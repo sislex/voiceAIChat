@@ -1,0 +1,40 @@
+# Зависимости
+node_modules/
+
+# Сборка
+out/
+dist/
+build/
+release/
+*.tsbuildinfo
+
+# Кэши/покрытие
+.vite/
+.cache/
+coverage/
+
+# Логи и мусор ОС
+*.log
+.DS_Store
+
+# Окружение
+.env
+.env.*
+
+# Python-венв Piper
+.venv-piper/
+.venv/
+
+# Тяжёлые ассеты (модели/голоса/рантаймы) — качаются, не в гит
+models/
+!models/.gitkeep
+**/resources/piper-runtime/
+**/resources/piper-voices/
+
+# Дублирующая защита от тяжёлых бинарей моделей/голосов и локальных БД
+*.bin
+*.onnx
+*.onnx.json
+*.db
+*.sqlite
+*.sqlite3

@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Manrope',system-ui,sans-serif;background:#ECEBE6;color:#1C1B18}
+a{color:#3D64C8;text-decoration:none}a:hover{color:#2A4C9F;text-decoration:underline}
+.app{display:grid;grid-template-columns:264px 1fr;height:100vh;background:#FAFAF7;overflow:hidden}
+.side{background:#F2F1EC;border-right:1px solid #E3E1D9;display:flex;flex-direction:column;min-height:0;height:100vh}
+.sidehead{padding:20px 18px 14px 18px;display:flex;align-items:center;justify-content:space-between}
+.logo{font-weight:800;font-size:16px;letter-spacing:-0.2px}
+.logodot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:8px}
+.newbtn{border:1px solid #D8D6CC;background:#fff;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;color:#1C1B18;font-family:inherit}
+.newbtn:hover{border-color:#B9B6A8}
+.convo{margin:2px 10px;padding:10px 12px;border-radius:9px;cursor:pointer;font-size:13px}
+.convo:hover{background:#E9E7E0}
+.convo.on{background:#E2E0D7}
+.ctitle{font-weight:700;margin:0 0 3px 0}
+.cmeta{font-size:11px;color:#8A877C;margin:0}
+.sidefoot{margin-top:auto;padding:12px;border-top:1px solid #E3E1D9}
+.footbtn{display:flex;align-items:center;gap:10px;width:100%;border:none;background:none;padding:9px 10px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;color:#55534A;font-family:inherit;text-align:left}
+.footbtn:hover{background:#E9E7E0}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;height:100vh}
+.mhead{padding:14px 28px;border-bottom:1px solid #EEEDE7;display:flex;align-items:center;justify-content:space-between;background:#FAFAF7}
+.mtitle{font-size:14px;font-weight:800;margin:0}
+.badge{font-size:11px;font-weight:700;color:#6E6B60;background:#F0EFE9;border:1px solid #E3E1D9;border-radius:99px;padding:4px 11px}
+.scroll{flex:1;min-height:0;overflow-y:auto;padding:26px 0}
+.col-c{max-width:720px;margin:0 auto;padding:0 28px;display:flex;flex-direction:column;gap:18px}
+.msg{display:flex;flex-direction:column;gap:6px;max-width:82%}
+.msg.me{align-self:flex-end;align-items:flex-end}
+.chip{font-size:11px;font-weight:800;letter-spacing:0.3px;padding:3px 9px;border-radius:99px;width:fit-content}
+.sp1{background:#E3EAFB;color:#2C4FA8}
+.sp2{background:#DFF1E6;color:#1F7A4D}
+.spa{background:#F4E9DC;color:#9A5B1F}
+.bub{padding:12px 16px;border-radius:14px;font-size:14px;line-height:1.55;margin:0}
+.me .bub{background:#EDF1FB;border:1px solid #DCE4F6;border-bottom-right-radius:4px}
+.ai .bub{background:#fff;border:1px solid #EAE8E0;border-bottom-left-radius:4px}
+.mtime{font-size:11px;color:#A5A296;margin:0}
+.live{border:1.5px dashed #C9C6B9;border-radius:14px;padding:14px 16px;background:#FCFCF9}
+.livehdr{font-size:11px;font-weight:800;color:#8A877C;letter-spacing:0.6px;margin:0 0 10px 0;display:flex;align-items:center;gap:8px}
+.reddot{width:8px;height:8px;border-radius:50%;background:#D5482F;animation:blink 1.1s infinite}
+@keyframes blink{50%{opacity:0.25}}
+.seg{display:flex;gap:10px;align-items:baseline;font-size:14px;line-height:1.5;margin:0 0 6px 0}
+.think{display:flex;align-items:center;gap:10px;color:#8A877C;font-size:13px;font-weight:600}
+.dots{display:flex;gap:4px}
+.dot{width:6px;height:6px;border-radius:50%;background:#B9B6A8;animation:hop 1s infinite}
+.dot:nth-child(2){animation-delay:0.15s}.dot:nth-child(3){animation-delay:0.3s}
+@keyframes hop{40%{transform:translateY(-4px);opacity:1}80%{transform:none;opacity:0.5}}
+.voicebar{border-top:1px solid #EEEDE7;background:#FAFAF7;padding:14px 28px 20px 28px}
+.vinner{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
+.vrow{display:flex;align-items:center;gap:12px}
+.tin{flex:1;border:1px solid #DDDBD1;border-radius:12px;padding:13px 16px;font-size:14px;font-family:inherit;background:#fff;outline:none;color:#1C1B18}
+.tin:focus{border-color:#9BA9D6}
+.micbtn{width:48px;height:48px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;transition:transform 0.15s}
+.micbtn:hover{transform:scale(1.06)}
+.stopbtn{width:48px;height:48px;border-radius:50%;border:1.5px solid #D5482F;background:#FBEEEA;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.wavewrap{flex:1;display:flex;align-items:center;gap:3px;height:48px;padding:0 8px}
+.wbar{width:4px;border-radius:2px;animation:wave 0.9s ease-in-out infinite}
+@keyframes wave{0%,100%{transform:scaleY(0.35)}50%{transform:scaleY(1)}}
+.vstatus{font-size:12px;font-weight:700;color:#8A877C;text-align:center}
+.spkline{display:flex;align-items:center;gap:10px;justify-content:center;font-size:12px;font-weight:700;color:#6E6B60}
+.speak{display:flex;align-items:center;gap:12px;flex:1;background:#fff;border:1px solid #EAE8E0;border-radius:12px;padding:10px 16px}
+.eq{display:flex;gap:2.5px;align-items:center;height:22px}
+.eqb{width:3px;border-radius:2px;animation:wave 0.7s ease-in-out infinite}
+.ovl{position:fixed;inset:0;background:rgba(28,27,24,0.35);display:flex;align-items:center;justify-content:center;z-index:50}
+.modal{background:#FAFAF7;border-radius:16px;width:480px;max-width:90vw;box-shadow:0 24px 60px rgba(0,0,0,0.25);overflow:hidden}
+.mdhead{padding:18px 22px;border-bottom:1px solid #EEEDE7;display:flex;align-items:center;justify-content:space-between}
+.mdh{font-size:15px;font-weight:800;margin:0}
+.xbtn{border:none;background:none;cursor:pointer;font-size:18px;color:#8A877C;padding:4px 8px}
+.mdbody{padding:10px 22px 22px 22px;display:flex;flex-direction:column}
+.frow{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid #F0EFE9;gap:20px}
+.flab{font-size:13px;font-weight:700;margin:0}
+.fsub{font-size:11px;color:#8A877C;margin:2px 0 0 0}
+.sel{border:1px solid #DDDBD1;border-radius:8px;padding:7px 10px;font-size:13px;font-family:inherit;background:#fff;color:#1C1B18}
+.sw{width:38px;height:22px;border-radius:99px;background:#D8D6CC;position:relative;cursor:pointer;transition:background 0.15s;flex-shrink:0}
+.sw::after{content:'';position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left 0.15s;box-shadow:0 1px 3px rgba(0,0,0,0.2)}
+.sw.on::after{left:19px}
+</style>
+</helmet>
+<div class="app">
+<aside class="side">
+<div class="sidehead"><span class="logo"><span class="logodot" style="background:{{ accent }}"></span>Голос·Чат</span><button class="newbtn" onClick="{{ newChat }}">+ Новый</button></div>
+<div class="f1" style="overflow-y:auto;min-height:0;padding-top:4px">
+<sc-for list="{{ convos }}" as="c" hint-placeholder-count="4">
+<div class="{{ c.cls }}" onClick="{{ c.pick }}"><p class="ctitle">{{ c.title }}</p><p class="cmeta">{{ c.meta }}</p></div>
+</sc-for>
+</div>
+<div class="sidefoot">
+<button class="footbtn" onClick="{{ openSettings }}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.4" stroke="#55534A" stroke-width="1.5"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4" stroke="#55534A" stroke-width="1.5" stroke-linecap="round"/></svg>Настройки</button>
+</div>
+</aside>
+<main class="main">
+<header class="mhead"><h1 class="mtitle">{{ chatTitle }}</h1><span class="badge">{{ statusBadge }}</span></header>
+<div class="scroll" dcRef="{{ scrollRef }}">
+<div class="col-c">
+<sc-for list="{{ messages }}" as="m" hint-placeholder-count="3">
+<div class="{{ m.cls }}"><span class="{{ m.chipCls }}">{{ m.name }}</span><p class="bub">{{ m.text }}</p><p class="mtime">{{ m.time }}</p></div>
+</sc-for>
+<sc-if value="{{ isListening }}" hint-placeholder-val="{{ false }}">
+<div class="live"><p class="livehdr"><span class="reddot"></span>РАСПОЗНАВАНИЕ · ЛОКАЛЬНО (WHISPER)</p>
+<sc-for list="{{ liveSegs }}" as="s"><p class="seg"><span class="{{ s.chipCls }}">{{ s.name }}</span><span>{{ s.text }}</span></p></sc-for>
+</div>
+</sc-if>
+<sc-if value="{{ isThinking }}" hint-placeholder-val="{{ false }}">
+<div class="think"><div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>Claude обрабатывает запрос…</div>
+</sc-if>
+</div>
+</div>
+<div class="voicebar"><div class="vinner">
+<sc-if value="{{ isListening }}" hint-placeholder-val="{{ false }}">
+<div class="spkline">Обнаружено говорящих: <span class="chip sp1">Спикер 1</span><sc-if value="{{ twoSpk }}"><span class="chip sp2">Спикер 2</span></sc-if></div>
+</sc-if>
+<div class="vrow">
+<sc-if value="{{ isIdle }}" hint-placeholder-val="{{ true }}">
+<input class="tin" placeholder="Напишите сообщение или нажмите на микрофон…" value="{{ draft }}" onChange="{{ onDraft }}" onKeyDown="{{ onKey }}">
+<button class="micbtn" style="background:{{ accent }}" onClick="{{ startVoice }}" title="Говорить"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="7" y="2.5" width="6" height="10" rx="3" fill="#fff"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+</sc-if>
+<sc-if value="{{ isListening }}" hint-placeholder-val="{{ false }}">
+<div class="wavewrap">{{ waveBars }}</div>
+<button class="stopbtn" onClick="{{ stopVoice }}" title="Готово"><svg width="16" height="16" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="2.5" fill="#D5482F"/></svg></button>
+</sc-if>
+<sc-if value="{{ isThinking }}" hint-placeholder-val="{{ false }}">
+<div class="speak"><div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div><span class="fs13 fw6" style="color:#8A877C">Запрос отправлен в Claude Console…</span></div>
+</sc-if>
+<sc-if value="{{ isSpeaking }}" hint-placeholder-val="{{ false }}">
+<div class="speak"><span class="eq">{{ eqBars }}</span><span class="fs13 fw7">Claude отвечает голосом…</span><span class="fs11" style="color:#A5A296;margin-left:auto">TTS · локально</span></div>
+<button class="stopbtn" onClick="{{ stopSpeak }}" title="Остановить озвучку"><svg width="16" height="16" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="2.5" fill="#D5482F"/></svg></button>
+</sc-if>
+</div>
+<p class="vstatus">{{ statusLine }}</p>
+</div></div>
+</main>
+<sc-if value="{{ settingsOpen }}" hint-placeholder-val="{{ false }}">
+<div class="ovl" onClick="{{ closeSettings }}"><div class="modal" onClick="{{ eatClick }}">
+<div class="mdhead"><h2 class="mdh">Настройки</h2><button class="xbtn" onClick="{{ closeSettings }}">✕</button></div>
+<div class="mdbody">
+<div class="frow"><div><p class="flab">Модель Claude</p><p class="fsub">Через Claude Console (CLI)</p></div><select class="sel"><option>Claude Sonnet 4.5</option><option>Claude Opus 4.5</option></select></div>
+<div class="frow"><div><p class="flab">Распознавание речи</p><p class="fsub">Локально, без интернета</p></div><select class="sel"><option>Whisper large-v3-turbo</option><option>Whisper medium</option><option>Whisper small</option></select></div>
+<div class="frow"><div><p class="flab">Диаризация спикеров</p><p class="fsub">Разделение голосов на говорящих</p></div><div class="{{ diarCls }}" onClick="{{ toggleDiar }}"></div></div>
+<div class="frow"><div><p class="flab">Голос озвучки</p><p class="fsub">Локальный TTS (Piper)</p></div><select class="sel"><option>Ирина (ru)</option><option>Дмитрий (ru)</option><option>Amy (en)</option></select></div>
+<div class="frow" style="border-bottom:none"><div><p class="flab">Микрофон</p></div><select class="sel"><option>MacBook Pro Microphone</option><option>AirPods Pro</option></select></div>
+</div>
+</div></div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;: {&quot;editor&quot;: &quot;color&quot;, &quot;default&quot;: &quot;#3D64C8&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;#3D64C8&quot;, &quot;#C86A3D&quot;, &quot;#3D9C6B&quot;, &quot;#7A5CC8&quot;], &quot;section&quot;: &quot;Вид&quot;}, &quot;twoSpeakers&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Демо&quot;}}">
+class Component extends DCLogic {
+  state = {
+    voice: 'idle', // idle | listening | thinking | speaking
+    draft: '',
+    settingsOpen: false,
+    diar: true,
+    activeConvo: 0,
+    liveSegs: [],
+    messages: [
+      { role: 'u1', text: 'Привет! Расскажи, какая сегодня погода обычно бывает в Лиссабоне в июле?', time: '14:02' },
+      { role: 'ai', text: 'В июле в Лиссабоне обычно солнечно и тепло: днём около +28°C, вечером +19°C. Дожди — большая редкость. Отличное время для прогулок у океана.', time: '14:02' },
+    ],
+  };
+  timers = [];
+  after(ms, fn) { this.timers.push(setTimeout(fn, ms)); }
+  clearTimers() { this.timers.forEach(clearTimeout); this.timers = []; }
+  componentWillUnmount() { this.clearTimers(); }
+
+  script() {
+    const two = this.props.twoSpeakers ?? true;
+    const segs = two ? [
+      { sp: 1, text: 'Слушай, а спроси заодно — что стоит посмотреть за три дня?' },
+      { sp: 2, text: 'И добавь: мы будем с ребёнком, лет пять ему.' },
+    ] : [
+      { sp: 1, text: 'А что стоит посмотреть в Лиссабоне за три дня?' },
+    ];
+    let shown = [];
+    segs.forEach((s, i) => {
+      // stream each segment word by word
+      const words = s.text.split(' ');
+      words.forEach((w, j) => {
+        this.after(700 + i * 2600 + j * 130, () => {
+          if (this.state.voice !== 'listening') return;
+          const cur = [...shown];
+          const partial = words.slice(0, j + 1).join(' ');
+          cur[i] = { sp: s.sp, text: partial };
+          shown = cur;
+          this.setState({ liveSegs: cur.filter(Boolean) });
+        });
+      });
+    });
+  }
+
+  commitVoice() {
+    const segs = this.state.liveSegs;
+    if (!segs.length) { this.setState({ voice: 'idle' }); return; }
+    const t = new Date();
+    const time = t.getHours() + ':' + String(t.getMinutes()).padStart(2, '0');
+    const msgs = segs.map(s => ({ role: 'u' + s.sp, text: s.text, time }));
+    this.setState({ messages: [...this.state.messages, ...msgs], liveSegs: [], voice: 'thinking' }, () => this.scrollDown());
+    this.after(1900, () => {
+      const reply = segs.length > 1
+        ? 'За три дня с пятилетним ребёнком советую: день 1 — Океанариум и район Belém с пастеларией; день 2 — трамвай 28 и замок Св. Георгия (детям нравятся павлины); день 3 — Синтра, парк Пена. Везде есть где перекусить и отдохнуть.'
+        : 'За три дня стоит успеть: Алфаму и замок Св. Георгия, Belém с монастырём Жеронимуш, Океанариум и однодневную поездку в Синтру.';
+      this.setState({ messages: [...this.state.messages, { role: 'ai', text: reply, time }], voice: 'speaking' }, () => this.scrollDown());
+      this.after(6000, () => { if (this.state.voice === 'speaking') this.setState({ voice: 'idle' }); });
+    });
+  }
+
+  scrollDown() { const el = this.scrollEl; if (el) el.scrollTop = el.scrollHeight; }
+
+  renderVals() {
+    const accent = this.props.accent ?? '#3D64C8';
+    const v = this.state.voice;
+    const chip = r => r === 'u1' ? 'chip sp1' : r === 'u2' ? 'chip sp2' : 'chip spa';
+    const name = r => r === 'u1' ? 'Спикер 1' : r === 'u2' ? 'Спикер 2' : 'Claude';
+    const showChips = this.state.diar;
+    const wave = React.createElement(React.Fragment, null, Array.from({ length: 28 }, (_, i) =>
+      React.createElement('span', { key: i, className: 'wbar', style: { background: accent, height: (14 + Math.abs(Math.sin(i * 1.7)) * 30) + 'px', animationDelay: (i * 0.055) + 's' } })));
+    const eq = React.createElement(React.Fragment, null, Array.from({ length: 5 }, (_, i) =>
+      React.createElement('span', { key: i, className: 'eqb', style: { background: accent, height: (8 + (i % 3) * 6) + 'px', animationDelay: (i * 0.12) + 's' } })));
+    return {
+      accent,
+      twoSpk: (this.props.twoSpeakers ?? true),
+      chatTitle: 'Поездка в Лиссабон',
+      statusBadge: v === 'idle' ? 'Готов' : v === 'listening' ? '● Запись' : v === 'thinking' ? 'Claude думает' : 'Озвучка',
+      statusLine: v === 'idle' ? 'STT и TTS работают локально · ответы через Claude Console'
+        : v === 'listening' ? 'Говорите… Whisper распознаёт речь на устройстве'
+        : v === 'thinking' ? 'Текст передан в Claude Console' : 'Воспроизведение ответа',
+      isIdle: v === 'idle', isListening: v === 'listening', isThinking: v === 'thinking', isSpeaking: v === 'speaking',
+      messages: this.state.messages.map(m => ({
+        cls: m.role === 'ai' ? 'msg ai' : 'msg me',
+        chipCls: (m.role === 'ai' || showChips) ? chip(m.role) : 'chip sp1',
+        name: name(m.role), text: m.text, time: m.time,
+      })),
+      liveSegs: this.state.liveSegs.map(s => ({ chipCls: showChips ? (s.sp === 1 ? 'chip sp1' : 'chip sp2') : 'chip sp1', name: showChips ? 'Спикер ' + s.sp : 'Вы', text: s.text })),
+      waveBars: wave, eqBars: eq,
+      draft: this.state.draft,
+      onDraft: e => this.setState({ draft: e.target.value }),
+      onKey: e => {
+        if (e.key === 'Enter' && this.state.draft.trim()) {
+          const t = new Date();
+          const time = t.getHours() + ':' + String(t.getMinutes()).padStart(2, '0');
+          this.setState({ messages: [...this.state.messages, { role: 'u1', text: this.state.draft.trim(), time }], draft: '', voice: 'thinking' }, () => this.scrollDown());
+          this.after(1800, () => {
+            this.setState({ messages: [...this.state.messages, { role: 'ai', text: 'Принял! Это прототип интерфейса — в готовом приложении здесь будет ответ Claude через Claude Console.', time }], voice: 'speaking' }, () => this.scrollDown());
+            this.after(4500, () => { if (this.state.voice === 'speaking') this.setState({ voice: 'idle' }); });
+          });
+        }
+      },
+      startVoice: () => { this.clearTimers(); this.setState({ voice: 'listening', liveSegs: [] }, () => this.scrollDown()); this.script(); },
+      stopVoice: () => { this.clearTimers(); this.commitVoice(); },
+      stopSpeak: () => this.setState({ voice: 'idle' }),
+      scrollRef: el => { this.scrollEl = el; },
+      convos: [
+        { title: 'Поездка в Лиссабон', meta: 'Сегодня · 6 сообщений' },
+        { title: 'Идеи для подарка', meta: 'Вчера · 12 сообщений' },
+        { title: 'Разбор договора аренды', meta: '3 июля · 8 сообщений' },
+        { title: 'План тренировок', meta: '28 июня · 15 сообщений' },
+      ].map((c, i) => ({ ...c, cls: i === this.state.activeConvo ? 'convo on' : 'convo', pick: () => this.setState({ activeConvo: i }) })),
+      newChat: () => this.setState({ messages: [], activeConvo: -1, voice: 'idle', liveSegs: [] }),
+      openSettings: () => this.setState({ settingsOpen: true }),
+      closeSettings: () => this.setState({ settingsOpen: false }),
+      eatClick: e => e.stopPropagation(),
+      settingsOpen: this.state.settingsOpen,
+      diarCls: this.state.diar ? 'sw on' : 'sw',
+      toggleDiar: () => this.setState({ diar: !this.state.diar }),
+    };
+  }
+}
+</script>
+</body>
+</html>

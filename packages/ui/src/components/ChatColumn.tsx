@@ -1,0 +1,258 @@
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import type { Message, VoiceState } from '@shared/types'
+import {
+  chipClass,
+  speakerName,
+  statusBadge,
+  type LiveSegment
+} from '../lib/view'
+import { Dots } from './animations'
+import { Markdown } from './Markdown'
+
+export interface ChatColumnProps {
+  title: string
+  state: VoiceState
+  messages: Message[]
+  liveSegments: LiveSegment[]
+  diarization: boolean
+  /** Стримящийся ответ Claude (растёт по токенам); пусто — нет активного стрима. */
+  streamingReply?: string
+  /** Текст ошибки для баннера (null/undefined — нет баннера). */
+  error?: string | null
+  /** Закрыть баннер ошибки. */
+  onDismissError?: () => void
+  /** Доступна ли озвучка (кнопка ▶ на ответах). */
+  canSpeak?: boolean
+  /** id сообщения, которое сейчас озвучивается (для иконки ⏹). */
+  speakingMessageId?: string | null
+  /** Озвучить/остановить сообщение по кнопке. */
+  onSpeakMessage?: (id: string, text: string) => void
+  /** Удалить сообщение из истории. */
+  onDeleteMessage?: (id: string) => void
+  /** Исправить сообщение пользователя и перегенерировать ответ. */
+  onEditMessage?: (id: string, text: string) => void
+  /** Отсутствует ли локальная модель Whisper (показать баннер первого запуска). */
+  modelMissing?: boolean
+  /** Название модели для баннера. */
+  modelLabel?: string
+  /** Идёт ли скачивание модели. */
+  downloading?: boolean
+  /** Прогресс скачивания (0–100). */
+  downloadPercent?: number
+  /** Запустить скачивание модели. */
+  onDownloadModel?: () => void
+  /** Голосовая панель, рендерится внизу колонки (как в прототипе). */
+  voiceBar: ReactNode
+}
+
+export function ChatColumn({
+  title,
+  state,
+  messages,
+  liveSegments,
+  diarization,
+  streamingReply = '',
+  canSpeak = false,
+  speakingMessageId = null,
+  onSpeakMessage,
+  onDeleteMessage,
+  onEditMessage,
+  error,
+  onDismissError,
+  modelMissing = false,
+  modelLabel = '',
+  downloading = false,
+  downloadPercent = 0,
+  onDownloadModel,
+  voiceBar
+}: ChatColumnProps): JSX.Element {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
+
+  const canEdit = state === 'idle'
+  const startEdit = (m: Message): void => {
+    setEditingId(m.id)
+    setEditDraft(m.text)
+  }
+  const cancelEdit = (): void => {
+    setEditingId(null)
+    setEditDraft('')
+  }
+  const saveEdit = (): void => {
+    if (editingId && editDraft.trim() && onEditMessage) onEditMessage(editingId, editDraft)
+    cancelEdit()
+  }
+
+  // Автоскролл вниз при новых сообщениях/сегментах/токенах ответа.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages.length, liveSegments, state, streamingReply])
+
+  const isListening = state === 'listening'
+  const hasStream = streamingReply.length > 0
+  // Индикатор «думает» показываем, пока не пошли токены ответа.
+  const isThinking = (state === 'thinking' || state === 'transcribing') && !hasStream
+
+  return (
+    <main className="main">
+      <header className="mhead">
+        <h1 className="mtitle">{title}</h1>
+        <span className="badge">{statusBadge(state)}</span>
+      </header>
+
+      {error && (
+        <div className="errbar" role="alert" data-testid="error-bar">
+          <span>{error}</span>
+          <button className="errclose" aria-label="Закрыть ошибку" onClick={onDismissError}>
+            ✕
+          </button>
+        </div>
+      )}
+
+      {modelMissing && (
+        <div className="modelbar" data-testid="model-bar">
+          <span>
+            Модель распознавания{modelLabel ? ` (${modelLabel})` : ''} не найдена. Скачайте её для
+            работы голосового ввода.
+          </span>
+          {downloading ? (
+            <span className="modelprog" data-testid="model-progress">
+              Скачивание… {downloadPercent}%
+            </span>
+          ) : (
+            <button className="modeldl" onClick={onDownloadModel}>
+              Скачать
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="scroll" ref={scrollRef} data-testid="scroll">
+        <div className="col-c">
+          {messages.map((m) => {
+            const isAi = m.role === 'ai'
+            const isEditing = editingId === m.id
+            return (
+              <div key={m.id} className={isAi ? 'msg ai' : 'msg me'}>
+                <span className={chipClass(m.role, diarization)}>
+                  {speakerName(m.role, diarization)}
+                </span>
+                {isEditing ? (
+                  <div className="editwrap">
+                    <textarea
+                      className="editarea"
+                      value={editDraft}
+                      rows={Math.min(10, editDraft.split('\n').length + 1)}
+                      onChange={(e) => setEditDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          saveEdit()
+                        } else if (e.key === 'Escape') {
+                          cancelEdit()
+                        }
+                      }}
+                      aria-label="Редактирование сообщения"
+                      autoFocus
+                    />
+                    <div className="editbtns">
+                      <button className="editsave" onClick={saveEdit}>
+                        Отправить
+                      </button>
+                      <button className="editcancel" onClick={cancelEdit}>
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                ) : isAi ? (
+                  <div className="bub">
+                    <Markdown>{m.text}</Markdown>
+                  </div>
+                ) : (
+                  <p className="bub">{m.text}</p>
+                )}
+                {!isEditing && (
+                  <div className="mfoot">
+                    <p className="mtime">{m.time}</p>
+                    {isAi && canSpeak && onSpeakMessage && (
+                      <button
+                        className="speakbtn"
+                        aria-label={
+                          speakingMessageId === m.id ? 'Остановить озвучку' : 'Озвучить ответ'
+                        }
+                        title={speakingMessageId === m.id ? 'Остановить' : 'Озвучить'}
+                        onClick={() => onSpeakMessage(m.id, m.text)}
+                      >
+                        {speakingMessageId === m.id ? '⏹' : '🔊'}
+                      </button>
+                    )}
+                    {!isAi && canEdit && onEditMessage && (
+                      <button
+                        className="msgbtn"
+                        aria-label="Изменить сообщение"
+                        title="Изменить и переспросить"
+                        onClick={() => startEdit(m)}
+                      >
+                        ✏️
+                      </button>
+                    )}
+                    {onDeleteMessage && (
+                      <button
+                        className="msgbtn"
+                        aria-label="Удалить сообщение"
+                        title="Удалить из истории"
+                        onClick={() => onDeleteMessage(m.id)}
+                      >
+                        🗑
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {isListening && (
+            <div className="live" data-testid="live-block">
+              <p className="livehdr">
+                <span className="reddot" />
+                РАСПОЗНАВАНИЕ · ЛОКАЛЬНО (WHISPER)
+              </p>
+              {liveSegments.map((s, i) => {
+                const role = `u${s.speakerId}` as const
+                return (
+                  <p className="seg" key={i}>
+                    <span className={chipClass(role, diarization)}>
+                      {speakerName(role, diarization)}
+                    </span>
+                    <span>{s.text}</span>
+                  </p>
+                )
+              })}
+            </div>
+          )}
+
+          {isThinking && (
+            <div className="think" data-testid="think">
+              <Dots />
+              Claude обрабатывает запрос…
+            </div>
+          )}
+
+          {hasStream && (
+            <div className="msg ai" data-testid="streaming">
+              <span className={chipClass('ai', diarization)}>{speakerName('ai', diarization)}</span>
+              <div className="bub">
+                <Markdown>{streamingReply}</Markdown>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {voiceBar}
+    </main>
+  )
+}

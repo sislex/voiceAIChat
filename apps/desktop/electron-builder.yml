@@ -1,0 +1,46 @@
+appId: com.voiceaichat.app
+productName: Голос·Чат
+directories:
+  output: release
+  buildResources: build
+
+# В бандл кладём только собранный код и манифест. node_modules с прод-зависимостями
+# electron-builder добавляет сам. Модель Whisper (models/, ~1.5 ГБ) НЕ бандлится —
+# качается при первом запуске в userData (см. Шаг 9).
+files:
+  - out/**/*
+  - package.json
+  - '!models/**'
+  - '!src/**'
+  - '!task/**'
+  - '!**/*.map'
+
+# Нативные части нельзя держать в asar: их нужно грузить/исполнять из ФС.
+# better-sqlite3 — node-аддон; nodejs-whisper — бинарь whisper-cli (whisper.cpp).
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**'
+  - '**/node_modules/nodejs-whisper/**'
+
+# Piper: self-contained python + piper-tts и голос по умолчанию (irina) кладём в
+# Contents/Resources рядом с asar — исполняются из ФС.
+extraResources:
+  - from: resources/piper-runtime
+    to: piper-runtime
+  - from: resources/piper-voices
+    to: piper-voices
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  # Локальная сборка без подписи (нет сертификата) — приложение запускается
+  # с предупреждением Gatekeeper. Для распространения добавить identity/notarize.
+  identity: null
+
+dmg:
+  title: Голос·Чат
+
+# Пересобрать нативные модули под ABI Electron.
+npmRebuild: true

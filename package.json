@@ -1,0 +1,20 @@
+{
+  "name": "voicechat-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Голосовой чат-бот: desktop (Electron), server (STT/TTS/Claude), web-клиент",
+  "//": "desktop НЕ в workspaces намеренно: у него свой node_modules с ручной сборкой whisper.cpp — корневой npm install его не трогает.",
+  "workspaces": [
+    "packages/*",
+    "apps/server",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:web": "bash scripts/dev-web.sh",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck:desktop": "npm --prefix apps/desktop run typecheck",
+    "test:desktop": "npm --prefix apps/desktop run test"
+  }
+}
