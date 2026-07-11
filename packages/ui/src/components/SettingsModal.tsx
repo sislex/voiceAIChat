@@ -7,6 +7,9 @@ import type {
   WhisperModel,
   WhisperModelInfo
 } from '@shared/types'
+import { CLAUDE_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
+import type { PermissionMode } from '@shared/types'
+import type { McpServer } from '@shared/mcp'
 
 export interface MicOption {
   deviceId: string
@@ -76,12 +79,49 @@ export function SettingsModal({
             <select
               className="sel"
               aria-label="Модель Claude"
-              value={settings.model}
+              value={normalizeClaudeModel(settings.model)}
               onChange={(e) => onChange({ model: e.target.value as ClaudeModel })}
             >
-              <option value="sonnet-4.5">Claude Sonnet 4.5</option>
-              <option value="opus-4.5">Claude Opus 4.5</option>
+              {CLAUDE_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
             </select>
+          </div>
+
+          <div className="frow">
+            <div>
+              <p className="flab">Права агента</p>
+              <p className="fsub">Что агенту разрешено делать с файлами/командами</p>
+            </div>
+            <select
+              className="sel"
+              aria-label="Права агента"
+              value={settings.permissionMode}
+              onChange={(e) => onChange({ permissionMode: e.target.value as PermissionMode })}
+            >
+              {PERMISSION_MODES.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="frow">
+            <div>
+              <p className="flab">Рабочий каталог</p>
+              <p className="fsub">Где агент работает с файлами (напр. путь к репозиторию)</p>
+            </div>
+            <input
+              className="sel"
+              type="text"
+              aria-label="Рабочий каталог"
+              placeholder="По умолчанию"
+              value={settings.workdir ?? ''}
+              onChange={(e) => onChange({ workdir: e.target.value.trim() || null })}
+            />
           </div>
 
           <div className="frow">

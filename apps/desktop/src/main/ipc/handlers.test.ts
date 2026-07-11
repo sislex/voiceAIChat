@@ -66,7 +66,7 @@ describe('ipc handlers', () => {
 
   it('settings:get/save проходят и сериализуемы', async () => {
     expect(await h['settings:get']()).toEqual(DEFAULT_SETTINGS)
-    const next = { ...DEFAULT_SETTINGS, model: 'opus-4.5' as const, diarization: false }
+    const next = { ...DEFAULT_SETTINGS, model: 'opus' as const, diarization: false }
     await h['settings:save'](next)
     expect(await h['settings:get']()).toEqual(next)
   })

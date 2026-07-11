@@ -45,10 +45,16 @@ describe('buildPrompt', () => {
 })
 
 describe('claudeModelAlias', () => {
-  it('маппит настройки в алиасы CLI', () => {
+  it('маппит настройки в алиасы CLI (в т.ч. новые модели и старые значения)', () => {
+    expect(claudeModelAlias('opus')).toBe('opus')
+    expect(claudeModelAlias('sonnet')).toBe('sonnet')
+    expect(claudeModelAlias('fable')).toBe('fable')
+    expect(claudeModelAlias('haiku')).toBe('haiku')
+    // Старые значения из БД (до перехода на алиасы) тоже понимаются.
     expect(claudeModelAlias('sonnet-4.5')).toBe('sonnet')
     expect(claudeModelAlias('opus-4.5')).toBe('opus')
-    expect(claudeModelAlias('что-то')).toBe('sonnet')
+    // Неизвестное → безопасный дефолт.
+    expect(claudeModelAlias('что-то')).toBe('opus')
   })
 })
 

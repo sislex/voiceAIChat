@@ -97,6 +97,28 @@ describe('App — интеграция UI со стором и IPC', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('меню модели содержит актуальные модели Claude', async () => {
+    await renderApp()
+    await userEvent.click(screen.getByText('Настройки'))
+    const select = screen.getByLabelText('Модель Claude')
+    const labels = [...select.querySelectorAll('option')].map((o) => o.textContent)
+    expect(labels).toEqual([
+      'Claude Opus 4.8',
+      'Claude Sonnet 5',
+      'Claude Fable 5',
+      'Claude Haiku 4.5'
+    ])
+  })
+
+  it('тумблер тёмной темы меняет data-theme и сохраняется', async () => {
+    const api = await renderApp()
+    expect(document.querySelector('.app')?.getAttribute('data-theme')).toBe('light')
+    await userEvent.click(screen.getByText('Настройки'))
+    await userEvent.click(screen.getByRole('switch', { name: 'Тёмная тема' }))
+    expect(api._state.settings.theme).toBe('dark')
+    expect(document.querySelector('.app')?.getAttribute('data-theme')).toBe('dark')
+  })
+
   it('тумблер диаризации переключает aria-checked и сохраняется в api', async () => {
     const api = await renderApp()
     await userEvent.click(screen.getByText('Настройки'))
@@ -161,12 +183,12 @@ describe('App — интеграция UI со стором и IPC', () => {
 
     await userEvent.click(screen.getByText('Настройки'))
     await userEvent.click(screen.getByRole('switch', { name: 'Диаризация спикеров' }))
-    await userEvent.selectOptions(screen.getByLabelText('Модель Claude'), 'opus-4.5')
+    await userEvent.selectOptions(screen.getByLabelText('Модель Claude'), 'sonnet')
     // Голос выбирается по реальному названию из активного движка (см. fakeApi).
     await userEvent.selectOptions(screen.getByLabelText('Голос озвучки'), 'ru_RU-dmitri-medium')
     expect(api._state.settings).toMatchObject({
       diarization: false,
-      model: 'opus-4.5',
+      model: 'sonnet',
       voice: 'ru_RU-dmitri-medium'
     })
 
@@ -179,7 +201,7 @@ describe('App — интеграция UI со стором и IPC', () => {
       'aria-checked',
       'false'
     )
-    expect(screen.getByLabelText<HTMLSelectElement>('Модель Claude').value).toBe('opus-4.5')
+    expect(screen.getByLabelText<HTMLSelectElement>('Модель Claude').value).toBe('sonnet')
     expect(screen.getByLabelText<HTMLSelectElement>('Голос озвучки').value).toBe('ru_RU-dmitri-medium')
   })
 
