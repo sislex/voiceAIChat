@@ -22,9 +22,13 @@ export interface VadConfig {
   minSilenceFrames: number
 }
 
+// Пороги подобраны на живом замере (кадр = 250 мс):
+// фон/тишина RMS ≈ 0.0001–0.0015, речь ≈ 0.02–0.13 (провалы между словами ~0.005).
+// threshold 0.015 — ~10× над фоном и надёжно ниже речи; minSpeechFrames 2 = 500 мс
+// (отзывчивый barge-in), minSilenceFrames 8 = 2 с тишины (авто-пауза hands-free).
 export const DEFAULT_VAD: VadConfig = {
-  threshold: 0.02,
-  minSpeechFrames: 3,
+  threshold: 0.015,
+  minSpeechFrames: 2,
   minSilenceFrames: 8
 }
 
