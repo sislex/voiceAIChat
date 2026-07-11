@@ -3,8 +3,11 @@ import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { VoiceBar } from './components/VoiceBar'
 import { SettingsModal } from './components/SettingsModal'
+import { ConsolePanel } from './components/ConsolePanel'
+import { OnboardingModal } from './components/OnboardingModal'
 import { useVoiceStore } from './store/useVoiceStore'
 import { useVoiceCues } from './lib/useVoiceCues'
+import { useHotkeys } from './lib/useHotkeys'
 import './styles/app.css'
 
 // Шаг 5: состояние живёт в сторе (store/voiceStore.ts) на базе машины состояний.
@@ -33,8 +36,13 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const detectedSpeakers =
     liveSpeakers.length > 0 ? liveSpeakers : state.settings.diarization ? [1, 2] : [1]
 
+  const showConsole = state.settings.showConsole
+
   return (
-    <div className="app">
+    <div
+      className={showConsole ? 'app app--console' : 'app'}
+      data-theme={state.settings.theme}
+    >
       <Sidebar
         conversations={state.conversations}
         activeId={state.activeId}
@@ -82,6 +90,26 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           />
         }
       />
+
+      {showConsole && (
+        <ConsolePanel
+          log={state.consoleLog}
+          open={state.consoleOpen}
+          onToggle={actions.toggleConsole}
+        />
+      )}
+
+      {!state.settings.onboarded && (
+        <OnboardingModal
+          modelPresent={state.modelPresent}
+          modelLabel={state.settings.whisperModel}
+          downloading={state.downloading}
+          downloadPercent={state.downloadPercent}
+          onDownloadModel={actions.downloadModel}
+          hasVoice={state.ttsVoices.length > 0}
+          onDone={actions.completeOnboarding}
+        />
+      )}
 
       {state.settingsOpen && (
         <SettingsModal

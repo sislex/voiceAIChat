@@ -34,14 +34,17 @@ function makeSttBridge(ws: WsClient): RendererSttBridge {
 
 function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
   return {
-    send: ({ conversationId, segments, attachments }) =>
-      ws.send({ t: 'claude.send', conversationId, segments, attachments }),
+    send: ({ conversationId, segments, attachments, verbose }) =>
+      ws.send({ t: 'claude.send', conversationId, segments, attachments, verbose }),
     cancel: () => ws.send({ t: 'claude.cancel' }),
     onToken: (cb) =>
       ws.on('claude.token', (m) => cb({ conversationId: m.conversationId, delta: m.delta })),
-    onDone: (cb) => ws.on('claude.done', (m) => cb({ conversationId: m.conversationId, text: m.text })),
+    onDone: (cb) =>
+      ws.on('claude.done', (m) => cb({ conversationId: m.conversationId, text: m.text, meta: m.meta })),
     onError: (cb) =>
-      ws.on('claude.error', (m) => cb({ conversationId: m.conversationId, message: m.message }))
+      ws.on('claude.error', (m) => cb({ conversationId: m.conversationId, message: m.message })),
+    onLog: (cb) =>
+      ws.on('claude.log', (m) => cb({ conversationId: m.conversationId, entry: m.entry }))
   }
 }
 

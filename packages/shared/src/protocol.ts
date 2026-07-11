@@ -1,7 +1,15 @@
 // Контракт клиент↔сервер (Ф1). HTTP REST — запрос/ответ; WebSocket — стриминг.
 // Семантика соответствует прежним Electron-IPC каналам (1:1), но транспорт-нейтральна.
 
-import type { Conversation, Message, MessageRole, SttSegment, WhisperModel } from './types'
+import type {
+  ClaudeLogEntry,
+  Conversation,
+  Message,
+  MessageRole,
+  SttSegment,
+  TurnMeta,
+  WhisperModel
+} from './types'
 
 // --- Общие ---------------------------------------------------------------
 
@@ -94,6 +102,8 @@ export type ClientMessage =
       segments: SttSegmentWire[]
       /** id вложений (из POST /api/uploads), которые Claude должен учесть. */
       attachments?: string[]
+      /** Режим консоли: слать активность агента (claude.log). */
+      verbose?: boolean
     }
   | { t: 'claude.cancel' }
   | { t: 'tts.speak'; text: string; voice: string }
@@ -107,8 +117,9 @@ export type ServerMessage =
   | { t: 'stt.final'; update: SttUpdate }
   | { t: 'stt.error'; message: string }
   | { t: 'claude.token'; conversationId: string; delta: string }
-  | { t: 'claude.done'; conversationId: string; text: string }
+  | { t: 'claude.done'; conversationId: string; text: string; meta?: TurnMeta }
   | { t: 'claude.error'; conversationId: string; message: string }
+  | { t: 'claude.log'; conversationId: string; entry: ClaudeLogEntry }
   | { t: 'tts.audio'; audio: string } // base64 WAV (или бинарный кадр — см. реализацию)
   | { t: 'tts.error'; message: string }
   | { t: 'tts.voiceProgress'; id: string; percent: number }
@@ -140,6 +151,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'claude.token',
   'claude.done',
   'claude.error',
+  'claude.log',
   'tts.audio',
   'tts.error',
   'tts.voiceProgress',

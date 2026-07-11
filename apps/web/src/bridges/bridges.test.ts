@@ -80,6 +80,22 @@ describe('WsClient', () => {
     expect(ws.sent).toEqual([buf])
     c.close()
   })
+
+  it('доставляет claude.log подписчику (режим консоли)', () => {
+    const c = new WsClient('ws://x/ws')
+    const ws = FakeWebSocket.last!
+    ws._open()
+    const logs: Array<{ entry: { summary: string } }> = []
+    c.on('claude.log', (m) => logs.push(m as never))
+    ws._emit({
+      t: 'claude.log',
+      conversationId: 'c1',
+      entry: { kind: 'tool_use', summary: 'Bash: ls', raw: '{}' }
+    })
+    expect(logs).toHaveLength(1)
+    expect(logs[0].entry.summary).toBe('Bash: ls')
+    c.close()
+  })
 })
 
 describe('createHttpApi', () => {

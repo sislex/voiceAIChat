@@ -5,9 +5,14 @@
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { parseStreamJsonLine } from './streamJson'
+import { parseStreamJsonActivity } from '@shared/streamJson'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from './types'
 
-export type SpawnFn = (command: string, args: string[]) => ChildProcess
+export type SpawnFn = (
+  command: string,
+  args: string[],
+  options?: { cwd?: string }
+) => ChildProcess
 
 export interface ClaudeCliOptions {
   /** Инъекция spawn (для тестов). По умолчанию node:child_process.spawn. */
@@ -82,6 +87,11 @@ export class ClaudeCli implements LlmClient {
     if (child.stdout) {
       const rl = createInterface({ input: child.stdout })
       rl.on('line', (line) => {
+        // Параллельно: активность для режима консоли (только если запрошена).
+        if (handlers.onActivity) {
+          const entry = parseStreamJsonActivity(line)
+          if (entry) handlers.onActivity(entry)
+        }
         const ev = parseStreamJsonLine(line)
         if (!ev) return
         switch (ev.kind) {

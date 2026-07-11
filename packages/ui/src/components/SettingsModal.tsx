@@ -171,6 +171,62 @@ export function SettingsModal({
             />
           </div>
 
+          <div className="frow">
+            <div>
+              <p className="flab">Режим hands-free</p>
+              <p className="fsub">Непрерывный диалог: авто-пауза по тишине и авто-запись</p>
+            </div>
+            <button
+              className={settings.handsFree ? 'sw on' : 'sw'}
+              onClick={() => onChange({ handsFree: !settings.handsFree })}
+              role="switch"
+              aria-checked={settings.handsFree}
+              aria-label="Режим hands-free"
+            />
+          </div>
+
+          <div className="frow">
+            <div>
+              <p className="flab">Перебивание голосом</p>
+              <p className="fsub">Заговорить во время озвучки — прервать и начать запись</p>
+            </div>
+            <button
+              className={settings.bargeIn ? 'sw on' : 'sw'}
+              onClick={() => onChange({ bargeIn: !settings.bargeIn })}
+              role="switch"
+              aria-checked={settings.bargeIn}
+              aria-label="Перебивание голосом"
+            />
+          </div>
+
+          <div className="frow">
+            <div>
+              <p className="flab">Режим консоли</p>
+              <p className="fsub">Показывать действия агента (команды, thinking, mode)</p>
+            </div>
+            <button
+              className={settings.showConsole ? 'sw on' : 'sw'}
+              onClick={() => onChange({ showConsole: !settings.showConsole })}
+              role="switch"
+              aria-checked={settings.showConsole}
+              aria-label="Режим консоли"
+            />
+          </div>
+
+          <div className="frow">
+            <div>
+              <p className="flab">Тёмная тема</p>
+              <p className="fsub">Переключить оформление интерфейса</p>
+            </div>
+            <button
+              className={settings.theme === 'dark' ? 'sw on' : 'sw'}
+              onClick={() => onChange({ theme: settings.theme === 'dark' ? 'light' : 'dark' })}
+              role="switch"
+              aria-checked={settings.theme === 'dark'}
+              aria-label="Тёмная тема"
+            />
+          </div>
+
           {voicesDownloadable && voiceCatalog.length > 0 && (
             <div className="voicedl" data-testid="voice-catalog">
               <p className="flab">Скачать голоса</p>

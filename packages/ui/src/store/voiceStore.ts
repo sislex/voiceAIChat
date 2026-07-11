@@ -7,21 +7,26 @@
 // ответ — мок-пайплайн (см. mockPipeline.ts).
 
 import type { RendererApi, SttSegmentWire, SttStatus, SttUpdate, UploadInfo } from '@shared/ipc'
+import type { McpServer } from '@shared/mcp'
 import type {
   CatalogVoice,
+  ClaudeLogEntry,
   Conversation,
   Message,
   MessageRole,
   Settings,
   TtsVoiceInfo,
+  TurnMeta,
   WhisperModel,
   WhisperModelInfo
 } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
+import { conversationToMarkdown, conversationToJson, exportFileName } from '@shared/export'
 import { transition, type VoiceEvent } from '@shared/stateMachine'
 import type { VoiceState } from '@shared/types'
 import type { LiveSegment } from '../lib/view'
 import { flushSpeakable, splitSpeakable } from '../lib/sentences'
+import { VadDetector } from '../lib/vad'
 import type { AudioController } from '../audio/browserAudio'
 import type { MicDevice } from '../audio/microphones'
 import {
@@ -57,8 +62,16 @@ export interface AppState {
   voiceDownloads: Record<string, number>
   /** Модели Whisper на диске (наличие/размер) — для управления местом. */
   whisperModels: WhisperModelInfo[]
+  /** Лог активности агента (режим консоли). */
+  consoleLog: ClaudeLogEntry[]
+  /** Развёрнута ли панель консоли. */
+  consoleOpen: boolean
   /** Стримящийся ответ Claude (растёт по токенам); пусто — нет активного стрима. */
   streamingReply: string
+  /** Метаданные последнего завершённого хода (длительность/токены/стоимость). */
+  lastTurnMeta: TurnMeta | null
+  /** Подключённые MCP-серверы (read-only показ в настройках). */
+  mcpServers: McpServer[]
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
   speakingMessageId: string | null
   /** Доступна ли озвучка (кнопка ▶ на ответах). */
@@ -97,7 +110,8 @@ export interface StoreDeps {
   sendClaudePrompt?: (
     conversationId: string,
     segments: SttSegmentWire[],
-    attachments?: string[]
+    attachments?: string[],
+    verbose?: boolean
   ) => void
   /** Отмена текущего запроса к Claude (renderer → main). */
   cancelClaude?: () => void
@@ -176,6 +190,10 @@ export interface StoreActions {
   deleteVoice(id: string): Promise<void>
   /** Удалить файл модели Whisper (освободить место). */
   deleteModel(model: WhisperModel): Promise<void>
+  /** Добавить запись активности агента (claude:log) в лог консоли. */
+  applyClaudeLog(entry: ClaudeLogEntry): void
+  /** Свернуть/развернуть панель консоли. */
+  toggleConsole(): void
   /** Прогресс скачивания голоса (tts:voiceProgress). */
   applyVoiceProgress(id: string, percent: number): void
   /** Голос скачан (tts:voiceDone) — обновляет списки. */
@@ -209,7 +227,11 @@ function initialState(): AppState {
     voicesDownloadable: false,
     voiceDownloads: {},
     whisperModels: [],
+    consoleLog: [],
+    consoleOpen: true,
     streamingReply: '',
+    lastTurnMeta: null,
+    mcpServers: [],
     speakingMessageId: null,
     ttsAvailable: false,
     error: null,
@@ -391,9 +413,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Роутинг ответа: реальный Claude (стрим событиями) или мок-пайплайн. */
   function beginReply(segments: SttSegmentWire[], attachments: string[] = []): void {
     if (claudeEnabled && deps.sendClaudePrompt && state.activeId) {
-      setState({ streamingReply: '' })
+      setState({ streamingReply: '', lastTurnMeta: null })
       ttsBuffer = ''
-      deps.sendClaudePrompt(state.activeId, segments, attachments)
+      deps.sendClaudePrompt(state.activeId, segments, attachments, state.settings.showConsole)
       return
     }
     const prompt = segments.map((s) => s.text).join(' ')
@@ -468,6 +490,17 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshModelStatus()
   }
 
+  const HANDS_FREE_GAP_MS = 400 // пауза перед авто-стартом записи после ответа (hands-free)
+  const CONSOLE_LOG_CAP = 500 // ограничиваем рост лога консоли
+  function applyClaudeLog(entry: ClaudeLogEntry): void {
+    const next = [...state.consoleLog, entry]
+    setState({ consoleLog: next.length > CONSOLE_LOG_CAP ? next.slice(-CONSOLE_LOG_CAP) : next })
+  }
+
+  function toggleConsole(): void {
+    setState({ consoleOpen: !state.consoleOpen })
+  }
+
   function downloadVoice(id: string): void {
     if (!deps.startVoiceDownload || id in state.voiceDownloads) return
     setState({ voiceDownloads: { ...state.voiceDownloads, [id]: 0 }, error: null })
@@ -536,8 +569,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       liveSegments: [],
       draft: '',
       attachments: [],
+      consoleLog: [],
       voice: 'idle',
-      streamingReply: ''
+      streamingReply: '',
+      lastTurnMeta: null
     })
   }
 
@@ -545,11 +580,18 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     cancelTimers()
     stopCapture()
     cancelReply()
-    setState({ liveSegments: [], voice: 'idle', streamingReply: '' })
+    setState({ liveSegments: [], consoleLog: [], voice: 'idle', streamingReply: '', lastTurnMeta: null })
     const res = await api['conversations:get']({ id })
     if (res) {
       setState({ activeId: res.conversation.id, messages: res.messages })
     }
+  }
+
+  async function renameConversation(id: string, title: string): Promise<void> {
+    const name = title.trim()
+    if (!name) return
+    await api['conversations:rename']({ id, title: name })
+    await refreshConversations()
   }
 
   async function deleteConversation(id: string): Promise<void> {
@@ -902,6 +944,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       downloadVoice,
       deleteVoice,
       deleteModel,
+      applyClaudeLog,
+      toggleConsole,
       applyVoiceProgress,
       applyVoiceDone,
       applyVoiceError,

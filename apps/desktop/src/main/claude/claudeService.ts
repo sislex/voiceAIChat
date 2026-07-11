@@ -38,12 +38,16 @@ export function createClaudeService(deps: ClaudeServiceDeps): ClaudeService {
       : buildConversationPrompt(deps.db.listMessages(conversationId), attachmentPaths)
 
     current = deps.client.send(
-      { prompt, sessionId, model },
+      { prompt, sessionId, model, permissionMode, cwd },
       {
         onSession: (sid) => deps.db.setClaudeSession(conversationId, sid),
         onDelta: (delta) => deps.send('claude:token', { conversationId, delta }),
-        onDone: (text) => deps.send('claude:done', { conversationId, text }),
-        onError: (message) => deps.send('claude:error', { conversationId, message })
+        onDone: (text, meta) => deps.send('claude:done', { conversationId, text, meta }),
+        onError: (message) => deps.send('claude:error', { conversationId, message }),
+        // Режим консоли: активность агента шлём только если клиент попросил.
+        onActivity: payload.verbose
+          ? (entry) => deps.send('claude:log', { conversationId, entry })
+          : undefined
       }
     )
   }

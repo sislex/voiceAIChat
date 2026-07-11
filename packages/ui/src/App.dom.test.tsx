@@ -107,6 +107,42 @@ describe('App — интеграция UI со стором и IPC', () => {
     expect(api._state.settings.diarization).toBe(false)
   })
 
+  it('тумблер «Режим консоли» включает панель консоли и сохраняется', async () => {
+    const api = await renderApp()
+    expect(screen.queryByTestId('console-panel')).toBeNull()
+
+    await userEvent.click(screen.getByText('Настройки'))
+    const sw = screen.getByRole('switch', { name: 'Режим консоли' })
+    expect(sw).toHaveAttribute('aria-checked', 'false')
+    await userEvent.click(sw)
+
+    expect(sw).toHaveAttribute('aria-checked', 'true')
+    expect(api._state.settings.showConsole).toBe(true)
+    await userEvent.click(screen.getByLabelText('Закрыть'))
+    expect(screen.getByTestId('console-panel')).toBeInTheDocument()
+  })
+
+  it('поиск в сайдбаре фильтрует список разговоров', async () => {
+    await renderApp() // «Идеи для подарка» + «Поездка в Лиссабон»
+    await userEvent.type(screen.getByLabelText('Поиск по разговорам'), 'лисс')
+    // Список в сайдбаре: заголовки разговоров — элементы .ctitle.
+    await waitFor(() => {
+      const titles = [...document.querySelectorAll('.ctitle')].map((n) => n.textContent)
+      expect(titles).toEqual(['Поездка в Лиссабон'])
+    })
+  })
+
+  it('переименование разговора: ✎ → ввод → Enter обновляет название и зовёт api', async () => {
+    const api = await renderApp()
+    await userEvent.click(screen.getByLabelText('Переименовать разговор «Идеи для подарка»'))
+    const input = screen.getByLabelText('Новое название разговора')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Подарки на НГ{Enter}')
+
+    await waitFor(() => expect(screen.getByText('Подарки на НГ')).toBeInTheDocument())
+    expect(api._state.conversations.some((c) => c.title === 'Подарки на НГ')).toBe(true)
+  })
+
   it('удаление разговора: подтверждение убирает его из списка и зовёт api', async () => {
     const api = await renderApp()
     expect(screen.getByText('Идеи для подарка')).toBeInTheDocument()

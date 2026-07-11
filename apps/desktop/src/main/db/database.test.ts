@@ -135,27 +135,41 @@ describe('VoiceChatDb — настройки', () => {
 
   it('сохраняет и читает настройки', () => {
     db.saveSettings({
-      model: 'opus-4.5',
+      model: 'opus',
       whisperModel: 'medium',
       diarization: false,
       voice: 'dmitri',
       micDeviceId: 'mic-123',
-      autoSpeak: true
+      autoSpeak: true,
+      showConsole: true,
+      theme: 'dark',
+      onboarded: true,
+      permissionMode: 'plan',
+      workdir: '/tmp/proj',
+      bargeIn: true,
+      handsFree: true
     })
     expect(db.getSettings()).toEqual({
-      model: 'opus-4.5',
+      model: 'opus',
       whisperModel: 'medium',
       diarization: false,
       voice: 'dmitri',
       micDeviceId: 'mic-123',
-      autoSpeak: true
+      autoSpeak: true,
+      showConsole: true,
+      theme: 'dark',
+      onboarded: true,
+      permissionMode: 'plan',
+      workdir: '/tmp/proj',
+      bargeIn: true,
+      handsFree: true
     })
   })
 
   it('мержит с дефолтами при частичном/битом конфиге', () => {
-    db.saveSettings({ ...DEFAULT_SETTINGS, model: 'opus-4.5' })
+    db.saveSettings({ ...DEFAULT_SETTINGS, model: 'opus' })
     const s = db.getSettings()
-    expect(s.model).toBe('opus-4.5')
+    expect(s.model).toBe('opus')
     expect(s.voice).toBe(DEFAULT_SETTINGS.voice)
   })
 })

@@ -1,6 +1,8 @@
 // Абстракция LLM-клиента (Шаг 8). Позволяет мокать Claude в тестах и подменять
 // реализацию (сейчас — Claude Code CLI).
 
+import type { ClaudeLogEntry, TurnMeta } from '@shared/types'
+
 export interface LlmRequest {
   /** Готовый текст промпта (сборка — на стороне вызывающего: см. claudeService.ts). */
   prompt: string
@@ -16,10 +18,12 @@ export interface LlmStreamHandlers {
   onDelta(text: string): void
   /** session-id, полученный от CLI (сохранить в БД для --resume). */
   onSession(sessionId: string): void
-  /** Успешное завершение с полным текстом ответа. */
-  onDone(fullText: string): void
+  /** Успешное завершение с полным текстом ответа и метаданными хода. */
+  onDone(fullText: string, meta?: TurnMeta): void
   /** Ошибка (CLI не найден / не залогинен / ненулевой код и т.п.). */
   onError(message: string): void
+  /** Запись активности агента (режим консоли) — необязательно. */
+  onActivity?(entry: ClaudeLogEntry): void
 }
 
 export interface LlmHandle {
