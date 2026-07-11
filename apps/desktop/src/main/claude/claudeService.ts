@@ -2,6 +2,7 @@
 // разговору в БД, читает модель из настроек, стримит ответ обратно событиями.
 
 import { ipcMain } from 'electron'
+import { existsSync } from 'node:fs'
 import type { IpcEventChannel, IpcEventPayload, IpcSendPayload } from '@shared/ipc'
 import type { VoiceChatDb } from '../db/database'
 import { claudeModelAlias, buildPrompt, buildConversationPrompt } from './prompt'

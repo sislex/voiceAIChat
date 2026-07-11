@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 import { createFakeApi, type FakeApi } from './test/fakeApi'
+import { DEFAULT_SETTINGS } from '@shared/types'
 
 // Большие задержки пайплайна: асинхронные этапы не срабатывают за время теста,
 // а таймеры гасятся при размонтировании (dispose). Проверяем синхронные переходы

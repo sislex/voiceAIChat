@@ -1,6 +1,7 @@
 // Per-connection сессия: маршрутизация WS-сообщений в сервисы (Claude, STT;
 // TTS — Ф6). Хранит per-connection состояние.
 
+import { existsSync } from 'node:fs'
 import { claudeModelAlias, buildPrompt, buildConversationPrompt } from '@voicechat/shared'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'

@@ -132,6 +132,8 @@ export interface StoreDeps {
   cancelTts?: () => void
   /** Запустить скачивание голоса Piper (renderer → main). */
   startVoiceDownload?: (id: string) => void
+  /** Сохранение файла на диск (экспорт). По умолчанию — через `<a download>`. */
+  download?: (filename: string, mime: string, data: string) => void
 }
 
 /** Действия, дергаемые из UI. Все асинхронные операции инкапсулированы здесь. */
@@ -166,6 +168,8 @@ export interface StoreActions {
   startVoice(): void
   stopVoice(): void
   stopSpeak(): void
+  /** Кадр энергии микрофона (для VAD: barge-in во время озвучки, hands-free-пауза). */
+  applyMicEnergy(rms: number): void
   /** Применить частичную гипотезу распознавания (stt:partial). */
   applySttPartial(update: SttUpdate): void
   /** Применить финальный транскрипт (stt:final) — запускает ответ. */
@@ -655,8 +659,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Запуск реального захвата (fire-and-forget); ошибки не рвут UX-цикл. */
   function startCapture(): void {
     if (!audio) return
+    handsVad.reset() // новая сессия слушания — сбрасываем детектор паузы
     void audio
-      .start({ deviceId: state.settings.micDeviceId })
+      .start({
+        deviceId: state.settings.micDeviceId,
+        onEnergy: (r) => applyMicEnergy(r) // hands-free авто-пауза по тишине
+      })
       .then(() => refreshMics()) // после разрешения появляются реальные метки
       .catch((err) => console.warn('[audio] запуск захвата не удался', err))
   }
@@ -1041,6 +1049,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       startVoice,
       stopVoice,
       stopSpeak,
+      applyMicEnergy,
       applySttPartial,
       applySttFinal,
       applySttError,

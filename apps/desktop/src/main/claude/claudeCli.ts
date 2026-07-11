@@ -106,7 +106,7 @@ export class ClaudeCli implements LlmClient {
             sawResult = true
             if (ev.sessionId) handlers.onSession(ev.sessionId)
             if (ev.isError) fail(ev.text || 'Claude вернул ошибку')
-            else done(ev.text)
+            else done(ev.text, ev.meta)
             break
           default:
             break
