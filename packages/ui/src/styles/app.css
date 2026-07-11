@@ -956,8 +956,11 @@
   border-radius: 16px;
   width: 480px;
   max-width: 90vw;
+  max-height: 90vh; /* не вылезаем за экран */
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
   overflow: hidden;
+  display: flex;
+  flex-direction: column; /* шапка фиксирована, тело скроллится */
 }
 .mdhead {
   padding: 18px 22px;
@@ -965,6 +968,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex: none;
 }
 .mdh {
   font-size: 15px;
@@ -983,6 +987,57 @@
   padding: 10px 22px 22px 22px;
   display: flex;
   flex-direction: column;
+  overflow-y: auto; /* прокрутка длинного списка настроек */
+  min-height: 0;
+  flex: 1;
+}
+
+/* ---- Настройки: меню слева + панель раздела справа ---- */
+.modal.settings {
+  width: 640px;
+}
+.settbody {
+  display: flex;
+  min-height: 0;
+  flex: 1; /* тянется в пределах max-height модала */
+}
+.settnav {
+  flex: none;
+  width: 176px;
+  border-right: 1px solid var(--border-soft);
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+.settnav-item {
+  text-align: left;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  padding: 9px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.settnav-item:hover {
+  background: var(--panel);
+}
+.settnav-item.on {
+  background: var(--panel);
+  font-weight: 700;
+}
+.settpane {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 14px 22px 22px 22px;
+}
+.settpane .frow:first-child,
+.settpane .voicedl:first-child {
+  margin-top: 0;
 }
 .frow {
   display: flex;

@@ -42,6 +42,12 @@ async function renderApp(): Promise<FakeApi> {
   return api
 }
 
+/** Открыть настройки и перейти в раздел меню (Агент — по умолчанию). */
+async function openSettings(section?: string): Promise<void> {
+  await userEvent.click(screen.getByText('Настройки'))
+  if (section) await userEvent.click(screen.getByRole('button', { name: section }))
+}
+
 describe('App — онбординг первого запуска', () => {
   it('показывается при onboarded=false и скрывается после «Начать»', async () => {
     const api = createFakeApi([])
@@ -125,7 +131,7 @@ describe('App — интеграция UI со стором и IPC', () => {
 
   it('меню модели содержит актуальные модели Claude', async () => {
     await renderApp()
-    await userEvent.click(screen.getByText('Настройки'))
+    await openSettings() // раздел «Агент» — по умолчанию
     const select = screen.getByLabelText('Модель Claude')
     const labels = [...select.querySelectorAll('option')].map((o) => o.textContent)
     expect(labels).toEqual([
@@ -139,7 +145,7 @@ describe('App — интеграция UI со стором и IPC', () => {
   it('тумблер тёмной темы меняет data-theme и сохраняется', async () => {
     const api = await renderApp()
     expect(document.querySelector('.app')?.getAttribute('data-theme')).toBe('light')
-    await userEvent.click(screen.getByText('Настройки'))
+    await openSettings('Интерфейс')
     await userEvent.click(screen.getByRole('switch', { name: 'Тёмная тема' }))
     expect(api._state.settings.theme).toBe('dark')
     expect(document.querySelector('.app')?.getAttribute('data-theme')).toBe('dark')
@@ -147,7 +153,7 @@ describe('App — интеграция UI со стором и IPC', () => {
 
   it('тумблер диаризации переключает aria-checked и сохраняется в api', async () => {
     const api = await renderApp()
-    await userEvent.click(screen.getByText('Настройки'))
+    await openSettings('Распознавание')
     const sw = screen.getByRole('switch', { name: 'Диаризация спикеров' })
     expect(sw).toHaveAttribute('aria-checked', 'true')
     await userEvent.click(sw)
@@ -159,7 +165,7 @@ describe('App — интеграция UI со стором и IPC', () => {
     const api = await renderApp()
     expect(screen.queryByTestId('console-panel')).toBeNull()
 
-    await userEvent.click(screen.getByText('Настройки'))
+    await openSettings('Интерфейс')
     const sw = screen.getByRole('switch', { name: 'Режим консоли' })
     expect(sw).toHaveAttribute('aria-checked', 'false')
     await userEvent.click(sw)
@@ -207,9 +213,11 @@ describe('App — интеграция UI со стором и IPC', () => {
     const first = render(<App api={api} delays={SLOW} />)
     await screen.findByText('Поездка в Лиссабон', {}, { timeout: 10_000 })
 
-    await userEvent.click(screen.getByText('Настройки'))
-    await userEvent.click(screen.getByRole('switch', { name: 'Диаризация спикеров' }))
+    await openSettings() // «Агент» — модель здесь
     await userEvent.selectOptions(screen.getByLabelText('Модель Claude'), 'sonnet')
+    await userEvent.click(screen.getByRole('button', { name: 'Распознавание' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Диаризация спикеров' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Озвучка' }))
     // Голос выбирается по реальному названию из активного движка (см. fakeApi).
     await userEvent.selectOptions(screen.getByLabelText('Голос озвучки'), 'ru_RU-dmitri-medium')
     expect(api._state.settings).toMatchObject({
@@ -222,18 +230,20 @@ describe('App — интеграция UI со стором и IPC', () => {
     first.unmount()
     render(<App api={api} delays={SLOW} />)
     await screen.findByText('Поездка в Лиссабон', {}, { timeout: 10_000 })
-    await userEvent.click(screen.getByText('Настройки'))
+    await openSettings() // «Агент»
+    expect(screen.getByLabelText<HTMLSelectElement>('Модель Claude').value).toBe('sonnet')
+    await userEvent.click(screen.getByRole('button', { name: 'Распознавание' }))
     expect(screen.getByRole('switch', { name: 'Диаризация спикеров' })).toHaveAttribute(
       'aria-checked',
       'false'
     )
-    expect(screen.getByLabelText<HTMLSelectElement>('Модель Claude').value).toBe('sonnet')
+    await userEvent.click(screen.getByRole('button', { name: 'Озвучка' }))
     expect(screen.getByLabelText<HTMLSelectElement>('Голос озвучки').value).toBe('ru_RU-dmitri-medium')
   })
 
   it('меню голоса показывает реальные названия из движка', async () => {
     await renderApp()
-    await userEvent.click(screen.getByText('Настройки'))
+    await openSettings('Озвучка')
     const select = screen.getByLabelText('Голос озвучки')
     expect(select).toHaveTextContent('Irina — русский (medium)')
     expect(select).toHaveTextContent('Dmitri — русский (medium)')
@@ -241,7 +251,7 @@ describe('App — интеграция UI со стором и IPC', () => {
 
   it('секция «Скачать голоса» показывает каталог и триггерит скачивание', async () => {
     await renderApp()
-    await userEvent.click(screen.getByText('Настройки'))
+    await openSettings('Озвучка')
     const catalog = screen.getByTestId('voice-catalog')
     expect(catalog).toHaveTextContent('Скачать голоса')
     // Установленный помечен, неустановленный — с кнопкой «Скачать».
