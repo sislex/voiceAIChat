@@ -12,6 +12,9 @@ const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_0
 /** Фейк api с двумя разговорами; «Поездка в Лиссабон» — самый свежий (активный). */
 async function seededApi(): Promise<FakeApi> {
   const api = createFakeApi([])
+  // По умолчанию считаем пользователя «вернувшимся» — иначе мастер онбординга
+  // перекрывает интерфейс во всех тестах. Онбординг проверяется отдельно.
+  await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
   await api['conversations:create']({ title: 'Идеи для подарка' })
   const lisbon = await api['conversations:create']({ title: 'Поездка в Лиссабон' })
   await api['messages:add']({
@@ -37,6 +40,28 @@ async function renderApp(): Promise<FakeApi> {
   await screen.findByText('Поездка в Лиссабон', {}, { timeout: 10_000 })
   return api
 }
+
+describe('App — онбординг первого запуска', () => {
+  it('показывается при onboarded=false и скрывается после «Начать»', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: false })
+    render(<App api={api} delays={SLOW} />)
+
+    const dialog = await screen.findByRole('dialog', { name: 'Добро пожаловать' })
+    expect(dialog).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /Начать/ }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Добро пожаловать' })).not.toBeInTheDocument()
+    )
+    expect(api._state.settings.onboarded).toBe(true)
+  })
+
+  it('не показывается для вернувшегося пользователя', async () => {
+    await renderApp() // seededApi ставит onboarded=true
+    expect(screen.queryByRole('dialog', { name: 'Добро пожаловать' })).not.toBeInTheDocument()
+  })
+})
 
 describe('App — интеграция UI со стором и IPC', () => {
   it('рендерит сайдбар с логотипом и разговорами из БД', async () => {

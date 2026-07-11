@@ -27,6 +27,19 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const { state, actions } = useVoiceStore({ api, now, delays })
   useVoiceCues(state.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
+  // Горячие клавиши: пробел (hold) — запись, Esc — стоп/отмена по состоянию.
+  // Выключены при открытом модале настроек (там свои поля/фокус).
+  useHotkeys({
+    enabled: !state.settingsOpen && state.settings.onboarded,
+    onPushStart: actions.startVoice,
+    onPushEnd: actions.stopVoice,
+    onEscape: () => {
+      const v = state.voice
+      if (v === 'thinking' || v === 'speaking') actions.cancelRequest()
+      else if (v === 'listening') actions.stopVoice()
+    }
+  })
+
   const activeTitle =
     state.conversations.find((c) => c.id === state.activeId)?.title ?? 'Новый разговор'
 

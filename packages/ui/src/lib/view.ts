@@ -51,7 +51,7 @@ export function statusBadge(state: VoiceState): string {
 export function statusLine(state: VoiceState): string {
   switch (state) {
     case 'idle':
-      return 'STT и TTS работают локально · ответы через Claude Console'
+      return 'Пробел — говорить · Esc — стоп · STT/TTS локально, ответы через Claude'
     case 'listening':
       return 'Говорите… Whisper распознаёт речь на устройстве'
     case 'transcribing':
