@@ -61,6 +61,7 @@ export function createHttpApi(): RendererApi {
     'tts:catalog': () => req(REST.ttsCatalog),
     'tts:deleteVoice': async ({ id }) => {
       await req(REST.ttsVoice(id), { method: 'DELETE' })
-    }
+    },
+    'mcp:list': () => req(REST.mcpServers)
   }
 }

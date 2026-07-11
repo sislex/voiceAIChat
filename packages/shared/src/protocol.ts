@@ -76,7 +76,8 @@ export const REST = {
   ttsCatalog: '/api/tts/catalog',
   ttsVoice: (id: string) => `/api/tts/voices/${id}`,
   ttsVoiceDownload: (id: string) => `/api/tts/voices/${id}/download`,
-  sttDownload: '/api/stt/download'
+  sttDownload: '/api/stt/download',
+  mcpServers: '/api/mcp/servers'
 } as const
 
 // --- WebSocket -----------------------------------------------------------

@@ -55,7 +55,12 @@ export function createSession(deps: SessionDeps): WsHandlers {
           const conversationId = msg.conversationId
           const conv = deps.db.getConversation(conversationId)
           const sessionId = conv?.claudeSessionId ?? null
-          const model = claudeModelAlias(deps.db.getSettings().model)
+          const settings = deps.db.getSettings()
+          const model = claudeModelAlias(settings.model)
+          const permissionMode = settings.permissionMode
+          // Рабочий каталог — только если задан и существует (иначе игнор).
+          const cwd =
+            settings.workdir && existsSync(settings.workdir) ? settings.workdir : undefined
           const attachmentPaths = (msg.attachments ?? [])
             .map((id) => deps.resolveUpload?.(id))
             .filter((p): p is string => typeof p === 'string')

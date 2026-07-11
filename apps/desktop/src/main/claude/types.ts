@@ -10,6 +10,10 @@ export interface LlmRequest {
   sessionId: string | null
   /** Модель для CLI (алиас, напр. 'sonnet' | 'opus'). */
   model: string
+  /** Режим прав агента (`--permission-mode`); undefined — не передавать флаг. */
+  permissionMode?: string
+  /** Рабочий каталог процесса CLI; undefined — каталог по умолчанию. */
+  cwd?: string
 }
 
 /** Колбэки потокового ответа. Ровно один из onDone/onError вызывается в конце. */

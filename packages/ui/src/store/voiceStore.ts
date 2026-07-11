@@ -174,8 +174,8 @@ export interface StoreActions {
   applySttError(message: string): void
   /** Применить фрагмент ответа Claude (claude:token). */
   applyClaudeToken(delta: string): void
-  /** Применить завершение ответа Claude (claude:done) — фиксирует сообщение. */
-  applyClaudeDone(text: string): void
+  /** Применить завершение ответа Claude (claude:done) — фиксирует сообщение + мету. */
+  applyClaudeDone(text: string, meta?: TurnMeta): void
   /** Обработать ошибку Claude (claude:error). */
   applyClaudeError(message: string): void
   /** Скрыть баннер ошибки. */
@@ -539,8 +539,19 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshWhisperModels()
     await refreshTtsVoices()
     await refreshVoiceCatalog()
+    await refreshMcpServers()
     if (conversations.length > 0) {
       await selectConversation(conversations[0].id)
+    }
+  }
+
+  /** Грузит список MCP-серверов (read-only; ошибки не критичны). */
+  async function refreshMcpServers(): Promise<void> {
+    if (!api['mcp:list']) return
+    try {
+      setState({ mcpServers: await api['mcp:list']() })
+    } catch (err) {
+      console.warn('[mcp] не удалось получить список серверов', err)
     }
   }
 
@@ -876,7 +887,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Завершение ответа Claude: фиксируем сообщение; TTS дозвучивает хвост. */
-  async function applyClaudeDone(text: string): Promise<void> {
+  async function applyClaudeDone(text: string, meta?: TurnMeta): Promise<void> {
+    // Мета хода (длительность/токены/стоимость) — показываем под последним ответом.
+    if (meta && Object.keys(meta).length > 0) setState({ lastTurnMeta: meta })
     if (state.voice !== 'thinking' && state.voice !== 'speaking') {
       setState({ streamingReply: '' })
       ttsBuffer = ''

@@ -104,6 +104,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     ],
     'stt:deleteModel': async () => {},
     'tts:deleteVoice': async () => {},
+    'mcp:list': async () => [],
     'tts:voices': async () => [
       { id: 'ru_RU-irina-medium', label: 'Irina — русский (medium)' },
       { id: 'ru_RU-dmitri-medium', label: 'Dmitri — русский (medium)' }

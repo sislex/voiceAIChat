@@ -138,6 +138,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           voicesDownloadable={state.voicesDownloadable}
           voiceDownloads={state.voiceDownloads}
           whisperModels={state.whisperModels}
+          mcpServers={state.mcpServers}
           onChange={actions.updateSettings}
           onDownloadVoice={actions.downloadVoice}
           onDeleteVoice={actions.deleteVoice}

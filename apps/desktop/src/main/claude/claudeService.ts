@@ -27,7 +27,10 @@ export function createClaudeService(deps: ClaudeServiceDeps): ClaudeService {
     current?.cancel() // barge-in/повторная отправка отменяет предыдущий запрос
     const conversation = deps.db.getConversation(conversationId)
     const sessionId = conversation?.claudeSessionId ?? null
-    const model = claudeModelAlias(deps.db.getSettings().model)
+    const settings = deps.db.getSettings()
+    const model = claudeModelAlias(settings.model)
+    const permissionMode = settings.permissionMode
+    const cwd = settings.workdir && existsSync(settings.workdir) ? settings.workdir : undefined
     const attachmentPaths = (payload.attachments ?? [])
       .map((id) => deps.resolveUpload?.(id))
       .filter((p): p is string => typeof p === 'string')

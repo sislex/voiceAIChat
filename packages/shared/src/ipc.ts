@@ -69,6 +69,8 @@ export interface IpcInvokeMap {
   'tts:catalog': { arg: void; result: TtsVoiceCatalog }
   /** Удалить установленный голос Piper (освободить место). */
   'tts:deleteVoice': { arg: { id: string }; result: void }
+  /** Список подключённых MCP-серверов (read-only, из `claude mcp list`). */
+  'mcp:list': { arg: void; result: McpServer[] }
 }
 
 export type IpcChannel = keyof IpcInvokeMap
@@ -269,7 +271,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'stt:deleteModel',
   'tts:voices',
   'tts:catalog',
-  'tts:deleteVoice'
+  'tts:deleteVoice',
+  'mcp:list'
 ]
 
 /**

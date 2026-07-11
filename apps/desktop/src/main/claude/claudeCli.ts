@@ -54,6 +54,7 @@ export class ClaudeCli implements LlmClient {
       '--model',
       req.model
     ]
+    if (req.permissionMode) args.push('--permission-mode', req.permissionMode)
     if (req.sessionId) args.push('--resume', req.sessionId)
 
     let finished = false
@@ -65,15 +66,15 @@ export class ClaudeCli implements LlmClient {
       finished = true
       handlers.onError(message)
     }
-    const done = (text: string): void => {
+    const done = (text: string, meta?: import('@shared/types').TurnMeta): void => {
       if (finished) return
       finished = true
-      handlers.onDone(text)
+      handlers.onDone(text, meta)
     }
 
     let child: ChildProcess
     try {
-      child = spawnFn(this.opts.binPath ?? 'claude', args)
+      child = spawnFn(this.opts.binPath ?? 'claude', args, req.cwd ? { cwd: req.cwd } : undefined)
     } catch (err) {
       fail(describeSpawnError(err))
       return { cancel: () => {} }

@@ -41,6 +41,23 @@ describe('parseStreamJsonLine', () => {
     expect(parseStreamJsonLine(line)).toMatchObject({ kind: 'result', isError: true })
   })
 
+  it('извлекает мету хода из result (длительность/ходы/стоимость/токены)', () => {
+    const line = JSON.stringify({
+      type: 'result',
+      is_error: false,
+      result: 'ок',
+      duration_ms: 7200,
+      num_turns: 2,
+      total_cost_usd: 0.0131,
+      usage: { input_tokens: 1234, output_tokens: 456 }
+    })
+    const ev = parseStreamJsonLine(line)
+    expect(ev).toMatchObject({
+      kind: 'result',
+      meta: { durationMs: 7200, numTurns: 2, costUsd: 0.0131, inputTokens: 1234, outputTokens: 456 }
+    })
+  })
+
   it('пустые строки → null, битый JSON → null', () => {
     expect(parseStreamJsonLine('')).toBeNull()
     expect(parseStreamJsonLine('   ')).toBeNull()

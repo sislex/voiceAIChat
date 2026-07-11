@@ -36,6 +36,8 @@ export interface SettingsModalProps {
   voiceDownloads: Record<string, number>
   /** Модели Whisper на диске (наличие/размер) — для управления местом. */
   whisperModels: WhisperModelInfo[]
+  /** Подключённые MCP-серверы (read-only показ). */
+  mcpServers: McpServer[]
   onChange: (patch: Partial<Settings>) => void
   onDownloadVoice: (id: string) => void
   /** Удалить установленный голос Piper. */
@@ -53,6 +55,7 @@ export function SettingsModal({
   voicesDownloadable,
   voiceDownloads,
   whisperModels,
+  mcpServers,
   onChange,
   onDownloadVoice,
   onDeleteVoice,
@@ -322,6 +325,23 @@ export function SettingsModal({
               ))}
             </select>
           </div>
+
+          {mcpServers.length > 0 && (
+            <div className="voicedl" data-testid="mcp-list">
+              <p className="flab">MCP-серверы</p>
+              {mcpServers.map((s) => (
+                <div className="vrow2" key={s.name}>
+                  <span className="vname">
+                    {s.name}
+                    {s.detail ? ` · ${s.detail}` : ''}
+                  </span>
+                  <span className={s.connected ? 'mcp-ok' : 'mcp-bad'}>
+                    {s.connected ? '✓ подключён' : '✗ офлайн'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

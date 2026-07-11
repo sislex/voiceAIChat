@@ -275,6 +275,12 @@ export function ChatColumn({
             )
           })}
 
+          {turnMeta && !hasStream && messages.length > 0 && messages[messages.length - 1].role === 'ai' && (
+            <p className="turnmeta" data-testid="turn-meta">
+              {formatTurnMeta(turnMeta)}
+            </p>
+          )}
+
           {isListening && (
             <div className="live" data-testid="live-block">
               <p className="livehdr">

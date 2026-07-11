@@ -406,6 +406,17 @@ describe('voiceStore — реальный Claude (claudeEnabled)', () => {
     expect(store.getState().voice).toBe('idle')
   })
 
+  it('applyClaudeDone сохраняет мету хода в lastTurnMeta', async () => {
+    const { store } = makeClaudeStore()
+    await store.actions.init()
+    store.actions.setDraft('x')
+    await store.actions.submitText()
+    store.actions.applyClaudeToken('Ответ')
+    store.actions.applyClaudeDone('Ответ', { durationMs: 3000, numTurns: 1, costUsd: 0.01 })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.getState().lastTurnMeta).toEqual({ durationMs: 3000, numTurns: 1, costUsd: 0.01 })
+  })
+
   it('done с пустым текстом использует накопленный стрим', async () => {
     const { store } = makeClaudeStore()
     await store.actions.init()
