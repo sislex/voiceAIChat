@@ -24,6 +24,16 @@ describe('Markdown', () => {
     expect(code?.className).toContain('hljs') // rehype-highlight отработал
   })
 
+  it('блок кода имеет кнопку копирования; клик копирует текст кода', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(<Markdown>{'```js\nconst x = 1\n```'}</Markdown>)
+    const btn = screen.getByLabelText('Копировать код')
+    fireEvent.click(btn)
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    expect(writeText.mock.calls[0][0]).toContain('const x = 1')
+  })
+
   it('ссылки открываются во внешнем окне (target=_blank)', () => {
     render(<Markdown>{'[клик](https://example.com)'}</Markdown>)
     const link = screen.getByText('клик') as HTMLAnchorElement

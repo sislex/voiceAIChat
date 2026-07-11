@@ -63,6 +63,7 @@ export interface HealthResponse {
 export const REST = {
   health: '/api/health',
   conversations: '/api/conversations',
+  conversationsSearch: '/api/conversations/search',
   conversation: (id: string) => `/api/conversations/${id}`,
   messages: (id: string) => `/api/conversations/${id}/messages`,
   message: (id: string, messageId: string) => `/api/conversations/${id}/messages/${messageId}`,

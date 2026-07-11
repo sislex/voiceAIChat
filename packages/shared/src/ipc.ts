@@ -51,6 +51,8 @@ export interface IpcInvokeMap {
   'conversations:list': { arg: void; result: Conversation[] }
   'conversations:create': { arg: { title?: string }; result: Conversation }
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
+  /** Поиск разговоров по названию и содержимому сообщений (регистронезависимо). */
+  'conversations:search': { arg: { query: string }; result: Conversation[] }
   'conversations:rename': { arg: { id: string; title: string }; result: void }
   'conversations:delete': { arg: { id: string }; result: void }
   'messages:add': { arg: AddMessageArgs; result: Message }
@@ -254,6 +256,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:list',
   'conversations:create',
   'conversations:get',
+  'conversations:search',
   'conversations:rename',
   'conversations:delete',
   'messages:add',

@@ -11,6 +11,10 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promi
     db.createConversation(req.body?.title)
   )
 
+  app.get<{ Querystring: { q?: string } }>(REST.conversationsSearch, async (req) =>
+    db.searchConversations(req.query.q ?? '')
+  )
+
   app.get<{ Params: { id: string } }>('/api/conversations/:id', async (req, reply) => {
     const conversation = db.getConversation(req.params.id)
     if (!conversation) return reply.code(404).send({ error: 'not found' })

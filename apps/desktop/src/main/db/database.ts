@@ -50,6 +50,8 @@ export class VoiceChatDb {
     this.db = new Database(filename)
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('foreign_keys = ON')
+    // Unicode-lower для регистронезависимого поиска (SQLite LIKE/lower() — только ASCII).
+    this.db.function('ulower', (s: unknown) => (typeof s === 'string' ? s.toLowerCase() : ''))
     this.db.exec(SCHEMA_SQL)
     this.newId = deps.newId ?? (() => randomUUID())
     this.now = deps.now ?? (() => Date.now())
@@ -95,6 +97,24 @@ export class VoiceChatDb {
       }
     ).n
     return this.mapConversation(row, count)
+  }
+
+  /** Поиск по названию разговора и тексту его сообщений (регистронезависимо). */
+  searchConversations(query: string): Conversation[] {
+    const q = query.trim()
+    if (!q) return this.listConversations()
+    const like = `%${q.toLowerCase().replace(/[%_\\]/g, (ch) => `\\${ch}`)}%`
+    const rows = this.db
+      .prepare(
+        `SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count
+         FROM conversations c
+         WHERE ulower(c.title) LIKE ? ESCAPE '\\'
+            OR EXISTS (SELECT 1 FROM messages m
+                       WHERE m.conversation_id = c.id AND ulower(m.text) LIKE ? ESCAPE '\\')
+         ORDER BY c.updated_at DESC`
+      )
+      .all(like, like) as Array<ConversationRow & { message_count: number }>
+    return rows.map((r) => this.mapConversation(r, r.message_count))
   }
 
   renameConversation(id: string, title: string): void {

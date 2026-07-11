@@ -54,6 +54,18 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
           .sort((a, b) => a.createdAt - b.createdAt)
       }
     },
+    'conversations:search': async ({ query }) => {
+      const q = query.trim().toLowerCase()
+      if (!q) return [...conversations].sort((a, b) => b.updatedAt - a.updatedAt).map(withCounts)
+      return [...conversations]
+        .filter(
+          (c) =>
+            c.title.toLowerCase().includes(q) ||
+            messages.some((m) => m.conversationId === c.id && m.text.toLowerCase().includes(q))
+        )
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .map(withCounts)
+    },
     'conversations:rename': async ({ id, title }) => {
       const conv = conversations.find((c) => c.id === id)
       if (conv) {

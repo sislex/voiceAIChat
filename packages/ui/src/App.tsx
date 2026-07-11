@@ -50,6 +50,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onNew={actions.newConversation}
         onPick={actions.selectConversation}
         onDelete={actions.deleteConversation}
+        onRename={actions.renameConversation}
+        searchQuery={state.searchQuery}
+        onSearch={actions.setSearchQuery}
         onOpenSettings={actions.openSettings}
       />
 
@@ -72,6 +75,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         downloading={state.downloading}
         downloadPercent={state.downloadPercent}
         onDownloadModel={actions.downloadModel}
+        onExport={actions.exportConversation}
+        turnMeta={state.lastTurnMeta}
         voiceBar={
           <VoiceBar
             state={state.voice}

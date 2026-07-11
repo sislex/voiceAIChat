@@ -48,6 +48,22 @@ describe('VoiceChatDb — разговоры', () => {
   it('getConversation возвращает null для несуществующего', () => {
     expect(db.getConversation('нет-такого')).toBeNull()
   })
+
+  it('поиск находит по названию и по тексту сообщения (регистронезависимо)', () => {
+    const a = db.createConversation('Поездка в Лиссабон')
+    const b = db.createConversation('Рецепты')
+    db.addMessage(b.id, 'u1', 'Как приготовить ПАЭЛью?', '10:00')
+    const c = db.createConversation('Погода')
+
+    // по названию (другой регистр)
+    expect(db.searchConversations('лиссабон').map((x) => x.id)).toEqual([a.id])
+    // по тексту сообщения (другой регистр)
+    expect(db.searchConversations('паэлью').map((x) => x.id)).toEqual([b.id])
+    // пустой запрос → все
+    expect(db.searchConversations('  ').map((x) => x.id).sort()).toEqual([a.id, b.id, c.id].sort())
+    // ничего не найдено
+    expect(db.searchConversations('зззз')).toEqual([])
+  })
 })
 
 describe('VoiceChatDb — сообщения', () => {

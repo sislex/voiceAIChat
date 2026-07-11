@@ -152,6 +152,78 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().messages).toHaveLength(0)
     expect(store.getState().voice).toBe('idle')
   })
+
+  it('init грузит список MCP-серверов', async () => {
+    const api = createFakeApi([])
+    vi.spyOn(api, 'mcp:list').mockResolvedValue([
+      { name: 'fs', detail: 'npx server', status: '✓ Connected', connected: true }
+    ])
+    const store = createVoiceStore({ api, now: () => 1, delays: DELAYS })
+    await store.actions.init()
+    expect(store.getState().mcpServers).toEqual([
+      { name: 'fs', detail: 'npx server', status: '✓ Connected', connected: true }
+    ])
+  })
+
+  it('renameConversation сохраняет новое имя и обновляет список', async () => {
+    const { store, api } = makeStore(['Старое'])
+    await store.actions.init()
+    const id = store.getState().conversations[0].id
+    const spy = vi.spyOn(api, 'conversations:rename')
+
+    await store.actions.renameConversation(id, '  Новое имя  ')
+
+    expect(spy).toHaveBeenCalledWith({ id, title: 'Новое имя' }) // trim
+    expect(store.getState().conversations[0].title).toBe('Новое имя')
+  })
+
+  it('renameConversation игнорирует пустое имя', async () => {
+    const { store, api } = makeStore(['Старое'])
+    await store.actions.init()
+    const id = store.getState().conversations[0].id
+    const spy = vi.spyOn(api, 'conversations:rename')
+
+    await store.actions.renameConversation(id, '   ')
+
+    expect(spy).not.toHaveBeenCalled()
+    expect(store.getState().conversations[0].title).toBe('Старое')
+  })
+
+  it('setSearchQuery фильтрует список; пустой запрос возвращает все', async () => {
+    const { store } = makeStore(['Лиссабон', 'Рецепты', 'Погода'])
+    await store.actions.init()
+    expect(store.getState().conversations).toHaveLength(3)
+
+    await store.actions.setSearchQuery('рецеп')
+    expect(store.getState().searchQuery).toBe('рецеп')
+    expect(store.getState().conversations.map((c) => c.title)).toEqual(['Рецепты'])
+
+    await store.actions.setSearchQuery('')
+    expect(store.getState().conversations).toHaveLength(3)
+  })
+
+  it('exportConversation зовёт download с корректными именем/mime/содержимым', async () => {
+    const download = vi.fn()
+    const api = createFakeApi(['Лиссабон'])
+    const store = createVoiceStore({ api, now: () => 1_700_000_000_000, delays: DELAYS, download })
+    await store.actions.init()
+    await store.actions.selectConversation(store.getState().conversations[0].id)
+    store.actions.setDraft('Привет')
+    // положим одно сообщение через submitText (мок-режим)
+    await store.actions.submitText()
+
+    store.actions.exportConversation('md')
+    expect(download).toHaveBeenCalledTimes(1)
+    const [name, mime, data] = download.mock.calls[0]
+    expect(name).toBe('лиссабон.md')
+    expect(mime).toBe('text/markdown')
+    expect(data).toContain('# Лиссабон')
+
+    store.actions.exportConversation('json')
+    const [nameJ, mimeJ] = download.mock.calls[1]
+    expect(nameJ).toBe('лиссабон.json')
+    expect(mimeJ).toBe('application/json')
+  })
 })
 
 describe('voiceStore — интеграция с аудиозахватом (Шаг 6)', () => {

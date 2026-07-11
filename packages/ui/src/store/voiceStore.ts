@@ -42,6 +42,8 @@ import {
 export interface AppState {
   voice: VoiceState
   conversations: Conversation[]
+  /** Текущий поисковый запрос по разговорам (пусто — показываем все). */
+  searchQuery: string
   activeId: string | null
   messages: Message[]
   liveSegments: LiveSegment[]
@@ -138,6 +140,14 @@ export interface StoreActions {
   newConversation(): void
   selectConversation(id: string): Promise<void>
   deleteConversation(id: string): Promise<void>
+  /** Переименовать разговор (БД + список). Пустое имя игнорируется. */
+  renameConversation(id: string, title: string): Promise<void>
+  /** Задать поисковый запрос по разговорам (пусто — весь список). */
+  setSearchQuery(query: string): Promise<void>
+  /** Экспортировать активный разговор в Markdown/JSON (скачивание файла). */
+  exportConversation(format: 'md' | 'json'): void
+  /** Завершить (или пропустить) приветственный мастер. */
+  completeOnboarding(): Promise<void>
   openSettings(): void
   closeSettings(): void
   updateSettings(patch: Partial<Settings>): Promise<void>
@@ -214,6 +224,7 @@ function initialState(): AppState {
   return {
     voice: 'idle',
     conversations: [],
+    searchQuery: '',
     activeId: null,
     messages: [],
     liveSegments: [],
@@ -300,16 +311,102 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     timers.clear()
   }
 
+  // --- VAD: barge-in (speaking) и hands-free авто-пауза (listening) --------
+  const bargeVad = new VadDetector()
+  const handsVad = new VadDetector()
+  let bargeMonitorStop: (() => void) | null = null
+
+  /** Держит энерго-монитор включённым ровно в состоянии speaking при bargeIn. */
+  function syncBargeMonitor(): void {
+    const want = state.voice === 'speaking' && state.settings.bargeIn && !!audio?.monitor
+    if (want && !bargeMonitorStop) {
+      bargeVad.reset()
+      // Плейсхолдер, пока промис стартует (чтобы не запустить два монитора).
+      bargeMonitorStop = () => {}
+      void audio!
+        .monitor!(state.settings.micDeviceId, (r) => applyMicEnergy(r))
+        .then((stop) => {
+          if (state.voice === 'speaking') bargeMonitorStop = stop
+          else stop() // уже вышли из speaking, пока стартовали
+        })
+        .catch(() => {
+          bargeMonitorStop = null
+        })
+    } else if (!want && bargeMonitorStop) {
+      bargeMonitorStop()
+      bargeMonitorStop = null
+    }
+  }
+
   /** Голосовой переход через машину состояний. Возвращает true, если он допустим. */
   function dispatchVoice(event: VoiceEvent): boolean {
-    const res = transition(state.voice, event)
-    if (res.ok) setState({ voice: res.state })
+    const prev = state.voice
+    const res = transition(prev, event)
+    if (res.ok) {
+      setState({ voice: res.state })
+      syncBargeMonitor()
+      // Hands-free: ход завершён (speaking → idle) → снова слушаем.
+      if (res.state === 'idle' && prev === 'speaking' && state.settings.handsFree) {
+        schedule(() => {
+          if (state.voice === 'idle' && state.settings.handsFree) startVoice()
+        }, HANDS_FREE_GAP_MS)
+      }
+    }
     return res.ok
   }
 
+  /**
+   * Кадр энергии микрофона: VAD.
+   * - speaking + bargeIn → начало речи прерывает озвучку и включает запись (barge-in);
+   * - listening + handsFree → пауза после речи авто-финализирует запись.
+   */
+  function applyMicEnergy(rmsValue: number): void {
+    if (state.voice === 'speaking' && state.settings.bargeIn) {
+      if (bargeVad.push(rmsValue) === 'speech-start') startVoice() // barge-in
+    } else if (state.voice === 'listening' && state.settings.handsFree) {
+      if (handsVad.push(rmsValue) === 'speech-end') stopVoice() // авто-пауза
+    }
+  }
+
   async function refreshConversations(): Promise<void> {
-    const conversations = await api['conversations:list']()
+    const q = state.searchQuery.trim()
+    const conversations = q
+      ? await api['conversations:search']({ query: q })
+      : await api['conversations:list']()
     setState({ conversations })
+  }
+
+  async function setSearchQuery(query: string): Promise<void> {
+    setState({ searchQuery: query })
+    await refreshConversations()
+  }
+
+  /** Скачивание файла по умолчанию — через временный `<a download>`. */
+  function defaultDownload(filename: string, mime: string, data: string): void {
+    const blob = new Blob([data], { type: mime })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  async function completeOnboarding(): Promise<void> {
+    await updateSettings({ onboarded: true })
+  }
+
+  function exportConversation(format: 'md' | 'json'): void {
+    const conv = state.conversations.find((c) => c.id === state.activeId)
+    if (!conv) return
+    const download = deps.download ?? defaultDownload
+    if (format === 'json') {
+      download(exportFileName(conv.title, 'json'), 'application/json', conversationToJson(conv, state.messages))
+    } else {
+      download(exportFileName(conv.title, 'md'), 'text/markdown', conversationToMarkdown(conv, state.messages))
+    }
   }
 
   /** Создаёт разговор, если активного нет; заголовок — из первой реплики. */
@@ -914,6 +1011,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       newConversation,
       selectConversation,
       deleteConversation,
+      renameConversation,
+      setSearchQuery,
+      exportConversation,
+      completeOnboarding,
       openSettings,
       closeSettings,
       updateSettings,

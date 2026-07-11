@@ -50,6 +50,8 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
       return { conversation, messages: db.listMessages(id) }
     },
 
+    'conversations:search': ({ query }) => db.searchConversations(query),
+
     'conversations:rename': ({ id, title }) => {
       db.renameConversation(id, title)
     },
