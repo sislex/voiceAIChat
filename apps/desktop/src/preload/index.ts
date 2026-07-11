@@ -46,7 +46,8 @@ const claude: RendererClaudeBridge = {
   cancel: () => ipcRenderer.send('claude:cancel'),
   onToken: (cb) => subscribe<IpcEventPayload<'claude:token'>>('claude:token', cb),
   onDone: (cb) => subscribe<IpcEventPayload<'claude:done'>>('claude:done', cb),
-  onError: (cb) => subscribe<IpcEventPayload<'claude:error'>>('claude:error', cb)
+  onError: (cb) => subscribe<IpcEventPayload<'claude:error'>>('claude:error', cb),
+  onLog: (cb) => subscribe<IpcEventPayload<'claude:log'>>('claude:log', cb)
 }
 
 // Мост TTS: озвучка/отмена (renderer → main) + завершение (main → renderer).

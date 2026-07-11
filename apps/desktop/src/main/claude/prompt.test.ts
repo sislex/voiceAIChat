@@ -31,9 +31,13 @@ describe('buildPrompt', () => {
 })
 
 describe('claudeModelAlias', () => {
-  it('маппит настройки в алиасы CLI', () => {
+  it('маппит настройки в алиасы CLI (в т.ч. новые модели и старые значения)', () => {
+    expect(claudeModelAlias('opus')).toBe('opus')
+    expect(claudeModelAlias('sonnet')).toBe('sonnet')
+    expect(claudeModelAlias('fable')).toBe('fable')
+    expect(claudeModelAlias('haiku')).toBe('haiku')
     expect(claudeModelAlias('sonnet-4.5')).toBe('sonnet')
     expect(claudeModelAlias('opus-4.5')).toBe('opus')
-    expect(claudeModelAlias('что-то')).toBe('sonnet')
+    expect(claudeModelAlias('что-то')).toBe('opus')
   })
 })

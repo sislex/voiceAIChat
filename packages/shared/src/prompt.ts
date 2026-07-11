@@ -2,6 +2,7 @@
 
 import type { SttSegmentWire } from './protocol'
 import type { MessageRole } from './types'
+import { normalizeClaudeModel } from './types'
 
 /** Добавляет к телу промпта просьбу прочитать вложенные файлы (пути абсолютные). */
 function withAttachments(body: string, attachmentPaths: string[]): string {
@@ -64,7 +65,5 @@ export function buildConversationPrompt(
 
 /** Маппинг модели из настроек в алиас модели Claude CLI. */
 export function claudeModelAlias(model: string): string {
-  if (model.startsWith('opus')) return 'opus'
-  if (model.startsWith('sonnet')) return 'sonnet'
-  return 'sonnet'
+  return normalizeClaudeModel(model)
 }

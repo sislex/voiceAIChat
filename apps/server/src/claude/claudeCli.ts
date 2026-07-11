@@ -4,10 +4,14 @@
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { parseStreamJsonLine } from '@voicechat/shared'
+import { parseStreamJsonLine, parseStreamJsonActivity } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from './types'
 
-export type SpawnFn = (command: string, args: string[]) => ChildProcess
+export type SpawnFn = (
+  command: string,
+  args: string[],
+  options?: { cwd?: string }
+) => ChildProcess
 
 export interface ClaudeCliOptions {
   /** Инъекция spawn (для тестов). По умолчанию node:child_process.spawn. */
@@ -49,6 +53,7 @@ export class ClaudeCli implements LlmClient {
       '--model',
       req.model
     ]
+    if (req.permissionMode) args.push('--permission-mode', req.permissionMode)
     if (req.sessionId) args.push('--resume', req.sessionId)
 
     let finished = false
@@ -60,15 +65,15 @@ export class ClaudeCli implements LlmClient {
       finished = true
       handlers.onError(message)
     }
-    const done = (text: string): void => {
+    const done = (text: string, meta?: import('@voicechat/shared').TurnMeta): void => {
       if (finished) return
       finished = true
-      handlers.onDone(text)
+      handlers.onDone(text, meta)
     }
 
     let child: ChildProcess
     try {
-      child = spawnFn(this.opts.binPath ?? 'claude', args)
+      child = spawnFn(this.opts.binPath ?? 'claude', args, req.cwd ? { cwd: req.cwd } : undefined)
     } catch (err) {
       fail(describeSpawnError(err))
       return { cancel: () => {} }
@@ -82,6 +87,11 @@ export class ClaudeCli implements LlmClient {
     if (child.stdout) {
       const rl = createInterface({ input: child.stdout })
       rl.on('line', (line) => {
+        // Параллельно: активность для режима консоли (только если запрошена).
+        if (handlers.onActivity) {
+          const entry = parseStreamJsonActivity(line)
+          if (entry) handlers.onActivity(entry)
+        }
         const ev = parseStreamJsonLine(line)
         if (!ev) return
         switch (ev.kind) {
@@ -95,7 +105,7 @@ export class ClaudeCli implements LlmClient {
             sawResult = true
             if (ev.sessionId) handlers.onSession(ev.sessionId)
             if (ev.isError) fail(ev.text || 'Claude вернул ошибку')
-            else done(ev.text)
+            else done(ev.text, ev.meta)
             break
           default:
             break

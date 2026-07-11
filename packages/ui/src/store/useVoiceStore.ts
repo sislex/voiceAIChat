@@ -33,8 +33,12 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
     const sendClaudePrompt =
       deps.sendClaudePrompt ??
       (hasClaude
-        ? (conversationId: string, segments: SttSegmentWire[], attachments?: string[]) =>
-            window.claude.send({ conversationId, segments, attachments })
+        ? (
+            conversationId: string,
+            segments: SttSegmentWire[],
+            attachments?: string[],
+            verbose?: boolean
+          ) => window.claude.send({ conversationId, segments, attachments, verbose })
         : undefined)
     const cancelClaude = deps.cancelClaude ?? (hasClaude ? () => window.claude.cancel() : undefined)
     const hasApi = typeof window !== 'undefined' && !!window.api
@@ -91,8 +95,9 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
     }
     if (typeof window !== 'undefined' && window.claude) {
       unsubs.push(window.claude.onToken((m) => store.actions.applyClaudeToken(m.delta)))
-      unsubs.push(window.claude.onDone((m) => store.actions.applyClaudeDone(m.text)))
+      unsubs.push(window.claude.onDone((m) => store.actions.applyClaudeDone(m.text, m.meta)))
       unsubs.push(window.claude.onError((m) => store.actions.applyClaudeError(m.message)))
+      unsubs.push(window.claude.onLog((m) => store.actions.applyClaudeLog(m.entry)))
     }
     if (typeof window !== 'undefined' && window.tts) {
       unsubs.push(

@@ -11,6 +11,7 @@ import type { LlmClient } from './claude/types.js'
 const mockClaude: LlmClient = {
   send(_req, h) {
     h.onSession('sess-xyz')
+    h.onActivity?.({ kind: 'tool_use', summary: 'Bash: npm test', raw: '{}' })
     h.onDelta('При')
     h.onDelta('вет')
     h.onDone('Привет')
@@ -63,5 +64,32 @@ describe('WS: Claude-стрим', () => {
     expect(doneMsg.text).toBe('Привет')
     // session-id записан
     expect(db.getConversation(conv.id)?.claudeSessionId).toBe('sess-xyz')
+    // без verbose активность НЕ шлётся
+    expect(events.some((e) => (e as { t: string }).t === 'claude.log')).toBe(false)
+  })
+
+  it('claude.send с verbose → приходит claude.log', async () => {
+    const conv = db.createConversation('Чат')
+    const ws = await connect()
+    const logs: unknown[] = []
+    const done = new Promise<void>((resolve) => {
+      ws.on('message', (d) => {
+        const m = JSON.parse(d.toString())
+        if (m.t === 'claude.log') logs.push(m)
+        if (m.t === 'claude.done') resolve()
+      })
+    })
+    ws.send(
+      JSON.stringify({
+        t: 'claude.send',
+        conversationId: conv.id,
+        segments: [{ speakerId: 1, text: 'привет' }],
+        verbose: true
+      })
+    )
+    await done
+    ws.close()
+    expect(logs).toHaveLength(1)
+    expect((logs[0] as { entry: { summary: string } }).entry.summary).toBe('Bash: npm test')
   })
 })

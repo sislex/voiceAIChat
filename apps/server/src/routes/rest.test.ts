@@ -50,6 +50,15 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.statusCode).toBe(404)
   })
 
+  it('поиск /conversations/search находит по названию (статик-роут не конфликтует с :id)', async () => {
+    await app.inject({ method: 'POST', url: '/api/conversations', payload: { title: 'Лиссабон' } })
+    await app.inject({ method: 'POST', url: '/api/conversations', payload: { title: 'Погода' } })
+    const res = await app.inject({ method: 'GET', url: '/api/conversations/search?q=лисс' })
+    expect(res.statusCode).toBe(200)
+    const found = res.json()
+    expect(found.map((c: { title: string }) => c.title)).toEqual(['Лиссабон'])
+  })
+
   it('добавление сообщения видно в get', async () => {
     const c = (await app.inject({ method: 'POST', url: '/api/conversations', payload: {} })).json()
     const m = (

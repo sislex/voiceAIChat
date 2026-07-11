@@ -7,21 +7,26 @@
 // ответ — мок-пайплайн (см. mockPipeline.ts).
 
 import type { RendererApi, SttSegmentWire, SttStatus, SttUpdate, UploadInfo } from '@shared/ipc'
+import type { McpServer } from '@shared/mcp'
 import type {
   CatalogVoice,
+  ClaudeLogEntry,
   Conversation,
   Message,
   MessageRole,
   Settings,
   TtsVoiceInfo,
+  TurnMeta,
   WhisperModel,
   WhisperModelInfo
 } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
+import { conversationToMarkdown, conversationToJson, exportFileName } from '@shared/export'
 import { transition, type VoiceEvent } from '@shared/stateMachine'
 import type { VoiceState } from '@shared/types'
 import type { LiveSegment } from '../lib/view'
 import { flushSpeakable, splitSpeakable } from '../lib/sentences'
+import { VadDetector } from '../lib/vad'
 import type { AudioController } from '../audio/browserAudio'
 import type { MicDevice } from '../audio/microphones'
 import {
@@ -37,6 +42,8 @@ import {
 export interface AppState {
   voice: VoiceState
   conversations: Conversation[]
+  /** Текущий поисковый запрос по разговорам (пусто — показываем все). */
+  searchQuery: string
   activeId: string | null
   messages: Message[]
   liveSegments: LiveSegment[]
@@ -57,8 +64,16 @@ export interface AppState {
   voiceDownloads: Record<string, number>
   /** Модели Whisper на диске (наличие/размер) — для управления местом. */
   whisperModels: WhisperModelInfo[]
+  /** Лог активности агента (режим консоли). */
+  consoleLog: ClaudeLogEntry[]
+  /** Развёрнута ли панель консоли. */
+  consoleOpen: boolean
   /** Стримящийся ответ Claude (растёт по токенам); пусто — нет активного стрима. */
   streamingReply: string
+  /** Метаданные последнего завершённого хода (длительность/токены/стоимость). */
+  lastTurnMeta: TurnMeta | null
+  /** Подключённые MCP-серверы (read-only показ в настройках). */
+  mcpServers: McpServer[]
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
   speakingMessageId: string | null
   /** Доступна ли озвучка (кнопка ▶ на ответах). */
@@ -97,7 +112,8 @@ export interface StoreDeps {
   sendClaudePrompt?: (
     conversationId: string,
     segments: SttSegmentWire[],
-    attachments?: string[]
+    attachments?: string[],
+    verbose?: boolean
   ) => void
   /** Отмена текущего запроса к Claude (renderer → main). */
   cancelClaude?: () => void
@@ -116,6 +132,8 @@ export interface StoreDeps {
   cancelTts?: () => void
   /** Запустить скачивание голоса Piper (renderer → main). */
   startVoiceDownload?: (id: string) => void
+  /** Сохранение файла на диск (экспорт). По умолчанию — через `<a download>`. */
+  download?: (filename: string, mime: string, data: string) => void
 }
 
 /** Действия, дергаемые из UI. Все асинхронные операции инкапсулированы здесь. */
@@ -124,6 +142,14 @@ export interface StoreActions {
   newConversation(): void
   selectConversation(id: string): Promise<void>
   deleteConversation(id: string): Promise<void>
+  /** Переименовать разговор (БД + список). Пустое имя игнорируется. */
+  renameConversation(id: string, title: string): Promise<void>
+  /** Задать поисковый запрос по разговорам (пусто — весь список). */
+  setSearchQuery(query: string): Promise<void>
+  /** Экспортировать активный разговор в Markdown/JSON (скачивание файла). */
+  exportConversation(format: 'md' | 'json'): void
+  /** Завершить (или пропустить) приветственный мастер. */
+  completeOnboarding(): Promise<void>
   openSettings(): void
   closeSettings(): void
   updateSettings(patch: Partial<Settings>): Promise<void>
@@ -142,6 +168,8 @@ export interface StoreActions {
   startVoice(): void
   stopVoice(): void
   stopSpeak(): void
+  /** Кадр энергии микрофона (для VAD: barge-in во время озвучки, hands-free-пауза). */
+  applyMicEnergy(rms: number): void
   /** Применить частичную гипотезу распознавания (stt:partial). */
   applySttPartial(update: SttUpdate): void
   /** Применить финальный транскрипт (stt:final) — запускает ответ. */
@@ -150,8 +178,8 @@ export interface StoreActions {
   applySttError(message: string): void
   /** Применить фрагмент ответа Claude (claude:token). */
   applyClaudeToken(delta: string): void
-  /** Применить завершение ответа Claude (claude:done) — фиксирует сообщение. */
-  applyClaudeDone(text: string): void
+  /** Применить завершение ответа Claude (claude:done) — фиксирует сообщение + мету. */
+  applyClaudeDone(text: string, meta?: TurnMeta): void
   /** Обработать ошибку Claude (claude:error). */
   applyClaudeError(message: string): void
   /** Скрыть баннер ошибки. */
@@ -176,6 +204,10 @@ export interface StoreActions {
   deleteVoice(id: string): Promise<void>
   /** Удалить файл модели Whisper (освободить место). */
   deleteModel(model: WhisperModel): Promise<void>
+  /** Добавить запись активности агента (claude:log) в лог консоли. */
+  applyClaudeLog(entry: ClaudeLogEntry): void
+  /** Свернуть/развернуть панель консоли. */
+  toggleConsole(): void
   /** Прогресс скачивания голоса (tts:voiceProgress). */
   applyVoiceProgress(id: string, percent: number): void
   /** Голос скачан (tts:voiceDone) — обновляет списки. */
@@ -196,6 +228,7 @@ function initialState(): AppState {
   return {
     voice: 'idle',
     conversations: [],
+    searchQuery: '',
     activeId: null,
     messages: [],
     liveSegments: [],
@@ -209,7 +242,11 @@ function initialState(): AppState {
     voicesDownloadable: false,
     voiceDownloads: {},
     whisperModels: [],
+    consoleLog: [],
+    consoleOpen: true,
     streamingReply: '',
+    lastTurnMeta: null,
+    mcpServers: [],
     speakingMessageId: null,
     ttsAvailable: false,
     error: null,
@@ -278,16 +315,102 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     timers.clear()
   }
 
+  // --- VAD: barge-in (speaking) и hands-free авто-пауза (listening) --------
+  const bargeVad = new VadDetector()
+  const handsVad = new VadDetector()
+  let bargeMonitorStop: (() => void) | null = null
+
+  /** Держит энерго-монитор включённым ровно в состоянии speaking при bargeIn. */
+  function syncBargeMonitor(): void {
+    const want = state.voice === 'speaking' && state.settings.bargeIn && !!audio?.monitor
+    if (want && !bargeMonitorStop) {
+      bargeVad.reset()
+      // Плейсхолдер, пока промис стартует (чтобы не запустить два монитора).
+      bargeMonitorStop = () => {}
+      void audio!
+        .monitor!(state.settings.micDeviceId, (r) => applyMicEnergy(r))
+        .then((stop) => {
+          if (state.voice === 'speaking') bargeMonitorStop = stop
+          else stop() // уже вышли из speaking, пока стартовали
+        })
+        .catch(() => {
+          bargeMonitorStop = null
+        })
+    } else if (!want && bargeMonitorStop) {
+      bargeMonitorStop()
+      bargeMonitorStop = null
+    }
+  }
+
   /** Голосовой переход через машину состояний. Возвращает true, если он допустим. */
   function dispatchVoice(event: VoiceEvent): boolean {
-    const res = transition(state.voice, event)
-    if (res.ok) setState({ voice: res.state })
+    const prev = state.voice
+    const res = transition(prev, event)
+    if (res.ok) {
+      setState({ voice: res.state })
+      syncBargeMonitor()
+      // Hands-free: ход завершён (speaking → idle) → снова слушаем.
+      if (res.state === 'idle' && prev === 'speaking' && state.settings.handsFree) {
+        schedule(() => {
+          if (state.voice === 'idle' && state.settings.handsFree) startVoice()
+        }, HANDS_FREE_GAP_MS)
+      }
+    }
     return res.ok
   }
 
+  /**
+   * Кадр энергии микрофона: VAD.
+   * - speaking + bargeIn → начало речи прерывает озвучку и включает запись (barge-in);
+   * - listening + handsFree → пауза после речи авто-финализирует запись.
+   */
+  function applyMicEnergy(rmsValue: number): void {
+    if (state.voice === 'speaking' && state.settings.bargeIn) {
+      if (bargeVad.push(rmsValue) === 'speech-start') startVoice() // barge-in
+    } else if (state.voice === 'listening' && state.settings.handsFree) {
+      if (handsVad.push(rmsValue) === 'speech-end') stopVoice() // авто-пауза
+    }
+  }
+
   async function refreshConversations(): Promise<void> {
-    const conversations = await api['conversations:list']()
+    const q = state.searchQuery.trim()
+    const conversations = q
+      ? await api['conversations:search']({ query: q })
+      : await api['conversations:list']()
     setState({ conversations })
+  }
+
+  async function setSearchQuery(query: string): Promise<void> {
+    setState({ searchQuery: query })
+    await refreshConversations()
+  }
+
+  /** Скачивание файла по умолчанию — через временный `<a download>`. */
+  function defaultDownload(filename: string, mime: string, data: string): void {
+    const blob = new Blob([data], { type: mime })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  async function completeOnboarding(): Promise<void> {
+    await updateSettings({ onboarded: true })
+  }
+
+  function exportConversation(format: 'md' | 'json'): void {
+    const conv = state.conversations.find((c) => c.id === state.activeId)
+    if (!conv) return
+    const download = deps.download ?? defaultDownload
+    if (format === 'json') {
+      download(exportFileName(conv.title, 'json'), 'application/json', conversationToJson(conv, state.messages))
+    } else {
+      download(exportFileName(conv.title, 'md'), 'text/markdown', conversationToMarkdown(conv, state.messages))
+    }
   }
 
   /** Создаёт разговор, если активного нет; заголовок — из первой реплики. */
@@ -391,9 +514,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Роутинг ответа: реальный Claude (стрим событиями) или мок-пайплайн. */
   function beginReply(segments: SttSegmentWire[], attachments: string[] = []): void {
     if (claudeEnabled && deps.sendClaudePrompt && state.activeId) {
-      setState({ streamingReply: '' })
+      setState({ streamingReply: '', lastTurnMeta: null })
       ttsBuffer = ''
-      deps.sendClaudePrompt(state.activeId, segments, attachments)
+      deps.sendClaudePrompt(state.activeId, segments, attachments, state.settings.showConsole)
       return
     }
     const prompt = segments.map((s) => s.text).join(' ')
@@ -420,8 +543,19 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshWhisperModels()
     await refreshTtsVoices()
     await refreshVoiceCatalog()
+    await refreshMcpServers()
     if (conversations.length > 0) {
       await selectConversation(conversations[0].id)
+    }
+  }
+
+  /** Грузит список MCP-серверов (read-only; ошибки не критичны). */
+  async function refreshMcpServers(): Promise<void> {
+    if (!api['mcp:list']) return
+    try {
+      setState({ mcpServers: await api['mcp:list']() })
+    } catch (err) {
+      console.warn('[mcp] не удалось получить список серверов', err)
     }
   }
 
@@ -466,6 +600,17 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await api['stt:deleteModel']({ model })
     await refreshWhisperModels()
     await refreshModelStatus()
+  }
+
+  const HANDS_FREE_GAP_MS = 400 // пауза перед авто-стартом записи после ответа (hands-free)
+  const CONSOLE_LOG_CAP = 500 // ограничиваем рост лога консоли
+  function applyClaudeLog(entry: ClaudeLogEntry): void {
+    const next = [...state.consoleLog, entry]
+    setState({ consoleLog: next.length > CONSOLE_LOG_CAP ? next.slice(-CONSOLE_LOG_CAP) : next })
+  }
+
+  function toggleConsole(): void {
+    setState({ consoleOpen: !state.consoleOpen })
   }
 
   function downloadVoice(id: string): void {
@@ -514,8 +659,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Запуск реального захвата (fire-and-forget); ошибки не рвут UX-цикл. */
   function startCapture(): void {
     if (!audio) return
+    handsVad.reset() // новая сессия слушания — сбрасываем детектор паузы
     void audio
-      .start({ deviceId: state.settings.micDeviceId })
+      .start({
+        deviceId: state.settings.micDeviceId,
+        onEnergy: (r) => applyMicEnergy(r) // hands-free авто-пауза по тишине
+      })
       .then(() => refreshMics()) // после разрешения появляются реальные метки
       .catch((err) => console.warn('[audio] запуск захвата не удался', err))
   }
@@ -536,8 +685,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       liveSegments: [],
       draft: '',
       attachments: [],
+      consoleLog: [],
       voice: 'idle',
-      streamingReply: ''
+      streamingReply: '',
+      lastTurnMeta: null
     })
   }
 
@@ -545,11 +696,18 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     cancelTimers()
     stopCapture()
     cancelReply()
-    setState({ liveSegments: [], voice: 'idle', streamingReply: '' })
+    setState({ liveSegments: [], consoleLog: [], voice: 'idle', streamingReply: '', lastTurnMeta: null })
     const res = await api['conversations:get']({ id })
     if (res) {
       setState({ activeId: res.conversation.id, messages: res.messages })
     }
+  }
+
+  async function renameConversation(id: string, title: string): Promise<void> {
+    const name = title.trim()
+    if (!name) return
+    await api['conversations:rename']({ id, title: name })
+    await refreshConversations()
   }
 
   async function deleteConversation(id: string): Promise<void> {
@@ -737,7 +895,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Завершение ответа Claude: фиксируем сообщение; TTS дозвучивает хвост. */
-  async function applyClaudeDone(text: string): Promise<void> {
+  async function applyClaudeDone(text: string, meta?: TurnMeta): Promise<void> {
+    // Мета хода (длительность/токены/стоимость) — показываем под последним ответом.
+    if (meta && Object.keys(meta).length > 0) setState({ lastTurnMeta: meta })
     if (state.voice !== 'thinking' && state.voice !== 'speaking') {
       setState({ streamingReply: '' })
       ttsBuffer = ''
@@ -872,6 +1032,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       newConversation,
       selectConversation,
       deleteConversation,
+      renameConversation,
+      setSearchQuery,
+      exportConversation,
+      completeOnboarding,
       openSettings,
       closeSettings,
       updateSettings,
@@ -885,6 +1049,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       startVoice,
       stopVoice,
       stopSpeak,
+      applyMicEnergy,
       applySttPartial,
       applySttFinal,
       applySttError,
@@ -902,6 +1067,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       downloadVoice,
       deleteVoice,
       deleteModel,
+      applyClaudeLog,
+      toggleConsole,
       applyVoiceProgress,
       applyVoiceDone,
       applyVoiceError,

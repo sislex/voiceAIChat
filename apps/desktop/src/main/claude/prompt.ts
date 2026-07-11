@@ -1,6 +1,7 @@
 // Сборка промпта для Claude (Шаг 8). Чистые функции.
 
 import type { MessageRole } from '@shared/types'
+import { normalizeClaudeModel } from '@shared/types'
 import type { SttSegmentWire } from '@shared/ipc'
 
 /** Добавляет к телу промпта просьбу прочитать вложенные файлы (пути абсолютные). */
@@ -61,7 +62,5 @@ export function buildConversationPrompt(
 
 /** Маппинг модели из настроек в алиас модели Claude CLI. */
 export function claudeModelAlias(model: string): string {
-  if (model.startsWith('opus')) return 'opus'
-  if (model.startsWith('sonnet')) return 'sonnet'
-  return 'sonnet'
+  return normalizeClaudeModel(model)
 }

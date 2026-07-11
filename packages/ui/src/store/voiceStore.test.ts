@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createVoiceStore, type VoiceStore } from './voiceStore'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
+import type { ClaudeLogEntry } from '@shared/types'
 
 // Быстрые задержки + фейковые таймеры делают мок-пайплайн детерминированным.
 const DELAYS = { frame: 20, transcribe: 20, think: 20, speak: 20 }
@@ -151,6 +152,78 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().messages).toHaveLength(0)
     expect(store.getState().voice).toBe('idle')
   })
+
+  it('init грузит список MCP-серверов', async () => {
+    const api = createFakeApi([])
+    vi.spyOn(api, 'mcp:list').mockResolvedValue([
+      { name: 'fs', detail: 'npx server', status: '✓ Connected', connected: true }
+    ])
+    const store = createVoiceStore({ api, now: () => 1, delays: DELAYS })
+    await store.actions.init()
+    expect(store.getState().mcpServers).toEqual([
+      { name: 'fs', detail: 'npx server', status: '✓ Connected', connected: true }
+    ])
+  })
+
+  it('renameConversation сохраняет новое имя и обновляет список', async () => {
+    const { store, api } = makeStore(['Старое'])
+    await store.actions.init()
+    const id = store.getState().conversations[0].id
+    const spy = vi.spyOn(api, 'conversations:rename')
+
+    await store.actions.renameConversation(id, '  Новое имя  ')
+
+    expect(spy).toHaveBeenCalledWith({ id, title: 'Новое имя' }) // trim
+    expect(store.getState().conversations[0].title).toBe('Новое имя')
+  })
+
+  it('renameConversation игнорирует пустое имя', async () => {
+    const { store, api } = makeStore(['Старое'])
+    await store.actions.init()
+    const id = store.getState().conversations[0].id
+    const spy = vi.spyOn(api, 'conversations:rename')
+
+    await store.actions.renameConversation(id, '   ')
+
+    expect(spy).not.toHaveBeenCalled()
+    expect(store.getState().conversations[0].title).toBe('Старое')
+  })
+
+  it('setSearchQuery фильтрует список; пустой запрос возвращает все', async () => {
+    const { store } = makeStore(['Лиссабон', 'Рецепты', 'Погода'])
+    await store.actions.init()
+    expect(store.getState().conversations).toHaveLength(3)
+
+    await store.actions.setSearchQuery('рецеп')
+    expect(store.getState().searchQuery).toBe('рецеп')
+    expect(store.getState().conversations.map((c) => c.title)).toEqual(['Рецепты'])
+
+    await store.actions.setSearchQuery('')
+    expect(store.getState().conversations).toHaveLength(3)
+  })
+
+  it('exportConversation зовёт download с корректными именем/mime/содержимым', async () => {
+    const download = vi.fn()
+    const api = createFakeApi(['Лиссабон'])
+    const store = createVoiceStore({ api, now: () => 1_700_000_000_000, delays: DELAYS, download })
+    await store.actions.init()
+    await store.actions.selectConversation(store.getState().conversations[0].id)
+    store.actions.setDraft('Привет')
+    // положим одно сообщение через submitText (мок-режим)
+    await store.actions.submitText()
+
+    store.actions.exportConversation('md')
+    expect(download).toHaveBeenCalledTimes(1)
+    const [name, mime, data] = download.mock.calls[0]
+    expect(name).toBe('лиссабон.md')
+    expect(mime).toBe('text/markdown')
+    expect(data).toContain('# Лиссабон')
+
+    store.actions.exportConversation('json')
+    const [nameJ, mimeJ] = download.mock.calls[1]
+    expect(nameJ).toBe('лиссабон.json')
+    expect(mimeJ).toBe('application/json')
+  })
 })
 
 describe('voiceStore — интеграция с аудиозахватом (Шаг 6)', () => {
@@ -180,7 +253,9 @@ describe('voiceStore — интеграция с аудиозахватом (Ш�
 
     store.actions.startVoice()
     expect(store.getState().voice).toBe('listening')
-    expect(audio.start).toHaveBeenCalledWith({ deviceId: 'mic-x' })
+    expect(audio.start).toHaveBeenCalledWith(
+      expect.objectContaining({ deviceId: 'mic-x' })
+    )
 
     store.actions.stopVoice()
     expect(audio.stop).toHaveBeenCalledOnce()
@@ -300,7 +375,12 @@ describe('voiceStore — реальный Claude (claudeEnabled)', () => {
 
     expect(store.getState().voice).toBe('thinking')
     const activeId = store.getState().activeId as string
-    expect(sendClaudePrompt).toHaveBeenCalledWith(activeId, [{ speakerId: 1, text: 'Привет' }], [])
+    expect(sendClaudePrompt).toHaveBeenCalledWith(
+      activeId,
+      [{ speakerId: 1, text: 'Привет' }],
+      [],
+      false // showConsole по умолчанию выключен → verbose=false
+    )
 
     await vi.advanceTimersByTimeAsync(STEP) // мок-ответ не должен появиться
     expect(store.getState().voice).toBe('thinking')
@@ -328,6 +408,17 @@ describe('voiceStore — реальный Claude (claudeEnabled)', () => {
     expect(store.getState().voice).toBe('idle')
   })
 
+  it('applyClaudeDone сохраняет мету хода в lastTurnMeta', async () => {
+    const { store } = makeClaudeStore()
+    await store.actions.init()
+    store.actions.setDraft('x')
+    await store.actions.submitText()
+    store.actions.applyClaudeToken('Ответ')
+    store.actions.applyClaudeDone('Ответ', { durationMs: 3000, numTurns: 1, costUsd: 0.01 })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.getState().lastTurnMeta).toEqual({ durationMs: 3000, numTurns: 1, costUsd: 0.01 })
+  })
+
   it('done с пустым текстом использует накопленный стрим', async () => {
     const { store } = makeClaudeStore()
     await store.actions.init()
@@ -350,6 +441,174 @@ describe('voiceStore — реальный Claude (claudeEnabled)', () => {
 
     store.actions.dismissError()
     expect(store.getState().error).toBeNull()
+  })
+})
+
+describe('voiceStore — barge-in голосом (VAD)', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+  })
+
+  async function speakingStore(bargeIn: boolean): Promise<VoiceStore> {
+    const api = createFakeApi([])
+    const store = createVoiceStore({
+      api,
+      delays: DELAYS,
+      claudeEnabled: true,
+      sendClaudePrompt: vi.fn()
+    })
+    await store.actions.init()
+    await store.actions.updateSettings({ bargeIn })
+    store.actions.setDraft('x')
+    await store.actions.submitText()
+    store.actions.applyClaudeToken('ответ')
+    store.actions.applyClaudeDone('ответ')
+    await vi.advanceTimersByTimeAsync(0)
+    return store
+  }
+
+  it('речь во время озвучки прерывает её и начинает запись (bargeIn)', async () => {
+    const store = await speakingStore(true)
+    expect(store.getState().voice).toBe('speaking')
+    store.actions.applyMicEnergy(0.5)
+    store.actions.applyMicEnergy(0.5)
+    store.actions.applyMicEnergy(0.5) // 3 громких кадра → speech-start
+    expect(store.getState().voice).toBe('listening')
+  })
+
+  it('без bargeIn энергия микрофона игнорируется', async () => {
+    const store = await speakingStore(false)
+    expect(store.getState().voice).toBe('speaking')
+    store.actions.applyMicEnergy(0.5)
+    store.actions.applyMicEnergy(0.5)
+    store.actions.applyMicEnergy(0.5)
+    expect(store.getState().voice).toBe('speaking')
+  })
+})
+
+describe('voiceStore — hands-free (VAD авто-пауза + авто-старт)', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+  })
+
+  it('в listening пауза после речи авто-финализирует запись (speech-end → stopVoice)', async () => {
+    const api = createFakeApi([])
+    const store = createVoiceStore({ api, delays: DELAYS })
+    await store.actions.init()
+    await store.actions.updateSettings({ handsFree: true })
+    store.actions.startVoice()
+    expect(store.getState().voice).toBe('listening')
+
+    // Речь (3 громких кадра) → затем тишина (8 тихих) → speech-end → stopVoice.
+    for (let i = 0; i < 3; i++) store.actions.applyMicEnergy(0.5)
+    for (let i = 0; i < 8; i++) store.actions.applyMicEnergy(0)
+    expect(store.getState().voice).toBe('transcribing')
+  })
+
+  it('без handsFree тишина не останавливает запись', async () => {
+    const api = createFakeApi([])
+    const store = createVoiceStore({ api, delays: DELAYS })
+    await store.actions.init()
+    store.actions.startVoice()
+    for (let i = 0; i < 3; i++) store.actions.applyMicEnergy(0.5)
+    for (let i = 0; i < 10; i++) store.actions.applyMicEnergy(0)
+    expect(store.getState().voice).toBe('listening')
+  })
+
+  it('после ответа (speaking → idle) hands-free авто-стартует запись', async () => {
+    const api = createFakeApi([])
+    const store = createVoiceStore({
+      api,
+      delays: DELAYS,
+      claudeEnabled: true,
+      sendClaudePrompt: vi.fn()
+    })
+    await store.actions.init()
+    await store.actions.updateSettings({ handsFree: true })
+    store.actions.setDraft('x')
+    await store.actions.submitText()
+    store.actions.applyClaudeToken('ответ')
+    store.actions.applyClaudeDone('ответ')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.getState().voice).toBe('speaking')
+    await vi.advanceTimersByTimeAsync(STEP) // speaking → idle (мок-таймер)
+    // Пауза перед авто-стартом.
+    await vi.advanceTimersByTimeAsync(500)
+    expect(store.getState().voice).toBe('listening')
+  })
+})
+
+describe('voiceStore — режим консоли (activity log)', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+  })
+
+  const entry = (summary: string): ClaudeLogEntry => ({
+    kind: 'tool_use',
+    summary,
+    raw: `{"summary":"${summary}"}`
+  })
+
+  it('applyClaudeLog добавляет записи в consoleLog по порядку', () => {
+    const api = createFakeApi([])
+    const store = createVoiceStore({ api, delays: DELAYS })
+    store.actions.applyClaudeLog(entry('Bash: ls'))
+    store.actions.applyClaudeLog(entry('Read: index.ts'))
+    expect(store.getState().consoleLog.map((e) => e.summary)).toEqual(['Bash: ls', 'Read: index.ts'])
+  })
+
+  it('toggleConsole переключает признак развёрнутости панели', () => {
+    const api = createFakeApi([])
+    const store = createVoiceStore({ api, delays: DELAYS })
+    const initial = store.getState().consoleOpen
+    store.actions.toggleConsole()
+    expect(store.getState().consoleOpen).toBe(!initial)
+    store.actions.toggleConsole()
+    expect(store.getState().consoleOpen).toBe(initial)
+  })
+
+  it('submitText передаёт verbose=true в Claude, когда showConsole включён', async () => {
+    const api = createFakeApi([])
+    const sendClaudePrompt = vi.fn()
+    const store = createVoiceStore({
+      api,
+      delays: DELAYS,
+      claudeEnabled: true,
+      sendClaudePrompt
+    })
+    await store.actions.init()
+    await store.actions.updateSettings({ showConsole: true })
+    store.actions.setDraft('вопрос')
+    await store.actions.submitText()
+
+    const activeId = store.getState().activeId as string
+    expect(sendClaudePrompt).toHaveBeenCalledWith(
+      activeId,
+      [{ speakerId: 1, text: 'вопрос' }],
+      [],
+      true
+    )
+  })
+
+  it('consoleLog очищается при смене/создании разговора', async () => {
+    const { store } = makeStore(['A', 'B'])
+    await store.actions.init()
+    store.actions.applyClaudeLog(entry('Bash: ls'))
+    expect(store.getState().consoleLog.length).toBe(1)
+
+    const other = store.getState().conversations.find((c) => c.id !== store.getState().activeId)!
+    await store.actions.selectConversation(other.id)
+    expect(store.getState().consoleLog).toEqual([])
+
+    store.actions.applyClaudeLog(entry('Read: x'))
+    store.actions.newConversation()
+    expect(store.getState().consoleLog).toEqual([])
   })
 })
 
@@ -668,7 +927,8 @@ describe('voiceStore — правки/удаление/вложения', () => 
     expect(sendClaudePrompt).toHaveBeenCalledWith(
       expect.any(String),
       [{ speakerId: 1, text: 'новый вопрос' }],
-      []
+      [],
+      false
     )
   })
 
@@ -691,7 +951,8 @@ describe('voiceStore — правки/удаление/вложения', () => 
     expect(sendClaudePrompt).toHaveBeenCalledWith(
       expect.any(String),
       [{ speakerId: 1, text: 'посмотри файл' }],
-      [attId]
+      [attId],
+      false
     )
     // В историю попала пометка о вложении.
     expect(store.getState().messages[0].text).toContain('📎 скрин.png')

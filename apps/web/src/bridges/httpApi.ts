@@ -30,6 +30,8 @@ export function createHttpApi(): RendererApi {
       if (!res.ok) throw new Error(`GET ${REST.conversation(id)} → ${res.status}`)
       return res.json()
     },
+    'conversations:search': ({ query }) =>
+      req(`${REST.conversationsSearch}?q=${encodeURIComponent(query)}`),
     'conversations:rename': async ({ id, title }) => {
       await req(REST.conversation(id), { method: 'PATCH', body: JSON.stringify({ title }) })
     },
@@ -59,6 +61,7 @@ export function createHttpApi(): RendererApi {
     'tts:catalog': () => req(REST.ttsCatalog),
     'tts:deleteVoice': async ({ id }) => {
       await req(REST.ttsVoice(id), { method: 'DELETE' })
-    }
+    },
+    'mcp:list': () => req(REST.mcpServers)
   }
 }

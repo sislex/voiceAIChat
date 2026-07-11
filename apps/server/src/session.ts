@@ -1,6 +1,7 @@
 // Per-connection сессия: маршрутизация WS-сообщений в сервисы (Claude, STT;
 // TTS — Ф6). Хранит per-connection состояние.
 
+import { existsSync } from 'node:fs'
 import { claudeModelAlias, buildPrompt, buildConversationPrompt } from '@voicechat/shared'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'
@@ -55,7 +56,12 @@ export function createSession(deps: SessionDeps): WsHandlers {
           const conversationId = msg.conversationId
           const conv = deps.db.getConversation(conversationId)
           const sessionId = conv?.claudeSessionId ?? null
-          const model = claudeModelAlias(deps.db.getSettings().model)
+          const settings = deps.db.getSettings()
+          const model = claudeModelAlias(settings.model)
+          const permissionMode = settings.permissionMode
+          // Рабочий каталог — только если задан и существует (иначе игнор).
+          const cwd =
+            settings.workdir && existsSync(settings.workdir) ? settings.workdir : undefined
           const attachmentPaths = (msg.attachments ?? [])
             .map((id) => deps.resolveUpload?.(id))
             .filter((p): p is string => typeof p === 'string')
@@ -66,12 +72,16 @@ export function createSession(deps: SessionDeps): WsHandlers {
             ? buildPrompt(msg.segments, attachmentPaths)
             : buildConversationPrompt(deps.db.listMessages(conversationId), attachmentPaths)
           claudeHandle = deps.claude.send(
-            { prompt, sessionId, model },
+            { prompt, sessionId, model, permissionMode, cwd },
             {
               onSession: (sid) => deps.db.setClaudeSession(conversationId, sid),
               onDelta: (delta) => ctx.send({ t: 'claude.token', conversationId, delta }),
-              onDone: (text) => ctx.send({ t: 'claude.done', conversationId, text }),
-              onError: (message) => ctx.send({ t: 'claude.error', conversationId, message })
+              onDone: (text, meta) => ctx.send({ t: 'claude.done', conversationId, text, meta }),
+              onError: (message) => ctx.send({ t: 'claude.error', conversationId, message }),
+              // Режим консоли: активность агента шлём только если клиент попросил.
+              onActivity: msg.verbose
+                ? (entry) => ctx.send({ t: 'claude.log', conversationId, entry })
+                : undefined
             }
           )
           break

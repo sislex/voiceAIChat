@@ -2,6 +2,7 @@
 // разговору в БД, читает модель из настроек, стримит ответ обратно событиями.
 
 import { ipcMain } from 'electron'
+import { existsSync } from 'node:fs'
 import type { IpcEventChannel, IpcEventPayload, IpcSendPayload } from '@shared/ipc'
 import type { VoiceChatDb } from '../db/database'
 import { claudeModelAlias, buildPrompt, buildConversationPrompt } from './prompt'
@@ -27,7 +28,10 @@ export function createClaudeService(deps: ClaudeServiceDeps): ClaudeService {
     current?.cancel() // barge-in/повторная отправка отменяет предыдущий запрос
     const conversation = deps.db.getConversation(conversationId)
     const sessionId = conversation?.claudeSessionId ?? null
-    const model = claudeModelAlias(deps.db.getSettings().model)
+    const settings = deps.db.getSettings()
+    const model = claudeModelAlias(settings.model)
+    const permissionMode = settings.permissionMode
+    const cwd = settings.workdir && existsSync(settings.workdir) ? settings.workdir : undefined
     const attachmentPaths = (payload.attachments ?? [])
       .map((id) => deps.resolveUpload?.(id))
       .filter((p): p is string => typeof p === 'string')
@@ -38,12 +42,16 @@ export function createClaudeService(deps: ClaudeServiceDeps): ClaudeService {
       : buildConversationPrompt(deps.db.listMessages(conversationId), attachmentPaths)
 
     current = deps.client.send(
-      { prompt, sessionId, model },
+      { prompt, sessionId, model, permissionMode, cwd },
       {
         onSession: (sid) => deps.db.setClaudeSession(conversationId, sid),
         onDelta: (delta) => deps.send('claude:token', { conversationId, delta }),
-        onDone: (text) => deps.send('claude:done', { conversationId, text }),
-        onError: (message) => deps.send('claude:error', { conversationId, message })
+        onDone: (text, meta) => deps.send('claude:done', { conversationId, text, meta }),
+        onError: (message) => deps.send('claude:error', { conversationId, message }),
+        // Режим консоли: активность агента шлём только если клиент попросил.
+        onActivity: payload.verbose
+          ? (entry) => deps.send('claude:log', { conversationId, entry })
+          : undefined
       }
     )
   }

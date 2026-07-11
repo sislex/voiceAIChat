@@ -47,3 +47,58 @@ describe('ChatColumn — кнопка озвучки ответа', () => {
     expect(screen.getByLabelText('Остановить озвучку')).toBeInTheDocument()
   })
 })
+
+describe('ChatColumn — копирование ответа', () => {
+  it('кнопка копирования есть у AI-ответа и копирует его текст', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    renderCol()
+    const btn = screen.getByLabelText('Копировать ответ')
+    await userEvent.click(btn)
+    expect(writeText).toHaveBeenCalledWith('Ответ **жирный**')
+  })
+
+  it('у сообщения пользователя кнопки копирования нет', () => {
+    renderCol()
+    expect(screen.getAllByLabelText('Копировать ответ')).toHaveLength(1) // только ai
+  })
+})
+
+describe('ChatColumn — экспорт разговора', () => {
+  it('меню экспорта: Markdown/JSON зовут onExport с форматом', async () => {
+    const onExport = vi.fn()
+    renderCol({ onExport })
+    await userEvent.click(screen.getByLabelText('Экспорт разговора'))
+    const menu = screen.getByTestId('export-menu')
+    await userEvent.click(screen.getByText('Markdown (.md)'))
+    expect(onExport).toHaveBeenCalledWith('md')
+
+    await userEvent.click(screen.getByLabelText('Экспорт разговора'))
+    await userEvent.click(screen.getByText('JSON (.json)'))
+    expect(onExport).toHaveBeenCalledWith('json')
+    void menu
+  })
+
+  it('показывает мету хода под последним ответом ассистента', () => {
+    renderCol({ turnMeta: { durationMs: 7200, numTurns: 2, costUsd: 0.0131 } })
+    const meta = screen.getByTestId('turn-meta')
+    expect(meta.textContent).toContain('7.2с')
+    expect(meta.textContent).toContain('2 хода')
+    expect(meta.textContent).toContain('$0.0131')
+  })
+
+  it('без сообщений кнопки экспорта нет', () => {
+    render(
+      <ChatColumn
+        title="Пусто"
+        state="idle"
+        messages={[]}
+        liveSegments={[]}
+        diarization={false}
+        onExport={vi.fn()}
+        voiceBar={null}
+      />
+    )
+    expect(screen.queryByLabelText('Экспорт разговора')).not.toBeInTheDocument()
+  })
+})

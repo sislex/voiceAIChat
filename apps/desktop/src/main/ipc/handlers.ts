@@ -1,6 +1,7 @@
 import type { VoiceChatDb } from '../db/database'
 import type { IpcArg, IpcChannel, IpcResult, SttStatus, UploadInfo } from '@shared/ipc'
 import type { TtsVoiceCatalog, TtsVoiceInfo, WhisperModel, WhisperModelInfo } from '@shared/types'
+import type { McpServer } from '@shared/mcp'
 
 /**
  * Тип обработчика одного канала: получает аргумент, возвращает результат.
@@ -27,6 +28,8 @@ export interface HandlerDeps {
   deleteModel?: (model: WhisperModel) => void
   /** Удалить установленный голос Piper. */
   deleteVoice?: (id: string) => void
+  /** Список MCP-серверов (read-only). По умолчанию — пусто. */
+  listMcpServers?: () => McpServer[] | Promise<McpServer[]>
 }
 
 /**
@@ -49,6 +52,8 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
       if (!conversation) return null
       return { conversation, messages: db.listMessages(id) }
     },
+
+    'conversations:search': ({ query }) => db.searchConversations(query),
 
     'conversations:rename': ({ id, title }) => {
       db.renameConversation(id, title)
@@ -92,6 +97,8 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
 
     'tts:deleteVoice': ({ id }) => {
       deps.deleteVoice?.(id)
-    }
+    },
+
+    'mcp:list': () => (deps.listMcpServers ? deps.listMcpServers() : [])
   }
 }

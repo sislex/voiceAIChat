@@ -16,6 +16,10 @@ describe('контракт протокола', () => {
       expect(SERVER_MESSAGE_TYPES).toContain(t)
   })
 
+  it('содержит claude.log (режим консоли)', () => {
+    expect(SERVER_MESSAGE_TYPES).toContain('claude.log')
+  })
+
   it('REST-пути строятся корректно', () => {
     expect(REST.conversations).toBe('/api/conversations')
     expect(REST.conversation('abc')).toBe('/api/conversations/abc')

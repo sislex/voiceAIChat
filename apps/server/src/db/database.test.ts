@@ -48,6 +48,22 @@ describe('VoiceChatDb — разговоры', () => {
   it('getConversation возвращает null для несуществующего', () => {
     expect(db.getConversation('нет-такого')).toBeNull()
   })
+
+  it('поиск находит по названию и по тексту сообщения (регистронезависимо)', () => {
+    const a = db.createConversation('Поездка в Лиссабон')
+    const b = db.createConversation('Рецепты')
+    db.addMessage(b.id, 'u1', 'Как приготовить ПАЭЛью?', '10:00')
+    const c = db.createConversation('Погода')
+
+    // по названию (другой регистр)
+    expect(db.searchConversations('лиссабон').map((x) => x.id)).toEqual([a.id])
+    // по тексту сообщения (другой регистр)
+    expect(db.searchConversations('паэлью').map((x) => x.id)).toEqual([b.id])
+    // пустой запрос → все
+    expect(db.searchConversations('  ').map((x) => x.id).sort()).toEqual([a.id, b.id, c.id].sort())
+    // ничего не найдено
+    expect(db.searchConversations('зззз')).toEqual([])
+  })
 })
 
 describe('VoiceChatDb — сообщения', () => {
@@ -135,27 +151,41 @@ describe('VoiceChatDb — настройки', () => {
 
   it('сохраняет и читает настройки', () => {
     db.saveSettings({
-      model: 'opus-4.5',
+      model: 'opus',
       whisperModel: 'medium',
       diarization: false,
       voice: 'dmitri',
       micDeviceId: 'mic-123',
-      autoSpeak: true
+      autoSpeak: true,
+      showConsole: true,
+      theme: 'dark',
+      onboarded: true,
+      permissionMode: 'plan',
+      workdir: '/tmp/proj',
+      bargeIn: true,
+      handsFree: true
     })
     expect(db.getSettings()).toEqual({
-      model: 'opus-4.5',
+      model: 'opus',
       whisperModel: 'medium',
       diarization: false,
       voice: 'dmitri',
       micDeviceId: 'mic-123',
-      autoSpeak: true
+      autoSpeak: true,
+      showConsole: true,
+      theme: 'dark',
+      onboarded: true,
+      permissionMode: 'plan',
+      workdir: '/tmp/proj',
+      bargeIn: true,
+      handsFree: true
     })
   })
 
   it('мержит с дефолтами при частичном/битом конфиге', () => {
-    db.saveSettings({ ...DEFAULT_SETTINGS, model: 'opus-4.5' })
+    db.saveSettings({ ...DEFAULT_SETTINGS, model: 'opus' })
     const s = db.getSettings()
-    expect(s.model).toBe('opus-4.5')
+    expect(s.model).toBe('opus')
     expect(s.voice).toBe(DEFAULT_SETTINGS.voice)
   })
 })

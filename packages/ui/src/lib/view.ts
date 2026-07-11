@@ -1,4 +1,4 @@
-import type { MessageRole, VoiceState } from '@shared/types'
+import type { MessageRole, TurnMeta, VoiceState } from '@shared/types'
 
 export const ACCENT = '#3D64C8'
 
@@ -51,7 +51,7 @@ export function statusBadge(state: VoiceState): string {
 export function statusLine(state: VoiceState): string {
   switch (state) {
     case 'idle':
-      return 'STT и TTS работают локально · ответы через Claude Console'
+      return 'Пробел — говорить · Esc — стоп · STT/TTS локально, ответы через Claude'
     case 'listening':
       return 'Говорите… Whisper распознаёт речь на устройстве'
     case 'transcribing':
@@ -61,4 +61,28 @@ export function statusLine(state: VoiceState): string {
     case 'speaking':
       return 'Воспроизведение ответа'
   }
+}
+
+/** Компактная строка меты хода: «7.2с · 2 хода · $0.013 · 1.2k→0.4k ток.». */
+export function formatTurnMeta(meta: TurnMeta): string {
+  const parts: string[] = []
+  if (typeof meta.durationMs === 'number') parts.push(`${(meta.durationMs / 1000).toFixed(1)}с`)
+  if (typeof meta.numTurns === 'number') parts.push(`${meta.numTurns} ${pluralTurns(meta.numTurns)}`)
+  if (typeof meta.costUsd === 'number') parts.push(`$${meta.costUsd.toFixed(meta.costUsd < 0.1 ? 4 : 2)}`)
+  if (typeof meta.inputTokens === 'number' && typeof meta.outputTokens === 'number') {
+    parts.push(`${kilo(meta.inputTokens)}→${kilo(meta.outputTokens)} ток.`)
+  }
+  return parts.join(' · ')
+}
+
+function kilo(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+}
+
+function pluralTurns(n: number): string {
+  const m10 = n % 10
+  const m100 = n % 100
+  if (m10 === 1 && m100 !== 11) return 'ход'
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return 'хода'
+  return 'ходов'
 }

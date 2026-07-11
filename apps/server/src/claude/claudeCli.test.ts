@@ -80,6 +80,34 @@ describe('ClaudeCli', () => {
     expect(args).toContain('stream-json')
   })
 
+  it('добавляет --permission-mode, когда задан; без него флага нет', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    const cli = new ClaudeCli({ spawn })
+    cli.send({ prompt: 'x', sessionId: null, model: 'opus', permissionMode: 'plan' }, makeHandlers())
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    expect(args[args.indexOf('--permission-mode') + 1]).toBe('plan')
+
+    const { child: child2 } = fakeChild()
+    const spawn2 = vi.fn(() => child2 as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn: spawn2 }).send({ prompt: 'x', sessionId: null, model: 'opus' }, makeHandlers())
+    const args2 = (spawn2 as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    expect(args2).not.toContain('--permission-mode')
+  })
+
+  it('передаёт cwd в spawn, когда задан; иначе третий аргумент undefined', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send({ prompt: 'x', sessionId: null, model: 'opus', cwd: '/tmp/p' }, makeHandlers())
+    const opts = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][2]
+    expect(opts).toEqual({ cwd: '/tmp/p' })
+
+    const { child: c2 } = fakeChild()
+    const spawn2 = vi.fn(() => c2 as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn: spawn2 }).send({ prompt: 'x', sessionId: null, model: 'opus' }, makeHandlers())
+    expect((spawn2 as unknown as ReturnType<typeof vi.fn>).mock.calls[0][2]).toBeUndefined()
+  })
+
   it('ENOENT (нет бинаря) → понятная ошибка с подсказкой claude login', async () => {
     const { child } = fakeChild()
     const spawn: SpawnFn = vi.fn(() => child as never)

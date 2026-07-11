@@ -7,6 +7,9 @@ import type {
   WhisperModel,
   WhisperModelInfo
 } from '@shared/types'
+import { CLAUDE_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
+import type { PermissionMode } from '@shared/types'
+import type { McpServer } from '@shared/mcp'
 
 export interface MicOption {
   deviceId: string
@@ -33,6 +36,8 @@ export interface SettingsModalProps {
   voiceDownloads: Record<string, number>
   /** Модели Whisper на диске (наличие/размер) — для управления местом. */
   whisperModels: WhisperModelInfo[]
+  /** Подключённые MCP-серверы (read-only показ). */
+  mcpServers: McpServer[]
   onChange: (patch: Partial<Settings>) => void
   onDownloadVoice: (id: string) => void
   /** Удалить установленный голос Piper. */
@@ -50,6 +55,7 @@ export function SettingsModal({
   voicesDownloadable,
   voiceDownloads,
   whisperModels,
+  mcpServers,
   onChange,
   onDownloadVoice,
   onDeleteVoice,
@@ -76,12 +82,49 @@ export function SettingsModal({
             <select
               className="sel"
               aria-label="Модель Claude"
-              value={settings.model}
+              value={normalizeClaudeModel(settings.model)}
               onChange={(e) => onChange({ model: e.target.value as ClaudeModel })}
             >
-              <option value="sonnet-4.5">Claude Sonnet 4.5</option>
-              <option value="opus-4.5">Claude Opus 4.5</option>
+              {CLAUDE_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
             </select>
+          </div>
+
+          <div className="frow">
+            <div>
+              <p className="flab">Права агента</p>
+              <p className="fsub">Что агенту разрешено делать с файлами/командами</p>
+            </div>
+            <select
+              className="sel"
+              aria-label="Права агента"
+              value={settings.permissionMode}
+              onChange={(e) => onChange({ permissionMode: e.target.value as PermissionMode })}
+            >
+              {PERMISSION_MODES.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="frow">
+            <div>
+              <p className="flab">Рабочий каталог</p>
+              <p className="fsub">Где агент работает с файлами (напр. путь к репозиторию)</p>
+            </div>
+            <input
+              className="sel"
+              type="text"
+              aria-label="Рабочий каталог"
+              placeholder="По умолчанию"
+              value={settings.workdir ?? ''}
+              onChange={(e) => onChange({ workdir: e.target.value.trim() || null })}
+            />
           </div>
 
           <div className="frow">
@@ -171,6 +214,62 @@ export function SettingsModal({
             />
           </div>
 
+          <div className="frow">
+            <div>
+              <p className="flab">Режим hands-free</p>
+              <p className="fsub">Непрерывный диалог: авто-пауза по тишине и авто-запись</p>
+            </div>
+            <button
+              className={settings.handsFree ? 'sw on' : 'sw'}
+              onClick={() => onChange({ handsFree: !settings.handsFree })}
+              role="switch"
+              aria-checked={settings.handsFree}
+              aria-label="Режим hands-free"
+            />
+          </div>
+
+          <div className="frow">
+            <div>
+              <p className="flab">Перебивание голосом</p>
+              <p className="fsub">Заговорить во время озвучки — прервать и начать запись</p>
+            </div>
+            <button
+              className={settings.bargeIn ? 'sw on' : 'sw'}
+              onClick={() => onChange({ bargeIn: !settings.bargeIn })}
+              role="switch"
+              aria-checked={settings.bargeIn}
+              aria-label="Перебивание голосом"
+            />
+          </div>
+
+          <div className="frow">
+            <div>
+              <p className="flab">Режим консоли</p>
+              <p className="fsub">Показывать действия агента (команды, thinking, mode)</p>
+            </div>
+            <button
+              className={settings.showConsole ? 'sw on' : 'sw'}
+              onClick={() => onChange({ showConsole: !settings.showConsole })}
+              role="switch"
+              aria-checked={settings.showConsole}
+              aria-label="Режим консоли"
+            />
+          </div>
+
+          <div className="frow">
+            <div>
+              <p className="flab">Тёмная тема</p>
+              <p className="fsub">Переключить оформление интерфейса</p>
+            </div>
+            <button
+              className={settings.theme === 'dark' ? 'sw on' : 'sw'}
+              onClick={() => onChange({ theme: settings.theme === 'dark' ? 'light' : 'dark' })}
+              role="switch"
+              aria-checked={settings.theme === 'dark'}
+              aria-label="Тёмная тема"
+            />
+          </div>
+
           {voicesDownloadable && voiceCatalog.length > 0 && (
             <div className="voicedl" data-testid="voice-catalog">
               <p className="flab">Скачать голоса</p>
@@ -226,6 +325,23 @@ export function SettingsModal({
               ))}
             </select>
           </div>
+
+          {mcpServers.length > 0 && (
+            <div className="voicedl" data-testid="mcp-list">
+              <p className="flab">MCP-серверы</p>
+              {mcpServers.map((s) => (
+                <div className="vrow2" key={s.name}>
+                  <span className="vname">
+                    {s.name}
+                    {s.detail ? ` · ${s.detail}` : ''}
+                  </span>
+                  <span className={s.connected ? 'mcp-ok' : 'mcp-bad'}>
+                    {s.connected ? '✓ подключён' : '✗ офлайн'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

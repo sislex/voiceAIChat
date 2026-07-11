@@ -3,6 +3,7 @@ import { existsSync, statSync, mkdirSync, copyFileSync, readdirSync, rmSync } fr
 import { join } from 'node:path'
 import { VoiceChatDb } from './db/database'
 import { registerIpc } from './ipc/register'
+import { listMcpServers } from './claude/mcp'
 import { WhisperEngine } from './stt/whisperEngine'
 import { createSttService, type SttService } from './stt/sttService'
 import { isModelPresent, listModels, modelPath } from './stt/models'
@@ -159,6 +160,7 @@ app.whenReady().then(() => {
     }),
     listTtsVoices: () => ttsEngine.listVoices(),
     ttsCatalog,
+    listMcpServers: () => listMcpServers(),
     saveUpload: (name, dataBase64) => {
       const rec = uploads.save(name, Buffer.from(dataBase64, 'base64'))
       return { id: rec.id, name: rec.name }

@@ -3,8 +3,11 @@ import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { VoiceBar } from './components/VoiceBar'
 import { SettingsModal } from './components/SettingsModal'
+import { ConsolePanel } from './components/ConsolePanel'
+import { OnboardingModal } from './components/OnboardingModal'
 import { useVoiceStore } from './store/useVoiceStore'
 import { useVoiceCues } from './lib/useVoiceCues'
+import { useHotkeys } from './lib/useHotkeys'
 import './styles/app.css'
 
 // Шаг 5: состояние живёт в сторе (store/voiceStore.ts) на базе машины состояний.
@@ -24,6 +27,19 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const { state, actions } = useVoiceStore({ api, now, delays })
   useVoiceCues(state.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
+  // Горячие клавиши: пробел (hold) — запись, Esc — стоп/отмена по состоянию.
+  // Выключены при открытом модале настроек (там свои поля/фокус).
+  useHotkeys({
+    enabled: !state.settingsOpen && state.settings.onboarded,
+    onPushStart: actions.startVoice,
+    onPushEnd: actions.stopVoice,
+    onEscape: () => {
+      const v = state.voice
+      if (v === 'thinking' || v === 'speaking') actions.cancelRequest()
+      else if (v === 'listening') actions.stopVoice()
+    }
+  })
+
   const activeTitle =
     state.conversations.find((c) => c.id === state.activeId)?.title ?? 'Новый разговор'
 
@@ -33,8 +49,13 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const detectedSpeakers =
     liveSpeakers.length > 0 ? liveSpeakers : state.settings.diarization ? [1, 2] : [1]
 
+  const showConsole = state.settings.showConsole
+
   return (
-    <div className="app">
+    <div
+      className={showConsole ? 'app app--console' : 'app'}
+      data-theme={state.settings.theme}
+    >
       <Sidebar
         conversations={state.conversations}
         activeId={state.activeId}
@@ -42,6 +63,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onNew={actions.newConversation}
         onPick={actions.selectConversation}
         onDelete={actions.deleteConversation}
+        onRename={actions.renameConversation}
+        searchQuery={state.searchQuery}
+        onSearch={actions.setSearchQuery}
         onOpenSettings={actions.openSettings}
       />
 
@@ -64,6 +88,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         downloading={state.downloading}
         downloadPercent={state.downloadPercent}
         onDownloadModel={actions.downloadModel}
+        onExport={actions.exportConversation}
+        turnMeta={state.lastTurnMeta}
         voiceBar={
           <VoiceBar
             state={state.voice}
@@ -83,6 +109,26 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         }
       />
 
+      {showConsole && (
+        <ConsolePanel
+          log={state.consoleLog}
+          open={state.consoleOpen}
+          onToggle={actions.toggleConsole}
+        />
+      )}
+
+      {!state.settings.onboarded && (
+        <OnboardingModal
+          modelPresent={state.modelPresent}
+          modelLabel={state.settings.whisperModel}
+          downloading={state.downloading}
+          downloadPercent={state.downloadPercent}
+          onDownloadModel={actions.downloadModel}
+          hasVoice={state.ttsVoices.length > 0}
+          onDone={actions.completeOnboarding}
+        />
+      )}
+
       {state.settingsOpen && (
         <SettingsModal
           settings={state.settings}
@@ -92,6 +138,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           voicesDownloadable={state.voicesDownloadable}
           voiceDownloads={state.voiceDownloads}
           whisperModels={state.whisperModels}
+          mcpServers={state.mcpServers}
           onChange={actions.updateSettings}
           onDownloadVoice={actions.downloadVoice}
           onDeleteVoice={actions.deleteVoice}

@@ -2,15 +2,18 @@
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
 import type {
+  ClaudeLogEntry,
   Conversation,
   Message,
   MessageRole,
   Settings,
   TtsVoiceCatalog,
   TtsVoiceInfo,
+  TurnMeta,
   WhisperModel,
   WhisperModelInfo
 } from './types'
+import type { McpServer } from './mcp'
 
 /** Статус локальной модели Whisper. */
 export interface SttStatus {
@@ -48,6 +51,8 @@ export interface IpcInvokeMap {
   'conversations:list': { arg: void; result: Conversation[] }
   'conversations:create': { arg: { title?: string }; result: Conversation }
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
+  /** Поиск разговоров по названию и содержимому сообщений (регистронезависимо). */
+  'conversations:search': { arg: { query: string }; result: Conversation[] }
   'conversations:rename': { arg: { id: string; title: string }; result: void }
   'conversations:delete': { arg: { id: string }; result: void }
   'messages:add': { arg: AddMessageArgs; result: Message }
@@ -64,6 +69,8 @@ export interface IpcInvokeMap {
   'tts:catalog': { arg: void; result: TtsVoiceCatalog }
   /** Удалить установленный голос Piper (освободить место). */
   'tts:deleteVoice': { arg: { id: string }; result: void }
+  /** Список подключённых MCP-серверов (read-only, из `claude mcp list`). */
+  'mcp:list': { arg: void; result: McpServer[] }
 }
 
 export type IpcChannel = keyof IpcInvokeMap
@@ -89,8 +96,13 @@ export interface IpcSendMap {
   'audio:start': { conversationId: string | null; sampleRate: number }
   'audio:chunk': AudioChunkMessage
   'audio:stop': void
-  /** Запрос ответа Claude на реплику (сегменты текущего хода + id вложений). */
-  'claude:send': { conversationId: string; segments: SttSegmentWire[]; attachments?: string[] }
+  /** Запрос ответа Claude на реплику (сегменты хода + вложения + режим консоли). */
+  'claude:send': {
+    conversationId: string
+    segments: SttSegmentWire[]
+    attachments?: string[]
+    verbose?: boolean
+  }
   /** Прервать текущий запрос к Claude. */
   'claude:cancel': void
   /** Запустить скачивание текущей модели Whisper. */
@@ -151,10 +163,12 @@ export interface IpcEventMap {
   'stt:error': { message: string }
   /** Очередной фрагмент ответа Claude. */
   'claude:token': { conversationId: string; delta: string }
-  /** Ответ Claude завершён (полный текст). */
-  'claude:done': { conversationId: string; text: string }
+  /** Ответ Claude завершён (полный текст + метаданные хода). */
+  'claude:done': { conversationId: string; text: string; meta?: TurnMeta }
   /** Ошибка при запросе к Claude. */
   'claude:error': { conversationId: string; message: string }
+  /** Запись активности агента (режим консоли). */
+  'claude:log': { conversationId: string; entry: ClaudeLogEntry }
   /** Прогресс скачивания модели Whisper (0–100). */
   'stt:downloadProgress': { percent: number }
   /** Скачивание модели завершено. */
@@ -183,6 +197,7 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'claude:token',
   'claude:done',
   'claude:error',
+  'claude:log',
   'stt:downloadProgress',
   'stt:downloadDone',
   'stt:downloadError',
@@ -218,6 +233,8 @@ export interface RendererClaudeBridge {
   onToken(cb: (msg: IpcEventPayload<'claude:token'>) => void): () => void
   onDone(cb: (msg: IpcEventPayload<'claude:done'>) => void): () => void
   onError(cb: (msg: IpcEventPayload<'claude:error'>) => void): () => void
+  /** Подписка на активность агента (режим консоли). */
+  onLog(cb: (msg: IpcEventPayload<'claude:log'>) => void): () => void
 }
 
 /**
@@ -241,6 +258,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:list',
   'conversations:create',
   'conversations:get',
+  'conversations:search',
   'conversations:rename',
   'conversations:delete',
   'messages:add',
@@ -253,7 +271,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'stt:deleteModel',
   'tts:voices',
   'tts:catalog',
-  'tts:deleteVoice'
+  'tts:deleteVoice',
+  'mcp:list'
 ]
 
 /**

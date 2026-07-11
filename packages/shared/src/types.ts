@@ -44,11 +44,97 @@ export interface Conversation {
   claudeSessionId: string | null
 }
 
-export type ClaudeModel = 'sonnet-4.5' | 'opus-4.5'
+/**
+ * Алиас модели Claude. В `claude --model` уходит именно алиас — конкретную
+ * версию («latest») резолвит сам CLI, поэтому версии тут не фиксируем.
+ */
+export type ClaudeModel = 'opus' | 'sonnet' | 'fable' | 'haiku'
+
+/** Модель Claude для меню настроек. */
+export interface ClaudeModelInfo {
+  id: ClaudeModel
+  /** Подпись в меню (текущая актуальная версия для алиаса). */
+  label: string
+}
+
+/**
+ * Актуальные модели Claude (порядок = порядок в меню). Подписи отражают версию,
+ * которую CLI сейчас резолвит для алиаса; при обновлении CLI меняется только
+ * резолв — правим подпись здесь.
+ */
+export const CLAUDE_MODELS: ClaudeModelInfo[] = [
+  { id: 'opus', label: 'Claude Opus 4.8' },
+  { id: 'sonnet', label: 'Claude Sonnet 5' },
+  { id: 'fable', label: 'Claude Fable 5' },
+  { id: 'haiku', label: 'Claude Haiku 4.5' }
+]
+
+/**
+ * Приводит значение модели из настроек/БД к валидному алиасу. Терпит старые
+ * значения (`sonnet-4.5`, `opus-4.5`) — берёт алиас по префиксу; неизвестное → opus.
+ */
+export function normalizeClaudeModel(raw: string): ClaudeModel {
+  const hit = CLAUDE_MODELS.find((m) => raw.startsWith(m.id))
+  return hit ? hit.id : 'opus'
+}
+
+/**
+ * Режим прав агента (передаётся в `claude --permission-mode`). Безопасный для
+ * неинтерактивного (`-p`) запуска набор: bypass (полный доступ, текущее поведение),
+ * acceptEdits (авто-правки файлов), plan (только планирование, без изменений).
+ */
+export type PermissionMode = 'bypassPermissions' | 'acceptEdits' | 'plan'
+
+/** Режим прав для меню настроек. */
+export interface PermissionModeInfo {
+  id: PermissionMode
+  label: string
+}
+
+export const PERMISSION_MODES: PermissionModeInfo[] = [
+  { id: 'bypassPermissions', label: 'Полный доступ' },
+  { id: 'acceptEdits', label: 'Авто-правки файлов' },
+  { id: 'plan', label: 'Только планирование' }
+]
+
 export type WhisperModel = 'large-v3-turbo' | 'medium' | 'small'
 
 /** Все поддерживаемые модели Whisper (для списков/управления). */
 export const WHISPER_MODELS: WhisperModel[] = ['large-v3-turbo', 'medium', 'small']
+
+/** Вид записи активности агента (для режима консоли). */
+export type ClaudeLogKind =
+  | 'system'
+  | 'thinking'
+  | 'tool_use'
+  | 'tool_result'
+  | 'result'
+  | 'other'
+
+/** Метаданные завершённого хода Claude (из result-события stream-json). */
+export interface TurnMeta {
+  /** Длительность хода, мс. */
+  durationMs?: number
+  /** Число ходов агента (num_turns). */
+  numTurns?: number
+  /** Стоимость хода в USD (total_cost_usd), если доступна. */
+  costUsd?: number
+  /** Токены ввода. */
+  inputTokens?: number
+  /** Токены вывода. */
+  outputTokens?: number
+}
+
+/** Одна запись активности агента для панели консоли. */
+export interface ClaudeLogEntry {
+  kind: ClaudeLogKind
+  /** Короткая читаемая строка для панели. */
+  summary: string
+  /** Доп. детали (полный ввод инструмента / результат / размышление). */
+  detail?: string
+  /** Сырая строка stream-json (для раскрытия «как в консоли»). */
+  raw: string
+}
 
 /** Состояние одной модели Whisper на диске (для управления местом). */
 export interface WhisperModelInfo {
@@ -93,15 +179,36 @@ export interface Settings {
   micDeviceId: string | null
   /** Автоматически озвучивать ответы Claude по мере генерации. */
   autoSpeak: boolean
+  /** Режим консоли: показывать активность агента (команды, thinking, mode…). */
+  showConsole: boolean
+  /** Тема интерфейса. */
+  theme: 'light' | 'dark'
+  /** Пользователь прошёл (или пропустил) приветственный мастер. */
+  onboarded: boolean
+  /** Режим прав агента для Claude CLI. */
+  permissionMode: PermissionMode
+  /** Рабочий каталог для сессии агента (доступ к репозиторию); null — по умолчанию. */
+  workdir: string | null
+  /** Barge-in голосом: речь во время озвучки прерывает её и начинает запись. */
+  bargeIn: boolean
+  /** Hands-free: непрерывный диалог — авто-стоп по тишине и авто-старт после ответа. */
+  handsFree: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  model: 'sonnet-4.5',
+  model: 'opus',
   whisperModel: 'large-v3-turbo',
   diarization: true,
   voice: 'ru_RU-ruslan-medium',
   micDeviceId: null,
-  autoSpeak: false
+  autoSpeak: false,
+  showConsole: false,
+  theme: 'light',
+  onboarded: false,
+  permissionMode: 'bypassPermissions',
+  workdir: null,
+  bargeIn: false,
+  handsFree: false
 }
 
 /** Один сегмент распознанной речи (speakerId=1 до диаризации). */

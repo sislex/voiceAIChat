@@ -38,6 +38,9 @@ export interface SidebarProps {
   onNew: () => void
   onPick: (id: string) => void
   onDelete: (id: string) => void
+  onRename: (id: string, title: string) => void
+  searchQuery: string
+  onSearch: (query: string) => void
   onOpenSettings: () => void
 }
 
@@ -48,10 +51,30 @@ export function Sidebar({
   onNew,
   onPick,
   onDelete,
+  onRename,
+  searchQuery,
+  onSearch,
   onOpenSettings
 }: SidebarProps): JSX.Element {
   // id разговора, для которого показываем инлайн-подтверждение удаления.
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  // id разговора в режиме переименования + черновик названия.
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+
+  const startRename = (c: Conversation): void => {
+    setRenamingId(c.id)
+    setRenameDraft(c.title)
+  }
+  const commitRename = (): void => {
+    if (renamingId && renameDraft.trim()) onRename(renamingId, renameDraft)
+    setRenamingId(null)
+    setRenameDraft('')
+  }
+  const cancelRename = (): void => {
+    setRenamingId(null)
+    setRenameDraft('')
+  }
 
   return (
     <aside className="side">
@@ -64,30 +87,84 @@ export function Sidebar({
           + Новый
         </button>
       </div>
+      <div className="sidesearch">
+        <input
+          className="searchinput"
+          type="search"
+          value={searchQuery}
+          placeholder="Поиск по разговорам…"
+          aria-label="Поиск по разговорам"
+          onChange={(e) => onSearch(e.target.value)}
+        />
+      </div>
       <div className="convolist">
+        {conversations.length === 0 && searchQuery.trim() !== '' && (
+          <p className="convo-empty">Ничего не найдено</p>
+        )}
         {conversations.map((c) => (
           <div
             key={c.id}
             className={c.id === activeId ? 'convo on' : 'convo'}
-            onClick={() => onPick(c.id)}
+            onClick={() => renamingId !== c.id && onPick(c.id)}
           >
             <div className="crow">
               <div className="cinfo">
-                <p className="ctitle">{c.title}</p>
+                {renamingId === c.id ? (
+                  <input
+                    className="ctitle-edit"
+                    value={renameDraft}
+                    autoFocus
+                    aria-label="Новое название разговора"
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onBlur={commitRename}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        commitRename()
+                      } else if (e.key === 'Escape') {
+                        cancelRename()
+                      }
+                    }}
+                  />
+                ) : (
+                  <p
+                    className="ctitle"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation()
+                      startRename(c)
+                    }}
+                  >
+                    {c.title}
+                  </p>
+                )}
                 <p className="cmeta">{formatMeta(c, now)}</p>
               </div>
-              {confirmingId !== c.id && (
-                <button
-                  className="delbtn"
-                  aria-label={`Удалить разговор «${c.title}»`}
-                  title="Удалить разговор"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setConfirmingId(c.id)
-                  }}
-                >
-                  ✕
-                </button>
+              {confirmingId !== c.id && renamingId !== c.id && (
+                <span className="crow-actions">
+                  <button
+                    className="renbtn"
+                    aria-label={`Переименовать разговор «${c.title}»`}
+                    title="Переименовать"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      startRename(c)
+                    }}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    className="delbtn"
+                    aria-label={`Удалить разговор «${c.title}»`}
+                    title="Удалить разговор"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setConfirmingId(c.id)
+                    }}
+                  >
+                    ✕
+                  </button>
+                </span>
               )}
             </div>
             {confirmingId === c.id && (

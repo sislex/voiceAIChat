@@ -32,7 +32,8 @@ describe('parseStreamJsonLine', () => {
       kind: 'result',
       text: 'Привет',
       sessionId: 'sess-9',
-      isError: false
+      isError: false,
+      meta: {}
     })
   })
 

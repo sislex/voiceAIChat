@@ -3,12 +3,17 @@
 import type { FastifyInstance } from 'fastify'
 import { REST, type AddMessageArgs, type Settings } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
+import { listMcpServers } from '../claude/mcp.js'
 
 export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promise<void> {
   app.get(REST.conversations, async () => db.listConversations())
 
   app.post<{ Body: { title?: string } }>(REST.conversations, async (req) =>
     db.createConversation(req.body?.title)
+  )
+
+  app.get<{ Querystring: { q?: string } }>(REST.conversationsSearch, async (req) =>
+    db.searchConversations(req.query.q ?? '')
   )
 
   app.get<{ Params: { id: string } }>('/api/conversations/:id', async (req, reply) => {
@@ -50,6 +55,8 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promi
       return { ok: true }
     }
   )
+
+  app.get(REST.mcpServers, async () => listMcpServers())
 
   app.get(REST.settings, async () => db.getSettings())
 

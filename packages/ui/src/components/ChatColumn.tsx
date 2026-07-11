@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { Message, VoiceState } from '@shared/types'
+import type { Message, TurnMeta, VoiceState } from '@shared/types'
 import {
   chipClass,
+  formatTurnMeta,
   speakerName,
   statusBadge,
   type LiveSegment
 } from '../lib/view'
 import { Dots } from './animations'
 import { Markdown } from './Markdown'
+import { copyText } from '../lib/clipboard'
 
 export interface ChatColumnProps {
   title: string
@@ -41,6 +43,10 @@ export interface ChatColumnProps {
   downloadPercent?: number
   /** Запустить скачивание модели. */
   onDownloadModel?: () => void
+  /** Экспортировать текущий разговор (Markdown/JSON). */
+  onExport?: (format: 'md' | 'json') => void
+  /** Мета последнего хода (длительность/токены/стоимость); null — не показывать. */
+  turnMeta?: TurnMeta | null
   /** Голосовая панель, рендерится внизу колонки (как в прототипе). */
   voiceBar: ReactNode
 }
@@ -64,11 +70,22 @@ export function ChatColumn({
   downloading = false,
   downloadPercent = 0,
   onDownloadModel,
+  onExport,
+  turnMeta,
   voiceBar
 }: ChatColumnProps): JSX.Element {
+  const [exportOpen, setExportOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const copyMessage = (m: Message): void => {
+    void copyText(m.text).then(() => {
+      setCopiedId(m.id)
+      setTimeout(() => setCopiedId((id) => (id === m.id ? null : id)), 1500)
+    })
+  }
 
   const canEdit = state === 'idle'
   const startEdit = (m: Message): void => {
@@ -99,7 +116,41 @@ export function ChatColumn({
     <main className="main">
       <header className="mhead">
         <h1 className="mtitle">{title}</h1>
-        <span className="badge">{statusBadge(state)}</span>
+        <span className="mhead-right">
+          <span className="badge">{statusBadge(state)}</span>
+          {onExport && messages.length > 0 && (
+            <span className="exportwrap">
+              <button
+                className="exportbtn"
+                aria-label="Экспорт разговора"
+                title="Экспорт разговора"
+                onClick={() => setExportOpen((v) => !v)}
+              >
+                ⇩
+              </button>
+              {exportOpen && (
+                <span className="exportmenu" data-testid="export-menu">
+                  <button
+                    onClick={() => {
+                      onExport('md')
+                      setExportOpen(false)
+                    }}
+                  >
+                    Markdown (.md)
+                  </button>
+                  <button
+                    onClick={() => {
+                      onExport('json')
+                      setExportOpen(false)
+                    }}
+                  >
+                    JSON (.json)
+                  </button>
+                </span>
+              )}
+            </span>
+          )}
+        </span>
       </header>
 
       {error && (
@@ -176,6 +227,16 @@ export function ChatColumn({
                 {!isEditing && (
                   <div className="mfoot">
                     <p className="mtime">{m.time}</p>
+                    {isAi && (
+                      <button
+                        className="msgbtn"
+                        aria-label="Копировать ответ"
+                        title="Копировать ответ"
+                        onClick={() => copyMessage(m)}
+                      >
+                        {copiedId === m.id ? '✓' : '📋'}
+                      </button>
+                    )}
                     {isAi && canSpeak && onSpeakMessage && (
                       <button
                         className="speakbtn"
@@ -213,6 +274,12 @@ export function ChatColumn({
               </div>
             )
           })}
+
+          {turnMeta && !hasStream && messages.length > 0 && messages[messages.length - 1].role === 'ai' && (
+            <p className="turnmeta" data-testid="turn-meta">
+              {formatTurnMeta(turnMeta)}
+            </p>
+          )}
 
           {isListening && (
             <div className="live" data-testid="live-block">
