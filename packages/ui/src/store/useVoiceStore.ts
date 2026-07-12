@@ -99,9 +99,13 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
       unsubs.push(window.claude.onError((m) => store.actions.applyClaudeError(m.message)))
       unsubs.push(window.claude.onLog((m) => store.actions.applyClaudeLog(m.entry)))
     }
+    if (typeof window !== 'undefined' && window.cc) {
+      unsubs.push(window.cc.onTail((m) => store.actions.applyCcTailItems(m.items)))
+    }
     if (typeof window !== 'undefined' && window.tts) {
       unsubs.push(
         window.tts.onAudio((m) => {
+          store.actions.applyTtsAudioReceived() // замер: пришло синтезированное аудио
           enqueueTtsAudio(m.audio, () => store.actions.applyTtsDone())
         })
       )

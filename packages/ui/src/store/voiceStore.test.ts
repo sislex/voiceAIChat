@@ -321,6 +321,32 @@ describe('voiceStore — реальный STT (sttEnabled)', () => {
     expect(store.getState().voice).toBe('idle')
   })
 
+  it('пишет тайминг распознавания в консоль (при showConsole)', async () => {
+    const store = makeSttStore()
+    await store.actions.init()
+    await store.actions.updateSettings({ showConsole: true })
+    store.actions.startVoice()
+    store.actions.stopVoice() // засекает распознавание
+    await vi.advanceTimersByTimeAsync(1500) // «распознавание» 1.5 с
+    await store.actions.applySttFinal({
+      segments: [{ speakerId: 1, text: 'Привет' }],
+      text: 'Привет'
+    })
+    const entry = store.getState().consoleLog.find((e) => e.kind === 'stt')
+    expect(entry).toBeTruthy()
+    expect(entry?.summary).toContain('Распознавание речи')
+    expect(entry?.summary).toContain('1.5 с')
+  })
+
+  it('без showConsole тайминг STT не пишется', async () => {
+    const store = makeSttStore()
+    await store.actions.init()
+    store.actions.startVoice()
+    store.actions.stopVoice()
+    await store.actions.applySttFinal({ segments: [{ speakerId: 1, text: 'x' }], text: 'x' })
+    expect(store.getState().consoleLog.some((e) => e.kind === 'stt')).toBe(false)
+  })
+
   it('пустой финал возвращает в idle без сообщений', async () => {
     const store = makeSttStore()
     await store.actions.init()
@@ -750,6 +776,20 @@ describe('voiceStore — TTS (ttsEnabled, Шаг 10)', () => {
     await reachSpeaking(store)
     store.actions.applyTtsError('нет голоса')
     expect(store.getState().voice).toBe('idle')
+  })
+
+  it('пишет тайминг генерации речи в консоль (при showConsole)', async () => {
+    const { store } = makeTtsStore()
+    await store.actions.init()
+    await store.actions.updateSettings({ showConsole: true })
+    store.actions.setDraft('привет')
+    await store.actions.submitText()
+    await vi.advanceTimersByTimeAsync(STEP) // → speaking, запрошен синтез (ttsReqAt)
+    await vi.advanceTimersByTimeAsync(300) // «генерация» 0.3 с
+    store.actions.applyTtsAudioReceived() // пришло аудио
+    const entry = store.getState().consoleLog.find((e) => e.kind === 'tts')
+    expect(entry).toBeTruthy()
+    expect(entry?.summary).toContain('Генерация речи')
   })
 })
 

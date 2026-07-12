@@ -1208,6 +1208,12 @@
 .clk-result {
   border-left-color: #6e6b60;
 }
+.clk-stt {
+  border-left-color: #c48a1f;
+}
+.clk-tts {
+  border-left-color: #1f9a9a;
+}
 .clraw {
   padding: 4px 8px 8px 8px;
 }
