@@ -2,6 +2,7 @@ import type { VoiceChatDb } from '../db/database'
 import type { IpcArg, IpcChannel, IpcResult, SttStatus, UploadInfo } from '@shared/ipc'
 import type { TtsVoiceCatalog, TtsVoiceInfo, WhisperModel, WhisperModelInfo } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
+import { listProjects, listSessions, readTranscript } from '../cc/ccSessions'
 
 /**
  * Тип обработчика одного канала: получает аргумент, возвращает результат.
@@ -99,6 +100,10 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
       deps.deleteVoice?.(id)
     },
 
-    'mcp:list': () => (deps.listMcpServers ? deps.listMcpServers() : [])
+    'mcp:list': () => (deps.listMcpServers ? deps.listMcpServers() : []),
+
+    'cc:projects': () => listProjects(),
+    'cc:sessions': ({ slug }) => listSessions(slug),
+    'cc:transcript': ({ slug, id, limit }) => readTranscript(slug, id, { limit })
   }
 }

@@ -8,6 +8,7 @@
 
 import type { RendererApi, SttSegmentWire, SttStatus, SttUpdate, UploadInfo } from '@shared/ipc'
 import type { McpServer } from '@shared/mcp'
+import type { CcProject, CcSession, CcItem } from '@shared/cc'
 import type {
   CatalogVoice,
   ClaudeLogEntry,
@@ -74,6 +75,18 @@ export interface AppState {
   lastTurnMeta: TurnMeta | null
   /** Подключённые MCP-серверы (read-only показ в настройках). */
   mcpServers: McpServer[]
+  /** Открыт ли Проводник Claude Code. */
+  ccOpen: boolean
+  /** Проекты Claude Code (~/.claude/projects). */
+  ccProjects: CcProject[]
+  /** Сессии выбранного проекта. */
+  ccSessions: CcSession[]
+  /** Транскрипт выбранной сессии. */
+  ccTranscript: CcItem[]
+  /** slug выбранного проекта (null — не выбран). */
+  ccProjectSlug: string | null
+  /** id выбранной сессии (null — не выбрана). */
+  ccSessionId: string | null
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
   speakingMessageId: string | null
   /** Доступна ли озвучка (кнопка ▶ на ответах). */
@@ -134,6 +147,10 @@ export interface StoreDeps {
   startVoiceDownload?: (id: string) => void
   /** Сохранение файла на диск (экспорт). По умолчанию — через `<a download>`. */
   download?: (filename: string, mime: string, data: string) => void
+  /** Начать live-tail сессии Claude Code (renderer → main/ws). */
+  ccTailStart?: (slug: string, id: string) => void
+  /** Остановить live-tail. */
+  ccTailStop?: () => void
 }
 
 /** Действия, дергаемые из UI. Все асинхронные операции инкапсулированы здесь. */
@@ -210,6 +227,16 @@ export interface StoreActions {
   applyClaudeLog(entry: ClaudeLogEntry): void
   /** Свернуть/развернуть панель консоли. */
   toggleConsole(): void
+  /** Открыть Проводник Claude Code (грузит проекты). */
+  openObserver(): Promise<void>
+  /** Закрыть Проводник (останавливает live-tail). */
+  closeObserver(): void
+  /** Выбрать проект (грузит сессии). */
+  selectCcProject(slug: string): Promise<void>
+  /** Выбрать сессию (грузит транскрипт + запускает live-tail). */
+  selectCcSession(slug: string, id: string): Promise<void>
+  /** Добавить пришедшие по live-tail записи в транскрипт. */
+  applyCcTailItems(items: CcItem[]): void
   /** Прогресс скачивания голоса (tts:voiceProgress). */
   applyVoiceProgress(id: string, percent: number): void
   /** Голос скачан (tts:voiceDone) — обновляет списки. */
@@ -249,6 +276,12 @@ function initialState(): AppState {
     streamingReply: '',
     lastTurnMeta: null,
     mcpServers: [],
+    ccOpen: false,
+    ccProjects: [],
+    ccSessions: [],
+    ccTranscript: [],
+    ccProjectSlug: null,
+    ccSessionId: null,
     speakingMessageId: null,
     ttsAvailable: false,
     error: null,
@@ -1158,6 +1191,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       deleteModel,
       applyClaudeLog,
       toggleConsole,
+      openObserver,
+      closeObserver,
+      selectCcProject,
+      selectCcSession,
+      applyCcTailItems,
       applyVoiceProgress,
       applyVoiceDone,
       applyVoiceError,

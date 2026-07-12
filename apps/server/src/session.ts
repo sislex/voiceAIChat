@@ -12,6 +12,7 @@ import { createSttSession, type SttSession } from './stt/sttSession.js'
 import type { DownloadEvent } from './stt/downloadManager.js'
 import type { TtsEngine } from './tts/types.js'
 import { createTtsSession, type TtsSession } from './tts/ttsSession.js'
+import { watchTranscript } from './cc/ccSessions.js'
 
 export interface SessionDeps {
   db: VoiceChatDb
@@ -36,6 +37,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let stt: SttSession | null = null
   let tts: TtsSession | null = null
   let unsubDownload: (() => void) | null = null
+  let ccTailStop: (() => void) | null = null
 
   function pcmFromBinary(data: Buffer): Int16Array {
     const copy = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
@@ -134,6 +136,19 @@ export function createSession(deps: SessionDeps): WsHandlers {
           }
           break
 
+        case 'cc.tail.start': {
+          ccTailStop?.()
+          const { slug, id } = msg
+          ccTailStop = watchTranscript(slug, id, (items) =>
+            ctx.send({ t: 'cc.tail', slug, id, items })
+          )
+          break
+        }
+        case 'cc.tail.stop':
+          ccTailStop?.()
+          ccTailStop = null
+          break
+
         default:
           break
       }
@@ -150,6 +165,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       tts = null
       unsubDownload?.() // отписка от менеджера загрузки; сама загрузка продолжается
       unsubDownload = null
+      ccTailStop?.()
+      ccTailStop = null
     }
   }
 }

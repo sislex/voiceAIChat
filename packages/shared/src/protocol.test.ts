@@ -20,6 +20,14 @@ describe('контракт протокола', () => {
     expect(SERVER_MESSAGE_TYPES).toContain('claude.log')
   })
 
+  it('содержит cc.tail (Проводник Claude Code)', () => {
+    expect(CLIENT_MESSAGE_TYPES).toContain('cc.tail.start')
+    expect(CLIENT_MESSAGE_TYPES).toContain('cc.tail.stop')
+    expect(SERVER_MESSAGE_TYPES).toContain('cc.tail')
+    expect(REST.ccSessions('slug')).toContain('/api/cc/projects/slug/sessions')
+    expect(REST.ccTranscript('s', 'id')).toContain('/sessions/id')
+  })
+
   it('REST-пути строятся корректно', () => {
     expect(REST.conversations).toBe('/api/conversations')
     expect(REST.conversation('abc')).toBe('/api/conversations/abc')

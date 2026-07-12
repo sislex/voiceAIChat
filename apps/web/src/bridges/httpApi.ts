@@ -62,6 +62,10 @@ export function createHttpApi(): RendererApi {
     'tts:deleteVoice': async ({ id }) => {
       await req(REST.ttsVoice(id), { method: 'DELETE' })
     },
-    'mcp:list': () => req(REST.mcpServers)
+    'mcp:list': () => req(REST.mcpServers),
+    'cc:projects': () => req(REST.ccProjects),
+    'cc:sessions': ({ slug }) => req(REST.ccSessions(slug)),
+    'cc:transcript': ({ slug, id, limit }) =>
+      req(REST.ccTranscript(slug, id) + (limit ? `?limit=${limit}` : ''))
   }
 }

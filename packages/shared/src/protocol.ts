@@ -10,6 +10,7 @@ import type {
   TurnMeta,
   WhisperModel
 } from './types'
+import type { CcItem } from './cc'
 
 // --- Общие ---------------------------------------------------------------
 
@@ -77,7 +78,11 @@ export const REST = {
   ttsVoice: (id: string) => `/api/tts/voices/${id}`,
   ttsVoiceDownload: (id: string) => `/api/tts/voices/${id}/download`,
   sttDownload: '/api/stt/download',
-  mcpServers: '/api/mcp/servers'
+  mcpServers: '/api/mcp/servers',
+  ccProjects: '/api/cc/projects',
+  ccSessions: (slug: string) => `/api/cc/projects/${encodeURIComponent(slug)}/sessions`,
+  ccTranscript: (slug: string, id: string) =>
+    `/api/cc/projects/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(id)}`
 } as const
 
 // --- WebSocket -----------------------------------------------------------
@@ -112,6 +117,8 @@ export type ClientMessage =
   | { t: 'tts.cancel' }
   | { t: 'tts.downloadVoice'; id: string }
   | { t: 'stt.download' }
+  | { t: 'cc.tail.start'; slug: string; id: string }
+  | { t: 'cc.tail.stop' }
 
 /** server → client. */
 export type ServerMessage =
@@ -130,6 +137,7 @@ export type ServerMessage =
   | { t: 'stt.downloadProgress'; percent: number }
   | { t: 'stt.downloadDone' }
   | { t: 'stt.downloadError'; message: string }
+  | { t: 'cc.tail'; slug: string; id: string; items: CcItem[] }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']
@@ -143,7 +151,9 @@ export const CLIENT_MESSAGE_TYPES: ClientMessageType[] = [
   'tts.speak',
   'tts.cancel',
   'tts.downloadVoice',
-  'stt.download'
+  'stt.download',
+  'cc.tail.start',
+  'cc.tail.stop'
 ]
 
 export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
@@ -161,5 +171,6 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'tts.voiceError',
   'stt.downloadProgress',
   'stt.downloadDone',
-  'stt.downloadError'
+  'stt.downloadError',
+  'cc.tail'
 ]

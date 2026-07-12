@@ -4,6 +4,7 @@
 import type {
   RendererApi,
   RendererAudioBridge,
+  RendererCcBridge,
   RendererClaudeBridge,
   RendererSttBridge,
   RendererTtsBridge
@@ -16,6 +17,7 @@ declare global {
     stt: RendererSttBridge
     claude: RendererClaudeBridge
     tts: RendererTtsBridge
+    cc: RendererCcBridge
   }
 }
 

@@ -14,6 +14,7 @@ import type {
   WhisperModelInfo
 } from './types'
 import type { McpServer } from './mcp'
+import type { CcProject, CcSession, CcItem } from './cc'
 
 /** Статус локальной модели Whisper. */
 export interface SttStatus {
@@ -71,6 +72,12 @@ export interface IpcInvokeMap {
   'tts:deleteVoice': { arg: { id: string }; result: void }
   /** Список подключённых MCP-серверов (read-only, из `claude mcp list`). */
   'mcp:list': { arg: void; result: McpServer[] }
+  /** Проекты Claude Code (~/.claude/projects). */
+  'cc:projects': { arg: void; result: CcProject[] }
+  /** Сессии проекта Claude Code. */
+  'cc:sessions': { arg: { slug: string }; result: CcSession[] }
+  /** Транскрипт сессии (последние `limit` записей). */
+  'cc:transcript': { arg: { slug: string; id: string; limit?: number }; result: CcItem[] }
 }
 
 export type IpcChannel = keyof IpcInvokeMap
@@ -113,6 +120,10 @@ export interface IpcSendMap {
   'tts:cancel': void
   /** Скачать голос Piper по id. */
   'tts:downloadVoice': { id: string }
+  /** Начать live-слежение за сессией Claude Code. */
+  'cc:tailStart': { slug: string; id: string }
+  /** Остановить live-слежение. */
+  'cc:tailStop': void
 }
 
 export type IpcSendChannel = keyof IpcSendMap
@@ -127,7 +138,9 @@ export const IPC_SEND_CHANNELS: IpcSendChannel[] = [
   'stt:download',
   'tts:speak',
   'tts:cancel',
-  'tts:downloadVoice'
+  'tts:downloadVoice',
+  'cc:tailStart',
+  'cc:tailStop'
 ]
 
 /**
@@ -185,6 +198,8 @@ export interface IpcEventMap {
   'tts:voiceDone': { id: string }
   /** Ошибка скачивания голоса. */
   'tts:voiceError': { id: string; message: string }
+  /** Новые записи транскрипта отслеживаемой сессии Claude Code (live-tail). */
+  'cc:tail': { slug: string; id: string; items: CcItem[] }
 }
 
 export type IpcEventChannel = keyof IpcEventMap
@@ -205,7 +220,8 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'tts:error',
   'tts:voiceProgress',
   'tts:voiceDone',
-  'tts:voiceError'
+  'tts:voiceError',
+  'cc:tail'
 ]
 
 /**
@@ -235,6 +251,19 @@ export interface RendererClaudeBridge {
   onError(cb: (msg: IpcEventPayload<'claude:error'>) => void): () => void
   /** Подписка на активность агента (режим консоли). */
   onLog(cb: (msg: IpcEventPayload<'claude:log'>) => void): () => void
+}
+
+/**
+ * Мост Проводника Claude Code, доступный в renderer как `window.cc`:
+ * live-tail активной сессии (invoke-часть — через `window.api`).
+ */
+export interface RendererCcBridge {
+  /** Начать слежение за сессией. */
+  tailStart(payload: IpcSendPayload<'cc:tailStart'>): void
+  /** Остановить слежение. */
+  tailStop(): void
+  /** Подписка на новые записи транскрипта. */
+  onTail(cb: (msg: IpcEventPayload<'cc:tail'>) => void): () => void
 }
 
 /**
@@ -272,7 +301,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tts:voices',
   'tts:catalog',
   'tts:deleteVoice',
-  'mcp:list'
+  'mcp:list',
+  'cc:projects',
+  'cc:sessions',
+  'cc:transcript'
 ]
 
 /**

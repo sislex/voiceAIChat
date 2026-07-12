@@ -3,6 +3,7 @@
 
 import type {
   RendererAudioBridge,
+  RendererCcBridge,
   RendererClaudeBridge,
   RendererSttBridge,
   RendererTtsBridge
@@ -61,9 +62,17 @@ function makeTtsBridge(ws: WsClient): RendererTtsBridge {
   }
 }
 
+function makeCcBridge(ws: WsClient): RendererCcBridge {
+  return {
+    tailStart: ({ slug, id }) => ws.send({ t: 'cc.tail.start', slug, id }),
+    tailStop: () => ws.send({ t: 'cc.tail.stop' }),
+    onTail: (cb) => ws.on('cc.tail', (m) => cb({ slug: m.slug, id: m.id, items: m.items }))
+  }
+}
+
 let installed = false
 
-/** Устанавливает window.api/audio/stt/claude/tts. Идемпотентно. */
+/** Устанавливает window.api/audio/stt/claude/tts/cc. Идемпотентно. */
 export function installBridges(): void {
   if (installed) return
   installed = true
@@ -73,4 +82,5 @@ export function installBridges(): void {
   window.stt = makeSttBridge(ws)
   window.claude = makeClaudeBridge(ws)
   window.tts = makeTtsBridge(ws)
+  window.cc = makeCcBridge(ws)
 }

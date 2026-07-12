@@ -4,6 +4,7 @@ import {
   type IpcEventPayload,
   type RendererApi,
   type RendererAudioBridge,
+  type RendererCcBridge,
   type RendererClaudeBridge,
   type RendererSttBridge,
   type RendererTtsBridge,
@@ -62,6 +63,13 @@ const tts: RendererTtsBridge = {
   onVoiceError: (cb) => subscribe<IpcEventPayload<'tts:voiceError'>>('tts:voiceError', cb)
 }
 
+// Мост Проводника Claude Code: live-tail (renderer → main + события main → renderer).
+const cc: RendererCcBridge = {
+  tailStart: (payload) => ipcRenderer.send('cc:tailStart', payload),
+  tailStop: () => ipcRenderer.send('cc:tailStop'),
+  onTail: (cb) => subscribe<IpcEventPayload<'cc:tail'>>('cc:tail', cb)
+}
+
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('api', api)
@@ -69,6 +77,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('stt', stt)
     contextBridge.exposeInMainWorld('claude', claude)
     contextBridge.exposeInMainWorld('tts', tts)
+    contextBridge.exposeInMainWorld('cc', cc)
   } catch (error) {
     console.error('[preload] exposeInMainWorld failed', error)
   }
@@ -79,10 +88,12 @@ if (process.contextIsolated) {
     stt: RendererSttBridge
     claude: RendererClaudeBridge
     tts: RendererTtsBridge
+    cc: RendererCcBridge
   }
   g.api = api
   g.audio = audio
   g.stt = stt
   g.claude = claude
   g.tts = tts
+  g.cc = cc
 }

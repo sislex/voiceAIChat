@@ -568,6 +568,40 @@ describe('voiceStore — hands-free (VAD авто-пауза + авто-стар
   })
 })
 
+describe('voiceStore — Проводник Claude Code', () => {
+  it('openObserver грузит проекты; выбор проекта → сессии; сессии → транскрипт + tail', async () => {
+    const api = createFakeApi([])
+    vi.spyOn(api, 'cc:projects').mockResolvedValue([
+      { slug: '-U-x-a', path: '/U/x/a', name: 'a', sessionCount: 2, lastActivity: 2 }
+    ])
+    vi.spyOn(api, 'cc:sessions').mockResolvedValue([
+      { id: 's1', title: 'Первая', updatedAt: 2, sizeBytes: 10 }
+    ])
+    vi.spyOn(api, 'cc:transcript').mockResolvedValue([{ kind: 'user', text: 'Привет' }])
+    const ccTailStart = vi.fn()
+    const ccTailStop = vi.fn()
+    const store = createVoiceStore({ api, now: () => 1, ccTailStart, ccTailStop })
+
+    await store.actions.openObserver()
+    expect(store.getState().ccOpen).toBe(true)
+    expect(store.getState().ccProjects).toHaveLength(1)
+
+    await store.actions.selectCcProject('-U-x-a')
+    expect(store.getState().ccSessions.map((s) => s.title)).toEqual(['Первая'])
+
+    await store.actions.selectCcSession('-U-x-a', 's1')
+    expect(store.getState().ccTranscript.map((i) => i.text)).toEqual(['Привет'])
+    expect(ccTailStart).toHaveBeenCalledWith('-U-x-a', 's1')
+
+    store.actions.applyCcTailItems([{ kind: 'assistant', text: 'Ответ' }])
+    expect(store.getState().ccTranscript.map((i) => i.text)).toEqual(['Привет', 'Ответ'])
+
+    store.actions.closeObserver()
+    expect(store.getState().ccOpen).toBe(false)
+    expect(ccTailStop).toHaveBeenCalled()
+  })
+})
+
 describe('voiceStore — режим консоли (activity log)', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => {
