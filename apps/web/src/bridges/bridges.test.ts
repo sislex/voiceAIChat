@@ -96,6 +96,18 @@ describe('WsClient', () => {
     expect(logs[0].entry.summary).toBe('Bash: ls')
     c.close()
   })
+
+  it('доставляет cc.tail подписчику (Проводник Claude Code)', () => {
+    const c = new WsClient('ws://x/ws')
+    const ws = FakeWebSocket.last!
+    ws._open()
+    const got: Array<{ items: Array<{ kind: string }> }> = []
+    c.on('cc.tail', (m) => got.push(m as never))
+    ws._emit({ t: 'cc.tail', slug: 's', id: 'i', items: [{ kind: 'assistant', text: 'ok' }] })
+    expect(got).toHaveLength(1)
+    expect(got[0].items[0].kind).toBe('assistant')
+    c.close()
+  })
 })
 
 describe('createHttpApi', () => {

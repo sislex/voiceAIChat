@@ -321,6 +321,32 @@ describe('voiceStore — реальный STT (sttEnabled)', () => {
     expect(store.getState().voice).toBe('idle')
   })
 
+  it('пишет тайминг распознавания в консоль (при showConsole)', async () => {
+    const store = makeSttStore()
+    await store.actions.init()
+    await store.actions.updateSettings({ showConsole: true })
+    store.actions.startVoice()
+    store.actions.stopVoice() // засекает распознавание
+    await vi.advanceTimersByTimeAsync(1500) // «распознавание» 1.5 с
+    await store.actions.applySttFinal({
+      segments: [{ speakerId: 1, text: 'Привет' }],
+      text: 'Привет'
+    })
+    const entry = store.getState().consoleLog.find((e) => e.kind === 'stt')
+    expect(entry).toBeTruthy()
+    expect(entry?.summary).toContain('Распознавание речи')
+    expect(entry?.summary).toContain('1.5 с')
+  })
+
+  it('без showConsole тайминг STT не пишется', async () => {
+    const store = makeSttStore()
+    await store.actions.init()
+    store.actions.startVoice()
+    store.actions.stopVoice()
+    await store.actions.applySttFinal({ segments: [{ speakerId: 1, text: 'x' }], text: 'x' })
+    expect(store.getState().consoleLog.some((e) => e.kind === 'stt')).toBe(false)
+  })
+
   it('пустой финал возвращает в idle без сообщений', async () => {
     const store = makeSttStore()
     await store.actions.init()
@@ -542,6 +568,40 @@ describe('voiceStore — hands-free (VAD авто-пауза + авто-стар
   })
 })
 
+describe('voiceStore — Проводник Claude Code', () => {
+  it('openObserver грузит проекты; выбор проекта → сессии; сессии → транскрипт + tail', async () => {
+    const api = createFakeApi([])
+    vi.spyOn(api, 'cc:projects').mockResolvedValue([
+      { slug: '-U-x-a', path: '/U/x/a', name: 'a', sessionCount: 2, lastActivity: 2 }
+    ])
+    vi.spyOn(api, 'cc:sessions').mockResolvedValue([
+      { id: 's1', title: 'Первая', updatedAt: 2, sizeBytes: 10 }
+    ])
+    vi.spyOn(api, 'cc:transcript').mockResolvedValue([{ kind: 'user', text: 'Привет' }])
+    const ccTailStart = vi.fn()
+    const ccTailStop = vi.fn()
+    const store = createVoiceStore({ api, now: () => 1, ccTailStart, ccTailStop })
+
+    await store.actions.openObserver()
+    expect(store.getState().ccOpen).toBe(true)
+    expect(store.getState().ccProjects).toHaveLength(1)
+
+    await store.actions.selectCcProject('-U-x-a')
+    expect(store.getState().ccSessions.map((s) => s.title)).toEqual(['Первая'])
+
+    await store.actions.selectCcSession('-U-x-a', 's1')
+    expect(store.getState().ccTranscript.map((i) => i.text)).toEqual(['Привет'])
+    expect(ccTailStart).toHaveBeenCalledWith('-U-x-a', 's1')
+
+    store.actions.applyCcTailItems([{ kind: 'assistant', text: 'Ответ' }])
+    expect(store.getState().ccTranscript.map((i) => i.text)).toEqual(['Привет', 'Ответ'])
+
+    store.actions.closeObserver()
+    expect(store.getState().ccOpen).toBe(false)
+    expect(ccTailStop).toHaveBeenCalled()
+  })
+})
+
 describe('voiceStore — режим консоли (activity log)', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => {
@@ -750,6 +810,20 @@ describe('voiceStore — TTS (ttsEnabled, Шаг 10)', () => {
     await reachSpeaking(store)
     store.actions.applyTtsError('нет голоса')
     expect(store.getState().voice).toBe('idle')
+  })
+
+  it('пишет тайминг генерации речи в консоль (при showConsole)', async () => {
+    const { store } = makeTtsStore()
+    await store.actions.init()
+    await store.actions.updateSettings({ showConsole: true })
+    store.actions.setDraft('привет')
+    await store.actions.submitText()
+    await vi.advanceTimersByTimeAsync(STEP) // → speaking, запрошен синтез (ttsReqAt)
+    await vi.advanceTimersByTimeAsync(300) // «генерация» 0.3 с
+    store.actions.applyTtsAudioReceived() // пришло аудио
+    const entry = store.getState().consoleLog.find((e) => e.kind === 'tts')
+    expect(entry).toBeTruthy()
+    expect(entry?.summary).toContain('Генерация речи')
   })
 })
 

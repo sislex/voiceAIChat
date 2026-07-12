@@ -109,6 +109,8 @@ export type ClaudeLogKind =
   | 'tool_use'
   | 'tool_result'
   | 'result'
+  | 'stt' // тайминг распознавания речи (клиентский замер)
+  | 'tts' // тайминг генерации речи (клиентский замер)
   | 'other'
 
 /** Метаданные завершённого хода Claude (из result-события stream-json). */

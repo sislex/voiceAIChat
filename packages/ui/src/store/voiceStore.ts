@@ -8,6 +8,7 @@
 
 import type { RendererApi, SttSegmentWire, SttStatus, SttUpdate, UploadInfo } from '@shared/ipc'
 import type { McpServer } from '@shared/mcp'
+import type { CcProject, CcSession, CcItem } from '@shared/cc'
 import type {
   CatalogVoice,
   ClaudeLogEntry,
@@ -74,6 +75,18 @@ export interface AppState {
   lastTurnMeta: TurnMeta | null
   /** Подключённые MCP-серверы (read-only показ в настройках). */
   mcpServers: McpServer[]
+  /** Открыт ли Проводник Claude Code. */
+  ccOpen: boolean
+  /** Проекты Claude Code (~/.claude/projects). */
+  ccProjects: CcProject[]
+  /** Сессии выбранного проекта. */
+  ccSessions: CcSession[]
+  /** Транскрипт выбранной сессии. */
+  ccTranscript: CcItem[]
+  /** slug выбранного проекта (null — не выбран). */
+  ccProjectSlug: string | null
+  /** id выбранной сессии (null — не выбрана). */
+  ccSessionId: string | null
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
   speakingMessageId: string | null
   /** Доступна ли озвучка (кнопка ▶ на ответах). */
@@ -134,6 +147,10 @@ export interface StoreDeps {
   startVoiceDownload?: (id: string) => void
   /** Сохранение файла на диск (экспорт). По умолчанию — через `<a download>`. */
   download?: (filename: string, mime: string, data: string) => void
+  /** Начать live-tail сессии Claude Code (renderer → main/ws). */
+  ccTailStart?: (slug: string, id: string) => void
+  /** Остановить live-tail. */
+  ccTailStop?: () => void
 }
 
 /** Действия, дергаемые из UI. Все асинхронные операции инкапсулированы здесь. */
@@ -192,6 +209,8 @@ export interface StoreActions {
   applyDownloadDone(): void
   /** Ошибка скачивания модели (stt:downloadError). */
   applyDownloadError(message: string): void
+  /** Пришло синтезированное аудио (tts:audio) — замер времени генерации речи. */
+  applyTtsAudioReceived(): void
   /** Один клип озвучки доигран (tts:audio закончился). */
   applyTtsDone(): void
   /** Ошибка озвучки (tts:error). */
@@ -208,6 +227,16 @@ export interface StoreActions {
   applyClaudeLog(entry: ClaudeLogEntry): void
   /** Свернуть/развернуть панель консоли. */
   toggleConsole(): void
+  /** Открыть Проводник Claude Code (грузит проекты). */
+  openObserver(): Promise<void>
+  /** Закрыть Проводник (останавливает live-tail). */
+  closeObserver(): void
+  /** Выбрать проект (грузит сессии). */
+  selectCcProject(slug: string): Promise<void>
+  /** Выбрать сессию (грузит транскрипт + запускает live-tail). */
+  selectCcSession(slug: string, id: string): Promise<void>
+  /** Добавить пришедшие по live-tail записи в транскрипт. */
+  applyCcTailItems(items: CcItem[]): void
   /** Прогресс скачивания голоса (tts:voiceProgress). */
   applyVoiceProgress(id: string, percent: number): void
   /** Голос скачан (tts:voiceDone) — обновляет списки. */
@@ -247,6 +276,12 @@ function initialState(): AppState {
     streamingReply: '',
     lastTurnMeta: null,
     mcpServers: [],
+    ccOpen: false,
+    ccProjects: [],
+    ccSessions: [],
+    ccTranscript: [],
+    ccProjectSlug: null,
+    ccSessionId: null,
     speakingMessageId: null,
     ttsAvailable: false,
     error: null,
@@ -455,8 +490,20 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!ttsEnabled || !deps.speakText || !ttsSession) return
     const t = text.trim()
     if (!t) return
+    if (ttsReqAt === 0) {
+      ttsReqAt = now() // засекаем генерацию речи (запрос → первое аудио)
+      ttsAudioLogged = false
+    }
     ttsSession.queued += 1
     deps.speakText(t, state.settings.voice)
+  }
+
+  /** Пришло синтезированное аудио (tts:audio) — логируем время до первого аудио. */
+  function applyTtsAudioReceived(): void {
+    if (ttsReqAt > 0 && !ttsAudioLogged) {
+      logTiming('tts', 'Генерация речи', now() - ttsReqAt)
+      ttsAudioLogged = true
+    }
   }
 
   /** Начинает pipeline-озвучку: сессия + переход thinking → speaking. */
@@ -471,6 +518,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     const s = ttsSession
     if (!s || !s.sourceComplete || s.played < s.queued) return
     ttsSession = null
+    ttsReqAt = 0 // сессия озвучки завершена — сбрасываем таймер генерации
+    ttsAudioLogged = false
     if (s.kind === 'pipeline' && state.voice === 'speaking') dispatchVoice('speaking_done')
     if (s.kind === 'replay') setState({ speakingMessageId: null })
   }
@@ -479,6 +528,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   function resetTts(): void {
     ttsSession = null
     ttsBuffer = ''
+    ttsReqAt = 0
+    ttsAudioLogged = false
     deps.cancelTts?.()
     if (state.speakingMessageId) setState({ speakingMessageId: null })
   }
@@ -609,8 +660,71 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ consoleLog: next.length > CONSOLE_LOG_CAP ? next.slice(-CONSOLE_LOG_CAP) : next })
   }
 
+  // Клиентские тайминги STT/TTS для консоли (перцептивная задержка).
+  let sttStartAt = 0 // момент остановки записи (реальный STT)
+  let ttsReqAt = 0 // момент запроса синтеза первого чанка ответа
+  let ttsAudioLogged = false // время до первого аудио уже залогировано
+
+  /** Пишет запись тайминга в консоль (только при включённом режиме консоли). */
+  function logTiming(kind: 'stt' | 'tts', label: string, ms: number): void {
+    if (!state.settings.showConsole) return
+    const summary = `${label}: ${(ms / 1000).toFixed(1)} с`
+    applyClaudeLog({ kind, summary, raw: JSON.stringify({ kind, label, ms }) })
+  }
+
   function toggleConsole(): void {
     setState({ consoleOpen: !state.consoleOpen })
+  }
+
+  // --- Проводник Claude Code (read-only + live-tail) -----------------------
+  const CC_TRANSCRIPT_CAP = 4000
+
+  async function openObserver(): Promise<void> {
+    setState({ ccOpen: true })
+    if (!api['cc:projects']) return
+    try {
+      setState({ ccProjects: await api['cc:projects']() })
+    } catch (err) {
+      console.warn('[cc] не удалось получить проекты', err)
+    }
+  }
+
+  function closeObserver(): void {
+    deps.ccTailStop?.()
+    setState({
+      ccOpen: false,
+      ccProjectSlug: null,
+      ccSessionId: null,
+      ccSessions: [],
+      ccTranscript: []
+    })
+  }
+
+  async function selectCcProject(slug: string): Promise<void> {
+    deps.ccTailStop?.()
+    setState({ ccProjectSlug: slug, ccSessionId: null, ccSessions: [], ccTranscript: [] })
+    try {
+      setState({ ccSessions: await api['cc:sessions']({ slug }) })
+    } catch (err) {
+      console.warn('[cc] не удалось получить сессии', err)
+    }
+  }
+
+  async function selectCcSession(slug: string, id: string): Promise<void> {
+    deps.ccTailStop?.()
+    setState({ ccProjectSlug: slug, ccSessionId: id, ccTranscript: [] })
+    try {
+      setState({ ccTranscript: await api['cc:transcript']({ slug, id }) })
+    } catch (err) {
+      console.warn('[cc] не удалось получить транскрипт', err)
+    }
+    deps.ccTailStart?.(slug, id) // live-слежение за активной сессией
+  }
+
+  function applyCcTailItems(items: CcItem[]): void {
+    if (items.length === 0) return
+    const next = [...state.ccTranscript, ...items]
+    setState({ ccTranscript: next.length > CC_TRANSCRIPT_CAP ? next.slice(-CC_TRANSCRIPT_CAP) : next })
   }
 
   function downloadVoice(id: string): void {
@@ -833,7 +947,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     cancelTimers()
     stopCapture()
     // При реальном STT финал придёт событием stt:final → applySttFinal.
-    if (sttEnabled) return
+    if (sttEnabled) {
+      sttStartAt = now() // засекаем распознавание (стоп → финал)
+      return
+    }
     // Мок-путь: имитируем финализацию из накопленного мок-транскрипта.
     const finalSegments =
       state.liveSegments.length > 0 ? state.liveSegments : [{ speakerId: 1, text: '(тишина)' }]
@@ -856,6 +973,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     // Если стоп ещё не был нажат (быстрый финал) — досрочно уходим из listening.
     if (state.voice === 'listening') dispatchVoice('stop_listening')
 
+    if (sttStartAt > 0) {
+      logTiming('stt', 'Распознавание речи', now() - sttStartAt)
+      sttStartAt = 0
+    }
     const text = update.text.trim()
     if (update.segments.length === 0 || !text) {
       // Ничего не распознано — тихо возвращаемся в idle.
@@ -1061,6 +1182,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applyDownloadProgress,
       applyDownloadDone,
       applyDownloadError,
+      applyTtsAudioReceived,
       applyTtsDone,
       applyTtsError,
       replayMessage,
@@ -1069,6 +1191,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       deleteModel,
       applyClaudeLog,
       toggleConsole,
+      openObserver,
+      closeObserver,
+      selectCcProject,
+      selectCcSession,
+      applyCcTailItems,
       applyVoiceProgress,
       applyVoiceDone,
       applyVoiceError,

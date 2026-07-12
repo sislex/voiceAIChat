@@ -5,6 +5,7 @@ import { VoiceBar } from './components/VoiceBar'
 import { SettingsModal } from './components/SettingsModal'
 import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
+import { CcObserver } from './components/CcObserver'
 import { useVoiceStore } from './store/useVoiceStore'
 import { useVoiceCues } from './lib/useVoiceCues'
 import { useHotkeys } from './lib/useHotkeys'
@@ -66,6 +67,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onRename={actions.renameConversation}
         searchQuery={state.searchQuery}
         onSearch={actions.setSearchQuery}
+        onOpenObserver={actions.openObserver}
         onOpenSettings={actions.openSettings}
       />
 
@@ -114,6 +116,19 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           log={state.consoleLog}
           open={state.consoleOpen}
           onToggle={actions.toggleConsole}
+        />
+      )}
+
+      {state.ccOpen && (
+        <CcObserver
+          projects={state.ccProjects}
+          sessions={state.ccSessions}
+          transcript={state.ccTranscript}
+          activeProject={state.ccProjectSlug}
+          activeSession={state.ccSessionId}
+          onSelectProject={actions.selectCcProject}
+          onSelectSession={actions.selectCcSession}
+          onClose={actions.closeObserver}
         />
       )}
 

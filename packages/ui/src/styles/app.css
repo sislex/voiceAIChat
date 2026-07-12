@@ -1208,6 +1208,12 @@
 .clk-result {
   border-left-color: #6e6b60;
 }
+.clk-stt {
+  border-left-color: #c48a1f;
+}
+.clk-tts {
+  border-left-color: #1f9a9a;
+}
 .clraw {
   padding: 4px 8px 8px 8px;
 }
@@ -1351,4 +1357,128 @@
 .mcp-bad {
   color: var(--text-dim);
   font-size: 12px;
+}
+
+/* ---- Проводник Claude Code ---- */
+.footico {
+  font-size: 15px;
+}
+.ccobs {
+  background: var(--bg);
+  border-radius: 16px;
+  width: 1040px;
+  max-width: 94vw;
+  height: 88vh;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.ccobs-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+.cc-col {
+  overflow-y: auto;
+  min-height: 0;
+}
+.cc-projects {
+  flex: none;
+  width: 220px;
+  border-right: 1px solid var(--border-soft);
+  padding: 8px;
+}
+.cc-sessions {
+  flex: none;
+  width: 260px;
+  border-right: 1px solid var(--border-soft);
+  padding: 8px;
+}
+.cc-transcript {
+  flex: 1;
+  padding: 16px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cc-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--text);
+}
+.cc-item:hover {
+  background: var(--panel);
+}
+.cc-item.on {
+  background: var(--panel);
+  font-weight: 600;
+}
+.cc-name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.cc-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 12px;
+}
+.cc-live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: #a33a3a;
+}
+.cc-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 82%;
+}
+.cc-user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.cc-role {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-dim);
+}
+.cc-act {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  border-left: 3px solid var(--border);
+  padding: 2px 0 2px 8px;
+  color: var(--text-dim);
+}
+.cc-act .clbadge {
+  min-width: 72px;
+  color: var(--text-dim);
+}
+.cc-act-text {
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.cc-act.cc-err {
+  color: #a33a3a;
 }

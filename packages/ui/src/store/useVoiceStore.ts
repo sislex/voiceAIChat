@@ -61,6 +61,10 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
         : undefined)
     const startVoiceDownload =
       deps.startVoiceDownload ?? (hasTts ? (id: string) => window.tts.downloadVoice({ id }) : undefined)
+    const hasCc = typeof window !== 'undefined' && !!window.cc
+    const ccTailStart =
+      deps.ccTailStart ?? (hasCc ? (slug: string, id: string) => window.cc.tailStart({ slug, id }) : undefined)
+    const ccTailStop = deps.ccTailStop ?? (hasCc ? () => window.cc.tailStop() : undefined)
     storeRef.current = createVoiceStore({
       ...deps,
       audio,
@@ -74,7 +78,9 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
       ttsEnabled,
       speakText,
       cancelTts,
-      startVoiceDownload
+      startVoiceDownload,
+      ccTailStart,
+      ccTailStop
     })
   }
   const store = storeRef.current
@@ -99,9 +105,13 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
       unsubs.push(window.claude.onError((m) => store.actions.applyClaudeError(m.message)))
       unsubs.push(window.claude.onLog((m) => store.actions.applyClaudeLog(m.entry)))
     }
+    if (typeof window !== 'undefined' && window.cc) {
+      unsubs.push(window.cc.onTail((m) => store.actions.applyCcTailItems(m.items)))
+    }
     if (typeof window !== 'undefined' && window.tts) {
       unsubs.push(
         window.tts.onAudio((m) => {
+          store.actions.applyTtsAudioReceived() // замер: пришло синтезированное аудио
           enqueueTtsAudio(m.audio, () => store.actions.applyTtsDone())
         })
       )

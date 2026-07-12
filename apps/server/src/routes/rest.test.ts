@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
@@ -57,6 +58,40 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.statusCode).toBe(200)
     const found = res.json()
     expect(found.map((c: { title: string }) => c.title)).toEqual(['Лиссабон'])
+  })
+
+  it('cc: projects/sessions/transcript из ~/.claude/projects (VC_CC_DIR)', async () => {
+    const ccDir = mkdtempSync(join(tmpdir(), 'cc-rest-'))
+    const proj = join(ccDir, '-Users-x-demo')
+    mkdirSync(proj, { recursive: true })
+    writeFileSync(
+      join(proj, 'sess.jsonl'),
+      [
+        JSON.stringify({ type: 'user', cwd: '/Users/x/demo', message: { content: 'Помоги с фичей' } }),
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Готово' }] } })
+      ].join('\n')
+    )
+    const prev = process.env.VC_CC_DIR
+    process.env.VC_CC_DIR = ccDir
+    try {
+      const projects = (await app.inject({ method: 'GET', url: '/api/cc/projects' })).json()
+      const demo = projects.find((p: { name: string }) => p.name === 'demo')
+      expect(demo?.path).toBe('/Users/x/demo')
+
+      const sessions = (
+        await app.inject({ method: 'GET', url: `/api/cc/projects/${demo.slug}/sessions` })
+      ).json()
+      expect(sessions[0].title).toBe('Помоги с фичей')
+
+      const items = (
+        await app.inject({ method: 'GET', url: `/api/cc/projects/${demo.slug}/sessions/sess` })
+      ).json()
+      expect(items.map((i: { kind: string }) => i.kind)).toEqual(['user', 'assistant'])
+    } finally {
+      if (prev === undefined) delete process.env.VC_CC_DIR
+      else process.env.VC_CC_DIR = prev
+      rmSync(ccDir, { recursive: true, force: true })
+    }
   })
 
   it('добавление сообщения видно в get', async () => {

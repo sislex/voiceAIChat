@@ -41,6 +41,7 @@ export interface SidebarProps {
   onRename: (id: string, title: string) => void
   searchQuery: string
   onSearch: (query: string) => void
+  onOpenObserver: () => void
   onOpenSettings: () => void
 }
 
@@ -54,6 +55,7 @@ export function Sidebar({
   onRename,
   searchQuery,
   onSearch,
+  onOpenObserver,
   onOpenSettings
 }: SidebarProps): JSX.Element {
   // id разговора, для которого показываем инлайн-подтверждение удаления.
@@ -188,6 +190,10 @@ export function Sidebar({
         ))}
       </div>
       <div className="sidefoot">
+        <button className="footbtn" onClick={onOpenObserver}>
+          <span className="footico">🗂</span>
+          Claude Code
+        </button>
         <button className="footbtn" onClick={onOpenSettings}>
           <GearIcon />
           Настройки

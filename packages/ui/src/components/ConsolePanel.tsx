@@ -17,6 +17,8 @@ const KIND_LABEL: Record<ClaudeLogKind, string> = {
   tool_use: 'tool',
   tool_result: 'res',
   result: 'done',
+  stt: '🎤',
+  tts: '🔊',
   other: '···'
 }
 
