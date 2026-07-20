@@ -3,6 +3,7 @@
 
 import type { RendererApi } from '@shared/ipc'
 import type { Conversation, Message, Settings } from '@shared/types'
+import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
 
 export interface FakeApi extends RendererApi {
@@ -22,6 +23,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
   const conversations: Conversation[] = []
   const messages: Message[] = []
+  const agents: AgentInfo[] = []
   let settings: Settings = { ...DEFAULT_SETTINGS }
 
   function makeConversation(title: string): Conversation {
@@ -105,6 +107,22 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'stt:deleteModel': async () => {},
     'tts:deleteVoice': async () => {},
     'mcp:list': async () => [],
+    'agents:list': async () => agents.map((a) => ({ ...a })),
+    'agents:create': async ({ name }) => {
+      const agent: AgentInfo = {
+        id: nextId(),
+        name,
+        online: false,
+        createdAt: tick(),
+        lastSeen: null
+      }
+      agents.push(agent)
+      return { id: agent.id, name, token: `token-${agent.id}` }
+    },
+    'agents:delete': async ({ id }) => {
+      const idx = agents.findIndex((a) => a.id === id)
+      if (idx >= 0) agents.splice(idx, 1)
+    },
     'cc:projects': async () => [],
     'cc:sessions': async () => [],
     'cc:transcript': async () => [],

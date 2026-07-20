@@ -188,4 +188,36 @@ describe('REST: conversations/messages/settings', () => {
     expect(saved.diarization).toBe(false)
     expect(saved.voice).toBe('ru_RU-dmitri-medium')
   })
+
+  it('агенты: create → list (offline) → delete', async () => {
+    const created = (
+      await app.inject({ method: 'POST', url: '/api/agents', payload: { name: 'MacBook' } })
+    ).json()
+    expect(created.name).toBe('MacBook')
+    expect(typeof created.token).toBe('string')
+
+    const list = (await app.inject({ method: 'GET', url: '/api/agents' })).json()
+    expect(list).toHaveLength(1)
+    expect(list[0]).toMatchObject({ id: created.id, name: 'MacBook', online: false })
+
+    const del = await app.inject({ method: 'DELETE', url: `/api/agents/${created.id}` })
+    expect(del.statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/agents' })).json()).toHaveLength(0)
+  })
+
+  it('агенты: POST без имени → 400', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/agents', payload: {} })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('удаление агента сбрасывает execTarget на сервер', async () => {
+    const created = (
+      await app.inject({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })
+    ).json()
+    const def = (await app.inject({ method: 'GET', url: '/api/settings' })).json()
+    await app.inject({ method: 'PUT', url: '/api/settings', payload: { ...def, execTarget: created.id } })
+    await app.inject({ method: 'DELETE', url: `/api/agents/${created.id}` })
+    const saved = (await app.inject({ method: 'GET', url: '/api/settings' })).json()
+    expect(saved.execTarget).toBeNull()
+  })
 })

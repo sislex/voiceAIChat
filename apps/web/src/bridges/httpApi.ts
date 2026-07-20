@@ -63,6 +63,12 @@ export function createHttpApi(): RendererApi {
       await req(REST.ttsVoice(id), { method: 'DELETE' })
     },
     'mcp:list': () => req(REST.mcpServers),
+    'agents:list': () => req(REST.agents),
+    'agents:create': ({ name }) =>
+      req(REST.agents, { method: 'POST', body: JSON.stringify({ name }) }),
+    'agents:delete': async ({ id }) => {
+      await req(REST.agent(id), { method: 'DELETE' })
+    },
     'cc:projects': () => req(REST.ccProjects),
     'cc:sessions': ({ slug }) => req(REST.ccSessions(slug)),
     'cc:transcript': ({ slug, id, limit }) =>

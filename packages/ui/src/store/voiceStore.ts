@@ -8,6 +8,7 @@
 
 import type { RendererApi, SttSegmentWire, SttStatus, SttUpdate, UploadInfo } from '@shared/ipc'
 import type { McpServer } from '@shared/mcp'
+import type { AgentCreated, AgentInfo } from '@shared/agentProtocol'
 import type { CcProject, CcSession, CcItem } from '@shared/cc'
 import type {
   CatalogVoice,
@@ -75,6 +76,8 @@ export interface AppState {
   lastTurnMeta: TurnMeta | null
   /** Подключённые MCP-серверы (read-only показ в настройках). */
   mcpServers: McpServer[]
+  /** Машины-агенты для удалённого выполнения команд (настройки). */
+  agents: AgentInfo[]
   /** Открыт ли Проводник Claude Code. */
   ccOpen: boolean
   /** Проекты Claude Code (~/.claude/projects). */
@@ -223,6 +226,10 @@ export interface StoreActions {
   deleteVoice(id: string): Promise<void>
   /** Удалить файл модели Whisper (освободить место). */
   deleteModel(model: WhisperModel): Promise<void>
+  /** Создать машину-агента; возвращает данные с одноразовым токеном. */
+  createAgent(name: string): Promise<AgentCreated | null>
+  /** Удалить машину-агента (отзыв токена). */
+  deleteAgent(id: string): Promise<void>
   /** Добавить запись активности агента (claude:log) в лог консоли. */
   applyClaudeLog(entry: ClaudeLogEntry): void
   /** Свернуть/развернуть панель консоли. */
@@ -276,6 +283,7 @@ function initialState(): AppState {
     streamingReply: '',
     lastTurnMeta: null,
     mcpServers: [],
+    agents: [],
     ccOpen: false,
     ccProjects: [],
     ccSessions: [],
@@ -595,6 +603,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshTtsVoices()
     await refreshVoiceCatalog()
     await refreshMcpServers()
+    await refreshAgents()
     if (conversations.length > 0) {
       await selectConversation(conversations[0].id)
     }
@@ -608,6 +617,37 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     } catch (err) {
       console.warn('[mcp] не удалось получить список серверов', err)
     }
+  }
+
+  /** Грузит машины-агенты с онлайн-статусом (ошибки не критичны). */
+  async function refreshAgents(): Promise<void> {
+    if (!api['agents:list']) return
+    try {
+      setState({ agents: await api['agents:list']() })
+    } catch (err) {
+      console.warn('[agents] не удалось получить список машин', err)
+    }
+  }
+
+  /** Создаёт машину-агента; вернёт null при ошибке (баннер уже показан). */
+  async function createAgent(name: string): Promise<AgentCreated | null> {
+    try {
+      const created = await api['agents:create']({ name })
+      await refreshAgents()
+      return created
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+      return null
+    }
+  }
+
+  /** Удаляет машину-агента; сбрасывает цель выполнения, если она указывала на неё. */
+  async function deleteAgent(id: string): Promise<void> {
+    await api['agents:delete']({ id })
+    if (state.settings.execTarget === id) {
+      setState({ settings: { ...state.settings, execTarget: null } })
+    }
+    await refreshAgents()
   }
 
   /**
@@ -837,6 +877,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   function openSettings(): void {
     setState({ settingsOpen: true })
+    // Онлайн-статус машин мог измениться — обновляем бейджи в фоне.
+    void refreshAgents()
   }
 
   function closeSettings(): void {
@@ -1189,6 +1231,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       downloadVoice,
       deleteVoice,
       deleteModel,
+      createAgent,
+      deleteAgent,
       applyClaudeLog,
       toggleConsole,
       openObserver,

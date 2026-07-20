@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { VoiceChatDb } from './database'
+import { VoiceChatDb, hashAgentToken } from './database'
 import { DEFAULT_SETTINGS } from '@voicechat/shared'
 
 function makeDb(): VoiceChatDb {
@@ -163,7 +163,8 @@ describe('VoiceChatDb — настройки', () => {
       permissionMode: 'plan',
       workdir: '/tmp/proj',
       bargeIn: true,
-      handsFree: true
+      handsFree: true,
+      execTarget: 'agent-1'
     })
     expect(db.getSettings()).toEqual({
       model: 'opus',
@@ -178,7 +179,8 @@ describe('VoiceChatDb — настройки', () => {
       permissionMode: 'plan',
       workdir: '/tmp/proj',
       bargeIn: true,
-      handsFree: true
+      handsFree: true,
+      execTarget: 'agent-1'
     })
   })
 
@@ -187,5 +189,40 @@ describe('VoiceChatDb — настройки', () => {
     const s = db.getSettings()
     expect(s.model).toBe('opus')
     expect(s.voice).toBe(DEFAULT_SETTINGS.voice)
+  })
+})
+
+describe('VoiceChatDb — агенты', () => {
+  let db: VoiceChatDb
+  beforeEach(() => {
+    db = makeDb()
+  })
+  afterEach(() => db.close())
+
+  it('создаёт агента, отдаёт токен один раз и хранит только хэш', () => {
+    const created = db.createAgent('MacBook')
+    expect(created.name).toBe('MacBook')
+    expect(created.token).toMatch(/^[0-9a-f]{48}$/)
+
+    const found = db.findAgentByTokenHash(hashAgentToken(created.token))
+    expect(found?.id).toBe(created.id)
+    expect(found?.name).toBe('MacBook')
+    // Неверный токен не находится.
+    expect(db.findAgentByTokenHash(hashAgentToken('другой'))).toBeNull()
+  })
+
+  it('list и delete', () => {
+    const a = db.createAgent('A')
+    const b = db.createAgent('B')
+    expect(db.listAgents().map((x) => x.name)).toEqual(['A', 'B'])
+    db.deleteAgent(a.id)
+    expect(db.listAgents().map((x) => x.id)).toEqual([b.id])
+  })
+
+  it('touchAgent обновляет last_seen', () => {
+    const a = db.createAgent('A')
+    expect(db.listAgents()[0].lastSeen).toBeNull()
+    db.touchAgent(a.id)
+    expect(db.listAgents()[0].lastSeen).not.toBeNull()
   })
 })

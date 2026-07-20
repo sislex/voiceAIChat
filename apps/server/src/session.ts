@@ -30,6 +30,13 @@ export interface SessionDeps {
   downloadVoice?: (id: string, onProgress: (percent: number) => void) => Promise<void>
   /** Резолв id вложения → абсолютный путь на сервере (для промпта Claude). */
   resolveUpload?: (id: string) => string | undefined
+  /** Онлайн-статус машин-агентов (для проброса Bash на клиента). */
+  agents?: {
+    isOnline(id: string): boolean
+    nameOf(id: string): string | undefined
+  }
+  /** База URL MCP-эндпоинта remote-bash (с секретом k); undefined — проброс выключен. */
+  mcpBaseUrl?: string
 }
 
 export function createSession(deps: SessionDeps): WsHandlers {
@@ -73,8 +80,26 @@ export function createSession(deps: SessionDeps): WsHandlers {
           const prompt = sessionId
             ? buildPrompt(msg.segments, attachmentPaths)
             : buildConversationPrompt(deps.db.listMessages(conversationId), attachmentPaths)
+          // Цель выполнения команд: выбранная машина-агент. Офлайн — сразу ошибка:
+          // молча выполнить команды не на той машине хуже, чем отказать.
+          const target = settings.execTarget
+          let remote: { mcpUrl: string; agentName: string } | undefined
+          if (target && deps.agents && deps.mcpBaseUrl) {
+            if (!deps.agents.isOnline(target)) {
+              ctx.send({
+                t: 'claude.error',
+                conversationId,
+                message: `Машина «${deps.agents.nameOf(target) ?? target}» не в сети. Запустите на ней агента или выберите «На сервере» в настройках.`
+              })
+              break
+            }
+            remote = {
+              mcpUrl: `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}`,
+              agentName: deps.agents.nameOf(target) ?? target
+            }
+          }
           claudeHandle = deps.claude.send(
-            { prompt, sessionId, model, permissionMode, cwd },
+            { prompt, sessionId, model, permissionMode, cwd, remote },
             {
               onSession: (sid) => deps.db.setClaudeSession(conversationId, sid),
               onDelta: (delta) => ctx.send({ t: 'claude.token', conversationId, delta }),

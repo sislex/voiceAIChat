@@ -102,6 +102,13 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
 
     'mcp:list': () => (deps.listMcpServers ? deps.listMcpServers() : []),
 
+    // Машины-агенты — только в web-режиме (claude и так выполняется локально).
+    'agents:list': () => [],
+    'agents:create': () => {
+      throw new Error('Машины-агенты не поддерживаются в desktop-приложении')
+    },
+    'agents:delete': () => {},
+
     'cc:projects': () => listProjects(),
     'cc:sessions': ({ slug }) => listSessions(slug),
     'cc:transcript': ({ slug, id, limit }) => readTranscript(slug, id, { limit })

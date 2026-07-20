@@ -10,6 +10,8 @@ import type {
 import { CLAUDE_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { PermissionMode } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
+import type { AgentCreated, AgentInfo } from '@shared/agentProtocol'
+import { copyText } from '../lib/clipboard'
 
 export interface MicOption {
   deviceId: string
@@ -48,6 +50,12 @@ export interface SettingsModalProps {
   whisperModels: WhisperModelInfo[]
   /** Подключённые MCP-серверы (read-only показ). */
   mcpServers: McpServer[]
+  /** Машины-агенты для удалённого выполнения команд. */
+  agents: AgentInfo[]
+  /** Создать машину; возвращает данные с одноразовым токеном (null при ошибке). */
+  onCreateAgent: (name: string) => Promise<AgentCreated | null>
+  /** Удалить машину (отзыв токена). */
+  onDeleteAgent: (id: string) => void
   onChange: (patch: Partial<Settings>) => void
   onDownloadVoice: (id: string) => void
   /** Удалить установленный голос Piper. */
@@ -66,6 +74,9 @@ export function SettingsModal({
   voiceDownloads,
   whisperModels,
   mcpServers,
+  agents,
+  onCreateAgent,
+  onDeleteAgent,
   onChange,
   onDownloadVoice,
   onDeleteVoice,
@@ -74,6 +85,21 @@ export function SettingsModal({
 }: SettingsModalProps): JSX.Element {
   const stop = (e: MouseEvent): void => e.stopPropagation()
   const [section, setSection] = useState<SettingsSection>('agent')
+  // Добавление машины: поле имени и одноразовый показ токена после создания.
+  const [agentName, setAgentName] = useState('')
+  const [createdAgent, setCreatedAgent] = useState<AgentCreated | null>(null)
+  const [tokenCopied, setTokenCopied] = useState(false)
+
+  const addAgent = async (): Promise<void> => {
+    const name = agentName.trim()
+    if (!name) return
+    const created = await onCreateAgent(name)
+    if (created) {
+      setCreatedAgent(created)
+      setAgentName('')
+      setTokenCopied(false)
+    }
+  }
 
   return (
     <div className="ovl" onClick={onClose} data-testid="overlay">
@@ -152,6 +178,97 @@ export function SettingsModal({
                     value={settings.workdir ?? ''}
                     onChange={(e) => onChange({ workdir: e.target.value.trim() || null })}
                   />
+                </div>
+
+                <div className="frow">
+                  <div>
+                    <p className="flab">Где выполнять команды</p>
+                    <p className="fsub">Shell-команды агента: на сервере или на вашей машине</p>
+                  </div>
+                  <select
+                    className="sel"
+                    aria-label="Где выполнять команды"
+                    value={settings.execTarget ?? ''}
+                    onChange={(e) => onChange({ execTarget: e.target.value || null })}
+                  >
+                    <option value="">На сервере</option>
+                    {agents.map((a) => (
+                      <option key={a.id} value={a.id} disabled={!a.online}>
+                        {a.name}
+                        {a.online ? '' : ' (офлайн)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="voicedl" data-testid="agent-list">
+                  <p className="flab">Машины</p>
+                  {agents.map((a) => (
+                    <div className="vrow2" key={a.id}>
+                      <span className="vname">{a.name}</span>
+                      <span className="vrowr">
+                        <span className={a.online ? 'mcp-ok' : 'mcp-bad'}>
+                          {a.online ? '✓ в сети' : '✗ офлайн'}
+                        </span>
+                        <button
+                          className="vdl vdel"
+                          aria-label={`Удалить машину ${a.name}`}
+                          onClick={() => onDeleteAgent(a.id)}
+                        >
+                          Удалить
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                  <div className="vrow2">
+                    <input
+                      className="sel"
+                      type="text"
+                      aria-label="Имя новой машины"
+                      placeholder="Имя машины (напр. MacBook)"
+                      value={agentName}
+                      onChange={(e) => setAgentName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && void addAgent()}
+                    />
+                    <button
+                      className="vdl"
+                      aria-label="Добавить машину"
+                      disabled={!agentName.trim()}
+                      onClick={() => void addAgent()}
+                    >
+                      Добавить
+                    </button>
+                  </div>
+                  {createdAgent && (
+                    <div className="voicedl" data-testid="agent-token">
+                      <p className="fsub">
+                        Токен для «{createdAgent.name}» — показывается один раз. Запустите на
+                        своей машине:
+                      </p>
+                      <code className="fsub" style={{ userSelect: 'all', wordBreak: 'break-all' }}>
+                        npx tsx apps/agent/src/index.ts --server ws://&lt;сервер&gt;:8787/agent
+                        --token {createdAgent.token}
+                      </code>
+                      <div className="vrow2">
+                        <button
+                          className="vdl"
+                          aria-label="Скопировать токен"
+                          onClick={() => {
+                            void copyText(createdAgent.token).then((ok) => setTokenCopied(ok))
+                          }}
+                        >
+                          {tokenCopied ? '✓ скопирован' : 'Скопировать токен'}
+                        </button>
+                        <button
+                          className="vdl"
+                          aria-label="Скрыть токен"
+                          onClick={() => setCreatedAgent(null)}
+                        >
+                          Скрыть
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {mcpServers.length > 0 && (

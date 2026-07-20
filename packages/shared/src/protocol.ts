@@ -79,6 +79,8 @@ export const REST = {
   ttsVoiceDownload: (id: string) => `/api/tts/voices/${id}/download`,
   sttDownload: '/api/stt/download',
   mcpServers: '/api/mcp/servers',
+  agents: '/api/agents',
+  agent: (id: string) => `/api/agents/${encodeURIComponent(id)}`,
   ccProjects: '/api/cc/projects',
   ccSessions: (slug: string) => `/api/cc/projects/${encodeURIComponent(slug)}/sessions`,
   ccTranscript: (slug: string, id: string) =>

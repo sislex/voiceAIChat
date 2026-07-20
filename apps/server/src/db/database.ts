@@ -1,8 +1,9 @@
 import Database from 'better-sqlite3'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { SCHEMA_SQL } from './schema'
 import {
   DEFAULT_SETTINGS,
+  type AgentCreated,
   type Conversation,
   type Message,
   type MessageRole,
@@ -25,6 +26,27 @@ interface ConversationRow {
   created_at: number
   updated_at: number
   claude_session_id: string | null
+}
+
+interface AgentRow {
+  id: string
+  name: string
+  token_hash: string
+  created_at: number
+  last_seen: number | null
+}
+
+/** Запись машины-агента из БД (онлайн-статус добавляется реестром). */
+export interface AgentRecord {
+  id: string
+  name: string
+  createdAt: number
+  lastSeen: number | null
+}
+
+/** sha256(token) в hex — токены храним только хэшем. */
+export function hashAgentToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex')
 }
 
 interface MessageRow {
@@ -196,6 +218,51 @@ export class VoiceChatDb {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`
       )
       .run(SETTINGS_KEY, JSON.stringify(settings))
+  }
+
+  // ---- Agents (машины для удалённого выполнения команд) ------------------
+
+  /** Создаёт машину-агента; возвращает токен открытым текстом (единственный раз). */
+  createAgent(name: string): AgentCreated {
+    const id = this.newId()
+    const token = randomBytes(24).toString('hex')
+    this.db
+      .prepare(
+        `INSERT INTO agents (id, name, token_hash, created_at, last_seen)
+         VALUES (?, ?, ?, ?, NULL)`
+      )
+      .run(id, name, hashAgentToken(token), this.now())
+    return { id, name, token }
+  }
+
+  listAgents(): AgentRecord[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM agents ORDER BY created_at ASC`)
+      .all() as AgentRow[]
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      createdAt: r.created_at,
+      lastSeen: r.last_seen
+    }))
+  }
+
+  /** Ищет агента по хэшу токена (авторизация WS-подключения). */
+  findAgentByTokenHash(tokenHash: string): AgentRecord | null {
+    const row = this.db
+      .prepare(`SELECT * FROM agents WHERE token_hash = ?`)
+      .get(tokenHash) as AgentRow | undefined
+    if (!row) return null
+    return { id: row.id, name: row.name, createdAt: row.created_at, lastSeen: row.last_seen }
+  }
+
+  deleteAgent(id: string): void {
+    this.db.prepare(`DELETE FROM agents WHERE id = ?`).run(id)
+  }
+
+  /** Обновляет last_seen (при регистрации и по pong). */
+  touchAgent(id: string): void {
+    this.db.prepare(`UPDATE agents SET last_seen = ? WHERE id = ?`).run(this.now(), id)
   }
 
   // ---- helpers ----------------------------------------------------------

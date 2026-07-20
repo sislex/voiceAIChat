@@ -15,6 +15,7 @@ import type {
 } from './types'
 import type { McpServer } from './mcp'
 import type { CcProject, CcSession, CcItem } from './cc'
+import type { AgentCreated, AgentInfo } from './agentProtocol'
 
 /** Статус локальной модели Whisper. */
 export interface SttStatus {
@@ -72,6 +73,12 @@ export interface IpcInvokeMap {
   'tts:deleteVoice': { arg: { id: string }; result: void }
   /** Список подключённых MCP-серверов (read-only, из `claude mcp list`). */
   'mcp:list': { arg: void; result: McpServer[] }
+  /** Машины-агенты для удалённого выполнения команд (только web-режим). */
+  'agents:list': { arg: void; result: AgentInfo[] }
+  /** Создать машину-агента; токен возвращается один раз. */
+  'agents:create': { arg: { name: string }; result: AgentCreated }
+  /** Удалить машину-агента (отзывает токен, рвёт соединение). */
+  'agents:delete': { arg: { id: string }; result: void }
   /** Проекты Claude Code (~/.claude/projects). */
   'cc:projects': { arg: void; result: CcProject[] }
   /** Сессии проекта Claude Code. */
@@ -302,6 +309,9 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tts:catalog',
   'tts:deleteVoice',
   'mcp:list',
+  'agents:list',
+  'agents:create',
+  'agents:delete',
   'cc:projects',
   'cc:sessions',
   'cc:transcript'
