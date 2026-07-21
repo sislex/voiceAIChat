@@ -58,6 +58,10 @@ export interface SettingsModalProps {
   onDeleteAgent: (id: string) => void
   /** Скачать готовый скрипт агента со вшитым токеном. */
   onDownloadAgentScript: (token: string) => void
+  /** Скачать трей-приложение агента (.dmg). */
+  onDownloadAgentApp: () => void
+  /** Получить строку подключения для трей-приложения (для копирования). */
+  onGetConnectionString: (token: string) => Promise<string | null>
   onChange: (patch: Partial<Settings>) => void
   onDownloadVoice: (id: string) => void
   /** Удалить установленный голос Piper. */
@@ -80,6 +84,8 @@ export function SettingsModal({
   onCreateAgent,
   onDeleteAgent,
   onDownloadAgentScript,
+  onDownloadAgentApp,
+  onGetConnectionString,
   onChange,
   onDownloadVoice,
   onDeleteVoice,
@@ -92,6 +98,12 @@ export function SettingsModal({
   const [agentName, setAgentName] = useState('')
   const [createdAgent, setCreatedAgent] = useState<AgentCreated | null>(null)
   const [tokenCopied, setTokenCopied] = useState(false)
+  const [connCopied, setConnCopied] = useState(false)
+
+  const copyConnectionString = async (token: string): Promise<void> => {
+    const str = await onGetConnectionString(token)
+    if (str) setConnCopied(await copyText(str))
+  }
 
   const addAgent = async (): Promise<void> => {
     const name = agentName.trim()
@@ -101,6 +113,7 @@ export function SettingsModal({
       setCreatedAgent(created)
       setAgentName('')
       setTokenCopied(false)
+      setConnCopied(false)
     }
   }
 
@@ -246,16 +259,38 @@ export function SettingsModal({
                     <div className="voicedl" data-testid="agent-token">
                       <p className="fsub">
                         Машина «{createdAgent.name}» создана. Токен показывается один раз.
-                        Скачайте скрипт (адрес сервера и токен уже вшиты) и запустите на своей
-                        машине командой <code>node voicechat-agent.cjs</code> — нужен только Node.js.
+                      </p>
+                      <p className="fsub">
+                        <b>Приложение с иконкой в трее</b> (рекомендуется): скачайте .dmg,
+                        установите и при первом запуске вставьте строку подключения.
                       </p>
                       <div className="vrow2">
                         <button
                           className="vdl"
-                          aria-label="Скачать агент"
+                          aria-label="Скачать приложение"
+                          onClick={() => onDownloadAgentApp()}
+                        >
+                          ⬇ Скачать приложение
+                        </button>
+                        <button
+                          className="vdl"
+                          aria-label="Скопировать строку подключения"
+                          onClick={() => void copyConnectionString(createdAgent.token)}
+                        >
+                          {connCopied ? '✓ строка скопирована' : 'Скопировать строку подключения'}
+                        </button>
+                      </div>
+                      <p className="fsub">
+                        <b>Или скрипт</b> (headless): запуск в терминале командой{' '}
+                        <code>node voicechat-agent.cjs</code> — нужен только Node.js.
+                      </p>
+                      <div className="vrow2">
+                        <button
+                          className="vdl"
+                          aria-label="Скачать скрипт"
                           onClick={() => onDownloadAgentScript(createdAgent.token)}
                         >
-                          ⬇ Скачать агент
+                          ⬇ Скачать скрипт (.cjs)
                         </button>
                         <button
                           className="vdl"

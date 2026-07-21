@@ -127,6 +127,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       filename: 'voicechat-agent.cjs',
       content: `// fake agent bundle, token=${token}`
     }),
+    'agents:appUrl': async () => 'http://localhost/api/agents/app',
+    'agents:connectionString': async ({ token }) => `vcagent:fake-${token}`,
     'cc:projects': async () => [],
     'cc:sessions': async () => [],
     'cc:transcript': async () => [],

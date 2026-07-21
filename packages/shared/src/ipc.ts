@@ -84,6 +84,10 @@ export interface IpcInvokeMap {
    * Возвращает имя файла и содержимое для скачивания.
    */
   'agents:script': { arg: { token: string }; result: { filename: string; content: string } }
+  /** Абсолютный URL .dmg трей-приложения (для скачивания ссылкой). */
+  'agents:appUrl': { arg: void; result: string }
+  /** Строка подключения (адрес+токен) для вставки в трей-приложение. */
+  'agents:connectionString': { arg: { token: string }; result: string }
   /** Проекты Claude Code (~/.claude/projects). */
   'cc:projects': { arg: void; result: CcProject[] }
   /** Сессии проекта Claude Code. */
@@ -323,6 +327,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'agents:create',
   'agents:delete',
   'agents:script',
+  'agents:appUrl',
+  'agents:connectionString',
   'cc:projects',
   'cc:sessions',
   'cc:transcript',

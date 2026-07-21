@@ -1,0 +1,25 @@
+appId: com.voiceaichat.agent
+productName: Голос·Чат Агент
+directories:
+  output: release
+
+files:
+  - out/**/*
+  - package.json
+  - '!src/**'
+  - '!**/*.map'
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  # Локальная сборка без подписи — запуск с предупреждением Gatekeeper
+  # (ПКМ → «Открыть»). Для распространения добавить identity/notarize.
+  identity: null
+
+dmg:
+  title: Голос·Чат Агент
+
+npmRebuild: false

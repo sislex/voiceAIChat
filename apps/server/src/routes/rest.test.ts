@@ -250,6 +250,13 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.statusCode).toBe(400)
   })
 
+  it('агенты: GET /api/agents/app без собранного .dmg → 404', async () => {
+    // В тестах autodiscover артефакта отключён (VITEST), VC_AGENT_APP не задан.
+    const res = await app.inject({ method: 'GET', url: '/api/agents/app' })
+    expect(res.statusCode).toBe(404)
+    expect(res.json().error).toContain('не собрано')
+  })
+
   it('агенты: GET /api/agents/script отдаёт JS-бандл', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/agents/script' })
     expect(res.statusCode).toBe(200)

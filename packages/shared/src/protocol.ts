@@ -81,6 +81,7 @@ export const REST = {
   mcpServers: '/api/mcp/servers',
   agents: '/api/agents',
   agentScript: '/api/agents/script',
+  agentApp: '/api/agents/app',
   agent: (id: string) => `/api/agents/${encodeURIComponent(id)}`,
   ccProjects: '/api/cc/projects',
   ccSessions: (slug: string) => `/api/cc/projects/${encodeURIComponent(slug)}/sessions`,

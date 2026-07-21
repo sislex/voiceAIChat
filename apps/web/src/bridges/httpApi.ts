@@ -1,7 +1,7 @@
 // window.api для веба: реализация RendererApi поверх REST сервера.
 // Каналы 1:1 соответствуют прежним Electron invoke-каналам.
 
-import { REST } from '@voicechat/shared'
+import { REST, encodeAgentConnection } from '@voicechat/shared'
 import type { RendererApi } from '@shared/ipc'
 import { SERVER_HTTP, serverWsUrl } from './config'
 
@@ -85,6 +85,9 @@ export function createHttpApi(): RendererApi {
         : header + bundle
       return { filename: 'voicechat-agent.cjs', content: withEnv }
     },
+    'agents:appUrl': async () => SERVER_HTTP + REST.agentApp,
+    'agents:connectionString': async ({ token }) =>
+      encodeAgentConnection({ server: serverWsUrl().replace(/\/ws$/, '/agent'), token }),
     'cc:projects': () => req(REST.ccProjects),
     'cc:sessions': ({ slug }) => req(REST.ccSessions(slug)),
     'cc:transcript': ({ slug, id, limit }) =>

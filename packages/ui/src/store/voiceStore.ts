@@ -150,6 +150,8 @@ export interface StoreDeps {
   startVoiceDownload?: (id: string) => void
   /** Сохранение файла на диск (экспорт). По умолчанию — через `<a download>`. */
   download?: (filename: string, mime: string, data: string) => void
+  /** Открыть URL (скачивание .dmg). По умолчанию — window.location.assign. */
+  openUrl?: (url: string) => void
   /** Начать live-tail сессии Claude Code (renderer → main/ws). */
   ccTailStart?: (slug: string, id: string) => void
   /** Остановить live-tail. */
@@ -232,6 +234,10 @@ export interface StoreActions {
   deleteAgent(id: string): Promise<void>
   /** Скачать готовый скрипт агента со вшитым токеном (запуск `node <файл>`). */
   downloadAgentScript(token: string): Promise<void>
+  /** Скачать трей-приложение агента (.dmg). */
+  downloadAgentApp(): Promise<void>
+  /** Получить строку подключения для вставки в трей-приложение. */
+  getAgentConnectionString(token: string): Promise<string | null>
   /** Добавить запись активности агента (claude:log) в лог консоли. */
   applyClaudeLog(entry: ClaudeLogEntry): void
   /** Свернуть/развернуть панель консоли. */
@@ -662,6 +668,27 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       download(filename, 'application/javascript', content)
     } catch (err) {
       setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  /** Скачивает трей-приложение (.dmg) по прямой ссылке. */
+  async function downloadAgentApp(): Promise<void> {
+    try {
+      const url = await api['agents:appUrl']()
+      if (deps.openUrl) deps.openUrl(url)
+      else window.location.assign(url)
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  /** Строка подключения для вставки в трей-приложение (null при ошибке). */
+  async function getAgentConnectionString(token: string): Promise<string | null> {
+    try {
+      return await api['agents:connectionString']({ token })
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+      return null
     }
   }
 
@@ -1270,6 +1297,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       createAgent,
       deleteAgent,
       downloadAgentScript,
+      downloadAgentApp,
+      getAgentConnectionString,
       applyClaudeLog,
       toggleConsole,
       openObserver,

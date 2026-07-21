@@ -109,7 +109,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   // Машины-агенты: реестр онлайн-подключений + REST + MCP-мост для проброса Bash.
   const agentRegistry = new AgentRegistry()
-  await registerAgentRoutes(app, db, agentRegistry)
+  await registerAgentRoutes(app, db, agentRegistry, opts.config.agentAppPath)
   const mcpSecret = randomBytes(16).toString('hex')
   registerRemoteBashMcp(app, agentRegistry, mcpSecret)
 

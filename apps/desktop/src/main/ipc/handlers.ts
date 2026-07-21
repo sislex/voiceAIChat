@@ -112,6 +112,12 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
     'agents:script': () => {
       throw new Error('Машины-агенты не поддерживаются в desktop-приложении')
     },
+    'agents:appUrl': () => {
+      throw new Error('Машины-агенты не поддерживаются в desktop-приложении')
+    },
+    'agents:connectionString': () => {
+      throw new Error('Машины-агенты не поддерживаются в desktop-приложении')
+    },
 
     'cc:projects': () => listProjects(),
     'cc:sessions': ({ slug }) => listSessions(slug),
