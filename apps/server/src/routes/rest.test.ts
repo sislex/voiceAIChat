@@ -250,19 +250,21 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.statusCode).toBe(400)
   })
 
-  it('агенты: GET /api/agents/app без собранного .dmg → 404', async () => {
-    // В тестах autodiscover артефакта отключён (VITEST), VC_AGENT_APP не задан.
-    const res = await app.inject({ method: 'GET', url: '/api/agents/app' })
-    expect(res.statusCode).toBe(404)
-    expect(res.json().error).toContain('не собрано')
+  it('скачивание: GET /api/agents/app и /api/app/desktop без .dmg → 404', async () => {
+    // В тестах autodiscover артефактов отключён (VITEST), VC_*_APP не заданы.
+    const agent = await app.inject({ method: 'GET', url: '/api/agents/app' })
+    expect(agent.statusCode).toBe(404)
+    expect(agent.json().error).toContain('не собрано')
+    const desktop = await app.inject({ method: 'GET', url: '/api/app/desktop' })
+    expect(desktop.statusCode).toBe(404)
   })
 
-  it('агенты: GET /api/agents/script отдаёт JS-бандл', async () => {
+  it('скачивание: GET /api/agents/script отдаёт JS-бандл (attachment)', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/agents/script' })
     expect(res.statusCode).toBe(200)
     expect(res.headers['content-type']).toContain('javascript')
+    expect(res.headers['content-disposition']).toContain('voicechat-agent.cjs')
     expect(res.body.startsWith('#!')).toBe(true)
-    expect(res.body).toContain('VC_AGENT_TOKEN')
   }, 30_000)
 
   it('удаление агента сбрасывает execTarget на сервер', async () => {

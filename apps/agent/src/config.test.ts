@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { normalizeServerUrl, loadConfig } from './config'
+import { encodeAgentConnection } from '@voicechat/shared'
 
 describe('normalizeServerUrl', () => {
   it('http(s):// → ws(s)://', () => {
@@ -29,5 +30,24 @@ describe('loadConfig', () => {
     })
     expect(cfg.token).toBe('flag')
     expect(cfg.serverUrl).toBe('ws://h:1/agent')
+  })
+
+  it('строка подключения (--connection) даёт server+token', () => {
+    const conn = encodeAgentConnection({ server: 'ws://h:8787/agent', token: 'tok42' })
+    const cfg = loadConfig(['--connection', conn], {})
+    expect(cfg).toEqual({ serverUrl: 'ws://h:8787/agent', token: 'tok42' })
+  })
+
+  it('строка подключения из env VC_AGENT_CONNECTION', () => {
+    const conn = encodeAgentConnection({ server: 'wss://host/agent', token: 't' })
+    const cfg = loadConfig([], { VC_AGENT_CONNECTION: conn })
+    expect(cfg).toEqual({ serverUrl: 'wss://host/agent', token: 't' })
+  })
+
+  it('явный --token перекрывает токен из строки подключения', () => {
+    const conn = encodeAgentConnection({ server: 'ws://h/agent', token: 'from-conn' })
+    const cfg = loadConfig(['--connection', conn, '--token', 'explicit'], {})
+    expect(cfg.token).toBe('explicit')
+    expect(cfg.serverUrl).toBe('ws://h/agent')
   })
 })

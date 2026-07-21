@@ -2,43 +2,60 @@
 // токен), удаление (отзыв токена + разрыв соединения).
 
 import { createReadStream, existsSync } from 'node:fs'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import { REST, type AgentInfo } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { buildAgentScript } from '../agents/agentScript.js'
 
+/** Пути к собранным .dmg (undefined — не собрано). */
+export interface AppArtifacts {
+  agentApp?: string
+  desktopApp?: string
+}
+
+/** Отдаёт .dmg на скачивание или 404 с подсказкой, как собрать. */
+function sendDmg(
+  reply: FastifyReply,
+  path: string | undefined,
+  filename: string,
+  buildHint: string
+): FastifyReply {
+  if (!path || !existsSync(path)) {
+    return reply.code(404).send({ error: `Приложение не собрано. Соберите: ${buildHint}` })
+  }
+  return reply
+    .header('content-type', 'application/x-apple-diskimage')
+    .header('content-disposition', `attachment; filename="${filename}"`)
+    .send(createReadStream(path))
+}
+
 export async function registerAgentRoutes(
   app: FastifyInstance,
   db: VoiceChatDb,
   registry: AgentRegistry,
-  /** Путь к .dmg компаньон-приложения (undefined — не собрано). */
-  agentAppPath?: string
+  artifacts: AppArtifacts = {}
 ): Promise<void> {
   app.get(REST.agents, async (): Promise<AgentInfo[]> => {
     const online = registry.onlineIds()
     return db.listAgents().map((a) => ({ ...a, online: online.has(a.id) }))
   })
 
-  // Собранное трей-приложение (.dmg). Собирается заранее: npm --prefix apps/agent-tray run dist.
-  app.get(REST.agentApp, async (_req, reply) => {
-    if (!agentAppPath || !existsSync(agentAppPath)) {
-      return reply.code(404).send({
-        error: 'Приложение агента не собрано. Соберите: npm --prefix apps/agent-tray run dist'
-      })
-    }
-    return reply
-      .header('content-type', 'application/x-apple-diskimage')
-      .header('content-disposition', 'attachment; filename="voicechat-agent.dmg"')
-      .send(createReadStream(agentAppPath))
-  })
+  // Собранные .dmg. Собираются заранее (npm --prefix … run dist).
+  app.get(REST.agentApp, async (_req, reply) =>
+    sendDmg(reply, artifacts.agentApp, 'voicechat-agent.dmg', 'npm --prefix apps/agent-tray run dist')
+  )
+  app.get(REST.desktopApp, async (_req, reply) =>
+    sendDmg(reply, artifacts.desktopApp, 'voicechat-desktop.dmg', 'npm --prefix apps/desktop run dist')
+  )
 
-  // Собранный бандл компаньон-агента (без токена — его подставляет клиент).
+  // Бандл компаньон-агента (.cjs, без токена — настраивается строкой подключения).
   app.get(REST.agentScript, async (_req, reply) => {
     try {
       const script = await buildAgentScript()
       return reply
         .header('content-type', 'application/javascript; charset=utf-8')
+        .header('content-disposition', 'attachment; filename="voicechat-agent.cjs"')
         .send(script)
     } catch (err) {
       return reply

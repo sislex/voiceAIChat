@@ -26,9 +26,10 @@ function formatBytes(bytes: number): string {
 }
 
 /** Разделы меню настроек. */
-type SettingsSection = 'agent' | 'stt' | 'tts' | 'dialog' | 'ui'
+type SettingsSection = 'agent' | 'download' | 'stt' | 'tts' | 'dialog' | 'ui'
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'agent', label: 'Агент' },
+  { id: 'download', label: 'Скачать' },
   { id: 'stt', label: 'Распознавание' },
   { id: 'tts', label: 'Озвучка' },
   { id: 'dialog', label: 'Голосовой диалог' },
@@ -56,11 +57,13 @@ export interface SettingsModalProps {
   onCreateAgent: (name: string) => Promise<AgentCreated | null>
   /** Удалить машину (отзыв токена). */
   onDeleteAgent: (id: string) => void
-  /** Скачать готовый скрипт агента со вшитым токеном. */
-  onDownloadAgentScript: (token: string) => void
-  /** Скачать трей-приложение агента (.dmg). */
+  /** Скачать десктоп-приложение (Mac, .dmg). */
+  onDownloadDesktopApp: () => void
+  /** Скачать трей-приложение агента (Mac, .dmg). */
   onDownloadAgentApp: () => void
-  /** Получить строку подключения для трей-приложения (для копирования). */
+  /** Скачать скрипт агента (Node, .cjs). */
+  onDownloadAgentScript: () => void
+  /** Получить строку подключения для настройки агента (для копирования). */
   onGetConnectionString: (token: string) => Promise<string | null>
   onChange: (patch: Partial<Settings>) => void
   onDownloadVoice: (id: string) => void
@@ -83,8 +86,9 @@ export function SettingsModal({
   agents,
   onCreateAgent,
   onDeleteAgent,
-  onDownloadAgentScript,
+  onDownloadDesktopApp,
   onDownloadAgentApp,
+  onDownloadAgentScript,
   onGetConnectionString,
   onChange,
   onDownloadVoice,
@@ -258,39 +262,17 @@ export function SettingsModal({
                   {createdAgent && (
                     <div className="voicedl" data-testid="agent-token">
                       <p className="fsub">
-                        Машина «{createdAgent.name}» создана. Токен показывается один раз.
-                      </p>
-                      <p className="fsub">
-                        <b>Приложение с иконкой в трее</b> (рекомендуется): скачайте .dmg,
-                        установите и при первом запуске вставьте строку подключения.
+                        Машина «{createdAgent.name}» создана — строка подключения показывается
+                        один раз. Скачайте агента в разделе «Скачать», при первом запуске вставьте
+                        строку подключения (годится и для приложения, и для скрипта).
                       </p>
                       <div className="vrow2">
-                        <button
-                          className="vdl"
-                          aria-label="Скачать приложение"
-                          onClick={() => onDownloadAgentApp()}
-                        >
-                          ⬇ Скачать приложение
-                        </button>
                         <button
                           className="vdl"
                           aria-label="Скопировать строку подключения"
                           onClick={() => void copyConnectionString(createdAgent.token)}
                         >
                           {connCopied ? '✓ строка скопирована' : 'Скопировать строку подключения'}
-                        </button>
-                      </div>
-                      <p className="fsub">
-                        <b>Или скрипт</b> (headless): запуск в терминале командой{' '}
-                        <code>node voicechat-agent.cjs</code> — нужен только Node.js.
-                      </p>
-                      <div className="vrow2">
-                        <button
-                          className="vdl"
-                          aria-label="Скачать скрипт"
-                          onClick={() => onDownloadAgentScript(createdAgent.token)}
-                        >
-                          ⬇ Скачать скрипт (.cjs)
                         </button>
                         <button
                           className="vdl"
@@ -329,6 +311,45 @@ export function SettingsModal({
                     ))}
                   </div>
                 )}
+              </>
+            )}
+
+            {section === 'download' && (
+              <>
+                <div className="frow">
+                  <div>
+                    <p className="flab">Десктоп-приложение</p>
+                    <p className="fsub">Основной клиент Голос·Чат для Mac (.dmg)</p>
+                  </div>
+                  <button className="vdl" aria-label="Скачать десктоп" onClick={() => onDownloadDesktopApp()}>
+                    ⬇ Скачать
+                  </button>
+                </div>
+
+                <div className="frow">
+                  <div>
+                    <p className="flab">Агент — приложение</p>
+                    <p className="fsub">Иконка в трее, выполнение команд на этой машине (Mac, .dmg)</p>
+                  </div>
+                  <button className="vdl" aria-label="Скачать приложение агента" onClick={() => onDownloadAgentApp()}>
+                    ⬇ Скачать
+                  </button>
+                </div>
+
+                <div className="frow">
+                  <div>
+                    <p className="flab">Агент — скрипт</p>
+                    <p className="fsub">Запуск в терминале: <code>node voicechat-agent.cjs</code> (нужен Node.js)</p>
+                  </div>
+                  <button className="vdl" aria-label="Скачать скрипт агента" onClick={() => onDownloadAgentScript()}>
+                    ⬇ Скачать
+                  </button>
+                </div>
+
+                <p className="fsub">
+                  Чтобы подключить агента: создайте машину в разделе «Агент», скопируйте строку
+                  подключения и вставьте её при первом запуске приложения (или передайте скрипту).
+                </p>
               </>
             )}
 

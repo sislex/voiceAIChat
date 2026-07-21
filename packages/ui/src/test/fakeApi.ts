@@ -123,11 +123,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const idx = agents.findIndex((a) => a.id === id)
       if (idx >= 0) agents.splice(idx, 1)
     },
-    'agents:script': async ({ token }) => ({
-      filename: 'voicechat-agent.cjs',
-      content: `// fake agent bundle, token=${token}`
-    }),
-    'agents:appUrl': async () => 'http://localhost/api/agents/app',
+    'downloads:url': async ({ kind }) => `http://localhost/api/download/${kind}`,
     'agents:connectionString': async ({ token }) => `vcagent:fake-${token}`,
     'cc:projects': async () => [],
     'cc:sessions': async () => [],

@@ -79,14 +79,9 @@ export interface IpcInvokeMap {
   'agents:create': { arg: { name: string }; result: AgentCreated }
   /** Удалить машину-агента (отзывает токен, рвёт соединение). */
   'agents:delete': { arg: { id: string }; result: void }
-  /**
-   * Готовый к запуску скрипт компаньон-агента (адрес сервера и токен уже вшиты).
-   * Возвращает имя файла и содержимое для скачивания.
-   */
-  'agents:script': { arg: { token: string }; result: { filename: string; content: string } }
-  /** Абсолютный URL .dmg трей-приложения (для скачивания ссылкой). */
-  'agents:appUrl': { arg: void; result: string }
-  /** Строка подключения (адрес+токен) для вставки в трей-приложение. */
+  /** Абсолютный URL артефакта для скачивания (десктоп/агент-приложение/скрипт). */
+  'downloads:url': { arg: { kind: 'desktop' | 'agent-app' | 'agent-script' }; result: string }
+  /** Строка подключения (адрес+токен) для настройки агента (приложение и скрипт). */
   'agents:connectionString': { arg: { token: string }; result: string }
   /** Проекты Claude Code (~/.claude/projects). */
   'cc:projects': { arg: void; result: CcProject[] }
@@ -326,8 +321,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'agents:list',
   'agents:create',
   'agents:delete',
-  'agents:script',
-  'agents:appUrl',
+  'downloads:url',
   'agents:connectionString',
   'cc:projects',
   'cc:sessions',

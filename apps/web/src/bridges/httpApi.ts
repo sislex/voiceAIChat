@@ -69,23 +69,15 @@ export function createHttpApi(): RendererApi {
     'agents:delete': async ({ id }) => {
       await req(REST.agent(id), { method: 'DELETE' })
     },
-    'agents:script': async ({ token }) => {
-      const res = await fetch(SERVER_HTTP + REST.agentScript)
-      if (!res.ok) throw new Error(`GET ${REST.agentScript} → ${res.status}`)
-      const bundle = await res.text()
-      // Адрес /agent берём из того же origin, что и WS-клиент (заменяя /ws на /agent).
-      const agentUrl = serverWsUrl().replace(/\/ws$/, '/agent')
-      // Вшиваем адрес и токен в начало файла — запуск без флагов: `node voicechat-agent.cjs`.
-      const header =
-        `process.env.VC_AGENT_SERVER = process.env.VC_AGENT_SERVER || ${JSON.stringify(agentUrl)}\n` +
-        `process.env.VC_AGENT_TOKEN = process.env.VC_AGENT_TOKEN || ${JSON.stringify(token)}\n`
-      // Shebang должен остаться первой строкой — вставляем env сразу после него.
-      const withEnv = bundle.startsWith('#!')
-        ? bundle.replace(/^(#![^\n]*\n)/, `$1${header}`)
-        : header + bundle
-      return { filename: 'voicechat-agent.cjs', content: withEnv }
+    'downloads:url': async ({ kind }) => {
+      const path =
+        kind === 'desktop'
+          ? REST.desktopApp
+          : kind === 'agent-app'
+            ? REST.agentApp
+            : REST.agentScript
+      return SERVER_HTTP + path
     },
-    'agents:appUrl': async () => SERVER_HTTP + REST.agentApp,
     'agents:connectionString': async ({ token }) =>
       encodeAgentConnection({ server: serverWsUrl().replace(/\/ws$/, '/agent'), token }),
     'cc:projects': () => req(REST.ccProjects),

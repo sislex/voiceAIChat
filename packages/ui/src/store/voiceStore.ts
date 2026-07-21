@@ -232,11 +232,13 @@ export interface StoreActions {
   createAgent(name: string): Promise<AgentCreated | null>
   /** Удалить машину-агента (отзыв токена). */
   deleteAgent(id: string): Promise<void>
-  /** Скачать готовый скрипт агента со вшитым токеном (запуск `node <файл>`). */
-  downloadAgentScript(token: string): Promise<void>
-  /** Скачать трей-приложение агента (.dmg). */
+  /** Скачать десктоп-приложение (Mac, .dmg). */
+  downloadDesktopApp(): Promise<void>
+  /** Скачать трей-приложение агента (Mac, .dmg). */
   downloadAgentApp(): Promise<void>
-  /** Получить строку подключения для вставки в трей-приложение. */
+  /** Скачать скрипт агента (Node, .cjs). */
+  downloadAgentScript(): Promise<void>
+  /** Получить строку подключения для настройки агента (приложение или скрипт). */
   getAgentConnectionString(token: string): Promise<string | null>
   /** Добавить запись активности агента (claude:log) в лог консоли. */
   applyClaudeLog(entry: ClaudeLogEntry): void
@@ -660,27 +662,19 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshAgents()
   }
 
-  /** Скачивает готовый к запуску скрипт агента (адрес и токен уже вшиты). */
-  async function downloadAgentScript(token: string): Promise<void> {
+  /** Скачивает артефакт по прямой ссылке (десктоп/агент-приложение/скрипт). */
+  async function downloadArtifact(kind: 'desktop' | 'agent-app' | 'agent-script'): Promise<void> {
     try {
-      const { filename, content } = await api['agents:script']({ token })
-      const download = deps.download ?? defaultDownload
-      download(filename, 'application/javascript', content)
-    } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
-    }
-  }
-
-  /** Скачивает трей-приложение (.dmg) по прямой ссылке. */
-  async function downloadAgentApp(): Promise<void> {
-    try {
-      const url = await api['agents:appUrl']()
+      const url = await api['downloads:url']({ kind })
       if (deps.openUrl) deps.openUrl(url)
       else window.location.assign(url)
     } catch (err) {
       setState({ error: err instanceof Error ? err.message : String(err) })
     }
   }
+  const downloadDesktopApp = (): Promise<void> => downloadArtifact('desktop')
+  const downloadAgentApp = (): Promise<void> => downloadArtifact('agent-app')
+  const downloadAgentScript = (): Promise<void> => downloadArtifact('agent-script')
 
   /** Строка подключения для вставки в трей-приложение (null при ошибке). */
   async function getAgentConnectionString(token: string): Promise<string | null> {
@@ -1296,8 +1290,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       deleteModel,
       createAgent,
       deleteAgent,
-      downloadAgentScript,
+      downloadDesktopApp,
       downloadAgentApp,
+      downloadAgentScript,
       getAgentConnectionString,
       applyClaudeLog,
       toggleConsole,

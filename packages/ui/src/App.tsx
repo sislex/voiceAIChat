@@ -158,8 +158,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           agents={state.agents}
           onCreateAgent={actions.createAgent}
           onDeleteAgent={(id) => void actions.deleteAgent(id)}
-          onDownloadAgentScript={(token) => void actions.downloadAgentScript(token)}
+          onDownloadDesktopApp={() => void actions.downloadDesktopApp()}
           onDownloadAgentApp={() => void actions.downloadAgentApp()}
+          onDownloadAgentScript={() => void actions.downloadAgentScript()}
           onGetConnectionString={actions.getAgentConnectionString}
           onChange={actions.updateSettings}
           onDownloadVoice={actions.downloadVoice}

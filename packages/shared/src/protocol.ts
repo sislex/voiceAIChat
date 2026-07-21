@@ -82,6 +82,7 @@ export const REST = {
   agents: '/api/agents',
   agentScript: '/api/agents/script',
   agentApp: '/api/agents/app',
+  desktopApp: '/api/app/desktop',
   agent: (id: string) => `/api/agents/${encodeURIComponent(id)}`,
   ccProjects: '/api/cc/projects',
   ccSessions: (slug: string) => `/api/cc/projects/${encodeURIComponent(slug)}/sessions`,
