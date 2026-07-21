@@ -88,6 +88,8 @@ export function createHttpApi(): RendererApi {
     'cc:projects': () => req(REST.ccProjects),
     'cc:sessions': ({ slug }) => req(REST.ccSessions(slug)),
     'cc:transcript': ({ slug, id, limit }) =>
-      req(REST.ccTranscript(slug, id) + (limit ? `?limit=${limit}` : ''))
+      req(REST.ccTranscript(slug, id) + (limit ? `?limit=${limit}` : '')),
+    'cc:resume': ({ slug, id }) =>
+      req(REST.ccResume, { method: 'POST', body: JSON.stringify({ slug, id }) })
   }
 }

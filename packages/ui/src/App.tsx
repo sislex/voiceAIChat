@@ -128,6 +128,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           activeSession={state.ccSessionId}
           onSelectProject={actions.selectCcProject}
           onSelectSession={actions.selectCcSession}
+          onResumeSession={(slug, id) => void actions.resumeCcSession(slug, id)}
           onClose={actions.closeObserver}
         />
       )}

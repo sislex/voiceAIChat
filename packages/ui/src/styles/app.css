@@ -1447,6 +1447,13 @@
   letter-spacing: 0.4px;
   color: #a33a3a;
 }
+.cc-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
 .cc-msg {
   display: flex;
   flex-direction: column;

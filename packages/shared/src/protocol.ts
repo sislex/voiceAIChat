@@ -85,7 +85,8 @@ export const REST = {
   ccProjects: '/api/cc/projects',
   ccSessions: (slug: string) => `/api/cc/projects/${encodeURIComponent(slug)}/sessions`,
   ccTranscript: (slug: string, id: string) =>
-    `/api/cc/projects/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(id)}`
+    `/api/cc/projects/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(id)}`,
+  ccResume: '/api/cc/resume'
 } as const
 
 // --- WebSocket -----------------------------------------------------------

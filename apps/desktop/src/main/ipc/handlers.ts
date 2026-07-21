@@ -2,6 +2,7 @@ import type { VoiceChatDb } from '../db/database'
 import type { IpcArg, IpcChannel, IpcResult, SttStatus, UploadInfo } from '@shared/ipc'
 import type { TtsVoiceCatalog, TtsVoiceInfo, WhisperModel, WhisperModelInfo } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
+import { ccResumeMessages, ccResumeTitle, ccTimeLabel } from '@shared/cc'
 import { listProjects, listSessions, readTranscript } from '../cc/ccSessions'
 
 /**
@@ -114,6 +115,16 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
 
     'cc:projects': () => listProjects(),
     'cc:sessions': ({ slug }) => listSessions(slug),
-    'cc:transcript': ({ slug, id, limit }) => readTranscript(slug, id, { limit })
+    'cc:transcript': ({ slug, id, limit }) => readTranscript(slug, id, { limit }),
+    'cc:resume': ({ slug, id }) => {
+      const items = readTranscript(slug, id)
+      const conv = db.createConversation(ccResumeTitle(items))
+      const now = Date.now()
+      for (const m of ccResumeMessages(items)) {
+        db.addMessage(conv.id, m.role, m.text, ccTimeLabel(m.ts, now))
+      }
+      db.setClaudeSession(conv.id, id)
+      return { conversation: db.getConversation(conv.id)!, messages: db.listMessages(conv.id) }
+    }
   }
 }

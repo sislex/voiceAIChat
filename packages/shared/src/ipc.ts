@@ -90,6 +90,11 @@ export interface IpcInvokeMap {
   'cc:sessions': { arg: { slug: string }; result: CcSession[] }
   /** Транскрипт сессии (последние `limit` записей). */
   'cc:transcript': { arg: { slug: string; id: string; limit?: number }; result: CcItem[] }
+  /**
+   * Продолжить сессию Claude Code: создаёт разговор с импортом истории и
+   * привязкой к session-id (следующий ход — через `claude --resume`).
+   */
+  'cc:resume': { arg: { slug: string; id: string }; result: ConversationWithMessages }
 }
 
 export type IpcChannel = keyof IpcInvokeMap
@@ -320,7 +325,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'agents:script',
   'cc:projects',
   'cc:sessions',
-  'cc:transcript'
+  'cc:transcript',
+  'cc:resume'
 ]
 
 /**

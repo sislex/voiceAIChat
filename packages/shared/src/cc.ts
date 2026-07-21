@@ -2,6 +2,8 @@
 // Источник — ~/.claude/projects/<слаг>/<session-id>.jsonl (по строке-событию).
 // Чистые функции — тестируются на фикстурах строк.
 
+import type { MessageRole } from './types'
+
 /** Проект Claude Code (папка в ~/.claude/projects). */
 export interface CcProject {
   /** Имя папки (слаг закодированного пути). */
@@ -153,6 +155,42 @@ export function ccSessionTitle(headText: string, max = 80): string {
     }
   }
   return 'Без названия'
+}
+
+// --- Продолжение сессии в приложении -------------------------------------
+// Импорт видимой истории сессии CC в ленту разговора приложения + привязка к
+// session-id (дальше ход идёт через `claude --resume <session-id>`).
+
+/** Одна реплика для импорта в разговор приложения. */
+export interface CcResumeMessage {
+  role: MessageRole
+  text: string
+  /** Момент времени исходной записи (мс), если известен. */
+  ts?: number
+}
+
+/** Отбирает из транскрипта видимые реплики (user/assistant) для ленты чата. */
+export function ccResumeMessages(items: CcItem[]): CcResumeMessage[] {
+  const out: CcResumeMessage[] = []
+  for (const i of items) {
+    if (i.kind === 'user') out.push({ role: 'u1', text: i.text, ts: i.ts })
+    else if (i.kind === 'assistant') out.push({ role: 'ai', text: i.text, ts: i.ts })
+  }
+  return out
+}
+
+/** Заголовок разговора-продолжения — первая реплика пользователя из транскрипта. */
+export function ccResumeTitle(items: CcItem[], max = 80): string {
+  const user = items.find((i) => i.kind === 'user')
+  if (!user) return 'Продолжение сессии'
+  const t = user.text.replace(/\s+/g, ' ').trim()
+  return t.length > max ? `${t.slice(0, max)}…` : t
+}
+
+/** Метка времени HH:MM из ts записи (или из fallback-времени). */
+export function ccTimeLabel(ts: number | undefined, fallbackNow: number): string {
+  const d = new Date(ts ?? fallbackNow)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 /** cwd из «головы» транскрипта (первое непустое поле cwd). */

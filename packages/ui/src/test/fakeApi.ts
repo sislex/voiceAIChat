@@ -130,6 +130,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'cc:projects': async () => [],
     'cc:sessions': async () => [],
     'cc:transcript': async () => [],
+    'cc:resume': async ({ id }) => {
+      const conv = makeConversation(`Продолжение ${id}`)
+      conversations.push(conv)
+      return { conversation: withCounts(conv), messages: [] }
+    },
     'tts:voices': async () => [
       { id: 'ru_RU-irina-medium', label: 'Irina — русский (medium)' },
       { id: 'ru_RU-dmitri-medium', label: 'Dmitri — русский (medium)' }

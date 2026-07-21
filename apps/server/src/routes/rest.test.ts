@@ -94,6 +94,46 @@ describe('REST: conversations/messages/settings', () => {
     }
   })
 
+  it('cc:resume создаёт разговор с импортом истории и привязкой session-id', async () => {
+    const ccDir = mkdtempSync(join(tmpdir(), 'cc-resume-'))
+    const proj = join(ccDir, '-Users-x-demo')
+    mkdirSync(proj, { recursive: true })
+    writeFileSync(
+      join(proj, 'sess-42.jsonl'),
+      [
+        JSON.stringify({ type: 'user', cwd: '/Users/x/demo', message: { content: 'Почини баг' } }),
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Готово' }] } })
+      ].join('\n')
+    )
+    const prev = process.env.VC_CC_DIR
+    process.env.VC_CC_DIR = ccDir
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/cc/resume',
+        payload: { slug: '-Users-x-demo', id: 'sess-42' }
+      })
+      expect(res.statusCode).toBe(200)
+      const { conversation, messages } = res.json()
+      // История импортирована в ленту.
+      expect(messages.map((m: { role: string; text: string }) => [m.role, m.text])).toEqual([
+        ['u1', 'Почини баг'],
+        ['ai', 'Готово']
+      ])
+      // Разговор привязан к session-id → следующий ход пойдёт через --resume.
+      expect(db.getConversation(conversation.id)?.claudeSessionId).toBe('sess-42')
+    } finally {
+      if (prev === undefined) delete process.env.VC_CC_DIR
+      else process.env.VC_CC_DIR = prev
+      rmSync(ccDir, { recursive: true, force: true })
+    }
+  })
+
+  it('cc:resume без slug/id → 400', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/cc/resume', payload: {} })
+    expect(res.statusCode).toBe(400)
+  })
+
   it('добавление сообщения видно в get', async () => {
     const c = (await app.inject({ method: 'POST', url: '/api/conversations', payload: {} })).json()
     const m = (

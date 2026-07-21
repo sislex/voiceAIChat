@@ -1,7 +1,14 @@
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
 
 import type { FastifyInstance } from 'fastify'
-import { REST, type AddMessageArgs, type Settings } from '@voicechat/shared'
+import {
+  REST,
+  ccResumeMessages,
+  ccResumeTitle,
+  ccTimeLabel,
+  type AddMessageArgs,
+  type Settings
+} from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { listMcpServers } from '../claude/mcp.js'
 import { listProjects, listSessions, readTranscript } from '../cc/ccSessions.js'
@@ -71,6 +78,20 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promi
         limit: req.query.limit ? Number(req.query.limit) : undefined
       })
   )
+
+  app.post<{ Body: { slug: string; id: string } }>(REST.ccResume, async (req, reply) => {
+    const { slug, id } = req.body ?? {}
+    if (!slug || !id) return reply.code(400).send({ error: 'slug и id обязательны' })
+    const items = readTranscript(slug, id)
+    const conv = db.createConversation(ccResumeTitle(items))
+    const now = Date.now()
+    for (const m of ccResumeMessages(items)) {
+      db.addMessage(conv.id, m.role, m.text, ccTimeLabel(m.ts, now))
+    }
+    // Привязка к session-id CC → следующий ход пойдёт через `claude --resume <id>`.
+    db.setClaudeSession(conv.id, id)
+    return { conversation: db.getConversation(conv.id), messages: db.listMessages(conv.id) }
+  })
 
   app.get(REST.settings, async () => db.getSettings())
 

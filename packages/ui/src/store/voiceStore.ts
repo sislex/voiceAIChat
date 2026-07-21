@@ -244,6 +244,8 @@ export interface StoreActions {
   selectCcProject(slug: string): Promise<void>
   /** Выбрать сессию (грузит транскрипт + запускает live-tail). */
   selectCcSession(slug: string, id: string): Promise<void>
+  /** Продолжить сессию: создать разговор с импортом истории и привязкой к session-id. */
+  resumeCcSession(slug: string, id: string): Promise<void>
   /** Добавить пришедшие по live-tail записи в транскрипт. */
   applyCcTailItems(items: CcItem[]): void
   /** Прогресс скачивания голоса (tts:voiceProgress). */
@@ -753,6 +755,27 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     })
   }
 
+  /** Продолжить выбранную сессию Claude Code: импорт истории + привязка session-id. */
+  async function resumeCcSession(slug: string, id: string): Promise<void> {
+    if (!api['cc:resume']) return
+    try {
+      const { conversation, messages } = await api['cc:resume']({ slug, id })
+      deps.ccTailStop?.()
+      setState({
+        activeId: conversation.id,
+        messages,
+        ccOpen: false,
+        ccProjectSlug: null,
+        ccSessionId: null,
+        ccSessions: [],
+        ccTranscript: []
+      })
+      await refreshConversations()
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
   async function selectCcProject(slug: string): Promise<void> {
     deps.ccTailStop?.()
     setState({ ccProjectSlug: slug, ccSessionId: null, ccSessions: [], ccTranscript: [] })
@@ -1253,6 +1276,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       closeObserver,
       selectCcProject,
       selectCcSession,
+      resumeCcSession,
       applyCcTailItems,
       applyVoiceProgress,
       applyVoiceDone,
