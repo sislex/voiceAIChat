@@ -3,6 +3,10 @@ productName: Голос·Чат Агент
 directories:
   output: release
 
+# Ad-hoc подпись после упаковки — иначе на Apple Silicon macOS считает
+# неподписанный .app «повреждённым» и не даёт открыть даже через ПКМ.
+afterPack: scripts/afterPack.cjs
+
 files:
   - out/**/*
   - package.json
