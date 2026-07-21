@@ -3,7 +3,7 @@
 
 import { REST } from '@voicechat/shared'
 import type { RendererApi } from '@shared/ipc'
-import { SERVER_HTTP } from './config'
+import { SERVER_HTTP, serverWsUrl } from './config'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   // Content-Type ставим только при наличии тела: иначе Fastify пытается распарсить
@@ -68,6 +68,22 @@ export function createHttpApi(): RendererApi {
       req(REST.agents, { method: 'POST', body: JSON.stringify({ name }) }),
     'agents:delete': async ({ id }) => {
       await req(REST.agent(id), { method: 'DELETE' })
+    },
+    'agents:script': async ({ token }) => {
+      const res = await fetch(SERVER_HTTP + REST.agentScript)
+      if (!res.ok) throw new Error(`GET ${REST.agentScript} → ${res.status}`)
+      const bundle = await res.text()
+      // Адрес /agent берём из того же origin, что и WS-клиент (заменяя /ws на /agent).
+      const agentUrl = serverWsUrl().replace(/\/ws$/, '/agent')
+      // Вшиваем адрес и токен в начало файла — запуск без флагов: `node voicechat-agent.cjs`.
+      const header =
+        `process.env.VC_AGENT_SERVER = process.env.VC_AGENT_SERVER || ${JSON.stringify(agentUrl)}\n` +
+        `process.env.VC_AGENT_TOKEN = process.env.VC_AGENT_TOKEN || ${JSON.stringify(token)}\n`
+      // Shebang должен остаться первой строкой — вставляем env сразу после него.
+      const withEnv = bundle.startsWith('#!')
+        ? bundle.replace(/^(#![^\n]*\n)/, `$1${header}`)
+        : header + bundle
+      return { filename: 'voicechat-agent.cjs', content: withEnv }
     },
     'cc:projects': () => req(REST.ccProjects),
     'cc:sessions': ({ slug }) => req(REST.ccSessions(slug)),

@@ -16,6 +16,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@voicechat/shared": "*",
     "better-sqlite3": "^11.10.0",
+    "esbuild": "^0.21.5",
     "fastify": "^5.1.0",
     "zod": "^4.4.3"
   },

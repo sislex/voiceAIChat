@@ -230,6 +230,8 @@ export interface StoreActions {
   createAgent(name: string): Promise<AgentCreated | null>
   /** Удалить машину-агента (отзыв токена). */
   deleteAgent(id: string): Promise<void>
+  /** Скачать готовый скрипт агента со вшитым токеном (запуск `node <файл>`). */
+  downloadAgentScript(token: string): Promise<void>
   /** Добавить запись активности агента (claude:log) в лог консоли. */
   applyClaudeLog(entry: ClaudeLogEntry): void
   /** Свернуть/развернуть панель консоли. */
@@ -648,6 +650,17 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ settings: { ...state.settings, execTarget: null } })
     }
     await refreshAgents()
+  }
+
+  /** Скачивает готовый к запуску скрипт агента (адрес и токен уже вшиты). */
+  async function downloadAgentScript(token: string): Promise<void> {
+    try {
+      const { filename, content } = await api['agents:script']({ token })
+      const download = deps.download ?? defaultDownload
+      download(filename, 'application/javascript', content)
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
   }
 
   /**
@@ -1233,6 +1246,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       deleteModel,
       createAgent,
       deleteAgent,
+      downloadAgentScript,
       applyClaudeLog,
       toggleConsole,
       openObserver,

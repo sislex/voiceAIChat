@@ -210,6 +210,14 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.statusCode).toBe(400)
   })
 
+  it('агенты: GET /api/agents/script отдаёт JS-бандл', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/agents/script' })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('javascript')
+    expect(res.body.startsWith('#!')).toBe(true)
+    expect(res.body).toContain('VC_AGENT_TOKEN')
+  }, 30_000)
+
   it('удаление агента сбрасывает execTarget на сервер', async () => {
     const created = (
       await app.inject({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })

@@ -56,6 +56,8 @@ export interface SettingsModalProps {
   onCreateAgent: (name: string) => Promise<AgentCreated | null>
   /** Удалить машину (отзыв токена). */
   onDeleteAgent: (id: string) => void
+  /** Скачать готовый скрипт агента со вшитым токеном. */
+  onDownloadAgentScript: (token: string) => void
   onChange: (patch: Partial<Settings>) => void
   onDownloadVoice: (id: string) => void
   /** Удалить установленный голос Piper. */
@@ -77,6 +79,7 @@ export function SettingsModal({
   agents,
   onCreateAgent,
   onDeleteAgent,
+  onDownloadAgentScript,
   onChange,
   onDownloadVoice,
   onDeleteVoice,
@@ -242,14 +245,18 @@ export function SettingsModal({
                   {createdAgent && (
                     <div className="voicedl" data-testid="agent-token">
                       <p className="fsub">
-                        Токен для «{createdAgent.name}» — показывается один раз. Запустите на
-                        своей машине:
+                        Машина «{createdAgent.name}» создана. Токен показывается один раз.
+                        Скачайте скрипт (адрес сервера и токен уже вшиты) и запустите на своей
+                        машине командой <code>node voicechat-agent.cjs</code> — нужен только Node.js.
                       </p>
-                      <code className="fsub" style={{ userSelect: 'all', wordBreak: 'break-all' }}>
-                        npx tsx apps/agent/src/index.ts --server ws://&lt;сервер&gt;:8787/agent
-                        --token {createdAgent.token}
-                      </code>
                       <div className="vrow2">
+                        <button
+                          className="vdl"
+                          aria-label="Скачать агент"
+                          onClick={() => onDownloadAgentScript(createdAgent.token)}
+                        >
+                          ⬇ Скачать агент
+                        </button>
                         <button
                           className="vdl"
                           aria-label="Скопировать токен"
@@ -257,11 +264,11 @@ export function SettingsModal({
                             void copyText(createdAgent.token).then((ok) => setTokenCopied(ok))
                           }}
                         >
-                          {tokenCopied ? '✓ скопирован' : 'Скопировать токен'}
+                          {tokenCopied ? '✓ токен скопирован' : 'Скопировать токен'}
                         </button>
                         <button
                           className="vdl"
-                          aria-label="Скрыть токен"
+                          aria-label="Скрыть"
                           onClick={() => setCreatedAgent(null)}
                         >
                           Скрыть

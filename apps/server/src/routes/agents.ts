@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify'
 import { REST, type AgentInfo } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { AgentRegistry } from '../agents/registry.js'
+import { buildAgentScript } from '../agents/agentScript.js'
 
 export async function registerAgentRoutes(
   app: FastifyInstance,
@@ -14,6 +15,20 @@ export async function registerAgentRoutes(
   app.get(REST.agents, async (): Promise<AgentInfo[]> => {
     const online = registry.onlineIds()
     return db.listAgents().map((a) => ({ ...a, online: online.has(a.id) }))
+  })
+
+  // Собранный бандл компаньон-агента (без токена — его подставляет клиент).
+  app.get(REST.agentScript, async (_req, reply) => {
+    try {
+      const script = await buildAgentScript()
+      return reply
+        .header('content-type', 'application/javascript; charset=utf-8')
+        .send(script)
+    } catch (err) {
+      return reply
+        .code(500)
+        .send({ error: `Не удалось собрать агента: ${err instanceof Error ? err.message : err}` })
+    }
   })
 
   app.post<{ Body: { name?: string } }>(REST.agents, async (req, reply) => {

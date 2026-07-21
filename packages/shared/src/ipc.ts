@@ -79,6 +79,11 @@ export interface IpcInvokeMap {
   'agents:create': { arg: { name: string }; result: AgentCreated }
   /** Удалить машину-агента (отзывает токен, рвёт соединение). */
   'agents:delete': { arg: { id: string }; result: void }
+  /**
+   * Готовый к запуску скрипт компаньон-агента (адрес сервера и токен уже вшиты).
+   * Возвращает имя файла и содержимое для скачивания.
+   */
+  'agents:script': { arg: { token: string }; result: { filename: string; content: string } }
   /** Проекты Claude Code (~/.claude/projects). */
   'cc:projects': { arg: void; result: CcProject[] }
   /** Сессии проекта Claude Code. */
@@ -312,6 +317,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'agents:list',
   'agents:create',
   'agents:delete',
+  'agents:script',
   'cc:projects',
   'cc:sessions',
   'cc:transcript'
