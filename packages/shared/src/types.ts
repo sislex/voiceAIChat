@@ -206,6 +206,25 @@ export interface Settings {
 /** Поддерживаемые LLM-движки (CLI). */
 export type LlmProvider = 'claude' | 'codex'
 
+/** Модель Codex для меню (id → в `codex exec -m`). */
+export interface CodexModelInfo {
+  id: string
+  label: string
+}
+
+/**
+ * Пресеты моделей Codex. Пустой id — модель по умолчанию из ~/.codex/config.toml.
+ * Список фиксированный (у codex нет CLI для перечисления); если в настройках
+ * сохранена модель не из списка, UI добавит её отдельным пунктом.
+ */
+export const CODEX_MODELS: CodexModelInfo[] = [
+  { id: '', label: 'По умолчанию (из codex)' },
+  { id: 'gpt-5-codex', label: 'gpt-5-codex' },
+  { id: 'gpt-5', label: 'gpt-5' },
+  { id: 'o3', label: 'o3' },
+  { id: 'o4-mini', label: 'o4-mini' }
+]
+
 export const DEFAULT_SETTINGS: Settings = {
   model: 'opus',
   whisperModel: 'large-v3-turbo',
