@@ -25,6 +25,13 @@ export function registerRemoteBashMcp(
       if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
       const agentId = req.query.agent ?? ''
 
+      // Отмена команды именно этого запроса при обрыве (claude убит на barge-in),
+      // не затрагивая параллельные команды на той же машине.
+      const abort = new AbortController()
+      req.raw.on('close', () => {
+        if (!reply.raw.writableEnded) abort.abort()
+      })
+
       const server = new McpServer({ name: 'remote', version: '1.0.0' })
       server.registerTool(
         'bash',
@@ -40,7 +47,7 @@ export function registerRemoteBashMcp(
         async ({ command, timeout_ms }) => {
           try {
             const timeoutMs = Math.min(timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
-            const res = await registry.exec(agentId, command, timeoutMs)
+            const res = await registry.exec(agentId, command, timeoutMs, abort.signal)
             const tail = `[exit code: ${res.exitCode ?? '?'}${res.timedOut ? ', таймаут' : ''}]`
             return {
               content: [{ type: 'text', text: `${res.output}\n${tail}`.trim() }],
@@ -57,18 +64,27 @@ export function registerRemoteBashMcp(
         }
       )
 
-      // Ход прерван (claude убит) → HTTP-запрос оборвался → снимаем команды с агента.
-      req.raw.on('close', () => {
-        if (!reply.raw.writableEnded) registry.cancelAll(agentId)
-      })
-
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined, // stateless: без session-id
         enableJsonResponse: true // обычный JSON-ответ вместо SSE
       })
       reply.hijack() // транспорт пишет в сырой res сам
-      await server.connect(transport)
-      await transport.handleRequest(req.raw, reply.raw, req.body)
+      try {
+        await server.connect(transport)
+        await transport.handleRequest(req.raw, reply.raw, req.body)
+      } catch (err) {
+        // Иначе hijacked-ответ не завершится и MCP-клиент claude повиснет.
+        if (!reply.raw.writableEnded) {
+          try {
+            reply.raw.writeHead(500, { 'content-type': 'application/json' })
+            reply.raw.end(
+              JSON.stringify({ error: err instanceof Error ? err.message : 'mcp transport error' })
+            )
+          } catch {
+            /* соединение уже закрыто */
+          }
+        }
+      }
     }
   )
 }

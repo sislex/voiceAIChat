@@ -135,6 +135,31 @@ describe('AgentRegistry', () => {
     expect(reg.nameOf('a1')).toBe('Мак')
   })
 
+  it('signal отменяет только свою команду, не трогая другие на той же машине', async () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock)
+    const ac = new AbortController()
+    const p1 = reg.exec('a1', 'sleep 5', 10_000, ac.signal) // exec-1
+    const p2 = reg.exec('a1', 'sleep 5', 10_000) // exec-2 (без signal)
+    ac.abort()
+    await expect(p1).rejects.toThrow('отменена')
+    // exec.cancel отправлен только для exec-1.
+    const cancels = sock.sent.filter((m) => m.t === 'exec.cancel')
+    expect(cancels).toEqual([{ t: 'exec.cancel', execId: 'exec-1' }])
+    // exec-2 всё ещё живой — завершаем его штатно.
+    reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-2', exitCode: 0 })
+    await expect(p2).resolves.toMatchObject({ exitCode: 0 })
+  })
+
+  it('exec с уже прерванным signal → reject сразу', async () => {
+    const reg = makeRegistry()
+    reg.register('a1', 'Мак', fakeSocket())
+    const ac = new AbortController()
+    ac.abort()
+    await expect(reg.exec('a1', 'ls', 1000, ac.signal)).rejects.toThrow('отменена')
+  })
+
   it('cancelAll отклоняет команды и шлёт exec.cancel', async () => {
     const reg = makeRegistry()
     const sock = fakeSocket()

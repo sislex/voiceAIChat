@@ -134,10 +134,17 @@ export class AgentRegistry {
   /**
    * Выполняет команду на агенте: шлёт exec.start, копит вывод (с капом),
    * резолвится по exec.done/exec.error, дисконнекту или страховочному таймауту.
+   * `signal` отменяет только эту команду (напр., оборвался HTTP-запрос claude).
    */
-  exec(agentId: string, command: string, timeoutMs: number): Promise<ExecResult> {
+  exec(
+    agentId: string,
+    command: string,
+    timeoutMs: number,
+    signal?: AbortSignal
+  ): Promise<ExecResult> {
     const agent = this.online.get(agentId)
     if (!agent) return Promise.reject(new Error('Машина не в сети'))
+    if (signal?.aborted) return Promise.reject(new Error('Команда отменена'))
 
     // Серверная проверка политики (первый барьер; агент проверяет ещё раз локально).
     const verdict = evaluateAgentCommand(agent.policy, command)
@@ -150,19 +157,34 @@ export class AgentRegistry {
       const timer = setTimeout(() => {
         // Агент не ответил даже со своим таймаутом — считаем команду зависшей.
         this.pending.delete(execId)
+        signal?.removeEventListener('abort', onAbort)
         this.send(agentId, { t: 'exec.cancel', execId })
         resolve({ exitCode: null, output: this.output(entryRef), timedOut: true })
       }, timeoutMs + GUARD_EXTRA_MS)
+      // Отмена только этой команды (без затрагивания других на той же машине).
+      const onAbort = (): void => {
+        if (!this.pending.delete(execId)) return
+        clearTimeout(timer)
+        this.send(agentId, { t: 'exec.cancel', execId })
+        reject(new Error('Команда отменена'))
+      }
       const entryRef: PendingExec = {
         agentId,
         chunks: [],
         bytes: 0,
         truncated: false,
         timer,
-        resolve,
-        reject
+        resolve: (r) => {
+          signal?.removeEventListener('abort', onAbort)
+          resolve(r)
+        },
+        reject: (e) => {
+          signal?.removeEventListener('abort', onAbort)
+          reject(e)
+        }
       }
       this.pending.set(execId, entryRef)
+      signal?.addEventListener('abort', onAbort, { once: true })
       this.send(agentId, { t: 'exec.start', execId, command, timeoutMs })
     })
   }
