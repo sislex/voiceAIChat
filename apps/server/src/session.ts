@@ -23,6 +23,8 @@ import { watchTranscript } from './cc/ccSessions.js'
 export interface SessionDeps {
   db: VoiceChatDb
   claude: LlmClient
+  /** Альтернативный движок Codex (используется при settings.llmProvider='codex'). */
+  codex?: LlmClient
   sttEngine: SttEngine
   ttsEngine: TtsEngine
   diarization?: DiarizationEngine
@@ -49,6 +51,19 @@ export interface SessionDeps {
     list(): AgentInfo[]
     subscribe(cb: () => void): () => void
   }
+}
+
+/**
+ * Разбирает сохранённый resume-id с префиксом провайдера ("claude:abc"/"codex:xyz").
+ * Возвращает id только если он принадлежит текущему провайдеру; иначе null
+ * (смена движка → свежий ход без чужого resume). Терпит старые id без префикса
+ * (считаем их claude).
+ */
+function resumeIdFor(stored: string | null, provider: 'claude' | 'codex'): string | null {
+  if (!stored) return null
+  const m = /^(claude|codex):(.*)$/s.exec(stored)
+  if (!m) return provider === 'claude' ? stored : null
+  return m[1] === provider ? m[2] : null
 }
 
 /** Краткое описание политики машины для системного промпта Claude. */
@@ -104,9 +119,15 @@ export function createSession(deps: SessionDeps): WsHandlers {
           claudeHandle?.cancel()
           const conversationId = msg.conversationId
           const conv = deps.db.getConversation(conversationId)
-          const sessionId = conv?.claudeSessionId ?? null
           const settings = deps.db.getSettings()
-          const model = claudeModelAlias(settings.model)
+          // Движок и модель по провайдеру.
+          const provider = settings.llmProvider === 'codex' && deps.codex ? 'codex' : 'claude'
+          const client = provider === 'codex' ? deps.codex! : deps.claude
+          const model =
+            provider === 'codex' ? settings.codexModel : claudeModelAlias(settings.model)
+          // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
+          // смене движка чужой resume-id игнорируем (свежий ход).
+          const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)
           const permissionMode = settings.permissionMode
           // Рабочий каталог — только если задан и существует (иначе игнор).
           const cwd =
@@ -140,10 +161,10 @@ export function createSession(deps: SessionDeps): WsHandlers {
               policySummary: policy ? policySummary(policy) : undefined
             }
           }
-          claudeHandle = deps.claude.send(
+          claudeHandle = client.send(
             { prompt, sessionId, model, permissionMode, cwd, remote },
             {
-              onSession: (sid) => deps.db.setClaudeSession(conversationId, sid),
+              onSession: (sid) => deps.db.setClaudeSession(conversationId, `${provider}:${sid}`),
               onDelta: (delta) => ctx.send({ t: 'claude.token', conversationId, delta }),
               onDone: (text, meta) => ctx.send({ t: 'claude.done', conversationId, text, meta }),
               onError: (message) => ctx.send({ t: 'claude.error', conversationId, message }),
