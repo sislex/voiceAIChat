@@ -197,7 +197,14 @@ export interface Settings {
   handsFree: boolean
   /** id машины-агента, где выполнять shell-команды; null — на сервере. */
   execTarget: string | null
+  /** LLM-движок: Claude Code CLI или Codex CLI. */
+  llmProvider: LlmProvider
+  /** Модель Codex (`codex exec -m`); '' — модель по умолчанию из конфига codex. */
+  codexModel: string
 }
+
+/** Поддерживаемые LLM-движки (CLI). */
+export type LlmProvider = 'claude' | 'codex'
 
 export const DEFAULT_SETTINGS: Settings = {
   model: 'opus',
@@ -213,7 +220,9 @@ export const DEFAULT_SETTINGS: Settings = {
   workdir: null,
   bargeIn: false,
   handsFree: false,
-  execTarget: null
+  execTarget: null,
+  llmProvider: 'claude',
+  codexModel: ''
 }
 
 /** Один сегмент распознанной речи (speakerId=1 до диаризации). */
