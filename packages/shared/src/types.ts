@@ -195,6 +195,8 @@ export interface Settings {
   bargeIn: boolean
   /** Hands-free: непрерывный диалог — авто-стоп по тишине и авто-старт после ответа. */
   handsFree: boolean
+  /** id машины-агента, где выполнять shell-команды; null — на сервере. */
+  execTarget: string | null
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -210,7 +212,8 @@ export const DEFAULT_SETTINGS: Settings = {
   permissionMode: 'bypassPermissions',
   workdir: null,
   bargeIn: false,
-  handsFree: false
+  handsFree: false,
+  execTarget: null
 }
 
 /** Один сегмент распознанной речи (speakerId=1 до диаризации). */

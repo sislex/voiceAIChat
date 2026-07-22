@@ -95,6 +95,39 @@ describe('ClaudeCli', () => {
     expect(args2).not.toContain('--permission-mode')
   })
 
+  it('remote: добавляет --mcp-config/--disallowedTools/--allowedTools; без remote — нет', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send(
+      {
+        prompt: 'x',
+        sessionId: null,
+        model: 'opus',
+        remote: { mcpUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=s&agent=a1', agentName: 'Мак' }
+      },
+      makeHandlers()
+    )
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const mcpConfig = JSON.parse(args[args.indexOf('--mcp-config') + 1]) as {
+      mcpServers: { remote: { type: string; url: string } }
+    }
+    expect(mcpConfig.mcpServers.remote.type).toBe('http')
+    expect(mcpConfig.mcpServers.remote.url).toContain('agent=a1')
+    expect(args[args.indexOf('--disallowedTools') + 1]).toBe('Bash')
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe('mcp__remote__bash')
+    expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('Мак')
+
+    const { child: c2 } = fakeChild()
+    const spawn2 = vi.fn(() => c2 as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn: spawn2 }).send(
+      { prompt: 'x', sessionId: null, model: 'opus' },
+      makeHandlers()
+    )
+    const args2 = (spawn2 as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    expect(args2).not.toContain('--mcp-config')
+    expect(args2).not.toContain('--disallowedTools')
+  })
+
   it('передаёт cwd в spawn, когда задан; иначе третий аргумент undefined', () => {
     const { child } = fakeChild()
     const spawn = vi.fn(() => child as never) as unknown as SpawnFn

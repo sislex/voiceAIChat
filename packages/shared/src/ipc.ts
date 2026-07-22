@@ -15,6 +15,7 @@ import type {
 } from './types'
 import type { McpServer } from './mcp'
 import type { CcProject, CcSession, CcItem } from './cc'
+import type { AgentCreated, AgentInfo, AgentPolicy } from './agentProtocol'
 
 /** Статус локальной модели Whisper. */
 export interface SttStatus {
@@ -72,12 +73,31 @@ export interface IpcInvokeMap {
   'tts:deleteVoice': { arg: { id: string }; result: void }
   /** Список подключённых MCP-серверов (read-only, из `claude mcp list`). */
   'mcp:list': { arg: void; result: McpServer[] }
+  /** Машины-агенты для удалённого выполнения команд (только web-режим). */
+  'agents:list': { arg: void; result: AgentInfo[] }
+  /** Создать машину-агента; токен возвращается один раз. */
+  'agents:create': { arg: { name: string }; result: AgentCreated }
+  /** Удалить машину-агента (отзывает токен, рвёт соединение). */
+  'agents:delete': { arg: { id: string }; result: void }
+  /** Задать политику возможностей машины. */
+  'agents:setPolicy': { arg: { id: string; policy: AgentPolicy }; result: void }
+  /** Перевыпустить токен (старый перестаёт работать); токен возвращается один раз. */
+  'agents:regenerateToken': { arg: { id: string }; result: { token: string } }
+  /** Абсолютный URL артефакта для скачивания (десктоп/агент-приложение/скрипт). */
+  'downloads:url': { arg: { kind: 'desktop' | 'agent-app' | 'agent-script' }; result: string }
+  /** Строка подключения (адрес+токен) для настройки агента (приложение и скрипт). */
+  'agents:connectionString': { arg: { token: string }; result: string }
   /** Проекты Claude Code (~/.claude/projects). */
   'cc:projects': { arg: void; result: CcProject[] }
   /** Сессии проекта Claude Code. */
   'cc:sessions': { arg: { slug: string }; result: CcSession[] }
   /** Транскрипт сессии (последние `limit` записей). */
   'cc:transcript': { arg: { slug: string; id: string; limit?: number }; result: CcItem[] }
+  /**
+   * Продолжить сессию Claude Code: создаёт разговор с импортом истории и
+   * привязкой к session-id (следующий ход — через `claude --resume`).
+   */
+  'cc:resume': { arg: { slug: string; id: string }; result: ConversationWithMessages }
 }
 
 export type IpcChannel = keyof IpcInvokeMap
@@ -240,6 +260,14 @@ export interface RendererSttBridge {
 }
 
 /**
+ * Мост живого списка машин-агентов, доступный как `window.agents`: подписка на
+ * обновления статуса/списка по WebSocket (web-режим). В desktop отсутствует.
+ */
+export interface RendererAgentsBridge {
+  onChange(cb: (agents: AgentInfo[]) => void): () => void
+}
+
+/**
  * Мост Claude, доступный в renderer как `window.claude`: отправка реплики,
  * отмена и подписка на поток ответа (main → renderer).
  */
@@ -302,9 +330,17 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tts:catalog',
   'tts:deleteVoice',
   'mcp:list',
+  'agents:list',
+  'agents:create',
+  'agents:delete',
+  'agents:setPolicy',
+  'agents:regenerateToken',
+  'downloads:url',
+  'agents:connectionString',
   'cc:projects',
   'cc:sessions',
-  'cc:transcript'
+  'cc:transcript',
+  'cc:resume'
 ]
 
 /**

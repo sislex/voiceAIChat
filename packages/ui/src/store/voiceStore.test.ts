@@ -153,6 +153,62 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().voice).toBe('idle')
   })
 
+  it('applyAgents обновляет живой список машин', () => {
+    const { store } = makeStore()
+    store.actions.applyAgents([
+      {
+        id: 'a1',
+        name: 'Mac',
+        online: true,
+        createdAt: 1,
+        lastSeen: 2,
+        policy: {
+          allowedDirs: [],
+          allowNetwork: true,
+          allowWrite: true,
+          denyPatterns: [],
+          allowPatterns: [],
+          skills: []
+        }
+      }
+    ])
+    expect(store.getState().agents).toHaveLength(1)
+    expect(store.getState().agents[0].online).toBe(true)
+  })
+
+  it('setAgentPolicy зовёт канал и обновляет локальный список', async () => {
+    const { store, api } = makeStore()
+    const spy = vi.spyOn(api, 'agents:setPolicy')
+    store.actions.applyAgents([
+      {
+        id: 'a1',
+        name: 'Mac',
+        online: true,
+        createdAt: 1,
+        lastSeen: 2,
+        policy: {
+          allowedDirs: [],
+          allowNetwork: true,
+          allowWrite: true,
+          denyPatterns: [],
+          allowPatterns: [],
+          skills: []
+        }
+      }
+    ])
+    const policy = {
+      allowedDirs: ['/tmp'],
+      allowNetwork: false,
+      allowWrite: true,
+      denyPatterns: [],
+      allowPatterns: [],
+      skills: []
+    }
+    await store.actions.setAgentPolicy('a1', policy)
+    expect(spy).toHaveBeenCalledWith({ id: 'a1', policy })
+    expect(store.getState().agents[0].policy.allowNetwork).toBe(false)
+  })
+
   it('init грузит список MCP-серверов', async () => {
     const api = createFakeApi([])
     vi.spyOn(api, 'mcp:list').mockResolvedValue([

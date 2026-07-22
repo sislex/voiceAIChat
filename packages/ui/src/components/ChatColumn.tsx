@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Message, TurnMeta, VoiceState } from '@shared/types'
+import type { AgentInfo } from '@shared/agentProtocol'
 import {
   chipClass,
   formatTurnMeta,
@@ -49,6 +50,12 @@ export interface ChatColumnProps {
   turnMeta?: TurnMeta | null
   /** Голосовая панель, рендерится внизу колонки (как в прототипе). */
   voiceBar: ReactNode
+  /** Машины-агенты для выбора цели выполнения команд (пусто — селектор скрыт). */
+  agents?: AgentInfo[]
+  /** Текущая цель выполнения: id машины или null («на сервере»). */
+  execTarget?: string | null
+  /** Сменить цель выполнения команд. */
+  onChangeExecTarget?: (target: string | null) => void
 }
 
 export function ChatColumn({
@@ -72,7 +79,10 @@ export function ChatColumn({
   onDownloadModel,
   onExport,
   turnMeta,
-  voiceBar
+  voiceBar,
+  agents = [],
+  execTarget = null,
+  onChangeExecTarget
 }: ChatColumnProps): JSX.Element {
   const [exportOpen, setExportOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -116,6 +126,25 @@ export function ChatColumn({
     <main className="main">
       <header className="mhead">
         <h1 className="mtitle">{title}</h1>
+        {agents.length > 0 && onChangeExecTarget && (
+          <label className="exectarget" title="Где выполнять команды агента">
+            <span className={`exectarget-dot ${execTarget ? 'remote' : 'server'}`} aria-hidden />
+            <select
+              className="exectarget-sel"
+              aria-label="Где выполнять команды"
+              value={execTarget ?? ''}
+              onChange={(e) => onChangeExecTarget(e.target.value || null)}
+            >
+              <option value="">🖥 На сервере</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id} disabled={!a.online}>
+                  💻 {a.name}
+                  {a.online ? '' : ' (офлайн)'}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <span className="mhead-right">
           <span className="badge">{statusBadge(state)}</span>
           {onExport && messages.length > 0 && (

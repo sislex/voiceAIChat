@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "description": "Голосовой чат-бот: desktop (Electron), server (STT/TTS/Claude), web-клиент",
-  "//": "desktop НЕ в workspaces намеренно: у него свой node_modules с ручной сборкой whisper.cpp — корневой npm install его не трогает.",
+  "//": "desktop и agent-tray НЕ в workspaces намеренно: у них свой node_modules с Electron — корневой npm install их не трогает.",
   "workspaces": [
     "packages/*",
     "apps/server",
-    "apps/web"
+    "apps/web",
+    "apps/agent"
   ],
   "scripts": {
     "dev:web": "bash scripts/dev-web.sh",
@@ -15,6 +16,9 @@
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "typecheck:desktop": "npm --prefix apps/desktop run typecheck",
-    "test:desktop": "npm --prefix apps/desktop run test"
+    "test:desktop": "npm --prefix apps/desktop run test",
+    "typecheck:agent-tray": "npm --prefix apps/agent-tray run typecheck",
+    "test:agent-tray": "npm --prefix apps/agent-tray run test",
+    "dist:agent-tray": "npm --prefix apps/agent-tray run dist"
   }
 }

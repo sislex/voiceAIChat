@@ -10,6 +10,8 @@ export interface CcObserverProps {
   activeSession: string | null
   onSelectProject: (slug: string) => void
   onSelectSession: (slug: string, id: string) => void
+  /** Продолжить сессию в приложении (импорт истории + привязка session-id). */
+  onResumeSession: (slug: string, id: string) => void
   onClose: () => void
 }
 
@@ -68,6 +70,7 @@ export function CcObserver({
   activeSession,
   onSelectProject,
   onSelectSession,
+  onResumeSession,
   onClose
 }: CcObserverProps): JSX.Element {
   const stop = (e: MouseEvent): void => e.stopPropagation()
@@ -113,8 +116,17 @@ export function CcObserver({
 
           <div className="cc-col cc-transcript" data-testid="cc-transcript">
             {activeSession && (
-              <div className="cc-live">
-                <span className="reddot" /> LIVE · слежение за сессией
+              <div className="cc-actions">
+                <span className="cc-live">
+                  <span className="reddot" /> LIVE · слежение за сессией
+                </span>
+                <button
+                  className="vdl"
+                  aria-label="Продолжить эту сессию"
+                  onClick={() => activeProject && onResumeSession(activeProject, activeSession)}
+                >
+                  ▶ Продолжить эту сессию
+                </button>
               </div>
             )}
             {!activeSession && <p className="cc-empty">Выберите сессию</p>}

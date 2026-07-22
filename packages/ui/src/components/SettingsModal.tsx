@@ -10,6 +10,9 @@ import type {
 import { CLAUDE_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { PermissionMode } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
+import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
+import { copyText } from '../lib/clipboard'
+import { AgentCard } from './AgentCard'
 
 export interface MicOption {
   deviceId: string
@@ -24,9 +27,10 @@ function formatBytes(bytes: number): string {
 }
 
 /** Разделы меню настроек. */
-type SettingsSection = 'agent' | 'stt' | 'tts' | 'dialog' | 'ui'
+type SettingsSection = 'agent' | 'download' | 'stt' | 'tts' | 'dialog' | 'ui'
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'agent', label: 'Агент' },
+  { id: 'download', label: 'Скачать' },
   { id: 'stt', label: 'Распознавание' },
   { id: 'tts', label: 'Озвучка' },
   { id: 'dialog', label: 'Голосовой диалог' },
@@ -48,6 +52,24 @@ export interface SettingsModalProps {
   whisperModels: WhisperModelInfo[]
   /** Подключённые MCP-серверы (read-only показ). */
   mcpServers: McpServer[]
+  /** Машины-агенты для удалённого выполнения команд. */
+  agents: AgentInfo[]
+  /** Создать машину; возвращает данные с одноразовым токеном (null при ошибке). */
+  onCreateAgent: (name: string) => Promise<AgentCreated | null>
+  /** Удалить машину (отзыв токена). */
+  onDeleteAgent: (id: string) => void
+  /** Сохранить политику возможностей машины. */
+  onSetAgentPolicy: (id: string, policy: AgentPolicy) => void
+  /** Перевыпустить токен машины → новая строка подключения. */
+  onRegenerateAgentToken: (id: string) => Promise<string | null>
+  /** Скачать десктоп-приложение (Mac, .dmg). */
+  onDownloadDesktopApp: () => void
+  /** Скачать трей-приложение агента (Mac, .dmg). */
+  onDownloadAgentApp: () => void
+  /** Скачать скрипт агента (Node, .cjs). */
+  onDownloadAgentScript: () => void
+  /** Получить строку подключения для настройки агента (для копирования). */
+  onGetConnectionString: (token: string) => Promise<string | null>
   onChange: (patch: Partial<Settings>) => void
   onDownloadVoice: (id: string) => void
   /** Удалить установленный голос Piper. */
@@ -66,6 +88,15 @@ export function SettingsModal({
   voiceDownloads,
   whisperModels,
   mcpServers,
+  agents,
+  onCreateAgent,
+  onDeleteAgent,
+  onSetAgentPolicy,
+  onRegenerateAgentToken,
+  onDownloadDesktopApp,
+  onDownloadAgentApp,
+  onDownloadAgentScript,
+  onGetConnectionString,
   onChange,
   onDownloadVoice,
   onDeleteVoice,
@@ -74,6 +105,28 @@ export function SettingsModal({
 }: SettingsModalProps): JSX.Element {
   const stop = (e: MouseEvent): void => e.stopPropagation()
   const [section, setSection] = useState<SettingsSection>('agent')
+  // Добавление машины: поле имени и одноразовый показ токена после создания.
+  const [agentName, setAgentName] = useState('')
+  const [createdAgent, setCreatedAgent] = useState<AgentCreated | null>(null)
+  const [tokenCopied, setTokenCopied] = useState(false)
+  const [connCopied, setConnCopied] = useState(false)
+
+  const copyConnectionString = async (token: string): Promise<void> => {
+    const str = await onGetConnectionString(token)
+    if (str) setConnCopied(await copyText(str))
+  }
+
+  const addAgent = async (): Promise<void> => {
+    const name = agentName.trim()
+    if (!name) return
+    const created = await onCreateAgent(name)
+    if (created) {
+      setCreatedAgent(created)
+      setAgentName('')
+      setTokenCopied(false)
+      setConnCopied(false)
+    }
+  }
 
   return (
     <div className="ovl" onClick={onClose} data-testid="overlay">
@@ -154,6 +207,93 @@ export function SettingsModal({
                   />
                 </div>
 
+                <div className="frow">
+                  <div>
+                    <p className="flab">Где выполнять команды</p>
+                    <p className="fsub">Shell-команды агента: на сервере или на вашей машине</p>
+                  </div>
+                  <select
+                    className="sel"
+                    aria-label="Где выполнять команды"
+                    value={settings.execTarget ?? ''}
+                    onChange={(e) => onChange({ execTarget: e.target.value || null })}
+                  >
+                    <option value="">На сервере</option>
+                    {agents.map((a) => (
+                      <option key={a.id} value={a.id} disabled={!a.online}>
+                        {a.name}
+                        {a.online ? '' : ' (офлайн)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="voicedl" data-testid="agent-list">
+                  <p className="flab">Машины</p>
+                  {agents.map((a) => (
+                    <AgentCard
+                      key={a.id}
+                      agent={a}
+                      onSetPolicy={onSetAgentPolicy}
+                      onDelete={onDeleteAgent}
+                      onRegenerateToken={onRegenerateAgentToken}
+                    />
+                  ))}
+                  <div className="vrow2">
+                    <input
+                      className="sel"
+                      type="text"
+                      aria-label="Имя новой машины"
+                      placeholder="Имя машины (напр. MacBook)"
+                      value={agentName}
+                      onChange={(e) => setAgentName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && void addAgent()}
+                    />
+                    <button
+                      className="vdl"
+                      aria-label="Добавить машину"
+                      disabled={!agentName.trim()}
+                      onClick={() => void addAgent()}
+                    >
+                      Добавить
+                    </button>
+                  </div>
+                  {createdAgent && (
+                    <div className="voicedl" data-testid="agent-token">
+                      <p className="fsub">
+                        Машина «{createdAgent.name}» создана — строка подключения показывается
+                        один раз. Скачайте агента в разделе «Скачать», при первом запуске вставьте
+                        строку подключения (годится и для приложения, и для скрипта).
+                      </p>
+                      <div className="vrow2">
+                        <button
+                          className="vdl"
+                          aria-label="Скопировать строку подключения"
+                          onClick={() => void copyConnectionString(createdAgent.token)}
+                        >
+                          {connCopied ? '✓ строка скопирована' : 'Скопировать строку подключения'}
+                        </button>
+                        <button
+                          className="vdl"
+                          aria-label="Скопировать токен"
+                          onClick={() => {
+                            void copyText(createdAgent.token).then((ok) => setTokenCopied(ok))
+                          }}
+                        >
+                          {tokenCopied ? '✓ токен скопирован' : 'Скопировать токен'}
+                        </button>
+                        <button
+                          className="vdl"
+                          aria-label="Скрыть"
+                          onClick={() => setCreatedAgent(null)}
+                        >
+                          Скрыть
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {mcpServers.length > 0 && (
                   <div className="voicedl" data-testid="mcp-list">
                     <p className="flab">MCP-серверы</p>
@@ -170,6 +310,45 @@ export function SettingsModal({
                     ))}
                   </div>
                 )}
+              </>
+            )}
+
+            {section === 'download' && (
+              <>
+                <div className="frow">
+                  <div>
+                    <p className="flab">Десктоп-приложение</p>
+                    <p className="fsub">Основной клиент Голос·Чат для Mac (.dmg)</p>
+                  </div>
+                  <button className="vdl" aria-label="Скачать десктоп" onClick={() => onDownloadDesktopApp()}>
+                    ⬇ Скачать
+                  </button>
+                </div>
+
+                <div className="frow">
+                  <div>
+                    <p className="flab">Агент — приложение</p>
+                    <p className="fsub">Иконка в трее, выполнение команд на этой машине (Mac, .dmg)</p>
+                  </div>
+                  <button className="vdl" aria-label="Скачать приложение агента" onClick={() => onDownloadAgentApp()}>
+                    ⬇ Скачать
+                  </button>
+                </div>
+
+                <div className="frow">
+                  <div>
+                    <p className="flab">Агент — скрипт</p>
+                    <p className="fsub">Запуск в терминале: <code>node voicechat-agent.cjs</code> (нужен Node.js)</p>
+                  </div>
+                  <button className="vdl" aria-label="Скачать скрипт агента" onClick={() => onDownloadAgentScript()}>
+                    ⬇ Скачать
+                  </button>
+                </div>
+
+                <p className="fsub">
+                  Чтобы подключить агента: создайте машину в разделе «Агент», скопируйте строку
+                  подключения и вставьте её при первом запуске приложения (или передайте скрипту).
+                </p>
               </>
             )}
 

@@ -4,6 +4,10 @@ directories:
   output: release
   buildResources: build
 
+# Ad-hoc подпись после упаковки — иначе на Apple Silicon macOS считает
+# неподписанный .app «повреждённым» и не даёт открыть.
+afterPack: scripts/afterPack.cjs
+
 # В бандл кладём только собранный код и манифест. node_modules с прод-зависимостями
 # electron-builder добавляет сам. Модель Whisper (models/, ~1.5 ГБ) НЕ бандлится —
 # качается при первом запуске в userData (см. Шаг 9).
@@ -14,6 +18,8 @@ files:
   - '!src/**'
   - '!task/**'
   - '!**/*.map'
+  # Модели Whisper (~1.5 ГБ) не бандлим — качаются при первом запуске в userData.
+  - '!**/nodejs-whisper/cpp/whisper.cpp/models/*.bin'
 
 # Нативные части нельзя держать в asar: их нужно грузить/исполнять из ФС.
 # better-sqlite3 — node-аддон; nodejs-whisper — бинарь whisper-cli (whisper.cpp).

@@ -55,6 +55,23 @@ export class ClaudeCli implements LlmClient {
     ]
     if (req.permissionMode) args.push('--permission-mode', req.permissionMode)
     if (req.sessionId) args.push('--resume', req.sessionId)
+    if (req.remote) {
+      // Проброс Bash на машину пользователя: встроенный Bash выключаем, вместо него —
+      // MCP-инструмент bash (сервер `remote`), который выполняет команду на агенте.
+      args.push(
+        '--mcp-config',
+        JSON.stringify({ mcpServers: { remote: { type: 'http', url: req.remote.mcpUrl } } }),
+        '--disallowedTools',
+        'Bash',
+        '--allowedTools',
+        'mcp__remote__bash',
+        '--append-system-prompt',
+        `Встроенный инструмент Bash отключён. Все shell-команды выполняй инструментом ` +
+          `mcp__remote__bash — они выполняются на машине пользователя «${req.remote.agentName}», ` +
+          `а не на сервере.` +
+          (req.remote.policySummary ? `\n\n${req.remote.policySummary}` : '')
+      )
+    }
 
     let finished = false
     let sawResult = false

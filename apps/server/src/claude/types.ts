@@ -14,6 +14,15 @@ export interface LlmRequest {
   permissionMode?: string
   /** Рабочий каталог процесса CLI; undefined — каталог по умолчанию. */
   cwd?: string
+  /** Удалённое выполнение Bash через MCP-мост; undefined — Bash на сервере. */
+  remote?: {
+    /** URL MCP-эндпоинта с agent id и секретом в query. */
+    mcpUrl: string
+    /** Имя машины для системного промпта. */
+    agentName: string
+    /** Краткое описание политики машины для системного промпта (что разрешено). */
+    policySummary?: string
+  }
 }
 
 /** Колбэки потокового ответа. Ровно один из onDone/onError вызывается в конце. */

@@ -11,6 +11,7 @@ import type {
   WhisperModel
 } from './types'
 import type { CcItem } from './cc'
+import type { AgentInfo } from './agentProtocol'
 
 // --- Общие ---------------------------------------------------------------
 
@@ -79,10 +80,18 @@ export const REST = {
   ttsVoiceDownload: (id: string) => `/api/tts/voices/${id}/download`,
   sttDownload: '/api/stt/download',
   mcpServers: '/api/mcp/servers',
+  agents: '/api/agents',
+  agentScript: '/api/agents/script',
+  agentApp: '/api/agents/app',
+  desktopApp: '/api/app/desktop',
+  agent: (id: string) => `/api/agents/${encodeURIComponent(id)}`,
+  agentPolicy: (id: string) => `/api/agents/${encodeURIComponent(id)}/policy`,
+  agentToken: (id: string) => `/api/agents/${encodeURIComponent(id)}/token`,
   ccProjects: '/api/cc/projects',
   ccSessions: (slug: string) => `/api/cc/projects/${encodeURIComponent(slug)}/sessions`,
   ccTranscript: (slug: string, id: string) =>
-    `/api/cc/projects/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(id)}`
+    `/api/cc/projects/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(id)}`,
+  ccResume: '/api/cc/resume'
 } as const
 
 // --- WebSocket -----------------------------------------------------------
@@ -138,6 +147,7 @@ export type ServerMessage =
   | { t: 'stt.downloadDone' }
   | { t: 'stt.downloadError'; message: string }
   | { t: 'cc.tail'; slug: string; id: string; items: CcItem[] }
+  | { t: 'agents'; agents: AgentInfo[] }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']
@@ -172,5 +182,6 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'stt.downloadProgress',
   'stt.downloadDone',
   'stt.downloadError',
-  'cc.tail'
+  'cc.tail',
+  'agents'
 ]

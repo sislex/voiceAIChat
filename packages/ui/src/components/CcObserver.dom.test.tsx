@@ -24,6 +24,7 @@ function renderObs(props: Partial<Parameters<typeof CcObserver>[0]> = {}): void 
       activeSession={null}
       onSelectProject={vi.fn()}
       onSelectSession={vi.fn()}
+      onResumeSession={vi.fn()}
       onClose={vi.fn()}
       {...props}
     />
@@ -53,6 +54,13 @@ describe('CcObserver', () => {
     expect(t).toHaveTextContent('Bash: ls')
     expect(t).toHaveTextContent('ошибка')
     expect(t).toHaveTextContent('LIVE')
+  })
+
+  it('кнопка «Продолжить эту сессию» → onResumeSession с проектом и id', () => {
+    const onResumeSession = vi.fn()
+    renderObs({ activeProject: '-U-x-a', activeSession: 's1', onResumeSession })
+    fireEvent.click(screen.getByLabelText('Продолжить эту сессию'))
+    expect(onResumeSession).toHaveBeenCalledWith('-U-x-a', 's1')
   })
 
   it('закрытие по ✕', () => {

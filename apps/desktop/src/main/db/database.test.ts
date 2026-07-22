@@ -163,7 +163,8 @@ describe('VoiceChatDb — настройки', () => {
       permissionMode: 'plan',
       workdir: '/tmp/proj',
       bargeIn: true,
-      handsFree: true
+      handsFree: true,
+      execTarget: 'agent-1'
     })
     expect(db.getSettings()).toEqual({
       model: 'opus',
@@ -178,7 +179,8 @@ describe('VoiceChatDb — настройки', () => {
       permissionMode: 'plan',
       workdir: '/tmp/proj',
       bargeIn: true,
-      handsFree: true
+      handsFree: true,
+      execTarget: 'agent-1'
     })
   })
 

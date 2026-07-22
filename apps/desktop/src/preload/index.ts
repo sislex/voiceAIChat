@@ -70,6 +70,20 @@ const cc: RendererCcBridge = {
   onTail: (cb) => subscribe<IpcEventPayload<'cc:tail'>>('cc:tail', cb)
 }
 
+// Мост режима агента (окна настройки/журнала в трее).
+interface AgentAdminState {
+  status: 'connecting' | 'online' | 'offline' | 'stopped' | 'unconfigured'
+  name: string | null
+  log: string[]
+}
+const agentAdmin = {
+  submitConnection: (str: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('agentmode:submitConnection', str),
+  getState: (): Promise<AgentAdminState> => ipcRenderer.invoke('agentmode:getState'),
+  onLog: (cb: (line: string) => void) => subscribe<string>('agentmode:log', cb),
+  onStatus: (cb: (s: AgentAdminState) => void) => subscribe<AgentAdminState>('agentmode:status', cb)
+}
+
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('api', api)
@@ -78,6 +92,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('claude', claude)
     contextBridge.exposeInMainWorld('tts', tts)
     contextBridge.exposeInMainWorld('cc', cc)
+    contextBridge.exposeInMainWorld('agentAdmin', agentAdmin)
   } catch (error) {
     console.error('[preload] exposeInMainWorld failed', error)
   }
@@ -89,6 +104,7 @@ if (process.contextIsolated) {
     claude: RendererClaudeBridge
     tts: RendererTtsBridge
     cc: RendererCcBridge
+    agentAdmin: typeof agentAdmin
   }
   g.api = api
   g.audio = audio
@@ -96,4 +112,5 @@ if (process.contextIsolated) {
   g.claude = claude
   g.tts = tts
   g.cc = cc
+  g.agentAdmin = agentAdmin
 }

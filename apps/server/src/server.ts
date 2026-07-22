@@ -2,6 +2,7 @@
 // чтобы тестировать через fastify.inject / ws-клиент.
 
 import { mkdirSync, existsSync, statSync, readdirSync, rmSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
@@ -10,6 +11,10 @@ import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
+import { registerAgentRoutes } from './routes/agents.js'
+import { AgentRegistry } from './agents/registry.js'
+import { attachAgentWs } from './agents/wsAgent.js'
+import { registerRemoteBashMcp, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { createSession } from './session.js'
 import { ClaudeCli } from './claude/claudeCli.js'
 import type { LlmClient } from './claude/types.js'
@@ -102,6 +107,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   await registerRest(app, db)
 
+  // Машины-агенты: реестр онлайн-подключений + REST + MCP-мост для проброса Bash.
+  const agentRegistry = new AgentRegistry()
+  await registerAgentRoutes(app, db, agentRegistry, {
+    agentApp: opts.config.agentAppPath,
+    desktopApp: opts.config.desktopAppPath
+  })
+  const mcpSecret = randomBytes(16).toString('hex')
+  registerRemoteBashMcp(app, agentRegistry, mcpSecret)
+
   app.get(REST.sttStatus, async (): Promise<SttStatus> => {
     const model = db.getSettings().whisperModel
     return { present: isModelPresent(opts.config.modelsDir, model, { existsSync, statSync }), model }
@@ -176,12 +190,25 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         modelDownload,
         downloadVoice: (id, onProgress) =>
           downloadPiperVoice(id, opts.config.piperVoicesDir, onProgress),
-        resolveUpload: (id) => uploads.pathById(id)
+        resolveUpload: (id) => uploads.pathById(id),
+        agents: agentRegistry,
+        // claude спавнится на этом же хосте — loopback работает при любом HOST.
+        mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`,
+        agentsFeed: {
+          list: () => {
+            const online = agentRegistry.onlineIds()
+            return db.listAgents().map((a) => ({ ...a, online: online.has(a.id) }))
+          },
+          subscribe: (cb) => agentRegistry.onChange(cb)
+        }
       }))
 
   await app.register(async (scoped) => {
     scoped.get('/ws', { websocket: true }, (socket) => {
       attachWs(socket, makeHandlers())
+    })
+    scoped.get('/agent', { websocket: true }, (socket) => {
+      attachAgentWs(socket, db, agentRegistry)
     })
   })
 
