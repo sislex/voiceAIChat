@@ -26,9 +26,12 @@ export function registerRemoteBashMcp(
       const agentId = req.query.agent ?? ''
 
       // Отмена команды именно этого запроса при обрыве (claude убит на barge-in),
-      // не затрагивая параллельные команды на той же машине.
+      // не затрагивая параллельные команды на той же машине. Слушаем close ОТВЕТА,
+      // а не запроса: у req.raw 'close' срабатывает сразу после чтения тела (до
+      // ответа) и отменял бы команду преждевременно. У ответа 'close' с
+      // незавершённой записью = клиент реально отвалился.
       const abort = new AbortController()
-      req.raw.on('close', () => {
+      reply.raw.on('close', () => {
         if (!reply.raw.writableEnded) abort.abort()
       })
 

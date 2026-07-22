@@ -116,4 +116,45 @@ describe('remoteBashMcp', () => {
     expect(body.result.isError).toBe(true)
     expect(body.result.content[0].text).toContain('не в сети')
   })
+
+  it('регресс: нормальный tools/call не отменяет команду (close ответа, не запроса)', async () => {
+    // Реестр с задержкой: запоминает, сработал ли signal.abort к моменту резолва.
+    // Баг был в том, что отмена висела на close запроса и срабатывала до ответа —
+    // тогда команда отменялась мгновенно.
+    let abortedAtResolve: boolean | null = null
+    const registry = {
+      exec: (_a: string, command: string, _t: number, signal?: AbortSignal) =>
+        new Promise<ExecResult>((resolve) => {
+          setTimeout(() => {
+            abortedAtResolve = signal?.aborted ?? false
+            resolve({ exitCode: 0, output: `OUT:${command}`, timedOut: false })
+          }, 60)
+        }),
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+
+    const server = Fastify({ logger: false })
+    registerRemoteBashMcp(server, registry, SECRET)
+    await server.listen({ port: 0, host: '127.0.0.1' })
+    const addr = server.server.address()
+    const port = typeof addr === 'object' && addr ? addr.port : 0
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/mcp/remote-bash?k=${SECRET}&agent=a1`, {
+        method: 'POST',
+        headers: MCP_HEADERS,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'bash', arguments: { command: 'hostname' } }
+        })
+      })
+      const data = (await res.json()) as { result: { content: Array<{ text: string }> } }
+      expect(data.result.content[0].text).toContain('OUT:hostname')
+      expect(data.result.content[0].text).not.toContain('отменена')
+      expect(abortedAtResolve).toBe(false)
+    } finally {
+      await server.close()
+    }
+  })
 })
