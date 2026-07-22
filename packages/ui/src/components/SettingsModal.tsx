@@ -8,7 +8,7 @@ import type {
   WhisperModelInfo
 } from '@shared/types'
 import { CLAUDE_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
-import type { PermissionMode } from '@shared/types'
+import type { PermissionMode, LlmProvider } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
 import { copyText } from '../lib/clipboard'
@@ -156,22 +156,55 @@ export function SettingsModal({
               <>
                 <div className="frow">
                   <div>
-                    <p className="flab">Модель Claude</p>
-                    <p className="fsub">Через Claude Console (CLI)</p>
+                    <p className="flab">Движок</p>
+                    <p className="fsub">Через какой CLI генерировать ответы</p>
                   </div>
                   <select
                     className="sel"
-                    aria-label="Модель Claude"
-                    value={normalizeClaudeModel(settings.model)}
-                    onChange={(e) => onChange({ model: e.target.value as ClaudeModel })}
+                    aria-label="Движок"
+                    value={settings.llmProvider}
+                    onChange={(e) => onChange({ llmProvider: e.target.value as LlmProvider })}
                   >
-                    {CLAUDE_MODELS.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
-                      </option>
-                    ))}
+                    <option value="claude">Claude Code</option>
+                    <option value="codex">Codex</option>
                   </select>
                 </div>
+
+                {settings.llmProvider === 'claude' ? (
+                  <div className="frow">
+                    <div>
+                      <p className="flab">Модель Claude</p>
+                      <p className="fsub">Через Claude Console (CLI)</p>
+                    </div>
+                    <select
+                      className="sel"
+                      aria-label="Модель Claude"
+                      value={normalizeClaudeModel(settings.model)}
+                      onChange={(e) => onChange({ model: e.target.value as ClaudeModel })}
+                    >
+                      {CLAUDE_MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="frow">
+                    <div>
+                      <p className="flab">Модель Codex</p>
+                      <p className="fsub">Через Codex CLI; пусто — модель по умолчанию из codex</p>
+                    </div>
+                    <input
+                      className="sel"
+                      type="text"
+                      aria-label="Модель Codex"
+                      placeholder="по умолчанию"
+                      value={settings.codexModel}
+                      onChange={(e) => onChange({ codexModel: e.target.value.trim() })}
+                    />
+                  </div>
+                )}
 
                 <div className="frow">
                   <div>

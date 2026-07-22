@@ -164,7 +164,9 @@ describe('VoiceChatDb — настройки', () => {
       workdir: '/tmp/proj',
       bargeIn: true,
       handsFree: true,
-      execTarget: 'agent-1'
+      execTarget: 'agent-1',
+      llmProvider: 'claude',
+      codexModel: ''
     })
     expect(db.getSettings()).toEqual({
       model: 'opus',
@@ -180,7 +182,9 @@ describe('VoiceChatDb — настройки', () => {
       workdir: '/tmp/proj',
       bargeIn: true,
       handsFree: true,
-      execTarget: 'agent-1'
+      execTarget: 'agent-1',
+      llmProvider: 'claude',
+      codexModel: ''
     })
   })
 
