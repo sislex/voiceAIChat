@@ -109,6 +109,10 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
       throw new Error('Машины-агенты не поддерживаются в desktop-приложении')
     },
     'agents:delete': () => {},
+    'agents:setPolicy': () => {},
+    'agents:regenerateToken': () => {
+      throw new Error('Машины-агенты не поддерживаются в desktop-приложении')
+    },
     'downloads:url': () => {
       throw new Error('Скачивание доступно только в веб-версии')
     },

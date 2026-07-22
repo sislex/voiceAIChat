@@ -2,7 +2,13 @@
 // Не зависит от ws: сокет — минимальный интерфейс {send, close} (тестируемо).
 
 import { randomUUID } from 'node:crypto'
-import type { AgentToServer, ServerToAgent } from '@voicechat/shared'
+import {
+  evaluateAgentCommand,
+  DEFAULT_AGENT_POLICY,
+  type AgentPolicy,
+  type AgentToServer,
+  type ServerToAgent
+} from '@voicechat/shared'
 
 /** Минимальный интерфейс сокета агента (реальный ws.WebSocket ему соответствует). */
 export interface AgentSocket {
@@ -34,18 +40,20 @@ interface PendingExec {
 interface OnlineAgent {
   name: string
   socket: AgentSocket
+  policy: AgentPolicy
 }
 
 export class AgentRegistry {
   private readonly online = new Map<string, OnlineAgent>()
   private readonly pending = new Map<string, PendingExec>()
   private readonly newId: () => string
+  private readonly changeListeners = new Set<() => void>()
 
   constructor(deps: { newId?: () => string } = {}) {
     this.newId = deps.newId ?? (() => randomUUID())
   }
 
-  register(agentId: string, name: string, socket: AgentSocket): void {
+  register(agentId: string, name: string, socket: AgentSocket, policy = DEFAULT_AGENT_POLICY): void {
     // Повторное подключение с тем же токеном вытесняет старое соединение.
     const prev = this.online.get(agentId)
     if (prev) {
@@ -56,17 +64,43 @@ export class AgentRegistry {
         /* уже закрыт */
       }
     }
-    this.online.set(agentId, { name, socket })
+    this.online.set(agentId, { name, socket, policy })
+    this.emitChange()
   }
 
   /** Убирает агента из онлайна и отклоняет все его незавершённые команды. */
   unregister(agentId: string): void {
-    this.online.delete(agentId)
+    const had = this.online.delete(agentId)
     for (const [execId, p] of this.pending) {
       if (p.agentId !== agentId) continue
       this.pending.delete(execId)
       clearTimeout(p.timer)
       p.reject(new Error('Машина отключилась во время выполнения команды'))
+    }
+    if (had) this.emitChange()
+  }
+
+  /** Обновляет политику онлайн-агента и шлёт её ему. */
+  updatePolicy(agentId: string, policy: AgentPolicy): void {
+    const agent = this.online.get(agentId)
+    if (!agent) return
+    agent.policy = policy
+    this.send(agentId, { t: 'agent.policy', policy })
+  }
+
+  /** Подписка на изменения онлайн-состава (register/unregister). */
+  onChange(cb: () => void): () => void {
+    this.changeListeners.add(cb)
+    return () => this.changeListeners.delete(cb)
+  }
+
+  private emitChange(): void {
+    for (const cb of this.changeListeners) {
+      try {
+        cb()
+      } catch {
+        /* слушатель не должен ронять реестр */
+      }
     }
   }
 
@@ -76,6 +110,10 @@ export class AgentRegistry {
 
   nameOf(agentId: string): string | undefined {
     return this.online.get(agentId)?.name
+  }
+
+  policyOf(agentId: string): AgentPolicy | undefined {
+    return this.online.get(agentId)?.policy
   }
 
   onlineIds(): Set<string> {
@@ -100,6 +138,12 @@ export class AgentRegistry {
   exec(agentId: string, command: string, timeoutMs: number): Promise<ExecResult> {
     const agent = this.online.get(agentId)
     if (!agent) return Promise.reject(new Error('Машина не в сети'))
+
+    // Серверная проверка политики (первый барьер; агент проверяет ещё раз локально).
+    const verdict = evaluateAgentCommand(agent.policy, command)
+    if (!verdict.allowed) {
+      return Promise.reject(new Error(`Запрещено политикой машины: ${verdict.reason}`))
+    }
 
     const execId = this.newId()
     return new Promise<ExecResult>((resolve, reject) => {

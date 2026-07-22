@@ -277,6 +277,33 @@
   border-radius: 99px;
   flex: none;
 }
+/* Карточка машины-агента в настройках. */
+.ac {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.ac-head {
+  cursor: pointer;
+  padding: 8px 10px;
+  margin: 0;
+}
+.ac-body {
+  padding: 4px 10px 10px;
+  border-top: 1px solid var(--border-soft);
+}
+.ac-section {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.ac-mono {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.ac-list {
+  margin-top: 6px;
+}
 .exectarget-dot.server {
   background: #b9b6a9;
 }

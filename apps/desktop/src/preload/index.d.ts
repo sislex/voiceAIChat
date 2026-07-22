@@ -1,4 +1,5 @@
 import type {
+  RendererAgentsBridge,
   RendererApi,
   RendererAudioBridge,
   RendererCcBridge,
@@ -15,6 +16,8 @@ declare global {
     claude: RendererClaudeBridge
     tts: RendererTtsBridge
     cc: RendererCcBridge
+    /** Живой список агентов (web); в desktop отсутствует. */
+    agents?: RendererAgentsBridge
   }
 }
 

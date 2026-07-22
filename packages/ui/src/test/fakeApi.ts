@@ -4,6 +4,7 @@
 import type { RendererApi } from '@shared/ipc'
 import type { Conversation, Message, Settings } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
+import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
 
 export interface FakeApi extends RendererApi {
@@ -114,7 +115,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         name,
         online: false,
         createdAt: tick(),
-        lastSeen: null
+        lastSeen: null,
+        policy: { ...DEFAULT_AGENT_POLICY }
       }
       agents.push(agent)
       return { id: agent.id, name, token: `token-${agent.id}` }
@@ -123,6 +125,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const idx = agents.findIndex((a) => a.id === id)
       if (idx >= 0) agents.splice(idx, 1)
     },
+    'agents:setPolicy': async ({ id, policy }) => {
+      const a = agents.find((x) => x.id === id)
+      if (a) a.policy = policy
+    },
+    'agents:regenerateToken': async ({ id }) => ({ token: `token2-${id}` }),
     'downloads:url': async ({ kind }) => `http://localhost/api/download/${kind}`,
     'agents:connectionString': async ({ token }) => `vcagent:fake-${token}`,
     'cc:projects': async () => [],

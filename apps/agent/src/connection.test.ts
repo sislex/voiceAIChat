@@ -50,6 +50,34 @@ describe('startConnection (handlers)', () => {
     expect(h.onExec).toHaveBeenCalledWith('true')
   })
 
+  it('запрещённая политикой команда → exec.error без спавна', () => {
+    const h = { onExecDone: vi.fn() }
+    startConnection({ serverUrl: 'ws://x/agent', token: 't' }, h)
+    const ws = instances[0]
+    ws.emit('open')
+    // Политика: запись запрещена.
+    ws.emit(
+      'message',
+      JSON.stringify({
+        t: 'agent.registered',
+        name: 'M',
+        policy: {
+          allowedDirs: [],
+          allowNetwork: true,
+          allowWrite: false,
+          denyPatterns: [],
+          allowPatterns: [],
+          skills: []
+        }
+      })
+    )
+    ws.sent.length = 0
+    ws.emit('message', JSON.stringify({ t: 'exec.start', execId: 'e9', command: 'rm file', timeoutMs: 5000 }))
+    const err = ws.sent.map((s) => JSON.parse(s)).find((m) => m.t === 'exec.error')
+    expect(err).toBeTruthy()
+    expect(err.message).toContain('политик')
+  })
+
   it('agent.denied → onDenied без выхода процесса', () => {
     const h = { onDenied: vi.fn() }
     startConnection({ serverUrl: 'ws://x/agent', token: 'bad' }, h)

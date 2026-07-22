@@ -3,7 +3,13 @@
 // и в трей-приложении (Electron).
 
 import WebSocket from 'ws'
-import type { AgentToServer, ServerToAgent } from '@voicechat/shared'
+import {
+  evaluateAgentCommand,
+  DEFAULT_AGENT_POLICY,
+  type AgentPolicy,
+  type AgentToServer,
+  type ServerToAgent
+} from '@voicechat/shared'
 import type { AgentConfig } from './config.js'
 import { runCommand, cancelCommand } from './exec.js'
 
@@ -52,6 +58,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
   let stopped = false
   let socket: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let policy: AgentPolicy = DEFAULT_AGENT_POLICY
 
   const connect = (): void => {
     handlers.onStatus?.('connecting')
@@ -75,17 +82,31 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
       switch (msg.t) {
         case 'agent.registered':
           backoff = BACKOFF_START_MS
+          policy = msg.policy ?? DEFAULT_AGENT_POLICY
           handlers.onStatus?.('online')
           handlers.onRegistered?.(msg.name)
+          break
+        case 'agent.policy':
+          policy = msg.policy
+          handlers.onLog?.('политика обновлена')
           break
         case 'agent.denied':
           stopped = true // не переподключаемся с заведомо неверным токеном
           handlers.onDenied?.(msg.reason)
           break
         case 'exec.start': {
-          handlers.onExec?.(msg.command)
-          const started = Date.now()
           const command = msg.command
+          // Локальная проверка политики — жёсткая граница на клиенте (второй барьер).
+          const verdict = evaluateAgentCommand(policy, command)
+          if (!verdict.allowed) {
+            handlers.onExec?.(command)
+            handlers.onExecDone?.(command, null, false, 0)
+            handlers.onLog?.(`команда отклонена политикой: ${verdict.reason}`)
+            send({ t: 'exec.error', execId: msg.execId, message: `Запрещено политикой: ${verdict.reason}` })
+            break
+          }
+          handlers.onExec?.(command)
+          const started = Date.now()
           runCommand(msg.execId, command, msg.timeoutMs, (out) => {
             if (out.t === 'exec.done') {
               handlers.onExecDone?.(command, out.exitCode, out.timedOut === true, Date.now() - started)

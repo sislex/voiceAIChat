@@ -10,8 +10,9 @@ import type {
 import { CLAUDE_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { PermissionMode } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
-import type { AgentCreated, AgentInfo } from '@shared/agentProtocol'
+import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
 import { copyText } from '../lib/clipboard'
+import { AgentCard } from './AgentCard'
 
 export interface MicOption {
   deviceId: string
@@ -57,6 +58,10 @@ export interface SettingsModalProps {
   onCreateAgent: (name: string) => Promise<AgentCreated | null>
   /** Удалить машину (отзыв токена). */
   onDeleteAgent: (id: string) => void
+  /** Сохранить политику возможностей машины. */
+  onSetAgentPolicy: (id: string, policy: AgentPolicy) => void
+  /** Перевыпустить токен машины → новая строка подключения. */
+  onRegenerateAgentToken: (id: string) => Promise<string | null>
   /** Скачать десктоп-приложение (Mac, .dmg). */
   onDownloadDesktopApp: () => void
   /** Скачать трей-приложение агента (Mac, .dmg). */
@@ -86,6 +91,8 @@ export function SettingsModal({
   agents,
   onCreateAgent,
   onDeleteAgent,
+  onSetAgentPolicy,
+  onRegenerateAgentToken,
   onDownloadDesktopApp,
   onDownloadAgentApp,
   onDownloadAgentScript,
@@ -224,21 +231,13 @@ export function SettingsModal({
                 <div className="voicedl" data-testid="agent-list">
                   <p className="flab">Машины</p>
                   {agents.map((a) => (
-                    <div className="vrow2" key={a.id}>
-                      <span className="vname">{a.name}</span>
-                      <span className="vrowr">
-                        <span className={a.online ? 'mcp-ok' : 'mcp-bad'}>
-                          {a.online ? '✓ в сети' : '✗ офлайн'}
-                        </span>
-                        <button
-                          className="vdl vdel"
-                          aria-label={`Удалить машину ${a.name}`}
-                          onClick={() => onDeleteAgent(a.id)}
-                        >
-                          Удалить
-                        </button>
-                      </span>
-                    </div>
+                    <AgentCard
+                      key={a.id}
+                      agent={a}
+                      onSetPolicy={onSetAgentPolicy}
+                      onDelete={onDeleteAgent}
+                      onRegenerateToken={onRegenerateAgentToken}
+                    />
                   ))}
                   <div className="vrow2">
                     <input

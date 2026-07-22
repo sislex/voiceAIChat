@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS agents (
   name       TEXT NOT NULL,
   token_hash TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  last_seen  INTEGER
+  last_seen  INTEGER,
+  policy     TEXT
 );
 `

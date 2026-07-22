@@ -69,6 +69,10 @@ export function createHttpApi(): RendererApi {
     'agents:delete': async ({ id }) => {
       await req(REST.agent(id), { method: 'DELETE' })
     },
+    'agents:setPolicy': async ({ id, policy }) => {
+      await req(REST.agentPolicy(id), { method: 'POST', body: JSON.stringify({ policy }) })
+    },
+    'agents:regenerateToken': ({ id }) => req(REST.agentToken(id), { method: 'POST' }),
     'downloads:url': async ({ kind }) => {
       const path =
         kind === 'desktop'

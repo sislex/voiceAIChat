@@ -250,6 +250,42 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.statusCode).toBe(400)
   })
 
+  it('агенты: список содержит политику; setPolicy сохраняет', async () => {
+    const created = (
+      await app.inject({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })
+    ).json()
+    const list = (await app.inject({ method: 'GET', url: '/api/agents' })).json()
+    expect(list[0].policy.allowNetwork).toBe(true)
+
+    const policy = {
+      allowedDirs: ['/tmp'],
+      allowNetwork: false,
+      allowWrite: false,
+      denyPatterns: ['sudo'],
+      allowPatterns: [],
+      skills: []
+    }
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/agents/${created.id}/policy`,
+      payload: { policy }
+    })
+    expect(res.statusCode).toBe(200)
+    const after = (await app.inject({ method: 'GET', url: '/api/agents' })).json()
+    expect(after[0].policy.allowNetwork).toBe(false)
+    expect(after[0].policy.allowedDirs).toEqual(['/tmp'])
+  })
+
+  it('агенты: перевыпуск токена возвращает новый токен', async () => {
+    const created = (
+      await app.inject({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })
+    ).json()
+    const res = await app.inject({ method: 'POST', url: `/api/agents/${created.id}/token` })
+    expect(res.statusCode).toBe(200)
+    expect(typeof res.json().token).toBe('string')
+    expect(res.json().token).not.toBe(created.token)
+  })
+
   it('скачивание: GET /api/agents/app и /api/app/desktop без .dmg → 404', async () => {
     // В тестах autodiscover артефактов отключён (VITEST), VC_*_APP не заданы.
     const agent = await app.inject({ method: 'GET', url: '/api/agents/app' })

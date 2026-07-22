@@ -2,7 +2,13 @@
 // TTS — Ф6). Хранит per-connection состояние.
 
 import { existsSync } from 'node:fs'
-import { claudeModelAlias, buildPrompt, buildConversationPrompt } from '@voicechat/shared'
+import {
+  claudeModelAlias,
+  buildPrompt,
+  buildConversationPrompt,
+  type AgentInfo,
+  type AgentPolicy
+} from '@voicechat/shared'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'
 import type { LlmClient, LlmHandle } from './claude/types.js'
@@ -30,13 +36,39 @@ export interface SessionDeps {
   downloadVoice?: (id: string, onProgress: (percent: number) => void) => Promise<void>
   /** Резолв id вложения → абсолютный путь на сервере (для промпта Claude). */
   resolveUpload?: (id: string) => string | undefined
-  /** Онлайн-статус машин-агентов (для проброса Bash на клиента). */
+  /** Онлайн-статус и политика машин-агентов (для проброса Bash на клиента). */
   agents?: {
     isOnline(id: string): boolean
     nameOf(id: string): string | undefined
+    policyOf(id: string): AgentPolicy | undefined
   }
   /** База URL MCP-эндпоинта remote-bash (с секретом k); undefined — проброс выключен. */
   mcpBaseUrl?: string
+  /** Живой список машин с онлайн-статусом + подписка на изменения (пуш веб-клиенту). */
+  agentsFeed?: {
+    list(): AgentInfo[]
+    subscribe(cb: () => void): () => void
+  }
+}
+
+/** Краткое описание политики машины для системного промпта Claude. */
+function policySummary(p: AgentPolicy): string {
+  const parts: string[] = []
+  if (p.allowedDirs.length) parts.push(`Работай только в каталогах: ${p.allowedDirs.join(', ')}.`)
+  parts.push(
+    p.allowNetwork
+      ? 'Доступ в сеть разрешён.'
+      : 'Доступ в сеть запрещён — не используй curl/wget/ssh и подобное.'
+  )
+  parts.push(
+    p.allowWrite ? 'Изменение файлов разрешено.' : 'Изменение файлов запрещено — только чтение.'
+  )
+  if (p.denyPatterns.length) parts.push(`Запрещённые паттерны команд: ${p.denyPatterns.join(', ')}.`)
+  if (p.allowPatterns.length) parts.push(`Разрешены только команды: ${p.allowPatterns.join(', ')}.`)
+  if (p.skills.length) {
+    parts.push(`Доступные скрипты: ${p.skills.map((s) => `«${s.name}» → ${s.command}`).join('; ')}.`)
+  }
+  return `Политика машины: ${parts.join(' ')}`
 }
 
 export function createSession(deps: SessionDeps): WsHandlers {
@@ -44,6 +76,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let stt: SttSession | null = null
   let tts: TtsSession | null = null
   let unsubDownload: (() => void) | null = null
+  let unsubAgents: (() => void) | null = null
   let ccTailStop: (() => void) | null = null
 
   function pcmFromBinary(data: Buffer): Int16Array {
@@ -57,6 +90,13 @@ export function createSession(deps: SessionDeps): WsHandlers {
       // (например, страницу обновили посреди загрузки), сразу получим текущий
       // прогресс и последующие события — прогресс-бар восстановится.
       unsubDownload = deps.modelDownload?.subscribe((ev) => ctx.send(ev)) ?? null
+      // Живой список машин-агентов: начальное состояние + пуш при изменениях.
+      if (deps.agentsFeed) {
+        ctx.send({ t: 'agents', agents: deps.agentsFeed.list() })
+        unsubAgents = deps.agentsFeed.subscribe(() =>
+          ctx.send({ t: 'agents', agents: deps.agentsFeed!.list() })
+        )
+      }
     },
     onMessage(msg, ctx) {
       switch (msg.t) {
@@ -83,7 +123,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
           // Цель выполнения команд: выбранная машина-агент. Офлайн — сразу ошибка:
           // молча выполнить команды не на той машине хуже, чем отказать.
           const target = settings.execTarget
-          let remote: { mcpUrl: string; agentName: string } | undefined
+          let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
           if (target && deps.agents && deps.mcpBaseUrl) {
             if (!deps.agents.isOnline(target)) {
               ctx.send({
@@ -93,9 +133,11 @@ export function createSession(deps: SessionDeps): WsHandlers {
               })
               break
             }
+            const policy = deps.agents.policyOf(target)
             remote = {
               mcpUrl: `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}`,
-              agentName: deps.agents.nameOf(target) ?? target
+              agentName: deps.agents.nameOf(target) ?? target,
+              policySummary: policy ? policySummary(policy) : undefined
             }
           }
           claudeHandle = deps.claude.send(
@@ -190,6 +232,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       tts = null
       unsubDownload?.() // отписка от менеджера загрузки; сама загрузка продолжается
       unsubDownload = null
+      unsubAgents?.()
+      unsubAgents = null
       ccTailStop?.()
       ccTailStop = null
     }

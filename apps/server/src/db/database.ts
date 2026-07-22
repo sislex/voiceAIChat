@@ -3,7 +3,9 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { SCHEMA_SQL } from './schema'
 import {
   DEFAULT_SETTINGS,
+  DEFAULT_AGENT_POLICY,
   type AgentCreated,
+  type AgentPolicy,
   type Conversation,
   type Message,
   type MessageRole,
@@ -34,6 +36,7 @@ interface AgentRow {
   token_hash: string
   created_at: number
   last_seen: number | null
+  policy: string | null
 }
 
 /** Запись машины-агента из БД (онлайн-статус добавляется реестром). */
@@ -42,6 +45,17 @@ export interface AgentRecord {
   name: string
   createdAt: number
   lastSeen: number | null
+  policy: AgentPolicy
+}
+
+/** Парсит JSON-политику из БД с откатом к дефолту (терпит старые/битые строки). */
+function parsePolicy(raw: string | null): AgentPolicy {
+  if (!raw) return { ...DEFAULT_AGENT_POLICY }
+  try {
+    return { ...DEFAULT_AGENT_POLICY, ...(JSON.parse(raw) as Partial<AgentPolicy>) }
+  } catch {
+    return { ...DEFAULT_AGENT_POLICY }
+  }
 }
 
 /** sha256(token) в hex — токены храним только хэшем. */
@@ -75,8 +89,17 @@ export class VoiceChatDb {
     // Unicode-lower для регистронезависимого поиска (SQLite LIKE/lower() — только ASCII).
     this.db.function('ulower', (s: unknown) => (typeof s === 'string' ? s.toLowerCase() : ''))
     this.db.exec(SCHEMA_SQL)
+    this.migrate()
     this.newId = deps.newId ?? (() => randomUUID())
     this.now = deps.now ?? (() => Date.now())
+  }
+
+  /** Лёгкие миграции существующих БД (idempotent). */
+  private migrate(): void {
+    const cols = this.db.prepare(`PRAGMA table_info(agents)`).all() as Array<{ name: string }>
+    if (!cols.some((c) => c.name === 'policy')) {
+      this.db.exec(`ALTER TABLE agents ADD COLUMN policy TEXT`)
+    }
   }
 
   close(): void {
@@ -228,23 +251,28 @@ export class VoiceChatDb {
     const token = randomBytes(24).toString('hex')
     this.db
       .prepare(
-        `INSERT INTO agents (id, name, token_hash, created_at, last_seen)
-         VALUES (?, ?, ?, ?, NULL)`
+        `INSERT INTO agents (id, name, token_hash, created_at, last_seen, policy)
+         VALUES (?, ?, ?, ?, NULL, ?)`
       )
-      .run(id, name, hashAgentToken(token), this.now())
+      .run(id, name, hashAgentToken(token), this.now(), JSON.stringify(DEFAULT_AGENT_POLICY))
     return { id, name, token }
+  }
+
+  private mapAgent(r: AgentRow): AgentRecord {
+    return {
+      id: r.id,
+      name: r.name,
+      createdAt: r.created_at,
+      lastSeen: r.last_seen,
+      policy: parsePolicy(r.policy)
+    }
   }
 
   listAgents(): AgentRecord[] {
     const rows = this.db
       .prepare(`SELECT * FROM agents ORDER BY created_at ASC`)
       .all() as AgentRow[]
-    return rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      createdAt: r.created_at,
-      lastSeen: r.last_seen
-    }))
+    return rows.map((r) => this.mapAgent(r))
   }
 
   /** Ищет агента по хэшу токена (авторизация WS-подключения). */
@@ -252,8 +280,19 @@ export class VoiceChatDb {
     const row = this.db
       .prepare(`SELECT * FROM agents WHERE token_hash = ?`)
       .get(tokenHash) as AgentRow | undefined
-    if (!row) return null
-    return { id: row.id, name: row.name, createdAt: row.created_at, lastSeen: row.last_seen }
+    return row ? this.mapAgent(row) : null
+  }
+
+  /** Задаёт политику возможностей машины. */
+  setAgentPolicy(id: string, policy: AgentPolicy): void {
+    this.db.prepare(`UPDATE agents SET policy = ? WHERE id = ?`).run(JSON.stringify(policy), id)
+  }
+
+  /** Перевыпускает токен машины (старый перестаёт работать). Возвращает новый токен. */
+  regenerateAgentToken(id: string): { token: string } {
+    const token = randomBytes(24).toString('hex')
+    this.db.prepare(`UPDATE agents SET token_hash = ? WHERE id = ?`).run(hashAgentToken(token), id)
+    return { token }
   }
 
   deleteAgent(id: string): void {

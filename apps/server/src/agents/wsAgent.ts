@@ -40,9 +40,9 @@ export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: Agen
         return
       }
       agentId = rec.id
-      registry.register(rec.id, rec.name, socket)
+      registry.register(rec.id, rec.name, socket, rec.policy)
       db.touchAgent(rec.id)
-      send({ t: 'agent.registered', name: rec.name })
+      send({ t: 'agent.registered', name: rec.name, policy: rec.policy })
       pingTimer = setInterval(() => {
         try {
           socket.ping()

@@ -9,10 +9,94 @@ export type AgentToServer =
   | { t: 'exec.done'; execId: string; exitCode: number | null; timedOut?: boolean }
   | { t: 'exec.error'; execId: string; message: string }
 
+/** Именованный скрипт («навык»), разрешённый к запуску на машине. */
+export interface AgentSkill {
+  name: string
+  command: string
+  description?: string
+}
+
+/** Политика возможностей машины-агента (что ему разрешено делать). */
+export interface AgentPolicy {
+  /** Разрешённые рабочие каталоги (пусто — любой). */
+  allowedDirs: string[]
+  /** Разрешён доступ в сеть/API. */
+  allowNetwork: boolean
+  /** Разрешены изменения файлов (создание/правка/удаление). */
+  allowWrite: boolean
+  /** Запрещённые паттерны команд (regex или подстрока). */
+  denyPatterns: string[]
+  /** Если непусто — разрешены только совпадающие с этими паттернами команды. */
+  allowPatterns: string[]
+  /** Навыки — именованные разрешённые скрипты. */
+  skills: AgentSkill[]
+}
+
+export const DEFAULT_AGENT_POLICY: AgentPolicy = {
+  allowedDirs: [],
+  allowNetwork: true,
+  allowWrite: true,
+  denyPatterns: [],
+  allowPatterns: [],
+  skills: []
+}
+
+/** Результат проверки команды по политике. */
+export interface PolicyVerdict {
+  allowed: boolean
+  reason?: string
+}
+
+const NETWORK_RE = /\b(curl|wget|nc|ncat|telnet|ssh|scp|sftp|ftp|rsync)\b/i
+const WRITE_RE = /(\brm\b|\bmv\b|\brmdir\b|\btruncate\b|\bdd\b|\btee\b|\bmkdir\b|>>?)/
+
+/** Совпадение паттерна: как regex (если компилируется), иначе подстрока (без регистра). */
+function matchesPattern(pattern: string, command: string): boolean {
+  try {
+    return new RegExp(pattern, 'i').test(command)
+  } catch {
+    return command.toLowerCase().includes(pattern.toLowerCase())
+  }
+}
+
+/** Абсолютные пути из команды (грубо: токены, начинающиеся с /). */
+function absolutePaths(command: string): string[] {
+  return command.match(/(?:^|[\s='"(])(\/[^\s'"()]+)/g)?.map((m) => m.replace(/^[\s='"(]+/, '')) ?? []
+}
+
+/**
+ * Проверяет команду по политике агента (чистая, тестируемая). Best-effort:
+ * ловит явные нарушения по паттернам/каталогам/сети/записи, но не является
+ * полноценной песочницей.
+ */
+export function evaluateAgentCommand(policy: AgentPolicy, command: string): PolicyVerdict {
+  const cmd = command.trim()
+  if (policy.allowPatterns.length > 0 && !policy.allowPatterns.some((p) => matchesPattern(p, cmd))) {
+    return { allowed: false, reason: 'команда не входит в список разрешённых' }
+  }
+  for (const p of policy.denyPatterns) {
+    if (matchesPattern(p, cmd)) return { allowed: false, reason: `запрещённый паттерн: ${p}` }
+  }
+  if (!policy.allowNetwork && NETWORK_RE.test(cmd)) {
+    return { allowed: false, reason: 'доступ в сеть запрещён' }
+  }
+  if (!policy.allowWrite && WRITE_RE.test(cmd)) {
+    return { allowed: false, reason: 'изменение файлов запрещено' }
+  }
+  if (policy.allowedDirs.length > 0) {
+    const outside = absolutePaths(cmd).find(
+      (p) => !policy.allowedDirs.some((d) => p === d || p.startsWith(d.endsWith('/') ? d : `${d}/`))
+    )
+    if (outside) return { allowed: false, reason: `путь вне разрешённых каталогов: ${outside}` }
+  }
+  return { allowed: true }
+}
+
 /** Сообщения сервер → агент. */
 export type ServerToAgent =
-  | { t: 'agent.registered'; name: string }
+  | { t: 'agent.registered'; name: string; policy: AgentPolicy }
   | { t: 'agent.denied'; reason: string }
+  | { t: 'agent.policy'; policy: AgentPolicy }
   | { t: 'exec.start'; execId: string; command: string; timeoutMs: number }
   | { t: 'exec.cancel'; execId: string }
 
@@ -23,6 +107,7 @@ export interface AgentInfo {
   online: boolean
   createdAt: number
   lastSeen: number | null
+  policy: AgentPolicy
 }
 
 /** Ответ на создание агента: токен возвращается только здесь, один раз. */

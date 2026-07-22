@@ -15,7 +15,7 @@ import type {
 } from './types'
 import type { McpServer } from './mcp'
 import type { CcProject, CcSession, CcItem } from './cc'
-import type { AgentCreated, AgentInfo } from './agentProtocol'
+import type { AgentCreated, AgentInfo, AgentPolicy } from './agentProtocol'
 
 /** Статус локальной модели Whisper. */
 export interface SttStatus {
@@ -79,6 +79,10 @@ export interface IpcInvokeMap {
   'agents:create': { arg: { name: string }; result: AgentCreated }
   /** Удалить машину-агента (отзывает токен, рвёт соединение). */
   'agents:delete': { arg: { id: string }; result: void }
+  /** Задать политику возможностей машины. */
+  'agents:setPolicy': { arg: { id: string; policy: AgentPolicy }; result: void }
+  /** Перевыпустить токен (старый перестаёт работать); токен возвращается один раз. */
+  'agents:regenerateToken': { arg: { id: string }; result: { token: string } }
   /** Абсолютный URL артефакта для скачивания (десктоп/агент-приложение/скрипт). */
   'downloads:url': { arg: { kind: 'desktop' | 'agent-app' | 'agent-script' }; result: string }
   /** Строка подключения (адрес+токен) для настройки агента (приложение и скрипт). */
@@ -256,6 +260,14 @@ export interface RendererSttBridge {
 }
 
 /**
+ * Мост живого списка машин-агентов, доступный как `window.agents`: подписка на
+ * обновления статуса/списка по WebSocket (web-режим). В desktop отсутствует.
+ */
+export interface RendererAgentsBridge {
+  onChange(cb: (agents: AgentInfo[]) => void): () => void
+}
+
+/**
  * Мост Claude, доступный в renderer как `window.claude`: отправка реплики,
  * отмена и подписка на поток ответа (main → renderer).
  */
@@ -321,6 +333,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'agents:list',
   'agents:create',
   'agents:delete',
+  'agents:setPolicy',
+  'agents:regenerateToken',
   'downloads:url',
   'agents:connectionString',
   'cc:projects',

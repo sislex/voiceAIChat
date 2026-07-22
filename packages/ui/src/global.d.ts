@@ -2,6 +2,7 @@
 // приложение внедряет их по-своему: desktop — через preload (Electron IPC),
 // web — через installBridges (REST+WS). Формы контрактов общие (@shared/ipc).
 import type {
+  RendererAgentsBridge,
   RendererApi,
   RendererAudioBridge,
   RendererCcBridge,
@@ -18,6 +19,8 @@ declare global {
     claude: RendererClaudeBridge
     tts: RendererTtsBridge
     cc: RendererCcBridge
+    /** Живой список агентов (web); в desktop отсутствует. */
+    agents?: RendererAgentsBridge
   }
 }
 

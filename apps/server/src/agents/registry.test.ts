@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { AgentRegistry, type AgentSocket } from './registry'
-import type { ServerToAgent } from '@voicechat/shared'
+import { DEFAULT_AGENT_POLICY, type ServerToAgent } from '@voicechat/shared'
 
 /** Фейковый сокет: копит отправленные сообщения. */
 function fakeSocket(): AgentSocket & { sent: ServerToAgent[]; closed: boolean } {
@@ -41,6 +41,39 @@ describe('AgentRegistry', () => {
   it('exec: офлайн-агент → reject сразу', async () => {
     const reg = makeRegistry()
     await expect(reg.exec('нет', 'ls', 1000)).rejects.toThrow('не в сети')
+  })
+
+  it('exec: команда, запрещённая политикой, → reject без отправки', async () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock, {
+      allowedDirs: [],
+      allowNetwork: true,
+      allowWrite: false,
+      denyPatterns: [],
+      allowPatterns: [],
+      skills: []
+    })
+    await expect(reg.exec('a1', 'rm -rf x', 1000)).rejects.toThrow('политик')
+    expect(sock.sent.some((m) => m.t === 'exec.start')).toBe(false)
+  })
+
+  it('updatePolicy шлёт agent.policy онлайн-агенту', () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock)
+    reg.updatePolicy('a1', { ...DEFAULT_AGENT_POLICY, allowNetwork: false })
+    const msg = sock.sent.find((m) => m.t === 'agent.policy')
+    expect(msg).toBeTruthy()
+  })
+
+  it('onChange вызывается на register/unregister', () => {
+    const reg = makeRegistry()
+    let n = 0
+    reg.onChange(() => n++)
+    reg.register('a1', 'Мак', fakeSocket())
+    reg.unregister('a1')
+    expect(n).toBe(2)
   })
 
   it('exec.error → reject с сообщением', async () => {

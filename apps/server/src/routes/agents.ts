@@ -3,7 +3,7 @@
 
 import { createReadStream, existsSync } from 'node:fs'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { REST, type AgentInfo } from '@voicechat/shared'
+import { REST, type AgentInfo, type AgentPolicy } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { buildAgentScript } from '../agents/agentScript.js'
@@ -78,5 +78,24 @@ export async function registerAgentRoutes(
     const settings = db.getSettings()
     if (settings.execTarget === id) db.saveSettings({ ...settings, execTarget: null })
     return { ok: true }
+  })
+
+  // Политика возможностей машины: сохранить в БД и сразу отправить онлайн-агенту.
+  app.post<{ Params: { id: string }; Body: { policy: AgentPolicy } }>(
+    '/api/agents/:id/policy',
+    async (req, reply) => {
+      const policy = req.body?.policy
+      if (!policy) return reply.code(400).send({ error: 'policy required' })
+      db.setAgentPolicy(req.params.id, policy)
+      registry.updatePolicy(req.params.id, policy)
+      return { ok: true }
+    }
+  )
+
+  // Перевыпуск токена: старый перестаёт работать, текущее соединение рвём.
+  app.post<{ Params: { id: string } }>('/api/agents/:id/token', async (req) => {
+    const { token } = db.regenerateAgentToken(req.params.id)
+    registry.disconnect(req.params.id)
+    return { token }
   })
 }

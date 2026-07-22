@@ -20,6 +20,8 @@ export interface LlmRequest {
     mcpUrl: string
     /** Имя машины для системного промпта. */
     agentName: string
+    /** Краткое описание политики машины для системного промпта (что разрешено). */
+    policySummary?: string
   }
 }
 

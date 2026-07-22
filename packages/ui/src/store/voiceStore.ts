@@ -8,7 +8,7 @@
 
 import type { RendererApi, SttSegmentWire, SttStatus, SttUpdate, UploadInfo } from '@shared/ipc'
 import type { McpServer } from '@shared/mcp'
-import type { AgentCreated, AgentInfo } from '@shared/agentProtocol'
+import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
 import type { CcProject, CcSession, CcItem } from '@shared/cc'
 import type {
   CatalogVoice,
@@ -240,6 +240,12 @@ export interface StoreActions {
   downloadAgentScript(): Promise<void>
   /** Получить строку подключения для настройки агента (приложение или скрипт). */
   getAgentConnectionString(token: string): Promise<string | null>
+  /** Применить живой список машин (пуш по WebSocket). */
+  applyAgents(agents: AgentInfo[]): void
+  /** Сохранить политику возможностей машины. */
+  setAgentPolicy(id: string, policy: AgentPolicy): Promise<void>
+  /** Перевыпустить токен машины; возвращает новую строку подключения (или null). */
+  regenerateAgentToken(id: string): Promise<string | null>
   /** Добавить запись активности агента (claude:log) в лог консоли. */
   applyClaudeLog(entry: ClaudeLogEntry): void
   /** Свернуть/развернуть панель консоли. */
@@ -680,6 +686,32 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function getAgentConnectionString(token: string): Promise<string | null> {
     try {
       return await api['agents:connectionString']({ token })
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+      return null
+    }
+  }
+
+  /** Живой список машин из пуша по WebSocket. */
+  function applyAgents(agents: AgentInfo[]): void {
+    setState({ agents })
+  }
+
+  /** Сохранить политику машины (сервер сразу применит её онлайн-агенту). */
+  async function setAgentPolicy(id: string, policy: AgentPolicy): Promise<void> {
+    try {
+      await api['agents:setPolicy']({ id, policy })
+      setState({ agents: state.agents.map((a) => (a.id === id ? { ...a, policy } : a)) })
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  /** Перевыпустить токен машины; вернуть новую строку подключения. */
+  async function regenerateAgentToken(id: string): Promise<string | null> {
+    try {
+      const { token } = await api['agents:regenerateToken']({ id })
+      return await getAgentConnectionString(token)
     } catch (err) {
       setState({ error: err instanceof Error ? err.message : String(err) })
       return null
@@ -1294,6 +1326,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       downloadAgentApp,
       downloadAgentScript,
       getAgentConnectionString,
+      applyAgents,
+      setAgentPolicy,
+      regenerateAgentToken,
       applyClaudeLog,
       toggleConsole,
       openObserver,

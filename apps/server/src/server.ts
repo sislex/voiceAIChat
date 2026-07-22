@@ -193,7 +193,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         resolveUpload: (id) => uploads.pathById(id),
         agents: agentRegistry,
         // claude спавнится на этом же хосте — loopback работает при любом HOST.
-        mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`
+        mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`,
+        agentsFeed: {
+          list: () => {
+            const online = agentRegistry.onlineIds()
+            return db.listAgents().map((a) => ({ ...a, online: online.has(a.id) }))
+          },
+          subscribe: (cb) => agentRegistry.onChange(cb)
+        }
       }))
 
   await app.register(async (scoped) => {

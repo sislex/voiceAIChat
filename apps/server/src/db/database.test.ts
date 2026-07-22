@@ -225,4 +225,37 @@ describe('VoiceChatDb — агенты', () => {
     db.touchAgent(a.id)
     expect(db.listAgents()[0].lastSeen).not.toBeNull()
   })
+
+  it('новый агент имеет дефолтную политику', () => {
+    db.createAgent('A')
+    const p = db.listAgents()[0].policy
+    expect(p.allowNetwork).toBe(true)
+    expect(p.allowWrite).toBe(true)
+    expect(p.allowedDirs).toEqual([])
+  })
+
+  it('setAgentPolicy сохраняет и читается', () => {
+    const a = db.createAgent('A')
+    db.setAgentPolicy(a.id, {
+      allowedDirs: ['/tmp'],
+      allowNetwork: false,
+      allowWrite: false,
+      denyPatterns: ['sudo'],
+      allowPatterns: [],
+      skills: [{ name: 'build', command: 'npm run build' }]
+    })
+    const p = db.listAgents()[0].policy
+    expect(p.allowNetwork).toBe(false)
+    expect(p.allowedDirs).toEqual(['/tmp'])
+    expect(p.skills[0]).toEqual({ name: 'build', command: 'npm run build' })
+  })
+
+  it('regenerateAgentToken делает старый токен недействительным', () => {
+    const created = db.createAgent('A')
+    const oldHash = hashAgentToken(created.token)
+    expect(db.findAgentByTokenHash(oldHash)?.id).toBe(created.id)
+    const { token } = db.regenerateAgentToken(created.id)
+    expect(db.findAgentByTokenHash(oldHash)).toBeNull()
+    expect(db.findAgentByTokenHash(hashAgentToken(token))?.id).toBe(created.id)
+  })
 })
