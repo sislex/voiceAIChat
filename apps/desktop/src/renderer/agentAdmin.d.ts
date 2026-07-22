@@ -13,6 +13,12 @@ interface AgentAdminBridge {
   onStatus(cb: (s: AgentAdminStateR) => void): () => void
 }
 
+interface RemoteClientBridge {
+  getUrl(): Promise<string | null>
+  setUrl(url: string | null): Promise<void>
+}
+
 interface Window {
   agentAdmin: AgentAdminBridge
+  remoteClient: RemoteClientBridge
 }

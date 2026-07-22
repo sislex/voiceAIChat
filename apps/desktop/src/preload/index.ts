@@ -84,15 +84,29 @@ const agentAdmin = {
   onStatus: (cb: (s: AgentAdminState) => void) => subscribe<AgentAdminState>('agentmode:status', cb)
 }
 
+// Режим тонкого клиента: URL сервера (null — локальный режим).
+const remoteClient = {
+  getUrl: (): Promise<string | null> => ipcRenderer.invoke('remote:getUrl'),
+  setUrl: (url: string | null): Promise<void> => ipcRenderer.invoke('remote:setUrl', url)
+}
+
+// Локальные IPC-мосты внедряем только в локальном режиме. В режиме тонкого
+// клиента (задан URL сервера) их ставит renderer как REST+WS — иначе
+// contextBridge-свойства read-only и их не переопределить.
+const remoteMode = Boolean(ipcRenderer.sendSync('remote:getUrlSync'))
+
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('api', api)
-    contextBridge.exposeInMainWorld('audio', audio)
-    contextBridge.exposeInMainWorld('stt', stt)
-    contextBridge.exposeInMainWorld('claude', claude)
-    contextBridge.exposeInMainWorld('tts', tts)
-    contextBridge.exposeInMainWorld('cc', cc)
+    if (!remoteMode) {
+      contextBridge.exposeInMainWorld('api', api)
+      contextBridge.exposeInMainWorld('audio', audio)
+      contextBridge.exposeInMainWorld('stt', stt)
+      contextBridge.exposeInMainWorld('claude', claude)
+      contextBridge.exposeInMainWorld('tts', tts)
+      contextBridge.exposeInMainWorld('cc', cc)
+    }
     contextBridge.exposeInMainWorld('agentAdmin', agentAdmin)
+    contextBridge.exposeInMainWorld('remoteClient', remoteClient)
   } catch (error) {
     console.error('[preload] exposeInMainWorld failed', error)
   }
@@ -105,12 +119,16 @@ if (process.contextIsolated) {
     tts: RendererTtsBridge
     cc: RendererCcBridge
     agentAdmin: typeof agentAdmin
+    remoteClient: typeof remoteClient
   }
-  g.api = api
-  g.audio = audio
-  g.stt = stt
-  g.claude = claude
-  g.tts = tts
-  g.cc = cc
+  if (!remoteMode) {
+    g.api = api
+    g.audio = audio
+    g.stt = stt
+    g.claude = claude
+    g.tts = tts
+    g.cc = cc
+  }
   g.agentAdmin = agentAdmin
+  g.remoteClient = remoteClient
 }

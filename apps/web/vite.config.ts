@@ -30,6 +30,9 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     testTimeout: 20000,
-    include: ['src/**/*.test.{ts,tsx}']
+    include: ['src/**/*.test.{ts,tsx}'],
+    // Юнит-тесты мостов переехали в @voicechat/ui (src/remote); тонкий слой web
+    // (main.tsx + config) без собственных тестов — не считаем это ошибкой.
+    passWithNoTests: true
   }
 })
