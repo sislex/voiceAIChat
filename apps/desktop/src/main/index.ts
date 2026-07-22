@@ -1,7 +1,9 @@
-import { app, BrowserWindow, session, shell } from 'electron'
+import { app, BrowserWindow, Menu, Tray, session, shell } from 'electron'
 import { existsSync, statSync, mkdirSync, copyFileSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { VoiceChatDb } from './db/database'
+import { trayIcon } from './trayIcon'
+import { initAgentMode, agentMenuItems, disposeAgentMode } from './agentMode'
 import { registerIpc } from './ipc/register'
 import { listMcpServers } from './claude/mcp'
 import { WhisperEngine } from './stt/whisperEngine'
@@ -27,6 +29,8 @@ const isDev = !app.isPackaged
 
 let db: VoiceChatDb | null = null
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+let isQuitting = false
 let disposeIpc: (() => void) | null = null
 let sttService: SttService | null = null
 let claudeService: ClaudeService | null = null
@@ -127,6 +131,14 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+  // Закрытие окна сворачивает в трей (приложение продолжает работать агентом);
+  // реальный выход — только через «Выход» в трее (isQuitting) или Cmd-Q (before-quit).
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault()
+      mainWindow?.hide()
+    }
+  })
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -142,6 +154,36 @@ function createWindow(): void {
   } else {
     void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+}
+
+/** Показать окно чата (создать, если было закрыто). */
+function showChat(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show()
+    mainWindow.focus()
+  } else {
+    createWindow()
+  }
+}
+
+/** Пересобрать меню трея (статус агента меняется — вызываем повторно). */
+function rebuildTrayMenu(): void {
+  if (!tray) return
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Открыть чат', click: () => showChat() },
+      { type: 'separator' },
+      ...agentMenuItems(),
+      { type: 'separator' },
+      {
+        label: 'Выход',
+        click: () => {
+          isQuitting = true
+          app.quit()
+        }
+      }
+    ])
+  )
 }
 
 app.whenReady().then(() => {
@@ -228,16 +270,29 @@ app.whenReady().then(() => {
 
   createWindow()
 
+  // Иконка в трее: «Открыть чат» + режим агента. Приложение живёт в трее даже
+  // при закрытом окне (агент продолжает работать).
+  tray = new Tray(trayIcon())
+  tray.setToolTip('Голос·Чат')
+  initAgentMode(rebuildTrayMenu)
+  rebuildTrayMenu()
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    else showChat()
   })
 })
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+// С треем окна могут быть скрыты — не выходим автоматически (выход через трей/Cmd-Q).
+app.on('window-all-closed', () => {})
+
+// Cmd-Q / выход из меню: снимаем перехват close, чтобы окно реально закрылось.
+app.on('before-quit', () => {
+  isQuitting = true
 })
 
 app.on('will-quit', () => {
+  disposeAgentMode()
   claudeService?.dispose()
   ccService?.dispose()
   sttService?.dispose()

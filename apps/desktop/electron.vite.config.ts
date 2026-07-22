@@ -7,7 +7,8 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: {
-        '@shared': resolve('../../packages/shared/src')
+        '@shared': resolve('../../packages/shared/src'),
+        '@agent': resolve('../agent/src')
       }
     }
   },
@@ -32,7 +33,9 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: resolve('src/renderer/index.html')
+          index: resolve('src/renderer/index.html'),
+          'agent-setup': resolve('src/renderer/agent-setup.html'),
+          'agent-log': resolve('src/renderer/agent-log.html')
         }
       }
     }
