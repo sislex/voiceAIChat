@@ -35,7 +35,8 @@ export default defineConfig({
         input: {
           index: resolve('src/renderer/index.html'),
           'agent-setup': resolve('src/renderer/agent-setup.html'),
-          'agent-log': resolve('src/renderer/agent-log.html')
+          'agent-log': resolve('src/renderer/agent-log.html'),
+          'remote-setup': resolve('src/renderer/remote-setup.html')
         }
       }
     }

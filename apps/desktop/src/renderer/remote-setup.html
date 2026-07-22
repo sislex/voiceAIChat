@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Подключение к серверу</title>
+    <style>
+      body { font: 13px/1.5 -apple-system, sans-serif; margin: 0; padding: 18px; color: #1a1a1a; background: #fafaf7; }
+      h1 { font-size: 15px; margin: 0 0 8px; }
+      p { margin: 0 0 12px; color: #555; }
+      input { width: 100%; box-sizing: border-box; font-size: 13px; padding: 8px; border: 1px solid #ccc; border-radius: 8px; }
+      .row { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+      button { padding: 7px 14px; border: 0; border-radius: 8px; background: #2a6; color: #fff; font-weight: 600; cursor: pointer; }
+      button.sec { background: #e6e6e0; color: #333; }
+      .err { color: #c33; margin-left: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>Подключение к серверу</h1>
+    <p>Десктоп будет работать тонким клиентом: чат, выполнение и агенты — на сервере.
+      Укажите адрес сервера (например <code>http://192.168.1.10:8787</code>).</p>
+    <input id="url" type="text" placeholder="http://host:8787" autofocus />
+    <div class="row">
+      <button id="save">Подключиться</button>
+      <button id="local" class="sec">Локальный режим</button>
+      <span id="msg" class="err"></span>
+    </div>
+    <script type="module" src="./remote-setup.ts"></script>
+  </body>
+</html>
