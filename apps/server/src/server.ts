@@ -17,6 +17,7 @@ import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { createSession } from './session.js'
 import { ClaudeCli } from './claude/claudeCli.js'
+import { CodexCli } from './codex/codexCli.js'
 import type { LlmClient } from './claude/types.js'
 import { WhisperEngine } from './stt/whisperEngine.js'
 import { isModelPresent, listModels, modelPath } from './stt/models.js'
@@ -41,6 +42,8 @@ export interface BuildOptions {
   db?: VoiceChatDb
   /** LLM-клиент (для тестов — мок). По умолчанию ClaudeCli. */
   claude?: LlmClient
+  /** Codex-клиент (для тестов — мок). По умолчанию CodexCli. */
+  codex?: LlmClient
   /** STT-движок (для тестов — мок). По умолчанию WhisperEngine из config. */
   sttEngine?: SttEngine
   /** TTS-движок (для тестов — мок). По умолчанию Piper/say из config. */
@@ -137,6 +140,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
 
   const claude = opts.claude ?? new ClaudeCli()
+  const codex = opts.codex ?? new CodexCli()
   const sttEngine =
     opts.sttEngine ??
     new WhisperEngine({
@@ -184,6 +188,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       createSession({
         db,
         claude,
+        codex,
         sttEngine,
         ttsEngine,
         diarization,
