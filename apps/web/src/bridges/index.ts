@@ -2,6 +2,7 @@
 // Формы совпадают с @shared/ipc, поэтому стор/компоненты renderer не меняются.
 
 import type {
+  RendererAgentsBridge,
   RendererAudioBridge,
   RendererCcBridge,
   RendererClaudeBridge,
@@ -70,6 +71,12 @@ function makeCcBridge(ws: WsClient): RendererCcBridge {
   }
 }
 
+function makeAgentsBridge(ws: WsClient): RendererAgentsBridge {
+  return {
+    onChange: (cb) => ws.on('agents', (m) => cb(m.agents))
+  }
+}
+
 let installed = false
 
 /** Устанавливает window.api/audio/stt/claude/tts/cc. Идемпотентно. */
@@ -83,4 +90,5 @@ export function installBridges(): void {
   window.claude = makeClaudeBridge(ws)
   window.tts = makeTtsBridge(ws)
   window.cc = makeCcBridge(ws)
+  window.agents = makeAgentsBridge(ws)
 }

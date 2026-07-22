@@ -2,6 +2,7 @@
 // installBridges() поверх REST+WS сервера. Формы контрактов те же (@shared/ipc),
 // поэтому стор и компоненты renderer переиспользуются без изменений.
 import type {
+  RendererAgentsBridge,
   RendererApi,
   RendererAudioBridge,
   RendererCcBridge,
@@ -18,6 +19,7 @@ declare global {
     claude: RendererClaudeBridge
     tts: RendererTtsBridge
     cc: RendererCcBridge
+    agents?: RendererAgentsBridge
   }
 }
 

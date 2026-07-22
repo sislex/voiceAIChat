@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Журнал агента</title>
+    <style>
+      body {
+        font: 13px/1.5 -apple-system, sans-serif;
+        margin: 0;
+        color: #1a1a1a;
+        background: #fafaf7;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      header {
+        padding: 10px 14px;
+        border-bottom: 1px solid #e2e2dd;
+        font-weight: 600;
+      }
+      #status { font-weight: 700; }
+      #log {
+        flex: 1;
+        overflow-y: auto;
+        margin: 0;
+        padding: 10px 14px;
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .line { padding: 1px 0; }
+    </style>
+  </head>
+  <body>
+    <header>Голос·Чат Агент · <span id="status">…</span></header>
+    <div id="log"></div>
+    <script type="module" src="./log.ts"></script>
+  </body>
+</html>

@@ -1,6 +1,6 @@
 // Конфигурация сервера из окружения.
 
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,6 +20,10 @@ export interface ServerConfig {
   piperBin: string
   /** Префикс аргументов piper (['-m','piper'] при запуске через python). */
   piperArgsPrefix: string[]
+  /** Путь к .dmg компаньон-приложения для скачивания (undefined — не собрано). */
+  agentAppPath?: string
+  /** Путь к .dmg десктоп-приложения для скачивания (undefined — не собрано). */
+  desktopAppPath?: string
 }
 
 const DEFAULT_DATA_DIR = join(homedir(), '.voicechat-server')
@@ -35,7 +39,19 @@ const REPO = {
   ),
   modelsDir: join(REPO_ROOT, 'apps/desktop/node_modules/nodejs-whisper/cpp/whisper.cpp/models'),
   piperBin: join(REPO_ROOT, '.venv-piper/bin/piper'),
-  piperVoicesDir: join(REPO_ROOT, 'apps/desktop/resources/piper-voices')
+  piperVoicesDir: join(REPO_ROOT, 'apps/desktop/resources/piper-voices'),
+  agentAppDir: join(REPO_ROOT, 'apps/agent-tray/release'),
+  desktopAppDir: join(REPO_ROOT, 'apps/desktop/release')
+}
+
+/** Первый .dmg в каталоге (собранный компаньон-агент) или undefined. */
+function findDmg(dir: string): string | undefined {
+  try {
+    const f = readdirSync(dir).find((n) => n.endsWith('.dmg'))
+    return f ? join(dir, f) : undefined
+  } catch {
+    return undefined
+  }
 }
 
 // Под тестами (vitest) авто-обнаружение репо-путей ОТКЛЮЧЕНО: иначе деструктивные
@@ -60,6 +76,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     whisperCli: pick(env.VC_WHISPER_CLI, REPO.whisperCli, join(dataDir, 'whisper-cli')),
     piperVoicesDir: pick(env.VC_PIPER_VOICES_DIR, REPO.piperVoicesDir, join(modelsDir, 'piper')),
     piperBin: pick(env.VC_PIPER_BIN, REPO.piperBin, 'piper'),
-    piperArgsPrefix: env.VC_PIPER_ARGS ? env.VC_PIPER_ARGS.split(' ') : []
+    piperArgsPrefix: env.VC_PIPER_ARGS ? env.VC_PIPER_ARGS.split(' ') : [],
+    agentAppPath: env.VC_AGENT_APP ?? (AUTODISCOVER ? findDmg(REPO.agentAppDir) : undefined),
+    desktopAppPath: env.VC_DESKTOP_APP ?? (AUTODISCOVER ? findDmg(REPO.desktopAppDir) : undefined)
   }
 }

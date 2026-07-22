@@ -23,7 +23,9 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "rebuild:node": "npm rebuild better-sqlite3",
     "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
+    "predist": "npm run rebuild:electron",
     "dist": "electron-vite build && electron-builder --mac",
+    "predist:dir": "npm run rebuild:electron",
     "dist:dir": "electron-vite build && electron-builder --dir"
   },
   "dependencies": {
@@ -32,7 +34,8 @@
     "nodejs-whisper": "^0.3.0",
     "react-markdown": "^9.1.0",
     "rehype-highlight": "^7.0.2",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.2",
@@ -42,6 +45,7 @@
     "@testing-library/user-event": "^14.5.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@typescript-eslint/eslint-plugin": "^8.19.0",

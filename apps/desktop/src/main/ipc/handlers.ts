@@ -2,6 +2,7 @@ import type { VoiceChatDb } from '../db/database'
 import type { IpcArg, IpcChannel, IpcResult, SttStatus, UploadInfo } from '@shared/ipc'
 import type { TtsVoiceCatalog, TtsVoiceInfo, WhisperModel, WhisperModelInfo } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
+import { ccResumeMessages, ccResumeTitle, ccTimeLabel } from '@shared/cc'
 import { listProjects, listSessions, readTranscript } from '../cc/ccSessions'
 
 /**
@@ -102,8 +103,35 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
 
     'mcp:list': () => (deps.listMcpServers ? deps.listMcpServers() : []),
 
+    // Машины-агенты — только в web-режиме (claude и так выполняется локально).
+    'agents:list': () => [],
+    'agents:create': () => {
+      throw new Error('Машины-агенты не поддерживаются в desktop-приложении')
+    },
+    'agents:delete': () => {},
+    'agents:setPolicy': () => {},
+    'agents:regenerateToken': () => {
+      throw new Error('Машины-агенты не поддерживаются в desktop-приложении')
+    },
+    'downloads:url': () => {
+      throw new Error('Скачивание доступно только в веб-версии')
+    },
+    'agents:connectionString': () => {
+      throw new Error('Машины-агенты не поддерживаются в desktop-приложении')
+    },
+
     'cc:projects': () => listProjects(),
     'cc:sessions': ({ slug }) => listSessions(slug),
-    'cc:transcript': ({ slug, id, limit }) => readTranscript(slug, id, { limit })
+    'cc:transcript': ({ slug, id, limit }) => readTranscript(slug, id, { limit }),
+    'cc:resume': ({ slug, id }) => {
+      const items = readTranscript(slug, id)
+      const conv = db.createConversation(ccResumeTitle(items))
+      const now = Date.now()
+      for (const m of ccResumeMessages(items)) {
+        db.addMessage(conv.id, m.role, m.text, ccTimeLabel(m.ts, now))
+      }
+      db.setClaudeSession(conv.id, id)
+      return { conversation: db.getConversation(conv.id)!, messages: db.listMessages(conv.id) }
+    }
   }
 }

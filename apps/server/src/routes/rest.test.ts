@@ -94,6 +94,46 @@ describe('REST: conversations/messages/settings', () => {
     }
   })
 
+  it('cc:resume создаёт разговор с импортом истории и привязкой session-id', async () => {
+    const ccDir = mkdtempSync(join(tmpdir(), 'cc-resume-'))
+    const proj = join(ccDir, '-Users-x-demo')
+    mkdirSync(proj, { recursive: true })
+    writeFileSync(
+      join(proj, 'sess-42.jsonl'),
+      [
+        JSON.stringify({ type: 'user', cwd: '/Users/x/demo', message: { content: 'Почини баг' } }),
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Готово' }] } })
+      ].join('\n')
+    )
+    const prev = process.env.VC_CC_DIR
+    process.env.VC_CC_DIR = ccDir
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/cc/resume',
+        payload: { slug: '-Users-x-demo', id: 'sess-42' }
+      })
+      expect(res.statusCode).toBe(200)
+      const { conversation, messages } = res.json()
+      // История импортирована в ленту.
+      expect(messages.map((m: { role: string; text: string }) => [m.role, m.text])).toEqual([
+        ['u1', 'Почини баг'],
+        ['ai', 'Готово']
+      ])
+      // Разговор привязан к session-id → следующий ход пойдёт через --resume.
+      expect(db.getConversation(conversation.id)?.claudeSessionId).toBe('sess-42')
+    } finally {
+      if (prev === undefined) delete process.env.VC_CC_DIR
+      else process.env.VC_CC_DIR = prev
+      rmSync(ccDir, { recursive: true, force: true })
+    }
+  })
+
+  it('cc:resume без slug/id → 400', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/cc/resume', payload: {} })
+    expect(res.statusCode).toBe(400)
+  })
+
   it('добавление сообщения видно в get', async () => {
     const c = (await app.inject({ method: 'POST', url: '/api/conversations', payload: {} })).json()
     const m = (
@@ -187,5 +227,90 @@ describe('REST: conversations/messages/settings', () => {
     const saved = (await app.inject({ method: 'GET', url: '/api/settings' })).json()
     expect(saved.diarization).toBe(false)
     expect(saved.voice).toBe('ru_RU-dmitri-medium')
+  })
+
+  it('агенты: create → list (offline) → delete', async () => {
+    const created = (
+      await app.inject({ method: 'POST', url: '/api/agents', payload: { name: 'MacBook' } })
+    ).json()
+    expect(created.name).toBe('MacBook')
+    expect(typeof created.token).toBe('string')
+
+    const list = (await app.inject({ method: 'GET', url: '/api/agents' })).json()
+    expect(list).toHaveLength(1)
+    expect(list[0]).toMatchObject({ id: created.id, name: 'MacBook', online: false })
+
+    const del = await app.inject({ method: 'DELETE', url: `/api/agents/${created.id}` })
+    expect(del.statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/agents' })).json()).toHaveLength(0)
+  })
+
+  it('агенты: POST без имени → 400', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/agents', payload: {} })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('агенты: список содержит политику; setPolicy сохраняет', async () => {
+    const created = (
+      await app.inject({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })
+    ).json()
+    const list = (await app.inject({ method: 'GET', url: '/api/agents' })).json()
+    expect(list[0].policy.allowNetwork).toBe(true)
+
+    const policy = {
+      allowedDirs: ['/tmp'],
+      allowNetwork: false,
+      allowWrite: false,
+      denyPatterns: ['sudo'],
+      allowPatterns: [],
+      skills: []
+    }
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/agents/${created.id}/policy`,
+      payload: { policy }
+    })
+    expect(res.statusCode).toBe(200)
+    const after = (await app.inject({ method: 'GET', url: '/api/agents' })).json()
+    expect(after[0].policy.allowNetwork).toBe(false)
+    expect(after[0].policy.allowedDirs).toEqual(['/tmp'])
+  })
+
+  it('агенты: перевыпуск токена возвращает новый токен', async () => {
+    const created = (
+      await app.inject({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })
+    ).json()
+    const res = await app.inject({ method: 'POST', url: `/api/agents/${created.id}/token` })
+    expect(res.statusCode).toBe(200)
+    expect(typeof res.json().token).toBe('string')
+    expect(res.json().token).not.toBe(created.token)
+  })
+
+  it('скачивание: GET /api/agents/app и /api/app/desktop без .dmg → 404', async () => {
+    // В тестах autodiscover артефактов отключён (VITEST), VC_*_APP не заданы.
+    const agent = await app.inject({ method: 'GET', url: '/api/agents/app' })
+    expect(agent.statusCode).toBe(404)
+    expect(agent.json().error).toContain('не собрано')
+    const desktop = await app.inject({ method: 'GET', url: '/api/app/desktop' })
+    expect(desktop.statusCode).toBe(404)
+  })
+
+  it('скачивание: GET /api/agents/script отдаёт JS-бандл (attachment)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/agents/script' })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('javascript')
+    expect(res.headers['content-disposition']).toContain('voicechat-agent.cjs')
+    expect(res.body.startsWith('#!')).toBe(true)
+  }, 30_000)
+
+  it('удаление агента сбрасывает execTarget на сервер', async () => {
+    const created = (
+      await app.inject({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })
+    ).json()
+    const def = (await app.inject({ method: 'GET', url: '/api/settings' })).json()
+    await app.inject({ method: 'PUT', url: '/api/settings', payload: { ...def, execTarget: created.id } })
+    await app.inject({ method: 'DELETE', url: `/api/agents/${created.id}` })
+    const saved = (await app.inject({ method: 'GET', url: '/api/settings' })).json()
+    expect(saved.execTarget).toBeNull()
   })
 })

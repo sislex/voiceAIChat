@@ -91,10 +91,15 @@ function safeJson(value: unknown): string {
   }
 }
 
+/** mcp__server__tool → server:tool (короткое имя MCP-инструмента для панели). */
+function displayToolName(name: string): string {
+  return name.replace(/^mcp__(.+?)__/, '$1:')
+}
+
 /** Краткое описание ввода инструмента (команда/путь/паттерн/url или сжатый JSON). */
-function summarizeToolInput(name: string, input: unknown): string {
+function summarizeToolInput(input: unknown): string {
   const i = (input ?? {}) as Record<string, unknown>
-  if (name === 'Bash' && typeof i.command === 'string') return i.command
+  if (typeof i.command === 'string') return i.command
   if (typeof i.file_path === 'string') return i.file_path
   if (typeof i.path === 'string') return i.path
   if (typeof i.pattern === 'string') return i.pattern
@@ -148,7 +153,7 @@ export function parseStreamJsonActivity(line: string): ClaudeLogEntry | null {
       if (!Array.isArray(content)) return null
       for (const block of content as Array<Record<string, unknown>>) {
         if (block.type === 'tool_use' && typeof block.name === 'string') {
-          const summary = `${block.name}: ${truncate(summarizeToolInput(block.name, block.input))}`
+          const summary = `${displayToolName(block.name)}: ${truncate(summarizeToolInput(block.input))}`
           return { kind: 'tool_use', summary, detail: safeJson(block.input), raw }
         }
         if (block.type === 'thinking' && typeof block.thinking === 'string') {

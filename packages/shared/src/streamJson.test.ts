@@ -103,6 +103,18 @@ describe('parseStreamJsonActivity (режим консоли)', () => {
     expect(e.detail).toContain('npm test')
   })
 
+  it('assistant tool_use (mcp__remote__bash) → короткое имя и команда', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [{ type: 'tool_use', name: 'mcp__remote__bash', input: { command: 'df -h' } }]
+      }
+    })
+    const e = parseStreamJsonActivity(line)!
+    expect(e.kind).toBe('tool_use')
+    expect(e.summary).toBe('remote:bash: df -h')
+  })
+
   it('assistant tool_use (Read) → путь файла', () => {
     const line = JSON.stringify({
       type: 'assistant',

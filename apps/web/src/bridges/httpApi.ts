@@ -1,9 +1,9 @@
 // window.api для веба: реализация RendererApi поверх REST сервера.
 // Каналы 1:1 соответствуют прежним Electron invoke-каналам.
 
-import { REST } from '@voicechat/shared'
+import { REST, encodeAgentConnection } from '@voicechat/shared'
 import type { RendererApi } from '@shared/ipc'
-import { SERVER_HTTP } from './config'
+import { SERVER_HTTP, serverWsUrl } from './config'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   // Content-Type ставим только при наличии тела: иначе Fastify пытается распарсить
@@ -63,9 +63,32 @@ export function createHttpApi(): RendererApi {
       await req(REST.ttsVoice(id), { method: 'DELETE' })
     },
     'mcp:list': () => req(REST.mcpServers),
+    'agents:list': () => req(REST.agents),
+    'agents:create': ({ name }) =>
+      req(REST.agents, { method: 'POST', body: JSON.stringify({ name }) }),
+    'agents:delete': async ({ id }) => {
+      await req(REST.agent(id), { method: 'DELETE' })
+    },
+    'agents:setPolicy': async ({ id, policy }) => {
+      await req(REST.agentPolicy(id), { method: 'POST', body: JSON.stringify({ policy }) })
+    },
+    'agents:regenerateToken': ({ id }) => req(REST.agentToken(id), { method: 'POST' }),
+    'downloads:url': async ({ kind }) => {
+      const path =
+        kind === 'desktop'
+          ? REST.desktopApp
+          : kind === 'agent-app'
+            ? REST.agentApp
+            : REST.agentScript
+      return SERVER_HTTP + path
+    },
+    'agents:connectionString': async ({ token }) =>
+      encodeAgentConnection({ server: serverWsUrl().replace(/\/ws$/, '/agent'), token }),
     'cc:projects': () => req(REST.ccProjects),
     'cc:sessions': ({ slug }) => req(REST.ccSessions(slug)),
     'cc:transcript': ({ slug, id, limit }) =>
-      req(REST.ccTranscript(slug, id) + (limit ? `?limit=${limit}` : ''))
+      req(REST.ccTranscript(slug, id) + (limit ? `?limit=${limit}` : '')),
+    'cc:resume': ({ slug, id }) =>
+      req(REST.ccResume, { method: 'POST', body: JSON.stringify({ slug, id }) })
   }
 }

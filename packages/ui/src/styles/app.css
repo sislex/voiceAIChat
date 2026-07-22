@@ -263,6 +263,64 @@
   align-items: center;
   gap: 10px;
 }
+/* Селектор цели выполнения команд: слева от статуса, прижат к названию. */
+.exectarget {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 14px;
+  margin-right: auto;
+}
+.exectarget-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  flex: none;
+}
+/* Карточка машины-агента в настройках. */
+.ac {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.ac-head {
+  cursor: pointer;
+  padding: 8px 10px;
+  margin: 0;
+}
+.ac-body {
+  padding: 4px 10px 10px;
+  border-top: 1px solid var(--border-soft);
+}
+.ac-section {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.ac-mono {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.ac-list {
+  margin-top: 6px;
+}
+.exectarget-dot.server {
+  background: #b9b6a9;
+}
+.exectarget-dot.remote {
+  background: #2aa66a;
+}
+.exectarget-sel {
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: inherit;
+  padding: 3px 8px;
+  cursor: pointer;
+  max-width: 220px;
+}
 .exportwrap {
   position: relative;
   display: inline-flex;
@@ -1446,6 +1504,13 @@
   font-weight: 700;
   letter-spacing: 0.4px;
   color: #a33a3a;
+}
+.cc-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 .cc-msg {
   display: flex;

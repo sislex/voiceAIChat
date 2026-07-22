@@ -108,6 +108,9 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
     if (typeof window !== 'undefined' && window.cc) {
       unsubs.push(window.cc.onTail((m) => store.actions.applyCcTailItems(m.items)))
     }
+    if (typeof window !== 'undefined' && window.agents) {
+      unsubs.push(window.agents.onChange((list) => store.actions.applyAgents(list)))
+    }
     if (typeof window !== 'undefined' && window.tts) {
       unsubs.push(
         window.tts.onAudio((m) => {

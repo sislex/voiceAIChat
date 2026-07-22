@@ -1,0 +1,252 @@
+// In-memory реестр подключённых машин-агентов и выполнение команд на них.
+// Не зависит от ws: сокет — минимальный интерфейс {send, close} (тестируемо).
+
+import { randomUUID } from 'node:crypto'
+import {
+  evaluateAgentCommand,
+  DEFAULT_AGENT_POLICY,
+  type AgentPolicy,
+  type AgentToServer,
+  type ServerToAgent
+} from '@voicechat/shared'
+
+/** Минимальный интерфейс сокета агента (реальный ws.WebSocket ему соответствует). */
+export interface AgentSocket {
+  send(data: string): void
+  close(): void
+}
+
+export interface ExecResult {
+  exitCode: number | null
+  output: string
+  timedOut: boolean
+}
+
+/** Кап буфера вывода одной команды — результат уходит в контекст модели. */
+const OUTPUT_CAP_BYTES = 200 * 1024
+/** Запас серверного страховочного таймаута сверх таймаута агента. */
+const GUARD_EXTRA_MS = 10_000
+
+interface PendingExec {
+  agentId: string
+  chunks: string[]
+  bytes: number
+  truncated: boolean
+  timer: NodeJS.Timeout
+  resolve(result: ExecResult): void
+  reject(err: Error): void
+}
+
+interface OnlineAgent {
+  name: string
+  socket: AgentSocket
+  policy: AgentPolicy
+}
+
+export class AgentRegistry {
+  private readonly online = new Map<string, OnlineAgent>()
+  private readonly pending = new Map<string, PendingExec>()
+  private readonly newId: () => string
+  private readonly changeListeners = new Set<() => void>()
+
+  constructor(deps: { newId?: () => string } = {}) {
+    this.newId = deps.newId ?? (() => randomUUID())
+  }
+
+  register(agentId: string, name: string, socket: AgentSocket, policy = DEFAULT_AGENT_POLICY): void {
+    // Повторное подключение с тем же токеном вытесняет старое соединение.
+    const prev = this.online.get(agentId)
+    if (prev) {
+      this.unregister(agentId)
+      try {
+        prev.socket.close()
+      } catch {
+        /* уже закрыт */
+      }
+    }
+    this.online.set(agentId, { name, socket, policy })
+    this.emitChange()
+  }
+
+  /** Убирает агента из онлайна и отклоняет все его незавершённые команды. */
+  unregister(agentId: string): void {
+    const had = this.online.delete(agentId)
+    for (const [execId, p] of this.pending) {
+      if (p.agentId !== agentId) continue
+      this.pending.delete(execId)
+      clearTimeout(p.timer)
+      p.reject(new Error('Машина отключилась во время выполнения команды'))
+    }
+    if (had) this.emitChange()
+  }
+
+  /** Обновляет политику онлайн-агента и шлёт её ему. */
+  updatePolicy(agentId: string, policy: AgentPolicy): void {
+    const agent = this.online.get(agentId)
+    if (!agent) return
+    agent.policy = policy
+    this.send(agentId, { t: 'agent.policy', policy })
+  }
+
+  /** Подписка на изменения онлайн-состава (register/unregister). */
+  onChange(cb: () => void): () => void {
+    this.changeListeners.add(cb)
+    return () => this.changeListeners.delete(cb)
+  }
+
+  private emitChange(): void {
+    for (const cb of this.changeListeners) {
+      try {
+        cb()
+      } catch {
+        /* слушатель не должен ронять реестр */
+      }
+    }
+  }
+
+  isOnline(agentId: string): boolean {
+    return this.online.has(agentId)
+  }
+
+  nameOf(agentId: string): string | undefined {
+    return this.online.get(agentId)?.name
+  }
+
+  policyOf(agentId: string): AgentPolicy | undefined {
+    return this.online.get(agentId)?.policy
+  }
+
+  onlineIds(): Set<string> {
+    return new Set(this.online.keys())
+  }
+
+  /** Закрывает сокет агента (при удалении машины). */
+  disconnect(agentId: string): void {
+    const a = this.online.get(agentId)
+    this.unregister(agentId)
+    try {
+      a?.socket.close()
+    } catch {
+      /* уже закрыт */
+    }
+  }
+
+  /**
+   * Выполняет команду на агенте: шлёт exec.start, копит вывод (с капом),
+   * резолвится по exec.done/exec.error, дисконнекту или страховочному таймауту.
+   * `signal` отменяет только эту команду (напр., оборвался HTTP-запрос claude).
+   */
+  exec(
+    agentId: string,
+    command: string,
+    timeoutMs: number,
+    signal?: AbortSignal
+  ): Promise<ExecResult> {
+    const agent = this.online.get(agentId)
+    if (!agent) return Promise.reject(new Error('Машина не в сети'))
+    if (signal?.aborted) return Promise.reject(new Error('Команда отменена'))
+
+    // Серверная проверка политики (первый барьер; агент проверяет ещё раз локально).
+    const verdict = evaluateAgentCommand(agent.policy, command)
+    if (!verdict.allowed) {
+      return Promise.reject(new Error(`Запрещено политикой машины: ${verdict.reason}`))
+    }
+
+    const execId = this.newId()
+    return new Promise<ExecResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        // Агент не ответил даже со своим таймаутом — считаем команду зависшей.
+        this.pending.delete(execId)
+        signal?.removeEventListener('abort', onAbort)
+        this.send(agentId, { t: 'exec.cancel', execId })
+        resolve({ exitCode: null, output: this.output(entryRef), timedOut: true })
+      }, timeoutMs + GUARD_EXTRA_MS)
+      // Отмена только этой команды (без затрагивания других на той же машине).
+      const onAbort = (): void => {
+        if (!this.pending.delete(execId)) return
+        clearTimeout(timer)
+        this.send(agentId, { t: 'exec.cancel', execId })
+        reject(new Error('Команда отменена'))
+      }
+      const entryRef: PendingExec = {
+        agentId,
+        chunks: [],
+        bytes: 0,
+        truncated: false,
+        timer,
+        resolve: (r) => {
+          signal?.removeEventListener('abort', onAbort)
+          resolve(r)
+        },
+        reject: (e) => {
+          signal?.removeEventListener('abort', onAbort)
+          reject(e)
+        }
+      }
+      this.pending.set(execId, entryRef)
+      signal?.addEventListener('abort', onAbort, { once: true })
+      this.send(agentId, { t: 'exec.start', execId, command, timeoutMs })
+    })
+  }
+
+  /** Отменяет все незавершённые команды агента (напр., ход Claude прерван). */
+  cancelAll(agentId: string): void {
+    for (const [execId, p] of this.pending) {
+      if (p.agentId !== agentId) continue
+      this.pending.delete(execId)
+      clearTimeout(p.timer)
+      this.send(agentId, { t: 'exec.cancel', execId })
+      p.reject(new Error('Команда отменена'))
+    }
+  }
+
+  /** Обрабатывает сообщение от агента (exec.chunk/done/error). */
+  handleMessage(agentId: string, msg: AgentToServer): void {
+    if (msg.t === 'agent.register') return // повторная регистрация — игнор
+    const p = this.pending.get(msg.execId)
+    if (!p || p.agentId !== agentId) return
+    switch (msg.t) {
+      case 'exec.chunk': {
+        if (p.truncated) return
+        p.bytes += Buffer.byteLength(msg.data)
+        if (p.bytes > OUTPUT_CAP_BYTES) {
+          p.truncated = true
+          p.chunks.push('\n…[вывод обрезан]')
+          return
+        }
+        p.chunks.push(msg.data)
+        return
+      }
+      case 'exec.done': {
+        this.pending.delete(msg.execId)
+        clearTimeout(p.timer)
+        p.resolve({
+          exitCode: msg.exitCode,
+          output: this.output(p),
+          timedOut: msg.timedOut === true
+        })
+        return
+      }
+      case 'exec.error': {
+        this.pending.delete(msg.execId)
+        clearTimeout(p.timer)
+        p.reject(new Error(msg.message))
+        return
+      }
+    }
+  }
+
+  private output(p: PendingExec): string {
+    return p.chunks.join('')
+  }
+
+  private send(agentId: string, msg: ServerToAgent): void {
+    const agent = this.online.get(agentId)
+    if (!agent) return
+    try {
+      agent.socket.send(JSON.stringify(msg))
+    } catch {
+      /* сокет умер — дисконнект придёт своим чередом */
+    }
+  }
+}

@@ -3,6 +3,8 @@
 
 import type { RendererApi } from '@shared/ipc'
 import type { Conversation, Message, Settings } from '@shared/types'
+import type { AgentInfo } from '@shared/agentProtocol'
+import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
 
 export interface FakeApi extends RendererApi {
@@ -22,6 +24,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
   const conversations: Conversation[] = []
   const messages: Message[] = []
+  const agents: AgentInfo[] = []
   let settings: Settings = { ...DEFAULT_SETTINGS }
 
   function makeConversation(title: string): Conversation {
@@ -105,9 +108,38 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'stt:deleteModel': async () => {},
     'tts:deleteVoice': async () => {},
     'mcp:list': async () => [],
+    'agents:list': async () => agents.map((a) => ({ ...a })),
+    'agents:create': async ({ name }) => {
+      const agent: AgentInfo = {
+        id: nextId(),
+        name,
+        online: false,
+        createdAt: tick(),
+        lastSeen: null,
+        policy: { ...DEFAULT_AGENT_POLICY }
+      }
+      agents.push(agent)
+      return { id: agent.id, name, token: `token-${agent.id}` }
+    },
+    'agents:delete': async ({ id }) => {
+      const idx = agents.findIndex((a) => a.id === id)
+      if (idx >= 0) agents.splice(idx, 1)
+    },
+    'agents:setPolicy': async ({ id, policy }) => {
+      const a = agents.find((x) => x.id === id)
+      if (a) a.policy = policy
+    },
+    'agents:regenerateToken': async ({ id }) => ({ token: `token2-${id}` }),
+    'downloads:url': async ({ kind }) => `http://localhost/api/download/${kind}`,
+    'agents:connectionString': async ({ token }) => `vcagent:fake-${token}`,
     'cc:projects': async () => [],
     'cc:sessions': async () => [],
     'cc:transcript': async () => [],
+    'cc:resume': async ({ id }) => {
+      const conv = makeConversation(`Продолжение ${id}`)
+      conversations.push(conv)
+      return { conversation: withCounts(conv), messages: [] }
+    },
     'tts:voices': async () => [
       { id: 'ru_RU-irina-medium', label: 'Irina — русский (medium)' },
       { id: 'ru_RU-dmitri-medium', label: 'Dmitri — русский (medium)' }
