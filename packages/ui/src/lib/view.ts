@@ -24,15 +24,15 @@ export function chipClass(role: MessageRole, diarization = true): string {
   return `chip sp${idx}`
 }
 
-/** Подпись спикера (учитывает выключенную диаризацию). */
-export function speakerName(role: MessageRole, diarization = true): string {
-  if (role === 'ai') return 'Claude'
+/** Подпись спикера (учитывает выключенную диаризацию). aiLabel — имя движка. */
+export function speakerName(role: MessageRole, diarization = true, aiLabel = 'Claude'): string {
+  if (role === 'ai') return aiLabel
   if (!diarization) return 'Вы'
   return `Спикер ${speakerNumber(role) ?? 1}`
 }
 
-/** Текст бейджа статуса в шапке. */
-export function statusBadge(state: VoiceState): string {
+/** Текст бейджа статуса в шапке. aiLabel — имя движка (для «… думает»). */
+export function statusBadge(state: VoiceState, aiLabel = 'Claude'): string {
   switch (state) {
     case 'idle':
       return 'Готов'
@@ -41,7 +41,7 @@ export function statusBadge(state: VoiceState): string {
     case 'transcribing':
       return 'Распознавание'
     case 'thinking':
-      return 'Claude думает'
+      return `${aiLabel} думает`
     case 'speaking':
       return 'Озвучка'
   }

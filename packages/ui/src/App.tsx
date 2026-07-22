@@ -95,6 +95,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         agents={state.agents}
         execTarget={state.settings.execTarget}
         onChangeExecTarget={(target) => void actions.updateSettings({ execTarget: target })}
+        aiLabel={state.settings.llmProvider === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar
             state={state.voice}
