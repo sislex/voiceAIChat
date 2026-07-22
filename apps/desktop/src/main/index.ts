@@ -1,9 +1,10 @@
-import { app, BrowserWindow, Menu, Tray, session, shell } from 'electron'
+import { app, BrowserWindow, Menu, Tray, ipcMain, session, shell } from 'electron'
 import { existsSync, statSync, mkdirSync, copyFileSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { VoiceChatDb } from './db/database'
 import { trayIcon } from './trayIcon'
 import { initAgentMode, agentMenuItems, disposeAgentMode } from './agentMode'
+import { readServerUrl, writeServerUrl } from './remoteConfig'
 import { registerIpc } from './ipc/register'
 import { listMcpServers } from './claude/mcp'
 import { WhisperEngine } from './stt/whisperEngine'
@@ -31,6 +32,7 @@ let db: VoiceChatDb | null = null
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
+let remoteSetupWindow: BrowserWindow | null = null
 let disposeIpc: (() => void) | null = null
 let sttService: SttService | null = null
 let claudeService: ClaudeService | null = null
@@ -166,12 +168,47 @@ function showChat(): void {
   }
 }
 
-/** Пересобрать меню трея (статус агента меняется — вызываем повторно). */
+/** Окно ввода адреса сервера (тонкий клиент). */
+function openRemoteSetup(): void {
+  if (remoteSetupWindow) {
+    remoteSetupWindow.focus()
+    return
+  }
+  remoteSetupWindow = new BrowserWindow({
+    width: 480,
+    height: 260,
+    resizable: false,
+    title: 'Подключение к серверу',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.mjs'),
+      contextIsolation: true,
+      sandbox: false
+    }
+  })
+  remoteSetupWindow.on('closed', () => {
+    remoteSetupWindow = null
+  })
+  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
+    void remoteSetupWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/remote-setup.html`)
+  } else {
+    void remoteSetupWindow.loadFile(join(__dirname, '../renderer/remote-setup.html'))
+  }
+}
+
+/** Пересобрать меню трея (статус агента/режим меняется — вызываем повторно). */
 function rebuildTrayMenu(): void {
   if (!tray) return
+  const serverUrl = readServerUrl(app.getPath('userData'))
+  const modeLabel = serverUrl ? `Режим: сервер ${serverUrl}` : 'Режим: локальный'
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Открыть чат', click: () => showChat() },
+      { type: 'separator' },
+      { label: modeLabel, enabled: false },
+      { label: 'Подключиться к серверу…', click: () => openRemoteSetup() },
+      ...(serverUrl
+        ? [{ label: 'Локальный режим', click: () => applyServerUrl(null) }]
+        : []),
       { type: 'separator' },
       ...agentMenuItems(),
       { type: 'separator' },
@@ -184,6 +221,20 @@ function rebuildTrayMenu(): void {
       }
     ])
   )
+}
+
+/** Сохранить URL сервера и перезагрузить окно чата в нужном режиме. */
+function applyServerUrl(url: string | null): void {
+  writeServerUrl(app.getPath('userData'), url)
+  remoteSetupWindow?.close()
+  rebuildTrayMenu()
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.reload()
+    mainWindow.show()
+    mainWindow.focus()
+  } else {
+    createWindow()
+  }
 }
 
 app.whenReady().then(() => {
@@ -266,6 +317,17 @@ app.whenReady().then(() => {
   // (на macOS дополнительно потребуется системное разрешение TCC).
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(permission === 'media')
+  })
+
+  // Режим тонкого клиента: renderer читает URL при старте (window.remoteClient).
+  ipcMain.handle('remote:getUrl', () => readServerUrl(app.getPath('userData')))
+  ipcMain.handle('remote:setUrl', (_e, url: string | null) => {
+    applyServerUrl(url)
+  })
+  // Синхронно для preload: решить, внедрять ли локальные IPC-мосты (иначе их ставит
+  // renderer как REST+WS против сервера; contextBridge-свойства перезаписать нельзя).
+  ipcMain.on('remote:getUrlSync', (e) => {
+    e.returnValue = readServerUrl(app.getPath('userData'))
   })
 
   createWindow()

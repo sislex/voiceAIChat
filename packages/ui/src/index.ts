@@ -4,4 +4,7 @@
 export { default } from './App'
 export { default as App } from './App'
 
+// Установка мостов window.* для удалённого режима (REST+WS) — web и desktop-клиент.
+export { installRemoteBridges } from './remote'
+
 // Стили подключаются приложениями через '@voicechat/ui/styles.css' либо напрямую.

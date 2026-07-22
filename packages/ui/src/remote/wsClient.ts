@@ -1,8 +1,8 @@
 // Устойчивое WS-соединение с сервером: типизированная отправка JSON/бинаря,
 // подписка по типу сообщения (msg.t), очередь на время (пере)подключения и
-// авто-reconnect. Один экземпляр на приложение (см. bridges/index.ts).
+// авто-reconnect. Один экземпляр на подключение (см. installRemoteBridges).
 
-import type { ClientMessage, ServerMessage, ServerMessageType } from '@voicechat/shared'
+import type { ClientMessage, ServerMessage, ServerMessageType } from '@shared/protocol'
 
 type AnyServerMessage = Extract<ServerMessage, { t: ServerMessageType }>
 type Listener = (msg: AnyServerMessage) => void

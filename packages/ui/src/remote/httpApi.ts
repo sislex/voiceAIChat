@@ -1,21 +1,22 @@
-// window.api для веба: реализация RendererApi поверх REST сервера.
-// Каналы 1:1 соответствуют прежним Electron invoke-каналам.
+// window.api поверх REST сервера (удалённый режим web/desktop). Каналы 1:1
+// соответствуют Electron invoke-каналам. httpBase — базовый HTTP-URL сервера
+// ('' = same-origin), agentWsUrl — ws-адрес /agent для строки подключения.
 
-import { REST, encodeAgentConnection } from '@voicechat/shared'
+import { REST } from '@shared/protocol'
+import { encodeAgentConnection } from '@shared/agentProtocol'
 import type { RendererApi } from '@shared/ipc'
-import { SERVER_HTTP, serverWsUrl } from './config'
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  // Content-Type ставим только при наличии тела: иначе Fastify пытается распарсить
-  // пустое JSON-тело у DELETE и отвечает 400.
-  const headers = init?.body != null ? { 'content-type': 'application/json' } : undefined
-  const res = await fetch(SERVER_HTTP + path, { ...init, headers })
-  if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
-  const text = await res.text()
-  return (text ? JSON.parse(text) : undefined) as T
-}
+export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi {
+  async function req<T>(path: string, init?: RequestInit): Promise<T> {
+    // Content-Type ставим только при наличии тела: иначе Fastify пытается распарсить
+    // пустое JSON-тело у DELETE и отвечает 400.
+    const headers = init?.body != null ? { 'content-type': 'application/json' } : undefined
+    const res = await fetch(httpBase + path, { ...init, headers })
+    if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
+    const text = await res.text()
+    return (text ? JSON.parse(text) : undefined) as T
+  }
 
-export function createHttpApi(): RendererApi {
   return {
     'app:ping': async () => {
       const h = await req<{ version: string }>(REST.health)
@@ -25,7 +26,7 @@ export function createHttpApi(): RendererApi {
     'conversations:create': ({ title }) =>
       req(REST.conversations, { method: 'POST', body: JSON.stringify({ title }) }),
     'conversations:get': async ({ id }) => {
-      const res = await fetch(SERVER_HTTP + REST.conversation(id))
+      const res = await fetch(httpBase + REST.conversation(id))
       if (res.status === 404) return null
       if (!res.ok) throw new Error(`GET ${REST.conversation(id)} → ${res.status}`)
       return res.json()
@@ -80,10 +81,9 @@ export function createHttpApi(): RendererApi {
           : kind === 'agent-app'
             ? REST.agentApp
             : REST.agentScript
-      return SERVER_HTTP + path
+      return httpBase + path
     },
-    'agents:connectionString': async ({ token }) =>
-      encodeAgentConnection({ server: serverWsUrl().replace(/\/ws$/, '/agent'), token }),
+    'agents:connectionString': async ({ token }) => encodeAgentConnection({ server: agentWsUrl, token }),
     'cc:projects': () => req(REST.ccProjects),
     'cc:sessions': ({ slug }) => req(REST.ccSessions(slug)),
     'cc:transcript': ({ slug, id, limit }) =>

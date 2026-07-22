@@ -1,5 +1,7 @@
-// Инициализация мостов window.* для веб-клиента: один WsClient + HTTP-api.
-// Формы совпадают с @shared/ipc, поэтому стор/компоненты renderer не меняются.
+// Установка мостов window.* поверх REST+WS сервера — удалённый режим.
+// Используется веб-клиентом (same-origin/VITE_SERVER_URL) и десктопом в роли
+// тонкого клиента (URL сервера задаётся пользователем). Формы совпадают с
+// @shared/ipc, поэтому UI/стор работают без изменений.
 
 import type {
   RendererAgentsBridge,
@@ -11,7 +13,6 @@ import type {
 } from '@shared/ipc'
 import { WsClient } from './wsClient'
 import { createHttpApi } from './httpApi'
-import { serverWsUrl } from './config'
 import { base64ToArrayBuffer } from './decode'
 
 function makeAudioBridge(ws: WsClient): RendererAudioBridge {
@@ -45,8 +46,7 @@ function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
       ws.on('claude.done', (m) => cb({ conversationId: m.conversationId, text: m.text, meta: m.meta })),
     onError: (cb) =>
       ws.on('claude.error', (m) => cb({ conversationId: m.conversationId, message: m.message })),
-    onLog: (cb) =>
-      ws.on('claude.log', (m) => cb({ conversationId: m.conversationId, entry: m.entry }))
+    onLog: (cb) => ws.on('claude.log', (m) => cb({ conversationId: m.conversationId, entry: m.entry }))
   }
 }
 
@@ -72,19 +72,28 @@ function makeCcBridge(ws: WsClient): RendererCcBridge {
 }
 
 function makeAgentsBridge(ws: WsClient): RendererAgentsBridge {
-  return {
-    onChange: (cb) => ws.on('agents', (m) => cb(m.agents))
-  }
+  return { onChange: (cb) => ws.on('agents', (m) => cb(m.agents)) }
 }
 
-let installed = false
+/** http→ws, same-origin если base пустой. */
+function toWsBase(httpBase: string): string {
+  if (httpBase) return httpBase.replace(/^http/, 'ws')
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.host}`
+}
 
-/** Устанавливает window.api/audio/stt/claude/tts/cc. Идемпотентно. */
-export function installBridges(): void {
-  if (installed) return
-  installed = true
-  const ws = new WsClient(serverWsUrl())
-  window.api = createHttpApi()
+let ws: WsClient | null = null
+
+/**
+ * Ставит window.api/audio/stt/claude/tts/cc/agents поверх сервера по адресу
+ * serverHttp ('' = same-origin). Идемпотентно на один процесс.
+ */
+export function installRemoteBridges(serverHttp: string): void {
+  if (ws) return
+  const httpBase = serverHttp.replace(/\/$/, '')
+  const wsBase = toWsBase(httpBase)
+  ws = new WsClient(`${wsBase}/ws`)
+  window.api = createHttpApi(httpBase, `${wsBase}/agent`)
   window.audio = makeAudioBridge(ws)
   window.stt = makeSttBridge(ws)
   window.claude = makeClaudeBridge(ws)
