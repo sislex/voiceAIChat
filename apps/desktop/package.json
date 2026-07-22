@@ -23,7 +23,9 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "rebuild:node": "npm rebuild better-sqlite3",
     "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
+    "predist": "npm run rebuild:electron",
     "dist": "electron-vite build && electron-builder --mac",
+    "predist:dir": "npm run rebuild:electron",
     "dist:dir": "electron-vite build && electron-builder --dir"
   },
   "dependencies": {
