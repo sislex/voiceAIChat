@@ -92,6 +92,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onDownloadModel={actions.downloadModel}
         onExport={actions.exportConversation}
         turnMeta={state.lastTurnMeta}
+        agents={state.agents}
+        execTarget={state.settings.execTarget}
+        onChangeExecTarget={(target) => void actions.updateSettings({ execTarget: target })}
         voiceBar={
           <VoiceBar
             state={state.voice}

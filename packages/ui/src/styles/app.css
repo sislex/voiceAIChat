@@ -263,6 +263,37 @@
   align-items: center;
   gap: 10px;
 }
+/* Селектор цели выполнения команд: слева от статуса, прижат к названию. */
+.exectarget {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 14px;
+  margin-right: auto;
+}
+.exectarget-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  flex: none;
+}
+.exectarget-dot.server {
+  background: #b9b6a9;
+}
+.exectarget-dot.remote {
+  background: #2aa66a;
+}
+.exectarget-sel {
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: inherit;
+  padding: 3px 8px;
+  cursor: pointer;
+  max-width: 220px;
+}
 .exportwrap {
   position: relative;
   display: inline-flex;
