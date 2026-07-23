@@ -33,7 +33,7 @@ WORKDIR /app
 
 # Работаем под непривилегированным пользователем `node` (есть в базовом образе):
 # claude CLI запрещает `--dangerously-skip-permissions` (режим «Полный доступ»)
-# под root/sudo. HOME=/home/node → сюда монтируются ~/.claude и ~/.codex.
+# под root/sudo. HOME=/home/node → здесь тома ~/.claude и ~/.codex с авторизацией.
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8787 \
@@ -51,7 +51,8 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 # claude/codex CLI: сервер вызывает их как бинарники `claude`/`codex` из PATH.
-# Аутентификация — через смонтированные ~/.claude и ~/.codex (см. compose).
+# Аутентификация — внутри контейнера (тома ~/.claude и ~/.codex, см. compose):
+# логин выполняется через `docker compose exec` (см. DOCKER.md).
 RUN npm i -g @anthropic-ai/claude-code @openai/codex
 
 # Переносим готовое дерево из стадии сборки: исходники + node_modules (с нативным
@@ -60,8 +61,11 @@ COPY --from=build /app /app
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Каталог данных во владении node (SQLite + вложения).
-RUN mkdir -p /data && chown -R node:node /data
+# Каталоги данных и авторизации во владении node (SQLite + вложения + токены CLI).
+# Создаём каталоги auth в образе → новые именованные тома инициализируются с
+# владельцем node (иначе Docker создаст их root-овыми, и node не сможет логиниться).
+RUN mkdir -p /data /home/node/.claude /home/node/.codex \
+  && chown -R node:node /data /home/node/.claude /home/node/.codex
 VOLUME ["/data"]
 EXPOSE 8787
 
