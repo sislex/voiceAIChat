@@ -18,6 +18,8 @@ export interface ChatColumnProps {
   title: string
   /** Переименовать текущий разговор (клик по заголовку в шапке). */
   onRenameTitle?: (title: string) => void
+  /** Показать/скрыть сайдбар (кнопка ☰, видна только на мобильных). */
+  onToggleSidebar?: () => void
   state: VoiceState
   messages: Message[]
   liveSegments: LiveSegment[]
@@ -67,6 +69,7 @@ export interface ChatColumnProps {
 export function ChatColumn({
   title,
   onRenameTitle,
+  onToggleSidebar,
   state,
   messages,
   liveSegments,
@@ -150,6 +153,16 @@ export function ChatColumn({
   return (
     <main className="main">
       <header className="mhead">
+        {onToggleSidebar && (
+          <button
+            className="burger"
+            aria-label="Меню разговоров"
+            title="Меню разговоров"
+            onClick={onToggleSidebar}
+          >
+            ☰
+          </button>
+        )}
         {titleEditing ? (
           <input
             className="mtitle-edit"

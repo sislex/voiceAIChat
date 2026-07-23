@@ -44,6 +44,8 @@ export interface SidebarProps {
   onOpenObserver: () => void
   onOpenCodexObserver: () => void
   onOpenSettings: () => void
+  /** Мобильный режим: сайдбар выдвинут поверх контента. */
+  open?: boolean
 }
 
 export function Sidebar({
@@ -58,7 +60,8 @@ export function Sidebar({
   onSearch,
   onOpenObserver,
   onOpenCodexObserver,
-  onOpenSettings
+  onOpenSettings,
+  open = false
 }: SidebarProps): JSX.Element {
   // id разговора, для которого показываем инлайн-подтверждение удаления.
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
@@ -81,7 +84,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="side">
+    <aside className={open ? 'side side--open' : 'side'}>
       <div className="sidehead">
         <span className="logo">
           <span className="logodot" style={{ background: ACCENT }} />

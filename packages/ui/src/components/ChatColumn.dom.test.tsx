@@ -139,3 +139,17 @@ describe('ChatColumn — переименование разговора по з
     expect(screen.queryByLabelText('Новое название разговора')).not.toBeInTheDocument()
   })
 })
+
+describe('ChatColumn — кнопка меню (мобильный сайдбар)', () => {
+  it('клик по ☰ зовёт onToggleSidebar', async () => {
+    const onToggle = vi.fn()
+    renderCol({ onToggleSidebar: onToggle })
+    await userEvent.click(screen.getByLabelText('Меню разговоров'))
+    expect(onToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it('без onToggleSidebar кнопки нет', () => {
+    renderCol()
+    expect(screen.queryByLabelText('Меню разговоров')).not.toBeInTheDocument()
+  })
+})
