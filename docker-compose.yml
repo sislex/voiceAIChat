@@ -1,0 +1,30 @@
+# voiceAIChat в контейнере: сервер + web на одном порту, claude/codex CLI внутри.
+#
+# Запуск:
+#   docker compose up --build
+#   → открыть http://localhost:8787
+#
+# Аутентификация claude/codex берётся из смонтированных каталогов хоста
+# (нужно, чтобы на хосте были выполнены `claude login` / `codex login`).
+# Проводники Claude Code / Codex тоже читают историю из этих каталогов.
+
+services:
+  voicechat:
+    build: .
+    image: voicechat
+    ports:
+      - "8787:8787"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8787"
+      VC_DATA_DIR: /data
+    volumes:
+      # Персист БД (voicechat.db) и вложений.
+      - vc-data:/data
+      # Авторизация + история CLI (rw: клиентам нужно обновлять сессии/токены).
+      - ${HOME}/.claude:/root/.claude
+      - ${HOME}/.codex:/root/.codex
+    restart: unless-stopped
+
+volumes:
+  vc-data:
