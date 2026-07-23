@@ -4,6 +4,7 @@ import type {
   RendererAudioBridge,
   RendererCcBridge,
   RendererClaudeBridge,
+  RendererCodexBridge,
   RendererSttBridge,
   RendererTtsBridge
 } from '@shared/ipc'
@@ -16,6 +17,7 @@ declare global {
     claude: RendererClaudeBridge
     tts: RendererTtsBridge
     cc: RendererCcBridge
+    codex: RendererCodexBridge
     /** Живой список агентов (web); в desktop отсутствует. */
     agents?: RendererAgentsBridge
   }

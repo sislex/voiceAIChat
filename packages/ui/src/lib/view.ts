@@ -1,4 +1,4 @@
-import type { MessageRole, TurnMeta, VoiceState } from '@shared/types'
+import type { LlmProvider, MessageRole, TurnMeta, VoiceState } from '@shared/types'
 
 export const ACCENT = '#3D64C8'
 
@@ -24,15 +24,23 @@ export function chipClass(role: MessageRole, diarization = true): string {
   return `chip sp${idx}`
 }
 
-/** Подпись спикера (учитывает выключенную диаризацию). */
-export function speakerName(role: MessageRole, diarization = true): string {
-  if (role === 'ai') return 'Claude'
+/**
+ * Подпись движка по значению, запечённому в сообщение. Отсутствие (старые
+ * сообщения, созданные до появления поля) → «Claude» (исторический дефолт).
+ */
+export function engineLabel(engine?: LlmProvider): string {
+  return engine === 'codex' ? 'Codex' : 'Claude'
+}
+
+/** Подпись спикера (учитывает выключенную диаризацию). aiLabel — имя движка. */
+export function speakerName(role: MessageRole, diarization = true, aiLabel = 'Claude'): string {
+  if (role === 'ai') return aiLabel
   if (!diarization) return 'Вы'
   return `Спикер ${speakerNumber(role) ?? 1}`
 }
 
-/** Текст бейджа статуса в шапке. */
-export function statusBadge(state: VoiceState): string {
+/** Текст бейджа статуса в шапке. aiLabel — имя движка (для «… думает»). */
+export function statusBadge(state: VoiceState, aiLabel = 'Claude'): string {
   switch (state) {
     case 'idle':
       return 'Готов'
@@ -41,7 +49,7 @@ export function statusBadge(state: VoiceState): string {
     case 'transcribing':
       return 'Распознавание'
     case 'thinking':
-      return 'Claude думает'
+      return `${aiLabel} думает`
     case 'speaking':
       return 'Озвучка'
   }

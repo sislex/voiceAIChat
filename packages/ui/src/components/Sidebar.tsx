@@ -42,6 +42,7 @@ export interface SidebarProps {
   searchQuery: string
   onSearch: (query: string) => void
   onOpenObserver: () => void
+  onOpenCodexObserver: () => void
   onOpenSettings: () => void
 }
 
@@ -56,6 +57,7 @@ export function Sidebar({
   searchQuery,
   onSearch,
   onOpenObserver,
+  onOpenCodexObserver,
   onOpenSettings
 }: SidebarProps): JSX.Element {
   // id разговора, для которого показываем инлайн-подтверждение удаления.
@@ -193,6 +195,10 @@ export function Sidebar({
         <button className="footbtn" onClick={onOpenObserver}>
           <span className="footico">🗂</span>
           Claude Code
+        </button>
+        <button className="footbtn" onClick={onOpenCodexObserver}>
+          <span className="footico">🧭</span>
+          Codex
         </button>
         <button className="footbtn" onClick={onOpenSettings}>
           <GearIcon />

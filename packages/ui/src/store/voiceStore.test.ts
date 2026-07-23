@@ -59,6 +59,23 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().voice).toBe('idle')
   })
 
+  it('applyClaudeDone запекает движок в ответ (engine)', async () => {
+    const { store, api } = makeStore()
+    const spyAdd = vi.spyOn(api, 'messages:add')
+    await store.actions.init()
+
+    store.actions.setDraft('Вопрос')
+    await store.actions.submitText() // → thinking
+    expect(store.getState().voice).toBe('thinking')
+
+    // Ответ пришёл от codex → сообщение сохраняется с engine='codex'.
+    await store.actions.applyClaudeDone('Ответ Codex', undefined, 'codex')
+
+    expect(spyAdd).toHaveBeenCalledWith(expect.objectContaining({ role: 'ai', engine: 'codex' }))
+    const ai = store.getState().messages.find((m) => m.role === 'ai' && m.text === 'Ответ Codex')
+    expect(ai?.engine).toBe('codex')
+  })
+
   it('пустой черновик не отправляется', async () => {
     const { store, api } = makeStore()
     const spyAdd = vi.spyOn(api, 'messages:add')
@@ -1114,5 +1131,50 @@ describe('voiceStore — управление моделями/голосами'
 
     await store.actions.deleteVoice('ru_RU-irina-medium')
     expect(spyVoice).toHaveBeenCalledWith({ id: 'ru_RU-irina-medium' })
+  })
+})
+
+describe('voiceStore — Проводник Codex', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+  })
+
+  it('openCodexObserver грузит проекты; select сохраняет cwd/id', async () => {
+    const { store, api } = makeStore()
+    const spyProjects = vi.spyOn(api, 'cx:projects')
+    await store.actions.init()
+
+    await store.actions.openCodexObserver()
+    expect(store.getState().cxOpen).toBe(true)
+    expect(spyProjects).toHaveBeenCalledOnce()
+
+    await store.actions.selectCxProject('/U/x/a')
+    expect(store.getState().cxProjectCwd).toBe('/U/x/a')
+
+    await store.actions.selectCxSession('sid-1')
+    expect(store.getState().cxSessionId).toBe('sid-1')
+
+    store.actions.closeCodexObserver()
+    expect(store.getState().cxOpen).toBe(false)
+    expect(store.getState().cxSessionId).toBeNull()
+  })
+
+  it('resumeCxSession импортирует разговор и переключает движок на Codex', async () => {
+    const { store, api } = makeStore()
+    const spyResume = vi.spyOn(api, 'cx:resume')
+    const spySave = vi.spyOn(api, 'settings:save')
+    await store.actions.init()
+    expect(store.getState().settings.llmProvider).toBe('claude')
+
+    await store.actions.resumeCxSession('sid-42')
+
+    expect(spyResume).toHaveBeenCalledWith({ id: 'sid-42' })
+    expect(store.getState().activeId).not.toBeNull()
+    expect(store.getState().cxOpen).toBe(false)
+    // Движок переключён на Codex, чтобы следующий ход продолжил сессию.
+    expect(store.getState().settings.llmProvider).toBe('codex')
+    expect(spySave).toHaveBeenCalledWith(expect.objectContaining({ llmProvider: 'codex' }))
   })
 })

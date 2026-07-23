@@ -6,12 +6,20 @@ import {
   ccResumeMessages,
   ccResumeTitle,
   ccTimeLabel,
+  cxResumeMessages,
+  cxResumeTitle,
+  cxTimeLabel,
   type AddMessageArgs,
   type Settings
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { listMcpServers } from '../claude/mcp.js'
 import { listProjects, listSessions, readTranscript } from '../cc/ccSessions.js'
+import {
+  listCxProjects,
+  listCxSessions,
+  readCxTranscript
+} from '../codex/codexSessions.js'
 
 export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promise<void> {
   app.get(REST.conversations, async () => db.listConversations())
@@ -48,8 +56,8 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promi
   app.post<{ Params: { id: string }; Body: AddMessageArgs }>(
     '/api/conversations/:id/messages',
     async (req) => {
-      const { role, text, time } = req.body
-      return db.addMessage(req.params.id, role, text, time)
+      const { role, text, time, engine } = req.body
+      return db.addMessage(req.params.id, role, text, time, engine)
     }
   )
 
@@ -90,6 +98,32 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promi
     }
     // Привязка к session-id CC → следующий ход пойдёт через `claude --resume <id>`.
     db.setClaudeSession(conv.id, id)
+    return { conversation: db.getConversation(conv.id), messages: db.listMessages(conv.id) }
+  })
+
+  // --- Проводник Codex ---------------------------------------------------
+  app.get(REST.cxProjects, async () => listCxProjects())
+  app.get<{ Querystring: { cwd?: string } }>(REST.cxSessions, async (req) =>
+    listCxSessions(req.query.cwd ?? '')
+  )
+  app.get<{ Querystring: { id?: string; limit?: string } }>(REST.cxTranscript, async (req) =>
+    readCxTranscript(req.query.id ?? '', {
+      limit: req.query.limit ? Number(req.query.limit) : undefined
+    })
+  )
+
+  app.post<{ Body: { id: string } }>(REST.cxResume, async (req, reply) => {
+    const { id } = req.body ?? {}
+    if (!id) return reply.code(400).send({ error: 'id обязателен' })
+    const items = readCxTranscript(id)
+    const conv = db.createConversation(cxResumeTitle(items))
+    const now = Date.now()
+    for (const m of cxResumeMessages(items)) {
+      db.addMessage(conv.id, m.role, m.text, cxTimeLabel(m.ts, now), m.role === 'ai' ? 'codex' : undefined)
+    }
+    // Привязка к session-id Codex (префикс провайдера) → следующий ход пойдёт
+    // через `codex exec resume <id>` (см. resumeIdFor в session.ts).
+    db.setClaudeSession(conv.id, `codex:${id}`)
     return { conversation: db.getConversation(conv.id), messages: db.listMessages(conv.id) }
   })
 

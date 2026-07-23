@@ -65,6 +65,10 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
     const ccTailStart =
       deps.ccTailStart ?? (hasCc ? (slug: string, id: string) => window.cc.tailStart({ slug, id }) : undefined)
     const ccTailStop = deps.ccTailStop ?? (hasCc ? () => window.cc.tailStop() : undefined)
+    const hasCodex = typeof window !== 'undefined' && !!window.codex
+    const cxTailStart =
+      deps.cxTailStart ?? (hasCodex ? (id: string) => window.codex.tailStart({ id }) : undefined)
+    const cxTailStop = deps.cxTailStop ?? (hasCodex ? () => window.codex.tailStop() : undefined)
     storeRef.current = createVoiceStore({
       ...deps,
       audio,
@@ -80,7 +84,9 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
       cancelTts,
       startVoiceDownload,
       ccTailStart,
-      ccTailStop
+      ccTailStop,
+      cxTailStart,
+      cxTailStop
     })
   }
   const store = storeRef.current
@@ -101,12 +107,15 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
     }
     if (typeof window !== 'undefined' && window.claude) {
       unsubs.push(window.claude.onToken((m) => store.actions.applyClaudeToken(m.delta)))
-      unsubs.push(window.claude.onDone((m) => store.actions.applyClaudeDone(m.text, m.meta)))
+      unsubs.push(window.claude.onDone((m) => store.actions.applyClaudeDone(m.text, m.meta, m.engine)))
       unsubs.push(window.claude.onError((m) => store.actions.applyClaudeError(m.message)))
       unsubs.push(window.claude.onLog((m) => store.actions.applyClaudeLog(m.entry)))
     }
     if (typeof window !== 'undefined' && window.cc) {
       unsubs.push(window.cc.onTail((m) => store.actions.applyCcTailItems(m.items)))
+    }
+    if (typeof window !== 'undefined' && window.codex) {
+      unsubs.push(window.codex.onTail((m) => store.actions.applyCxTailItems(m.items)))
     }
     if (typeof window !== 'undefined' && window.agents) {
       unsubs.push(window.agents.onChange((list) => store.actions.applyAgents(list)))

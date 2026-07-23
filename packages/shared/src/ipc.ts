@@ -4,6 +4,7 @@
 import type {
   ClaudeLogEntry,
   Conversation,
+  LlmProvider,
   Message,
   MessageRole,
   Settings,
@@ -15,6 +16,7 @@ import type {
 } from './types'
 import type { McpServer } from './mcp'
 import type { CcProject, CcSession, CcItem } from './cc'
+import type { CxProject, CxSession, CxItem } from './codexSessions'
 import type { AgentCreated, AgentInfo, AgentPolicy } from './agentProtocol'
 
 /** Статус локальной модели Whisper. */
@@ -36,6 +38,8 @@ export interface AddMessageArgs {
   role: MessageRole
   text: string
   time: string
+  /** Движок ответа (для роли 'ai'); запекается в сообщение. */
+  engine?: LlmProvider
 }
 
 /** Метаданные загруженного вложения. */
@@ -98,6 +102,17 @@ export interface IpcInvokeMap {
    * привязкой к session-id (следующий ход — через `claude --resume`).
    */
   'cc:resume': { arg: { slug: string; id: string }; result: ConversationWithMessages }
+  /** «Проекты» Codex (cwd-группы сессий ~/.codex/sessions). */
+  'cx:projects': { arg: void; result: CxProject[] }
+  /** Сессии Codex с указанным cwd. */
+  'cx:sessions': { arg: { cwd: string }; result: CxSession[] }
+  /** Транскрипт сессии Codex по id (последние `limit` записей). */
+  'cx:transcript': { arg: { id: string; limit?: number }; result: CxItem[] }
+  /**
+   * Продолжить сессию Codex: создаёт разговор с импортом истории и привязкой
+   * к session-id (следующий ход — через `codex exec resume <id>`).
+   */
+  'cx:resume': { arg: { id: string }; result: ConversationWithMessages }
 }
 
 export type IpcChannel = keyof IpcInvokeMap
@@ -144,6 +159,10 @@ export interface IpcSendMap {
   'cc:tailStart': { slug: string; id: string }
   /** Остановить live-слежение. */
   'cc:tailStop': void
+  /** Начать live-слежение за сессией Codex. */
+  'cx:tailStart': { id: string }
+  /** Остановить live-слежение Codex. */
+  'cx:tailStop': void
 }
 
 export type IpcSendChannel = keyof IpcSendMap
@@ -160,7 +179,9 @@ export const IPC_SEND_CHANNELS: IpcSendChannel[] = [
   'tts:cancel',
   'tts:downloadVoice',
   'cc:tailStart',
-  'cc:tailStop'
+  'cc:tailStop',
+  'cx:tailStart',
+  'cx:tailStop'
 ]
 
 /**
@@ -196,8 +217,8 @@ export interface IpcEventMap {
   'stt:error': { message: string }
   /** Очередной фрагмент ответа Claude. */
   'claude:token': { conversationId: string; delta: string }
-  /** Ответ Claude завершён (полный текст + метаданные хода). */
-  'claude:done': { conversationId: string; text: string; meta?: TurnMeta }
+  /** Ответ Claude завершён (полный текст + метаданные хода + движок ответа). */
+  'claude:done': { conversationId: string; text: string; meta?: TurnMeta; engine?: LlmProvider }
   /** Ошибка при запросе к Claude. */
   'claude:error': { conversationId: string; message: string }
   /** Запись активности агента (режим консоли). */
@@ -220,6 +241,8 @@ export interface IpcEventMap {
   'tts:voiceError': { id: string; message: string }
   /** Новые записи транскрипта отслеживаемой сессии Claude Code (live-tail). */
   'cc:tail': { slug: string; id: string; items: CcItem[] }
+  /** Новые записи транскрипта отслеживаемой сессии Codex (live-tail). */
+  'cx:tail': { id: string; items: CxItem[] }
 }
 
 export type IpcEventChannel = keyof IpcEventMap
@@ -241,7 +264,8 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'tts:voiceProgress',
   'tts:voiceDone',
   'tts:voiceError',
-  'cc:tail'
+  'cc:tail',
+  'cx:tail'
 ]
 
 /**
@@ -295,6 +319,19 @@ export interface RendererCcBridge {
 }
 
 /**
+ * Мост Проводника Codex, доступный в renderer как `window.codex`:
+ * live-tail активной сессии (invoke-часть — через `window.api`).
+ */
+export interface RendererCodexBridge {
+  /** Начать слежение за сессией Codex. */
+  tailStart(payload: IpcSendPayload<'cx:tailStart'>): void
+  /** Остановить слежение. */
+  tailStop(): void
+  /** Подписка на новые записи транскрипта. */
+  onTail(cb: (msg: IpcEventPayload<'cx:tail'>) => void): () => void
+}
+
+/**
  * Мост TTS, доступный в renderer как `window.tts`: озвучка, отмена и подписка
  * на завершение/ошибку.
  */
@@ -340,7 +377,11 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'cc:projects',
   'cc:sessions',
   'cc:transcript',
-  'cc:resume'
+  'cc:resume',
+  'cx:projects',
+  'cx:sessions',
+  'cx:transcript',
+  'cx:resume'
 ]
 
 /**
