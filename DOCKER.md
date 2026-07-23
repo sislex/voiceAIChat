@@ -6,8 +6,9 @@
 ## Быстрый старт
 
 ```bash
-docker compose up --build
+npm run docker          # = docker compose up --build
 # открыть http://localhost:8787
+npm run docker:down     # остановить
 ```
 
 ## Аутентификация claude / codex
