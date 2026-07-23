@@ -29,7 +29,22 @@ services:
       - vc-codex:/home/node/.codex
     restart: unless-stopped
 
+  # HTTPS для доступа по IP: без secure-контекста браузер не даёт микрофон.
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - voicechat
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Локальный CA и выписанные сертификаты — переживают пересоздание.
+      - vc-caddy:/data
+    restart: unless-stopped
+
 volumes:
   vc-data:
   vc-claude:
   vc-codex:
+  vc-caddy:
