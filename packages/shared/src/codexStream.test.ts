@@ -27,6 +27,16 @@ describe('parseCodexLine', () => {
     expect(ev && ev.kind === 'result' && ev.meta).toMatchObject({ inputTokens: 100, outputTokens: 5 })
   })
 
+  it('turn.completed с model → meta.model', () => {
+    const line = JSON.stringify({
+      type: 'turn.completed',
+      model: 'gpt-5-codex',
+      usage: { input_tokens: 10, output_tokens: 2 }
+    })
+    const ev = parseCodexLine(line)
+    expect(ev && ev.kind === 'result' && ev.meta.model).toBe('gpt-5-codex')
+  })
+
   it('error / turn.failed → error с сообщением', () => {
     expect(parseCodexLine(JSON.stringify({ type: 'error', message: 'oops' }))).toEqual({
       kind: 'error',

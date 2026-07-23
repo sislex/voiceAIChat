@@ -7,6 +7,7 @@ import { initAgentMode, agentMenuItems, disposeAgentMode } from './agentMode'
 import { readServerUrl, writeServerUrl } from './remoteConfig'
 import { registerIpc } from './ipc/register'
 import { listMcpServers } from './claude/mcp'
+import { getLoginStatus } from './auth/loginStatus'
 import { WhisperEngine } from './stt/whisperEngine'
 import { createSttService, type SttService } from './stt/sttService'
 import { isModelPresent, listModels, modelPath } from './stt/models'
@@ -258,6 +259,7 @@ app.whenReady().then(() => {
     listTtsVoices: () => ttsEngine.listVoices(),
     ttsCatalog,
     listMcpServers: () => listMcpServers(),
+    loginStatus: () => getLoginStatus(),
     saveUpload: (name, dataBase64) => {
       const rec = uploads.save(name, Buffer.from(dataBase64, 'base64'))
       return { id: rec.id, name: rec.name }

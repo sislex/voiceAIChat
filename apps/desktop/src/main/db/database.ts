@@ -7,8 +7,19 @@ import {
   type LlmProvider,
   type Message,
   type MessageRole,
-  type Settings
+  type Settings,
+  type TurnMeta
 } from '@shared/types'
+
+/** Разбор JSON meta сообщения; битый/пустой → undefined. */
+function parseMeta(raw: string): TurnMeta | undefined {
+  try {
+    const v = JSON.parse(raw) as unknown
+    return v && typeof v === 'object' ? (v as TurnMeta) : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /** Инъектируемые зависимости — для детерминированных тестов. */
 export interface DbDeps {
@@ -36,6 +47,7 @@ interface MessageRow {
   time: string
   created_at: number
   engine: string | null
+  meta: string | null
 }
 
 /**
@@ -65,6 +77,9 @@ export class VoiceChatDb {
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN engine TEXT`)
+    }
+    if (!msgCols.some((c) => c.name === 'meta')) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN meta TEXT`)
     }
   }
 
@@ -152,20 +167,31 @@ export class VoiceChatDb {
     role: MessageRole,
     text: string,
     time: string,
-    engine?: LlmProvider
+    engine?: LlmProvider,
+    meta?: TurnMeta
   ): Message {
     const id = this.newId()
     const createdAt = this.now()
     const insert = this.db.prepare(
-      `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
     const touch = this.db.prepare(`UPDATE conversations SET updated_at = ? WHERE id = ?`)
+    const metaJson = meta && Object.keys(meta).length > 0 ? JSON.stringify(meta) : null
     this.db.transaction(() => {
-      insert.run(id, conversationId, role, text, time, createdAt, engine ?? null)
+      insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson)
       touch.run(createdAt, conversationId)
     })()
-    return { id, conversationId, role, text, time, createdAt, ...(engine ? { engine } : {}) }
+    return {
+      id,
+      conversationId,
+      role,
+      text,
+      time,
+      createdAt,
+      ...(engine ? { engine } : {}),
+      ...(meta && Object.keys(meta).length > 0 ? { meta } : {})
+    }
   }
 
   /** Удаляет одно сообщение по id (в рамках разговора). */
@@ -188,7 +214,8 @@ export class VoiceChatDb {
       text: r.text,
       time: r.time,
       createdAt: r.created_at,
-      ...(r.engine ? { engine: r.engine as LlmProvider } : {})
+      ...(r.engine ? { engine: r.engine as LlmProvider } : {}),
+      ...(r.meta ? { meta: parseMeta(r.meta) } : {})
     }))
   }
 

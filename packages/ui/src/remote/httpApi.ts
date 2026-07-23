@@ -39,10 +39,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:delete': async ({ id }) => {
       await req(REST.conversation(id), { method: 'DELETE' })
     },
-    'messages:add': ({ conversationId, role, text, time, engine }) =>
+    'messages:add': ({ conversationId, role, text, time, engine, meta }) =>
       req(REST.messages(conversationId), {
         method: 'POST',
-        body: JSON.stringify({ role, text, time, ...(engine ? { engine } : {}) })
+        body: JSON.stringify({ role, text, time, ...(engine ? { engine } : {}), ...(meta ? { meta } : {}) })
       }),
     'messages:delete': async ({ conversationId, messageId }) => {
       await req(REST.message(conversationId, messageId), { method: 'DELETE' })
@@ -64,6 +64,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       await req(REST.ttsVoice(id), { method: 'DELETE' })
     },
     'mcp:list': () => req(REST.mcpServers),
+    'auth:status': () => req(REST.authStatus),
     'agents:list': () => req(REST.agents),
     'agents:create': ({ name }) =>
       req(REST.agents, { method: 'POST', body: JSON.stringify({ name }) }),

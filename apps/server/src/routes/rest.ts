@@ -14,6 +14,7 @@ import {
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { listMcpServers } from '../claude/mcp.js'
+import { getLoginStatus } from '../auth/loginStatus.js'
 import { listProjects, listSessions, readTranscript } from '../cc/ccSessions.js'
 import {
   listCxProjects,
@@ -56,8 +57,8 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promi
   app.post<{ Params: { id: string }; Body: AddMessageArgs }>(
     '/api/conversations/:id/messages',
     async (req) => {
-      const { role, text, time, engine } = req.body
-      return db.addMessage(req.params.id, role, text, time, engine)
+      const { role, text, time, engine, meta } = req.body
+      return db.addMessage(req.params.id, role, text, time, engine, meta)
     }
   )
 
@@ -73,6 +74,8 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promi
   )
 
   app.get(REST.mcpServers, async () => listMcpServers())
+
+  app.get(REST.authStatus, async () => getLoginStatus())
 
   app.get(REST.ccProjects, async () => listProjects())
   app.get<{ Params: { slug: string } }>(

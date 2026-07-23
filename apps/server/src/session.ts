@@ -7,7 +7,10 @@ import {
   buildPrompt,
   buildConversationPrompt,
   type AgentInfo,
-  type AgentPolicy
+  type AgentPolicy,
+  type ClaudeInitInfo,
+  type TurnMeta,
+  type TurnRequestInfo
 } from '@voicechat/shared'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'
@@ -163,13 +166,55 @@ export function createSession(deps: SessionDeps): WsHandlers {
               policySummary: policy ? policySummary(policy) : undefined
             }
           }
+          // Полный контекст хода: все сообщения разговора на момент отправки
+          // (реплика пользователя уже сохранена клиентом перед claude.send).
+          const contextMessages = deps.db
+            .listMessages(conversationId)
+            .map((m) => ({ role: m.role, text: m.text }))
+          // Детали запроса для панели «Подробнее» (всё, что мы отправили модели).
+          const requestInfo: TurnRequestInfo = {
+            provider,
+            model,
+            prompt,
+            promptChars: prompt.length,
+            resumed: Boolean(sessionId),
+            ...(permissionMode ? { permissionMode } : {}),
+            ...(cwd ? { cwd } : {}),
+            ...(attachmentPaths.length ? { attachments: attachmentPaths } : {}),
+            ...(remote ? { execTarget: remote.agentName } : {}),
+            ...(contextMessages.length ? { messages: contextMessages } : {})
+          }
+          // Окружение хода из system/init (инструменты/навыки/mcp) — только claude.
+          let initInfo: ClaudeInitInfo | undefined
+          const startedAt = Date.now()
           claudeHandle = client.send(
             { prompt, sessionId, model, permissionMode, cwd, remote },
             {
               onSession: (sid) => deps.db.setClaudeSession(conversationId, `${provider}:${sid}`),
+              onInit: (info) => {
+                initInfo = info
+              },
               onDelta: (delta) => ctx.send({ t: 'claude.token', conversationId, delta }),
-              onDone: (text, meta) =>
-                ctx.send({ t: 'claude.done', conversationId, text, meta, engine: provider }),
+              onDone: (text, meta) => {
+                // Итоговая модель: из потока CLI → из настроек → у Codex с пустой
+                // настройкой модель берётся из его config.toml и наружу не видна.
+                const resolvedModel =
+                  meta?.model || model || (provider === 'codex' ? 'по умолчанию (Codex)' : model)
+                const merged: TurnMeta = {
+                  ...meta,
+                  // Длительность из CLI, а если её нет — измеряем по стенным часам.
+                  durationMs: meta?.durationMs ?? Date.now() - startedAt,
+                  model: resolvedModel,
+                  request: {
+                    ...requestInfo,
+                    model: resolvedModel,
+                    ...(initInfo?.tools ? { tools: initInfo.tools } : {}),
+                    ...(initInfo?.slashCommands ? { slashCommands: initInfo.slashCommands } : {}),
+                    ...(initInfo?.mcpServers ? { mcpServers: initInfo.mcpServers } : {})
+                  }
+                }
+                ctx.send({ t: 'claude.done', conversationId, text, meta: merged, engine: provider })
+              },
               onError: (message) => ctx.send({ t: 'claude.error', conversationId, message }),
               // Режим консоли: активность агента шлём только если клиент попросил.
               onActivity: msg.verbose

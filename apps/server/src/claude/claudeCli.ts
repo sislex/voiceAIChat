@@ -114,6 +114,7 @@ export class ClaudeCli implements LlmClient {
         switch (ev.kind) {
           case 'session':
             handlers.onSession(ev.sessionId)
+            if (ev.init) handlers.onInit?.(ev.init)
             break
           case 'delta':
             if (!finished) handlers.onDelta(ev.text)

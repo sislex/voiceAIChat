@@ -7,13 +7,40 @@
 //   {"type":"assistant","message":{"content":[{"type":"text","text":"..."}]},...}
 //   {"type":"result","subtype":"success","is_error":false,"result":"...","session_id":"..."}
 
-import type { ClaudeLogEntry, TurnMeta } from './types'
+import type { ClaudeInitInfo, ClaudeLogEntry, TurnMeta } from './types'
 
 export type ClaudeStreamEvent =
-  | { kind: 'session'; sessionId: string }
+  | { kind: 'session'; sessionId: string; init?: ClaudeInitInfo }
   | { kind: 'delta'; text: string }
   | { kind: 'result'; text: string; sessionId?: string; isError: boolean; meta: TurnMeta }
   | { kind: 'ignore' }
+
+/** Массив строк из произвольного значения (для tools/slash_commands). */
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const arr = value.filter((v): v is string => typeof v === 'string')
+  return arr.length ? arr : undefined
+}
+
+/** Достаёт окружение хода из system/init-события. */
+function parseInitInfo(obj: Record<string, unknown>): ClaudeInitInfo {
+  const info: ClaudeInitInfo = {}
+  const tools = stringArray(obj.tools)
+  if (tools) info.tools = tools
+  const slash = stringArray(obj.slash_commands)
+  if (slash) info.slashCommands = slash
+  // mcp_servers — массив объектов {name,...} либо строк.
+  if (Array.isArray(obj.mcp_servers)) {
+    const names = obj.mcp_servers
+      .map((s) => (typeof s === 'string' ? s : (s as { name?: unknown })?.name))
+      .filter((n): n is string => typeof n === 'string')
+    if (names.length) info.mcpServers = names
+  }
+  if (typeof obj.model === 'string') info.model = obj.model
+  if (typeof obj.cwd === 'string') info.cwd = obj.cwd
+  if (typeof obj.permissionMode === 'string') info.permissionMode = obj.permissionMode
+  return info
+}
 
 /** Достаёт метаданные хода из result-объекта stream-json. */
 function parseTurnMeta(obj: Record<string, unknown>): TurnMeta {
@@ -24,6 +51,11 @@ function parseTurnMeta(obj: Record<string, unknown>): TurnMeta {
   const usage = obj.usage as { input_tokens?: unknown; output_tokens?: unknown } | undefined
   if (usage && typeof usage.input_tokens === 'number') meta.inputTokens = usage.input_tokens
   if (usage && typeof usage.output_tokens === 'number') meta.outputTokens = usage.output_tokens
+  const u = usage as { cache_read_input_tokens?: unknown; cache_creation_input_tokens?: unknown } | undefined
+  if (u && typeof u.cache_read_input_tokens === 'number') meta.cacheReadTokens = u.cache_read_input_tokens
+  if (u && typeof u.cache_creation_input_tokens === 'number') {
+    meta.cacheCreationTokens = u.cache_creation_input_tokens
+  }
   return meta
 }
 
@@ -45,7 +77,7 @@ export function parseStreamJsonLine(line: string): ClaudeStreamEvent | null {
   switch (obj.type) {
     case 'system': {
       if (obj.subtype === 'init' && typeof obj.session_id === 'string') {
-        return { kind: 'session', sessionId: obj.session_id }
+        return { kind: 'session', sessionId: obj.session_id, init: parseInitInfo(obj) }
       }
       return { kind: 'ignore' }
     }

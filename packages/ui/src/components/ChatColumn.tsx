@@ -11,6 +11,7 @@ import {
 } from '../lib/view'
 import { Dots } from './animations'
 import { Markdown } from './Markdown'
+import { MessageMeta } from './MessageMeta'
 import { copyText } from '../lib/clipboard'
 
 export interface ChatColumnProps {
@@ -220,7 +221,7 @@ export function ChatColumn({
             const isEditing = editingId === m.id
             return (
               <div key={m.id} className={isAi ? 'msg ai' : 'msg me'}>
-                <span className={chipClass(m.role, diarization)}>
+                <span className={chipClass(m.role, diarization, isAi ? m.engine : undefined)}>
                   {speakerName(m.role, diarization, isAi ? engineLabel(m.engine) : aiLabel)}
                 </span>
                 {isEditing ? (
@@ -260,6 +261,7 @@ export function ChatColumn({
                 {!isEditing && (
                   <div className="mfoot">
                     <p className="mtime">{m.time}</p>
+                    {isAi && m.meta && <MessageMeta meta={m.meta} />}
                     {isAi && (
                       <button
                         className="msgbtn"
@@ -343,7 +345,9 @@ export function ChatColumn({
 
           {hasStream && (
             <div className="msg ai" data-testid="streaming">
-              <span className={chipClass('ai', diarization)}>{speakerName('ai', diarization, aiLabel)}</span>
+              <span className={chipClass('ai', diarization, aiLabel === 'Codex' ? 'codex' : 'claude')}>
+                {speakerName('ai', diarization, aiLabel)}
+              </span>
               <div className="bub">
                 <Markdown>{streamingReply}</Markdown>
               </div>
