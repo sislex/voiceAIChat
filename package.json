@@ -19,6 +19,8 @@
     "test:desktop": "npm --prefix apps/desktop run test",
     "typecheck:agent-tray": "npm --prefix apps/agent-tray run typecheck",
     "test:agent-tray": "npm --prefix apps/agent-tray run test",
-    "dist:agent-tray": "npm --prefix apps/agent-tray run dist"
+    "dist:agent-tray": "npm --prefix apps/agent-tray run dist",
+    "docker": "docker compose up --build",
+    "docker:down": "docker compose down"
   }
 }
