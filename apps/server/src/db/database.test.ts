@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import Database from 'better-sqlite3'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { VoiceChatDb, hashAgentToken } from './database'
 import { DEFAULT_SETTINGS } from '@voicechat/shared'
 
@@ -101,6 +105,44 @@ describe('VoiceChatDb — сообщения', () => {
     db.addMessage(c.id, 'u1', 'x', '14:00')
     const after = db.getConversation(c.id)!.updatedAt
     expect(after).toBeGreaterThan(before)
+  })
+
+  it('запекает движок в сообщение (engine) и читает обратно; без движка — поле отсутствует', () => {
+    const c = db.createConversation('Чат')
+    db.addMessage(c.id, 'u1', 'вопрос', '14:00')
+    db.addMessage(c.id, 'ai', 'ответ codex', '14:01', 'codex')
+    db.addMessage(c.id, 'ai', 'ответ claude', '14:02', 'claude')
+    const msgs = db.listMessages(c.id)
+    expect(msgs[0].engine).toBeUndefined() // реплика пользователя
+    expect(msgs[1].engine).toBe('codex')
+    expect(msgs[2].engine).toBe('claude')
+  })
+})
+
+describe('VoiceChatDb — миграция колонки engine', () => {
+  it('ALTER добавляет engine в старую messages без него', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-mig-'))
+    const file = join(dir, 'legacy.db')
+    // Готовим «старую» БД: messages без колонки engine.
+    const raw = new Database(file)
+    raw.exec(`CREATE TABLE conversations (
+      id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL, claude_session_id TEXT)`)
+    raw.exec(`CREATE TABLE messages (
+      id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL,
+      text TEXT NOT NULL, time TEXT NOT NULL, created_at INTEGER NOT NULL)`)
+    raw.prepare(
+      `INSERT INTO messages (id, conversation_id, role, text, time, created_at) VALUES (?,?,?,?,?,?)`
+    ).run('m1', 'c1', 'ai', 'старый ответ', '10:00', 1)
+    raw.close()
+    // Открываем через VoiceChatDb → migrate() добавляет engine, старые строки читаются.
+    const db = new VoiceChatDb(file)
+    const cols = (db as unknown as { db: Database.Database }).db
+      .prepare(`PRAGMA table_info(messages)`)
+      .all() as Array<{ name: string }>
+    expect(cols.some((c) => c.name === 'engine')).toBe(true)
+    db.close()
+    rmSync(dir, { recursive: true, force: true })
   })
 })
 

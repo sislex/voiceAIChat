@@ -8,6 +8,7 @@ import type {
   RendererAudioBridge,
   RendererCcBridge,
   RendererClaudeBridge,
+  RendererCodexBridge,
   RendererSttBridge,
   RendererTtsBridge
 } from '@shared/ipc'
@@ -43,7 +44,9 @@ function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
     onToken: (cb) =>
       ws.on('claude.token', (m) => cb({ conversationId: m.conversationId, delta: m.delta })),
     onDone: (cb) =>
-      ws.on('claude.done', (m) => cb({ conversationId: m.conversationId, text: m.text, meta: m.meta })),
+      ws.on('claude.done', (m) =>
+        cb({ conversationId: m.conversationId, text: m.text, meta: m.meta, engine: m.engine })
+      ),
     onError: (cb) =>
       ws.on('claude.error', (m) => cb({ conversationId: m.conversationId, message: m.message })),
     onLog: (cb) => ws.on('claude.log', (m) => cb({ conversationId: m.conversationId, entry: m.entry }))
@@ -68,6 +71,14 @@ function makeCcBridge(ws: WsClient): RendererCcBridge {
     tailStart: ({ slug, id }) => ws.send({ t: 'cc.tail.start', slug, id }),
     tailStop: () => ws.send({ t: 'cc.tail.stop' }),
     onTail: (cb) => ws.on('cc.tail', (m) => cb({ slug: m.slug, id: m.id, items: m.items }))
+  }
+}
+
+function makeCodexBridge(ws: WsClient): RendererCodexBridge {
+  return {
+    tailStart: ({ id }) => ws.send({ t: 'cx.tail.start', id }),
+    tailStop: () => ws.send({ t: 'cx.tail.stop' }),
+    onTail: (cb) => ws.on('cx.tail', (m) => cb({ id: m.id, items: m.items }))
   }
 }
 
@@ -99,5 +110,6 @@ export function installRemoteBridges(serverHttp: string): void {
   window.claude = makeClaudeBridge(ws)
   window.tts = makeTtsBridge(ws)
   window.cc = makeCcBridge(ws)
+  window.codex = makeCodexBridge(ws)
   window.agents = makeAgentsBridge(ws)
 }

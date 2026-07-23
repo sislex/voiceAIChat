@@ -7,6 +7,7 @@ import type {
   RendererAudioBridge,
   RendererCcBridge,
   RendererClaudeBridge,
+  RendererCodexBridge,
   RendererSttBridge,
   RendererTtsBridge
 } from '@shared/ipc'
@@ -19,6 +20,7 @@ declare global {
     claude: RendererClaudeBridge
     tts: RendererTtsBridge
     cc: RendererCcBridge
+    codex: RendererCodexBridge
     agents?: RendererAgentsBridge
   }
 }

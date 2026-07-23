@@ -39,10 +39,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:delete': async ({ id }) => {
       await req(REST.conversation(id), { method: 'DELETE' })
     },
-    'messages:add': ({ conversationId, role, text, time }) =>
+    'messages:add': ({ conversationId, role, text, time, engine }) =>
       req(REST.messages(conversationId), {
         method: 'POST',
-        body: JSON.stringify({ role, text, time })
+        body: JSON.stringify({ role, text, time, ...(engine ? { engine } : {}) })
       }),
     'messages:delete': async ({ conversationId, messageId }) => {
       await req(REST.message(conversationId, messageId), { method: 'DELETE' })
@@ -89,6 +89,11 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'cc:transcript': ({ slug, id, limit }) =>
       req(REST.ccTranscript(slug, id) + (limit ? `?limit=${limit}` : '')),
     'cc:resume': ({ slug, id }) =>
-      req(REST.ccResume, { method: 'POST', body: JSON.stringify({ slug, id }) })
+      req(REST.ccResume, { method: 'POST', body: JSON.stringify({ slug, id }) }),
+    'cx:projects': () => req(REST.cxProjects),
+    'cx:sessions': ({ cwd }) => req(`${REST.cxSessions}?cwd=${encodeURIComponent(cwd)}`),
+    'cx:transcript': ({ id, limit }) =>
+      req(`${REST.cxTranscript}?id=${encodeURIComponent(id)}${limit ? `&limit=${limit}` : ''}`),
+    'cx:resume': ({ id }) => req(REST.cxResume, { method: 'POST', body: JSON.stringify({ id }) })
   }
 }

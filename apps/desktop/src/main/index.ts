@@ -23,6 +23,7 @@ import type { TtsVoiceCatalog } from '@shared/types'
 import { ClaudeCli } from './claude/claudeCli'
 import { createClaudeService, type ClaudeService } from './claude/claudeService'
 import { createCcService, type CcService } from './cc/ccService'
+import { createCodexService, type CodexService } from './codex/codexService'
 import { UploadStore } from './uploads'
 import { DEFAULT_SETTINGS } from '@shared/types'
 
@@ -37,6 +38,7 @@ let disposeIpc: (() => void) | null = null
 let sttService: SttService | null = null
 let claudeService: ClaudeService | null = null
 let ccService: CcService | null = null
+let codexService: CodexService | null = null
 let modelDownloadService: ModelDownloadService | null = null
 let ttsService: TtsService | null = null
 let voiceDownloadService: VoiceDownloadService | null = null
@@ -313,6 +315,11 @@ app.whenReady().then(() => {
     send: (channel, payload) => mainWindow?.webContents.send(channel, payload)
   })
 
+  // Проводник Codex: live-tail сессий (~/.codex/sessions).
+  codexService = createCodexService({
+    send: (channel, payload) => mainWindow?.webContents.send(channel, payload)
+  })
+
   // Chromium по умолчанию отклоняет запрос микрофона — разрешаем media явно
   // (на macOS дополнительно потребуется системное разрешение TCC).
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
@@ -357,6 +364,7 @@ app.on('will-quit', () => {
   disposeAgentMode()
   claudeService?.dispose()
   ccService?.dispose()
+  codexService?.dispose()
   sttService?.dispose()
   modelDownloadService?.dispose()
   ttsService?.dispose()

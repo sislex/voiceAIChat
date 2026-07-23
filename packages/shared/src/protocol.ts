@@ -4,6 +4,7 @@
 import type {
   ClaudeLogEntry,
   Conversation,
+  LlmProvider,
   Message,
   MessageRole,
   SttSegment,
@@ -11,6 +12,7 @@ import type {
   WhisperModel
 } from './types'
 import type { CcItem } from './cc'
+import type { CxItem } from './codexSessions'
 import type { AgentInfo } from './agentProtocol'
 
 // --- Общие ---------------------------------------------------------------
@@ -54,6 +56,8 @@ export interface AddMessageArgs {
   role: MessageRole
   text: string
   time: string
+  /** Движок ответа (для роли 'ai'); запекается в сообщение. */
+  engine?: LlmProvider
 }
 
 export interface HealthResponse {
@@ -91,7 +95,11 @@ export const REST = {
   ccSessions: (slug: string) => `/api/cc/projects/${encodeURIComponent(slug)}/sessions`,
   ccTranscript: (slug: string, id: string) =>
     `/api/cc/projects/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(id)}`,
-  ccResume: '/api/cc/resume'
+  ccResume: '/api/cc/resume',
+  cxProjects: '/api/cx/projects',
+  cxSessions: '/api/cx/sessions',
+  cxTranscript: '/api/cx/transcript',
+  cxResume: '/api/cx/resume'
 } as const
 
 // --- WebSocket -----------------------------------------------------------
@@ -128,6 +136,8 @@ export type ClientMessage =
   | { t: 'stt.download' }
   | { t: 'cc.tail.start'; slug: string; id: string }
   | { t: 'cc.tail.stop' }
+  | { t: 'cx.tail.start'; id: string }
+  | { t: 'cx.tail.stop' }
 
 /** server → client. */
 export type ServerMessage =
@@ -135,7 +145,7 @@ export type ServerMessage =
   | { t: 'stt.final'; update: SttUpdate }
   | { t: 'stt.error'; message: string }
   | { t: 'claude.token'; conversationId: string; delta: string }
-  | { t: 'claude.done'; conversationId: string; text: string; meta?: TurnMeta }
+  | { t: 'claude.done'; conversationId: string; text: string; meta?: TurnMeta; engine?: LlmProvider }
   | { t: 'claude.error'; conversationId: string; message: string }
   | { t: 'claude.log'; conversationId: string; entry: ClaudeLogEntry }
   | { t: 'tts.audio'; audio: string } // base64 WAV (или бинарный кадр — см. реализацию)
@@ -147,6 +157,7 @@ export type ServerMessage =
   | { t: 'stt.downloadDone' }
   | { t: 'stt.downloadError'; message: string }
   | { t: 'cc.tail'; slug: string; id: string; items: CcItem[] }
+  | { t: 'cx.tail'; id: string; items: CxItem[] }
   | { t: 'agents'; agents: AgentInfo[] }
 
 export type ClientMessageType = ClientMessage['t']
@@ -163,7 +174,9 @@ export const CLIENT_MESSAGE_TYPES: ClientMessageType[] = [
   'tts.downloadVoice',
   'stt.download',
   'cc.tail.start',
-  'cc.tail.stop'
+  'cc.tail.stop',
+  'cx.tail.start',
+  'cx.tail.stop'
 ]
 
 export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
@@ -183,5 +196,6 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'stt.downloadDone',
   'stt.downloadError',
   'cc.tail',
+  'cx.tail',
   'agents'
 ]

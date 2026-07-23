@@ -6,6 +6,7 @@ import {
   type RendererAudioBridge,
   type RendererCcBridge,
   type RendererClaudeBridge,
+  type RendererCodexBridge,
   type RendererSttBridge,
   type RendererTtsBridge,
   type SttUpdate
@@ -70,6 +71,13 @@ const cc: RendererCcBridge = {
   onTail: (cb) => subscribe<IpcEventPayload<'cc:tail'>>('cc:tail', cb)
 }
 
+// Мост Проводника Codex: live-tail сессий ~/.codex/sessions.
+const codex: RendererCodexBridge = {
+  tailStart: (payload) => ipcRenderer.send('cx:tailStart', payload),
+  tailStop: () => ipcRenderer.send('cx:tailStop'),
+  onTail: (cb) => subscribe<IpcEventPayload<'cx:tail'>>('cx:tail', cb)
+}
+
 // Мост режима агента (окна настройки/журнала в трее).
 interface AgentAdminState {
   status: 'connecting' | 'online' | 'offline' | 'stopped' | 'unconfigured'
@@ -104,6 +112,7 @@ if (process.contextIsolated) {
       contextBridge.exposeInMainWorld('claude', claude)
       contextBridge.exposeInMainWorld('tts', tts)
       contextBridge.exposeInMainWorld('cc', cc)
+      contextBridge.exposeInMainWorld('codex', codex)
     }
     contextBridge.exposeInMainWorld('agentAdmin', agentAdmin)
     contextBridge.exposeInMainWorld('remoteClient', remoteClient)
@@ -118,6 +127,7 @@ if (process.contextIsolated) {
     claude: RendererClaudeBridge
     tts: RendererTtsBridge
     cc: RendererCcBridge
+    codex: RendererCodexBridge
     agentAdmin: typeof agentAdmin
     remoteClient: typeof remoteClient
   }
@@ -128,6 +138,7 @@ if (process.contextIsolated) {
     g.claude = claude
     g.tts = tts
     g.cc = cc
+    g.codex = codex
   }
   g.agentAdmin = agentAdmin
   g.remoteClient = remoteClient
