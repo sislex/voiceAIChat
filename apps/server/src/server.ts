@@ -217,6 +217,28 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     })
   })
 
+  // Раздача собранного web-приложения тем же сервером (один порт, same-origin).
+  // Включается только если задан VC_WEB_DIR и каталог существует — в dev/тестах
+  // не активируется (там фронт крутит Vite). API/WS остаются под /api, /ws, /agent.
+  if (opts.config.webDir && existsSync(opts.config.webDir)) {
+    const webDir = opts.config.webDir
+    const { default: fastifyStatic } = await import('@fastify/static')
+    await app.register(fastifyStatic, { root: webDir, wildcard: false })
+    // SPA-fallback: неизвестный GET (не /api, не /ws, не /agent) → index.html.
+    app.setNotFoundHandler((req, reply) => {
+      const url = req.url.split('?')[0]
+      if (
+        req.method === 'GET' &&
+        !url.startsWith('/api') &&
+        !url.startsWith('/ws') &&
+        !url.startsWith('/agent')
+      ) {
+        return reply.type('text/html').sendFile('index.html')
+      }
+      return reply.code(404).send({ error: 'not found' })
+    })
+  }
+
   app.addHook('onClose', async () => {
     if (!opts.db) db.close() // закрываем только созданную нами БД
   })
