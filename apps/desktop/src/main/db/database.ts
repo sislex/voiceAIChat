@@ -4,6 +4,7 @@ import { SCHEMA_SQL } from './schema'
 import {
   DEFAULT_SETTINGS,
   type Conversation,
+  type LlmProvider,
   type Message,
   type MessageRole,
   type Settings
@@ -34,6 +35,7 @@ interface MessageRow {
   text: string
   time: string
   created_at: number
+  engine: string | null
 }
 
 /**
@@ -53,8 +55,17 @@ export class VoiceChatDb {
     // Unicode-lower для регистронезависимого поиска (SQLite LIKE/lower() — только ASCII).
     this.db.function('ulower', (s: unknown) => (typeof s === 'string' ? s.toLowerCase() : ''))
     this.db.exec(SCHEMA_SQL)
+    this.migrate()
     this.newId = deps.newId ?? (() => randomUUID())
     this.now = deps.now ?? (() => Date.now())
+  }
+
+  /** Лёгкие миграции существующих БД (idempotent). */
+  private migrate(): void {
+    const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
+    if (!msgCols.some((c) => c.name === 'engine')) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN engine TEXT`)
+    }
   }
 
   close(): void {
@@ -136,19 +147,25 @@ export class VoiceChatDb {
 
   // ---- Messages ---------------------------------------------------------
 
-  addMessage(conversationId: string, role: MessageRole, text: string, time: string): Message {
+  addMessage(
+    conversationId: string,
+    role: MessageRole,
+    text: string,
+    time: string,
+    engine?: LlmProvider
+  ): Message {
     const id = this.newId()
     const createdAt = this.now()
     const insert = this.db.prepare(
-      `INSERT INTO messages (id, conversation_id, role, text, time, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
     const touch = this.db.prepare(`UPDATE conversations SET updated_at = ? WHERE id = ?`)
     this.db.transaction(() => {
-      insert.run(id, conversationId, role, text, time, createdAt)
+      insert.run(id, conversationId, role, text, time, createdAt, engine ?? null)
       touch.run(createdAt, conversationId)
     })()
-    return { id, conversationId, role, text, time, createdAt }
+    return { id, conversationId, role, text, time, createdAt, ...(engine ? { engine } : {}) }
   }
 
   /** Удаляет одно сообщение по id (в рамках разговора). */
@@ -170,7 +187,8 @@ export class VoiceChatDb {
       role: r.role as MessageRole,
       text: r.text,
       time: r.time,
-      createdAt: r.created_at
+      createdAt: r.created_at,
+      ...(r.engine ? { engine: r.engine as LlmProvider } : {})
     }))
   }
 

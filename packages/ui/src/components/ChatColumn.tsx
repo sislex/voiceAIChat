@@ -3,6 +3,7 @@ import type { Message, TurnMeta, VoiceState } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
 import {
   chipClass,
+  engineLabel,
   formatTurnMeta,
   speakerName,
   statusBadge,
@@ -220,7 +221,7 @@ export function ChatColumn({
             return (
               <div key={m.id} className={isAi ? 'msg ai' : 'msg me'}>
                 <span className={chipClass(m.role, diarization)}>
-                  {speakerName(m.role, diarization, aiLabel)}
+                  {speakerName(m.role, diarization, isAi ? engineLabel(m.engine) : aiLabel)}
                 </span>
                 {isEditing ? (
                   <div className="editwrap">

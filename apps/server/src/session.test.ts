@@ -117,7 +117,7 @@ describe('WS: выбор движка Codex', () => {
     const conv = cdb.createConversation('Чат')
     const ws = new WebSocket(`ws://127.0.0.1:${cport}/ws`)
     await new Promise((r) => ws.on('open', r as () => void))
-    const done = new Promise<{ text: string }>((resolve) => {
+    const done = new Promise<{ text: string; engine?: string }>((resolve) => {
       ws.on('message', (d) => {
         const m = JSON.parse(d.toString())
         if (m.t === 'claude.done') resolve(m)
@@ -127,6 +127,8 @@ describe('WS: выбор движка Codex', () => {
     const doneMsg = await done
     ws.close()
     expect(doneMsg.text).toBe('Ответ Codex')
+    // движок ответа запечён в событие claude.done
+    expect(doneMsg.engine).toBe('codex')
     // session-id сохранён с префиксом codex и моделью из codexModel
     expect(cdb.getConversation(conv.id)?.claudeSessionId).toBe('codex:thread-gpt-5-codex')
     await capp.close()

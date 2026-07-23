@@ -1,4 +1,4 @@
-import type { MessageRole, TurnMeta, VoiceState } from '@shared/types'
+import type { LlmProvider, MessageRole, TurnMeta, VoiceState } from '@shared/types'
 
 export const ACCENT = '#3D64C8'
 
@@ -22,6 +22,14 @@ export function chipClass(role: MessageRole, diarization = true): string {
   const n = speakerNumber(role) ?? 1
   const idx = ((n - 1) % 4) + 1 // sp1..sp4, дальше по кругу
   return `chip sp${idx}`
+}
+
+/**
+ * Подпись движка по значению, запечённому в сообщение. Отсутствие (старые
+ * сообщения, созданные до появления поля) → «Claude» (исторический дефолт).
+ */
+export function engineLabel(engine?: LlmProvider): string {
+  return engine === 'codex' ? 'Codex' : 'Claude'
 }
 
 /** Подпись спикера (учитывает выключенную диаризацию). aiLabel — имя движка. */

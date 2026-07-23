@@ -6,6 +6,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
 import { CcObserver } from './components/CcObserver'
+import { CodexObserver } from './components/CodexObserver'
 import { useVoiceStore } from './store/useVoiceStore'
 import { useVoiceCues } from './lib/useVoiceCues'
 import { useHotkeys } from './lib/useHotkeys'
@@ -68,6 +69,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         searchQuery={state.searchQuery}
         onSearch={actions.setSearchQuery}
         onOpenObserver={actions.openObserver}
+        onOpenCodexObserver={actions.openCodexObserver}
         onOpenSettings={actions.openSettings}
       />
 
@@ -134,6 +136,20 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onSelectSession={actions.selectCcSession}
           onResumeSession={(slug, id) => void actions.resumeCcSession(slug, id)}
           onClose={actions.closeObserver}
+        />
+      )}
+
+      {state.cxOpen && (
+        <CodexObserver
+          projects={state.cxProjects}
+          sessions={state.cxSessions}
+          transcript={state.cxTranscript}
+          activeProject={state.cxProjectCwd}
+          activeSession={state.cxSessionId}
+          onSelectProject={actions.selectCxProject}
+          onSelectSession={actions.selectCxSession}
+          onResumeSession={(id) => void actions.resumeCxSession(id)}
+          onClose={actions.closeCodexObserver}
         />
       )}
 
