@@ -4,9 +4,11 @@
 #   docker compose up --build
 #   → открыть http://localhost:8787
 #
-# Аутентификация claude/codex берётся из смонтированных каталогов хоста
-# (нужно, чтобы на хосте были выполнены `claude login` / `codex login`).
-# Проводники Claude Code / Codex тоже читают историю из этих каталогов.
+# Аутентификация claude/codex живёт ВНУТРИ контейнера (тома vc-claude/vc-codex),
+# а не берётся с хоста. Логин выполняется один раз внутри контейнера:
+#   docker compose exec -u node voicechat claude auth login   # или: claude setup-token
+#   docker compose exec -u node voicechat codex login
+# Токены сохраняются в томах и переживают пересоздание контейнера.
 
 services:
   voicechat:
@@ -21,11 +23,13 @@ services:
     volumes:
       # Персист БД (voicechat.db) и вложений.
       - vc-data:/data
-      # Авторизация + история CLI (rw: клиентам нужно обновлять сессии/токены).
-      # Монтируем в HOME пользователя node (контейнер работает не под root).
-      - ${HOME}/.claude:/home/node/.claude
-      - ${HOME}/.codex:/home/node/.codex
+      # Авторизация + история CLI внутри контейнера (rw: обновление токенов).
+      # Именованные тома, а не bind-mount с хоста → логин делается в контейнере.
+      - vc-claude:/home/node/.claude
+      - vc-codex:/home/node/.codex
     restart: unless-stopped
 
 volumes:
   vc-data:
+  vc-claude:
+  vc-codex:
