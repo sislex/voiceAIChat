@@ -40,16 +40,28 @@ function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
   return {
     send: ({ conversationId, segments, attachments, verbose }) =>
       ws.send({ t: 'claude.send', conversationId, segments, attachments, verbose }),
-    cancel: () => ws.send({ t: 'claude.cancel' }),
+    cancel: (payload) =>
+      ws.send({
+        t: 'claude.cancel',
+        ...(payload?.conversationId ? { conversationId: payload.conversationId } : {})
+      }),
     onToken: (cb) =>
       ws.on('claude.token', (m) => cb({ conversationId: m.conversationId, delta: m.delta })),
     onDone: (cb) =>
       ws.on('claude.done', (m) =>
-        cb({ conversationId: m.conversationId, text: m.text, meta: m.meta, engine: m.engine })
+        cb({
+          conversationId: m.conversationId,
+          text: m.text,
+          meta: m.meta,
+          engine: m.engine,
+          message: m.message
+        })
       ),
     onError: (cb) =>
       ws.on('claude.error', (m) => cb({ conversationId: m.conversationId, message: m.message })),
-    onLog: (cb) => ws.on('claude.log', (m) => cb({ conversationId: m.conversationId, entry: m.entry }))
+    onLog: (cb) =>
+      ws.on('claude.log', (m) => cb({ conversationId: m.conversationId, entry: m.entry })),
+    onActive: (cb) => ws.on('claude.active', (m) => cb({ turns: m.turns }))
   }
 }
 

@@ -1821,6 +1821,97 @@
   }
 }
 
+/* ---- Форма ответов на вопросы модели (```questions) ---- */
+.qform {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border, #dddbd1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.qitem {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.qtext {
+  font-weight: 700;
+  font-size: 14px;
+  padding: 0;
+  margin: 0 0 6px 0;
+}
+.qhint {
+  font-weight: 400;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.qopts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.qopt {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.qopt input {
+  cursor: pointer;
+}
+.qother {
+  margin-top: 4px;
+  border: 1px solid var(--border, #dddbd1);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+  max-width: 320px;
+}
+.qfoot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.qcount {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.qsubmit {
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #2f3b5c;
+  color: #fff;
+  border: 1px solid #2f3b5c;
+}
+.qsubmit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Вопросы у прошлых сообщений — статичный список без формы. */
+.qstatic {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border, #dddbd1);
+}
+.qstaticitem {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+}
+.qstaticopts {
+  color: var(--text-dim);
+}
+
 /* ==== Мобильные модалки: настройки и прочие — на весь экран ==== */
 @media (max-width: 768px) {
   .ovl {

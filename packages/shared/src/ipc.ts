@@ -150,8 +150,8 @@ export interface IpcSendMap {
     attachments?: string[]
     verbose?: boolean
   }
-  /** Прервать текущий запрос к Claude. */
-  'claude:cancel': void
+  /** Прервать запрос к Claude (conversationId — какой ход; без него — все). */
+  'claude:cancel': { conversationId?: string } | undefined
   /** Запустить скачивание текущей модели Whisper. */
   'stt:download': void
   /** Озвучить текст (TTS). */
@@ -223,11 +223,20 @@ export interface IpcEventMap {
   /** Очередной фрагмент ответа Claude. */
   'claude:token': { conversationId: string; delta: string }
   /** Ответ Claude завершён (полный текст + метаданные хода + движок ответа). */
-  'claude:done': { conversationId: string; text: string; meta?: TurnMeta; engine?: LlmProvider }
+  'claude:done': {
+    conversationId: string
+    text: string
+    meta?: TurnMeta
+    engine?: LlmProvider
+    /** Сообщение, сохранённое сервером (клиент добавляет его в ленту как есть). */
+    message?: Message
+  }
   /** Ошибка при запросе к Claude. */
   'claude:error': { conversationId: string; message: string }
   /** Запись активности агента (режим консоли). */
   'claude:log': { conversationId: string; entry: ClaudeLogEntry }
+  /** Снапшот активных ходов при (пере)подключении — восстановление стрима. */
+  'claude:active': { turns: Array<{ conversationId: string; partial: string }> }
   /** Прогресс скачивания модели Whisper (0–100). */
   'stt:downloadProgress': { percent: number }
   /** Скачивание модели завершено. */
@@ -261,6 +270,7 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'claude:done',
   'claude:error',
   'claude:log',
+  'claude:active',
   'stt:downloadProgress',
   'stt:downloadDone',
   'stt:downloadError',
@@ -302,12 +312,14 @@ export interface RendererAgentsBridge {
  */
 export interface RendererClaudeBridge {
   send(payload: IpcSendPayload<'claude:send'>): void
-  cancel(): void
+  cancel(payload?: IpcSendPayload<'claude:cancel'>): void
   onToken(cb: (msg: IpcEventPayload<'claude:token'>) => void): () => void
   onDone(cb: (msg: IpcEventPayload<'claude:done'>) => void): () => void
   onError(cb: (msg: IpcEventPayload<'claude:error'>) => void): () => void
   /** Подписка на активность агента (режим консоли). */
   onLog(cb: (msg: IpcEventPayload<'claude:log'>) => void): () => void
+  /** Снапшот активных ходов (только remote-мост; desktop-main его не шлёт). */
+  onActive?(cb: (msg: IpcEventPayload<'claude:active'>) => void): () => void
 }
 
 /**

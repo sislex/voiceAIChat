@@ -135,3 +135,146 @@ describe('WS: выбор движка Codex', () => {
     cdb.close()
   })
 })
+
+describe('WS: ходы переживают обрыв соединения (TurnManager)', () => {
+  // Медленный мок: дельты и финал приходят по таймерам — можно оборвать WS посреди хода.
+  function makeSlowClaude(deltas: string[], finalText: string, doneAfterMs: number): LlmClient {
+    return {
+      send(_req, h) {
+        h.onSession('sess-slow')
+        let at = 5
+        for (const d of deltas) {
+          setTimeout(() => h.onDelta(d), at)
+          at += 5
+        }
+        const timer = setTimeout(() => h.onDone(finalText), doneAfterMs)
+        return { cancel: () => clearTimeout(timer) }
+      }
+    }
+  }
+
+  async function buildSlow(claude: LlmClient): Promise<{
+    sapp: FastifyInstance
+    sdb: VoiceChatDb
+    sport: number
+  }> {
+    const sdb = new VoiceChatDb(':memory:')
+    const sapp = await buildServer({ config: loadConfig({ PORT: '0' }), db: sdb, claude })
+    await sapp.listen({ port: 0, host: '127.0.0.1' })
+    const sport = (sapp.server.address() as AddressInfo).port
+    return { sapp, sdb, sport }
+  }
+
+  function connectTo(sport: number): Promise<WebSocket> {
+    const ws = new WebSocket(`ws://127.0.0.1:${sport}/ws`)
+    return new Promise((res, rej) => {
+      ws.on('open', () => res(ws))
+      ws.on('error', rej)
+    })
+  }
+
+  const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+  it('обрыв WS не отменяет ход: ответ сохраняет в БД сам сервер', async () => {
+    const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча', 'сть'], 'Часть ответа', 60))
+    const conv = sdb.createConversation('Чат')
+    const ws = await connectTo(sport)
+    ws.send(
+      JSON.stringify({
+        t: 'claude.send',
+        conversationId: conv.id,
+        segments: [{ speakerId: 1, text: 'привет' }]
+      })
+    )
+    await wait(20)
+    ws.close() // «обновление страницы» посреди генерации
+    await wait(90)
+
+    const saved = sdb.listMessages(conv.id).filter((m) => m.role === 'ai')
+    expect(saved).toHaveLength(1)
+    expect(saved[0].text).toBe('Часть ответа')
+    expect(saved[0].engine).toBe('claude')
+    expect(saved[0].meta?.request?.provider).toBe('claude')
+    await sapp.close()
+    sdb.close()
+  })
+
+  it('новое подключение получает claude.active с накопленным текстом, а затем done с сообщением из БД', async () => {
+    const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча', 'сть'], 'Часть ответа', 80))
+    const conv = sdb.createConversation('Чат')
+    const ws1 = await connectTo(sport)
+    ws1.send(
+      JSON.stringify({
+        t: 'claude.send',
+        conversationId: conv.id,
+        segments: [{ speakerId: 1, text: 'привет' }]
+      })
+    )
+    await wait(25) // обе дельты уже пришли
+    ws1.close()
+
+    // Второй клиент («страница после обновления»); слушатель вешаем ДО open,
+    // чтобы не потерять claude.active, который сервер шлёт сразу при подключении.
+    const ws2 = new WebSocket(`ws://127.0.0.1:${sport}/ws`)
+    const events: Array<{ t: string } & Record<string, unknown>> = []
+    const done = new Promise<void>((resolve) => {
+      ws2.on('message', (d) => {
+        const m = JSON.parse(d.toString())
+        events.push(m)
+        if (m.t === 'claude.done') resolve()
+      })
+    })
+    await done
+    ws2.close()
+
+    const active = events.find((e) => e.t === 'claude.active') as unknown as {
+      turns: Array<{ conversationId: string; partial: string }>
+    }
+    expect(active).toBeDefined()
+    expect(active.turns).toHaveLength(1)
+    expect(active.turns[0].conversationId).toBe(conv.id)
+    expect(active.turns[0].partial).toBe('Часть')
+
+    // done несёт сохранённое сервером сообщение — оно же лежит в БД.
+    const doneMsg = events.find((e) => e.t === 'claude.done') as unknown as {
+      text: string
+      message?: { id: string; text: string; role: string }
+    }
+    expect(doneMsg.text).toBe('Часть ответа')
+    expect(doneMsg.message?.role).toBe('ai')
+    const saved = sdb.listMessages(conv.id).filter((m) => m.role === 'ai')
+    expect(saved).toHaveLength(1)
+    expect(doneMsg.message?.id).toBe(saved[0].id)
+    await sapp.close()
+    sdb.close()
+  })
+
+  it('claude.cancel с conversationId снимает ход: ничего не сохраняется, приходит пустой done', async () => {
+    const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча'], 'Часть ответа', 60))
+    const conv = sdb.createConversation('Чат')
+    const ws = await connectTo(sport)
+    const events: Array<{ t: string; text?: string }> = []
+    const emptyDone = new Promise<void>((resolve) => {
+      ws.on('message', (d) => {
+        const m = JSON.parse(d.toString())
+        events.push(m)
+        if (m.t === 'claude.done' && m.text === '') resolve()
+      })
+    })
+    ws.send(
+      JSON.stringify({
+        t: 'claude.send',
+        conversationId: conv.id,
+        segments: [{ speakerId: 1, text: 'привет' }]
+      })
+    )
+    await wait(15)
+    ws.send(JSON.stringify({ t: 'claude.cancel', conversationId: conv.id }))
+    await emptyDone
+    await wait(80) // финал мока уже не должен ничего записать
+    expect(sdb.listMessages(conv.id).filter((m) => m.role === 'ai')).toHaveLength(0)
+    ws.close()
+    await sapp.close()
+    sdb.close()
+  })
+})

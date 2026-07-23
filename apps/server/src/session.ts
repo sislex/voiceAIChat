@@ -1,20 +1,12 @@
 // Per-connection сессия: маршрутизация WS-сообщений в сервисы (Claude, STT;
-// TTS — Ф6). Хранит per-connection состояние.
+// TTS — Ф6). Хранит per-connection состояние (микрофон, озвучка, подписки).
+// Сами ходы LLM живут в процесс-глобальном TurnManager и переживают обрыв
+// соединения: обновление страницы не отменяет генерацию ответа.
 
-import { existsSync } from 'node:fs'
-import {
-  claudeModelAlias,
-  buildPrompt,
-  buildConversationPrompt,
-  type AgentInfo,
-  type AgentPolicy,
-  type ClaudeInitInfo,
-  type TurnMeta,
-  type TurnRequestInfo
-} from '@voicechat/shared'
+import type { AgentInfo } from '@voicechat/shared'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'
-import type { LlmClient, LlmHandle } from './claude/types.js'
+import type { TurnManager } from './turns.js'
 import type { SttEngine } from './stt/types.js'
 import type { DiarizationEngine } from './diarization/types.js'
 import { createSttSession, type SttSession } from './stt/sttSession.js'
@@ -26,9 +18,8 @@ import { watchCxTranscript } from './codex/codexSessions.js'
 
 export interface SessionDeps {
   db: VoiceChatDb
-  claude: LlmClient
-  /** Альтернативный движок Codex (используется при settings.llmProvider='codex'). */
-  codex?: LlmClient
+  /** Процесс-глобальный реестр ходов LLM (ходы переживают reconnect). */
+  turns: TurnManager
   sttEngine: SttEngine
   ttsEngine: TtsEngine
   diarization?: DiarizationEngine
@@ -40,16 +31,6 @@ export interface SessionDeps {
   }
   /** Скачивание голоса Piper по id с прогрессом. */
   downloadVoice?: (id: string, onProgress: (percent: number) => void) => Promise<void>
-  /** Резолв id вложения → абсолютный путь на сервере (для промпта Claude). */
-  resolveUpload?: (id: string) => string | undefined
-  /** Онлайн-статус и политика машин-агентов (для проброса Bash на клиента). */
-  agents?: {
-    isOnline(id: string): boolean
-    nameOf(id: string): string | undefined
-    policyOf(id: string): AgentPolicy | undefined
-  }
-  /** База URL MCP-эндпоинта remote-bash (с секретом k); undefined — проброс выключен. */
-  mcpBaseUrl?: string
   /** Живой список машин с онлайн-статусом + подписка на изменения (пуш веб-клиенту). */
   agentsFeed?: {
     list(): AgentInfo[]
@@ -57,45 +38,12 @@ export interface SessionDeps {
   }
 }
 
-/**
- * Разбирает сохранённый resume-id с префиксом провайдера ("claude:abc"/"codex:xyz").
- * Возвращает id только если он принадлежит текущему провайдеру; иначе null
- * (смена движка → свежий ход без чужого resume). Терпит старые id без префикса
- * (считаем их claude).
- */
-function resumeIdFor(stored: string | null, provider: 'claude' | 'codex'): string | null {
-  if (!stored) return null
-  const m = /^(claude|codex):(.*)$/s.exec(stored)
-  if (!m) return provider === 'claude' ? stored : null
-  return m[1] === provider ? m[2] : null
-}
-
-/** Краткое описание политики машины для системного промпта Claude. */
-function policySummary(p: AgentPolicy): string {
-  const parts: string[] = []
-  if (p.allowedDirs.length) parts.push(`Работай только в каталогах: ${p.allowedDirs.join(', ')}.`)
-  parts.push(
-    p.allowNetwork
-      ? 'Доступ в сеть разрешён.'
-      : 'Доступ в сеть запрещён — не используй curl/wget/ssh и подобное.'
-  )
-  parts.push(
-    p.allowWrite ? 'Изменение файлов разрешено.' : 'Изменение файлов запрещено — только чтение.'
-  )
-  if (p.denyPatterns.length) parts.push(`Запрещённые паттерны команд: ${p.denyPatterns.join(', ')}.`)
-  if (p.allowPatterns.length) parts.push(`Разрешены только команды: ${p.allowPatterns.join(', ')}.`)
-  if (p.skills.length) {
-    parts.push(`Доступные скрипты: ${p.skills.map((s) => `«${s.name}» → ${s.command}`).join('; ')}.`)
-  }
-  return `Политика машины: ${parts.join(' ')}`
-}
-
 export function createSession(deps: SessionDeps): WsHandlers {
-  let claudeHandle: LlmHandle | null = null
   let stt: SttSession | null = null
   let tts: TtsSession | null = null
   let unsubDownload: (() => void) | null = null
   let unsubAgents: (() => void) | null = null
+  let unsubTurns: (() => void) | null = null
   let ccTailStop: (() => void) | null = null
   let cxTailStop: (() => void) | null = null
 
@@ -110,6 +58,10 @@ export function createSession(deps: SessionDeps): WsHandlers {
       // (например, страницу обновили посреди загрузки), сразу получим текущий
       // прогресс и последующие события — прогресс-бар восстановится.
       unsubDownload = deps.modelDownload?.subscribe((ev) => ctx.send(ev)) ?? null
+      // События ходов LLM (token/done/error/log) — каждому клиенту; плюс снапшот
+      // активных ходов, чтобы после обновления страницы стрим продолжился.
+      unsubTurns = deps.turns.subscribe((m) => ctx.send(m))
+      ctx.send({ t: 'claude.active', turns: deps.turns.active() })
       // Живой список машин-агентов: начальное состояние + пуш при изменениях.
       if (deps.agentsFeed) {
         ctx.send({ t: 'agents', agents: deps.agentsFeed.list() })
@@ -120,113 +72,16 @@ export function createSession(deps: SessionDeps): WsHandlers {
     },
     onMessage(msg, ctx) {
       switch (msg.t) {
-        case 'claude.send': {
-          claudeHandle?.cancel()
-          const conversationId = msg.conversationId
-          const conv = deps.db.getConversation(conversationId)
-          const settings = deps.db.getSettings()
-          // Движок и модель по провайдеру.
-          const provider = settings.llmProvider === 'codex' && deps.codex ? 'codex' : 'claude'
-          const client = provider === 'codex' ? deps.codex! : deps.claude
-          const model =
-            provider === 'codex' ? settings.codexModel : claudeModelAlias(settings.model)
-          // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
-          // смене движка чужой resume-id игнорируем (свежий ход).
-          const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)
-          const permissionMode = settings.permissionMode
-          // Рабочий каталог — только если задан и существует (иначе игнор).
-          const cwd =
-            settings.workdir && existsSync(settings.workdir) ? settings.workdir : undefined
-          const attachmentPaths = (msg.attachments ?? [])
-            .map((id) => deps.resolveUpload?.(id))
-            .filter((p): p is string => typeof p === 'string')
-          // Есть сессия → продолжаем одним ходом (--resume). Нет (новый разговор или
-          // сессия сброшена после удаления/правки) → пересобираем промпт из текущей
-          // истории БД, чтобы контекст модели совпадал с видимым (без удалённых реплик).
-          const prompt = sessionId
-            ? buildPrompt(msg.segments, attachmentPaths)
-            : buildConversationPrompt(deps.db.listMessages(conversationId), attachmentPaths)
-          // Цель выполнения команд: выбранная машина-агент. Офлайн — сразу ошибка:
-          // молча выполнить команды не на той машине хуже, чем отказать.
-          const target = settings.execTarget
-          let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
-          if (target && deps.agents && deps.mcpBaseUrl) {
-            if (!deps.agents.isOnline(target)) {
-              ctx.send({
-                t: 'claude.error',
-                conversationId,
-                message: `Машина «${deps.agents.nameOf(target) ?? target}» не в сети. Запустите на ней агента или выберите «На сервере» в настройках.`
-              })
-              break
-            }
-            const policy = deps.agents.policyOf(target)
-            remote = {
-              mcpUrl: `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}`,
-              agentName: deps.agents.nameOf(target) ?? target,
-              policySummary: policy ? policySummary(policy) : undefined
-            }
-          }
-          // Полный контекст хода: все сообщения разговора на момент отправки
-          // (реплика пользователя уже сохранена клиентом перед claude.send).
-          const contextMessages = deps.db
-            .listMessages(conversationId)
-            .map((m) => ({ role: m.role, text: m.text }))
-          // Детали запроса для панели «Подробнее» (всё, что мы отправили модели).
-          const requestInfo: TurnRequestInfo = {
-            provider,
-            model,
-            prompt,
-            promptChars: prompt.length,
-            resumed: Boolean(sessionId),
-            ...(permissionMode ? { permissionMode } : {}),
-            ...(cwd ? { cwd } : {}),
-            ...(attachmentPaths.length ? { attachments: attachmentPaths } : {}),
-            ...(remote ? { execTarget: remote.agentName } : {}),
-            ...(contextMessages.length ? { messages: contextMessages } : {})
-          }
-          // Окружение хода из system/init (инструменты/навыки/mcp) — только claude.
-          let initInfo: ClaudeInitInfo | undefined
-          const startedAt = Date.now()
-          claudeHandle = client.send(
-            { prompt, sessionId, model, permissionMode, cwd, remote },
-            {
-              onSession: (sid) => deps.db.setClaudeSession(conversationId, `${provider}:${sid}`),
-              onInit: (info) => {
-                initInfo = info
-              },
-              onDelta: (delta) => ctx.send({ t: 'claude.token', conversationId, delta }),
-              onDone: (text, meta) => {
-                // Итоговая модель: из потока CLI → из настроек → у Codex с пустой
-                // настройкой модель берётся из его config.toml и наружу не видна.
-                const resolvedModel =
-                  meta?.model || model || (provider === 'codex' ? 'по умолчанию (Codex)' : model)
-                const merged: TurnMeta = {
-                  ...meta,
-                  // Длительность из CLI, а если её нет — измеряем по стенным часам.
-                  durationMs: meta?.durationMs ?? Date.now() - startedAt,
-                  model: resolvedModel,
-                  request: {
-                    ...requestInfo,
-                    model: resolvedModel,
-                    ...(initInfo?.tools ? { tools: initInfo.tools } : {}),
-                    ...(initInfo?.slashCommands ? { slashCommands: initInfo.slashCommands } : {}),
-                    ...(initInfo?.mcpServers ? { mcpServers: initInfo.mcpServers } : {})
-                  }
-                }
-                ctx.send({ t: 'claude.done', conversationId, text, meta: merged, engine: provider })
-              },
-              onError: (message) => ctx.send({ t: 'claude.error', conversationId, message }),
-              // Режим консоли: активность агента шлём только если клиент попросил.
-              onActivity: msg.verbose
-                ? (entry) => ctx.send({ t: 'claude.log', conversationId, entry })
-                : undefined
-            }
-          )
+        case 'claude.send':
+          deps.turns.start({
+            conversationId: msg.conversationId,
+            segments: msg.segments,
+            attachments: msg.attachments,
+            verbose: msg.verbose
+          })
           break
-        }
         case 'claude.cancel':
-          claudeHandle?.cancel()
-          claudeHandle = null
+          deps.turns.cancel(msg.conversationId)
           break
 
         case 'audio.start':
@@ -304,8 +159,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
       stt?.chunk(pcmFromBinary(data))
     },
     onClose() {
-      claudeHandle?.cancel()
-      claudeHandle = null
+      // Ходы LLM НЕ отменяем: они доигрывают в TurnManager, ответ сохранит сервер.
       stt?.dispose()
       stt = null
       tts?.dispose()
@@ -314,6 +168,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubDownload = null
       unsubAgents?.()
       unsubAgents = null
+      unsubTurns?.()
+      unsubTurns = null
       ccTailStop?.()
       ccTailStop = null
       cxTailStop?.()

@@ -102,6 +102,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onSpeakMessage={actions.replayMessage}
         onDeleteMessage={actions.deleteMessage}
         onEditMessage={actions.editMessage}
+        onAnswerQuestions={(text) => void actions.answerQuestions(text)}
         error={state.error}
         onDismissError={actions.dismissError}
         modelMissing={!state.modelPresent}

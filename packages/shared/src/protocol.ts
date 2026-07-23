@@ -119,6 +119,13 @@ export interface UploadInfo {
   name: string
 }
 
+/** Активный (незавершённый) ход модели — для восстановления стрима после reconnect. */
+export interface ActiveTurn {
+  conversationId: string
+  /** Накопленный частичный текст ответа. */
+  partial: string
+}
+
 /** client → server. */
 export type ClientMessage =
   | { t: 'audio.start'; sampleRate: number }
@@ -132,7 +139,7 @@ export type ClientMessage =
       /** Режим консоли: слать активность агента (claude.log). */
       verbose?: boolean
     }
-  | { t: 'claude.cancel' }
+  | { t: 'claude.cancel'; conversationId?: string }
   | { t: 'tts.speak'; text: string; voice: string }
   | { t: 'tts.cancel' }
   | { t: 'tts.downloadVoice'; id: string }
@@ -148,9 +155,18 @@ export type ServerMessage =
   | { t: 'stt.final'; update: SttUpdate }
   | { t: 'stt.error'; message: string }
   | { t: 'claude.token'; conversationId: string; delta: string }
-  | { t: 'claude.done'; conversationId: string; text: string; meta?: TurnMeta; engine?: LlmProvider }
+  | {
+      t: 'claude.done'
+      conversationId: string
+      text: string
+      meta?: TurnMeta
+      engine?: LlmProvider
+      /** Сообщение, сохранённое сервером в БД (клиент не сохраняет сам). */
+      message?: Message
+    }
   | { t: 'claude.error'; conversationId: string; message: string }
   | { t: 'claude.log'; conversationId: string; entry: ClaudeLogEntry }
+  | { t: 'claude.active'; turns: ActiveTurn[] }
   | { t: 'tts.audio'; audio: string } // base64 WAV (или бинарный кадр — см. реализацию)
   | { t: 'tts.error'; message: string }
   | { t: 'tts.voiceProgress'; id: string; percent: number }
@@ -190,6 +206,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'claude.done',
   'claude.error',
   'claude.log',
+  'claude.active',
   'tts.audio',
   'tts.error',
   'tts.voiceProgress',
