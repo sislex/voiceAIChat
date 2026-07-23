@@ -15,6 +15,7 @@ import type {
   WhisperModelInfo
 } from './types'
 import type { McpServer } from './mcp'
+import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
 import type { CxProject, CxSession, CxItem } from './codexSessions'
 import type { AgentCreated, AgentInfo, AgentPolicy } from './agentProtocol'
@@ -40,6 +41,8 @@ export interface AddMessageArgs {
   time: string
   /** Движок ответа (для роли 'ai'); запекается в сообщение. */
   engine?: LlmProvider
+  /** Метаданные хода (токены/тайминги/детали запроса) — для роли 'ai'. */
+  meta?: TurnMeta
 }
 
 /** Метаданные загруженного вложения. */
@@ -77,6 +80,8 @@ export interface IpcInvokeMap {
   'tts:deleteVoice': { arg: { id: string }; result: void }
   /** Список подключённых MCP-серверов (read-only, из `claude mcp list`). */
   'mcp:list': { arg: void; result: McpServer[] }
+  /** Статус авторизации CLI claude/codex (залогинен ли пользователь). */
+  'auth:status': { arg: void; result: LoginStatusMap }
   /** Машины-агенты для удалённого выполнения команд (только web-режим). */
   'agents:list': { arg: void; result: AgentInfo[] }
   /** Создать машину-агента; токен возвращается один раз. */
@@ -367,6 +372,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tts:catalog',
   'tts:deleteVoice',
   'mcp:list',
+  'auth:status',
   'agents:list',
   'agents:create',
   'agents:delete',

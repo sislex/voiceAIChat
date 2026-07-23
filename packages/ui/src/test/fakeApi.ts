@@ -83,7 +83,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         if (messages[i].conversationId === id) messages.splice(i, 1)
       }
     },
-    'messages:add': async ({ conversationId, role, text, time, engine }) => {
+    'messages:add': async ({ conversationId, role, text, time, engine, meta }) => {
       const msg: Message = {
         id: nextId(),
         conversationId,
@@ -91,7 +91,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         text,
         time,
         createdAt: tick(),
-        ...(engine ? { engine } : {})
+        ...(engine ? { engine } : {}),
+        ...(meta ? { meta } : {})
       }
       messages.push(msg)
       const conv = conversations.find((c) => c.id === conversationId)
@@ -116,6 +117,10 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'stt:deleteModel': async () => {},
     'tts:deleteVoice': async () => {},
     'mcp:list': async () => [],
+    'auth:status': async () => ({
+      claude: { provider: 'claude', loggedIn: true, detail: 'подписка team' },
+      codex: { provider: 'codex', loggedIn: false, detail: 'вход не выполнен — выполните `codex login`' }
+    }),
     'agents:list': async () => agents.map((a) => ({ ...a })),
     'agents:create': async ({ name }) => {
       const agent: AgentInfo = {

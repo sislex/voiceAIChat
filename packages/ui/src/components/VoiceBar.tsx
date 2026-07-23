@@ -3,7 +3,7 @@ import type { VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import { ACCENT, chipClass, speakerName, statusLine } from '../lib/view'
 import { WaveBars, EqBars, Dots } from './animations'
-import { MicIcon, StopIcon } from './icons'
+import { MicIcon, SendIcon, StopIcon } from './icons'
 
 export interface VoiceBarProps {
   state: VoiceState
@@ -24,6 +24,8 @@ export interface VoiceBarProps {
   onAddFiles: (files: File[]) => void
   /** Убрать вложение по id. */
   onRemoveAttachment: (id: string) => void
+  /** Имя движка ответа (Claude / Codex) — для подписей статуса. */
+  aiLabel?: string
 }
 
 export function VoiceBar({
@@ -39,7 +41,8 @@ export function VoiceBar({
   onStopSpeak,
   onCancelRequest,
   onAddFiles,
-  onRemoveAttachment
+  onRemoveAttachment,
+  aiLabel = 'Claude'
 }: VoiceBarProps): JSX.Element {
   const isIdle = state === 'idle'
   const isListening = state === 'listening'
@@ -143,15 +146,27 @@ export function VoiceBar({
               >
                 📎
               </button>
-              <button
-                className="micbtn"
-                style={{ background: ACCENT }}
-                onClick={onStartVoice}
-                title="Говорить"
-                aria-label="Говорить"
-              >
-                <MicIcon />
-              </button>
+              {canSend ? (
+                <button
+                  className="micbtn sendbtn"
+                  style={{ background: ACCENT }}
+                  onClick={onSubmitText}
+                  title="Отправить сообщение"
+                  aria-label="Отправить сообщение"
+                >
+                  <SendIcon />
+                </button>
+              ) : (
+                <button
+                  className="micbtn"
+                  style={{ background: ACCENT }}
+                  onClick={onStartVoice}
+                  title="Говорить"
+                  aria-label="Говорить"
+                >
+                  <MicIcon />
+                </button>
+              )}
             </>
           )}
 
@@ -176,7 +191,7 @@ export function VoiceBar({
               <div className="speak">
                 <Dots />
                 <span className="fs13 fw6" style={{ color: '#8A877C' }}>
-                  Запрос отправлен в Claude Console…
+                  Запрос отправлен движку {aiLabel}…
                 </span>
               </div>
               <button
@@ -196,7 +211,7 @@ export function VoiceBar({
                 <span className="eq">
                   <EqBars />
                 </span>
-                <span className="fs13 fw7">Claude отвечает голосом…</span>
+                <span className="fs13 fw7">{aiLabel} отвечает голосом…</span>
                 <span className="fs11" style={{ color: '#A5A296', marginLeft: 'auto' }}>
                   TTS · локально
                 </span>
@@ -213,7 +228,7 @@ export function VoiceBar({
           )}
         </div>
 
-        <p className="vstatus">{statusLine(state)}</p>
+        <p className="vstatus">{statusLine(state, aiLabel)}</p>
       </div>
     </div>
   )

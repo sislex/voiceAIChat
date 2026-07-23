@@ -43,7 +43,12 @@ describe('VoiceBar — состояния', () => {
 
   it('thinking: карточка «Запрос отправлен…»', () => {
     setup('thinking')
-    expect(screen.getByText('Запрос отправлен в Claude Console…')).toBeInTheDocument()
+    expect(screen.getByText('Запрос отправлен движку Claude…')).toBeInTheDocument()
+  })
+
+  it('thinking: имя движка из aiLabel (Codex)', () => {
+    setup('thinking', { aiLabel: 'Codex' })
+    expect(screen.getByText('Запрос отправлен движку Codex…')).toBeInTheDocument()
   })
 
   it('speaking: эквалайзер, надпись и кнопка стоп', () => {
@@ -63,6 +68,19 @@ describe('VoiceBar — состояния', () => {
     const props = setup('idle')
     await userEvent.click(screen.getByLabelText('Говорить'))
     expect(props.onStartVoice).toHaveBeenCalledOnce()
+  })
+
+  it('непустой инпут: кнопка «Отправить» вместо микрофона, клик → onSubmitText', async () => {
+    const props = setup('idle', { draft: 'привет' })
+    expect(screen.queryByLabelText('Говорить')).not.toBeInTheDocument()
+    const sendBtn = screen.getByLabelText('Отправить сообщение')
+    await userEvent.click(sendBtn)
+    expect(props.onSubmitText).toHaveBeenCalledOnce()
+  })
+
+  it('кнопка «Отправить» появляется и при наличии только вложений', () => {
+    setup('idle', { attachments: [{ id: 'a1', name: 'file.txt' }] })
+    expect(screen.getByLabelText('Отправить сообщение')).toBeInTheDocument()
   })
 
   it('Enter в непустом инпуте вызывает onSubmitText', async () => {

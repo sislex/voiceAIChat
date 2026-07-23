@@ -15,9 +15,13 @@ export function speakerNumber(role: MessageRole): number | null {
   return Number.isFinite(n) ? n : 1
 }
 
-/** CSS-класс chip для роли (учитывает выключенную диаризацию). */
-export function chipClass(role: MessageRole, diarization = true): string {
-  if (role === 'ai') return 'chip spa'
+/**
+ * CSS-класс chip для роли (учитывает выключенную диаризацию). Для ответов ИИ
+ * цвет зависит от движка: Claude — `spa`, Codex — `spx` (разные цвета, чтобы
+ * сразу видеть, кто ответил).
+ */
+export function chipClass(role: MessageRole, diarization = true, engine?: LlmProvider): string {
+  if (role === 'ai') return engine === 'codex' ? 'chip spx' : 'chip spa'
   if (!diarization) return 'chip sp1'
   const n = speakerNumber(role) ?? 1
   const idx = ((n - 1) % 4) + 1 // sp1..sp4, дальше по кругу
@@ -55,17 +59,17 @@ export function statusBadge(state: VoiceState, aiLabel = 'Claude'): string {
   }
 }
 
-/** Строка статуса под голосовой панелью. */
-export function statusLine(state: VoiceState): string {
+/** Строка статуса под голосовой панелью. aiLabel — имя движка ответа. */
+export function statusLine(state: VoiceState, aiLabel = 'Claude'): string {
   switch (state) {
     case 'idle':
-      return 'Пробел — говорить · Esc — стоп · STT/TTS локально, ответы через Claude'
+      return `Пробел — говорить · Esc — стоп · распознавание и озвучка локально, ответы через ${aiLabel}`
     case 'listening':
       return 'Говорите… Whisper распознаёт речь на устройстве'
     case 'transcribing':
       return 'Финализируем транскрипт и делим по говорящим'
     case 'thinking':
-      return 'Текст передан в Claude Console'
+      return `Текст передан движку ${aiLabel}`
     case 'speaking':
       return 'Воспроизведение ответа'
   }

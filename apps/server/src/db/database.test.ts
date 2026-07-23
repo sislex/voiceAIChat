@@ -91,6 +91,34 @@ describe('VoiceChatDb — сообщения', () => {
     expect(db.getConversation(c.id)?.messageCount).toBe(2)
   })
 
+  it('сохраняет и читает meta ответа (токены/детали запроса)', () => {
+    const c = db.createConversation('Чат')
+    const meta = {
+      durationMs: 4200,
+      inputTokens: 1500,
+      outputTokens: 300,
+      model: 'sonnet',
+      request: {
+        provider: 'claude' as const,
+        model: 'sonnet',
+        prompt: 'привет',
+        promptChars: 6,
+        resumed: false,
+        tools: ['Bash', 'Read']
+      }
+    }
+    db.addMessage(c.id, 'ai', 'ответ', '14:02', 'claude', meta)
+    const [m] = db.listMessages(c.id)
+    expect(m.meta).toEqual(meta)
+    expect(m.engine).toBe('claude')
+  })
+
+  it('без meta сообщение не содержит поля meta', () => {
+    const c = db.createConversation('Чат')
+    db.addMessage(c.id, 'u1', 'вопрос', '14:00')
+    expect(db.listMessages(c.id)[0].meta).toBeUndefined()
+  })
+
   it('сообщения возвращаются в хронологическом порядке', () => {
     const c = db.createConversation('Чат')
     db.addMessage(c.id, 'u1', 'первое', '14:00')

@@ -10,6 +10,7 @@ import type {
 import { CLAUDE_MODELS, CODEX_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { PermissionMode, LlmProvider } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
+import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
 import { copyText } from '../lib/clipboard'
 import { AgentCard } from './AgentCard'
@@ -52,6 +53,8 @@ export interface SettingsModalProps {
   whisperModels: WhisperModelInfo[]
   /** Подключённые MCP-серверы (read-only показ). */
   mcpServers: McpServer[]
+  /** Статус входа claude/codex (read-only показ); null — ещё не загружен. */
+  loginStatus?: LoginStatusMap | null
   /** Машины-агенты для удалённого выполнения команд. */
   agents: AgentInfo[]
   /** Создать машину; возвращает данные с одноразовым токеном (null при ошибке). */
@@ -88,6 +91,7 @@ export function SettingsModal({
   voiceDownloads,
   whisperModels,
   mcpServers,
+  loginStatus,
   agents,
   onCreateAgent,
   onDeleteAgent,
@@ -169,6 +173,31 @@ export function SettingsModal({
                     <option value="codex">Codex</option>
                   </select>
                 </div>
+
+                {loginStatus && (
+                  <div className="voicedl" data-testid="login-status">
+                    <p className="flab">Вход в CLI</p>
+                    <p className="fsub">
+                      Авторизация claude/codex — выполните <code>claude login</code> /{' '}
+                      <code>codex login</code> в терминале
+                    </p>
+                    {(['claude', 'codex'] as const).map((provider) => {
+                      const s = loginStatus[provider]
+                      const name = provider === 'claude' ? 'Claude Code' : 'Codex'
+                      return (
+                        <div className="vrow2" key={provider}>
+                          <span className="vname">
+                            {name}
+                            {s.detail ? ` · ${s.detail}` : ''}
+                          </span>
+                          <span className={s.loggedIn ? 'mcp-ok' : 'mcp-bad'}>
+                            {s.loggedIn ? '✓ вход выполнен' : '✗ не выполнен'}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
 
                 {settings.llmProvider === 'claude' ? (
                   <div className="frow">

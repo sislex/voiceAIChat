@@ -104,6 +104,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
             draft={state.draft}
             diarization={state.settings.diarization}
             detectedSpeakers={detectedSpeakers}
+            aiLabel={state.settings.llmProvider === 'codex' ? 'Codex' : 'Claude'}
             attachments={state.attachments}
             onDraftChange={actions.setDraft}
             onSubmitText={actions.submitText}
@@ -175,6 +176,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           voiceDownloads={state.voiceDownloads}
           whisperModels={state.whisperModels}
           mcpServers={state.mcpServers}
+          loginStatus={state.loginStatus}
           agents={state.agents}
           onCreateAgent={actions.createAgent}
           onDeleteAgent={(id) => void actions.deleteAgent(id)}

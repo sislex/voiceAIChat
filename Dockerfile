@@ -31,10 +31,13 @@ RUN npm run -w @voicechat/web build
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 
+# Работаем под непривилегированным пользователем `node` (есть в базовом образе):
+# claude CLI запрещает `--dangerously-skip-permissions` (режим «Полный доступ»)
+# под root/sudo. HOME=/home/node → сюда монтируются ~/.claude и ~/.codex.
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8787 \
-    HOME=/root \
+    HOME=/home/node \
     VC_DATA_DIR=/data \
     VC_WEB_DIR=/app/apps/web/dist
 
@@ -42,8 +45,9 @@ ENV NODE_ENV=production \
 #   хранилищу; в slim-образе его нет → без этого запросы к chatgpt.com падают с
 #   `invalid peer certificate: UnknownIssuer`.
 # bubblewrap: песочница codex на Linux (иначе codex ругается и берёт bundled).
+# gosu: старт под root (chown тома) → сброс до node в entrypoint.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates bubblewrap \
+  && apt-get install -y --no-install-recommends ca-certificates bubblewrap gosu \
   && rm -rf /var/lib/apt/lists/*
 
 # claude/codex CLI: сервер вызывает их как бинарники `claude`/`codex` из PATH.
@@ -53,10 +57,15 @@ RUN npm i -g @anthropic-ai/claude-code @openai/codex
 # Переносим готовое дерево из стадии сборки: исходники + node_modules (с нативным
 # better-sqlite3 под glibc) + собранный web.
 COPY --from=build /app /app
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-RUN mkdir -p /data
+# Каталог данных во владении node (SQLite + вложения).
+RUN mkdir -p /data && chown -R node:node /data
 VOLUME ["/data"]
 EXPOSE 8787
 
+# Entrypoint стартует под root (chown тома), затем сбрасывает привилегии до node.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 # Старт сервера (tsx src/index.ts в воркспейсе @voicechat/server).
 CMD ["npm", "run", "-w", "@voicechat/server", "start"]

@@ -22,6 +22,11 @@ export interface Message {
    * Отсутствует у старых сообщений и у реплик пользователя.
    */
   engine?: LlmProvider
+  /**
+   * Метаданные хода (токены/тайминги/детали запроса) — только для ответов 'ai'.
+   * Отсутствует у реплик пользователя и у ответов, сохранённых до этой фичи.
+   */
+  meta?: TurnMeta
 }
 
 /** Сегмент распознанной речи после диаризации. */
@@ -131,6 +136,68 @@ export interface TurnMeta {
   inputTokens?: number
   /** Токены вывода. */
   outputTokens?: number
+  /** Токены, прочитанные из кэша промпта (cache_read_input_tokens). */
+  cacheReadTokens?: number
+  /** Токены, записанные в кэш промпта (cache_creation_input_tokens). */
+  cacheCreationTokens?: number
+  /** Модель, которой отправлен ход (алиас claude / id codex). */
+  model?: string
+  /** Что именно ушло модели этим ходом — для панели «Подробнее». */
+  request?: TurnRequestInfo
+}
+
+/**
+ * Детали запроса одного хода: всё, что мы отправили модели, плюс окружение хода
+ * (инструменты/навыки из system/init CLI). Внутренний системный промпт Claude Code
+ * из CLI недоступен и здесь не фигурирует.
+ */
+export interface TurnRequestInfo {
+  /** Движок хода. */
+  provider: LlmProvider
+  /** Модель хода (алиас claude / id codex). */
+  model: string
+  /** Полный текст промпта, отправленный этим ходом. */
+  prompt: string
+  /** Размер промпта в символах. */
+  promptChars: number
+  /** Режим прав агента (permission mode). */
+  permissionMode?: string
+  /** Рабочий каталог процесса CLI. */
+  cwd?: string
+  /** Пути вложений, приложенных к ходу. */
+  attachments?: string[]
+  /** Имя машины, если команды выполняются удалённо (иначе — на сервере). */
+  execTarget?: string
+  /** true — продолжение сессии (--resume); false — холодный старт из истории. */
+  resumed: boolean
+  /** Доступные инструменты (из system/init CLI). */
+  tools?: string[]
+  /** Доступные навыки/slash-команды (из system/init CLI). */
+  slashCommands?: string[]
+  /** MCP-серверы хода (из system/init CLI). */
+  mcpServers?: string[]
+  /**
+   * Полный контекст разговора на момент хода: все сообщения (история + текущая
+   * реплика), как они лежали в БД при отправке. При --resume история хранится в
+   * сессии CLI и повторно не пересылается, но показывается здесь для наглядности.
+   */
+  messages?: TurnContextMessage[]
+}
+
+/** Одно сообщение контекста хода (роль + текст). */
+export interface TurnContextMessage {
+  role: MessageRole
+  text: string
+}
+
+/** Сведения из system/init-события Claude CLI (окружение хода). */
+export interface ClaudeInitInfo {
+  tools?: string[]
+  slashCommands?: string[]
+  mcpServers?: string[]
+  model?: string
+  cwd?: string
+  permissionMode?: string
 }
 
 /** Одна запись активности агента для панели консоли. */

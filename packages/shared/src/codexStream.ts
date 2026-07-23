@@ -23,6 +23,7 @@ function usageMeta(usage: unknown): TurnMeta {
   const u = (usage ?? {}) as Record<string, unknown>
   if (typeof u.input_tokens === 'number') meta.inputTokens = u.input_tokens
   if (typeof u.output_tokens === 'number') meta.outputTokens = u.output_tokens
+  if (typeof u.cached_input_tokens === 'number') meta.cacheReadTokens = u.cached_input_tokens
   return meta
 }
 
@@ -57,8 +58,12 @@ export function parseCodexLine(line: string): CodexStreamEvent | null {
       }
       return { kind: 'ignore' }
     }
-    case 'turn.completed':
-      return { kind: 'result', meta: usageMeta(obj.usage), isError: false }
+    case 'turn.completed': {
+      const meta = usageMeta(obj.usage)
+      // Codex иногда сообщает модель хода — заберём, если есть.
+      if (typeof obj.model === 'string' && obj.model) meta.model = obj.model
+      return { kind: 'result', meta, isError: false }
+    }
     case 'turn.failed':
     case 'error': {
       const err = (obj.error ?? {}) as Record<string, unknown>

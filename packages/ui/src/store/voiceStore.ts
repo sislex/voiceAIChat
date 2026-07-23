@@ -8,6 +8,7 @@
 
 import type { RendererApi, SttSegmentWire, SttStatus, SttUpdate, UploadInfo } from '@shared/ipc'
 import type { McpServer } from '@shared/mcp'
+import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
 import type { CcProject, CcSession, CcItem } from '@shared/cc'
 import type { CxProject, CxSession, CxItem } from '@shared/codexSessions'
@@ -41,6 +42,9 @@ import {
   titleFromText,
   transcriptFrames
 } from './mockPipeline'
+
+/** Период опроса статуса входа claude/codex (ms). */
+const LOGIN_STATUS_POLL_MS = 30_000
 
 /** Полное состояние приложения в renderer. */
 export interface AppState {
@@ -78,6 +82,8 @@ export interface AppState {
   lastTurnMeta: TurnMeta | null
   /** Подключённые MCP-серверы (read-only показ в настройках). */
   mcpServers: McpServer[]
+  /** Статус входа claude/codex (показ в настройках); null — ещё не загружен. */
+  loginStatus: LoginStatusMap | null
   /** Машины-агенты для удалённого выполнения команд (настройки). */
   agents: AgentInfo[]
   /** Открыт ли Проводник Claude Code. */
@@ -331,6 +337,7 @@ function initialState(): AppState {
     streamingReply: '',
     lastTurnMeta: null,
     mcpServers: [],
+    loginStatus: null,
     agents: [],
     ccOpen: false,
     ccProjects: [],
@@ -383,6 +390,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   let state = { ...initialState(), ttsAvailable: ttsEnabled }
   const listeners = new Set<() => void>()
   const timers = new Set<ReturnType<typeof setTimeout>>()
+  // Периодический опрос статуса входа claude/codex — чтобы вход в CLI при
+  // работающем приложении отражался без перезагрузки.
+  let loginStatusPoll: ReturnType<typeof setInterval> | null = null
 
   function getState(): AppState {
     return state
@@ -523,7 +533,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function persistMessage(
     role: MessageRole,
     text: string,
-    engine?: LlmProvider
+    engine?: LlmProvider,
+    meta?: TurnMeta
   ): Promise<void> {
     const conversationId = state.activeId
     if (!conversationId) return
@@ -532,7 +543,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       role,
       text,
       time: formatTime(now()),
-      ...(engine ? { engine } : {})
+      ...(engine ? { engine } : {}),
+      ...(meta && Object.keys(meta).length > 0 ? { meta } : {})
     })
     setState({ messages: [...state.messages, message] })
   }
@@ -602,14 +614,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Фиксация мок-ответа и переход thinking → speaking → idle (без стрима). */
-  async function finishReply(fullText: string, engine?: LlmProvider): Promise<void> {
+  async function finishReply(fullText: string, engine?: LlmProvider, meta?: TurnMeta): Promise<void> {
     const text = fullText.trim()
     setState({ streamingReply: '' })
     if (!text) {
       if (state.voice === 'thinking') dispatchVoice('reset') // пустой ответ → idle
       return
     }
-    await persistMessage('ai', text, engine)
+    await persistMessage('ai', text, engine, meta)
     await refreshConversations()
     if (!dispatchVoice('reply_ready')) return // thinking → speaking
     if (autoSpeakActive()) {
@@ -662,10 +674,18 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshTtsVoices()
     await refreshVoiceCatalog()
     await refreshMcpServers()
+    await refreshLoginStatus()
+    startLoginStatusPolling()
     await refreshAgents()
     if (conversations.length > 0) {
       await selectConversation(conversations[0].id)
     }
+  }
+
+  /** Запускает периодический опрос статуса входа (идемпотентно). */
+  function startLoginStatusPolling(): void {
+    if (loginStatusPoll || !api['auth:status']) return
+    loginStatusPoll = setInterval(() => void refreshLoginStatus(), LOGIN_STATUS_POLL_MS)
   }
 
   /** Грузит список MCP-серверов (read-only; ошибки не критичны). */
@@ -675,6 +695,16 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ mcpServers: await api['mcp:list']() })
     } catch (err) {
       console.warn('[mcp] не удалось получить список серверов', err)
+    }
+  }
+
+  /** Грузит статус входа claude/codex (read-only; ошибки не критичны). */
+  async function refreshLoginStatus(): Promise<void> {
+    if (!api['auth:status']) return
+    try {
+      setState({ loginStatus: await api['auth:status']() })
+    } catch (err) {
+      console.warn('[auth] не удалось получить статус входа', err)
     }
   }
 
@@ -1271,14 +1301,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
     if (!autoSpeakActive()) {
       // Без автоозвучки — единый ответ, короткий таймер speaking → idle.
-      void finishReply(text || state.streamingReply, engine)
+      void finishReply(text || state.streamingReply, engine, meta)
       return
     }
 
     const full = (text || state.streamingReply).trim()
     setState({ streamingReply: '' })
     if (full) {
-      await persistMessage('ai', full, engine)
+      await persistMessage('ai', full, engine, meta)
       await refreshConversations()
     }
     // Дозвучиваем незавершённый хвост (закрывая незавершённый блок кода).
@@ -1387,6 +1417,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   function dispose(): void {
     cancelTimers()
+    if (loginStatusPoll) {
+      clearInterval(loginStatusPoll)
+      loginStatusPoll = null
+    }
   }
 
   return {

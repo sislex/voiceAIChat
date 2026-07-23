@@ -58,6 +58,8 @@ export interface AddMessageArgs {
   time: string
   /** Движок ответа (для роли 'ai'); запекается в сообщение. */
   engine?: LlmProvider
+  /** Метаданные хода (токены/тайминги/детали запроса) — для роли 'ai'. */
+  meta?: TurnMeta
 }
 
 export interface HealthResponse {
@@ -84,6 +86,7 @@ export const REST = {
   ttsVoiceDownload: (id: string) => `/api/tts/voices/${id}/download`,
   sttDownload: '/api/stt/download',
   mcpServers: '/api/mcp/servers',
+  authStatus: '/api/auth/status',
   agents: '/api/agents',
   agentScript: '/api/agents/script',
   agentApp: '/api/agents/app',

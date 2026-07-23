@@ -4,7 +4,53 @@ import { parseStreamJsonActivity, parseStreamJsonLine } from './streamJson'
 describe('parseStreamJsonLine', () => {
   it('извлекает session_id из system/init', () => {
     const line = JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-123' })
-    expect(parseStreamJsonLine(line)).toEqual({ kind: 'session', sessionId: 'sess-123' })
+    expect(parseStreamJsonLine(line)).toMatchObject({ kind: 'session', sessionId: 'sess-123' })
+  })
+
+  it('извлекает окружение хода (инструменты/навыки/mcp) из system/init', () => {
+    const line = JSON.stringify({
+      type: 'system',
+      subtype: 'init',
+      session_id: 'sess-1',
+      model: 'claude-opus',
+      cwd: '/repo',
+      permissionMode: 'acceptEdits',
+      tools: ['Bash', 'Read', 'Edit'],
+      slash_commands: ['review', 'init'],
+      mcp_servers: [{ name: 'remote', status: 'connected' }, 'fs']
+    })
+    const ev = parseStreamJsonLine(line)
+    expect(ev).toMatchObject({ kind: 'session', sessionId: 'sess-1' })
+    expect(ev && 'init' in ev ? ev.init : undefined).toEqual({
+      model: 'claude-opus',
+      cwd: '/repo',
+      permissionMode: 'acceptEdits',
+      tools: ['Bash', 'Read', 'Edit'],
+      slashCommands: ['review', 'init'],
+      mcpServers: ['remote', 'fs']
+    })
+  })
+
+  it('парсит кэш-токены из usage в result', () => {
+    const line = JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      result: 'ok',
+      usage: {
+        input_tokens: 100,
+        output_tokens: 20,
+        cache_read_input_tokens: 80,
+        cache_creation_input_tokens: 5
+      }
+    })
+    const ev = parseStreamJsonLine(line)
+    expect(ev && ev.kind === 'result' ? ev.meta : undefined).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadTokens: 80,
+      cacheCreationTokens: 5
+    })
   })
 
   it('извлекает текстовую дельту из stream_event/content_block_delta', () => {

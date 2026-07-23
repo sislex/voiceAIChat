@@ -22,8 +22,9 @@ services:
       # Персист БД (voicechat.db) и вложений.
       - vc-data:/data
       # Авторизация + история CLI (rw: клиентам нужно обновлять сессии/токены).
-      - ${HOME}/.claude:/root/.claude
-      - ${HOME}/.codex:/root/.codex
+      # Монтируем в HOME пользователя node (контейнер работает не под root).
+      - ${HOME}/.claude:/home/node/.claude
+      - ${HOME}/.codex:/home/node/.codex
     restart: unless-stopped
 
 volumes:

@@ -2,6 +2,7 @@ import type { VoiceChatDb } from '../db/database'
 import type { IpcArg, IpcChannel, IpcResult, SttStatus, UploadInfo } from '@shared/ipc'
 import type { TtsVoiceCatalog, TtsVoiceInfo, WhisperModel, WhisperModelInfo } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
+import type { LoginStatusMap } from '@shared/auth'
 import { ccResumeMessages, ccResumeTitle, ccTimeLabel } from '@shared/cc'
 import { cxResumeMessages, cxResumeTitle, cxTimeLabel } from '@shared/codexSessions'
 import { listProjects, listSessions, readTranscript } from '../cc/ccSessions'
@@ -38,6 +39,8 @@ export interface HandlerDeps {
   deleteVoice?: (id: string) => void
   /** Список MCP-серверов (read-only). По умолчанию — пусто. */
   listMcpServers?: () => McpServer[] | Promise<McpServer[]>
+  /** Статус входа claude/codex. По умолчанию — оба не залогинены. */
+  loginStatus?: () => LoginStatusMap | Promise<LoginStatusMap>
 }
 
 /**
@@ -71,8 +74,8 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
       db.deleteConversation(id)
     },
 
-    'messages:add': ({ conversationId, role, text, time, engine }) =>
-      db.addMessage(conversationId, role, text, time, engine),
+    'messages:add': ({ conversationId, role, text, time, engine, meta }) =>
+      db.addMessage(conversationId, role, text, time, engine, meta),
 
     'messages:delete': ({ conversationId, messageId }) => {
       db.deleteMessage(conversationId, messageId)
@@ -108,6 +111,14 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
     },
 
     'mcp:list': () => (deps.listMcpServers ? deps.listMcpServers() : []),
+
+    'auth:status': () =>
+      deps.loginStatus
+        ? deps.loginStatus()
+        : {
+            claude: { provider: 'claude', loggedIn: false },
+            codex: { provider: 'codex', loggedIn: false }
+          },
 
     // Машины-агенты — только в web-режиме (claude и так выполняется локально).
     'agents:list': () => [],
