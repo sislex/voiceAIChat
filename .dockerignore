@@ -1,0 +1,24 @@
+# Зависимости и артефакты — пересобираются в образе.
+node_modules
+**/node_modules
+**/dist
+apps/web/dist
+
+# Electron-приложения не нужны серверному образу (и не воркспейсы).
+apps/desktop
+apps/agent-tray
+
+# Локальные окружения/сборки.
+.venv-piper
+**/release
+**/*.dmg
+
+# VCS/IDE/прочее.
+.git
+.gitignore
+.idea
+.claude
+*.log
+Dockerfile
+.dockerignore
+docker-compose.yml

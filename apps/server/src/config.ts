@@ -24,6 +24,12 @@ export interface ServerConfig {
   agentAppPath?: string
   /** Путь к .dmg десктоп-приложения для скачивания (undefined — не собрано). */
   desktopAppPath?: string
+  /**
+   * Каталог собранного web-приложения (apps/web/dist) для раздачи статики тем же
+   * сервером. Задаётся только через env (VC_WEB_DIR) — в dev/тестах не задан, чтобы
+   * не мешать Vite. В Docker указывает на скопированный билд.
+   */
+  webDir?: string
 }
 
 const DEFAULT_DATA_DIR = join(homedir(), '.voicechat-server')
@@ -78,6 +84,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     piperBin: pick(env.VC_PIPER_BIN, REPO.piperBin, 'piper'),
     piperArgsPrefix: env.VC_PIPER_ARGS ? env.VC_PIPER_ARGS.split(' ') : [],
     agentAppPath: env.VC_AGENT_APP ?? (AUTODISCOVER ? findDmg(REPO.agentAppDir) : undefined),
-    desktopAppPath: env.VC_DESKTOP_APP ?? (AUTODISCOVER ? findDmg(REPO.desktopAppDir) : undefined)
+    desktopAppPath: env.VC_DESKTOP_APP ?? (AUTODISCOVER ? findDmg(REPO.desktopAppDir) : undefined),
+    webDir: env.VC_WEB_DIR
   }
 }
