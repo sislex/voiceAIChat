@@ -27,6 +27,18 @@ RUN npm ci
 # Сборка web (same-origin: VITE_SERVER_URL НЕ задаём) → apps/web/dist.
 RUN npm run -w @voicechat/web build
 
+# ---- Сборка whisper.cpp: whisper-cli для серверного распознавания речи ----
+# Статическая линковка (BUILD_SHARED_LIBS=OFF) → в runtime нужен только бинарь
+# (+ libgomp1: OpenMP). Без него STT в контейнере не работает вовсе.
+FROM debian:bookworm-slim AS whisper
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git cmake make g++ ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch v1.7.5 https://github.com/ggml-org/whisper.cpp /whisper
+RUN cmake -S /whisper -B /whisper/build -DCMAKE_BUILD_TYPE=Release \
+      -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF \
+  && cmake --build /whisper/build -j"$(nproc)" --target whisper-cli
+
 # ---- Runtime -------------------------------------------------------------
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
@@ -39,7 +51,8 @@ ENV NODE_ENV=production \
     PORT=8787 \
     HOME=/home/node \
     VC_DATA_DIR=/data \
-    VC_WEB_DIR=/app/apps/web/dist
+    VC_WEB_DIR=/app/apps/web/dist \
+    VC_WHISPER_CLI=/usr/local/bin/whisper-cli
 
 # ca-certificates: codex — Rust-бинарь (rustls) и проверяет TLS по системному
 #   хранилищу; в slim-образе его нет → без этого запросы к chatgpt.com падают с
@@ -47,7 +60,7 @@ ENV NODE_ENV=production \
 # bubblewrap: песочница codex на Linux (иначе codex ругается и берёт bundled).
 # gosu: старт под root (chown тома) → сброс до node в entrypoint.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates bubblewrap gosu \
+  && apt-get install -y --no-install-recommends ca-certificates bubblewrap gosu libgomp1 \
   && rm -rf /var/lib/apt/lists/*
 
 # claude/codex CLI: сервер вызывает их как бинарники `claude`/`codex` из PATH.
@@ -58,6 +71,7 @@ RUN npm i -g @anthropic-ai/claude-code @openai/codex
 # Переносим готовое дерево из стадии сборки: исходники + node_modules (с нативным
 # better-sqlite3 под glibc) + собранный web.
 COPY --from=build /app /app
+COPY --from=whisper /whisper/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
