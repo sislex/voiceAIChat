@@ -75,6 +75,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
 
       <ChatColumn
         title={activeTitle}
+        onRenameTitle={(t) => {
+          if (state.activeId) void actions.renameConversation(state.activeId, t)
+        }}
         state={state.voice}
         messages={state.messages}
         liveSegments={state.liveSegments}

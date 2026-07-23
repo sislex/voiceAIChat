@@ -102,3 +102,40 @@ describe('ChatColumn — экспорт разговора', () => {
     expect(screen.queryByLabelText('Экспорт разговора')).not.toBeInTheDocument()
   })
 })
+
+describe('ChatColumn — переименование разговора по заголовку', () => {
+  it('клик по заголовку открывает поле, Enter сохраняет новое имя', async () => {
+    const onRename = vi.fn()
+    renderCol({ onRenameTitle: onRename })
+    await userEvent.click(screen.getByText('Тест'))
+    const input = screen.getByLabelText('Новое название разговора')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Новое имя{Enter}')
+    expect(onRename).toHaveBeenCalledWith('Новое имя')
+  })
+
+  it('Escape отменяет редактирование, onRenameTitle не зовётся', async () => {
+    const onRename = vi.fn()
+    renderCol({ onRenameTitle: onRename })
+    await userEvent.click(screen.getByText('Тест'))
+    await userEvent.keyboard('{Escape}')
+    expect(onRename).not.toHaveBeenCalled()
+    expect(screen.getByText('Тест')).toBeInTheDocument()
+  })
+
+  it('пустое имя не сохраняется', async () => {
+    const onRename = vi.fn()
+    renderCol({ onRenameTitle: onRename })
+    await userEvent.click(screen.getByText('Тест'))
+    const input = screen.getByLabelText('Новое название разговора')
+    await userEvent.clear(input)
+    await userEvent.keyboard('{Enter}')
+    expect(onRename).not.toHaveBeenCalled()
+  })
+
+  it('без onRenameTitle клик не открывает редактирование', async () => {
+    renderCol()
+    await userEvent.click(screen.getByText('Тест'))
+    expect(screen.queryByLabelText('Новое название разговора')).not.toBeInTheDocument()
+  })
+})

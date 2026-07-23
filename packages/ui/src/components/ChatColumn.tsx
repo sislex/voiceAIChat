@@ -16,6 +16,8 @@ import { copyText } from '../lib/clipboard'
 
 export interface ChatColumnProps {
   title: string
+  /** Переименовать текущий разговор (клик по заголовку в шапке). */
+  onRenameTitle?: (title: string) => void
   state: VoiceState
   messages: Message[]
   liveSegments: LiveSegment[]
@@ -64,6 +66,7 @@ export interface ChatColumnProps {
 
 export function ChatColumn({
   title,
+  onRenameTitle,
   state,
   messages,
   liveSegments,
@@ -94,6 +97,23 @@ export function ChatColumn({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [titleEditing, setTitleEditing] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
+
+  const startTitleEdit = (): void => {
+    if (!onRenameTitle) return
+    setTitleDraft(title)
+    setTitleEditing(true)
+  }
+  const commitTitleEdit = (): void => {
+    if (onRenameTitle && titleDraft.trim()) onRenameTitle(titleDraft.trim())
+    setTitleEditing(false)
+    setTitleDraft('')
+  }
+  const cancelTitleEdit = (): void => {
+    setTitleEditing(false)
+    setTitleDraft('')
+  }
 
   const copyMessage = (m: Message): void => {
     void copyText(m.text).then(() => {
@@ -130,7 +150,32 @@ export function ChatColumn({
   return (
     <main className="main">
       <header className="mhead">
-        <h1 className="mtitle">{title}</h1>
+        {titleEditing ? (
+          <input
+            className="mtitle-edit"
+            value={titleDraft}
+            autoFocus
+            aria-label="Новое название разговора"
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onBlur={commitTitleEdit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commitTitleEdit()
+              } else if (e.key === 'Escape') {
+                cancelTitleEdit()
+              }
+            }}
+          />
+        ) : (
+          <h1
+            className={onRenameTitle ? 'mtitle mtitle--editable' : 'mtitle'}
+            title={onRenameTitle ? 'Переименовать разговор' : undefined}
+            onClick={startTitleEdit}
+          >
+            {title}
+          </h1>
+        )}
         {agents.length > 0 && onChangeExecTarget && (
           <label className="exectarget" title="Где выполнять команды агента">
             <span className={`exectarget-dot ${execTarget ? 'remote' : 'server'}`} aria-hidden />
