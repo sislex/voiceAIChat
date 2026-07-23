@@ -1820,3 +1820,55 @@
     padding: 10px 12px 14px 12px;
   }
 }
+
+/* ==== Мобильные модалки: настройки и прочие — на весь экран ==== */
+@media (max-width: 768px) {
+  .ovl {
+    align-items: stretch;
+    justify-content: stretch;
+  }
+  .modal,
+  .modal.settings {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .mdhead {
+    padding: 12px 14px;
+  }
+  /* Крестик закрытия — крупнее, удобнее попадать пальцем. */
+  .xbtn {
+    font-size: 22px;
+    padding: 8px 14px;
+  }
+  /* Разделы настроек — горизонтальные вкладки сверху вместо колонки слева. */
+  .settbody {
+    flex-direction: column;
+  }
+  .settnav {
+    width: auto;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--border-soft);
+    padding: 8px 10px;
+    gap: 4px;
+  }
+  .settnav-item {
+    white-space: nowrap;
+    flex: none;
+    padding: 8px 12px;
+  }
+  .settpane {
+    padding: 12px 14px 20px 14px;
+  }
+  /* Строки настроек: подпись и контрол могут переноситься. */
+  .frow {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+}
