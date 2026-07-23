@@ -35,3 +35,10 @@ describe('контракт протокола', () => {
     expect(REST.ttsVoiceDownload('ru_RU-irina-medium')).toContain('ru_RU-irina-medium')
   })
 })
+
+describe('ходы, переживающие reconnect', () => {
+  it('содержит claude.active (снапшот активных ходов) и адресный claude.cancel', () => {
+    expect(SERVER_MESSAGE_TYPES).toContain('claude.active')
+    expect(CLIENT_MESSAGE_TYPES).toContain('claude.cancel')
+  })
+})

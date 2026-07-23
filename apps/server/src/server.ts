@@ -16,6 +16,7 @@ import { AgentRegistry } from './agents/registry.js'
 import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { createSession } from './session.js'
+import { createTurnManager } from './turns.js'
 import { ClaudeCli } from './claude/claudeCli.js'
 import { CodexCli } from './codex/codexCli.js'
 import type { LlmClient } from './claude/types.js'
@@ -182,23 +183,30 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return { downloadable, voices }
   })
 
+  // Один реестр ходов LLM на процесс: ходы переживают обрыв WS-соединения,
+  // ответ сохраняется в БД сервером, клиенты получают события broadcast'ом.
+  const turnManager = createTurnManager({
+    db,
+    claude,
+    codex,
+    resolveUpload: (id) => uploads.pathById(id),
+    agents: agentRegistry,
+    // claude спавнится на этом же хосте — loopback работает при любом HOST.
+    mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`
+  })
+
   const makeHandlers =
     opts.createWsHandlers ??
     (() =>
       createSession({
         db,
-        claude,
-        codex,
+        turns: turnManager,
         sttEngine,
         ttsEngine,
         diarization,
         modelDownload,
         downloadVoice: (id, onProgress) =>
           downloadPiperVoice(id, opts.config.piperVoicesDir, onProgress),
-        resolveUpload: (id) => uploads.pathById(id),
-        agents: agentRegistry,
-        // claude спавнится на этом же хосте — loopback работает при любом HOST.
-        mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`,
         agentsFeed: {
           list: () => {
             const online = agentRegistry.onlineIds()

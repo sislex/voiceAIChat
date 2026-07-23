@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Message, TurnMeta, VoiceState } from '@shared/types'
+import { parseQuestions } from '@shared/questions'
 import type { AgentInfo } from '@shared/agentProtocol'
 import {
   chipClass,
@@ -11,6 +12,7 @@ import {
 } from '../lib/view'
 import { Dots } from './animations'
 import { Markdown } from './Markdown'
+import { QuestionsForm } from './QuestionsForm'
 import { MessageMeta } from './MessageMeta'
 import { copyText } from '../lib/clipboard'
 
@@ -64,6 +66,8 @@ export interface ChatColumnProps {
   onChangeExecTarget?: (target: string | null) => void
   /** Имя движка для подписи ответов и статуса (Claude/Codex). */
   aiLabel?: string
+  /** Отправить собранные ответы на вопросы модели (форма под последним ответом). */
+  onAnswerQuestions?: (text: string) => void
 }
 
 export function ChatColumn({
@@ -93,7 +97,8 @@ export function ChatColumn({
   agents = [],
   execTarget = null,
   onChangeExecTarget,
-  aiLabel = 'Claude'
+  aiLabel = 'Claude',
+  onAnswerQuestions
 }: ChatColumnProps): JSX.Element {
   const [exportOpen, setExportOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -277,6 +282,11 @@ export function ChatColumn({
           {messages.map((m) => {
             const isAi = m.role === 'ai'
             const isEditing = editingId === m.id
+            // Уточняющие вопросы модели: вырезаем блок из текста; форма — только
+            // у последнего сообщения ленты (после ответа пользователя она исчезает).
+            const parsed = isAi ? parseQuestions(m.text) : null
+            const aiText = parsed ? parsed.body : m.text
+            const isLast = messages[messages.length - 1]?.id === m.id
             return (
               <div key={m.id} className={isAi ? 'msg ai' : 'msg me'}>
                 <span className={chipClass(m.role, diarization, isAi ? m.engine : undefined)}>
@@ -311,7 +321,19 @@ export function ChatColumn({
                   </div>
                 ) : isAi ? (
                   <div className="bub">
-                    <Markdown>{m.text}</Markdown>
+                    <Markdown>{aiText}</Markdown>
+                    {parsed &&
+                      (isLast && onAnswerQuestions && state === 'idle' ? (
+                        <QuestionsForm questions={parsed.questions} onSubmit={onAnswerQuestions} />
+                      ) : (
+                        <div className="qstatic" data-testid="questions-static">
+                          {parsed.questions.map((q, i) => (
+                            <p className="qstaticitem" key={i}>
+                              {q.q} <span className="qstaticopts">({q.options.join(' / ')})</span>
+                            </p>
+                          ))}
+                        </div>
+                      ))}
                   </div>
                 ) : (
                   <p className="bub">{m.text}</p>
@@ -337,7 +359,7 @@ export function ChatColumn({
                           speakingMessageId === m.id ? 'Остановить озвучку' : 'Озвучить ответ'
                         }
                         title={speakingMessageId === m.id ? 'Остановить' : 'Озвучить'}
-                        onClick={() => onSpeakMessage(m.id, m.text)}
+                        onClick={() => onSpeakMessage(m.id, aiText)}
                       >
                         {speakingMessageId === m.id ? '⏹' : '🔊'}
                       </button>

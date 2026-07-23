@@ -7,6 +7,7 @@
 // ответ — мок-пайплайн (см. mockPipeline.ts).
 
 import type { RendererApi, SttSegmentWire, SttStatus, SttUpdate, UploadInfo } from '@shared/ipc'
+import type { ActiveTurn } from '@shared/protocol'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
@@ -78,6 +79,8 @@ export interface AppState {
   consoleOpen: boolean
   /** Стримящийся ответ Claude (растёт по токенам); пусто — нет активного стрима. */
   streamingReply: string
+  /** Незавершённые ходы модели по разговорам: id → накопленный частичный текст. */
+  activeTurns: Record<string, string>
   /** Метаданные последнего завершённого хода (длительность/токены/стоимость). */
   lastTurnMeta: TurnMeta | null
   /** Подключённые MCP-серверы (read-only показ в настройках). */
@@ -152,7 +155,7 @@ export interface StoreDeps {
     verbose?: boolean
   ) => void
   /** Отмена текущего запроса к Claude (renderer → main). */
-  cancelClaude?: () => void
+  cancelClaude?: (conversationId?: string) => void
   /** Запрос статуса модели Whisper (наличие). */
   getSttStatus?: () => Promise<SttStatus>
   /** Запуск скачивания модели Whisper (renderer → main). */
@@ -201,6 +204,8 @@ export interface StoreActions {
   updateSettings(patch: Partial<Settings>): Promise<void>
   setDraft(value: string): void
   submitText(): Promise<void>
+  /** Отправить собранные ответы на вопросы модели (форма в чате) как реплику. */
+  answerQuestions(text: string): Promise<void>
   /** Отменить текущий запрос к Claude и вернуться в idle (случайно отправил). */
   cancelRequest(): void
   /** Удалить сообщение из истории (БД + лента). */
@@ -222,12 +227,20 @@ export interface StoreActions {
   applySttFinal(update: SttUpdate): void
   /** Обработать ошибку распознавания (stt:error). */
   applySttError(message: string): void
-  /** Применить фрагмент ответа Claude (claude:token). */
-  applyClaudeToken(delta: string): void
-  /** Применить завершение ответа Claude (claude:done) — фиксирует сообщение + мету + движок. */
-  applyClaudeDone(text: string, meta?: TurnMeta, engine?: LlmProvider): void
+  /** Применить фрагмент ответа Claude (claude:token); conversationId — чей ход. */
+  applyClaudeToken(delta: string, conversationId?: string): void
+  /** Применить завершение ответа Claude (claude:done); message — сообщение, сохранённое сервером. */
+  applyClaudeDone(
+    text: string,
+    meta?: TurnMeta,
+    engine?: LlmProvider,
+    message?: Message,
+    conversationId?: string
+  ): void
   /** Обработать ошибку Claude (claude:error). */
-  applyClaudeError(message: string): void
+  applyClaudeError(message: string, conversationId?: string): void
+  /** Применить снапшот активных ходов (claude:active) — восстановление стрима. */
+  applyClaudeActive(turns: ActiveTurn[]): void
   /** Скрыть баннер ошибки. */
   dismissError(): void
   /** Запустить скачивание модели Whisper. */
@@ -335,6 +348,7 @@ function initialState(): AppState {
     consoleLog: [],
     consoleOpen: true,
     streamingReply: '',
+    activeTurns: {},
     lastTurnMeta: null,
     mcpServers: [],
     loginStatus: null,
@@ -549,6 +563,21 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ messages: [...state.messages, message] })
   }
 
+  /** Добавляет в ленту сообщение, уже сохранённое сервером (без записи в БД). */
+  function appendPersisted(message: Message): void {
+    if (state.messages.some((m) => m.id === message.id)) return
+    setState({ messages: [...state.messages, message] })
+  }
+
+  /** Если у текущего разговора есть недоигранный ход — восстанавливаем его стрим. */
+  function restoreStreamIfActive(): void {
+    const id = state.activeId
+    if (!id) return
+    const partial = state.activeTurns[id]
+    if (partial === undefined || state.voice !== 'idle') return
+    setState({ streamingReply: partial, voice: 'thinking', lastTurnMeta: null })
+  }
+
   // --- TTS: сессия и очередь синтеза по предложениям (стриминг) --------------
   interface TtsSession {
     kind: 'pipeline' | 'replay'
@@ -614,14 +643,20 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Фиксация мок-ответа и переход thinking → speaking → idle (без стрима). */
-  async function finishReply(fullText: string, engine?: LlmProvider, meta?: TurnMeta): Promise<void> {
+  async function finishReply(
+    fullText: string,
+    engine?: LlmProvider,
+    meta?: TurnMeta,
+    persisted?: Message
+  ): Promise<void> {
     const text = fullText.trim()
     setState({ streamingReply: '' })
     if (!text) {
       if (state.voice === 'thinking') dispatchVoice('reset') // пустой ответ → idle
       return
     }
-    await persistMessage('ai', text, engine, meta)
+    if (persisted) appendPersisted(persisted)
+    else await persistMessage('ai', text, engine, meta)
     await refreshConversations()
     if (!dispatchVoice('reply_ready')) return // thinking → speaking
     if (autoSpeakActive()) {
@@ -655,7 +690,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   /** Отмена текущего ответа: запрос к Claude и озвучка (barge-in/смена разговора). */
   function cancelReply(): void {
-    deps.cancelClaude?.()
+    deps.cancelClaude?.(state.activeId ?? undefined)
     resetTts()
     if (state.streamingReply) setState({ streamingReply: '' })
   }
@@ -1063,7 +1098,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   function newConversation(): void {
     cancelTimers()
     stopCapture()
-    cancelReply()
+    resetTts() // ход текущего разговора не отменяем — он доиграет на сервере
     dispatchVoice('reset')
     setState({
       activeId: null,
@@ -1081,11 +1116,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function selectConversation(id: string): Promise<void> {
     cancelTimers()
     stopCapture()
-    cancelReply()
+    resetTts() // ход прежнего разговора не отменяем — он доиграет на сервере
     setState({ liveSegments: [], consoleLog: [], voice: 'idle', streamingReply: '', lastTurnMeta: null })
     const res = await api['conversations:get']({ id })
     if (res) {
       setState({ activeId: res.conversation.id, messages: res.messages })
+      restoreStreamIfActive() // у разговора есть недоигранный ход → показываем стрим
     }
   }
 
@@ -1141,6 +1177,17 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       [{ speakerId: 1, text: text || 'См. приложенные файлы.' }],
       atts.map((a) => a.id)
     )
+  }
+
+  /** Ответы формы вопросов: обычная реплика пользователя + новый ход модели. */
+  async function answerQuestions(text: string): Promise<void> {
+    const t = text.trim()
+    if (!t || state.voice !== 'idle' || !state.activeId) return
+    setState({ error: null })
+    await persistMessage('u1', t)
+    await refreshConversations()
+    if (!dispatchVoice('submit_text')) return // idle → thinking
+    beginReply([{ speakerId: 1, text: t }])
   }
 
   function cancelRequest(): void {
@@ -1276,7 +1323,16 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
    * Фрагмент ответа Claude: растим отображаемый текст и, если включён TTS,
    * нарезаем поток на предложения и озвучиваем их на лету (не дожидаясь конца).
    */
-  function applyClaudeToken(delta: string): void {
+  function applyClaudeToken(delta: string, conversationId?: string): void {
+    // Копим текст хода per-разговор — для восстановления стрима после
+    // переключения разговора или обновления страницы.
+    const convId = conversationId ?? state.activeId
+    if (convId) {
+      setState({
+        activeTurns: { ...state.activeTurns, [convId]: (state.activeTurns[convId] ?? '') + delta }
+      })
+    }
+    if (convId !== state.activeId) return // фоновый разговор — в ленту не рисуем
     if (state.voice !== 'thinking' && state.voice !== 'speaking') return
     setState({ streamingReply: state.streamingReply + delta })
     if (!autoSpeakActive()) return
@@ -1290,25 +1346,49 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Завершение ответа Claude: фиксируем сообщение; TTS дозвучивает хвост. */
-  async function applyClaudeDone(text: string, meta?: TurnMeta, engine?: LlmProvider): Promise<void> {
+  async function applyClaudeDone(
+    text: string,
+    meta?: TurnMeta,
+    engine?: LlmProvider,
+    message?: Message,
+    conversationId?: string
+  ): Promise<void> {
+    // Ход завершён — убираем из активных.
+    const convId = conversationId ?? state.activeId
+    if (convId) {
+      const { [convId]: _done, ...rest } = state.activeTurns
+      setState({ activeTurns: rest })
+    }
+    if (convId !== state.activeId) {
+      // Фоновый разговор: ответ уже сохранён сервером — обновляем только сайдбар.
+      if (message) await refreshConversations()
+      return
+    }
     // Мета хода (длительность/токены/стоимость) — показываем под последним ответом.
     if (meta && Object.keys(meta).length > 0) setState({ lastTurnMeta: meta })
     if (state.voice !== 'thinking' && state.voice !== 'speaking') {
       setState({ streamingReply: '' })
       ttsBuffer = ''
+      // Ход доиграл, пока вкладка была в idle (например, после обновления
+      // страницы) — сохранённое сервером сообщение просто добавляем в ленту.
+      if (message) {
+        appendPersisted(message)
+        await refreshConversations()
+      }
       return
     }
 
     if (!autoSpeakActive()) {
       // Без автоозвучки — единый ответ, короткий таймер speaking → idle.
-      void finishReply(text || state.streamingReply, engine, meta)
+      void finishReply(text || state.streamingReply, engine, meta, message)
       return
     }
 
     const full = (text || state.streamingReply).trim()
     setState({ streamingReply: '' })
     if (full) {
-      await persistMessage('ai', full, engine, meta)
+      if (message) appendPersisted(message)
+      else await persistMessage('ai', full, engine, meta)
       await refreshConversations()
     }
     // Дозвучиваем незавершённый хвост (закрывая незавершённый блок кода).
@@ -1329,11 +1409,23 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Ошибка Claude: показываем баннер и возвращаемся в idle. */
-  function applyClaudeError(message: string): void {
+  function applyClaudeError(message: string, conversationId?: string): void {
+    const convId = conversationId ?? state.activeId
+    if (convId) {
+      const { [convId]: _failed, ...rest } = state.activeTurns
+      setState({ activeTurns: rest })
+    }
+    if (convId !== state.activeId) return // ошибка фонового хода — текущий UI не трогаем
     console.warn('[claude] ошибка:', message)
     resetTts()
     setState({ streamingReply: '', error: message })
     if (state.voice === 'thinking' || state.voice === 'speaking') dispatchVoice('error')
+  }
+
+  /** Снапшот активных ходов при (пере)подключении WS — восстановление стрима. */
+  function applyClaudeActive(turns: ActiveTurn[]): void {
+    setState({ activeTurns: Object.fromEntries(turns.map((t) => [t.conversationId, t.partial])) })
+    restoreStreamIfActive()
   }
 
   function dismissError(): void {
@@ -1440,6 +1532,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       updateSettings,
       setDraft,
       submitText,
+      answerQuestions,
       cancelRequest,
       deleteMessage,
       editMessage,
@@ -1455,6 +1548,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applyClaudeToken,
       applyClaudeDone,
       applyClaudeError,
+      applyClaudeActive,
       dismissError,
       downloadModel,
       applyDownloadProgress,

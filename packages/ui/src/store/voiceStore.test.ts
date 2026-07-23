@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createVoiceStore, type VoiceStore } from './voiceStore'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
-import type { ClaudeLogEntry } from '@shared/types'
+import type { ClaudeLogEntry, Message } from '@shared/types'
 
 // Быстрые задержки + фейковые таймеры делают мок-пайплайн детерминированным.
 const DELAYS = { frame: 20, transcribe: 20, think: 20, speak: 20 }
@@ -1176,5 +1176,120 @@ describe('voiceStore — Проводник Codex', () => {
     // Движок переключён на Codex, чтобы следующий ход продолжил сессию.
     expect(store.getState().settings.llmProvider).toBe('codex')
     expect(spySave).toHaveBeenCalledWith(expect.objectContaining({ llmProvider: 'codex' }))
+  })
+})
+
+describe('voiceStore — ходы, переживающие обновление страницы (activeTurns)', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+  })
+
+  function makeClaudeStore(): {
+    store: VoiceStore
+    api: FakeApi
+    sendClaudePrompt: ReturnType<typeof vi.fn>
+    cancelClaude: ReturnType<typeof vi.fn>
+  } {
+    const api = createFakeApi([])
+    const sendClaudePrompt = vi.fn()
+    const cancelClaude = vi.fn()
+    const store = createVoiceStore({
+      api,
+      delays: DELAYS,
+      claudeEnabled: true,
+      sendClaudePrompt,
+      cancelClaude
+    })
+    return { store, api, sendClaudePrompt, cancelClaude }
+  }
+
+  /** Сообщение «как из БД сервера» (сервер сохраняет ответ сам). */
+  function aiMessage(conversationId: string, text: string): Message {
+    return {
+      id: `srv-${text}`,
+      conversationId,
+      role: 'ai',
+      text,
+      time: '12:00',
+      createdAt: 1,
+      engine: 'claude'
+    }
+  }
+
+  it('applyClaudeActive восстанавливает стрим активного разговора после обновления', async () => {
+    const { store } = makeClaudeStore()
+    await store.actions.init()
+    store.actions.setDraft('вопрос')
+    await store.actions.submitText()
+    const id = store.getState().activeId!
+    // «Обновление страницы»: повторный выбор разговора сбрасывает UI в idle.
+    await store.actions.selectConversation(id)
+    expect(store.getState().voice).toBe('idle')
+    // Снапшот активных ходов с сервера → стрим продолжается с накопленного места.
+    store.actions.applyClaudeActive([{ conversationId: id, partial: 'Нача' }])
+    expect(store.getState().voice).toBe('thinking')
+    expect(store.getState().streamingReply).toBe('Нача')
+    store.actions.applyClaudeToken('ло', id)
+    expect(store.getState().streamingReply).toBe('Начало')
+  })
+
+  it('done с сохранённым сервером сообщением добавляет его в ленту без повторной записи', async () => {
+    const { store, api } = makeClaudeStore()
+    const spyAdd = vi.spyOn(api, 'messages:add')
+    await store.actions.init()
+    store.actions.setDraft('вопрос')
+    await store.actions.submitText()
+    const id = store.getState().activeId!
+    spyAdd.mockClear() // submitText записал реплику пользователя — не считаем её
+    store.actions.applyClaudeToken('Привет', id)
+    store.actions.applyClaudeDone('Привет', undefined, 'claude', aiMessage(id, 'Привет'), id)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.getState().messages.some((m) => m.id === 'srv-Привет')).toBe(true)
+    expect(spyAdd).not.toHaveBeenCalled() // клиент не пишет ответ в БД сам
+    expect(store.getState().voice).toBe('speaking')
+    await vi.advanceTimersByTimeAsync(STEP)
+    expect(store.getState().voice).toBe('idle')
+  })
+
+  it('события чужого разговора копятся в activeTurns, но не трогают текущую ленту', async () => {
+    const { store, api } = makeClaudeStore()
+    const spyAdd = vi.spyOn(api, 'messages:add')
+    await store.actions.init()
+    store.actions.setDraft('вопрос')
+    await store.actions.submitText()
+    spyAdd.mockClear()
+    const before = store.getState().messages.length
+    store.actions.applyClaudeToken('фон', 'другой-разговор')
+    expect(store.getState().streamingReply).toBe('')
+    expect(store.getState().activeTurns['другой-разговор']).toBe('фон')
+    store.actions.applyClaudeDone(
+      'фон',
+      undefined,
+      'claude',
+      aiMessage('другой-разговор', 'фон'),
+      'другой-разговор'
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.getState().messages).toHaveLength(before)
+    expect(spyAdd).not.toHaveBeenCalled()
+    expect(store.getState().activeTurns['другой-разговор']).toBeUndefined()
+  })
+
+  it('переключение разговора не отменяет ход; явная отмена шлёт conversationId', async () => {
+    const { store, api, cancelClaude } = makeClaudeStore()
+    await store.actions.init()
+    store.actions.setDraft('вопрос')
+    await store.actions.submitText()
+    const first = store.getState().activeId!
+    const conv = await api['conversations:create']({ title: 'Другой' })
+    await store.actions.selectConversation(conv.id)
+    expect(cancelClaude).not.toHaveBeenCalled() // ход первого разговора жив
+    // Вернулись, ход ещё активен — стрим восстановился, отмена адресная.
+    await store.actions.selectConversation(first)
+    store.actions.applyClaudeActive([{ conversationId: first, partial: 'x' }])
+    store.actions.cancelRequest()
+    expect(cancelClaude).toHaveBeenCalledWith(first)
   })
 })

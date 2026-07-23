@@ -40,7 +40,12 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
             verbose?: boolean
           ) => window.claude.send({ conversationId, segments, attachments, verbose })
         : undefined)
-    const cancelClaude = deps.cancelClaude ?? (hasClaude ? () => window.claude.cancel() : undefined)
+    const cancelClaude =
+      deps.cancelClaude ??
+      (hasClaude
+        ? (conversationId?: string) =>
+            window.claude.cancel(conversationId ? { conversationId } : undefined)
+        : undefined)
     const hasApi = typeof window !== 'undefined' && !!window.api
     const getSttStatus =
       deps.getSttStatus ?? (hasApi ? () => window.api['stt:status']() : undefined)
@@ -106,9 +111,20 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
       unsubs.push(window.stt.onDownloadError((e) => store.actions.applyDownloadError(e.message)))
     }
     if (typeof window !== 'undefined' && window.claude) {
-      unsubs.push(window.claude.onToken((m) => store.actions.applyClaudeToken(m.delta)))
-      unsubs.push(window.claude.onDone((m) => store.actions.applyClaudeDone(m.text, m.meta, m.engine)))
-      unsubs.push(window.claude.onError((m) => store.actions.applyClaudeError(m.message)))
+      unsubs.push(
+        window.claude.onToken((m) => store.actions.applyClaudeToken(m.delta, m.conversationId))
+      )
+      unsubs.push(
+        window.claude.onDone((m) =>
+          store.actions.applyClaudeDone(m.text, m.meta, m.engine, m.message, m.conversationId)
+        )
+      )
+      unsubs.push(
+        window.claude.onError((m) => store.actions.applyClaudeError(m.message, m.conversationId))
+      )
+      if (window.claude.onActive) {
+        unsubs.push(window.claude.onActive((m) => store.actions.applyClaudeActive(m.turns)))
+      }
       unsubs.push(window.claude.onLog((m) => store.actions.applyClaudeLog(m.entry)))
     }
     if (typeof window !== 'undefined' && window.cc) {
