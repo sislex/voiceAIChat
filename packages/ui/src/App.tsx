@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
@@ -27,6 +28,8 @@ export interface AppProps {
 
 export default function App({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
   const { state, actions } = useVoiceStore({ api, now, delays })
+  // Мобильный режим: выдвинут ли сайдбар (на десктопе класс side--open не влияет).
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   useVoiceCues(state.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
   // Горячие клавиши: пробел (hold) — запись, Esc — стоп/отмена по состоянию.
@@ -59,11 +62,18 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
       data-theme={state.settings.theme}
     >
       <Sidebar
+        open={sidebarOpen}
         conversations={state.conversations}
         activeId={state.activeId}
         now={now ? now() : Date.now()}
-        onNew={actions.newConversation}
-        onPick={actions.selectConversation}
+        onNew={() => {
+          void actions.newConversation()
+          setSidebarOpen(false)
+        }}
+        onPick={(id) => {
+          void actions.selectConversation(id)
+          setSidebarOpen(false)
+        }}
         onDelete={actions.deleteConversation}
         onRename={actions.renameConversation}
         searchQuery={state.searchQuery}
@@ -72,8 +82,12 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onOpenCodexObserver={actions.openCodexObserver}
         onOpenSettings={actions.openSettings}
       />
+      {sidebarOpen && (
+        <div className="side-backdrop" aria-hidden onClick={() => setSidebarOpen(false)} />
+      )}
 
       <ChatColumn
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
         title={activeTitle}
         onRenameTitle={(t) => {
           if (state.activeId) void actions.renameConversation(state.activeId, t)
