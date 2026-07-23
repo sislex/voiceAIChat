@@ -38,6 +38,14 @@ ENV NODE_ENV=production \
     VC_DATA_DIR=/data \
     VC_WEB_DIR=/app/apps/web/dist
 
+# ca-certificates: codex — Rust-бинарь (rustls) и проверяет TLS по системному
+#   хранилищу; в slim-образе его нет → без этого запросы к chatgpt.com падают с
+#   `invalid peer certificate: UnknownIssuer`.
+# bubblewrap: песочница codex на Linux (иначе codex ругается и берёт bundled).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates bubblewrap \
+  && rm -rf /var/lib/apt/lists/*
+
 # claude/codex CLI: сервер вызывает их как бинарники `claude`/`codex` из PATH.
 # Аутентификация — через смонтированные ~/.claude и ~/.codex (см. compose).
 RUN npm i -g @anthropic-ai/claude-code @openai/codex
