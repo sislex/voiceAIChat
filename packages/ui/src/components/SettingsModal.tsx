@@ -7,7 +7,7 @@ import type {
   WhisperModel,
   WhisperModelInfo
 } from '@shared/types'
-import { CLAUDE_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
+import { CLAUDE_MODELS, CODEX_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { PermissionMode, LlmProvider } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
@@ -193,16 +193,25 @@ export function SettingsModal({
                   <div className="frow">
                     <div>
                       <p className="flab">Модель Codex</p>
-                      <p className="fsub">Через Codex CLI; пусто — модель по умолчанию из codex</p>
+                      <p className="fsub">Через Codex CLI</p>
                     </div>
-                    <input
+                    <select
                       className="sel"
-                      type="text"
                       aria-label="Модель Codex"
-                      placeholder="по умолчанию"
                       value={settings.codexModel}
-                      onChange={(e) => onChange({ codexModel: e.target.value.trim() })}
-                    />
+                      onChange={(e) => onChange({ codexModel: e.target.value })}
+                    >
+                      {/* Сохранённая модель не из пресетов — показываем отдельным пунктом. */}
+                      {settings.codexModel &&
+                        !CODEX_MODELS.some((m) => m.id === settings.codexModel) && (
+                          <option value={settings.codexModel}>{settings.codexModel}</option>
+                        )}
+                      {CODEX_MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 )}
 

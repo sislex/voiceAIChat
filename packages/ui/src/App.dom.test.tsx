@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 import { createFakeApi, type FakeApi } from './test/fakeApi'
@@ -140,6 +140,44 @@ describe('App — интеграция UI со стором и IPC', () => {
       'Claude Fable 5',
       'Claude Haiku 4.5'
     ])
+  })
+
+  it('подпись движка запечена в сообщение: смена движка не переписывает старые ответы', async () => {
+    const api = createFakeApi([])
+    // Текущий движок — Codex, но у старых ответов свои запечённые подписи.
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true, llmProvider: 'codex' })
+    const conv = await api['conversations:create']({ title: 'Смешанный чат' })
+    await api['messages:add']({ conversationId: conv.id, role: 'u1', text: 'вопрос', time: '10:00' })
+    await api['messages:add']({
+      conversationId: conv.id,
+      role: 'ai',
+      text: 'ответ codex',
+      time: '10:01',
+      engine: 'codex'
+    })
+    await api['messages:add']({
+      conversationId: conv.id,
+      role: 'ai',
+      text: 'ответ claude',
+      time: '10:02',
+      engine: 'claude'
+    })
+    await api['messages:add']({
+      conversationId: conv.id,
+      role: 'ai',
+      text: 'старый ответ',
+      time: '10:03'
+    }) // без engine → «Claude» (легаси)
+
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('ответ codex', {}, { timeout: 10_000 })
+
+    // Считаем подписи только в ленте чата (в сайдбаре есть кнопки Codex/Claude Code).
+    const chat = within(screen.getByTestId('scroll'))
+    // Ровно один ответ помечен «Codex», два — «Claude» (claude + легаси),
+    // хотя текущий движок в настройках — Codex.
+    expect(chat.getAllByText('Codex')).toHaveLength(1)
+    expect(chat.getAllByText('Claude')).toHaveLength(2)
   })
 
   it('тумблер тёмной темы меняет data-theme и сохраняется', async () => {

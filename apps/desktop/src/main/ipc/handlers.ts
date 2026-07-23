@@ -3,7 +3,13 @@ import type { IpcArg, IpcChannel, IpcResult, SttStatus, UploadInfo } from '@shar
 import type { TtsVoiceCatalog, TtsVoiceInfo, WhisperModel, WhisperModelInfo } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
 import { ccResumeMessages, ccResumeTitle, ccTimeLabel } from '@shared/cc'
+import { cxResumeMessages, cxResumeTitle, cxTimeLabel } from '@shared/codexSessions'
 import { listProjects, listSessions, readTranscript } from '../cc/ccSessions'
+import {
+  listCxProjects,
+  listCxSessions,
+  readCxTranscript
+} from '../codex/codexSessions'
 
 /**
  * Тип обработчика одного канала: получает аргумент, возвращает результат.
@@ -65,8 +71,8 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
       db.deleteConversation(id)
     },
 
-    'messages:add': ({ conversationId, role, text, time }) =>
-      db.addMessage(conversationId, role, text, time),
+    'messages:add': ({ conversationId, role, text, time, engine }) =>
+      db.addMessage(conversationId, role, text, time, engine),
 
     'messages:delete': ({ conversationId, messageId }) => {
       db.deleteMessage(conversationId, messageId)
@@ -131,6 +137,26 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
         db.addMessage(conv.id, m.role, m.text, ccTimeLabel(m.ts, now))
       }
       db.setClaudeSession(conv.id, id)
+      return { conversation: db.getConversation(conv.id)!, messages: db.listMessages(conv.id) }
+    },
+
+    'cx:projects': () => listCxProjects(),
+    'cx:sessions': ({ cwd }) => listCxSessions(cwd),
+    'cx:transcript': ({ id, limit }) => readCxTranscript(id, { limit }),
+    'cx:resume': ({ id }) => {
+      const items = readCxTranscript(id)
+      const conv = db.createConversation(cxResumeTitle(items))
+      const now = Date.now()
+      for (const m of cxResumeMessages(items)) {
+        db.addMessage(
+          conv.id,
+          m.role,
+          m.text,
+          cxTimeLabel(m.ts, now),
+          m.role === 'ai' ? 'codex' : undefined
+        )
+      }
+      db.setClaudeSession(conv.id, `codex:${id}`)
       return { conversation: db.getConversation(conv.id)!, messages: db.listMessages(conv.id) }
     }
   }

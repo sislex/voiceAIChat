@@ -3,6 +3,7 @@ import type { Message, TurnMeta, VoiceState } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
 import {
   chipClass,
+  engineLabel,
   formatTurnMeta,
   speakerName,
   statusBadge,
@@ -56,6 +57,8 @@ export interface ChatColumnProps {
   execTarget?: string | null
   /** Сменить цель выполнения команд. */
   onChangeExecTarget?: (target: string | null) => void
+  /** Имя движка для подписи ответов и статуса (Claude/Codex). */
+  aiLabel?: string
 }
 
 export function ChatColumn({
@@ -82,7 +85,8 @@ export function ChatColumn({
   voiceBar,
   agents = [],
   execTarget = null,
-  onChangeExecTarget
+  onChangeExecTarget,
+  aiLabel = 'Claude'
 }: ChatColumnProps): JSX.Element {
   const [exportOpen, setExportOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -146,7 +150,7 @@ export function ChatColumn({
           </label>
         )}
         <span className="mhead-right">
-          <span className="badge">{statusBadge(state)}</span>
+          <span className="badge">{statusBadge(state, aiLabel)}</span>
           {onExport && messages.length > 0 && (
             <span className="exportwrap">
               <button
@@ -217,7 +221,7 @@ export function ChatColumn({
             return (
               <div key={m.id} className={isAi ? 'msg ai' : 'msg me'}>
                 <span className={chipClass(m.role, diarization)}>
-                  {speakerName(m.role, diarization)}
+                  {speakerName(m.role, diarization, isAi ? engineLabel(m.engine) : aiLabel)}
                 </span>
                 {isEditing ? (
                   <div className="editwrap">
@@ -333,13 +337,13 @@ export function ChatColumn({
           {isThinking && (
             <div className="think" data-testid="think">
               <Dots />
-              Claude обрабатывает запрос…
+              {aiLabel} обрабатывает запрос…
             </div>
           )}
 
           {hasStream && (
             <div className="msg ai" data-testid="streaming">
-              <span className={chipClass('ai', diarization)}>{speakerName('ai', diarization)}</span>
+              <span className={chipClass('ai', diarization)}>{speakerName('ai', diarization, aiLabel)}</span>
               <div className="bub">
                 <Markdown>{streamingReply}</Markdown>
               </div>

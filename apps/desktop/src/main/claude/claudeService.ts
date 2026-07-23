@@ -46,7 +46,8 @@ export function createClaudeService(deps: ClaudeServiceDeps): ClaudeService {
       {
         onSession: (sid) => deps.db.setClaudeSession(conversationId, sid),
         onDelta: (delta) => deps.send('claude:token', { conversationId, delta }),
-        onDone: (text, meta) => deps.send('claude:done', { conversationId, text, meta }),
+        onDone: (text, meta) =>
+          deps.send('claude:done', { conversationId, text, meta, engine: 'claude' }),
         onError: (message) => deps.send('claude:error', { conversationId, message }),
         // Режим консоли: активность агента шлём только если клиент попросил.
         onActivity: payload.verbose

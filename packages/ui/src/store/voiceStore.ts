@@ -10,10 +10,12 @@ import type { RendererApi, SttSegmentWire, SttStatus, SttUpdate, UploadInfo } fr
 import type { McpServer } from '@shared/mcp'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
 import type { CcProject, CcSession, CcItem } from '@shared/cc'
+import type { CxProject, CxSession, CxItem } from '@shared/codexSessions'
 import type {
   CatalogVoice,
   ClaudeLogEntry,
   Conversation,
+  LlmProvider,
   Message,
   MessageRole,
   Settings,
@@ -90,6 +92,18 @@ export interface AppState {
   ccProjectSlug: string | null
   /** id выбранной сессии (null — не выбрана). */
   ccSessionId: string | null
+  /** Открыт ли Проводник Codex. */
+  cxOpen: boolean
+  /** «Проекты» Codex (cwd-группы сессий ~/.codex/sessions). */
+  cxProjects: CxProject[]
+  /** Сессии выбранного проекта Codex. */
+  cxSessions: CxSession[]
+  /** Транскрипт выбранной сессии Codex. */
+  cxTranscript: CxItem[]
+  /** cwd выбранного проекта Codex (null — не выбран). */
+  cxProjectCwd: string | null
+  /** id выбранной сессии Codex (null — не выбрана). */
+  cxSessionId: string | null
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
   speakingMessageId: string | null
   /** Доступна ли озвучка (кнопка ▶ на ответах). */
@@ -156,6 +170,10 @@ export interface StoreDeps {
   ccTailStart?: (slug: string, id: string) => void
   /** Остановить live-tail. */
   ccTailStop?: () => void
+  /** Начать live-tail сессии Codex (renderer → main/ws). */
+  cxTailStart?: (id: string) => void
+  /** Остановить live-tail Codex. */
+  cxTailStop?: () => void
 }
 
 /** Действия, дергаемые из UI. Все асинхронные операции инкапсулированы здесь. */
@@ -200,8 +218,8 @@ export interface StoreActions {
   applySttError(message: string): void
   /** Применить фрагмент ответа Claude (claude:token). */
   applyClaudeToken(delta: string): void
-  /** Применить завершение ответа Claude (claude:done) — фиксирует сообщение + мету. */
-  applyClaudeDone(text: string, meta?: TurnMeta): void
+  /** Применить завершение ответа Claude (claude:done) — фиксирует сообщение + мету + движок. */
+  applyClaudeDone(text: string, meta?: TurnMeta, engine?: LlmProvider): void
   /** Обработать ошибку Claude (claude:error). */
   applyClaudeError(message: string): void
   /** Скрыть баннер ошибки. */
@@ -262,6 +280,18 @@ export interface StoreActions {
   resumeCcSession(slug: string, id: string): Promise<void>
   /** Добавить пришедшие по live-tail записи в транскрипт. */
   applyCcTailItems(items: CcItem[]): void
+  /** Открыть Проводник Codex (грузит проекты). */
+  openCodexObserver(): Promise<void>
+  /** Закрыть Проводник Codex (останавливает live-tail). */
+  closeCodexObserver(): void
+  /** Выбрать проект Codex по cwd (грузит сессии). */
+  selectCxProject(cwd: string): Promise<void>
+  /** Выбрать сессию Codex (грузит транскрипт + запускает live-tail). */
+  selectCxSession(id: string): Promise<void>
+  /** Продолжить сессию Codex: создать разговор с импортом истории и переключить движок на Codex. */
+  resumeCxSession(id: string): Promise<void>
+  /** Добавить пришедшие по live-tail записи в транскрипт Codex. */
+  applyCxTailItems(items: CxItem[]): void
   /** Прогресс скачивания голоса (tts:voiceProgress). */
   applyVoiceProgress(id: string, percent: number): void
   /** Голос скачан (tts:voiceDone) — обновляет списки. */
@@ -308,6 +338,12 @@ function initialState(): AppState {
     ccTranscript: [],
     ccProjectSlug: null,
     ccSessionId: null,
+    cxOpen: false,
+    cxProjects: [],
+    cxSessions: [],
+    cxTranscript: [],
+    cxProjectCwd: null,
+    cxSessionId: null,
     speakingMessageId: null,
     ttsAvailable: false,
     error: null,
@@ -484,14 +520,19 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Персист сообщения в БД и добавление в ленту. */
-  async function persistMessage(role: MessageRole, text: string): Promise<void> {
+  async function persistMessage(
+    role: MessageRole,
+    text: string,
+    engine?: LlmProvider
+  ): Promise<void> {
     const conversationId = state.activeId
     if (!conversationId) return
     const message = await api['messages:add']({
       conversationId,
       role,
       text,
-      time: formatTime(now())
+      time: formatTime(now()),
+      ...(engine ? { engine } : {})
     })
     setState({ messages: [...state.messages, message] })
   }
@@ -561,14 +602,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Фиксация мок-ответа и переход thinking → speaking → idle (без стрима). */
-  async function finishReply(fullText: string): Promise<void> {
+  async function finishReply(fullText: string, engine?: LlmProvider): Promise<void> {
     const text = fullText.trim()
     setState({ streamingReply: '' })
     if (!text) {
       if (state.voice === 'thinking') dispatchVoice('reset') // пустой ответ → idle
       return
     }
-    await persistMessage('ai', text)
+    await persistMessage('ai', text, engine)
     await refreshConversations()
     if (!dispatchVoice('reply_ready')) return // thinking → speaking
     if (autoSpeakActive()) {
@@ -854,6 +895,78 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (items.length === 0) return
     const next = [...state.ccTranscript, ...items]
     setState({ ccTranscript: next.length > CC_TRANSCRIPT_CAP ? next.slice(-CC_TRANSCRIPT_CAP) : next })
+  }
+
+  // --- Проводник Codex (read-only + live-tail) -----------------------------
+  async function openCodexObserver(): Promise<void> {
+    setState({ cxOpen: true })
+    if (!api['cx:projects']) return
+    try {
+      setState({ cxProjects: await api['cx:projects']() })
+    } catch (err) {
+      console.warn('[cx] не удалось получить проекты', err)
+    }
+  }
+
+  function closeCodexObserver(): void {
+    deps.cxTailStop?.()
+    setState({
+      cxOpen: false,
+      cxProjectCwd: null,
+      cxSessionId: null,
+      cxSessions: [],
+      cxTranscript: []
+    })
+  }
+
+  async function selectCxProject(cwd: string): Promise<void> {
+    deps.cxTailStop?.()
+    setState({ cxProjectCwd: cwd, cxSessionId: null, cxSessions: [], cxTranscript: [] })
+    try {
+      setState({ cxSessions: await api['cx:sessions']({ cwd }) })
+    } catch (err) {
+      console.warn('[cx] не удалось получить сессии', err)
+    }
+  }
+
+  async function selectCxSession(id: string): Promise<void> {
+    deps.cxTailStop?.()
+    setState({ cxSessionId: id, cxTranscript: [] })
+    try {
+      setState({ cxTranscript: await api['cx:transcript']({ id }) })
+    } catch (err) {
+      console.warn('[cx] не удалось получить транскрипт', err)
+    }
+    deps.cxTailStart?.(id) // live-слежение за активной сессией
+  }
+
+  /** Продолжить сессию Codex: импорт истории + привязка session-id + переключение движка на Codex. */
+  async function resumeCxSession(id: string): Promise<void> {
+    if (!api['cx:resume']) return
+    try {
+      const { conversation, messages } = await api['cx:resume']({ id })
+      deps.cxTailStop?.()
+      setState({
+        activeId: conversation.id,
+        messages,
+        cxOpen: false,
+        cxProjectCwd: null,
+        cxSessionId: null,
+        cxSessions: [],
+        cxTranscript: []
+      })
+      // Следующий ход должен продолжить именно через Codex.
+      if (state.settings.llmProvider !== 'codex') await updateSettings({ llmProvider: 'codex' })
+      await refreshConversations()
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  function applyCxTailItems(items: CxItem[]): void {
+    if (items.length === 0) return
+    const next = [...state.cxTranscript, ...items]
+    setState({ cxTranscript: next.length > CC_TRANSCRIPT_CAP ? next.slice(-CC_TRANSCRIPT_CAP) : next })
   }
 
   function downloadVoice(id: string): void {
@@ -1147,7 +1260,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Завершение ответа Claude: фиксируем сообщение; TTS дозвучивает хвост. */
-  async function applyClaudeDone(text: string, meta?: TurnMeta): Promise<void> {
+  async function applyClaudeDone(text: string, meta?: TurnMeta, engine?: LlmProvider): Promise<void> {
     // Мета хода (длительность/токены/стоимость) — показываем под последним ответом.
     if (meta && Object.keys(meta).length > 0) setState({ lastTurnMeta: meta })
     if (state.voice !== 'thinking' && state.voice !== 'speaking') {
@@ -1158,14 +1271,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
     if (!autoSpeakActive()) {
       // Без автоозвучки — единый ответ, короткий таймер speaking → idle.
-      void finishReply(text || state.streamingReply)
+      void finishReply(text || state.streamingReply, engine)
       return
     }
 
     const full = (text || state.streamingReply).trim()
     setState({ streamingReply: '' })
     if (full) {
-      await persistMessage('ai', full)
+      await persistMessage('ai', full, engine)
       await refreshConversations()
     }
     // Дозвучиваем незавершённый хвост (закрывая незавершённый блок кода).
@@ -1337,6 +1450,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       selectCcSession,
       resumeCcSession,
       applyCcTailItems,
+      openCodexObserver,
+      closeCodexObserver,
+      selectCxProject,
+      selectCxSession,
+      resumeCxSession,
+      applyCxTailItems,
       applyVoiceProgress,
       applyVoiceDone,
       applyVoiceError,

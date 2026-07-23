@@ -19,6 +19,7 @@ import type { DownloadEvent } from './stt/downloadManager.js'
 import type { TtsEngine } from './tts/types.js'
 import { createTtsSession, type TtsSession } from './tts/ttsSession.js'
 import { watchTranscript } from './cc/ccSessions.js'
+import { watchCxTranscript } from './codex/codexSessions.js'
 
 export interface SessionDeps {
   db: VoiceChatDb
@@ -93,6 +94,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubDownload: (() => void) | null = null
   let unsubAgents: (() => void) | null = null
   let ccTailStop: (() => void) | null = null
+  let cxTailStop: (() => void) | null = null
 
   function pcmFromBinary(data: Buffer): Int16Array {
     const copy = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
@@ -166,7 +168,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
             {
               onSession: (sid) => deps.db.setClaudeSession(conversationId, `${provider}:${sid}`),
               onDelta: (delta) => ctx.send({ t: 'claude.token', conversationId, delta }),
-              onDone: (text, meta) => ctx.send({ t: 'claude.done', conversationId, text, meta }),
+              onDone: (text, meta) =>
+                ctx.send({ t: 'claude.done', conversationId, text, meta, engine: provider }),
               onError: (message) => ctx.send({ t: 'claude.error', conversationId, message }),
               // Режим консоли: активность агента шлём только если клиент попросил.
               onActivity: msg.verbose
@@ -237,6 +240,17 @@ export function createSession(deps: SessionDeps): WsHandlers {
           ccTailStop = null
           break
 
+        case 'cx.tail.start': {
+          cxTailStop?.()
+          const { id } = msg
+          cxTailStop = watchCxTranscript(id, (items) => ctx.send({ t: 'cx.tail', id, items }))
+          break
+        }
+        case 'cx.tail.stop':
+          cxTailStop?.()
+          cxTailStop = null
+          break
+
         default:
           break
       }
@@ -257,6 +271,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubAgents = null
       ccTailStop?.()
       ccTailStop = null
+      cxTailStop?.()
+      cxTailStop = null
     }
   }
 }

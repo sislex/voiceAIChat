@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS messages (
   text            TEXT NOT NULL,
   time            TEXT NOT NULL,
   created_at      INTEGER NOT NULL,
+  engine          TEXT,
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 
