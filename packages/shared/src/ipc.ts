@@ -7,6 +7,7 @@ import type {
   LlmProvider,
   Message,
   MessageRole,
+  SessionUser,
   Settings,
   TtsVoiceCatalog,
   TtsVoiceInfo,
@@ -304,6 +305,16 @@ export interface RendererSttBridge {
  */
 export interface RendererAgentsBridge {
   onChange(cb: (agents: AgentInfo[]) => void): () => void
+}
+
+/**
+ * Мост сессии (только web): вход/выход/текущий пользователь. В desktop отсутствует
+ * (аутентификация приложения не нужна) — UI трактует это как «без логина».
+ */
+export interface RendererSessionBridge {
+  login(creds: { name: string; password: string }): Promise<SessionUser | null>
+  me(): Promise<SessionUser | null>
+  logout(): Promise<void>
 }
 
 /**

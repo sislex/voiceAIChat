@@ -8,6 +8,7 @@ import type {
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
+  RendererSessionBridge,
   RendererSttBridge,
   RendererTtsBridge
 } from '@shared/ipc'
@@ -22,6 +23,7 @@ declare global {
     cc: RendererCcBridge
     codex: RendererCodexBridge
     agents?: RendererAgentsBridge
+    session?: RendererSessionBridge
   }
 }
 

@@ -12,6 +12,9 @@ import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
 import { registerAgentRoutes } from './routes/agents.js'
+import { registerAuth } from './users/auth.js'
+import { loadOrCreateSecret, verifyToken } from './users/accounts.js'
+import type { SessionUser } from '@voicechat/shared'
 import { AgentRegistry } from './agents/registry.js'
 import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
@@ -51,6 +54,8 @@ export interface BuildOptions {
   ttsEngine?: TtsEngine
   /** Переопределение обработчиков WS (для тестов). Иначе — реальная сессия. */
   createWsHandlers?: () => WsHandlers
+  /** Секрет подписи токенов сессии (для тестов). Иначе — из dataDir/эфемерный. */
+  sessionSecret?: string
 }
 
 function makeTtsEngine(config: ServerConfig): TtsEngine {
@@ -107,6 +112,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       return new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db'))
     })()
 
+  // Аутентификация приложения (многопользовательский режим web): секрет подписи
+  // токенов из dataDir (переживает рестарт); в тестах (opts.db) — эфемерный, без диска.
+  const sessionSecret =
+    opts.sessionSecret ??
+    (opts.db ? randomBytes(32).toString('hex') : loadOrCreateSecret(opts.config.dataDir))
+  registerAuth(app, sessionSecret)
+
   app.get(REST.health, async (): Promise<HealthResponse> => ({ ok: true, version: VERSION }))
 
   await registerRest(app, db)
@@ -120,8 +132,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const mcpSecret = randomBytes(16).toString('hex')
   registerRemoteBashMcp(app, agentRegistry, mcpSecret)
 
+  // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
+  // её выбор берём у канонического пользователя (admin), а не per-user.
+  const machineWhisperModel = (): WhisperModel => db.getSettings('admin').whisperModel
+
   app.get(REST.sttStatus, async (): Promise<SttStatus> => {
-    const model = db.getSettings().whisperModel
+    const model = machineWhisperModel()
     return { present: isModelPresent(opts.config.modelsDir, model, { existsSync, statSync }), model }
   })
 
@@ -147,7 +163,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     new WhisperEngine({
       whisperCli: opts.config.whisperCli,
       modelsDir: opts.config.modelsDir,
-      getModel: () => db.getSettings().whisperModel
+      getModel: () => machineWhisperModel()
     })
   const ttsEngine = opts.ttsEngine ?? makeTtsEngine(opts.config)
   const diarization = new StubDiarizationEngine()
@@ -155,7 +171,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Один менеджер загрузки модели на процесс: переживает переподключения клиентов,
   // не рестартится при повторном клике, отдаёт текущий прогресс новым соединениям.
   const modelDownload = new ModelDownloadManager((onProgress) =>
-    downloadModel(db.getSettings().whisperModel, opts.config.modelsDir, onProgress)
+    downloadModel(machineWhisperModel(), opts.config.modelsDir, onProgress)
   )
 
   // Загрузка вложений: клиент шлёт base64, сервер сохраняет файл и возвращает id.
@@ -195,30 +211,42 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`
   })
 
-  const makeHandlers =
-    opts.createWsHandlers ??
-    (() =>
-      createSession({
-        db,
-        turns: turnManager,
-        sttEngine,
-        ttsEngine,
-        diarization,
-        modelDownload,
-        downloadVoice: (id, onProgress) =>
-          downloadPiperVoice(id, opts.config.piperVoicesDir, onProgress),
-        agentsFeed: {
-          list: () => {
-            const online = agentRegistry.onlineIds()
-            return db.listAgents().map((a) => ({ ...a, online: online.has(a.id) }))
-          },
-          subscribe: (cb) => agentRegistry.onChange(cb)
-        }
-      }))
+  const makeHandlers = (user: SessionUser): WsHandlers =>
+    createSession({
+      db,
+      turns: turnManager,
+      user,
+      sttEngine,
+      ttsEngine,
+      diarization,
+      modelDownload,
+      downloadVoice: (id, onProgress) =>
+        downloadPiperVoice(id, opts.config.piperVoicesDir, onProgress),
+      agentsFeed: {
+        // Список машин — только этого пользователя (изоляция).
+        list: () => {
+          const online = agentRegistry.onlineIds()
+          return db.listAgents(user.name).map((a) => ({ ...a, online: online.has(a.id) }))
+        },
+        subscribe: (cb) => agentRegistry.onChange(cb)
+      }
+    })
 
   await app.register(async (scoped) => {
-    scoped.get('/ws', { websocket: true }, (socket) => {
-      attachWs(socket, makeHandlers())
+    scoped.get('/ws', { websocket: true }, (socket, request) => {
+      // Тестовый оверрайд обработчиков — без аутентификации.
+      if (opts.createWsHandlers) {
+        attachWs(socket, opts.createWsHandlers())
+        return
+      }
+      // Аутентификация WS: токен в query (?token=…). Нет/неверный → закрываем.
+      const token = (request.query as { token?: string } | undefined)?.token
+      const user = verifyToken(token, sessionSecret)
+      if (!user) {
+        socket.close()
+        return
+      }
+      attachWs(socket, makeHandlers(user))
     })
     scoped.get('/agent', { websocket: true }, (socket) => {
       attachAgentWs(socket, db, agentRegistry)

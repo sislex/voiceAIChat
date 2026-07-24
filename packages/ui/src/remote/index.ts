@@ -9,11 +9,15 @@ import type {
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
+  RendererSessionBridge,
   RendererSttBridge,
   RendererTtsBridge
 } from '@shared/ipc'
+import { REST } from '@shared/protocol'
+import type { SessionUser } from '@shared/types'
 import { WsClient } from './wsClient'
 import { createHttpApi } from './httpApi'
+import { getToken, setToken } from './session'
 import { base64ToArrayBuffer } from './decode'
 
 function makeAudioBridge(ws: WsClient): RendererAudioBridge {
@@ -98,6 +102,39 @@ function makeAgentsBridge(ws: WsClient): RendererAgentsBridge {
   return { onChange: (cb) => ws.on('agents', (m) => cb(m.agents)) }
 }
 
+/** Мост сессии поверх REST: логин сохраняет токен и перезапускает WS с ним. */
+function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessionBridge {
+  const authHeaders = (): Record<string, string> => {
+    const t = getToken()
+    return t ? { authorization: `Bearer ${t}` } : {}
+  }
+  return {
+    login: async ({ name, password }) => {
+      const res = await fetch(httpBase + REST.sessionLogin, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, password })
+      })
+      if (!res.ok) return null
+      const { token, user } = (await res.json()) as { token: string; user: SessionUser }
+      setToken(token)
+      ws.reconnect() // теперь есть токен — поднимаем WS-соединение
+      return user
+    },
+    me: async () => {
+      if (!getToken()) return null
+      const res = await fetch(httpBase + REST.sessionMe, { headers: authHeaders() })
+      if (!res.ok) return null
+      const { user } = (await res.json()) as { user: SessionUser | null }
+      return user ?? null
+    },
+    logout: async () => {
+      setToken(null)
+      ws.reconnect() // рвём авторизованное соединение
+    }
+  }
+}
+
 /** http→ws, same-origin если base пустой. */
 function toWsBase(httpBase: string): string {
   if (httpBase) return httpBase.replace(/^http/, 'ws')
@@ -115,7 +152,8 @@ export function installRemoteBridges(serverHttp: string): void {
   if (ws) return
   const httpBase = serverHttp.replace(/\/$/, '')
   const wsBase = toWsBase(httpBase)
-  ws = new WsClient(`${wsBase}/ws`)
+  // WS дозванивается только при наличии токена сессии (getToken) — до логина ждём.
+  ws = new WsClient(`${wsBase}/ws`, getToken)
   window.api = createHttpApi(httpBase, `${wsBase}/agent`)
   window.audio = makeAudioBridge(ws)
   window.stt = makeSttBridge(ws)
@@ -124,4 +162,5 @@ export function installRemoteBridges(serverHttp: string): void {
   window.cc = makeCcBridge(ws)
   window.codex = makeCodexBridge(ws)
   window.agents = makeAgentsBridge(ws)
+  window.session = makeSessionBridge(httpBase, ws)
 }

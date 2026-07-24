@@ -5,7 +5,11 @@ import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
+import { signToken } from '../users/accounts.js'
 import type { TtsEngine } from './types.js'
+
+const SECRET = 'test-secret'
+const TOKEN = signToken({ name: 'admin', role: 'admin' }, SECRET)
 
 const mockTts: TtsEngine = {
   async synthesize(text) {
@@ -29,7 +33,12 @@ let port: number
 
 beforeEach(async () => {
   db = new VoiceChatDb(':memory:')
-  app = await buildServer({ config: loadConfig({ PORT: '0' }), db, ttsEngine: mockTts })
+  app = await buildServer({
+    config: loadConfig({ PORT: '0' }),
+    db,
+    ttsEngine: mockTts,
+    sessionSecret: SECRET
+  })
   await app.listen({ port: 0, host: '127.0.0.1' })
   port = (app.server.address() as AddressInfo).port
 })
@@ -40,7 +49,7 @@ afterEach(async () => {
 
 describe('WS: TTS-синтез + REST голоса', () => {
   it('tts.speak → tts.audio (base64 WAV)', async () => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`)
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${TOKEN}`)
     await new Promise((r) => ws.on('open', r))
     const audio = new Promise<{ audio: string }>((resolve) => {
       ws.on('message', (d) => {
@@ -57,7 +66,11 @@ describe('WS: TTS-синтез + REST голоса', () => {
   })
 
   it('GET /api/tts/voices отдаёт голоса движка', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/tts/voices' })
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/tts/voices',
+      headers: { authorization: `Bearer ${TOKEN}` }
+    })
     expect(res.json()).toEqual([{ id: 'ru_RU-irina-medium', label: 'Irina' }])
   })
 })

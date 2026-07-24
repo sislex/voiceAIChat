@@ -22,7 +22,10 @@ export interface DbDeps {
   now?: () => number
 }
 
-const SETTINGS_KEY = 'app'
+/** Ключ настроек per-user в key-value таблице settings (`app:<userId>`). */
+function settingsKey(userId: string): string {
+  return `app:${userId}`
+}
 
 interface ConversationRow {
   id: string
@@ -39,6 +42,7 @@ interface AgentRow {
   created_at: number
   last_seen: number | null
   policy: string | null
+  user_id: string | null
 }
 
 /** Запись машины-агента из БД (онлайн-статус добавляется реестром). */
@@ -48,6 +52,8 @@ export interface AgentRecord {
   createdAt: number
   lastSeen: number | null
   policy: AgentPolicy
+  /** Владелец машины (пользователь, создавший её). */
+  userId: string | null
 }
 
 /** Парсит JSON-политику из БД с откатом к дефолту (терпит старые/битые строки). */
@@ -114,6 +120,15 @@ export class VoiceChatDb {
     if (!agentCols.some((c) => c.name === 'policy')) {
       this.db.exec(`ALTER TABLE agents ADD COLUMN policy TEXT`)
     }
+    if (!agentCols.some((c) => c.name === 'user_id')) {
+      this.db.exec(`ALTER TABLE agents ADD COLUMN user_id TEXT`)
+    }
+    const convCols = this.db
+      .prepare(`PRAGMA table_info(conversations)`)
+      .all() as Array<{ name: string }>
+    if (!convCols.some((c) => c.name === 'user_id')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN user_id TEXT`)
+    }
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN engine TEXT`)
@@ -121,6 +136,10 @@ export class VoiceChatDb {
     if (!msgCols.some((c) => c.name === 'meta')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN meta TEXT`)
     }
+    // Многопользовательский режим: строки без владельца (legacy однопользовательских
+    // данных) удаляем — чистый старт. Идемпотентно: после первого прогона NULL нет.
+    this.db.exec(`DELETE FROM conversations WHERE user_id IS NULL`) // messages/speakers — по CASCADE
+    this.db.exec(`DELETE FROM agents WHERE user_id IS NULL`)
   }
 
   close(): void {
@@ -129,33 +148,34 @@ export class VoiceChatDb {
 
   // ---- Conversations ----------------------------------------------------
 
-  createConversation(title = 'Новый разговор'): Conversation {
+  createConversation(userId: string, title = 'Новый разговор'): Conversation {
     const id = this.newId()
     const ts = this.now()
     this.db
       .prepare(
-        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id)
-         VALUES (?, ?, ?, ?, NULL)`
+        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id)
+         VALUES (?, ?, ?, ?, NULL, ?)`
       )
-      .run(id, title, ts, ts)
+      .run(id, title, ts, ts, userId)
     return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null }
   }
 
-  listConversations(): Conversation[] {
+  listConversations(userId: string): Conversation[] {
     const rows = this.db
       .prepare(
         `SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count
          FROM conversations c
+         WHERE c.user_id = ?
          ORDER BY c.updated_at DESC`
       )
-      .all() as Array<ConversationRow & { message_count: number }>
+      .all(userId) as Array<ConversationRow & { message_count: number }>
     return rows.map((r) => this.mapConversation(r, r.message_count))
   }
 
-  getConversation(id: string): Conversation | null {
+  getConversation(userId: string, id: string): Conversation | null {
     const row = this.db
-      .prepare(`SELECT * FROM conversations WHERE id = ?`)
-      .get(id) as ConversationRow | undefined
+      .prepare(`SELECT * FROM conversations WHERE id = ? AND user_id = ?`)
+      .get(id, userId) as ConversationRow | undefined
     if (!row) return null
     const count = (
       this.db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?`).get(id) as {
@@ -165,44 +185,54 @@ export class VoiceChatDb {
     return this.mapConversation(row, count)
   }
 
+  /** Владеет ли пользователь разговором (для проверок при работе с сообщениями). */
+  private ownsConversation(userId: string, conversationId: string): boolean {
+    const row = this.db
+      .prepare(`SELECT 1 FROM conversations WHERE id = ? AND user_id = ?`)
+      .get(conversationId, userId)
+    return row !== undefined
+  }
+
   /** Поиск по названию разговора и тексту его сообщений (регистронезависимо). */
-  searchConversations(query: string): Conversation[] {
+  searchConversations(userId: string, query: string): Conversation[] {
     const q = query.trim()
-    if (!q) return this.listConversations()
+    if (!q) return this.listConversations(userId)
     const like = `%${q.toLowerCase().replace(/[%_\\]/g, (ch) => `\\${ch}`)}%`
     const rows = this.db
       .prepare(
         `SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count
          FROM conversations c
-         WHERE ulower(c.title) LIKE ? ESCAPE '\\'
+         WHERE c.user_id = ?
+           AND (ulower(c.title) LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM messages m
-                       WHERE m.conversation_id = c.id AND ulower(m.text) LIKE ? ESCAPE '\\')
+                       WHERE m.conversation_id = c.id AND ulower(m.text) LIKE ? ESCAPE '\\'))
          ORDER BY c.updated_at DESC`
       )
-      .all(like, like) as Array<ConversationRow & { message_count: number }>
+      .all(userId, like, like) as Array<ConversationRow & { message_count: number }>
     return rows.map((r) => this.mapConversation(r, r.message_count))
   }
 
-  renameConversation(id: string, title: string): void {
+  renameConversation(userId: string, id: string, title: string): void {
     this.db
-      .prepare(`UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?`)
-      .run(title, this.now(), id)
+      .prepare(`UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?`)
+      .run(title, this.now(), id, userId)
   }
 
-  deleteConversation(id: string): void {
+  deleteConversation(userId: string, id: string): void {
     // ON DELETE CASCADE удалит сообщения и спикеров.
-    this.db.prepare(`DELETE FROM conversations WHERE id = ?`).run(id)
+    this.db.prepare(`DELETE FROM conversations WHERE id = ? AND user_id = ?`).run(id, userId)
   }
 
-  setClaudeSession(id: string, sessionId: string | null): void {
+  setClaudeSession(userId: string, id: string, sessionId: string | null): void {
     this.db
-      .prepare(`UPDATE conversations SET claude_session_id = ? WHERE id = ?`)
-      .run(sessionId, id)
+      .prepare(`UPDATE conversations SET claude_session_id = ? WHERE id = ? AND user_id = ?`)
+      .run(sessionId, id, userId)
   }
 
   // ---- Messages ---------------------------------------------------------
 
   addMessage(
+    userId: string,
     conversationId: string,
     role: MessageRole,
     text: string,
@@ -210,6 +240,9 @@ export class VoiceChatDb {
     engine?: LlmProvider,
     meta?: TurnMeta
   ): Message {
+    if (!this.ownsConversation(userId, conversationId)) {
+      throw new Error(`Разговор ${conversationId} не принадлежит пользователю`)
+    }
     const id = this.newId()
     const createdAt = this.now()
     const insert = this.db.prepare(
@@ -234,14 +267,16 @@ export class VoiceChatDb {
     }
   }
 
-  /** Удаляет одно сообщение по id (в рамках разговора). */
-  deleteMessage(conversationId: string, messageId: string): void {
+  /** Удаляет одно сообщение по id (в рамках разговора пользователя). */
+  deleteMessage(userId: string, conversationId: string, messageId: string): void {
+    if (!this.ownsConversation(userId, conversationId)) return
     this.db
       .prepare(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`)
       .run(messageId, conversationId)
   }
 
-  listMessages(conversationId: string): Message[] {
+  listMessages(userId: string, conversationId: string): Message[] {
+    if (!this.ownsConversation(userId, conversationId)) return []
     const rows = this.db
       .prepare(
         `SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, id ASC`
@@ -261,10 +296,10 @@ export class VoiceChatDb {
 
   // ---- Settings ---------------------------------------------------------
 
-  getSettings(): Settings {
-    const row = this.db.prepare(`SELECT value FROM settings WHERE key = ?`).get(SETTINGS_KEY) as
-      | { value: string }
-      | undefined
+  getSettings(userId: string): Settings {
+    const row = this.db
+      .prepare(`SELECT value FROM settings WHERE key = ?`)
+      .get(settingsKey(userId)) as { value: string } | undefined
     if (!row) return { ...DEFAULT_SETTINGS }
     try {
       // Мержим с дефолтами, чтобы новые поля не ломали старый конфиг.
@@ -274,27 +309,27 @@ export class VoiceChatDb {
     }
   }
 
-  saveSettings(settings: Settings): void {
+  saveSettings(userId: string, settings: Settings): void {
     this.db
       .prepare(
         `INSERT INTO settings (key, value) VALUES (?, ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`
       )
-      .run(SETTINGS_KEY, JSON.stringify(settings))
+      .run(settingsKey(userId), JSON.stringify(settings))
   }
 
   // ---- Agents (машины для удалённого выполнения команд) ------------------
 
-  /** Создаёт машину-агента; возвращает токен открытым текстом (единственный раз). */
-  createAgent(name: string): AgentCreated {
+  /** Создаёт машину-агента пользователя; возвращает токен открытым текстом (раз). */
+  createAgent(userId: string, name: string): AgentCreated {
     const id = this.newId()
     const token = randomBytes(24).toString('hex')
     this.db
       .prepare(
-        `INSERT INTO agents (id, name, token_hash, created_at, last_seen, policy)
-         VALUES (?, ?, ?, ?, NULL, ?)`
+        `INSERT INTO agents (id, name, token_hash, created_at, last_seen, policy, user_id)
+         VALUES (?, ?, ?, ?, NULL, ?, ?)`
       )
-      .run(id, name, hashAgentToken(token), this.now(), JSON.stringify(DEFAULT_AGENT_POLICY))
+      .run(id, name, hashAgentToken(token), this.now(), JSON.stringify(DEFAULT_AGENT_POLICY), userId)
     return { id, name, token }
   }
 
@@ -304,18 +339,19 @@ export class VoiceChatDb {
       name: r.name,
       createdAt: r.created_at,
       lastSeen: r.last_seen,
-      policy: parsePolicy(r.policy)
+      policy: parsePolicy(r.policy),
+      userId: r.user_id
     }
   }
 
-  listAgents(): AgentRecord[] {
+  listAgents(userId: string): AgentRecord[] {
     const rows = this.db
-      .prepare(`SELECT * FROM agents ORDER BY created_at ASC`)
-      .all() as AgentRow[]
+      .prepare(`SELECT * FROM agents WHERE user_id = ? ORDER BY created_at ASC`)
+      .all(userId) as AgentRow[]
     return rows.map((r) => this.mapAgent(r))
   }
 
-  /** Ищет агента по хэшу токена (авторизация WS-подключения). */
+  /** Ищет агента по хэшу токена (авторизация WS-подключения). Глобально по токену. */
   findAgentByTokenHash(tokenHash: string): AgentRecord | null {
     const row = this.db
       .prepare(`SELECT * FROM agents WHERE token_hash = ?`)
@@ -323,20 +359,24 @@ export class VoiceChatDb {
     return row ? this.mapAgent(row) : null
   }
 
-  /** Задаёт политику возможностей машины. */
-  setAgentPolicy(id: string, policy: AgentPolicy): void {
-    this.db.prepare(`UPDATE agents SET policy = ? WHERE id = ?`).run(JSON.stringify(policy), id)
+  /** Задаёт политику возможностей машины (в рамках владельца). */
+  setAgentPolicy(userId: string, id: string, policy: AgentPolicy): void {
+    this.db
+      .prepare(`UPDATE agents SET policy = ? WHERE id = ? AND user_id = ?`)
+      .run(JSON.stringify(policy), id, userId)
   }
 
   /** Перевыпускает токен машины (старый перестаёт работать). Возвращает новый токен. */
-  regenerateAgentToken(id: string): { token: string } {
+  regenerateAgentToken(userId: string, id: string): { token: string } {
     const token = randomBytes(24).toString('hex')
-    this.db.prepare(`UPDATE agents SET token_hash = ? WHERE id = ?`).run(hashAgentToken(token), id)
+    this.db
+      .prepare(`UPDATE agents SET token_hash = ? WHERE id = ? AND user_id = ?`)
+      .run(hashAgentToken(token), id, userId)
     return { token }
   }
 
-  deleteAgent(id: string): void {
-    this.db.prepare(`DELETE FROM agents WHERE id = ?`).run(id)
+  deleteAgent(userId: string, id: string): void {
+    this.db.prepare(`DELETE FROM agents WHERE id = ? AND user_id = ?`).run(id, userId)
   }
 
   /** Обновляет last_seen (при регистрации и по pong). */

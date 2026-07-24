@@ -74,9 +74,10 @@ describe('server: раздача web-статики (VC_WEB_DIR)', () => {
     expect(res.body).toContain('voiceAIChat')
   })
 
-  it('неизвестный /api → 404 (не отдаём index.html)', async () => {
+  it('неизвестный /api не отдаёт index.html (401 от auth-хука либо 404)', async () => {
     const res = await webApp.inject({ method: 'GET', url: '/api/does-not-exist' })
-    expect(res.statusCode).toBe(404)
+    expect([401, 404]).toContain(res.statusCode)
+    expect(res.body).not.toContain('voiceAIChat')
   })
 
   it('API и здоровье продолжают работать при включённой статике', async () => {

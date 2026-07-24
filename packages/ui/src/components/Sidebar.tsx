@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Conversation } from '@shared/types'
+import type { Conversation, SessionUser } from '@shared/types'
 import { ACCENT } from '../lib/view'
 import { GearIcon } from './icons'
 
@@ -44,6 +44,10 @@ export interface SidebarProps {
   onOpenObserver: () => void
   onOpenCodexObserver: () => void
   onOpenSettings: () => void
+  /** Текущий пользователь (web-режим); null/без имени — строка входа не показывается. */
+  currentUser?: SessionUser | null
+  /** Выйти из сессии (web). */
+  onLogout?: () => void
   /** Мобильный режим: сайдбар выдвинут поверх контента. */
   open?: boolean
 }
@@ -61,6 +65,8 @@ export function Sidebar({
   onOpenObserver,
   onOpenCodexObserver,
   onOpenSettings,
+  currentUser,
+  onLogout,
   open = false
 }: SidebarProps): JSX.Element {
   // id разговора, для которого показываем инлайн-подтверждение удаления.
@@ -207,6 +213,18 @@ export function Sidebar({
           <GearIcon />
           Настройки
         </button>
+        {currentUser && currentUser.name && (
+          <div className="userrow">
+            <span className="username" title={`Роль: ${currentUser.role}`}>
+              👤 {currentUser.name}
+            </span>
+            {onLogout && (
+              <button className="logoutbtn" onClick={onLogout} title="Выйти">
+                Выйти
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </aside>
   )

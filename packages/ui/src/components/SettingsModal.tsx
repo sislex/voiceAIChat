@@ -7,8 +7,8 @@ import type {
   WhisperModel,
   WhisperModelInfo
 } from '@shared/types'
-import { CLAUDE_MODELS, CODEX_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
-import type { PermissionMode, LlmProvider } from '@shared/types'
+import { CODEX_MODELS, modelsForRole, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
+import type { PermissionMode, LlmProvider, UserRole } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
@@ -79,6 +79,8 @@ export interface SettingsModalProps {
   onDeleteVoice: (id: string) => void
   /** Удалить файл модели Whisper. */
   onDeleteModel: (model: WhisperModel) => void
+  /** Роль текущего пользователя — ограничивает список моделей Claude. */
+  role: UserRole
   onClose: () => void
 }
 
@@ -105,6 +107,7 @@ export function SettingsModal({
   onDownloadVoice,
   onDeleteVoice,
   onDeleteModel,
+  role,
   onClose
 }: SettingsModalProps): JSX.Element {
   const stop = (e: MouseEvent): void => e.stopPropagation()
@@ -211,7 +214,7 @@ export function SettingsModal({
                       value={normalizeClaudeModel(settings.model)}
                       onChange={(e) => onChange({ model: e.target.value as ClaudeModel })}
                     >
-                      {CLAUDE_MODELS.map((m) => (
+                      {modelsForRole(role).map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.label}
                         </option>

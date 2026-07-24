@@ -5,12 +5,16 @@
 import { REST } from '@shared/protocol'
 import { encodeAgentConnection } from '@shared/agentProtocol'
 import type { RendererApi } from '@shared/ipc'
+import { getToken } from './session'
 
 export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi {
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
     // Content-Type ставим только при наличии тела: иначе Fastify пытается распарсить
-    // пустое JSON-тело у DELETE и отвечает 400.
-    const headers = init?.body != null ? { 'content-type': 'application/json' } : undefined
+    // пустое JSON-тело у DELETE и отвечает 400. Токен сессии — в Authorization.
+    const headers: Record<string, string> = {}
+    if (init?.body != null) headers['content-type'] = 'application/json'
+    const token = getToken()
+    if (token) headers['authorization'] = `Bearer ${token}`
     const res = await fetch(httpBase + path, { ...init, headers })
     if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
     const text = await res.text()
@@ -26,7 +30,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:create': ({ title }) =>
       req(REST.conversations, { method: 'POST', body: JSON.stringify({ title }) }),
     'conversations:get': async ({ id }) => {
-      const res = await fetch(httpBase + REST.conversation(id))
+      const token = getToken()
+      const res = await fetch(httpBase + REST.conversation(id), {
+        headers: token ? { authorization: `Bearer ${token}` } : undefined
+      })
       if (res.status === 404) return null
       if (!res.ok) throw new Error(`GET ${REST.conversation(id)} → ${res.status}`)
       return res.json()

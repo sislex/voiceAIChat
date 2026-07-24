@@ -6,6 +6,7 @@ import { VoiceBar } from './components/VoiceBar'
 import { SettingsModal } from './components/SettingsModal'
 import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
+import { LoginScreen } from './components/LoginScreen'
 import { CcObserver } from './components/CcObserver'
 import { CodexObserver } from './components/CodexObserver'
 import { useVoiceStore } from './store/useVoiceStore'
@@ -56,6 +57,17 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
 
   const showConsole = state.settings.showConsole
 
+  // Многопользовательский режим (web): пока не вошли — показываем экран логина.
+  if (state.authRequired && !state.currentUser) {
+    return (
+      <LoginScreen
+        onLogin={(name, password) => void actions.login(name, password)}
+        error={state.authError}
+        theme={state.settings.theme}
+      />
+    )
+  }
+
   return (
     <div
       className={showConsole ? 'app app--console' : 'app'}
@@ -81,6 +93,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onOpenObserver={actions.openObserver}
         onOpenCodexObserver={actions.openCodexObserver}
         onOpenSettings={actions.openSettings}
+        currentUser={state.currentUser}
+        onLogout={state.authRequired ? () => void actions.logout() : undefined}
       />
       {sidebarOpen && (
         <div className="side-backdrop" aria-hidden onClick={() => setSidebarOpen(false)} />
@@ -209,6 +223,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onDownloadVoice={actions.downloadVoice}
           onDeleteVoice={actions.deleteVoice}
           onDeleteModel={actions.deleteModel}
+          role={state.currentUser?.role ?? 'admin'}
           onClose={actions.closeSettings}
         />
       )}

@@ -6,6 +6,9 @@ import { join } from 'node:path'
 import { VoiceChatDb, hashAgentToken } from './database'
 import { DEFAULT_SETTINGS } from '@voicechat/shared'
 
+/** Владелец данных по умолчанию в тестах. */
+const U = 'admin'
+
 function makeDb(): VoiceChatDb {
   let idCounter = 0
   let clock = 1_000
@@ -23,50 +26,95 @@ describe('VoiceChatDb — разговоры', () => {
   afterEach(() => db.close())
 
   it('создаёт и читает разговор', () => {
-    const c = db.createConversation('Поездка в Лиссабон')
+    const c = db.createConversation(U, 'Поездка в Лиссабон')
     expect(c.id).toBe('id-1')
     expect(c.title).toBe('Поездка в Лиссабон')
     expect(c.messageCount).toBe(0)
     expect(c.claudeSessionId).toBeNull()
 
-    const fetched = db.getConversation(c.id)
+    const fetched = db.getConversation(U, c.id)
     expect(fetched).not.toBeNull()
     expect(fetched?.title).toBe('Поездка в Лиссабон')
   })
 
   it('список отсортирован по updated_at убыванию', () => {
-    const a = db.createConversation('A')
-    const b = db.createConversation('B')
+    const a = db.createConversation(U, 'A')
+    const b = db.createConversation(U, 'B')
     // Обновляем A позже → он должен всплыть наверх.
-    db.addMessage(a.id, 'u1', 'привет', '10:00')
-    const list = db.listConversations()
+    db.addMessage(U, a.id, 'u1', 'привет', '10:00')
+    const list = db.listConversations(U)
     expect(list.map((c) => c.id)).toEqual([a.id, b.id])
   })
 
   it('переименование меняет заголовок', () => {
-    const c = db.createConversation('Старое')
-    db.renameConversation(c.id, 'Новое')
-    expect(db.getConversation(c.id)?.title).toBe('Новое')
+    const c = db.createConversation(U, 'Старое')
+    db.renameConversation(U, c.id, 'Новое')
+    expect(db.getConversation(U, c.id)?.title).toBe('Новое')
   })
 
   it('getConversation возвращает null для несуществующего', () => {
-    expect(db.getConversation('нет-такого')).toBeNull()
+    expect(db.getConversation(U, 'нет-такого')).toBeNull()
   })
 
   it('поиск находит по названию и по тексту сообщения (регистронезависимо)', () => {
-    const a = db.createConversation('Поездка в Лиссабон')
-    const b = db.createConversation('Рецепты')
-    db.addMessage(b.id, 'u1', 'Как приготовить ПАЭЛью?', '10:00')
-    const c = db.createConversation('Погода')
+    const a = db.createConversation(U, 'Поездка в Лиссабон')
+    const b = db.createConversation(U, 'Рецепты')
+    db.addMessage(U, b.id, 'u1', 'Как приготовить ПАЭЛью?', '10:00')
+    const c = db.createConversation(U, 'Погода')
 
     // по названию (другой регистр)
-    expect(db.searchConversations('лиссабон').map((x) => x.id)).toEqual([a.id])
+    expect(db.searchConversations(U, 'лиссабон').map((x) => x.id)).toEqual([a.id])
     // по тексту сообщения (другой регистр)
-    expect(db.searchConversations('паэлью').map((x) => x.id)).toEqual([b.id])
+    expect(db.searchConversations(U, 'паэлью').map((x) => x.id)).toEqual([b.id])
     // пустой запрос → все
-    expect(db.searchConversations('  ').map((x) => x.id).sort()).toEqual([a.id, b.id, c.id].sort())
+    expect(db.searchConversations(U, '  ').map((x) => x.id).sort()).toEqual([a.id, b.id, c.id].sort())
     // ничего не найдено
-    expect(db.searchConversations('зззз')).toEqual([])
+    expect(db.searchConversations(U, 'зззз')).toEqual([])
+  })
+})
+
+describe('VoiceChatDb — изоляция по пользователю', () => {
+  let db: VoiceChatDb
+  beforeEach(() => {
+    db = makeDb()
+  })
+  afterEach(() => db.close())
+
+  it('разговоры и сообщения одного пользователя не видны другому', () => {
+    const a = db.createConversation('admin', 'A-разговор')
+    db.addMessage('admin', a.id, 'u1', 'секрет админа', '10:00')
+    const u = db.createConversation('user', 'U-разговор')
+
+    // Списки не пересекаются.
+    expect(db.listConversations('admin').map((c) => c.id)).toEqual([a.id])
+    expect(db.listConversations('user').map((c) => c.id)).toEqual([u.id])
+    // Чужой разговор не читается по id.
+    expect(db.getConversation('user', a.id)).toBeNull()
+    expect(db.listMessages('user', a.id)).toEqual([])
+    // Поиск не находит чужого.
+    expect(db.searchConversations('user', 'секрет')).toEqual([])
+  })
+
+  it('нельзя добавить сообщение в чужой разговор', () => {
+    const a = db.createConversation('admin', 'A')
+    expect(() => db.addMessage('user', a.id, 'u1', 'вторжение', '10:00')).toThrow()
+  })
+
+  it('настройки раздельны у пользователей', () => {
+    db.saveSettings('admin', { ...DEFAULT_SETTINGS, model: 'opus' })
+    db.saveSettings('user', { ...DEFAULT_SETTINGS, model: 'sonnet' })
+    expect(db.getSettings('admin').model).toBe('opus')
+    expect(db.getSettings('user').model).toBe('sonnet')
+  })
+
+  it('машины-агенты раздельны у пользователей', () => {
+    const a = db.createAgent('admin', 'AdminBox')
+    db.createAgent('user', 'UserBox')
+    expect(db.listAgents('admin').map((x) => x.name)).toEqual(['AdminBox'])
+    expect(db.listAgents('user').map((x) => x.name)).toEqual(['UserBox'])
+    // Чужого агента нельзя удалить.
+    db.deleteAgent('user', a.id)
+    expect(db.listAgents('admin').map((x) => x.name)).toEqual(['AdminBox'])
   })
 })
 
@@ -78,21 +126,21 @@ describe('VoiceChatDb — сообщения', () => {
   afterEach(() => db.close())
 
   it('добавляет сообщения и считает их в messageCount', () => {
-    const c = db.createConversation('Чат')
-    db.addMessage(c.id, 'u1', 'Привет', '14:02')
-    db.addMessage(c.id, 'ai', 'Здравствуйте!', '14:02')
+    const c = db.createConversation(U, 'Чат')
+    db.addMessage(U, c.id, 'u1', 'Привет', '14:02')
+    db.addMessage(U, c.id, 'ai', 'Здравствуйте!', '14:02')
 
-    const msgs = db.listMessages(c.id)
+    const msgs = db.listMessages(U, c.id)
     expect(msgs).toHaveLength(2)
     expect(msgs[0].text).toBe('Привет')
     expect(msgs[0].role).toBe('u1')
     expect(msgs[1].role).toBe('ai')
 
-    expect(db.getConversation(c.id)?.messageCount).toBe(2)
+    expect(db.getConversation(U, c.id)?.messageCount).toBe(2)
   })
 
   it('сохраняет и читает meta ответа (токены/детали запроса)', () => {
-    const c = db.createConversation('Чат')
+    const c = db.createConversation(U, 'Чат')
     const meta = {
       durationMs: 4200,
       inputTokens: 1500,
@@ -107,68 +155,80 @@ describe('VoiceChatDb — сообщения', () => {
         tools: ['Bash', 'Read']
       }
     }
-    db.addMessage(c.id, 'ai', 'ответ', '14:02', 'claude', meta)
-    const [m] = db.listMessages(c.id)
+    db.addMessage(U, c.id, 'ai', 'ответ', '14:02', 'claude', meta)
+    const [m] = db.listMessages(U, c.id)
     expect(m.meta).toEqual(meta)
     expect(m.engine).toBe('claude')
   })
 
   it('без meta сообщение не содержит поля meta', () => {
-    const c = db.createConversation('Чат')
-    db.addMessage(c.id, 'u1', 'вопрос', '14:00')
-    expect(db.listMessages(c.id)[0].meta).toBeUndefined()
+    const c = db.createConversation(U, 'Чат')
+    db.addMessage(U, c.id, 'u1', 'вопрос', '14:00')
+    expect(db.listMessages(U, c.id)[0].meta).toBeUndefined()
   })
 
   it('сообщения возвращаются в хронологическом порядке', () => {
-    const c = db.createConversation('Чат')
-    db.addMessage(c.id, 'u1', 'первое', '14:00')
-    db.addMessage(c.id, 'u2', 'второе', '14:01')
-    db.addMessage(c.id, 'ai', 'третье', '14:02')
-    expect(db.listMessages(c.id).map((m) => m.text)).toEqual(['первое', 'второе', 'третье'])
+    const c = db.createConversation(U, 'Чат')
+    db.addMessage(U, c.id, 'u1', 'первое', '14:00')
+    db.addMessage(U, c.id, 'u2', 'второе', '14:01')
+    db.addMessage(U, c.id, 'ai', 'третье', '14:02')
+    expect(db.listMessages(U, c.id).map((m) => m.text)).toEqual(['первое', 'второе', 'третье'])
   })
 
   it('добавление сообщения обновляет updated_at разговора', () => {
-    const c = db.createConversation('Чат')
-    const before = db.getConversation(c.id)!.updatedAt
-    db.addMessage(c.id, 'u1', 'x', '14:00')
-    const after = db.getConversation(c.id)!.updatedAt
+    const c = db.createConversation(U, 'Чат')
+    const before = db.getConversation(U, c.id)!.updatedAt
+    db.addMessage(U, c.id, 'u1', 'x', '14:00')
+    const after = db.getConversation(U, c.id)!.updatedAt
     expect(after).toBeGreaterThan(before)
   })
 
   it('запекает движок в сообщение (engine) и читает обратно; без движка — поле отсутствует', () => {
-    const c = db.createConversation('Чат')
-    db.addMessage(c.id, 'u1', 'вопрос', '14:00')
-    db.addMessage(c.id, 'ai', 'ответ codex', '14:01', 'codex')
-    db.addMessage(c.id, 'ai', 'ответ claude', '14:02', 'claude')
-    const msgs = db.listMessages(c.id)
+    const c = db.createConversation(U, 'Чат')
+    db.addMessage(U, c.id, 'u1', 'вопрос', '14:00')
+    db.addMessage(U, c.id, 'ai', 'ответ codex', '14:01', 'codex')
+    db.addMessage(U, c.id, 'ai', 'ответ claude', '14:02', 'claude')
+    const msgs = db.listMessages(U, c.id)
     expect(msgs[0].engine).toBeUndefined() // реплика пользователя
     expect(msgs[1].engine).toBe('codex')
     expect(msgs[2].engine).toBe('claude')
   })
 })
 
-describe('VoiceChatDb — миграция колонки engine', () => {
-  it('ALTER добавляет engine в старую messages без него', () => {
+describe('VoiceChatDb — миграция и очистка legacy', () => {
+  it('ALTER добавляет engine/user_id и удаляет строки без владельца', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-mig-'))
     const file = join(dir, 'legacy.db')
-    // Готовим «старую» БД: messages без колонки engine.
+    // Готовим «старую» однопользовательскую БД: без engine и без user_id.
     const raw = new Database(file)
     raw.exec(`CREATE TABLE conversations (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL, claude_session_id TEXT)`)
     raw.exec(`CREATE TABLE messages (
       id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL,
-      text TEXT NOT NULL, time TEXT NOT NULL, created_at INTEGER NOT NULL)`)
+      text TEXT NOT NULL, time TEXT NOT NULL, created_at INTEGER NOT NULL,
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE)`)
+    raw.exec(`CREATE TABLE agents (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL,
+      created_at INTEGER NOT NULL, last_seen INTEGER, policy TEXT)`)
+    raw.prepare(`INSERT INTO conversations (id,title,created_at,updated_at) VALUES (?,?,?,?)`)
+      .run('c1', 'старый', 1, 1)
     raw.prepare(
       `INSERT INTO messages (id, conversation_id, role, text, time, created_at) VALUES (?,?,?,?,?,?)`
     ).run('m1', 'c1', 'ai', 'старый ответ', '10:00', 1)
+    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at) VALUES (?,?,?,?)`)
+      .run('a1', 'oldbox', 'hash', 1)
     raw.close()
-    // Открываем через VoiceChatDb → migrate() добавляет engine, старые строки читаются.
+    // Открываем через VoiceChatDb → migrate() добавляет колонки и чистит legacy.
     const db = new VoiceChatDb(file)
     const cols = (db as unknown as { db: Database.Database }).db
       .prepare(`PRAGMA table_info(messages)`)
       .all() as Array<{ name: string }>
     expect(cols.some((c) => c.name === 'engine')).toBe(true)
+    // Legacy без владельца — удалены (чистый старт многопользовательского режима).
+    expect(db.listConversations('admin')).toHaveLength(0)
+    expect(db.listMessages('admin', 'c1')).toHaveLength(0)
+    expect(db.listAgents('admin')).toHaveLength(0)
     db.close()
     rmSync(dir, { recursive: true, force: true })
   })
@@ -182,13 +242,13 @@ describe('VoiceChatDb — каскадное удаление', () => {
   afterEach(() => db.close())
 
   it('удаление разговора удаляет его сообщения', () => {
-    const c = db.createConversation('Чат')
-    db.addMessage(c.id, 'u1', 'x', '14:00')
-    db.addMessage(c.id, 'ai', 'y', '14:00')
-    db.deleteConversation(c.id)
-    expect(db.getConversation(c.id)).toBeNull()
-    expect(db.listMessages(c.id)).toHaveLength(0)
-    expect(db.listConversations()).toHaveLength(0)
+    const c = db.createConversation(U, 'Чат')
+    db.addMessage(U, c.id, 'u1', 'x', '14:00')
+    db.addMessage(U, c.id, 'ai', 'y', '14:00')
+    db.deleteConversation(U, c.id)
+    expect(db.getConversation(U, c.id)).toBeNull()
+    expect(db.listMessages(U, c.id)).toHaveLength(0)
+    expect(db.listConversations(U)).toHaveLength(0)
   })
 })
 
@@ -200,11 +260,11 @@ describe('VoiceChatDb — session-id Claude', () => {
   afterEach(() => db.close())
 
   it('сохраняет и обнуляет session-id', () => {
-    const c = db.createConversation('Чат')
-    db.setClaudeSession(c.id, 'sess-abc')
-    expect(db.getConversation(c.id)?.claudeSessionId).toBe('sess-abc')
-    db.setClaudeSession(c.id, null)
-    expect(db.getConversation(c.id)?.claudeSessionId).toBeNull()
+    const c = db.createConversation(U, 'Чат')
+    db.setClaudeSession(U, c.id, 'sess-abc')
+    expect(db.getConversation(U, c.id)?.claudeSessionId).toBe('sess-abc')
+    db.setClaudeSession(U, c.id, null)
+    expect(db.getConversation(U, c.id)?.claudeSessionId).toBeNull()
   })
 })
 
@@ -216,11 +276,11 @@ describe('VoiceChatDb — настройки', () => {
   afterEach(() => db.close())
 
   it('без сохранённых настроек возвращает дефолты', () => {
-    expect(db.getSettings()).toEqual(DEFAULT_SETTINGS)
+    expect(db.getSettings(U)).toEqual(DEFAULT_SETTINGS)
   })
 
   it('сохраняет и читает настройки', () => {
-    db.saveSettings({
+    db.saveSettings(U, {
       model: 'opus',
       whisperModel: 'medium',
       diarization: false,
@@ -238,7 +298,7 @@ describe('VoiceChatDb — настройки', () => {
       llmProvider: 'claude',
       codexModel: ''
     })
-    expect(db.getSettings()).toEqual({
+    expect(db.getSettings(U)).toEqual({
       model: 'opus',
       whisperModel: 'medium',
       diarization: false,
@@ -259,8 +319,8 @@ describe('VoiceChatDb — настройки', () => {
   })
 
   it('мержит с дефолтами при частичном/битом конфиге', () => {
-    db.saveSettings({ ...DEFAULT_SETTINGS, model: 'opus' })
-    const s = db.getSettings()
+    db.saveSettings(U, { ...DEFAULT_SETTINGS, model: 'opus' })
+    const s = db.getSettings(U)
     expect(s.model).toBe('opus')
     expect(s.voice).toBe(DEFAULT_SETTINGS.voice)
   })
@@ -274,43 +334,44 @@ describe('VoiceChatDb — агенты', () => {
   afterEach(() => db.close())
 
   it('создаёт агента, отдаёт токен один раз и хранит только хэш', () => {
-    const created = db.createAgent('MacBook')
+    const created = db.createAgent(U, 'MacBook')
     expect(created.name).toBe('MacBook')
     expect(created.token).toMatch(/^[0-9a-f]{48}$/)
 
     const found = db.findAgentByTokenHash(hashAgentToken(created.token))
     expect(found?.id).toBe(created.id)
     expect(found?.name).toBe('MacBook')
+    expect(found?.userId).toBe(U)
     // Неверный токен не находится.
     expect(db.findAgentByTokenHash(hashAgentToken('другой'))).toBeNull()
   })
 
   it('list и delete', () => {
-    const a = db.createAgent('A')
-    const b = db.createAgent('B')
-    expect(db.listAgents().map((x) => x.name)).toEqual(['A', 'B'])
-    db.deleteAgent(a.id)
-    expect(db.listAgents().map((x) => x.id)).toEqual([b.id])
+    const a = db.createAgent(U, 'A')
+    const b = db.createAgent(U, 'B')
+    expect(db.listAgents(U).map((x) => x.name)).toEqual(['A', 'B'])
+    db.deleteAgent(U, a.id)
+    expect(db.listAgents(U).map((x) => x.id)).toEqual([b.id])
   })
 
   it('touchAgent обновляет last_seen', () => {
-    const a = db.createAgent('A')
-    expect(db.listAgents()[0].lastSeen).toBeNull()
+    const a = db.createAgent(U, 'A')
+    expect(db.listAgents(U)[0].lastSeen).toBeNull()
     db.touchAgent(a.id)
-    expect(db.listAgents()[0].lastSeen).not.toBeNull()
+    expect(db.listAgents(U)[0].lastSeen).not.toBeNull()
   })
 
   it('новый агент имеет дефолтную политику', () => {
-    db.createAgent('A')
-    const p = db.listAgents()[0].policy
+    db.createAgent(U, 'A')
+    const p = db.listAgents(U)[0].policy
     expect(p.allowNetwork).toBe(true)
     expect(p.allowWrite).toBe(true)
     expect(p.allowedDirs).toEqual([])
   })
 
   it('setAgentPolicy сохраняет и читается', () => {
-    const a = db.createAgent('A')
-    db.setAgentPolicy(a.id, {
+    const a = db.createAgent(U, 'A')
+    db.setAgentPolicy(U, a.id, {
       allowedDirs: ['/tmp'],
       allowNetwork: false,
       allowWrite: false,
@@ -318,17 +379,17 @@ describe('VoiceChatDb — агенты', () => {
       allowPatterns: [],
       skills: [{ name: 'build', command: 'npm run build' }]
     })
-    const p = db.listAgents()[0].policy
+    const p = db.listAgents(U)[0].policy
     expect(p.allowNetwork).toBe(false)
     expect(p.allowedDirs).toEqual(['/tmp'])
     expect(p.skills[0]).toEqual({ name: 'build', command: 'npm run build' })
   })
 
   it('regenerateAgentToken делает старый токен недействительным', () => {
-    const created = db.createAgent('A')
+    const created = db.createAgent(U, 'A')
     const oldHash = hashAgentToken(created.token)
     expect(db.findAgentByTokenHash(oldHash)?.id).toBe(created.id)
-    const { token } = db.regenerateAgentToken(created.id)
+    const { token } = db.regenerateAgentToken(U, created.id)
     expect(db.findAgentByTokenHash(oldHash)).toBeNull()
     expect(db.findAgentByTokenHash(hashAgentToken(token))?.id).toBe(created.id)
   })

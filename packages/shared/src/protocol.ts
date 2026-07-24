@@ -70,6 +70,9 @@ export interface HealthResponse {
 /** Пути REST (единый источник для сервера и клиентов). */
 export const REST = {
   health: '/api/health',
+  sessionLogin: '/api/session/login',
+  sessionMe: '/api/session/me',
+  sessionLogout: '/api/session/logout',
   conversations: '/api/conversations',
   conversationsSearch: '/api/conversations/search',
   conversation: (id: string) => `/api/conversations/${id}`,

@@ -74,8 +74,11 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
     const cxTailStart =
       deps.cxTailStart ?? (hasCodex ? (id: string) => window.codex.tailStart({ id }) : undefined)
     const cxTailStop = deps.cxTailStop ?? (hasCodex ? () => window.codex.tailStop() : undefined)
+    const session =
+      deps.session ?? (typeof window !== 'undefined' ? window.session : undefined)
     storeRef.current = createVoiceStore({
       ...deps,
+      session,
       audio,
       listMics,
       sttEnabled,
