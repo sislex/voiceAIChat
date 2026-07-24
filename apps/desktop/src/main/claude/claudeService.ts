@@ -4,6 +4,7 @@
 import { ipcMain } from 'electron'
 import { existsSync } from 'node:fs'
 import type { IpcEventChannel, IpcEventPayload, IpcSendPayload } from '@shared/ipc'
+import type { ClaudeLogEntry } from '@shared/types'
 import type { VoiceChatDb } from '../db/database'
 import { claudeModelAlias, buildPrompt, buildConversationPrompt } from './prompt'
 import type { LlmClient, LlmHandle } from './types'
@@ -41,18 +42,26 @@ export function createClaudeService(deps: ClaudeServiceDeps): ClaudeService {
       ? buildPrompt(segments, attachmentPaths)
       : buildConversationPrompt(deps.db.listMessages(conversationId), attachmentPaths)
 
+    // Активность хода — для подробного вида сообщения; собираем всегда, а в
+    // глобальную консоль (claude:log) шлём только если клиент попросил (verbose).
+    const activity: ClaudeLogEntry[] = []
     current = deps.client.send(
       { prompt, sessionId, model, permissionMode, cwd },
       {
         onSession: (sid) => deps.db.setClaudeSession(conversationId, sid),
         onDelta: (delta) => deps.send('claude:token', { conversationId, delta }),
         onDone: (text, meta) =>
-          deps.send('claude:done', { conversationId, text, meta, engine: 'claude' }),
+          deps.send('claude:done', {
+            conversationId,
+            text,
+            meta: activity.length ? { ...meta, activity } : meta,
+            engine: 'claude'
+          }),
         onError: (message) => deps.send('claude:error', { conversationId, message }),
-        // Режим консоли: активность агента шлём только если клиент попросил.
-        onActivity: payload.verbose
-          ? (entry) => deps.send('claude:log', { conversationId, entry })
-          : undefined
+        onActivity: (entry) => {
+          activity.push(entry)
+          if (payload.verbose) deps.send('claude:log', { conversationId, entry })
+        }
       }
     )
   }

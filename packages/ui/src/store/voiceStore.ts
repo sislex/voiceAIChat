@@ -77,6 +77,11 @@ export interface AppState {
   consoleLog: ClaudeLogEntry[]
   /** Развёрнута ли панель консоли. */
   consoleOpen: boolean
+  /**
+   * Активность текущего (незавершённого) хода активного разговора — для живого
+   * статуса/секций стрим-пузыря. Сбрасывается в начале хода и по его завершении.
+   */
+  liveActivity: ClaudeLogEntry[]
   /** Стримящийся ответ Claude (растёт по токенам); пусто — нет активного стрима. */
   streamingReply: string
   /** Незавершённые ходы модели по разговорам: id → накопленный частичный текст. */
@@ -283,8 +288,11 @@ export interface StoreActions {
   setAgentPolicy(id: string, policy: AgentPolicy): Promise<void>
   /** Перевыпустить токен машины; возвращает новую строку подключения (или null). */
   regenerateAgentToken(id: string): Promise<string | null>
-  /** Добавить запись активности агента (claude:log) в лог консоли. */
-  applyClaudeLog(entry: ClaudeLogEntry): void
+  /**
+   * Добавить запись активности агента (claude:log) в лог консоли и, если запись
+   * относится к активному разговору, — в активность текущего хода (liveActivity).
+   */
+  applyClaudeLog(entry: ClaudeLogEntry, conversationId?: string): void
   /** Свернуть/развернуть панель консоли. */
   toggleConsole(): void
   /** Открыть Проводник Claude Code (грузит проекты). */
@@ -347,6 +355,7 @@ function initialState(): AppState {
     whisperModels: [],
     consoleLog: [],
     consoleOpen: true,
+    liveActivity: [],
     streamingReply: '',
     activeTurns: {},
     lastTurnMeta: null,
@@ -679,9 +688,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Роутинг ответа: реальный Claude (стрим событиями) или мок-пайплайн. */
   function beginReply(segments: SttSegmentWire[], attachments: string[] = []): void {
     if (claudeEnabled && deps.sendClaudePrompt && state.activeId) {
-      setState({ streamingReply: '', lastTurnMeta: null })
+      setState({ streamingReply: '', lastTurnMeta: null, liveActivity: [] })
       ttsBuffer = ''
-      deps.sendClaudePrompt(state.activeId, segments, attachments, state.settings.showConsole)
+      // verbose=true всегда: активность нужна для живого статуса и подробного вида
+      // сообщения (глобальная консоль всё равно рендерится только при showConsole).
+      deps.sendClaudePrompt(state.activeId, segments, attachments, true)
       return
     }
     const prompt = segments.map((s) => s.text).join(' ')
@@ -869,9 +880,18 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   const HANDS_FREE_GAP_MS = 400 // пауза перед авто-стартом записи после ответа (hands-free)
   const CONSOLE_LOG_CAP = 500 // ограничиваем рост лога консоли
-  function applyClaudeLog(entry: ClaudeLogEntry): void {
+  function applyClaudeLog(entry: ClaudeLogEntry, conversationId?: string): void {
     const next = [...state.consoleLog, entry]
-    setState({ consoleLog: next.length > CONSOLE_LOG_CAP ? next.slice(-CONSOLE_LOG_CAP) : next })
+    const patch: Partial<AppState> = {
+      consoleLog: next.length > CONSOLE_LOG_CAP ? next.slice(-CONSOLE_LOG_CAP) : next
+    }
+    // Активность текущего хода активного разговора — для живого статуса/секций.
+    // (conversationId не задан у клиентских таймингов stt/tts — считаем их своими.)
+    if (conversationId === undefined || conversationId === state.activeId) {
+      const live = [...state.liveActivity, entry]
+      patch.liveActivity = live.length > CONSOLE_LOG_CAP ? live.slice(-CONSOLE_LOG_CAP) : live
+    }
+    setState(patch)
   }
 
   // Клиентские тайминги STT/TTS для консоли (перцептивная задержка).
@@ -1107,6 +1127,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       draft: '',
       attachments: [],
       consoleLog: [],
+      liveActivity: [],
       voice: 'idle',
       streamingReply: '',
       lastTurnMeta: null
@@ -1117,7 +1138,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     cancelTimers()
     stopCapture()
     resetTts() // ход прежнего разговора не отменяем — он доиграет на сервере
-    setState({ liveSegments: [], consoleLog: [], voice: 'idle', streamingReply: '', lastTurnMeta: null })
+    setState({ liveSegments: [], consoleLog: [], liveActivity: [], voice: 'idle', streamingReply: '', lastTurnMeta: null })
     const res = await api['conversations:get']({ id })
     if (res) {
       setState({ activeId: res.conversation.id, messages: res.messages })
@@ -1364,6 +1385,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       if (message) await refreshConversations()
       return
     }
+    // Ход активного разговора завершён — активность живёт теперь в meta сообщения.
+    if (state.liveActivity.length) setState({ liveActivity: [] })
     // Мета хода (длительность/токены/стоимость) — показываем под последним ответом.
     if (meta && Object.keys(meta).length > 0) setState({ lastTurnMeta: meta })
     if (state.voice !== 'thinking' && state.voice !== 'speaking') {
@@ -1418,7 +1441,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (convId !== state.activeId) return // ошибка фонового хода — текущий UI не трогаем
     console.warn('[claude] ошибка:', message)
     resetTts()
-    setState({ streamingReply: '', error: message })
+    setState({ streamingReply: '', error: message, liveActivity: [] })
     if (state.voice === 'thinking' || state.voice === 'speaking') dispatchVoice('error')
   }
 
