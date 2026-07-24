@@ -1325,3 +1325,70 @@ describe('voiceStore — ходы, переживающие обновление
     expect(cancelClaude).toHaveBeenCalledWith(first)
   })
 })
+
+describe('voiceStore — сессия/аутентификация (web)', () => {
+  it('без моста сессии (desktop) — authRequired=false, роль admin, init грузит данные', async () => {
+    const { store } = makeStore(['Разговор'])
+    await store.actions.init()
+    expect(store.getState().authRequired).toBe(false)
+    expect(store.getState().currentUser).toEqual({ name: '', role: 'admin' })
+    expect(store.getState().conversations.length).toBe(1)
+  })
+
+  it('с мостом сессии: нет сохранённой сессии → показываем логин (данные не грузим)', async () => {
+    const api = createFakeApi(['Разговор'])
+    const session = {
+      me: vi.fn().mockResolvedValue(null),
+      login: vi.fn(),
+      logout: vi.fn()
+    }
+    const store = createVoiceStore({ api, session })
+    await store.actions.init()
+    expect(store.getState().authRequired).toBe(true)
+    expect(store.getState().currentUser).toBeNull()
+    expect(store.getState().conversations).toEqual([]) // bootstrap не запускался
+  })
+
+  it('login: успех выставляет пользователя и грузит данные; провал — ошибка', async () => {
+    const api = createFakeApi(['Разговор'])
+    const session = {
+      me: vi.fn().mockResolvedValue(null),
+      login: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ name: 'user', role: 'user' }),
+      logout: vi.fn()
+    }
+    const store = createVoiceStore({ api, session })
+    await store.actions.init()
+
+    // Первая попытка — неверные данные.
+    await store.actions.login('user', 'x')
+    expect(store.getState().currentUser).toBeNull()
+    expect(store.getState().authError).toBeTruthy()
+
+    // Вторая — успех: пользователь + загрузка разговоров.
+    await store.actions.login('user', '')
+    expect(store.getState().currentUser).toEqual({ name: 'user', role: 'user' })
+    expect(store.getState().authError).toBeNull()
+    expect(store.getState().conversations.length).toBe(1)
+  })
+
+  it('logout очищает пользователя и возвращает на экран логина', async () => {
+    const api = createFakeApi(['Разговор'])
+    const session = {
+      me: vi.fn().mockResolvedValue({ name: 'admin', role: 'admin' }),
+      login: vi.fn(),
+      logout: vi.fn().mockResolvedValue(undefined)
+    }
+    const store = createVoiceStore({ api, session })
+    await store.actions.init()
+    expect(store.getState().currentUser).toEqual({ name: 'admin', role: 'admin' })
+
+    await store.actions.logout()
+    expect(session.logout).toHaveBeenCalled()
+    expect(store.getState().currentUser).toBeNull()
+    expect(store.getState().authRequired).toBe(true)
+    expect(store.getState().conversations).toEqual([])
+  })
+})

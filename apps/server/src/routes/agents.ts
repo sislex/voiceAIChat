@@ -5,6 +5,7 @@ import { createReadStream, existsSync } from 'node:fs'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { REST, type AgentInfo, type AgentPolicy } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
+import { uid } from '../users/auth.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { buildAgentScript } from '../agents/agentScript.js'
 
@@ -36,10 +37,14 @@ export async function registerAgentRoutes(
   registry: AgentRegistry,
   artifacts: AppArtifacts = {}
 ): Promise<void> {
-  app.get(REST.agents, async (): Promise<AgentInfo[]> => {
+  app.get(REST.agents, async (req): Promise<AgentInfo[]> => {
     const online = registry.onlineIds()
-    return db.listAgents().map((a) => ({ ...a, online: online.has(a.id) }))
+    return db.listAgents(uid(req)).map((a) => ({ ...a, online: online.has(a.id) }))
   })
+
+  // Владеет ли текущий пользователь машиной id (для операций над ней).
+  const ownsAgent = (userId: string, id: string): boolean =>
+    db.listAgents(userId).some((a) => a.id === id)
 
   // Собранные .dmg. Собираются заранее (npm --prefix … run dist).
   app.get(REST.agentApp, async (_req, reply) =>
@@ -67,16 +72,18 @@ export async function registerAgentRoutes(
   app.post<{ Body: { name?: string } }>(REST.agents, async (req, reply) => {
     const name = req.body?.name?.trim()
     if (!name) return reply.code(400).send({ error: 'name required' })
-    return db.createAgent(name)
+    return db.createAgent(uid(req), name)
   })
 
-  app.delete<{ Params: { id: string } }>('/api/agents/:id', async (req) => {
+  app.delete<{ Params: { id: string } }>('/api/agents/:id', async (req, reply) => {
+    const u = uid(req)
     const id = req.params.id
+    if (!ownsAgent(u, id)) return reply.code(404).send({ error: 'not found' })
     registry.disconnect(id)
-    db.deleteAgent(id)
+    db.deleteAgent(u, id)
     // Удалили выбранную цель выполнения — возвращаемся на сервер.
-    const settings = db.getSettings()
-    if (settings.execTarget === id) db.saveSettings({ ...settings, execTarget: null })
+    const settings = db.getSettings(u)
+    if (settings.execTarget === id) db.saveSettings(u, { ...settings, execTarget: null })
     return { ok: true }
   })
 
@@ -84,17 +91,21 @@ export async function registerAgentRoutes(
   app.post<{ Params: { id: string }; Body: { policy: AgentPolicy } }>(
     '/api/agents/:id/policy',
     async (req, reply) => {
+      const u = uid(req)
       const policy = req.body?.policy
       if (!policy) return reply.code(400).send({ error: 'policy required' })
-      db.setAgentPolicy(req.params.id, policy)
+      if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
+      db.setAgentPolicy(u, req.params.id, policy)
       registry.updatePolicy(req.params.id, policy)
       return { ok: true }
     }
   )
 
   // Перевыпуск токена: старый перестаёт работать, текущее соединение рвём.
-  app.post<{ Params: { id: string } }>('/api/agents/:id/token', async (req) => {
-    const { token } = db.regenerateAgentToken(req.params.id)
+  app.post<{ Params: { id: string } }>('/api/agents/:id/token', async (req, reply) => {
+    const u = uid(req)
+    if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
+    const { token } = db.regenerateAgentToken(u, req.params.id)
     registry.disconnect(req.params.id)
     return { token }
   })

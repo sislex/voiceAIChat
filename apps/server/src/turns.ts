@@ -9,6 +9,7 @@ import {
   appendQuestionsHint,
   buildConversationPrompt,
   buildPrompt,
+  clampModelForRole,
   claudeModelAlias,
   type ActiveTurn,
   type AgentPolicy,
@@ -21,6 +22,7 @@ import {
   type TurnRequestInfo
 } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
+import { roleOf } from './users/accounts.js'
 import type { LlmClient, LlmHandle } from './claude/types.js'
 
 export interface TurnManagerDeps {
@@ -44,6 +46,8 @@ export interface TurnManagerDeps {
 
 /** Запрос нового хода (соответствует клиентскому claude.send). */
 export interface StartTurnRequest {
+  /** Владелец разговора (логин пользователя) — для изоляции данных. */
+  userId: string
   conversationId: string
   segments: SttSegmentWire[]
   attachments?: string[]
@@ -55,10 +59,13 @@ export interface TurnManager {
   start(req: StartTurnRequest): void
   /** Отменить ход разговора; без conversationId — все активные ходы. */
   cancel(conversationId?: string): void
-  /** Подписка на события ходов (token/done/error/log). Возвращает отписку. */
-  subscribe(listener: (m: ServerMessage) => void): () => void
-  /** Снапшот активных ходов (для claude.active при подключении). */
-  active(): ActiveTurn[]
+  /**
+   * Подписка на события ходов (token/done/error/log). Слушатель получает id
+   * владельца хода — сессия форвардит клиенту только события своего пользователя.
+   */
+  subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
+  /** Снапшот активных ходов пользователя (для claude.active при подключении). */
+  active(userId: string): ActiveTurn[]
 }
 
 /**
@@ -98,6 +105,8 @@ interface TurnState {
   handle: LlmHandle
   partial: string
   verbose: boolean
+  /** Владелец хода (для фильтрации broadcast/active по пользователю). */
+  userId: string
   /** Активность хода (для подробного вида сообщения); собирается всегда. */
   activity: ClaudeLogEntry[]
 }
@@ -106,12 +115,12 @@ interface TurnState {
 const ACTIVITY_CAP = 500
 
 export function createTurnManager(deps: TurnManagerDeps): TurnManager {
-  const listeners = new Set<(m: ServerMessage) => void>()
+  const listeners = new Set<(m: ServerMessage, ownerUserId: string) => void>()
   const turns = new Map<string, TurnState>()
   const now = deps.now ?? (() => Date.now())
 
-  function broadcast(m: ServerMessage): void {
-    for (const l of listeners) l(m)
+  function broadcast(m: ServerMessage, ownerUserId: string): void {
+    for (const l of listeners) l(m, ownerUserId)
   }
 
   /** Время сообщения в формате ленты (HH:MM), как у клиента. */
@@ -122,15 +131,21 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
   function start(req: StartTurnRequest): void {
     const conversationId = req.conversationId
+    const userId = req.userId
     // Новый ход в том же разговоре отменяет прежний (повторная отправка).
     cancelTurn(conversationId, false)
 
-    const conv = deps.db.getConversation(conversationId)
-    const settings = deps.db.getSettings()
-    // Движок и модель по провайдеру.
+    const conv = deps.db.getConversation(userId, conversationId)
+    const settings = deps.db.getSettings(userId)
+    // Движок и модель по провайдеру. Модель Claude клампим по роли пользователя
+    // (у роли user нет opus/fable — сервер не даст обойти фильтр клиента).
     const provider = settings.llmProvider === 'codex' && deps.codex ? 'codex' : 'claude'
     const client = provider === 'codex' ? deps.codex! : deps.claude
-    const model = provider === 'codex' ? settings.codexModel : claudeModelAlias(settings.model)
+    const role = roleOf(userId) ?? 'user'
+    const model =
+      provider === 'codex'
+        ? settings.codexModel
+        : claudeModelAlias(clampModelForRole(settings.model, role))
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
     // смене движка чужой resume-id игнорируем (свежий ход).
     const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)
@@ -147,19 +162,25 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const prompt = appendQuestionsHint(
       sessionId
         ? buildPrompt(req.segments, attachmentPaths)
-        : buildConversationPrompt(deps.db.listMessages(conversationId), attachmentPaths)
+        : buildConversationPrompt(deps.db.listMessages(userId, conversationId), attachmentPaths)
     )
-    // Цель выполнения команд: выбранная машина-агент. Офлайн — сразу ошибка:
-    // молча выполнить команды не на той машине хуже, чем отказать.
-    const target = settings.execTarget
+    // Цель выполнения команд: выбранная машина-агент. Только своя машина
+    // (чужую игнорируем → выполняем на сервере). Офлайн своей — сразу ошибка.
+    const target =
+      settings.execTarget && deps.db.listAgents(userId).some((a) => a.id === settings.execTarget)
+        ? settings.execTarget
+        : null
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     if (target && deps.agents && deps.mcpBaseUrl) {
       if (!deps.agents.isOnline(target)) {
-        broadcast({
-          t: 'claude.error',
-          conversationId,
-          message: `Машина «${deps.agents.nameOf(target) ?? target}» не в сети. Запустите на ней агента или выберите «На сервере» в настройках.`
-        })
+        broadcast(
+          {
+            t: 'claude.error',
+            conversationId,
+            message: `Машина «${deps.agents.nameOf(target) ?? target}» не в сети. Запустите на ней агента или выберите «На сервере» в настройках.`
+          },
+          userId
+        )
         return
       }
       const policy = deps.agents.policyOf(target)
@@ -172,7 +193,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Полный контекст хода: все сообщения разговора на момент отправки
     // (реплика пользователя уже сохранена клиентом перед claude.send).
     const contextMessages = deps.db
-      .listMessages(conversationId)
+      .listMessages(userId, conversationId)
       .map((m) => ({ role: m.role, text: m.text }))
     // Детали запроса для панели «Подробнее» (всё, что мы отправили модели).
     const requestInfo: TurnRequestInfo = {
@@ -195,6 +216,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       handle: { cancel: () => {} },
       partial: '',
       verbose: Boolean(req.verbose),
+      userId,
       activity: []
     }
     turns.set(conversationId, turn)
@@ -205,14 +227,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     turn.handle = client.send(
       { prompt, sessionId, model, permissionMode, cwd, remote },
       {
-        onSession: (sid) => deps.db.setClaudeSession(conversationId, `${provider}:${sid}`),
+        onSession: (sid) => deps.db.setClaudeSession(userId, conversationId, `${provider}:${sid}`),
         onInit: (info) => {
           initInfo = info
         },
         onDelta: (delta) => {
           if (finished) return
           turn.partial += delta
-          broadcast({ t: 'claude.token', conversationId, delta })
+          broadcast({ t: 'claude.token', conversationId, delta }, userId)
         },
         onDone: (text, meta) => {
           if (finished) return
@@ -240,21 +262,24 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           const finalText = text.trim() ? text : turn.partial
           let message: Message | undefined
           if (finalText.trim()) {
-            message = deps.db.addMessage(conversationId, 'ai', finalText, timeHHMM(), provider, merged)
+            message = deps.db.addMessage(userId, conversationId, 'ai', finalText, timeHHMM(), provider, merged)
           }
-          broadcast({
-            t: 'claude.done',
-            conversationId,
-            text: finalText,
-            meta: merged,
-            engine: provider,
-            ...(message ? { message } : {})
-          })
+          broadcast(
+            {
+              t: 'claude.done',
+              conversationId,
+              text: finalText,
+              meta: merged,
+              engine: provider,
+              ...(message ? { message } : {})
+            },
+            userId
+          )
         },
         onError: (message) => {
           if (finished) return
           finish()
-          broadcast({ t: 'claude.error', conversationId, message })
+          broadcast({ t: 'claude.error', conversationId, message }, userId)
         },
         // Активность собираем всегда (для подробного вида сообщения); в глобальную
         // консоль (событие claude.log) шлём только если ход запрошен с verbose.
@@ -262,7 +287,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           if (finished) return
           turn.activity.push(entry)
           if (turn.activity.length > ACTIVITY_CAP) turn.activity.shift()
-          if (req.verbose) broadcast({ t: 'claude.log', conversationId, entry })
+          if (req.verbose) broadcast({ t: 'claude.log', conversationId, entry }, userId)
         }
       }
     )
@@ -277,7 +302,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     turns.delete(conversationId)
     turn.handle.cancel()
     // Пустой done без message: клиенты сбрасывают «думает…», в БД ничего нет.
-    if (notify) broadcast({ t: 'claude.done', conversationId, text: '' })
+    if (notify) broadcast({ t: 'claude.done', conversationId, text: '' }, turn.userId)
   }
 
   function cancel(conversationId?: string): void {
@@ -292,8 +317,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-    active() {
-      return [...turns].map(([conversationId, t]) => ({ conversationId, partial: t.partial }))
+    active(userId) {
+      return [...turns]
+        .filter(([, t]) => t.userId === userId)
+        .map(([conversationId, t]) => ({ conversationId, partial: t.partial }))
     }
   }
 }

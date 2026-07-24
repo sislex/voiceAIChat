@@ -6,7 +6,14 @@
 // настройки) — реальные, из SQLite через window.api (IPC). Рост транскрипта и
 // ответ — мок-пайплайн (см. mockPipeline.ts).
 
-import type { RendererApi, SttSegmentWire, SttStatus, SttUpdate, UploadInfo } from '@shared/ipc'
+import type {
+  RendererApi,
+  RendererSessionBridge,
+  SttSegmentWire,
+  SttStatus,
+  SttUpdate,
+  UploadInfo
+} from '@shared/ipc'
 import type { ActiveTurn } from '@shared/protocol'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
@@ -20,6 +27,7 @@ import type {
   LlmProvider,
   Message,
   MessageRole,
+  SessionUser,
   Settings,
   TtsVoiceInfo,
   TurnMeta,
@@ -49,6 +57,14 @@ const LOGIN_STATUS_POLL_MS = 30_000
 
 /** Полное состояние приложения в renderer. */
 export interface AppState {
+  /**
+   * Требуется ли вход (есть мост сессии — web). false в desktop → без экрана логина.
+   */
+  authRequired: boolean
+  /** Текущий пользователь; null при authRequired → показываем экран логина. */
+  currentUser: SessionUser | null
+  /** Ошибка последнего логина (для формы). */
+  authError: string | null
   voice: VoiceState
   conversations: Conversation[]
   /** Текущий поисковый запрос по разговорам (пусто — показываем все). */
@@ -134,6 +150,8 @@ export interface AppState {
 
 export interface StoreDeps {
   api: RendererApi
+  /** Мост сессии (web). Отсутствует (desktop) → аутентификация не требуется. */
+  session?: RendererSessionBridge
   /** Источник времени (для формата HH:MM). По умолчанию Date.now. */
   now?: () => number
   /** Переопределение задержек пайплайна (для тестов). */
@@ -193,6 +211,10 @@ export interface StoreDeps {
 /** Действия, дергаемые из UI. Все асинхронные операции инкапсулированы здесь. */
 export interface StoreActions {
   init(): Promise<void>
+  /** Войти по логину/паролю (web). Успех → загрузка данных пользователя. */
+  login(name: string, password: string): Promise<void>
+  /** Выйти: очистить сессию и данные, показать экран логина (web). */
+  logout(): Promise<void>
   newConversation(): void
   selectConversation(id: string): Promise<void>
   deleteConversation(id: string): Promise<void>
@@ -337,6 +359,9 @@ export interface VoiceStore {
 
 function initialState(): AppState {
   return {
+    authRequired: false,
+    currentUser: null,
+    authError: null,
     voice: 'idle',
     conversations: [],
     searchQuery: '',
@@ -709,6 +734,25 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   // --- Публичные действия -------------------------------------------------
 
   async function init(): Promise<void> {
+    // Без моста сессии (desktop) — аутентификация не нужна: полный доступ (admin).
+    if (!deps.session) {
+      setState({ authRequired: false, currentUser: { name: '', role: 'admin' } })
+      await bootstrap()
+      return
+    }
+    // Web: восстанавливаем сессию по сохранённому токену; нет — экран логина.
+    setState({ authRequired: true })
+    const user = await deps.session.me().catch(() => null)
+    if (user) {
+      setState({ currentUser: user })
+      await bootstrap()
+    } else {
+      setState({ currentUser: null })
+    }
+  }
+
+  /** Тяжёлая загрузка данных пользователя (после успешной аутентификации). */
+  async function bootstrap(): Promise<void> {
     const [settings, conversations] = await Promise.all([
       api['settings:get'](),
       api['conversations:list']()
@@ -726,6 +770,32 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (conversations.length > 0) {
       await selectConversation(conversations[0].id)
     }
+  }
+
+  /** Вход по логину/паролю (web): успех → загрузка данных, иначе — ошибка формы. */
+  async function login(name: string, password: string): Promise<void> {
+    if (!deps.session) return
+    setState({ authError: null })
+    const user = await deps.session.login({ name, password }).catch(() => null)
+    if (!user) {
+      setState({ authError: 'Неверный логин или пароль' })
+      return
+    }
+    setState({ currentUser: user, authError: null })
+    await bootstrap()
+  }
+
+  /** Выход: гасим таймеры/аудио, чистим сессию и состояние, показываем логин. */
+  async function logout(): Promise<void> {
+    cancelTimers()
+    stopCapture()
+    resetTts()
+    if (loginStatusPoll) {
+      clearInterval(loginStatusPoll)
+      loginStatusPoll = null
+    }
+    await deps.session?.logout().catch(() => {})
+    setState({ ...initialState(), authRequired: true, ttsAvailable: ttsEnabled })
   }
 
   /** Запускает периодический опрос статуса входа (идемпотентно). */
@@ -1543,6 +1613,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     subscribe,
     actions: {
       init,
+      login,
+      logout,
       newConversation,
       selectConversation,
       deleteConversation,

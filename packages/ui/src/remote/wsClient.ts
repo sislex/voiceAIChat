@@ -13,13 +13,24 @@ export class WsClient {
   private listeners = new Map<string, Set<Listener>>()
   private closed = false
 
-  constructor(private readonly url: string) {
+  /**
+   * baseUrl — адрес /ws; tokenProvider даёт актуальный токен сессии. Если провайдер
+   * задан и токена пока нет (до логина) — не дозваниваемся, ждём reconnect().
+   */
+  constructor(
+    private readonly baseUrl: string,
+    private readonly tokenProvider?: () => string | null
+  ) {
     this.connect()
   }
 
   private connect(): void {
     if (this.closed) return
-    const ws = new WebSocket(this.url)
+    const token = this.tokenProvider ? this.tokenProvider() : undefined
+    // Провайдер задан, но токена нет — соединение отложено до логина (reconnect()).
+    if (this.tokenProvider && !token) return
+    const url = token ? `${this.baseUrl}?token=${encodeURIComponent(token)}` : this.baseUrl
+    const ws = new WebSocket(url)
     ws.binaryType = 'arraybuffer'
     this.ws = ws
 
@@ -78,6 +89,22 @@ export class WsClient {
     return () => {
       set!.delete(listener)
     }
+  }
+
+  /** Пере-дозвон с актуальным токеном (после логина/логаута). */
+  reconnect(): void {
+    if (this.closed) return
+    const prev = this.ws
+    this.ws = null
+    if (prev) {
+      prev.onclose = null // не даём авто-reconnect старого сокета
+      try {
+        prev.close()
+      } catch {
+        // no-op
+      }
+    }
+    this.connect()
   }
 
   close(): void {

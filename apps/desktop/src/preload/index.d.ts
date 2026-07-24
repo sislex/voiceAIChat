@@ -5,6 +5,7 @@ import type {
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
+  RendererSessionBridge,
   RendererSttBridge,
   RendererTtsBridge
 } from '@shared/ipc'
@@ -20,6 +21,8 @@ declare global {
     codex: RendererCodexBridge
     /** Живой список агентов (web); в desktop отсутствует. */
     agents?: RendererAgentsBridge
+    /** Сессия пользователя (web); в desktop отсутствует → без экрана логина. */
+    session?: RendererSessionBridge
   }
 }
 

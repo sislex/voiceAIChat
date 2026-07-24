@@ -89,6 +89,37 @@ export function normalizeClaudeModel(raw: string): ClaudeModel {
   return hit ? hit.id : 'opus'
 }
 
+/** Роль пользователя приложения (многопользовательский режим web-версии). */
+export type UserRole = 'admin' | 'user'
+
+/** Аутентифицированный пользователь сессии. */
+export interface SessionUser {
+  /** Логин (он же идентификатор владельца данных). */
+  name: string
+  role: UserRole
+}
+
+/**
+ * Модели Claude, недоступные роли `user`. У `admin` доступны все. Ограничение
+ * дублируется на сервере (кламп модели хода), клиент лишь прячет их в списке.
+ */
+const RESTRICTED_FOR_USER: ClaudeModel[] = ['opus', 'fable']
+
+/** Доступна ли модель роли (admin — все; user — без opus/fable). */
+export function isModelAllowed(model: ClaudeModel, role: UserRole): boolean {
+  return role === 'admin' || !RESTRICTED_FOR_USER.includes(model)
+}
+
+/** Список моделей, доступных роли (для селектора в настройках). */
+export function modelsForRole(role: UserRole): ClaudeModelInfo[] {
+  return CLAUDE_MODELS.filter((m) => isModelAllowed(m.id, role))
+}
+
+/** Разрешённая модель для роли: исходная, если можно, иначе безопасный fallback. */
+export function clampModelForRole(model: ClaudeModel, role: UserRole): ClaudeModel {
+  return isModelAllowed(model, role) ? model : 'sonnet'
+}
+
 /**
  * Режим прав агента (передаётся в `claude --permission-mode`). Безопасный для
  * неинтерактивного (`-p`) запуска набор: bypass (полный доступ, текущее поведение),

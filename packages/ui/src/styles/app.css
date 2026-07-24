@@ -1500,6 +1500,112 @@
   color: #9fbfe0;
 }
 
+/* ---- Экран входа (многопользовательский режим web) ---- */
+.login-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  color: var(--text);
+  padding: 24px;
+}
+.login-card {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px 24px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
+}
+.login-title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.login-input {
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+.login-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.login-error {
+  margin: 0;
+  color: #c0392b;
+  font-size: 13px;
+}
+.login-submit {
+  margin-top: 4px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.login-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.login-hint {
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ---- Строка пользователя в сайдбаре ---- */
+.userrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 4px 2px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border-soft);
+}
+.username {
+  font-size: 13px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.logoutbtn {
+  flex: none;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 7px;
+  padding: 3px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.logoutbtn:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
 /* ---- Активность ответа модели (простой статус + подробные секции) ---- */
 .msgact {
   margin-bottom: 8px;

@@ -3,7 +3,7 @@
 // Сами ходы LLM живут в процесс-глобальном TurnManager и переживают обрыв
 // соединения: обновление страницы не отменяет генерацию ответа.
 
-import type { AgentInfo } from '@voicechat/shared'
+import type { AgentInfo, SessionUser } from '@voicechat/shared'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'
 import type { TurnManager } from './turns.js'
@@ -18,6 +18,8 @@ import { watchCxTranscript } from './codex/codexSessions.js'
 
 export interface SessionDeps {
   db: VoiceChatDb
+  /** Пользователь этого соединения (изоляция данных/ходов). */
+  user: SessionUser
   /** Процесс-глобальный реестр ходов LLM (ходы переживают reconnect). */
   turns: TurnManager
   sttEngine: SttEngine
@@ -58,10 +60,12 @@ export function createSession(deps: SessionDeps): WsHandlers {
       // (например, страницу обновили посреди загрузки), сразу получим текущий
       // прогресс и последующие события — прогресс-бар восстановится.
       unsubDownload = deps.modelDownload?.subscribe((ev) => ctx.send(ev)) ?? null
-      // События ходов LLM (token/done/error/log) — каждому клиенту; плюс снапшот
-      // активных ходов, чтобы после обновления страницы стрим продолжился.
-      unsubTurns = deps.turns.subscribe((m) => ctx.send(m))
-      ctx.send({ t: 'claude.active', turns: deps.turns.active() })
+      // События ходов LLM (token/done/error/log) — только своему пользователю;
+      // плюс снапшот активных ходов, чтобы после обновления страницы стрим продолжился.
+      unsubTurns = deps.turns.subscribe((m, ownerUserId) => {
+        if (ownerUserId === deps.user.name) ctx.send(m)
+      })
+      ctx.send({ t: 'claude.active', turns: deps.turns.active(deps.user.name) })
       // Живой список машин-агентов: начальное состояние + пуш при изменениях.
       if (deps.agentsFeed) {
         ctx.send({ t: 'agents', agents: deps.agentsFeed.list() })
@@ -74,6 +78,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
       switch (msg.t) {
         case 'claude.send':
           deps.turns.start({
+            userId: deps.user.name,
             conversationId: msg.conversationId,
             segments: msg.segments,
             attachments: msg.attachments,
@@ -91,7 +96,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
             send: ctx.send,
             language: deps.language,
             diarization: deps.diarization,
-            isDiarizationEnabled: () => deps.db.getSettings().diarization
+            isDiarizationEnabled: () => deps.db.getSettings(deps.user.name).diarization
           })
           stt.start(msg.sampleRate)
           break

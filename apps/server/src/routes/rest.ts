@@ -13,6 +13,7 @@ import {
   type Settings
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
+import { uid } from '../users/auth.js'
 import { listMcpServers } from '../claude/mcp.js'
 import { getLoginStatus } from '../auth/loginStatus.js'
 import { listProjects, listSessions, readTranscript } from '../cc/ccSessions.js'
@@ -23,34 +24,34 @@ import {
 } from '../codex/codexSessions.js'
 
 export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promise<void> {
-  app.get(REST.conversations, async () => db.listConversations())
+  app.get(REST.conversations, async (req) => db.listConversations(uid(req)))
 
   app.post<{ Body: { title?: string } }>(REST.conversations, async (req) =>
-    db.createConversation(req.body?.title)
+    db.createConversation(uid(req), req.body?.title)
   )
 
   app.get<{ Querystring: { q?: string } }>(REST.conversationsSearch, async (req) =>
-    db.searchConversations(req.query.q ?? '')
+    db.searchConversations(uid(req), req.query.q ?? '')
   )
 
   app.get<{ Params: { id: string } }>('/api/conversations/:id', async (req, reply) => {
-    const conversation = db.getConversation(req.params.id)
+    const conversation = db.getConversation(uid(req), req.params.id)
     if (!conversation) return reply.code(404).send({ error: 'not found' })
-    return { conversation, messages: db.listMessages(req.params.id) }
+    return { conversation, messages: db.listMessages(uid(req), req.params.id) }
   })
 
   app.patch<{ Params: { id: string }; Body: { title: string } }>(
     '/api/conversations/:id',
     async (req, reply) => {
-      db.renameConversation(req.params.id, req.body.title)
-      const conversation = db.getConversation(req.params.id)
+      db.renameConversation(uid(req), req.params.id, req.body.title)
+      const conversation = db.getConversation(uid(req), req.params.id)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       return conversation
     }
   )
 
   app.delete<{ Params: { id: string } }>('/api/conversations/:id', async (req) => {
-    db.deleteConversation(req.params.id)
+    db.deleteConversation(uid(req), req.params.id)
     return { ok: true }
   })
 
@@ -58,17 +59,17 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promi
     '/api/conversations/:id/messages',
     async (req) => {
       const { role, text, time, engine, meta } = req.body
-      return db.addMessage(req.params.id, role, text, time, engine, meta)
+      return db.addMessage(uid(req), req.params.id, role, text, time, engine, meta)
     }
   )
 
   app.delete<{ Params: { id: string; messageId: string } }>(
     '/api/conversations/:id/messages/:messageId',
     async (req) => {
-      db.deleteMessage(req.params.id, req.params.messageId)
+      db.deleteMessage(uid(req), req.params.id, req.params.messageId)
       // История изменилась — сбрасываем сессию Claude, чтобы следующий запрос
       // пересобрал контекст из БД (модель «забудет» удалённое).
-      db.setClaudeSession(req.params.id, null)
+      db.setClaudeSession(uid(req), req.params.id, null)
       return { ok: true }
     }
   )
@@ -91,17 +92,18 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promi
   )
 
   app.post<{ Body: { slug: string; id: string } }>(REST.ccResume, async (req, reply) => {
+    const u = uid(req)
     const { slug, id } = req.body ?? {}
     if (!slug || !id) return reply.code(400).send({ error: 'slug и id обязательны' })
     const items = readTranscript(slug, id)
-    const conv = db.createConversation(ccResumeTitle(items))
+    const conv = db.createConversation(u, ccResumeTitle(items))
     const now = Date.now()
     for (const m of ccResumeMessages(items)) {
-      db.addMessage(conv.id, m.role, m.text, ccTimeLabel(m.ts, now))
+      db.addMessage(u, conv.id, m.role, m.text, ccTimeLabel(m.ts, now))
     }
     // Привязка к session-id CC → следующий ход пойдёт через `claude --resume <id>`.
-    db.setClaudeSession(conv.id, id)
-    return { conversation: db.getConversation(conv.id), messages: db.listMessages(conv.id) }
+    db.setClaudeSession(u, conv.id, id)
+    return { conversation: db.getConversation(u, conv.id), messages: db.listMessages(u, conv.id) }
   })
 
   // --- Проводник Codex ---------------------------------------------------
@@ -116,24 +118,25 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promi
   )
 
   app.post<{ Body: { id: string } }>(REST.cxResume, async (req, reply) => {
+    const u = uid(req)
     const { id } = req.body ?? {}
     if (!id) return reply.code(400).send({ error: 'id обязателен' })
     const items = readCxTranscript(id)
-    const conv = db.createConversation(cxResumeTitle(items))
+    const conv = db.createConversation(u, cxResumeTitle(items))
     const now = Date.now()
     for (const m of cxResumeMessages(items)) {
-      db.addMessage(conv.id, m.role, m.text, cxTimeLabel(m.ts, now), m.role === 'ai' ? 'codex' : undefined)
+      db.addMessage(u, conv.id, m.role, m.text, cxTimeLabel(m.ts, now), m.role === 'ai' ? 'codex' : undefined)
     }
     // Привязка к session-id Codex (префикс провайдера) → следующий ход пойдёт
     // через `codex exec resume <id>` (см. resumeIdFor в session.ts).
-    db.setClaudeSession(conv.id, `codex:${id}`)
-    return { conversation: db.getConversation(conv.id), messages: db.listMessages(conv.id) }
+    db.setClaudeSession(u, conv.id, `codex:${id}`)
+    return { conversation: db.getConversation(u, conv.id), messages: db.listMessages(u, conv.id) }
   })
 
-  app.get(REST.settings, async () => db.getSettings())
+  app.get(REST.settings, async (req) => db.getSettings(uid(req)))
 
   app.put<{ Body: Settings }>(REST.settings, async (req) => {
-    db.saveSettings(req.body)
-    return db.getSettings()
+    db.saveSettings(uid(req), req.body)
+    return db.getSettings(uid(req))
   })
 }

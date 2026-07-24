@@ -5,7 +5,12 @@ import type { FastifyInstance } from 'fastify'
 import { buildServer } from './server.js'
 import { loadConfig } from './config.js'
 import { VoiceChatDb } from './db/database.js'
+import { signToken } from './users/accounts.js'
 import type { LlmClient } from './claude/types.js'
+
+const SECRET = 'test-secret'
+const U = 'admin'
+const TOKEN = signToken({ name: U, role: 'admin' }, SECRET)
 
 // Мок LLM: сразу отдаёт session, две дельты и финал.
 const mockClaude: LlmClient = {
@@ -25,7 +30,12 @@ let port: number
 
 beforeEach(async () => {
   db = new VoiceChatDb(':memory:')
-  app = await buildServer({ config: loadConfig({ PORT: '0' }), db, claude: mockClaude })
+  app = await buildServer({
+    config: loadConfig({ PORT: '0' }),
+    db,
+    claude: mockClaude,
+    sessionSecret: SECRET
+  })
   await app.listen({ port: 0, host: '127.0.0.1' })
   port = (app.server.address() as AddressInfo).port
 })
@@ -34,17 +44,35 @@ afterEach(async () => {
   db.close()
 })
 
-function connect(): Promise<WebSocket> {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`)
+/** Подключение WS с токеном сессии в query. */
+function connect(p = port, token = TOKEN): Promise<WebSocket> {
+  const ws = new WebSocket(`ws://127.0.0.1:${p}/ws?token=${token}`)
   return new Promise((res, rej) => {
     ws.on('open', () => res(ws))
     ws.on('error', rej)
   })
 }
 
+describe('WS: аутентификация соединения', () => {
+  it('без токена сервер закрывает соединение', async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`)
+    // Сокет может кратко открыться и тут же закрыться — ждём именно close.
+    let opened = false
+    const result = await new Promise<'closed' | 'stayed'>((resolve) => {
+      ws.on('open', () => {
+        opened = true
+      })
+      ws.on('close', () => resolve('closed'))
+      setTimeout(() => resolve(opened ? 'stayed' : 'closed'), 800)
+    })
+    expect(result).toBe('closed')
+    ws.close()
+  })
+})
+
 describe('WS: Claude-стрим', () => {
   it('claude.send → token×2 + done; session-id сохранён в БД', async () => {
-    const conv = db.createConversation('Чат')
+    const conv = db.createConversation(U, 'Чат')
     const ws = await connect()
     const events: unknown[] = []
     const done = new Promise<void>((resolve) => {
@@ -66,7 +94,7 @@ describe('WS: Claude-стрим', () => {
     }
     expect(doneMsg.text).toBe('Привет')
     // session-id записан с префиксом провайдера
-    expect(db.getConversation(conv.id)?.claudeSessionId).toBe('claude:sess-xyz')
+    expect(db.getConversation(U, conv.id)?.claudeSessionId).toBe('claude:sess-xyz')
     // без verbose активность НЕ шлётся в глобальную консоль (событие claude.log)…
     expect(events.some((e) => (e as { t: string }).t === 'claude.log')).toBe(false)
     // …но собирается всегда и персистится в meta сохранённого сообщения (для подробного вида)
@@ -74,7 +102,7 @@ describe('WS: Claude-стрим', () => {
   })
 
   it('claude.send с verbose → приходит claude.log', async () => {
-    const conv = db.createConversation('Чат')
+    const conv = db.createConversation(U, 'Чат')
     const ws = await connect()
     const logs: unknown[] = []
     const done = new Promise<void>((resolve) => {
@@ -102,7 +130,7 @@ describe('WS: Claude-стрим', () => {
 describe('WS: выбор движка Codex', () => {
   it('llmProvider=codex → используется codex-клиент; session-id с префиксом codex', async () => {
     const cdb = new VoiceChatDb(':memory:')
-    cdb.saveSettings({ ...cdb.getSettings(), llmProvider: 'codex', codexModel: 'gpt-5-codex' })
+    cdb.saveSettings(U, { ...cdb.getSettings(U), llmProvider: 'codex', codexModel: 'gpt-5-codex' })
     const mockCodex: LlmClient = {
       send(req, h) {
         // модель берётся из codexModel
@@ -115,13 +143,13 @@ describe('WS: выбор движка Codex', () => {
       config: loadConfig({ PORT: '0' }),
       db: cdb,
       claude: mockClaude,
-      codex: mockCodex
+      codex: mockCodex,
+      sessionSecret: SECRET
     })
     await capp.listen({ port: 0, host: '127.0.0.1' })
     const cport = (capp.server.address() as AddressInfo).port
-    const conv = cdb.createConversation('Чат')
-    const ws = new WebSocket(`ws://127.0.0.1:${cport}/ws`)
-    await new Promise((r) => ws.on('open', r as () => void))
+    const conv = cdb.createConversation(U, 'Чат')
+    const ws = await connect(cport)
     const done = new Promise<{ text: string; engine?: string }>((resolve) => {
       ws.on('message', (d) => {
         const m = JSON.parse(d.toString())
@@ -135,7 +163,7 @@ describe('WS: выбор движка Codex', () => {
     // движок ответа запечён в событие claude.done
     expect(doneMsg.engine).toBe('codex')
     // session-id сохранён с префиксом codex и моделью из codexModel
-    expect(cdb.getConversation(conv.id)?.claudeSessionId).toBe('codex:thread-gpt-5-codex')
+    expect(cdb.getConversation(U, conv.id)?.claudeSessionId).toBe('codex:thread-gpt-5-codex')
     await capp.close()
     cdb.close()
   })
@@ -164,14 +192,19 @@ describe('WS: ходы переживают обрыв соединения (Tur
     sport: number
   }> {
     const sdb = new VoiceChatDb(':memory:')
-    const sapp = await buildServer({ config: loadConfig({ PORT: '0' }), db: sdb, claude })
+    const sapp = await buildServer({
+      config: loadConfig({ PORT: '0' }),
+      db: sdb,
+      claude,
+      sessionSecret: SECRET
+    })
     await sapp.listen({ port: 0, host: '127.0.0.1' })
     const sport = (sapp.server.address() as AddressInfo).port
     return { sapp, sdb, sport }
   }
 
   function connectTo(sport: number): Promise<WebSocket> {
-    const ws = new WebSocket(`ws://127.0.0.1:${sport}/ws`)
+    const ws = new WebSocket(`ws://127.0.0.1:${sport}/ws?token=${TOKEN}`)
     return new Promise((res, rej) => {
       ws.on('open', () => res(ws))
       ws.on('error', rej)
@@ -182,7 +215,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
 
   it('обрыв WS не отменяет ход: ответ сохраняет в БД сам сервер', async () => {
     const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча', 'сть'], 'Часть ответа', 60))
-    const conv = sdb.createConversation('Чат')
+    const conv = sdb.createConversation(U, 'Чат')
     const ws = await connectTo(sport)
     ws.send(
       JSON.stringify({
@@ -195,7 +228,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
     ws.close() // «обновление страницы» посреди генерации
     await wait(90)
 
-    const saved = sdb.listMessages(conv.id).filter((m) => m.role === 'ai')
+    const saved = sdb.listMessages(U, conv.id).filter((m) => m.role === 'ai')
     expect(saved).toHaveLength(1)
     expect(saved[0].text).toBe('Часть ответа')
     expect(saved[0].engine).toBe('claude')
@@ -206,7 +239,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
 
   it('новое подключение получает claude.active с накопленным текстом, а затем done с сообщением из БД', async () => {
     const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча', 'сть'], 'Часть ответа', 80))
-    const conv = sdb.createConversation('Чат')
+    const conv = sdb.createConversation(U, 'Чат')
     const ws1 = await connectTo(sport)
     ws1.send(
       JSON.stringify({
@@ -220,7 +253,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
 
     // Второй клиент («страница после обновления»); слушатель вешаем ДО open,
     // чтобы не потерять claude.active, который сервер шлёт сразу при подключении.
-    const ws2 = new WebSocket(`ws://127.0.0.1:${sport}/ws`)
+    const ws2 = new WebSocket(`ws://127.0.0.1:${sport}/ws?token=${TOKEN}`)
     const events: Array<{ t: string } & Record<string, unknown>> = []
     const done = new Promise<void>((resolve) => {
       ws2.on('message', (d) => {
@@ -247,7 +280,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
     }
     expect(doneMsg.text).toBe('Часть ответа')
     expect(doneMsg.message?.role).toBe('ai')
-    const saved = sdb.listMessages(conv.id).filter((m) => m.role === 'ai')
+    const saved = sdb.listMessages(U, conv.id).filter((m) => m.role === 'ai')
     expect(saved).toHaveLength(1)
     expect(doneMsg.message?.id).toBe(saved[0].id)
     await sapp.close()
@@ -256,7 +289,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
 
   it('claude.cancel с conversationId снимает ход: ничего не сохраняется, приходит пустой done', async () => {
     const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча'], 'Часть ответа', 60))
-    const conv = sdb.createConversation('Чат')
+    const conv = sdb.createConversation(U, 'Чат')
     const ws = await connectTo(sport)
     const events: Array<{ t: string; text?: string }> = []
     const emptyDone = new Promise<void>((resolve) => {
@@ -277,7 +310,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
     ws.send(JSON.stringify({ t: 'claude.cancel', conversationId: conv.id }))
     await emptyDone
     await wait(80) // финал мока уже не должен ничего записать
-    expect(sdb.listMessages(conv.id).filter((m) => m.role === 'ai')).toHaveLength(0)
+    expect(sdb.listMessages(U, conv.id).filter((m) => m.role === 'ai')).toHaveLength(0)
     ws.close()
     await sapp.close()
     sdb.close()

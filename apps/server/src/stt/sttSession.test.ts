@@ -5,7 +5,11 @@ import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
+import { signToken } from '../users/accounts.js'
 import type { SttEngine } from './types.js'
+
+const SECRET = 'test-secret'
+const TOKEN = signToken({ name: 'admin', role: 'admin' }, SECRET)
 
 // Мок STT: любой буфер → фиксированный результат.
 const mockStt: SttEngine = {
@@ -23,7 +27,12 @@ let port: number
 
 beforeEach(async () => {
   db = new VoiceChatDb(':memory:')
-  app = await buildServer({ config: loadConfig({ PORT: '0' }), db, sttEngine: mockStt })
+  app = await buildServer({
+    config: loadConfig({ PORT: '0' }),
+    db,
+    sttEngine: mockStt,
+    sessionSecret: SECRET
+  })
   await app.listen({ port: 0, host: '127.0.0.1' })
   port = (app.server.address() as AddressInfo).port
 })
@@ -33,7 +42,7 @@ afterEach(async () => {
 })
 
 function connect(): Promise<WebSocket> {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`)
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${TOKEN}`)
   return new Promise((res, rej) => {
     ws.on('open', () => res(ws))
     ws.on('error', rej)
