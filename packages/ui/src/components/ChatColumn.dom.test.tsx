@@ -153,3 +153,44 @@ describe('ChatColumn — кнопка меню (мобильный сайдба�
     expect(screen.queryByLabelText('Меню разговоров')).not.toBeInTheDocument()
   })
 })
+
+describe('ChatColumn — простой/подробный вид ответа', () => {
+  const withActivity: Message[] = [
+    { id: 'u1', conversationId: 'c', role: 'u1', text: 'Вопрос', time: '10:00', createdAt: 1 },
+    {
+      id: 'a1',
+      conversationId: 'c',
+      role: 'ai',
+      text: 'Ответ',
+      time: '10:01',
+      createdAt: 2,
+      meta: {
+        activity: [
+          { kind: 'tool_use', summary: 'Bash: ls', detail: 'ls', raw: '{"t":"assistant"}' },
+          { kind: 'result', summary: 'Готово', raw: '{"t":"result"}' }
+        ]
+      }
+    }
+  ]
+
+  it('простой вид по умолчанию: счётчик есть, секций нет', () => {
+    renderCol({ messages: withActivity })
+    expect(screen.getByTestId('activity-count').textContent).toContain('2 действия')
+    expect(screen.queryByTestId('activity-sections')).toBeNull()
+  })
+
+  it('кнопка «Подробнее» раскрывает секции хода', async () => {
+    renderCol({ messages: withActivity })
+    await userEvent.click(screen.getByTitle('Подробнее'))
+    expect(screen.getByTestId('activity-sections')).toBeInTheDocument()
+    expect(screen.getAllByTestId('activity-section')).toHaveLength(2)
+    // и обратно
+    await userEvent.click(screen.getByTitle('Кратко'))
+    expect(screen.queryByTestId('activity-sections')).toBeNull()
+  })
+
+  it('без активности кнопки переключения нет', () => {
+    renderCol()
+    expect(screen.queryByTitle('Подробнее')).not.toBeInTheDocument()
+  })
+})

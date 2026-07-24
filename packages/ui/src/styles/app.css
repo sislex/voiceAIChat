@@ -1500,6 +1500,78 @@
   color: #9fbfe0;
 }
 
+/* ---- Активность ответа модели (простой статус + подробные секции) ---- */
+.msgact {
+  margin-bottom: 8px;
+}
+.msgact-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.msgact-phrase {
+  font-weight: 600;
+}
+.msgact-count {
+  flex: none;
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.msgact-sections {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+}
+.actsec {
+  border-radius: 7px;
+  margin-bottom: 3px;
+  border-left: 3px solid var(--border);
+}
+.actsec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.actsec-head:hover {
+  background: var(--panel);
+  border-radius: 7px;
+}
+.actsec-where {
+  flex: none;
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+/* Кнопка «Подробнее / Кратко» — компактная, с акцентным текстом. */
+.actbtn {
+  width: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  opacity: 0.75;
+}
+.actbtn--stream {
+  display: inline-block;
+  margin-top: 8px;
+}
+
 /* ---- Тёмная тема: точечные оверрайды поверхностей, не покрытых токенами ---- */
 [data-theme='dark'] .convo:hover,
 [data-theme='dark'] .footbtn:hover {

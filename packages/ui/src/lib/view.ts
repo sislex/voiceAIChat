@@ -1,4 +1,11 @@
-import type { LlmProvider, MessageRole, TurnMeta, VoiceState } from '@shared/types'
+import type {
+  ClaudeLogEntry,
+  ClaudeLogKind,
+  LlmProvider,
+  MessageRole,
+  TurnMeta,
+  VoiceState
+} from '@shared/types'
 
 export const ACCENT = '#3D64C8'
 
@@ -97,4 +104,93 @@ function pluralTurns(n: number): string {
   if (m10 === 1 && m100 !== 11) return 'ход'
   if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return 'хода'
   return 'ходов'
+}
+
+// --- Активность хода (простой/подробный вид сообщения) --------------------
+
+/** Короткий ярлык вида активности для бейджа (как в терминале). */
+export const ACTIVITY_KIND_LABEL: Record<ClaudeLogKind, string> = {
+  system: 'sys',
+  thinking: 'think',
+  tool_use: 'tool',
+  tool_result: 'res',
+  result: 'done',
+  stt: '🎤',
+  tts: '🔊',
+  other: '···'
+}
+
+/** Имя инструмента из summary записи tool_use («Bash: ls» → «Bash»). */
+function toolNameOf(entry: ClaudeLogEntry): string {
+  const i = entry.summary.indexOf(':')
+  return (i > 0 ? entry.summary.slice(0, i) : entry.summary).trim()
+}
+
+/** Где выполнялась команда: на выбранной машине или на сервере. */
+function whereRan(execTarget?: string | null): string {
+  return execTarget ? `на машине «${execTarget}»` : 'на сервере'
+}
+
+/** Множественное число для «N действий». */
+export function pluralActions(n: number): string {
+  const m10 = n % 10
+  const m100 = n % 100
+  if (m10 === 1 && m100 !== 11) return 'действие'
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return 'действия'
+  return 'действий'
+}
+
+/**
+ * Живой статус хода «что сейчас происходит» по последней записи активности.
+ * Явного таймера ожидания CLI не отдаёт — стадию «жду результат команды»
+ * приближаем статусом по последней tool_use (команда отправлена, ждём ответа).
+ */
+export function activityStatus(
+  entries: ClaudeLogEntry[],
+  voice: VoiceState,
+  execTarget?: string | null
+): string {
+  const last = entries[entries.length - 1]
+  if (!last) return voice === 'transcribing' ? 'Распознаю речь…' : 'Отправляю запрос…'
+  switch (last.kind) {
+    case 'system':
+      return 'Готовлю сессию…'
+    case 'thinking':
+      return 'Размышляю…'
+    case 'tool_use': {
+      const tool = toolNameOf(last)
+      if (tool === 'Bash') return `Выполняю команду ${whereRan(execTarget)}…`
+      if (['Read', 'Edit', 'Write', 'MultiEdit'].includes(tool))
+        return `Работаю с файлами ${whereRan(execTarget)}…`
+      return `Вызываю инструмент ${tool}…`
+    }
+    case 'tool_result':
+      return 'Обрабатываю результат…'
+    case 'result':
+      return 'Готово'
+    case 'stt':
+      return 'Распознаю речь…'
+    case 'tts':
+      return 'Озвучиваю…'
+    default:
+      return 'Работаю…'
+  }
+}
+
+/** Метка «где» для секции подробного вида (в модели / на машине / на клиенте). */
+export function activityLocation(entry: ClaudeLogEntry, execTarget?: string | null): string {
+  switch (entry.kind) {
+    case 'tool_use':
+    case 'tool_result':
+      return whereRan(execTarget)
+    case 'thinking':
+    case 'system':
+    case 'result':
+      return 'в модели'
+    case 'stt':
+    case 'tts':
+      return 'на клиенте'
+    default:
+      return ''
+  }
 }

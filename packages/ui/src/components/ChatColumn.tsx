@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { Message, TurnMeta, VoiceState } from '@shared/types'
+import type { ClaudeLogEntry, Message, TurnMeta, VoiceState } from '@shared/types'
 import { parseQuestions } from '@shared/questions'
 import type { AgentInfo } from '@shared/agentProtocol'
 import {
@@ -14,6 +14,7 @@ import { Dots } from './animations'
 import { Markdown } from './Markdown'
 import { QuestionsForm } from './QuestionsForm'
 import { MessageMeta } from './MessageMeta'
+import { MessageActivity } from './MessageActivity'
 import { copyText } from '../lib/clipboard'
 
 export interface ChatColumnProps {
@@ -28,6 +29,8 @@ export interface ChatColumnProps {
   diarization: boolean
   /** Стримящийся ответ Claude (растёт по токенам); пусто — нет активного стрима. */
   streamingReply?: string
+  /** Активность текущего (незавершённого) хода — для живого статуса/секций. */
+  liveActivity?: ClaudeLogEntry[]
   /** Текст ошибки для баннера (null/undefined — нет баннера). */
   error?: string | null
   /** Закрыть баннер ошибки. */
@@ -79,6 +82,7 @@ export function ChatColumn({
   liveSegments,
   diarization,
   streamingReply = '',
+  liveActivity = [],
   canSpeak = false,
   speakingMessageId = null,
   onSpeakMessage,
@@ -107,6 +111,18 @@ export function ChatColumn({
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [titleEditing, setTitleEditing] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
+  // id сообщений в подробном виде (по умолчанию все в простом); плюс отдельный
+  // флаг подробного вида для живого (стримящегося) хода.
+  const [detailedIds, setDetailedIds] = useState<Set<string>>(new Set())
+  const [liveDetailed, setLiveDetailed] = useState(false)
+
+  const toggleDetailed = (id: string): void =>
+    setDetailedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
 
   const startTitleEdit = (): void => {
     if (!onRenameTitle) return
@@ -321,6 +337,13 @@ export function ChatColumn({
                   </div>
                 ) : isAi ? (
                   <div className="bub">
+                    {m.meta?.activity && m.meta.activity.length > 0 && (
+                      <MessageActivity
+                        activity={m.meta.activity}
+                        detailed={detailedIds.has(m.id)}
+                        execTarget={execTarget}
+                      />
+                    )}
                     <Markdown>{aiText}</Markdown>
                     {parsed &&
                       (isLast && onAnswerQuestions && state === 'idle' ? (
@@ -342,6 +365,17 @@ export function ChatColumn({
                   <div className="mfoot">
                     <p className="mtime">{m.time}</p>
                     {isAi && m.meta && <MessageMeta meta={m.meta} />}
+                    {isAi && m.meta?.activity && m.meta.activity.length > 0 && (
+                      <button
+                        className="msgbtn actbtn"
+                        aria-label={detailedIds.has(m.id) ? 'Свернуть подробности' : 'Показать подробности'}
+                        title={detailedIds.has(m.id) ? 'Кратко' : 'Подробнее'}
+                        aria-pressed={detailedIds.has(m.id)}
+                        onClick={() => toggleDetailed(m.id)}
+                      >
+                        {detailedIds.has(m.id) ? '≡ Кратко' : '≣ Подробнее'}
+                      </button>
+                    )}
                     {isAi && (
                       <button
                         className="msgbtn"
@@ -418,8 +452,29 @@ export function ChatColumn({
 
           {isThinking && (
             <div className="think" data-testid="think">
-              <Dots />
-              {aiLabel} обрабатывает запрос…
+              {liveActivity.length > 0 ? (
+                <MessageActivity
+                  live
+                  voice={state}
+                  activity={liveActivity}
+                  detailed={liveDetailed}
+                  execTarget={execTarget}
+                />
+              ) : (
+                <>
+                  <Dots />
+                  {aiLabel} обрабатывает запрос…
+                </>
+              )}
+              {liveActivity.length > 0 && (
+                <button
+                  className="msgbtn actbtn"
+                  aria-pressed={liveDetailed}
+                  onClick={() => setLiveDetailed((v) => !v)}
+                >
+                  {liveDetailed ? '≡ Кратко' : '≣ Подробнее'}
+                </button>
+              )}
             </div>
           )}
 
@@ -429,7 +484,25 @@ export function ChatColumn({
                 {speakerName('ai', diarization, aiLabel)}
               </span>
               <div className="bub">
+                {liveActivity.length > 0 && (
+                  <MessageActivity
+                    live
+                    voice={state}
+                    activity={liveActivity}
+                    detailed={liveDetailed}
+                    execTarget={execTarget}
+                  />
+                )}
                 <Markdown>{streamingReply}</Markdown>
+                {liveActivity.length > 0 && (
+                  <button
+                    className="msgbtn actbtn actbtn--stream"
+                    aria-pressed={liveDetailed}
+                    onClick={() => setLiveDetailed((v) => !v)}
+                  >
+                    {liveDetailed ? '≡ Кратко' : '≣ Подробнее'}
+                  </button>
+                )}
               </div>
             </div>
           )}

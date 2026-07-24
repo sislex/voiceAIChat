@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import type { ClaudeLogEntry, ClaudeLogKind } from '@shared/types'
+import type { ClaudeLogEntry } from '@shared/types'
+import { ACTIVITY_KIND_LABEL as KIND_LABEL } from '../lib/view'
 
 export interface ConsolePanelProps {
   /** Записи активности агента (в порядке поступления). */
@@ -8,18 +9,6 @@ export interface ConsolePanelProps {
   open: boolean
   /** Свернуть/развернуть панель. */
   onToggle: () => void
-}
-
-/** Ярлык вида активности для бейджа (короткий, как в терминале). */
-const KIND_LABEL: Record<ClaudeLogKind, string> = {
-  system: 'sys',
-  thinking: 'think',
-  tool_use: 'tool',
-  tool_result: 'res',
-  result: 'done',
-  stt: '🎤',
-  tts: '🔊',
-  other: '···'
 }
 
 /** Одна запись лога: клик раскрывает сырой stream-json. */

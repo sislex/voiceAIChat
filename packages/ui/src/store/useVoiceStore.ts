@@ -125,7 +125,9 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
       if (window.claude.onActive) {
         unsubs.push(window.claude.onActive((m) => store.actions.applyClaudeActive(m.turns)))
       }
-      unsubs.push(window.claude.onLog((m) => store.actions.applyClaudeLog(m.entry)))
+      unsubs.push(
+        window.claude.onLog((m) => store.actions.applyClaudeLog(m.entry, m.conversationId))
+      )
     }
     if (typeof window !== 'undefined' && window.cc) {
       unsubs.push(window.cc.onTail((m) => store.actions.applyCcTailItems(m.items)))

@@ -1,5 +1,66 @@
 import { describe, it, expect } from 'vitest'
-import { chipClass } from './view'
+import type { ClaudeLogEntry } from '@shared/types'
+import { activityLocation, activityStatus, chipClass, pluralActions } from './view'
+
+const log = (kind: ClaudeLogEntry['kind'], summary: string): ClaudeLogEntry => ({
+  kind,
+  summary,
+  raw: '{}'
+})
+
+describe('activityStatus — живая фраза «что происходит»', () => {
+  it('нет записей → «Отправляю запрос…» (в thinking)', () => {
+    expect(activityStatus([], 'thinking')).toBe('Отправляю запрос…')
+  })
+
+  it('нет записей в transcribing → распознавание речи', () => {
+    expect(activityStatus([], 'transcribing')).toBe('Распознаю речь…')
+  })
+
+  it('Bash с execTarget → «на машине «X»», без него → «на сервере»', () => {
+    const entries = [log('tool_use', 'Bash: ls -la')]
+    expect(activityStatus(entries, 'thinking', 'macbook')).toBe(
+      'Выполняю команду на машине «macbook»…'
+    )
+    expect(activityStatus(entries, 'thinking')).toBe('Выполняю команду на сервере…')
+  })
+
+  it('Read/Edit → работа с файлами; прочий инструмент — по имени', () => {
+    expect(activityStatus([log('tool_use', 'Read: a.ts')], 'thinking')).toBe(
+      'Работаю с файлами на сервере…'
+    )
+    expect(activityStatus([log('tool_use', 'Grep: foo')], 'thinking')).toBe(
+      'Вызываю инструмент Grep…'
+    )
+  })
+
+  it('thinking/result — соответствующие фразы', () => {
+    expect(activityStatus([log('thinking', '💭 …')], 'thinking')).toBe('Размышляю…')
+    expect(activityStatus([log('result', 'Готово')], 'thinking')).toBe('Готово')
+  })
+})
+
+describe('activityLocation — метка «где» для секции', () => {
+  it('tool_use/tool_result — машина или сервер', () => {
+    expect(activityLocation(log('tool_use', 'Bash: ls'), 'srv')).toBe('на машине «srv»')
+    expect(activityLocation(log('tool_result', 'ok'))).toBe('на сервере')
+  })
+
+  it('thinking/system/result — в модели', () => {
+    expect(activityLocation(log('thinking', '…'))).toBe('в модели')
+    expect(activityLocation(log('system', '…'))).toBe('в модели')
+  })
+})
+
+describe('pluralActions — склонение «действие»', () => {
+  it('склоняет по русским правилам', () => {
+    expect(pluralActions(1)).toBe('действие')
+    expect(pluralActions(2)).toBe('действия')
+    expect(pluralActions(5)).toBe('действий')
+    expect(pluralActions(11)).toBe('действий')
+    expect(pluralActions(21)).toBe('действие')
+  })
+})
 
 describe('chipClass — цвет подписи по движку', () => {
   it('Claude и Codex получают разные классы', () => {

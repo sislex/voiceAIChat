@@ -60,12 +60,17 @@ describe('WS: Claude-стрим', () => {
 
     const tokens = events.filter((e) => (e as { t: string }).t === 'claude.token')
     expect(tokens).toHaveLength(2)
-    const doneMsg = events.find((e) => (e as { t: string }).t === 'claude.done') as { text: string }
+    const doneMsg = events.find((e) => (e as { t: string }).t === 'claude.done') as {
+      text: string
+      message?: { meta?: { activity?: { summary: string }[] } }
+    }
     expect(doneMsg.text).toBe('Привет')
     // session-id записан с префиксом провайдера
     expect(db.getConversation(conv.id)?.claudeSessionId).toBe('claude:sess-xyz')
-    // без verbose активность НЕ шлётся
+    // без verbose активность НЕ шлётся в глобальную консоль (событие claude.log)…
     expect(events.some((e) => (e as { t: string }).t === 'claude.log')).toBe(false)
+    // …но собирается всегда и персистится в meta сохранённого сообщения (для подробного вида)
+    expect(doneMsg.message?.meta?.activity?.map((a) => a.summary)).toEqual(['Bash: npm test'])
   })
 
   it('claude.send с verbose → приходит claude.log', async () => {

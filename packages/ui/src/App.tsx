@@ -97,6 +97,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         liveSegments={state.liveSegments}
         diarization={state.settings.diarization}
         streamingReply={state.streamingReply}
+        liveActivity={state.liveActivity}
         canSpeak={state.ttsAvailable}
         speakingMessageId={state.speakingMessageId}
         onSpeakMessage={actions.replayMessage}

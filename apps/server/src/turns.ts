@@ -13,6 +13,7 @@ import {
   type ActiveTurn,
   type AgentPolicy,
   type ClaudeInitInfo,
+  type ClaudeLogEntry,
   type Message,
   type ServerMessage,
   type SttSegmentWire,
@@ -97,7 +98,12 @@ interface TurnState {
   handle: LlmHandle
   partial: string
   verbose: boolean
+  /** Активность хода (для подробного вида сообщения); собирается всегда. */
+  activity: ClaudeLogEntry[]
 }
+
+/** Кэп на число записей активности, хранимых у одного хода. */
+const ACTIVITY_CAP = 500
 
 export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   const listeners = new Set<(m: ServerMessage) => void>()
@@ -185,7 +191,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let initInfo: ClaudeInitInfo | undefined
     const startedAt = now()
     let finished = false
-    const turn: TurnState = { handle: { cancel: () => {} }, partial: '', verbose: Boolean(req.verbose) }
+    const turn: TurnState = {
+      handle: { cancel: () => {} },
+      partial: '',
+      verbose: Boolean(req.verbose),
+      activity: []
+    }
     turns.set(conversationId, turn)
     const finish = (): void => {
       finished = true
@@ -221,7 +232,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               ...(initInfo?.tools ? { tools: initInfo.tools } : {}),
               ...(initInfo?.slashCommands ? { slashCommands: initInfo.slashCommands } : {}),
               ...(initInfo?.mcpServers ? { mcpServers: initInfo.mcpServers } : {})
-            }
+            },
+            // Активность хода — для подробного вида сообщения (персистится в meta).
+            ...(turn.activity.length ? { activity: turn.activity } : {})
           }
           // Ответ сохраняет сервер: клиент мог обновить страницу или уйти.
           const finalText = text.trim() ? text : turn.partial
@@ -243,10 +256,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           finish()
           broadcast({ t: 'claude.error', conversationId, message })
         },
-        // Режим консоли: активность агента шлём только если ход запрошен с verbose.
-        onActivity: req.verbose
-          ? (entry) => broadcast({ t: 'claude.log', conversationId, entry })
-          : undefined
+        // Активность собираем всегда (для подробного вида сообщения); в глобальную
+        // консоль (событие claude.log) шлём только если ход запрошен с verbose.
+        onActivity: (entry) => {
+          if (finished) return
+          turn.activity.push(entry)
+          if (turn.activity.length > ACTIVITY_CAP) turn.activity.shift()
+          if (req.verbose) broadcast({ t: 'claude.log', conversationId, entry })
+        }
       }
     )
     // Мгновенно завершившийся ход (мок/ошибка спавна) уже убран из реестра.

@@ -478,7 +478,7 @@ describe('voiceStore — реальный Claude (claudeEnabled)', () => {
       activeId,
       [{ speakerId: 1, text: 'Привет' }],
       [],
-      false // showConsole по умолчанию выключен → verbose=false
+      true // verbose всегда true: активность нужна для статуса и подробного вида
     )
 
     await vi.advanceTimersByTimeAsync(STEP) // мок-ответ не должен появиться
@@ -706,7 +706,7 @@ describe('voiceStore — режим консоли (activity log)', () => {
     expect(store.getState().consoleOpen).toBe(initial)
   })
 
-  it('submitText передаёт verbose=true в Claude, когда showConsole включён', async () => {
+  it('submitText передаёт verbose=true в Claude всегда (активность нужна для статуса)', async () => {
     const api = createFakeApi([])
     const sendClaudePrompt = vi.fn()
     const store = createVoiceStore({
@@ -716,7 +716,7 @@ describe('voiceStore — режим консоли (activity log)', () => {
       sendClaudePrompt
     })
     await store.actions.init()
-    await store.actions.updateSettings({ showConsole: true })
+    // showConsole выключен — verbose всё равно true (для живого статуса/подробного вида).
     store.actions.setDraft('вопрос')
     await store.actions.submitText()
 
@@ -742,6 +742,38 @@ describe('voiceStore — режим консоли (activity log)', () => {
     store.actions.applyClaudeLog(entry('Read: x'))
     store.actions.newConversation()
     expect(store.getState().consoleLog).toEqual([])
+  })
+
+  it('applyClaudeLog копит liveActivity только для активного разговора', async () => {
+    const { store } = makeStore(['A'])
+    await store.actions.init()
+    const activeId = store.getState().activeId as string
+    store.actions.applyClaudeLog(entry('Bash: ls'), activeId)
+    store.actions.applyClaudeLog(entry('чужой ход'), 'other-conv')
+    // В liveActivity — только запись активного разговора; в общий лог — обе.
+    expect(store.getState().liveActivity.map((e) => e.summary)).toEqual(['Bash: ls'])
+    expect(store.getState().consoleLog.length).toBe(2)
+  })
+
+  it('applyClaudeDone очищает liveActivity активного разговора', async () => {
+    const { store } = makeStore(['A'])
+    await store.actions.init()
+    const activeId = store.getState().activeId as string
+    store.actions.applyClaudeLog(entry('Bash: ls'), activeId)
+    expect(store.getState().liveActivity.length).toBe(1)
+    store.actions.applyClaudeDone('', undefined, undefined, undefined, activeId)
+    expect(store.getState().liveActivity).toEqual([])
+  })
+
+  it('liveActivity очищается при смене разговора', async () => {
+    const { store } = makeStore(['A', 'B'])
+    await store.actions.init()
+    const activeId = store.getState().activeId as string
+    store.actions.applyClaudeLog(entry('Bash: ls'), activeId)
+    expect(store.getState().liveActivity.length).toBe(1)
+    const other = store.getState().conversations.find((c) => c.id !== activeId)!
+    await store.actions.selectConversation(other.id)
+    expect(store.getState().liveActivity).toEqual([])
   })
 })
 
@@ -1075,7 +1107,7 @@ describe('voiceStore — правки/удаление/вложения', () => 
       expect.any(String),
       [{ speakerId: 1, text: 'новый вопрос' }],
       [],
-      false
+      true
     )
   })
 
@@ -1099,7 +1131,7 @@ describe('voiceStore — правки/удаление/вложения', () => 
       expect.any(String),
       [{ speakerId: 1, text: 'посмотри файл' }],
       [attId],
-      false
+      true
     )
     // В историю попала пометка о вложении.
     expect(store.getState().messages[0].text).toContain('📎 скрин.png')
