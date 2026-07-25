@@ -13,6 +13,7 @@ import { MachineStatus } from './components/MachineStatus'
 import { MachineUtility } from './components/MachineUtility'
 import type { MachineOps } from './components/machine'
 import { CodexObserver } from './components/CodexObserver'
+import { ConversationSettings } from './components/ConversationSettings'
 import { useVoiceStore } from './store/useVoiceStore'
 import { useVoiceCues } from './lib/useVoiceCues'
 import { useHotkeys } from './lib/useHotkeys'
@@ -35,6 +36,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const { state, actions } = useVoiceStore({ api, now, delays })
   // Мобильный режим: выдвинут ли сайдбар (на десктопе класс side--open не влияет).
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false)
   useVoiceCues(state.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
   // Горячие клавиши: пробел (hold) — запись, Esc — стоп/отмена по состоянию.
@@ -142,6 +144,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onRenameTitle={(t) => {
           if (state.activeId) void actions.renameConversation(state.activeId, t)
         }}
+        onOpenConversationSettings={() => setConversationSettingsOpen(true)}
         state={state.voice}
         messages={state.messages}
         loadingMessages={state.loadingMessages}
@@ -167,9 +170,6 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         turnMeta={state.lastTurnMeta}
         agents={state.agents}
         execTarget={activeExecTarget}
-        onChangeExecTarget={(target) => {
-          if (state.activeId) void actions.setConversationExecTarget(state.activeId, target)
-        }}
         aiLabel={state.settings.llmProvider === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar
@@ -191,6 +191,24 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           />
         }
       />
+
+      {conversationSettingsOpen && activeConversation && (
+        <ConversationSettings
+          conversation={activeConversation}
+          agents={state.agents}
+          machineOps={machineOps}
+          onSave={async ({ title, execTarget, workdir, skillNames }) => {
+            await actions.renameConversation(activeConversation.id, title)
+            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames)
+          }}
+          onAddSkill={async (agentId, skill) => {
+            const agent = state.agents.find((item) => item.id === agentId)
+            if (!agent) return
+            await actions.setAgentPolicy(agentId, { ...agent.policy, skills: [...agent.policy.skills, skill] })
+          }}
+          onClose={() => setConversationSettingsOpen(false)}
+        />
+      )}
 
       {showConsole && (
         <ConsolePanel

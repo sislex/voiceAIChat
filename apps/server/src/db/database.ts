@@ -41,6 +41,8 @@ interface ConversationRow {
   updated_at: number
   claude_session_id: string | null
   exec_target: string | null
+  workdir: string | null
+  skill_names: string | null
   last_exec_target?: string | null
 }
 
@@ -160,6 +162,12 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'exec_target')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN exec_target TEXT`)
     }
+    if (!convCols.some((c) => c.name === 'workdir')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN workdir TEXT`)
+    }
+    if (!convCols.some((c) => c.name === 'skill_names')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN skill_names TEXT NOT NULL DEFAULT '[]'`)
+    }
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN engine TEXT`)
@@ -208,7 +216,7 @@ export class VoiceChatDb {
          VALUES (?, ?, ?, ?, NULL, ?, NULL)`
       )
       .run(id, title, ts, ts, userId)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, lastExecTarget: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], lastExecTarget: null }
   }
 
   listConversations(userId: string): Conversation[] {
@@ -278,10 +286,26 @@ export class VoiceChatDb {
       .run(title, this.now(), id, userId)
   }
 
-  setConversationExecTarget(userId: string, id: string, execTarget: string | null): Conversation | null {
+  setConversationExecTarget(
+    userId: string,
+    id: string,
+    execTarget: string | null,
+    workdir?: string | null,
+    skillNames?: string[]
+  ): Conversation | null {
+    const fields = ['exec_target = ?']
+    const values: unknown[] = [execTarget]
+    if (workdir !== undefined) {
+      fields.push('workdir = ?')
+      values.push(workdir)
+    }
+    if (skillNames !== undefined) {
+      fields.push('skill_names = ?')
+      values.push(JSON.stringify(skillNames))
+    }
     this.db
-      .prepare(`UPDATE conversations SET exec_target = ? WHERE id = ? AND user_id = ?`)
-      .run(execTarget, id, userId)
+      .prepare(`UPDATE conversations SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`)
+      .run(...values, id, userId)
     return this.getConversation(userId, id)
   }
 
@@ -588,6 +612,15 @@ export class VoiceChatDb {
       messageCount,
       claudeSessionId: row.claude_session_id,
       execTarget: row.exec_target,
+      workdir: row.workdir,
+      skillNames: (() => {
+        try {
+          const value = JSON.parse(row.skill_names ?? '[]') as unknown
+          return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+        } catch {
+          return []
+        }
+      })(),
       lastExecTarget: row.last_exec_target ?? null
     }
   }

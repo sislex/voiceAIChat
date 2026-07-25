@@ -57,6 +57,10 @@ export interface Conversation {
   claudeSessionId: string | null
   /** Изменяемая цель новых ходов только этого чата. */
   execTarget: string | null
+  /** Корневая директория для команд на выбранной машине. */
+  workdir: string | null
+  /** Имена навыков выбранной машины, включённых для этого разговора. */
+  skillNames: string[]
   /** Неизменяемая цель последнего сообщения; используется подписью в списке чатов. */
   lastExecTarget: string | null
 }

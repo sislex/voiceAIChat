@@ -84,7 +84,7 @@ function resumeIdFor(stored: string | null, provider: 'claude' | 'codex'): strin
 }
 
 /** Краткое описание политики машины для системного промпта Claude. */
-function policySummary(p: AgentPolicy): string {
+function policySummary(p: AgentPolicy, selectedSkills?: string[]): string {
   const parts: string[] = []
   if (p.allowedDirs.length) parts.push(`Работай только в каталогах: ${p.allowedDirs.join(', ')}.`)
   parts.push(
@@ -97,8 +97,13 @@ function policySummary(p: AgentPolicy): string {
   )
   if (p.denyPatterns.length) parts.push(`Запрещённые паттерны команд: ${p.denyPatterns.join(', ')}.`)
   if (p.allowPatterns.length) parts.push(`Разрешены только команды: ${p.allowPatterns.join(', ')}.`)
-  if (p.skills.length) {
-    parts.push(`Доступные скрипты: ${p.skills.map((s) => `«${s.name}» → ${s.command}`).join('; ')}.`)
+  const skills = selectedSkills === undefined
+    ? p.skills
+    : p.skills.filter((skill) => selectedSkills.includes(skill.name))
+  if (skills.length) {
+    parts.push(`Навыки этого разговора: ${skills.map((s) => `«${s.name}» → ${s.command}${s.description ? ` (${s.description})` : ''}`).join('; ')}.`)
+  } else if (selectedSkills !== undefined) {
+    parts.push('Для этого разговора навыки не выбраны.')
   }
   return `Политика машины: ${parts.join(' ')}`
 }
@@ -158,8 +163,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // смене движка чужой resume-id игнорируем (свежий ход).
     const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)
     let permissionMode = settings.permissionMode
-    // Рабочий каталог — только если задан и существует (иначе игнор).
-    const cwd = settings.workdir && existsSync(settings.workdir) ? settings.workdir : undefined
+    // Для удалённой машины каталог принадлежит разговору и существует на машине;
+    // локальный каталог по-прежнему проверяем на сервере.
+    const localCwd = settings.workdir && existsSync(settings.workdir) ? settings.workdir : undefined
     const attachmentPaths = (req.attachments ?? [])
       .map((id) => deps.resolveUpload?.(id))
       .filter((p): p is string => typeof p === 'string')
@@ -198,11 +204,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       }
       const policy = deps.agents.policyOf(target)
       remote = {
-        mcpUrl: `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}`,
+        mcpUrl: `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}${conv?.workdir ? `&cwd=${encodeURIComponent(conv.workdir)}` : ''}`,
         agentName: deps.agents.nameOf(target) ?? target,
-        policySummary: policy ? policySummary(policy) : undefined
+        policySummary: policy ? policySummary(policy, conv?.skillNames ?? []) : undefined
       }
     }
+    const cwd = remote ? conv?.workdir ?? undefined : localCwd
     // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
     // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
     // выполнения). На своей машине действия регулирует политика машины.

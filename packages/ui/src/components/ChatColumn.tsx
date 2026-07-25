@@ -30,6 +30,8 @@ export interface ChatColumnProps {
   onRenameTitle?: (title: string) => void
   /** Показать/скрыть сайдбар (кнопка ☰, видна только на мобильных). */
   onToggleSidebar?: () => void
+  /** Открыть отдельную страницу настроек текущего разговора. */
+  onOpenConversationSettings?: () => void
   state: VoiceState
   messages: Message[]
   /** Идёт загрузка сообщений разговора — показываем лоадер вместо ленты. */
@@ -88,6 +90,7 @@ export function ChatColumn({
   title,
   onRenameTitle,
   onToggleSidebar,
+  onOpenConversationSettings,
   state,
   messages,
   loadingMessages = false,
@@ -226,23 +229,15 @@ export function ChatColumn({
             {title}
           </h1>
         )}
+        {onOpenConversationSettings && (
+          <button className="convsettings-open" aria-label="Настройки разговора" title="Настройки разговора" onClick={onOpenConversationSettings}>⚙</button>
+        )}
         {onChangeExecTarget && (
           <label className="exectarget" title="Машина для новых сообщений этого чата">
             <span className={`exectarget-dot ${execTarget === 'none' ? 'disabled' : execTarget ? 'remote' : 'server'}`} aria-hidden />
-            <select
-              className="exectarget-sel"
-              aria-label="Машина активного чата"
-              value={execTarget ?? ''}
-              disabled={state !== 'idle'}
-              onChange={(e) => onChangeExecTarget(e.target.value || null)}
-            >
-              <option value="">Сервер</option>
-              <option value="none">Без машины</option>
-              {agents.map((a) => (
-                <option key={a.id} value={a.id} disabled={!a.online}>
-                  {a.name}{a.online ? '' : ' (офлайн)'}
-                </option>
-              ))}
+            <select className="exectarget-sel" aria-label="Машина активного чата" value={execTarget ?? ''} disabled={state !== 'idle'} onChange={(e) => onChangeExecTarget(e.target.value || null)}>
+              <option value="">Сервер</option><option value="none">Без машины</option>
+              {agents.map((a) => <option key={a.id} value={a.id} disabled={!a.online}>{a.name}{a.online ? '' : ' (офлайн)'}</option>)}
             </select>
           </label>
         )}
