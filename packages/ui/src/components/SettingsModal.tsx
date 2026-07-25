@@ -331,27 +331,6 @@ export function SettingsModal({
                   />
                 </div>
 
-                <div className="frow">
-                  <div>
-                    <p className="flab">Где выполнять команды</p>
-                    <p className="fsub">Shell-команды агента: на сервере или на вашей машине</p>
-                  </div>
-                  <select
-                    className="sel"
-                    aria-label="Где выполнять команды"
-                    value={settings.execTarget ?? ''}
-                    onChange={(e) => onChange({ execTarget: e.target.value || null })}
-                  >
-                    <option value="">На сервере</option>
-                    {agents.map((a) => (
-                      <option key={a.id} value={a.id} disabled={!a.online}>
-                        {a.name}
-                        {a.online ? '' : ' (офлайн)'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
                 <div className="voicedl" data-testid="agent-list">
                   <p className="flab">Машины</p>
                   {agents.map((a) => (

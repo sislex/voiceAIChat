@@ -176,7 +176,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     )
     // Цель выполнения команд: выбранная машина-агент. Только своя машина
     // (чужую игнорируем → выполняем на сервере). Офлайн своей — сразу ошибка.
-    const requestedTarget = req.execTarget === undefined ? settings.execTarget : req.execTarget
+    const requestedTarget =
+      req.execTarget === undefined ? (conv ? conv.execTarget : settings.execTarget) : req.execTarget
     const executionDisabled = requestedTarget === 'none'
     const target =
       !executionDisabled && requestedTarget && deps.db.listAgents(userId).some((a) => a.id === requestedTarget)

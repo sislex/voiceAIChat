@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-07-26
-checked: 4805be2
+updated: 2026-07-25
+checked: aa35067
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -21,8 +21,8 @@ journal_mode = WAL`, `foreign_keys = ON`.
 
 | Таблица | Смысл |
 |---|---|
-| `conversations` | разговор: `title`, таймстемпы, `claude_session_id` (для `--resume`), `user_id` |
-| `messages` | `role` (`u<N>` для говорящих, `ai`), `text`, `engine`, `meta` (JSON `TurnMeta`), `exec_target` (снимок цели выполнения), каскад по разговору |
+| `conversations` | разговор: `title`, таймстемпы, `claude_session_id` (для `--resume`), `user_id`, `exec_target` (изменяемая цель новых ходов чата) |
+| `messages` | `role` (`u<N>` для говорящих, `ai`), `text`, `engine`, `meta` (JSON `TurnMeta`), `exec_target` (неизменяемый снимок цели выполнения), каскад по разговору |
 | `speakers` | метки говорящих внутри разговора |
 | `settings` | key-value, значения — JSON-строки |
 | `agents` | машины: `token_hash`, `last_seen`, `policy` (JSON), `user_id` |

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Conversation, SessionUser } from '@shared/types'
+import type { AgentInfo } from '@shared/agentProtocol'
 import { ACCENT } from '../lib/view'
 import { GearIcon } from './icons'
 
@@ -41,6 +42,9 @@ export interface SidebarProps {
   onPick: (id: string) => void
   onDelete: (id: string) => void
   onRename: (id: string, title: string) => void
+  /** Живой список машин для независимого выбора в каждом чате. */
+  agents?: AgentInfo[]
+  onChangeExecTarget?: (id: string, target: string | null) => void
   searchQuery: string
   onSearch: (query: string) => void
   onOpenObserver: () => void
@@ -71,6 +75,8 @@ export function Sidebar({
   onPick,
   onDelete,
   onRename,
+  agents = [],
+  onChangeExecTarget,
   searchQuery,
   onSearch,
   onOpenObserver,
@@ -168,6 +174,26 @@ export function Sidebar({
                   </p>
                 )}
                 <p className="cmeta">{formatMeta(c, now)}</p>
+                {onChangeExecTarget && (
+                  <label className="chat-machine" onClick={(e) => e.stopPropagation()}>
+                    <span>Машина</span>
+                    <select
+                      aria-label={`Машина чата «${c.title}»`}
+                      value={c.execTarget ?? ''}
+                      disabled={workingSet.has(c.id)}
+                      title={workingSet.has(c.id) ? 'Нельзя менять машину во время ответа' : undefined}
+                      onChange={(e) => onChangeExecTarget(c.id, e.target.value || null)}
+                    >
+                      <option value="">Сервер</option>
+                      <option value="none">Без машины</option>
+                      {agents.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}{a.online ? '' : ' (офлайн)'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <p className={workingSet.has(c.id) ? 'cstatus on' : 'cstatus'}>
                   <span className="cstatus-dot" aria-hidden />
                   {workingSet.has(c.id) ? 'идёт работа' : 'не ведётся'}

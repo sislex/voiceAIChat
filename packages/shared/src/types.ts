@@ -55,6 +55,8 @@ export interface Conversation {
   messageCount: number
   /** session-id Claude CLI, привязанный к разговору (null до первого ответа). */
   claudeSessionId: string | null
+  /** Изменяемая цель новых ходов только этого чата. */
+  execTarget: string | null
 }
 
 /**

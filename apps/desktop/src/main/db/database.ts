@@ -37,6 +37,7 @@ interface ConversationRow {
   created_at: number
   updated_at: number
   claude_session_id: string | null
+  exec_target: string | null
 }
 
 interface MessageRow {
@@ -75,6 +76,10 @@ export class VoiceChatDb {
 
   /** Лёгкие миграции существующих БД (idempotent). */
   private migrate(): void {
+    const convCols = this.db.prepare(`PRAGMA table_info(conversations)`).all() as Array<{ name: string }>
+    if (!convCols.some((c) => c.name === 'exec_target')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN exec_target TEXT`)
+    }
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN engine TEXT`)
@@ -113,11 +118,11 @@ export class VoiceChatDb {
     const ts = this.now()
     this.db
       .prepare(
-        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id)
-         VALUES (?, ?, ?, ?, NULL)`
+        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, exec_target)
+         VALUES (?, ?, ?, ?, NULL, NULL)`
       )
       .run(id, title, ts, ts)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null }
   }
 
   listConversations(): Conversation[] {
@@ -168,6 +173,11 @@ export class VoiceChatDb {
       .run(title, this.now(), id)
   }
 
+  setConversationExecTarget(id: string, execTarget: string | null): Conversation | null {
+    this.db.prepare(`UPDATE conversations SET exec_target = ? WHERE id = ?`).run(execTarget, id)
+    return this.getConversation(id)
+  }
+
   deleteConversation(id: string): void {
     // ON DELETE CASCADE удалит сообщения и спикеров.
     this.db.prepare(`DELETE FROM conversations WHERE id = ?`).run(id)
@@ -211,11 +221,6 @@ export class VoiceChatDb {
       ...(engine ? { engine } : {}),
       ...(meta && Object.keys(meta).length > 0 ? { meta } : {})
     }
-  }
-
-  setMessageExecTarget(conversationId: string, messageId: string, execTarget: string | null): Message | null {
-    this.db.prepare(`UPDATE messages SET exec_target = ? WHERE id = ? AND conversation_id = ?`).run(execTarget, messageId, conversationId)
-    return this.listMessages(conversationId).find((m) => m.id === messageId) ?? null
   }
 
   /** Удаляет одно сообщение по id (в рамках разговора). */
@@ -277,7 +282,8 @@ export class VoiceChatDb {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       messageCount,
-      claudeSessionId: row.claude_session_id
+      claudeSessionId: row.claude_session_id,
+      execTarget: row.exec_target
     }
   }
 }

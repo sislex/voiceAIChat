@@ -40,6 +40,7 @@ interface ConversationRow {
   created_at: number
   updated_at: number
   claude_session_id: string | null
+  exec_target: string | null
 }
 
 interface AgentRow {
@@ -125,6 +126,8 @@ export class VoiceChatDb {
   private readonly db: Database.Database
   private readonly newId: () => string
   private readonly now: () => number
+  /** Close-события WebSocket могут прийти после teardown; закрытую БД больше не трогаем. */
+  private closed = false
 
   constructor(filename: string, deps: DbDeps = {}) {
     this.db = new Database(filename)
@@ -152,6 +155,9 @@ export class VoiceChatDb {
       .all() as Array<{ name: string }>
     if (!convCols.some((c) => c.name === 'user_id')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN user_id TEXT`)
+    }
+    if (!convCols.some((c) => c.name === 'exec_target')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN exec_target TEXT`)
     }
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
@@ -185,6 +191,8 @@ export class VoiceChatDb {
   }
 
   close(): void {
+    if (this.closed) return
+    this.closed = true
     this.db.close()
   }
 
@@ -195,11 +203,11 @@ export class VoiceChatDb {
     const ts = this.now()
     this.db
       .prepare(
-        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id)
-         VALUES (?, ?, ?, ?, NULL, ?)`
+        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target)
+         VALUES (?, ?, ?, ?, NULL, ?, NULL)`
       )
       .run(id, title, ts, ts, userId)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null }
   }
 
   listConversations(userId: string): Conversation[] {
@@ -260,6 +268,19 @@ export class VoiceChatDb {
       .run(title, this.now(), id, userId)
   }
 
+  setConversationExecTarget(userId: string, id: string, execTarget: string | null): Conversation | null {
+    this.db
+      .prepare(`UPDATE conversations SET exec_target = ? WHERE id = ? AND user_id = ?`)
+      .run(execTarget, id, userId)
+    return this.getConversation(userId, id)
+  }
+
+  clearConversationExecTargetForAgent(userId: string, agentId: string): void {
+    this.db
+      .prepare(`UPDATE conversations SET exec_target = NULL WHERE user_id = ? AND exec_target = ?`)
+      .run(userId, agentId)
+  }
+
   deleteConversation(userId: string, id: string): void {
     // ON DELETE CASCADE удалит сообщения и спикеров.
     this.db.prepare(`DELETE FROM conversations WHERE id = ? AND user_id = ?`).run(id, userId)
@@ -309,12 +330,6 @@ export class VoiceChatDb {
       ...(meta && Object.keys(meta).length > 0 ? { meta } : {}),
       ...(execTarget !== undefined ? { execTarget } : {})
     }
-  }
-
-  setMessageExecTarget(userId: string, conversationId: string, messageId: string, execTarget: string | null): Message | null {
-    if (!this.ownsConversation(userId, conversationId)) return null
-    this.db.prepare(`UPDATE messages SET exec_target = ? WHERE id = ? AND conversation_id = ?`).run(execTarget, messageId, conversationId)
-    return this.listMessages(userId, conversationId).find((m) => m.id === messageId) ?? null
   }
 
   /** Удаляет одно сообщение по id (в рамках разговора пользователя). */
@@ -432,6 +447,7 @@ export class VoiceChatDb {
 
   /** Обновляет last_seen (при регистрации и по pong). */
   touchAgent(id: string): void {
+    if (this.closed) return
     this.db.prepare(`UPDATE agents SET last_seen = ? WHERE id = ?`).run(this.now(), id)
   }
 
@@ -560,7 +576,8 @@ export class VoiceChatDb {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       messageCount,
-      claudeSessionId: row.claude_session_id
+      claudeSessionId: row.claude_session_id,
+      execTarget: row.exec_target
     }
   }
 }

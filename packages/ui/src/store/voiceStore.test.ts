@@ -163,9 +163,10 @@ describe('voiceStore — интеграция стора с api-моком и м
     await store.actions.init()
     expect(store.getState().activeId).not.toBeNull()
 
-    store.actions.newConversation()
+    await store.actions.newConversation()
 
-    expect(store.getState().activeId).toBeNull()
+    expect(store.getState().activeId).not.toBeNull()
+    expect(store.getState().conversations).toHaveLength(2)
     expect(store.getState().messages).toHaveLength(0)
     expect(store.getState().voice).toBe('idle')
   })
@@ -740,7 +741,7 @@ describe('voiceStore — режим консоли (activity log)', () => {
     expect(store.getState().consoleLog).toEqual([])
 
     store.actions.applyClaudeLog(entry('Read: x'))
-    store.actions.newConversation()
+    await store.actions.newConversation()
     expect(store.getState().consoleLog).toEqual([])
   })
 

@@ -244,11 +244,13 @@ export interface StoreActions {
   login(name: string, password: string): Promise<void>
   /** Выйти: очистить сессию и данные, показать экран логина (web). */
   logout(): Promise<void>
-  newConversation(): void
+  newConversation(): Promise<void>
   selectConversation(id: string): Promise<void>
   deleteConversation(id: string): Promise<void>
   /** Переименовать разговор (БД + список). Пустое имя игнорируется. */
   renameConversation(id: string, title: string): Promise<void>
+  /** Изменить машину только одного разговора. */
+  setConversationExecTarget(id: string, execTarget: string | null): Promise<void>
   /** Задать поисковый запрос по разговорам (пусто — весь список). */
   setSearchQuery(query: string): Promise<void>
   /** Экспортировать активный разговор в Markdown/JSON (скачивание файла). */
@@ -268,7 +270,6 @@ export interface StoreActions {
   deleteMessage(id: string): Promise<void>
   /** Исправить сообщение пользователя: удалить его и все последующие, переспросить. */
   editMessage(id: string, newText: string): Promise<void>
-  setMessageExecTarget(id: string, execTarget: string | null): Promise<void>
   /** Прикрепить файл к следующему сообщению (загрузка на сервер). */
   addAttachment(file: File): Promise<void>
   /** Убрать прикреплённый файл по id. */
@@ -649,7 +650,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   /** Создаёт разговор, если активного нет; заголовок — из первой реплики. */
   async function ensureConversation(titleSeed: string): Promise<string | null> {
-    if (state.activeId) return state.activeId
+    if (state.activeId) {
+      const current = state.conversations.find((c) => c.id === state.activeId)
+      if (current && current.messageCount === 0 && current.title === 'Новый разговор') {
+        await api['conversations:rename']({ id: current.id, title: titleFromText(titleSeed) })
+        await refreshConversations()
+      }
+      return state.activeId
+    }
     const conv = await api['conversations:create']({ title: titleFromText(titleSeed) })
     setState({ activeId: conv.id, messages: [] })
     await refreshConversations()
@@ -792,8 +800,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await finishReply(mockReply(prompt))
   }
 
+  /** Цель активного разговора; у нового несохранённого чата — сервер. */
+  function activeConversationExecTarget(): string | null {
+    return state.conversations.find((c) => c.id === state.activeId)?.execTarget ?? null
+  }
+
   /** Роутинг ответа: реальный Claude (стрим событиями) или мок-пайплайн. */
-  function beginReply(segments: SttSegmentWire[], attachments: string[] = [], execTarget: string | null = state.settings.execTarget): void {
+  function beginReply(segments: SttSegmentWire[], attachments: string[] = [], execTarget: string | null = activeConversationExecTarget()): void {
     if (claudeEnabled && deps.sendClaudePrompt && state.activeId) {
       setState({ streamingReply: '', lastTurnMeta: null, liveActivity: [] })
       ttsBuffer = ''
@@ -936,9 +949,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Удаляет машину-агента; сбрасывает цель выполнения, если она указывала на неё. */
   async function deleteAgent(id: string): Promise<void> {
     await api['agents:delete']({ id })
-    if (state.settings.execTarget === id) {
-      setState({ settings: { ...state.settings, execTarget: null } })
-    }
+    setState({
+      conversations: state.conversations.map((c) =>
+        c.execTarget === id ? { ...c, execTarget: null } : c
+      ),
+      ...(state.settings.execTarget === id
+        ? { settings: { ...state.settings, execTarget: null } }
+        : {})
+    })
     await refreshAgents()
   }
 
@@ -1333,7 +1351,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   function defaultUtilityAgent(): string | null {
     const online = state.agents.find((a) => a.online)
     if (online) return online.id
-    const target = state.agents.find((a) => a.id === state.settings.execTarget)
+    const target = state.agents.find((a) => a.id === activeConversationExecTarget())
     return target?.id ?? state.agents[0]?.id ?? null
   }
 
@@ -1389,7 +1407,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function maybeOpenUtility(text: string): Promise<boolean> {
     const tool = detectOpenUtility(text, state.agents)
     if (!tool) return false
-    if (state.settings.execTarget === 'none') {
+    if (activeConversationExecTarget() === 'none') {
       await persistMessage('ai', 'Команды отключены: для этого сообщения выбрано «Без машины».')
       await refreshConversations()
       return true
@@ -1464,13 +1482,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     void audio.stop().catch((err) => console.warn('[audio] остановка захвата не удалась', err))
   }
 
-  function newConversation(): void {
+  async function newConversation(): Promise<void> {
     cancelTimers()
     stopCapture()
     resetTts() // ход текущего разговора не отменяем — он доиграет на сервере
     dispatchVoice('reset')
+    const conversation = await api['conversations:create']({ title: 'Новый разговор' })
     setState({
-      activeId: null,
+      activeId: conversation.id,
       messages: [],
       liveSegments: [],
       draft: '',
@@ -1481,6 +1500,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       streamingReply: '',
       lastTurnMeta: null
     })
+    await refreshConversations()
   }
 
   async function selectConversation(id: string): Promise<void> {
@@ -1506,6 +1526,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshConversations()
   }
 
+  async function setConversationExecTarget(id: string, execTarget: string | null): Promise<void> {
+    const conversation = await api['conversations:setExecTarget']({ id, execTarget })
+    setState({
+      conversations: state.conversations.map((c) => (c.id === id ? conversation : c))
+    })
+  }
+
   async function deleteConversation(id: string): Promise<void> {
     await api['conversations:delete']({ id })
     const wasActive = state.activeId === id
@@ -1513,7 +1540,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (wasActive) {
       const next = state.conversations[0]
       if (next) await selectConversation(next.id)
-      else newConversation()
+      else await newConversation()
     }
   }
 
@@ -1543,7 +1570,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if ((!text && atts.length === 0) || state.voice !== 'idle') return
     setState({ error: null })
     await ensureConversation(text || atts.map((a) => a.name).join(', '))
-    const execTarget = state.settings.execTarget
+    const execTarget = activeConversationExecTarget()
     await persistMessage('u1', composeUserText(text, atts), undefined, undefined, execTarget)
     setState({ draft: '', attachments: [] })
     await refreshConversations()
@@ -1562,7 +1589,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     const t = text.trim()
     if (!t || state.voice !== 'idle' || !state.activeId) return
     setState({ error: null })
-    const execTarget = state.settings.execTarget
+    const execTarget = activeConversationExecTarget()
     await persistMessage('u1', t, undefined, undefined, execTarget)
     await refreshConversations()
     if (!dispatchVoice('submit_text')) return // idle → thinking
@@ -1575,12 +1602,6 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     cancelTimers()
     cancelReply() // отмена запроса к Claude + сброс озвучки + очистка стрима
     dispatchVoice('reset') // thinking/speaking → idle
-  }
-
-  async function setMessageExecTarget(id: string, execTarget: string | null): Promise<void> {
-    if (!state.activeId) return
-    const message = await api['messages:setExecTarget']({ conversationId: state.activeId, messageId: id, execTarget })
-    setState({ messages: state.messages.map((m) => (m.id === id ? message : m)) })
   }
 
   async function deleteMessage(id: string): Promise<void> {
@@ -1927,6 +1948,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       selectConversation,
       deleteConversation,
       renameConversation,
+      setConversationExecTarget,
       setSearchQuery,
       exportConversation,
       completeOnboarding,
@@ -1939,7 +1961,6 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       cancelRequest,
       deleteMessage,
       editMessage,
-      setMessageExecTarget,
       addAttachment,
       removeAttachment,
       startVoice,

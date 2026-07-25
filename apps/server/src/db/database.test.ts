@@ -46,6 +46,16 @@ describe('VoiceChatDb — разговоры', () => {
     expect(list.map((c) => c.id)).toEqual([a.id, b.id])
   })
 
+  it('цель выполнения хранится независимо для каждого разговора', () => {
+    const first = db.createConversation(U, 'Первый')
+    const second = db.createConversation(U, 'Второй')
+
+    db.setConversationExecTarget(U, first.id, 'machine-1')
+
+    expect(db.getConversation(U, first.id)?.execTarget).toBe('machine-1')
+    expect(db.getConversation(U, second.id)?.execTarget).toBeNull()
+  })
+
   it('переименование меняет заголовок', () => {
     const c = db.createConversation(U, 'Старое')
     db.renameConversation(U, c.id, 'Новое')
