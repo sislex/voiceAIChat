@@ -17,7 +17,7 @@ import type {
 } from '@shared/ipc'
 import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
 import { detectOpenUtility, toolBlock, type ToolSpec } from '@shared/tools'
-import type { ActiveTurn } from '@shared/protocol'
+import type { ActiveTurn, SystemCapabilities } from '@shared/protocol'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
@@ -93,6 +93,8 @@ export interface AppState {
   voiceDownloads: Record<string, number>
   /** Модели Whisper на диске (наличие/размер) — для управления местом. */
   whisperModels: WhisperModelInfo[]
+  /** Возможности системы (ресурсы контейнера): блок STT/TTS при нехватке памяти. null — ещё не загружено. */
+  capabilities: SystemCapabilities | null
   /** Лог активности агента (режим консоли). */
   consoleLog: ClaudeLogEntry[]
   /** Развёрнута ли панель консоли. */
@@ -434,6 +436,7 @@ function initialState(): AppState {
     voicesDownloadable: false,
     voiceDownloads: {},
     whisperModels: [],
+    capabilities: null,
     consoleLog: [],
     consoleOpen: true,
     liveActivity: [],
@@ -827,6 +830,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshWhisperModels()
     await refreshTtsVoices()
     await refreshVoiceCatalog()
+    await refreshCapabilities()
     await refreshMcpServers()
     await refreshLoginStatus()
     startLoginStatusPolling()
@@ -986,6 +990,16 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function refreshVoiceCatalog(): Promise<void> {
     const catalog = await api['tts:catalog']()
     setState({ voiceCatalog: catalog.voices, voicesDownloadable: catalog.downloadable })
+  }
+
+  /** Грузит возможности системы (ресурсы контейнера); ошибки/старый мост — не критичны. */
+  async function refreshCapabilities(): Promise<void> {
+    if (!api['system:capabilities']) return
+    try {
+      setState({ capabilities: await api['system:capabilities']() })
+    } catch (err) {
+      console.warn('[system] не удалось получить возможности системы', err)
+    }
   }
 
   /** Грузит список моделей Whisper с размерами (для управления местом). */

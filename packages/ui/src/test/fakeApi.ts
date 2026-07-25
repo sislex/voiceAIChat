@@ -112,6 +112,12 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'settings:save': async (next) => {
       settings = { ...next }
     },
+    'system:capabilities': async () => ({
+      stt: { available: true, reason: '' },
+      tts: { available: true, reason: '' },
+      memoryLimitBytes: 8 * 1024 * 1024 * 1024,
+      cpuCount: 4
+    }),
     'stt:status': async () => ({ present: true, model: settings.whisperModel }),
     'stt:models': async () => [
       { model: 'large-v3-turbo', present: true, sizeBytes: 1_624_555_275 },

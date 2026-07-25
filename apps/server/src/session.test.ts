@@ -207,6 +207,71 @@ describe('WS: роль user не выполняет на сервере (фор�
   })
 })
 
+describe('WS: блок STT/TTS при нехватке ресурсов контейнера', () => {
+  // Завышаем порог памяти через env → capabilities помечает STT/TTS недоступными,
+  // и сервер обязан жёстко отклонять audio.start / tts.speak с ошибкой.
+  async function buildBlocked(): Promise<{ bapp: FastifyInstance; bdb: VoiceChatDb; bport: number }> {
+    const bdb = new VoiceChatDb(':memory:')
+    const bapp = await buildServer({
+      config: loadConfig({ PORT: '0', VC_MIN_MEM_STT: '999999999999', VC_MIN_MEM_TTS: '999999999999' }),
+      db: bdb,
+      claude: mockClaude,
+      sessionSecret: SECRET
+    })
+    await bapp.listen({ port: 0, host: '127.0.0.1' })
+    const bport = (bapp.server.address() as AddressInfo).port
+    return { bapp, bdb, bport }
+  }
+
+  it('audio.start → stt.error (распознавание не запускается)', async () => {
+    const { bapp, bdb, bport } = await buildBlocked()
+    const ws = await connect(bport)
+    const err = new Promise<{ t: string; message: string }>((resolve) => {
+      ws.on('message', (d) => {
+        const m = JSON.parse(d.toString())
+        if (m.t === 'stt.error') resolve(m)
+      })
+    })
+    ws.send(JSON.stringify({ t: 'audio.start', sampleRate: 16000 }))
+    const m = await err
+    expect(m.message).toContain('распознавания')
+    ws.close()
+    await bapp.close()
+    bdb.close()
+  })
+
+  it('tts.speak → tts.error (озвучка не запускается)', async () => {
+    const { bapp, bdb, bport } = await buildBlocked()
+    const ws = await connect(bport)
+    const err = new Promise<{ t: string; message: string }>((resolve) => {
+      ws.on('message', (d) => {
+        const m = JSON.parse(d.toString())
+        if (m.t === 'tts.error') resolve(m)
+      })
+    })
+    ws.send(JSON.stringify({ t: 'tts.speak', text: 'привет', voice: '' }))
+    const m = await err
+    expect(m.message).toContain('озвучки')
+    ws.close()
+    await bapp.close()
+    bdb.close()
+  })
+
+  it('GET /api/system/capabilities отражает блок', async () => {
+    const { bapp, bdb } = await buildBlocked()
+    const res = await bapp.inject({
+      method: 'GET',
+      url: '/api/system/capabilities',
+      headers: { authorization: `Bearer ${TOKEN}` }
+    })
+    const cap = res.json()
+    expect(cap.stt.available).toBe(false)
+    expect(cap.tts.available).toBe(false)
+    await bapp.close()
+    bdb.close()
+  })
+})
+
 describe('WS: выбор движка Codex', () => {
   it('llmProvider=codex → используется codex-клиент; session-id с префиксом codex', async () => {
     const cdb = new VoiceChatDb(':memory:')

@@ -32,6 +32,28 @@ export interface SttStatus {
   model: WhisperModel
 }
 
+/** Доступность одной функции (STT/TTS) на этой машине/в контейнере. */
+export interface CapabilityStatus {
+  /** Функция разрешена (ресурсов достаточно). */
+  available: boolean
+  /** Причина недоступности для показа в UI ('' — если доступно). */
+  reason: string
+}
+
+/**
+ * Возможности системы по ресурсам контейнера. Считаются на сервере при старте:
+ * если памяти меньше порога — распознавание речи (STT) и/или озвучка (TTS)
+ * блокируются (и в настройках, и жёстко на сервере).
+ */
+export interface SystemCapabilities {
+  stt: CapabilityStatus
+  tts: CapabilityStatus
+  /** Лимит памяти контейнера (cgroup) либо память хоста, байты. */
+  memoryLimitBytes: number
+  /** Число доступных CPU (cgroup-квота либо ядра хоста). */
+  cpuCount: number
+}
+
 // --- HTTP REST -----------------------------------------------------------
 //
 // GET    /api/health                         -> { ok, version }
@@ -43,6 +65,7 @@ export interface SttStatus {
 // POST   /api/conversations/:id/messages AddMessageArgs -> Message
 // GET    /api/settings                       -> Settings
 // PUT    /api/settings  Settings             -> Settings
+// GET    /api/system/capabilities            -> SystemCapabilities
 // GET    /api/stt/status                     -> SttStatus
 // GET    /api/tts/voices                     -> TtsVoiceInfo[]
 // GET    /api/tts/catalog                    -> TtsVoiceCatalog
@@ -80,6 +103,7 @@ export const REST = {
   message: (id: string, messageId: string) => `/api/conversations/${id}/messages/${messageId}`,
   uploads: '/api/uploads',
   settings: '/api/settings',
+  systemCapabilities: '/api/system/capabilities',
   sttStatus: '/api/stt/status',
   sttModels: '/api/stt/models',
   sttModel: (model: string) => `/api/stt/models/${model}`,

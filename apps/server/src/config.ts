@@ -40,6 +40,10 @@ export interface ServerConfig {
   claudeGatewayAuthMode: 'x-api-key' | 'bearer' | 'both'
   /** Отображение имён моделей Claude Code в имена upstream. */
   claudeGatewayModelMap: Record<string, string>
+  /** Порог памяти для распознавания речи (STT), байты; undefined — дефолт по модели. */
+  minMemSttBytes?: number
+  /** Порог памяти для озвучки (TTS), байты; undefined — дефолт. */
+  minMemTtsBytes?: number
 }
 
 const DEFAULT_DATA_DIR = join(homedir(), '.voicechat-server')
@@ -94,6 +98,17 @@ function parseModelMap(raw: string | undefined): Record<string, string> {
   }
 }
 
+/** Разбирает порог памяти: число байт или с суффиксом G/M/K (напр. '1.5G'). undefined — не задан. */
+function parseBytes(raw: string | undefined): number | undefined {
+  if (!raw) return undefined
+  const m = /^\s*([\d.]+)\s*([gmk])?b?\s*$/i.exec(raw)
+  if (!m) return undefined
+  const n = Number(m[1])
+  if (!Number.isFinite(n) || n <= 0) return undefined
+  const mult = { g: 1024 ** 3, m: 1024 ** 2, k: 1024 }[m[2]?.toLowerCase() ?? ''] ?? 1
+  return Math.round(n * mult)
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const dataDir = env.VC_DATA_DIR ?? DEFAULT_DATA_DIR
   const modelsDir = pick(env.VC_MODELS_DIR, REPO.modelsDir, join(dataDir, 'models'))
@@ -116,6 +131,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       env.VC_CLAUDE_UPSTREAM_AUTH === 'bearer' || env.VC_CLAUDE_UPSTREAM_AUTH === 'both'
         ? env.VC_CLAUDE_UPSTREAM_AUTH
         : 'x-api-key',
-    claudeGatewayModelMap: parseModelMap(env.VC_CLAUDE_MODEL_MAP)
+    claudeGatewayModelMap: parseModelMap(env.VC_CLAUDE_MODEL_MAP),
+    minMemSttBytes: parseBytes(env.VC_MIN_MEM_STT),
+    minMemTtsBytes: parseBytes(env.VC_MIN_MEM_TTS)
   }
 }

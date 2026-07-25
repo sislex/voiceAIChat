@@ -39,6 +39,9 @@ import { downloadPiperVoice } from './tts/voiceDownload.js'
 import type { TtsEngine } from './tts/types.js'
 import type { TtsVoiceCatalog } from '@voicechat/shared'
 import { registerAnthropicGateway } from './anthropic/gateway.js'
+import { detectResources } from './system/resources.js'
+import { computeCapabilities } from './system/capabilities.js'
+import type { SystemCapabilities } from '@voicechat/shared'
 
 const VERSION = '0.1.0'
 
@@ -161,6 +164,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return { present: isModelPresent(opts.config.modelsDir, model, { existsSync, statSync }), model }
   })
 
+  // Ресурсы контейнера считаем один раз при старте (лимит cgroup стабилен). На их
+  // основе — возможности STT/TTS: при нехватке памяти функции блокируются и в
+  // настройках (UI), и жёстко в WS-сессии (см. createSession). Порог STT зависит
+  // от выбранной модели Whisper, поэтому пересчитываем на каждый вызов (дёшево).
+  const resources = detectResources()
+  const capabilities = (): SystemCapabilities =>
+    computeCapabilities(resources, machineWhisperModel(), undefined, {
+      stt: opts.config.minMemSttBytes,
+      tts: opts.config.minMemTtsBytes
+    })
+  app.get(REST.systemCapabilities, async (): Promise<SystemCapabilities> => capabilities())
+
   // Управление местом: список моделей с размером и удаление файлов.
   app.get(REST.sttModels, async () => listModels(opts.config.modelsDir, { existsSync, statSync }))
   app.delete<{ Params: { model: WhisperModel } }>('/api/stt/models/:model', async (req) => {
@@ -237,6 +252,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       sttEngine,
       ttsEngine,
       diarization,
+      capabilities,
       modelDownload,
       downloadVoice: (id, onProgress) =>
         downloadPiperVoice(id, opts.config.piperVoicesDir, onProgress),

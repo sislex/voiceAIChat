@@ -3,7 +3,7 @@
 // Сами ходы LLM живут в процесс-глобальном TurnManager и переживают обрыв
 // соединения: обновление страницы не отменяет генерацию ответа.
 
-import type { AgentInfo, SessionUser } from '@voicechat/shared'
+import type { AgentInfo, SessionUser, SystemCapabilities } from '@voicechat/shared'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'
 import type { TurnManager } from './turns.js'
@@ -25,6 +25,8 @@ export interface SessionDeps {
   sttEngine: SttEngine
   ttsEngine: TtsEngine
   diarization?: DiarizationEngine
+  /** Возможности системы по ресурсам контейнера (блокировка STT/TTS при нехватке памяти). */
+  capabilities: () => SystemCapabilities
   language?: string
   /** Процесс-глобальный менеджер скачивания модели Whisper (переживает переподключения). */
   modelDownload?: {
@@ -89,7 +91,13 @@ export function createSession(deps: SessionDeps): WsHandlers {
           deps.turns.cancel(msg.conversationId)
           break
 
-        case 'audio.start':
+        case 'audio.start': {
+          // Жёсткий блок: если ресурсов контейнера мало — STT не запускаем.
+          const sttCap = deps.capabilities().stt
+          if (!sttCap.available) {
+            ctx.send({ t: 'stt.error', message: sttCap.reason })
+            break
+          }
           stt?.dispose()
           stt = createSttSession({
             engine: deps.sttEngine,
@@ -100,6 +108,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
           })
           stt.start(msg.sampleRate)
           break
+        }
         case 'audio.stop':
           stt?.stop()
           break
@@ -109,10 +118,17 @@ export function createSession(deps: SessionDeps): WsHandlers {
           deps.modelDownload?.start()
           break
 
-        case 'tts.speak':
+        case 'tts.speak': {
+          // Жёсткий блок озвучки при нехватке ресурсов контейнера.
+          const ttsCap = deps.capabilities().tts
+          if (!ttsCap.available) {
+            ctx.send({ t: 'tts.error', message: ttsCap.reason })
+            break
+          }
           if (!tts) tts = createTtsSession({ engine: deps.ttsEngine, send: ctx.send })
           tts.speak(msg.text, msg.voice)
           break
+        }
         case 'tts.cancel':
           tts?.cancel()
           break
