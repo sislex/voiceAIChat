@@ -425,3 +425,33 @@ describe('REST: conversations/messages/settings', () => {
     expect(saved.execTarget).toBeNull()
   })
 })
+
+describe('REST: утилиты машины (exec/fs)', () => {
+  it('exec: 404 на чужую машину; 400 на офлайн-машину владельца', async () => {
+    // Своя офлайн-машина: exec → 400 (не в сети).
+    const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
+    const own = await inj({
+      method: 'POST',
+      url: `/api/agents/${created.id}/exec`,
+      payload: { command: 'ls' }
+    })
+    expect(own.statusCode).toBe(400)
+    expect(own.json().error).toContain('не в сети')
+
+    // Чужая машина (создана под user) → 404 для admin.
+    db.createUser('user', '', 'user')
+    const other = db.createAgent('user', 'UserBox')
+    const foreign = await inj({
+      method: 'POST',
+      url: `/api/agents/${other.id}/exec`,
+      payload: { command: 'ls' }
+    })
+    expect(foreign.statusCode).toBe(404)
+  })
+
+  it('fs.list: 400 на офлайн-машину владельца', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
+    const res = await inj({ method: 'GET', url: `/api/agents/${created.id}/fs?path=` })
+    expect(res.statusCode).toBe(400)
+  })
+})

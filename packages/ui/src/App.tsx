@@ -9,7 +9,8 @@ import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen } from './components/LoginScreen'
 import { CcObserver } from './components/CcObserver'
 import { UsersAdmin } from './components/UsersAdmin'
-import { FileExplorer } from './components/FileExplorer'
+import { MachineUtility } from './components/MachineUtility'
+import type { MachineOps } from './components/machine'
 import { CodexObserver } from './components/CodexObserver'
 import { useVoiceStore } from './store/useVoiceStore'
 import { useVoiceCues } from './lib/useVoiceCues'
@@ -59,6 +60,26 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
 
   const showConsole = state.settings.showConsole
 
+  // Операции над машиной для утилит (консоль/проводник); только web (есть мост fs).
+  const machineOps: MachineOps | undefined = state.authRequired
+    ? {
+        list: actions.fsList,
+        write: actions.fsWrite,
+        remove: actions.fsRemove,
+        rename: actions.fsRename,
+        mkdir: actions.fsMkdir,
+        download: actions.downloadFsFile,
+        upload: actions.uploadFsFile,
+        exec: actions.agentExec
+      }
+    : undefined
+
+  // Закрывает мобильный сайдбар и выполняет действие пункта меню.
+  const menu = (fn: () => void) => (): void => {
+    setSidebarOpen(false)
+    fn()
+  }
+
   // Многопользовательский режим (web): пока не вошли — показываем экран логина.
   if (state.authRequired && !state.currentUser) {
     return (
@@ -92,11 +113,12 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onRename={actions.renameConversation}
         searchQuery={state.searchQuery}
         onSearch={actions.setSearchQuery}
-        onOpenObserver={actions.openObserver}
-        onOpenCodexObserver={actions.openCodexObserver}
-        onOpenSettings={actions.openSettings}
-        onOpenFiles={state.authRequired ? actions.openFiles : undefined}
-        onOpenUsers={state.authRequired ? () => void actions.openUsers() : undefined}
+        onOpenObserver={menu(actions.openObserver)}
+        onOpenCodexObserver={menu(actions.openCodexObserver)}
+        onOpenSettings={menu(actions.openSettings)}
+        onOpenFiles={state.authRequired ? menu(() => actions.openUtility('explorer')) : undefined}
+        onOpenConsole={state.authRequired ? menu(() => actions.openUtility('console')) : undefined}
+        onOpenUsers={state.authRequired ? menu(() => void actions.openUsers()) : undefined}
         currentUser={state.currentUser}
         onLogout={state.authRequired ? () => void actions.logout() : undefined}
       />
@@ -122,6 +144,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onDeleteMessage={actions.deleteMessage}
         onEditMessage={actions.editMessage}
         onAnswerQuestions={(text) => void actions.answerQuestions(text)}
+        machineOps={machineOps}
         error={state.error}
         onDismissError={actions.dismissError}
         modelMissing={!state.modelPresent}
@@ -210,25 +233,13 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         />
       )}
 
-      {state.fsOpen && (
-        <FileExplorer
+      {state.utility && machineOps && (
+        <MachineUtility
+          tool={{ kind: state.utility.kind, ...(state.utility.agentId ? { agentId: state.utility.agentId } : {}) }}
           agents={state.agents}
-          agentId={state.fsAgentId}
-          root={state.fsRoot}
-          cwd={state.fsCwd}
-          entries={state.fsEntries}
-          error={state.fsError}
-          writable={
-            state.agents.find((a) => a.id === state.fsAgentId)?.policy.allowWrite ?? false
-          }
-          onSelectAgent={(id) => void actions.selectFsAgent(id)}
-          onNavigate={(path) => void actions.listFsDir(path)}
-          onDownload={(path, name) => void actions.downloadFsFile(path, name)}
-          onUpload={(file) => void actions.uploadFsFile(file)}
-          onDelete={(path) => void actions.deleteFsEntry(path)}
-          onRename={(from, to) => void actions.renameFsEntry(from, to)}
-          onMkdir={(name) => void actions.mkdirFs(name)}
-          onClose={actions.closeFiles}
+          ops={machineOps}
+          variant="modal"
+          onClose={actions.closeUtility}
         />
       )}
 

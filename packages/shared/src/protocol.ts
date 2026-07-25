@@ -102,6 +102,7 @@ export const REST = {
   agentFsFile: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/file`,
   agentFsRename: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/rename`,
   agentFsMkdir: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/mkdir`,
+  agentExec: (id: string) => `/api/agents/${encodeURIComponent(id)}/exec`,
   ccProjects: '/api/cc/projects',
   ccSessions: (slug: string) => `/api/cc/projects/${encodeURIComponent(slug)}/sessions`,
   ccTranscript: (slug: string, id: string) =>

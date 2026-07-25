@@ -7,6 +7,7 @@
 import { existsSync } from 'node:fs'
 import {
   appendQuestionsHint,
+  appendToolHint,
   buildConversationPrompt,
   buildPrompt,
   clampModelForRole,
@@ -164,10 +165,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // сессия сброшена после удаления/правки) → пересобираем промпт из текущей
     // истории БД, чтобы контекст модели совпадал с видимым (без удалённых реплик).
     // Хинт о формате уточняющих вопросов (```questions) — форма ответов в чате.
-    const prompt = appendQuestionsHint(
-      sessionId
-        ? buildPrompt(req.segments, attachmentPaths)
-        : buildConversationPrompt(deps.db.listMessages(userId, conversationId), attachmentPaths)
+    const prompt = appendToolHint(
+      appendQuestionsHint(
+        sessionId
+          ? buildPrompt(req.segments, attachmentPaths)
+          : buildConversationPrompt(deps.db.listMessages(userId, conversationId), attachmentPaths)
+      )
     )
     // Цель выполнения команд: выбранная машина-агент. Только своя машина
     // (чужую игнорируем → выполняем на сервере). Офлайн своей — сразу ошибка.

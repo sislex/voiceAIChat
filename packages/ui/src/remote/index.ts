@@ -177,7 +177,19 @@ function makeFsBridge(httpBase: string): RendererFsBridge {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ path })
-      }).then(asResult)
+      }).then(asResult),
+    exec: async (id, command) => {
+      const res = await fetch(`${httpBase}${REST.agentExec(id)}`, {
+        method: 'POST',
+        headers: authHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ command })
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error ?? `HTTP ${res.status}`)
+      }
+      return res.json()
+    }
   }
 }
 

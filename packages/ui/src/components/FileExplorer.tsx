@@ -1,25 +1,13 @@
-import { useRef, useState, type MouseEvent } from 'react'
-import type { FsEntry } from '@shared/agentProtocol'
-import type { AgentInfo } from '@shared/agentProtocol'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import type { AgentInfo, FsEntry } from '@shared/agentProtocol'
+import type { MachineOps, UtilityVariant } from './machine'
 
 export interface FileExplorerProps {
-  /** Машины пользователя (для выбора цели проводника). */
   agents: AgentInfo[]
-  agentId: string | null
-  root: string
-  cwd: string
-  entries: FsEntry[]
-  error: string | null
-  /** Разрешены ли изменения (из политики выбранной машины). */
-  writable: boolean
-  onSelectAgent: (id: string) => void
-  onNavigate: (path: string) => void
-  onDownload: (path: string, name: string) => void
-  onUpload: (file: File) => void
-  onDelete: (path: string) => void
-  onRename: (from: string, to: string) => void
-  onMkdir: (name: string) => void
-  onClose: () => void
+  initialAgentId?: string | null
+  ops: MachineOps
+  variant?: UtilityVariant
+  onClose?: () => void
 }
 
 function fmtSize(n: number): string {
@@ -27,8 +15,6 @@ function fmtSize(n: number): string {
   if (n >= 1000) return `${Math.round(n / 1000)} КБ`
   return `${n} Б`
 }
-
-/** Родительский каталог абсолютного пути (posix). */
 function parentOf(p: string): string {
   const up = p.replace(/\/+$/, '').replace(/\/[^/]*$/, '')
   return up || '/'
@@ -37,158 +23,212 @@ function joinPath(dir: string, name: string): string {
   return `${dir.replace(/\/$/, '')}/${name}`
 }
 
+/** Самодостаточный проводник по машине: своё состояние, операции — через ops. */
 export function FileExplorer({
   agents,
-  agentId,
-  root,
-  cwd,
-  entries,
-  error,
-  writable,
-  onSelectAgent,
-  onNavigate,
-  onDownload,
-  onUpload,
-  onDelete,
-  onRename,
-  onMkdir,
+  initialAgentId,
+  ops,
+  variant = 'modal',
   onClose
 }: FileExplorerProps): JSX.Element {
-  const stop = (e: MouseEvent): void => e.stopPropagation()
-  const fileInput = useRef<HTMLInputElement>(null)
+  const [agentId, setAgentId] = useState<string | null>(
+    initialAgentId ?? agents.find((a) => a.online)?.id ?? agents[0]?.id ?? null
+  )
+  const [cwd, setCwd] = useState('')
+  const [root, setRoot] = useState('')
+  const [entries, setEntries] = useState<FsEntry[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [fullscreen, setFullscreen] = useState(false)
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  const writable = agents.find((a) => a.id === agentId)?.policy.allowWrite ?? false
+
+  const load = async (path: string): Promise<void> => {
+    if (!agentId) return
+    try {
+      const res = await ops.list(agentId, path)
+      setRoot(res.root)
+      setCwd(res.cwd)
+      setEntries(res.entries ?? [])
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  // Загрузка корня при выборе машины.
+  useEffect(() => {
+    setEntries([])
+    void load('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId])
+
+  const run = async (op: Promise<unknown>): Promise<void> => {
+    try {
+      await op
+      await load(cwd) // всегда перечитываем текущий каталог
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
 
   const doRename = (entry: FsEntry): void => {
+    if (!agentId) return
     const next = window.prompt('Новое имя', entry.name)
-    if (next && next !== entry.name) onRename(joinPath(cwd, entry.name), joinPath(cwd, next))
+    if (next && next !== entry.name) void run(ops.rename(agentId, joinPath(cwd, entry.name), joinPath(cwd, next)))
   }
   const doMkdir = (): void => {
+    if (!agentId) return
     const name = window.prompt('Имя новой папки')
-    if (name) onMkdir(name)
+    if (name) void run(ops.mkdir(agentId, joinPath(cwd, name)))
   }
+  const stop = (e: MouseEvent): void => e.stopPropagation()
 
-  return (
-    <div className="ovl" onClick={onClose} data-testid="fs-overlay">
-      <div className="ccobs" onClick={stop} role="dialog" aria-label="Проводник по машине">
-        <div className="mdhead">
-          <h2 className="mdh">Проводник по машине</h2>
-          <button className="xbtn" onClick={onClose} aria-label="Закрыть">
+  const body = (
+    <>
+      <div className="fsbar">
+        {agents.length > 1 && (
+          <select
+            className="sel"
+            aria-label="Машина"
+            value={agentId ?? ''}
+            onChange={(e) => setAgentId(e.target.value)}
+          >
+            {agents.map((a) => (
+              <option key={a.id} value={a.id} disabled={!a.online}>
+                💻 {a.name}
+                {a.online ? '' : ' (офлайн)'}
+              </option>
+            ))}
+          </select>
+        )}
+        <button className="fsbtn" title="Вверх" disabled={!agentId} onClick={() => void load(parentOf(cwd))}>
+          ⬆
+        </button>
+        <span className="fspath" title={cwd}>
+          {cwd || '—'}
+        </span>
+        {writable && (
+          <>
+            <button className="fsbtn" disabled={!agentId} onClick={doMkdir}>
+              ＋ Папка
+            </button>
+            <button className="fsbtn" disabled={!agentId} onClick={() => fileInput.current?.click()}>
+              ⬆ Загрузить
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              aria-label="Загрузить файл"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f && agentId) void run(ops.upload(agentId, cwd, f))
+                e.target.value = ''
+              }}
+            />
+          </>
+        )}
+      </div>
+      {error && (
+        <p className="fserror" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="fslist" data-testid="fs-list">
+        {agents.length === 0 && <p className="cc-empty">Нет машин. Добавьте машину в настройках.</p>}
+        {agentId && entries.length === 0 && !error && <p className="cc-empty">Пусто</p>}
+        {entries.map((entry) => {
+          const abs = joinPath(cwd, entry.name)
+          return (
+            <div className="fsrow" key={entry.name} data-testid="fs-row">
+              <button
+                className="fsname"
+                disabled={entry.kind !== 'dir'}
+                onClick={() => entry.kind === 'dir' && void load(abs)}
+              >
+                {entry.kind === 'dir' ? '📁' : '📄'} {entry.name}
+              </button>
+              <span className="fssize">{entry.kind === 'file' ? fmtSize(entry.size) : ''}</span>
+              <span className="fsrow-actions">
+                {entry.kind === 'file' && (
+                  <button
+                    className="msgbtn"
+                    title="Скачать"
+                    onClick={() => agentId && void ops.download(agentId, abs, entry.name)}
+                  >
+                    ⬇
+                  </button>
+                )}
+                {writable && (
+                  <button className="msgbtn" title="Переименовать" onClick={() => doRename(entry)}>
+                    ✎
+                  </button>
+                )}
+                {writable &&
+                  (confirmDel === abs ? (
+                    <>
+                      <button
+                        className="delyes"
+                        onClick={() => {
+                          setConfirmDel(null)
+                          if (agentId) void run(ops.remove(agentId, abs))
+                        }}
+                      >
+                        Удалить
+                      </button>
+                      <button className="delno" onClick={() => setConfirmDel(null)}>
+                        Отмена
+                      </button>
+                    </>
+                  ) : (
+                    <button className="msgbtn" title="Удалить" onClick={() => setConfirmDel(abs)}>
+                      🗑
+                    </button>
+                  ))}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      {root && <p className="fsroot">Корень: {root}</p>}
+    </>
+  )
+
+  const header = (
+    <div className="mdhead">
+      <h2 className="mdh">Проводник по машине</h2>
+      <span className="util-head-btns">
+        {variant === 'embedded' && (
+          <button className="xbtn" title="На весь экран" onClick={() => setFullscreen((v) => !v)}>
+            {fullscreen ? '🗕' : '⛶'}
+          </button>
+        )}
+        {onClose && (
+          <button className="xbtn" aria-label="Закрыть" onClick={onClose}>
             ✕
           </button>
-        </div>
-
-        <div className="fsbar">
-          {agents.length > 1 && (
-            <select
-              className="sel"
-              aria-label="Машина"
-              value={agentId ?? ''}
-              onChange={(e) => onSelectAgent(e.target.value)}
-            >
-              {agents.map((a) => (
-                <option key={a.id} value={a.id} disabled={!a.online}>
-                  💻 {a.name}
-                  {a.online ? '' : ' (офлайн)'}
-                </option>
-              ))}
-            </select>
-          )}
-          <button
-            className="fsbtn"
-            aria-label="Вверх"
-            title="Вверх"
-            disabled={!agentId}
-            onClick={() => onNavigate(parentOf(cwd))}
-          >
-            ⬆
-          </button>
-          <span className="fspath" title={cwd}>
-            {cwd || '—'}
-          </span>
-          {writable && (
-            <>
-              <button className="fsbtn" onClick={doMkdir} disabled={!agentId}>
-                ＋ Папка
-              </button>
-              <button className="fsbtn" onClick={() => fileInput.current?.click()} disabled={!agentId}>
-                ⬆ Загрузить
-              </button>
-              <input
-                ref={fileInput}
-                type="file"
-                aria-label="Загрузить файл"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const f = e.target.files?.[0]
-                  if (f) onUpload(f)
-                  e.target.value = ''
-                }}
-              />
-            </>
-          )}
-        </div>
-
-        {error && (
-          <p className="fserror" role="alert">
-            {error}
-          </p>
         )}
+      </span>
+    </div>
+  )
 
-        <div className="fslist" data-testid="fs-list">
-          {agents.length === 0 && <p className="cc-empty">Нет машин. Добавьте машину в настройках.</p>}
-          {agentId && entries.length === 0 && <p className="cc-empty">Пусто</p>}
-          {entries.map((entry) => {
-            const abs = joinPath(cwd, entry.name)
-            return (
-              <div className="fsrow" key={entry.name} data-testid="fs-row">
-                <button
-                  className="fsname"
-                  onClick={() => entry.kind === 'dir' && onNavigate(abs)}
-                  disabled={entry.kind !== 'dir'}
-                  title={entry.kind === 'dir' ? 'Открыть папку' : entry.name}
-                >
-                  {entry.kind === 'dir' ? '📁' : '📄'} {entry.name}
-                </button>
-                <span className="fssize">{entry.kind === 'file' ? fmtSize(entry.size) : ''}</span>
-                <span className="fsrow-actions">
-                  {entry.kind === 'file' && (
-                    <button className="msgbtn" title="Скачать" onClick={() => onDownload(abs, entry.name)}>
-                      ⬇
-                    </button>
-                  )}
-                  {writable && (
-                    <button className="msgbtn" title="Переименовать" onClick={() => doRename(entry)}>
-                      ✎
-                    </button>
-                  )}
-                  {writable &&
-                    (confirmDel === abs ? (
-                      <>
-                        <button
-                          className="delyes"
-                          onClick={() => {
-                            setConfirmDel(null)
-                            onDelete(abs)
-                          }}
-                        >
-                          Удалить
-                        </button>
-                        <button className="delno" onClick={() => setConfirmDel(null)}>
-                          Отмена
-                        </button>
-                      </>
-                    ) : (
-                      <button className="msgbtn" title="Удалить" onClick={() => setConfirmDel(abs)}>
-                        🗑
-                      </button>
-                    ))}
-                </span>
-              </div>
-            )
-          })}
+  if (variant === 'modal') {
+    return (
+      <div className="ovl" onClick={onClose} data-testid="fs-overlay">
+        <div className="ccobs" onClick={stop} role="dialog" aria-label="Проводник по машине">
+          {header}
+          {body}
         </div>
-        {root && <p className="fsroot">Корень: {root}</p>}
       </div>
+    )
+  }
+  // embedded: карточка в сообщении; fullscreen — фиксированный оверлей.
+  return (
+    <div className={fullscreen ? 'util-embed util-embed--fs' : 'util-embed'} data-testid="fs-embed">
+      {header}
+      {body}
     </div>
   )
 }

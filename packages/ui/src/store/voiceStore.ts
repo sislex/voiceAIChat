@@ -15,7 +15,8 @@ import type {
   SttUpdate,
   UploadInfo
 } from '@shared/ipc'
-import type { FsEntry } from '@shared/agentProtocol'
+import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
+import { detectOpenUtility, toolBlock, type ToolSpec } from '@shared/tools'
 import type { ActiveTurn } from '@shared/protocol'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
@@ -151,18 +152,8 @@ export interface AppState {
   adminMessages: Message[]
   /** id разговора, открытого в админ-истории (null — не открыт). */
   adminConversationId: string | null
-  /** Открыт ли файловый проводник по машине. */
-  fsOpen: boolean
-  /** Машина, по которой открыт проводник (null — не выбрана). */
-  fsAgentId: string | null
-  /** Абсолютный корень проводника на машине (каталог скрипта). */
-  fsRoot: string
-  /** Текущий каталог проводника (абсолютный путь). */
-  fsCwd: string
-  /** Содержимое текущего каталога. */
-  fsEntries: FsEntry[]
-  /** Ошибка последней файловой операции (null — нет). */
-  fsError: string | null
+  /** Открытая из меню машинная утилита (консоль/проводник) + машина; null — закрыта. */
+  utility: { kind: 'console' | 'explorer'; agentId: string | null } | null
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
   speakingMessageId: string | null
   /** Доступна ли озвучка (кнопка ▶ на ответах). */
@@ -395,25 +386,23 @@ export interface StoreActions {
   loadAdminUsage(unit: UsageUnit, from?: number, to?: number): Promise<void>
   /** Открыть разговор пользователя в админ-просмотре истории. */
   openAdminConversation(conversationId: string): Promise<void>
-  // --- Файловый проводник по машине ---
-  /** Открыть проводник (по первой доступной машине). */
-  openFiles(): void
-  /** Закрыть проводник. */
-  closeFiles(): void
-  /** Выбрать машину и открыть её корень. */
-  selectFsAgent(agentId: string): Promise<void>
-  /** Открыть каталог (абсолютный путь). */
-  listFsDir(path: string): Promise<void>
-  /** Скачать файл (сохранение через браузер). */
-  downloadFsFile(path: string, name: string): Promise<void>
-  /** Загрузить файл в текущий каталог. */
-  uploadFsFile(file: File): Promise<void>
-  /** Удалить файл/каталог. */
-  deleteFsEntry(path: string): Promise<void>
-  /** Переименовать/переместить. */
-  renameFsEntry(from: string, to: string): Promise<void>
-  /** Создать каталог в текущем. */
-  mkdirFs(name: string): Promise<void>
+  // --- Машинные утилиты (консоль/проводник) ---
+  /** Открыть утилиту из меню (машина по умолчанию — первая онлайн-своя). */
+  openUtility(kind: 'console' | 'explorer'): void
+  /** Закрыть утилиту, открытую из меню. */
+  closeUtility(): void
+  /** Тонкие операции над машиной (используются самодостаточными виджетами). */
+  fsList(agentId: string, path: string): Promise<FsResult>
+  fsWrite(agentId: string, path: string, dataBase64: string): Promise<FsResult>
+  fsRemove(agentId: string, path: string): Promise<FsResult>
+  fsRename(agentId: string, from: string, to: string): Promise<FsResult>
+  fsMkdir(agentId: string, path: string): Promise<FsResult>
+  /** Скачать файл машины (чтение + сохранение через браузер). */
+  downloadFsFile(agentId: string, path: string, name: string): Promise<void>
+  /** Загрузить файл на машину в указанный каталог; возвращает обновлённый листинг. */
+  uploadFsFile(agentId: string, dir: string, file: File): Promise<FsResult>
+  /** Выполнить команду на машине (консоль). */
+  agentExec(agentId: string, command: string): Promise<AgentExecResult>
   /** Отмена всех активных таймеров пайплайна (напр. при размонтировании). */
   dispose(): void
 }
@@ -473,12 +462,7 @@ function initialState(): AppState {
     adminConversations: [],
     adminMessages: [],
     adminConversationId: null,
-    fsOpen: false,
-    fsAgentId: null,
-    fsRoot: '',
-    fsCwd: '',
-    fsEntries: [],
-    fsError: null,
+    utility: null,
     speakingMessageId: null,
     ttsAvailable: false,
     error: null,
@@ -1299,111 +1283,75 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
-  // --- Файловый проводник по машине --------------------------------------
+  // --- Машинные утилиты (консоль/проводник) -------------------------------
 
-  /** Применяет FsResult к состоянию (листинг обновляем, если пришёл). */
-  function applyFsResult(res: { root: string; cwd: string; entries?: FsEntry[] }): void {
-    setState({
-      fsRoot: res.root,
-      fsCwd: res.cwd,
-      ...(res.entries ? { fsEntries: res.entries } : {}),
-      fsError: null
-    })
+  /** Машина по умолчанию для утилиты: своя онлайн, иначе выбранная цель, иначе первая. */
+  function defaultUtilityAgent(): string | null {
+    const online = state.agents.find((a) => a.online)
+    if (online) return online.id
+    const target = state.agents.find((a) => a.id === state.settings.execTarget)
+    return target?.id ?? state.agents[0]?.id ?? null
   }
 
-  function fsFail(err: unknown): void {
-    setState({ fsError: err instanceof Error ? err.message : String(err) })
+  function openUtility(kind: 'console' | 'explorer'): void {
+    setState({ utility: { kind, agentId: defaultUtilityAgent() } })
+  }
+  function closeUtility(): void {
+    setState({ utility: null })
   }
 
-  function openFiles(): void {
-    setState({ fsOpen: true, fsError: null })
-    // Первая онлайн-машина пользователя как цель по умолчанию (иначе — первая).
-    const target = state.agents.find((a) => a.online) ?? state.agents[0]
-    if (target) void selectFsAgent(target.id)
+  const noFs = (): never => {
+    throw new Error('Файловые операции недоступны')
+  }
+  const fsList = (agentId: string, path: string): Promise<FsResult> =>
+    deps.fs ? deps.fs.list(agentId, path) : noFs()
+  const fsWrite = (agentId: string, path: string, dataBase64: string): Promise<FsResult> =>
+    deps.fs ? deps.fs.write(agentId, path, dataBase64) : noFs()
+  const fsRemove = (agentId: string, path: string): Promise<FsResult> =>
+    deps.fs ? deps.fs.remove(agentId, path) : noFs()
+  const fsRename = (agentId: string, from: string, to: string): Promise<FsResult> =>
+    deps.fs ? deps.fs.rename(agentId, from, to) : noFs()
+  const fsMkdir = (agentId: string, path: string): Promise<FsResult> =>
+    deps.fs ? deps.fs.mkdir(agentId, path) : noFs()
+  const agentExec = (agentId: string, command: string): Promise<AgentExecResult> =>
+    deps.fs ? deps.fs.exec(agentId, command) : noFs()
+
+  async function uploadFsFile(agentId: string, dir: string, file: File): Promise<FsResult> {
+    if (!deps.fs) return noFs()
+    const dataBase64 = await fileToBase64(file)
+    const path = `${dir.replace(/\/$/, '')}/${file.name}`
+    return deps.fs.write(agentId, path, dataBase64)
   }
 
-  function closeFiles(): void {
-    setState({ fsOpen: false, fsAgentId: null, fsRoot: '', fsCwd: '', fsEntries: [], fsError: null })
-  }
-
-  async function selectFsAgent(agentId: string): Promise<void> {
-    setState({ fsAgentId: agentId, fsEntries: [], fsError: null })
+  async function downloadFsFile(agentId: string, path: string, name: string): Promise<void> {
     if (!deps.fs) return
-    try {
-      applyFsResult(await deps.fs.list(agentId, '')) // '' → корень
-    } catch (err) {
-      fsFail(err)
-    }
+    const res = await deps.fs.read(agentId, path)
+    const bytes = Uint8Array.from(atob(res.dataBase64 ?? ''), (c) => c.charCodeAt(0))
+    const blob = new Blob([bytes], { type: 'application/octet-stream' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
-  async function listFsDir(path: string): Promise<void> {
-    if (!deps.fs || !state.fsAgentId) return
-    try {
-      applyFsResult(await deps.fs.list(state.fsAgentId, path))
-    } catch (err) {
-      fsFail(err)
-    }
-  }
-
-  async function downloadFsFile(path: string, name: string): Promise<void> {
-    if (!deps.fs || !state.fsAgentId) return
-    try {
-      const res = await deps.fs.read(state.fsAgentId, path)
-      const bytes = Uint8Array.from(atob(res.dataBase64 ?? ''), (c) => c.charCodeAt(0))
-      const blob = new Blob([bytes], { type: 'application/octet-stream' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = name
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      fsFail(err)
-    }
-  }
-
-  /** Абсолютный дочерний путь в текущем каталоге проводника. */
-  function fsChild(name: string): string {
-    return `${state.fsCwd.replace(/\/$/, '')}/${name}`
-  }
-
-  async function uploadFsFile(file: File): Promise<void> {
-    if (!deps.fs || !state.fsAgentId) return
-    try {
-      const dataBase64 = await fileToBase64(file)
-      applyFsResult(await deps.fs.write(state.fsAgentId, fsChild(file.name), dataBase64))
-    } catch (err) {
-      fsFail(err)
-    }
-  }
-
-  async function deleteFsEntry(path: string): Promise<void> {
-    if (!deps.fs || !state.fsAgentId) return
-    try {
-      applyFsResult(await deps.fs.remove(state.fsAgentId, path))
-    } catch (err) {
-      fsFail(err)
-    }
-  }
-
-  async function renameFsEntry(from: string, to: string): Promise<void> {
-    if (!deps.fs || !state.fsAgentId) return
-    try {
-      applyFsResult(await deps.fs.rename(state.fsAgentId, from, to))
-    } catch (err) {
-      fsFail(err)
-    }
-  }
-
-  async function mkdirFs(name: string): Promise<void> {
-    if (!deps.fs || !state.fsAgentId) return
-    try {
-      applyFsResult(await deps.fs.mkdir(state.fsAgentId, fsChild(name)))
-    } catch (err) {
-      fsFail(err)
-    }
+  /**
+   * Если текст — команда «открой консоль/проводник», сохраняет ai-сообщение с
+   * tool-блоком (виджет прямо в ответе) и возвращает true (в LLM не идём).
+   */
+  async function maybeOpenUtility(text: string): Promise<boolean> {
+    const tool = detectOpenUtility(text, state.agents)
+    if (!tool) return false
+    const agent = tool.agentId ? state.agents.find((a) => a.id === tool.agentId) : undefined
+    const label = tool.kind === 'console' ? 'Консоль' : 'Проводник'
+    const where = agent ? ` — машина «${agent.name}»` : ''
+    const spec: ToolSpec = { kind: tool.kind, ...(tool.agentId ? { agentId: tool.agentId } : {}) }
+    await persistMessage('ai', `🖥 ${label}${where}\n\n${toolBlock(spec)}`)
+    await refreshConversations()
+    return true
   }
 
   function downloadVoice(id: string): void {
@@ -1545,6 +1493,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await persistMessage('u1', composeUserText(text, atts))
     setState({ draft: '', attachments: [] })
     await refreshConversations()
+    // Команда «открой консоль/проводник» → виджет прямо в ответе, без обращения к LLM.
+    if (atts.length === 0 && (await maybeOpenUtility(text))) return
     if (!dispatchVoice('submit_text')) return // idle → thinking
     beginReply(
       [{ speakerId: 1, text: text || 'См. приложенные файлы.' }],
@@ -1835,6 +1785,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
     setState({ liveSegments: [] })
     await refreshConversations()
+    // Голосовая команда «открой консоль/проводник» → виджет в ответе, без LLM.
+    if (await maybeOpenUtility(segments.map((s) => s.text).join(' '))) {
+      dispatchVoice('reset') // thinking → idle
+      return
+    }
     beginReply(segments)
   }
 
@@ -1969,15 +1924,16 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       selectAdminUser,
       loadAdminUsage,
       openAdminConversation,
-      openFiles,
-      closeFiles,
-      selectFsAgent,
-      listFsDir,
+      openUtility,
+      closeUtility,
+      fsList,
+      fsWrite,
+      fsRemove,
+      fsRename,
+      fsMkdir,
       downloadFsFile,
       uploadFsFile,
-      deleteFsEntry,
-      renameFsEntry,
-      mkdirFs,
+      agentExec,
       applyVoiceProgress,
       applyVoiceDone,
       applyVoiceError,

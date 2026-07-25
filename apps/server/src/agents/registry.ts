@@ -29,7 +29,9 @@ const OUTPUT_CAP_BYTES = 200 * 1024
 /** Запас серверного страховочного таймаута сверх таймаута агента. */
 const GUARD_EXTRA_MS = 10_000
 /** Таймаут файловой операции проводника. */
-const FS_TIMEOUT_MS = 30_000
+const FS_TIMEOUT_MS = 10_000
+/** Сообщение, когда агент не ответил на fs-операцию (частая причина — устаревший агент). */
+const FS_NO_REPLY = 'Машина не ответила. Возможно, агент устарел — обновите его на машине.'
 
 interface PendingExec {
   agentId: string
@@ -216,7 +218,7 @@ export class AgentRegistry {
     return new Promise<FsResult>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingFs.delete(opId)
-        reject(new Error('Машина не ответила на файловую операцию'))
+        reject(new Error(FS_NO_REPLY))
       }, FS_TIMEOUT_MS)
       this.pendingFs.set(opId, { agentId, timer, resolve, reject })
       this.send(agentId, make(opId))

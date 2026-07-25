@@ -1,62 +1,77 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { FileExplorer, type FileExplorerProps } from './FileExplorer'
-import type { FsEntry } from '@shared/agentProtocol'
+import { FileExplorer } from './FileExplorer'
+import type { AgentInfo } from '@shared/agentProtocol'
+import type { MachineOps } from './machine'
 
-const entries: FsEntry[] = [
-  { name: 'sub', kind: 'dir', size: 0, mtime: 1 },
-  { name: 'a.txt', kind: 'file', size: 1234, mtime: 2 }
-]
+const policy = (allowWrite: boolean) => ({
+  allowedDirs: [],
+  allowNetwork: true,
+  allowWrite,
+  denyPatterns: [],
+  allowPatterns: [],
+  skills: []
+})
+const agent = (allowWrite = true): AgentInfo => ({
+  id: 'm1',
+  name: 'Мак',
+  online: true,
+  createdAt: 1,
+  lastSeen: null,
+  policy: policy(allowWrite)
+})
 
-function renderFs(props: Partial<FileExplorerProps> = {}): FileExplorerProps {
-  const full: FileExplorerProps = {
-    agents: [
-      { id: 'm1', name: 'Мак', online: true, createdAt: 1, lastSeen: null, policy: { allowedDirs: [], allowNetwork: true, allowWrite: true, denyPatterns: [], allowPatterns: [], skills: [] } }
-    ],
-    agentId: 'm1',
-    root: '/home/u',
-    cwd: '/home/u',
-    entries,
-    error: null,
-    writable: true,
-    onSelectAgent: vi.fn(),
-    onNavigate: vi.fn(),
-    onDownload: vi.fn(),
-    onUpload: vi.fn(),
-    onDelete: vi.fn(),
-    onRename: vi.fn(),
-    onMkdir: vi.fn(),
-    onClose: vi.fn(),
-    ...props
+function makeOps(): MachineOps {
+  const listing = {
+    root: '/r',
+    cwd: '/r',
+    entries: [
+      { name: 'sub', kind: 'dir' as const, size: 0, mtime: 1 },
+      { name: 'a.txt', kind: 'file' as const, size: 1234, mtime: 2 }
+    ]
   }
-  render(<FileExplorer {...full} />)
-  return full
+  return {
+    list: vi.fn().mockResolvedValue(listing),
+    write: vi.fn().mockResolvedValue(listing),
+    remove: vi.fn().mockResolvedValue(listing),
+    rename: vi.fn().mockResolvedValue(listing),
+    mkdir: vi.fn().mockResolvedValue(listing),
+    download: vi.fn().mockResolvedValue(undefined),
+    upload: vi.fn().mockResolvedValue(listing),
+    exec: vi.fn().mockResolvedValue({ exitCode: 0, output: '', timedOut: false })
+  }
 }
 
-describe('FileExplorer', () => {
-  it('рендерит содержимое каталога', () => {
-    renderFs()
-    expect(screen.getAllByTestId('fs-row')).toHaveLength(2)
+describe('FileExplorer (самодостаточный)', () => {
+  it('листит корень при монтировании', async () => {
+    const ops = makeOps()
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={ops} variant="embedded" />)
+    expect(await screen.findByText(/a\.txt/)).toBeInTheDocument()
+    expect(ops.list).toHaveBeenCalledWith('m1', '')
   })
 
-  it('клик по папке зовёт onNavigate с абсолютным путём', async () => {
-    const p = renderFs()
-    await userEvent.click(screen.getByText(/sub/))
-    expect(p.onNavigate).toHaveBeenCalledWith('/home/u/sub')
+  it('клик по папке листит её абсолютный путь', async () => {
+    const ops = makeOps()
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={ops} variant="embedded" />)
+    await userEvent.click(await screen.findByText(/sub/))
+    expect(ops.list).toHaveBeenCalledWith('m1', '/r/sub')
   })
 
-  it('скачивание файла зовёт onDownload', async () => {
-    const p = renderFs()
+  it('скачивание файла зовёт ops.download', async () => {
+    const ops = makeOps()
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={ops} variant="embedded" />)
+    await screen.findByText(/a\.txt/)
     await userEvent.click(screen.getByTitle('Скачать'))
-    expect(p.onDownload).toHaveBeenCalledWith('/home/u/a.txt', 'a.txt')
+    expect(ops.download).toHaveBeenCalledWith('m1', '/r/a.txt', 'a.txt')
   })
 
-  it('без writable кнопки мутаций скрыты', () => {
-    renderFs({ writable: false })
+  it('без allowWrite кнопки мутаций скрыты', async () => {
+    const ops = makeOps()
+    render(<FileExplorer agents={[agent(false)]} initialAgentId="m1" ops={ops} variant="embedded" />)
+    await screen.findByText(/a\.txt/)
     expect(screen.queryByRole('button', { name: /Загрузить/ })).toBeNull()
     expect(screen.queryByTitle('Удалить')).toBeNull()
-    // Скачивание доступно всегда.
     expect(screen.getByTitle('Скачать')).toBeInTheDocument()
   })
 })
