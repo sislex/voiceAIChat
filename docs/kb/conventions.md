@@ -1,6 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
 updated: 2026-07-26
+checked: 4805be2
 areas:
   - package.json
   - packages/ui/vitest.config.ts

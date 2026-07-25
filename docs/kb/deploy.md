@@ -1,6 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-07-26
+checked: 4805be2
 areas:
   - Dockerfile
   - docker-compose.yml
