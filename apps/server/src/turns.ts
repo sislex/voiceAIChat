@@ -278,7 +278,16 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           const finalText = text.trim() ? text : turn.partial
           let message: Message | undefined
           if (finalText.trim()) {
-            message = deps.db.addMessage(userId, conversationId, 'ai', finalText, timeHHMM(), provider, merged)
+            message = deps.db.addMessage(
+              userId,
+              conversationId,
+              'ai',
+              finalText,
+              timeHHMM(),
+              provider,
+              merged,
+              requestedTarget
+            )
           }
           broadcast(
             {

@@ -163,6 +163,21 @@ export class VoiceChatDb {
     if (!msgCols.some((c) => c.name === 'exec_target')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN exec_target TEXT`)
     }
+    // Ответ агента наследует цель ближайшей пользовательской реплики того же разговора.
+    // Заполняет сообщения, созданные до сохранения exec_target у AI-ответов.
+    this.db.exec(`
+      UPDATE messages AS answer
+      SET exec_target = (
+        SELECT prompt.exec_target
+        FROM messages AS prompt
+        WHERE prompt.conversation_id = answer.conversation_id
+          AND prompt.role != 'ai'
+          AND (prompt.created_at < answer.created_at OR (prompt.created_at = answer.created_at AND prompt.id < answer.id))
+        ORDER BY prompt.created_at DESC, prompt.id DESC
+        LIMIT 1
+      )
+      WHERE answer.role = 'ai' AND answer.exec_target IS NULL
+    `)
     // Многопользовательский режим: строки без владельца (legacy однопользовательских
     // данных) удаляем — чистый старт. Идемпотентно: после первого прогона NULL нет.
     this.db.exec(`DELETE FROM conversations WHERE user_id IS NULL`) // messages/speakers — по CASCADE
