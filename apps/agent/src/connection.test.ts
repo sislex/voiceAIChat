@@ -52,6 +52,34 @@ describe('startConnection (handlers)', () => {
     expect(h.onUpdateAvailable).toHaveBeenCalledWith('9.9.9')
   })
 
+  const POLICY = {
+    allowedDirs: [],
+    allowNetwork: false,
+    allowWrite: false,
+    denyPatterns: [],
+    allowPatterns: [],
+    skills: []
+  }
+
+  it('setPolicy применяет локально, шлёт agent.setPolicy и зовёт onPolicy', () => {
+    const h = { onPolicy: vi.fn() }
+    const conn = startConnection({ serverUrl: 'ws://x/agent', token: 't', rootDir: '/tmp' }, h)
+    conn.setPolicy(POLICY)
+    expect(conn.getPolicy()).toEqual(POLICY)
+    expect(h.onPolicy).toHaveBeenCalledWith(POLICY)
+    const sent = instances[0].sent.map((s) => JSON.parse(s)).find((m) => m.t === 'agent.setPolicy')
+    expect(sent.policy).toEqual(POLICY)
+  })
+
+  it('входящий agent.policy → onPolicy, серверу не шлём', () => {
+    const h = { onPolicy: vi.fn() }
+    startConnection({ serverUrl: 'ws://x/agent', token: 't', rootDir: '/tmp' }, h)
+    const ws = instances[0]
+    ws.emit('message', JSON.stringify({ t: 'agent.policy', policy: POLICY }))
+    expect(h.onPolicy).toHaveBeenCalledWith(POLICY)
+    expect(ws.sent.some((s) => JSON.parse(s).t === 'agent.setPolicy')).toBe(false)
+  })
+
   it('exec.start → onExec с командой', () => {
     const h = { onExec: vi.fn() }
     startConnection({ serverUrl: 'ws://x/agent', token: 't', rootDir: '/tmp' }, h)

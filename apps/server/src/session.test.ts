@@ -127,6 +127,40 @@ describe('WS: Claude-стрим', () => {
   })
 })
 
+describe('WS /agent: смена политики с машины', () => {
+  it('agent.setPolicy сохраняется в БД владельца', async () => {
+    const created = db.createAgent('admin', 'Box') // admin засеян buildServer
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent`)
+    await new Promise((r) => ws.on('open', r as () => void))
+    const registered = new Promise<void>((res) => {
+      ws.on('message', (d) => {
+        if (JSON.parse(d.toString()).t === 'agent.registered') res()
+      })
+    })
+    ws.send(JSON.stringify({ t: 'agent.register', token: created.token, version: '0.2.0' }))
+    await registered
+    ws.send(
+      JSON.stringify({
+        t: 'agent.setPolicy',
+        policy: {
+          allowedDirs: [],
+          allowNetwork: true,
+          allowWrite: false,
+          denyPatterns: [],
+          allowPatterns: [],
+          skills: []
+        }
+      })
+    )
+    // Ждём применения (сообщение обрабатывается асинхронно).
+    for (let i = 0; i < 20 && db.listAgents('admin')[0]?.policy.allowWrite !== false; i++) {
+      await new Promise((r) => setTimeout(r, 25))
+    }
+    expect(db.listAgents('admin')[0].policy.allowWrite).toBe(false)
+    ws.close()
+  })
+})
+
 describe('WS: роль user не выполняет на сервере (форс plan)', () => {
   // Мок, возвращающий полученный permissionMode — проверяем клампинг по роли.
   const echoPerm: LlmClient = {

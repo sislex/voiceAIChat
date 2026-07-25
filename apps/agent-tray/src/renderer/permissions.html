@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Разрешения машины</title>
+    <style>
+      body {
+        font: 13px/1.5 -apple-system, sans-serif;
+        margin: 0;
+        padding: 18px;
+        color: #1a1a1a;
+        background: #fafaf7;
+      }
+      h1 { font-size: 15px; margin: 0 0 4px; }
+      .sub { color: #777; margin: 0 0 14px; font-size: 12px; }
+      .perm {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border: 1px solid #e3e1d9;
+        border-radius: 10px;
+        background: #fff;
+        margin-bottom: 8px;
+      }
+      .perm input { width: 18px; height: 18px; }
+      .perm .t { font-weight: 600; }
+      .perm .d { color: #777; font-size: 12px; }
+      .perm label { display: flex; flex-direction: column; }
+      section { margin-top: 16px; }
+      h2 { font-size: 12px; color: #777; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .3px; }
+      .list { font-family: ui-monospace, monospace; font-size: 12px; color: #333; }
+      .list .item { padding: 2px 0; }
+      .empty { color: #999; }
+      .note { color: #999; font-size: 11px; margin-top: 4px; }
+      .placeholder { color: #999; }
+    </style>
+  </head>
+  <body>
+    <h1>Разрешения машины</h1>
+    <p class="sub">Что разрешено выполнять на этой машине. Переключатели действуют сразу и синхронизируются с сервером.</p>
+    <div id="root"><p class="placeholder">Загрузка…</p></div>
+    <script type="module" src="./permissions.ts"></script>
+  </body>
+</html>

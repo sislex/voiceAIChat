@@ -293,6 +293,7 @@ export class AgentRegistry {
   /** Обрабатывает сообщение от агента (exec.* и fs.result/fs.error). */
   handleMessage(agentId: string, msg: AgentToServer): void {
     if (msg.t === 'agent.register') return // повторная регистрация — игнор
+    if (msg.t === 'agent.setPolicy') return // обрабатывается в wsAgent (нужен owner/БД)
     if (msg.t === 'fs.result' || msg.t === 'fs.error') {
       const pf = this.pendingFs.get(msg.opId)
       if (!pf || pf.agentId !== agentId) return
