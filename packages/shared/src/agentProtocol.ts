@@ -39,6 +39,9 @@ export type AgentToServer =
   | { t: 'exec.chunk'; execId: string; stream: 'stdout' | 'stderr'; data: string }
   | { t: 'exec.done'; execId: string; exitCode: number | null; timedOut?: boolean }
   | { t: 'exec.error'; execId: string; message: string }
+  | { t: 'pty.output'; ptyId: string; data: string }
+  | { t: 'pty.exit'; ptyId: string; exitCode: number | null; signal?: number }
+  | { t: 'pty.error'; ptyId: string; message: string }
   | { t: 'fs.result'; opId: string; result: FsResult }
   | { t: 'fs.error'; opId: string; message: string }
   | { t: 'agent.setPolicy'; policy: AgentPolicy }
@@ -143,6 +146,10 @@ export type ServerToAgent =
   | { t: 'agent.updateAvailable'; version: string }
   | { t: 'exec.start'; execId: string; command: string; timeoutMs: number }
   | { t: 'exec.cancel'; execId: string }
+  | { t: 'pty.start'; ptyId: string; cols: number; rows: number }
+  | { t: 'pty.input'; ptyId: string; data: string }
+  | { t: 'pty.resize'; ptyId: string; cols: number; rows: number }
+  | { t: 'pty.kill'; ptyId: string }
   | FsOp
 
 /** Машина-агент для списка в настройках. */

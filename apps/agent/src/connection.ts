@@ -13,6 +13,7 @@ import {
 } from '@voicechat/shared'
 import type { AgentConfig } from './config.js'
 import { runCommand, cancelCommand } from './exec.js'
+import { startPty, writePty, resizePty, killPty } from './pty.js'
 import { fsDelete, fsList, fsMkdir, fsRead, fsRename, fsWrite } from './fileOps.js'
 
 const BACKOFF_START_MS = 1_000
@@ -143,6 +144,21 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
         case 'exec.cancel':
           handlers.onLog?.('отмена команды')
           cancelCommand(msg.execId)
+          break
+        case 'pty.start':
+          // Живой терминал: доверенный shell без per-command гейта (см. PTY_CONSOLE.md).
+          handlers.onLog?.(`терминал открыт (${msg.ptyId})`)
+          startPty(msg.ptyId, msg.cols, msg.rows, config.rootDir, send)
+          break
+        case 'pty.input':
+          writePty(msg.ptyId, msg.data)
+          break
+        case 'pty.resize':
+          resizePty(msg.ptyId, msg.cols, msg.rows)
+          break
+        case 'pty.kill':
+          handlers.onLog?.('терминал закрыт')
+          killPty(msg.ptyId)
           break
         case 'fs.list':
         case 'fs.read':

@@ -191,6 +191,10 @@ export type ClientMessage =
   | { t: 'cc.tail.stop' }
   | { t: 'cx.tail.start'; id: string }
   | { t: 'cx.tail.stop' }
+  | { t: 'pty.start'; agentId: string; ptyId: string; cols: number; rows: number }
+  | { t: 'pty.input'; ptyId: string; data: string }
+  | { t: 'pty.resize'; ptyId: string; cols: number; rows: number }
+  | { t: 'pty.kill'; ptyId: string }
 
 /** server → client. */
 export type ServerMessage =
@@ -221,6 +225,9 @@ export type ServerMessage =
   | { t: 'cc.tail'; slug: string; id: string; items: CcItem[] }
   | { t: 'cx.tail'; id: string; items: CxItem[] }
   | { t: 'agents'; agents: AgentInfo[] }
+  | { t: 'pty.output'; ptyId: string; data: string }
+  | { t: 'pty.exit'; ptyId: string; exitCode: number | null }
+  | { t: 'pty.error'; ptyId: string; message: string }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']
@@ -238,7 +245,11 @@ export const CLIENT_MESSAGE_TYPES: ClientMessageType[] = [
   'cc.tail.start',
   'cc.tail.stop',
   'cx.tail.start',
-  'cx.tail.stop'
+  'cx.tail.stop',
+  'pty.start',
+  'pty.input',
+  'pty.resize',
+  'pty.kill'
 ]
 
 export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
@@ -260,5 +271,8 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'stt.downloadError',
   'cc.tail',
   'cx.tail',
-  'agents'
+  'agents',
+  'pty.output',
+  'pty.exit',
+  'pty.error'
 ]

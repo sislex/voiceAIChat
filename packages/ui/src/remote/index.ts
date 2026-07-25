@@ -10,6 +10,7 @@ import type {
   RendererClaudeBridge,
   RendererCodexBridge,
   RendererFsBridge,
+  RendererPtyBridge,
   RendererSessionBridge,
   RendererSttBridge,
   RendererTtsBridge
@@ -193,6 +194,19 @@ function makeFsBridge(httpBase: string): RendererFsBridge {
   }
 }
 
+/** Мост живого PTY-терминала поверх клиентского WS. */
+function makePtyBridge(ws: WsClient): RendererPtyBridge {
+  return {
+    start: ({ agentId, ptyId, cols, rows }) => ws.send({ t: 'pty.start', agentId, ptyId, cols, rows }),
+    input: ({ ptyId, data }) => ws.send({ t: 'pty.input', ptyId, data }),
+    resize: ({ ptyId, cols, rows }) => ws.send({ t: 'pty.resize', ptyId, cols, rows }),
+    kill: ({ ptyId }) => ws.send({ t: 'pty.kill', ptyId }),
+    onOutput: (cb) => ws.on('pty.output', (m) => cb({ ptyId: m.ptyId, data: m.data })),
+    onExit: (cb) => ws.on('pty.exit', (m) => cb({ ptyId: m.ptyId, exitCode: m.exitCode })),
+    onError: (cb) => ws.on('pty.error', (m) => cb({ ptyId: m.ptyId, message: m.message }))
+  }
+}
+
 /** http→ws, same-origin если base пустой. */
 function toWsBase(httpBase: string): string {
   if (httpBase) return httpBase.replace(/^http/, 'ws')
@@ -222,4 +236,5 @@ export function installRemoteBridges(serverHttp: string): void {
   window.agents = makeAgentsBridge(ws)
   window.session = makeSessionBridge(httpBase, ws)
   window.fs = makeFsBridge(httpBase)
+  window.pty = makePtyBridge(ws)
 }

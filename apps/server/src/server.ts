@@ -267,6 +267,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           }))
         },
         subscribe: (cb) => agentRegistry.onChange(cb)
+      },
+      pty: {
+        start: (agentId, ptyId, cols, rows, emit) =>
+          agentRegistry.ptyStart(agentId, ptyId, cols, rows, emit),
+        input: (ptyId, data) => agentRegistry.ptyInput(ptyId, data),
+        resize: (ptyId, cols, rows) => agentRegistry.ptyResize(ptyId, cols, rows),
+        kill: (ptyId) => agentRegistry.ptyKill(ptyId)
       }
     })
 

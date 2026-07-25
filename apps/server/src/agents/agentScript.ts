@@ -20,7 +20,10 @@ export function buildAgentScript(): Promise<string> {
     target: 'node18',
     write: false,
     // Опциональные нативные ускорители ws: отсутствуют → ws сам падает на JS-фолбэк.
-    external: ['bufferutil', 'utf-8-validate'],
+    // @lydell/node-pty — нативный (живой терминал): не бандлим, грузим require в
+    // рантайме там, где агент установлен из репозитория/трея. Нет модуля →
+    // startPty ловит ошибку и терминал деградирует (exec остаётся рабочим).
+    external: ['bufferutil', 'utf-8-validate', '@lydell/node-pty'],
     banner: { js: '#!/usr/bin/env node' }
   })
     .then((res) => res.outputFiles[0].text)

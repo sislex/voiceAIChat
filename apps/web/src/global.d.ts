@@ -8,6 +8,8 @@ import type {
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
+  RendererFsBridge,
+  RendererPtyBridge,
   RendererSessionBridge,
   RendererSttBridge,
   RendererTtsBridge
@@ -24,6 +26,8 @@ declare global {
     codex: RendererCodexBridge
     agents?: RendererAgentsBridge
     session?: RendererSessionBridge
+    fs?: RendererFsBridge
+    pty?: RendererPtyBridge
   }
 }
 
