@@ -14,6 +14,10 @@ services:
   voicechat:
     build: .
     image: voicechat
+    # Лимит памяти контейнера → его читает автоопределение ресурсов (cgroup).
+    # При 1 GiB блокируется распознавание на large-v3-turbo (нужно ~2 ГБ) и medium
+    # (~1.2 ГБ); проходит small (~0.6 ГБ) и озвучка TTS (~0.4 ГБ). Для small+medium — 1536m.
+    mem_limit: 1g
     ports:
       - "8787:8787"
     environment:
