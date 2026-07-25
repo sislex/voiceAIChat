@@ -20,7 +20,7 @@ import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
 import type { CxProject, CxSession, CxItem } from './codexSessions'
-import type { AgentCreated, AgentInfo, AgentPolicy, FsResult } from './agentProtocol'
+import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult } from './agentProtocol'
 
 /** Статус локальной модели Whisper. */
 export interface SttStatus {
@@ -337,6 +337,8 @@ export interface RendererFsBridge {
   remove(agentId: string, path: string): Promise<FsResult>
   rename(agentId: string, from: string, to: string): Promise<FsResult>
   mkdir(agentId: string, path: string): Promise<FsResult>
+  /** Выполнить команду на машине (утилита «Консоль»). */
+  exec(agentId: string, command: string): Promise<AgentExecResult>
 }
 
 /**

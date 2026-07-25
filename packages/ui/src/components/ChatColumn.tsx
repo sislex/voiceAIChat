@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ClaudeLogEntry, Message, TurnMeta, VoiceState } from '@shared/types'
 import { parseQuestions } from '@shared/questions'
+import { parseToolBlock } from '@shared/tools'
 import type { AgentInfo } from '@shared/agentProtocol'
+import { MachineUtility } from './MachineUtility'
+import type { MachineOps } from './machine'
 import {
   chipClass,
   engineLabel,
@@ -71,6 +74,8 @@ export interface ChatColumnProps {
   aiLabel?: string
   /** Отправить собранные ответы на вопросы модели (форма под последним ответом). */
   onAnswerQuestions?: (text: string) => void
+  /** Операции над машиной для встроенных утилит; отсутствуют → виджеты не рендерятся. */
+  machineOps?: MachineOps
 }
 
 export function ChatColumn({
@@ -102,7 +107,8 @@ export function ChatColumn({
   execTarget = null,
   onChangeExecTarget,
   aiLabel = 'Claude',
-  onAnswerQuestions
+  onAnswerQuestions,
+  machineOps
 }: ChatColumnProps): JSX.Element {
   const [exportOpen, setExportOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -298,10 +304,13 @@ export function ChatColumn({
           {messages.map((m) => {
             const isAi = m.role === 'ai'
             const isEditing = editingId === m.id
+            // Встроенная утилита (консоль/проводник) — блок ```tool в тексте.
+            const toolParsed = isAi && machineOps ? parseToolBlock(m.text) : null
+            const baseText = toolParsed ? toolParsed.body : m.text
             // Уточняющие вопросы модели: вырезаем блок из текста; форма — только
             // у последнего сообщения ленты (после ответа пользователя она исчезает).
-            const parsed = isAi ? parseQuestions(m.text) : null
-            const aiText = parsed ? parsed.body : m.text
+            const parsed = isAi ? parseQuestions(baseText) : null
+            const aiText = parsed ? parsed.body : baseText
             const isLast = messages[messages.length - 1]?.id === m.id
             return (
               <div key={m.id} className={isAi ? 'msg ai' : 'msg me'}>
@@ -344,7 +353,15 @@ export function ChatColumn({
                         execTarget={execTarget}
                       />
                     )}
-                    <Markdown>{aiText}</Markdown>
+                    {aiText && <Markdown>{aiText}</Markdown>}
+                    {toolParsed && machineOps && (
+                      <MachineUtility
+                        tool={toolParsed.tool}
+                        agents={agents}
+                        ops={machineOps}
+                        variant="embedded"
+                      />
+                    )}
                     {parsed &&
                       (isLast && onAnswerQuestions && state === 'idle' ? (
                         <QuestionsForm questions={parsed.questions} onSubmit={onAnswerQuestions} />

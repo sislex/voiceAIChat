@@ -194,3 +194,36 @@ describe('ChatColumn — простой/подробный вид ответа',
     expect(screen.queryByTitle('Подробнее')).not.toBeInTheDocument()
   })
 })
+
+describe('ChatColumn — встроенная утилита (tool-блок)', () => {
+  const toolMsg: Message[] = [
+    {
+      id: 'a1',
+      conversationId: 'c',
+      role: 'ai',
+      text: '🖥 Консоль\n\n```tool\n{"kind":"console"}\n```',
+      time: '10:01',
+      createdAt: 2
+    }
+  ]
+  const ops = {
+    list: vi.fn(),
+    write: vi.fn(),
+    remove: vi.fn(),
+    rename: vi.fn(),
+    mkdir: vi.fn(),
+    download: vi.fn(),
+    upload: vi.fn(),
+    exec: vi.fn()
+  }
+
+  it('рендерит консоль внутри ai-сообщения при наличии machineOps', () => {
+    renderCol({ messages: toolMsg, machineOps: ops, agents: [] })
+    expect(screen.getByTestId('console-embed')).toBeInTheDocument()
+  })
+
+  it('без machineOps виджет не рендерится (блок просто скрыт)', () => {
+    renderCol({ messages: toolMsg })
+    expect(screen.queryByTestId('console-embed')).toBeNull()
+  })
+})

@@ -2,6 +2,13 @@
 // подключается к серверу по WS /agent, авторизуется токеном и выполняет
 // присланные shell-команды (проброс Bash через MCP-мост).
 
+/** Результат выполнения команды на машине (утилита «Консоль»). */
+export interface AgentExecResult {
+  exitCode: number | null
+  output: string
+  timedOut: boolean
+}
+
 /** Элемент каталога в проводнике по машине. */
 export interface FsEntry {
   name: string

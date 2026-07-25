@@ -100,5 +100,7 @@ export function fsMkdir(root: string, policy: AgentPolicy, path: string): FsResu
   const abs = absPath(root, path)
   assertAllowed(policy, abs, true)
   mkdirSync(abs, { recursive: true })
-  return listResult(root, abs)
+  // Возвращаем листинг РОДИТЕЛЯ — чтобы новая папка была видна в текущем каталоге,
+  // а не «проваливаться» в пустую только что созданную.
+  return listResult(root, dirname(abs))
 }

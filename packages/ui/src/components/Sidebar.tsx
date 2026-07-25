@@ -46,6 +46,8 @@ export interface SidebarProps {
   onOpenSettings: () => void
   /** Открыть файловый проводник по машине-агенту (web). */
   onOpenFiles?: () => void
+  /** Открыть консоль по машине-агенту (web). */
+  onOpenConsole?: () => void
   /** Открыть админ-страницу пользователей (только admin). */
   onOpenUsers?: () => void
   /** Текущий пользователь (web-режим); null/без имени — строка входа не показывается. */
@@ -70,6 +72,7 @@ export function Sidebar({
   onOpenCodexObserver,
   onOpenSettings,
   onOpenFiles,
+  onOpenConsole,
   onOpenUsers,
   currentUser,
   onLogout,
@@ -219,6 +222,12 @@ export function Sidebar({
           <button className="footbtn" onClick={onOpenFiles}>
             <span className="footico">📁</span>
             Открыть проводник
+          </button>
+        )}
+        {onOpenConsole && (
+          <button className="footbtn" onClick={onOpenConsole}>
+            <span className="footico">⌨️</span>
+            Открыть консоль
           </button>
         )}
         {onOpenUsers && currentUser?.role === 'admin' && (

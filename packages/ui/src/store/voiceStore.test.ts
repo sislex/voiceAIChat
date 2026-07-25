@@ -1393,44 +1393,51 @@ describe('voiceStore — сессия/аутентификация (web)', () =>
   })
 })
 
-describe('voiceStore — файловый проводник', () => {
+describe('voiceStore — машинные утилиты', () => {
   function makeFs() {
     const listing = { root: '/r', cwd: '/r', entries: [{ name: 'a.txt', kind: 'file' as const, size: 1, mtime: 0 }] }
     return {
       list: vi.fn().mockResolvedValue(listing),
       read: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r', dataBase64: btoa('hi'), name: 'a.txt' }),
-      write: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r', entries: [] }),
-      remove: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r', entries: [] }),
-      rename: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r', entries: [] }),
-      mkdir: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r/new', entries: [] })
+      write: vi.fn().mockResolvedValue(listing),
+      remove: vi.fn().mockResolvedValue(listing),
+      rename: vi.fn().mockResolvedValue(listing),
+      mkdir: vi.fn().mockResolvedValue(listing),
+      exec: vi.fn().mockResolvedValue({ exitCode: 0, output: 'ok', timedOut: false })
     }
   }
 
-  it('selectFsAgent листит корень и заполняет состояние', async () => {
+  it('тонкие ops пробрасывают вызовы в мост fs', async () => {
     const fs = makeFs()
     const store = createVoiceStore({ api: createFakeApi([]), fs })
-    await store.actions.selectFsAgent('m1')
-    expect(fs.list).toHaveBeenCalledWith('m1', '')
-    expect(store.getState().fsAgentId).toBe('m1')
-    expect(store.getState().fsRoot).toBe('/r')
-    expect(store.getState().fsEntries).toHaveLength(1)
+    const res = await store.actions.fsList('m1', '/x')
+    expect(fs.list).toHaveBeenCalledWith('m1', '/x')
+    expect(res.entries).toHaveLength(1)
+    const exec = await store.actions.agentExec('m1', 'ls')
+    expect(fs.exec).toHaveBeenCalledWith('m1', 'ls')
+    expect(exec.output).toBe('ok')
   })
 
-  it('mkdir строит абсолютный путь от cwd', async () => {
-    const fs = makeFs()
-    const store = createVoiceStore({ api: createFakeApi([]), fs })
-    await store.actions.selectFsAgent('m1')
-    await store.actions.mkdirFs('new')
-    expect(fs.mkdir).toHaveBeenCalledWith('m1', '/r/new')
-    expect(store.getState().fsCwd).toBe('/r/new')
+  it('openUtility выбирает онлайн-машину и открывает; closeUtility закрывает', () => {
+    const store = createVoiceStore({ api: createFakeApi([]), fs: makeFs() })
+    store.actions.openUtility('console')
+    expect(store.getState().utility?.kind).toBe('console')
+    store.actions.closeUtility()
+    expect(store.getState().utility).toBeNull()
   })
 
-  it('ошибка операции пишется в fsError', async () => {
-    const fs = makeFs()
-    fs.list.mockRejectedValueOnce(new Error('offline'))
-    const store = createVoiceStore({ api: createFakeApi([]), fs })
-    await store.actions.selectFsAgent('m1')
-    expect(store.getState().fsError).toBe('offline')
+  it('команда «открой консоль» создаёт ai-сообщение с tool-блоком (без LLM)', async () => {
+    const store = createVoiceStore({ api: createFakeApi([]), fs: makeFs() })
+    await store.actions.init()
+    store.actions.setDraft('открой консоль')
+    await store.actions.submitText()
+    const msgs = store.getState().messages
+    const last = msgs[msgs.length - 1]
+    expect(last.role).toBe('ai')
+    expect(last.text).toContain('```tool')
+    expect(last.text).toContain('"kind":"console"')
+    // Остаёмся в idle (в LLM не ходили).
+    expect(store.getState().voice).toBe('idle')
   })
 })
 

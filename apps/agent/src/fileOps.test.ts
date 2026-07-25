@@ -43,6 +43,12 @@ describe('fileOps', () => {
     expect(fsList(root, OPEN, '').entries!.some((e) => e.name === 'c.txt')).toBe(false)
   })
 
+  it('mkdir возвращает листинг РОДИТЕЛЯ с новой папкой (видна в текущем каталоге)', () => {
+    const res = fsMkdir(root, OPEN, join(root, 'newdir'))
+    expect(res.cwd).toBe(root) // остаёмся в текущем каталоге
+    expect(res.entries!.some((e) => e.name === 'newdir' && e.kind === 'dir')).toBe(true)
+  })
+
   it('без allowWrite мутации запрещены, чтение разрешено', () => {
     const ro: AgentPolicy = { ...DEFAULT_AGENT_POLICY, allowWrite: false }
     expect(() => fsWrite(root, ro, join(root, 'x.txt'), '')).toThrow(/запрещено/i)

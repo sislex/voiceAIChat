@@ -153,4 +153,14 @@ export async function registerAgentRoutes(
     '/api/agents/:id/fs/mkdir',
     async (req, reply) => withFs(req, reply, (id) => registry.fsMkdir(id, req.body?.path ?? ''))
   )
+
+  // Утилита «Консоль»: выполнить команду на своей машине (проверка политики — в registry.exec).
+  app.post<{ Params: { id: string }; Body: { command?: string } }>(
+    '/api/agents/:id/exec',
+    async (req, reply) =>
+      withFs(req, reply, (id) => registry.exec(id, req.body?.command ?? '', EXEC_TIMEOUT_MS))
+  )
 }
+
+/** Таймаут пользовательской команды консоли. */
+const EXEC_TIMEOUT_MS = 60_000
