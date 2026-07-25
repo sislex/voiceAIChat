@@ -144,6 +144,8 @@ export interface AppState {
   cxSessionId: string | null
   /** Открыта ли админ-страница пользователей (только admin). */
   usersOpen: boolean
+  /** Открыто ли меню «Машины» (статус агентских машин). */
+  machinesOpen: boolean
   /** Список пользователей для админки. */
   adminUsers: AdminUserInfo[]
   /** Выбранный пользователь в админке (null — не выбран). */
@@ -336,6 +338,10 @@ export interface StoreActions {
   setAgentPolicy(id: string, policy: AgentPolicy): Promise<void>
   /** Перевыпустить токен машины; возвращает новую строку подключения (или null). */
   regenerateAgentToken(id: string): Promise<string | null>
+  /** Открыть меню «Машины» (статус агентских машин); подтягивает список. */
+  openMachines(): void
+  /** Закрыть меню «Машины». */
+  closeMachines(): void
   /**
    * Добавить запись активности агента (claude:log) в лог консоли и, если запись
    * относится к активному разговору, — в активность текущего хода (liveActivity).
@@ -462,6 +468,7 @@ function initialState(): AppState {
     cxProjectCwd: null,
     cxSessionId: null,
     usersOpen: false,
+    machinesOpen: false,
     adminUsers: [],
     adminSelected: null,
     adminUsage: null,
@@ -951,6 +958,17 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ error: err instanceof Error ? err.message : String(err) })
       return null
     }
+  }
+
+  /** Открывает меню «Машины»; освежает список (пуш по WS дальше держит его актуальным). */
+  function openMachines(): void {
+    setState({ machinesOpen: true })
+    void refreshAgents()
+  }
+
+  /** Закрывает меню «Машины». */
+  function closeMachines(): void {
+    setState({ machinesOpen: false })
   }
 
   /** Живой список машин из пуша по WebSocket. */
@@ -1933,6 +1951,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applyAgents,
       setAgentPolicy,
       regenerateAgentToken,
+      openMachines,
+      closeMachines,
       applyClaudeLog,
       toggleConsole,
       openObserver,

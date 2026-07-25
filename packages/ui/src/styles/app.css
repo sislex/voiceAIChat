@@ -2571,3 +2571,132 @@
 .term-status--err {
   color: #ff9b9b;
 }
+
+/* --- Меню «Машины»: таблица статуса агентских машин --- */
+.mst-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 16px;
+  gap: 12px;
+}
+.mst-empty {
+  color: var(--text-dim);
+  font-size: 14px;
+  padding: 24px 8px;
+  text-align: center;
+}
+.mst {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.mst thead th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.mst tbody td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border-soft);
+  vertical-align: top;
+}
+.mst-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mst-ver {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.mst-dim {
+  color: var(--text-dim);
+}
+.mst-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.mst-status.on {
+  color: #2e9e5b;
+}
+.mst-status.off {
+  color: var(--text-dim);
+}
+.mst-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.mst-meter {
+  position: relative;
+  width: 130px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+}
+.mst-meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.mst-meter-fill.hot {
+  background: color-mix(in srgb, #d9534f 45%, transparent);
+}
+.mst-meter-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.mst-disk div {
+  white-space: nowrap;
+}
+.mst-batt {
+  white-space: nowrap;
+}
+.mst-batt.low {
+  color: #d9534f;
+  font-weight: 600;
+}
+.mst-perms {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mst-perm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mst-perm.off {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.mst-perm input {
+  accent-color: var(--accent);
+}
+.mst-hint {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 4px 2px 0;
+}

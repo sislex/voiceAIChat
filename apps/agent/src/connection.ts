@@ -15,9 +15,12 @@ import type { AgentConfig } from './config.js'
 import { runCommand, cancelCommand } from './exec.js'
 import { startPty, writePty, resizePty, killPty } from './pty.js'
 import { fsDelete, fsList, fsMkdir, fsRead, fsRename, fsWrite } from './fileOps.js'
+import { createTelemetryCollector } from './telemetry.js'
 
 const BACKOFF_START_MS = 1_000
 const BACKOFF_MAX_MS = 30_000
+/** Период отправки телеметрии машины на сервер. */
+const TELEMETRY_INTERVAL_MS = 30_000
 
 /** Статус соединения агента для индикации в UI. */
 export type AgentStatus = 'connecting' | 'online' | 'offline' | 'stopped'
@@ -74,6 +77,23 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
   let policy: AgentPolicy = DEFAULT_AGENT_POLICY
   // Ссылка на send текущего соединения — для отправки вне обработчика сообщений.
   let activeSend: ((msg: AgentToServer) => void) | null = null
+  let telemetryTimer: ReturnType<typeof setInterval> | null = null
+  const collectTelemetry = createTelemetryCollector(config.rootDir)
+
+  /** Собирает и шлёт телеметрию (ошибки сбора не критичны — просто пропускаем). */
+  const pushTelemetry = async (send: (msg: AgentToServer) => void): Promise<void> => {
+    try {
+      send({ t: 'agent.telemetry', telemetry: await collectTelemetry() })
+    } catch {
+      /* телеметрия best-effort */
+    }
+  }
+
+  /** Останавливает периодическую отправку телеметрии. */
+  const stopTelemetry = (): void => {
+    if (telemetryTimer) clearInterval(telemetryTimer)
+    telemetryTimer = null
+  }
 
   /** Применяет политику локально (+ уведомляет UI); при emit — шлёт серверу. */
   const applyPolicy = (p: AgentPolicy, emit: boolean): void => {
@@ -108,6 +128,10 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           applyPolicy(msg.policy ?? DEFAULT_AGENT_POLICY, false)
           handlers.onStatus?.('online')
           handlers.onRegistered?.(msg.name)
+          // Телеметрия: сразу снимок и далее по таймеру (пере-регистрация обнуляет).
+          stopTelemetry()
+          void pushTelemetry(send)
+          telemetryTimer = setInterval(() => void pushTelemetry(send), TELEMETRY_INTERVAL_MS)
           break
         case 'agent.policy':
           applyPolicy(msg.policy, false)
@@ -200,6 +224,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
 
     const reconnect = (): void => {
       activeSend = null
+      stopTelemetry()
       if (stopped) return
       handlers.onStatus?.('offline')
       handlers.onLog?.(`соединение потеряно, повтор через ${Math.round(backoff / 1000)}с`)
@@ -220,6 +245,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
     stop: () => {
       stopped = true
       if (reconnectTimer) clearTimeout(reconnectTimer)
+      stopTelemetry()
       handlers.onStatus?.('stopped')
       try {
         socket?.close()

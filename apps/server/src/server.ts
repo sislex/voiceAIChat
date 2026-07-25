@@ -263,7 +263,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           return db.listAgents(user.name).map((a) => ({
             ...a,
             online: online.has(a.id),
-            version: agentRegistry.versionOf(a.id)
+            version: agentRegistry.versionOf(a.id),
+            telemetry: agentRegistry.telemetryOf(a.id)
           }))
         },
         subscribe: (cb) => agentRegistry.onChange(cb)

@@ -253,3 +253,39 @@ describe('AgentRegistry', () => {
   })
 
 })
+
+describe('AgentRegistry — телеметрия', () => {
+  const sample = {
+    ts: 1000,
+    os: { platform: 'linux', release: '6.8', arch: 'x64', isAndroid: false },
+    cpu: { count: 8, loadPct: 42 },
+    mem: { totalBytes: 16_000, usedBytes: 8_000 },
+    disk: { root: { totalBytes: 100, freeBytes: 40 } }
+  }
+
+  it('agent.telemetry сохраняется, отдаётся telemetryOf и уведомляет onChange', () => {
+    const reg = makeRegistry()
+    reg.register('a1', 'Мак', fakeSocket())
+    const changes = vi.fn()
+    reg.onChange(changes)
+
+    reg.handleMessage('a1', { t: 'agent.telemetry', telemetry: sample })
+
+    expect(reg.telemetryOf('a1')).toEqual(sample)
+    expect(changes).toHaveBeenCalledTimes(1)
+  })
+
+  it('телеметрия офлайн-агента игнорируется', () => {
+    const reg = makeRegistry()
+    reg.handleMessage('нет', { t: 'agent.telemetry', telemetry: sample })
+    expect(reg.telemetryOf('нет')).toBeUndefined()
+  })
+
+  it('unregister очищает телеметрию', () => {
+    const reg = makeRegistry()
+    reg.register('a1', 'Мак', fakeSocket())
+    reg.handleMessage('a1', { t: 'agent.telemetry', telemetry: sample })
+    reg.unregister('a1')
+    expect(reg.telemetryOf('a1')).toBeUndefined()
+  })
+})
