@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ChatColumn } from './ChatColumn'
@@ -226,6 +226,63 @@ describe('ChatColumn — встроенная утилита (tool-блок)', (
   it('без machineOps виджет не рендерится (блок просто скрыт)', () => {
     renderCol({ messages: toolMsg })
     expect(screen.queryByTestId('console-embed')).toBeNull()
+  })
+})
+
+describe('ChatColumn — высота поля редактирования', () => {
+  // Как в VoiceBar: раскладки в jsdom нет, поэтому метрики задаём стилем,
+  // а scrollHeight подменяем «строками» по 20px (паддинги 10+10, рамка 1+1).
+  const LINE = 20
+  const PAD = 20
+
+  beforeEach(() => {
+    document.head.insertAdjacentHTML(
+      'beforeend',
+      '<style id="editarea-metrics">.editarea{line-height:20px;padding:10px 12px;border:1px solid #000}</style>'
+    )
+    Object.defineProperty(HTMLTextAreaElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get(this: HTMLTextAreaElement) {
+        return Math.max(1, this.value.split('\n').length) * LINE + PAD
+      }
+    })
+  })
+
+  afterEach(() => {
+    document.getElementById('editarea-metrics')?.remove()
+    delete (HTMLTextAreaElement.prototype as { scrollHeight?: number }).scrollHeight
+  })
+
+  async function openEdit(text: string): Promise<HTMLTextAreaElement> {
+    renderCol({
+      onEditMessage: vi.fn(),
+      messages: [{ ...messages[0], text }]
+    })
+    await userEvent.click(screen.getByLabelText('Изменить сообщение'))
+    return screen.getByLabelText('Редактирование сообщения') as HTMLTextAreaElement
+  }
+
+  it('короткое сообщение — минимум две строки', async () => {
+    const area = await openEdit('одна строка')
+    expect(area).toHaveAttribute('rows', '2')
+    expect(area.style.height).toBe('62px') // 2*20 + 20 + рамка 2
+  })
+
+  it('высота считается сразу при открытии правки трёхстрочного сообщения', async () => {
+    const area = await openEdit('a\nb\nc')
+    expect(area.style.height).toBe('82px')
+  })
+
+  it('длинное сообщение упирается в четыре строки', async () => {
+    const area = await openEdit('a\nb\nc\nd\ne\nf')
+    expect(area.style.height).toBe('102px')
+  })
+
+  it('высота растёт при наборе новых строк', async () => {
+    const area = await openEdit('a')
+    expect(area.style.height).toBe('62px')
+    await userEvent.type(area, '{Shift>}{Enter}{/Shift}b{Shift>}{Enter}{/Shift}c')
+    expect(area.style.height).toBe('82px')
   })
 })
 
