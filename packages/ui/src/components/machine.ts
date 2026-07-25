@@ -5,6 +5,8 @@ import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
 
 export interface MachineOps {
   list(agentId: string, path: string): Promise<FsResult>
+  /** Содержимое файла (base64) — например, чтобы показать картинку в сообщении. */
+  read(agentId: string, path: string): Promise<FsResult>
   write(agentId: string, path: string, dataBase64: string): Promise<FsResult>
   remove(agentId: string, path: string): Promise<FsResult>
   rename(agentId: string, from: string, to: string): Promise<FsResult>

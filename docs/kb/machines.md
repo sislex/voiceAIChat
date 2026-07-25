@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-07-25
-checked: abc2a23
+updated: 2026-07-26
+checked: c782144
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -104,6 +104,19 @@ esbuild'ом на сервере — `agents/agentScript.ts`, адрес и то
 `FsOp` (`fs.list/read/write/delete/rename/mkdir`) идут REST'ом на сервер
 (`/api/agents/:id/fs*`), оттуда — агенту, ответ `fs.result`/`fs.error` по `opId`.
 Реализация на агенте — `apps/agent/src/fileOps.ts`, UI — `FileExplorer.tsx`.
+
+Пути в `FsOp` **абсолютные** (`absPath` просто `resolve`-ит; пусто → `rootDir`
+агента), поэтому читать можно любой файл вне зависимости от текущего каталога
+проводника. Чтение (`fs.list`/`fs.read`) не требует `allowWrite` — ограничено
+только `allowedDirs`; лимит на файл `FS_MAX_BYTES` = 32 МБ. На этом же `fs.read`
+держится показ картинок, созданных моделью (`MessageImage`, см. `llm.md`):
+новых сообщений в протоколе агента для них не понадобилось, поэтому
+`AGENT_VERSION` не бампался.
+
+`MachineOps` (`packages/ui/src/components/machine.ts`) — контракт этих операций
+для самодостаточных виджетов; объект собирается в `App.tsx` заново на каждый
+рендер, так что в зависимостях эффектов держи конкретную функцию (`ops.read`),
+а не сам объект.
 
 ## Телеметрия
 

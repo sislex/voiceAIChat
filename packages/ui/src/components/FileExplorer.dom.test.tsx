@@ -33,6 +33,7 @@ function makeOps(): MachineOps {
   }
   return {
     list: vi.fn().mockResolvedValue(listing),
+    read: vi.fn().mockResolvedValue(listing),
     write: vi.fn().mockResolvedValue(listing),
     remove: vi.fn().mockResolvedValue(listing),
     rename: vi.fn().mockResolvedValue(listing),

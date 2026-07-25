@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-07-26
-checked: 4805be2
+checked: c782144
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -14,6 +14,7 @@ areas:
   - packages/shared/src/prompt.ts
   - packages/shared/src/tools.ts
   - packages/shared/src/questions.ts
+  - packages/shared/src/images.ts
 ---
 
 # LLM: claude/codex CLI, ходы, stream-json, gateway
@@ -78,8 +79,22 @@ HOME контейнера копируются только файлы авто�
 - ` ```questions ` + JSON-массив `{q, options, multi?}` → форма уточняющих
   вопросов; выбранные ответы уходят обычным сообщением пользователя
   (`packages/shared/src/questions.ts`).
+- ` ```image ` + JSON `{path, agentId?, caption?}` → созданная моделью картинка
+  прямо в сообщении (`packages/shared/src/images.ts`, подсказка — `IMAGE_HINT`).
+  `path` — **абсолютный путь на машине, где шёл ход**; байты клиент тянет через
+  `fs.read` и показывает data-URL. Здесь же fallback: обычная markdown-картинка
+  с локальным путём (markdown-синтаксис картинки, где вместо URL — `/tmp/out.png`)
+  распознаётся так же — модели пишут
+  так по привычке, а браузер такой `src` не откроет.
 
-Оба парсера — чистые функции без DOM и сети, тесты рядом.
+Все три парсера — чистые функции без DOM и сети, тесты рядом. Подсказки
+навешиваются в `turns.ts` цепочкой `appendImageHint(appendToolHint(appendQuestionsHint(…)))`.
+
+Служебные блоки **не озвучиваются**: `SERVICE_FENCES` в
+`packages/shared/src/sentences.ts` (`tool`/`questions`/`image`) заставляет
+`splitSpeakable` и `prepareTtsText` пропускать их молча, а не подставлять
+заглушку «Далее пример кода». Заводишь новый служебный блок — добавь его туда,
+иначе TTS начнёт его проговаривать.
 
 ## Наблюдатели сессий Claude Code и Codex
 

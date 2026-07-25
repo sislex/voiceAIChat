@@ -2,8 +2,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ClaudeLogEntry, Message, TurnMeta, VoiceState } from '@shared/types'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
+import { parseImages } from '@shared/images'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { MachineUtility } from './MachineUtility'
+import { MessageImage } from './MessageImage'
 import type { MachineOps } from './machine'
 import {
   chipClass,
@@ -187,6 +189,9 @@ export function ChatColumn({
 
   const isListening = state === 'listening'
   const hasStream = streamingReply.length > 0
+  // Картинки в ещё не завершённом ответе: блок вырезаем сразу, чтобы вместо
+  // сырого JSON пользователь видел саму картинку, как только файл готов.
+  const liveImages = parseImages(streamingReply)
   // Индикатор «думает» показываем, пока не пошли токены ответа.
   const isThinking = (state === 'thinking' || state === 'transcribing') && !hasStream
 
@@ -319,10 +324,14 @@ export function ChatColumn({
             // Встроенная утилита (консоль/проводник) — блок ```tool в тексте.
             const toolParsed = isAi && machineOps ? parseToolBlock(m.text) : null
             const baseText = toolParsed ? toolParsed.body : m.text
+            // Картинки, созданные моделью: блок вырезаем всегда (иначе в тексте
+            // виден сырой JSON), а показываем, только если есть доступ к машине.
+            const imagesParsed = isAi ? parseImages(baseText) : null
+            const imageText = imagesParsed ? imagesParsed.body : baseText
             // Уточняющие вопросы модели: вырезаем блок из текста; форма — только
             // у последнего сообщения ленты (после ответа пользователя она исчезает).
-            const parsed = isAi ? parseQuestions(baseText) : null
-            const aiText = parsed ? parsed.body : baseText
+            const parsed = isAi ? parseQuestions(imageText) : null
+            const aiText = parsed ? parsed.body : imageText
             const isLast = messages[messages.length - 1]?.id === m.id
             return (
               <div key={m.id} className={isAi ? 'msg ai' : 'msg me'}>
@@ -367,6 +376,15 @@ export function ChatColumn({
                       />
                     )}
                     {aiText && <Markdown>{aiText}</Markdown>}
+                    {machineOps &&
+                      imagesParsed?.images.map((img) => (
+                        <MessageImage
+                          key={img.path}
+                          image={img}
+                          execAgentId={m.execTarget ?? execTarget}
+                          ops={machineOps}
+                        />
+                      ))}
                     {toolParsed && machineOps && (
                       <MachineUtility
                         tool={toolParsed.tool}
@@ -529,7 +547,16 @@ export function ChatColumn({
                     execTarget={execTarget}
                   />
                 )}
-                <Markdown>{streamingReply}</Markdown>
+                <Markdown>{liveImages.body}</Markdown>
+                {machineOps &&
+                  liveImages.images.map((img) => (
+                    <MessageImage
+                      key={img.path}
+                      image={img}
+                      execAgentId={execTarget}
+                      ops={machineOps}
+                    />
+                  ))}
                 {liveActivity.length > 0 && (
                   <button
                     className="msgbtn actbtn actbtn--stream"
