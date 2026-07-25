@@ -88,6 +88,7 @@ function topicFiles() {
         path,
         title: data.title ?? f.replace(/\.md$/, ''),
         updated: data.updated ?? '',
+        checked: data.checked ?? '',
         areas: Array.isArray(data.areas) ? data.areas : []
       }
     })
@@ -97,6 +98,47 @@ function topicFiles() {
 function lastCommitDate(paths) {
   if (paths.length === 0) return ''
   return git(['log', '-1', '--format=%cs', '--', ...paths])
+}
+
+/** Существует ли объект с таким sha (после rebase старый sha исчезает). */
+function shaExists(sha) {
+  if (!sha) return false
+  try {
+    execFileSync('git', ['cat-file', '-e', `${sha}^{commit}`], { cwd: ROOT, stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Коммиты, затронувшие areas после сверки (`checked`). */
+function commitsSinceChecked(sha, paths) {
+  if (paths.length === 0) return []
+  const out = git(['log', '--format=%h %s', `${sha}..HEAD`, '--', ...paths])
+  return out ? out.split('\n') : []
+}
+
+/**
+ * Свежесть темы. Основной механизм — sha сверки (`checked`): ловит и правки того
+ * же дня, что критично, когда несколько агентов коммитят в один день. Дата
+ * используется как фолбэк, когда sha нет или он исчез после rebase.
+ */
+function staleness(topic) {
+  if (topic.areas.length === 0) return { stale: false, why: '' }
+  if (shaExists(topic.checked)) {
+    const commits = commitsSinceChecked(topic.checked, topic.areas)
+    if (commits.length === 0) return { stale: false, why: '' }
+    return {
+      stale: true,
+      why: `${commits.length} коммит(ов) в areas после сверки: ${commits[0]}${commits.length > 1 ? ' …' : ''}`
+    }
+  }
+  const code = lastCommitDate(topic.areas)
+  if (!topic.updated) return { stale: true, why: 'нет поля updated' }
+  if (code && code > topic.updated) {
+    return { stale: true, why: `код изменён ${code}, сверка ${topic.updated} (по датам: правки того же дня не видны — поставь checked)` }
+  }
+  return { stale: false, why: '' }
 }
 
 /** Пакеты, у которых нет AGENTS.md. */
@@ -157,12 +199,8 @@ function journalEntries() {
 function cmdCheck(strict) {
   const stale = []
   for (const t of topicFiles()) {
-    const code = lastCommitDate(t.areas)
-    if (!t.updated) {
-      stale.push({ ...t, code, why: 'нет поля updated' })
-    } else if (code && code > t.updated) {
-      stale.push({ ...t, code, why: `код изменён ${code}, сверка ${t.updated}` })
-    }
+    const s = staleness(t)
+    if (s.stale) stale.push({ ...t, why: s.why })
   }
 
   console.log(C.bold('База знаний docs/kb'))
@@ -211,9 +249,8 @@ function cmdIndex() {
   lines.push('| Файл | Тема | Сверено | Статус |')
   lines.push('|---|---|---|---|')
   for (const t of topics) {
-    const code = lastCommitDate(t.areas)
-    const stale = !t.updated || (code && code > t.updated)
-    const status = stale ? `⚠ код изменён ${code || '—'}` : '✓'
+    const s = staleness(t)
+    const status = s.stale ? `⚠ ${s.why}` : '✓'
     lines.push(`| [${t.file}](${t.file}) | ${t.title} | ${t.updated || '—'} | ${status} |`)
   }
   lines.push('')
@@ -335,8 +372,15 @@ function cmdTouch(args) {
       process.exitCode = 1
       continue
     }
-    writeFileSync(path, text.replace(/^(updated:\s*).*$/m, `$1${today()}`))
-    console.log(C.green(`✓ ${relative(ROOT, path)} → updated: ${today()}`))
+    // Пишем и дату (для человека), и sha HEAD (для точной проверки свежести).
+    const head = git(['rev-parse', '--short', 'HEAD'])
+    let next = text.replace(/^(updated:\s*).*$/m, `$1${today()}`)
+    next =
+      'checked' in data
+        ? next.replace(/^(checked:\s*).*$/m, `$1${head}`)
+        : next.replace(/^(updated:\s*.*)$/m, `$1\nchecked: ${head}`)
+    writeFileSync(path, next)
+    console.log(C.green(`✓ ${relative(ROOT, path)} → updated: ${today()}, checked: ${head}`))
   }
 }
 

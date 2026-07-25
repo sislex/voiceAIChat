@@ -1,12 +1,14 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-07-26
+checked: 4805be2
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
   - apps/server/src/turns.ts
   - apps/server/src/anthropic
   - apps/server/src/cc
+  - apps/server/src/users/cliProfiles.ts
   - packages/shared/src/streamJson.ts
   - packages/shared/src/codexStream.ts
   - packages/shared/src/prompt.ts
@@ -32,6 +34,14 @@ areas:
 
 Статус входа обоих CLI сервер отдаёт на `/api/auth/status`
 (`apps/server/src/auth/loginStatus.ts`), UI опрашивает его раз в 30 с.
+
+**У каждого пользователя свой HOME для CLI** (`apps/server/src/users/cliProfiles.ts`):
+`<dataDir>/cli-users/<base64url(логин)>/` с `.claude` и `.codex` внутри. Из общего
+HOME контейнера копируются только файлы авторизации и конфигурации — история,
+`projects/` и `sessions/` не копируются, чтобы пользователи не видели чужие
+сессии. `buildServer` передаёт движкам `profileHome(userId)`, поэтому наблюдатели
+`/api/cc/*` и `/api/cx/*` читают транскрипты из профиля пользователя, а не из
+`~/.claude`.
 
 ## Разбор потока
 
@@ -73,8 +83,9 @@ areas:
 
 ## Наблюдатели сессий Claude Code и Codex
 
-`apps/server/src/cc/ccSessions.ts` читает `~/.claude/projects/<слаг>/<session-id>.jsonl`
-(по файлу на разговор) и отдаёт read-only историю + live-tail (`cc.tail`).
+`apps/server/src/cc/ccSessions.ts` читает `<HOME профиля>/.claude/projects/<слаг>/<session-id>.jsonl`
+(по файлу на разговор; HOME — профиль пользователя, см. выше) и отдаёт read-only
+историю + live-tail (`cc.tail`).
 Важные детали формата и грабли — в `docs/plans/CC_OBSERVER.md`: файлы бывают до
 ~10 МБ, поэтому для списка читается только «голова» файла (cwd + первый промпт),
 полный разбор — при открытии транскрипта; реальный путь проекта берётся из `cwd`
