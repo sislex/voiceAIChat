@@ -42,7 +42,8 @@ function isPublic(url: string): boolean {
     url.startsWith('/api/session/') ||
     url === REST.agentApp ||
     url === REST.agentScript ||
-    url === REST.desktopApp
+    url === REST.desktopApp ||
+    url === REST.agentLatestVersion
   )
 }
 

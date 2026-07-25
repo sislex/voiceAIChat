@@ -173,7 +173,7 @@ describe('AgentRegistry', () => {
   it('fsList: шлёт fs.list и резолвится по fs.result (по opId)', async () => {
     const reg = makeRegistry()
     const sock = fakeSocket()
-    reg.register('a1', 'Мак', sock)
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.2.0')
 
     const p = reg.fsList('a1', '')
     expect(sock.sent[0]).toEqual({ t: 'fs.list', opId: 'exec-1', path: '' })
@@ -185,12 +185,25 @@ describe('AgentRegistry', () => {
   it('fs.error → reject с сообщением; offline → reject', async () => {
     const reg = makeRegistry()
     const sock = fakeSocket()
-    reg.register('a1', 'Мак', sock)
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.2.0')
 
     const p = reg.fsDelete('a1', '/x')
     reg.handleMessage('a1', { t: 'fs.error', opId: 'exec-1', message: 'запрещено' })
     await expect(p).rejects.toThrow('запрещено')
 
     await expect(reg.fsList('offline', '')).rejects.toThrow('не в сети')
+  })
+
+  it('гейтинг версии: старый агент (0.1.0) → fs запрещён + сигнал обновления; exec разрешён', async () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.1.0')
+
+    await expect(reg.fsList('a1', '')).rejects.toThrow(/устарел/i)
+    // Агенту ушёл сигнал об обновлении.
+    expect(sock.sent.some((m) => m.t === 'agent.updateAvailable')).toBe(true)
+    // exec (min 0.1.0) не гейтится — уходит exec.start.
+    reg.exec('a1', 'ls', 1000)
+    expect(sock.sent.some((m) => m.t === 'exec.start')).toBe(true)
   })
 })

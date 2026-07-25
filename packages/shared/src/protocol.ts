@@ -103,6 +103,8 @@ export const REST = {
   agentFsRename: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/rename`,
   agentFsMkdir: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/mkdir`,
   agentExec: (id: string) => `/api/agents/${encodeURIComponent(id)}/exec`,
+  /** Последняя доступная версия агента (публично; для «Проверить обновления»). */
+  agentLatestVersion: '/api/agents/version',
   ccProjects: '/api/cc/projects',
   ccSessions: (slug: string) => `/api/cc/projects/${encodeURIComponent(slug)}/sessions`,
   ccTranscript: (slug: string, id: string) =>

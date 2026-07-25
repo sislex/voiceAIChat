@@ -5,6 +5,7 @@
 import WebSocket from 'ws'
 import {
   evaluateAgentCommand,
+  AGENT_VERSION,
   DEFAULT_AGENT_POLICY,
   type AgentPolicy,
   type AgentToServer,
@@ -27,6 +28,8 @@ export interface AgentHandlers {
   onDenied?(reason: string): void
   onExec?(command: string): void
   onExecDone?(command: string, exitCode: number | null, timedOut: boolean, ms: number): void
+  /** Сервер сообщил, что доступна новая версия агента. */
+  onUpdateAvailable?(version: string): void
   /** Свободная строка лога (для консоли/журнала). */
   onLog?(line: string): void
 }
@@ -50,6 +53,8 @@ export function consoleHandlers(): AgentHandlers {
       console.log(
         `[agent] → exit ${exitCode ?? '?'}${timedOut ? ' (таймаут)' : ''} (${(ms / 1000).toFixed(1)}с)`
       ),
+    onUpdateAvailable: (version) =>
+      console.log(`[agent] доступно обновление v${version} — перекачайте и перезапустите скрипт агента`),
     onLog: (line) => console.log(`[agent] ${line}`)
   }
 }
@@ -70,7 +75,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
     }
 
     ws.on('open', () => {
-      send({ t: 'agent.register', token: config.token })
+      send({ t: 'agent.register', token: config.token, version: AGENT_VERSION })
     })
 
     ws.on('message', (data) => {
@@ -94,6 +99,9 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
         case 'agent.denied':
           stopped = true // не переподключаемся с заведомо неверным токеном
           handlers.onDenied?.(msg.reason)
+          break
+        case 'agent.updateAvailable':
+          handlers.onUpdateAvailable?.(msg.version)
           break
         case 'exec.start': {
           const command = msg.command

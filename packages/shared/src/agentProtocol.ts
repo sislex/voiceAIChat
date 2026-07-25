@@ -35,7 +35,7 @@ export interface FsResult {
 
 /** Сообщения агент → сервер. */
 export type AgentToServer =
-  | { t: 'agent.register'; token: string }
+  | { t: 'agent.register'; token: string; version?: string }
   | { t: 'exec.chunk'; execId: string; stream: 'stdout' | 'stderr'; data: string }
   | { t: 'exec.done'; execId: string; exitCode: number | null; timedOut?: boolean }
   | { t: 'exec.error'; execId: string; message: string }
@@ -139,6 +139,7 @@ export type ServerToAgent =
   | { t: 'agent.registered'; name: string; policy: AgentPolicy }
   | { t: 'agent.denied'; reason: string }
   | { t: 'agent.policy'; policy: AgentPolicy }
+  | { t: 'agent.updateAvailable'; version: string }
   | { t: 'exec.start'; execId: string; command: string; timeoutMs: number }
   | { t: 'exec.cancel'; execId: string }
   | FsOp
@@ -151,6 +152,8 @@ export interface AgentInfo {
   createdAt: number
   lastSeen: number | null
   policy: AgentPolicy
+  /** Версия подключённого агента (только когда online; иначе не задана). */
+  version?: string
 }
 
 /** Ответ на создание агента: токен возвращается только здесь, один раз. */
