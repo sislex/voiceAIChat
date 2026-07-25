@@ -104,7 +104,13 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
 
   const connect = (): void => {
     handlers.onStatus?.('connecting')
-    const ws = new WebSocket(config.serverUrl)
+    // Самоподписанный TLS (Caddy `tls internal`): VC_AGENT_INSECURE_TLS=1 отключает
+    // проверку сертификата для wss:// — иначе Node ws рвёт соединение. Нужно на телефоне.
+    const wsOpts =
+      process.env.VC_AGENT_INSECURE_TLS && config.serverUrl.startsWith('wss:')
+        ? { rejectUnauthorized: false }
+        : undefined
+    const ws = new WebSocket(config.serverUrl, wsOpts)
     socket = ws
     const send = (msg: AgentToServer): void => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))

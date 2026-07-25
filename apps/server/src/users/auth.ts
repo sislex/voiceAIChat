@@ -35,13 +35,14 @@ function bearer(req: FastifyRequest): string | undefined {
   return m ? m[1] : undefined
 }
 
-/** Публичные пути (без токена): health, сессия, скачивание бинарей приложения. */
+/** Публичные пути (без токена): health, сессия, скачивание бинарей/установщиков агента. */
 function isPublic(url: string): boolean {
   return (
     url === REST.health ||
     url.startsWith('/api/session/') ||
     url === REST.agentApp ||
     url === REST.agentScript ||
+    url === REST.agentInstallAndroid ||
     url === REST.desktopApp ||
     url === REST.agentLatestVersion
   )

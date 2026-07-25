@@ -4,6 +4,7 @@
 // Строка подключения копируется из веб-настроек и содержит адрес + токен.
 
 import { decodeAgentConnection } from '@voicechat/shared'
+import { defaultRootDir } from './platform.js'
 
 export interface AgentConfig {
   /** ws://host:port/agent */
@@ -51,6 +52,6 @@ export function loadConfig(
   return {
     serverUrl: normalizeServerUrl(finalServer),
     token: finalToken,
-    rootDir: env.VC_AGENT_ROOT ?? process.cwd()
+    rootDir: defaultRootDir(env)
   }
 }
