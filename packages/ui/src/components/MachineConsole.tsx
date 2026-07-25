@@ -1,6 +1,7 @@
-import { useState, type FormEvent, type MouseEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import type { AgentExecResult, AgentInfo } from '@shared/agentProtocol'
 import type { UtilityVariant } from './machine'
+import { ToolFrame } from './ToolFrame'
 
 export interface MachineConsoleProps {
   agents: AgentInfo[]
@@ -32,8 +33,6 @@ export function MachineConsole({
   const [cmd, setCmd] = useState('')
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [running, setRunning] = useState(false)
-  const [fullscreen, setFullscreen] = useState(false)
-  const stop = (e: MouseEvent): void => e.stopPropagation()
 
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
@@ -57,8 +56,13 @@ export function MachineConsole({
     }
   }
 
-  const body = (
-    <>
+  return (
+    <ToolFrame
+      title="Консоль машины"
+      variant={variant}
+      onClose={onClose}
+      testId={variant === 'modal' ? 'console-overlay' : 'console-embed'}
+    >
       <div className="fsbar">
         {agents.length > 1 && (
           <select
@@ -106,41 +110,6 @@ export function MachineConsole({
           ▶
         </button>
       </form>
-    </>
-  )
-
-  const header = (
-    <div className="mdhead">
-      <h2 className="mdh">Консоль машины</h2>
-      <span className="util-head-btns">
-        {variant === 'embedded' && (
-          <button className="xbtn" title="На весь экран" onClick={() => setFullscreen((v) => !v)}>
-            {fullscreen ? '🗕' : '⛶'}
-          </button>
-        )}
-        {onClose && (
-          <button className="xbtn" aria-label="Закрыть" onClick={onClose}>
-            ✕
-          </button>
-        )}
-      </span>
-    </div>
-  )
-
-  if (variant === 'modal') {
-    return (
-      <div className="ovl" onClick={onClose} data-testid="console-overlay">
-        <div className="ccobs" onClick={stop} role="dialog" aria-label="Консоль машины">
-          {header}
-          {body}
-        </div>
-      </div>
-    )
-  }
-  return (
-    <div className={fullscreen ? 'util-embed util-embed--fs' : 'util-embed'} data-testid="console-embed">
-      {header}
-      {body}
-    </div>
+    </ToolFrame>
   )
 }

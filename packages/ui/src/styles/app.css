@@ -1864,7 +1864,7 @@
   font-family: 'SF Mono', ui-monospace, Menlo, monospace;
 }
 
-/* ---- Встроенная утилита в сообщении (карточка + разворот на весь экран) ---- */
+/* ---- Рамка тулов (ToolFrame): карточка в сообщении + разворот на весь экран ---- */
 .util-embed {
   display: flex;
   flex-direction: column;
@@ -2157,6 +2157,15 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+/* Разворот модального тула на весь экран (кнопка в шапке ToolFrame). */
+.ccobs--fs {
+  width: auto;
+  max-width: none;
+  height: auto;
+  position: fixed;
+  inset: 8px;
+  border-radius: 12px;
 }
 .ccobs-body {
   display: flex;

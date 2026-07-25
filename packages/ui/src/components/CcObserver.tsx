@@ -1,6 +1,6 @@
-import type { MouseEvent } from 'react'
 import type { CcProject, CcSession, CcItem, CcItemKind } from '@shared/cc'
 import { Markdown } from './Markdown'
+import { ToolFrame } from './ToolFrame'
 
 export interface CcObserverProps {
   projects: CcProject[]
@@ -73,69 +73,60 @@ export function CcObserver({
   onResumeSession,
   onClose
 }: CcObserverProps): JSX.Element {
-  const stop = (e: MouseEvent): void => e.stopPropagation()
   return (
-    <div className="ovl" onClick={onClose} data-testid="cc-overlay">
-      <div className="ccobs" onClick={stop} role="dialog" aria-label="Проводник Claude Code">
-        <div className="mdhead">
-          <h2 className="mdh">Проводник Claude Code</h2>
-          <button className="xbtn" onClick={onClose} aria-label="Закрыть">
-            ✕
-          </button>
-        </div>
-        <div className="ccobs-body">
-          <nav className="cc-col cc-projects" aria-label="Проекты">
-            {projects.length === 0 && <p className="cc-empty">Проектов не найдено</p>}
-            {projects.map((p) => (
-              <button
-                key={p.slug}
-                className={p.slug === activeProject ? 'cc-item on' : 'cc-item'}
-                onClick={() => onSelectProject(p.slug)}
-              >
-                <span className="cc-name">{p.name}</span>
-                <span className="cc-sub">
-                  {p.sessionCount} · {when(p.lastActivity)}
-                </span>
-              </button>
-            ))}
-          </nav>
+    <ToolFrame title="Проводник Claude Code" onClose={onClose} testId="cc-overlay">
+      <div className="ccobs-body">
+        <nav className="cc-col cc-projects" aria-label="Проекты">
+          {projects.length === 0 && <p className="cc-empty">Проектов не найдено</p>}
+          {projects.map((p) => (
+            <button
+              key={p.slug}
+              className={p.slug === activeProject ? 'cc-item on' : 'cc-item'}
+              onClick={() => onSelectProject(p.slug)}
+            >
+              <span className="cc-name">{p.name}</span>
+              <span className="cc-sub">
+                {p.sessionCount} · {when(p.lastActivity)}
+              </span>
+            </button>
+          ))}
+        </nav>
 
-          <nav className="cc-col cc-sessions" aria-label="Сессии">
-            {activeProject && sessions.length === 0 && <p className="cc-empty">Нет сессий</p>}
-            {sessions.map((s) => (
-              <button
-                key={s.id}
-                className={s.id === activeSession ? 'cc-item on' : 'cc-item'}
-                onClick={() => activeProject && onSelectSession(activeProject, s.id)}
-              >
-                <span className="cc-name">{s.title}</span>
-                <span className="cc-sub">{when(s.updatedAt)}</span>
-              </button>
-            ))}
-          </nav>
+        <nav className="cc-col cc-sessions" aria-label="Сессии">
+          {activeProject && sessions.length === 0 && <p className="cc-empty">Нет сессий</p>}
+          {sessions.map((s) => (
+            <button
+              key={s.id}
+              className={s.id === activeSession ? 'cc-item on' : 'cc-item'}
+              onClick={() => activeProject && onSelectSession(activeProject, s.id)}
+            >
+              <span className="cc-name">{s.title}</span>
+              <span className="cc-sub">{when(s.updatedAt)}</span>
+            </button>
+          ))}
+        </nav>
 
-          <div className="cc-col cc-transcript" data-testid="cc-transcript">
-            {activeSession && (
-              <div className="cc-actions">
-                <span className="cc-live">
-                  <span className="reddot" /> LIVE · слежение за сессией
-                </span>
-                <button
-                  className="vdl"
-                  aria-label="Продолжить эту сессию"
-                  onClick={() => activeProject && onResumeSession(activeProject, activeSession)}
-                >
-                  ▶ Продолжить эту сессию
-                </button>
-              </div>
-            )}
-            {!activeSession && <p className="cc-empty">Выберите сессию</p>}
-            {transcript.map((item, i) => (
-              <TranscriptItem key={i} item={item} />
-            ))}
-          </div>
+        <div className="cc-col cc-transcript" data-testid="cc-transcript">
+          {activeSession && (
+            <div className="cc-actions">
+              <span className="cc-live">
+                <span className="reddot" /> LIVE · слежение за сессией
+              </span>
+              <button
+                className="vdl"
+                aria-label="Продолжить эту сессию"
+                onClick={() => activeProject && onResumeSession(activeProject, activeSession)}
+              >
+                ▶ Продолжить эту сессию
+              </button>
+            </div>
+          )}
+          {!activeSession && <p className="cc-empty">Выберите сессию</p>}
+          {transcript.map((item, i) => (
+            <TranscriptItem key={i} item={item} />
+          ))}
         </div>
       </div>
-    </div>
+    </ToolFrame>
   )
 }
