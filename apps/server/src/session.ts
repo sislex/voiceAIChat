@@ -7,6 +7,7 @@ import type { AgentInfo, SessionUser, SystemCapabilities } from '@voicechat/shar
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'
 import type { TurnManager } from './turns.js'
+import type { PtyEvent } from './agents/registry.js'
 import type { SttEngine } from './stt/types.js'
 import type { DiarizationEngine } from './diarization/types.js'
 import { createSttSession, type SttSession } from './stt/sttSession.js'
@@ -40,6 +41,16 @@ export interface SessionDeps {
     list(): AgentInfo[]
     subscribe(cb: () => void): () => void
   }
+  /** Релей живого PTY-терминала по машине (отдельно от однострочного exec). */
+  pty?: PtyRelay
+}
+
+/** Минимальный релей PTY для сессии (реализует AgentRegistry). */
+export interface PtyRelay {
+  start(agentId: string, ptyId: string, cols: number, rows: number, emit: (e: PtyEvent) => void): void
+  input(ptyId: string, data: string): void
+  resize(ptyId: string, cols: number, rows: number): void
+  kill(ptyId: string): void
 }
 
 export function createSession(deps: SessionDeps): WsHandlers {
@@ -50,6 +61,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubTurns: (() => void) | null = null
   let ccTailStop: (() => void) | null = null
   let cxTailStop: (() => void) | null = null
+  const ptyIds = new Set<string>()
 
   function pcmFromBinary(data: Buffer): Int16Array {
     const copy = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
@@ -172,6 +184,28 @@ export function createSession(deps: SessionDeps): WsHandlers {
           cxTailStop = null
           break
 
+        case 'pty.start': {
+          // Живой терминал: только по своей машине (проверка владения по списку).
+          const owns = deps.agentsFeed?.list().some((a) => a.id === msg.agentId) ?? false
+          if (!owns) {
+            ctx.send({ t: 'pty.error', ptyId: msg.ptyId, message: 'Машина не найдена' })
+            break
+          }
+          ptyIds.add(msg.ptyId)
+          deps.pty?.start(msg.agentId, msg.ptyId, msg.cols, msg.rows, (e) => ctx.send(e))
+          break
+        }
+        case 'pty.input':
+          deps.pty?.input(msg.ptyId, msg.data)
+          break
+        case 'pty.resize':
+          deps.pty?.resize(msg.ptyId, msg.cols, msg.rows)
+          break
+        case 'pty.kill':
+          ptyIds.delete(msg.ptyId)
+          deps.pty?.kill(msg.ptyId)
+          break
+
         default:
           break
       }
@@ -195,6 +229,9 @@ export function createSession(deps: SessionDeps): WsHandlers {
       ccTailStop = null
       cxTailStop?.()
       cxTailStop = null
+      // Живые терминалы этого соединения закрываем (обновление страницы = новый сеанс).
+      for (const id of ptyIds) deps.pty?.kill(id)
+      ptyIds.clear()
     }
   }
 }

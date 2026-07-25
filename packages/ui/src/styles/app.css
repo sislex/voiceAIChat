@@ -2532,3 +2532,42 @@
     transition: none;
   }
 }
+
+/* ---- Терминал машины (xterm + PTY) ---- */
+.term-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 260px;
+  background: #0b0e14;
+  overflow: hidden;
+}
+.util-embed .term-wrap {
+  min-height: 260px;
+}
+.util-embed--fs .term-wrap,
+.ccobs--fs .term-wrap {
+  min-height: 0;
+}
+.term-host {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px;
+}
+/* xterm сам управляет внутренним слоем; растягиваем вьюпорт на всю высоту. */
+.term-host .xterm,
+.term-host .xterm-viewport,
+.term-host .xterm-screen {
+  height: 100% !important;
+}
+.term-status {
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #9aa4b2;
+  background: #0d1220;
+  border-top: 1px solid var(--border);
+}
+.term-status--err {
+  color: #ff9b9b;
+}

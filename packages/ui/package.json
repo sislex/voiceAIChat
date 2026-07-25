@@ -20,7 +20,9 @@
     "react-markdown": "^9.1.0",
     "rehype-highlight": "^7.0.0",
     "remark-gfm": "^4.0.1",
-    "highlight.js": "^11.10.0"
+    "highlight.js": "^11.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "@xterm/addon-fit": "^0.10.0"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.0",

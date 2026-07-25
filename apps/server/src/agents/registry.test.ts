@@ -206,4 +206,50 @@ describe('AgentRegistry', () => {
     reg.exec('a1', 'ls', 1000)
     expect(sock.sent.some((m) => m.t === 'exec.start')).toBe(true)
   })
+  it('pty: релеит start/input агенту и вывод/exit клиенту', () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.3.0')
+
+    const events: Array<{ t: string }> = []
+    reg.ptyStart('a1', 'p1', 80, 24, (e) => events.push(e))
+    expect(sock.sent).toContainEqual({ t: 'pty.start', ptyId: 'p1', cols: 80, rows: 24 })
+
+    reg.ptyInput('p1', 'ls\r')
+    expect(sock.sent).toContainEqual({ t: 'pty.input', ptyId: 'p1', data: 'ls\r' })
+    reg.ptyResize('p1', 100, 30)
+    expect(sock.sent).toContainEqual({ t: 'pty.resize', ptyId: 'p1', cols: 100, rows: 30 })
+
+    reg.handleMessage('a1', { t: 'pty.output', ptyId: 'p1', data: 'файлы' })
+    reg.handleMessage('a1', { t: 'pty.exit', ptyId: 'p1', exitCode: 0 })
+    expect(events).toEqual([
+      { t: 'pty.output', ptyId: 'p1', data: 'файлы' },
+      { t: 'pty.exit', ptyId: 'p1', exitCode: 0 }
+    ])
+    // После exit сессия удалена: ввод больше не уходит агенту.
+    const before = sock.sent.length
+    reg.ptyInput('p1', 'x')
+    expect(sock.sent.length).toBe(before)
+  })
+
+  it('pty: старый агент (<0.3.0) → pty.error клиенту, без pty.start агенту', () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.2.0')
+    const events: Array<{ t: string; message?: string }> = []
+    reg.ptyStart('a1', 'p1', 80, 24, (e) => events.push(e))
+    expect(events[0].t).toBe('pty.error')
+    expect(sock.sent.some((m) => m.t === 'pty.start')).toBe(false)
+  })
+
+  it('pty: дисконнект агента шлёт pty.error по активным сессиям', () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.3.0')
+    const events: Array<{ t: string }> = []
+    reg.ptyStart('a1', 'p1', 80, 24, (e) => events.push(e))
+    reg.unregister('a1')
+    expect(events.some((e) => e.t === 'pty.error')).toBe(true)
+  })
+
 })

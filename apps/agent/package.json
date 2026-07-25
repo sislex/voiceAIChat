@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@voicechat/shared": "*",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "@lydell/node-pty": "^1.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

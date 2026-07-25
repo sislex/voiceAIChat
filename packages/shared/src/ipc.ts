@@ -345,6 +345,21 @@ export interface RendererFsBridge {
 }
 
 /**
+ * Мост живого PTY-терминала по машине (web = поверх WS). Отправка — start/input/
+ * resize/kill; подписки — output/exit/error. Отсутствует в desktop → терминал
+ * деградирует до однострочной консоли.
+ */
+export interface RendererPtyBridge {
+  start(params: { agentId: string; ptyId: string; cols: number; rows: number }): void
+  input(params: { ptyId: string; data: string }): void
+  resize(params: { ptyId: string; cols: number; rows: number }): void
+  kill(params: { ptyId: string }): void
+  onOutput(cb: (m: { ptyId: string; data: string }) => void): () => void
+  onExit(cb: (m: { ptyId: string; exitCode: number | null }) => void): () => void
+  onError(cb: (m: { ptyId: string; message: string }) => void): () => void
+}
+
+/**
  * Мост Claude, доступный в renderer как `window.claude`: отправка реплики,
  * отмена и подписка на поток ответа (main → renderer).
  */

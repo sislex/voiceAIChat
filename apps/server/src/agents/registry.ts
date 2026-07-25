@@ -27,6 +27,18 @@ export interface ExecResult {
   timedOut: boolean
 }
 
+/** События PTY, уходящие клиенту (подмножество ServerMessage). */
+export type PtyEvent =
+  | { t: 'pty.output'; ptyId: string; data: string }
+  | { t: 'pty.exit'; ptyId: string; exitCode: number | null }
+  | { t: 'pty.error'; ptyId: string; message: string }
+
+/** Активная PTY-сессия: к какому агенту привязана и куда слать вывод. */
+interface PtySession {
+  agentId: string
+  emit: (e: PtyEvent) => void
+}
+
 /** Кап буфера вывода одной команды — результат уходит в контекст модели. */
 const OUTPUT_CAP_BYTES = 200 * 1024
 /** Запас серверного страховочного таймаута сверх таймаута агента. */
@@ -65,6 +77,7 @@ export class AgentRegistry {
   private readonly online = new Map<string, OnlineAgent>()
   private readonly pending = new Map<string, PendingExec>()
   private readonly pendingFs = new Map<string, PendingFs>()
+  private readonly ptys = new Map<string, PtySession>()
   private readonly newId: () => string
   private readonly changeListeners = new Set<() => void>()
 
@@ -127,6 +140,15 @@ export class AgentRegistry {
       this.pendingFs.delete(opId)
       clearTimeout(p.timer)
       p.reject(new Error('Машина отключилась'))
+    }
+    for (const [ptyId, sess] of this.ptys) {
+      if (sess.agentId !== agentId) continue
+      this.ptys.delete(ptyId)
+      try {
+        sess.emit({ t: 'pty.error', ptyId, message: 'Машина отключилась' })
+      } catch {
+        /* слушатель не должен ронять реестр */
+      }
     }
     if (had) this.emitChange()
   }
@@ -279,6 +301,49 @@ export class AgentRegistry {
     return this.runFs(agentId, (opId) => ({ t: 'fs.mkdir', opId, path }))
   }
 
+  // --- Живой PTY-терминал по машине (релей, БЕЗ накопления вывода) ---
+
+  /** Открывает PTY на агенте; вывод/выход/ошибки уходят через emit клиенту. */
+  ptyStart(
+    agentId: string,
+    ptyId: string,
+    cols: number,
+    rows: number,
+    emit: (e: PtyEvent) => void
+  ): void {
+    if (!this.online.has(agentId)) {
+      emit({ t: 'pty.error', ptyId, message: 'Машина не в сети' })
+      return
+    }
+    const ve = this.versionError(agentId, 'pty')
+    if (ve) {
+      emit({ t: 'pty.error', ptyId, message: ve.message })
+      return
+    }
+    this.ptys.set(ptyId, { agentId, emit })
+    this.send(agentId, { t: 'pty.start', ptyId, cols, rows })
+  }
+
+  /** Ввод пользователя (нажатия клавиш) в PTY. */
+  ptyInput(ptyId: string, data: string): void {
+    const sess = this.ptys.get(ptyId)
+    if (sess) this.send(sess.agentId, { t: 'pty.input', ptyId, data })
+  }
+
+  /** Изменение размеров терминала. */
+  ptyResize(ptyId: string, cols: number, rows: number): void {
+    const sess = this.ptys.get(ptyId)
+    if (sess) this.send(sess.agentId, { t: 'pty.resize', ptyId, cols, rows })
+  }
+
+  /** Закрытие PTY-сессии (по запросу клиента/дисконнекту). */
+  ptyKill(ptyId: string): void {
+    const sess = this.ptys.get(ptyId)
+    if (!sess) return
+    this.ptys.delete(ptyId)
+    this.send(sess.agentId, { t: 'pty.kill', ptyId })
+  }
+
   /** Отменяет все незавершённые команды агента (напр., ход Claude прерван). */
   cancelAll(agentId: string): void {
     for (const [execId, p] of this.pending) {
@@ -301,6 +366,19 @@ export class AgentRegistry {
       clearTimeout(pf.timer)
       if (msg.t === 'fs.result') pf.resolve(msg.result)
       else pf.reject(new Error(msg.message))
+      return
+    }
+    if (msg.t === 'pty.output' || msg.t === 'pty.exit' || msg.t === 'pty.error') {
+      const sess = this.ptys.get(msg.ptyId)
+      if (!sess || sess.agentId !== agentId) return
+      if (msg.t === 'pty.output') sess.emit({ t: 'pty.output', ptyId: msg.ptyId, data: msg.data })
+      else if (msg.t === 'pty.exit') {
+        this.ptys.delete(msg.ptyId)
+        sess.emit({ t: 'pty.exit', ptyId: msg.ptyId, exitCode: msg.exitCode })
+      } else {
+        this.ptys.delete(msg.ptyId)
+        sess.emit({ t: 'pty.error', ptyId: msg.ptyId, message: msg.message })
+      }
       return
     }
     const p = this.pending.get(msg.execId)

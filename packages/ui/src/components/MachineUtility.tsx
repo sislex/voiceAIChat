@@ -1,7 +1,9 @@
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { ToolSpec } from '@shared/tools'
+import type { RendererPtyBridge } from '@shared/ipc'
 import { FileExplorer } from './FileExplorer'
 import { MachineConsole } from './MachineConsole'
+import { MachineTerminal } from './MachineTerminal'
 import type { MachineOps, UtilityVariant } from './machine'
 
 export interface MachineUtilityProps {
@@ -10,6 +12,8 @@ export interface MachineUtilityProps {
   ops: MachineOps
   variant?: UtilityVariant
   onClose?: () => void
+  /** Мост живого PTY-терминала. По умолчанию — window.pty (web); отсутствует → однострочная консоль. */
+  pty?: RendererPtyBridge
 }
 
 /** Рендерит нужную утилиту (консоль/проводник) по ToolSpec. */
@@ -18,9 +22,22 @@ export function MachineUtility({
   agents,
   ops,
   variant = 'modal',
-  onClose
+  onClose,
+  pty = typeof window !== 'undefined' ? window.pty : undefined
 }: MachineUtilityProps): JSX.Element {
   if (tool.kind === 'console') {
+    // Настоящий терминал (xterm+PTY), если доступен мост; иначе — однострочная консоль.
+    if (pty) {
+      return (
+        <MachineTerminal
+          agents={agents}
+          initialAgentId={tool.agentId ?? null}
+          pty={pty}
+          variant={variant}
+          onClose={onClose}
+        />
+      )
+    }
     return (
       <MachineConsole
         agents={agents}
