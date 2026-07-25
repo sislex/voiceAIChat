@@ -28,6 +28,8 @@ export interface ChatColumnProps {
   onToggleSidebar?: () => void
   state: VoiceState
   messages: Message[]
+  /** Идёт загрузка сообщений разговора — показываем лоадер вместо ленты. */
+  loadingMessages?: boolean
   liveSegments: LiveSegment[]
   diarization: boolean
   /** Стримящийся ответ Claude (растёт по токенам); пусто — нет активного стрима. */
@@ -84,6 +86,7 @@ export function ChatColumn({
   onToggleSidebar,
   state,
   messages,
+  loadingMessages = false,
   liveSegments,
   diarization,
   streamingReply = '',
@@ -301,6 +304,12 @@ export function ChatColumn({
 
       <div className="scroll" ref={scrollRef} data-testid="scroll">
         <div className="col-c">
+          {loadingMessages && (
+            <div className="msgloading" data-testid="messages-loading">
+              <Dots />
+              <span>Загрузка сообщений…</span>
+            </div>
+          )}
           {messages.map((m) => {
             const isAi = m.role === 'ai'
             const isEditing = editingId === m.id
