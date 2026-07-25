@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-07-25
-checked: 4b248e3
+checked: abc2a23
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -67,10 +67,10 @@ URL руками. Параметризованные пути — функции
 поток `claude.log` с активностью агента. `claude.done` несёт готовое `message`,
 сохранённое сервером: **клиент не сохраняет сообщение сам**.
 
-Изменяемая цель выполнения принадлежит разговору (`Conversation.execTarget`) и
-выбирается рядом с названием активной беседы: id машины, `null` (сервер) или
-`'none'` (команды запрещены). Мост
-`conversations:setExecTarget` сохраняет выбор через `PATCH /api/conversations/:id`.
+Настройки выполнения принадлежат разговору: `Conversation.execTarget` (id машины,
+`null` — сервер, `'none'` — команды запрещены), `workdir` и `skillNames`. Кнопка
+в шапке открывает отдельную страницу настроек разговора. Мост
+`conversations:setExecTarget` сохраняет поля одним `PATCH /api/conversations/:id`.
 При отправке `claude.send.execTarget` получает цель активного разговора.
 
 `Message.execTarget` — неизменяемый снимок фактической цели конкретного вопроса

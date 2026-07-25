@@ -10,6 +10,8 @@ const conv: Conversation = {
   messageCount: 2,
   claudeSessionId: null,
   execTarget: null,
+  workdir: null,
+  skillNames: [],
   lastExecTarget: null
 }
 const messages: Message[] = [

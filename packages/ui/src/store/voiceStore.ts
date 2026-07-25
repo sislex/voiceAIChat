@@ -250,7 +250,7 @@ export interface StoreActions {
   /** Переименовать разговор (БД + список). Пустое имя игнорируется. */
   renameConversation(id: string, title: string): Promise<void>
   /** Изменить машину только одного разговора. */
-  setConversationExecTarget(id: string, execTarget: string | null): Promise<void>
+  setConversationExecTarget(id: string, execTarget: string | null, workdir?: string | null, skillNames?: string[]): Promise<void>
   /** Задать поисковый запрос по разговорам (пусто — весь список). */
   setSearchQuery(query: string): Promise<void>
   /** Экспортировать активный разговор в Markdown/JSON (скачивание файла). */
@@ -1526,8 +1526,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshConversations()
   }
 
-  async function setConversationExecTarget(id: string, execTarget: string | null): Promise<void> {
-    const conversation = await api['conversations:setExecTarget']({ id, execTarget })
+  async function setConversationExecTarget(
+    id: string,
+    execTarget: string | null,
+    workdir?: string | null,
+    skillNames?: string[]
+  ): Promise<void> {
+    const conversation = await api['conversations:setExecTarget']({ id, execTarget, workdir, skillNames })
     setState({
       conversations: state.conversations.map((c) => (c.id === id ? conversation : c))
     })

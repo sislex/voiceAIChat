@@ -44,12 +44,12 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     return { conversation, messages: db.listMessages(uid(req), req.params.id) }
   })
 
-  app.patch<{ Params: { id: string }; Body: { title?: string; execTarget?: string | null } }>(
+  app.patch<{ Params: { id: string }; Body: { title?: string; execTarget?: string | null; workdir?: string | null; skillNames?: string[] } }>(
     '/api/conversations/:id',
     async (req, reply) => {
       if (typeof req.body.title === 'string') db.renameConversation(uid(req), req.params.id, req.body.title)
       if (req.body.execTarget !== undefined) {
-        db.setConversationExecTarget(uid(req), req.params.id, req.body.execTarget)
+        db.setConversationExecTarget(uid(req), req.params.id, req.body.execTarget, req.body.workdir, req.body.skillNames)
       }
       const conversation = db.getConversation(uid(req), req.params.id)
       if (!conversation) return reply.code(404).send({ error: 'not found' })

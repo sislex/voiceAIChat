@@ -56,6 +56,17 @@ describe('VoiceChatDb — разговоры', () => {
     expect(db.getConversation(U, second.id)?.execTarget).toBeNull()
   })
 
+  it('сохраняет директорию и выбранные навыки разговора', () => {
+    const conversation = db.createConversation(U, 'Проект')
+    db.setConversationExecTarget(U, conversation.id, 'machine-1', '/repo/app', ['build', 'test'])
+
+    expect(db.getConversation(U, conversation.id)).toMatchObject({
+      execTarget: 'machine-1',
+      workdir: '/repo/app',
+      skillNames: ['build', 'test']
+    })
+  })
+
   it('список показывает цель последнего сообщения отдельно от текущей цели чата', () => {
     const c = db.createConversation(U, 'История')
     db.setConversationExecTarget(U, c.id, 'machine-next')
@@ -63,6 +74,8 @@ describe('VoiceChatDb — разговоры', () => {
 
     expect(db.listConversations(U)[0]).toMatchObject({
       execTarget: 'machine-next',
+      workdir: null,
+      skillNames: [],
       lastExecTarget: 'machine-last'
     })
   })

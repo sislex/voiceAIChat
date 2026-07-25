@@ -68,7 +68,10 @@ export interface IpcInvokeMap {
   /** Поиск разговоров по названию и содержимому сообщений (регистронезависимо). */
   'conversations:search': { arg: { query: string }; result: Conversation[] }
   'conversations:rename': { arg: { id: string; title: string }; result: void }
-  'conversations:setExecTarget': { arg: { id: string; execTarget: string | null }; result: Conversation }
+  'conversations:setExecTarget': {
+    arg: { id: string; execTarget: string | null; workdir?: string | null; skillNames?: string[] }
+    result: Conversation
+  }
   'conversations:delete': { arg: { id: string }; result: void }
   'messages:add': { arg: AddMessageArgs; result: Message }
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }

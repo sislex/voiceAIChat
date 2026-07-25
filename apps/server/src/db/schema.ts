@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS conversations (
   updated_at        INTEGER NOT NULL,
   claude_session_id TEXT,
   user_id           TEXT,
-  exec_target       TEXT
+  exec_target       TEXT,
+  workdir           TEXT,
+  skill_names       TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS messages (

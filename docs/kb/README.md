@@ -31,10 +31,11 @@
 
 ## Журнал сессий
 
-Всего записей: 3. Последние:
+Всего записей: 4. Последние:
 
 - [2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md](log/2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md) — база знаний для агентов
 - [2026-07-26-alexeys-macbook-air-2-composer-autogrow.md](log/2026-07-26-alexeys-macbook-air-2-composer-autogrow.md) — composer-autogrow
+- [2026-07-25-2470-com-conversation-settings.md](log/2026-07-25-2470-com-conversation-settings.md) — conversation-settings
 - [2026-07-25-2470-com-chat-exec-target.md](log/2026-07-25-2470-com-chat-exec-target.md) — chat-exec-target
 
 ## Исторические планы

@@ -19,7 +19,7 @@ export function registerRemoteBashMcp(
   registry: AgentRegistry,
   secret: string
 ): void {
-  app.post<{ Querystring: { agent?: string; k?: string } }>(
+  app.post<{ Querystring: { agent?: string; k?: string; cwd?: string } }>(
     REMOTE_BASH_MCP_PATH,
     async (req, reply) => {
       if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
@@ -50,7 +50,11 @@ export function registerRemoteBashMcp(
         async ({ command, timeout_ms }) => {
           try {
             const timeoutMs = Math.min(timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
-            const res = await registry.exec(agentId, command, timeoutMs, abort.signal)
+            const cwd = req.query.cwd
+            const shellCommand = cwd
+              ? `cd -- '${cwd.replace(/'/g, `'\"'\"'`)}' && ${command}`
+              : command
+            const res = await registry.exec(agentId, shellCommand, timeoutMs, abort.signal)
             const tail = `[exit code: ${res.exitCode ?? '?'}${res.timedOut ? ', таймаут' : ''}]`
             return {
               content: [{ type: 'text', text: `${res.output}\n${tail}`.trim() }],
