@@ -75,6 +75,8 @@ export interface AppState {
   searchQuery: string
   activeId: string | null
   messages: Message[]
+  /** Идёт загрузка сообщений разговора (обновление страницы / открытие чата). */
+  loadingMessages: boolean
   liveSegments: LiveSegment[]
   settings: Settings
   settingsOpen: boolean
@@ -425,6 +427,7 @@ function initialState(): AppState {
     searchQuery: '',
     activeId: null,
     messages: [],
+    loadingMessages: false,
     liveSegments: [],
     settings: { ...DEFAULT_SETTINGS },
     settingsOpen: false,
@@ -820,6 +823,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   /** Тяжёлая загрузка данных пользователя (после успешной аутентификации). */
   async function bootstrap(): Promise<void> {
+    setState({ loadingMessages: true }) // обновление страницы: лоадер до готовности ленты
     const [settings, conversations] = await Promise.all([
       api['settings:get'](),
       api['conversations:list']()
@@ -837,6 +841,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshAgents()
     if (conversations.length > 0) {
       await selectConversation(conversations[0].id)
+    } else {
+      setState({ loadingMessages: false })
     }
   }
 
@@ -1452,11 +1458,15 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     cancelTimers()
     stopCapture()
     resetTts() // ход прежнего разговора не отменяем — он доиграет на сервере
-    setState({ liveSegments: [], consoleLog: [], liveActivity: [], voice: 'idle', streamingReply: '', lastTurnMeta: null })
-    const res = await api['conversations:get']({ id })
-    if (res) {
-      setState({ activeId: res.conversation.id, messages: res.messages })
-      restoreStreamIfActive() // у разговора есть недоигранный ход → показываем стрим
+    setState({ liveSegments: [], consoleLog: [], liveActivity: [], voice: 'idle', streamingReply: '', lastTurnMeta: null, messages: [], loadingMessages: true })
+    try {
+      const res = await api['conversations:get']({ id })
+      if (res) {
+        setState({ activeId: res.conversation.id, messages: res.messages })
+        restoreStreamIfActive() // у разговора есть недоигранный ход → показываем стрим
+      }
+    } finally {
+      setState({ loadingMessages: false })
     }
   }
 

@@ -227,3 +227,16 @@ describe('ChatColumn — встроенная утилита (tool-блок)', (
     expect(screen.queryByTestId('console-embed')).toBeNull()
   })
 })
+
+describe('ChatColumn — загрузка сообщений', () => {
+  it('loadingMessages=true → показывает лоадер', () => {
+    renderCol({ loadingMessages: true, messages: [] })
+    expect(screen.getByTestId('messages-loading')).toBeInTheDocument()
+    expect(screen.getByText('Загрузка сообщений…')).toBeInTheDocument()
+  })
+
+  it('loadingMessages=false → лоадера нет', () => {
+    renderCol({ loadingMessages: false })
+    expect(screen.queryByTestId('messages-loading')).not.toBeInTheDocument()
+  })
+})

@@ -140,6 +140,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         }}
         state={state.voice}
         messages={state.messages}
+        loadingMessages={state.loadingMessages}
         liveSegments={state.liveSegments}
         diarization={state.settings.diarization}
         streamingReply={state.streamingReply}

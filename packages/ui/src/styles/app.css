@@ -143,6 +143,15 @@
   cursor: not-allowed;
   background: #c2bfb2;
 }
+.msgloading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 0;
+  color: var(--text-dim);
+  font-size: 13px;
+}
 .crow {
   display: flex;
   align-items: flex-start;
