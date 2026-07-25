@@ -77,6 +77,12 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
     'messages:add': ({ conversationId, role, text, time, engine, meta }) =>
       db.addMessage(conversationId, role, text, time, engine, meta),
 
+    'messages:setExecTarget': ({ conversationId, messageId, execTarget }) => {
+      const message = db.setMessageExecTarget(conversationId, messageId, execTarget)
+      if (!message) throw new Error('Сообщение не найдено')
+      return message
+    },
+
     'messages:delete': ({ conversationId, messageId }) => {
       db.deleteMessage(conversationId, messageId)
       // История изменилась — сбрасываем сессию Claude, чтобы контекст пересобрался.

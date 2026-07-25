@@ -2700,3 +2700,14 @@
   font-size: 12px;
   margin: 4px 2px 0;
 }
+
+.msg-target select {
+  max-width: 190px;
+  border: 0;
+  background: transparent;
+  color: var(--muted, #777);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.exectarget-dot.disabled { background: #999; }

@@ -4,6 +4,8 @@
 import type { ClaudeInitInfo, ClaudeLogEntry, TurnMeta } from '@voicechat/shared'
 
 export interface LlmRequest {
+  /** Владелец CLI-профиля: история одного пользователя не смешивается с другими. */
+  userId?: string
   /** Готовый текст промпта (сборка — на стороне вызывающего: см. session.ts). */
   prompt: string
   /** session-id Claude для продолжения разговора (null — новый/сброшенный). */
@@ -15,6 +17,8 @@ export interface LlmRequest {
   /** Рабочий каталог процесса CLI; undefined — каталог по умолчанию. */
   cwd?: string
   /** Удалённое выполнение Bash через MCP-мост; undefined — Bash на сервере. */
+  /** true — shell-команды запрещены полностью, даже на сервере. */
+  executionDisabled?: boolean
   remote?: {
     /** URL MCP-эндпоинта с agent id и секретом в query. */
     mcpUrl: string

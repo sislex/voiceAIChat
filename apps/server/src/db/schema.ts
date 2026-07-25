@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at      INTEGER NOT NULL,
   engine          TEXT,
   meta            TEXT,
+  exec_target     TEXT,
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 

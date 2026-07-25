@@ -37,8 +37,9 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
             conversationId: string,
             segments: SttSegmentWire[],
             attachments?: string[],
-            verbose?: boolean
-          ) => window.claude.send({ conversationId, segments, attachments, verbose })
+            verbose?: boolean,
+            execTarget?: string | null
+          ) => window.claude.send({ conversationId, segments, attachments, verbose, execTarget })
         : undefined)
     const cancelClaude =
       deps.cancelClaude ??
