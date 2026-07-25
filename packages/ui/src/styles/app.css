@@ -2160,11 +2160,9 @@
 }
 /* Разворот модального тула на весь экран (кнопка в шапке ToolFrame). */
 .ccobs--fs {
-  width: auto;
+  width: calc(100vw - 16px);
   max-width: none;
-  height: auto;
-  position: fixed;
-  inset: 8px;
+  height: calc(100vh - 16px);
   border-radius: 12px;
 }
 .ccobs-body {
@@ -2489,5 +2487,48 @@
   .frow {
     flex-wrap: wrap;
     row-gap: 8px;
+  }
+}
+
+/* ---- Анимации попапов-тулов (ToolFrame) ---- */
+/* Появление модалки: затемнение фона + «выезд» карточки. Разворот на весь
+   экран анимируется плавным ростом width/height (карточка остаётся в потоке
+   центрирующего оверлея, поэтому переход интерполируется). */
+.ovl--anim {
+  animation: tf-fade 0.18s ease-out;
+}
+.ccobs--anim {
+  animation: tf-pop 0.18s ease-out;
+  transition: width 0.22s ease, height 0.22s ease, border-radius 0.22s ease;
+}
+.util-embed--fs {
+  animation: tf-pop 0.18s ease-out;
+}
+@keyframes tf-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes tf-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ovl--anim,
+  .ccobs--anim,
+  .util-embed--fs {
+    animation: none;
+  }
+  .ccobs--anim {
+    transition: none;
   }
 }
