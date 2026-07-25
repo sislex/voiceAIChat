@@ -3,7 +3,7 @@
 // карточка внутри сообщения ('embedded') и модалка из меню ('modal'); в обоих
 // разворот на весь экран живёт здесь, а не в самих тулах.
 
-import { useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 import type { UtilityVariant } from './machine'
 
 export interface ToolFrameProps {
@@ -29,6 +29,22 @@ export function ToolFrame({
   const [fullscreen, setFullscreen] = useState(false)
   const stop = (e: MouseEvent): void => e.stopPropagation()
 
+  // Esc: сначала сворачивает разворот, затем закрывает (для modal). Слушатель на
+  // фазе перехвата и со stopPropagation — чтобы не сработали глобальные хоткеи
+  // (отмена записи). В embedded без разворота Esc не трогаем — работают хоткеи.
+  useEffect(() => {
+    if (variant !== 'modal' && !fullscreen) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' && e.code !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      if (fullscreen) setFullscreen(false)
+      else onClose?.()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [variant, fullscreen, onClose])
+
   const head = (
     <div className="mdhead">
       <h2 className="mdh">{title}</h2>
@@ -52,9 +68,9 @@ export function ToolFrame({
 
   if (variant === 'modal') {
     return (
-      <div className="ovl" onClick={onClose} data-testid={testId}>
+      <div className="ovl ovl--anim" onClick={onClose} data-testid={testId}>
         <div
-          className={fullscreen ? 'ccobs ccobs--fs' : 'ccobs'}
+          className={fullscreen ? 'ccobs ccobs--anim ccobs--fs' : 'ccobs ccobs--anim'}
           onClick={stop}
           role="dialog"
           aria-label={title}
