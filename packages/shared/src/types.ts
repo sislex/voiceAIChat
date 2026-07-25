@@ -61,6 +61,13 @@ export interface Conversation {
   workdir: string | null
   /** Имена навыков выбранной машины, включённых для этого разговора. */
   skillNames: string[]
+  /** Движок только этого разговора; null — из общих настроек пользователя. */
+  llmProvider: LlmProvider | null
+  /**
+   * Модель только этого разговора (алиас claude / id codex, '' — модель по
+   * умолчанию codex). Действует лишь вместе с llmProvider; null — из настроек.
+   */
+  llmModel: string | null
   /** Неизменяемая цель последнего сообщения; используется подписью в списке чатов. */
   lastExecTarget: string | null
 }

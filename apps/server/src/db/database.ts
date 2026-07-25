@@ -43,6 +43,8 @@ interface ConversationRow {
   exec_target: string | null
   workdir: string | null
   skill_names: string | null
+  llm_provider: string | null
+  llm_model: string | null
   last_exec_target?: string | null
 }
 
@@ -168,6 +170,12 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'skill_names')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN skill_names TEXT NOT NULL DEFAULT '[]'`)
     }
+    if (!convCols.some((c) => c.name === 'llm_provider')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN llm_provider TEXT`)
+    }
+    if (!convCols.some((c) => c.name === 'llm_model')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN llm_model TEXT`)
+    }
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN engine TEXT`)
@@ -216,7 +224,7 @@ export class VoiceChatDb {
          VALUES (?, ?, ?, ?, NULL, ?, NULL)`
       )
       .run(id, title, ts, ts, userId)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], lastExecTarget: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, lastExecTarget: null }
   }
 
   listConversations(userId: string): Conversation[] {
@@ -291,7 +299,9 @@ export class VoiceChatDb {
     id: string,
     execTarget: string | null,
     workdir?: string | null,
-    skillNames?: string[]
+    skillNames?: string[],
+    llmProvider?: LlmProvider | null,
+    llmModel?: string | null
   ): Conversation | null {
     const fields = ['exec_target = ?']
     const values: unknown[] = [execTarget]
@@ -302,6 +312,14 @@ export class VoiceChatDb {
     if (skillNames !== undefined) {
       fields.push('skill_names = ?')
       values.push(JSON.stringify(skillNames))
+    }
+    if (llmProvider !== undefined) {
+      fields.push('llm_provider = ?')
+      values.push(llmProvider)
+    }
+    if (llmModel !== undefined) {
+      fields.push('llm_model = ?')
+      values.push(llmModel)
     }
     this.db
       .prepare(`UPDATE conversations SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`)
@@ -621,6 +639,8 @@ export class VoiceChatDb {
           return []
         }
       })(),
+      llmProvider: row.llm_provider === 'claude' || row.llm_provider === 'codex' ? row.llm_provider : null,
+      llmModel: row.llm_model,
       lastExecTarget: row.last_exec_target ?? null
     }
   }

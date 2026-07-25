@@ -67,6 +67,19 @@ describe('VoiceChatDb — разговоры', () => {
     })
   })
 
+  it('сохраняет движок и модель разговора; неизвестный движок читается как null', () => {
+    const conversation = db.createConversation(U, 'Проект')
+    db.setConversationExecTarget(U, conversation.id, null, undefined, undefined, 'codex', 'gpt-5-codex')
+    expect(db.getConversation(U, conversation.id)).toMatchObject({ llmProvider: 'codex', llmModel: 'gpt-5-codex' })
+
+    db.setConversationExecTarget(U, conversation.id, null, undefined, undefined, null, null)
+    expect(db.getConversation(U, conversation.id)).toMatchObject({ llmProvider: null, llmModel: null })
+
+    // Прямо в БД оказался мусор (например, откат версии) — маппинг терпит.
+    db.setConversationExecTarget(U, conversation.id, null, undefined, undefined, 'gemini' as never, 'x')
+    expect(db.getConversation(U, conversation.id)?.llmProvider).toBeNull()
+  })
+
   it('список показывает цель последнего сообщения отдельно от текущей цели чата', () => {
     const c = db.createConversation(U, 'История')
     db.setConversationExecTarget(U, c.id, 'machine-next')

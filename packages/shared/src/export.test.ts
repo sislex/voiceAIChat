@@ -12,6 +12,8 @@ const conv: Conversation = {
   execTarget: null,
   workdir: null,
   skillNames: [],
+  llmProvider: null,
+  llmModel: null,
   lastExecTarget: null
 }
 const messages: Message[] = [

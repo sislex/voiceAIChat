@@ -61,12 +61,37 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     return { conversation, messages: db.listMessages(uid(req), req.params.id) }
   })
 
-  app.patch<{ Params: { id: string }; Body: { title?: string; execTarget?: string | null; workdir?: string | null; skillNames?: string[] } }>(
+  app.patch<{
+    Params: { id: string }
+    Body: {
+      title?: string
+      execTarget?: string | null
+      workdir?: string | null
+      skillNames?: string[]
+      llmProvider?: string | null
+      llmModel?: string | null
+    }
+  }>(
     '/api/conversations/:id',
     async (req, reply) => {
       if (typeof req.body.title === 'string') db.renameConversation(uid(req), req.params.id, req.body.title)
       if (req.body.execTarget !== undefined) {
-        db.setConversationExecTarget(uid(req), req.params.id, req.body.execTarget, req.body.workdir, req.body.skillNames)
+        // Неизвестное значение движка приравниваем к «из общих настроек».
+        const llmProvider =
+          req.body.llmProvider === undefined
+            ? undefined
+            : req.body.llmProvider === 'claude' || req.body.llmProvider === 'codex'
+              ? req.body.llmProvider
+              : null
+        db.setConversationExecTarget(
+          uid(req),
+          req.params.id,
+          req.body.execTarget,
+          req.body.workdir,
+          req.body.skillNames,
+          llmProvider,
+          req.body.llmModel
+        )
       }
       const conversation = db.getConversation(uid(req), req.params.id)
       if (!conversation) return reply.code(404).send({ error: 'not found' })

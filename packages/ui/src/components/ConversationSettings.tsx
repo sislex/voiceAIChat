@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { Conversation } from '@shared/types'
+import { clampModelForRole, CODEX_MODELS, modelsForRole, normalizeClaudeModel } from '@shared/types'
+import type { Conversation, LlmProvider, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { MachineOps } from './machine'
 
@@ -7,7 +8,18 @@ export interface ConversationSettingsProps {
   conversation: Conversation
   agents: AgentInfo[]
   machineOps?: MachineOps
-  onSave: (value: { title: string; execTarget: string | null; workdir: string | null; skillNames: string[] }) => Promise<void>
+  /** Роль пользователя — прячет модели Claude, недоступные роли user. */
+  role: UserRole
+  /** Общие настройки — дефолты движка/модели, когда разговор их не переопределяет. */
+  settings: Pick<Settings, 'llmProvider' | 'model' | 'codexModel'>
+  onSave: (value: {
+    title: string
+    execTarget: string | null
+    workdir: string | null
+    skillNames: string[]
+    llmProvider: LlmProvider | null
+    llmModel: string | null
+  }) => Promise<void>
   onAddSkill: (agentId: string, skill: AgentSkill) => Promise<void>
   onClose: () => void
 }
@@ -21,11 +33,19 @@ function joinPath(dir: string, name: string): string {
   return `${dir.replace(/\/$/, '')}/${name}`
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, settings, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
   const [title, setTitle] = useState(conversation.title)
   const [execTarget, setExecTarget] = useState<string | null>(conversation.execTarget)
   const [workdir, setWorkdir] = useState<string | null>(conversation.workdir)
   const [skillNames, setSkillNames] = useState<string[]>(conversation.skillNames)
+  const [llmProvider, setLlmProvider] = useState<LlmProvider | ''>(conversation.llmProvider ?? '')
+  const [llmModel, setLlmModel] = useState<string>(
+    conversation.llmProvider && conversation.llmModel !== null
+      ? conversation.llmModel
+      : conversation.llmProvider === 'codex'
+        ? settings.codexModel
+        : clampModelForRole(normalizeClaudeModel(settings.model), role)
+  )
   const [cwd, setCwd] = useState('')
   const [entries, setEntries] = useState<FsEntry[]>([])
   const [loadingDir, setLoadingDir] = useState(false)
@@ -81,7 +101,14 @@ export function ConversationSettings({ conversation, agents, machineOps, onSave,
     }
     setSaving(true)
     try {
-      await onSave({ title: cleanTitle, execTarget, workdir: execTarget ? workdir : null, skillNames: execTarget ? skillNames : [] })
+      await onSave({
+        title: cleanTitle,
+        execTarget,
+        workdir: execTarget ? workdir : null,
+        skillNames: execTarget ? skillNames : [],
+        llmProvider: llmProvider || null,
+        llmModel: llmProvider ? llmModel : null
+      })
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -105,6 +132,36 @@ export function ConversationSettings({ conversation, agents, machineOps, onSave,
               {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}{agent.online ? '' : ' (офлайн)'}</option>)}
             </select>
           </label>
+        </section>
+
+        <section className="convsettings-card">
+          <div className="convsettings-sectionhead"><div><h2>Движок и модель</h2><p>Отвечает только в этом разговоре; «По умолчанию» — из общих настроек.</p></div></div>
+          <label className="convsettings-field"><span>Движок</span>
+            <select
+              aria-label="Движок разговора"
+              value={llmProvider}
+              onChange={(e) => {
+                const next = (e.target.value || '') as LlmProvider | ''
+                setLlmProvider(next)
+                setLlmModel(next === 'codex' ? settings.codexModel : clampModelForRole(normalizeClaudeModel(settings.model), role))
+              }}
+            >
+              <option value="">По умолчанию ({settings.llmProvider === 'codex' ? 'Codex' : 'Claude Code'})</option>
+              <option value="claude">Claude Code</option>
+              <option value="codex">Codex</option>
+            </select>
+          </label>
+          {llmProvider === 'claude' && <label className="convsettings-field"><span>Модель Claude</span>
+            <select aria-label="Модель разговора" value={normalizeClaudeModel(llmModel)} onChange={(e) => setLlmModel(e.target.value)}>
+              {modelsForRole(role).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </label>}
+          {llmProvider === 'codex' && <label className="convsettings-field"><span>Модель Codex</span>
+            <select aria-label="Модель разговора" value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>
+              {llmModel && !CODEX_MODELS.some((m) => m.id === llmModel) && <option value={llmModel}>{llmModel}</option>}
+              {CODEX_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </label>}
         </section>
 
         {selectedAgent && <>

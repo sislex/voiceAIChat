@@ -172,7 +172,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         turnMeta={state.lastTurnMeta}
         agents={state.agents}
         execTarget={activeExecTarget}
-        aiLabel={state.settings.llmProvider === 'codex' ? 'Codex' : 'Claude'}
+        aiLabel={(activeConversation?.llmProvider ?? state.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar
             state={state.voice}
@@ -180,7 +180,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
             draft={state.draft}
             diarization={state.settings.diarization}
             detectedSpeakers={detectedSpeakers}
-            aiLabel={state.settings.llmProvider === 'codex' ? 'Codex' : 'Claude'}
+            aiLabel={(activeConversation?.llmProvider ?? state.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
             attachments={state.attachments}
             onDraftChange={actions.setDraft}
             onSubmitText={actions.submitText}
@@ -199,9 +199,11 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           conversation={activeConversation}
           agents={state.agents}
           machineOps={machineOps}
-          onSave={async ({ title, execTarget, workdir, skillNames }) => {
+          role={state.currentUser?.role ?? 'admin'}
+          settings={state.settings}
+          onSave={async ({ title, execTarget, workdir, skillNames, llmProvider, llmModel }) => {
             await actions.renameConversation(activeConversation.id, title)
-            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames)
+            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel)
           }}
           onAddSkill={async (agentId, skill) => {
             const agent = state.agents.find((item) => item.id === agentId)

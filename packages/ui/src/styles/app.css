@@ -314,6 +314,22 @@
 .side-backdrop {
   display: none;
 }
+/* Бейдж машины прижат к названию; auto-margin отталкивает остальную шапку вправо. */
+.mtitle-machine {
+  flex-shrink: 0;
+  margin-left: 10px;
+  margin-right: auto;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--muted, #888);
+  border: 1px solid var(--border, #ddd);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
 .mtitle--editable {
   cursor: pointer;
 }
