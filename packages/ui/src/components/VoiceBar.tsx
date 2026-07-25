@@ -1,9 +1,13 @@
 import { useRef, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import type { VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
+import { useAutoGrow } from '../lib/autoGrow'
 import { ACCENT, chipClass, speakerName, statusLine } from '../lib/view'
 import { WaveBars, Dots } from './animations'
 import { MicIcon, SendIcon, StopIcon } from './icons'
+
+const DRAFT_MIN_ROWS = 2
+const DRAFT_MAX_ROWS = 4
 
 export interface VoiceBarProps {
   state: VoiceState
@@ -56,6 +60,8 @@ export function VoiceBar({
   const composerMode = isIdle || isSpeaking || replyStarted
 
   const fileRef = useRef<HTMLInputElement>(null)
+  // Композер начинается с двух строк и растёт с текстом до четырёх, дальше — скролл.
+  const draftRef = useAutoGrow(draft, DRAFT_MIN_ROWS, DRAFT_MAX_ROWS)
   const canSend = draft.trim().length > 0 || attachments.length > 0
   const canSubmit = isIdle && canSend
 
@@ -127,10 +133,11 @@ export function VoiceBar({
           {composerMode && (
             <>
               <textarea
+                ref={draftRef}
                 className="tin"
                 placeholder="Напишите сообщение (Shift+Enter — новая строка)…"
                 value={draft}
-                rows={1}
+                rows={DRAFT_MIN_ROWS}
                 onChange={(e) => onDraftChange(e.target.value)}
                 onKeyDown={onKey}
                 onPaste={onPaste}
