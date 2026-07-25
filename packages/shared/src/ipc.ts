@@ -15,7 +15,7 @@ import type {
   WhisperModel,
   WhisperModelInfo
 } from './types'
-import type { SystemCapabilities } from './protocol'
+import type { ServerFileInfo, SystemCapabilities } from './protocol'
 import type { AdminUserInfo, UsageReport, UsageUnit } from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
@@ -350,6 +350,16 @@ export interface RendererFsBridge {
   mkdir(agentId: string, path: string): Promise<FsResult>
   /** Выполнить команду на машине (утилита «Консоль»). */
   exec(agentId: string, command: string): Promise<AgentExecResult>
+}
+
+/**
+ * Мост чтения файлов с диска СЕРВЕРА (только web). Нужен для картинок, которые
+ * создаёт сам CLI: они лежат в профиле пользователя на сервере, а не на машине.
+ * Сервер отдаёт только «свою» область; чужой или несуществующий путь → null,
+ * чтобы вызывающий мог спокойно попробовать прочитать файл с машины.
+ */
+export interface RendererFilesBridge {
+  read(path: string): Promise<ServerFileInfo | null>
 }
 
 /**

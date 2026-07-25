@@ -1,12 +1,15 @@
-// Картинка, созданная моделью, прямо в сообщении. Файл лежит на машине-агенте,
-// поэтому байты тянем через fs.read и показываем data-URL: обычного src с
-// абсолютным путём браузер не откроет.
+// Картинка, созданная моделью, прямо в сообщении. Путь абсолютный, и лежать файл
+// может в двух местах: на СЕРВЕРЕ (встроенные генераторы CLI пишут в профиль
+// пользователя) или на МАШИНЕ-агенте (модель сама создала файл там). Байты в обоих
+// случаях приходят base64 и показываются как data-URL: обычный src с абсолютным
+// путём браузер не откроет.
 //
 // Рамка — общая (ToolFrame): шапка с кнопками и разворот на весь экран. В
 // развороте — зум колесом и перетаскивание, как в просмотрщике ChatGPT.
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { imageMime, imageName, type ImageRef } from '@shared/images'
+import type { ServerFileInfo } from '@shared/protocol'
 import { copyImage } from '../lib/clipboard'
 import { Dots } from './animations'
 import { ToolFrame, type ToolFrameControl } from './ToolFrame'
@@ -18,6 +21,8 @@ export interface MessageImageProps {
   execAgentId?: string | null
   /** Нужна только операция чтения файла — берём её из общего контракта машин. */
   ops: Pick<MachineOps, 'read'>
+  /** Чтение файла с диска сервера; null — сервер такого файла у себя не знает. */
+  readServerFile?: (path: string) => Promise<ServerFileInfo | null>
   variant?: UtilityVariant
   onClose?: () => void
 }
@@ -35,11 +40,12 @@ function decodeBase64(b64: string): Uint8Array {
   return out
 }
 
-/** Картинка из ответа модели: подгружает файл с машины и показывает в рамке тула. */
+/** Картинка из ответа модели: подгружает файл и показывает его в рамке тула. */
 export function MessageImage({
   image,
   execAgentId = null,
   ops,
+  readServerFile,
   variant = 'embedded',
   onClose
 }: MessageImageProps): JSX.Element {
@@ -56,21 +62,32 @@ export function MessageImage({
   const bytes = useRef<Uint8Array | null>(null)
 
   useEffect(() => {
-    if (!agentId) {
-      setError('Файл на машине, а машина для этого ответа не выбрана')
-      return
-    }
     let alive = true
     setSrc(null)
     setError(null)
-    void read(agentId, image.path)
-      .then((res) => {
+
+    // Где искать файл. Явный agentId в блоке — значит модель сама сказала «на
+    // машине». Иначе сначала спрашиваем сервер: встроенные генераторы картинок
+    // (напр. инструмент Codex) пишут их в профиль пользователя НА СЕРВЕРЕ, даже
+    // когда команды хода уходили на машину. Сервер отвечает null, если такого
+    // файла у себя не знает, — тогда пробуем машину.
+    const load = async (): Promise<string> => {
+      if (!image.agentId && readServerFile) {
+        const onServer = await readServerFile(image.path)
+        if (onServer?.dataBase64) return onServer.dataBase64
+      }
+      if (!agentId) {
+        throw new Error('Файл не найден на сервере, а машина для этого ответа не выбрана')
+      }
+      const res = await read(agentId, image.path)
+      const b64 = res.dataBase64 ?? ''
+      if (!b64) throw new Error('Файл пустой или недоступен')
+      return b64
+    }
+
+    void load()
+      .then((b64) => {
         if (!alive) return
-        const b64 = res.dataBase64 ?? ''
-        if (!b64) {
-          setError('Файл пустой или недоступен')
-          return
-        }
         bytes.current = decodeBase64(b64)
         setSrc(`data:${mime};base64,${b64}`)
       })
@@ -80,7 +97,7 @@ export function MessageImage({
     return () => {
       alive = false
     }
-  }, [agentId, image.path, mime, read])
+  }, [agentId, image.agentId, image.path, mime, read, readServerFile])
 
   const download = (): void => {
     if (!src) return

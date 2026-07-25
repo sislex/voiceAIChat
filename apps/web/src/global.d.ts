@@ -8,6 +8,7 @@ import type {
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
+  RendererFilesBridge,
   RendererFsBridge,
   RendererPtyBridge,
   RendererSessionBridge,
@@ -27,6 +28,7 @@ declare global {
     agents?: RendererAgentsBridge
     session?: RendererSessionBridge
     fs?: RendererFsBridge
+    files?: RendererFilesBridge
     pty?: RendererPtyBridge
   }
 }

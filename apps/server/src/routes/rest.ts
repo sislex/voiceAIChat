@@ -1,5 +1,6 @@
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
 
+import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import {
   REST,
@@ -15,6 +16,7 @@ import {
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import { ensureCliProfile } from '../users/cliProfiles.js'
+import { readUserFile } from '../serverFiles.js'
 import { listMcpServers } from '../claude/mcp.js'
 import { getLoginStatus } from '../auth/loginStatus.js'
 import { listProjects, listSessions, readTranscript } from '../cc/ccSessions.js'
@@ -28,6 +30,21 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
   const profile = (req: Parameters<typeof uid>[0]) => ensureCliProfile(dataDir, uid(req))
   const ccDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CC_DIR ?? profile(req).ccProjects
   const cxDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CODEX_DIR ?? profile(req).codexSessions
+  // Файл с диска сервера (картинки, созданные самим CLI). Своя область — профиль
+  // CLI пользователя, его загрузки и заданный им рабочий каталог; всё остальное
+  // неотличимо от «нет такого файла». Проверка пути — `serverFiles.ts`.
+  app.get<{ Querystring: { path?: string } }>(REST.serverFile, async (req, reply) => {
+    const userId = uid(req)
+    const workdir = db.getSettings(userId).workdir
+    const roots = [profile(req).home, join(dataDir, 'uploads'), ...(workdir ? [workdir] : [])]
+    const res = readUserFile(req.query.path ?? '', roots)
+    if (!res.ok) {
+      const code = res.reason === 'too-large' ? 413 : 404
+      return reply.code(code).send({ error: res.reason }) as never
+    }
+    return res.file
+  })
+
   app.get(REST.conversations, async (req) => db.listConversations(uid(req)))
 
   app.post<{ Body: { title?: string } }>(REST.conversations, async (req) =>

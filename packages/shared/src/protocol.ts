@@ -104,6 +104,8 @@ export const REST = {
   messages: (id: string) => `/api/conversations/${id}/messages`,
   message: (id: string, messageId: string) => `/api/conversations/${id}/messages/${messageId}`,
   uploads: '/api/uploads',
+  /** Чтение файла с диска сервера (только «своя» область) — картинки от CLI. */
+  serverFile: '/api/files/read',
   settings: '/api/settings',
   systemCapabilities: '/api/system/capabilities',
   sttStatus: '/api/stt/status',
@@ -163,6 +165,14 @@ export interface UploadInfo {
   id: string
   /** Имя файла (для отображения). */
   name: string
+}
+
+/** Содержимое файла с диска сервера (ответ GET /api/files/read). */
+export interface ServerFileInfo {
+  /** Имя файла (для скачивания и заголовка). */
+  name: string
+  /** Содержимое в base64. */
+  dataBase64: string
 }
 
 /** Активный (незавершённый) ход модели — для восстановления стрима после reconnect. */

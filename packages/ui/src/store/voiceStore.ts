@@ -8,6 +8,7 @@
 
 import type {
   RendererApi,
+  RendererFilesBridge,
   RendererFsBridge,
   RendererSessionBridge,
   SttSegmentWire,
@@ -17,7 +18,7 @@ import type {
 } from '@shared/ipc'
 import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
 import { detectOpenUtility, toolBlock, type ToolSpec } from '@shared/tools'
-import type { ActiveTurn, SystemCapabilities } from '@shared/protocol'
+import type { ActiveTurn, ServerFileInfo, SystemCapabilities } from '@shared/protocol'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
@@ -180,6 +181,8 @@ export interface StoreDeps {
   session?: RendererSessionBridge
   /** Мост файлового проводника по машине (web). */
   fs?: RendererFsBridge
+  /** Мост чтения файлов с диска сервера (web) — картинки, созданные CLI. */
+  files?: RendererFilesBridge
   /** Источник времени (для формата HH:MM). По умолчанию Date.now. */
   now?: () => number
   /** Переопределение задержек пайплайна (для тестов). */
@@ -408,6 +411,8 @@ export interface StoreActions {
   fsList(agentId: string, path: string): Promise<FsResult>
   /** Прочитать файл машины (base64) — например, картинку для показа в сообщении. */
   fsRead(agentId: string, path: string): Promise<FsResult>
+  /** Прочитать файл с диска сервера (картинки от CLI); null — файла там нет. */
+  readServerFile(path: string): Promise<ServerFileInfo | null>
   fsWrite(agentId: string, path: string, dataBase64: string): Promise<FsResult>
   fsRemove(agentId: string, path: string): Promise<FsResult>
   fsRename(agentId: string, from: string, to: string): Promise<FsResult>
@@ -1371,6 +1376,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     deps.fs ? deps.fs.list(agentId, path) : noFs()
   const fsRead = (agentId: string, path: string): Promise<FsResult> =>
     deps.fs ? deps.fs.read(agentId, path) : noFs()
+  /** Файл с диска сервера; null — сервер такого у себя не знает. */
+  const readServerFile = (path: string): Promise<ServerFileInfo | null> =>
+    deps.files ? deps.files.read(path) : Promise.resolve(null)
   const fsWrite = (agentId: string, path: string, dataBase64: string): Promise<FsResult> =>
     deps.fs ? deps.fs.write(agentId, path, dataBase64) : noFs()
   const fsRemove = (agentId: string, path: string): Promise<FsResult> =>
@@ -2032,6 +2040,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       closeUtility,
       fsList,
       fsRead,
+      readServerFile,
       fsWrite,
       fsRemove,
       fsRename,

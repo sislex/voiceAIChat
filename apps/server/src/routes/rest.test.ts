@@ -11,6 +11,7 @@ import { signToken } from '../users/accounts.js'
 let app: FastifyInstance
 let db: VoiceChatDb
 let token: string
+let dataDir: string
 
 const SECRET = 'test-secret'
 const U = 'admin'
@@ -34,7 +35,7 @@ beforeEach(async () => {
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  const dataDir = join(tmpdir(), `vc-rest-test-${Date.now()}-${id}`)
+  dataDir = join(tmpdir(), `vc-rest-test-${Date.now()}-${id}`)
   // Явно изолируем каталоги моделей/голосов во временную папку — тесты удаления
   // не должны касаться реальных файлов репозитория.
   app = await buildServer({
@@ -468,5 +469,46 @@ describe('REST: утилиты машины (exec/fs)', () => {
     const res = await app.inject({ method: 'GET', url: '/api/agents/version' }) // без токена
     expect(res.statusCode).toBe(200)
     expect(typeof res.json().version).toBe('string')
+  })
+})
+
+describe('REST: чтение файла с диска сервера (/api/files/read)', () => {
+  // Профиль CLI создаётся при первом обращении к нему; дёргаем любой роут,
+  // который его трогает, а затем кладём туда «сгенерированную» картинку.
+  async function seedImage(): Promise<string> {
+    await inj({ method: 'GET', url: '/api/auth/status' })
+    const dir = join(dataDir, 'cli-users', Buffer.from(U).toString('base64url'), '.codex', 'generated_images', 'sess')
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, 'pic.png')
+    writeFileSync(file, 'PNGDATA')
+    return file
+  }
+
+  it('отдаёт картинку из профиля пользователя', async () => {
+    const file = await seedImage()
+    const res = await inj({ method: 'GET', url: `/api/files/read?path=${encodeURIComponent(file)}` })
+    expect(res.statusCode).toBe(200)
+    const body = res.json() as { name: string; dataBase64: string }
+    expect(body.name).toBe('pic.png')
+    expect(Buffer.from(body.dataBase64, 'base64').toString()).toBe('PNGDATA')
+  })
+
+  it('файл вне своей области — 404', async () => {
+    await seedImage()
+    const outside = join(tmpdir(), `vc-outside-${Date.now()}.png`)
+    writeFileSync(outside, 'NOPE')
+    const res = await inj({ method: 'GET', url: `/api/files/read?path=${encodeURIComponent(outside)}` })
+    expect(res.statusCode).toBe(404)
+    rmSync(outside, { force: true })
+  })
+
+  it('без токена — 401 (роут под общей защитой /api)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/files/read?path=/etc/passwd' })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('системный файл не отдаётся', async () => {
+    const res = await inj({ method: 'GET', url: '/api/files/read?path=/etc/passwd' })
+    expect(res.statusCode).toBe(404)
   })
 })

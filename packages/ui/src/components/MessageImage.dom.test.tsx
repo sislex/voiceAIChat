@@ -13,10 +13,13 @@ function fakeOps(dataBase64: string = PNG_B64) {
 
 const IMAGE = { path: '/tmp/out.png' }
 
+/** Сервер такого файла у себя не знает (штатный ответ, не ошибка). */
+const noServerFile = () => Promise.resolve(null)
+
 describe('MessageImage — загрузка картинки с машины', () => {
   it('читает файл через ops.read и показывает его как data-URL', async () => {
     const ops = fakeOps()
-    render(<MessageImage image={IMAGE} execAgentId="m1" ops={ops} />)
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={ops} readServerFile={noServerFile} />)
     expect(screen.getByTestId('image-loading')).toBeInTheDocument()
     const img = await screen.findByTestId('message-image')
     expect(ops.read).toHaveBeenCalledWith('m1', '/tmp/out.png')
@@ -25,33 +28,34 @@ describe('MessageImage — загрузка картинки с машины', (
 
   it('agentId из блока важнее машины сообщения', async () => {
     const ops = fakeOps()
-    render(<MessageImage image={{ path: '/tmp/a.png', agentId: 'm2' }} execAgentId="m1" ops={ops} />)
+    render(<MessageImage image={{ path: '/tmp/a.png', agentId: 'm2' }} execAgentId="m1" ops={ops} readServerFile={noServerFile} />)
     await screen.findByTestId('message-image')
     expect(ops.read).toHaveBeenCalledWith('m2', '/tmp/a.png')
   })
 
-  it('без машины — понятная ошибка с путём, чтения нет', () => {
+  it('без машины и без файла на сервере — понятная ошибка с путём', async () => {
     const ops = fakeOps()
-    render(<MessageImage image={IMAGE} execAgentId={null} ops={ops} />)
-    expect(screen.getByRole('alert')).toHaveTextContent('машина для этого ответа не выбрана')
+    render(<MessageImage image={IMAGE} execAgentId={null} ops={ops} readServerFile={noServerFile} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('машина для этого ответа не выбрана')
     expect(screen.getByRole('alert')).toHaveTextContent('/tmp/out.png')
     expect(ops.read).not.toHaveBeenCalled()
   })
 
-  it('execTarget «none» считается отсутствием машины', () => {
+  it('execTarget «none» считается отсутствием машины', async () => {
     const ops = fakeOps()
-    render(<MessageImage image={IMAGE} execAgentId="none" ops={ops} />)
+    render(<MessageImage image={IMAGE} execAgentId="none" ops={ops} readServerFile={noServerFile} />)
+    await screen.findByRole('alert')
     expect(ops.read).not.toHaveBeenCalled()
   })
 
   it('ошибка чтения показывается пользователю', async () => {
     const ops = { read: vi.fn().mockRejectedValue(new Error('нет доступа')) }
-    render(<MessageImage image={IMAGE} execAgentId="m1" ops={ops} />)
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={ops} readServerFile={noServerFile} />)
     expect(await screen.findByRole('alert')).toHaveTextContent('нет доступа')
   })
 
   it('пустой ответ — сообщение вместо битой картинки', async () => {
-    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps('')} />)
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps('')} readServerFile={noServerFile} />)
     expect(await screen.findByRole('alert')).toHaveTextContent('Файл пустой или недоступен')
   })
 
@@ -61,6 +65,7 @@ describe('MessageImage — загрузка картинки с машины', (
         image={{ path: '/tmp/dir/chart.png', caption: 'График продаж' }}
         execAgentId="m1"
         ops={fakeOps()}
+        readServerFile={noServerFile}
       />
     )
     await screen.findByTestId('message-image')
@@ -71,7 +76,7 @@ describe('MessageImage — загрузка картинки с машины', (
 
 describe('MessageImage — разворот и зум', () => {
   it('клик по превью разворачивает на весь экран, Esc сворачивает', async () => {
-    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} readServerFile={noServerFile} />)
     await screen.findByTestId('message-image')
     expect(screen.queryByTestId('image-surface')).toBeNull()
 
@@ -84,7 +89,7 @@ describe('MessageImage — разворот и зум', () => {
   })
 
   it('колесо мыши в развороте приближает картинку', async () => {
-    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} readServerFile={noServerFile} />)
     await screen.findByTestId('message-image')
     await userEvent.click(screen.getByLabelText('Открыть картинку на весь экран'))
 
@@ -96,7 +101,7 @@ describe('MessageImage — разворот и зум', () => {
   })
 
   it('двойной клик приближает, повторный возвращает исходный масштаб', async () => {
-    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} readServerFile={noServerFile} />)
     await screen.findByTestId('message-image')
     await userEvent.click(screen.getByLabelText('Открыть картинку на весь экран'))
 
@@ -108,7 +113,7 @@ describe('MessageImage — разворот и зум', () => {
   })
 
   it('после сворачивания масштаб сбрасывается', async () => {
-    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} readServerFile={noServerFile} />)
     await screen.findByTestId('message-image')
     await userEvent.click(screen.getByLabelText('Открыть картинку на весь экран'))
     await userEvent.dblClick(screen.getByTestId('image-surface'))
@@ -127,7 +132,7 @@ describe('MessageImage — скачивание и копирование', () =
 
   it('кнопка «Скачать» кликает по ссылке с именем файла', async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    render(<MessageImage image={{ path: '/tmp/dir/chart.png' }} execAgentId="m1" ops={fakeOps()} />)
+    render(<MessageImage image={{ path: '/tmp/dir/chart.png' }} execAgentId="m1" ops={fakeOps()} readServerFile={noServerFile} />)
     await screen.findByTestId('message-image')
 
     await userEvent.click(screen.getByLabelText('Скачать картинку'))
@@ -138,7 +143,7 @@ describe('MessageImage — скачивание и копирование', () =
   })
 
   it('кнопки неактивны, пока картинка не загрузилась', () => {
-    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} readServerFile={noServerFile} />)
     expect(screen.getByLabelText('Скачать картинку')).toBeDisabled()
     expect(screen.getByLabelText('Копировать картинку')).toBeDisabled()
   })
@@ -151,7 +156,7 @@ describe('MessageImage — скачивание и копирование', () =
     }
     vi.stubGlobal('ClipboardItem', FakeClipboardItem)
 
-    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} readServerFile={noServerFile} />)
     await screen.findByTestId('message-image')
     await userEvent.click(screen.getByLabelText('Копировать картинку'))
 
@@ -164,9 +169,60 @@ describe('MessageImage — скачивание и копирование', () =
 
   it('буфер недоступен — кнопка сообщает о неудаче', async () => {
     Object.assign(navigator, { clipboard: undefined })
-    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} readServerFile={noServerFile} />)
     await screen.findByTestId('message-image')
     await userEvent.click(screen.getByLabelText('Копировать картинку'))
     expect(await screen.findByTitle('Не удалось скопировать')).toBeInTheDocument()
+  })
+})
+
+describe('MessageImage — файл на сервере (картинки от CLI)', () => {
+  // Регрессия: встроенный генератор Codex пишет png в профиль пользователя НА
+  // СЕРВЕРЕ (`<профиль>/.codex/generated_images/…`), даже когда команды хода шли
+  // на машину. Чтение только с машины давало «stat ENOENT» вместо картинки.
+  const CODEX = { path: '/data/cli-users/YWRtaW4/.codex/generated_images/s/call.png' }
+
+  it('сначала спрашивает сервер и машину уже не трогает', async () => {
+    const ops = fakeOps()
+    const readServerFile = vi.fn().mockResolvedValue({ name: 'call.png', dataBase64: PNG_B64 })
+    render(<MessageImage image={CODEX} execAgentId="m1" ops={ops} readServerFile={readServerFile} />)
+
+    const img = await screen.findByTestId('message-image')
+    expect(readServerFile).toHaveBeenCalledWith(CODEX.path)
+    expect(img).toHaveAttribute('src', `data:image/png;base64,${PNG_B64}`)
+    expect(ops.read).not.toHaveBeenCalled()
+  })
+
+  it('сервер не знает файла → читаем с машины хода', async () => {
+    const ops = fakeOps()
+    const readServerFile = vi.fn().mockResolvedValue(null)
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={ops} readServerFile={readServerFile} />)
+
+    await screen.findByTestId('message-image')
+    expect(readServerFile).toHaveBeenCalledWith('/tmp/out.png')
+    expect(ops.read).toHaveBeenCalledWith('m1', '/tmp/out.png')
+  })
+
+  it('явный agentId в блоке — сервер не спрашиваем вовсе', async () => {
+    const ops = fakeOps()
+    const readServerFile = vi.fn()
+    render(
+      <MessageImage
+        image={{ path: '/tmp/a.png', agentId: 'm2' }}
+        execAgentId="m1"
+        ops={ops}
+        readServerFile={readServerFile}
+      />
+    )
+    await screen.findByTestId('message-image')
+    expect(readServerFile).not.toHaveBeenCalled()
+    expect(ops.read).toHaveBeenCalledWith('m2', '/tmp/a.png')
+  })
+
+  it('без моста сервера работает по-старому — только машина', async () => {
+    const ops = fakeOps()
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={ops} />)
+    await screen.findByTestId('message-image')
+    expect(ops.read).toHaveBeenCalledWith('m1', '/tmp/out.png')
   })
 })
