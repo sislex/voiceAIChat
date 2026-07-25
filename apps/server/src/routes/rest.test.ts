@@ -414,6 +414,15 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.body.startsWith('#!')).toBe(true)
   }, 30_000)
 
+  it('установщик Termux: GET /api/agents/install-android.sh публичен и отдаёт bash', async () => {
+    // Без токена — должен быть доступен (curl с телефона до логина).
+    const res = await app.inject({ method: 'GET', url: '/api/agents/install-android.sh' })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('shellscript')
+    expect(res.body.startsWith('#!')).toBe(true)
+    expect(res.body).toContain('/api/agents/script')
+  })
+
   it('удаление агента сбрасывает execTarget на сервер', async () => {
     const created = (
       await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })

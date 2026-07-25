@@ -3,6 +3,7 @@
 
 import { spawn } from 'node:child_process'
 import type { AgentToServer } from '@voicechat/shared'
+import { resolveShell } from './platform.js'
 
 /** Активные команды: execId → процесс (для exec.cancel). */
 const running = new Map<string, ReturnType<typeof spawn>>()
@@ -17,7 +18,8 @@ export function runCommand(
 ): void {
   let child: ReturnType<typeof spawn>
   try {
-    child = spawn(command, { shell: '/bin/bash' })
+    // Shell определяем динамически: на Termux /bin/bash нет (см. platform.resolveShell).
+    child = spawn(command, { shell: resolveShell() })
   } catch (err) {
     emit({ t: 'exec.error', execId, message: err instanceof Error ? err.message : String(err) })
     return

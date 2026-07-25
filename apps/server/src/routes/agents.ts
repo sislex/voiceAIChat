@@ -8,6 +8,7 @@ import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { buildAgentScript } from '../agents/agentScript.js'
+import { buildAndroidInstallScript } from '../agents/androidInstall.js'
 
 /** Пути к собранным .dmg (undefined — не собрано). */
 export interface AppArtifacts {
@@ -75,6 +76,18 @@ export async function registerAgentRoutes(
         .code(500)
         .send({ error: `Не удалось собрать агента: ${err instanceof Error ? err.message : err}` })
     }
+  })
+
+  // Установщик агента для Termux (Android): bash-скрипт с адресом сервера.
+  // Строка подключения передаётся аргументом при запуске, в endpoint не вшивается.
+  app.get(REST.agentInstallAndroid, async (req, reply) => {
+    const fwdProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim()
+    const fwdHost = String(req.headers['x-forwarded-host'] ?? '').split(',')[0].trim()
+    const proto = fwdProto || req.protocol
+    const host = fwdHost || req.headers.host || ''
+    return reply
+      .header('content-type', 'text/x-shellscript; charset=utf-8')
+      .send(buildAndroidInstallScript(`${proto}://${host}`))
   })
 
   app.post<{ Body: { name?: string } }>(REST.agents, async (req, reply) => {

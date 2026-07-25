@@ -28,3 +28,7 @@ VC_AGENT_SERVER=ws://192.168.1.10:8787/agent VC_AGENT_TOKEN=abc… npm start --w
 
 Агент сам переподключается при обрыве связи (backoff до 30 с). Токен отзывается
 удалением машины в настройках.
+
+## Android
+
+Запуск на телефоне через Termux — см. [ANDROID.md](./ANDROID.md).

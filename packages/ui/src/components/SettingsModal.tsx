@@ -8,11 +8,14 @@ import type {
   WhisperModelInfo
 } from '@shared/types'
 import type { SystemCapabilities } from '@shared/protocol'
+import { REST } from '@shared/protocol'
 import { CODEX_MODELS, modelsForRole, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { PermissionMode, LlmProvider, UserRole } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
+import { decodeAgentConnection } from '@shared/agentProtocol'
+import { toDataURL as qrToDataUrl } from 'qrcode'
 import { copyText } from '../lib/clipboard'
 import { AgentCard } from './AgentCard'
 
@@ -87,6 +90,19 @@ export interface SettingsModalProps {
   onClose: () => void
 }
 
+/** База сервера (http/https) из строки подключения vcagent: для установщика Termux. */
+function serverBaseFromConnection(conn: string): string | null {
+  const parsed = decodeAgentConnection(conn)
+  if (!parsed?.server) return null
+  const http = parsed.server.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:')
+  try {
+    const u = new URL(http)
+    return `${u.protocol}//${u.host}`
+  } catch {
+    return null
+  }
+}
+
 export function SettingsModal({
   settings,
   mics,
@@ -124,10 +140,37 @@ export function SettingsModal({
   const [createdAgent, setCreatedAgent] = useState<AgentCreated | null>(null)
   const [tokenCopied, setTokenCopied] = useState(false)
   const [connCopied, setConnCopied] = useState(false)
+  const [cmdCopied, setCmdCopied] = useState(false)
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
 
   const copyConnectionString = async (token: string): Promise<void> => {
     const str = await onGetConnectionString(token)
     if (str) setConnCopied(await copyText(str))
+  }
+
+  // Готовая команда установки для Termux (Android): адрес сервера берём из строки подключения.
+  const copyTermuxCommand = async (token: string): Promise<void> => {
+    const conn = await onGetConnectionString(token)
+    if (!conn) return
+    const base = serverBaseFromConnection(conn)
+    if (!base) return
+    const cmd = `curl -fsSLk ${base}${REST.agentInstallAndroid} | bash -s -- '${conn}'`
+    setCmdCopied(await copyText(cmd))
+  }
+
+  // QR строки подключения: отсканировать телефоном и вставить в Termux (--connection).
+  const toggleQr = async (token: string): Promise<void> => {
+    if (qrDataUrl) {
+      setQrDataUrl(null)
+      return
+    }
+    const conn = await onGetConnectionString(token)
+    if (!conn) return
+    try {
+      setQrDataUrl(await qrToDataUrl(conn, { width: 220, margin: 1 }))
+    } catch {
+      setQrDataUrl(null)
+    }
   }
 
   const addAgent = async (): Promise<void> => {
@@ -344,9 +387,24 @@ export function SettingsModal({
                       <p className="fsub">
                         Машина «{createdAgent.name}» создана — строка подключения показывается
                         один раз. Скачайте агента в разделе «Скачать», при первом запуске вставьте
-                        строку подключения (годится и для приложения, и для скрипта).
+                        строку подключения (годится и для приложения, и для скрипта). Для Android
+                        (Termux) скопируйте готовую команду ниже и вставьте её в Termux.
                       </p>
                       <div className="vrow2">
+                        <button
+                          className="vdl"
+                          aria-label="Скопировать команду установки для Termux (Android)"
+                          onClick={() => void copyTermuxCommand(createdAgent.token)}
+                        >
+                          {cmdCopied ? '✓ команда скопирована' : '📱 Команда для Termux (Android)'}
+                        </button>
+                        <button
+                          className="vdl"
+                          aria-label="Показать QR-код строки подключения"
+                          onClick={() => void toggleQr(createdAgent.token)}
+                        >
+                          {qrDataUrl ? 'Скрыть QR' : '▦ QR строки подключения'}
+                        </button>
                         <button
                           className="vdl"
                           aria-label="Скопировать строку подключения"
@@ -366,11 +424,26 @@ export function SettingsModal({
                         <button
                           className="vdl"
                           aria-label="Скрыть"
-                          onClick={() => setCreatedAgent(null)}
+                          onClick={() => {
+                            setCreatedAgent(null)
+                            setCmdCopied(false)
+                            setConnCopied(false)
+                            setTokenCopied(false)
+                            setQrDataUrl(null)
+                          }}
                         >
                           Скрыть
                         </button>
                       </div>
+                      {qrDataUrl && (
+                        <div className="qr-conn" data-testid="agent-qr">
+                          <img src={qrDataUrl} alt="QR-код строки подключения" width={220} height={220} />
+                          <p className="fsub">
+                            Отсканируйте телефоном (любой сканер QR), скопируется строка
+                            подключения — вставьте её в Termux после <code>--connection</code>.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -424,6 +497,18 @@ export function SettingsModal({
                   <button className="vdl" aria-label="Скачать скрипт агента" onClick={() => onDownloadAgentScript()}>
                     ⬇ Скачать
                   </button>
+                </div>
+
+                <div className="frow">
+                  <div>
+                    <p className="flab">Агент — Android (Termux)</p>
+                    <p className="fsub">
+                      Установите <a href="https://f-droid.org/packages/com.termux/" target="_blank" rel="noreferrer">Termux</a> (лучше с F-Droid),
+                      создайте машину в разделе «Агент» и вставьте её команду
+                      <code> «📱 Команда для Termux»</code> в Termux — она поставит Node.js,
+                      скачает агента и настроит автозапуск.
+                    </p>
+                  </div>
                 </div>
 
                 <p className="fsub">

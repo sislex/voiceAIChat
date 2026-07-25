@@ -1,0 +1,77 @@
+# Агент на Android (через Termux)
+
+Компаньон-агент — это обычный Node-скрипт (`voicechat-agent.cjs`), поэтому на
+Android он запускается в [Termux](https://f-droid.org/packages/com.termux/) без
+отдельного приложения. Он подключается к серверу и становится ещё одной «машиной»
+в разделе Настройки → Агент → Машины: доступны выполнение команд, файловый
+проводник и консоль.
+
+## Быстрый старт (рекомендуется)
+
+1. Установите **Termux** — лучше с [F-Droid](https://f-droid.org/packages/com.termux/)
+   (версия из Google Play устарела). Для автозапуска — ещё и **Termux:Boot**.
+2. В веб-клиенте: Настройки → Агент → «Добавить машину».
+3. Нажмите **«📱 Команда для Termux (Android)»** — команда скопируется в буфер.
+4. Вставьте её в Termux и выполните. Она сама:
+   - установит Node.js (`pkg install nodejs-lts`);
+   - скачает `voicechat-agent.cjs`;
+   - сохранит строку подключения;
+   - настроит автозапуск (Termux:Boot) и `termux-wake-lock`;
+   - запустит агента.
+
+Команда выглядит так:
+
+```bash
+curl -fsSL https://<сервер>/api/agents/install-android.sh | bash -s -- 'vcagent:…'
+```
+
+## Вручную
+
+```bash
+pkg update && pkg install -y nodejs-lts
+curl -fsSL https://<сервер>/api/agents/script -o voicechat-agent.cjs
+node voicechat-agent.cjs --connection 'vcagent:…'
+```
+
+## Что работает и нюансы Android
+
+- **Выполнение команд (exec)** и **файловый проводник** — работают. Shell
+  определяется автоматически (`platform.resolveShell`): на Termux это
+  `/data/data/com.termux/files/usr/bin/bash`, а не `/bin/bash`.
+- **Консоль (PTY).** Нативный модуль `@lydell/node-pty` на Android обычно не
+  собирается. Тогда агент автоматически переходит в **упрощённый режим**
+  (интерактивный shell через pipe): ввод-вывод работает, но нет настоящего TTY и
+  ресайза. Полноценный терминал — только если удалось собрать node-pty:
+  `pkg install -y clang make python && npm i @lydell/node-pty` рядом с `.cjs`.
+  Принудительно упрощённый режим: переменная `VC_PTY_FORCE_FALLBACK=1`.
+- **Доступ к общей памяти телефона.** По умолчанию виден только домашний каталог
+  Termux. Чтобы открыть `~/storage` (папки телефона), один раз выполните
+  `termux-setup-storage` и дайте разрешение.
+- **Живучесть в фоне.** Android усыпляет фоновые процессы. `run.sh` держит
+  `termux-wake-lock`; для запуска после перезагрузки нужен **Termux:Boot**.
+  Полезно также отключить оптимизацию батареи для Termux в настройках Android.
+- **Корневой каталог проводника** по умолчанию — `$HOME` Termux; переопределяется
+  через `VC_AGENT_ROOT`.
+
+
+## Самоподписанный сертификат (важно)
+
+Если сервер за Caddy с `tls internal` (доступ по голому IP по https с
+самоподписанным сертификатом), Node-агент по умолчанию оборвёт `wss://`-соединение
+проверкой сертификата. Установщик Termux выставляет `VC_AGENT_INSECURE_TLS=1`
+(и `curl -k`) — агент начинает доверять такому серверу. При ручном запуске:
+
+```bash
+VC_AGENT_INSECURE_TLS=1 node voicechat-agent.cjs --connection 'vcagent:…'
+```
+
+## Переменные окружения
+
+| Переменная | Назначение |
+|---|---|
+| `VC_AGENT_CONNECTION` | строка подключения `vcagent:…` (альтернатива `--connection`) |
+| `VC_AGENT_SERVER` + `VC_AGENT_TOKEN` | адрес и токен по отдельности |
+| `VC_AGENT_ROOT` | корневой каталог файлового проводника |
+| `VC_PTY_SHELL` | принудительный shell для консоли |
+| `VC_PTY_FORCE_FALLBACK` | всегда упрощённый (pipe) терминал |
+| `VC_AGENT_INSECURE_TLS` | доверять самоподписанному TLS сервера (wss://) |
