@@ -7,6 +7,8 @@ import {
   DEFAULT_AGENT_POLICY,
   type AgentPolicy,
   type AgentToServer,
+  type FsOp,
+  type FsResult,
   type ServerToAgent
 } from '@voicechat/shared'
 
@@ -26,6 +28,8 @@ export interface ExecResult {
 const OUTPUT_CAP_BYTES = 200 * 1024
 /** Запас серверного страховочного таймаута сверх таймаута агента. */
 const GUARD_EXTRA_MS = 10_000
+/** Таймаут файловой операции проводника. */
+const FS_TIMEOUT_MS = 30_000
 
 interface PendingExec {
   agentId: string
@@ -34,6 +38,13 @@ interface PendingExec {
   truncated: boolean
   timer: NodeJS.Timeout
   resolve(result: ExecResult): void
+  reject(err: Error): void
+}
+
+interface PendingFs {
+  agentId: string
+  timer: NodeJS.Timeout
+  resolve(result: FsResult): void
   reject(err: Error): void
 }
 
@@ -46,6 +57,7 @@ interface OnlineAgent {
 export class AgentRegistry {
   private readonly online = new Map<string, OnlineAgent>()
   private readonly pending = new Map<string, PendingExec>()
+  private readonly pendingFs = new Map<string, PendingFs>()
   private readonly newId: () => string
   private readonly changeListeners = new Set<() => void>()
 
@@ -76,6 +88,12 @@ export class AgentRegistry {
       this.pending.delete(execId)
       clearTimeout(p.timer)
       p.reject(new Error('Машина отключилась во время выполнения команды'))
+    }
+    for (const [opId, p] of this.pendingFs) {
+      if (p.agentId !== agentId) continue
+      this.pendingFs.delete(opId)
+      clearTimeout(p.timer)
+      p.reject(new Error('Машина отключилась'))
     }
     if (had) this.emitChange()
   }
@@ -189,6 +207,41 @@ export class AgentRegistry {
     })
   }
 
+  // --- Файловый проводник по машине (по образцу exec, корреляция по opId) ---
+
+  /** Отправляет файловую операцию агенту и ждёт fs.result/fs.error (по opId). */
+  private runFs(agentId: string, make: (opId: string) => FsOp): Promise<FsResult> {
+    if (!this.online.has(agentId)) return Promise.reject(new Error('Машина не в сети'))
+    const opId = this.newId()
+    return new Promise<FsResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingFs.delete(opId)
+        reject(new Error('Машина не ответила на файловую операцию'))
+      }, FS_TIMEOUT_MS)
+      this.pendingFs.set(opId, { agentId, timer, resolve, reject })
+      this.send(agentId, make(opId))
+    })
+  }
+
+  fsList(agentId: string, path: string): Promise<FsResult> {
+    return this.runFs(agentId, (opId) => ({ t: 'fs.list', opId, path }))
+  }
+  fsRead(agentId: string, path: string): Promise<FsResult> {
+    return this.runFs(agentId, (opId) => ({ t: 'fs.read', opId, path }))
+  }
+  fsWrite(agentId: string, path: string, dataBase64: string): Promise<FsResult> {
+    return this.runFs(agentId, (opId) => ({ t: 'fs.write', opId, path, dataBase64 }))
+  }
+  fsDelete(agentId: string, path: string): Promise<FsResult> {
+    return this.runFs(agentId, (opId) => ({ t: 'fs.delete', opId, path }))
+  }
+  fsRename(agentId: string, from: string, to: string): Promise<FsResult> {
+    return this.runFs(agentId, (opId) => ({ t: 'fs.rename', opId, from, to }))
+  }
+  fsMkdir(agentId: string, path: string): Promise<FsResult> {
+    return this.runFs(agentId, (opId) => ({ t: 'fs.mkdir', opId, path }))
+  }
+
   /** Отменяет все незавершённые команды агента (напр., ход Claude прерван). */
   cancelAll(agentId: string): void {
     for (const [execId, p] of this.pending) {
@@ -200,9 +253,18 @@ export class AgentRegistry {
     }
   }
 
-  /** Обрабатывает сообщение от агента (exec.chunk/done/error). */
+  /** Обрабатывает сообщение от агента (exec.* и fs.result/fs.error). */
   handleMessage(agentId: string, msg: AgentToServer): void {
     if (msg.t === 'agent.register') return // повторная регистрация — игнор
+    if (msg.t === 'fs.result' || msg.t === 'fs.error') {
+      const pf = this.pendingFs.get(msg.opId)
+      if (!pf || pf.agentId !== agentId) return
+      this.pendingFs.delete(msg.opId)
+      clearTimeout(pf.timer)
+      if (msg.t === 'fs.result') pf.resolve(msg.result)
+      else pf.reject(new Error(msg.message))
+      return
+    }
     const p = this.pending.get(msg.execId)
     if (!p || p.agentId !== agentId) return
     switch (msg.t) {

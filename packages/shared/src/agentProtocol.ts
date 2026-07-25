@@ -2,12 +2,38 @@
 // подключается к серверу по WS /agent, авторизуется токеном и выполняет
 // присланные shell-команды (проброс Bash через MCP-мост).
 
+/** Элемент каталога в проводнике по машине. */
+export interface FsEntry {
+  name: string
+  kind: 'file' | 'dir'
+  /** Размер файла в байтах (0 для каталогов). */
+  size: number
+  /** Время изменения (UNIX мс). */
+  mtime: number
+}
+
+/** Результат операции проводника (по opId). */
+export interface FsResult {
+  /** Абсолютный корень проводника на машине (каталог скрипта). */
+  root: string
+  /** Текущий каталог (относительно корня; '' — корень). */
+  cwd: string
+  /** Содержимое каталога (для fs.list). */
+  entries?: FsEntry[]
+  /** Содержимое файла в base64 (для fs.read). */
+  dataBase64?: string
+  /** Имя файла (для fs.read — для сохранения). */
+  name?: string
+}
+
 /** Сообщения агент → сервер. */
 export type AgentToServer =
   | { t: 'agent.register'; token: string }
   | { t: 'exec.chunk'; execId: string; stream: 'stdout' | 'stderr'; data: string }
   | { t: 'exec.done'; execId: string; exitCode: number | null; timedOut?: boolean }
   | { t: 'exec.error'; execId: string; message: string }
+  | { t: 'fs.result'; opId: string; result: FsResult }
+  | { t: 'fs.error'; opId: string; message: string }
 
 /** Именованный скрипт («навык»), разрешённый к запуску на машине. */
 export interface AgentSkill {
@@ -92,6 +118,15 @@ export function evaluateAgentCommand(policy: AgentPolicy, command: string): Poli
   return { allowed: true }
 }
 
+/** Файловая операция проводника (сервер → агент), path относительно корня. */
+export type FsOp =
+  | { t: 'fs.list'; opId: string; path: string }
+  | { t: 'fs.read'; opId: string; path: string }
+  | { t: 'fs.write'; opId: string; path: string; dataBase64: string }
+  | { t: 'fs.delete'; opId: string; path: string }
+  | { t: 'fs.rename'; opId: string; from: string; to: string }
+  | { t: 'fs.mkdir'; opId: string; path: string }
+
 /** Сообщения сервер → агент. */
 export type ServerToAgent =
   | { t: 'agent.registered'; name: string; policy: AgentPolicy }
@@ -99,6 +134,7 @@ export type ServerToAgent =
   | { t: 'agent.policy'; policy: AgentPolicy }
   | { t: 'exec.start'; execId: string; command: string; timeoutMs: number }
   | { t: 'exec.cancel'; execId: string }
+  | FsOp
 
 /** Машина-агент для списка в настройках. */
 export interface AgentInfo {

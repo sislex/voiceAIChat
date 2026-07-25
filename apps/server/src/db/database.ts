@@ -11,8 +11,15 @@ import {
   type Message,
   type MessageRole,
   type Settings,
-  type TurnMeta
+  type TurnMeta,
+  type UsageBucket,
+  type UsageByModel,
+  type UsageReport,
+  type UsageTotals,
+  type UsageUnit,
+  type UserRole
 } from '@voicechat/shared'
+import { hashPassword, verifyPassword } from '../users/passwords.js'
 
 /** Инъектируемые зависимости — для детерминированных тестов. */
 export interface DbDeps {
@@ -43,6 +50,22 @@ interface AgentRow {
   last_seen: number | null
   policy: string | null
   user_id: string | null
+}
+
+/** Запись пользователя приложения (без хеша пароля наружу). */
+export interface UserRow {
+  name: string
+  role: UserRole
+  blocked: boolean
+  createdAt: number
+}
+
+interface UserDbRow {
+  name: string
+  password_hash: string
+  role: string
+  blocked: number
+  created_at: number
 }
 
 /** Запись машины-агента из БД (онлайн-статус добавляется реестром). */
@@ -382,6 +405,119 @@ export class VoiceChatDb {
   /** Обновляет last_seen (при регистрации и по pong). */
   touchAgent(id: string): void {
     this.db.prepare(`UPDATE agents SET last_seen = ? WHERE id = ?`).run(this.now(), id)
+  }
+
+  // ---- Users (аккаунты приложения) --------------------------------------
+
+  private mapUser(r: UserDbRow): UserRow {
+    return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at }
+  }
+
+  /** Гарантирует наличие пользователя admin (сид при старте; пароль по умолчанию пустой). */
+  ensureAdmin(): void {
+    const exists = this.db.prepare(`SELECT 1 FROM users WHERE name = 'admin'`).get()
+    if (exists) return
+    this.db
+      .prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at) VALUES (?, ?, 'admin', 0, ?)`)
+      .run('admin', hashPassword(''), this.now())
+  }
+
+  /** Создаёт пользователя (роль admin/user). Кидает при дубликате имени. */
+  createUser(name: string, password: string, role: UserRole): UserRow {
+    this.db
+      .prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at) VALUES (?, ?, ?, 0, ?)`)
+      .run(name, hashPassword(password), role, this.now())
+    return { name, role, blocked: false, createdAt: this.now() }
+  }
+
+  getUser(name: string): UserRow | null {
+    const row = this.db.prepare(`SELECT * FROM users WHERE name = ?`).get(name) as
+      | UserDbRow
+      | undefined
+    return row ? this.mapUser(row) : null
+  }
+
+  listUsers(): UserRow[] {
+    const rows = this.db.prepare(`SELECT * FROM users ORDER BY created_at ASC`).all() as UserDbRow[]
+    return rows.map((r) => this.mapUser(r))
+  }
+
+  /** Проверяет пароль; возвращает пользователя при успехе, иначе null. */
+  verifyUserPassword(name: string, password: string): UserRow | null {
+    const row = this.db.prepare(`SELECT * FROM users WHERE name = ?`).get(name) as
+      | UserDbRow
+      | undefined
+    if (!row) return null
+    return verifyPassword(password, row.password_hash) ? this.mapUser(row) : null
+  }
+
+  setUserBlocked(name: string, blocked: boolean): void {
+    this.db.prepare(`UPDATE users SET blocked = ? WHERE name = ?`).run(blocked ? 1 : 0, name)
+  }
+
+  setUserPassword(name: string, password: string): void {
+    this.db.prepare(`UPDATE users SET password_hash = ? WHERE name = ?`).run(hashPassword(password), name)
+  }
+
+  deleteUser(name: string): void {
+    this.db.prepare(`DELETE FROM users WHERE name = ?`).run(name)
+  }
+
+  /** Удаляет пользователя и ВСЕ его данные (разговоры/сообщения/агенты/настройки). */
+  deleteUserData(userId: string): void {
+    this.db.transaction(() => {
+      // messages/speakers уйдут по ON DELETE CASCADE.
+      this.db.prepare(`DELETE FROM conversations WHERE user_id = ?`).run(userId)
+      this.db.prepare(`DELETE FROM agents WHERE user_id = ?`).run(userId)
+      this.db.prepare(`DELETE FROM settings WHERE key = ?`).run(settingsKey(userId))
+      this.db.prepare(`DELETE FROM users WHERE name = ?`).run(userId)
+    })()
+  }
+
+  // ---- Отчёт по токенам (агрегация meta ai-сообщений пользователя) --------
+
+  /**
+   * Отчёт по использованию токенов пользователя: суммы по временным бакетам и по
+   * моделям + итог. Считается из meta ai-сообщений (JSON1 json_extract). Бакеты
+   * времени — в UTC (created_at хранится в мс).
+   */
+  usageReport(userId: string, unit: UsageUnit, from?: number, to?: number): UsageReport {
+    // Формат бакета для strftime над created_at/1000 (unixepoch, UTC).
+    const fmt = unit === 'hour' ? '%Y-%m-%d %H:00' : unit === 'week' ? '%Y-W%W' : '%Y-%m-%d'
+    // Суммы токенов/стоимости (COALESCE, т.к. json_extract даёт NULL при отсутствии).
+    const sums = `
+      COUNT(*) AS messages,
+      COALESCE(SUM(json_extract(m.meta,'$.inputTokens')),0) AS inputTokens,
+      COALESCE(SUM(json_extract(m.meta,'$.outputTokens')),0) AS outputTokens,
+      COALESCE(SUM(json_extract(m.meta,'$.cacheReadTokens')),0) AS cacheReadTokens,
+      COALESCE(SUM(json_extract(m.meta,'$.costUsd')),0) AS costUsd`
+    const where = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL
+      ${from !== undefined ? 'AND m.created_at >= @from' : ''}
+      ${to !== undefined ? 'AND m.created_at <= @to' : ''}`
+    const bind = {
+      userId,
+      ...(from !== undefined ? { from } : {}),
+      ...(to !== undefined ? { to } : {})
+    }
+
+    const totals = this.db
+      .prepare(`SELECT ${sums} FROM messages m JOIN conversations c ON m.conversation_id = c.id WHERE ${where}`)
+      .get(bind) as UsageTotals
+    const byBucket = this.db
+      .prepare(
+        `SELECT strftime('${fmt}', m.created_at/1000, 'unixepoch') AS bucket, ${sums}
+         FROM messages m JOIN conversations c ON m.conversation_id = c.id
+         WHERE ${where} GROUP BY bucket ORDER BY bucket ASC`
+      )
+      .all(bind) as UsageBucket[]
+    const byModel = this.db
+      .prepare(
+        `SELECT COALESCE(json_extract(m.meta,'$.model'),'?') AS model, ${sums}
+         FROM messages m JOIN conversations c ON m.conversation_id = c.id
+         WHERE ${where} GROUP BY model ORDER BY outputTokens DESC`
+      )
+      .all(bind) as UsageByModel[]
+    return { unit, totals, byBucket, byModel }
   }
 
   // ---- helpers ----------------------------------------------------------

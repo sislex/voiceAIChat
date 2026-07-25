@@ -127,6 +127,52 @@ describe('WS: Claude-стрим', () => {
   })
 })
 
+describe('WS: роль user не выполняет на сервере (форс plan)', () => {
+  // Мок, возвращающий полученный permissionMode — проверяем клампинг по роли.
+  const echoPerm: LlmClient = {
+    send(req, h) {
+      h.onDone(`perm:${req.permissionMode ?? 'none'}`)
+      return { cancel: () => {} }
+    }
+  }
+
+  async function permForRole(role: 'admin' | 'user'): Promise<string> {
+    const rdb = new VoiceChatDb(':memory:')
+    const rapp = await buildServer({
+      config: loadConfig({ PORT: '0' }),
+      db: rdb,
+      claude: echoPerm,
+      sessionSecret: SECRET
+    })
+    await rapp.listen({ port: 0, host: '127.0.0.1' })
+    const rport = (rapp.server.address() as AddressInfo).port
+    if (role === 'user') rdb.createUser('user', '', 'user') // admin засеян buildServer'ом
+    const conv = rdb.createConversation(role, 'Чат')
+    const ws = await connect(rport, signToken({ name: role, role }, SECRET))
+    const done = new Promise<string>((resolve) => {
+      ws.on('message', (d) => {
+        const m = JSON.parse(d.toString())
+        if (m.t === 'claude.done') resolve(m.text)
+      })
+    })
+    ws.send(JSON.stringify({ t: 'claude.send', conversationId: conv.id, segments: [{ speakerId: 1, text: 'привет' }] }))
+    const text = await done
+    ws.close()
+    await rapp.close()
+    rdb.close()
+    return text
+  }
+
+  it('user на сервере → permissionMode форсится в plan', async () => {
+    expect(await permForRole('user')).toBe('perm:plan')
+  })
+
+  it('admin на сервере → permissionMode из настроек (не клампится)', async () => {
+    // Дефолтный permissionMode — bypassPermissions.
+    expect(await permForRole('admin')).toBe('perm:bypassPermissions')
+  })
+})
+
 describe('WS: выбор движка Codex', () => {
   it('llmProvider=codex → используется codex-клиент; session-id с префиксом codex', async () => {
     const cdb = new VoiceChatDb(':memory:')

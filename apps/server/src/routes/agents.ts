@@ -109,4 +109,48 @@ export async function registerAgentRoutes(
     registry.disconnect(req.params.id)
     return { token }
   })
+
+  // --- Файловый проводник по машине (все под проверкой владения) ---
+  /** Проверка владения + читаемый ответ на ошибки агента (офлайн/политика). */
+  const withFs = async (
+    req: { params: { id: string } },
+    reply: FastifyReply,
+    run: (id: string) => Promise<unknown>
+  ): Promise<unknown> => {
+    const u = uid(req as never)
+    if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
+    try {
+      return await run(req.params.id)
+    } catch (err) {
+      return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+    '/api/agents/:id/fs',
+    async (req, reply) => withFs(req, reply, (id) => registry.fsList(id, req.query.path ?? ''))
+  )
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+    '/api/agents/:id/fs/file',
+    async (req, reply) => withFs(req, reply, (id) => registry.fsRead(id, req.query.path ?? ''))
+  )
+  app.post<{ Params: { id: string }; Body: { path?: string; dataBase64?: string } }>(
+    '/api/agents/:id/fs/file',
+    { bodyLimit: 48 * 1024 * 1024 }, // ~32 МБ файла + запас base64
+    async (req, reply) =>
+      withFs(req, reply, (id) => registry.fsWrite(id, req.body?.path ?? '', req.body?.dataBase64 ?? ''))
+  )
+  app.delete<{ Params: { id: string }; Querystring: { path?: string } }>(
+    '/api/agents/:id/fs',
+    async (req, reply) => withFs(req, reply, (id) => registry.fsDelete(id, req.query.path ?? ''))
+  )
+  app.post<{ Params: { id: string }; Body: { from?: string; to?: string } }>(
+    '/api/agents/:id/fs/rename',
+    async (req, reply) =>
+      withFs(req, reply, (id) => registry.fsRename(id, req.body?.from ?? '', req.body?.to ?? ''))
+  )
+  app.post<{ Params: { id: string }; Body: { path?: string } }>(
+    '/api/agents/:id/fs/mkdir',
+    async (req, reply) => withFs(req, reply, (id) => registry.fsMkdir(id, req.body?.path ?? ''))
+  )
 }

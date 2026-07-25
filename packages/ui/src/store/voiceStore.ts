@@ -8,16 +8,19 @@
 
 import type {
   RendererApi,
+  RendererFsBridge,
   RendererSessionBridge,
   SttSegmentWire,
   SttStatus,
   SttUpdate,
   UploadInfo
 } from '@shared/ipc'
+import type { FsEntry } from '@shared/agentProtocol'
 import type { ActiveTurn } from '@shared/protocol'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
+import type { AdminUserInfo, UsageReport, UsageUnit } from '@shared/admin'
 import type { CcProject, CcSession, CcItem } from '@shared/cc'
 import type { CxProject, CxSession, CxItem } from '@shared/codexSessions'
 import type {
@@ -134,6 +137,32 @@ export interface AppState {
   cxProjectCwd: string | null
   /** id выбранной сессии Codex (null — не выбрана). */
   cxSessionId: string | null
+  /** Открыта ли админ-страница пользователей (только admin). */
+  usersOpen: boolean
+  /** Список пользователей для админки. */
+  adminUsers: AdminUserInfo[]
+  /** Выбранный пользователь в админке (null — не выбран). */
+  adminSelected: string | null
+  /** Отчёт по токенам выбранного пользователя (null — не загружен). */
+  adminUsage: UsageReport | null
+  /** Разговоры выбранного пользователя (для просмотра истории админом). */
+  adminConversations: Conversation[]
+  /** Сообщения открытого разговора в админ-просмотре истории. */
+  adminMessages: Message[]
+  /** id разговора, открытого в админ-истории (null — не открыт). */
+  adminConversationId: string | null
+  /** Открыт ли файловый проводник по машине. */
+  fsOpen: boolean
+  /** Машина, по которой открыт проводник (null — не выбрана). */
+  fsAgentId: string | null
+  /** Абсолютный корень проводника на машине (каталог скрипта). */
+  fsRoot: string
+  /** Текущий каталог проводника (абсолютный путь). */
+  fsCwd: string
+  /** Содержимое текущего каталога. */
+  fsEntries: FsEntry[]
+  /** Ошибка последней файловой операции (null — нет). */
+  fsError: string | null
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
   speakingMessageId: string | null
   /** Доступна ли озвучка (кнопка ▶ на ответах). */
@@ -152,6 +181,8 @@ export interface StoreDeps {
   api: RendererApi
   /** Мост сессии (web). Отсутствует (desktop) → аутентификация не требуется. */
   session?: RendererSessionBridge
+  /** Мост файлового проводника по машине (web). */
+  fs?: RendererFsBridge
   /** Источник времени (для формата HH:MM). По умолчанию Date.now. */
   now?: () => number
   /** Переопределение задержек пайплайна (для тестов). */
@@ -347,6 +378,42 @@ export interface StoreActions {
   applyVoiceDone(id: string): void
   /** Ошибка скачивания голоса (tts:voiceError). */
   applyVoiceError(id: string, message: string): void
+  // --- Админ-страница пользователей (только admin) ---
+  /** Открыть страницу пользователей (грузит список). */
+  openUsers(): Promise<void>
+  /** Закрыть страницу пользователей. */
+  closeUsers(): void
+  /** Создать пользователя (admin). */
+  createUserAccount(name: string, password: string, role: 'admin' | 'user'): Promise<void>
+  /** Блокировать/разблокировать пользователя. */
+  setUserBlocked(name: string, blocked: boolean): Promise<void>
+  /** Удалить пользователя и все его данные. */
+  deleteUserAccount(name: string): Promise<void>
+  /** Выбрать пользователя в админке (грузит отчёт по токенам и разговоры). */
+  selectAdminUser(name: string): Promise<void>
+  /** Загрузить отчёт по токенам выбранного пользователя. */
+  loadAdminUsage(unit: UsageUnit, from?: number, to?: number): Promise<void>
+  /** Открыть разговор пользователя в админ-просмотре истории. */
+  openAdminConversation(conversationId: string): Promise<void>
+  // --- Файловый проводник по машине ---
+  /** Открыть проводник (по первой доступной машине). */
+  openFiles(): void
+  /** Закрыть проводник. */
+  closeFiles(): void
+  /** Выбрать машину и открыть её корень. */
+  selectFsAgent(agentId: string): Promise<void>
+  /** Открыть каталог (абсолютный путь). */
+  listFsDir(path: string): Promise<void>
+  /** Скачать файл (сохранение через браузер). */
+  downloadFsFile(path: string, name: string): Promise<void>
+  /** Загрузить файл в текущий каталог. */
+  uploadFsFile(file: File): Promise<void>
+  /** Удалить файл/каталог. */
+  deleteFsEntry(path: string): Promise<void>
+  /** Переименовать/переместить. */
+  renameFsEntry(from: string, to: string): Promise<void>
+  /** Создать каталог в текущем. */
+  mkdirFs(name: string): Promise<void>
   /** Отмена всех активных таймеров пайплайна (напр. при размонтировании). */
   dispose(): void
 }
@@ -399,6 +466,19 @@ function initialState(): AppState {
     cxTranscript: [],
     cxProjectCwd: null,
     cxSessionId: null,
+    usersOpen: false,
+    adminUsers: [],
+    adminSelected: null,
+    adminUsage: null,
+    adminConversations: [],
+    adminMessages: [],
+    adminConversationId: null,
+    fsOpen: false,
+    fsAgentId: null,
+    fsRoot: '',
+    fsCwd: '',
+    fsEntries: [],
+    fsError: null,
     speakingMessageId: null,
     ttsAvailable: false,
     error: null,
@@ -1124,6 +1204,208 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ cxTranscript: next.length > CC_TRANSCRIPT_CAP ? next.slice(-CC_TRANSCRIPT_CAP) : next })
   }
 
+  // --- Админ-страница пользователей ---------------------------------------
+
+  async function refreshAdminUsers(): Promise<void> {
+    if (!api['admin:users']) return
+    setState({ adminUsers: await api['admin:users']() })
+  }
+
+  async function openUsers(): Promise<void> {
+    setState({ usersOpen: true })
+    try {
+      await refreshAdminUsers()
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  function closeUsers(): void {
+    setState({
+      usersOpen: false,
+      adminSelected: null,
+      adminUsage: null,
+      adminConversations: [],
+      adminMessages: [],
+      adminConversationId: null
+    })
+  }
+
+  async function createUserAccount(name: string, password: string, role: 'admin' | 'user'): Promise<void> {
+    try {
+      await api['admin:createUser']({ name, password, role })
+      await refreshAdminUsers()
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  async function setUserBlocked(name: string, blocked: boolean): Promise<void> {
+    try {
+      await api['admin:setBlocked']({ name, blocked })
+      await refreshAdminUsers()
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  async function deleteUserAccount(name: string): Promise<void> {
+    try {
+      await api['admin:deleteUser']({ name })
+      if (state.adminSelected === name) closeUsers()
+      await refreshAdminUsers()
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  async function selectAdminUser(name: string): Promise<void> {
+    setState({
+      adminSelected: name,
+      adminUsage: null,
+      adminConversations: [],
+      adminMessages: [],
+      adminConversationId: null
+    })
+    try {
+      const [usage, conversations] = await Promise.all([
+        api['admin:usage']({ name, unit: 'day' }),
+        api['admin:conversations']({ name })
+      ])
+      setState({ adminUsage: usage, adminConversations: conversations })
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  async function loadAdminUsage(unit: UsageUnit, from?: number, to?: number): Promise<void> {
+    const name = state.adminSelected
+    if (!name) return
+    try {
+      setState({ adminUsage: await api['admin:usage']({ name, unit, from, to }) })
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  async function openAdminConversation(conversationId: string): Promise<void> {
+    const name = state.adminSelected
+    if (!name) return
+    setState({ adminConversationId: conversationId, adminMessages: [] })
+    try {
+      setState({ adminMessages: await api['admin:messages']({ name, conversationId }) })
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  // --- Файловый проводник по машине --------------------------------------
+
+  /** Применяет FsResult к состоянию (листинг обновляем, если пришёл). */
+  function applyFsResult(res: { root: string; cwd: string; entries?: FsEntry[] }): void {
+    setState({
+      fsRoot: res.root,
+      fsCwd: res.cwd,
+      ...(res.entries ? { fsEntries: res.entries } : {}),
+      fsError: null
+    })
+  }
+
+  function fsFail(err: unknown): void {
+    setState({ fsError: err instanceof Error ? err.message : String(err) })
+  }
+
+  function openFiles(): void {
+    setState({ fsOpen: true, fsError: null })
+    // Первая онлайн-машина пользователя как цель по умолчанию (иначе — первая).
+    const target = state.agents.find((a) => a.online) ?? state.agents[0]
+    if (target) void selectFsAgent(target.id)
+  }
+
+  function closeFiles(): void {
+    setState({ fsOpen: false, fsAgentId: null, fsRoot: '', fsCwd: '', fsEntries: [], fsError: null })
+  }
+
+  async function selectFsAgent(agentId: string): Promise<void> {
+    setState({ fsAgentId: agentId, fsEntries: [], fsError: null })
+    if (!deps.fs) return
+    try {
+      applyFsResult(await deps.fs.list(agentId, '')) // '' → корень
+    } catch (err) {
+      fsFail(err)
+    }
+  }
+
+  async function listFsDir(path: string): Promise<void> {
+    if (!deps.fs || !state.fsAgentId) return
+    try {
+      applyFsResult(await deps.fs.list(state.fsAgentId, path))
+    } catch (err) {
+      fsFail(err)
+    }
+  }
+
+  async function downloadFsFile(path: string, name: string): Promise<void> {
+    if (!deps.fs || !state.fsAgentId) return
+    try {
+      const res = await deps.fs.read(state.fsAgentId, path)
+      const bytes = Uint8Array.from(atob(res.dataBase64 ?? ''), (c) => c.charCodeAt(0))
+      const blob = new Blob([bytes], { type: 'application/octet-stream' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = name
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      fsFail(err)
+    }
+  }
+
+  /** Абсолютный дочерний путь в текущем каталоге проводника. */
+  function fsChild(name: string): string {
+    return `${state.fsCwd.replace(/\/$/, '')}/${name}`
+  }
+
+  async function uploadFsFile(file: File): Promise<void> {
+    if (!deps.fs || !state.fsAgentId) return
+    try {
+      const dataBase64 = await fileToBase64(file)
+      applyFsResult(await deps.fs.write(state.fsAgentId, fsChild(file.name), dataBase64))
+    } catch (err) {
+      fsFail(err)
+    }
+  }
+
+  async function deleteFsEntry(path: string): Promise<void> {
+    if (!deps.fs || !state.fsAgentId) return
+    try {
+      applyFsResult(await deps.fs.remove(state.fsAgentId, path))
+    } catch (err) {
+      fsFail(err)
+    }
+  }
+
+  async function renameFsEntry(from: string, to: string): Promise<void> {
+    if (!deps.fs || !state.fsAgentId) return
+    try {
+      applyFsResult(await deps.fs.rename(state.fsAgentId, from, to))
+    } catch (err) {
+      fsFail(err)
+    }
+  }
+
+  async function mkdirFs(name: string): Promise<void> {
+    if (!deps.fs || !state.fsAgentId) return
+    try {
+      applyFsResult(await deps.fs.mkdir(state.fsAgentId, fsChild(name)))
+    } catch (err) {
+      fsFail(err)
+    }
+  }
+
   function downloadVoice(id: string): void {
     if (!deps.startVoiceDownload || id in state.voiceDownloads) return
     setState({ voiceDownloads: { ...state.voiceDownloads, [id]: 0 }, error: null })
@@ -1679,6 +1961,23 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       selectCxSession,
       resumeCxSession,
       applyCxTailItems,
+      openUsers,
+      closeUsers,
+      createUserAccount,
+      setUserBlocked,
+      deleteUserAccount,
+      selectAdminUser,
+      loadAdminUsage,
+      openAdminConversation,
+      openFiles,
+      closeFiles,
+      selectFsAgent,
+      listFsDir,
+      downloadFsFile,
+      uploadFsFile,
+      deleteFsEntry,
+      renameFsEntry,
+      mkdirFs,
       applyVoiceProgress,
       applyVoiceDone,
       applyVoiceError,

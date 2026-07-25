@@ -102,6 +102,24 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'cx:sessions': ({ cwd }) => req(`${REST.cxSessions}?cwd=${encodeURIComponent(cwd)}`),
     'cx:transcript': ({ id, limit }) =>
       req(`${REST.cxTranscript}?id=${encodeURIComponent(id)}${limit ? `&limit=${limit}` : ''}`),
-    'cx:resume': ({ id }) => req(REST.cxResume, { method: 'POST', body: JSON.stringify({ id }) })
+    'cx:resume': ({ id }) => req(REST.cxResume, { method: 'POST', body: JSON.stringify({ id }) }),
+    'admin:users': () => req(REST.adminUsers),
+    'admin:createUser': (b) =>
+      req(REST.adminUsers, { method: 'POST', body: JSON.stringify(b) }),
+    'admin:setBlocked': async ({ name, blocked }) => {
+      await req(REST.adminUserBlock(name), { method: 'POST', body: JSON.stringify({ blocked }) })
+    },
+    'admin:deleteUser': async ({ name }) => {
+      await req(REST.adminUser(name), { method: 'DELETE' })
+    },
+    'admin:usage': ({ name, unit, from, to }) => {
+      const q = new URLSearchParams({ unit })
+      if (from) q.set('from', String(from))
+      if (to) q.set('to', String(to))
+      return req(`${REST.adminUserUsage(name)}?${q.toString()}`)
+    },
+    'admin:conversations': ({ name }) => req(REST.adminUserConversations(name)),
+    'admin:messages': ({ name, conversationId }) =>
+      req(`${REST.adminUserMessages(name)}?conversationId=${encodeURIComponent(conversationId)}`)
   }
 }
