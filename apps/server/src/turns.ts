@@ -164,8 +164,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // смене движка чужой resume-id игнорируем (свежий ход).
     const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)
     let permissionMode = settings.permissionMode
-    // Для удалённой машины каталог принадлежит разговору и существует на машине;
-    // локальный каталог по-прежнему проверяем на сервере.
+    // Рабочий каталог разговора (`conv.workdir`) выбирается через проводник
+    // МАШИНЫ — это путь на её хосте, и в контейнере сервера его нет. Он уходит
+    // только в MCP-мост (`&cwd=`), где `remote.bash` делает `cd` на агенте.
+    // Локальный `cwd` для процесса claude берём исключительно из серверных
+    // настроек и только если каталог реально существует здесь.
     const localCwd = settings.workdir && existsSync(settings.workdir) ? settings.workdir : undefined
     const attachmentPaths = (req.attachments ?? [])
       .map((id) => deps.resolveUpload?.(id))
@@ -213,7 +216,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         policySummary: policy ? policySummary(policy, conv?.skillNames ?? []) : undefined
       }
     }
-    const cwd = remote ? conv?.workdir ?? undefined : localCwd
+    // Никогда не подставляем сюда каталог машины: chdir в несуществующий (или
+    // чужой, вроде /root) путь роняет спавн с ENOENT/EACCES ещё до запуска CLI.
+    const cwd = localCwd
     // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
     // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
     // выполнения). На своей машине действия регулирует политика машины.
