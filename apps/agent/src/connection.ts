@@ -12,6 +12,7 @@ import {
 } from '@voicechat/shared'
 import type { AgentConfig } from './config.js'
 import { runCommand, cancelCommand } from './exec.js'
+import { fsDelete, fsList, fsMkdir, fsRead, fsRename, fsWrite } from './fileOps.js'
 
 const BACKOFF_START_MS = 1_000
 const BACKOFF_MAX_MS = 30_000
@@ -119,6 +120,41 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           handlers.onLog?.('отмена команды')
           cancelCommand(msg.execId)
           break
+        case 'fs.list':
+        case 'fs.read':
+        case 'fs.write':
+        case 'fs.delete':
+        case 'fs.rename':
+        case 'fs.mkdir': {
+          const root = config.rootDir
+          try {
+            let result
+            switch (msg.t) {
+              case 'fs.list':
+                result = fsList(root, policy, msg.path)
+                break
+              case 'fs.read':
+                result = fsRead(root, policy, msg.path)
+                break
+              case 'fs.write':
+                result = fsWrite(root, policy, msg.path, msg.dataBase64)
+                break
+              case 'fs.delete':
+                result = fsDelete(root, policy, msg.path)
+                break
+              case 'fs.rename':
+                result = fsRename(root, policy, msg.from, msg.to)
+                break
+              case 'fs.mkdir':
+                result = fsMkdir(root, policy, msg.path)
+                break
+            }
+            send({ t: 'fs.result', opId: msg.opId, result })
+          } catch (err) {
+            send({ t: 'fs.error', opId: msg.opId, message: err instanceof Error ? err.message : String(err) })
+          }
+          break
+        }
       }
     })
 

@@ -15,11 +15,12 @@ import type {
   WhisperModel,
   WhisperModelInfo
 } from './types'
+import type { AdminUserInfo, UsageReport, UsageUnit } from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
 import type { CxProject, CxSession, CxItem } from './codexSessions'
-import type { AgentCreated, AgentInfo, AgentPolicy } from './agentProtocol'
+import type { AgentCreated, AgentInfo, AgentPolicy, FsResult } from './agentProtocol'
 
 /** Статус локальной модели Whisper. */
 export interface SttStatus {
@@ -119,6 +120,14 @@ export interface IpcInvokeMap {
    * к session-id (следующий ход — через `codex exec resume <id>`).
    */
   'cx:resume': { arg: { id: string }; result: ConversationWithMessages }
+  // --- Админ-страница пользователей (только admin) ---
+  'admin:users': { arg: void; result: AdminUserInfo[] }
+  'admin:createUser': { arg: { name: string; password: string; role: 'admin' | 'user' }; result: AdminUserInfo }
+  'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
+  'admin:deleteUser': { arg: { name: string }; result: void }
+  'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number }; result: UsageReport }
+  'admin:conversations': { arg: { name: string }; result: Conversation[] }
+  'admin:messages': { arg: { name: string; conversationId: string }; result: Message[] }
 }
 
 export type IpcChannel = keyof IpcInvokeMap
@@ -318,6 +327,19 @@ export interface RendererSessionBridge {
 }
 
 /**
+ * Мост файлового проводника по машине-агенту (только web). Все операции —
+ * request/response поверх REST; возвращают FsResult (листинг/содержимое файла).
+ */
+export interface RendererFsBridge {
+  list(agentId: string, path: string): Promise<FsResult>
+  read(agentId: string, path: string): Promise<FsResult>
+  write(agentId: string, path: string, dataBase64: string): Promise<FsResult>
+  remove(agentId: string, path: string): Promise<FsResult>
+  rename(agentId: string, from: string, to: string): Promise<FsResult>
+  mkdir(agentId: string, path: string): Promise<FsResult>
+}
+
+/**
  * Мост Claude, доступный в renderer как `window.claude`: отправка реплики,
  * отмена и подписка на поток ответа (main → renderer).
  */
@@ -410,7 +432,14 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'cx:projects',
   'cx:sessions',
   'cx:transcript',
-  'cx:resume'
+  'cx:resume',
+  'admin:users',
+  'admin:createUser',
+  'admin:setBlocked',
+  'admin:deleteUser',
+  'admin:usage',
+  'admin:conversations',
+  'admin:messages'
 ]
 
 /**

@@ -12,8 +12,9 @@ import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
 import { registerAgentRoutes } from './routes/agents.js'
-import { registerAuth } from './users/auth.js'
-import { loadOrCreateSecret, verifyToken } from './users/accounts.js'
+import { registerAdminRoutes } from './routes/admin.js'
+import { registerAuth, resolveUser } from './users/auth.js'
+import { loadOrCreateSecret } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
 import { AgentRegistry } from './agents/registry.js'
 import { attachAgentWs } from './agents/wsAgent.js'
@@ -117,7 +118,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const sessionSecret =
     opts.sessionSecret ??
     (opts.db ? randomBytes(32).toString('hex') : loadOrCreateSecret(opts.config.dataDir))
-  registerAuth(app, sessionSecret)
+  db.ensureAdmin() // сид админа (пустой пароль по умолчанию)
+  registerAuth(app, db, sessionSecret)
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({ ok: true, version: VERSION }))
 
@@ -131,6 +133,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   const mcpSecret = randomBytes(16).toString('hex')
   registerRemoteBashMcp(app, agentRegistry, mcpSecret)
+
+  // Админ-страница пользователей (роуты под guard requireAdmin).
+  registerAdminRoutes(app, db, agentRegistry)
 
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
   // её выбор берём у канонического пользователя (admin), а не per-user.
@@ -239,9 +244,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         attachWs(socket, opts.createWsHandlers())
         return
       }
-      // Аутентификация WS: токен в query (?token=…). Нет/неверный → закрываем.
+      // Аутентификация WS: токен в query (?token=…). Нет/неверный/заблокирован → закрываем.
       const token = (request.query as { token?: string } | undefined)?.token
-      const user = verifyToken(token, sessionSecret)
+      const user = resolveUser(db, token, sessionSecret)
       if (!user) {
         socket.close()
         return

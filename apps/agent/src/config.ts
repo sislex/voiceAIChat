@@ -9,6 +9,8 @@ export interface AgentConfig {
   /** ws://host:port/agent */
   serverUrl: string
   token: string
+  /** Корневой каталог проводника (по умолчанию — где запущен агент). */
+  rootDir: string
 }
 
 const USAGE = `Использование:
@@ -46,5 +48,9 @@ export function loadConfig(
     console.error(USAGE)
     process.exit(1)
   }
-  return { serverUrl: normalizeServerUrl(finalServer), token: finalToken }
+  return {
+    serverUrl: normalizeServerUrl(finalServer),
+    token: finalToken,
+    rootDir: env.VC_AGENT_ROOT ?? process.cwd()
+  }
 }

@@ -394,3 +394,68 @@ describe('VoiceChatDb — агенты', () => {
     expect(db.findAgentByTokenHash(hashAgentToken(token))?.id).toBe(created.id)
   })
 })
+
+describe('VoiceChatDb — пользователи и админ-данные', () => {
+  let db: VoiceChatDb
+  beforeEach(() => {
+    db = makeDb()
+  })
+  afterEach(() => db.close())
+
+  it('ensureAdmin создаёт admin один раз', () => {
+    db.ensureAdmin()
+    db.ensureAdmin()
+    expect(db.listUsers().map((u) => u.name)).toEqual(['admin'])
+    expect(db.getUser('admin')?.role).toBe('admin')
+  })
+
+  it('createUser/getUser/verifyUserPassword/блокировка/удаление', () => {
+    db.createUser('bob', 'pw', 'user')
+    expect(db.getUser('bob')).toMatchObject({ name: 'bob', role: 'user', blocked: false })
+    expect(db.verifyUserPassword('bob', 'pw')?.name).toBe('bob')
+    expect(db.verifyUserPassword('bob', 'x')).toBeNull()
+    db.setUserBlocked('bob', true)
+    expect(db.getUser('bob')?.blocked).toBe(true)
+    db.deleteUser('bob')
+    expect(db.getUser('bob')).toBeNull()
+  })
+
+  it('deleteUserData стирает разговоры/агентов/настройки и учётку', () => {
+    db.createUser('bob', '', 'user')
+    const c = db.createConversation('bob', 'Чат')
+    db.addMessage('bob', c.id, 'u1', 'привет', '10:00')
+    db.createAgent('bob', 'BobBox')
+    db.saveSettings('bob', { ...DEFAULT_SETTINGS, model: 'sonnet' })
+
+    db.deleteUserData('bob')
+    expect(db.getUser('bob')).toBeNull()
+    expect(db.listConversations('bob')).toEqual([])
+    expect(db.listAgents('bob')).toEqual([])
+    // Настройки вернулись к дефолту (строка удалена).
+    expect(db.getSettings('bob').model).toBe(DEFAULT_SETTINGS.model)
+  })
+
+  it('usageReport суммирует токены ai-сообщений по моделям', () => {
+    const c = db.createConversation('bob', 'Чат')
+    const meta = (model: string, inTok: number, outTok: number) => ({
+      inputTokens: inTok,
+      outputTokens: outTok,
+      costUsd: 0.01,
+      model
+    })
+    db.addMessage('bob', c.id, 'u1', 'вопрос', '10:00')
+    db.addMessage('bob', c.id, 'ai', 'ответ1', '10:01', 'claude', meta('opus', 100, 20))
+    db.addMessage('bob', c.id, 'ai', 'ответ2', '10:02', 'claude', meta('opus', 50, 10))
+    db.addMessage('bob', c.id, 'ai', 'ответ3', '10:03', 'claude', meta('sonnet', 30, 5))
+
+    const rep = db.usageReport('bob', 'day')
+    expect(rep.totals.inputTokens).toBe(180)
+    expect(rep.totals.outputTokens).toBe(35)
+    expect(rep.totals.messages).toBe(3)
+    const opus = rep.byModel.find((m) => m.model === 'opus')!
+    expect(opus.inputTokens).toBe(150)
+    expect(opus.outputTokens).toBe(30)
+    // Изоляция: у другого пользователя пусто.
+    expect(db.usageReport('alice', 'day').totals.messages).toBe(0)
+  })
+})

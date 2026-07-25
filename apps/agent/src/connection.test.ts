@@ -30,7 +30,7 @@ describe('startConnection (handlers)', () => {
 
   it('шлёт agent.register на open и статус connecting→online', () => {
     const h = { onStatus: vi.fn(), onRegistered: vi.fn() }
-    startConnection({ serverUrl: 'ws://x/agent', token: 'tok' }, h)
+    startConnection({ serverUrl: 'ws://x/agent', token: 'tok', rootDir: '/tmp' }, h)
     expect(h.onStatus).toHaveBeenCalledWith('connecting')
     const ws = instances[0]
     ws.emit('open')
@@ -43,7 +43,7 @@ describe('startConnection (handlers)', () => {
 
   it('exec.start → onExec с командой', () => {
     const h = { onExec: vi.fn() }
-    startConnection({ serverUrl: 'ws://x/agent', token: 't' }, h)
+    startConnection({ serverUrl: 'ws://x/agent', token: 't', rootDir: '/tmp' }, h)
     const ws = instances[0]
     ws.emit('open')
     ws.emit('message', JSON.stringify({ t: 'exec.start', execId: 'e1', command: 'true', timeoutMs: 5000 }))
@@ -52,7 +52,7 @@ describe('startConnection (handlers)', () => {
 
   it('запрещённая политикой команда → exec.error без спавна', () => {
     const h = { onExecDone: vi.fn() }
-    startConnection({ serverUrl: 'ws://x/agent', token: 't' }, h)
+    startConnection({ serverUrl: 'ws://x/agent', token: 't', rootDir: '/tmp' }, h)
     const ws = instances[0]
     ws.emit('open')
     // Политика: запись запрещена.
@@ -80,7 +80,7 @@ describe('startConnection (handlers)', () => {
 
   it('agent.denied → onDenied без выхода процесса', () => {
     const h = { onDenied: vi.fn() }
-    startConnection({ serverUrl: 'ws://x/agent', token: 'bad' }, h)
+    startConnection({ serverUrl: 'ws://x/agent', token: 'bad', rootDir: '/tmp' }, h)
     const ws = instances[0]
     ws.emit('message', JSON.stringify({ t: 'agent.denied', reason: 'Неверный токен' }))
     expect(h.onDenied).toHaveBeenCalledWith('Неверный токен')
@@ -88,7 +88,7 @@ describe('startConnection (handlers)', () => {
 
   it('stop() закрывает и ставит статус stopped', () => {
     const h = { onStatus: vi.fn() }
-    const conn = startConnection({ serverUrl: 'ws://x/agent', token: 't' }, h)
+    const conn = startConnection({ serverUrl: 'ws://x/agent', token: 't', rootDir: '/tmp' }, h)
     conn.stop()
     expect(h.onStatus).toHaveBeenCalledWith('stopped')
   })

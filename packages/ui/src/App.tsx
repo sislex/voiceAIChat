@@ -8,6 +8,8 @@ import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen } from './components/LoginScreen'
 import { CcObserver } from './components/CcObserver'
+import { UsersAdmin } from './components/UsersAdmin'
+import { FileExplorer } from './components/FileExplorer'
 import { CodexObserver } from './components/CodexObserver'
 import { useVoiceStore } from './store/useVoiceStore'
 import { useVoiceCues } from './lib/useVoiceCues'
@@ -93,6 +95,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onOpenObserver={actions.openObserver}
         onOpenCodexObserver={actions.openCodexObserver}
         onOpenSettings={actions.openSettings}
+        onOpenFiles={state.authRequired ? actions.openFiles : undefined}
+        onOpenUsers={state.authRequired ? () => void actions.openUsers() : undefined}
         currentUser={state.currentUser}
         onLogout={state.authRequired ? () => void actions.logout() : undefined}
       />
@@ -184,6 +188,47 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onSelectSession={actions.selectCxSession}
           onResumeSession={(id) => void actions.resumeCxSession(id)}
           onClose={actions.closeCodexObserver}
+        />
+      )}
+
+      {state.usersOpen && (
+        <UsersAdmin
+          users={state.adminUsers}
+          selected={state.adminSelected}
+          usage={state.adminUsage}
+          conversations={state.adminConversations}
+          messages={state.adminMessages}
+          conversationId={state.adminConversationId}
+          currentUserName={state.currentUser?.name ?? ''}
+          onSelect={(name) => void actions.selectAdminUser(name)}
+          onCreate={(name, password, role) => void actions.createUserAccount(name, password, role)}
+          onSetBlocked={(name, blocked) => void actions.setUserBlocked(name, blocked)}
+          onDelete={(name) => void actions.deleteUserAccount(name)}
+          onLoadUsage={(unit) => void actions.loadAdminUsage(unit)}
+          onOpenConversation={(id) => void actions.openAdminConversation(id)}
+          onClose={actions.closeUsers}
+        />
+      )}
+
+      {state.fsOpen && (
+        <FileExplorer
+          agents={state.agents}
+          agentId={state.fsAgentId}
+          root={state.fsRoot}
+          cwd={state.fsCwd}
+          entries={state.fsEntries}
+          error={state.fsError}
+          writable={
+            state.agents.find((a) => a.id === state.fsAgentId)?.policy.allowWrite ?? false
+          }
+          onSelectAgent={(id) => void actions.selectFsAgent(id)}
+          onNavigate={(path) => void actions.listFsDir(path)}
+          onDownload={(path, name) => void actions.downloadFsFile(path, name)}
+          onUpload={(file) => void actions.uploadFsFile(file)}
+          onDelete={(path) => void actions.deleteFsEntry(path)}
+          onRename={(from, to) => void actions.renameFsEntry(from, to)}
+          onMkdir={(name) => void actions.mkdirFs(name)}
+          onClose={actions.closeFiles}
         />
       )}
 

@@ -9,11 +9,13 @@ import type {
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
+  RendererFsBridge,
   RendererSessionBridge,
   RendererSttBridge,
   RendererTtsBridge
 } from '@shared/ipc'
 import { REST } from '@shared/protocol'
+import type { FsResult } from '@shared/agentProtocol'
 import type { SessionUser } from '@shared/types'
 import { WsClient } from './wsClient'
 import { createHttpApi } from './httpApi'
@@ -135,6 +137,50 @@ function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessionBridg
   }
 }
 
+/** Мост файлового проводника поверх REST (с токеном сессии). */
+function makeFsBridge(httpBase: string): RendererFsBridge {
+  const authHeaders = (extra?: Record<string, string>): Record<string, string> => {
+    const t = getToken()
+    return { ...(t ? { authorization: `Bearer ${t}` } : {}), ...extra }
+  }
+  const asResult = async (res: Response): Promise<FsResult> => {
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string }
+      throw new Error(body.error ?? `HTTP ${res.status}`)
+    }
+    return res.json() as Promise<FsResult>
+  }
+  const q = (agentId: string, path: string): string =>
+    `${httpBase}${REST.agentFs(agentId)}?path=${encodeURIComponent(path)}`
+  return {
+    list: (id, path) => fetch(q(id, path), { headers: authHeaders() }).then(asResult),
+    read: (id, path) =>
+      fetch(`${httpBase}${REST.agentFsFile(id)}?path=${encodeURIComponent(path)}`, {
+        headers: authHeaders()
+      }).then(asResult),
+    write: (id, path, dataBase64) =>
+      fetch(`${httpBase}${REST.agentFsFile(id)}`, {
+        method: 'POST',
+        headers: authHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ path, dataBase64 })
+      }).then(asResult),
+    remove: (id, path) =>
+      fetch(q(id, path), { method: 'DELETE', headers: authHeaders() }).then(asResult),
+    rename: (id, from, to) =>
+      fetch(`${httpBase}${REST.agentFsRename(id)}`, {
+        method: 'POST',
+        headers: authHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ from, to })
+      }).then(asResult),
+    mkdir: (id, path) =>
+      fetch(`${httpBase}${REST.agentFsMkdir(id)}`, {
+        method: 'POST',
+        headers: authHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ path })
+      }).then(asResult)
+  }
+}
+
 /** http→ws, same-origin если base пустой. */
 function toWsBase(httpBase: string): string {
   if (httpBase) return httpBase.replace(/^http/, 'ws')
@@ -163,4 +209,5 @@ export function installRemoteBridges(serverHttp: string): void {
   window.codex = makeCodexBridge(ws)
   window.agents = makeAgentsBridge(ws)
   window.session = makeSessionBridge(httpBase, ws)
+  window.fs = makeFsBridge(httpBase)
 }

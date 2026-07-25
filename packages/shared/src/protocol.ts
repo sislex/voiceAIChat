@@ -97,6 +97,11 @@ export const REST = {
   agent: (id: string) => `/api/agents/${encodeURIComponent(id)}`,
   agentPolicy: (id: string) => `/api/agents/${encodeURIComponent(id)}/policy`,
   agentToken: (id: string) => `/api/agents/${encodeURIComponent(id)}/token`,
+  // --- Файловый проводник по машине ---
+  agentFs: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs`,
+  agentFsFile: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/file`,
+  agentFsRename: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/rename`,
+  agentFsMkdir: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/mkdir`,
   ccProjects: '/api/cc/projects',
   ccSessions: (slug: string) => `/api/cc/projects/${encodeURIComponent(slug)}/sessions`,
   ccTranscript: (slug: string, id: string) =>
@@ -105,7 +110,15 @@ export const REST = {
   cxProjects: '/api/cx/projects',
   cxSessions: '/api/cx/sessions',
   cxTranscript: '/api/cx/transcript',
-  cxResume: '/api/cx/resume'
+  cxResume: '/api/cx/resume',
+  // --- Админ-страница пользователей (только admin) ---
+  adminUsers: '/api/admin/users',
+  adminUser: (name: string) => `/api/admin/users/${encodeURIComponent(name)}`,
+  adminUserBlock: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/block`,
+  adminUserUsage: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/usage`,
+  adminUserConversations: (name: string) =>
+    `/api/admin/users/${encodeURIComponent(name)}/conversations`,
+  adminUserMessages: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/messages`
 } as const
 
 // --- WebSocket -----------------------------------------------------------

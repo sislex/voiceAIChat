@@ -1392,3 +1392,55 @@ describe('voiceStore — сессия/аутентификация (web)', () =>
     expect(store.getState().conversations).toEqual([])
   })
 })
+
+describe('voiceStore — файловый проводник', () => {
+  function makeFs() {
+    const listing = { root: '/r', cwd: '/r', entries: [{ name: 'a.txt', kind: 'file' as const, size: 1, mtime: 0 }] }
+    return {
+      list: vi.fn().mockResolvedValue(listing),
+      read: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r', dataBase64: btoa('hi'), name: 'a.txt' }),
+      write: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r', entries: [] }),
+      remove: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r', entries: [] }),
+      rename: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r', entries: [] }),
+      mkdir: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r/new', entries: [] })
+    }
+  }
+
+  it('selectFsAgent листит корень и заполняет состояние', async () => {
+    const fs = makeFs()
+    const store = createVoiceStore({ api: createFakeApi([]), fs })
+    await store.actions.selectFsAgent('m1')
+    expect(fs.list).toHaveBeenCalledWith('m1', '')
+    expect(store.getState().fsAgentId).toBe('m1')
+    expect(store.getState().fsRoot).toBe('/r')
+    expect(store.getState().fsEntries).toHaveLength(1)
+  })
+
+  it('mkdir строит абсолютный путь от cwd', async () => {
+    const fs = makeFs()
+    const store = createVoiceStore({ api: createFakeApi([]), fs })
+    await store.actions.selectFsAgent('m1')
+    await store.actions.mkdirFs('new')
+    expect(fs.mkdir).toHaveBeenCalledWith('m1', '/r/new')
+    expect(store.getState().fsCwd).toBe('/r/new')
+  })
+
+  it('ошибка операции пишется в fsError', async () => {
+    const fs = makeFs()
+    fs.list.mockRejectedValueOnce(new Error('offline'))
+    const store = createVoiceStore({ api: createFakeApi([]), fs })
+    await store.actions.selectFsAgent('m1')
+    expect(store.getState().fsError).toBe('offline')
+  })
+})
+
+describe('voiceStore — админ-страница пользователей', () => {
+  it('openUsers грузит список; createUserAccount обновляет его', async () => {
+    const store = createVoiceStore({ api: createFakeApi([]) })
+    await store.actions.openUsers()
+    expect(store.getState().usersOpen).toBe(true)
+    expect(store.getState().adminUsers.map((u) => u.name)).toContain('admin')
+    await store.actions.createUserAccount('bob', 'pw', 'user')
+    expect(store.getState().adminUsers.map((u) => u.name)).toContain('bob')
+  })
+})

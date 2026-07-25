@@ -20,7 +20,7 @@ describe('normalizeServerUrl', () => {
 describe('loadConfig', () => {
   it('читает флаги --server/--token', () => {
     const cfg = loadConfig(['--server', 'ws://h:1/agent', '--token', 't1'], {})
-    expect(cfg).toEqual({ serverUrl: 'ws://h:1/agent', token: 't1' })
+    expect(cfg).toEqual({ serverUrl: 'ws://h:1/agent', token: 't1', rootDir: process.cwd() })
   })
 
   it('флаги имеют приоритет над env', () => {
@@ -35,13 +35,13 @@ describe('loadConfig', () => {
   it('строка подключения (--connection) даёт server+token', () => {
     const conn = encodeAgentConnection({ server: 'ws://h:8787/agent', token: 'tok42' })
     const cfg = loadConfig(['--connection', conn], {})
-    expect(cfg).toEqual({ serverUrl: 'ws://h:8787/agent', token: 'tok42' })
+    expect(cfg).toEqual({ serverUrl: 'ws://h:8787/agent', token: 'tok42', rootDir: process.cwd() })
   })
 
   it('строка подключения из env VC_AGENT_CONNECTION', () => {
     const conn = encodeAgentConnection({ server: 'wss://host/agent', token: 't' })
     const cfg = loadConfig([], { VC_AGENT_CONNECTION: conn })
-    expect(cfg).toEqual({ serverUrl: 'wss://host/agent', token: 't' })
+    expect(cfg).toEqual({ serverUrl: 'wss://host/agent', token: 't', rootDir: process.cwd() })
   })
 
   it('явный --token перекрывает токен из строки подключения', () => {
