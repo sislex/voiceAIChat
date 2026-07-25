@@ -393,18 +393,19 @@ export function ChatColumn({
                 )}
                 {!isEditing && (
                   <div className="mfoot">
-                    {!isAi && onChangeMessageExecTarget && (
+                    {onChangeMessageExecTarget && (
                       <label className="msg-target" title="Машина этого сообщения">
+                        <span className="msg-target-label">Машина:</span>
                         <select
                           aria-label={`Машина сообщения ${m.id}`}
                           value={m.execTarget ?? ''}
                           onChange={(e) => onChangeMessageExecTarget(m.id, e.target.value || null)}
                         >
-                          <option value="">🖥 На сервере</option>
-                          <option value="none">⛔ Без машины</option>
+                          <option value="">Сервер</option>
+                          <option value="none">Без машины</option>
                           {agents.map((a) => (
                             <option key={a.id} value={a.id}>
-                              💻 {a.name}{a.online ? '' : ' (офлайн)'}
+                              {a.name}{a.online ? '' : ' (офлайн)'}
                             </option>
                           ))}
                         </select>
@@ -531,6 +532,9 @@ export function ChatColumn({
                 {speakerName('ai', diarization, aiLabel)}
               </span>
               <div className="bub">
+                <div className="live-machine" data-testid="live-machine">
+                  Машина: {execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === execTarget)?.name ?? 'Сервер'}
+                </div>
                 {liveActivity.length > 0 && (
                   <MessageActivity
                     live

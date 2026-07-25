@@ -2701,13 +2701,31 @@
   margin: 4px 2px 0;
 }
 
+.msg-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.msg-target-label { font-weight: 600; }
 .msg-target select {
   max-width: 190px;
   border: 0;
+  outline: 0;
   background: transparent;
-  color: var(--muted, #777);
+  color: inherit;
   font: inherit;
-  font-size: 11px;
   cursor: pointer;
+}
+.live-machine {
+  margin: 0 0 8px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
 }
 .exectarget-dot.disabled { background: #999; }
