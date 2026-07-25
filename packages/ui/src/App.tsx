@@ -100,6 +100,12 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         open={sidebarOpen}
         conversations={state.conversations}
         activeId={state.activeId}
+        workingIds={[
+          ...Object.keys(state.activeTurns),
+          ...((state.voice === 'thinking' || state.voice === 'speaking') && state.activeId
+            ? [state.activeId]
+            : [])
+        ]}
         now={now ? now() : Date.now()}
         onNew={() => {
           void actions.newConversation()
@@ -161,6 +167,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         voiceBar={
           <VoiceBar
             state={state.voice}
+            replyStarted={state.streamingReply.length > 0}
             draft={state.draft}
             diarization={state.settings.diarization}
             detectedSpeakers={detectedSpeakers}

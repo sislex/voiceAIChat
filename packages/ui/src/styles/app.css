@@ -103,6 +103,46 @@
   color: var(--text-dim);
   margin: 0;
 }
+.cstatus {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  margin: 3px 0 0 0;
+  color: var(--text-dim);
+}
+.cstatus-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #c2bfb2;
+  flex: none;
+}
+.cstatus.on {
+  color: #2e8b57;
+  font-weight: 700;
+}
+.cstatus.on .cstatus-dot {
+  background: #37b26b;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.7);
+  }
+}
+.micbtn:disabled,
+.sendbtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: #c2bfb2;
+}
 .crow {
   display: flex;
   align-items: flex-start;

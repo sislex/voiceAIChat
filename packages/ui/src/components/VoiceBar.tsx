@@ -2,7 +2,7 @@ import { useRef, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 
 import type { VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import { ACCENT, chipClass, speakerName, statusLine } from '../lib/view'
-import { WaveBars, EqBars, Dots } from './animations'
+import { WaveBars, Dots } from './animations'
 import { MicIcon, SendIcon, StopIcon } from './icons'
 
 export interface VoiceBarProps {
@@ -26,6 +26,8 @@ export interface VoiceBarProps {
   onRemoveAttachment: (id: string) => void
   /** Имя движка ответа (Claude / Codex) — для подписей статуса. */
   aiLabel?: string
+  /** Ответ уже начал стримиться (пошли токены) — держим поле ввода доступным для черновика. */
+  replyStarted?: boolean
 }
 
 export function VoiceBar({
@@ -42,21 +44,26 @@ export function VoiceBar({
   onCancelRequest,
   onAddFiles,
   onRemoveAttachment,
-  aiLabel = 'Claude'
+  aiLabel = 'Claude',
+  replyStarted = false
 }: VoiceBarProps): JSX.Element {
   const isIdle = state === 'idle'
   const isListening = state === 'listening'
   const isThinking = state === 'thinking' || state === 'transcribing'
   const isSpeaking = state === 'speaking'
+  // Композер доступен в idle, во время озвучки и как только пошёл стриминг ответа —
+  // можно печатать следующий вопрос черновиком. Отправка заблокирована до idle.
+  const composerMode = isIdle || isSpeaking || replyStarted
 
   const fileRef = useRef<HTMLInputElement>(null)
   const canSend = draft.trim().length > 0 || attachments.length > 0
+  const canSubmit = isIdle && canSend
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     // Enter — отправить, Shift+Enter — перенос строки (многострочный ввод).
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      if (canSend) onSubmitText()
+      if (canSubmit) onSubmitText()
     }
   }
 
@@ -117,7 +124,7 @@ export function VoiceBar({
         )}
 
         <div className="vrow" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
-          {isIdle && (
+          {composerMode && (
             <>
               <textarea
                 className="tin"
@@ -146,26 +153,47 @@ export function VoiceBar({
               >
                 📎
               </button>
-              {canSend ? (
-                <button
-                  className="micbtn sendbtn"
-                  style={{ background: ACCENT }}
-                  onClick={onSubmitText}
-                  title="Отправить сообщение"
-                  aria-label="Отправить сообщение"
-                >
-                  <SendIcon />
-                </button>
+              {isIdle ? (
+                canSend ? (
+                  <button
+                    className="micbtn sendbtn"
+                    style={{ background: ACCENT }}
+                    onClick={onSubmitText}
+                    title="Отправить сообщение"
+                    aria-label="Отправить сообщение"
+                  >
+                    <SendIcon />
+                  </button>
+                ) : (
+                  <button
+                    className="micbtn"
+                    style={{ background: ACCENT }}
+                    onClick={onStartVoice}
+                    title="Говорить"
+                    aria-label="Говорить"
+                  >
+                    <MicIcon />
+                  </button>
+                )
               ) : (
-                <button
-                  className="micbtn"
-                  style={{ background: ACCENT }}
-                  onClick={onStartVoice}
-                  title="Говорить"
-                  aria-label="Говорить"
-                >
-                  <MicIcon />
-                </button>
+                <>
+                  <button
+                    className="micbtn sendbtn"
+                    disabled
+                    title="Дождитесь завершения ответа, затем отправьте"
+                    aria-label="Отправить сообщение"
+                  >
+                    <SendIcon />
+                  </button>
+                  <button
+                    className="stopbtn"
+                    onClick={isSpeaking ? onStopSpeak : onCancelRequest}
+                    title={isSpeaking ? 'Остановить озвучку' : 'Остановить запрос'}
+                    aria-label={isSpeaking ? 'Остановить озвучку' : 'Остановить запрос'}
+                  >
+                    <StopIcon />
+                  </button>
+                </>
               )}
             </>
           )}
@@ -186,7 +214,7 @@ export function VoiceBar({
             </>
           )}
 
-          {isThinking && (
+          {isThinking && !replyStarted && (
             <>
               <div className="speak">
                 <Dots />
@@ -205,27 +233,6 @@ export function VoiceBar({
             </>
           )}
 
-          {isSpeaking && (
-            <>
-              <div className="speak">
-                <span className="eq">
-                  <EqBars />
-                </span>
-                <span className="fs13 fw7">{aiLabel} отвечает голосом…</span>
-                <span className="fs11" style={{ color: '#A5A296', marginLeft: 'auto' }}>
-                  TTS · локально
-                </span>
-              </div>
-              <button
-                className="stopbtn"
-                onClick={onStopSpeak}
-                title="Остановить озвучку"
-                aria-label="Остановить озвучку"
-              >
-                <StopIcon />
-              </button>
-            </>
-          )}
         </div>
 
         <p className="vstatus">{statusLine(state, aiLabel)}</p>

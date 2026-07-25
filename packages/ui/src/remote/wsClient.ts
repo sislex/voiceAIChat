@@ -12,6 +12,14 @@ export class WsClient {
   private queue: Array<string | ArrayBuffer> = []
   private listeners = new Map<string, Set<Listener>>()
   private closed = false
+  // Буфер сообщений, пришедших ДО регистрации слушателей: сокет открывается на
+  // загрузке модуля, а подписки — позже, в React-эффекте. Без буфера снапшот
+  // claude.active (шлётся один раз при открытии) терялся → частичный ответ пропадал
+  // после обновления страницы. Флашим микротаском при первой подписке — к этому
+  // моменту все синхронные on() текущего тика уже зарегистрированы.
+  private buffered: AnyServerMessage[] = []
+  private flushed = false
+  private flushScheduled = false
 
   /**
    * baseUrl — адрес /ws; tokenProvider даёт актуальный токен сессии. Если провайдер
@@ -47,8 +55,11 @@ export class WsClient {
       } catch {
         return
       }
-      const set = this.listeners.get(msg.t)
-      if (set) for (const l of set) l(msg)
+      if (!this.flushed) {
+        this.buffered.push(msg)
+        return
+      }
+      this.dispatch(msg)
     }
     ws.onclose = () => {
       this.ws = null
@@ -61,6 +72,28 @@ export class WsClient {
         // no-op
       }
     }
+  }
+
+  /** Доставка сообщения текущим слушателям его типа. */
+  private dispatch(msg: AnyServerMessage): void {
+    const set = this.listeners.get(msg.t)
+    if (set) for (const l of [...set]) l(msg)
+  }
+
+  /**
+   * Единичный флаш буфера на микротаске. Планируется из on(): к моменту выполнения
+   * все синхронные подписки тика уже добавлены, поэтому буфер доставляется в
+   * исходном порядке уже зарегистрированным слушателям.
+   */
+  private scheduleFlush(): void {
+    if (this.flushScheduled || this.flushed) return
+    this.flushScheduled = true
+    queueMicrotask(() => {
+      this.flushed = true
+      const items = this.buffered
+      this.buffered = []
+      for (const m of items) this.dispatch(m)
+    })
   }
 
   send(msg: ClientMessage): void {
@@ -86,6 +119,7 @@ export class WsClient {
     }
     const listener = cb as Listener
     set.add(listener)
+    if (!this.flushed) this.scheduleFlush()
     return () => {
       set!.delete(listener)
     }
