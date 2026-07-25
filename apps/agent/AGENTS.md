@@ -1,0 +1,37 @@
+# @voicechat/agent — компаньон-агент на машине пользователя
+
+Консольное приложение: подключается к серверу по WS (`/agent`), авторизуется
+токеном машины и выполняет команды, файловые операции, живой PTY, шлёт телеметрию.
+Работает на Linux, macOS и Android (Termux). Windows/ConPTY не поддерживаем.
+
+## Раскладка
+
+`index.ts` (CLI-аргументы/env, запуск), `config.ts`, `connection.ts` (WS,
+реконнект с backoff до 30 с, маршрутизация сообщений), `exec.ts` (спавн команды,
+стрим stdout/stderr, таймаут, отмена), `pty.ts` (живой терминал через
+`@lydell/node-pty`), `fileOps.ts` (проводник), `telemetry.ts`, `platform.ts`.
+
+## Правила
+
+- **Любой спавн — через `platform.ts` (`resolveShell()`)**, никогда не хардкодь
+  `/bin/bash`: в Termux его нет, бинарники в `/data/data/com.termux/files/usr/bin`,
+  PATH бывает урезан. `exec` и `pty` обязаны выбирать shell одинаково.
+- Агент раздаётся как **самодостаточный `voicechat-agent.cjs`**, который собирает
+  сервер (`apps/server/src/agents/agentScript.ts`, esbuild, CJS). Значит: новые
+  зависимости должны бандлиться или быть опциональными. `@lydell/node-pty`
+  нативный и намеренно **не** бандлится — грузится `require` в рантайме, при
+  отсутствии `startPty` ловит ошибку и терминал деградирует, `exec` продолжает
+  работать. Такой же приём применяй к любой новой нативной зависимости.
+- Новая возможность → бампни `AGENT_VERSION` и допиши `TOOL_MIN_VERSION` в
+  `packages/shared/src/version.ts`, иначе сервер разрешит вызов старому агенту.
+- Гейт политики (`evaluateAgentCommand`) применяется к однострочному `exec`;
+  внутри живого PTY per-command гейта нет — это доверенный shell пользователя.
+- Модули без WS (exec, fileOps, telemetry, platform, pty) тестируются напрямую;
+  так и держи — не тащи сокет в логику.
+
+Запуск для разработки:
+`npx tsx apps/agent/src/index.ts --server ws://<сервер>:8787/agent --token <токен>`
+(или `VC_AGENT_SERVER` / `VC_AGENT_TOKEN`).
+
+Гейт: `npm run -w @voicechat/agent typecheck && npm run -w @voicechat/agent test`.
+Подробности: `docs/kb/machines.md`, `README.md`, `ANDROID.md`.

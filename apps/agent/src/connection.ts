@@ -176,7 +176,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           cancelCommand(msg.execId)
           break
         case 'pty.start':
-          // Живой терминал: доверенный shell без per-command гейта (см. PTY_CONSOLE.md).
+          // Живой терминал: доверенный shell без per-command гейта (см. docs/plans/PTY_CONSOLE.md).
           handlers.onLog?.(`терминал открыт (${msg.ptyId})`)
           startPty(msg.ptyId, msg.cols, msg.rows, config.rootDir, send)
           break

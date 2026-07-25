@@ -12,6 +12,10 @@
   ],
   "scripts": {
     "dev:web": "bash scripts/dev-web.sh",
+    "kb": "node scripts/kb.mjs",
+    "kb:check": "node scripts/kb.mjs check",
+    "kb:index": "node scripts/kb.mjs index",
+    "kb:log": "node scripts/kb.mjs log",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
