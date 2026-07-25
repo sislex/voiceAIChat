@@ -34,11 +34,22 @@ describe('startConnection (handlers)', () => {
     expect(h.onStatus).toHaveBeenCalledWith('connecting')
     const ws = instances[0]
     ws.emit('open')
-    expect(JSON.parse(ws.sent[0])).toEqual({ t: 'agent.register', token: 'tok' })
+    const reg = JSON.parse(ws.sent[0])
+    expect(reg.t).toBe('agent.register')
+    expect(reg.token).toBe('tok')
+    expect(typeof reg.version).toBe('string') // рапортует свою версию
 
     ws.emit('message', JSON.stringify({ t: 'agent.registered', name: 'MacBook' }))
     expect(h.onStatus).toHaveBeenCalledWith('online')
     expect(h.onRegistered).toHaveBeenCalledWith('MacBook')
+  })
+
+  it('agent.updateAvailable → onUpdateAvailable(version)', () => {
+    const h = { onUpdateAvailable: vi.fn() }
+    startConnection({ serverUrl: 'ws://x/agent', token: 't', rootDir: '/tmp' }, h)
+    const ws = instances[0]
+    ws.emit('message', JSON.stringify({ t: 'agent.updateAvailable', version: '9.9.9' }))
+    expect(h.onUpdateAvailable).toHaveBeenCalledWith('9.9.9')
   })
 
   it('exec.start → onExec с командой', () => {

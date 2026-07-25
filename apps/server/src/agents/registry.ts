@@ -4,6 +4,9 @@
 import { randomUUID } from 'node:crypto'
 import {
   evaluateAgentCommand,
+  isToolAllowed,
+  requiredVersion,
+  AGENT_VERSION,
   DEFAULT_AGENT_POLICY,
   type AgentPolicy,
   type AgentToServer,
@@ -54,6 +57,8 @@ interface OnlineAgent {
   name: string
   socket: AgentSocket
   policy: AgentPolicy
+  /** Версия подключённого агента (legacy без рапорта → '0.1.0'). */
+  version: string
 }
 
 export class AgentRegistry {
@@ -67,7 +72,13 @@ export class AgentRegistry {
     this.newId = deps.newId ?? (() => randomUUID())
   }
 
-  register(agentId: string, name: string, socket: AgentSocket, policy = DEFAULT_AGENT_POLICY): void {
+  register(
+    agentId: string,
+    name: string,
+    socket: AgentSocket,
+    policy = DEFAULT_AGENT_POLICY,
+    version = '0.1.0'
+  ): void {
     // Повторное подключение с тем же токеном вытесняет старое соединение.
     const prev = this.online.get(agentId)
     if (prev) {
@@ -78,8 +89,28 @@ export class AgentRegistry {
         /* уже закрыт */
       }
     }
-    this.online.set(agentId, { name, socket, policy })
+    this.online.set(agentId, { name, socket, policy, version })
     this.emitChange()
+  }
+
+  /** Версия подключённого агента (undefined — офлайн). */
+  versionOf(agentId: string): string | undefined {
+    return this.online.get(agentId)?.version
+  }
+
+  /**
+   * Проверяет, что версия агента достаточна для тула. Если нет — шлёт агенту
+   * сигнал об обновлении и возвращает ошибку (иначе null). Офлайн — null
+   * (это обработают проверки «не в сети» в exec/runFs).
+   */
+  private versionError(agentId: string, tool: string): Error | null {
+    const a = this.online.get(agentId)
+    if (!a || isToolAllowed(a.version, tool)) return null
+    this.send(agentId, { t: 'agent.updateAvailable', version: AGENT_VERSION })
+    return new Error(
+      `Агент на «${a.name}» устарел (v${a.version}). Нужна ≥ v${requiredVersion(tool)}. ` +
+        `Обновите приложение на машине (в трее — «Проверить обновления»).`
+    )
   }
 
   /** Убирает агента из онлайна и отклоняет все его незавершённые команды. */
@@ -165,6 +196,8 @@ export class AgentRegistry {
     const agent = this.online.get(agentId)
     if (!agent) return Promise.reject(new Error('Машина не в сети'))
     if (signal?.aborted) return Promise.reject(new Error('Команда отменена'))
+    const ve = this.versionError(agentId, 'exec')
+    if (ve) return Promise.reject(ve)
 
     // Серверная проверка политики (первый барьер; агент проверяет ещё раз локально).
     const verdict = evaluateAgentCommand(agent.policy, command)
@@ -214,6 +247,8 @@ export class AgentRegistry {
   /** Отправляет файловую операцию агенту и ждёт fs.result/fs.error (по opId). */
   private runFs(agentId: string, make: (opId: string) => FsOp): Promise<FsResult> {
     if (!this.online.has(agentId)) return Promise.reject(new Error('Машина не в сети'))
+    const ve = this.versionError(agentId, 'fs')
+    if (ve) return Promise.reject(ve)
     const opId = this.newId()
     return new Promise<FsResult>((resolve, reject) => {
       const timer = setTimeout(() => {

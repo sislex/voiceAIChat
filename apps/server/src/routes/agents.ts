@@ -3,7 +3,7 @@
 
 import { createReadStream, existsSync } from 'node:fs'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { REST, type AgentInfo, type AgentPolicy } from '@voicechat/shared'
+import { REST, AGENT_VERSION, type AgentInfo, type AgentPolicy } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import type { AgentRegistry } from '../agents/registry.js'
@@ -39,12 +39,19 @@ export async function registerAgentRoutes(
 ): Promise<void> {
   app.get(REST.agents, async (req): Promise<AgentInfo[]> => {
     const online = registry.onlineIds()
-    return db.listAgents(uid(req)).map((a) => ({ ...a, online: online.has(a.id) }))
+    return db.listAgents(uid(req)).map((a) => ({
+      ...a,
+      online: online.has(a.id),
+      version: registry.versionOf(a.id)
+    }))
   })
 
   // Владеет ли текущий пользователь машиной id (для операций над ней).
   const ownsAgent = (userId: string, id: string): boolean =>
     db.listAgents(userId).some((a) => a.id === id)
+
+  // Последняя доступная версия агента (публично — трей проверяет обновления).
+  app.get(REST.agentLatestVersion, async () => ({ version: AGENT_VERSION }))
 
   // Собранные .dmg. Собираются заранее (npm --prefix … run dist).
   app.get(REST.agentApp, async (_req, reply) =>

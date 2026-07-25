@@ -40,7 +40,8 @@ export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: Agen
         return
       }
       agentId = rec.id
-      registry.register(rec.id, rec.name, socket, rec.policy)
+      // Версия из рапорта агента; отсутствует (старый агент) → legacy '0.1.0'.
+      registry.register(rec.id, rec.name, socket, rec.policy, msg.version ?? '0.1.0')
       db.touchAgent(rec.id)
       send({ t: 'agent.registered', name: rec.name, policy: rec.policy })
       pingTimer = setInterval(() => {

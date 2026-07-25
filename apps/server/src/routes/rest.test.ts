@@ -454,4 +454,10 @@ describe('REST: утилиты машины (exec/fs)', () => {
     const res = await inj({ method: 'GET', url: `/api/agents/${created.id}/fs?path=` })
     expect(res.statusCode).toBe(400)
   })
+
+  it('GET /api/agents/version публичен и отдаёт версию', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/agents/version' }) // без токена
+    expect(res.statusCode).toBe(200)
+    expect(typeof res.json().version).toBe('string')
+  })
 })

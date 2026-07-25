@@ -231,7 +231,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         // Список машин — только этого пользователя (изоляция).
         list: () => {
           const online = agentRegistry.onlineIds()
-          return db.listAgents(user.name).map((a) => ({ ...a, online: online.has(a.id) }))
+          return db.listAgents(user.name).map((a) => ({
+            ...a,
+            online: online.has(a.id),
+            version: agentRegistry.versionOf(a.id)
+          }))
         },
         subscribe: (cb) => agentRegistry.onChange(cb)
       }
