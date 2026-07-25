@@ -52,6 +52,8 @@ export interface StartTurnRequest {
   segments: SttSegmentWire[]
   attachments?: string[]
   verbose?: boolean
+  /** Цель конкретного сообщения: id, null — сервер, 'none' — запрет команд. */
+  execTarget?: string | null
 }
 
 export interface TurnManager {
@@ -174,9 +176,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     )
     // Цель выполнения команд: выбранная машина-агент. Только своя машина
     // (чужую игнорируем → выполняем на сервере). Офлайн своей — сразу ошибка.
+    const requestedTarget = req.execTarget === undefined ? settings.execTarget : req.execTarget
+    const executionDisabled = requestedTarget === 'none'
     const target =
-      settings.execTarget && deps.db.listAgents(userId).some((a) => a.id === settings.execTarget)
-        ? settings.execTarget
+      !executionDisabled && requestedTarget && deps.db.listAgents(userId).some((a) => a.id === requestedTarget)
+        ? requestedTarget
         : null
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     if (target && deps.agents && deps.mcpBaseUrl) {
@@ -201,7 +205,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
     // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
     // выполнения). На своей машине действия регулирует политика машины.
-    if (role === 'user' && !remote) permissionMode = 'plan'
+    if (executionDisabled || (role === 'user' && !remote)) permissionMode = 'plan'
     // Полный контекст хода: все сообщения разговора на момент отправки
     // (реплика пользователя уже сохранена клиентом перед claude.send).
     const contextMessages = deps.db
@@ -217,7 +221,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ...(permissionMode ? { permissionMode } : {}),
       ...(cwd ? { cwd } : {}),
       ...(attachmentPaths.length ? { attachments: attachmentPaths } : {}),
-      ...(remote ? { execTarget: remote.agentName } : {}),
+      ...(executionDisabled ? { execTarget: 'Без машины (команды запрещены)' } : remote ? { execTarget: remote.agentName } : {}),
       ...(contextMessages.length ? { messages: contextMessages } : {})
     }
     // Окружение хода из system/init (инструменты/навыки/mcp) — только claude.
@@ -237,7 +241,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       if (turns.get(conversationId) === turn) turns.delete(conversationId)
     }
     turn.handle = client.send(
-      { prompt, sessionId, model, permissionMode, cwd, remote },
+      { userId, prompt, sessionId, model, permissionMode, cwd, remote, executionDisabled },
       {
         onSession: (sid) => deps.db.setClaudeSession(userId, conversationId, `${provider}:${sid}`),
         onInit: (info) => {

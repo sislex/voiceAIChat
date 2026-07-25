@@ -113,6 +113,7 @@ interface MessageRow {
   created_at: number
   engine: string | null
   meta: string | null
+  exec_target: string | null
 }
 
 /**
@@ -158,6 +159,9 @@ export class VoiceChatDb {
     }
     if (!msgCols.some((c) => c.name === 'meta')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN meta TEXT`)
+    }
+    if (!msgCols.some((c) => c.name === 'exec_target')) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN exec_target TEXT`)
     }
     // Многопользовательский режим: строки без владельца (legacy однопользовательских
     // данных) удаляем — чистый старт. Идемпотентно: после первого прогона NULL нет.
@@ -261,7 +265,8 @@ export class VoiceChatDb {
     text: string,
     time: string,
     engine?: LlmProvider,
-    meta?: TurnMeta
+    meta?: TurnMeta,
+    execTarget?: string | null
   ): Message {
     if (!this.ownsConversation(userId, conversationId)) {
       throw new Error(`Разговор ${conversationId} не принадлежит пользователю`)
@@ -269,13 +274,13 @@ export class VoiceChatDb {
     const id = this.newId()
     const createdAt = this.now()
     const insert = this.db.prepare(
-      `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     const touch = this.db.prepare(`UPDATE conversations SET updated_at = ? WHERE id = ?`)
     const metaJson = meta && Object.keys(meta).length > 0 ? JSON.stringify(meta) : null
     this.db.transaction(() => {
-      insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson)
+      insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson, execTarget ?? null)
       touch.run(createdAt, conversationId)
     })()
     return {
@@ -286,8 +291,15 @@ export class VoiceChatDb {
       time,
       createdAt,
       ...(engine ? { engine } : {}),
-      ...(meta && Object.keys(meta).length > 0 ? { meta } : {})
+      ...(meta && Object.keys(meta).length > 0 ? { meta } : {}),
+      ...(execTarget !== undefined ? { execTarget } : {})
     }
+  }
+
+  setMessageExecTarget(userId: string, conversationId: string, messageId: string, execTarget: string | null): Message | null {
+    if (!this.ownsConversation(userId, conversationId)) return null
+    this.db.prepare(`UPDATE messages SET exec_target = ? WHERE id = ? AND conversation_id = ?`).run(execTarget, messageId, conversationId)
+    return this.listMessages(userId, conversationId).find((m) => m.id === messageId) ?? null
   }
 
   /** Удаляет одно сообщение по id (в рамках разговора пользователя). */
@@ -313,7 +325,8 @@ export class VoiceChatDb {
       time: r.time,
       createdAt: r.created_at,
       ...(r.engine ? { engine: r.engine as LlmProvider } : {}),
-      ...(r.meta ? { meta: parseMeta(r.meta) } : {})
+      ...(r.meta ? { meta: parseMeta(r.meta) } : {}),
+      ...(r.exec_target !== null ? { execTarget: r.exec_target } : {})
     }))
   }
 

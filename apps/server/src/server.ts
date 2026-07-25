@@ -42,6 +42,7 @@ import { registerAnthropicGateway } from './anthropic/gateway.js'
 import { detectResources } from './system/resources.js'
 import { computeCapabilities } from './system/capabilities.js'
 import type { SystemCapabilities } from '@voicechat/shared'
+import { ensureCliProfile } from './users/cliProfiles.js'
 
 const VERSION = '0.1.0'
 
@@ -127,10 +128,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({ ok: true, version: VERSION }))
 
-  await registerRest(app, db)
+  await registerRest(app, db, opts.config.dataDir)
 
-  const claude = opts.claude ?? new ClaudeCli()
-  const codex = opts.codex ?? new CodexCli()
+  const profileHome = (userId: string): string =>
+    ensureCliProfile(opts.config.dataDir, userId).home
+  const claude = opts.claude ?? new ClaudeCli({ profileHome })
+  const codex = opts.codex ?? new CodexCli({ profileHome })
 
   // Входящий Anthropic Messages API для подключения внешнего Claude Code CLI.
   // Авторизация клиента намеренно отсутствует: маршрут предназначен для закрытой сети.

@@ -48,6 +48,7 @@ interface MessageRow {
   created_at: number
   engine: string | null
   meta: string | null
+  exec_target: string | null
 }
 
 /**
@@ -80,6 +81,9 @@ export class VoiceChatDb {
     }
     if (!msgCols.some((c) => c.name === 'meta')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN meta TEXT`)
+    }
+    if (!msgCols.some((c) => c.name === 'exec_target')) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN exec_target TEXT`)
     }
   }
 
@@ -194,6 +198,11 @@ export class VoiceChatDb {
     }
   }
 
+  setMessageExecTarget(conversationId: string, messageId: string, execTarget: string | null): Message | null {
+    this.db.prepare(`UPDATE messages SET exec_target = ? WHERE id = ? AND conversation_id = ?`).run(execTarget, messageId, conversationId)
+    return this.listMessages(conversationId).find((m) => m.id === messageId) ?? null
+  }
+
   /** Удаляет одно сообщение по id (в рамках разговора). */
   deleteMessage(conversationId: string, messageId: string): void {
     this.db
@@ -215,7 +224,8 @@ export class VoiceChatDb {
       time: r.time,
       createdAt: r.created_at,
       ...(r.engine ? { engine: r.engine as LlmProvider } : {}),
-      ...(r.meta ? { meta: parseMeta(r.meta) } : {})
+      ...(r.meta ? { meta: parseMeta(r.meta) } : {}),
+      ...(r.exec_target !== null ? { execTarget: r.exec_target } : {})
     }))
   }
 

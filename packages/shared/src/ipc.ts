@@ -46,6 +46,8 @@ export interface AddMessageArgs {
   engine?: LlmProvider
   /** Метаданные хода (токены/тайминги/детали запроса) — для роли 'ai'. */
   meta?: TurnMeta
+  /** Цель этой реплики: id машины, null — сервер, 'none' — команды запрещены. */
+  execTarget?: string | null
 }
 
 /** Метаданные загруженного вложения. */
@@ -68,6 +70,7 @@ export interface IpcInvokeMap {
   'conversations:rename': { arg: { id: string; title: string }; result: void }
   'conversations:delete': { arg: { id: string }; result: void }
   'messages:add': { arg: AddMessageArgs; result: Message }
+  'messages:setExecTarget': { arg: { conversationId: string; messageId: string; execTarget: string | null }; result: Message }
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }
   'uploads:add': { arg: { name: string; dataBase64: string }; result: UploadInfo }
   'settings:get': { arg: void; result: Settings }
@@ -162,6 +165,8 @@ export interface IpcSendMap {
     segments: SttSegmentWire[]
     attachments?: string[]
     verbose?: boolean
+    /** Цель именно этого хода: id машины, null — сервер, 'none' — без команд. */
+    execTarget?: string | null
   }
   /** Прервать запрос к Claude (conversationId — какой ход; без него — все). */
   'claude:cancel': { conversationId?: string } | undefined
@@ -426,6 +431,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:rename',
   'conversations:delete',
   'messages:add',
+  'messages:setExecTarget',
   'messages:delete',
   'uploads:add',
   'settings:get',
