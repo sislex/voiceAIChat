@@ -9,6 +9,7 @@ import {
   AGENT_VERSION,
   DEFAULT_AGENT_POLICY,
   type AgentPolicy,
+  type AgentTelemetry,
   type AgentToServer,
   type FsOp,
   type FsResult,
@@ -78,6 +79,7 @@ export class AgentRegistry {
   private readonly pending = new Map<string, PendingExec>()
   private readonly pendingFs = new Map<string, PendingFs>()
   private readonly ptys = new Map<string, PtySession>()
+  private readonly telemetry = new Map<string, AgentTelemetry>()
   private readonly newId: () => string
   private readonly changeListeners = new Set<() => void>()
 
@@ -111,6 +113,18 @@ export class AgentRegistry {
     return this.online.get(agentId)?.version
   }
 
+  /** Последняя телеметрия онлайн-агента (undefined — нет данных/офлайн). */
+  telemetryOf(agentId: string): AgentTelemetry | undefined {
+    return this.telemetry.get(agentId)
+  }
+
+  /** Сохраняет свежую телеметрию агента и уведомляет подписчиков (пуш веб-клиенту). */
+  private setTelemetry(agentId: string, t: AgentTelemetry): void {
+    if (!this.online.has(agentId)) return
+    this.telemetry.set(agentId, t)
+    this.emitChange()
+  }
+
   /**
    * Проверяет, что версия агента достаточна для тула. Если нет — шлёт агенту
    * сигнал об обновлении и возвращает ошибку (иначе null). Офлайн — null
@@ -129,6 +143,7 @@ export class AgentRegistry {
   /** Убирает агента из онлайна и отклоняет все его незавершённые команды. */
   unregister(agentId: string): void {
     const had = this.online.delete(agentId)
+    this.telemetry.delete(agentId)
     for (const [execId, p] of this.pending) {
       if (p.agentId !== agentId) continue
       this.pending.delete(execId)
@@ -359,6 +374,10 @@ export class AgentRegistry {
   handleMessage(agentId: string, msg: AgentToServer): void {
     if (msg.t === 'agent.register') return // повторная регистрация — игнор
     if (msg.t === 'agent.setPolicy') return // обрабатывается в wsAgent (нужен owner/БД)
+    if (msg.t === 'agent.telemetry') {
+      this.setTelemetry(agentId, msg.telemetry)
+      return
+    }
     if (msg.t === 'fs.result' || msg.t === 'fs.error') {
       const pf = this.pendingFs.get(msg.opId)
       if (!pf || pf.agentId !== agentId) return

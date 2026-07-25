@@ -42,7 +42,8 @@ export async function registerAgentRoutes(
     return db.listAgents(uid(req)).map((a) => ({
       ...a,
       online: online.has(a.id),
-      version: registry.versionOf(a.id)
+      version: registry.versionOf(a.id),
+      telemetry: registry.telemetryOf(a.id)
     }))
   })
 

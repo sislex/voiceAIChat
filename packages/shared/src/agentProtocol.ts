@@ -33,6 +33,49 @@ export interface FsResult {
   name?: string
 }
 
+/** Использование дискового раздела (байты). */
+export interface DiskUsage {
+  totalBytes: number
+  freeBytes: number
+}
+
+/** Живая телеметрия машины-агента: ОС, загрузка, диск, батарея. */
+export interface AgentTelemetry {
+  /** Когда собрана (UNIX мс). */
+  ts: number
+  os: {
+    /** os.platform(): 'linux' | 'darwin' | 'win32' … */
+    platform: string
+    /** Релиз/версия ядра (os.release()). */
+    release: string
+    /** Архитектура (os.arch()). */
+    arch: string
+    /** Работает ли агент в Termux (Android). */
+    isAndroid: boolean
+  }
+  cpu: {
+    /** Число логических ядер. */
+    count: number
+    /** Загрузка CPU в процентах (0–100), усреднённая за интервал сбора. */
+    loadPct: number
+  }
+  mem: {
+    totalBytes: number
+    usedBytes: number
+  }
+  disk: {
+    /** Корневой раздел (/). */
+    root?: DiskUsage
+    /** Рабочий каталог агента. */
+    work?: DiskUsage
+  }
+  /** Батарея (только Android с termux-api); иначе отсутствует. */
+  battery?: {
+    percent: number
+    charging: boolean
+  }
+}
+
 /** Сообщения агент → сервер. */
 export type AgentToServer =
   | { t: 'agent.register'; token: string; version?: string }
@@ -45,6 +88,7 @@ export type AgentToServer =
   | { t: 'fs.result'; opId: string; result: FsResult }
   | { t: 'fs.error'; opId: string; message: string }
   | { t: 'agent.setPolicy'; policy: AgentPolicy }
+  | { t: 'agent.telemetry'; telemetry: AgentTelemetry }
 
 /** Именованный скрипт («навык»), разрешённый к запуску на машине. */
 export interface AgentSkill {
@@ -162,6 +206,8 @@ export interface AgentInfo {
   policy: AgentPolicy
   /** Версия подключённого агента (только когда online; иначе не задана). */
   version?: string
+  /** Последняя телеметрия машины (только когда online; иначе не задана). */
+  telemetry?: AgentTelemetry
 }
 
 /** Ответ на создание агента: токен возвращается только здесь, один раз. */

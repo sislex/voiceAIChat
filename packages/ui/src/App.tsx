@@ -9,6 +9,7 @@ import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen } from './components/LoginScreen'
 import { CcObserver } from './components/CcObserver'
 import { UsersAdmin } from './components/UsersAdmin'
+import { MachineStatus } from './components/MachineStatus'
 import { MachineUtility } from './components/MachineUtility'
 import type { MachineOps } from './components/machine'
 import { CodexObserver } from './components/CodexObserver'
@@ -125,6 +126,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onOpenFiles={state.authRequired ? menu(() => actions.openUtility('explorer')) : undefined}
         onOpenConsole={state.authRequired ? menu(() => actions.openUtility('console')) : undefined}
         onOpenUsers={state.authRequired ? menu(() => void actions.openUsers()) : undefined}
+        onOpenMachines={state.authRequired ? menu(actions.openMachines) : undefined}
         currentUser={state.currentUser}
         onLogout={state.authRequired ? () => void actions.logout() : undefined}
       />
@@ -219,6 +221,14 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onSelectSession={actions.selectCxSession}
           onResumeSession={(id) => void actions.resumeCxSession(id)}
           onClose={actions.closeCodexObserver}
+        />
+      )}
+
+      {state.machinesOpen && (
+        <MachineStatus
+          agents={state.agents}
+          onSetPolicy={(id, policy) => void actions.setAgentPolicy(id, policy)}
+          onClose={actions.closeMachines}
         />
       )}
 

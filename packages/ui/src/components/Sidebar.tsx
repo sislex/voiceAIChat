@@ -52,6 +52,8 @@ export interface SidebarProps {
   onOpenConsole?: () => void
   /** Открыть админ-страницу пользователей (только admin). */
   onOpenUsers?: () => void
+  /** Открыть меню «Машины» (статус агентских машин; web). */
+  onOpenMachines?: () => void
   /** Текущий пользователь (web-режим); null/без имени — строка входа не показывается. */
   currentUser?: SessionUser | null
   /** Выйти из сессии (web). */
@@ -77,6 +79,7 @@ export function Sidebar({
   onOpenFiles,
   onOpenConsole,
   onOpenUsers,
+  onOpenMachines,
   currentUser,
   onLogout,
   open = false
@@ -242,6 +245,12 @@ export function Sidebar({
           <button className="footbtn" onClick={onOpenUsers}>
             <span className="footico">👥</span>
             Пользователи
+          </button>
+        )}
+        {onOpenMachines && (
+          <button className="footbtn" onClick={onOpenMachines}>
+            <span className="footico">🖥</span>
+            Машины
           </button>
         )}
         <button className="footbtn" onClick={onOpenSettings}>
