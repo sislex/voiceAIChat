@@ -120,7 +120,6 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onDelete={actions.deleteConversation}
         onRename={actions.renameConversation}
         agents={state.agents}
-        onChangeExecTarget={(id, target) => void actions.setConversationExecTarget(id, target)}
         searchQuery={state.searchQuery}
         onSearch={actions.setSearchQuery}
         onOpenObserver={menu(actions.openObserver)}
@@ -168,6 +167,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         turnMeta={state.lastTurnMeta}
         agents={state.agents}
         execTarget={activeExecTarget}
+        onChangeExecTarget={(target) => {
+          if (state.activeId) void actions.setConversationExecTarget(state.activeId, target)
+        }}
         aiLabel={state.settings.llmProvider === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar

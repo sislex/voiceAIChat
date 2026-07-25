@@ -68,8 +68,10 @@ export interface ChatColumnProps {
   voiceBar: ReactNode
   /** Машины-агенты для выбора цели выполнения команд (пусто — селектор скрыт). */
   agents?: AgentInfo[]
-  /** Текущая цель выполнения: id машины или null («на сервере»). */
+  /** Текущая цель выполнения активного чата. */
   execTarget?: string | null
+  /** Сменить цель только активного чата из селектора рядом с заголовком. */
+  onChangeExecTarget?: (target: string | null) => void
   /** Имя движка для подписи ответов и статуса (Claude/Codex). */
   aiLabel?: string
   /** Отправить собранные ответы на вопросы модели (форма под последним ответом). */
@@ -106,6 +108,7 @@ export function ChatColumn({
   voiceBar,
   agents = [],
   execTarget = null,
+  onChangeExecTarget,
   aiLabel = 'Claude',
   onAnswerQuestions,
   machineOps
@@ -215,6 +218,26 @@ export function ChatColumn({
           >
             {title}
           </h1>
+        )}
+        {onChangeExecTarget && (
+          <label className="exectarget" title="Машина для новых сообщений этого чата">
+            <span className={`exectarget-dot ${execTarget === 'none' ? 'disabled' : execTarget ? 'remote' : 'server'}`} aria-hidden />
+            <select
+              className="exectarget-sel"
+              aria-label="Машина активного чата"
+              value={execTarget ?? ''}
+              disabled={state !== 'idle'}
+              onChange={(e) => onChangeExecTarget(e.target.value || null)}
+            >
+              <option value="">Сервер</option>
+              <option value="none">Без машины</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id} disabled={!a.online}>
+                  {a.name}{a.online ? '' : ' (офлайн)'}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
         <span className="mhead-right">
           <span className="badge">{statusBadge(state, aiLabel)}</span>

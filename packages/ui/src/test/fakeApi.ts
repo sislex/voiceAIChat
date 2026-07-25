@@ -33,13 +33,18 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
   function makeConversation(title: string): Conversation {
     const ts = tick()
-    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null }
+    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, lastExecTarget: null }
   }
 
   for (const title of seedConversations) conversations.push(makeConversation(title))
 
   function withCounts(c: Conversation): Conversation {
-    return { ...c, messageCount: messages.filter((m) => m.conversationId === c.id).length }
+    const own = messages.filter((m) => m.conversationId === c.id)
+    return {
+      ...c,
+      messageCount: own.length,
+      lastExecTarget: own[own.length - 1]?.execTarget ?? null
+    }
   }
 
   const api: FakeApi = {

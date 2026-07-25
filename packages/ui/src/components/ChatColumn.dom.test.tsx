@@ -257,3 +257,16 @@ describe('ChatColumn — снимок машины сообщения', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 })
+
+
+describe('ChatColumn — машина активного чата в заголовке', () => {
+  it('показывает список рядом с названием и передаёт новый выбор', async () => {
+    const onChangeExecTarget = vi.fn()
+    const agent = { id: 'm1', name: 'MacBook', online: true } as AgentInfo
+    renderCol({ agents: [agent], execTarget: null, onChangeExecTarget })
+
+    const select = screen.getByLabelText('Машина активного чата')
+    await userEvent.selectOptions(select, 'm1')
+    expect(onChangeExecTarget).toHaveBeenCalledWith('m1')
+  })
+})

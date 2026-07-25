@@ -57,6 +57,8 @@ export interface Conversation {
   claudeSessionId: string | null
   /** Изменяемая цель новых ходов только этого чата. */
   execTarget: string | null
+  /** Неизменяемая цель последнего сообщения; используется подписью в списке чатов. */
+  lastExecTarget: string | null
 }
 
 /**
