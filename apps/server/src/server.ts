@@ -122,7 +122,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const sessionSecret =
     opts.sessionSecret ??
     (opts.db ? randomBytes(32).toString('hex') : loadOrCreateSecret(opts.config.dataDir))
-  db.ensureAdmin() // сид админа (пустой пароль по умолчанию)
+  db.ensureAdmin(opts.config.adminPassword) // сид админа (пароль из VC_ADMIN_PASSWORD)
   registerAuth(app, db, sessionSecret)
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({ ok: true, version: VERSION }))
