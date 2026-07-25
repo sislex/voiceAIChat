@@ -7,6 +7,7 @@ import type {
   WhisperModel,
   WhisperModelInfo
 } from '@shared/types'
+import type { SystemCapabilities } from '@shared/protocol'
 import { CODEX_MODELS, modelsForRole, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { PermissionMode, LlmProvider, UserRole } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
@@ -51,6 +52,8 @@ export interface SettingsModalProps {
   voiceDownloads: Record<string, number>
   /** Модели Whisper на диске (наличие/размер) — для управления местом. */
   whisperModels: WhisperModelInfo[]
+  /** Возможности системы (ресурсы контейнера); null — ещё не загружено. При нехватке памяти STT/TTS блокируются. */
+  capabilities: SystemCapabilities | null
   /** Подключённые MCP-серверы (read-only показ). */
   mcpServers: McpServer[]
   /** Статус входа claude/codex (read-only показ); null — ещё не загружен. */
@@ -92,6 +95,7 @@ export function SettingsModal({
   voicesDownloadable,
   voiceDownloads,
   whisperModels,
+  capabilities,
   mcpServers,
   loginStatus,
   agents,
@@ -111,6 +115,9 @@ export function SettingsModal({
   onClose
 }: SettingsModalProps): JSX.Element {
   const stop = (e: MouseEvent): void => e.stopPropagation()
+  // Блокировка функций при нехватке ресурсов контейнера (null — ещё не загружено, не блокируем).
+  const sttBlocked = capabilities != null && !capabilities.stt.available
+  const ttsBlocked = capabilities != null && !capabilities.tts.available
   const [section, setSection] = useState<SettingsSection>('agent')
   // Добавление машины: поле имени и одноразовый показ токена после создания.
   const [agentName, setAgentName] = useState('')
@@ -428,6 +435,14 @@ export function SettingsModal({
 
             {section === 'stt' && (
               <>
+                {sttBlocked && (
+                  <div className="frow" data-testid="stt-blocked">
+                    <div>
+                      <p className="flab">Распознавание отключено</p>
+                      <p className="fsub">{capabilities?.stt.reason}</p>
+                    </div>
+                  </div>
+                )}
                 <div className="frow">
                   <div>
                     <p className="flab">Распознавание речи</p>
@@ -436,6 +451,7 @@ export function SettingsModal({
                   <select
                     className="sel"
                     aria-label="Модель распознавания"
+                    disabled={sttBlocked}
                     value={settings.whisperModel}
                     onChange={(e) => onChange({ whisperModel: e.target.value as WhisperModel })}
                   >
@@ -475,6 +491,7 @@ export function SettingsModal({
                   <button
                     className={settings.diarization ? 'sw on' : 'sw'}
                     onClick={() => onChange({ diarization: !settings.diarization })}
+                    disabled={sttBlocked}
                     role="switch"
                     aria-checked={settings.diarization}
                     aria-label="Диаризация спикеров"
@@ -488,6 +505,7 @@ export function SettingsModal({
                   <select
                     className="sel"
                     aria-label="Микрофон"
+                    disabled={sttBlocked}
                     value={settings.micDeviceId ?? ''}
                     onChange={(e) => onChange({ micDeviceId: e.target.value || null })}
                   >
@@ -504,6 +522,14 @@ export function SettingsModal({
 
             {section === 'tts' && (
               <>
+                {ttsBlocked && (
+                  <div className="frow" data-testid="tts-blocked">
+                    <div>
+                      <p className="flab">Озвучка отключена</p>
+                      <p className="fsub">{capabilities?.tts.reason}</p>
+                    </div>
+                  </div>
+                )}
                 <div className="frow">
                   <div>
                     <p className="flab">Голос озвучки</p>
@@ -512,6 +538,7 @@ export function SettingsModal({
                   <select
                     className="sel"
                     aria-label="Голос озвучки"
+                    disabled={ttsBlocked}
                     value={settings.voice}
                     onChange={(e) => onChange({ voice: e.target.value })}
                   >
@@ -532,6 +559,7 @@ export function SettingsModal({
                   <button
                     className={settings.autoSpeak ? 'sw on' : 'sw'}
                     onClick={() => onChange({ autoSpeak: !settings.autoSpeak })}
+                    disabled={ttsBlocked}
                     role="switch"
                     aria-checked={settings.autoSpeak}
                     aria-label="Автоозвучка ответов"

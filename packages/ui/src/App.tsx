@@ -264,6 +264,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           voicesDownloadable={state.voicesDownloadable}
           voiceDownloads={state.voiceDownloads}
           whisperModels={state.whisperModels}
+          capabilities={state.capabilities}
           mcpServers={state.mcpServers}
           loginStatus={state.loginStatus}
           agents={state.agents}

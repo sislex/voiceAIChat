@@ -60,6 +60,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'settings:save': async (settings) => {
       await req(REST.settings, { method: 'PUT', body: JSON.stringify(settings) })
     },
+    'system:capabilities': () => req(REST.systemCapabilities),
     'stt:status': () => req(REST.sttStatus),
     'stt:models': () => req(REST.sttModels),
     'stt:deleteModel': async ({ model }) => {

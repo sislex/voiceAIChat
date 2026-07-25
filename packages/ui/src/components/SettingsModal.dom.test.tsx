@@ -13,6 +13,7 @@ function renderModal(role: UserRole): void {
     voicesDownloadable: false,
     voiceDownloads: {},
     whisperModels: [],
+    capabilities: null,
     mcpServers: [],
     loginStatus: null,
     agents: [],

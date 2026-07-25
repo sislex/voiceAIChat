@@ -15,6 +15,7 @@ import type {
   WhisperModel,
   WhisperModelInfo
 } from './types'
+import type { SystemCapabilities } from './protocol'
 import type { AdminUserInfo, UsageReport, UsageUnit } from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
@@ -71,6 +72,8 @@ export interface IpcInvokeMap {
   'uploads:add': { arg: { name: string; dataBase64: string }; result: UploadInfo }
   'settings:get': { arg: void; result: Settings }
   'settings:save': { arg: Settings; result: void }
+  /** Возможности системы по ресурсам контейнера (блокировка STT/TTS при нехватке памяти). */
+  'system:capabilities': { arg: void; result: SystemCapabilities }
   'stt:status': { arg: void; result: SttStatus }
   /** Список всех моделей Whisper с наличием и размером (управление местом). */
   'stt:models': { arg: void; result: WhisperModelInfo[] }
@@ -412,6 +415,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'uploads:add',
   'settings:get',
   'settings:save',
+  'system:capabilities',
   'stt:status',
   'stt:models',
   'stt:deleteModel',
