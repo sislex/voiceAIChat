@@ -1,11 +1,17 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { VoiceBar } from './VoiceBar'
 import '../styles/app.css'
 
 function setup(state: Parameters<typeof VoiceBar>[0]['state'], overrides = {}) {
-  const props = {
+  const props = makeProps(state, overrides)
+  render(<VoiceBar {...props} />)
+  return props
+}
+
+function makeProps(state: Parameters<typeof VoiceBar>[0]['state'], overrides = {}) {
+  return {
     state,
     draft: '',
     diarization: true,
@@ -21,8 +27,6 @@ function setup(state: Parameters<typeof VoiceBar>[0]['state'], overrides = {}) {
     onRemoveAttachment: vi.fn(),
     ...overrides
   }
-  render(<VoiceBar {...props} />)
-  return props
 }
 
 describe('VoiceBar — состояния', () => {
@@ -110,5 +114,56 @@ describe('VoiceBar — состояния', () => {
     screen.getByLabelText('Поле ввода сообщения').focus()
     await userEvent.keyboard('{Enter}')
     expect(props.onSubmitText).not.toHaveBeenCalled()
+  })
+})
+
+describe('VoiceBar — высота поля ввода', () => {
+  // В jsdom нет раскладки: задаём метрики поля стилем и подменяем scrollHeight так,
+  // будто текст занял свои строки. Строка — 20px, паддинги 10+10, рамка 1+1.
+  const LINE = 20
+  const PAD = 20
+
+  beforeEach(() => {
+    document.head.insertAdjacentHTML(
+      'beforeend',
+      '<style id="tin-metrics">.tin{line-height:20px;padding:10px 16px;border:1px solid #000}</style>'
+    )
+    Object.defineProperty(HTMLTextAreaElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get(this: HTMLTextAreaElement) {
+        return Math.max(1, this.value.split('\n').length) * LINE + PAD
+      }
+    })
+  })
+
+  afterEach(() => {
+    document.getElementById('tin-metrics')?.remove()
+    delete (HTMLTextAreaElement.prototype as { scrollHeight?: number }).scrollHeight
+  })
+
+  function heightOf(draft: string): string {
+    const { unmount } = render(<VoiceBar {...makeProps('idle', { draft })} />)
+    const height = (screen.getByLabelText('Поле ввода сообщения') as HTMLTextAreaElement).style.height
+    unmount()
+    return height
+  }
+
+  it('поле открывается на двух строках', () => {
+    setup('idle')
+    expect(screen.getByLabelText('Поле ввода сообщения')).toHaveAttribute('rows', '2')
+  })
+
+  it('одна строка текста всё равно даёт высоту двух строк', () => {
+    expect(heightOf('привет')).toBe('62px') // 2*20 + 20 + рамка 2
+  })
+
+  it('высота идёт за числом строк: 3 и 4 строки', () => {
+    expect(heightOf('a\nb\nc')).toBe('82px')
+    expect(heightOf('a\nb\nc\nd')).toBe('102px')
+  })
+
+  it('после четырёх строк не растёт — дальше скролл', () => {
+    expect(heightOf('a\nb\nc\nd\ne')).toBe('102px')
+    expect(heightOf('a\nb\nc\nd\ne\nf\ng\nh')).toBe('102px')
   })
 })
