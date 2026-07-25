@@ -7,6 +7,7 @@
 import { existsSync } from 'node:fs'
 import {
   appendQuestionsHint,
+  appendToolHint,
   buildConversationPrompt,
   buildPrompt,
   clampModelForRole,
@@ -22,7 +23,6 @@ import {
   type TurnRequestInfo
 } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
-import { roleOf } from './users/accounts.js'
 import type { LlmClient, LlmHandle } from './claude/types.js'
 
 export interface TurnManagerDeps {
@@ -132,6 +132,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   function start(req: StartTurnRequest): void {
     const conversationId = req.conversationId
     const userId = req.userId
+    // Заблокированный пользователь не может запускать ходы (страховка сверх WS-гейта).
+    const account = deps.db.getUser(userId)
+    if (!account || account.blocked) {
+      broadcast({ t: 'claude.error', conversationId, message: 'Учётная запись недоступна.' }, userId)
+      return
+    }
     // Новый ход в том же разговоре отменяет прежний (повторная отправка).
     cancelTurn(conversationId, false)
 
@@ -141,7 +147,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // (у роли user нет opus/fable — сервер не даст обойти фильтр клиента).
     const provider = settings.llmProvider === 'codex' && deps.codex ? 'codex' : 'claude'
     const client = provider === 'codex' ? deps.codex! : deps.claude
-    const role = roleOf(userId) ?? 'user'
+    const role = account.role
     const model =
       provider === 'codex'
         ? settings.codexModel
@@ -149,7 +155,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
     // смене движка чужой resume-id игнорируем (свежий ход).
     const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)
-    const permissionMode = settings.permissionMode
+    let permissionMode = settings.permissionMode
     // Рабочий каталог — только если задан и существует (иначе игнор).
     const cwd = settings.workdir && existsSync(settings.workdir) ? settings.workdir : undefined
     const attachmentPaths = (req.attachments ?? [])
@@ -159,10 +165,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // сессия сброшена после удаления/правки) → пересобираем промпт из текущей
     // истории БД, чтобы контекст модели совпадал с видимым (без удалённых реплик).
     // Хинт о формате уточняющих вопросов (```questions) — форма ответов в чате.
-    const prompt = appendQuestionsHint(
-      sessionId
-        ? buildPrompt(req.segments, attachmentPaths)
-        : buildConversationPrompt(deps.db.listMessages(userId, conversationId), attachmentPaths)
+    const prompt = appendToolHint(
+      appendQuestionsHint(
+        sessionId
+          ? buildPrompt(req.segments, attachmentPaths)
+          : buildConversationPrompt(deps.db.listMessages(userId, conversationId), attachmentPaths)
+      )
     )
     // Цель выполнения команд: выбранная машина-агент. Только своя машина
     // (чужую игнорируем → выполняем на сервере). Офлайн своей — сразу ошибка.
@@ -190,6 +198,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         policySummary: policy ? policySummary(policy) : undefined
       }
     }
+    // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
+    // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
+    // выполнения). На своей машине действия регулирует политика машины.
+    if (role === 'user' && !remote) permissionMode = 'plan'
     // Полный контекст хода: все сообщения разговора на момент отправки
     // (реплика пользователя уже сохранена клиентом перед claude.send).
     const contextMessages = deps.db

@@ -8,6 +8,9 @@ import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen } from './components/LoginScreen'
 import { CcObserver } from './components/CcObserver'
+import { UsersAdmin } from './components/UsersAdmin'
+import { MachineUtility } from './components/MachineUtility'
+import type { MachineOps } from './components/machine'
 import { CodexObserver } from './components/CodexObserver'
 import { useVoiceStore } from './store/useVoiceStore'
 import { useVoiceCues } from './lib/useVoiceCues'
@@ -57,6 +60,26 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
 
   const showConsole = state.settings.showConsole
 
+  // Операции над машиной для утилит (консоль/проводник); только web (есть мост fs).
+  const machineOps: MachineOps | undefined = state.authRequired
+    ? {
+        list: actions.fsList,
+        write: actions.fsWrite,
+        remove: actions.fsRemove,
+        rename: actions.fsRename,
+        mkdir: actions.fsMkdir,
+        download: actions.downloadFsFile,
+        upload: actions.uploadFsFile,
+        exec: actions.agentExec
+      }
+    : undefined
+
+  // Закрывает мобильный сайдбар и выполняет действие пункта меню.
+  const menu = (fn: () => void) => (): void => {
+    setSidebarOpen(false)
+    fn()
+  }
+
   // Многопользовательский режим (web): пока не вошли — показываем экран логина.
   if (state.authRequired && !state.currentUser) {
     return (
@@ -90,9 +113,12 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onRename={actions.renameConversation}
         searchQuery={state.searchQuery}
         onSearch={actions.setSearchQuery}
-        onOpenObserver={actions.openObserver}
-        onOpenCodexObserver={actions.openCodexObserver}
-        onOpenSettings={actions.openSettings}
+        onOpenObserver={menu(actions.openObserver)}
+        onOpenCodexObserver={menu(actions.openCodexObserver)}
+        onOpenSettings={menu(actions.openSettings)}
+        onOpenFiles={state.authRequired ? menu(() => actions.openUtility('explorer')) : undefined}
+        onOpenConsole={state.authRequired ? menu(() => actions.openUtility('console')) : undefined}
+        onOpenUsers={state.authRequired ? menu(() => void actions.openUsers()) : undefined}
         currentUser={state.currentUser}
         onLogout={state.authRequired ? () => void actions.logout() : undefined}
       />
@@ -118,6 +144,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onDeleteMessage={actions.deleteMessage}
         onEditMessage={actions.editMessage}
         onAnswerQuestions={(text) => void actions.answerQuestions(text)}
+        machineOps={machineOps}
         error={state.error}
         onDismissError={actions.dismissError}
         modelMissing={!state.modelPresent}
@@ -184,6 +211,35 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onSelectSession={actions.selectCxSession}
           onResumeSession={(id) => void actions.resumeCxSession(id)}
           onClose={actions.closeCodexObserver}
+        />
+      )}
+
+      {state.usersOpen && (
+        <UsersAdmin
+          users={state.adminUsers}
+          selected={state.adminSelected}
+          usage={state.adminUsage}
+          conversations={state.adminConversations}
+          messages={state.adminMessages}
+          conversationId={state.adminConversationId}
+          currentUserName={state.currentUser?.name ?? ''}
+          onSelect={(name) => void actions.selectAdminUser(name)}
+          onCreate={(name, password, role) => void actions.createUserAccount(name, password, role)}
+          onSetBlocked={(name, blocked) => void actions.setUserBlocked(name, blocked)}
+          onDelete={(name) => void actions.deleteUserAccount(name)}
+          onLoadUsage={(unit) => void actions.loadAdminUsage(unit)}
+          onOpenConversation={(id) => void actions.openAdminConversation(id)}
+          onClose={actions.closeUsers}
+        />
+      )}
+
+      {state.utility && machineOps && (
+        <MachineUtility
+          tool={{ kind: state.utility.kind, ...(state.utility.agentId ? { agentId: state.utility.agentId } : {}) }}
+          agents={state.agents}
+          ops={machineOps}
+          variant="modal"
+          onClose={actions.closeUtility}
         />
       )}
 

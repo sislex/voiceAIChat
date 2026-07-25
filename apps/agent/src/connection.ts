@@ -5,6 +5,7 @@
 import WebSocket from 'ws'
 import {
   evaluateAgentCommand,
+  AGENT_VERSION,
   DEFAULT_AGENT_POLICY,
   type AgentPolicy,
   type AgentToServer,
@@ -12,6 +13,7 @@ import {
 } from '@voicechat/shared'
 import type { AgentConfig } from './config.js'
 import { runCommand, cancelCommand } from './exec.js'
+import { fsDelete, fsList, fsMkdir, fsRead, fsRename, fsWrite } from './fileOps.js'
 
 const BACKOFF_START_MS = 1_000
 const BACKOFF_MAX_MS = 30_000
@@ -26,6 +28,10 @@ export interface AgentHandlers {
   onDenied?(reason: string): void
   onExec?(command: string): void
   onExecDone?(command: string, exitCode: number | null, timedOut: boolean, ms: number): void
+  /** Сервер сообщил, что доступна новая версия агента. */
+  onUpdateAvailable?(version: string): void
+  /** Текущая политика изменилась (регистрация/пуш сервера/локальная правка). */
+  onPolicy?(policy: AgentPolicy): void
   /** Свободная строка лога (для консоли/журнала). */
   onLog?(line: string): void
 }
@@ -34,6 +40,10 @@ export interface AgentHandlers {
 export interface AgentConnection {
   /** Остановить: закрыть сокет, отменить reconnect (статус → stopped). */
   stop(): void
+  /** Текущая политика возможностей машины. */
+  getPolicy(): AgentPolicy
+  /** Задать политику локально и отправить её серверу (правка с машины). */
+  setPolicy(policy: AgentPolicy): void
 }
 
 /** Дефолтные handlers для CLI: печать в консоль, выход при отказе. */
@@ -49,6 +59,8 @@ export function consoleHandlers(): AgentHandlers {
       console.log(
         `[agent] → exit ${exitCode ?? '?'}${timedOut ? ' (таймаут)' : ''} (${(ms / 1000).toFixed(1)}с)`
       ),
+    onUpdateAvailable: (version) =>
+      console.log(`[agent] доступно обновление v${version} — перекачайте и перезапустите скрипт агента`),
     onLog: (line) => console.log(`[agent] ${line}`)
   }
 }
@@ -59,6 +71,15 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
   let socket: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let policy: AgentPolicy = DEFAULT_AGENT_POLICY
+  // Ссылка на send текущего соединения — для отправки вне обработчика сообщений.
+  let activeSend: ((msg: AgentToServer) => void) | null = null
+
+  /** Применяет политику локально (+ уведомляет UI); при emit — шлёт серверу. */
+  const applyPolicy = (p: AgentPolicy, emit: boolean): void => {
+    policy = p
+    handlers.onPolicy?.(p)
+    if (emit) activeSend?.({ t: 'agent.setPolicy', policy: p })
+  }
 
   const connect = (): void => {
     handlers.onStatus?.('connecting')
@@ -67,9 +88,10 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
     const send = (msg: AgentToServer): void => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
     }
+    activeSend = send
 
     ws.on('open', () => {
-      send({ t: 'agent.register', token: config.token })
+      send({ t: 'agent.register', token: config.token, version: AGENT_VERSION })
     })
 
     ws.on('message', (data) => {
@@ -82,17 +104,20 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
       switch (msg.t) {
         case 'agent.registered':
           backoff = BACKOFF_START_MS
-          policy = msg.policy ?? DEFAULT_AGENT_POLICY
+          applyPolicy(msg.policy ?? DEFAULT_AGENT_POLICY, false)
           handlers.onStatus?.('online')
           handlers.onRegistered?.(msg.name)
           break
         case 'agent.policy':
-          policy = msg.policy
+          applyPolicy(msg.policy, false)
           handlers.onLog?.('политика обновлена')
           break
         case 'agent.denied':
           stopped = true // не переподключаемся с заведомо неверным токеном
           handlers.onDenied?.(msg.reason)
+          break
+        case 'agent.updateAvailable':
+          handlers.onUpdateAvailable?.(msg.version)
           break
         case 'exec.start': {
           const command = msg.command
@@ -119,10 +144,46 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           handlers.onLog?.('отмена команды')
           cancelCommand(msg.execId)
           break
+        case 'fs.list':
+        case 'fs.read':
+        case 'fs.write':
+        case 'fs.delete':
+        case 'fs.rename':
+        case 'fs.mkdir': {
+          const root = config.rootDir
+          try {
+            let result
+            switch (msg.t) {
+              case 'fs.list':
+                result = fsList(root, policy, msg.path)
+                break
+              case 'fs.read':
+                result = fsRead(root, policy, msg.path)
+                break
+              case 'fs.write':
+                result = fsWrite(root, policy, msg.path, msg.dataBase64)
+                break
+              case 'fs.delete':
+                result = fsDelete(root, policy, msg.path)
+                break
+              case 'fs.rename':
+                result = fsRename(root, policy, msg.from, msg.to)
+                break
+              case 'fs.mkdir':
+                result = fsMkdir(root, policy, msg.path)
+                break
+            }
+            send({ t: 'fs.result', opId: msg.opId, result })
+          } catch (err) {
+            send({ t: 'fs.error', opId: msg.opId, message: err instanceof Error ? err.message : String(err) })
+          }
+          break
+        }
       }
     })
 
     const reconnect = (): void => {
+      activeSend = null
       if (stopped) return
       handlers.onStatus?.('offline')
       handlers.onLog?.(`соединение потеряно, повтор через ${Math.round(backoff / 1000)}с`)
@@ -149,6 +210,8 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
       } catch {
         /* уже закрыт */
       }
-    }
+    },
+    getPolicy: () => policy,
+    setPolicy: (p: AgentPolicy) => applyPolicy(p, true)
   }
 }

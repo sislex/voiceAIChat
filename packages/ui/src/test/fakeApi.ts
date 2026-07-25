@@ -3,6 +3,7 @@
 
 import type { RendererApi } from '@shared/ipc'
 import type { Conversation, Message, Settings } from '@shared/types'
+import type { AdminUserInfo } from '@shared/admin'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
@@ -25,6 +26,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const conversations: Conversation[] = []
   const messages: Message[] = []
   const agents: AgentInfo[] = []
+  const adminUsers: AdminUserInfo[] = [
+    { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 0, agents: [] }
+  ]
   let settings: Settings = { ...DEFAULT_SETTINGS }
 
   function makeConversation(title: string): Conversation {
@@ -172,6 +176,35 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         { id: 'ru_RU-ruslan-medium', label: 'Ruslan — русский (medium)', installed: false }
       ]
     }),
+    'admin:users': async () => adminUsers.map((u) => ({ ...u })),
+    'admin:createUser': async ({ name, role }) => {
+      const u: AdminUserInfo = {
+        name,
+        role,
+        blocked: false,
+        createdAt: tick(),
+        conversationCount: 0,
+        agents: []
+      }
+      adminUsers.push(u)
+      return { ...u }
+    },
+    'admin:setBlocked': async ({ name, blocked }) => {
+      const u = adminUsers.find((x) => x.name === name)
+      if (u) u.blocked = blocked
+    },
+    'admin:deleteUser': async ({ name }) => {
+      const idx = adminUsers.findIndex((x) => x.name === name)
+      if (idx >= 0) adminUsers.splice(idx, 1)
+    },
+    'admin:usage': async ({ unit }) => ({
+      unit,
+      totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, messages: 0 },
+      byBucket: [],
+      byModel: []
+    }),
+    'admin:conversations': async () => [],
+    'admin:messages': async () => [],
     _state: {
       get conversations() {
         return conversations

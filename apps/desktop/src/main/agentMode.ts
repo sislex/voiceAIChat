@@ -93,7 +93,10 @@ function startAgent(): void {
     return
   }
   connection?.stop()
-  connection = startConnection({ serverUrl: cfg.serverUrl, token: cfg.token }, handlers())
+  connection = startConnection(
+    { serverUrl: cfg.serverUrl, token: cfg.token, rootDir: process.cwd() },
+    handlers()
+  )
 }
 
 function stopAgent(): void {

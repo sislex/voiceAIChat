@@ -57,6 +57,7 @@ afterEach(async () => {
 
 describe('REST: аутентификация', () => {
   it('без токена защищённый роут → 401, health и login — открыты', async () => {
+    db.createUser('user', '', 'user') // пользователь теперь заводится в БД
     expect((await app.inject({ method: 'GET', url: '/api/conversations' })).statusCode).toBe(401)
     expect((await app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(200)
     // Логин: верный пароль (пустой) → токен; неверный → 401.
@@ -77,6 +78,7 @@ describe('REST: аутентификация', () => {
   })
 
   it('данные пользователей изолированы (user не видит разговоры admin)', async () => {
+    db.createUser('user', '', 'user')
     const adminTok = signToken({ name: 'admin', role: 'admin' }, SECRET)
     const userTok = signToken({ name: 'user', role: 'user' }, SECRET)
     const auth = (t: string) => ({ authorization: `Bearer ${t}` })
@@ -94,6 +96,51 @@ describe('REST: аутентификация', () => {
     ).json()
     expect(adminList).toHaveLength(1)
     expect(userList).toHaveLength(0)
+  })
+})
+
+describe('REST: админ-роуты (только admin)', () => {
+  it('user → 403 на /api/admin/users', async () => {
+    db.createUser('user', '', 'user')
+    const userTok = signToken({ name: 'user', role: 'user' }, SECRET)
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/admin/users',
+      headers: { authorization: `Bearer ${userTok}` }
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('admin: список → создание → блок → удаление', async () => {
+    // admin засеян buildServer'ом.
+    const list0 = (await inj({ method: 'GET', url: '/api/admin/users' })).json()
+    expect(list0.map((u: { name: string }) => u.name)).toContain('admin')
+
+    const created = await inj({
+      method: 'POST',
+      url: '/api/admin/users',
+      payload: { name: 'bob', password: 'pw', role: 'user' }
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toMatchObject({ name: 'bob', role: 'user', blocked: false })
+
+    await inj({ method: 'POST', url: '/api/admin/users/bob/block', payload: { blocked: true } })
+    const blocked = (await inj({ method: 'GET', url: '/api/admin/users' })).json()
+    expect(blocked.find((u: { name: string }) => u.name === 'bob').blocked).toBe(true)
+
+    // usage-отчёт отдаётся (пустой).
+    const usage = (await inj({ method: 'GET', url: '/api/admin/users/bob/usage?unit=day' })).json()
+    expect(usage.totals.messages).toBe(0)
+
+    const del = await inj({ method: 'DELETE', url: '/api/admin/users/bob' })
+    expect(del.statusCode).toBe(200)
+    const after = (await inj({ method: 'GET', url: '/api/admin/users' })).json()
+    expect(after.map((u: { name: string }) => u.name)).not.toContain('bob')
+  })
+
+  it('admin нельзя удалить', async () => {
+    const res = await inj({ method: 'DELETE', url: '/api/admin/users/admin' })
+    expect(res.statusCode).toBe(400)
   })
 })
 
@@ -376,5 +423,41 @@ describe('REST: conversations/messages/settings', () => {
     await inj({ method: 'DELETE', url: `/api/agents/${created.id}` })
     const saved = (await inj({ method: 'GET', url: '/api/settings' })).json()
     expect(saved.execTarget).toBeNull()
+  })
+})
+
+describe('REST: утилиты машины (exec/fs)', () => {
+  it('exec: 404 на чужую машину; 400 на офлайн-машину владельца', async () => {
+    // Своя офлайн-машина: exec → 400 (не в сети).
+    const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
+    const own = await inj({
+      method: 'POST',
+      url: `/api/agents/${created.id}/exec`,
+      payload: { command: 'ls' }
+    })
+    expect(own.statusCode).toBe(400)
+    expect(own.json().error).toContain('не в сети')
+
+    // Чужая машина (создана под user) → 404 для admin.
+    db.createUser('user', '', 'user')
+    const other = db.createAgent('user', 'UserBox')
+    const foreign = await inj({
+      method: 'POST',
+      url: `/api/agents/${other.id}/exec`,
+      payload: { command: 'ls' }
+    })
+    expect(foreign.statusCode).toBe(404)
+  })
+
+  it('fs.list: 400 на офлайн-машину владельца', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
+    const res = await inj({ method: 'GET', url: `/api/agents/${created.id}/fs?path=` })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('GET /api/agents/version публичен и отдаёт версию', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/agents/version' }) // без токена
+    expect(res.statusCode).toBe(200)
+    expect(typeof res.json().version).toBe('string')
   })
 })

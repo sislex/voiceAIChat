@@ -1,6 +1,7 @@
 // Мост renderer ↔ main для окон настройки и журнала.
 
 import { contextBridge, ipcRenderer } from 'electron'
+import type { AgentPolicy } from '@voicechat/shared'
 
 export interface AgentState {
   status: 'connecting' | 'online' | 'offline' | 'stopped' | 'unconfigured'
@@ -21,6 +22,14 @@ const api = {
   /** Подписка на смену статуса. */
   onStatus: (cb: (s: AgentState) => void): void => {
     ipcRenderer.on('agent:status', (_e, s: AgentState) => cb(s))
+  },
+  /** Текущая политика (разрешения) машины; null — не подключены. */
+  getPolicy: (): Promise<AgentPolicy | null> => ipcRenderer.invoke('agent:getPolicy'),
+  /** Задать политику с машины (применяется локально + уходит на сервер). */
+  setPolicy: (policy: AgentPolicy): Promise<void> => ipcRenderer.invoke('agent:setPolicy', policy),
+  /** Подписка на изменение политики (пуш сервера/локальная правка). */
+  onPolicy: (cb: (policy: AgentPolicy) => void): void => {
+    ipcRenderer.on('agent:policy', (_e, p: AgentPolicy) => cb(p))
   }
 }
 

@@ -169,6 +169,21 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
       }
       db.setClaudeSession(conv.id, `codex:${id}`)
       return { conversation: db.getConversation(conv.id)!, messages: db.listMessages(conv.id) }
-    }
+    },
+
+    // Админ-каналы — только в web (многопользовательский режим). В desktop
+    // (однопользовательский, без сессий) не поддерживаются.
+    'admin:users': notInDesktop,
+    'admin:createUser': notInDesktop,
+    'admin:setBlocked': notInDesktop,
+    'admin:deleteUser': notInDesktop,
+    'admin:usage': notInDesktop,
+    'admin:conversations': notInDesktop,
+    'admin:messages': notInDesktop
   }
+}
+
+/** Заглушка для web-only каналов в desktop: бросает при вызове. */
+function notInDesktop(): never {
+  throw new Error('Функция доступна только в веб-версии')
 }

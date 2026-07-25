@@ -11,6 +11,7 @@ const PING_INTERVAL_MS = 30_000
 
 export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: AgentRegistry): void {
   let agentId: string | null = null
+  let owner: string | null = null
   let pingTimer: NodeJS.Timeout | null = null
 
   const send = (msg: ServerToAgent): void => {
@@ -40,7 +41,9 @@ export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: Agen
         return
       }
       agentId = rec.id
-      registry.register(rec.id, rec.name, socket, rec.policy)
+      owner = rec.userId
+      // Версия из рапорта агента; отсутствует (старый агент) → legacy '0.1.0'.
+      registry.register(rec.id, rec.name, socket, rec.policy, msg.version ?? '0.1.0')
       db.touchAgent(rec.id)
       send({ t: 'agent.registered', name: rec.name, policy: rec.policy })
       pingTimer = setInterval(() => {
@@ -50,6 +53,13 @@ export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: Agen
           /* закрывается */
         }
       }, PING_INTERVAL_MS)
+      return
+    }
+
+    // Смена политики с машины: сохраняем у владельца и раздаём (эхо агенту).
+    if (msg.t === 'agent.setPolicy') {
+      if (owner) db.setAgentPolicy(owner, agentId, msg.policy)
+      registry.updatePolicy(agentId, msg.policy)
       return
     }
 

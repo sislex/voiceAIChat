@@ -22,7 +22,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           setup: resolve('src/renderer/setup.html'),
-          log: resolve('src/renderer/log.html')
+          log: resolve('src/renderer/log.html'),
+          permissions: resolve('src/renderer/permissions.html')
         }
       }
     }

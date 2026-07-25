@@ -301,3 +301,13 @@ describe('App — интеграция UI со стором и IPC', () => {
     expect(catalog).toBeInTheDocument()
   })
 })
+
+describe('App — мобильное меню', () => {
+  it('клик по пункту меню (Настройки) закрывает выдвинутый сайдбар', async () => {
+    await renderApp()
+    await userEvent.click(screen.getByLabelText('Меню разговоров')) // ☰ — выдвинуть
+    expect(document.querySelector('.side--open')).not.toBeNull()
+    await userEvent.click(screen.getByText('Настройки'))
+    expect(document.querySelector('.side--open')).toBeNull()
+  })
+})
