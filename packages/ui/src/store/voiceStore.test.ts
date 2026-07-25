@@ -1392,3 +1392,62 @@ describe('voiceStore — сессия/аутентификация (web)', () =>
     expect(store.getState().conversations).toEqual([])
   })
 })
+
+describe('voiceStore — машинные утилиты', () => {
+  function makeFs() {
+    const listing = { root: '/r', cwd: '/r', entries: [{ name: 'a.txt', kind: 'file' as const, size: 1, mtime: 0 }] }
+    return {
+      list: vi.fn().mockResolvedValue(listing),
+      read: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r', dataBase64: btoa('hi'), name: 'a.txt' }),
+      write: vi.fn().mockResolvedValue(listing),
+      remove: vi.fn().mockResolvedValue(listing),
+      rename: vi.fn().mockResolvedValue(listing),
+      mkdir: vi.fn().mockResolvedValue(listing),
+      exec: vi.fn().mockResolvedValue({ exitCode: 0, output: 'ok', timedOut: false })
+    }
+  }
+
+  it('тонкие ops пробрасывают вызовы в мост fs', async () => {
+    const fs = makeFs()
+    const store = createVoiceStore({ api: createFakeApi([]), fs })
+    const res = await store.actions.fsList('m1', '/x')
+    expect(fs.list).toHaveBeenCalledWith('m1', '/x')
+    expect(res.entries).toHaveLength(1)
+    const exec = await store.actions.agentExec('m1', 'ls')
+    expect(fs.exec).toHaveBeenCalledWith('m1', 'ls')
+    expect(exec.output).toBe('ok')
+  })
+
+  it('openUtility выбирает онлайн-машину и открывает; closeUtility закрывает', () => {
+    const store = createVoiceStore({ api: createFakeApi([]), fs: makeFs() })
+    store.actions.openUtility('console')
+    expect(store.getState().utility?.kind).toBe('console')
+    store.actions.closeUtility()
+    expect(store.getState().utility).toBeNull()
+  })
+
+  it('команда «открой консоль» создаёт ai-сообщение с tool-блоком (без LLM)', async () => {
+    const store = createVoiceStore({ api: createFakeApi([]), fs: makeFs() })
+    await store.actions.init()
+    store.actions.setDraft('открой консоль')
+    await store.actions.submitText()
+    const msgs = store.getState().messages
+    const last = msgs[msgs.length - 1]
+    expect(last.role).toBe('ai')
+    expect(last.text).toContain('```tool')
+    expect(last.text).toContain('"kind":"console"')
+    // Остаёмся в idle (в LLM не ходили).
+    expect(store.getState().voice).toBe('idle')
+  })
+})
+
+describe('voiceStore — админ-страница пользователей', () => {
+  it('openUsers грузит список; createUserAccount обновляет его', async () => {
+    const store = createVoiceStore({ api: createFakeApi([]) })
+    await store.actions.openUsers()
+    expect(store.getState().usersOpen).toBe(true)
+    expect(store.getState().adminUsers.map((u) => u.name)).toContain('admin')
+    await store.actions.createUserAccount('bob', 'pw', 'user')
+    expect(store.getState().adminUsers.map((u) => u.name)).toContain('bob')
+  })
+})

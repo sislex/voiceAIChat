@@ -1,10 +1,11 @@
 // Аутентификация запросов приложения (web). Глобальный preHandler защищает
-// /api/* (кроме публичных путей) по Bearer-токену, плюс роуты сессии
-// (login/me/logout). Токены — stateless HMAC (см. accounts.ts).
+// /api/* (кроме публичных путей) по Bearer-токену; роль и блокировка берутся из
+// БД (таблица users). Плюс роуты сессии (login/me/logout) и guard requireAdmin.
 
-import type { FastifyInstance, FastifyRequest } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { REST, type SessionUser } from '@voicechat/shared'
-import { signToken, verifyCredentials, verifyToken } from './accounts.js'
+import type { VoiceChatDb } from '../db/database.js'
+import { signToken, verifyTokenName } from './accounts.js'
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -17,6 +18,13 @@ declare module 'fastify' {
 export function uid(req: FastifyRequest): string {
   if (!req.user) throw new Error('нет аутентифицированного пользователя')
   return req.user.name
+}
+
+/** Guard «только admin» для admin-роутов (вешается как preHandler). */
+export async function requireAdmin(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (req.user?.role !== 'admin') {
+    await reply.code(403).send({ error: 'forbidden' })
+  }
 }
 
 /** Токен из заголовка Authorization: Bearer <token>. */
@@ -34,18 +42,28 @@ function isPublic(url: string): boolean {
     url.startsWith('/api/session/') ||
     url === REST.agentApp ||
     url === REST.agentScript ||
-    url === REST.desktopApp
+    url === REST.desktopApp ||
+    url === REST.agentLatestVersion
   )
 }
 
-export function registerAuth(app: FastifyInstance, secret: string): void {
+/** Разрешает токен в актуального пользователя БД: null, если нет/заблокирован. */
+export function resolveUser(db: VoiceChatDb, token: string | undefined, secret: string): SessionUser | null {
+  const name = verifyTokenName(token, secret)
+  if (!name) return null
+  const u = db.getUser(name)
+  if (!u || u.blocked) return null
+  return { name: u.name, role: u.role }
+}
+
+export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: string): void {
   app.decorateRequest('user', null)
 
   app.addHook('preHandler', async (req, reply) => {
     const url = req.url.split('?')[0]
     if (!url.startsWith('/api/')) return // статика/SPA/ws — не трогаем
     if (isPublic(url)) return
-    const user = verifyToken(bearer(req), secret)
+    const user = resolveUser(db, bearer(req), secret)
     if (!user) {
       await reply.code(401).send({ error: 'unauthorized' })
       return reply
@@ -57,14 +75,16 @@ export function registerAuth(app: FastifyInstance, secret: string): void {
     REST.sessionLogin,
     async (req, reply) => {
       const { name, password } = req.body ?? {}
-      const user = verifyCredentials(name ?? '', password ?? '')
-      if (!user) return reply.code(401).send({ error: 'неверный логин или пароль' })
+      const u = name ? db.verifyUserPassword(name, password ?? '') : null
+      if (!u) return reply.code(401).send({ error: 'неверный логин или пароль' })
+      if (u.blocked) return reply.code(403).send({ error: 'учётная запись заблокирована' })
+      const user: SessionUser = { name: u.name, role: u.role }
       return { token: signToken(user, secret), user }
     }
   )
 
   app.get(REST.sessionMe, async (req) => {
-    const user = verifyToken(bearer(req), secret)
+    const user = resolveUser(db, bearer(req), secret)
     return user ? { user } : { user: null }
   })
 

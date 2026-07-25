@@ -8,6 +8,7 @@ import type {
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
+  RendererFsBridge,
   RendererSessionBridge,
   RendererSttBridge,
   RendererTtsBridge
@@ -26,6 +27,8 @@ declare global {
     agents?: RendererAgentsBridge
     /** Сессия пользователя (web); в desktop отсутствует → без экрана логина. */
     session?: RendererSessionBridge
+    /** Файловый проводник по машине-агенту (web); в desktop отсутствует. */
+    fs?: RendererFsBridge
   }
 }
 

@@ -44,6 +44,12 @@ export interface SidebarProps {
   onOpenObserver: () => void
   onOpenCodexObserver: () => void
   onOpenSettings: () => void
+  /** Открыть файловый проводник по машине-агенту (web). */
+  onOpenFiles?: () => void
+  /** Открыть консоль по машине-агенту (web). */
+  onOpenConsole?: () => void
+  /** Открыть админ-страницу пользователей (только admin). */
+  onOpenUsers?: () => void
   /** Текущий пользователь (web-режим); null/без имени — строка входа не показывается. */
   currentUser?: SessionUser | null
   /** Выйти из сессии (web). */
@@ -65,6 +71,9 @@ export function Sidebar({
   onOpenObserver,
   onOpenCodexObserver,
   onOpenSettings,
+  onOpenFiles,
+  onOpenConsole,
+  onOpenUsers,
   currentUser,
   onLogout,
   open = false
@@ -209,6 +218,24 @@ export function Sidebar({
           <span className="footico">🧭</span>
           Codex
         </button>
+        {onOpenFiles && (
+          <button className="footbtn" onClick={onOpenFiles}>
+            <span className="footico">📁</span>
+            Открыть проводник
+          </button>
+        )}
+        {onOpenConsole && (
+          <button className="footbtn" onClick={onOpenConsole}>
+            <span className="footico">⌨️</span>
+            Открыть консоль
+          </button>
+        )}
+        {onOpenUsers && currentUser?.role === 'admin' && (
+          <button className="footbtn" onClick={onOpenUsers}>
+            <span className="footico">👥</span>
+            Пользователи
+          </button>
+        )}
         <button className="footbtn" onClick={onOpenSettings}>
           <GearIcon />
           Настройки

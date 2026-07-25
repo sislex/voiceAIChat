@@ -8,16 +8,20 @@
 
 import type {
   RendererApi,
+  RendererFsBridge,
   RendererSessionBridge,
   SttSegmentWire,
   SttStatus,
   SttUpdate,
   UploadInfo
 } from '@shared/ipc'
+import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
+import { detectOpenUtility, toolBlock, type ToolSpec } from '@shared/tools'
 import type { ActiveTurn } from '@shared/protocol'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
+import type { AdminUserInfo, UsageReport, UsageUnit } from '@shared/admin'
 import type { CcProject, CcSession, CcItem } from '@shared/cc'
 import type { CxProject, CxSession, CxItem } from '@shared/codexSessions'
 import type {
@@ -134,6 +138,22 @@ export interface AppState {
   cxProjectCwd: string | null
   /** id выбранной сессии Codex (null — не выбрана). */
   cxSessionId: string | null
+  /** Открыта ли админ-страница пользователей (только admin). */
+  usersOpen: boolean
+  /** Список пользователей для админки. */
+  adminUsers: AdminUserInfo[]
+  /** Выбранный пользователь в админке (null — не выбран). */
+  adminSelected: string | null
+  /** Отчёт по токенам выбранного пользователя (null — не загружен). */
+  adminUsage: UsageReport | null
+  /** Разговоры выбранного пользователя (для просмотра истории админом). */
+  adminConversations: Conversation[]
+  /** Сообщения открытого разговора в админ-просмотре истории. */
+  adminMessages: Message[]
+  /** id разговора, открытого в админ-истории (null — не открыт). */
+  adminConversationId: string | null
+  /** Открытая из меню машинная утилита (консоль/проводник) + машина; null — закрыта. */
+  utility: { kind: 'console' | 'explorer'; agentId: string | null } | null
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
   speakingMessageId: string | null
   /** Доступна ли озвучка (кнопка ▶ на ответах). */
@@ -152,6 +172,8 @@ export interface StoreDeps {
   api: RendererApi
   /** Мост сессии (web). Отсутствует (desktop) → аутентификация не требуется. */
   session?: RendererSessionBridge
+  /** Мост файлового проводника по машине (web). */
+  fs?: RendererFsBridge
   /** Источник времени (для формата HH:MM). По умолчанию Date.now. */
   now?: () => number
   /** Переопределение задержек пайплайна (для тестов). */
@@ -347,6 +369,40 @@ export interface StoreActions {
   applyVoiceDone(id: string): void
   /** Ошибка скачивания голоса (tts:voiceError). */
   applyVoiceError(id: string, message: string): void
+  // --- Админ-страница пользователей (только admin) ---
+  /** Открыть страницу пользователей (грузит список). */
+  openUsers(): Promise<void>
+  /** Закрыть страницу пользователей. */
+  closeUsers(): void
+  /** Создать пользователя (admin). */
+  createUserAccount(name: string, password: string, role: 'admin' | 'user'): Promise<void>
+  /** Блокировать/разблокировать пользователя. */
+  setUserBlocked(name: string, blocked: boolean): Promise<void>
+  /** Удалить пользователя и все его данные. */
+  deleteUserAccount(name: string): Promise<void>
+  /** Выбрать пользователя в админке (грузит отчёт по токенам и разговоры). */
+  selectAdminUser(name: string): Promise<void>
+  /** Загрузить отчёт по токенам выбранного пользователя. */
+  loadAdminUsage(unit: UsageUnit, from?: number, to?: number): Promise<void>
+  /** Открыть разговор пользователя в админ-просмотре истории. */
+  openAdminConversation(conversationId: string): Promise<void>
+  // --- Машинные утилиты (консоль/проводник) ---
+  /** Открыть утилиту из меню (машина по умолчанию — первая онлайн-своя). */
+  openUtility(kind: 'console' | 'explorer'): void
+  /** Закрыть утилиту, открытую из меню. */
+  closeUtility(): void
+  /** Тонкие операции над машиной (используются самодостаточными виджетами). */
+  fsList(agentId: string, path: string): Promise<FsResult>
+  fsWrite(agentId: string, path: string, dataBase64: string): Promise<FsResult>
+  fsRemove(agentId: string, path: string): Promise<FsResult>
+  fsRename(agentId: string, from: string, to: string): Promise<FsResult>
+  fsMkdir(agentId: string, path: string): Promise<FsResult>
+  /** Скачать файл машины (чтение + сохранение через браузер). */
+  downloadFsFile(agentId: string, path: string, name: string): Promise<void>
+  /** Загрузить файл на машину в указанный каталог; возвращает обновлённый листинг. */
+  uploadFsFile(agentId: string, dir: string, file: File): Promise<FsResult>
+  /** Выполнить команду на машине (консоль). */
+  agentExec(agentId: string, command: string): Promise<AgentExecResult>
   /** Отмена всех активных таймеров пайплайна (напр. при размонтировании). */
   dispose(): void
 }
@@ -399,6 +455,14 @@ function initialState(): AppState {
     cxTranscript: [],
     cxProjectCwd: null,
     cxSessionId: null,
+    usersOpen: false,
+    adminUsers: [],
+    adminSelected: null,
+    adminUsage: null,
+    adminConversations: [],
+    adminMessages: [],
+    adminConversationId: null,
+    utility: null,
     speakingMessageId: null,
     ttsAvailable: false,
     error: null,
@@ -1124,6 +1188,172 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ cxTranscript: next.length > CC_TRANSCRIPT_CAP ? next.slice(-CC_TRANSCRIPT_CAP) : next })
   }
 
+  // --- Админ-страница пользователей ---------------------------------------
+
+  async function refreshAdminUsers(): Promise<void> {
+    if (!api['admin:users']) return
+    setState({ adminUsers: await api['admin:users']() })
+  }
+
+  async function openUsers(): Promise<void> {
+    setState({ usersOpen: true })
+    try {
+      await refreshAdminUsers()
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  function closeUsers(): void {
+    setState({
+      usersOpen: false,
+      adminSelected: null,
+      adminUsage: null,
+      adminConversations: [],
+      adminMessages: [],
+      adminConversationId: null
+    })
+  }
+
+  async function createUserAccount(name: string, password: string, role: 'admin' | 'user'): Promise<void> {
+    try {
+      await api['admin:createUser']({ name, password, role })
+      await refreshAdminUsers()
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  async function setUserBlocked(name: string, blocked: boolean): Promise<void> {
+    try {
+      await api['admin:setBlocked']({ name, blocked })
+      await refreshAdminUsers()
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  async function deleteUserAccount(name: string): Promise<void> {
+    try {
+      await api['admin:deleteUser']({ name })
+      if (state.adminSelected === name) closeUsers()
+      await refreshAdminUsers()
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  async function selectAdminUser(name: string): Promise<void> {
+    setState({
+      adminSelected: name,
+      adminUsage: null,
+      adminConversations: [],
+      adminMessages: [],
+      adminConversationId: null
+    })
+    try {
+      const [usage, conversations] = await Promise.all([
+        api['admin:usage']({ name, unit: 'day' }),
+        api['admin:conversations']({ name })
+      ])
+      setState({ adminUsage: usage, adminConversations: conversations })
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  async function loadAdminUsage(unit: UsageUnit, from?: number, to?: number): Promise<void> {
+    const name = state.adminSelected
+    if (!name) return
+    try {
+      setState({ adminUsage: await api['admin:usage']({ name, unit, from, to }) })
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  async function openAdminConversation(conversationId: string): Promise<void> {
+    const name = state.adminSelected
+    if (!name) return
+    setState({ adminConversationId: conversationId, adminMessages: [] })
+    try {
+      setState({ adminMessages: await api['admin:messages']({ name, conversationId }) })
+    } catch (err) {
+      setState({ error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  // --- Машинные утилиты (консоль/проводник) -------------------------------
+
+  /** Машина по умолчанию для утилиты: своя онлайн, иначе выбранная цель, иначе первая. */
+  function defaultUtilityAgent(): string | null {
+    const online = state.agents.find((a) => a.online)
+    if (online) return online.id
+    const target = state.agents.find((a) => a.id === state.settings.execTarget)
+    return target?.id ?? state.agents[0]?.id ?? null
+  }
+
+  function openUtility(kind: 'console' | 'explorer'): void {
+    setState({ utility: { kind, agentId: defaultUtilityAgent() } })
+  }
+  function closeUtility(): void {
+    setState({ utility: null })
+  }
+
+  const noFs = (): never => {
+    throw new Error('Файловые операции недоступны')
+  }
+  const fsList = (agentId: string, path: string): Promise<FsResult> =>
+    deps.fs ? deps.fs.list(agentId, path) : noFs()
+  const fsWrite = (agentId: string, path: string, dataBase64: string): Promise<FsResult> =>
+    deps.fs ? deps.fs.write(agentId, path, dataBase64) : noFs()
+  const fsRemove = (agentId: string, path: string): Promise<FsResult> =>
+    deps.fs ? deps.fs.remove(agentId, path) : noFs()
+  const fsRename = (agentId: string, from: string, to: string): Promise<FsResult> =>
+    deps.fs ? deps.fs.rename(agentId, from, to) : noFs()
+  const fsMkdir = (agentId: string, path: string): Promise<FsResult> =>
+    deps.fs ? deps.fs.mkdir(agentId, path) : noFs()
+  const agentExec = (agentId: string, command: string): Promise<AgentExecResult> =>
+    deps.fs ? deps.fs.exec(agentId, command) : noFs()
+
+  async function uploadFsFile(agentId: string, dir: string, file: File): Promise<FsResult> {
+    if (!deps.fs) return noFs()
+    const dataBase64 = await fileToBase64(file)
+    const path = `${dir.replace(/\/$/, '')}/${file.name}`
+    return deps.fs.write(agentId, path, dataBase64)
+  }
+
+  async function downloadFsFile(agentId: string, path: string, name: string): Promise<void> {
+    if (!deps.fs) return
+    const res = await deps.fs.read(agentId, path)
+    const bytes = Uint8Array.from(atob(res.dataBase64 ?? ''), (c) => c.charCodeAt(0))
+    const blob = new Blob([bytes], { type: 'application/octet-stream' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  /**
+   * Если текст — команда «открой консоль/проводник», сохраняет ai-сообщение с
+   * tool-блоком (виджет прямо в ответе) и возвращает true (в LLM не идём).
+   */
+  async function maybeOpenUtility(text: string): Promise<boolean> {
+    const tool = detectOpenUtility(text, state.agents)
+    if (!tool) return false
+    const agent = tool.agentId ? state.agents.find((a) => a.id === tool.agentId) : undefined
+    const label = tool.kind === 'console' ? 'Консоль' : 'Проводник'
+    const where = agent ? ` — машина «${agent.name}»` : ''
+    const spec: ToolSpec = { kind: tool.kind, ...(tool.agentId ? { agentId: tool.agentId } : {}) }
+    await persistMessage('ai', `🖥 ${label}${where}\n\n${toolBlock(spec)}`)
+    await refreshConversations()
+    return true
+  }
+
   function downloadVoice(id: string): void {
     if (!deps.startVoiceDownload || id in state.voiceDownloads) return
     setState({ voiceDownloads: { ...state.voiceDownloads, [id]: 0 }, error: null })
@@ -1263,6 +1493,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await persistMessage('u1', composeUserText(text, atts))
     setState({ draft: '', attachments: [] })
     await refreshConversations()
+    // Команда «открой консоль/проводник» → виджет прямо в ответе, без обращения к LLM.
+    if (atts.length === 0 && (await maybeOpenUtility(text))) return
     if (!dispatchVoice('submit_text')) return // idle → thinking
     beginReply(
       [{ speakerId: 1, text: text || 'См. приложенные файлы.' }],
@@ -1553,6 +1785,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
     setState({ liveSegments: [] })
     await refreshConversations()
+    // Голосовая команда «открой консоль/проводник» → виджет в ответе, без LLM.
+    if (await maybeOpenUtility(segments.map((s) => s.text).join(' '))) {
+      dispatchVoice('reset') // thinking → idle
+      return
+    }
     beginReply(segments)
   }
 
@@ -1679,6 +1916,24 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       selectCxSession,
       resumeCxSession,
       applyCxTailItems,
+      openUsers,
+      closeUsers,
+      createUserAccount,
+      setUserBlocked,
+      deleteUserAccount,
+      selectAdminUser,
+      loadAdminUsage,
+      openAdminConversation,
+      openUtility,
+      closeUtility,
+      fsList,
+      fsWrite,
+      fsRemove,
+      fsRename,
+      fsMkdir,
+      downloadFsFile,
+      uploadFsFile,
+      agentExec,
       applyVoiceProgress,
       applyVoiceDone,
       applyVoiceError,
