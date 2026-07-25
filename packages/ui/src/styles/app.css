@@ -2706,25 +2706,11 @@
   font-size: 11px;
   font-weight: 600;
 }
-.chat-machine {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 5px;
+.chat-last-machine {
+  margin: 4px 0 0;
   color: var(--text-dim);
   font-size: 11px;
-}
-.chat-machine select {
-  min-width: 0;
-  max-width: 150px;
-  flex: 1;
-  border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  padding: 2px 4px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
+  font-weight: 600;
 }
 .live-machine {
   margin: 0 0 8px;

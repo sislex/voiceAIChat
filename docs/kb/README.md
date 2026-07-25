@@ -9,12 +9,12 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-26 | ✓ |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: 4b248e3 feat(chat): независимый выбор машины для каждого чата |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-07-26 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-25 | ✓ |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-25 | ⚠ 1 коммит(ов) в areas после сверки: 4b248e3 feat(chat): независимый выбор машины для каждого чата |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-07-26 | ✓ |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: aa35067 docs(kb): сверка свежести по sha коммита + факты про execTarget и cliProfiles |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-26 | ✓ |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: 4b248e3 feat(chat): независимый выбор машины для каждого чата |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-25 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-25 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |

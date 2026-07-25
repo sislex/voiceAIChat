@@ -1,12 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { Sidebar } from './Sidebar'
 import type { Conversation } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
 
 function conv(id: string, title: string): Conversation {
-  return { id, title, updatedAt: 1, messageCount: 2, execTarget: id === 'c1' ? 'm1' : null } as Conversation
+  return { id, title, updatedAt: 1, messageCount: 2, execTarget: null, lastExecTarget: id === 'c1' ? 'm1' : 'none' } as Conversation
 }
 
 function setup(overrides: Record<string, unknown> = {}) {
@@ -45,7 +44,8 @@ describe('Sidebar — статус работы чата', () => {
 })
 
 
-describe('Sidebar — машина отдельного чата', () => {
+
+describe('Sidebar — машина последнего сообщения', () => {
   const agent = {
     id: 'm1',
     name: 'MacBook',
@@ -55,17 +55,11 @@ describe('Sidebar — машина отдельного чата', () => {
     policy: { allowedDirs: [], allowNetwork: true, allowWrite: true, denyPatterns: [], allowPatterns: [], skills: [] }
   } as AgentInfo
 
-  it('показывает свой выбор у каждого чата и меняет только выбранный', async () => {
-    const onChangeExecTarget = vi.fn()
-    setup({ agents: [agent], onChangeExecTarget })
+  it('показывает read-only машину последнего сообщения без списков выбора', () => {
+    setup({ agents: [agent] })
 
-    const first = screen.getByLabelText('Машина чата «Чат 1»') as HTMLSelectElement
-    const second = screen.getByLabelText('Машина чата «Чат 2»') as HTMLSelectElement
-    expect(first.value).toBe('m1')
-    expect(second.value).toBe('')
-
-    await userEvent.selectOptions(second, 'none')
-    expect(onChangeExecTarget).toHaveBeenCalledWith('c2', 'none')
-    expect(first.value).toBe('m1')
+    expect(screen.getByText('Последнее: MacBook')).toBeInTheDocument()
+    expect(screen.getByText('Последнее: Без машины')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 })

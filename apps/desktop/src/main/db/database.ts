@@ -38,6 +38,7 @@ interface ConversationRow {
   updated_at: number
   claude_session_id: string | null
   exec_target: string | null
+  last_exec_target?: string | null
 }
 
 interface MessageRow {
@@ -122,13 +123,16 @@ export class VoiceChatDb {
          VALUES (?, ?, ?, ?, NULL, NULL)`
       )
       .run(id, title, ts, ts)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, lastExecTarget: null }
   }
 
   listConversations(): Conversation[] {
     const rows = this.db
       .prepare(
-        `SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count
+        `SELECT c.*,
+                (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count,
+                (SELECT m.exec_target FROM messages m WHERE m.conversation_id = c.id
+                 ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          ORDER BY c.updated_at DESC`
       )
@@ -138,7 +142,10 @@ export class VoiceChatDb {
 
   getConversation(id: string): Conversation | null {
     const row = this.db
-      .prepare(`SELECT * FROM conversations WHERE id = ?`)
+      .prepare(`SELECT c.*,
+                       (SELECT m.exec_target FROM messages m WHERE m.conversation_id = c.id
+                        ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
+                FROM conversations c WHERE c.id = ?`)
       .get(id) as ConversationRow | undefined
     if (!row) return null
     const count = (
@@ -156,7 +163,10 @@ export class VoiceChatDb {
     const like = `%${q.toLowerCase().replace(/[%_\\]/g, (ch) => `\\${ch}`)}%`
     const rows = this.db
       .prepare(
-        `SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count
+        `SELECT c.*,
+                (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count,
+                (SELECT m.exec_target FROM messages m WHERE m.conversation_id = c.id
+                 ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE ulower(c.title) LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM messages m
@@ -283,7 +293,8 @@ export class VoiceChatDb {
       updatedAt: row.updated_at,
       messageCount,
       claudeSessionId: row.claude_session_id,
-      execTarget: row.exec_target
+      execTarget: row.exec_target,
+      lastExecTarget: row.last_exec_target ?? null
     }
   }
 }

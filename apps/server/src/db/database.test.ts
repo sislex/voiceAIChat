@@ -56,6 +56,17 @@ describe('VoiceChatDb — разговоры', () => {
     expect(db.getConversation(U, second.id)?.execTarget).toBeNull()
   })
 
+  it('список показывает цель последнего сообщения отдельно от текущей цели чата', () => {
+    const c = db.createConversation(U, 'История')
+    db.setConversationExecTarget(U, c.id, 'machine-next')
+    db.addMessage(U, c.id, 'u1', 'вопрос', '10:00', undefined, undefined, 'machine-last')
+
+    expect(db.listConversations(U)[0]).toMatchObject({
+      execTarget: 'machine-next',
+      lastExecTarget: 'machine-last'
+    })
+  })
+
   it('переименование меняет заголовок', () => {
     const c = db.createConversation(U, 'Старое')
     db.renameConversation(U, c.id, 'Новое')
