@@ -1,3 +1,5 @@
+import { SERVICE_FENCES, fenceLang } from '@shared/sentences'
+
 // Разбиение потока текста на озвучиваемые чанки для стриминговой TTS.
 // - обычный текст режется на завершённые предложения;
 // - блоки кода (```…```) не озвучиваются: вместо них — фраза-заглушка;
@@ -87,7 +89,8 @@ export function splitSpeakable(text: string, final = false): { chunks: string[];
     }
     // лид-ин к коду без знака конца («Вот пример:») — озвучим отдельным чанком
     if (beforeRest.trim()) chunks.push(beforeRest.trim())
-    chunks.push(CODE_SPEECH)
+    // Служебные блоки (```tool/```questions/```image) — разметка для UI: молчим.
+    if (!SERVICE_FENCES.has(fenceLang(t.slice(open + 3)))) chunks.push(CODE_SPEECH)
     t = t.slice(open + 3 + closeRel + 3)
   }
 }

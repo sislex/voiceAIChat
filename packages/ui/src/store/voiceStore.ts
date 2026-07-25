@@ -406,6 +406,8 @@ export interface StoreActions {
   closeUtility(): void
   /** Тонкие операции над машиной (используются самодостаточными виджетами). */
   fsList(agentId: string, path: string): Promise<FsResult>
+  /** Прочитать файл машины (base64) — например, картинку для показа в сообщении. */
+  fsRead(agentId: string, path: string): Promise<FsResult>
   fsWrite(agentId: string, path: string, dataBase64: string): Promise<FsResult>
   fsRemove(agentId: string, path: string): Promise<FsResult>
   fsRename(agentId: string, from: string, to: string): Promise<FsResult>
@@ -1367,6 +1369,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   const fsList = (agentId: string, path: string): Promise<FsResult> =>
     deps.fs ? deps.fs.list(agentId, path) : noFs()
+  const fsRead = (agentId: string, path: string): Promise<FsResult> =>
+    deps.fs ? deps.fs.read(agentId, path) : noFs()
   const fsWrite = (agentId: string, path: string, dataBase64: string): Promise<FsResult> =>
     deps.fs ? deps.fs.write(agentId, path, dataBase64) : noFs()
   const fsRemove = (agentId: string, path: string): Promise<FsResult> =>
@@ -2027,6 +2031,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       openUtility,
       closeUtility,
       fsList,
+      fsRead,
       fsWrite,
       fsRemove,
       fsRename,

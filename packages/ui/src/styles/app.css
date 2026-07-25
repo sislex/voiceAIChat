@@ -2732,3 +2732,96 @@
 .convsettings-path { margin-top: 16px; padding: 11px; border-radius: 8px; background: var(--bg, #f5f6fa); font-family: monospace; }.convsettings-picker { margin-top: 12px; border: 1px solid var(--line, #ddd); border-radius: 9px; overflow: hidden; }.convsettings-pickerbar { display: flex; gap: 8px; align-items: center; padding: 8px; border-bottom: 1px solid var(--line, #ddd); }.convsettings-pickerbar span { flex: 1; overflow: hidden; text-overflow: ellipsis; font-family: monospace; }.convsettings-dir { display: block; width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line, #eee); background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .convsettings-skill { display: flex; gap: 12px; align-items: start; padding: 13px 0; border-bottom: 1px solid var(--line, #eee); }.convsettings-skill span { display: grid; gap: 4px; }.convsettings-skill small,.convsettings-muted { color: var(--muted, #737987); }.convsettings-skill code { font-size: 12px; }.convsettings-add { display: grid; grid-template-columns: 1fr 2fr 2fr auto; gap: 9px; margin-top: 20px; }.convsettings-add h3 { grid-column: 1 / -1; font-size: 15px; }.convsettings-error { color: #c43838; }.convsettings-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px max(24px, calc((100vw - 900px) / 2)); border-top: 1px solid var(--line, #ddd); background: var(--panel, #fff); }.convsettings-footer .primary { border-color: #5068d8; background: #5068d8; color: #fff; }
 @media (max-width: 700px) { .convsettings-head,.convsettings-body,.convsettings-footer { padding-left: 14px; padding-right: 14px; }.convsettings-add { grid-template-columns: 1fr; }.convsettings-add h3 { grid-column: auto; } }
+
+/* ---- Картинка от модели в сообщении (ToolFrame + просмотрщик) ---- */
+/* Карточка подстраивается под картинку, а не растягивается на всю ширину пузыря:
+   узкая иллюстрация не должна висеть в пустой рамке (как в ChatGPT). */
+.util-embed--img {
+  max-height: none;
+  width: fit-content;
+  max-width: 100%;
+}
+.imgbody {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* Превью: кликабельная кнопка без «кнопочного» вида. */
+.imgprev {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+  line-height: 0;
+}
+.imgprev img {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+}
+.imgcap {
+  margin: 0;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.imgload {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 14px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.imgerr {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 12px 14px;
+  color: #b3261e;
+  font-size: 13px;
+}
+.imgpath {
+  color: var(--text-dim);
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+/* Разворот: тёмное полотно во всю карточку, картинка вписана по размеру. */
+.util-embed--img.util-embed--fs {
+  width: auto;
+}
+.util-embed--img.util-embed--fs .imgbody {
+  flex: 1;
+  min-height: 0;
+  background: #14140f;
+}
+.imgsurf {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  cursor: zoom-in;
+  touch-action: none;
+}
+.imgsurf--zoomed {
+  cursor: grab;
+}
+.imgsurf--zoomed:active {
+  cursor: grabbing;
+}
+.imgsurf img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transform-origin: center center;
+  user-select: none;
+  -webkit-user-drag: none;
+}

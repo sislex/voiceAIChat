@@ -7,6 +7,17 @@
 /** Фраза вместо блока кода в озвучке. */
 export const CODE_SPEECH = 'Далее пример кода.'
 
+/**
+ * Служебные fenced-блоки: разметка для UI (виджет, форма вопросов, картинка),
+ * а не код. Их не озвучиваем вовсе — иначе вместо ответа звучит «далее пример кода».
+ */
+export const SERVICE_FENCES = new Set(['tool', 'questions', 'image'])
+
+/** Слово-язык сразу после открывающей ``` в нижнем регистре ('' — его нет). */
+export function fenceLang(afterFence: string): string {
+  return (/^[^\S\n]*([A-Za-z0-9_+-]*)/.exec(afterFence)?.[1] ?? '').toLowerCase()
+}
+
 export function splitSentences(text: string): { sentences: string[]; rest: string } {
   const sentences: string[] = []
   const re = /[^.!?…\n]*[.!?…\n]+/g
@@ -47,7 +58,7 @@ export function splitSpeakable(text: string): { chunks: string[]; rest: string }
     }
     // лид-ин к коду без знака конца («Вот пример:») — озвучим отдельным чанком
     if (beforeRest.trim()) chunks.push(beforeRest.trim())
-    chunks.push(CODE_SPEECH)
+    if (!SERVICE_FENCES.has(fenceLang(t.slice(open + 3)))) chunks.push(CODE_SPEECH)
     t = t.slice(open + 3 + closeRel + 3)
   }
 }
