@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AgentInfo, FsEntry } from '@shared/agentProtocol'
 import type { MachineOps, UtilityVariant } from './machine'
+import { ToolFrame } from './ToolFrame'
 
 export interface FileExplorerProps {
   agents: AgentInfo[]
@@ -38,7 +39,6 @@ export function FileExplorer({
   const [root, setRoot] = useState('')
   const [entries, setEntries] = useState<FsEntry[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [fullscreen, setFullscreen] = useState(false)
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -83,10 +83,14 @@ export function FileExplorer({
     const name = window.prompt('Имя новой папки')
     if (name) void run(ops.mkdir(agentId, joinPath(cwd, name)))
   }
-  const stop = (e: MouseEvent): void => e.stopPropagation()
 
-  const body = (
-    <>
+  return (
+    <ToolFrame
+      title="Проводник по машине"
+      variant={variant}
+      onClose={onClose}
+      testId={variant === 'modal' ? 'fs-overlay' : 'fs-embed'}
+    >
       <div className="fsbar">
         {agents.length > 1 && (
           <select
@@ -193,42 +197,6 @@ export function FileExplorer({
         })}
       </div>
       {root && <p className="fsroot">Корень: {root}</p>}
-    </>
-  )
-
-  const header = (
-    <div className="mdhead">
-      <h2 className="mdh">Проводник по машине</h2>
-      <span className="util-head-btns">
-        {variant === 'embedded' && (
-          <button className="xbtn" title="На весь экран" onClick={() => setFullscreen((v) => !v)}>
-            {fullscreen ? '🗕' : '⛶'}
-          </button>
-        )}
-        {onClose && (
-          <button className="xbtn" aria-label="Закрыть" onClick={onClose}>
-            ✕
-          </button>
-        )}
-      </span>
-    </div>
-  )
-
-  if (variant === 'modal') {
-    return (
-      <div className="ovl" onClick={onClose} data-testid="fs-overlay">
-        <div className="ccobs" onClick={stop} role="dialog" aria-label="Проводник по машине">
-          {header}
-          {body}
-        </div>
-      </div>
-    )
-  }
-  // embedded: карточка в сообщении; fullscreen — фиксированный оверлей.
-  return (
-    <div className={fullscreen ? 'util-embed util-embed--fs' : 'util-embed'} data-testid="fs-embed">
-      {header}
-      {body}
-    </div>
+    </ToolFrame>
   )
 }
