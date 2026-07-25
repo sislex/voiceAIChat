@@ -34,6 +34,8 @@ function pluralMessages(n: number): string {
 export interface SidebarProps {
   conversations: Conversation[]
   activeId: string | null
+  /** id разговоров, где сейчас идёт ход модели (индикатор «идёт работа»). */
+  workingIds?: string[]
   now: number
   onNew: () => void
   onPick: (id: string) => void
@@ -61,6 +63,7 @@ export interface SidebarProps {
 export function Sidebar({
   conversations,
   activeId,
+  workingIds = [],
   now,
   onNew,
   onPick,
@@ -83,6 +86,7 @@ export function Sidebar({
   // id разговора в режиме переименования + черновик названия.
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
+  const workingSet = new Set(workingIds)
 
   const startRename = (c: Conversation): void => {
     setRenamingId(c.id)
@@ -161,6 +165,10 @@ export function Sidebar({
                   </p>
                 )}
                 <p className="cmeta">{formatMeta(c, now)}</p>
+                <p className={workingSet.has(c.id) ? 'cstatus on' : 'cstatus'}>
+                  <span className="cstatus-dot" aria-hidden />
+                  {workingSet.has(c.id) ? 'идёт работа' : 'не ведётся'}
+                </p>
               </div>
               {confirmingId !== c.id && renamingId !== c.id && (
                 <span className="crow-actions">

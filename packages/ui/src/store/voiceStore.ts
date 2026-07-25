@@ -1670,6 +1670,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       })
     }
     if (convId !== state.activeId) return // фоновый разговор — в ленту не рисуем
+    // Защита: если снапшот claude.active был пропущен (гонка подписки WS), но
+    // токены активного разговора идут — поднимаем стрим из накопленного и выходим
+    // (этот delta уже учтён в activeTurns выше).
+    if (convId && state.voice === 'idle' && (state.activeTurns[convId] ?? '') !== '') {
+      restoreStreamIfActive()
+      return
+    }
     if (state.voice !== 'thinking' && state.voice !== 'speaking') return
     setState({ streamingReply: state.streamingReply + delta })
     if (!autoSpeakActive()) return

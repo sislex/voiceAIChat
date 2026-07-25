@@ -55,12 +55,13 @@ describe('WsClient', () => {
     c.close()
   })
 
-  it('роутинг по типу сообщения + отписка', () => {
+  it('роутинг по типу сообщения + отписка', async () => {
     const c = new WsClient('ws://x/ws')
     const ws = FakeWebSocket.last!
     ws._open()
     const tokens: string[] = []
     const off = c.on('claude.token', (m) => tokens.push(m.delta))
+    await Promise.resolve() // флаш буфера подписок (микротаск) → далее прямая доставка
     ws._emit({ t: 'claude.token', conversationId: 'c1', delta: 'Привет' })
     ws._emit({ t: 'claude.done', conversationId: 'c1', text: 'Привет' })
     expect(tokens).toEqual(['Привет'])
@@ -70,15 +71,37 @@ describe('WsClient', () => {
     c.close()
   })
 
-  it('доставляет agents (живой статус машин) подписчику', () => {
+  it('доставляет agents (живой статус машин) подписчику', async () => {
     const c = new WsClient('ws://x/ws')
     const ws = FakeWebSocket.last!
     ws._open()
     const got: Array<{ agents: unknown[] }> = []
     c.on('agents', (m) => got.push(m as never))
+    await Promise.resolve()
     ws._emit({ t: 'agents', agents: [{ id: 'a1', name: 'M', online: true }] })
     expect(got).toHaveLength(1)
     expect(got[0].agents).toHaveLength(1)
+    c.close()
+  })
+
+  it('буферизует сообщения до подписки и доставляет в исходном порядке', async () => {
+    const c = new WsClient('ws://x/ws')
+    const ws = FakeWebSocket.last!
+    ws._open()
+    // Сервер прислал снапшот и токен ДО того, как клиент успел подписаться (гонка
+    // при обновлении страницы: сокет открыт раньше React-эффекта с подписками).
+    ws._emit({ t: 'claude.active', turns: [{ conversationId: 'c1', partial: 'Нача' }] })
+    ws._emit({ t: 'claude.token', conversationId: 'c1', delta: 'ло' })
+    const order: string[] = []
+    // Подписку на token регистрируем раньше active — но буфер флашится глобально в
+    // исходном FIFO-порядке, поэтому active доставляется перед token.
+    c.on('claude.token', (m) => order.push('token:' + m.delta))
+    c.on('claude.active', (m) => order.push('active:' + m.turns[0].partial))
+    await Promise.resolve()
+    expect(order).toEqual(['active:Нача', 'token:ло'])
+    // После флаша новые сообщения доставляются напрямую.
+    ws._emit({ t: 'claude.token', conversationId: 'c1', delta: '!' })
+    expect(order).toEqual(['active:Нача', 'token:ло', 'token:!'])
     c.close()
   })
 })

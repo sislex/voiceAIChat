@@ -51,11 +51,25 @@ describe('VoiceBar — состояния', () => {
     expect(screen.getByText('Запрос отправлен движку Codex…')).toBeInTheDocument()
   })
 
-  it('speaking: эквалайзер, надпись и кнопка стоп', () => {
+  it('speaking: поле ввода доступно, «Отправить» неактивна, есть стоп озвучки', () => {
     setup('speaking')
-    expect(screen.getByText('Claude отвечает голосом…')).toBeInTheDocument()
-    expect(screen.getByText('TTS · локально')).toBeInTheDocument()
+    expect(screen.getByLabelText('Поле ввода сообщения')).toBeInTheDocument()
+    expect(screen.getByLabelText('Отправить сообщение')).toBeDisabled()
     expect(screen.getByLabelText('Остановить озвучку')).toBeInTheDocument()
+  })
+
+  it('стриминг (replyStarted): поле ввода доступно, «Отправить» неактивна, есть стоп запроса', () => {
+    setup('thinking', { replyStarted: true, draft: 'следующий вопрос' })
+    expect(screen.getByLabelText('Поле ввода сообщения')).toBeInTheDocument()
+    expect(screen.getByLabelText('Отправить сообщение')).toBeDisabled()
+    expect(screen.getByLabelText('Остановить запрос')).toBeInTheDocument()
+  })
+
+  it('стриминг: Enter не отправляет (отправка только в idle)', async () => {
+    const props = setup('thinking', { replyStarted: true, draft: 'привет' })
+    screen.getByLabelText('Поле ввода сообщения').focus()
+    await userEvent.keyboard('{Enter}')
+    expect(props.onSubmitText).not.toHaveBeenCalled()
   })
 
   it('diarization off: подпись «Вы» вместо «Спикер N»', () => {
