@@ -21,14 +21,16 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
 - `components/` — экраны и виджеты. Крупные: `ChatColumn`, `Sidebar`, `VoiceBar`,
   `SettingsModal`, `MachineConsole`/`MachineTerminal`/`MachineStatus`/`AgentCard`,
   `FileExplorer`, `CcObserver`/`CodexObserver`, `UsersAdmin`, `QuestionsForm`,
-  `MessageActivity`, `Markdown`.
+  `MessageActivity`, `MessageImage`, `Markdown`.
 - `styles/app.css` + `global.css` — стили общие, подключаются хостом как
   `@voicechat/ui/styles.css`.
 
 ## Правила
 
 - Всплывающие панели инструментов оборачивай в общий `ToolFrame` (рамка, Esc,
-  анимация разворота) — не делай свою.
+  анимация разворота) — не делай свою. Нужны свои кнопки в шапке — проп
+  `actions`; нужно содержимому знать про разворот (зум картинки, клик по
+  превью) — `children`/`actions` принимают функцию от `ToolFrameControl`.
 - Данные и настройки — через стор, а не прямым `fetch` из компонента.
 - Растущие поля ввода — через `useAutoGrow` (`lib/autoGrow.ts`): считает высоту в
   пикселях от `scrollHeight`, поэтому переносы длинных строк тоже учитываются.

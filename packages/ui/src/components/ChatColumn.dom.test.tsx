@@ -209,6 +209,7 @@ describe('ChatColumn — встроенная утилита (tool-блок)', (
   ]
   const ops = {
     list: vi.fn(),
+    read: vi.fn(),
     write: vi.fn(),
     remove: vi.fn(),
     rename: vi.fn(),
@@ -226,6 +227,57 @@ describe('ChatColumn — встроенная утилита (tool-блок)', (
   it('без machineOps виджет не рендерится (блок просто скрыт)', () => {
     renderCol({ messages: toolMsg })
     expect(screen.queryByTestId('console-embed')).toBeNull()
+  })
+})
+
+describe('ChatColumn — картинка от модели в сообщении', () => {
+  const imgMsg = (text: string): Message[] => [
+    { id: 'a1', conversationId: 'c', role: 'ai', text, time: '10:01', createdAt: 2, execTarget: 'm1' }
+  ]
+  const ops = {
+    list: vi.fn(),
+    read: vi.fn().mockResolvedValue({ root: '/', cwd: '', dataBase64: 'AAA' }),
+    write: vi.fn(),
+    remove: vi.fn(),
+    rename: vi.fn(),
+    mkdir: vi.fn(),
+    download: vi.fn(),
+    upload: vi.fn(),
+    exec: vi.fn()
+  }
+
+  it('рендерит картинку из блока и читает файл с машины сообщения', async () => {
+    renderCol({ messages: imgMsg('Готово\n\n```image\n{"path":"/tmp/out.png"}\n```'), machineOps: ops })
+    expect(await screen.findByTestId('image-embed')).toBeInTheDocument()
+    expect(ops.read).toHaveBeenCalledWith('m1', '/tmp/out.png')
+  })
+
+  it('блок вырезан из текста ответа', () => {
+    renderCol({ messages: imgMsg('Готово\n\n```image\n{"path":"/tmp/out.png"}\n```'), machineOps: ops })
+    expect(screen.getByText('Готово')).toBeInTheDocument()
+    expect(screen.queryByText(/tmp\/out\.png/)).toBeNull()
+  })
+
+  it('markdown-картинка с локальным путём тоже становится виджетом', async () => {
+    renderCol({ messages: imgMsg('Схема: ![Схема](/tmp/a.png)'), machineOps: ops })
+    expect(await screen.findByTestId('image-embed')).toBeInTheDocument()
+  })
+
+  it('в незавершённом ответе картинка показывается, а блок не мозолит глаза', async () => {
+    renderCol({
+      state: 'thinking',
+      streamingReply: 'Рисую…\n\n```image\n{"path":"/tmp/live.png"}\n```',
+      execTarget: 'm1',
+      machineOps: ops
+    })
+    expect(await screen.findByTestId('image-embed')).toBeInTheDocument()
+    expect(screen.queryByText(/tmp\/live\.png/)).toBeNull()
+  })
+
+  it('без machineOps картинка не рендерится, но и сырой блок не виден', () => {
+    renderCol({ messages: imgMsg('Готово\n\n```image\n{"path":"/tmp/out.png"}\n```') })
+    expect(screen.queryByTestId('image-embed')).toBeNull()
+    expect(screen.queryByText(/tmp\/out\.png/)).toBeNull()
   })
 })
 

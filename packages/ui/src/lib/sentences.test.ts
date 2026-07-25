@@ -102,3 +102,22 @@ describe('таблицы не озвучиваются', () => {
     expect(out).not.toContain(TABLE_SPEECH)
   })
 })
+
+describe('splitSpeakable — служебные блоки', () => {
+  it('```image не даёт заглушки «далее пример кода»', () => {
+    const { chunks } = splitSpeakable('Готово.\n```image\n{"path":"/tmp/a.png"}\n```', true)
+    expect(chunks).toEqual(['Готово.'])
+  })
+
+  it('```tool и ```questions тоже пропускаются молча', () => {
+    expect(splitSpeakable('Открываю.\n```tool\n{"kind":"console"}\n```', true).chunks).toEqual([
+      'Открываю.'
+    ])
+    expect(splitSpeakable('```questions\n[]\n```\nВыбери.', true).chunks).toEqual(['Выбери.'])
+  })
+
+  it('обычный блок кода по-прежнему заменяется заглушкой', () => {
+    const { chunks } = splitSpeakable('Смотри.\n```js\nlet a = 1\n```', true)
+    expect(chunks).toContain(CODE_SPEECH)
+  })
+})

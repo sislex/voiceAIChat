@@ -27,3 +27,20 @@ describe('prepareTtsText', () => {
     expect(prepareTtsText('  \n текст \n  ')).toBe('текст')
   })
 })
+
+describe('prepareTtsText — служебные блоки', () => {
+  it('```image не озвучивается ни текстом, ни заглушкой', () => {
+    const t = prepareTtsText('Готово.\n\n```image\n{"path":"/tmp/a.png"}\n```')
+    expect(t).toBe('Готово.')
+  })
+
+  it('```tool и ```questions тоже молчат', () => {
+    const t = prepareTtsText('Открываю.\n```tool\n{"kind":"console"}\n```')
+    expect(t).toBe('Открываю.')
+    expect(prepareTtsText('```questions\n[]\n```\nВыбери.')).toBe('Выбери.')
+  })
+
+  it('обычный блок кода по-прежнему заменяется фразой', () => {
+    expect(prepareTtsText('Смотри:\n```js\nlet a = 1\n```')).toContain('Далее пример кода')
+  })
+})
