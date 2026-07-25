@@ -6,11 +6,12 @@ import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { parseStreamJsonLine, parseStreamJsonActivity } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from './types'
+import { cliProfileEnv } from '../users/cliProfiles.js'
 
 export type SpawnFn = (
   command: string,
   args: string[],
-  options?: { cwd?: string }
+  options?: { cwd?: string; env?: NodeJS.ProcessEnv }
 ) => ChildProcess
 
 export interface ClaudeCliOptions {
@@ -18,6 +19,8 @@ export interface ClaudeCliOptions {
   spawn?: SpawnFn
   /** Имя/путь бинаря. По умолчанию 'claude' (ищется в PATH). */
   binPath?: string
+  /** Возвращает изолированный HOME владельца запроса. */
+  profileHome?: (userId: string) => string
 }
 
 function describeSpawnError(err: unknown): string {
@@ -55,6 +58,14 @@ export class ClaudeCli implements LlmClient {
     ]
     if (req.permissionMode) args.push('--permission-mode', req.permissionMode)
     if (req.sessionId) args.push('--resume', req.sessionId)
+    if (req.executionDisabled) {
+      args.push(
+        '--disallowedTools',
+        'Bash',
+        '--append-system-prompt',
+        'Для этого сообщения машина не выбрана. Не выполняй shell-команды и не пытайся запускать их каким-либо инструментом.'
+      )
+    }
     if (req.remote) {
       // Проброс Bash на машину пользователя: встроенный Bash выключаем, вместо него —
       // MCP-инструмент bash (сервер `remote`), который выполняет команду на агенте.
@@ -90,7 +101,12 @@ export class ClaudeCli implements LlmClient {
 
     let child: ChildProcess
     try {
-      child = spawnFn(this.opts.binPath ?? 'claude', args, req.cwd ? { cwd: req.cwd } : undefined)
+      const home = req.userId ? this.opts.profileHome?.(req.userId) : undefined
+      const spawnOptions =
+        req.cwd || home
+          ? { ...(req.cwd ? { cwd: req.cwd } : {}), ...(home ? { env: cliProfileEnv(home) } : {}) }
+          : undefined
+      child = spawnFn(this.opts.binPath ?? 'claude', args, spawnOptions)
     } catch (err) {
       fail(describeSpawnError(err))
       return { cancel: () => {} }

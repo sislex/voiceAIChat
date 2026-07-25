@@ -96,7 +96,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
             conversationId: msg.conversationId,
             segments: msg.segments,
             attachments: msg.attachments,
-            verbose: msg.verbose
+            verbose: msg.verbose,
+            execTarget: msg.execTarget
           })
           break
         case 'claude.cancel':

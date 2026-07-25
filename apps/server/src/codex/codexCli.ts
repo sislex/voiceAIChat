@@ -7,17 +7,20 @@ import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { parseCodexLine, parseCodexActivity } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
+import { cliProfileEnv } from '../users/cliProfiles.js'
 
 export type SpawnFn = (
   command: string,
   args: string[],
-  options?: { cwd?: string }
+  options?: { cwd?: string; env?: NodeJS.ProcessEnv }
 ) => ChildProcess
 
 export interface CodexCliOptions {
   spawn?: SpawnFn
   /** Имя/путь бинаря. По умолчанию 'codex' (ищется в PATH). */
   binPath?: string
+  /** Возвращает изолированный HOME владельца запроса. */
+  profileHome?: (userId: string) => string
 }
 
 function describeSpawnError(err: unknown): string {
@@ -61,6 +64,11 @@ export class CodexCli implements LlmClient {
     if (req.model) args.push('-m', req.model)
     if (req.cwd) args.push('-C', req.cwd)
 
+    if (req.executionDisabled) {
+      prompt =
+        `Для этого сообщения машина не выбрана. Не выполняй shell-команды и не запускай команды никаким способом.\n\n${prompt}`
+    }
+
     if (req.remote) {
       // Проброс на агента через MCP-инструмент. bypass — иначе codex в exec-режиме
       // отменяет вызовы инструментов («user cancelled»); использовать именно remote
@@ -102,7 +110,12 @@ export class CodexCli implements LlmClient {
 
     let child: ChildProcess
     try {
-      child = spawnFn(this.opts.binPath ?? 'codex', args, req.cwd ? { cwd: req.cwd } : undefined)
+      const home = req.userId ? this.opts.profileHome?.(req.userId) : undefined
+      const spawnOptions =
+        req.cwd || home
+          ? { ...(req.cwd ? { cwd: req.cwd } : {}), ...(home ? { env: cliProfileEnv(home) } : {}) }
+          : undefined
+      child = spawnFn(this.opts.binPath ?? 'codex', args, spawnOptions)
     } catch (err) {
       fail(describeSpawnError(err))
       return { cancel: () => {} }

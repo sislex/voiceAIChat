@@ -14,6 +14,7 @@ import {
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
+import { ensureCliProfile } from '../users/cliProfiles.js'
 import { listMcpServers } from '../claude/mcp.js'
 import { getLoginStatus } from '../auth/loginStatus.js'
 import { listProjects, listSessions, readTranscript } from '../cc/ccSessions.js'
@@ -23,7 +24,10 @@ import {
   readCxTranscript
 } from '../codex/codexSessions.js'
 
-export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promise<void> {
+export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDir: string): Promise<void> {
+  const profile = (req: Parameters<typeof uid>[0]) => ensureCliProfile(dataDir, uid(req))
+  const ccDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CC_DIR ?? profile(req).ccProjects
+  const cxDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CODEX_DIR ?? profile(req).codexSessions
   app.get(REST.conversations, async (req) => db.listConversations(uid(req)))
 
   app.post<{ Body: { title?: string } }>(REST.conversations, async (req) =>
@@ -58,8 +62,16 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promi
   app.post<{ Params: { id: string }; Body: AddMessageArgs }>(
     '/api/conversations/:id/messages',
     async (req) => {
-      const { role, text, time, engine, meta } = req.body
-      return db.addMessage(uid(req), req.params.id, role, text, time, engine, meta)
+      const { role, text, time, engine, meta, execTarget } = req.body
+      return db.addMessage(uid(req), req.params.id, role, text, time, engine, meta, execTarget)
+    }
+  )
+
+  app.patch<{ Params: { id: string; messageId: string }; Body: { execTarget: string | null } }>(
+    '/api/conversations/:id/messages/:messageId',
+    async (req, reply) => {
+      const message = db.setMessageExecTarget(uid(req), req.params.id, req.params.messageId, req.body.execTarget)
+      return message ?? reply.code(404).send({ error: 'not found' })
     }
   )
 
@@ -76,26 +88,26 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promi
 
   app.get(REST.mcpServers, async () => listMcpServers())
 
-  app.get(REST.authStatus, async () => getLoginStatus())
+  app.get(REST.authStatus, async (req) => getLoginStatus({ home: profile(req).home }))
 
-  app.get(REST.ccProjects, async () => listProjects())
+  app.get(REST.ccProjects, async (req) => listProjects(ccDir(req)))
   app.get<{ Params: { slug: string } }>(
     '/api/cc/projects/:slug/sessions',
-    async (req) => listSessions(req.params.slug)
+    async (req) => listSessions(req.params.slug, ccDir(req))
   )
   app.get<{ Params: { slug: string; id: string }; Querystring: { limit?: string } }>(
     '/api/cc/projects/:slug/sessions/:id',
     async (req) =>
       readTranscript(req.params.slug, req.params.id, {
         limit: req.query.limit ? Number(req.query.limit) : undefined
-      })
+      }, ccDir(req))
   )
 
   app.post<{ Body: { slug: string; id: string } }>(REST.ccResume, async (req, reply) => {
     const u = uid(req)
     const { slug, id } = req.body ?? {}
     if (!slug || !id) return reply.code(400).send({ error: 'slug и id обязательны' })
-    const items = readTranscript(slug, id)
+    const items = readTranscript(slug, id, {}, ccDir(req))
     const conv = db.createConversation(u, ccResumeTitle(items))
     const now = Date.now()
     for (const m of ccResumeMessages(items)) {
@@ -107,21 +119,21 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb): Promi
   })
 
   // --- Проводник Codex ---------------------------------------------------
-  app.get(REST.cxProjects, async () => listCxProjects())
+  app.get(REST.cxProjects, async (req) => listCxProjects(cxDir(req)))
   app.get<{ Querystring: { cwd?: string } }>(REST.cxSessions, async (req) =>
-    listCxSessions(req.query.cwd ?? '')
+    listCxSessions(req.query.cwd ?? '', cxDir(req))
   )
   app.get<{ Querystring: { id?: string; limit?: string } }>(REST.cxTranscript, async (req) =>
     readCxTranscript(req.query.id ?? '', {
       limit: req.query.limit ? Number(req.query.limit) : undefined
-    })
+    }, cxDir(req))
   )
 
   app.post<{ Body: { id: string } }>(REST.cxResume, async (req, reply) => {
     const u = uid(req)
     const { id } = req.body ?? {}
     if (!id) return reply.code(400).send({ error: 'id обязателен' })
-    const items = readCxTranscript(id)
+    const items = readCxTranscript(id, {}, cxDir(req))
     const conv = db.createConversation(u, cxResumeTitle(items))
     const now = Date.now()
     for (const m of cxResumeMessages(items)) {
