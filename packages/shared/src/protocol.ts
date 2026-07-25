@@ -83,6 +83,8 @@ export interface AddMessageArgs {
   engine?: LlmProvider
   /** Метаданные хода (токены/тайминги/детали запроса) — для роли 'ai'. */
   meta?: TurnMeta
+  /** Цель этой реплики: id машины, null — сервер, 'none' — команды запрещены. */
+  execTarget?: string | null
 }
 
 export interface HealthResponse {
@@ -182,6 +184,8 @@ export type ClientMessage =
       attachments?: string[]
       /** Режим консоли: слать активность агента (claude.log). */
       verbose?: boolean
+      /** Цель именно этого хода: id машины, null — сервер, 'none' — без команд. */
+      execTarget?: string | null
     }
   | { t: 'claude.cancel'; conversationId?: string }
   | { t: 'tts.speak'; text: string; voice: string }

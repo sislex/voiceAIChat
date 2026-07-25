@@ -72,6 +72,8 @@ export interface ChatColumnProps {
   execTarget?: string | null
   /** Сменить цель выполнения команд. */
   onChangeExecTarget?: (target: string | null) => void
+  /** Изменить цель только у конкретного сообщения. */
+  onChangeMessageExecTarget?: (id: string, target: string | null) => void
   /** Имя движка для подписи ответов и статуса (Claude/Codex). */
   aiLabel?: string
   /** Отправить собранные ответы на вопросы модели (форма под последним ответом). */
@@ -109,6 +111,7 @@ export function ChatColumn({
   agents = [],
   execTarget = null,
   onChangeExecTarget,
+  onChangeMessageExecTarget,
   aiLabel = 'Claude',
   onAnswerQuestions,
   machineOps
@@ -219,9 +222,9 @@ export function ChatColumn({
             {title}
           </h1>
         )}
-        {agents.length > 0 && onChangeExecTarget && (
+        {onChangeExecTarget && (
           <label className="exectarget" title="Где выполнять команды агента">
-            <span className={`exectarget-dot ${execTarget ? 'remote' : 'server'}`} aria-hidden />
+            <span className={`exectarget-dot ${execTarget === 'none' ? 'disabled' : execTarget ? 'remote' : 'server'}`} aria-hidden />
             <select
               className="exectarget-sel"
               aria-label="Где выполнять команды"
@@ -229,6 +232,7 @@ export function ChatColumn({
               onChange={(e) => onChangeExecTarget(e.target.value || null)}
             >
               <option value="">🖥 На сервере</option>
+              <option value="none">⛔ Без машины</option>
               {agents.map((a) => (
                 <option key={a.id} value={a.id} disabled={!a.online}>
                   💻 {a.name}
@@ -389,6 +393,23 @@ export function ChatColumn({
                 )}
                 {!isEditing && (
                   <div className="mfoot">
+                    {!isAi && onChangeMessageExecTarget && (
+                      <label className="msg-target" title="Машина этого сообщения">
+                        <select
+                          aria-label={`Машина сообщения ${m.id}`}
+                          value={m.execTarget ?? ''}
+                          onChange={(e) => onChangeMessageExecTarget(m.id, e.target.value || null)}
+                        >
+                          <option value="">🖥 На сервере</option>
+                          <option value="none">⛔ Без машины</option>
+                          {agents.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              💻 {a.name}{a.online ? '' : ' (офлайн)'}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                     <p className="mtime">{m.time}</p>
                     {isAi && m.meta && <MessageMeta meta={m.meta} />}
                     {isAi && m.meta?.activity && m.meta.activity.length > 0 && (

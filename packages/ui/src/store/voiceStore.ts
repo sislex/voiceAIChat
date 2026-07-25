@@ -203,7 +203,8 @@ export interface StoreDeps {
     conversationId: string,
     segments: SttSegmentWire[],
     attachments?: string[],
-    verbose?: boolean
+    verbose?: boolean,
+    execTarget?: string | null
   ) => void
   /** Отмена текущего запроса к Claude (renderer → main). */
   cancelClaude?: (conversationId?: string) => void
@@ -267,6 +268,7 @@ export interface StoreActions {
   deleteMessage(id: string): Promise<void>
   /** Исправить сообщение пользователя: удалить его и все последующие, переспросить. */
   editMessage(id: string, newText: string): Promise<void>
+  setMessageExecTarget(id: string, execTarget: string | null): Promise<void>
   /** Прикрепить файл к следующему сообщению (загрузка на сервер). */
   addAttachment(file: File): Promise<void>
   /** Убрать прикреплённый файл по id. */
@@ -659,19 +661,22 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     role: MessageRole,
     text: string,
     engine?: LlmProvider,
-    meta?: TurnMeta
-  ): Promise<void> {
+    meta?: TurnMeta,
+    execTarget?: string | null
+  ): Promise<Message | undefined> {
     const conversationId = state.activeId
-    if (!conversationId) return
+    if (!conversationId) return undefined
     const message = await api['messages:add']({
       conversationId,
       role,
       text,
       time: formatTime(now()),
       ...(engine ? { engine } : {}),
-      ...(meta && Object.keys(meta).length > 0 ? { meta } : {})
+      ...(meta && Object.keys(meta).length > 0 ? { meta } : {}),
+      ...(execTarget !== undefined ? { execTarget } : {})
     })
     setState({ messages: [...state.messages, message] })
+    return message
   }
 
   /** Добавляет в ленту сообщение, уже сохранённое сервером (без записи в БД). */
@@ -788,13 +793,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Роутинг ответа: реальный Claude (стрим событиями) или мок-пайплайн. */
-  function beginReply(segments: SttSegmentWire[], attachments: string[] = []): void {
+  function beginReply(segments: SttSegmentWire[], attachments: string[] = [], execTarget: string | null = state.settings.execTarget): void {
     if (claudeEnabled && deps.sendClaudePrompt && state.activeId) {
       setState({ streamingReply: '', lastTurnMeta: null, liveActivity: [] })
       ttsBuffer = ''
       // verbose=true всегда: активность нужна для живого статуса и подробного вида
       // сообщения (глобальная консоль всё равно рендерится только при showConsole).
-      deps.sendClaudePrompt(state.activeId, segments, attachments, true)
+      if (execTarget === null) deps.sendClaudePrompt(state.activeId, segments, attachments, true)
+      else deps.sendClaudePrompt(state.activeId, segments, attachments, true, execTarget)
       return
     }
     const prompt = segments.map((s) => s.text).join(' ')
@@ -1383,6 +1389,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function maybeOpenUtility(text: string): Promise<boolean> {
     const tool = detectOpenUtility(text, state.agents)
     if (!tool) return false
+    if (state.settings.execTarget === 'none') {
+      await persistMessage('ai', 'Команды отключены: для этого сообщения выбрано «Без машины».')
+      await refreshConversations()
+      return true
+    }
     const agent = tool.agentId ? state.agents.find((a) => a.id === tool.agentId) : undefined
     const label = tool.kind === 'console' ? 'Консоль' : 'Проводник'
     const where = agent ? ` — машина «${agent.name}»` : ''
@@ -1532,7 +1543,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if ((!text && atts.length === 0) || state.voice !== 'idle') return
     setState({ error: null })
     await ensureConversation(text || atts.map((a) => a.name).join(', '))
-    await persistMessage('u1', composeUserText(text, atts))
+    const execTarget = state.settings.execTarget
+    await persistMessage('u1', composeUserText(text, atts), undefined, undefined, execTarget)
     setState({ draft: '', attachments: [] })
     await refreshConversations()
     // Команда «открой консоль/проводник» → виджет прямо в ответе, без обращения к LLM.
@@ -1540,7 +1552,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!dispatchVoice('submit_text')) return // idle → thinking
     beginReply(
       [{ speakerId: 1, text: text || 'См. приложенные файлы.' }],
-      atts.map((a) => a.id)
+      atts.map((a) => a.id),
+      execTarget
     )
   }
 
@@ -1549,10 +1562,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     const t = text.trim()
     if (!t || state.voice !== 'idle' || !state.activeId) return
     setState({ error: null })
-    await persistMessage('u1', t)
+    const execTarget = state.settings.execTarget
+    await persistMessage('u1', t, undefined, undefined, execTarget)
     await refreshConversations()
     if (!dispatchVoice('submit_text')) return // idle → thinking
-    beginReply([{ speakerId: 1, text: t }])
+    beginReply([{ speakerId: 1, text: t }], [], execTarget)
   }
 
   function cancelRequest(): void {
@@ -1561,6 +1575,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     cancelTimers()
     cancelReply() // отмена запроса к Claude + сброс озвучки + очистка стрима
     dispatchVoice('reset') // thinking/speaking → idle
+  }
+
+  async function setMessageExecTarget(id: string, execTarget: string | null): Promise<void> {
+    if (!state.activeId) return
+    const message = await api['messages:setExecTarget']({ conversationId: state.activeId, messageId: id, execTarget })
+    setState({ messages: state.messages.map((m) => (m.id === id ? message : m)) })
   }
 
   async function deleteMessage(id: string): Promise<void> {
@@ -1576,16 +1596,18 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     const idx = state.messages.findIndex((m) => m.id === id)
     if (idx < 0) return
     const role = state.messages[idx].role
+    const messageExecTarget = state.messages[idx].execTarget ?? null
     // Удаляем правимое сообщение и все последующие (в БД и в ленте) — перегенерация.
     const removed = state.messages.slice(idx)
     for (const m of removed) {
       await api['messages:delete']({ conversationId: state.activeId, messageId: m.id })
     }
     setState({ messages: state.messages.slice(0, idx), error: null })
-    await persistMessage(role, text)
+    const execTarget = messageExecTarget
+    await persistMessage(role, text, undefined, undefined, execTarget)
     await refreshConversations()
     if (!dispatchVoice('submit_text')) return // idle → thinking
-    beginReply([{ speakerId: 1, text }])
+    beginReply([{ speakerId: 1, text }], [], execTarget)
   }
 
   async function addAttachment(file: File): Promise<void> {
@@ -1917,6 +1939,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       cancelRequest,
       deleteMessage,
       editMessage,
+      setMessageExecTarget,
       addAttachment,
       removeAttachment,
       startVoice,

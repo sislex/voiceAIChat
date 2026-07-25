@@ -45,8 +45,8 @@ function makeSttBridge(ws: WsClient): RendererSttBridge {
 
 function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
   return {
-    send: ({ conversationId, segments, attachments, verbose }) =>
-      ws.send({ t: 'claude.send', conversationId, segments, attachments, verbose }),
+    send: ({ conversationId, segments, attachments, verbose, execTarget }) =>
+      ws.send({ t: 'claude.send', conversationId, segments, attachments, verbose, execTarget }),
     cancel: (payload) =>
       ws.send({
         t: 'claude.cancel',
