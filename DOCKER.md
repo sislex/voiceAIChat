@@ -54,6 +54,57 @@ docker compose exec -u node voicechat codex login
 и без них): `VC_WHISPER_CLI`, `VC_MODELS_DIR`, `VC_PIPER_BIN`,
 `VC_PIPER_VOICES_DIR` — если добавить в образ бинарники whisper-cli/piper.
 
+
+## Подключение внешнего Claude Code к серверу
+
+Сервер публикует Anthropic-compatible маршруты `POST /v1/messages` и
+`POST /v1/messages/count_tokens`. Запросы прозрачно передаются в другой
+Anthropic-compatible API: сохраняются tools/tool_result, thinking, prompt caching,
+beta-заголовки, ошибки и потоковые SSE-события.
+
+Настройте backend в `.env` рядом с `docker-compose.yml`:
+
+```env
+VC_CLAUDE_UPSTREAM_URL=https://llm.example.com
+VC_CLAUDE_UPSTREAM_API_KEY=upstream-secret
+VC_CLAUDE_UPSTREAM_AUTH=x-api-key
+VC_CLAUDE_MODEL_MAP={"claude-opus-4-6":"provider-opus","claude-sonnet-4-6":"provider-sonnet","claude-haiku-4-5-20251001":"provider-haiku"}
+```
+
+`VC_CLAUDE_UPSTREAM_URL` может оканчиваться как корнем API, так и `/v1`.
+`VC_CLAUDE_UPSTREAM_AUTH` принимает `x-api-key` (по умолчанию), `bearer` или
+`both`. `VC_CLAUDE_MODEL_MAP` необязателен: без него имя модели передаётся без
+изменений.
+
+Перезапустите контейнер:
+
+```bash
+docker compose up -d --build
+```
+
+На машине с Claude Code:
+
+```bash
+export ANTHROPIC_BASE_URL=https://voicechat.example.com
+# Claude Code ожидает наличие учётных данных; сервер закрытой сети это значение
+# намеренно не проверяет и не передаёт upstream.
+export ANTHROPIC_AUTH_TOKEN=unused-local-network-token
+claude --model sonnet
+```
+
+Для локальной проверки без Claude Code:
+
+```bash
+curl http://localhost:8787/v1/messages \
+  -H 'content-type: application/json' \
+  -H 'anthropic-version: 2023-06-01' \
+  -d '{"model":"claude-sonnet-4-6","max_tokens":64,"messages":[{"role":"user","content":"Ответь: ok"}]}'
+```
+
+Входящая авторизация отсутствует намеренно. Не публикуйте эти маршруты в открытый
+интернет без VPN, firewall или авторизации на reverse proxy: любой доступ к ним
+расходует ключ upstream.
+
 ## Сборка образа вручную
 
 ```bash

@@ -30,6 +30,16 @@ export interface ServerConfig {
    * не мешать Vite. В Docker указывает на скопированный билд.
    */
   webDir?: string
+  /** Backend входящего Claude gateway: прозрачный upstream или локальный Codex CLI. */
+  claudeGatewayBackend: 'upstream' | 'codex'
+  /** Anthropic-compatible upstream для входящих запросов Claude Code. */
+  claudeGatewayUpstreamUrl?: string
+  /** API-ключ upstream; входящий gateway остаётся без авторизации. */
+  claudeGatewayUpstreamKey?: string
+  /** Способ передачи ключа upstream. */
+  claudeGatewayAuthMode: 'x-api-key' | 'bearer' | 'both'
+  /** Отображение имён моделей Claude Code в имена upstream. */
+  claudeGatewayModelMap: Record<string, string>
 }
 
 const DEFAULT_DATA_DIR = join(homedir(), '.voicechat-server')
@@ -71,6 +81,19 @@ function pick(envVal: string | undefined, repoPath: string, fallback: string): s
   return fallback
 }
 
+function parseModelMap(raw: string | undefined): Record<string, string> {
+  if (!raw) return {}
+  try {
+    const value: unknown = JSON.parse(raw)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+    return Object.fromEntries(
+      Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+    )
+  } catch {
+    throw new Error('VC_CLAUDE_MODEL_MAP должен быть JSON-объектом {\"входная-модель\":\"upstream-модель\"}')
+  }
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const dataDir = env.VC_DATA_DIR ?? DEFAULT_DATA_DIR
   const modelsDir = pick(env.VC_MODELS_DIR, REPO.modelsDir, join(dataDir, 'models'))
@@ -85,6 +108,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     piperArgsPrefix: env.VC_PIPER_ARGS ? env.VC_PIPER_ARGS.split(' ') : [],
     agentAppPath: env.VC_AGENT_APP ?? (AUTODISCOVER ? findDmg(REPO.agentAppDir) : undefined),
     desktopAppPath: env.VC_DESKTOP_APP ?? (AUTODISCOVER ? findDmg(REPO.desktopAppDir) : undefined),
-    webDir: env.VC_WEB_DIR
+    webDir: env.VC_WEB_DIR,
+    claudeGatewayBackend: env.VC_CLAUDE_GATEWAY_BACKEND === 'codex' ? 'codex' : 'upstream',
+    claudeGatewayUpstreamUrl: env.VC_CLAUDE_UPSTREAM_URL,
+    claudeGatewayUpstreamKey: env.VC_CLAUDE_UPSTREAM_API_KEY,
+    claudeGatewayAuthMode:
+      env.VC_CLAUDE_UPSTREAM_AUTH === 'bearer' || env.VC_CLAUDE_UPSTREAM_AUTH === 'both'
+        ? env.VC_CLAUDE_UPSTREAM_AUTH
+        : 'x-api-key',
+    claudeGatewayModelMap: parseModelMap(env.VC_CLAUDE_MODEL_MAP)
   }
 }
