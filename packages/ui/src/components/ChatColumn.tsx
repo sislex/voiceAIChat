@@ -19,6 +19,10 @@ import { QuestionsForm } from './QuestionsForm'
 import { MessageMeta } from './MessageMeta'
 import { MessageActivity } from './MessageActivity'
 import { copyText } from '../lib/clipboard'
+import { useAutoGrow } from '../lib/autoGrow'
+
+const EDIT_MIN_ROWS = 2
+const EDIT_MAX_ROWS = 4
 
 export interface ChatColumnProps {
   title: string
@@ -117,6 +121,9 @@ export function ChatColumn({
   const scrollRef = useRef<HTMLDivElement>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
+  // Поле редактирования — как композер: от двух строк до четырёх, дальше скролл.
+  // Хук один на колонку: редактируется всегда не больше одного сообщения.
+  const editRef = useAutoGrow(editDraft, EDIT_MIN_ROWS, EDIT_MAX_ROWS)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [titleEditing, setTitleEditing] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
@@ -330,9 +337,10 @@ export function ChatColumn({
                 {isEditing ? (
                   <div className="editwrap">
                     <textarea
+                      ref={editRef}
                       className="editarea"
                       value={editDraft}
-                      rows={Math.min(10, editDraft.split('\n').length + 1)}
+                      rows={EDIT_MIN_ROWS}
                       onChange={(e) => setEditDraft(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
