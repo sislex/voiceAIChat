@@ -1,0 +1,100 @@
+# voiceAIChat — инструкции для агента
+
+Голосовой чат-бот: браузер/десктоп говорит с Claude или Codex CLI, речь распознаётся
+Whisper, ответ озвучивается Piper. Плюс «машины» — компаньон-агенты на чужих
+хостах, на которых модель выполняет команды и держит живой терминал.
+
+**Этот файл читается в начале каждой сессии — он должен остаться коротким.**
+Детали живут в `docs/kb/` и в `AGENTS.md` внутри пакетов; читай их по мере надобности,
+а не заранее. **Перед завершением работы обнови базу знаний — см. «Обновление KB».**
+
+## Карта монорепо (npm workspaces)
+
+| Путь | Пакет | Что это | Детали |
+|---|---|---|---|
+| `packages/shared` | `@voicechat/shared` | Типы, контракт REST/WS, чистая логика (без зависимостей) | [AGENTS](packages/shared/AGENTS.md) |
+| `packages/ui` | `@voicechat/ui` | Весь React-UI и стор; транспорт-нейтрален (мосты `window.*`) | [AGENTS](packages/ui/AGENTS.md) |
+| `apps/server` | `@voicechat/server` | Fastify: REST + WS, SQLite, Whisper, Piper, claude/codex CLI, реестр машин | [AGENTS](apps/server/AGENTS.md) |
+| `apps/web` | `@voicechat/web` | Тонкий браузерный клиент: `@voicechat/ui` + мосты поверх REST/WS | [AGENTS](apps/web/AGENTS.md) |
+| `apps/agent` | `@voicechat/agent` | Компаньон-агент на машине пользователя (exec/fs/pty/телеметрия) | [AGENTS](apps/agent/AGENTS.md) |
+| `apps/agent-tray` | `@voicechat/agent-tray` | Electron-трей вокруг агента (установка, лог, разрешения) | [AGENTS](apps/agent-tray/AGENTS.md) |
+| `apps/desktop` | `@voicechat/desktop` | Исходное Electron-приложение (свой `node_modules`, вне workspaces) | [AGENTS](apps/desktop/AGENTS.md) |
+
+`apps/desktop` и `apps/agent-tray` **намеренно не в** `workspaces`: у них свой
+`node_modules` с Electron, корневой `npm install` их не трогает.
+
+## Команды
+
+```bash
+npm install                  # корневые воркспейсы (desktop/agent-tray — отдельно)
+npm run dev:web              # сервер :8787 + Vite-клиент вместе (scripts/dev-web.sh)
+npm run typecheck            # все воркспейсы; отдельно: typecheck:desktop, typecheck:agent-tray
+npm run test                 # все воркспейсы (vitest run)
+npm run -w @voicechat/ui test        # тесты одного пакета — так быстрее
+npm run docker               # docker compose up --build -d → http://localhost:8787
+npm run kb:check             # что в базе знаний устарело относительно кода
+```
+
+**Dev-сервер запускает пользователь, а не агент.** Не оставляй свой процесс на
+:8787 — он ловит `EADDRINUSE` у пользователя. Нужен запуск — попроси, или подними
+на другом порту (`PORT=8799`).
+
+## Гейт (обязателен для каждого шага)
+
+Шаг не считается сделанным, пока не зелёные: `typecheck` затронутых пакетов +
+`test` затронутых пакетов. Где менялся UI/сборка — плюс `build`. Тесты пишутся
+в том же шаге, что и код, а не «потом».
+
+## Что нужно знать до первой правки
+
+- **Единый источник контракта — `packages/shared`.** Новое поле/сообщение/роут
+  добавляется сначала там (`protocol.ts`, `agentProtocol.ts`, `ipc.ts`, `types.ts`),
+  потом на сервере и в UI. Списки `CLIENT_MESSAGE_TYPES` / `SERVER_MESSAGE_TYPES`
+  проверяются тестами контракта — пополняй их.
+- **UI один на всех.** Фича в `packages/ui` появляется и в web, и в desktop. Прямых
+  обращений к транспорту в компонентах нет: только `window.api/audio/stt/claude/tts/
+  cc/codex/agents/session/fs/pty` (формы — в `@shared/ipc`).
+- **Сервер не компилируется в JS** — запускается `tsx` прямо из исходников, поэтому
+  в импортах внутри `apps/server` пишутся расширения `.js` (`./config.js`), хотя
+  файлы — `.ts`. В `packages/ui`/`shared` — без расширений, алиас `@shared/*`.
+- **Комментарии и документация — по-русски**, объясняют «почему», а не «что»
+  (см. соседний код). Тесты — `*.test.ts` / `*.dom.test.tsx` рядом с исходником.
+- **Язык общения с пользователем — русский.**
+
+## База знаний (`docs/kb/`)
+
+Читай нужный файл по теме — не весь каталог:
+
+| Файл | Когда открывать |
+|---|---|
+| [architecture.md](docs/kb/architecture.md) | как связаны клиент, сервер, CLI и машины; где чей стейт |
+| [protocol.md](docs/kb/protocol.md) | добавляешь/меняешь REST-роут, WS-сообщение, мост `window.*` |
+| [llm.md](docs/kb/llm.md) | claude/codex CLI, stream-json, ходы, наблюдатели сессий, Anthropic-gateway |
+| [stt-tts.md](docs/kb/stt-tts.md) | Whisper, Piper/say, голоса, скачивание моделей, лимиты по памяти |
+| [machines.md](docs/kb/machines.md) | компаньон-агент, политика команд, PTY, проводник, телеметрия, версии |
+| [data-auth.md](docs/kb/data-auth.md) | SQLite-схема, пользователи, роли, токены, права |
+| [deploy.md](docs/kb/deploy.md) | Docker, Caddy/HTTPS, прод-сервер, переменные окружения |
+| [conventions.md](docs/kb/conventions.md) | стиль кода, тесты, как устроены гейты и коммиты |
+| [kb-workflow.md](docs/kb/kb-workflow.md) | правила ведения самой базы знаний |
+
+Историю решений по фичам — только если нужен контекст «почему так»: `docs/plans/`
+(живые планы с чек-листами), `docs/kb/log/` (журнал сессий), `docs/docker.md`.
+
+## Обновление KB (делает каждый агент, на любой машине)
+
+Узнал факт, которого не было в KB, или изменил поведение, описанное в KB, —
+занеси. Иначе следующая сессия снова платит за исследование.
+
+1. Правь **тематический файл** в `docs/kb/` (или `AGENTS.md` пакета, если факт
+   локален для пакета) и поставь сегодняшнюю дату: `node scripts/kb.mjs touch <файл>`.
+2. Заведи запись журнала: `npm run kb:log -- <короткий-slug>` — создаст
+   `docs/kb/log/<дата>-<машина>-<slug>.md`. **Один файл на запись** — поэтому
+   параллельные агенты на разных машинах никогда не конфликтуют в журнале.
+3. `npm run kb:index` — перегенерирует `docs/kb/README.md`.
+4. Коммить правки KB **вместе с кодом** одним коммитом.
+
+Конфликты: `docs/kb/README.md` генерируемый — не разрешай его руками, возьми любую
+версию и прогони `npm run kb:index`. В тематических файлах пиши абзацами по теме
+(а не одним растущим списком) — так параллельные правки ложатся в разные места файла.
+
+В Claude Code для шагов 1–3 есть `/kb-update`.
