@@ -95,7 +95,7 @@ xterm.write ◄─────────────────────�
 - [x] Ш4. UI: xterm-терминал — MachineTerminal, MachineUtility, стили; typecheck+тесты+сборка web зелёные
 - [x] Ш5. Web-мост — makePtyBridge + window.pty; web-typecheck зелёный
 - [x] Ш6. Машина: fish 3.7.0 установлен; бандл агента — node-pty external (require в рантайме); загрузка безопасна в ESM и CJS
-- [ ] Ш7. Финал: commit/push/docker
+- [x] Ш7. Финал — общий typecheck ✓, commit dbf8389, push origin/main ✓, docker --build up ✓ (health 200)
 
 ## Журнал
 
