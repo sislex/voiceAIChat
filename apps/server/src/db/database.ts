@@ -413,13 +413,16 @@ export class VoiceChatDb {
     return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at }
   }
 
-  /** Гарантирует наличие пользователя admin (сид при старте; пароль по умолчанию пустой). */
-  ensureAdmin(): void {
+  /**
+   * Гарантирует наличие пользователя admin (сид при старте). Пароль применяется
+   * только при создании записи — смена пароля через UI не перезатирается рестартом.
+   */
+  ensureAdmin(password = ''): void {
     const exists = this.db.prepare(`SELECT 1 FROM users WHERE name = 'admin'`).get()
     if (exists) return
     this.db
       .prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at) VALUES (?, ?, 'admin', 0, ?)`)
-      .run('admin', hashPassword(''), this.now())
+      .run('admin', hashPassword(password), this.now())
   }
 
   /** Создаёт пользователя (роль admin/user). Кидает при дубликате имени. */

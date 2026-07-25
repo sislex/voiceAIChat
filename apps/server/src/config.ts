@@ -40,6 +40,8 @@ export interface ServerConfig {
   claudeGatewayAuthMode: 'x-api-key' | 'bearer' | 'both'
   /** Отображение имён моделей Claude Code в имена upstream. */
   claudeGatewayModelMap: Record<string, string>
+  /** Пароль пользователя admin при сиде новой БД (пусто — без пароля). */
+  adminPassword: string
   /** Порог памяти для распознавания речи (STT), байты; undefined — дефолт по модели. */
   minMemSttBytes?: number
   /** Порог памяти для озвучки (TTS), байты; undefined — дефолт. */
@@ -132,6 +134,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
         ? env.VC_CLAUDE_UPSTREAM_AUTH
         : 'x-api-key',
     claudeGatewayModelMap: parseModelMap(env.VC_CLAUDE_MODEL_MAP),
+    adminPassword: env.VC_ADMIN_PASSWORD ?? '',
     minMemSttBytes: parseBytes(env.VC_MIN_MEM_STT),
     minMemTtsBytes: parseBytes(env.VC_MIN_MEM_TTS)
   }
