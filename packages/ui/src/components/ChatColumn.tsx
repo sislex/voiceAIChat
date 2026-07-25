@@ -238,6 +238,9 @@ export function ChatColumn({
             {title}
           </h1>
         )}
+        <span className="mtitle-machine" data-testid="head-machine" title="Машина этого разговора">
+          {execTarget === 'none' ? 'Без машины' : execTarget ? (agents.find((a) => a.id === execTarget)?.name ?? execTarget) : 'Сервер'}
+        </span>
         {onOpenConversationSettings && (
           <button className="convsettings-open" aria-label="Настройки разговора" title="Настройки разговора" onClick={onOpenConversationSettings}>⚙</button>
         )}

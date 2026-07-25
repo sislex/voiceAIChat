@@ -13,6 +13,7 @@ import {
   buildPrompt,
   clampModelForRole,
   claudeModelAlias,
+  normalizeClaudeModel,
   type ActiveTurn,
   type AgentPolicy,
   type ClaudeInitInfo,
@@ -151,15 +152,20 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
     const conv = deps.db.getConversation(userId, conversationId)
     const settings = deps.db.getSettings(userId)
-    // Движок и модель по провайдеру. Модель Claude клампим по роли пользователя
-    // (у роли user нет opus/fable — сервер не даст обойти фильтр клиента).
-    const provider = settings.llmProvider === 'codex' && deps.codex ? 'codex' : 'claude'
+    // Движок и модель: переопределение разговора приоритетнее общих настроек
+    // (conv.llmProvider=null — наследуем). Модель Claude клампим по роли
+    // пользователя (у роли user нет opus/fable — сервер не даст обойти фильтр).
+    const wantProvider = conv?.llmProvider ?? settings.llmProvider
+    const provider = wantProvider === 'codex' && deps.codex ? 'codex' : 'claude'
     const client = provider === 'codex' ? deps.codex! : deps.claude
     const role = account.role
+    const convModel = conv?.llmProvider === provider ? conv.llmModel : null
     const model =
       provider === 'codex'
-        ? settings.codexModel
-        : claudeModelAlias(clampModelForRole(settings.model, role))
+        ? (convModel ?? settings.codexModel)
+        : claudeModelAlias(
+            clampModelForRole(convModel ? normalizeClaudeModel(convModel) : settings.model, role)
+          )
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
     // смене движка чужой resume-id игнорируем (свежий ход).
     const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)

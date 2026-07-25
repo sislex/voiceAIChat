@@ -80,3 +80,62 @@ describe('turns: рабочий каталог разговора принадл
     db.close()
   })
 })
+
+describe('turns: движок и модель разговора приоритетнее общих настроек', () => {
+  function managers(db: VoiceChatDb) {
+    const claude = recorder()
+    const codex = recorder()
+    const turns = createTurnManager({ db, claude: claude.client, codex: codex.client })
+    const run = (conversationId: string): Promise<void> =>
+      new Promise((resolve) => {
+        const off = turns.subscribe((m) => {
+          if (m.t === 'claude.done' || m.t === 'claude.error') {
+            off()
+            resolve()
+          }
+        })
+        turns.start({ userId: U, conversationId, segments: [{ speakerId: 1, text: 'привет' }] })
+      })
+    return { claude, codex, run }
+  }
+
+  it('разговор с llmProvider=codex идёт в codex со своей моделью при общих настройках claude', async () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    db.setConversationExecTarget(U, conv.id, null, undefined, undefined, 'codex', 'gpt-5-codex')
+
+    const { claude, codex, run } = managers(db)
+    await run(conv.id)
+
+    expect(claude.last()).toBeNull()
+    expect(codex.last()?.model).toBe('gpt-5-codex')
+    db.close()
+  })
+
+  it('модель claude разговора переопределяет модель из настроек', async () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    db.setConversationExecTarget(U, conv.id, null, undefined, undefined, 'claude', 'haiku')
+
+    const { claude, run } = managers(db)
+    await run(conv.id)
+
+    expect(claude.last()?.model).toBe('haiku')
+    db.close()
+  })
+
+  it('без переопределения действуют общие настройки (модель из settings)', async () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+
+    const { claude, codex, run } = managers(db)
+    await run(conv.id)
+
+    expect(codex.last()).toBeNull()
+    expect(claude.last()?.model).toBe('opus')
+    db.close()
+  })
+})

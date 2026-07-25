@@ -33,7 +33,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
   function makeConversation(title: string): Conversation {
     const ts = tick()
-    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], lastExecTarget: null }
+    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, lastExecTarget: null }
   }
 
   for (const title of seedConversations) conversations.push(makeConversation(title))
@@ -85,12 +85,14 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         conv.updatedAt = tick()
       }
     },
-    'conversations:setExecTarget': async ({ id, execTarget, workdir, skillNames }) => {
+    'conversations:setExecTarget': async ({ id, execTarget, workdir, skillNames, llmProvider, llmModel }) => {
       const conv = conversations.find((c) => c.id === id)
       if (!conv) throw new Error('not found')
       conv.execTarget = execTarget
       if (workdir !== undefined) conv.workdir = workdir
       if (skillNames !== undefined) conv.skillNames = skillNames
+      if (llmProvider !== undefined) conv.llmProvider = llmProvider
+      if (llmModel !== undefined) conv.llmModel = llmModel
       return { ...conv }
     },
     'conversations:delete': async ({ id }) => {

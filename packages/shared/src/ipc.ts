@@ -69,7 +69,16 @@ export interface IpcInvokeMap {
   'conversations:search': { arg: { query: string }; result: Conversation[] }
   'conversations:rename': { arg: { id: string; title: string }; result: void }
   'conversations:setExecTarget': {
-    arg: { id: string; execTarget: string | null; workdir?: string | null; skillNames?: string[] }
+    arg: {
+      id: string
+      execTarget: string | null
+      workdir?: string | null
+      skillNames?: string[]
+      /** Движок разговора; null — из общих настроек. undefined — не менять. */
+      llmProvider?: LlmProvider | null
+      /** Модель разговора (действует вместе с llmProvider). undefined — не менять. */
+      llmModel?: string | null
+    }
     result: Conversation
   }
   'conversations:delete': { arg: { id: string }; result: void }

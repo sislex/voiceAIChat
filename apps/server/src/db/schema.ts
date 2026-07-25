@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS conversations (
   user_id           TEXT,
   exec_target       TEXT,
   workdir           TEXT,
-  skill_names       TEXT NOT NULL DEFAULT '[]'
+  skill_names       TEXT NOT NULL DEFAULT '[]',
+  llm_provider      TEXT,
+  llm_model         TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (
