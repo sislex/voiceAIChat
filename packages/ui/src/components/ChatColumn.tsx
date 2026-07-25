@@ -3,6 +3,7 @@ import type { ClaudeLogEntry, Message, TurnMeta, VoiceState } from '@shared/type
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
 import { parseImages } from '@shared/images'
+import type { ServerFileInfo } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { MachineUtility } from './MachineUtility'
 import { MessageImage } from './MessageImage'
@@ -86,6 +87,8 @@ export interface ChatColumnProps {
   onAnswerQuestions?: (text: string) => void
   /** Операции над машиной для встроенных утилит; отсутствуют → виджеты не рендерятся. */
   machineOps?: MachineOps
+  /** Чтение файла с диска сервера — картинки, созданные самим CLI. */
+  readServerFile?: (path: string) => Promise<ServerFileInfo | null>
 }
 
 export function ChatColumn({
@@ -120,7 +123,8 @@ export function ChatColumn({
   onChangeExecTarget,
   aiLabel = 'Claude',
   onAnswerQuestions,
-  machineOps
+  machineOps,
+  readServerFile
 }: ChatColumnProps): JSX.Element {
   const [exportOpen, setExportOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -383,6 +387,7 @@ export function ChatColumn({
                           image={img}
                           execAgentId={m.execTarget ?? execTarget}
                           ops={machineOps}
+                          readServerFile={readServerFile}
                         />
                       ))}
                     {toolParsed && machineOps && (
@@ -555,6 +560,7 @@ export function ChatColumn({
                       image={img}
                       execAgentId={execTarget}
                       ops={machineOps}
+                      readServerFile={readServerFile}
                     />
                   ))}
                 {liveActivity.length > 0 && (

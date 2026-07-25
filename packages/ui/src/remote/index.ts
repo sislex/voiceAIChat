@@ -9,13 +9,14 @@ import type {
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
+  RendererFilesBridge,
   RendererFsBridge,
   RendererPtyBridge,
   RendererSessionBridge,
   RendererSttBridge,
   RendererTtsBridge
 } from '@shared/ipc'
-import { REST } from '@shared/protocol'
+import { REST, type ServerFileInfo } from '@shared/protocol'
 import type { FsResult } from '@shared/agentProtocol'
 import type { SessionUser } from '@shared/types'
 import { WsClient } from './wsClient'
@@ -138,6 +139,27 @@ function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessionBridg
   }
 }
 
+/** Мост чтения файлов с диска сервера (картинки, созданные самим CLI). */
+function makeFilesBridge(httpBase: string): RendererFilesBridge {
+  return {
+    read: async (path) => {
+      const t = getToken()
+      const res = await fetch(
+        `${httpBase}${REST.serverFile}?path=${encodeURIComponent(path)}`,
+        { headers: t ? { authorization: `Bearer ${t}` } : {} }
+      )
+      // 404 — «файла нет в моей области»; это штатный ответ, а не сбой: вызывающий
+      // после него пробует прочитать тот же путь с машины.
+      if (res.status === 404) return null
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error === 'too-large' ? 'файл слишком большой' : `HTTP ${res.status}`)
+      }
+      return res.json() as Promise<ServerFileInfo>
+    }
+  }
+}
+
 /** Мост файлового проводника поверх REST (с токеном сессии). */
 function makeFsBridge(httpBase: string): RendererFsBridge {
   const authHeaders = (extra?: Record<string, string>): Record<string, string> => {
@@ -236,5 +258,6 @@ export function installRemoteBridges(serverHttp: string): void {
   window.agents = makeAgentsBridge(ws)
   window.session = makeSessionBridge(httpBase, ws)
   window.fs = makeFsBridge(httpBase)
+  window.files = makeFilesBridge(httpBase)
   window.pty = makePtyBridge(ws)
 }

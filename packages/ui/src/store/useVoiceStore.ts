@@ -78,10 +78,12 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
     const session =
       deps.session ?? (typeof window !== 'undefined' ? window.session : undefined)
     const fs = deps.fs ?? (typeof window !== 'undefined' ? window.fs : undefined)
+    const files = deps.files ?? (typeof window !== 'undefined' ? window.files : undefined)
     storeRef.current = createVoiceStore({
       ...deps,
       session,
       fs,
+      files,
       audio,
       listMics,
       sttEnabled,

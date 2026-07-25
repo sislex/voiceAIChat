@@ -160,6 +160,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onEditMessage={actions.editMessage}
         onAnswerQuestions={(text) => void actions.answerQuestions(text)}
         machineOps={machineOps}
+        readServerFile={actions.readServerFile}
         error={state.error}
         onDismissError={actions.dismissError}
         modelMissing={!state.modelPresent}

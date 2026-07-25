@@ -8,6 +8,7 @@ import type {
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
+  RendererFilesBridge,
   RendererFsBridge,
   RendererPtyBridge,
   RendererSessionBridge,
@@ -30,6 +31,8 @@ declare global {
     session?: RendererSessionBridge
     /** Файловый проводник по машине-агенту (web); в desktop отсутствует. */
     fs?: RendererFsBridge
+    /** Чтение файлов с диска сервера (web); в desktop отсутствует. */
+    files?: RendererFilesBridge
     /** Живой PTY-терминал по машине (web); в desktop отсутствует. */
     pty?: RendererPtyBridge
   }

@@ -9,9 +9,9 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-26 | ⚠ 3 коммит(ов) в areas после сверки: c782144 feat(chat): картинки от модели прямо в сообщении … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-26 | ⚠ 4 коммит(ов) в areas после сверки: 829f43e fix(server): каталог машины больше не подставляется в cwd локального CLI … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-07-26 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-25 | ⚠ 3 коммит(ов) в areas после сверки: 5101cfa feat(chat): add per-conversation settings page … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-26 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-07-26 | ✓ |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: aa35067 docs(kb): сверка свежести по sha коммита + факты про execTarget и cliProfiles |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-26 | ✓ |
