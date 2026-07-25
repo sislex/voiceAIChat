@@ -55,7 +55,8 @@ export function ToolFrame({
           aria-pressed={fullscreen}
           onClick={() => setFullscreen((v) => !v)}
         >
-          {fullscreen ? '🗕' : '⛶'}
+          {/* Не эмодзи: 🗕 (U+1F5D5) в Chrome/macOS рисуется пустым квадратом. */}
+          {fullscreen ? '▭' : '⛶'}
         </button>
         {onClose && (
           <button className="xbtn" aria-label="Закрыть" onClick={onClose}>
