@@ -70,18 +70,18 @@ export function createHandlers(db: VoiceChatDb, deps: HandlerDeps = {}): Handler
       db.renameConversation(id, title)
     },
 
+    'conversations:setExecTarget': ({ id, execTarget }) => {
+      const conversation = db.setConversationExecTarget(id, execTarget)
+      if (!conversation) throw new Error('Разговор не найден')
+      return conversation
+    },
+
     'conversations:delete': ({ id }) => {
       db.deleteConversation(id)
     },
 
     'messages:add': ({ conversationId, role, text, time, engine, meta }) =>
       db.addMessage(conversationId, role, text, time, engine, meta),
-
-    'messages:setExecTarget': ({ conversationId, messageId, execTarget }) => {
-      const message = db.setMessageExecTarget(conversationId, messageId, execTarget)
-      if (!message) throw new Error('Сообщение не найдено')
-      return message
-    },
 
     'messages:delete': ({ conversationId, messageId }) => {
       db.deleteMessage(conversationId, messageId)

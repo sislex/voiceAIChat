@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ChatColumn } from './ChatColumn'
 import type { Message } from '@shared/types'
+import type { AgentInfo } from '@shared/agentProtocol'
 
 const messages: Message[] = [
   { id: 'u1', conversationId: 'c', role: 'u1', text: 'Вопрос', time: '10:00', createdAt: 1 },
@@ -238,5 +239,21 @@ describe('ChatColumn — загрузка сообщений', () => {
   it('loadingMessages=false → лоадера нет', () => {
     renderCol({ loadingMessages: false })
     expect(screen.queryByTestId('messages-loading')).not.toBeInTheDocument()
+  })
+})
+
+
+describe('ChatColumn — снимок машины сообщения', () => {
+  it('показывает машину вопроса и ответа без селекторов', () => {
+    const machineMessages: Message[] = [
+      { id: 'u', conversationId: 'c', role: 'u1', text: 'Вопрос', time: '10:00', createdAt: 1, execTarget: 'm1' },
+      { id: 'a', conversationId: 'c', role: 'ai', text: 'Ответ', time: '10:01', createdAt: 2, execTarget: 'none' }
+    ]
+    const agent = { id: 'm1', name: 'MacBook', online: true } as AgentInfo
+    renderCol({ messages: machineMessages, agents: [agent] })
+
+    expect(screen.getByText('Вопрос: MacBook')).toBeInTheDocument()
+    expect(screen.getByText('Ответ: Без машины')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 })

@@ -8,7 +8,8 @@ const conv: Conversation = {
   createdAt: 1000,
   updatedAt: 2000,
   messageCount: 2,
-  claudeSessionId: null
+  claudeSessionId: null,
+  execTarget: null
 }
 const messages: Message[] = [
   { id: 'm1', conversationId: 'c1', role: 'u1', text: 'Погода?', time: '10:00', createdAt: 1000 },

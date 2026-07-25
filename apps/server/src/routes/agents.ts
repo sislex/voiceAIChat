@@ -102,7 +102,8 @@ export async function registerAgentRoutes(
     if (!ownsAgent(u, id)) return reply.code(404).send({ error: 'not found' })
     registry.disconnect(id)
     db.deleteAgent(u, id)
-    // Удалили выбранную цель выполнения — возвращаемся на сервер.
+    db.clearConversationExecTargetForAgent(u, id)
+    // Удалили legacy-цель выполнения — возвращаемся на сервер.
     const settings = db.getSettings(u)
     if (settings.execTarget === id) db.saveSettings(u, { ...settings, execTarget: null })
     return { ok: true }

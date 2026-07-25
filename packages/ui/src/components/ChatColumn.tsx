@@ -70,10 +70,6 @@ export interface ChatColumnProps {
   agents?: AgentInfo[]
   /** Текущая цель выполнения: id машины или null («на сервере»). */
   execTarget?: string | null
-  /** Сменить цель выполнения команд. */
-  onChangeExecTarget?: (target: string | null) => void
-  /** Изменить цель только у конкретного сообщения. */
-  onChangeMessageExecTarget?: (id: string, target: string | null) => void
   /** Имя движка для подписи ответов и статуса (Claude/Codex). */
   aiLabel?: string
   /** Отправить собранные ответы на вопросы модели (форма под последним ответом). */
@@ -110,8 +106,6 @@ export function ChatColumn({
   voiceBar,
   agents = [],
   execTarget = null,
-  onChangeExecTarget,
-  onChangeMessageExecTarget,
   aiLabel = 'Claude',
   onAnswerQuestions,
   machineOps
@@ -221,26 +215,6 @@ export function ChatColumn({
           >
             {title}
           </h1>
-        )}
-        {onChangeExecTarget && (
-          <label className="exectarget" title="Где выполнять команды агента">
-            <span className={`exectarget-dot ${execTarget === 'none' ? 'disabled' : execTarget ? 'remote' : 'server'}`} aria-hidden />
-            <select
-              className="exectarget-sel"
-              aria-label="Где выполнять команды"
-              value={execTarget ?? ''}
-              onChange={(e) => onChangeExecTarget(e.target.value || null)}
-            >
-              <option value="">🖥 На сервере</option>
-              <option value="none">⛔ Без машины</option>
-              {agents.map((a) => (
-                <option key={a.id} value={a.id} disabled={!a.online}>
-                  💻 {a.name}
-                  {a.online ? '' : ' (офлайн)'}
-                </option>
-              ))}
-            </select>
-          </label>
         )}
         <span className="mhead-right">
           <span className="badge">{statusBadge(state, aiLabel)}</span>
@@ -393,24 +367,9 @@ export function ChatColumn({
                 )}
                 {!isEditing && (
                   <div className="mfoot">
-                    {onChangeMessageExecTarget && (
-                      <label className="msg-target" title="Машина этого сообщения">
-                        <span className="msg-target-label">Машина:</span>
-                        <select
-                          aria-label={`Машина сообщения ${m.id}`}
-                          value={m.execTarget ?? ''}
-                          onChange={(e) => onChangeMessageExecTarget(m.id, e.target.value || null)}
-                        >
-                          <option value="">Сервер</option>
-                          <option value="none">Без машины</option>
-                          {agents.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.name}{a.online ? '' : ' (офлайн)'}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
+                    <span className="msg-machine" title="Снимок машины в момент выполнения">
+                      {isAi ? 'Ответ' : 'Вопрос'}: {m.execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === m.execTarget)?.name ?? 'Сервер'}
+                    </span>
                     <p className="mtime">{m.time}</p>
                     {isAi && m.meta && <MessageMeta meta={m.meta} />}
                     {isAi && m.meta?.activity && m.meta.activity.length > 0 && (

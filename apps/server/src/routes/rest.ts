@@ -44,10 +44,13 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     return { conversation, messages: db.listMessages(uid(req), req.params.id) }
   })
 
-  app.patch<{ Params: { id: string }; Body: { title: string } }>(
+  app.patch<{ Params: { id: string }; Body: { title?: string; execTarget?: string | null } }>(
     '/api/conversations/:id',
     async (req, reply) => {
-      db.renameConversation(uid(req), req.params.id, req.body.title)
+      if (typeof req.body.title === 'string') db.renameConversation(uid(req), req.params.id, req.body.title)
+      if (req.body.execTarget !== undefined) {
+        db.setConversationExecTarget(uid(req), req.params.id, req.body.execTarget)
+      }
       const conversation = db.getConversation(uid(req), req.params.id)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       return conversation
@@ -64,14 +67,6 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     async (req) => {
       const { role, text, time, engine, meta, execTarget } = req.body
       return db.addMessage(uid(req), req.params.id, role, text, time, engine, meta, execTarget)
-    }
-  )
-
-  app.patch<{ Params: { id: string; messageId: string }; Body: { execTarget: string | null } }>(
-    '/api/conversations/:id/messages/:messageId',
-    async (req, reply) => {
-      const message = db.setMessageExecTarget(uid(req), req.params.id, req.params.messageId, req.body.execTarget)
-      return message ?? reply.code(404).send({ error: 'not found' })
     }
   )
 

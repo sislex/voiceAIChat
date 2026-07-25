@@ -50,8 +50,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
     }
   })
 
-  const activeTitle =
-    state.conversations.find((c) => c.id === state.activeId)?.title ?? 'Новый разговор'
+  const activeConversation = state.conversations.find((c) => c.id === state.activeId)
+  const activeTitle = activeConversation?.title ?? 'Новый разговор'
+  const activeExecTarget = activeConversation?.execTarget ?? null
 
   // Номера обнаруженных спикеров — из растущего транскрипта; при пустом live —
   // от режима диаризации (как в прототипе).
@@ -118,6 +119,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         }}
         onDelete={actions.deleteConversation}
         onRename={actions.renameConversation}
+        agents={state.agents}
+        onChangeExecTarget={(id, target) => void actions.setConversationExecTarget(id, target)}
         searchQuery={state.searchQuery}
         onSearch={actions.setSearchQuery}
         onOpenObserver={menu(actions.openObserver)}
@@ -164,9 +167,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onExport={actions.exportConversation}
         turnMeta={state.lastTurnMeta}
         agents={state.agents}
-        execTarget={state.settings.execTarget}
-        onChangeExecTarget={(target) => void actions.updateSettings({ execTarget: target })}
-        onChangeMessageExecTarget={(id, target) => void actions.setMessageExecTarget(id, target)}
+        execTarget={activeExecTarget}
         aiLabel={state.settings.llmProvider === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar

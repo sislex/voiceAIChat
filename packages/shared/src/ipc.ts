@@ -68,9 +68,9 @@ export interface IpcInvokeMap {
   /** Поиск разговоров по названию и содержимому сообщений (регистронезависимо). */
   'conversations:search': { arg: { query: string }; result: Conversation[] }
   'conversations:rename': { arg: { id: string; title: string }; result: void }
+  'conversations:setExecTarget': { arg: { id: string; execTarget: string | null }; result: Conversation }
   'conversations:delete': { arg: { id: string }; result: void }
   'messages:add': { arg: AddMessageArgs; result: Message }
-  'messages:setExecTarget': { arg: { conversationId: string; messageId: string; execTarget: string | null }; result: Message }
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }
   'uploads:add': { arg: { name: string; dataBase64: string }; result: UploadInfo }
   'settings:get': { arg: void; result: Settings }
@@ -429,9 +429,9 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:get',
   'conversations:search',
   'conversations:rename',
+  'conversations:setExecTarget',
   'conversations:delete',
   'messages:add',
-  'messages:setExecTarget',
   'messages:delete',
   'uploads:add',
   'settings:get',

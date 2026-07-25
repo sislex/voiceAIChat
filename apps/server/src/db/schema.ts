@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   created_at        INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL,
   claude_session_id TEXT,
-  user_id           TEXT
+  user_id           TEXT,
+  exec_target       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (

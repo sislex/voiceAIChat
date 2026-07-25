@@ -33,7 +33,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
   function makeConversation(title: string): Conversation {
     const ts = tick()
-    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null }
+    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null }
   }
 
   for (const title of seedConversations) conversations.push(makeConversation(title))
@@ -80,6 +80,12 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         conv.updatedAt = tick()
       }
     },
+    'conversations:setExecTarget': async ({ id, execTarget }) => {
+      const conv = conversations.find((c) => c.id === id)
+      if (!conv) throw new Error('not found')
+      conv.execTarget = execTarget
+      return { ...conv }
+    },
     'conversations:delete': async ({ id }) => {
       const idx = conversations.findIndex((c) => c.id === id)
       if (idx >= 0) conversations.splice(idx, 1)
@@ -102,12 +108,6 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const conv = conversations.find((c) => c.id === conversationId)
       if (conv) conv.updatedAt = msg.createdAt
       return msg
-    },
-    'messages:setExecTarget': async ({ messageId, execTarget }) => {
-      const message = messages.find((m) => m.id === messageId)
-      if (!message) throw new Error('not found')
-      message.execTarget = execTarget
-      return { ...message }
     },
     'messages:delete': async ({ messageId }) => {
       const idx = messages.findIndex((m) => m.id === messageId)
