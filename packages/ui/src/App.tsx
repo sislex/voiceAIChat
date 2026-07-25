@@ -68,6 +68,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const machineOps: MachineOps | undefined = state.authRequired
     ? {
         list: actions.fsList,
+        read: actions.fsRead,
         write: actions.fsWrite,
         remove: actions.fsRemove,
         rename: actions.fsRename,

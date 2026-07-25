@@ -71,6 +71,42 @@ describe('ToolFrame (общая рамка тулов)', () => {
     expect(container.querySelector('.util-embed--fs')).toBeNull()
   })
 
+  it('actions рисуются в шапке и знают про разворот', async () => {
+    render(
+      <ToolFrame
+        title="Тул"
+        variant="embedded"
+        actions={({ fullscreen }) => <button>{fullscreen ? 'развёрнут' : 'свёрнут'}</button>}
+      >
+        <p>тело</p>
+      </ToolFrame>
+    )
+    expect(screen.getByText('свёрнут')).toBeInTheDocument()
+    await userEvent.click(screen.getByTitle('На весь экран'))
+    expect(screen.getByText('развёрнут')).toBeInTheDocument()
+  })
+
+  it('children-функция получает управление разворотом', async () => {
+    const { container } = render(
+      <ToolFrame title="Тул" variant="embedded">
+        {({ fullscreen, setFullscreen }) => (
+          <button onClick={() => setFullscreen(!fullscreen)}>переключить</button>
+        )}
+      </ToolFrame>
+    )
+    await userEvent.click(screen.getByText('переключить'))
+    expect(container.querySelector('.util-embed--fs')).not.toBeNull()
+  })
+
+  it('className добавляется к корню рамки', () => {
+    const { container } = render(
+      <ToolFrame title="Тул" variant="embedded" className="util-embed--img">
+        <p>тело</p>
+      </ToolFrame>
+    )
+    expect(container.querySelector('.util-embed.util-embed--img')).not.toBeNull()
+  })
+
   it('без onClose крестика нет', () => {
     render(
       <ToolFrame title="Тул" variant="embedded">

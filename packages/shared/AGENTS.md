@@ -19,7 +19,7 @@ desktop — алиас на исходники).
 | `stateMachine.ts` | голосовой цикл `idle→listening→transcribing→thinking→speaking`, barge-in |
 | `streamJson.ts`, `codexStream.ts` | разбор stream-json claude/codex (текст + активность) |
 | `prompt.ts` | сборка промпта, метки спикеров, вложения, подсказки `TOOL_HINT`/questions |
-| `tools.ts`, `questions.ts` | fenced-блоки ` ```tool ` / ` ```questions ` в ответе модели |
+| `tools.ts`, `questions.ts`, `images.ts` | fenced-блоки ` ```tool ` / ` ```questions ` / ` ```image ` в ответе модели (служебные — их список в `sentences.ts`, чтобы TTS их не читал) |
 | `sentences.ts`, `textPrep.ts`, `pcm.ts`, `format.ts`, `export.ts` | нарезка на фразы, подготовка текста к синтезу, аудио-утилиты, форматирование, экспорт разговора |
 | `cc.ts`, `codexSessions.ts`, `mcp.ts`, `auth.ts`, `admin.ts` | типы наблюдателей сессий, MCP, статуса входа, админки |
 

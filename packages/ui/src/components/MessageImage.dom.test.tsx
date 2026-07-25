@@ -1,0 +1,172 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MessageImage } from './MessageImage'
+
+// 1×1 png — достаточно, чтобы проверить путь «base64 → data-URL → <img src>».
+const PNG_B64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
+function fakeOps(dataBase64: string = PNG_B64) {
+  return { read: vi.fn().mockResolvedValue({ root: '/', cwd: '', name: 'out.png', dataBase64 }) }
+}
+
+const IMAGE = { path: '/tmp/out.png' }
+
+describe('MessageImage — загрузка картинки с машины', () => {
+  it('читает файл через ops.read и показывает его как data-URL', async () => {
+    const ops = fakeOps()
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={ops} />)
+    expect(screen.getByTestId('image-loading')).toBeInTheDocument()
+    const img = await screen.findByTestId('message-image')
+    expect(ops.read).toHaveBeenCalledWith('m1', '/tmp/out.png')
+    expect(img).toHaveAttribute('src', `data:image/png;base64,${PNG_B64}`)
+  })
+
+  it('agentId из блока важнее машины сообщения', async () => {
+    const ops = fakeOps()
+    render(<MessageImage image={{ path: '/tmp/a.png', agentId: 'm2' }} execAgentId="m1" ops={ops} />)
+    await screen.findByTestId('message-image')
+    expect(ops.read).toHaveBeenCalledWith('m2', '/tmp/a.png')
+  })
+
+  it('без машины — понятная ошибка с путём, чтения нет', () => {
+    const ops = fakeOps()
+    render(<MessageImage image={IMAGE} execAgentId={null} ops={ops} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('машина для этого ответа не выбрана')
+    expect(screen.getByRole('alert')).toHaveTextContent('/tmp/out.png')
+    expect(ops.read).not.toHaveBeenCalled()
+  })
+
+  it('execTarget «none» считается отсутствием машины', () => {
+    const ops = fakeOps()
+    render(<MessageImage image={IMAGE} execAgentId="none" ops={ops} />)
+    expect(ops.read).not.toHaveBeenCalled()
+  })
+
+  it('ошибка чтения показывается пользователю', async () => {
+    const ops = { read: vi.fn().mockRejectedValue(new Error('нет доступа')) }
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={ops} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('нет доступа')
+  })
+
+  it('пустой ответ — сообщение вместо битой картинки', async () => {
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps('')} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Файл пустой или недоступен')
+  })
+
+  it('в шапке имя файла, а caption — подпись под картинкой', async () => {
+    render(
+      <MessageImage
+        image={{ path: '/tmp/dir/chart.png', caption: 'График продаж' }}
+        execAgentId="m1"
+        ops={fakeOps()}
+      />
+    )
+    await screen.findByTestId('message-image')
+    expect(screen.getByRole('group', { name: 'chart.png' })).toBeInTheDocument()
+    expect(screen.getByText('График продаж')).toHaveClass('imgcap')
+  })
+})
+
+describe('MessageImage — разворот и зум', () => {
+  it('клик по превью разворачивает на весь экран, Esc сворачивает', async () => {
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    await screen.findByTestId('message-image')
+    expect(screen.queryByTestId('image-surface')).toBeNull()
+
+    await userEvent.click(screen.getByLabelText('Открыть картинку на весь экран'))
+    expect(screen.getByTestId('image-surface')).toBeInTheDocument()
+    expect(screen.getByTestId('image-embed')).toHaveClass('util-embed--fs')
+
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByTestId('image-surface')).toBeNull()
+  })
+
+  it('колесо мыши в развороте приближает картинку', async () => {
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    await screen.findByTestId('message-image')
+    await userEvent.click(screen.getByLabelText('Открыть картинку на весь экран'))
+
+    const surface = screen.getByTestId('image-surface')
+    expect(surface.dataset.zoom).toBe('1.00')
+    surface.dispatchEvent(new WheelEvent('wheel', { deltaY: -300, bubbles: true, cancelable: true }))
+    await waitFor(() => expect(Number(surface.dataset.zoom)).toBeGreaterThan(1))
+    expect(surface).toHaveClass('imgsurf--zoomed')
+  })
+
+  it('двойной клик приближает, повторный возвращает исходный масштаб', async () => {
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    await screen.findByTestId('message-image')
+    await userEvent.click(screen.getByLabelText('Открыть картинку на весь экран'))
+
+    const surface = screen.getByTestId('image-surface')
+    await userEvent.dblClick(surface)
+    expect(surface.dataset.zoom).toBe('2.00')
+    await userEvent.dblClick(surface)
+    expect(surface.dataset.zoom).toBe('1.00')
+  })
+
+  it('после сворачивания масштаб сбрасывается', async () => {
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    await screen.findByTestId('message-image')
+    await userEvent.click(screen.getByLabelText('Открыть картинку на весь экран'))
+    await userEvent.dblClick(screen.getByTestId('image-surface'))
+    expect(screen.getByTestId('image-surface').dataset.zoom).toBe('2.00')
+
+    await userEvent.click(screen.getByTitle('Свернуть'))
+    await userEvent.click(screen.getByLabelText('Открыть картинку на весь экран'))
+    expect(screen.getByTestId('image-surface').dataset.zoom).toBe('1.00')
+  })
+})
+
+describe('MessageImage — скачивание и копирование', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('кнопка «Скачать» кликает по ссылке с именем файла', async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    render(<MessageImage image={{ path: '/tmp/dir/chart.png' }} execAgentId="m1" ops={fakeOps()} />)
+    await screen.findByTestId('message-image')
+
+    await userEvent.click(screen.getByLabelText('Скачать картинку'))
+    expect(click).toHaveBeenCalledTimes(1)
+    const a = click.mock.instances[0] as unknown as HTMLAnchorElement
+    expect(a.download).toBe('chart.png')
+    expect(a.getAttribute('href')).toContain('data:image/png;base64,')
+  })
+
+  it('кнопки неактивны, пока картинка не загрузилась', () => {
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    expect(screen.getByLabelText('Скачать картинку')).toBeDisabled()
+    expect(screen.getByLabelText('Копировать картинку')).toBeDisabled()
+  })
+
+  it('копирование кладёт в буфер картинку нужного MIME-типа', async () => {
+    const write = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { write } })
+    class FakeClipboardItem {
+      constructor(readonly items: Record<string, Blob>) {}
+    }
+    vi.stubGlobal('ClipboardItem', FakeClipboardItem)
+
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    await screen.findByTestId('message-image')
+    await userEvent.click(screen.getByLabelText('Копировать картинку'))
+
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(1))
+    const item = write.mock.calls[0][0][0] as FakeClipboardItem
+    expect(item.items['image/png']).toBeInstanceOf(Blob)
+    expect(await screen.findByTitle('Копировать картинку')).toHaveTextContent('✓')
+    vi.unstubAllGlobals()
+  })
+
+  it('буфер недоступен — кнопка сообщает о неудаче', async () => {
+    Object.assign(navigator, { clipboard: undefined })
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} />)
+    await screen.findByTestId('message-image')
+    await userEvent.click(screen.getByLabelText('Копировать картинку'))
+    expect(await screen.findByTitle('Не удалось скопировать')).toBeInTheDocument()
+  })
+})
