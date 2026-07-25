@@ -30,6 +30,8 @@ export interface AgentHandlers {
   onExecDone?(command: string, exitCode: number | null, timedOut: boolean, ms: number): void
   /** Сервер сообщил, что доступна новая версия агента. */
   onUpdateAvailable?(version: string): void
+  /** Текущая политика изменилась (регистрация/пуш сервера/локальная правка). */
+  onPolicy?(policy: AgentPolicy): void
   /** Свободная строка лога (для консоли/журнала). */
   onLog?(line: string): void
 }
@@ -38,6 +40,10 @@ export interface AgentHandlers {
 export interface AgentConnection {
   /** Остановить: закрыть сокет, отменить reconnect (статус → stopped). */
   stop(): void
+  /** Текущая политика возможностей машины. */
+  getPolicy(): AgentPolicy
+  /** Задать политику локально и отправить её серверу (правка с машины). */
+  setPolicy(policy: AgentPolicy): void
 }
 
 /** Дефолтные handlers для CLI: печать в консоль, выход при отказе. */
@@ -65,6 +71,15 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
   let socket: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let policy: AgentPolicy = DEFAULT_AGENT_POLICY
+  // Ссылка на send текущего соединения — для отправки вне обработчика сообщений.
+  let activeSend: ((msg: AgentToServer) => void) | null = null
+
+  /** Применяет политику локально (+ уведомляет UI); при emit — шлёт серверу. */
+  const applyPolicy = (p: AgentPolicy, emit: boolean): void => {
+    policy = p
+    handlers.onPolicy?.(p)
+    if (emit) activeSend?.({ t: 'agent.setPolicy', policy: p })
+  }
 
   const connect = (): void => {
     handlers.onStatus?.('connecting')
@@ -73,6 +88,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
     const send = (msg: AgentToServer): void => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
     }
+    activeSend = send
 
     ws.on('open', () => {
       send({ t: 'agent.register', token: config.token, version: AGENT_VERSION })
@@ -88,12 +104,12 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
       switch (msg.t) {
         case 'agent.registered':
           backoff = BACKOFF_START_MS
-          policy = msg.policy ?? DEFAULT_AGENT_POLICY
+          applyPolicy(msg.policy ?? DEFAULT_AGENT_POLICY, false)
           handlers.onStatus?.('online')
           handlers.onRegistered?.(msg.name)
           break
         case 'agent.policy':
-          policy = msg.policy
+          applyPolicy(msg.policy, false)
           handlers.onLog?.('политика обновлена')
           break
         case 'agent.denied':
@@ -167,6 +183,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
     })
 
     const reconnect = (): void => {
+      activeSend = null
       if (stopped) return
       handlers.onStatus?.('offline')
       handlers.onLog?.(`соединение потеряно, повтор через ${Math.round(backoff / 1000)}с`)
@@ -193,6 +210,8 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
       } catch {
         /* уже закрыт */
       }
-    }
+    },
+    getPolicy: () => policy,
+    setPolicy: (p: AgentPolicy) => applyPolicy(p, true)
   }
 }

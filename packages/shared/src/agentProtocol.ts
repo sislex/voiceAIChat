@@ -41,6 +41,7 @@ export type AgentToServer =
   | { t: 'exec.error'; execId: string; message: string }
   | { t: 'fs.result'; opId: string; result: FsResult }
   | { t: 'fs.error'; opId: string; message: string }
+  | { t: 'agent.setPolicy'; policy: AgentPolicy }
 
 /** Именованный скрипт («навык»), разрешённый к запуску на машине. */
 export interface AgentSkill {

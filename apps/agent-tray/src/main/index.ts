@@ -7,7 +7,7 @@ import { homedir, tmpdir } from 'node:os'
 import { writeFileSync } from 'node:fs'
 import { startConnection, type AgentConnection, type AgentStatus } from '@agent/connection'
 import type { AgentConfig } from '@agent/config'
-import { AGENT_VERSION, REST, compareVersions } from '@voicechat/shared'
+import { AGENT_VERSION, REST, compareVersions, type AgentPolicy } from '@voicechat/shared'
 import { trayIcon } from './trayIcon.js'
 import { readConfig, writeConfig, configFromConnectionString } from './configStore.js'
 import { httpBaseFromWs } from './serverUrl.js'
@@ -23,17 +23,21 @@ const state: {
   log: string[]
   /** Версия, о которой сообщил сервер как о доступной (null — нет обновления). */
   latestVersion: string | null
+  /** Текущая политика (разрешения) машины; null — ещё не подключены. */
+  policy: AgentPolicy | null
 } = {
   status: 'unconfigured',
   name: null,
   log: [],
-  latestVersion: null
+  latestVersion: null,
+  policy: null
 }
 
 let tray: Tray | null = null
 let connection: AgentConnection | null = null
 let setupWindow: BrowserWindow | null = null
 let logWindow: BrowserWindow | null = null
+let permsWindow: BrowserWindow | null = null
 
 const userDir = (): string => app.getPath('userData')
 
@@ -79,6 +83,7 @@ function updateTray(): void {
       { label: `Версия ${AGENT_VERSION}`, enabled: false },
       { type: 'separator' },
       { label: 'Показать журнал', click: () => openLog() },
+      { label: 'Разрешения…', enabled: state.policy !== null, click: () => openPermissions() },
       running
         ? { label: 'Остановить', click: () => stopAgent() }
         : { label: 'Возобновить', enabled: hasConfig, click: () => startAgent() },
@@ -115,6 +120,11 @@ function handlers() {
     onExec: (command: string) => pushLog(`$ ${command}`),
     onExecDone: (_c: string, exitCode: number | null, timedOut: boolean, ms: number) =>
       pushLog(`→ exit ${exitCode ?? '?'}${timedOut ? ' (таймаут)' : ''} (${(ms / 1000).toFixed(1)}с)`),
+    onPolicy: (policy: AgentPolicy) => {
+      state.policy = policy
+      updateTray() // разблокировать пункт «Разрешения…»
+      permsWindow?.webContents.send('agent:policy', policy)
+    },
     onUpdateAvailable: (version: string) => {
       state.latestVersion = version
       pushLog(`доступно обновление v${version}`)
@@ -211,15 +221,16 @@ function stopAgent(): void {
   pushStatus()
 }
 
-function rendererFile(name: 'setup' | 'log'): string {
+type RendererName = 'setup' | 'log' | 'permissions'
+function rendererFile(name: RendererName): string {
   return join(__dirname, `../renderer/${name}.html`)
 }
-function rendererUrl(name: 'setup' | 'log'): string | null {
+function rendererUrl(name: RendererName): string | null {
   const base = process.env['ELECTRON_RENDERER_URL']
   return base ? `${base}/${name}.html` : null
 }
 
-function loadRenderer(win: BrowserWindow, name: 'setup' | 'log'): void {
+function loadRenderer(win: BrowserWindow, name: RendererName): void {
   const url = isDev ? rendererUrl(name) : null
   if (url) void win.loadURL(url)
   else void win.loadFile(rendererFile(name))
@@ -268,9 +279,35 @@ function openLog(): void {
   loadRenderer(logWindow, 'log')
 }
 
+function openPermissions(): void {
+  if (permsWindow) {
+    permsWindow.focus()
+    return
+  }
+  permsWindow = new BrowserWindow({
+    width: 480,
+    height: 520,
+    title: 'Разрешения машины',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.mjs'),
+      contextIsolation: true,
+      sandbox: false
+    }
+  })
+  permsWindow.on('closed', () => {
+    permsWindow = null
+  })
+  loadRenderer(permsWindow, 'permissions')
+}
+
 // --- IPC ------------------------------------------------------------------
 
 ipcMain.handle('agent:getState', () => ({ ...state }))
+
+ipcMain.handle('agent:getPolicy', () => state.policy)
+ipcMain.handle('agent:setPolicy', (_e, policy: AgentPolicy) => {
+  connection?.setPolicy(policy)
+})
 
 ipcMain.handle('agent:submitConnection', (_e, str: string) => {
   const cfg = configFromConnectionString(str)
