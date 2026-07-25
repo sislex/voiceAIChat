@@ -79,9 +79,10 @@ export class CodexCli implements LlmClient {
       args.push(...sandboxArgs(req.permissionMode))
     }
 
-    // resume существующей сессии (thread_id). Prompt — последним позиционным аргументом.
+    // Prompt всегда читается из stdin (`-`), а не передаётся argv: полный контекст
+    // Claude Code со схемами tools легко превышает системный ARG_MAX (spawn E2BIG).
     if (req.sessionId) args.push('resume', req.sessionId)
-    args.push(prompt)
+    args.push('-')
 
     let finished = false
     let stderr = ''
@@ -107,10 +108,9 @@ export class CodexCli implements LlmClient {
       return { cancel: () => {} }
     }
 
-    // Закрываем stdin: промпт передан аргументом, иначе codex ждёт ввод из stdin
-    // («Reading additional input from stdin…») и никогда не отвечает.
+    // Передаём потенциально многомегабайтный prompt через pipe без лимита argv.
     try {
-      child.stdin?.end()
+      child.stdin?.end(prompt)
     } catch {
       /* stdin недоступен */
     }

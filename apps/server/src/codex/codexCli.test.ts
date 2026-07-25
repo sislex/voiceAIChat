@@ -5,13 +5,15 @@ import { CodexCli, type SpawnFn } from './codexCli'
 import type { LlmStreamHandlers } from '../claude/types'
 
 function fakeChild(): {
-  child: EventEmitter & { stdout: PassThrough; stderr: PassThrough; kill: () => void }
+  child: EventEmitter & { stdin: PassThrough; stdout: PassThrough; stderr: PassThrough; kill: () => void }
+  stdin: PassThrough
   stdout: PassThrough
 } {
+  const stdin = new PassThrough()
   const stdout = new PassThrough()
   const stderr = new PassThrough()
-  const child = Object.assign(new EventEmitter(), { stdout, stderr, kill: vi.fn() })
-  return { child, stdout }
+  const child = Object.assign(new EventEmitter(), { stdin, stdout, stderr, kill: vi.fn() })
+  return { child, stdin, stdout }
 }
 
 function makeHandlers(): LlmStreamHandlers & { calls: Record<string, unknown[]> } {
@@ -30,14 +32,18 @@ const argsOf = (spawn: unknown): string[] =>
   (spawn as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
 
 describe('CodexCli', () => {
-  it('базовые args: exec --json --skip-git-repo-check + модель + промпт последним', () => {
-    const { child } = fakeChild()
+  it('базовые args: prompt передаётся через stdin, argv заканчивается на -', async () => {
+    const { child, stdin } = fakeChild()
+    let input = ''
+    stdin.on('data', (chunk) => (input += chunk.toString()))
     const spawn = vi.fn(() => child as never) as unknown as SpawnFn
     new CodexCli({ spawn }).send({ prompt: 'привет', sessionId: null, model: 'gpt-5-codex' }, makeHandlers())
     const args = argsOf(spawn)
     expect(args.slice(0, 3)).toEqual(['exec', '--json', '--skip-git-repo-check'])
     expect(args[args.indexOf('-m') + 1]).toBe('gpt-5-codex')
-    expect(args[args.length - 1]).toBe('привет')
+    expect(args[args.length - 1]).toBe('-')
+    await tick()
+    expect(input).toBe('привет')
   })
 
   it('пустая модель → без -m; permissionMode=plan → sandbox read-only', () => {
@@ -60,8 +66,10 @@ describe('CodexCli', () => {
     expect(args[args.indexOf('resume') + 1]).toBe('thread-7')
   })
 
-  it('remote → -c mcp_servers.remote.url + read-only + инструкция в промпте', () => {
-    const { child } = fakeChild()
+  it('remote → -c mcp_servers.remote.url + инструкция в stdin', async () => {
+    const { child, stdin } = fakeChild()
+    let input = ''
+    stdin.on('data', (chunk) => (input += chunk.toString()))
     const spawn = vi.fn(() => child as never) as unknown as SpawnFn
     new CodexCli({ spawn }).send(
       {
@@ -75,10 +83,10 @@ describe('CodexCli', () => {
     const args = argsOf(spawn)
     expect(args.some((a) => a.startsWith('mcp_servers.remote.url='))).toBe(true)
     expect(args).toContain('--dangerously-bypass-approvals-and-sandbox')
-    const prompt = args[args.length - 1]
-    expect(prompt).toContain('remote')
-    expect(prompt).toContain('Мак')
-    expect(prompt).toContain('сделай что-то')
+    await tick()
+    expect(input).toContain('remote')
+    expect(input).toContain('Мак')
+    expect(input).toContain('сделай что-то')
   })
 
   it('парсит JSONL: session, message → done с накопленным текстом', async () => {

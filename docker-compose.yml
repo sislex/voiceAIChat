@@ -20,6 +20,13 @@ services:
       HOST: 0.0.0.0
       PORT: "8787"
       VC_DATA_DIR: /data
+      # Anthropic-compatible backend для внешних клиентов Claude Code.
+      # Значения берутся из shell/.env; если URL пуст, gateway отвечает 503.
+      VC_CLAUDE_GATEWAY_BACKEND: ${VC_CLAUDE_GATEWAY_BACKEND:-upstream}
+      VC_CLAUDE_UPSTREAM_URL: ${VC_CLAUDE_UPSTREAM_URL:-}
+      VC_CLAUDE_UPSTREAM_API_KEY: ${VC_CLAUDE_UPSTREAM_API_KEY:-}
+      VC_CLAUDE_UPSTREAM_AUTH: ${VC_CLAUDE_UPSTREAM_AUTH:-x-api-key}
+      VC_CLAUDE_MODEL_MAP: ${VC_CLAUDE_MODEL_MAP:-{}}
     volumes:
       # Персист БД (voicechat.db) и вложений.
       - vc-data:/data

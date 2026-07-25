@@ -37,6 +37,7 @@ import { piperCatalog } from './tts/piperCatalog.js'
 import { downloadPiperVoice } from './tts/voiceDownload.js'
 import type { TtsEngine } from './tts/types.js'
 import type { TtsVoiceCatalog } from '@voicechat/shared'
+import { registerAnthropicGateway } from './anthropic/gateway.js'
 
 const VERSION = '0.1.0'
 
@@ -123,6 +124,20 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   await registerRest(app, db)
 
+  const claude = opts.claude ?? new ClaudeCli()
+  const codex = opts.codex ?? new CodexCli()
+
+  // Входящий Anthropic Messages API для подключения внешнего Claude Code CLI.
+  // Авторизация клиента намеренно отсутствует: маршрут предназначен для закрытой сети.
+  registerAnthropicGateway(app, {
+    backend: opts.config.claudeGatewayBackend,
+    codex,
+    upstreamUrl: opts.config.claudeGatewayUpstreamUrl,
+    upstreamApiKey: opts.config.claudeGatewayUpstreamKey,
+    authMode: opts.config.claudeGatewayAuthMode,
+    modelMap: opts.config.claudeGatewayModelMap
+  })
+
   // Машины-агенты: реестр онлайн-подключений + REST + MCP-мост для проброса Bash.
   const agentRegistry = new AgentRegistry()
   await registerAgentRoutes(app, db, agentRegistry, {
@@ -156,8 +171,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return { ok: true }
   })
 
-  const claude = opts.claude ?? new ClaudeCli()
-  const codex = opts.codex ?? new CodexCli()
   const sttEngine =
     opts.sttEngine ??
     new WhisperEngine({
