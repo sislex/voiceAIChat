@@ -15,6 +15,11 @@ describe('pickShell', () => {
     delete process.env.VC_PTY_SHELL
     expect(pickShell().length).toBeGreaterThan(0)
   })
+  it('на Windows без PowerShell в PATH берёт ComSpec, без него — cmd.exe', () => {
+    const env = { PATH: '/nonexistent', ComSpec: 'C:\\Windows\\system32\\cmd.exe' } as NodeJS.ProcessEnv
+    expect(pickShell(env, 'win32')).toBe('C:\\Windows\\system32\\cmd.exe')
+    expect(pickShell({ PATH: '/nonexistent' } as NodeJS.ProcessEnv, 'win32')).toBe('cmd.exe')
+  })
 })
 
 describe('startPty/killPty', () => {

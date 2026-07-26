@@ -90,7 +90,7 @@ export interface SettingsModalProps {
   onClose: () => void
 }
 
-/** База сервера (http/https) из строки подключения vcagent: для установщика Termux. */
+/** База сервера (http/https) из строки подключения vcagent: для команд установки. */
 function serverBaseFromConnection(conn: string): string | null {
   const parsed = decodeAgentConnection(conn)
   if (!parsed?.server) return null
@@ -141,6 +141,7 @@ export function SettingsModal({
   const [tokenCopied, setTokenCopied] = useState(false)
   const [connCopied, setConnCopied] = useState(false)
   const [cmdCopied, setCmdCopied] = useState(false)
+  const [winCmdCopied, setWinCmdCopied] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
 
   const copyConnectionString = async (token: string): Promise<void> => {
@@ -156,6 +157,18 @@ export function SettingsModal({
     if (!base) return
     const cmd = `curl -fsSLk ${base}${REST.agentInstallAndroid} | bash -s -- '${conn}'`
     setCmdCopied(await copyText(cmd))
+  }
+
+  // Готовая команда установки для Windows: вставляется в PowerShell, ExecutionPolicy
+  // обходим дочерним powershell -File; внешние кавычки одинарные, чтобы $env:TEMP
+  // не разворачивала оболочка, в которую вставили команду.
+  const copyWindowsCommand = async (token: string): Promise<void> => {
+    const conn = await onGetConnectionString(token)
+    if (!conn) return
+    const base = serverBaseFromConnection(conn)
+    if (!base) return
+    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command 'Set-Location $env:TEMP; curl.exe -fsSLk ${base}${REST.agentInstallWindows} -o vc-agent-install.ps1; & .\\vc-agent-install.ps1 "${conn}"'`
+    setWinCmdCopied(await copyText(cmd))
   }
 
   // QR строки подключения: отсканировать телефоном и вставить в Termux (--connection).
@@ -367,7 +380,8 @@ export function SettingsModal({
                         Машина «{createdAgent.name}» создана — строка подключения показывается
                         один раз. Скачайте агента в разделе «Скачать», при первом запуске вставьте
                         строку подключения (годится и для приложения, и для скрипта). Для Android
-                        (Termux) скопируйте готовую команду ниже и вставьте её в Termux.
+                        (Termux) и Windows (PowerShell) скопируйте готовую команду ниже —
+                        она сама установит и запустит агента.
                       </p>
                       <div className="vrow2">
                         <button
@@ -376,6 +390,13 @@ export function SettingsModal({
                           onClick={() => void copyTermuxCommand(createdAgent.token)}
                         >
                           {cmdCopied ? '✓ команда скопирована' : '📱 Команда для Termux (Android)'}
+                        </button>
+                        <button
+                          className="vdl"
+                          aria-label="Скопировать команду установки для Windows (PowerShell)"
+                          onClick={() => void copyWindowsCommand(createdAgent.token)}
+                        >
+                          {winCmdCopied ? '✓ команда скопирована' : '🪟 Команда для Windows (PowerShell)'}
                         </button>
                         <button
                           className="vdl"
@@ -406,6 +427,7 @@ export function SettingsModal({
                           onClick={() => {
                             setCreatedAgent(null)
                             setCmdCopied(false)
+                            setWinCmdCopied(false)
                             setConnCopied(false)
                             setTokenCopied(false)
                             setQrDataUrl(null)
@@ -486,6 +508,18 @@ export function SettingsModal({
                       создайте машину в разделе «Агент» и вставьте её команду
                       <code> «📱 Команда для Termux»</code> в Termux — она поставит Node.js,
                       скачает агента и настроит автозапуск.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="frow">
+                  <div>
+                    <p className="flab">Агент — Windows (PowerShell)</p>
+                    <p className="fsub">
+                      Создайте машину в разделе «Агент» и вставьте её команду
+                      <code> «🪟 Команда для Windows»</code> в PowerShell — она поставит
+                      Node.js 22+ (портативно, без прав администратора), скачает агента
+                      и настроит автозапуск при входе.
                     </p>
                   </div>
                 </div>

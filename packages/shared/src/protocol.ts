@@ -121,6 +121,7 @@ export const REST = {
   agents: '/api/agents',
   agentScript: '/api/agents/script',
   agentInstallAndroid: '/api/agents/install-android.sh',
+  agentInstallWindows: '/api/agents/install-windows.ps1',
   agentApp: '/api/agents/app',
   desktopApp: '/api/app/desktop',
   agent: (id: string) => `/api/agents/${encodeURIComponent(id)}`,

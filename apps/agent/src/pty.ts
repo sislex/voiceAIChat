@@ -10,7 +10,7 @@
 import { createRequire } from 'node:module'
 import { spawn } from 'node:child_process'
 import type { AgentToServer } from '@voicechat/shared'
-import { which } from './platform.js'
+import { isWindows, which } from './platform.js'
 
 // Минимальная форма node-pty, которая нам нужна (без зависимости от типов пакета).
 interface IPty {
@@ -44,14 +44,21 @@ function loadPty(): PtyModule {
 /** Активные PTY-сессии: ptyId → сессия. */
 const sessions = new Map<string, PtySession>()
 
-/** Выбор интерактивного shell: override → fish → zsh → bash → $SHELL → sh. */
-export function pickShell(): string {
-  if (process.env.VC_PTY_SHELL) return process.env.VC_PTY_SHELL
+/**
+ * Выбор интерактивного shell: override → fish → zsh → bash → $SHELL → sh.
+ * На Windows — PowerShell (приятнее для интерактива), иначе cmd.exe (ComSpec).
+ */
+export function pickShell(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
+): string {
+  if (env.VC_PTY_SHELL) return env.VC_PTY_SHELL
+  if (isWindows(platform)) return which('powershell', env, platform) || env.ComSpec || 'cmd.exe'
   for (const s of ['fish', 'zsh', 'bash']) {
-    const p = which(s)
+    const p = which(s, env, platform)
     if (p) return p
   }
-  return process.env.SHELL || which('sh') || '/bin/sh'
+  return env.SHELL || which('sh', env, platform) || '/bin/sh'
 }
 
 function clampDim(v: number, fallback: number): number {
@@ -82,7 +89,8 @@ function startNative(ptyId: string, cols: number, rows: number, cwd: string, emi
  */
 function startFallback(ptyId: string, cwd: string, emit: (msg: AgentToServer) => void): void {
   const shell = pickShell()
-  const child = spawn(shell, ['-i'], {
+  // cmd.exe/PowerShell интерактивны по умолчанию и не знают флага -i.
+  const child = spawn(shell, isWindows() ? [] : ['-i'], {
     cwd: cwd || process.env.HOME || process.cwd(),
     env: { ...process.env, TERM: 'xterm-256color' },
     stdio: ['pipe', 'pipe', 'pipe']

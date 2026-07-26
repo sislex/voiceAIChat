@@ -43,6 +43,7 @@ function isPublic(url: string): boolean {
     url === REST.agentApp ||
     url === REST.agentScript ||
     url === REST.agentInstallAndroid ||
+    url === REST.agentInstallWindows ||
     url === REST.desktopApp ||
     url === REST.agentLatestVersion
   )

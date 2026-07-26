@@ -1,0 +1,99 @@
+// Генератор установщика агента для Windows (PowerShell) — аналог androidInstall.ts.
+// Пользователь запускает в PowerShell одну команду (копируется из настроек):
+//   powershell -NoProfile -ExecutionPolicy Bypass -Command 'Set-Location $env:TEMP;
+//     curl.exe -fsSLk <BASE>/api/agents/install-windows.ps1 -o vc-agent-install.ps1;
+//     & .\vc-agent-install.ps1 "vcagent:…"'
+// Строка подключения (с токеном) передаётся аргументом — она НЕ вшита в endpoint.
+
+/**
+ * Собирает PowerShell-скрипт установщика с подставленным адресом сервера.
+ * Начинается с BOM: Windows PowerShell 5.1 без него читает файл в ANSI
+ * и портит русские строки.
+ */
+export function buildWindowsInstallScript(baseUrl: string): string {
+  // Отрезаем хвостовой слэш, чтобы не получить '//api/...'.
+  const server = baseUrl.replace(/\/+$/, '')
+  return `﻿# Установщик компаньон-агента Голос·Чат для Windows (PowerShell 5.1+).
+# Использование: скопируйте готовую команду из веб-настроек («Команда для Windows»)
+# и вставьте в PowerShell. Строка подключения vcagent:… передаётся аргументом.
+param([string]$Connection)
+
+$ErrorActionPreference = 'Stop'
+$Server = '${server}'
+if (-not $Connection) { $Connection = $env:VC_AGENT_CONNECTION }
+$AgentDir = Join-Path $env:LOCALAPPDATA 'voicechat-agent'
+New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
+
+# Сервер может стоять за Caddy с самоподписанным сертификатом, поэтому качаем
+# через curl.exe -k (есть в Windows 10 1803+; Invoke-WebRequest в PS 5.1 не умеет
+# пропускать проверку сертификата).
+function Fetch([string]$Url, [string]$OutFile) {
+  & curl.exe -fsSLk $Url -o $OutFile
+  if ($LASTEXITCODE -ne 0) { throw "не удалось скачать $Url" }
+}
+
+# Мажорная версия node -v (0 — node нет или не запускается).
+function NodeMajor([string]$Cmd) {
+  try {
+    $v = & $Cmd -v 2>$null
+    if ("$v" -match 'v(\\d+)') { return [int]$Matches[1] }
+  } catch { }
+  return 0
+}
+
+Write-Host '[1/5] Проверяю Node.js (нужна версия 22+)…'
+$NodeExe = 'node'
+$LocalNode = Join-Path $AgentDir 'node\\node.exe'
+if ((NodeMajor 'node') -lt 22) {
+  if ((NodeMajor $LocalNode) -ge 22) {
+    $NodeExe = $LocalNode
+  } else {
+    Write-Host 'Node.js 22+ не найден — скачиваю последнюю портативную (без прав администратора)…'
+    $Arch = 'x64'
+    if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { $Arch = 'arm64' }
+    # nodejs.org — нормальный сертификат, здесь -k не нужен, а JSON удобнее через IRM.
+    $Ver = (Invoke-RestMethod 'https://nodejs.org/dist/index.json')[0].version
+    $Zip = Join-Path $env:TEMP 'voicechat-node.zip'
+    Fetch "https://nodejs.org/dist/$Ver/node-$Ver-win-$Arch.zip" $Zip
+    if (Test-Path (Join-Path $AgentDir 'node')) { Remove-Item (Join-Path $AgentDir 'node') -Recurse -Force }
+    Expand-Archive -Path $Zip -DestinationPath $AgentDir -Force
+    Move-Item (Join-Path $AgentDir "node-$Ver-win-$Arch") (Join-Path $AgentDir 'node')
+    Remove-Item $Zip -Force
+    $NodeExe = $LocalNode
+  }
+}
+Write-Host "Использую Node.js: $NodeExe"
+
+Write-Host '[2/5] Скачиваю агента…'
+Fetch "$Server/api/agents/script" (Join-Path $AgentDir 'voicechat-agent.cjs')
+
+if ($Connection) {
+  Write-Host '[3/5] Сохраняю строку подключения…'
+  Set-Content -Path (Join-Path $AgentDir 'connection') -Value $Connection -NoNewline -Encoding ascii
+} else {
+  Write-Host "[3/5] Строка подключения не передана — впишите её в $AgentDir\\connection и запустите run.cmd."
+}
+
+Write-Host '[4/5] Готовлю запуск и автозапуск (реестр HKCU, окно скрыто)…'
+$RunCmd = Join-Path $AgentDir 'run.cmd'
+# OEM-кодировка: cmd.exe читает .cmd в кодовой странице консоли, иначе rem-строки в кракозябрах.
+@(
+  '@echo off',
+  'rem Сервер за самоподписанным TLS — агент должен ему доверять.',
+  'set "VC_AGENT_INSECURE_TLS=1"',
+  'set /p VC_CONN=<"%~dp0connection"',
+  'cd /d "%USERPROFILE%"',
+  ('"{0}" "%~dp0voicechat-agent.cjs" --connection "%VC_CONN%"' -f $NodeExe)
+) | Set-Content -Path $RunCmd -Encoding oem
+# VBS-обёртка запускает run.cmd без консольного окна (UTF-16 — wscript так читает юникод).
+$Vbs = Join-Path $AgentDir 'run-hidden.vbs'
+('CreateObject("WScript.Shell").Run Chr(34) & "{0}" & Chr(34), 0, False' -f $RunCmd) |
+  Set-Content -Path $Vbs -Encoding unicode
+Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' \`
+  -Name 'voicechat-agent' -Value ('wscript.exe "{0}"' -f $Vbs)
+
+Write-Host '[5/5] Запускаю агента (в фоне; автозапуск при входе настроен)…'
+Start-Process -FilePath 'wscript.exe' -ArgumentList ('"{0}"' -f $Vbs)
+Write-Host "Готово. Машина появится в настройках через несколько секунд. Файлы агента: $AgentDir"
+`
+}

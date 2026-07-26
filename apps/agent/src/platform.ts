@@ -1,6 +1,7 @@
 // Определение платформы и разрешение shell/каталогов. Вынесено отдельно, чтобы
 // exec.ts и pty.ts выбирали рабочий shell одинаково — критично для Termux (Android),
-// где НЕТ /bin/bash, а бинарники лежат в /data/data/com.termux/files/usr/bin.
+// где НЕТ /bin/bash, а бинарники лежат в /data/data/com.termux/files/usr/bin,
+// и для Windows, где POSIX-shell нет вовсе (работаем через cmd.exe/PowerShell).
 
 import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
@@ -9,6 +10,11 @@ import { delimiter, join } from 'node:path'
 export const TERMUX_PREFIX = '/data/data/com.termux/files/usr'
 const TERMUX_BIN = `${TERMUX_PREFIX}/bin`
 const TERMUX_HOME = '/data/data/com.termux/files/home'
+
+/** Windows? Платформа — параметром, чтобы win32-ветки тестировались на POSIX-CI. */
+export function isWindows(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === 'win32'
+}
 
 /** Запущены ли мы внутри Termux (Android). */
 export function isTermux(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -25,9 +31,18 @@ function searchDirs(env: NodeJS.ProcessEnv): string[] {
 }
 
 /** Первый найденный бинарь из PATH (и Termux bin), иначе null. */
-export function which(bin: string, env: NodeJS.ProcessEnv = process.env): string | null {
+export function which(
+  bin: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
+): string | null {
+  // На Windows исполняемые файлы имеют расширение (PATHEXT); голое имя не найдётся.
+  const names =
+    isWindows(platform) && !/\.[^\\/]+$/.test(bin) ? [bin + '.exe', bin + '.cmd', bin + '.bat'] : [bin]
   for (const dir of searchDirs(env)) {
-    if (existsSync(join(dir, bin))) return join(dir, bin)
+    for (const name of names) {
+      if (existsSync(join(dir, name))) return join(dir, name)
+    }
   }
   return null
 }
@@ -36,12 +51,18 @@ export function which(bin: string, env: NodeJS.ProcessEnv = process.env): string
  * Путь к shell для запуска команд. Порядок: VC_PTY_SHELL/SHELL override →
  * bash/zsh/fish/sh из PATH (с учётом Termux) → /bin/bash → /bin/sh → 'sh'.
  * На Termux /bin/bash отсутствует — поэтому ищем по PATH, а не хардкодим путь.
+ * На Windows — cmd.exe (ComSpec): spawn(команда, {shell}) корректно квотит
+ * аргументы только под cmd, а не под PowerShell.
  */
-export function resolveShell(env: NodeJS.ProcessEnv = process.env): string {
+export function resolveShell(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
+): string {
   const override = env.VC_PTY_SHELL || env.SHELL
   if (override && existsSync(override)) return override
+  if (isWindows(platform)) return env.ComSpec || 'cmd.exe'
   for (const s of ['bash', 'zsh', 'fish', 'sh']) {
-    const p = which(s, env)
+    const p = which(s, env, platform)
     if (p) return p
   }
   if (existsSync('/bin/bash')) return '/bin/bash'

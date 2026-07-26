@@ -2,7 +2,8 @@
 
 Консольное приложение: подключается к серверу по WS (`/agent`), авторизуется
 токеном машины и выполняет команды, файловые операции, живой PTY, шлёт телеметрию.
-Работает на Linux, macOS и Android (Termux). Windows/ConPTY не поддерживаем.
+Работает на Linux, macOS, Android (Termux) и Windows (exec через `cmd.exe`,
+консоль — PowerShell в pipe-режиме; ConPTY только если рядом собран node-pty).
 
 ## Раскладка
 
@@ -34,4 +35,4 @@
 (или `VC_AGENT_SERVER` / `VC_AGENT_TOKEN`).
 
 Гейт: `npm run -w @voicechat/agent typecheck && npm run -w @voicechat/agent test`.
-Подробности: `docs/kb/machines.md`, `README.md`, `ANDROID.md`.
+Подробности: `docs/kb/machines.md`, `README.md`, `ANDROID.md`, `WINDOWS.md`.

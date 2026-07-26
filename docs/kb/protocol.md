@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-07-25
-checked: abc2a23
+updated: 2026-07-26
+checked: c9170a7
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -36,7 +36,7 @@ URL руками. Параметризованные пути — функции
 Все пути под `/api/*` требуют `Authorization: Bearer <токен сессии>` — это
 глобальный `preHandler` в `apps/server/src/users/auth.ts`. Публичные исключения
 (там же, функция `isPublic`): `/api/health`, `/api/session/*`, скачивание
-агента/десктопа (`agentApp`, `agentScript`, `agentInstallAndroid`, `desktopApp`)
+агента/десктопа (`agentApp`, `agentScript`, `agentInstallAndroid`, `agentInstallWindows`, `desktopApp`)
 и `/api/agents/version`. Админские роуты дополнительно закрыты `requireAdmin`.
 
 Группы: сессия, разговоры и сообщения (+ поиск), вложения (`/api/uploads`),
