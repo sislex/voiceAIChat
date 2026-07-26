@@ -374,4 +374,47 @@ describe('MessageImage — картинка отдаётся HTTP-серверо
     await screen.findByTestId('message-image')
     expect(ops.read).toHaveBeenCalledWith('m1', MACHINE.path)
   })
+
+  it('адрес молчит (другая сеть) — по таймауту идём дальше, до байтов через сервер', async () => {
+    vi.useFakeTimers()
+    try {
+      const ops = fakeOps()
+      render(
+        <MessageImage
+          image={MACHINE}
+          execAgentId="m1"
+          ops={ops}
+          agents={[agent({ port: 8788, hosts: ['192.168.1.5', '10.0.0.2'] })]}
+        />
+      )
+      expect(screen.getByTestId('message-image')).toHaveAttribute('src', 'http://192.168.1.5:8788/pic.png')
+      await vi.advanceTimersByTimeAsync(4001)
+      expect(screen.getByTestId('message-image')).toHaveAttribute('src', 'http://10.0.0.2:8788/pic.png')
+      await vi.advanceTimersByTimeAsync(4001)
+      await vi.waitFor(() => expect(ops.read).toHaveBeenCalledWith('m1', MACHINE.path))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('загрузившуюся картинку таймаут не переключает', async () => {
+    vi.useFakeTimers()
+    try {
+      const ops = fakeOps()
+      render(
+        <MessageImage
+          image={MACHINE}
+          execAgentId="m1"
+          ops={ops}
+          agents={[agent({ port: 8788, hosts: ['192.168.1.5', '10.0.0.2'] })]}
+        />
+      )
+      fireEvent.load(screen.getByTestId('message-image'))
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(screen.getByTestId('message-image')).toHaveAttribute('src', 'http://192.168.1.5:8788/pic.png')
+      expect(ops.read).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

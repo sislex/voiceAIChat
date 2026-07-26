@@ -160,6 +160,9 @@ export function parseImages(text: string): ParsedImages {
   return { body: body.trim(), images }
 }
 
+/** Каталог на машине, из которого агент раздаёт картинки по HTTP (единственный). */
+export const IMAGE_HOST_DIR = '.generated_images'
+
 /**
  * URL-ы, по которым машина раздаёт эту картинку. Адрес НЕ хранится в сообщении:
  * IP машины меняется, поэтому список собирается заново из живого `AgentInfo` —
@@ -171,6 +174,11 @@ export function machineImageUrls(
   imageHost: { port: number; hosts: string[] } | undefined
 ): string[] {
   if (!imageHost || imageHost.hosts.length === 0) return []
+  // Агент отдаёт только файлы, лежащие непосредственно в `<корень>/.generated_images`.
+  // Для любого другого пути прямые адреса заведомо мёртвые, а каждый из них стоит
+  // браузеру таймаута соединения — такие картинки сразу идут байтами через сервер.
+  const parts = path.split(/[\\/]/).filter(Boolean)
+  if (parts[parts.length - 2] !== IMAGE_HOST_DIR) return []
   const name = encodeURIComponent(imageName(path))
   return imageHost.hosts.map((h) => `http://${h}:${imageHost.port}/${name}`)
 }

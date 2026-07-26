@@ -90,7 +90,7 @@ describe('machineImageUrls — адрес собирается из живых �
   })
 
   it('имя файла экранируется', () => {
-    expect(machineImageUrls('/x/файл с пробелом.png', { port: 80, hosts: ['h'] })[0]).toBe(
+    expect(machineImageUrls('/x/.generated_images/файл с пробелом.png', { port: 80, hosts: ['h'] })[0]).toBe(
       'http://h:80/%D1%84%D0%B0%D0%B9%D0%BB%20%D1%81%20%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB%D0%BE%D0%BC.png'
     )
   })
@@ -98,6 +98,13 @@ describe('machineImageUrls — адрес собирается из живых �
   it('нет раздачи или адресов — пусто (клиент откатится на чтение через сервер)', () => {
     expect(machineImageUrls('/x/a.png', undefined)).toEqual([])
     expect(machineImageUrls('/x/a.png', { port: 8788, hosts: [] })).toEqual([])
+  })
+
+  it('файл вне .generated_images — пусто: агент раздаёт только этот каталог', () => {
+    expect(machineImageUrls('/home/u/pic.png', { port: 8788, hosts: ['192.168.1.5'] })).toEqual([])
+    expect(
+      machineImageUrls('/home/u/.generated_images/deep/pic.png', { port: 8788, hosts: ['h'] })
+    ).toEqual([])
   })
 })
 
