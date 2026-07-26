@@ -9,14 +9,14 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-26 | ⚠ 6 коммит(ов) в areas после сверки: 60f0144 feat(chat): configure conversation engine and model … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-26 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-07-26 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: 60f0144 feat(chat): configure conversation engine and model |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-07-26 | ✓ |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: aa35067 docs(kb): сверка свежести по sha коммита + факты про execTarget и cliProfiles |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-26 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-26 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-25 | ⚠ 3 коммит(ов) в areas после сверки: 60f0144 feat(chat): configure conversation engine and model … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-26 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 
 ## Инструкции по пакетам
@@ -31,11 +31,14 @@
 
 ## Журнал сессий
 
-Всего записей: 5. Последние:
+Всего записей: 8. Последние:
 
 - [2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md](log/2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md) — база знаний для агентов
 - [2026-07-26-alexeys-macbook-air-2-image-in-message.md](log/2026-07-26-alexeys-macbook-air-2-image-in-message.md) — image-in-message
 - [2026-07-26-alexeys-macbook-air-2-composer-autogrow.md](log/2026-07-26-alexeys-macbook-air-2-composer-autogrow.md) — composer-autogrow
+- [2026-07-26-2470-com-windows-agent-installer.md](log/2026-07-26-2470-com-windows-agent-installer.md) — windows-agent-installer
+- [2026-07-26-2470-com-thin-desktop-gateway-lan.md](log/2026-07-26-2470-com-thin-desktop-gateway-lan.md) — thin-desktop-gateway-lan
+- [2026-07-26-2470-com-repair-claude-oauth-profile.md](log/2026-07-26-2470-com-repair-claude-oauth-profile.md) — repair-claude-oauth-profile
 - [2026-07-25-2470-com-conversation-settings.md](log/2026-07-25-2470-com-conversation-settings.md) — conversation-settings
 - [2026-07-25-2470-com-chat-exec-target.md](log/2026-07-25-2470-com-chat-exec-target.md) — chat-exec-target
 

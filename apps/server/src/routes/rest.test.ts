@@ -424,6 +424,15 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.body).toContain('/api/agents/script')
   })
 
+  it('установщик Windows: GET /api/agents/install-windows.ps1 публичен и отдаёт PowerShell', async () => {
+    // Без токена — команду запускают на машине до какого-либо логина.
+    const res = await app.inject({ method: 'GET', url: '/api/agents/install-windows.ps1' })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('powershell')
+    expect(res.body).toContain('/api/agents/script')
+    expect(res.body).toContain('nodejs.org')
+  })
+
   it('удаление агента сбрасывает execTarget на сервер', async () => {
     const created = (
       await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })

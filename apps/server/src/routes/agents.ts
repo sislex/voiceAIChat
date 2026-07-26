@@ -2,13 +2,14 @@
 // токен), удаление (отзыв токена + разрыв соединения).
 
 import { createReadStream, existsSync } from 'node:fs'
-import type { FastifyInstance, FastifyReply } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { REST, AGENT_VERSION, type AgentInfo, type AgentPolicy } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { buildAgentScript } from '../agents/agentScript.js'
 import { buildAndroidInstallScript } from '../agents/androidInstall.js'
+import { buildWindowsInstallScript } from '../agents/windowsInstall.js'
 
 /** Пути к собранным .dmg (undefined — не собрано). */
 export interface AppArtifacts {
@@ -79,17 +80,27 @@ export async function registerAgentRoutes(
     }
   })
 
-  // Установщик агента для Termux (Android): bash-скрипт с адресом сервера.
-  // Строка подключения передаётся аргументом при запуске, в endpoint не вшивается.
-  app.get(REST.agentInstallAndroid, async (req, reply) => {
+  // Внешняя база сервера для установщиков: за прокси (Caddy) — из X-Forwarded-*.
+  const externalBase = (req: FastifyRequest): string => {
     const fwdProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim()
     const fwdHost = String(req.headers['x-forwarded-host'] ?? '').split(',')[0].trim()
     const proto = fwdProto || req.protocol
     const host = fwdHost || req.headers.host || ''
-    return reply
+    return `${proto}://${host}`
+  }
+
+  // Установщики агента (Termux/Android — bash, Windows — PowerShell) с адресом сервера.
+  // Строка подключения передаётся аргументом при запуске, в endpoint не вшивается.
+  app.get(REST.agentInstallAndroid, async (req, reply) =>
+    reply
       .header('content-type', 'text/x-shellscript; charset=utf-8')
-      .send(buildAndroidInstallScript(`${proto}://${host}`))
-  })
+      .send(buildAndroidInstallScript(externalBase(req)))
+  )
+  app.get(REST.agentInstallWindows, async (req, reply) =>
+    reply
+      .header('content-type', 'text/x-powershell; charset=utf-8')
+      .send(buildWindowsInstallScript(externalBase(req)))
+  )
 
   app.post<{ Body: { name?: string } }>(REST.agents, async (req, reply) => {
     const name = req.body?.name?.trim()

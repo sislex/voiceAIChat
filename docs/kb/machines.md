@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-07-26
-checked: 967d619
+checked: c9170a7
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -35,7 +35,14 @@ esbuild'ом на сервере — `agents/agentScript.ts`, адрес и то
 репозитория (`npx tsx apps/agent/src/index.ts --server … --token …`, либо env
 `VC_AGENT_SERVER`/`VC_AGENT_TOKEN`). Android — Termux, скрипт
 `/api/agents/install-android.sh` (`agents/androidInstall.ts`), подробности в
-`apps/agent/ANDROID.md`.
+`apps/agent/ANDROID.md`. Windows — PowerShell-установщик
+`/api/agents/install-windows.ps1` (`agents/windowsInstall.ts`): проверяет Node 22+
+(иначе кладёт последнюю портативную в `%LOCALAPPDATA%\voicechat-agent\node`),
+скачивает `.cjs`, сохраняет строку подключения, настраивает автозапуск
+(HKCU `Run` → `wscript` → скрытый `run.cmd`) и запускает агента; подробности в
+`apps/agent/WINDOWS.md`. Скрипт отдаётся с BOM — иначе PowerShell 5.1 читает
+его в ANSI и портит русские строки; готовая команда копируется из настроек
+(«Команда для Windows») и рассчитана на вставку в PowerShell, не в cmd.
 
 ## Версии и гейтинг возможностей
 
@@ -149,6 +156,15 @@ esbuild'ом на сервере — `agents/agentScript.ts`, адрес и то
 Android). CPU считается по дельте `os.cpus()` между вызовами — `loadavg` на
 Windows/Android недостоверен. Телеметрия и версия есть в `AgentInfo` **только
 когда машина онлайн**. UI — `MachineStatus.tsx`, `AgentCard.tsx`.
+
+## Windows — грабли
+
+Shell резолвится в `platform.ts`: для `exec` — `cmd.exe` (`%ComSpec%`), потому что
+`spawn(команда, {shell})` в Node правильно квотит аргументы только под cmd; для
+PTY-консоли `pickShell()` предпочитает `powershell.exe`. `which()` подставляет
+расширения `.exe/.cmd/.bat` — голое имя на Windows не находится. `@lydell/node-pty`
+в бандл не входит, поэтому консоль обычно работает в упрощённом pipe-режиме
+(cmd/powershell запускаются без `-i` — они интерактивны по умолчанию).
 
 ## Termux (Android) — грабли
 
