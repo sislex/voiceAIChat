@@ -98,6 +98,21 @@ export async function registerAgentRoutes(
   })
 
   // Внешняя база сервера для установщиков: за прокси (Caddy) — из X-Forwarded-*.
+  /**
+   * Годится ли база для команды, которую выполнит ДРУГАЯ машина. `Host` запроса —
+   * это адрес, по которому открыт браузер: на dev-машине это localhost, и такая
+   * команда на телефоне ушла бы в него самого (реальный случай: curl молча не
+   * находил сервер, обновление «проходило» без эффекта).
+   */
+  const reachableFromMachine = (base: string): boolean => {
+    try {
+      const host = new URL(base).hostname.replace(/^\[|\]$/g, '')
+      return !(host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost'))
+    } catch {
+      return false
+    }
+  }
+
   const externalBase = (req: FastifyRequest): string => {
     const fwdProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim()
     const fwdHost = String(req.headers['x-forwarded-host'] ?? '').split(',')[0].trim()
@@ -187,7 +202,20 @@ export async function registerAgentRoutes(
         error: 'Не удалось определить ОС машины (нужна телеметрия агента 0.4+). Обновите вручную командой из настроек.'
       })
     }
-    const base = externalBase(req)
+    // Адрес, по которому машина достанет установщик. Берём тот, по которому пришёл
+    // запрос; если он локальный (dev, проброс порта) — нужен явный VC_PUBLIC_URL,
+    // иначе команда уйдёт в саму машину и обновление тихо не случится.
+    const requestBase = externalBase(req)
+    const base = reachableFromMachine(requestBase)
+      ? requestBase
+      : (process.env.VC_PUBLIC_URL ?? '').replace(/\/+$/, '')
+    if (!base) {
+      return reply.code(409).send({
+        error:
+          `Сервер видит себя как ${requestBase} — с машины такой адрес недостижим. ` +
+          'Задайте VC_PUBLIC_URL или скопируйте команду обновления и запустите её на машине.'
+      })
+    }
     // Установщик должен пережить смерть агента, который его запустил: на unix —
     // setsid+nohup, на Windows — Start-Process (он и так отвязывает процесс).
     const detached =
