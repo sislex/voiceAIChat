@@ -1,4 +1,5 @@
-import { useState, type MouseEvent } from 'react'
+import { useState } from 'react'
+import { PopupFrame } from './PopupFrame'
 import type {
   CatalogVoice,
   ClaudeModel,
@@ -114,7 +115,6 @@ export function SettingsModal({
   role,
   onClose
 }: SettingsModalProps): JSX.Element {
-  const stop = (e: MouseEvent): void => e.stopPropagation()
   // Блокировка функций при нехватке ресурсов контейнера (null — ещё не загружено, не блокируем).
   const sttBlocked = capabilities != null && !capabilities.stt.available
   const ttsBlocked = capabilities != null && !capabilities.tts.available
@@ -133,8 +133,7 @@ export function SettingsModal({
   }
 
   return (
-    <div className="ovl" onClick={onClose} data-testid="overlay">
-      <div className="modal settings" onClick={stop} role="dialog" aria-label="Настройки">
+    <PopupFrame title="Настройки" onClose={onClose} testId="overlay" panelClassName="modal settings">
         <div className="mdhead">
           <h2 className="mdh">Настройки</h2>
           <button className="xbtn" onClick={onClose} aria-label="Закрыть" title="Закрыть">
@@ -637,7 +636,6 @@ export function SettingsModal({
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </PopupFrame>
   )
 }

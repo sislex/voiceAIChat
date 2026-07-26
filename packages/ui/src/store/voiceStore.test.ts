@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createVoiceStore, type VoiceStore } from './voiceStore'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
 import type { ClaudeLogEntry, Message } from '@shared/types'
+import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 
 // Быстрые задержки + фейковые таймеры делают мок-пайплайн детерминированным.
 const DELAYS = { frame: 20, transcribe: 20, think: 20, speak: 20 }
@@ -1419,10 +1420,22 @@ describe('voiceStore — машинные утилиты', () => {
     expect(exec.output).toBe('ok')
   })
 
+  it('openUtility предпочитает машину активного разговора', async () => {
+    const { store } = makeStore(['A'])
+    await store.actions.init()
+    store.actions.applyAgents([
+      { id: 'other', name: 'Other', online: true, createdAt: 1, lastSeen: null, policy: DEFAULT_AGENT_POLICY },
+      { id: 'chat', name: 'Chat', online: true, createdAt: 1, lastSeen: null, policy: DEFAULT_AGENT_POLICY }
+    ])
+    await store.actions.setConversationExecTarget(store.getState().activeId!, 'chat')
+    store.actions.openUtility('explorer')
+    expect(store.getState().utility?.agentId).toBe('chat')
+  })
+
   it('openUtility выбирает онлайн-машину и открывает; closeUtility закрывает', () => {
     const store = createVoiceStore({ api: createFakeApi([]), fs: makeFs() })
-    store.actions.openUtility('console')
-    expect(store.getState().utility?.kind).toBe('console')
+    store.actions.openUtility('console', 'm1', '/work')
+    expect(store.getState().utility).toEqual({ kind: 'console', agentId: 'm1', path: '/work' })
     store.actions.closeUtility()
     expect(store.getState().utility).toBeNull()
   })

@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-07-26
-checked: e0bc98e
+checked: 150a37a
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -102,3 +102,7 @@ WS дозванивается только при наличии токена с
 
 Отдельный WS с собственным протоколом (`agentProtocol.ts`): `AgentToServer` и
 `ServerToAgent`. Детали (регистрация, политика, версии, PTY) — `machines.md`.
+
+## Начальный каталог PTY
+
+Сообщение `pty.start` на участках client→server и server→agent содержит необязательное поле `cwd`. Сервер проверяет владение машиной и передаёт поле реестру; агент запускает native PTY или pipe-fallback в указанной папке, а при отсутствии поля использует свой корень.

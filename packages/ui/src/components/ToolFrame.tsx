@@ -3,7 +3,8 @@
 // карточка внутри сообщения ('embedded') и модалка из меню ('modal'); в обоих
 // разворот на весь экран живёт здесь, а не в самих тулах.
 
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { PopupFrame } from './PopupFrame'
 import type { UtilityVariant } from './machine'
 
 /** Управление разворотом — для содержимого, которому нужен фуллскрин по клику. */
@@ -39,8 +40,6 @@ export function ToolFrame({
   children
 }: ToolFrameProps): JSX.Element {
   const [fullscreen, setFullscreen] = useState(false)
-  const stop = (e: MouseEvent): void => e.stopPropagation()
-
   // Esc: сначала сворачивает разворот, затем закрывает (для modal). Слушатель на
   // фазе перехвата и со stopPropagation — чтобы не сработали глобальные хоткеи
   // (отмена записи). В embedded без разворота Esc не трогаем — работают хоткеи.
@@ -87,17 +86,17 @@ export function ToolFrame({
 
   if (variant === 'modal') {
     return (
-      <div className="ovl ovl--anim" onClick={onClose} data-testid={testId}>
-        <div
-          className={`ccobs ccobs--anim${fullscreen ? ' ccobs--fs' : ''}${extra}`}
-          onClick={stop}
-          role="dialog"
-          aria-label={title}
-        >
-          {head}
-          {body}
-        </div>
-      </div>
+      <PopupFrame
+        title={title}
+        onClose={onClose}
+        testId={testId}
+        overlayClassName="ovl--anim"
+        closeOnEscape={false}
+        panelClassName={`ccobs ccobs--anim${fullscreen ? ' ccobs--fs' : ''}${extra}`}
+      >
+        {head}
+        {body}
+      </PopupFrame>
     )
   }
   // embedded: карточка в сообщении; fullscreen — фиксированный оверлей.

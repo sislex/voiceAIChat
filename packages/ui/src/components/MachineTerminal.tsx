@@ -10,6 +10,8 @@ import type { UtilityVariant } from './machine'
 export interface MachineTerminalProps {
   agents: AgentInfo[]
   initialAgentId?: string | null
+  /** Начальный рабочий каталог PTY. */
+  initialCwd?: string
   /** Мост живого PTY (web). */
   pty: RendererPtyBridge
   variant?: UtilityVariant
@@ -22,7 +24,7 @@ function newPtyId(): string {
 }
 
 /** Один живой xterm-сеанс на выбранную машину (перемонтируется по key=agentId). */
-function TerminalView({ agentId, pty }: { agentId: string; pty: RendererPtyBridge }): JSX.Element {
+function TerminalView({ agentId, cwd, pty }: { agentId: string; cwd?: string; pty: RendererPtyBridge }): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'live' | 'exited' | 'error'>('live')
   const [statusMsg, setStatusMsg] = useState('')
@@ -50,7 +52,7 @@ function TerminalView({ agentId, pty }: { agentId: string; pty: RendererPtyBridg
       }
     }
     doFit()
-    pty.start({ agentId, ptyId, cols: term.cols, rows: term.rows })
+    pty.start({ agentId, ptyId, cols: term.cols, rows: term.rows, ...(cwd ? { cwd } : {}) })
     const onData = term.onData((data) => pty.input({ ptyId, data }))
     const offOut = pty.onOutput((m) => {
       if (m.ptyId === ptyId) term.write(m.data)
@@ -80,7 +82,7 @@ function TerminalView({ agentId, pty }: { agentId: string; pty: RendererPtyBridg
       pty.kill({ ptyId })
       term.dispose()
     }
-  }, [agentId, pty])
+  }, [agentId, cwd, pty])
 
   return (
     <div className="term-wrap">
@@ -96,6 +98,7 @@ function TerminalView({ agentId, pty }: { agentId: string; pty: RendererPtyBridg
 export function MachineTerminal({
   agents,
   initialAgentId,
+  initialCwd,
   pty,
   variant = 'modal',
   onClose
@@ -132,7 +135,7 @@ export function MachineTerminal({
         )}
       </div>
       {agentId ? (
-        <TerminalView key={agentId} agentId={agentId} pty={pty} />
+        <TerminalView key={`${agentId}:${initialCwd ?? ''}`} agentId={agentId} cwd={initialCwd} pty={pty} />
       ) : (
         <p className="cc-empty">Нет доступной машины.</p>
       )}

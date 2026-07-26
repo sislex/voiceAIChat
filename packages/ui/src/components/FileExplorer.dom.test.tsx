@@ -67,6 +67,21 @@ describe('FileExplorer (самодостаточный)', () => {
     expect(ops.download).toHaveBeenCalledWith('m1', '/r/a.txt', 'a.txt')
   })
 
+  it('путь файла открывает родительскую папку и выделяет файл', async () => {
+    const ops = makeOps()
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" initialFilePath="/r/a.txt" ops={ops} variant="embedded" />)
+    expect(await screen.findByText(/a\.txt/)).toBeInTheDocument()
+    expect(ops.list).toHaveBeenCalledWith('m1', '/r')
+    expect(screen.getByText(/a\.txt/).closest('[data-testid="fs-row"]')).toHaveAttribute('data-selected', 'true')
+  })
+
+  it('кнопка терминала передаёт машину и текущую папку', async () => {
+    const open = vi.fn()
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={makeOps()} variant="embedded" onOpenTerminal={open} />)
+    await userEvent.click(await screen.findByTitle('Открыть терминал в этой папке'))
+    expect(open).toHaveBeenCalledWith('m1', '/r')
+  })
+
   it('без allowWrite кнопки мутаций скрыты', async () => {
     const ops = makeOps()
     render(<FileExplorer agents={[agent(false)]} initialAgentId="m1" ops={ops} variant="embedded" />)

@@ -21,6 +21,11 @@ describe('parseToolBlock', () => {
     expect(res?.body).toBe('Открываю.')
   })
 
+  it('сохраняет путь для проводника или cwd терминала', () => {
+    const res = parseToolBlock(toolBlock({ kind: 'explorer', agentId: 'm1', path: '/tmp/a.png' }))
+    expect(res?.tool).toEqual({ kind: 'explorer', agentId: 'm1', path: '/tmp/a.png' })
+  })
+
   it('нет блока / битый JSON / неизвестный kind → null', () => {
     expect(parseToolBlock('просто текст')).toBeNull()
     expect(parseToolBlock('```tool\n{битый}\n```')).toBeNull()

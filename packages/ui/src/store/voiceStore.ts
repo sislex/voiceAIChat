@@ -160,7 +160,7 @@ export interface AppState {
   /** id разговора, открытого в админ-истории (null — не открыт). */
   adminConversationId: string | null
   /** Открытая из меню машинная утилита (консоль/проводник) + машина; null — закрыта. */
-  utility: { kind: 'console' | 'explorer'; agentId: string | null } | null
+  utility: { kind: 'console' | 'explorer'; agentId: string | null; path?: string } | null
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
   speakingMessageId: string | null
   /** Доступна ли озвучка (кнопка ▶ на ответах). */
@@ -406,7 +406,7 @@ export interface StoreActions {
   openAdminConversation(conversationId: string): Promise<void>
   // --- Машинные утилиты (консоль/проводник) ---
   /** Открыть утилиту из меню (машина по умолчанию — первая онлайн-своя). */
-  openUtility(kind: 'console' | 'explorer'): void
+  openUtility(kind: 'console' | 'explorer', agentId?: string | null, path?: string): void
   /** Закрыть утилиту, открытую из меню. */
   closeUtility(): void
   /** Тонкие операции над машиной (используются самодостаточными виджетами). */
@@ -1370,16 +1370,15 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   // --- Машинные утилиты (консоль/проводник) -------------------------------
 
-  /** Машина по умолчанию для утилиты: своя онлайн, иначе выбранная цель, иначе первая. */
+  /** Машина утилиты: сначала цель активного чата, затем первая онлайн. */
   function defaultUtilityAgent(): string | null {
-    const online = state.agents.find((a) => a.online)
-    if (online) return online.id
-    const target = state.agents.find((a) => a.id === activeConversationExecTarget())
-    return target?.id ?? state.agents[0]?.id ?? null
+    const target = state.agents.find((a) => a.id === activeConversationExecTarget() && a.online)
+    if (target) return target.id
+    return state.agents.find((a) => a.online)?.id ?? state.agents[0]?.id ?? null
   }
 
-  function openUtility(kind: 'console' | 'explorer'): void {
-    setState({ utility: { kind, agentId: defaultUtilityAgent() } })
+  function openUtility(kind: 'console' | 'explorer', agentId?: string | null, path?: string): void {
+    setState({ utility: { kind, agentId: agentId ?? defaultUtilityAgent(), ...(path ? { path } : {}) } })
   }
   function closeUtility(): void {
     setState({ utility: null })

@@ -27,6 +27,22 @@ describe('MessageImage — загрузка картинки с машины', (
     expect(img).toHaveAttribute('src', `data:image/png;base64,${PNG_B64}`)
   })
 
+  it('кнопка проводника передаёт машину и путь картинки', async () => {
+    const open = vi.fn()
+    render(
+      <MessageImage
+        image={{ path: '/tmp/a.png', agentId: 'm2' }}
+        execAgentId="m1"
+        ops={fakeOps()}
+        readServerFile={noServerFile}
+        onOpenInExplorer={open}
+      />
+    )
+    await screen.findByTestId('message-image')
+    await userEvent.click(screen.getByLabelText('Показать картинку в проводнике'))
+    expect(open).toHaveBeenCalledWith('m2', '/tmp/a.png')
+  })
+
   it('agentId из блока важнее машины сообщения', async () => {
     const ops = fakeOps()
     render(<MessageImage image={{ path: '/tmp/a.png', agentId: 'm2' }} execAgentId="m1" ops={ops} readServerFile={noServerFile} />)

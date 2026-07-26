@@ -173,7 +173,7 @@ describe('AgentRegistry', () => {
   it('fsList: шлёт fs.list и резолвится по fs.result (по opId)', async () => {
     const reg = makeRegistry()
     const sock = fakeSocket()
-    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.2.0')
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.6.0')
 
     const p = reg.fsList('a1', '')
     expect(sock.sent[0]).toEqual({ t: 'fs.list', opId: 'exec-1', path: '' })
@@ -209,11 +209,11 @@ describe('AgentRegistry', () => {
   it('pty: релеит start/input агенту и вывод/exit клиенту', () => {
     const reg = makeRegistry()
     const sock = fakeSocket()
-    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.3.0')
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.9.0')
 
     const events: Array<{ t: string }> = []
-    reg.ptyStart('a1', 'p1', 80, 24, (e) => events.push(e))
-    expect(sock.sent).toContainEqual({ t: 'pty.start', ptyId: 'p1', cols: 80, rows: 24 })
+    reg.ptyStart('a1', 'p1', 80, 24, '/work', (e) => events.push(e))
+    expect(sock.sent).toContainEqual({ t: 'pty.start', ptyId: 'p1', cols: 80, rows: 24, cwd: '/work' })
 
     reg.ptyInput('p1', 'ls\r')
     expect(sock.sent).toContainEqual({ t: 'pty.input', ptyId: 'p1', data: 'ls\r' })
@@ -232,12 +232,12 @@ describe('AgentRegistry', () => {
     expect(sock.sent.length).toBe(before)
   })
 
-  it('pty: старый агент (<0.3.0) → pty.error клиенту, без pty.start агенту', () => {
+  it('pty: старый агент (<0.9.0) → pty.error клиенту, без pty.start агенту', () => {
     const reg = makeRegistry()
     const sock = fakeSocket()
     reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.2.0')
     const events: Array<{ t: string; message?: string }> = []
-    reg.ptyStart('a1', 'p1', 80, 24, (e) => events.push(e))
+    reg.ptyStart('a1', 'p1', 80, 24, undefined, (e) => events.push(e))
     expect(events[0].t).toBe('pty.error')
     expect(sock.sent.some((m) => m.t === 'pty.start')).toBe(false)
   })
@@ -245,9 +245,9 @@ describe('AgentRegistry', () => {
   it('pty: дисконнект агента шлёт pty.error по активным сессиям', () => {
     const reg = makeRegistry()
     const sock = fakeSocket()
-    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.3.0')
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.9.0')
     const events: Array<{ t: string }> = []
-    reg.ptyStart('a1', 'p1', 80, 24, (e) => events.push(e))
+    reg.ptyStart('a1', 'p1', 80, 24, undefined, (e) => events.push(e))
     reg.unregister('a1')
     expect(events.some((e) => e.t === 'pty.error')).toBe(true)
   })

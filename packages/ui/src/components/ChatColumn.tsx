@@ -89,6 +89,8 @@ export interface ChatColumnProps {
   machineOps?: MachineOps
   /** Чтение файла с диска сервера — картинки, созданные самим CLI. */
   readServerFile?: (path: string) => Promise<ServerFileInfo | null>
+  /** Открыть файл картинки в проводнике нужной машины. */
+  onOpenImageInExplorer?: (agentId: string, path: string) => void
 }
 
 export function ChatColumn({
@@ -124,7 +126,8 @@ export function ChatColumn({
   aiLabel = 'Claude',
   onAnswerQuestions,
   machineOps,
-  readServerFile
+  readServerFile,
+  onOpenImageInExplorer
 }: ChatColumnProps): JSX.Element {
   const [exportOpen, setExportOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -392,6 +395,7 @@ export function ChatColumn({
                           ops={machineOps}
                           readServerFile={readServerFile}
                           agents={agents}
+                          onOpenInExplorer={onOpenImageInExplorer}
                         />
                       ))}
                     {toolParsed && machineOps && (
@@ -566,6 +570,7 @@ export function ChatColumn({
                       ops={machineOps}
                       readServerFile={readServerFile}
                       agents={agents}
+                      onOpenInExplorer={onOpenImageInExplorer}
                       live
                     />
                   ))}

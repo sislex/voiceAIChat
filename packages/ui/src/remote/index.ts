@@ -239,7 +239,8 @@ function makeFsBridge(httpBase: string): RendererFsBridge {
 /** Мост живого PTY-терминала поверх клиентского WS. */
 function makePtyBridge(ws: WsClient): RendererPtyBridge {
   return {
-    start: ({ agentId, ptyId, cols, rows }) => ws.send({ t: 'pty.start', agentId, ptyId, cols, rows }),
+    start: ({ agentId, ptyId, cols, rows, cwd }) =>
+      ws.send({ t: 'pty.start', agentId, ptyId, cols, rows, ...(cwd ? { cwd } : {}) }),
     input: ({ ptyId, data }) => ws.send({ t: 'pty.input', ptyId, data }),
     resize: ({ ptyId, cols, rows }) => ws.send({ t: 'pty.resize', ptyId, cols, rows }),
     kill: ({ ptyId }) => ws.send({ t: 'pty.kill', ptyId }),

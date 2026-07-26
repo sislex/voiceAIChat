@@ -379,7 +379,7 @@ export interface RendererFilesBridge {
  * деградирует до однострочной консоли.
  */
 export interface RendererPtyBridge {
-  start(params: { agentId: string; ptyId: string; cols: number; rows: number }): void
+  start(params: { agentId: string; ptyId: string; cols: number; rows: number; cwd?: string }): void
   input(params: { ptyId: string; data: string }): void
   resize(params: { ptyId: string; cols: number; rows: number }): void
   kill(params: { ptyId: string }): void

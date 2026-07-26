@@ -47,7 +47,7 @@ export interface SessionDeps {
 
 /** Минимальный релей PTY для сессии (реализует AgentRegistry). */
 export interface PtyRelay {
-  start(agentId: string, ptyId: string, cols: number, rows: number, emit: (e: PtyEvent) => void): void
+  start(agentId: string, ptyId: string, cols: number, rows: number, cwd: string | undefined, emit: (e: PtyEvent) => void): void
   input(ptyId: string, data: string): void
   resize(ptyId: string, cols: number, rows: number): void
   kill(ptyId: string): void
@@ -193,7 +193,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
             break
           }
           ptyIds.add(msg.ptyId)
-          deps.pty?.start(msg.agentId, msg.ptyId, msg.cols, msg.rows, (e) => ctx.send(e))
+          deps.pty?.start(msg.agentId, msg.ptyId, msg.cols, msg.rows, msg.cwd, (e) => ctx.send(e))
           break
         }
         case 'pty.input':
