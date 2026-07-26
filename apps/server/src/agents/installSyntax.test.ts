@@ -31,6 +31,50 @@ function syntaxError(script: string, name: string): string {
   }
 }
 
+/**
+ * Регрессия: установщики проверяют скачанный бандл через `node --check`, а тот
+ * выбирает модульную систему ПО РАСШИРЕНИЮ. С временным именем «…cjs.new» он
+ * падает с ERR_UNKNOWN_FILE_EXTENSION, и обновление отменялось на любой машине
+ * («скачанный скрипт битый»). Проверяем настоящим запуском node.
+ */
+describe('установщики: временное имя бандла годится для node --check', () => {
+  /** Имена файлов после `--check` в тексте скрипта. */
+  function checkedNames(script: string): string[] {
+    const out: string[] = []
+    for (const m of script.matchAll(/--check\s+\S*?([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+)/g)) {
+      out.push(m[1])
+    }
+    return out
+  }
+
+  const scripts = {
+    android: buildAndroidInstallScript('https://h'),
+    linux: buildUnixInstallScript('https://h', 'linux'),
+    macos: buildUnixInstallScript('https://h', 'macos')
+  }
+
+  for (const [os, script] of Object.entries(scripts)) {
+    it(`${os}: node --check принимает это имя`, () => {
+      const names = checkedNames(script)
+      expect(names.length).toBeGreaterThan(0)
+      const dir = mkdtempSync(join(tmpdir(), 'vc-check-'))
+      try {
+        for (const name of names) {
+          const file = join(dir, name)
+          writeFileSync(file, 'module.exports = 1\n')
+          const res = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' })
+          expect(res.stderr, `${name}: node не понял расширение`).not.toContain(
+            'ERR_UNKNOWN_FILE_EXTENSION'
+          )
+          expect(res.status, `${name}: node --check упал`).toBe(0)
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+  }
+})
+
 describe.skipIf(!hasBash)('установщики: синтаксис bash', () => {
   const cases: Array<[string, string]> = [
     ['install-android.sh', buildAndroidInstallScript('https://host.example')],

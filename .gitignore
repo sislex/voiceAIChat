@@ -42,6 +42,11 @@ models/
 # Скачанный бандл компаньон-агента (собирается сервером на лету, не в гит)
 voicechat-agent.cjs
 voicechat-agent.cjs.*
+voicechat-agent.*.cjs
+
+# Картинки, созданные моделью: агент раздаёт их из своего rootDir по HTTP, а на
+# машине-сервере этот rootDir — сам репозиторий (см. docs/kb/machines.md).
+.generated_images/
 
 # Скриншоты для обсуждения (не часть кодовой базы)
 scrins/

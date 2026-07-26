@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-07-26
-checked: 829f43e
+checked: e0bc98e
 areas:
   - apps/server/src/db
   - apps/server/src/users

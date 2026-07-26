@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
 updated: 2026-07-26
-checked: 4805be2
+checked: e0bc98e
 areas:
   - package.json
   - packages/ui/vitest.config.ts
@@ -45,6 +45,10 @@ npm run -w @voicechat/server test
 npm run test:desktop                   # desktop — свой node_modules
 npm run test                           # все воркспейсы
 ```
+
+Полный гейт репозитория — `npm run verify`: typecheck + test всех воркспейсов,
+сборка, плюс desktop и agent-tray (у них свой `node_modules`). Перед пушем удобнее
+гонять его, чем собирать команды руками.
 
 ## Гейт шага
 

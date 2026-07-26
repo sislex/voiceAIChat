@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-07-26
-checked: c9170a7
+checked: e0bc98e
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -140,8 +140,12 @@ Claude восстанавливается из действующего обще
 опционального маппинга имён моделей `VC_CLAUDE_MODEL_MAP`), поэтому сохраняются
 tools, thinking, prompt caching, SSE и beta-заголовки. Backend — либо `upstream`
 (проброс на реальный Anthropic-совместимый URL), либо `codex` (локальный CLI).
-Без `VC_CLAUDE_UPSTREAM_URL` отвечает 503. Входящий gateway **не авторизуется** —
-не открывай его наружу без прокси.
+Без `VC_CLAUDE_UPSTREAM_URL` отвечает 503. Токена gateway не спрашивает, но с
+59f9178 **пускает только из локальной сети**: адрес клиента проверяется
+`isLocalNetworkAddress` (loopback, 10/8, 172.16/12, 192.168/16, link-local, fc00::/7),
+иначе 403 `permission_error`. Когда запрос пришёл с локального адреса (типично
+из-за прокси), реальный клиент берётся из `x-forwarded-for`. То есть наружу его
+всё равно не выставляют — фильтр по сети не заменяет авторизацию.
 
 ## Проброс Bash на машину пользователя
 
