@@ -9,6 +9,18 @@ import type {
 
 export const ACCENT = '#3D64C8'
 
+/**
+ * Время сообщения для ленты: из createdAt (epoch ms) в часовом поясе зрителя.
+ * Запечённая строка `time` — только фолбэк для записей без createdAt: у ответов
+ * модели её формирует сервер в своём поясе (UTC в контейнере), и она «уезжает»
+ * относительно реплик пользователя, отформатированных браузером.
+ */
+export function messageTime(m: { time: string; createdAt: number }): string {
+  if (!m.createdAt) return m.time
+  const d = new Date(m.createdAt)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 /** Строка live-транскрипта во время записи. */
 export interface LiveSegment {
   speakerId: number

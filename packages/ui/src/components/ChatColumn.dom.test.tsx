@@ -430,3 +430,16 @@ describe('ChatColumn — статус стрима внизу пузыря и п
     expect(screen.getByTestId('msg-interrupted').textContent).toContain('прерван')
   })
 })
+
+describe('ChatColumn — время сообщения в поясе зрителя', () => {
+  it('рендерит время из createdAt, а не запечённую серверную строку', () => {
+    const ts = new Date(2026, 6, 26, 14, 30).getTime() // локальные 14:30
+    renderCol({
+      messages: [
+        { id: 'a3', conversationId: 'c', role: 'ai', text: 'Ответ', time: '23:59', createdAt: ts }
+      ]
+    })
+    expect(screen.getByText('14:30')).toBeInTheDocument()
+    expect(screen.queryByText('23:59')).toBeNull()
+  })
+})

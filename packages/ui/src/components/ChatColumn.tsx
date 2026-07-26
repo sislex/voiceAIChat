@@ -13,6 +13,7 @@ import {
   chipClass,
   engineLabel,
   formatTurnMeta,
+  messageTime,
   pluralActions,
   speakerName,
   statusBadge,
@@ -438,7 +439,7 @@ export function ChatColumn({
                     <span className="msg-machine" title="Снимок машины в момент выполнения">
                       {isAi ? 'Ответ' : 'Вопрос'}: {m.execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === m.execTarget)?.name ?? 'Сервер'}
                     </span>
-                    <p className="mtime">{m.time}</p>
+                    <p className="mtime">{messageTime(m)}</p>
                     {isAi && m.meta && <MessageMeta meta={m.meta} />}
                     {isAi && m.meta?.activity && m.meta.activity.length > 0 && (
                       <button
