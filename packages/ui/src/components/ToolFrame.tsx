@@ -74,7 +74,7 @@ export function ToolFrame({
           {fullscreen ? '▭' : '⛶'}
         </button>
         {onClose && (
-          <button className="xbtn" aria-label="Закрыть" onClick={onClose}>
+          <button className="xbtn" aria-label="Закрыть" title="Закрыть" onClick={onClose}>
             ✕
           </button>
         )}

@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { RendererPtyBridge } from '@shared/ipc'
+import { ToolFrame } from './ToolFrame'
 import type { UtilityVariant } from './machine'
 
 export interface MachineTerminalProps {
@@ -102,28 +103,14 @@ export function MachineTerminal({
   const [agentId, setAgentId] = useState<string | null>(
     initialAgentId ?? agents.find((a) => a.online)?.id ?? agents[0]?.id ?? null
   )
-  const [fullscreen, setFullscreen] = useState(false)
 
-  const header = (
-    <div className="mdhead">
-      <h2 className="mdh">Терминал машины</h2>
-      <span className="util-head-btns">
-        {variant === 'embedded' && (
-          <button className="xbtn" title="На весь экран" onClick={() => setFullscreen((v) => !v)}>
-            {fullscreen ? '🗕' : '⛶'}
-          </button>
-        )}
-        {onClose && (
-          <button className="xbtn" aria-label="Закрыть" onClick={onClose}>
-            ✕
-          </button>
-        )}
-      </span>
-    </div>
-  )
-
-  const body = (
-    <>
+  return (
+    <ToolFrame
+      title="Терминал машины"
+      variant={variant}
+      onClose={onClose}
+      testId={variant === 'modal' ? 'terminal-overlay' : 'terminal-embed'}
+    >
       <div className="fsbar">
         {agents.length > 1 && (
           <select
@@ -149,23 +136,6 @@ export function MachineTerminal({
       ) : (
         <p className="cc-empty">Нет доступной машины.</p>
       )}
-    </>
-  )
-
-  if (variant === 'modal') {
-    return (
-      <div className="ovl" onClick={onClose} data-testid="terminal-overlay">
-        <div className="ccobs" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Терминал машины">
-          {header}
-          {body}
-        </div>
-      </div>
-    )
-  }
-  return (
-    <div className={fullscreen ? 'util-embed util-embed--fs' : 'util-embed'} data-testid="terminal-embed">
-      {header}
-      {body}
-    </div>
+    </ToolFrame>
   )
 }

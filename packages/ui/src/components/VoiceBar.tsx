@@ -119,7 +119,7 @@ export function VoiceBar({
                 📎 {a.name}
                 <button
                   className="attx"
-                  aria-label={`Убрать вложение ${a.name}`}
+                  aria-label={`Убрать вложение ${a.name}`} title={`Убрать вложение ${a.name}`}
                   onClick={() => onRemoveAttachment(a.id)}
                 >
                   ✕

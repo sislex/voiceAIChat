@@ -293,7 +293,7 @@ export function ChatColumn({
       {error && (
         <div className="errbar" role="alert" data-testid="error-bar">
           <span>{error}</span>
-          <button className="errclose" aria-label="Закрыть ошибку" onClick={onDismissError}>
+          <button className="errclose" aria-label="Закрыть ошибку" title="Закрыть ошибку" onClick={onDismissError}>
             ✕
           </button>
         </div>
@@ -564,6 +564,7 @@ export function ChatColumn({
                       execAgentId={execTarget}
                       ops={machineOps}
                       readServerFile={readServerFile}
+                      live
                     />
                   ))}
                 {liveActivity.length > 0 && (

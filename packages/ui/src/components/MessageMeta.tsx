@@ -115,7 +115,7 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
           <div className="modal metamodal" onClick={stop} role="dialog" aria-label="Подробности запроса">
             <div className="mdhead">
               <h2 className="mdh">Что было отправлено модели</h2>
-              <button className="xbtn" aria-label="Закрыть" onClick={() => setOpen(false)}>
+              <button className="xbtn" aria-label="Закрыть" title="Закрыть" onClick={() => setOpen(false)}>
                 ✕
               </button>
             </div>

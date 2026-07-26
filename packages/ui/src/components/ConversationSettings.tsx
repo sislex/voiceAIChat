@@ -120,7 +120,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
   return (
     <div className="convsettings" role="dialog" aria-modal="true" aria-label="Настройки разговора">
       <header className="convsettings-head">
-        <button className="convsettings-back" onClick={onClose} aria-label="Вернуться в разговор">←</button>
+        <button className="convsettings-back" onClick={onClose} aria-label="Вернуться в разговор" title="Вернуться в разговор">←</button>
         <div><h1>Настройки разговора</h1><p>Параметры применяются только к этому разговору</p></div>
       </header>
       <main className="convsettings-body">
@@ -169,7 +169,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
             <div className="convsettings-sectionhead"><div><h2>Корневая директория</h2><p>Команды этого разговора будут начинаться в выбранной папке.</p></div><button onClick={() => void loadDir(workdir ?? '')} disabled={!selectedAgent.online || loadingDir}>Выбрать</button></div>
             <div className="convsettings-path">{workdir || 'Корень машины'}</div>
             {(cwd || entries.length > 0 || loadingDir) && <div className="convsettings-picker">
-              <div className="convsettings-pickerbar"><button onClick={() => void loadDir(parentOf(cwd))}>↑</button><span>{cwd}</span><button onClick={() => { setWorkdir(cwd); setEntries([]) }}>Выбрать эту папку</button></div>
+              <div className="convsettings-pickerbar"><button onClick={() => void loadDir(parentOf(cwd))} title="На уровень выше" aria-label="На уровень выше">↑</button><span>{cwd}</span><button onClick={() => { setWorkdir(cwd); setEntries([]) }}>Выбрать эту папку</button></div>
               {loadingDir ? <p>Загрузка…</p> : entries.filter((entry) => entry.kind === 'dir').map((entry) => <button className="convsettings-dir" key={entry.name} onClick={() => void loadDir(joinPath(cwd, entry.name))}>📁 {entry.name}</button>)}
             </div>}
           </section>

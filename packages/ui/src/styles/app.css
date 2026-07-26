@@ -2784,13 +2784,80 @@
   color: var(--text-dim);
   font-size: 12px;
 }
-.imgload {
+/* Плитка-заглушка, пока файла ещё нет: бегущий блик + подпись поверх. */
+.imgskel {
+  position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
+  width: min(360px, 60vw);
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background: var(--border-soft);
+}
+.imgskel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent 80%
+  );
+  transform: translateX(-100%);
+  animation: img-sheen 1.4s ease-in-out infinite;
+}
+[data-theme='dark'] .imgskel::after {
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.09) 50%,
+    transparent 80%
+  );
+}
+.imgskel-label {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
-  padding: 18px 14px;
   color: var(--text-dim);
   font-size: 13px;
+}
+@keyframes img-sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Проявление: размытая и чуть уменьшенная → резкая. */
+.imgfade {
+  filter: blur(14px);
+  opacity: 0.35;
+  transform: scale(1.03);
+  transition: filter 0.6s ease-out, opacity 0.4s ease-out, transform 0.6s ease-out;
+}
+.imgfade--on {
+  filter: blur(0);
+  opacity: 1;
+  transform: scale(1);
+}
+/* В развороте трансформацией управляет зум — проявление только по прозрачности. */
+.imgsurf .imgfade {
+  transform: none;
+  transition: filter 0.6s ease-out, opacity 0.4s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .imgskel::after {
+    animation: none;
+  }
+  .imgfade {
+    filter: none;
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
 }
 .imgerr {
   display: flex;

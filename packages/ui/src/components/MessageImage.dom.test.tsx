@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MessageImage } from './MessageImage'
 
@@ -224,5 +224,57 @@ describe('MessageImage — файл на сервере (картинки от C
     render(<MessageImage image={IMAGE} execAgentId="m1" ops={ops} />)
     await screen.findByTestId('message-image')
     expect(ops.read).toHaveBeenCalledWith('m1', '/tmp/out.png')
+  })
+})
+
+describe('MessageImage — постепенное появление во время генерации', () => {
+  // Codex отдаёт только готовый файл (событий с частичными кадрами нет), поэтому
+  // «постепенность» = плитка-заглушка, пока файла нет, и проявление после загрузки.
+  it('пока ход идёт и файла нет — заглушка «Рисую картинку…», а не ошибка', async () => {
+    const ops = { read: vi.fn().mockRejectedValue(new Error('ENOENT: no such file')) }
+    render(
+      <MessageImage image={IMAGE} execAgentId="m1" ops={ops} readServerFile={noServerFile} live />
+    )
+    await waitFor(() => expect(ops.read).toHaveBeenCalled())
+    expect(screen.getByTestId('image-loading')).toHaveTextContent('Рисую картинку…')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('перечитывает файл, пока ход не завершён, и показывает появившуюся картинку', async () => {
+    vi.useFakeTimers()
+    try {
+      const read = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('ENOENT: no such file'))
+        .mockResolvedValue({ root: '/', cwd: '', dataBase64: PNG_B64 })
+      render(
+        <MessageImage image={IMAGE} execAgentId="m1" ops={{ read }} readServerFile={noServerFile} live />
+      )
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1))
+      await vi.advanceTimersByTimeAsync(800) // пауза между попытками
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+      await vi.waitFor(() => expect(screen.getByTestId('message-image')).toBeInTheDocument())
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ход завершён и файла нет — показываем ошибку, а не бесконечную заглушку', async () => {
+    const ops = { read: vi.fn().mockRejectedValue(new Error('ENOENT: no such file')) }
+    render(
+      <MessageImage image={IMAGE} execAgentId="m1" ops={ops} readServerFile={noServerFile} />
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent('ENOENT')
+    expect(ops.read).toHaveBeenCalledTimes(1)
+  })
+
+  it('картинка проявляется: до onLoad размыта, после — резкая', async () => {
+    render(<MessageImage image={IMAGE} execAgentId="m1" ops={fakeOps()} readServerFile={noServerFile} />)
+    const img = await screen.findByTestId('message-image')
+    // jsdom не грузит data-URL сам: до события картинка в «размытом» состоянии.
+    expect(img).toHaveClass('imgfade')
+    expect(img).not.toHaveClass('imgfade--on')
+    fireEvent.load(img)
+    expect(img).toHaveClass('imgfade--on')
   })
 })
