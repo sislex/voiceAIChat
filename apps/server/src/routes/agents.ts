@@ -222,8 +222,8 @@ export async function registerAgentRoutes(
       os === 'windows'
         ? `powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Join-Path $env:TEMP 'vc-agent-install.ps1'; ` +
           `curl.exe -fsSLk ${installScriptUrl(os, base)} -o $p; ` +
-          `Start-Process -WindowStyle Hidden powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',$p"`
-        : `(setsid nohup bash -lc ${shellQuote(installCommand(os, base))} > /dev/null 2>&1 < /dev/null &) ; echo update-started`
+          `Start-Process -WindowStyle Hidden powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',$p -RedirectStandardOutput \"$env:USERPROFILE\\voicechat-update.log\" -RedirectStandardError \"$env:USERPROFILE\\voicechat-update.err.log\""`
+        : `(setsid nohup bash -lc ${shellQuote(installCommand(os, base))} > "$HOME/voicechat-update.log" 2>&1 < /dev/null &) ; echo update-started`
     try {
       const res = await registry.exec(id, detached, UPDATE_EXEC_TIMEOUT_MS)
       return { ok: true, os, output: res.output.slice(0, 2000) }
