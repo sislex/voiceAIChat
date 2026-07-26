@@ -16,6 +16,7 @@ import { runCommand, cancelCommand } from './exec.js'
 import { startPty, writePty, resizePty, killPty } from './pty.js'
 import { fsDelete, fsList, fsMkdir, fsRead, fsRename, fsWrite } from './fileOps.js'
 import { createTelemetryCollector } from './telemetry.js'
+import { ensureImageDir, localAddresses, startImageHost, type ImageHost } from './imageHost.js'
 
 const BACKOFF_START_MS = 1_000
 const BACKOFF_MAX_MS = 30_000
@@ -78,7 +79,17 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
   // Ссылка на send текущего соединения — для отправки вне обработчика сообщений.
   let activeSend: ((msg: AgentToServer) => void) | null = null
   let telemetryTimer: ReturnType<typeof setInterval> | null = null
+  // Раздача картинок поднимается один раз на процесс и переживает реконнекты;
+  // при каждой регистрации сообщаем серверу порт и текущие адреса машины.
+  let imageHost: ImageHost | null = null
   const collectTelemetry = createTelemetryCollector(config.rootDir)
+
+  /** Описание раздачи для agent.register (адреса пересчитываем каждый раз: IP меняется). */
+  const imageHostInfo = (): { port: number; hosts: string[] } | undefined => {
+    if (!imageHost) return undefined
+    ensureImageDir(config.rootDir) // каталог могли удалить между подключениями
+    return { port: imageHost.port, hosts: localAddresses() }
+  }
 
   /** Собирает и шлёт телеметрию (ошибки сбора не критичны — просто пропускаем). */
   const pushTelemetry = async (send: (msg: AgentToServer) => void): Promise<void> => {
@@ -118,7 +129,13 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
     activeSend = send
 
     ws.on('open', () => {
-      send({ t: 'agent.register', token: config.token, version: AGENT_VERSION })
+      const images = imageHostInfo()
+      send({
+        t: 'agent.register',
+        token: config.token,
+        version: AGENT_VERSION,
+        ...(images ? { imageHost: images } : {})
+      })
     })
 
     ws.on('message', (data) => {
@@ -138,6 +155,11 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           stopTelemetry()
           void pushTelemetry(send)
           telemetryTimer = setInterval(() => void pushTelemetry(send), TELEMETRY_INTERVAL_MS)
+          // Адреса машины могли смениться, пока агент был офлайн.
+          {
+            const info = imageHostInfo()
+            if (info) send({ t: 'agent.imageHost', imageHost: info })
+          }
           break
         case 'agent.policy':
           applyPolicy(msg.policy, false)
@@ -247,11 +269,26 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
 
   connect()
 
+  // Раздача картинок поднимается параллельно подключению: слушающий сокет — это
+  // асинхронно, а держать из-за него реконнект нельзя. Поднялась — досылаем порт
+  // и адреса отдельным сообщением. Не поднялась — сервер просто не увидит
+  // imageHost и оставит картинки у себя (прежний путь через REST).
+  void startImageHost(config.rootDir)
+    .then((host) => {
+      if (!host || stopped) return
+      imageHost = host
+      handlers.onLog?.(`раздача картинок на :${host.port}`)
+      const info = imageHostInfo()
+      if (info) activeSend?.({ t: 'agent.imageHost', imageHost: info })
+    })
+    .catch(() => undefined)
+
   return {
     stop: () => {
       stopped = true
       if (reconnectTimer) clearTimeout(reconnectTimer)
       stopTelemetry()
+      imageHost?.stop()
       handlers.onStatus?.('stopped')
       try {
         socket?.close()

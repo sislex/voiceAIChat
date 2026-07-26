@@ -391,6 +391,7 @@ export function ChatColumn({
                           execAgentId={m.execTarget ?? execTarget}
                           ops={machineOps}
                           readServerFile={readServerFile}
+                          agents={agents}
                         />
                       ))}
                     {toolParsed && machineOps && (
@@ -564,6 +565,7 @@ export function ChatColumn({
                       execAgentId={execTarget}
                       ops={machineOps}
                       readServerFile={readServerFile}
+                      agents={agents}
                       live
                     />
                   ))}

@@ -8,8 +8,9 @@
 // развороте — зум колесом и перетаскивание, как в просмотрщике ChatGPT.
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { imageMime, imageName, type ImageRef } from '@shared/images'
+import { imageMime, imageName, machineImageUrls, type ImageRef } from '@shared/images'
 import type { ServerFileInfo } from '@shared/protocol'
+import type { AgentInfo } from '@shared/agentProtocol'
 import { copyImage } from '../lib/clipboard'
 import { Dots } from './animations'
 import { ToolFrame, type ToolFrameControl } from './ToolFrame'
@@ -23,6 +24,8 @@ export interface MessageImageProps {
   ops: Pick<MachineOps, 'read'>
   /** Чтение файла с диска сервера; null — сервер такого файла у себя не знает. */
   readServerFile?: (path: string) => Promise<ServerFileInfo | null>
+  /** Машины: из живого AgentInfo берётся текущий адрес раздачи картинок. */
+  agents?: AgentInfo[]
   /** Ход ещё идёт: файла может пока не быть — ждём его, а не ругаемся. */
   live?: boolean
   variant?: UtilityVariant
@@ -38,6 +41,16 @@ const RETRY_MS = 700
 /** Предохранитель от бесконечного опроса, если ход «завис» живым. */
 const MAX_ATTEMPTS = 90
 
+/** Сохранение файла по ссылке (клик по временному <a download>). */
+function saveAs(href: string, name: string): void {
+  const a = document.createElement('a')
+  a.href = href
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
 /** base64 → байты (atob отдаёт «бинарную строку», её и разворачиваем). */
 function decodeBase64(b64: string): Uint8Array {
   const bin = atob(b64)
@@ -52,6 +65,7 @@ export function MessageImage({
   execAgentId = null,
   ops,
   readServerFile,
+  agents = [],
   live = false,
   variant = 'embedded',
   onClose
@@ -63,6 +77,17 @@ export function MessageImage({
   // только функцию чтения, иначе эффект перечитывал бы файл бесконечно.
   const { read } = ops
 
+  // Прямые адреса машины: собираются на каждый рендер из живого AgentInfo,
+  // поэтому сменившийся IP подхватывается сразу после обновления списка машин.
+  const hostUrls = machineImageUrls(
+    image.path,
+    agents.find((a) => a.id === agentId && a.online)?.imageHost
+  )
+  // Какой адрес пробуем сейчас; onError двигает к следующему, дальше — байты
+  // через сервер (машина может быть недоступна из браузера — другая сеть/NAT).
+  const [urlIndex, setUrlIndex] = useState(0)
+  const directUrl = hostUrls[urlIndex]
+
   const [src, setSrc] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<'ok' | 'fail' | null>(null)
@@ -71,6 +96,8 @@ export function MessageImage({
   const bytes = useRef<Uint8Array | null>(null)
 
   useEffect(() => {
+    // Пока есть непроверенный адрес машины — байты не тянем вовсе.
+    if (directUrl) return
     let alive = true
     let retry: ReturnType<typeof setTimeout> | undefined
 
@@ -113,38 +140,58 @@ export function MessageImage({
       alive = false
       if (retry) clearTimeout(retry)
     }
-  }, [agentId, image.agentId, image.path, mime, read, readServerFile, live, attempt])
+  }, [directUrl, agentId, image.agentId, image.path, mime, read, readServerFile, live, attempt])
+
+  // Показываем прямой адрес машины, если он есть; иначе — байты через сервер.
+  const shownSrc = directUrl ?? src
+  const ready = Boolean(shownSrc)
+
+  /** Байты картинки для «скачать»/«копировать» (с машины — докачиваем по URL). */
+  const blobOf = async (): Promise<Blob | null> => {
+    if (bytes.current) return new Blob([bytes.current.slice()], { type: mime })
+    if (!directUrl) return null
+    // На агенте выставлен access-control-allow-origin: * — fetch пройдёт.
+    const res = await fetch(directUrl)
+    if (!res.ok) return null
+    return res.blob()
+  }
 
   const download = (): void => {
-    if (!src) return
-    const a = document.createElement('a')
-    a.href = src
-    a.download = name
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    if (!shownSrc) return
+    // data-URL с сервера отдаём ссылке как есть. Для прямого адреса машины так
+    // нельзя: у кросс-доменной ссылки браузер игнорирует download и просто
+    // открывает картинку — поэтому сначала докачиваем байты в blob.
+    if (!directUrl) {
+      saveAs(shownSrc, name)
+      return
+    }
+    void blobOf().then((blob) => {
+      const url = blob && typeof URL.createObjectURL === 'function' ? URL.createObjectURL(blob) : null
+      saveAs(url ?? shownSrc, name)
+      if (url) URL.revokeObjectURL(url)
+    })
   }
 
   const copy = (): void => {
-    if (!bytes.current) return
-    // Копия буфера: Blob не должен зависеть от переиспользования исходного массива.
-    const blob = new Blob([bytes.current.slice()], { type: mime })
-    void copyImage(blob).then((ok) => {
-      setCopied(ok ? 'ok' : 'fail')
-      setTimeout(() => setCopied(null), 1500)
-    })
+    void blobOf()
+      .then((blob) => (blob ? copyImage(blob) : false))
+      .catch(() => false)
+      .then((ok) => {
+        setCopied(ok ? 'ok' : 'fail')
+        setTimeout(() => setCopied(null), 1500)
+      })
   }
 
   const actions = (
     <>
-      <button className="xbtn" title="Скачать" aria-label="Скачать картинку" disabled={!src} onClick={download}>
+      <button className="xbtn" title="Скачать" aria-label="Скачать картинку" disabled={!ready} onClick={download}>
         ⬇
       </button>
       <button
         className="xbtn"
         title={copied === 'fail' ? 'Не удалось скопировать' : 'Копировать картинку'}
         aria-label="Копировать картинку"
-        disabled={!src}
+        disabled={!ready}
         onClick={copy}
       >
         {copied === 'ok' ? '✓' : copied === 'fail' ? '✕' : '⧉'}
@@ -164,8 +211,15 @@ export function MessageImage({
     >
       {(ctl) => (
         <div className="imgbody">
-          {src ? (
-            <ImageSurface src={src} alt={image.caption ?? name} ctl={ctl} />
+          {shownSrc ? (
+            <ImageSurface
+              src={shownSrc}
+              alt={image.caption ?? name}
+              ctl={ctl}
+              // Машина недоступна из этой сети — пробуем следующий её адрес, а
+              // когда они кончатся, откатываемся на чтение байтов через сервер.
+              onFail={directUrl ? () => setUrlIndex((i) => i + 1) : undefined}
+            />
           ) : error && !live ? (
             <p className="imgerr" role="alert">
               {error}
@@ -180,7 +234,7 @@ export function MessageImage({
               </span>
             </div>
           )}
-          {image.caption && src && <p className="imgcap">{image.caption}</p>}
+          {image.caption && shownSrc && <p className="imgcap">{image.caption}</p>}
         </div>
       )}
     </ToolFrame>
@@ -194,11 +248,14 @@ export function MessageImage({
 function ImageSurface({
   src,
   alt,
-  ctl
+  ctl,
+  onFail
 }: {
   src: string
   alt: string
   ctl: ToolFrameControl
+  /** Картинка не загрузилась по этому адресу (актуально для прямого URL машины). */
+  onFail?: () => void
 }): JSX.Element {
   const { fullscreen, setFullscreen } = ctl
   const surface = useRef<HTMLDivElement>(null)
@@ -286,6 +343,7 @@ function ImageSurface({
           decoding="async"
           data-testid="message-image"
           onLoad={() => setShown(true)}
+          onError={onFail}
         />
       </button>
     )
@@ -311,6 +369,7 @@ function ImageSurface({
         decoding="async"
         data-testid="message-image"
         onLoad={() => setShown(true)}
+        onError={onFail}
         draggable={false}
         style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}
       />

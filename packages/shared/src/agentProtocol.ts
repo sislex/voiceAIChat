@@ -78,7 +78,9 @@ export interface AgentTelemetry {
 
 /** Сообщения агент → сервер. */
 export type AgentToServer =
-  | { t: 'agent.register'; token: string; version?: string }
+  | { t: 'agent.register'; token: string; version?: string; imageHost?: AgentImageHost }
+  /** Раздача картинок поднялась/адреса машины сменились — обновить у сервера. */
+  | { t: 'agent.imageHost'; imageHost: AgentImageHost }
   | { t: 'exec.chunk'; execId: string; stream: 'stdout' | 'stderr'; data: string }
   | { t: 'exec.done'; execId: string; exitCode: number | null; timedOut?: boolean }
   | { t: 'exec.error'; execId: string; message: string }
@@ -208,6 +210,21 @@ export interface AgentInfo {
   version?: string
   /** Последняя телеметрия машины (только когда online; иначе не задана). */
   telemetry?: AgentTelemetry
+  /** Раздача картинок машиной (только когда online и агент это умеет). */
+  imageHost?: AgentImageHost
+}
+
+/**
+ * Раздача картинок машиной: агент поднимает у себя маленький HTTP-сервер над
+ * `<rootDir>/.generated_images`, чтобы браузер тянул картинку прямо с машины,
+ * не гоняя байты через сервер. Адрес НЕ сохраняется в сообщении: IP машины
+ * меняется, поэтому клиент собирает URL заново из живого `AgentInfo`.
+ */
+export interface AgentImageHost {
+  /** Порт HTTP-сервера картинок на машине. */
+  port: number
+  /** IPv4-адреса машины (без loopback), в порядке предпочтения. */
+  hosts: string[]
 }
 
 /** Ответ на создание агента: токен возвращается только здесь, один раз. */

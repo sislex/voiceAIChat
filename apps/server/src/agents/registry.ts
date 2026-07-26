@@ -8,6 +8,7 @@ import {
   requiredVersion,
   AGENT_VERSION,
   DEFAULT_AGENT_POLICY,
+  type AgentImageHost,
   type AgentPolicy,
   type AgentTelemetry,
   type AgentToServer,
@@ -72,6 +73,7 @@ interface OnlineAgent {
   policy: AgentPolicy
   /** Версия подключённого агента (legacy без рапорта → '0.1.0'). */
   version: string
+  imageHost?: AgentImageHost
 }
 
 export class AgentRegistry {
@@ -92,7 +94,8 @@ export class AgentRegistry {
     name: string,
     socket: AgentSocket,
     policy = DEFAULT_AGENT_POLICY,
-    version = '0.1.0'
+    version = '0.1.0',
+    imageHost?: AgentImageHost
   ): void {
     // Повторное подключение с тем же токеном вытесняет старое соединение.
     const prev = this.online.get(agentId)
@@ -104,7 +107,20 @@ export class AgentRegistry {
         /* уже закрыт */
       }
     }
-    this.online.set(agentId, { name, socket, policy, version })
+    this.online.set(agentId, { name, socket, policy, version, imageHost })
+    this.emitChange()
+  }
+
+  /** Раздача картинок машиной (undefined — офлайн или агент её не умеет). */
+  imageHostOf(agentId: string): AgentImageHost | undefined {
+    return this.online.get(agentId)?.imageHost
+  }
+
+  /** Обновляет данные раздачи (порт/адреса меняются на живом соединении). */
+  setImageHost(agentId: string, imageHost: AgentImageHost): void {
+    const a = this.online.get(agentId)
+    if (!a) return
+    a.imageHost = imageHost
     this.emitChange()
   }
 
@@ -376,6 +392,10 @@ export class AgentRegistry {
     if (msg.t === 'agent.setPolicy') return // обрабатывается в wsAgent (нужен owner/БД)
     if (msg.t === 'agent.telemetry') {
       this.setTelemetry(agentId, msg.telemetry)
+      return
+    }
+    if (msg.t === 'agent.imageHost') {
+      this.setImageHost(agentId, msg.imageHost)
       return
     }
     if (msg.t === 'fs.result' || msg.t === 'fs.error') {

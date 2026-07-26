@@ -25,6 +25,7 @@ import {
   type TurnRequestInfo
 } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
+import { relocateImagesToMachine } from './imageRelocate.js'
 import type { LlmClient, LlmHandle } from './claude/types.js'
 
 export interface TurnManagerDeps {
@@ -39,7 +40,13 @@ export interface TurnManagerDeps {
     isOnline(id: string): boolean
     nameOf(id: string): string | undefined
     policyOf(id: string): AgentPolicy | undefined
+    /** Файловые операции машины — нужны, чтобы переложить туда картинки хода. */
+    fsList?(id: string, path: string): Promise<{ root: string }>
+    fsMkdir?(id: string, path: string): Promise<unknown>
+    fsWrite?(id: string, path: string, dataBase64: string): Promise<unknown>
   }
+  /** Корни «своей» области сервера — откуда можно забирать файл картинки. */
+  serverFileRoots?: (userId: string) => string[]
   /** База URL MCP-эндпоинта remote-bash (с секретом k); undefined — проброс выключен. */
   mcpBaseUrl?: string
   /** Источник времени (для детерминированных тестов). */
@@ -298,31 +305,55 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             ...(turn.activity.length ? { activity: turn.activity } : {})
           }
           // Ответ сохраняет сервер: клиент мог обновить страницу или уйти.
-          const finalText = text.trim() ? text : turn.partial
-          let message: Message | undefined
-          if (finalText.trim()) {
-            message = deps.db.addMessage(
-              userId,
-              conversationId,
-              'ai',
-              finalText,
-              timeHHMM(),
-              provider,
-              merged,
-              requestedTarget
+          const rawText = text.trim() ? text : turn.partial
+
+          // Картинки, созданные CLI, лежат на сервере — перекладываем их на
+          // машину разговора, откуда браузер возьмёт их напрямую. Шаг сетевой,
+          // поэтому сохранение и claude.done ждут его; осечка не критична —
+          // relocate вернёт исходный текст, и картинка покажется через сервер.
+          const prepared = (async (): Promise<string> => {
+            const a = deps.agents
+            if (!target || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.serverFileRoots) {
+              return rawText
+            }
+            try {
+              return await relocateImagesToMachine(rawText, target, {
+                roots: deps.serverFileRoots(userId),
+                fsList: (id, path) => a.fsList!(id, path),
+                fsMkdir: (id, path) => a.fsMkdir!(id, path),
+                fsWrite: (id, path, data) => a.fsWrite!(id, path, data)
+              })
+            } catch {
+              return rawText
+            }
+          })()
+
+          void prepared.then((finalText) => {
+            let message: Message | undefined
+            if (finalText.trim()) {
+              message = deps.db.addMessage(
+                userId,
+                conversationId,
+                'ai',
+                finalText,
+                timeHHMM(),
+                provider,
+                merged,
+                requestedTarget
+              )
+            }
+            broadcast(
+              {
+                t: 'claude.done',
+                conversationId,
+                text: finalText,
+                meta: merged,
+                engine: provider,
+                ...(message ? { message } : {})
+              },
+              userId
             )
-          }
-          broadcast(
-            {
-              t: 'claude.done',
-              conversationId,
-              text: finalText,
-              meta: merged,
-              engine: provider,
-              ...(message ? { message } : {})
-            },
-            userId
-          )
+          })
         },
         onError: (message) => {
           if (finished) return

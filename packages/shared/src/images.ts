@@ -160,6 +160,21 @@ export function parseImages(text: string): ParsedImages {
   return { body: body.trim(), images }
 }
 
+/**
+ * URL-ы, по которым машина раздаёт эту картинку. Адрес НЕ хранится в сообщении:
+ * IP машины меняется, поэтому список собирается заново из живого `AgentInfo` —
+ * после обновления страницы ссылки снова актуальны. Адресов может быть
+ * несколько (несколько интерфейсов) — клиент пробует их по очереди.
+ */
+export function machineImageUrls(
+  path: string,
+  imageHost: { port: number; hosts: string[] } | undefined
+): string[] {
+  if (!imageHost || imageHost.hosts.length === 0) return []
+  const name = encodeURIComponent(imageName(path))
+  return imageHost.hosts.map((h) => `http://${h}:${imageHost.port}/${name}`)
+}
+
 /** Дописывает к промпту инструкцию про блок картинки (пустой промпт не трогает). */
 export function appendImageHint(prompt: string): string {
   if (!prompt.trim()) return prompt

@@ -242,7 +242,23 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     claude,
     codex,
     resolveUpload: (id) => uploads.pathById(id),
-    agents: agentRegistry,
+    agents: {
+      isOnline: (id) => agentRegistry.isOnline(id),
+      nameOf: (id) => agentRegistry.nameOf(id),
+      policyOf: (id) => agentRegistry.policyOf(id),
+      fsList: (id, path) => agentRegistry.fsList(id, path),
+      fsMkdir: (id, path) => agentRegistry.fsMkdir(id, path),
+      fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data)
+    },
+    // Откуда можно забирать файл картинки: профиль CLI, загрузки, рабочий каталог.
+    serverFileRoots: (userId) => {
+      const settings = db.getSettings(userId)
+      return [
+        ensureCliProfile(opts.config.dataDir, userId).home,
+        join(opts.config.dataDir, 'uploads'),
+        ...(settings.workdir ? [settings.workdir] : [])
+      ]
+    },
     // claude спавнится на этом же хосте — loopback работает при любом HOST.
     mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`
   })
@@ -267,7 +283,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             ...a,
             online: online.has(a.id),
             version: agentRegistry.versionOf(a.id),
-            telemetry: agentRegistry.telemetryOf(a.id)
+            telemetry: agentRegistry.telemetryOf(a.id),
+            imageHost: agentRegistry.imageHostOf(a.id)
           }))
         },
         subscribe: (cb) => agentRegistry.onChange(cb)
