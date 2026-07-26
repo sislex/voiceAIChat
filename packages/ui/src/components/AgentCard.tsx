@@ -34,7 +34,7 @@ function ListEditor({
       {items.map((it) => (
         <div className="vrow2" key={it}>
           <span className="vname ac-mono">{it}</span>
-          <button className="vdl vdel" aria-label={`Удалить ${it}`} onClick={() => onChange(items.filter((x) => x !== it))}>
+          <button className="vdl vdel" aria-label={`Удалить ${it}`} title={`Удалить ${it}`} onClick={() => onChange(items.filter((x) => x !== it))}>
             ✕
           </button>
         </div>
@@ -133,7 +133,7 @@ export function AgentCard({ agent, onSetPolicy, onDelete, onRegenerateToken }: A
                 className={policy.allowNetwork ? 'sw on' : 'sw'}
                 role="switch"
                 aria-checked={policy.allowNetwork}
-                aria-label="Доступ в сеть"
+                aria-label="Доступ в сеть" title="Доступ в сеть"
                 onClick={() => patch({ allowNetwork: !policy.allowNetwork })}
               />
             </div>
@@ -143,7 +143,7 @@ export function AgentCard({ agent, onSetPolicy, onDelete, onRegenerateToken }: A
                 className={policy.allowWrite ? 'sw on' : 'sw'}
                 role="switch"
                 aria-checked={policy.allowWrite}
-                aria-label="Изменение файлов"
+                aria-label="Изменение файлов" title="Изменение файлов"
                 onClick={() => patch({ allowWrite: !policy.allowWrite })}
               />
             </div>
@@ -177,7 +177,7 @@ export function AgentCard({ agent, onSetPolicy, onDelete, onRegenerateToken }: A
                 </span>
                 <button
                   className="vdl vdel"
-                  aria-label={`Удалить навык ${s.name}`}
+                  aria-label={`Удалить навык ${s.name}`} title={`Удалить навык ${s.name}`}
                   onClick={() => patch({ skills: policy.skills.filter((_, j) => j !== i) })}
                 >
                   ✕

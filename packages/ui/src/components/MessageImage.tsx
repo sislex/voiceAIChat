@@ -23,6 +23,8 @@ export interface MessageImageProps {
   ops: Pick<MachineOps, 'read'>
   /** Чтение файла с диска сервера; null — сервер такого файла у себя не знает. */
   readServerFile?: (path: string) => Promise<ServerFileInfo | null>
+  /** Ход ещё идёт: файла может пока не быть — ждём его, а не ругаемся. */
+  live?: boolean
   variant?: UtilityVariant
   onClose?: () => void
 }
@@ -31,6 +33,10 @@ const MIN_ZOOM = 1
 const MAX_ZOOM = 8
 /** Исходный вид: без приближения и сдвига. */
 const FLAT = { zoom: MIN_ZOOM, x: 0, y: 0 }
+/** Пауза между попытками дочитать файл, пока ход не завершён. */
+const RETRY_MS = 700
+/** Предохранитель от бесконечного опроса, если ход «завис» живым. */
+const MAX_ATTEMPTS = 90
 
 /** base64 → байты (atob отдаёт «бинарную строку», её и разворачиваем). */
 function decodeBase64(b64: string): Uint8Array {
@@ -46,6 +52,7 @@ export function MessageImage({
   execAgentId = null,
   ops,
   readServerFile,
+  live = false,
   variant = 'embedded',
   onClose
 }: MessageImageProps): JSX.Element {
@@ -59,12 +66,13 @@ export function MessageImage({
   const [src, setSrc] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<'ok' | 'fail' | null>(null)
+  // Номер попытки: пока идёт ход, файл может ещё дописываться — перечитываем.
+  const [attempt, setAttempt] = useState(0)
   const bytes = useRef<Uint8Array | null>(null)
 
   useEffect(() => {
     let alive = true
-    setSrc(null)
-    setError(null)
+    let retry: ReturnType<typeof setTimeout> | undefined
 
     // Где искать файл. Явный agentId в блоке — значит модель сама сказала «на
     // машине». Иначе сначала спрашиваем сервер: встроенные генераторы картинок
@@ -89,15 +97,23 @@ export function MessageImage({
       .then((b64) => {
         if (!alive) return
         bytes.current = decodeBase64(b64)
+        setError(null)
         setSrc(`data:${mime};base64,${b64}`)
       })
       .catch((err: unknown) => {
-        if (alive) setError(err instanceof Error ? err.message : String(err))
+        if (!alive) return
+        setError(err instanceof Error ? err.message : String(err))
+        // Ход ещё идёт — файл, скорее всего, просто не дописан: ждём и пробуем
+        // снова. Ошибку покажем, только когда ход закончится, а файла всё нет.
+        if (live && attempt < MAX_ATTEMPTS) {
+          retry = setTimeout(() => setAttempt((n) => n + 1), RETRY_MS)
+        }
       })
     return () => {
       alive = false
+      if (retry) clearTimeout(retry)
     }
-  }, [agentId, image.agentId, image.path, mime, read, readServerFile])
+  }, [agentId, image.agentId, image.path, mime, read, readServerFile, live, attempt])
 
   const download = (): void => {
     if (!src) return
@@ -148,20 +164,23 @@ export function MessageImage({
     >
       {(ctl) => (
         <div className="imgbody">
-          {error ? (
+          {src ? (
+            <ImageSurface src={src} alt={image.caption ?? name} ctl={ctl} />
+          ) : error && !live ? (
             <p className="imgerr" role="alert">
               {error}
               <span className="imgpath">{image.path}</span>
             </p>
-          ) : !src ? (
-            <div className="imgload" data-testid="image-loading">
-              <Dots />
-              <span>Загрузка картинки…</span>
-            </div>
           ) : (
-            <ImageSurface src={src} alt={image.caption ?? name} ctl={ctl} />
+            // Пока файла нет — плитка-заглушка с бегущим бликом, как в ChatGPT.
+            <div className="imgskel" data-testid="image-loading" aria-live="polite">
+              <span className="imgskel-label">
+                <Dots />
+                {live ? 'Рисую картинку…' : 'Загрузка картинки…'}
+              </span>
+            </div>
           )}
-          {image.caption && !error && <p className="imgcap">{image.caption}</p>}
+          {image.caption && src && <p className="imgcap">{image.caption}</p>}
         </div>
       )}
     </ToolFrame>
@@ -183,6 +202,15 @@ function ImageSurface({
 }): JSX.Element {
   const { fullscreen, setFullscreen } = ctl
   const surface = useRef<HTMLDivElement>(null)
+  // Проявление: пока браузер не декодировал картинку, показываем её размытой и
+  // уменьшенной, после onLoad снимаем размытие — тот же «unblur», что в ChatGPT.
+  // Кэшированная картинка может успеть загрузиться до навешивания onLoad, поэтому
+  // сверяемся с img.complete на монтировании.
+  const [shown, setShown] = useState(false)
+  const reveal = (el: HTMLImageElement | null): void => {
+    if (el?.complete) setShown(true)
+  }
+  const revealClass = shown ? 'imgfade imgfade--on' : 'imgfade'
   // Масштаб и сдвиг — одним состоянием: зум к курсору меняет их согласованно.
   const [view, setView] = useState(FLAT)
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null)
@@ -250,7 +278,15 @@ function ImageSurface({
         aria-label="Открыть картинку на весь экран"
         onClick={() => setFullscreen(true)}
       >
-        <img src={src} alt={alt} data-testid="message-image" />
+        <img
+          ref={reveal}
+          className={revealClass}
+          src={src}
+          alt={alt}
+          decoding="async"
+          data-testid="message-image"
+          onLoad={() => setShown(true)}
+        />
       </button>
     )
   }
@@ -268,9 +304,13 @@ function ImageSurface({
       onDoubleClick={onDoubleClick}
     >
       <img
+        ref={reveal}
+        className={revealClass}
         src={src}
         alt={alt}
+        decoding="async"
         data-testid="message-image"
+        onLoad={() => setShown(true)}
         draggable={false}
         style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}
       />

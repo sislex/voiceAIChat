@@ -106,7 +106,13 @@ export function MachineConsole({
           disabled={!agentId || running}
           onChange={(e) => setCmd(e.target.value)}
         />
-        <button className="fsbtn" type="submit" disabled={!agentId || running || !cmd.trim()}>
+        <button
+          className="fsbtn"
+          type="submit"
+          title="Выполнить команду"
+          aria-label="Выполнить команду"
+          disabled={!agentId || running || !cmd.trim()}
+        >
           ▶
         </button>
       </form>

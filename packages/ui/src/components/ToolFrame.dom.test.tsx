@@ -107,6 +107,19 @@ describe('ToolFrame (общая рамка тулов)', () => {
     expect(container.querySelector('.util-embed.util-embed--img')).not.toBeNull()
   })
 
+  it('кнопки шапки подписаны тултипом (не только aria-label)', async () => {
+    render(
+      <ToolFrame title="Тул" variant="embedded" onClose={vi.fn()}>
+        <p>тело</p>
+      </ToolFrame>
+    )
+    expect(screen.getByLabelText('Закрыть')).toHaveAttribute('title', 'Закрыть')
+    // Разворот подписан по состоянию: до и после клика текст разный.
+    expect(screen.getByTitle('На весь экран')).toBeInTheDocument()
+    await userEvent.click(screen.getByTitle('На весь экран'))
+    expect(screen.getByTitle('Свернуть')).toBeInTheDocument()
+  })
+
   it('без onClose крестика нет', () => {
     render(
       <ToolFrame title="Тул" variant="embedded">

@@ -190,7 +190,7 @@ export function SettingsModal({
       <div className="modal settings" onClick={stop} role="dialog" aria-label="Настройки">
         <div className="mdhead">
           <h2 className="mdh">Настройки</h2>
-          <button className="xbtn" onClick={onClose} aria-label="Закрыть">
+          <button className="xbtn" onClick={onClose} aria-label="Закрыть" title="Закрыть">
             ✕
           </button>
         </div>
@@ -453,7 +453,7 @@ export function SettingsModal({
                     <p className="flab">Десктоп-приложение</p>
                     <p className="fsub">Основной клиент Голос·Чат для Mac (.dmg)</p>
                   </div>
-                  <button className="vdl" aria-label="Скачать десктоп" onClick={() => onDownloadDesktopApp()}>
+                  <button className="vdl" aria-label="Скачать десктоп" title="Скачать десктоп" onClick={() => onDownloadDesktopApp()}>
                     ⬇ Скачать
                   </button>
                 </div>
@@ -463,7 +463,7 @@ export function SettingsModal({
                     <p className="flab">Агент — приложение</p>
                     <p className="fsub">Иконка в трее, выполнение команд на этой машине (Mac, .dmg)</p>
                   </div>
-                  <button className="vdl" aria-label="Скачать приложение агента" onClick={() => onDownloadAgentApp()}>
+                  <button className="vdl" aria-label="Скачать приложение агента" title="Скачать приложение агента" onClick={() => onDownloadAgentApp()}>
                     ⬇ Скачать
                   </button>
                 </div>
@@ -473,7 +473,7 @@ export function SettingsModal({
                     <p className="flab">Агент — скрипт</p>
                     <p className="fsub">Запуск в терминале: <code>node voicechat-agent.cjs</code> (нужен Node.js)</p>
                   </div>
-                  <button className="vdl" aria-label="Скачать скрипт агента" onClick={() => onDownloadAgentScript()}>
+                  <button className="vdl" aria-label="Скачать скрипт агента" title="Скачать скрипт агента" onClick={() => onDownloadAgentScript()}>
                     ⬇ Скачать
                   </button>
                 </div>
@@ -558,7 +558,7 @@ export function SettingsModal({
                     disabled={sttBlocked}
                     role="switch"
                     aria-checked={settings.diarization}
-                    aria-label="Диаризация спикеров"
+                    aria-label="Диаризация спикеров" title="Диаризация спикеров"
                   />
                 </div>
 
@@ -626,7 +626,7 @@ export function SettingsModal({
                     disabled={ttsBlocked}
                     role="switch"
                     aria-checked={settings.autoSpeak}
-                    aria-label="Автоозвучка ответов"
+                    aria-label="Автоозвучка ответов" title="Автоозвучка ответов"
                   />
                 </div>
 
@@ -681,7 +681,7 @@ export function SettingsModal({
                     onClick={() => onChange({ handsFree: !settings.handsFree })}
                     role="switch"
                     aria-checked={settings.handsFree}
-                    aria-label="Режим hands-free"
+                    aria-label="Режим hands-free" title="Режим hands-free"
                   />
                 </div>
 
@@ -695,7 +695,7 @@ export function SettingsModal({
                     onClick={() => onChange({ bargeIn: !settings.bargeIn })}
                     role="switch"
                     aria-checked={settings.bargeIn}
-                    aria-label="Перебивание голосом"
+                    aria-label="Перебивание голосом" title="Перебивание голосом"
                   />
                 </div>
               </>
@@ -713,7 +713,7 @@ export function SettingsModal({
                     onClick={() => onChange({ theme: settings.theme === 'dark' ? 'light' : 'dark' })}
                     role="switch"
                     aria-checked={settings.theme === 'dark'}
-                    aria-label="Тёмная тема"
+                    aria-label="Тёмная тема" title="Тёмная тема"
                   />
                 </div>
 
@@ -727,7 +727,7 @@ export function SettingsModal({
                     onClick={() => onChange({ showConsole: !settings.showConsole })}
                     role="switch"
                     aria-checked={settings.showConsole}
-                    aria-label="Режим консоли"
+                    aria-label="Режим консоли" title="Режим консоли"
                   />
                 </div>
               </>

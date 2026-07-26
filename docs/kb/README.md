@@ -9,14 +9,14 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-26 | ⚠ 4 коммит(ов) в areas после сверки: 829f43e fix(server): каталог машины больше не подставляется в cwd локального CLI … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-26 | ⚠ 6 коммит(ов) в areas после сверки: 60f0144 feat(chat): configure conversation engine and model … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-07-26 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-26 | ✓ |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: 60f0144 feat(chat): configure conversation engine and model |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-07-26 | ✓ |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: aa35067 docs(kb): сверка свежести по sha коммита + факты про execTarget и cliProfiles |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-26 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-26 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-25 | ⚠ 1 коммит(ов) в areas после сверки: 5101cfa feat(chat): add per-conversation settings page |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-25 | ⚠ 3 коммит(ов) в areas после сверки: 60f0144 feat(chat): configure conversation engine and model … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 
 ## Инструкции по пакетам
