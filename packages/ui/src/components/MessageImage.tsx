@@ -42,6 +42,8 @@ const FLAT = { zoom: MIN_ZOOM, x: 0, y: 0 }
 const RETRY_MS = 700
 /** Предохранитель от бесконечного опроса, если ход «завис» живым. */
 const MAX_ATTEMPTS = 90
+/** Сколько ждём картинку с прямого адреса машины, прежде чем идти к следующему. */
+const DIRECT_URL_TIMEOUT_MS = 4000
 
 /** Сохранение файла по ссылке (клик по временному <a download>). */
 function saveAs(href: string, name: string): void {
@@ -90,6 +92,19 @@ export function MessageImage({
   // через сервер (машина может быть недоступна из браузера — другая сеть/NAT).
   const [urlIndex, setUrlIndex] = useState(0)
   const directUrl = hostUrls[urlIndex]
+  // Недоступный адрес (машина в другой сети, за NAT) браузер держит до своего
+  // таймаута соединения — это десятки секунд НА КАЖДЫЙ адрес. Столько не ждём:
+  // не пришла картинка за DIRECT_URL_TIMEOUT_MS — двигаемся к следующему адресу,
+  // а после последнего откатываемся на байты через сервер.
+  const directOk = useRef(false)
+  useEffect(() => {
+    if (!directUrl) return
+    directOk.current = false
+    const t = setTimeout(() => {
+      if (!directOk.current) setUrlIndex((i) => i + 1)
+    }, DIRECT_URL_TIMEOUT_MS)
+    return () => clearTimeout(t)
+  }, [directUrl])
 
   const [src, setSrc] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -232,6 +247,9 @@ export function MessageImage({
               // Машина недоступна из этой сети — пробуем следующий её адрес, а
               // когда они кончатся, откатываемся на чтение байтов через сервер.
               onFail={directUrl ? () => setUrlIndex((i) => i + 1) : undefined}
+              onOk={() => {
+                directOk.current = true
+              }}
             />
           ) : error && !live ? (
             <p className="imgerr" role="alert">
@@ -262,13 +280,16 @@ function ImageSurface({
   src,
   alt,
   ctl,
-  onFail
+  onFail,
+  onOk
 }: {
   src: string
   alt: string
   ctl: ToolFrameControl
   /** Картинка не загрузилась по этому адресу (актуально для прямого URL машины). */
   onFail?: () => void
+  /** Картинка по текущему src загрузилась (гасит таймаут перебора адресов). */
+  onOk?: () => void
 }): JSX.Element {
   const { fullscreen, setFullscreen } = ctl
   const surface = useRef<HTMLDivElement>(null)
@@ -277,8 +298,12 @@ function ImageSurface({
   // Кэшированная картинка может успеть загрузиться до навешивания onLoad, поэтому
   // сверяемся с img.complete на монтировании.
   const [shown, setShown] = useState(false)
+  const loaded = (): void => {
+    setShown(true)
+    onOk?.()
+  }
   const reveal = (el: HTMLImageElement | null): void => {
-    if (el?.complete) setShown(true)
+    if (el?.complete) loaded()
   }
   const revealClass = shown ? 'imgfade imgfade--on' : 'imgfade'
   // Масштаб и сдвиг — одним состоянием: зум к курсору меняет их согласованно.
@@ -355,7 +380,7 @@ function ImageSurface({
           alt={alt}
           decoding="async"
           data-testid="message-image"
-          onLoad={() => setShown(true)}
+          onLoad={loaded}
           onError={onFail}
         />
       </button>
@@ -381,7 +406,7 @@ function ImageSurface({
         alt={alt}
         decoding="async"
         data-testid="message-image"
-        onLoad={() => setShown(true)}
+        onLoad={loaded}
         onError={onFail}
         draggable={false}
         style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}
