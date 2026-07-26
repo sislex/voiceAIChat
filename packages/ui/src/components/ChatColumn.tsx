@@ -91,6 +91,8 @@ export interface ChatColumnProps {
   readServerFile?: (path: string) => Promise<ServerFileInfo | null>
   /** Открыть файл картинки в проводнике нужной машины. */
   onOpenImageInExplorer?: (agentId: string, path: string) => void
+  /** Открыть терминал из встроенного проводника в сообщении. */
+  onOpenTerminal?: (agentId: string, cwd: string) => void
 }
 
 export function ChatColumn({
@@ -127,7 +129,8 @@ export function ChatColumn({
   onAnswerQuestions,
   machineOps,
   readServerFile,
-  onOpenImageInExplorer
+  onOpenImageInExplorer,
+  onOpenTerminal
 }: ChatColumnProps): JSX.Element {
   const [exportOpen, setExportOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -404,6 +407,7 @@ export function ChatColumn({
                         agents={agents}
                         ops={machineOps}
                         variant="embedded"
+                        onOpenTerminal={onOpenTerminal}
                       />
                     )}
                     {parsed &&

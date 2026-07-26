@@ -224,6 +224,23 @@ describe('ChatColumn — встроенная утилита (tool-блок)', (
     expect(screen.getByTestId('console-embed')).toBeInTheDocument()
   })
 
+  it('встроенный проводник открывает терминал на своей машине и в текущей папке', async () => {
+    const open = vi.fn()
+    const explorerOps = {
+      ...ops,
+      list: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r/work', entries: [] })
+    }
+    const explorerMsg: Message[] = [{
+      id: 'a2', conversationId: 'c', role: 'ai',
+      text: 'Проводник\n\n```tool\n{"kind":"explorer","agentId":"m1"}\n```',
+      time: '10:02', createdAt: 3
+    }]
+    const agent = { id: 'm1', name: 'MacBook', online: true, policy: { allowWrite: true } } as AgentInfo
+    renderCol({ messages: explorerMsg, machineOps: explorerOps, agents: [agent], onOpenTerminal: open })
+    await userEvent.click(await screen.findByTitle('Открыть терминал в этой папке'))
+    expect(open).toHaveBeenCalledWith('m1', '/r/work')
+  })
+
   it('без machineOps виджет не рендерится (блок просто скрыт)', () => {
     renderCol({ messages: toolMsg })
     expect(screen.queryByTestId('console-embed')).toBeNull()
