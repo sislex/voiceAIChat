@@ -68,6 +68,8 @@ export interface Conversation {
    * умолчанию codex). Действует лишь вместе с llmProvider; null — из настроек.
    */
   llmModel: string | null
+  /** Режим прав агента только этого разговора; null — из общих настроек. */
+  permissionMode: PermissionMode | null
   /** Неизменяемая цель последнего сообщения; используется подписью в списке чатов. */
   lastExecTarget: string | null
 }

@@ -7,6 +7,7 @@ import type {
   LlmProvider,
   Message,
   MessageRole,
+  PermissionMode,
   SessionUser,
   Settings,
   TtsVoiceCatalog,
@@ -78,6 +79,8 @@ export interface IpcInvokeMap {
       llmProvider?: LlmProvider | null
       /** Модель разговора (действует вместе с llmProvider). undefined — не менять. */
       llmModel?: string | null
+      /** Режим прав разговора; null — из общих настроек. undefined — не менять. */
+      permissionMode?: PermissionMode | null
     }
     result: Conversation
   }

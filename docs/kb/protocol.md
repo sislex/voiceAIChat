@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-07-26
-checked: 9d819ac
+checked: 339d12f
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -77,7 +77,10 @@ SIGTERM) `flushInterrupted` сохраняет частичный текст а�
 Настройки выполнения принадлежат разговору: `Conversation.execTarget` (id машины,
 `null` — сервер, `'none'` — команды запрещены), `workdir` и `skillNames`, плюс
 переопределение движка/модели `llmProvider`/`llmModel` (`null` — из общих
-настроек; модель codex `''` — дефолт из конфига codex). Кнопка
+настроек; модель codex `''` — дефолт из конфига codex) и режима прав
+`permissionMode` (`plan`/`acceptEdits`/`bypassPermissions`, `null` — из общих
+настроек; страница настроек разговора показывает фактический режим с учётом
+серверного форса `plan` для роли user без своей машины — см. `turns.ts`). Кнопка
 в шапке открывает отдельную страницу настроек разговора; рядом с названием чата
 шапка показывает машину разговора. Мост
 `conversations:setExecTarget` сохраняет поля одним `PATCH /api/conversations/:id`.

@@ -75,6 +75,7 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
       skillNames?: string[]
       llmProvider?: string | null
       llmModel?: string | null
+      permissionMode?: string | null
     }
   }>(
     '/api/conversations/:id',
@@ -88,6 +89,13 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
             : req.body.llmProvider === 'claude' || req.body.llmProvider === 'codex'
               ? req.body.llmProvider
               : null
+        // Неизвестный режим прав приравниваем к «из общих настроек».
+        const permissionMode =
+          req.body.permissionMode === undefined
+            ? undefined
+            : req.body.permissionMode === 'plan' || req.body.permissionMode === 'acceptEdits' || req.body.permissionMode === 'bypassPermissions'
+              ? req.body.permissionMode
+              : null
         db.setConversationExecTarget(
           uid(req),
           req.params.id,
@@ -95,7 +103,8 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
           req.body.workdir,
           req.body.skillNames,
           llmProvider,
-          req.body.llmModel
+          req.body.llmModel,
+          permissionMode
         )
       }
       const conversation = db.getConversation(uid(req), req.params.id)

@@ -204,9 +204,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           role={state.currentUser?.role ?? 'admin'}
           settings={state.settings}
           defaultAgentId={state.settings.defaultAgentId}
-          onSave={async ({ title, execTarget, workdir, skillNames, llmProvider, llmModel }) => {
+          onSave={async ({ title, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode }) => {
             await actions.renameConversation(activeConversation.id, title)
-            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel)
+            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode)
           }}
           onAddSkill={async (agentId, skill) => {
             const agent = state.agents.find((item) => item.id === agentId)
