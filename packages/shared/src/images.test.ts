@@ -5,6 +5,7 @@ import {
   imageMime,
   imageName,
   isImagePath,
+  machineImageUrls,
   parseImages,
   IMAGE_HINT
 } from './images'
@@ -78,6 +79,25 @@ describe('parseImages — markdown-картинка с локальным пут
     const r = parseImages(text)
     expect(r.images).toHaveLength(1)
     expect(r.body).toBe('')
+  })
+})
+
+describe('machineImageUrls — адрес собирается из живых данных агента', () => {
+  it('по адресу на каждый интерфейс машины', () => {
+    expect(
+      machineImageUrls('/home/u/.generated_images/a.png', { port: 8788, hosts: ['192.168.1.5', '10.0.0.2'] })
+    ).toEqual(['http://192.168.1.5:8788/a.png', 'http://10.0.0.2:8788/a.png'])
+  })
+
+  it('имя файла экранируется', () => {
+    expect(machineImageUrls('/x/файл с пробелом.png', { port: 80, hosts: ['h'] })[0]).toBe(
+      'http://h:80/%D1%84%D0%B0%D0%B9%D0%BB%20%D1%81%20%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB%D0%BE%D0%BC.png'
+    )
+  })
+
+  it('нет раздачи или адресов — пусто (клиент откатится на чтение через сервер)', () => {
+    expect(machineImageUrls('/x/a.png', undefined)).toEqual([])
+    expect(machineImageUrls('/x/a.png', { port: 8788, hosts: [] })).toEqual([])
   })
 })
 

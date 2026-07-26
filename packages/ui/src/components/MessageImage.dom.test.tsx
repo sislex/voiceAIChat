@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MessageImage } from './MessageImage'
+import { DEFAULT_AGENT_POLICY, type AgentInfo } from '@shared/agentProtocol'
 
 // 1×1 png — достаточно, чтобы проверить путь «base64 → data-URL → <img src>».
 const PNG_B64 =
@@ -276,5 +277,85 @@ describe('MessageImage — постепенное появление во вре
     expect(img).not.toHaveClass('imgfade--on')
     fireEvent.load(img)
     expect(img).toHaveClass('imgfade--on')
+  })
+})
+
+describe('MessageImage — картинка отдаётся HTTP-сервером машины', () => {
+  const MACHINE = { path: '/home/u/.generated_images/pic.png', agentId: 'm1' }
+  const agent = (imageHost?: { port: number; hosts: string[] }): AgentInfo => ({
+    id: 'm1',
+    name: 'Ноутбук',
+    online: true,
+    createdAt: 0,
+    lastSeen: 0,
+    policy: DEFAULT_AGENT_POLICY,
+    ...(imageHost ? { imageHost } : {})
+  })
+
+  it('src — прямой адрес машины, байты через сервер не тянем', async () => {
+    const ops = fakeOps()
+    render(
+      <MessageImage
+        image={MACHINE}
+        execAgentId="m1"
+        ops={ops}
+        agents={[agent({ port: 8788, hosts: ['192.168.1.5'] })]}
+      />
+    )
+    const img = await screen.findByTestId('message-image')
+    expect(img).toHaveAttribute('src', 'http://192.168.1.5:8788/pic.png')
+    expect(ops.read).not.toHaveBeenCalled()
+  })
+
+  it('адрес пересобирается из живого AgentInfo — сменившийся IP подхватывается', async () => {
+    const { rerender } = render(
+      <MessageImage image={MACHINE} execAgentId="m1" ops={fakeOps()} agents={[agent({ port: 8788, hosts: ['10.0.0.2'] })]} />
+    )
+    expect((await screen.findByTestId('message-image')).getAttribute('src')).toContain('10.0.0.2')
+    rerender(
+      <MessageImage image={MACHINE} execAgentId="m1" ops={fakeOps()} agents={[agent({ port: 8788, hosts: ['10.0.0.9'] })]} />
+    )
+    expect(screen.getByTestId('message-image')).toHaveAttribute('src', 'http://10.0.0.9:8788/pic.png')
+  })
+
+  it('первый адрес недоступен → пробуем следующий', async () => {
+    render(
+      <MessageImage
+        image={MACHINE}
+        execAgentId="m1"
+        ops={fakeOps()}
+        agents={[agent({ port: 8788, hosts: ['192.168.1.5', '10.0.0.2'] })]}
+      />
+    )
+    const img = await screen.findByTestId('message-image')
+    fireEvent.error(img)
+    expect(screen.getByTestId('message-image')).toHaveAttribute('src', 'http://10.0.0.2:8788/pic.png')
+  })
+
+  it('все адреса машины недоступны → откат на чтение байтов через сервер', async () => {
+    const ops = fakeOps()
+    render(
+      <MessageImage
+        image={MACHINE}
+        execAgentId="m1"
+        ops={ops}
+        agents={[agent({ port: 8788, hosts: ['192.168.1.5'] })]}
+      />
+    )
+    fireEvent.error(await screen.findByTestId('message-image'))
+    await waitFor(() => expect(ops.read).toHaveBeenCalledWith('m1', MACHINE.path))
+    await waitFor(() =>
+      expect(screen.getByTestId('message-image')).toHaveAttribute(
+        'src',
+        `data:image/png;base64,${PNG_B64}`
+      )
+    )
+  })
+
+  it('машина офлайн или без раздачи → сразу байты через сервер', async () => {
+    const ops = fakeOps()
+    render(<MessageImage image={MACHINE} execAgentId="m1" ops={ops} agents={[agent()]} />)
+    await screen.findByTestId('message-image')
+    expect(ops.read).toHaveBeenCalledWith('m1', MACHINE.path)
   })
 })

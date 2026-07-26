@@ -44,7 +44,8 @@ export async function registerAgentRoutes(
       ...a,
       online: online.has(a.id),
       version: registry.versionOf(a.id),
-      telemetry: registry.telemetryOf(a.id)
+      telemetry: registry.telemetryOf(a.id),
+      imageHost: registry.imageHostOf(a.id)
     }))
   })
 
