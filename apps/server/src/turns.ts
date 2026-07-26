@@ -77,6 +77,12 @@ export interface TurnManager {
   subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
   /** Снапшот активных ходов пользователя (для claude.active при подключении). */
   active(userId: string): ActiveTurn[]
+  /**
+   * Остановка сервера (деплой/SIGTERM): отменить активные ходы и сохранить их
+   * накопленный частичный текст в БД с пометкой interrupted — иначе рестарт
+   * теряет уже набранную часть ответа.
+   */
+  flushInterrupted(): void
 }
 
 /**
@@ -125,6 +131,14 @@ interface TurnState {
   userId: string
   /** Активность хода (для подробного вида сообщения); собирается всегда. */
   activity: ClaudeLogEntry[]
+  /** Ход завершён (done/error/flush) — поздние события CLI игнорируются. */
+  done: boolean
+  /** Контекст хода — чтобы flushInterrupted мог сохранить прерванный ответ. */
+  provider: 'claude' | 'codex'
+  model: string
+  startedAt: number
+  requestInfo: TurnRequestInfo
+  execTarget: string | null
 }
 
 /** Кэп на число записей активности, хранимых у одного хода. */
@@ -257,17 +271,22 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Окружение хода из system/init (инструменты/навыки/mcp) — только claude.
     let initInfo: ClaudeInitInfo | undefined
     const startedAt = now()
-    let finished = false
     const turn: TurnState = {
       handle: { cancel: () => {} },
       partial: '',
       verbose: Boolean(req.verbose),
       userId,
-      activity: []
+      activity: [],
+      done: false,
+      provider,
+      model,
+      startedAt,
+      requestInfo,
+      execTarget: requestedTarget
     }
     turns.set(conversationId, turn)
     const finish = (): void => {
-      finished = true
+      turn.done = true
       if (turns.get(conversationId) === turn) turns.delete(conversationId)
     }
     turn.handle = client.send(
@@ -278,12 +297,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           initInfo = info
         },
         onDelta: (delta) => {
-          if (finished) return
+          if (turn.done) return
           turn.partial += delta
           broadcast({ t: 'claude.token', conversationId, delta }, userId)
         },
         onDone: (text, meta) => {
-          if (finished) return
+          if (turn.done) return
           finish()
           // Итоговая модель: из потока CLI → из настроек → у Codex с пустой
           // настройкой модель берётся из его config.toml и наружу не видна.
@@ -356,14 +375,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           })
         },
         onError: (message) => {
-          if (finished) return
+          if (turn.done) return
           finish()
           broadcast({ t: 'claude.error', conversationId, message }, userId)
         },
         // Активность собираем всегда (для подробного вида сообщения); в глобальную
         // консоль (событие claude.log) шлём только если ход запрошен с verbose.
         onActivity: (entry) => {
-          if (finished) return
+          if (turn.done) return
           turn.activity.push(entry)
           if (turn.activity.length > ACTIVITY_CAP) turn.activity.shift()
           if (req.verbose) broadcast({ t: 'claude.log', conversationId, entry }, userId)
@@ -371,7 +390,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       }
     )
     // Мгновенно завершившийся ход (мок/ошибка спавна) уже убран из реестра.
-    if (finished) turn.handle = { cancel: () => {} }
+    if (turn.done) turn.handle = { cancel: () => {} }
   }
 
   /** Отмена одного хода; notify — рассылать ли пустой done (сброс UI вкладок). */
@@ -389,9 +408,45 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     else for (const id of [...turns.keys()]) cancelTurn(id, true)
   }
 
+  /**
+   * Плановая остановка сервера: каждый активный ход отменяется, а накопленный
+   * частичный текст сохраняется в БД как ответ с пометкой interrupted (вместе с
+   * активностью) — после рестарта пользователь видит уже набранную часть.
+   */
+  function flushInterrupted(): void {
+    for (const [conversationId, turn] of [...turns]) {
+      turns.delete(conversationId)
+      turn.done = true
+      turn.handle.cancel()
+      if (!turn.partial.trim()) continue
+      const meta: TurnMeta = {
+        durationMs: now() - turn.startedAt,
+        model: turn.model,
+        interrupted: true,
+        request: turn.requestInfo,
+        ...(turn.activity.length ? { activity: turn.activity } : {})
+      }
+      const message = deps.db.addMessage(
+        turn.userId,
+        conversationId,
+        'ai',
+        turn.partial,
+        timeHHMM(),
+        turn.provider,
+        meta,
+        turn.execTarget
+      )
+      broadcast(
+        { t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, message },
+        turn.userId
+      )
+    }
+  }
+
   return {
     start,
     cancel,
+    flushInterrupted,
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -399,7 +454,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     active(userId) {
       return [...turns]
         .filter(([, t]) => t.userId === userId)
-        .map(([conversationId, t]) => ({ conversationId, partial: t.partial }))
+        .map(([conversationId, t]) => ({
+          conversationId,
+          partial: t.partial,
+          ...(t.activity.length ? { activity: t.activity } : {})
+        }))
     }
   }
 }

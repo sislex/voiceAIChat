@@ -9,9 +9,11 @@ import { MachineUtility } from './MachineUtility'
 import { MessageImage } from './MessageImage'
 import type { MachineOps } from './machine'
 import {
+  activityStatus,
   chipClass,
   engineLabel,
   formatTurnMeta,
+  pluralActions,
   speakerName,
   statusBadge,
   type LiveSegment
@@ -381,6 +383,11 @@ export function ChatColumn({
                   </div>
                 ) : isAi ? (
                   <div className="bub">
+                    {m.meta?.interrupted && (
+                      <p className="msg-interrupted" data-testid="msg-interrupted">
+                        ⚠️ Ответ прерван перезапуском сервера — сохранена набранная часть.
+                      </p>
+                    )}
                     {m.meta?.activity && m.meta.activity.length > 0 && (
                       <MessageActivity
                         activity={m.meta.activity}
@@ -578,15 +585,30 @@ export function ChatColumn({
                       live
                     />
                   ))}
-                {liveActivity.length > 0 && (
-                  <button
-                    className="msgbtn actbtn actbtn--stream"
-                    aria-pressed={liveDetailed}
-                    onClick={() => setLiveDetailed((v) => !v)}
-                  >
-                    {liveDetailed ? '≡ Кратко' : '≣ Подробнее'}
-                  </button>
-                )}
+                {/* Дубль статуса внизу пузыря: при длинном ответе верхняя строка
+                    уезжает из вида, а здесь всегда видно, что модель делает. */}
+                <div className="msgact-status msgact--bottom" data-testid="live-status-bottom">
+                  <Dots />
+                  <span className="msgact-phrase">
+                    {liveActivity.length > 0
+                      ? activityStatus(liveActivity, state, execTarget)
+                      : `${aiLabel} отвечает…`}
+                  </span>
+                  {liveActivity.length > 0 && (
+                    <span className="msgact-count">
+                      {liveActivity.length} {pluralActions(liveActivity.length)}
+                    </span>
+                  )}
+                  {liveActivity.length > 0 && (
+                    <button
+                      className="msgbtn actbtn actbtn--stream"
+                      aria-pressed={liveDetailed}
+                      onClick={() => setLiveDetailed((v) => !v)}
+                    >
+                      {liveDetailed ? '≡ Кратко' : '≣ Подробнее'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}

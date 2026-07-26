@@ -200,6 +200,8 @@ export interface ActiveTurn {
   conversationId: string
   /** Накопленный частичный текст ответа. */
   partial: string
+  /** Активность хода — восстановление живого статуса и счётчика действий. */
+  activity?: ClaudeLogEntry[]
 }
 
 /** client → server. */

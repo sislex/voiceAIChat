@@ -263,6 +263,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`
   })
 
+  // Плановая остановка (деплой/SIGTERM → app.close()): сохранить частичные
+  // ответы активных ходов, чтобы рестарт контейнера не терял набранный текст.
+  app.addHook('onClose', async () => {
+    turnManager.flushInterrupted()
+  })
+
   const makeHandlers = (user: SessionUser): WsHandlers =>
     createSession({
       db,

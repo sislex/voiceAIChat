@@ -1269,6 +1269,25 @@ describe('voiceStore — ходы, переживающие обновление
     expect(store.getState().streamingReply).toBe('Начало')
   })
 
+  it('applyClaudeActive восстанавливает и счётчик действий (liveActivity)', async () => {
+    const { store } = makeClaudeStore()
+    await store.actions.init()
+    store.actions.setDraft('вопрос')
+    await store.actions.submitText()
+    const id = store.getState().activeId!
+    await store.actions.selectConversation(id) // «обновление страницы»
+    expect(store.getState().liveActivity).toEqual([])
+    const activity: ClaudeLogEntry[] = [
+      { kind: 'tool_use', summary: 'Bash: ls', raw: '{}' },
+      { kind: 'tool_result', summary: 'ок', raw: '{}' }
+    ]
+    store.actions.applyClaudeActive([{ conversationId: id, partial: 'Нача', activity }])
+    expect(store.getState().liveActivity).toHaveLength(2)
+    // Новые записи продолжают счёт с накопленного, а не заново.
+    store.actions.applyClaudeLog({ kind: 'tool_use', summary: 'Read: x', raw: '{}' }, id)
+    expect(store.getState().liveActivity).toHaveLength(3)
+  })
+
   it('done с сохранённым сервером сообщением добавляет его в ленту без повторной записи', async () => {
     const { store, api } = makeClaudeStore()
     const spyAdd = vi.spyOn(api, 'messages:add')
