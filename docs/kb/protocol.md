@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-07-26
-checked: c9170a7
+checked: 6ddcdb7
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -39,7 +39,8 @@ URL руками. Параметризованные пути — функции
 агента/десктопа (`agentApp`, `agentScript`, `agentInstallAndroid`, `agentInstallWindows`, `desktopApp`)
 и `/api/agents/version`. Админские роуты дополнительно закрыты `requireAdmin`.
 
-Группы: сессия, разговоры и сообщения (+ поиск), вложения (`/api/uploads`),
+Группы: сессия, разговоры и сообщения (+ поиск),
+идемпотентный импорт legacy-данных desktop (`POST /api/migrations/desktop`), вложения (`/api/uploads`),
 настройки, возможности системы, STT-модели, TTS-голоса и каталог, MCP-серверы,
 статус входа CLI, машины (+ политика, токен, файловые операции, exec),
 наблюдатели сессий Claude (`/api/cc/*`) и Codex (`/api/cx/*`), админка

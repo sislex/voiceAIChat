@@ -2,7 +2,6 @@
 
 const input = document.getElementById('url') as HTMLInputElement
 const save = document.getElementById('save') as HTMLButtonElement
-const local = document.getElementById('local') as HTMLButtonElement
 const msg = document.getElementById('msg') as HTMLSpanElement
 
 void window.remoteClient.getUrl().then((u) => {
@@ -23,7 +22,6 @@ save.addEventListener('click', () => {
   }
   void window.remoteClient.setUrl(url)
 })
-local.addEventListener('click', () => void window.remoteClient.setUrl(null))
 input.addEventListener('keydown', (e) => e.key === 'Enter' && save.click())
 
 export {}

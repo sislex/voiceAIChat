@@ -146,6 +146,13 @@ describe('REST: админ-роуты (только admin)', () => {
 })
 
 describe('REST: conversations/messages/settings', () => {
+  it('импорт desktop требует токен и идемпотентен', async () => {
+    const payload = { conversations: [{ conversation: { id: 'legacy-c', title: 'Legacy', createdAt: 10, updatedAt: 20, claudeSessionId: null, execTarget: null }, messages: [{ id: 'legacy-m', conversationId: 'legacy-c', role: 'u1', text: 'hello', time: '10:00', createdAt: 15 }] }] }
+    expect((await app.inject({ method: 'POST', url: '/api/migrations/desktop', payload })).statusCode).toBe(401)
+    expect((await inj({ method: 'POST', url: '/api/migrations/desktop', payload })).json()).toEqual({ conversationsImported: 1, messagesImported: 1 })
+    expect((await inj({ method: 'POST', url: '/api/migrations/desktop', payload })).json()).toEqual({ conversationsImported: 0, messagesImported: 0 })
+  })
+
   it('create → list → get', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Тест' } })).json()
     expect(created.title).toBe('Тест')

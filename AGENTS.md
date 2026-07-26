@@ -18,7 +18,7 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 | `apps/web` | `@voicechat/web` | Тонкий браузерный клиент: `@voicechat/ui` + мосты поверх REST/WS | [AGENTS](apps/web/AGENTS.md) |
 | `apps/agent` | `@voicechat/agent` | Компаньон-агент на машине пользователя (exec/fs/pty/телеметрия) | [AGENTS](apps/agent/AGENTS.md) |
 | `apps/agent-tray` | `@voicechat/agent-tray` | Electron-трей вокруг агента (установка, лог, разрешения) | [AGENTS](apps/agent-tray/AGENTS.md) |
-| `apps/desktop` | `@voicechat/desktop` | Исходное Electron-приложение (свой `node_modules`, вне workspaces) | [AGENTS](apps/desktop/AGENTS.md) |
+| `apps/desktop` | `@voicechat/desktop` | Тонкая Electron-оболочка web/server + legacy-импорт БД (вне workspaces) | [AGENTS](apps/desktop/AGENTS.md) |
 
 `apps/desktop` и `apps/agent-tray` **намеренно не в** `workspaces`: у них свой
 `node_modules` с Electron, корневой `npm install` их не трогает.

@@ -1,6 +1,6 @@
 import Fastify from 'fastify'
 import { describe, expect, it, vi } from 'vitest'
-import { registerAnthropicGateway } from './gateway'
+import { isLocalNetworkAddress, registerAnthropicGateway } from './gateway'
 
 function appWith(fetch: typeof globalThis.fetch, extra: Parameters<typeof registerAnthropicGateway>[1] = {}) {
   const app = Fastify()
@@ -12,6 +12,21 @@ function appWith(fetch: typeof globalThis.fetch, extra: Parameters<typeof regist
   })
   return app
 }
+
+describe('ограничение gateway локальной сетью', () => {
+  it('классифицирует локальные и публичные адреса', () => {
+    expect(isLocalNetworkAddress('192.168.1.2')).toBe(true)
+    expect(isLocalNetworkAddress('203.0.113.10')).toBe(false)
+  })
+  it('отклоняет внешний адрес за Caddy', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>()
+    const app = appWith(fetch)
+    const res = await app.inject({ method: 'POST', url: '/v1/messages', payload: {}, remoteAddress: '172.18.0.2', headers: { 'x-forwarded-for': '203.0.113.10' } })
+    expect(res.statusCode).toBe(403)
+    expect(fetch).not.toHaveBeenCalled()
+    await app.close()
+  })
+})
 
 describe('Anthropic gateway', () => {
   it('прозрачно передаёт messages, tools и beta-заголовки, меняя только модель', async () => {
