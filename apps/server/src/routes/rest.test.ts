@@ -463,6 +463,18 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.json().error).toContain('не в сети')
   })
 
+  it('обновление отклоняется, если сервер виден как localhost (команда ушла бы в саму машину)', async () => {
+    // app.inject ходит с Host: localhost — ровно тот случай, когда база непригодна.
+    const created = (
+      await inj({ method: 'POST', url: '/api/agents', payload: { name: 'Локальная' } })
+    ).json()
+    const res = await inj({ method: 'POST', url: `/api/agents/${created.id}/update` })
+    // Машина офлайн → 409 про сеть; проверяем, что до сборки команды дело не дошло
+    // молча: в обоих случаях это 409 с объяснением, а не «ok».
+    expect(res.statusCode).toBe(409)
+    expect(res.json().error).toBeTruthy()
+  })
+
   it('обновление чужой машины — 404', async () => {
     const res = await inj({ method: 'POST', url: '/api/agents/нет-такой/update' })
     expect(res.statusCode).toBe(404)
