@@ -87,4 +87,17 @@ describe('ConversationSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     return waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ execTarget: 'm1' })))
   })
+
+  it('просит подтверждение при переходе из плана в полный доступ', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    const conv = { ...conversation, permissionMode: 'plan' as const }
+    render(<ConversationSettings conversation={conv} agents={[agent]} role="admin" settings={settings} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Режим разговора' }), { target: { value: 'bypassPermissions' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(onSave).not.toHaveBeenCalled()
+    confirm.mockRestore()
+  })
+
 })

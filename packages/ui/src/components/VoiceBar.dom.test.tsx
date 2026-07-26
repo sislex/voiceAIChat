@@ -167,3 +167,19 @@ describe('VoiceBar — высота поля ввода', () => {
     expect(heightOf('a\nb\nc\nd\ne\nf\ng\nh')).toBe('102px')
   })
 })
+
+
+describe('VoiceBar — быстрый режим', () => {
+  it('переключает План на Разработку', async () => {
+    const onChangePermissionMode = vi.fn()
+    setup('idle', { permissionMode: 'plan', onChangePermissionMode })
+    expect(screen.getByRole('button', { name: 'План' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(screen.getByRole('button', { name: 'Разработка' }))
+    expect(onChangePermissionMode).toHaveBeenCalledWith('acceptEdits')
+  })
+
+  it('блокирует переключение во время хода', () => {
+    setup('thinking', { permissionMode: 'plan', onChangePermissionMode: vi.fn() })
+    expect(screen.getByRole('button', { name: 'Разработка' })).toBeDisabled()
+  })
+})

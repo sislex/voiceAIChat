@@ -1,5 +1,5 @@
 import { useRef, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
-import type { VoiceState } from '@shared/types'
+import type { PermissionMode, VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import { useAutoGrow } from '../lib/autoGrow'
 import { ACCENT, chipClass, speakerName, statusLine } from '../lib/view'
@@ -32,6 +32,10 @@ export interface VoiceBarProps {
   aiLabel?: string
   /** Ответ уже начал стримиться (пошли токены) — держим поле ввода доступным для черновика. */
   replyStarted?: boolean
+  /** Фактический режим активного разговора. */
+  permissionMode?: PermissionMode
+  /** Быстро переключить планирование/разработку для всего разговора. */
+  onChangePermissionMode?: (mode: PermissionMode) => void
 }
 
 export function VoiceBar({
@@ -49,7 +53,9 @@ export function VoiceBar({
   onAddFiles,
   onRemoveAttachment,
   aiLabel = 'Claude',
-  replyStarted = false
+  replyStarted = false,
+  permissionMode = 'plan',
+  onChangePermissionMode
 }: VoiceBarProps): JSX.Element {
   const isIdle = state === 'idle'
   const isListening = state === 'listening'
@@ -242,7 +248,29 @@ export function VoiceBar({
 
         </div>
 
-        <p className="vstatus">{statusLine(state, aiLabel)}</p>
+        <div className="vbottom">
+          {onChangePermissionMode && (
+            <div className="mode-toggle" role="group" aria-label="Режим работы">
+              <button
+                className={permissionMode === 'plan' ? 'active' : ''}
+                aria-pressed={permissionMode === 'plan'}
+                disabled={!isIdle}
+                onClick={() => onChangePermissionMode('plan')}
+              >
+                План
+              </button>
+              <button
+                className={permissionMode !== 'plan' ? 'active' : ''}
+                aria-pressed={permissionMode !== 'plan'}
+                disabled={!isIdle}
+                onClick={() => onChangePermissionMode('acceptEdits')}
+              >
+                Разработка
+              </button>
+            </div>
+          )}
+          <p className="vstatus">{statusLine(state, aiLabel)}</p>
+        </div>
       </div>
     </div>
   )
