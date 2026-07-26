@@ -67,16 +67,13 @@ sleep 1
 [ -f "\$AGENT_DIR/voicechat-agent.cjs" ] && mv "\$AGENT_DIR/voicechat-agent.cjs" "\$AGENT_DIR/voicechat-agent.cjs.prev" || true
 mv "\$AGENT_DIR/voicechat-agent.cjs.new" "\$AGENT_DIR/voicechat-agent.cjs"
 
-if [ -n "\$CONN" ]; then
-  echo "[4/6] Сохраняю строку подключения…"
-  printf '%s' "\$CONN" > "\$AGENT_DIR/connection"
-  chmod 600 "\$AGENT_DIR/connection"
-else
-elif [ -f "\$AGENT_DIR/connection" ]; then
-  echo "[4/6] Строка подключения уже сохранена — использую её."
-else
-  echo "[4/6] Строка подключения не передана — впишите её в \$AGENT_DIR/connection и перезапустите."
-fi
+[ -n "\$CONN" ] || {
+  echo "Не нашёл строку подключения. Скопируйте команду установки из списка машин — в ней она есть."
+  exit 1
+}
+echo "[4/6] Сохраняю строку подключения…"
+printf '%s' "\$CONN" > "\$AGENT_DIR/connection"
+chmod 600 "\$AGENT_DIR/connection"
 
 echo "[5/6] Готовлю запуск и автозапуск (Termux:Boot)…"
 cat > "\$AGENT_DIR/run.sh" <<'RUN'
