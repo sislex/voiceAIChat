@@ -333,6 +333,8 @@ export interface Settings {
   llmProvider: LlmProvider
   /** Модель Codex (`codex exec -m`); '' — модель по умолчанию из конфига codex. */
   codexModel: string
+  /** id машины-агента по умолчанию для новых разговоров; null — сервер. */
+  defaultAgentId: string | null
 }
 
 /** Поддерживаемые LLM-движки (CLI). */
@@ -373,7 +375,8 @@ export const DEFAULT_SETTINGS: Settings = {
   handsFree: false,
   execTarget: null,
   llmProvider: 'claude',
-  codexModel: ''
+  codexModel: '',
+  defaultAgentId: null
 }
 
 /** Один сегмент распознанной речи (speakerId=1 до диаризации). */

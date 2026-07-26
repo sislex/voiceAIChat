@@ -185,4 +185,22 @@ describe('MachineStatus — устаревший агент и обновлен�
     expect(cmd).toContain('install-linux.sh') // телеметрия говорит linux
     expect(cmd).not.toContain('vcagent:')
   })
+
+  it('радио «по умолчанию»: отмечает выбранную машину и вызывает onSetDefault', () => {
+    const onSetDefault = vi.fn()
+    render(<MachineStatus agents={[agent()]} onSetPolicy={vi.fn()} onSetDefault={onSetDefault} defaultAgentId={null} onClose={vi.fn()} />)
+    const radio = screen.getByRole('radio', { name: /по умолчанию/ })
+    expect(radio).not.toBeChecked()
+    fireEvent.click(radio)
+    expect(onSetDefault).toHaveBeenCalledWith('a1')
+  })
+
+  it('радио «по умолчанию»: повторный клик по выбранной сбрасывает выбор', () => {
+    const onSetDefault = vi.fn()
+    render(<MachineStatus agents={[agent()]} onSetPolicy={vi.fn()} onSetDefault={onSetDefault} defaultAgentId="a1" onClose={vi.fn()} />)
+    const radio = screen.getByRole('radio', { name: /по умолчанию/ })
+    expect(radio).toBeChecked()
+    fireEvent.click(radio)
+    expect(onSetDefault).toHaveBeenCalledWith(null)
+  })
 })

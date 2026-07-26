@@ -23,6 +23,10 @@ export interface MachineStatusProps {
   onGetConnectionString?: (token: string) => Promise<string | null>
   /** Обновить агента на машине (сервер выполнит на ней команду установки). */
   onUpdateAgent?: (id: string) => Promise<string | null>
+  /** Машина по умолчанию для новых разговоров (radio). */
+  defaultAgentId?: string | null
+  /** Выбрать/снять машину по умолчанию (повторный клик по выбранной — сброс). */
+  onSetDefault?: (id: string | null) => void
   onClose: () => void
 }
 
@@ -207,6 +211,8 @@ export function MachineStatus({
   onRegenerateToken,
   onGetConnectionString,
   onUpdateAgent,
+  defaultAgentId,
+  onSetDefault,
   onClose
 }: MachineStatusProps): JSX.Element {
   const [name, setName] = useState('')
@@ -287,6 +293,7 @@ export function MachineStatus({
                 <th>Диск</th>
                 <th>Батарея</th>
                 <th>Разрешения</th>
+                {onSetDefault && <th>По умолчанию</th>}
                 <th>Агент</th>
               </tr>
             </thead>
@@ -315,6 +322,19 @@ export function MachineStatus({
                       onToggle={() => onSetPolicy(a.id, { ...a.policy, allowWrite: !a.policy.allowWrite })}
                     />
                   </td>
+                  {onSetDefault && (
+                    <td className="mst-default">
+                      <input
+                        type="radio"
+                        name="default-machine"
+                        checked={a.id === defaultAgentId}
+                        aria-label={`Сделать «${a.name}» машиной по умолчанию`}
+                        title="Использовать по умолчанию в новых разговорах"
+                        onChange={() => onSetDefault(a.id)}
+                        onClick={() => { if (a.id === defaultAgentId) onSetDefault(null) }}
+                      />
+                    </td>
+                  )}
                   <AgentActions
                     agent={a}
                     busy={busyId === a.id}
