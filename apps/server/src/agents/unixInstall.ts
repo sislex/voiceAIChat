@@ -28,9 +28,11 @@ export function buildUnixInstallScript(baseUrl: string, os: UnixOs): string {
     ? `ps -o command= -p "$1" 2>/dev/null | tr ' ' '\\n'`
     : `tr '\\0' '\\n' < "/proc/$1/cmdline" 2>/dev/null`
 
-  const stopOld = isMac
-    ? `launchctl bootout "gui/$(id -u)/com.voicechat.agent" 2>/dev/null || true`
-    : `systemctl --user stop voicechat-agent.service 2>/dev/null || true`
+  // Перезапуск поручаем супервизору: он доведёт дело до конца, даже если наш
+  // процесс погибнет вместе со старым агентом.
+  const restart = isMac
+    ? `launchctl kickstart -k "gui/$(id -u)/com.voicechat.agent" 2>/dev/null || true`
+    : `systemctl --user restart voicechat-agent.service 2>/dev/null || true`
 
   const autostart = isMac
     ? `PLIST="$HOME/Library/LaunchAgents/com.voicechat.agent.plist"
@@ -68,7 +70,7 @@ RestartSec=5
 WantedBy=default.target
 UNITEOF
   systemctl --user daemon-reload
-  if systemctl --user enable --now voicechat-agent.service 2>/dev/null; then
+  if systemctl --user enable voicechat-agent.service 2>/dev/null; then
     echo "  автозапуск: systemd --user (voicechat-agent.service)"
     # Чтобы агент жил и без активной сессии пользователя.
     loginctl enable-linger "$USER" 2>/dev/null || true
@@ -166,32 +168,12 @@ fi
   exit 1
 }
 
-# --- Остановка старого ---------------------------------------------------
-echo "[4/6] Останавливаю старый агент…"
-${stopOld}
-# Одного pkill мало: старый агент мог унаследовать SIG_IGN на SIGTERM от обёртки,
-# которой его запускали, — тогда он выживает, и мы поднимаем ВТОРОЙ агент с тем же
-# токеном (соединения начинают вытеснять друг друга). Поэтому проверяем и добиваем.
-# Шаблон со скобками, иначе pkill найдёт сам себя в своей же командной строке.
-agents_alive() { pgrep -f "voicechat-agent[.]cjs" 2>/dev/null | wc -l | tr -d ' '; }
-for i in 1 2 3; do
-  [ "$(agents_alive)" = "0" ] && break
-  pkill -f "voicechat-agent[.]cjs" 2>/dev/null || true
-  sleep 1
-done
-if [ "$(agents_alive)" != "0" ]; then
-  echo "  не отреагировал на SIGTERM — добиваю"
-  pkill -9 -f "voicechat-agent[.]cjs" 2>/dev/null || true
-  sleep 1
-fi
-if [ "$(agents_alive)" != "0" ]; then
-  echo "Старый агент не останавливается — прерываюсь, чтобы не поднять второй."
-  echo "Погасите его вручную (pkill -9 -f voicechat-agent.cjs) и повторите."
-  exit 1
-fi
-
-# --- Подмена и запуск ----------------------------------------------------
-echo "[5/6] Ставлю новый скрипт…"
+# --- Подмена файлов (старый агент ещё работает — ему это не мешает) -------
+# Порядок важен: сначала ВСЯ работа с файлами, и только последним действием —
+# перезапуск. Иначе установщик убивает сам себя: агент живёт в cgroup своего
+# systemd-сервиса, а systemctl stop гасит весь cgroup, включая процессы,
+# которые агент запустил (setsid меняет сессию, но не cgroup).
+echo "[4/6] Ставлю новый скрипт…"
 [ -f "$AGENT_DIR/voicechat-agent.cjs" ] &&
   mv "$AGENT_DIR/voicechat-agent.cjs" "$AGENT_DIR/voicechat-agent.cjs.prev" || true
 mv "$AGENT_DIR/voicechat-agent.new.cjs" "$AGENT_DIR/voicechat-agent.cjs"
@@ -207,21 +189,37 @@ exec "$NODE_BIN" "$AGENT_DIR/voicechat-agent.cjs" --connection "\\$(cat "$AGENT_
 RUNEOF
 chmod +x "$AGENT_DIR/run.sh"
 
-echo "[6/6] Автозапуск и старт…"
+echo "[5/6] Настраиваю автозапуск…"
 ${autostart}
 
-# systemd/launchd уже поднял процесс; иначе стартуем сами, отвязанно от терминала.
-if [ "$SUPERVISED" != "1" ]; then
-  ( setsid nohup "$AGENT_DIR/run.sh" >> "$AGENT_DIR/agent.log" 2>&1 < /dev/null & ) 2>/dev/null ||
-    ( nohup "$AGENT_DIR/run.sh" >> "$AGENT_DIR/agent.log" 2>&1 < /dev/null & )
-fi
-
-sleep 3
-if pgrep -f "voicechat-agent[.]cjs" >/dev/null 2>&1; then
-  echo "Готово. Агент запущен, машина появится в списке через несколько секунд."
+echo "[6/6] Перезапускаю агента…"
+# Дальше этой строки код может не выполниться: перезапуск гасит старый агент, а
+# вместе с ним — и нас (см. про cgroup выше). Поэтому всё, что нужно, уже сделано,
+# а сам перезапуск поручаем супервизору: systemd/launchd доведут его до конца даже
+# если наш процесс умрёт. Проверять результат здесь нельзя — только по версии в UI.
+if [ "$SUPERVISED" = "1" ]; then
+  ${restart}
+  echo "Перезапуск поручен супервизору. Машина вернётся в список через несколько секунд."
 else
-  echo "Агент не поднялся — смотрите $AGENT_DIR/agent.log"
-  exit 1
+  # Супервизора нет: переключаем отдельным отвязанным скриптом. Его имя намеренно
+  # не совпадает с шаблоном pkill, иначе он погасит сам себя.
+  cat > "$AGENT_DIR/vc-switch.sh" <<'SWEOF'
+#!/usr/bin/env bash
+cd "$(dirname "$0")"
+agents_alive() { pgrep -f "voicechat-agent[.]cjs" 2>/dev/null | wc -l | tr -d ' '; }
+for i in 1 2 3; do
+  [ "$(agents_alive)" = "0" ] && break
+  pkill -f "voicechat-agent[.]cjs" 2>/dev/null || true
+  sleep 1
+done
+# Агент мог унаследовать SIG_IGN на SIGTERM от обёртки — тогда добиваем.
+[ "$(agents_alive)" != "0" ] && { pkill -9 -f "voicechat-agent[.]cjs" 2>/dev/null || true; sleep 1; }
+nohup ./run.sh >> agent.log 2>&1 &
+SWEOF
+  chmod +x "$AGENT_DIR/vc-switch.sh"
+  ( setsid nohup "$AGENT_DIR/vc-switch.sh" > /dev/null 2>&1 < /dev/null & ) 2>/dev/null ||
+    ( nohup "$AGENT_DIR/vc-switch.sh" > /dev/null 2>&1 < /dev/null & )
+  echo "Перезапуск запущен. Машина вернётся в список через несколько секунд."
 fi
 `
 }
