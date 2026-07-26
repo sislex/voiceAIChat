@@ -8,16 +8,13 @@ import type {
   WhisperModelInfo
 } from '@shared/types'
 import type { SystemCapabilities } from '@shared/protocol'
-import { REST } from '@shared/protocol'
 import { CODEX_MODELS, modelsForRole, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { PermissionMode, LlmProvider, UserRole } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
-import { decodeAgentConnection } from '@shared/agentProtocol'
-import { toDataURL as qrToDataUrl } from 'qrcode'
-import { copyText } from '../lib/clipboard'
 import { AgentCard } from './AgentCard'
+import { AgentCommands } from './AgentCommands'
 
 export interface MicOption {
   deviceId: string
@@ -90,19 +87,6 @@ export interface SettingsModalProps {
   onClose: () => void
 }
 
-/** База сервера (http/https) из строки подключения vcagent: для команд установки. */
-function serverBaseFromConnection(conn: string): string | null {
-  const parsed = decodeAgentConnection(conn)
-  if (!parsed?.server) return null
-  const http = parsed.server.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:')
-  try {
-    const u = new URL(http)
-    return `${u.protocol}//${u.host}`
-  } catch {
-    return null
-  }
-}
-
 export function SettingsModal({
   settings,
   mics,
@@ -138,54 +122,6 @@ export function SettingsModal({
   // Добавление машины: поле имени и одноразовый показ токена после создания.
   const [agentName, setAgentName] = useState('')
   const [createdAgent, setCreatedAgent] = useState<AgentCreated | null>(null)
-  const [tokenCopied, setTokenCopied] = useState(false)
-  const [connCopied, setConnCopied] = useState(false)
-  const [cmdCopied, setCmdCopied] = useState(false)
-  const [winCmdCopied, setWinCmdCopied] = useState(false)
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
-
-  const copyConnectionString = async (token: string): Promise<void> => {
-    const str = await onGetConnectionString(token)
-    if (str) setConnCopied(await copyText(str))
-  }
-
-  // Готовая команда установки для Termux (Android): адрес сервера берём из строки подключения.
-  const copyTermuxCommand = async (token: string): Promise<void> => {
-    const conn = await onGetConnectionString(token)
-    if (!conn) return
-    const base = serverBaseFromConnection(conn)
-    if (!base) return
-    const cmd = `curl -fsSLk ${base}${REST.agentInstallAndroid} | bash -s -- '${conn}'`
-    setCmdCopied(await copyText(cmd))
-  }
-
-  // Готовая команда установки для Windows: вставляется в PowerShell, ExecutionPolicy
-  // обходим дочерним powershell -File; внешние кавычки одинарные, чтобы $env:TEMP
-  // не разворачивала оболочка, в которую вставили команду.
-  const copyWindowsCommand = async (token: string): Promise<void> => {
-    const conn = await onGetConnectionString(token)
-    if (!conn) return
-    const base = serverBaseFromConnection(conn)
-    if (!base) return
-    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command 'Set-Location $env:TEMP; curl.exe -fsSLk ${base}${REST.agentInstallWindows} -o vc-agent-install.ps1; & .\\vc-agent-install.ps1 "${conn}"'`
-    setWinCmdCopied(await copyText(cmd))
-  }
-
-  // QR строки подключения: отсканировать телефоном и вставить в Termux (--connection).
-  const toggleQr = async (token: string): Promise<void> => {
-    if (qrDataUrl) {
-      setQrDataUrl(null)
-      return
-    }
-    const conn = await onGetConnectionString(token)
-    if (!conn) return
-    try {
-      setQrDataUrl(await qrToDataUrl(conn, { width: 220, margin: 1 }))
-    } catch {
-      setQrDataUrl(null)
-    }
-  }
-
   const addAgent = async (): Promise<void> => {
     const name = agentName.trim()
     if (!name) return
@@ -193,8 +129,6 @@ export function SettingsModal({
     if (created) {
       setCreatedAgent(created)
       setAgentName('')
-      setTokenCopied(false)
-      setConnCopied(false)
     }
   }
 
@@ -375,77 +309,12 @@ export function SettingsModal({
                     </button>
                   </div>
                   {createdAgent && (
-                    <div className="voicedl" data-testid="agent-token">
-                      <p className="fsub">
-                        Машина «{createdAgent.name}» создана — строка подключения показывается
-                        один раз. Скачайте агента в разделе «Скачать», при первом запуске вставьте
-                        строку подключения (годится и для приложения, и для скрипта). Для Android
-                        (Termux) и Windows (PowerShell) скопируйте готовую команду ниже —
-                        она сама установит и запустит агента.
-                      </p>
-                      <div className="vrow2">
-                        <button
-                          className="vdl"
-                          aria-label="Скопировать команду установки для Termux (Android)"
-                          onClick={() => void copyTermuxCommand(createdAgent.token)}
-                        >
-                          {cmdCopied ? '✓ команда скопирована' : '📱 Команда для Termux (Android)'}
-                        </button>
-                        <button
-                          className="vdl"
-                          aria-label="Скопировать команду установки для Windows (PowerShell)"
-                          onClick={() => void copyWindowsCommand(createdAgent.token)}
-                        >
-                          {winCmdCopied ? '✓ команда скопирована' : '🪟 Команда для Windows (PowerShell)'}
-                        </button>
-                        <button
-                          className="vdl"
-                          aria-label="Показать QR-код строки подключения"
-                          onClick={() => void toggleQr(createdAgent.token)}
-                        >
-                          {qrDataUrl ? 'Скрыть QR' : '▦ QR строки подключения'}
-                        </button>
-                        <button
-                          className="vdl"
-                          aria-label="Скопировать строку подключения"
-                          onClick={() => void copyConnectionString(createdAgent.token)}
-                        >
-                          {connCopied ? '✓ строка скопирована' : 'Скопировать строку подключения'}
-                        </button>
-                        <button
-                          className="vdl"
-                          aria-label="Скопировать токен"
-                          onClick={() => {
-                            void copyText(createdAgent.token).then((ok) => setTokenCopied(ok))
-                          }}
-                        >
-                          {tokenCopied ? '✓ токен скопирован' : 'Скопировать токен'}
-                        </button>
-                        <button
-                          className="vdl"
-                          aria-label="Скрыть"
-                          onClick={() => {
-                            setCreatedAgent(null)
-                            setCmdCopied(false)
-                            setWinCmdCopied(false)
-                            setConnCopied(false)
-                            setTokenCopied(false)
-                            setQrDataUrl(null)
-                          }}
-                        >
-                          Скрыть
-                        </button>
-                      </div>
-                      {qrDataUrl && (
-                        <div className="qr-conn" data-testid="agent-qr">
-                          <img src={qrDataUrl} alt="QR-код строки подключения" width={220} height={220} />
-                          <p className="fsub">
-                            Отсканируйте телефоном (любой сканер QR), скопируется строка
-                            подключения — вставьте её в Termux после <code>--connection</code>.
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                    <AgentCommands
+                      name={createdAgent.name}
+                      token={createdAgent.token}
+                      onGetConnectionString={onGetConnectionString}
+                      onHide={() => setCreatedAgent(null)}
+                    />
                   )}
                 </div>
 

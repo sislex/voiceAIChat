@@ -168,6 +168,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (a) a.policy = policy
     },
     'agents:regenerateToken': async ({ id }) => ({ token: `token2-${id}` }),
+    'agents:update': async () => ({ ok: true as const, os: 'linux' }),
     'downloads:url': async ({ kind }) => `http://localhost/api/download/${kind}`,
     'agents:connectionString': async ({ token }) => `vcagent:fake-${token}`,
     'cc:projects': async () => [],

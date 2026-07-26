@@ -68,7 +68,7 @@ describe('SettingsModal — команды установки агента', () 
     fireEvent.change(screen.getByLabelText('Имя новой машины'), { target: { value: 'Win' } })
     fireEvent.click(screen.getByLabelText('Добавить машину'))
     fireEvent.click(
-      await screen.findByLabelText('Скопировать команду установки для Windows (PowerShell)')
+      await screen.findByLabelText('Скопировать команду установки для Windows')
     )
     await waitFor(() => expect(writeText).toHaveBeenCalled())
     const cmd = writeText.mock.calls[0][0] as string

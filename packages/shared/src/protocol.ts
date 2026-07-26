@@ -137,11 +137,15 @@ export const REST = {
   agentScript: '/api/agents/script',
   agentInstallAndroid: '/api/agents/install-android.sh',
   agentInstallWindows: '/api/agents/install-windows.ps1',
+  agentInstallLinux: '/api/agents/install-linux.sh',
+  agentInstallMacos: '/api/agents/install-macos.sh',
   agentApp: '/api/agents/app',
   desktopApp: '/api/app/desktop',
   agent: (id: string) => `/api/agents/${encodeURIComponent(id)}`,
   agentPolicy: (id: string) => `/api/agents/${encodeURIComponent(id)}/policy`,
   agentToken: (id: string) => `/api/agents/${encodeURIComponent(id)}/token`,
+  /** Обновить агента на машине: сервер выполняет на ней ту же команду установки. */
+  agentUpdate: (id: string) => `/api/agents/${encodeURIComponent(id)}/update`,
   // --- Файловый проводник по машине ---
   agentFs: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs`,
   agentFsFile: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/file`,

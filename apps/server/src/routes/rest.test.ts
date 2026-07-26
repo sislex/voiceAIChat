@@ -440,6 +440,39 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.body).toContain('nodejs.org')
   })
 
+  it('установщики Linux и macOS публичны, отдают bash и разные скрипты', async () => {
+    const lin = await app.inject({ method: 'GET', url: '/api/agents/install-linux.sh' })
+    const mac = await app.inject({ method: 'GET', url: '/api/agents/install-macos.sh' })
+    for (const res of [lin, mac]) {
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['content-type']).toContain('shellscript')
+      expect(res.body).toContain('/api/agents/script')
+      expect(res.body).toContain('-ge 22') // проверка Node 22+
+    }
+    expect(lin.body).toContain('systemctl --user')
+    expect(mac.body).toContain('LaunchAgents')
+    expect(lin.body).not.toBe(mac.body)
+  })
+
+  it('обновление офлайн-машины отклоняется с понятной причиной', async () => {
+    const created = (
+      await inj({ method: 'POST', url: '/api/agents', payload: { name: 'Офлайн' } })
+    ).json()
+    const res = await inj({ method: 'POST', url: `/api/agents/${created.id}/update` })
+    expect(res.statusCode).toBe(409)
+    expect(res.json().error).toContain('не в сети')
+  })
+
+  it('обновление чужой машины — 404', async () => {
+    const res = await inj({ method: 'POST', url: '/api/agents/нет-такой/update' })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('обновление без токена — 401', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/agents/x/update' })
+    expect(res.statusCode).toBe(401)
+  })
+
   it('удаление агента сбрасывает execTarget на сервер', async () => {
     const created = (
       await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })
