@@ -3,6 +3,7 @@ import { clampModelForRole, CODEX_MODELS, modelsForRole, normalizeClaudeModel } 
 import type { Conversation, LlmProvider, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { MachineOps } from './machine'
+import { PopupFrame } from './PopupFrame'
 
 export interface ConversationSettingsProps {
   conversation: Conversation
@@ -118,7 +119,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
   }
 
   return (
-    <div className="convsettings" role="dialog" aria-modal="true" aria-label="Настройки разговора">
+    <PopupFrame title="Настройки разговора" onClose={onClose} testId="conversation-settings-overlay" panelClassName="convsettings">
       <header className="convsettings-head">
         <button className="convsettings-back" onClick={onClose} aria-label="Вернуться в разговор" title="Вернуться в разговор">←</button>
         <div><h1>Настройки разговора</h1><p>Параметры применяются только к этому разговору</p></div>
@@ -186,6 +187,6 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         {error && <p className="convsettings-error" role="alert">{error}</p>}
       </main>
       <footer className="convsettings-footer"><button onClick={onClose}>Отмена</button><button className="primary" disabled={saving} onClick={() => void save()}>{saving ? 'Сохранение…' : 'Сохранить'}</button></footer>
-    </div>
+    </PopupFrame>
   )
 }

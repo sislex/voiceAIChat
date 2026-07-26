@@ -12,6 +12,8 @@ export interface ToolSpec {
   kind: 'console' | 'explorer'
   /** id машины-агента; если не задан — UI выберет доступную. */
   agentId?: string
+  /** Файл для выделения в проводнике или начальный cwd терминала. */
+  path?: string
 }
 
 /** Результат разбора текста ответа с tool-блоком. */
@@ -53,12 +55,16 @@ export function parseToolBlock(text: string): ParsedTool | null {
     return null
   }
   if (!raw || typeof raw !== 'object') return null
-  const o = raw as { kind?: unknown; agentId?: unknown }
+  const o = raw as { kind?: unknown; agentId?: unknown; path?: unknown }
   if (o.kind !== 'console' && o.kind !== 'explorer') return null
   const body = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim()
   return {
     body,
-    tool: { kind: o.kind, ...(typeof o.agentId === 'string' ? { agentId: o.agentId } : {}) }
+    tool: {
+      kind: o.kind,
+      ...(typeof o.agentId === 'string' ? { agentId: o.agentId } : {}),
+      ...(typeof o.path === 'string' ? { path: o.path } : {})
+    }
   }
 }
 

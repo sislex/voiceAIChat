@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { PopupFrame } from './PopupFrame'
 import type { MessageRole, TurnMeta } from '@shared/types'
 
 /** Человекочитаемая роль сообщения контекста. */
@@ -65,7 +66,6 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
   const [hover, setHover] = useState(false)
   const [open, setOpen] = useState(false)
   const req = meta.request
-  const stop = (e: MouseEvent): void => e.stopPropagation()
 
   // Задержка закрытия тултипа: пока курсор идёт от иконки к тултипу (через зазор),
   // mouseleave не должен мгновенно его прятать — иначе не успеть нажать «Подробнее».
@@ -111,8 +111,7 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
       )}
 
       {open && (
-        <div className="ovl" onClick={() => setOpen(false)} data-testid="meta-overlay">
-          <div className="modal metamodal" onClick={stop} role="dialog" aria-label="Подробности запроса">
+        <PopupFrame title="Подробности запроса" onClose={() => setOpen(false)} testId="meta-overlay" panelClassName="modal metamodal">
             <div className="mdhead">
               <h2 className="mdh">Что было отправлено модели</h2>
               <button className="xbtn" aria-label="Закрыть" title="Закрыть" onClick={() => setOpen(false)}>
@@ -192,8 +191,7 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
                 </>
               )}
             </div>
-          </div>
-        </div>
+        </PopupFrame>
       )}
     </span>
   )

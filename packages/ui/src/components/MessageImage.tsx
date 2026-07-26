@@ -30,6 +30,8 @@ export interface MessageImageProps {
   live?: boolean
   variant?: UtilityVariant
   onClose?: () => void
+  /** Открыть расположение файла на выбранной машине. */
+  onOpenInExplorer?: (agentId: string, path: string) => void
 }
 
 const MIN_ZOOM = 1
@@ -68,7 +70,8 @@ export function MessageImage({
   agents = [],
   live = false,
   variant = 'embedded',
-  onClose
+  onClose,
+  onOpenInExplorer
 }: MessageImageProps): JSX.Element {
   const agentId = image.agentId ?? (execAgentId && execAgentId !== 'none' ? execAgentId : null)
   const name = imageName(image.path)
@@ -184,6 +187,16 @@ export function MessageImage({
 
   const actions = (
     <>
+      {agentId && onOpenInExplorer && (
+        <button
+          className="xbtn"
+          title="Показать в проводнике"
+          aria-label="Показать картинку в проводнике"
+          onClick={() => onOpenInExplorer(agentId, image.path)}
+        >
+          📂
+        </button>
+      )}
       <button className="xbtn" title="Скачать" aria-label="Скачать картинку" disabled={!ready} onClick={download}>
         ⬇
       </button>

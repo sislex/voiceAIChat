@@ -14,6 +14,8 @@ export interface MachineUtilityProps {
   onClose?: () => void
   /** Мост живого PTY-терминала. По умолчанию — window.pty (web); отсутствует → однострочная консоль. */
   pty?: RendererPtyBridge
+  /** Переключить popup проводника на терминал в указанной папке. */
+  onOpenTerminal?: (agentId: string, cwd: string) => void
 }
 
 /** Рендерит нужную утилиту (консоль/проводник) по ToolSpec. */
@@ -23,6 +25,7 @@ export function MachineUtility({
   ops,
   variant = 'modal',
   onClose,
+  onOpenTerminal,
   pty = typeof window !== 'undefined' ? window.pty : undefined
 }: MachineUtilityProps): JSX.Element {
   if (tool.kind === 'console') {
@@ -32,6 +35,7 @@ export function MachineUtility({
         <MachineTerminal
           agents={agents}
           initialAgentId={tool.agentId ?? null}
+          initialCwd={tool.path}
           pty={pty}
           variant={variant}
           onClose={onClose}
@@ -52,7 +56,9 @@ export function MachineUtility({
     <FileExplorer
       agents={agents}
       initialAgentId={tool.agentId ?? null}
+      initialFilePath={tool.path}
       ops={ops}
+      onOpenTerminal={onOpenTerminal}
       variant={variant}
       onClose={onClose}
     />

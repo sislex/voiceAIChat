@@ -23,10 +23,10 @@ describe('isToolAllowed / requiredVersion', () => {
     expect(isToolAllowed('0.2.0', 'exec')).toBe(true)
   })
 
-  it('pty требует 0.3.0 (legacy 0.2.0 не умеет терминал)', () => {
-    expect(requiredVersion('pty')).toBe('0.3.0')
-    expect(isToolAllowed('0.2.0', 'pty')).toBe(false)
-    expect(isToolAllowed('0.3.0', 'pty')).toBe(true)
+  it('pty требует 0.9.0 (старый агент не умеет начальный cwd)', () => {
+    expect(requiredVersion('pty')).toBe('0.9.0')
+    expect(isToolAllowed('0.6.0', 'pty')).toBe(false)
+    expect(isToolAllowed('0.9.0', 'pty')).toBe(true)
   })
 
   it('неизвестный тул → базовая 0.1.0', () => {

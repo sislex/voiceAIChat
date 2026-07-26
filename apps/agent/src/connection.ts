@@ -200,7 +200,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
         case 'pty.start':
           // Живой терминал: доверенный shell без per-command гейта (см. docs/plans/PTY_CONSOLE.md).
           handlers.onLog?.(`терминал открыт (${msg.ptyId})`)
-          startPty(msg.ptyId, msg.cols, msg.rows, config.rootDir, send)
+          startPty(msg.ptyId, msg.cols, msg.rows, msg.cwd || config.rootDir, send)
           break
         case 'pty.input':
           writePty(msg.ptyId, msg.data)

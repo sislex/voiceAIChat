@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-07-26
-checked: e0bc98e
+checked: 150a37a
 areas:
   - apps/server/src/server.ts
   - apps/server/src/session.ts
@@ -81,3 +81,7 @@ React подключается через `useVoiceStore.ts`.
 Озвучка идёт по мере готовности предложений: `sentences.ts` (shared + ui) режет
 поток токенов на произносимые фразы, `lib/ttsPlayer.ts` играет их очередью.
 VAD (`lib/vad.ts`) даёт hands-free и barge-in.
+
+## Единый контейнер popup
+
+Все модальные поверхности UI используют `PopupFrame`: он владеет overlay, `role=dialog`, кликом по фону и обработкой Escape. `ToolFrame` остаётся надстройкой для тулов и полноэкранного режима, но его modal-вариант также построен на `PopupFrame`.

@@ -1843,6 +1843,10 @@
 .fsrow:hover {
   background: var(--panel);
 }
+.fsrow--selected {
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
+  outline: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+}
 .fsname {
   flex: 1;
   text-align: left;

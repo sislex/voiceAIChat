@@ -340,6 +340,7 @@ export class AgentRegistry {
     ptyId: string,
     cols: number,
     rows: number,
+    cwd: string | undefined,
     emit: (e: PtyEvent) => void
   ): void {
     if (!this.online.has(agentId)) {
@@ -352,7 +353,7 @@ export class AgentRegistry {
       return
     }
     this.ptys.set(ptyId, { agentId, emit })
-    this.send(agentId, { t: 'pty.start', ptyId, cols, rows })
+    this.send(agentId, { t: 'pty.start', ptyId, cols, rows, ...(cwd ? { cwd } : {}) })
   }
 
   /** Ввод пользователя (нажатия клавиш) в PTY. */

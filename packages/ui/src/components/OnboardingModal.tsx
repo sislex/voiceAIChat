@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react'
+import { PopupFrame } from './PopupFrame'
 
 export interface OnboardingModalProps {
   /** Локальная модель Whisper уже скачана. */
@@ -31,10 +31,8 @@ export function OnboardingModal({
   hasVoice,
   onDone
 }: OnboardingModalProps): JSX.Element {
-  const stop = (e: MouseEvent): void => e.stopPropagation()
   return (
-    <div className="ovl" onClick={onDone} data-testid="onboarding-overlay">
-      <div className="modal onboarding" onClick={stop} role="dialog" aria-label="Добро пожаловать">
+    <PopupFrame title="Добро пожаловать" onClose={onDone} testId="onboarding-overlay" panelClassName="modal onboarding">
         <div className="mdhead">
           <h2 className="mdh">Добро пожаловать в Голос·Чат</h2>
         </div>
@@ -78,7 +76,6 @@ export function OnboardingModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </PopupFrame>
   )
 }

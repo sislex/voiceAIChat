@@ -161,6 +161,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onAnswerQuestions={(text) => void actions.answerQuestions(text)}
         machineOps={machineOps}
         readServerFile={actions.readServerFile}
+        onOpenImageInExplorer={(agentId, path) => actions.openUtility('explorer', agentId, path)}
         error={state.error}
         onDismissError={actions.dismissError}
         modelMissing={!state.modelPresent}
@@ -283,10 +284,15 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
 
       {state.utility && machineOps && (
         <MachineUtility
-          tool={{ kind: state.utility.kind, ...(state.utility.agentId ? { agentId: state.utility.agentId } : {}) }}
+          tool={{
+            kind: state.utility.kind,
+            ...(state.utility.agentId ? { agentId: state.utility.agentId } : {}),
+            ...(state.utility.path ? { path: state.utility.path } : {})
+          }}
           agents={state.agents}
           ops={machineOps}
           variant="modal"
+          onOpenTerminal={(agentId, cwd) => actions.openUtility('console', agentId, cwd)}
           onClose={actions.closeUtility}
         />
       )}

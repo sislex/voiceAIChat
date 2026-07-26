@@ -192,7 +192,7 @@ export type ServerToAgent =
   | { t: 'agent.updateAvailable'; version: string }
   | { t: 'exec.start'; execId: string; command: string; timeoutMs: number }
   | { t: 'exec.cancel'; execId: string }
-  | { t: 'pty.start'; ptyId: string; cols: number; rows: number }
+  | { t: 'pty.start'; ptyId: string; cols: number; rows: number; cwd?: string }
   | { t: 'pty.input'; ptyId: string; data: string }
   | { t: 'pty.resize'; ptyId: string; cols: number; rows: number }
   | { t: 'pty.kill'; ptyId: string }

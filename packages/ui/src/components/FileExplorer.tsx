@@ -6,9 +6,12 @@ import { ToolFrame } from './ToolFrame'
 export interface FileExplorerProps {
   agents: AgentInfo[]
   initialAgentId?: string | null
+  /** Файл, чью папку нужно открыть и чью строку выделить. */
+  initialFilePath?: string
   ops: MachineOps
   variant?: UtilityVariant
   onClose?: () => void
+  onOpenTerminal?: (agentId: string, cwd: string) => void
 }
 
 function fmtSize(n: number): string {
@@ -17,8 +20,11 @@ function fmtSize(n: number): string {
   return `${n} Б`
 }
 function parentOf(p: string): string {
-  const up = p.replace(/\/+$/, '').replace(/\/[^/]*$/, '')
+  const up = p.replace(/[\\/]+$/, '').replace(/[\\/][^\\/]*$/, '')
   return up || '/'
+}
+function nameOf(p: string): string {
+  return p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ''
 }
 function joinPath(dir: string, name: string): string {
   return `${dir.replace(/\/$/, '')}/${name}`
@@ -28,9 +34,11 @@ function joinPath(dir: string, name: string): string {
 export function FileExplorer({
   agents,
   initialAgentId,
+  initialFilePath,
   ops,
   variant = 'modal',
-  onClose
+  onClose,
+  onOpenTerminal
 }: FileExplorerProps): JSX.Element {
   const [agentId, setAgentId] = useState<string | null>(
     initialAgentId ?? agents.find((a) => a.online)?.id ?? agents[0]?.id ?? null
@@ -40,6 +48,8 @@ export function FileExplorer({
   const [entries, setEntries] = useState<FsEntry[]>([])
   const [error, setError] = useState<string | null>(null)
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
+  const [selectedName, setSelectedName] = useState(() => initialFilePath ? nameOf(initialFilePath) : '')
+  const selectedRow = useRef<HTMLDivElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const writable = agents.find((a) => a.id === agentId)?.policy.allowWrite ?? false
@@ -57,12 +67,17 @@ export function FileExplorer({
     }
   }
 
-  // Загрузка корня при выборе машины.
+  // Путь файла открывает родительскую папку и выделяет нужную строку.
   useEffect(() => {
     setEntries([])
-    void load('')
+    setSelectedName(initialFilePath ? nameOf(initialFilePath) : '')
+    void load(initialFilePath ? parentOf(initialFilePath) : '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId])
+  }, [agentId, initialFilePath])
+
+  useEffect(() => {
+    selectedRow.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [entries, selectedName])
 
   const run = async (op: Promise<unknown>): Promise<void> => {
     try {
@@ -113,6 +128,11 @@ export function FileExplorer({
         <span className="fspath" title={cwd}>
           {cwd || '—'}
         </span>
+        {onOpenTerminal && agentId && cwd && (
+          <button className="fsbtn" title="Открыть терминал в этой папке" onClick={() => onOpenTerminal(agentId, cwd)}>
+            &gt;_ Терминал
+          </button>
+        )}
         {writable && (
           <>
             <button className="fsbtn" disabled={!agentId} onClick={doMkdir}>
@@ -146,7 +166,13 @@ export function FileExplorer({
         {entries.map((entry) => {
           const abs = joinPath(cwd, entry.name)
           return (
-            <div className="fsrow" key={entry.name} data-testid="fs-row">
+            <div
+              ref={entry.name === selectedName ? selectedRow : undefined}
+              className={entry.name === selectedName ? 'fsrow fsrow--selected' : 'fsrow'}
+              key={entry.name}
+              data-testid="fs-row"
+              data-selected={entry.name === selectedName ? 'true' : undefined}
+            >
               <button
                 className="fsname"
                 disabled={entry.kind !== 'dir'}
