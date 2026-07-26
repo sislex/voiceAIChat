@@ -254,6 +254,10 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         <MachineStatus
           agents={state.agents}
           onSetPolicy={(id, policy) => void actions.setAgentPolicy(id, policy)}
+          onCreateAgent={actions.createAgent}
+          onRegenerateToken={actions.regenerateAgentToken}
+          onGetConnectionString={actions.getAgentConnectionString}
+          onUpdateAgent={actions.updateAgent}
           onClose={actions.closeMachines}
         />
       )}

@@ -344,6 +344,8 @@ export interface StoreActions {
   setAgentPolicy(id: string, policy: AgentPolicy): Promise<void>
   /** Перевыпустить токен машины; возвращает новую строку подключения (или null). */
   regenerateAgentToken(id: string): Promise<string | null>
+  /** Обновить агента на машине; null — команда запущена, строка — ошибка. */
+  updateAgent(id: string): Promise<string | null>
   /** Открыть меню «Машины» (статус агентских машин); подтягивает список. */
   openMachines(): void
   /** Закрыть меню «Машины». */
@@ -1017,14 +1019,28 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
-  /** Перевыпустить токен машины; вернуть новую строку подключения. */
+  /**
+   * Перевыпустить токен машины; вернуть НОВЫЙ ТОКЕН (старый сразу перестаёт
+   * работать). Строку подключения по нему собирает `getAgentConnectionString` —
+   * так вызывающий сам решает, что показать: команду, строку или токен.
+   */
   async function regenerateAgentToken(id: string): Promise<string | null> {
     try {
       const { token } = await api['agents:regenerateToken']({ id })
-      return await getAgentConnectionString(token)
+      return token
     } catch (err) {
       setState({ error: err instanceof Error ? err.message : String(err) })
       return null
+    }
+  }
+
+  /** Обновить агента на машине; null — запуск удался, иначе текст ошибки. */
+  async function updateAgent(id: string): Promise<string | null> {
+    try {
+      await api['agents:update']({ id })
+      return null
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err)
     }
   }
 
@@ -2014,6 +2030,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applyAgents,
       setAgentPolicy,
       regenerateAgentToken,
+      updateAgent,
       openMachines,
       closeMachines,
       applyClaudeLog,

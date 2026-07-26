@@ -41,7 +41,7 @@ function NodeMajor([string]$Cmd) {
   return 0
 }
 
-Write-Host '[1/5] Проверяю Node.js (нужна версия 22+)…'
+Write-Host '[1/6] Проверяю Node.js (нужна версия 22+)…'
 $NodeExe = 'node'
 $LocalNode = Join-Path $AgentDir 'node\\node.exe'
 if ((NodeMajor 'node') -lt 22) {
@@ -64,17 +64,47 @@ if ((NodeMajor 'node') -lt 22) {
 }
 Write-Host "Использую Node.js: $NodeExe"
 
-Write-Host '[2/5] Скачиваю агента…'
-Fetch "$Server/api/agents/script" (Join-Path $AgentDir 'voicechat-agent.cjs')
+Write-Host '[2/6] Скачиваю агента…'
+$NewCjs = Join-Path $AgentDir 'voicechat-agent.cjs.new'
+Fetch "$Server/api/agents/script" $NewCjs
+if ((Get-Item $NewCjs).Length -lt 1000) { throw 'скачанный скрипт подозрительно мал' }
+& $NodeExe --check $NewCjs
+if ($LASTEXITCODE -ne 0) { Remove-Item $NewCjs -Force; throw 'скачанный скрипт битый — обновление отменено' }
 
-if ($Connection) {
-  Write-Host '[3/5] Сохраняю строку подключения…'
-  Set-Content -Path (Join-Path $AgentDir 'connection') -Value $Connection -NoNewline -Encoding ascii
-} else {
-  Write-Host "[3/5] Строка подключения не передана — впишите её в $AgentDir\\connection и запустите run.cmd."
+Write-Host '[3/6] Ищу строку подключения и останавливаю старый агент…'
+# Ищем node-процессы, у которых в командной строке наш скрипт (CIM: у Get-Process
+# командной строки нет). Повторный запуск установщика = обновление.
+$Old = @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
+  Where-Object { $_.CommandLine -and $_.CommandLine -like '*voicechat-agent.cjs*' })
+
+$ConnFile = Join-Path $AgentDir 'connection'
+if (-not $Connection -and (Test-Path $ConnFile)) {
+  $Connection = (Get-Content $ConnFile -Raw).Trim()
+  if ($Connection) { Write-Host '  строка подключения — из сохранённого файла' }
 }
+if (-not $Connection) {
+  # Агент мог стоять в другом каталоге — забираем строку у живого процесса.
+  foreach ($p in $Old) {
+    if ($p.CommandLine -match '(vcagent:[A-Za-z0-9_\-]+)') {
+      $Connection = $Matches[1]
+      Write-Host '  строка подключения восстановлена из работающего агента'
+      break
+    }
+  }
+}
+if (-not $Connection) { throw 'Не нашёл строку подключения. Скопируйте команду установки из настроек — в ней она есть.' }
 
-Write-Host '[4/5] Готовлю запуск и автозапуск (реестр HKCU, окно скрыто)…'
+$Old | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Start-Sleep -Seconds 1
+
+$Cjs = Join-Path $AgentDir 'voicechat-agent.cjs'
+if (Test-Path $Cjs) { Move-Item $Cjs (Join-Path $AgentDir 'voicechat-agent.cjs.prev') -Force }
+Move-Item $NewCjs $Cjs -Force
+
+Write-Host '[4/6] Сохраняю строку подключения…'
+Set-Content -Path $ConnFile -Value $Connection -NoNewline -Encoding ascii
+
+Write-Host '[5/6] Готовлю запуск и автозапуск (реестр HKCU, окно скрыто)…'
 $RunCmd = Join-Path $AgentDir 'run.cmd'
 # OEM-кодировка: cmd.exe читает .cmd в кодовой странице консоли, иначе rem-строки в кракозябрах.
 @(
@@ -92,7 +122,7 @@ $Vbs = Join-Path $AgentDir 'run-hidden.vbs'
 Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' \`
   -Name 'voicechat-agent' -Value ('wscript.exe "{0}"' -f $Vbs)
 
-Write-Host '[5/5] Запускаю агента (в фоне; автозапуск при входе настроен)…'
+Write-Host '[6/6] Запускаю агента (в фоне; автозапуск при входе настроен)…'
 Start-Process -FilePath 'wscript.exe' -ArgumentList ('"{0}"' -f $Vbs)
 Write-Host "Готово. Машина появится в настройках через несколько секунд. Файлы агента: $AgentDir"
 `

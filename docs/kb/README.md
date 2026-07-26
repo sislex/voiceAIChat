@@ -9,15 +9,15 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-26 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-07-26 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-26 | ⚠ 2 коммит(ов) в areas после сверки: 6ddcdb7 feat(agents): установка машины на Windows одной командой (PowerShell) … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-26 | ⚠ 2 коммит(ов) в areas после сверки: 4435572 feat(agents): добавление машины и обновление агента из попапа «Машины» … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: 59f9178 refactor(desktop): перейти на тонкую оболочку web-сервера |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-26 | ⚠ 5 коммит(ов) в areas после сверки: 4435572 feat(agents): добавление машины и обновление агента из попапа «Машины» … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-07-26 | ✓ |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: aa35067 docs(kb): сверка свежести по sha коммита + факты про execTarget и cliProfiles |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-26 | ✓ |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: 6ddcdb7 feat(agents): установка машины на Windows одной командой (PowerShell) |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-26 | ✓ |
-| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-26 | ⚠ 2 коммит(ов) в areas после сверки: 59f9178 refactor(desktop): перейти на тонкую оболочку web-сервера … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-26 | ⚠ 2 коммит(ов) в areas после сверки: 59f9178 refactor(desktop): перейти на тонкую оболочку web-сервера … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-26 | ⚠ 2 коммит(ов) в areas после сверки: 4435572 feat(agents): добавление машины и обновление агента из попапа «Машины» … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-26 | ⚠ 2 коммит(ов) в areas после сверки: 4435572 feat(agents): добавление машины и обновление агента из попапа «Машины» … |
+| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: 59f9178 refactor(desktop): перейти на тонкую оболочку web-сервера |
 
 ## Инструкции по пакетам
 

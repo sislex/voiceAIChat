@@ -112,6 +112,8 @@ export interface IpcInvokeMap {
   'agents:setPolicy': { arg: { id: string; policy: AgentPolicy }; result: void }
   /** Перевыпустить токен (старый перестаёт работать); токен возвращается один раз. */
   'agents:regenerateToken': { arg: { id: string }; result: { token: string } }
+  /** Обновить агента на машине: сервер выполняет на ней команду установки. */
+  'agents:update': { arg: { id: string }; result: { ok: true; os: string } }
   /** Абсолютный URL артефакта для скачивания (десктоп/агент-приложение/скрипт). */
   'downloads:url': { arg: { kind: 'desktop' | 'agent-app' | 'agent-script' }; result: string }
   /** Строка подключения (адрес+токен) для настройки агента (приложение и скрипт). */
@@ -472,6 +474,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'agents:delete',
   'agents:setPolicy',
   'agents:regenerateToken',
+  'agents:update',
   'downloads:url',
   'agents:connectionString',
   'cc:projects',

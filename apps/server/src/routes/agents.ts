@@ -3,13 +3,30 @@
 
 import { createReadStream, existsSync } from 'node:fs'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { REST, AGENT_VERSION, type AgentInfo, type AgentPolicy } from '@voicechat/shared'
+import {
+  REST,
+  AGENT_VERSION,
+  agentOsFromPlatform,
+  installCommand,
+  installScriptUrl,
+  type AgentInfo,
+  type AgentPolicy
+} from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { buildAgentScript } from '../agents/agentScript.js'
 import { buildAndroidInstallScript } from '../agents/androidInstall.js'
 import { buildWindowsInstallScript } from '../agents/windowsInstall.js'
+import { buildUnixInstallScript } from '../agents/unixInstall.js'
+
+/** Кавычим строку для одинарных кавычек bash. */
+function shellQuote(s: string): string {
+  return `'${s.replace(/'/g, `'"'"'`)}'`
+}
+
+/** Запуск обновления отвязан от exec'а, поэтому ждать долго не нужно. */
+const UPDATE_EXEC_TIMEOUT_MS = 30_000
 
 /** Пути к собранным .dmg (undefined — не собрано). */
 export interface AppArtifacts {
@@ -101,6 +118,16 @@ export async function registerAgentRoutes(
       .header('content-type', 'text/x-powershell; charset=utf-8')
       .send(buildWindowsInstallScript(externalBase(req)))
   )
+  app.get(REST.agentInstallLinux, async (req, reply) =>
+    reply
+      .header('content-type', 'text/x-shellscript; charset=utf-8')
+      .send(buildUnixInstallScript(externalBase(req), 'linux'))
+  )
+  app.get(REST.agentInstallMacos, async (req, reply) =>
+    reply
+      .header('content-type', 'text/x-shellscript; charset=utf-8')
+      .send(buildUnixInstallScript(externalBase(req), 'macos'))
+  )
 
   app.post<{ Body: { name?: string } }>(REST.agents, async (req, reply) => {
     const name = req.body?.name?.trim()
@@ -134,6 +161,54 @@ export async function registerAgentRoutes(
       return { ok: true }
     }
   )
+
+  /**
+   * Обновление агента на машине: сервер выполняет на ней РОВНО ту команду, которую
+   * пользователь мог бы скопировать и вставить руками. Строку подключения не
+   * передаём — установщик сам достанет её из файла или из аргументов живого агента
+   * (иначе пришлось бы перевыпускать токен, а при осечке машина осталась бы без него).
+   *
+   * Команда должна пережить смерть агента, который её же и запустил: на unix
+   * заворачиваем в setsid+nohup, на Windows — в Start-Process. Поэтому ответ
+   * приходит сразу, а результат виден по тому, что машина вернулась в сеть с новой
+   * версией. Ошибку самого обновления смотреть в agent.log на машине.
+   */
+  app.post<{ Params: { id: string } }>('/api/agents/:id/update', async (req, reply) => {
+    const u = uid(req)
+    const id = req.params.id
+    if (!ownsAgent(u, id)) return reply.code(404).send({ error: 'not found' })
+    if (!registry.isOnline(id)) {
+      return reply.code(409).send({ error: 'Машина не в сети — обновить можно только запущенного агента' })
+    }
+    const telemetry = registry.telemetryOf(id)
+    const os = telemetry ? agentOsFromPlatform(telemetry.os.platform, telemetry.os.isAndroid) : null
+    if (!os) {
+      return reply.code(409).send({
+        error: 'Не удалось определить ОС машины (нужна телеметрия агента 0.4+). Обновите вручную командой из настроек.'
+      })
+    }
+    const base = externalBase(req)
+    // Установщик должен пережить смерть агента, который его запустил: на unix —
+    // setsid+nohup, на Windows — Start-Process (он и так отвязывает процесс).
+    const detached =
+      os === 'windows'
+        ? `powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Join-Path $env:TEMP 'vc-agent-install.ps1'; ` +
+          `curl.exe -fsSLk ${installScriptUrl(os, base)} -o $p; ` +
+          `Start-Process -WindowStyle Hidden powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',$p"`
+        : `(setsid nohup bash -lc ${shellQuote(installCommand(os, base))} > /dev/null 2>&1 < /dev/null &) ; echo update-started`
+    try {
+      const res = await registry.exec(id, detached, UPDATE_EXEC_TIMEOUT_MS)
+      return { ok: true, os, output: res.output.slice(0, 2000) }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      // Гейт политики проверяется и на сервере, и на агенте: обновление качает
+      // скрипт и пишет файлы, поэтому машине с запретом сети/записи оно не пройдёт.
+      const hint = msg.includes('политикой')
+        ? ' Разрешите машине сеть и запись файлов (или обновите вручную командой из списка машин).'
+        : ''
+      return reply.code(502).send({ error: msg + hint })
+    }
+  })
 
   // Перевыпуск токена: старый перестаёт работать, текущее соединение рвём.
   app.post<{ Params: { id: string } }>('/api/agents/:id/token', async (req, reply) => {

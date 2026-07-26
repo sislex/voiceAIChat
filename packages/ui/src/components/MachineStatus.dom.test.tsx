@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MachineStatus } from './MachineStatus'
 import { DEFAULT_AGENT_POLICY, type AgentInfo, type AgentTelemetry } from '@shared/agentProtocol'
+import { AGENT_VERSION } from '@shared/version'
 
 function telemetry(over: Partial<AgentTelemetry> = {}): AgentTelemetry {
   return {
@@ -74,5 +75,114 @@ describe('MachineStatus', () => {
   it('нет машин → подсказка', () => {
     render(<MachineStatus agents={[]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByText(/Нет добавленных машин/)).toBeInTheDocument()
+  })
+})
+
+describe('MachineStatus — добавление машины прямо в попапе', () => {
+  it('создаёт машину и сразу показывает команды на все ОС', async () => {
+    const onCreateAgent = vi.fn().mockResolvedValue({ id: 'n1', name: 'Ноут', token: 'tok1' })
+    const onGetConnectionString = vi.fn().mockResolvedValue('vcagent:x')
+    render(
+      <MachineStatus
+        agents={[]}
+        onSetPolicy={vi.fn()}
+        onCreateAgent={onCreateAgent}
+        onGetConnectionString={onGetConnectionString}
+        onClose={vi.fn()}
+      />
+    )
+    fireEvent.change(screen.getByLabelText('Имя новой машины'), { target: { value: 'Ноут' } })
+    fireEvent.click(screen.getByLabelText('Добавить машину'))
+
+    expect(onCreateAgent).toHaveBeenCalledWith('Ноут')
+    const cmds = await screen.findByTestId('agent-commands')
+    for (const os of ['Windows', 'macOS', 'Linux', 'Android']) {
+      expect(within(cmds).getByLabelText(`Скопировать команду установки для ${os}`)).toBeInTheDocument()
+    }
+  })
+
+  it('без onCreateAgent блока добавления нет (режим только-просмотр)', () => {
+    render(<MachineStatus agents={[]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
+    expect(screen.queryByLabelText('Имя новой машины')).toBeNull()
+  })
+
+  it('перевыпуск токена показывает команды с новым токеном', async () => {
+    const onRegenerateToken = vi.fn().mockResolvedValue('tok-new')
+    const onGetConnectionString = vi.fn().mockResolvedValue('vcagent:x')
+    render(
+      <MachineStatus
+        agents={[agent()]}
+        onSetPolicy={vi.fn()}
+        onRegenerateToken={onRegenerateToken}
+        onGetConnectionString={onGetConnectionString}
+        onClose={vi.fn()}
+      />
+    )
+    fireEvent.click(screen.getByLabelText('Перевыпустить токен для Мак'))
+    expect(onRegenerateToken).toHaveBeenCalledWith('a1')
+    expect(await screen.findByTestId('agent-commands')).toBeInTheDocument()
+  })
+})
+
+describe('MachineStatus — устаревший агент и обновление', () => {
+  it('у устаревшего агента есть значок, кнопка обновления и копирование команды', () => {
+    render(
+      <MachineStatus agents={[agent({ version: '0.1.0' })]} onSetPolicy={vi.fn()} onUpdateAgent={vi.fn()} onClose={vi.fn()} />
+    )
+    expect(screen.getByText(/устарел, есть v/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Обновить агента на Мак')).toBeInTheDocument()
+    expect(screen.getByLabelText('Скопировать команду обновления для Мак')).toBeInTheDocument()
+  })
+
+  it('у свежего агента кнопок обновления нет', () => {
+    render(
+      <MachineStatus agents={[agent({ version: AGENT_VERSION })]} onSetPolicy={vi.fn()} onUpdateAgent={vi.fn()} onClose={vi.fn()} />
+    )
+    expect(screen.queryByText(/устарел/)).toBeNull()
+    expect(screen.queryByLabelText('Обновить агента на Мак')).toBeNull()
+  })
+
+  it('у офлайн-машины обновление не предлагается (версии не знаем)', () => {
+    render(
+      <MachineStatus
+        agents={[agent({ online: false, version: undefined })]}
+        onSetPolicy={vi.fn()}
+        onUpdateAgent={vi.fn()}
+        onClose={vi.fn()}
+      />
+    )
+    expect(screen.queryByLabelText('Обновить агента на Мак')).toBeNull()
+  })
+
+  it('клик по «обновить» зовёт мост и показывает, что обновление запущено', async () => {
+    const onUpdateAgent = vi.fn().mockResolvedValue(null)
+    render(
+      <MachineStatus agents={[agent({ version: '0.1.0' })]} onSetPolicy={vi.fn()} onUpdateAgent={onUpdateAgent} onClose={vi.fn()} />
+    )
+    fireEvent.click(screen.getByLabelText('Обновить агента на Мак'))
+    expect(onUpdateAgent).toHaveBeenCalledWith('a1')
+    expect(await screen.findByRole('status')).toHaveTextContent('Обновление на «Мак» запущено')
+  })
+
+  it('ошибка обновления показывается как есть', async () => {
+    const onUpdateAgent = vi.fn().mockResolvedValue('Машина не в сети')
+    render(
+      <MachineStatus agents={[agent({ version: '0.1.0' })]} onSetPolicy={vi.fn()} onUpdateAgent={onUpdateAgent} onClose={vi.fn()} />
+    )
+    fireEvent.click(screen.getByLabelText('Обновить агента на Мак'))
+    expect(await screen.findByRole('status')).toHaveTextContent('Машина не в сети')
+  })
+
+  it('команда обновления собирается под ОС машины и не содержит токен', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(
+      <MachineStatus agents={[agent({ version: '0.1.0' })]} onSetPolicy={vi.fn()} onClose={vi.fn()} />
+    )
+    fireEvent.click(screen.getByLabelText('Скопировать команду обновления для Мак'))
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    const cmd = writeText.mock.calls[0][0] as string
+    expect(cmd).toContain('install-linux.sh') // телеметрия говорит linux
+    expect(cmd).not.toContain('vcagent:')
   })
 })

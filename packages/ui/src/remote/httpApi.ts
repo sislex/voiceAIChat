@@ -94,6 +94,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       await req(REST.agentPolicy(id), { method: 'POST', body: JSON.stringify({ policy }) })
     },
     'agents:regenerateToken': ({ id }) => req(REST.agentToken(id), { method: 'POST' }),
+    'agents:update': ({ id }) => req(REST.agentUpdate(id), { method: 'POST' }),
     'downloads:url': async ({ kind }) => {
       const path =
         kind === 'desktop'

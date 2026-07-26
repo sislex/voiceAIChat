@@ -21,7 +21,7 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
 - `components/` — экраны и виджеты. Крупные: `ChatColumn`, `Sidebar`, `VoiceBar`,
   `SettingsModal`, `MachineConsole`/`MachineTerminal`/`MachineStatus`/`AgentCard`,
   `FileExplorer`, `CcObserver`/`CodexObserver`, `UsersAdmin`, `QuestionsForm`,
-  `MessageActivity`, `MessageImage`, `Markdown`.
+  `MessageActivity`, `MessageImage`, `AgentCommands`, `Markdown`.
 - `styles/app.css` + `global.css` — стили общие, подключаются хостом как
   `@voicechat/ui/styles.css`.
 
