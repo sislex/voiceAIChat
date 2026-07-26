@@ -971,8 +971,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       conversations: state.conversations.map((c) =>
         c.execTarget === id ? { ...c, execTarget: null } : c
       ),
-      ...(state.settings.execTarget === id
-        ? { settings: { ...state.settings, execTarget: null } }
+      ...(state.settings.execTarget === id || state.settings.defaultAgentId === id
+        ? {
+            settings: {
+              ...state.settings,
+              ...(state.settings.execTarget === id ? { execTarget: null } : {}),
+              ...(state.settings.defaultAgentId === id ? { defaultAgentId: null } : {})
+            }
+          }
         : {})
     })
     await refreshAgents()

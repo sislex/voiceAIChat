@@ -13,6 +13,8 @@ export interface ConversationSettingsProps {
   role: UserRole
   /** Общие настройки — дефолты движка/модели, когда разговор их не переопределяет. */
   settings: Pick<Settings, 'llmProvider' | 'model' | 'codexModel'>
+  /** Машина по умолчанию — предвыбирается в новых разговорах и помечается в списке. */
+  defaultAgentId?: string | null
   onSave: (value: {
     title: string
     execTarget: string | null
@@ -34,16 +36,20 @@ function joinPath(dir: string, name: string): string {
   return `${dir.replace(/\/$/, '')}/${name}`
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, settings, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, settings, defaultAgentId, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
   const [title, setTitle] = useState(conversation.title)
-  const [execTarget, setExecTarget] = useState<string | null>(conversation.execTarget)
+  const defaultExecTarget = defaultAgentId && agents.some((a) => a.id === defaultAgentId) ? defaultAgentId : null
+  const [execTarget, setExecTarget] = useState<string | null>(
+    conversation.execTarget ?? (conversation.messageCount === 0 ? defaultExecTarget : null)
+  )
   const [workdir, setWorkdir] = useState<string | null>(conversation.workdir)
   const [skillNames, setSkillNames] = useState<string[]>(conversation.skillNames)
-  const [llmProvider, setLlmProvider] = useState<LlmProvider | ''>(conversation.llmProvider ?? '')
+  const initialProvider: LlmProvider = conversation.llmProvider ?? settings.llmProvider
+  const [llmProvider, setLlmProvider] = useState<LlmProvider>(initialProvider)
   const [llmModel, setLlmModel] = useState<string>(
     conversation.llmProvider && conversation.llmModel !== null
       ? conversation.llmModel
-      : conversation.llmProvider === 'codex'
+      : initialProvider === 'codex'
         ? settings.codexModel
         : clampModelForRole(normalizeClaudeModel(settings.model), role)
   )
@@ -102,13 +108,17 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
     }
     setSaving(true)
     try {
+      const globalModel = llmProvider === 'codex' ? settings.codexModel : clampModelForRole(normalizeClaudeModel(settings.model), role)
+      // Пункта «по умолчанию» в списке движков нет, но наследование глобальных настроек сохраняется:
+      // если выбранные движок и модель совпадают с глобальными — храним null (следовать общим настройкам).
+      const inheritsGlobal = llmProvider === settings.llmProvider && llmModel === globalModel
       await onSave({
         title: cleanTitle,
         execTarget,
         workdir: execTarget ? workdir : null,
         skillNames: execTarget ? skillNames : [],
-        llmProvider: llmProvider || null,
-        llmModel: llmProvider ? llmModel : null
+        llmProvider: inheritsGlobal ? null : llmProvider,
+        llmModel: inheritsGlobal ? null : llmModel
       })
       onClose()
     } catch (err) {
@@ -130,24 +140,23 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
           <label className="convsettings-field"><span>Машина</span>
             <select value={execTarget ?? ''} onChange={(e) => { setExecTarget(e.target.value || null); setWorkdir(null); setCwd(''); setEntries([]) }}>
               <option value="">Сервер</option>
-              {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}{agent.online ? '' : ' (офлайн)'}</option>)}
+              {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}{agent.id === defaultAgentId ? ' — по умолчанию' : ''}{agent.online ? '' : ' (офлайн)'}</option>)}
             </select>
           </label>
         </section>
 
         <section className="convsettings-card">
-          <div className="convsettings-sectionhead"><div><h2>Движок и модель</h2><p>Отвечает только в этом разговоре; «По умолчанию» — из общих настроек.</p></div></div>
+          <div className="convsettings-sectionhead"><div><h2>Движок и модель</h2><p>Действуют только в этом разговоре; по умолчанию — из общих настроек.</p></div></div>
           <label className="convsettings-field"><span>Движок</span>
             <select
               aria-label="Движок разговора"
               value={llmProvider}
               onChange={(e) => {
-                const next = (e.target.value || '') as LlmProvider | ''
+                const next = e.target.value as LlmProvider
                 setLlmProvider(next)
                 setLlmModel(next === 'codex' ? settings.codexModel : clampModelForRole(normalizeClaudeModel(settings.model), role))
               }}
             >
-              <option value="">По умолчанию ({settings.llmProvider === 'codex' ? 'Codex' : 'Claude Code'})</option>
               <option value="claude">Claude Code</option>
               <option value="codex">Codex</option>
             </select>

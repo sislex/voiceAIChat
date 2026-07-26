@@ -201,7 +201,8 @@ describe('VoiceChatDb — настройки', () => {
       handsFree: true,
       execTarget: 'agent-1',
       llmProvider: 'claude',
-      codexModel: ''
+      codexModel: '',
+      defaultAgentId: null
     })
     expect(db.getSettings()).toEqual({
       model: 'opus',
@@ -219,7 +220,8 @@ describe('VoiceChatDb — настройки', () => {
       handsFree: true,
       execTarget: 'agent-1',
       llmProvider: 'claude',
-      codexModel: ''
+      codexModel: '',
+      defaultAgentId: null
     })
   })
 

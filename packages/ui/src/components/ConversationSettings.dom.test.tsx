@@ -50,4 +50,23 @@ describe('ConversationSettings', () => {
     expect(options).not.toContain('fable')
     expect(options).toContain('sonnet')
   })
+
+  it('в списке движков нет пункта «по умолчанию» — только движки, предвыбран глобальный', () => {
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    const engine = screen.getByRole('combobox', { name: 'Движок разговора' }) as HTMLSelectElement
+    const options = Array.from(engine.querySelectorAll('option')).map((o) => o.value)
+    expect(options).toEqual(['claude', 'codex'])
+    expect(engine.value).toBe('claude')
+    // Поле модели видно всегда и зависит от движка.
+    expect(screen.getByRole('combobox', { name: 'Модель разговора' })).toBeInTheDocument()
+  })
+
+  it('предвыбирает машину по умолчанию в новом разговоре и помечает её в списке', () => {
+    const conv = { ...conversation, execTarget: null, messageCount: 0 }
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(<ConversationSettings conversation={conv} agents={[agent]} role="admin" settings={settings} defaultAgentId="m1" onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    expect(screen.getByText(/Рабочая машина — по умолчанию/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    return waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ execTarget: 'm1' })))
+  })
 })
