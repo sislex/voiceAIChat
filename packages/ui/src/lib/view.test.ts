@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ClaudeLogEntry } from '@shared/types'
-import { activityLocation, activityStatus, chipClass, pluralActions } from './view'
+import { activityLocation, activityStatus, chipClass, messageTime, pluralActions } from './view'
 
 const log = (kind: ClaudeLogEntry['kind'], summary: string): ClaudeLogEntry => ({
   kind,
@@ -76,5 +76,16 @@ describe('chipClass — цвет подписи по движку', () => {
     expect(chipClass('u1', true)).toBe('chip sp1')
     expect(chipClass('u2', true)).toBe('chip sp2')
     expect(chipClass('u1', false)).toBe('chip sp1')
+  })
+})
+
+describe('messageTime — время сообщения в поясе зрителя', () => {
+  it('форматирует createdAt локальными часами, игнорируя запечённую строку', () => {
+    const ts = new Date(2026, 6, 26, 9, 5).getTime() // локальные 09:05
+    expect(messageTime({ time: '23:59', createdAt: ts })).toBe('09:05')
+  })
+
+  it('без createdAt откатывается к запечённой строке time', () => {
+    expect(messageTime({ time: '10:00', createdAt: 0 })).toBe('10:00')
   })
 })
