@@ -12,6 +12,7 @@ import {
   type LlmProvider,
   type Message,
   type MessageRole,
+  type PermissionMode,
   type Settings,
   type TurnMeta,
   type UsageBucket,
@@ -47,6 +48,7 @@ interface ConversationRow {
   skill_names: string | null
   llm_provider: string | null
   llm_model: string | null
+  permission_mode: string | null
   last_exec_target?: string | null
 }
 
@@ -178,6 +180,9 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'llm_model')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN llm_model TEXT`)
     }
+    if (!convCols.some((c) => c.name === 'permission_mode')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN permission_mode TEXT`)
+    }
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN engine TEXT`)
@@ -226,7 +231,7 @@ export class VoiceChatDb {
          VALUES (?, ?, ?, ?, NULL, ?, NULL)`
       )
       .run(id, title, ts, ts, userId)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, lastExecTarget: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, lastExecTarget: null }
   }
 
   listConversations(userId: string): Conversation[] {
@@ -303,7 +308,8 @@ export class VoiceChatDb {
     workdir?: string | null,
     skillNames?: string[],
     llmProvider?: LlmProvider | null,
-    llmModel?: string | null
+    llmModel?: string | null,
+    permissionMode?: PermissionMode | null
   ): Conversation | null {
     const fields = ['exec_target = ?']
     const values: unknown[] = [execTarget]
@@ -322,6 +328,10 @@ export class VoiceChatDb {
     if (llmModel !== undefined) {
       fields.push('llm_model = ?')
       values.push(llmModel)
+    }
+    if (permissionMode !== undefined) {
+      fields.push('permission_mode = ?')
+      values.push(permissionMode)
     }
     this.db
       .prepare(`UPDATE conversations SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`)
@@ -663,6 +673,11 @@ export class VoiceChatDb {
       })(),
       llmProvider: row.llm_provider === 'claude' || row.llm_provider === 'codex' ? row.llm_provider : null,
       llmModel: row.llm_model,
+      // Мусор в колонке (например, откат версии) читаем как «из общих настроек».
+      permissionMode:
+        row.permission_mode === 'plan' || row.permission_mode === 'acceptEdits' || row.permission_mode === 'bypassPermissions'
+          ? row.permission_mode
+          : null,
       lastExecTarget: row.last_exec_target ?? null
     }
   }

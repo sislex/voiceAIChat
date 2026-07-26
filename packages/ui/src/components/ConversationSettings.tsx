@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { clampModelForRole, CODEX_MODELS, modelsForRole, normalizeClaudeModel } from '@shared/types'
-import type { Conversation, LlmProvider, Settings, UserRole } from '@shared/types'
+import { clampModelForRole, CODEX_MODELS, modelsForRole, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
+import type { Conversation, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { MachineOps } from './machine'
 import { PopupFrame } from './PopupFrame'
@@ -12,7 +12,7 @@ export interface ConversationSettingsProps {
   /** Роль пользователя — прячет модели Claude, недоступные роли user. */
   role: UserRole
   /** Общие настройки — дефолты движка/модели, когда разговор их не переопределяет. */
-  settings: Pick<Settings, 'llmProvider' | 'model' | 'codexModel'>
+  settings: Pick<Settings, 'llmProvider' | 'model' | 'codexModel' | 'permissionMode'>
   /** Машина по умолчанию — предвыбирается в новых разговорах и помечается в списке. */
   defaultAgentId?: string | null
   onSave: (value: {
@@ -22,6 +22,7 @@ export interface ConversationSettingsProps {
     skillNames: string[]
     llmProvider: LlmProvider | null
     llmModel: string | null
+    permissionMode: PermissionMode | null
   }) => Promise<void>
   onAddSkill: (agentId: string, skill: AgentSkill) => Promise<void>
   onClose: () => void
@@ -34,6 +35,10 @@ function parentOf(path: string): string {
 
 function joinPath(dir: string, name: string): string {
   return `${dir.replace(/\/$/, '')}/${name}`
+}
+
+function modeLabel(id: PermissionMode): string {
+  return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
 export function ConversationSettings({ conversation, agents, machineOps, role, settings, defaultAgentId, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
@@ -53,6 +58,8 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         ? settings.codexModel
         : clampModelForRole(normalizeClaudeModel(settings.model), role)
   )
+  // '' — «как в общих настройках» (в БД хранится null).
+  const [permissionMode, setPermissionMode] = useState<PermissionMode | ''>(conversation.permissionMode ?? '')
   const [cwd, setCwd] = useState('')
   const [entries, setEntries] = useState<FsEntry[]>([])
   const [loadingDir, setLoadingDir] = useState(false)
@@ -118,7 +125,8 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         workdir: execTarget ? workdir : null,
         skillNames: execTarget ? skillNames : [],
         llmProvider: inheritsGlobal ? null : llmProvider,
-        llmModel: inheritsGlobal ? null : llmModel
+        llmModel: inheritsGlobal ? null : llmModel,
+        permissionMode: permissionMode || null
       })
       onClose()
     } catch (err) {
@@ -127,6 +135,10 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
       setSaving(false)
     }
   }
+
+  // Фактический режим хода: сервер форсит «план», когда роль user работает без своей машины (turns.ts).
+  const forcedPlan = role === 'user' && !execTarget
+  const effectiveMode: PermissionMode = forcedPlan ? 'plan' : permissionMode || settings.permissionMode
 
   return (
     <PopupFrame title="Настройки разговора" onClose={onClose} testId="conversation-settings-overlay" panelClassName="convsettings">
@@ -172,6 +184,20 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
               {CODEX_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
           </label>}
+        </section>
+
+        <section className="convsettings-card">
+          <div className="convsettings-sectionhead"><div><h2>Режим работы</h2><p>Что агенту разрешено в этом разговоре; по умолчанию — из общих настроек.</p></div></div>
+          <label className="convsettings-field"><span>Режим</span>
+            <select aria-label="Режим разговора" value={permissionMode} onChange={(e) => setPermissionMode(e.target.value as PermissionMode | '')}>
+              <option value="">Как в общих настройках — {modeLabel(settings.permissionMode)}</option>
+              {PERMISSION_MODES.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </label>
+          <p className="convsettings-muted" data-testid="conv-mode-current">
+            Сейчас действует: <b>{modeLabel(effectiveMode)}</b>
+            {forcedPlan && ' — без своей машины команды не выполняются, доступно только планирование'}
+          </p>
         </section>
 
         {selectedAgent && <>

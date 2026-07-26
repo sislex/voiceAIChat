@@ -33,7 +33,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
   function makeConversation(title: string): Conversation {
     const ts = tick()
-    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, lastExecTarget: null }
+    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, lastExecTarget: null }
   }
 
   for (const title of seedConversations) conversations.push(makeConversation(title))
@@ -85,7 +85,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         conv.updatedAt = tick()
       }
     },
-    'conversations:setExecTarget': async ({ id, execTarget, workdir, skillNames, llmProvider, llmModel }) => {
+    'conversations:setExecTarget': async ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode }) => {
       const conv = conversations.find((c) => c.id === id)
       if (!conv) throw new Error('not found')
       conv.execTarget = execTarget
@@ -93,6 +93,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (skillNames !== undefined) conv.skillNames = skillNames
       if (llmProvider !== undefined) conv.llmProvider = llmProvider
       if (llmModel !== undefined) conv.llmModel = llmModel
+      if (permissionMode !== undefined) conv.permissionMode = permissionMode
       return { ...conv }
     },
     'conversations:delete': async ({ id }) => {

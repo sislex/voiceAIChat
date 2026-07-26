@@ -43,7 +43,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:rename': async ({ id, title }) => {
       await req(REST.conversation(id), { method: 'PATCH', body: JSON.stringify({ title }) })
     },
-    'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmProvider, llmModel }) =>
+    'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode }) =>
       req(REST.conversation(id), {
         method: 'PATCH',
         body: JSON.stringify({
@@ -51,7 +51,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
           ...(workdir !== undefined ? { workdir } : {}),
           ...(skillNames !== undefined ? { skillNames } : {}),
           ...(llmProvider !== undefined ? { llmProvider } : {}),
-          ...(llmModel !== undefined ? { llmModel } : {})
+          ...(llmModel !== undefined ? { llmModel } : {}),
+          ...(permissionMode !== undefined ? { permissionMode } : {})
         })
       }),
     'conversations:delete': async ({ id }) => {

@@ -190,7 +190,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
     // смене движка чужой resume-id игнорируем (свежий ход).
     const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)
-    let permissionMode = settings.permissionMode
+    // Режим прав: переопределение разговора приоритетнее общих настроек.
+    let permissionMode = conv?.permissionMode ?? settings.permissionMode
     // Рабочий каталог разговора (`conv.workdir`) выбирается через проводник
     // МАШИНЫ — это путь на её хосте, и в контейнере сервера его нет. Он уходит
     // только в MCP-мост (`&cwd=`), где `remote.bash` делает `cd` на агенте.

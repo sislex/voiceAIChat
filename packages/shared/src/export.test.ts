@@ -14,6 +14,7 @@ const conv: Conversation = {
   skillNames: [],
   llmProvider: null,
   llmModel: null,
+  permissionMode: null,
   lastExecTarget: null
 }
 const messages: Message[] = [

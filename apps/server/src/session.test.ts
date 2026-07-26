@@ -170,7 +170,7 @@ describe('WS: роль user не выполняет на сервере (фор�
     }
   }
 
-  async function permForRole(role: 'admin' | 'user'): Promise<string> {
+  async function permForRole(role: 'admin' | 'user', convMode?: 'plan' | 'acceptEdits' | 'bypassPermissions'): Promise<string> {
     const rdb = new VoiceChatDb(':memory:')
     const rapp = await buildServer({
       config: loadConfig({ PORT: '0' }),
@@ -182,6 +182,7 @@ describe('WS: роль user не выполняет на сервере (фор�
     const rport = (rapp.server.address() as AddressInfo).port
     if (role === 'user') rdb.createUser('user', '', 'user') // admin засеян buildServer'ом
     const conv = rdb.createConversation(role, 'Чат')
+    if (convMode) rdb.setConversationExecTarget(role, conv.id, null, undefined, undefined, undefined, undefined, convMode)
     const ws = await connect(rport, signToken({ name: role, role }, SECRET))
     const done = new Promise<string>((resolve) => {
       ws.on('message', (d) => {
@@ -204,6 +205,14 @@ describe('WS: роль user не выполняет на сервере (фор�
   it('admin на сервере → permissionMode из настроек (не клампится)', async () => {
     // Дефолтный permissionMode — bypassPermissions.
     expect(await permForRole('admin')).toBe('perm:bypassPermissions')
+  })
+
+  it('permissionMode разговора переопределяет общие настройки', async () => {
+    expect(await permForRole('admin', 'plan')).toBe('perm:plan')
+  })
+
+  it('переопределение разговора не даёт роли user обойти форс plan на сервере', async () => {
+    expect(await permForRole('user', 'bypassPermissions')).toBe('perm:plan')
   })
 })
 

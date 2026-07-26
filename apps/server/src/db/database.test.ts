@@ -80,6 +80,22 @@ describe('VoiceChatDb — разговоры', () => {
     expect(db.getConversation(U, conversation.id)?.llmProvider).toBeNull()
   })
 
+  it('сохраняет режим прав разговора; мусор в колонке читается как null', () => {
+    const conversation = db.createConversation(U, 'Проект')
+    expect(conversation.permissionMode).toBeNull()
+
+    db.setConversationExecTarget(U, conversation.id, null, undefined, undefined, undefined, undefined, 'plan')
+    expect(db.getConversation(U, conversation.id)?.permissionMode).toBe('plan')
+
+    // null — вернуться к «из общих настроек».
+    db.setConversationExecTarget(U, conversation.id, null, undefined, undefined, undefined, undefined, null)
+    expect(db.getConversation(U, conversation.id)?.permissionMode).toBeNull()
+
+    // Прямо в БД оказался мусор (например, откат версии) — маппинг терпит.
+    db.setConversationExecTarget(U, conversation.id, null, undefined, undefined, undefined, undefined, 'yolo' as never)
+    expect(db.getConversation(U, conversation.id)?.permissionMode).toBeNull()
+  })
+
   it('список показывает цель последнего сообщения отдельно от текущей цели чата', () => {
     const c = db.createConversation(U, 'История')
     db.setConversationExecTarget(U, c.id, 'machine-next')

@@ -138,6 +138,7 @@ export class VoiceChatDb {
       skillNames: [],
       llmProvider: null,
       llmModel: null,
+      permissionMode: null,
       lastExecTarget: null
     }
   }
@@ -321,6 +322,7 @@ export class VoiceChatDb {
       skillNames: [],
       llmProvider: null,
       llmModel: null,
+      permissionMode: null,
       lastExecTarget: row.last_exec_target ?? null
     }
   }

@@ -7,8 +7,8 @@ const agent: AgentInfo = {
   id: 'm1', name: 'Рабочая машина', online: true, createdAt: 1, lastSeen: 1, version: '1', telemetry: undefined,
   policy: { allowedDirs: [], allowNetwork: true, allowWrite: true, denyPatterns: [], allowPatterns: [], skills: [{ name: 'build', command: 'npm run build' }] }
 }
-const conversation = { id: 'c1', title: 'Старое имя', createdAt: 1, updatedAt: 1, messageCount: 0, claudeSessionId: null, execTarget: 'm1', workdir: null, skillNames: [], llmProvider: null, llmModel: null, lastExecTarget: null }
-const settings = { llmProvider: 'claude', model: 'opus', codexModel: '' } as const
+const conversation = { id: 'c1', title: 'Старое имя', createdAt: 1, updatedAt: 1, messageCount: 0, claudeSessionId: null, execTarget: 'm1', workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, lastExecTarget: null }
+const settings = { llmProvider: 'claude', model: 'opus', codexModel: '', permissionMode: 'bypassPermissions' } as const
 
 describe('ConversationSettings', () => {
   it('сохраняет название, машину, директорию и выбранные навыки', async () => {
@@ -21,7 +21,7 @@ describe('ConversationSettings', () => {
     await screen.findByText('/home/u/project')
     fireEvent.click(screen.getByRole('button', { name: 'Выбрать эту папку' }))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Новый чат', execTarget: 'm1', workdir: '/home/u/project', skillNames: ['build'], llmProvider: null, llmModel: null }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Новый чат', execTarget: 'm1', workdir: '/home/u/project', skillNames: ['build'], llmProvider: null, llmModel: null, permissionMode: null }))
   })
 
   it('добавляет новый навык выбранной машине', async () => {
@@ -39,7 +39,7 @@ describe('ConversationSettings', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Движок разговора' }), { target: { value: 'codex' } })
     fireEvent.change(screen.getByRole('combobox', { name: 'Модель разговора' }), { target: { value: 'gpt-5-codex' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Старое имя', execTarget: 'm1', workdir: null, skillNames: [], llmProvider: 'codex', llmModel: 'gpt-5-codex' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Старое имя', execTarget: 'm1', workdir: null, skillNames: [], llmProvider: 'codex', llmModel: 'gpt-5-codex', permissionMode: null }))
   })
 
   it('роль user не видит модели opus/fable в выборе модели разговора', () => {
@@ -59,6 +59,24 @@ describe('ConversationSettings', () => {
     expect(engine.value).toBe('claude')
     // Поле модели видно всегда и зависит от движка.
     expect(screen.getByRole('combobox', { name: 'Модель разговора' })).toBeInTheDocument()
+  })
+
+  it('сохраняет режим прав разговора и показывает действующий режим', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    // До выбора наследуем общие настройки.
+    expect(screen.getByTestId('conv-mode-current')).toHaveTextContent('Сейчас действует: Полный доступ')
+    fireEvent.change(screen.getByRole('combobox', { name: 'Режим разговора' }), { target: { value: 'plan' } })
+    expect(screen.getByTestId('conv-mode-current')).toHaveTextContent('Сейчас действует: Только планирование')
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: 'plan' })))
+  })
+
+  it('роль user без машины видит, что действует только планирование', () => {
+    const conv = { ...conversation, execTarget: null }
+    render(<ConversationSettings conversation={conv} agents={[agent]} role="user" settings={settings} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    expect(screen.getByTestId('conv-mode-current')).toHaveTextContent('Только планирование')
+    expect(screen.getByTestId('conv-mode-current')).toHaveTextContent('без своей машины')
   })
 
   it('предвыбирает машину по умолчанию в новом разговоре и помечает её в списке', () => {
