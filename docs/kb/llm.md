@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-07-26
-checked: 967d619
+checked: c9170a7
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -44,7 +44,9 @@ areas:
 `<dataDir>/cli-users/<base64url(логин)>/` с `.claude` и `.codex` внутри. Из общего
 HOME контейнера копируются только файлы авторизации и конфигурации — история,
 `projects/` и `sessions/` не копируются, чтобы пользователи не видели чужие
-сессии. `buildServer` передаёт движкам `profileHome(userId)`, поэтому наблюдатели
+сессии. При каждом обращении повреждённый или окончательно просроченный OAuth
+Claude восстанавливается из действующего общего профиля, но рабочие
+пользовательские токены никогда не перезаписываются. `buildServer` передаёт движкам `profileHome(userId)`, поэтому наблюдатели
 `/api/cc/*` и `/api/cx/*` читают транскрипты из профиля пользователя, а не из
 `~/.claude`.
 

@@ -2,7 +2,7 @@
 // пользователя живут отдельно; из общего контейнерного HOME копируются только
 // файлы авторизации/конфигурации, без sessions/projects/history.
 
-import { chmodSync, copyFileSync, existsSync, mkdirSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -41,8 +41,45 @@ function seedFile(source: string, target: string): void {
   }
 }
 
+function hasUsableClaudeOauth(path: string, now = Date.now()): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as {
+      claudeAiOauth?: {
+        accessToken?: unknown
+        refreshToken?: unknown
+        expiresAt?: unknown
+        refreshTokenExpiresAt?: unknown
+      }
+    }
+    const oauth = parsed.claudeAiOauth
+    if (typeof oauth?.accessToken !== 'string' || !oauth.accessToken) return false
+
+    if (typeof oauth.refreshToken === 'string' && oauth.refreshToken) {
+      return typeof oauth.refreshTokenExpiresAt !== 'number' || oauth.refreshTokenExpiresAt > now
+    }
+    return typeof oauth.expiresAt !== 'number' || oauth.expiresAt > now
+  } catch {
+    return false
+  }
+}
+
+/** Восстанавливает только нерабочий OAuth-профиль, не затирая его свежие токены. */
+function repairClaudeCredentials(source: string, target: string): void {
+  if (hasUsableClaudeOauth(target) || !hasUsableClaudeOauth(source)) return
+  try {
+    copyFileSync(source, target)
+    chmodSync(target, 0o600)
+  } catch {
+    // UI покажет, что профиль по-прежнему требует login.
+  }
+}
+
 /** Создаёт приватный профиль и при первом обращении копирует только auth/config. */
-export function ensureCliProfile(dataDir: string, userId: string): CliProfileDirs {
+export function ensureCliProfile(
+  dataDir: string,
+  userId: string,
+  sharedHome = homedir()
+): CliProfileDirs {
   const dirs = cliProfileDirs(dataDir, userId)
   for (const dir of [dirs.home, dirs.claude, dirs.codex, dirs.ccProjects, dirs.codexSessions]) {
     mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -53,8 +90,10 @@ export function ensureCliProfile(dataDir: string, userId: string): CliProfileDir
     }
   }
 
-  const sharedHome = homedir()
-  seedFile(join(sharedHome, '.claude', '.credentials.json'), join(dirs.claude, '.credentials.json'))
+  const sharedClaudeCredentials = join(sharedHome, '.claude', '.credentials.json')
+  const profileClaudeCredentials = join(dirs.claude, '.credentials.json')
+  seedFile(sharedClaudeCredentials, profileClaudeCredentials)
+  repairClaudeCredentials(sharedClaudeCredentials, profileClaudeCredentials)
   seedFile(join(sharedHome, '.claude', 'settings.json'), join(dirs.claude, 'settings.json'))
   seedFile(join(sharedHome, '.codex', 'auth.json'), join(dirs.codex, 'auth.json'))
   seedFile(join(sharedHome, '.codex', 'config.toml'), join(dirs.codex, 'config.toml'))
