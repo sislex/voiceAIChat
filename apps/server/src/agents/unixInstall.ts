@@ -169,9 +169,26 @@ fi
 # --- Остановка старого ---------------------------------------------------
 echo "[4/6] Останавливаю старый агент…"
 ${stopOld}
+# Одного pkill мало: старый агент мог унаследовать SIG_IGN на SIGTERM от обёртки,
+# которой его запускали, — тогда он выживает, и мы поднимаем ВТОРОЙ агент с тем же
+# токеном (соединения начинают вытеснять друг друга). Поэтому проверяем и добиваем.
 # Шаблон со скобками, иначе pkill найдёт сам себя в своей же командной строке.
-pkill -f "voicechat-agent[.]cjs" 2>/dev/null || true
-sleep 1
+agents_alive() { pgrep -f "voicechat-agent[.]cjs" 2>/dev/null | wc -l | tr -d ' '; }
+for i in 1 2 3; do
+  [ "$(agents_alive)" = "0" ] && break
+  pkill -f "voicechat-agent[.]cjs" 2>/dev/null || true
+  sleep 1
+done
+if [ "$(agents_alive)" != "0" ]; then
+  echo "  не отреагировал на SIGTERM — добиваю"
+  pkill -9 -f "voicechat-agent[.]cjs" 2>/dev/null || true
+  sleep 1
+fi
+if [ "$(agents_alive)" != "0" ]; then
+  echo "Старый агент не останавливается — прерываюсь, чтобы не поднять второй."
+  echo "Погасите его вручную (pkill -9 -f voicechat-agent.cjs) и повторите."
+  exit 1
+fi
 
 # --- Подмена и запуск ----------------------------------------------------
 echo "[5/6] Ставлю новый скрипт…"

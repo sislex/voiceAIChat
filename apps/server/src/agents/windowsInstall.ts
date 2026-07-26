@@ -96,6 +96,10 @@ if (-not $Connection) { throw 'Не нашёл строку подключени
 
 $Old | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Seconds 1
+# Убеждаемся, что не осталось живых: иначе поднимем второй агент с тем же токеном.
+$Still = @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
+  Where-Object { $_.CommandLine -and $_.CommandLine -like '*voicechat-agent.cjs*' })
+if ($Still.Count -gt 0) { throw 'старый агент не останавливается — погасите его вручную и повторите' }
 
 $Cjs = Join-Path $AgentDir 'voicechat-agent.cjs'
 if (Test-Path $Cjs) { Move-Item $Cjs (Join-Path $AgentDir 'voicechat-agent.cjs.prev') -Force }
