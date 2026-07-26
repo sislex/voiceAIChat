@@ -139,3 +139,57 @@ describe('turns: движок и модель разговора приорит�
     db.close()
   })
 })
+
+describe('turns: остановка сервера (flushInterrupted)', () => {
+  /** Мок «зависшего» хода: стримит активность и начало ответа, done не зовёт. */
+  function hanging(): { client: LlmClient; cancelled: () => boolean } {
+    let cancelled = false
+    return {
+      client: {
+        send(_req, h) {
+          h.onActivity?.({ kind: 'tool_use', summary: 'Bash: ls', raw: '{}' })
+          h.onDelta('Начало отве')
+          return {
+            cancel: () => {
+              cancelled = true
+            }
+          }
+        }
+      },
+      cancelled: () => cancelled
+    }
+  }
+
+  it('частичный текст сохраняется в БД с пометкой interrupted и активностью', () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    const { client, cancelled } = hanging()
+    const turns = createTurnManager({ db, claude: client })
+    turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'привет' }] })
+
+    // Снапшот активного хода отдаёт активность — счётчик действий переживает reconnect.
+    expect(turns.active(U)[0]?.activity).toHaveLength(1)
+
+    turns.flushInterrupted()
+    expect(cancelled()).toBe(true)
+    expect(turns.active(U)).toHaveLength(0)
+    const ai = db.listMessages(U, conv.id).find((m) => m.role === 'ai')
+    expect(ai?.text).toBe('Начало отве')
+    expect(ai?.meta?.interrupted).toBe(true)
+    expect(ai?.meta?.activity).toHaveLength(1)
+    db.close()
+  })
+
+  it('ход без набранного текста не оставляет сообщения', () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    const client: LlmClient = { send: () => ({ cancel: () => {} }) }
+    const turns = createTurnManager({ db, claude: client })
+    turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'привет' }] })
+    turns.flushInterrupted()
+    expect(db.listMessages(U, conv.id).some((m) => m.role === 'ai')).toBe(false)
+    db.close()
+  })
+})

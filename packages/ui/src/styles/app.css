@@ -2038,6 +2038,20 @@
   display: inline-block;
   margin-top: 8px;
 }
+/* Нижний дубль строки статуса в стрим-пузыре. */
+.msgact--bottom {
+  margin-top: 8px;
+}
+.msgact--bottom .actbtn--stream {
+  margin-top: 0;
+}
+/* Пометка прерванного ответа (сервер перезапустился в середине хода). */
+.msg-interrupted {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #b45309;
+}
 
 /* ---- Тёмная тема: точечные оверрайды поверхностей, не покрытых токенами ---- */
 [data-theme='dark'] .convo:hover,

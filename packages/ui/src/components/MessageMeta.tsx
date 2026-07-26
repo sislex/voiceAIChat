@@ -99,6 +99,7 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
       {hover && !open && (
         <span className="metatip" role="tooltip" data-testid="meta-tip">
           <Row label="Модель" value={meta.model ?? req?.model} />
+          <Row label="Статус" value={meta.interrupted ? 'прерван перезапуском сервера' : undefined} />
           <Row label="Токены (вход → выход)" value={inOut} />
           <Row label="Токены из кэша" value={meta.cacheReadTokens ? kilo(meta.cacheReadTokens) : undefined} />
           <Row label="Размер запроса" value={req ? `${req.promptChars.toLocaleString('ru')} симв.` : undefined} />
@@ -124,6 +125,7 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
                 <h3 className="metasech">Метрики хода</h3>
                 <Row label="Движок" value={req?.provider} />
                 <Row label="Модель" value={meta.model ?? req?.model} />
+                <Row label="Статус" value={meta.interrupted ? 'прерван перезапуском сервера' : undefined} />
                 <Row label="Токены входа" value={typeof meta.inputTokens === 'number' ? meta.inputTokens.toLocaleString('ru') : undefined} />
                 <Row label="Токены выхода" value={typeof meta.outputTokens === 'number' ? meta.outputTokens.toLocaleString('ru') : undefined} />
                 <Row label="Токены из кэша (чтение)" value={typeof meta.cacheReadTokens === 'number' ? meta.cacheReadTokens.toLocaleString('ru') : undefined} />

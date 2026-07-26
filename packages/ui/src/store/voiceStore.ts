@@ -111,6 +111,8 @@ export interface AppState {
   streamingReply: string
   /** Незавершённые ходы модели по разговорам: id → накопленный частичный текст. */
   activeTurns: Record<string, string>
+  /** Активность незавершённых ходов по разговорам — восстановление счётчика действий. */
+  activeActivity: Record<string, ClaudeLogEntry[]>
   /** Метаданные последнего завершённого хода (длительность/токены/стоимость). */
   lastTurnMeta: TurnMeta | null
   /** Подключённые MCP-серверы (read-only показ в настройках). */
@@ -463,6 +465,7 @@ function initialState(): AppState {
     liveActivity: [],
     streamingReply: '',
     activeTurns: {},
+    activeActivity: {},
     lastTurnMeta: null,
     mcpServers: [],
     loginStatus: null,
@@ -708,7 +711,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!id) return
     const partial = state.activeTurns[id]
     if (partial === undefined || state.voice !== 'idle') return
-    setState({ streamingReply: partial, voice: 'thinking', lastTurnMeta: null })
+    setState({
+      streamingReply: partial,
+      voice: 'thinking',
+      lastTurnMeta: null,
+      // Счётчик действий продолжается с накопленного, а не с нуля.
+      liveActivity: state.activeActivity[id] ?? []
+    })
   }
 
   // --- TTS: сессия и очередь синтеза по предложениям (стриминг) --------------
@@ -1103,6 +1112,15 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     const next = [...state.consoleLog, entry]
     const patch: Partial<AppState> = {
       consoleLog: next.length > CONSOLE_LOG_CAP ? next.slice(-CONSOLE_LOG_CAP) : next
+    }
+    // Копим активность per-разговор (как activeTurns копит текст) — для
+    // восстановления живого статуса после смены разговора или reconnect.
+    if (conversationId !== undefined) {
+      const acc = [...(state.activeActivity[conversationId] ?? []), entry]
+      patch.activeActivity = {
+        ...state.activeActivity,
+        [conversationId]: acc.length > CONSOLE_LOG_CAP ? acc.slice(-CONSOLE_LOG_CAP) : acc
+      }
     }
     // Активность текущего хода активного разговора — для живого статуса/секций.
     // (conversationId не задан у клиентских таймингов stt/tts — считаем их своими.)
@@ -1806,7 +1824,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     const convId = conversationId ?? state.activeId
     if (convId) {
       const { [convId]: _done, ...rest } = state.activeTurns
-      setState({ activeTurns: rest })
+      const { [convId]: _act, ...restActivity } = state.activeActivity
+      setState({ activeTurns: rest, activeActivity: restActivity })
     }
     if (convId !== state.activeId) {
       // Фоновый разговор: ответ уже сохранён сервером — обновляем только сайдбар.
@@ -1864,7 +1883,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     const convId = conversationId ?? state.activeId
     if (convId) {
       const { [convId]: _failed, ...rest } = state.activeTurns
-      setState({ activeTurns: rest })
+      const { [convId]: _act, ...restActivity } = state.activeActivity
+      setState({ activeTurns: rest, activeActivity: restActivity })
     }
     if (convId !== state.activeId) return // ошибка фонового хода — текущий UI не трогаем
     console.warn('[claude] ошибка:', message)
@@ -1875,7 +1895,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   /** Снапшот активных ходов при (пере)подключении WS — восстановление стрима. */
   function applyClaudeActive(turns: ActiveTurn[]): void {
-    setState({ activeTurns: Object.fromEntries(turns.map((t) => [t.conversationId, t.partial])) })
+    setState({
+      activeTurns: Object.fromEntries(turns.map((t) => [t.conversationId, t.partial])),
+      activeActivity: Object.fromEntries(
+        turns
+          .filter((t) => t.activity && t.activity.length > 0)
+          .map((t) => [t.conversationId, t.activity ?? []])
+      )
+    })
     restoreStreamIfActive()
   }
 

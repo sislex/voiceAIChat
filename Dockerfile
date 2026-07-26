@@ -85,5 +85,7 @@ EXPOSE 8787
 
 # Entrypoint стартует под root (chown тома), затем сбрасывает привилегии до node.
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-# Старт сервера (tsx src/index.ts в воркспейсе @voicechat/server).
-CMD ["npm", "run", "-w", "@voicechat/server", "start"]
+# Старт сервера без npm-обёртки: npm не пробрасывает SIGTERM до node, и при
+# остановке контейнера сервер умирал по SIGKILL, не успев сохранить частичные
+# ответы активных ходов (flushInterrupted). exec делает node процессом-лидером.
+CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/index.ts"]
