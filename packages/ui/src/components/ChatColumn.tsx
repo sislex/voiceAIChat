@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { ClaudeLogEntry, Message, TurnMeta, VoiceState } from '@shared/types'
+import type { ClaudeLogEntry, Message, PermissionMode, TurnMeta, VoiceState } from '@shared/types'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
 import { parseImages } from '@shared/images'
@@ -30,6 +30,13 @@ import { useAutoGrow } from '../lib/autoGrow'
 const EDIT_MIN_ROWS = 2
 const EDIT_MAX_ROWS = 4
 
+function modeLabel(mode?: string): string {
+  if (mode === 'plan') return 'Планирование'
+  if (mode === 'acceptEdits') return 'Разработка'
+  if (mode === 'bypassPermissions') return 'Полный доступ'
+  return 'Режим не записан'
+}
+
 export interface ChatColumnProps {
   title: string
   /** Переименовать текущий разговор (клик по заголовку в шапке). */
@@ -38,6 +45,12 @@ export interface ChatColumnProps {
   onToggleSidebar?: () => void
   /** Открыть отдельную страницу настроек текущего разговора. */
   onOpenConversationSettings?: () => void
+  /** Фактический режим активного разговора для бейджа в шапке. */
+  permissionMode?: PermissionMode
+  /** Выполнить исходный запрос планового ответа в режиме разработки. */
+  onExecutePlan?: (answerId: string) => void
+  /** Разрешено ли эскалировать план (user без машины — нет). */
+  canExecutePlan?: boolean
   state: VoiceState
   messages: Message[]
   /** Идёт загрузка сообщений разговора — показываем лоадер вместо ленты. */
@@ -103,6 +116,9 @@ export function ChatColumn({
   onRenameTitle,
   onToggleSidebar,
   onOpenConversationSettings,
+  permissionMode = 'plan',
+  onExecutePlan,
+  canExecutePlan = true,
   state,
   messages,
   loadingMessages = false,
@@ -250,6 +266,15 @@ export function ChatColumn({
         <span className="mtitle-machine" data-testid="head-machine" title="Машина этого разговора">
           {execTarget === 'none' ? 'Без машины' : execTarget ? (agents.find((a) => a.id === execTarget)?.name ?? execTarget) : 'Сервер'}
         </span>
+        <button
+          className={`mode-badge mode-badge--${permissionMode}`}
+          data-testid="mode-badge"
+          onClick={onOpenConversationSettings}
+          disabled={!onOpenConversationSettings}
+          title="Открыть настройки режима разговора"
+        >
+          {modeLabel(permissionMode)}
+        </button>
         {onOpenConversationSettings && (
           <button className="convsettings-open" aria-label="Настройки разговора" title="Настройки разговора" onClick={onOpenConversationSettings}>⚙</button>
         )}
@@ -439,6 +464,11 @@ export function ChatColumn({
                     <span className="msg-machine" title="Снимок машины в момент выполнения">
                       {isAi ? 'Ответ' : 'Вопрос'}: {m.execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === m.execTarget)?.name ?? 'Сервер'}
                     </span>
+                    {isAi && (
+                      <span className="msg-mode" data-testid={`message-mode-${m.id}`} title="Режим этого ответа">
+                        {modeLabel(m.meta?.request?.permissionMode)}
+                      </span>
+                    )}
                     <p className="mtime">{messageTime(m)}</p>
                     {isAi && m.meta && <MessageMeta meta={m.meta} />}
                     {isAi && m.meta?.activity && m.meta.activity.length > 0 && (
@@ -460,6 +490,11 @@ export function ChatColumn({
                         onClick={() => copyMessage(m)}
                       >
                         {copiedId === m.id ? '✓' : '📋'}
+                      </button>
+                    )}
+                    {isAi && isLast && m.meta?.request?.permissionMode === 'plan' && onExecutePlan && canExecutePlan && state === 'idle' && (
+                      <button className="execute-plan" onClick={() => onExecutePlan(m.id)}>
+                        Выполнить план
                       </button>
                     )}
                     {isAi && canSpeak && onSpeakMessage && (

@@ -270,6 +270,8 @@ export interface StoreActions {
   submitText(): Promise<void>
   /** Отправить собранные ответы на вопросы модели (форма в чате) как реплику. */
   answerQuestions(text: string): Promise<void>
+  /** Повторить исходный запрос планового ответа уже в режиме авто-правок. */
+  executePlan(answerId: string): Promise<void>
   /** Отменить текущий запрос к Claude и вернуться в idle (случайно отправил). */
   cancelRequest(): void
   /** Удалить сообщение из истории (БД + лента). */
@@ -1656,6 +1658,32 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     beginReply([{ speakerId: 1, text: t }], [], execTarget)
   }
 
+  async function executePlan(answerId: string): Promise<void> {
+    if (!state.activeId || state.voice !== 'idle') return
+    const answerIndex = state.messages.findIndex((message) => message.id === answerId && message.role === 'ai')
+    if (answerIndex < 0 || state.messages[answerIndex].meta?.request?.permissionMode !== 'plan') return
+    const source = state.messages.slice(0, answerIndex).reverse().find((message) => message.role !== 'ai')
+    const conversation = state.conversations.find((item) => item.id === state.activeId)
+    if (!source || !conversation) return
+
+    // Режим разработки здесь намеренно = acceptEdits: он разрешает применить план,
+    // не выдавая полный bypass. Сервер всё равно форсит plan для user без машины.
+    await setConversationExecTarget(
+      conversation.id,
+      conversation.execTarget,
+      conversation.workdir,
+      conversation.skillNames,
+      conversation.llmProvider,
+      conversation.llmModel,
+      'acceptEdits'
+    )
+    const execTarget = activeConversationExecTarget()
+    await persistMessage('u1', source.text, undefined, undefined, execTarget)
+    await refreshConversations()
+    if (!dispatchVoice('submit_text')) return
+    beginReply([{ speakerId: 1, text: source.text }], [], execTarget)
+  }
+
   function cancelRequest(): void {
     // Пользователь случайно отправил — отменяем запрос и возвращаемся в idle.
     if (state.voice !== 'thinking' && state.voice !== 'speaking') return
@@ -2027,6 +2055,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setDraft,
       submitText,
       answerQuestions,
+      executePlan,
       cancelRequest,
       deleteMessage,
       editMessage,

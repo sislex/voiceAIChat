@@ -443,3 +443,40 @@ describe('ChatColumn — время сообщения в поясе зрите�
     expect(screen.queryByText('23:59')).toBeNull()
   })
 })
+
+
+describe('ChatColumn — режим работы', () => {
+  const planMessages: Message[] = [
+    { id: 'u-plan', conversationId: 'c', role: 'u1', text: 'Составь план', time: '10:00', createdAt: 1 },
+    {
+      id: 'a-plan', conversationId: 'c', role: 'ai', text: 'План готов', time: '10:01', createdAt: 2,
+      meta: { request: { provider: 'claude', model: 'sonnet', prompt: 'Составь план', promptChars: 11, permissionMode: 'plan', resumed: false } }
+    }
+  ]
+
+  it('показывает фактический режим в шапке и открывает настройки по клику', async () => {
+    const onOpen = vi.fn()
+    renderCol({ permissionMode: 'acceptEdits', onOpenConversationSettings: onOpen })
+    const badge = screen.getByTestId('mode-badge')
+    expect(badge).toHaveTextContent('Разработка')
+    await userEvent.click(badge)
+    expect(onOpen).toHaveBeenCalledOnce()
+  })
+
+  it('показывает режим, сохранённый у конкретного ответа', () => {
+    renderCol({ messages: planMessages })
+    expect(screen.getByTestId('message-mode-a-plan')).toHaveTextContent('Планирование')
+  })
+
+  it('после планового ответа предлагает выполнить план', async () => {
+    const onExecutePlan = vi.fn()
+    renderCol({ messages: planMessages, onExecutePlan })
+    await userEvent.click(screen.getByRole('button', { name: 'Выполнить план' }))
+    expect(onExecutePlan).toHaveBeenCalledWith('a-plan')
+  })
+
+  it('не предлагает эскалацию пользователю без машины', () => {
+    renderCol({ messages: planMessages, onExecutePlan: vi.fn(), canExecutePlan: false })
+    expect(screen.queryByRole('button', { name: 'Выполнить план' })).not.toBeInTheDocument()
+  })
+})

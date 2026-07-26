@@ -9,12 +9,12 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: 8a697dd feat(turns): частичный ответ переживает рестарт сервера, статус хода — и внизу пузыря |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-26 | ⚠ 2 коммит(ов) в areas после сверки: 7e8a605 feat: режим прав per-разговор + индикатор действующего режима в настройках чата … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-07-26 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-26 | ✓ |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: 7e8a605 feat: режим прав per-разговор + индикатор действующего режима в настройках чата |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: 8a697dd feat(turns): частичный ответ переживает рестарт сервера, статус хода — и внизу пузыря |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-26 | ✓ |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-26 | ⚠ 2 коммит(ов) в areas после сверки: 8a697dd feat(turns): частичный ответ переживает рестарт сервера, статус хода — и внизу пузыря … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-26 | ⚠ 3 коммит(ов) в areas после сверки: 7e8a605 feat: режим прав per-разговор + индикатор действующего режима в настройках чата … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: 339d12f feat(ui): машина по умолчанию для новых разговоров (defaultAgentId) |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-26 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
@@ -31,7 +31,7 @@
 
 ## Журнал сессий
 
-Всего записей: 10. Последние:
+Всего записей: 11. Последние:
 
 - [2026-07-26-localhost-popup-file-terminal-context.md](log/2026-07-26-localhost-popup-file-terminal-context.md) — popup-file-terminal-context
 - [2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md](log/2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md) — база знаний для агентов
@@ -41,8 +41,8 @@
 - [2026-07-26-2470-com-thin-desktop-gateway-lan.md](log/2026-07-26-2470-com-thin-desktop-gateway-lan.md) — thin-desktop-gateway-lan
 - [2026-07-26-2470-com-repair-claude-oauth-profile.md](log/2026-07-26-2470-com-repair-claude-oauth-profile.md) — repair-claude-oauth-profile
 - [2026-07-26-2470-com-conversation-permission-mode.md](log/2026-07-26-2470-com-conversation-permission-mode.md) — conversation-permission-mode
+- [2026-07-26-2470-com-chat-mode-actions.md](log/2026-07-26-2470-com-chat-mode-actions.md) — chat-mode-actions
 - [2026-07-25-2470-com-conversation-settings.md](log/2026-07-25-2470-com-conversation-settings.md) — conversation-settings
-- [2026-07-25-2470-com-chat-exec-target.md](log/2026-07-25-2470-com-chat-exec-target.md) — chat-exec-target
 
 ## Исторические планы
 

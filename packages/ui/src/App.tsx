@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
+import type { PermissionMode } from '@shared/types'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { VoiceBar } from './components/VoiceBar'
@@ -55,6 +56,26 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const activeConversation = state.conversations.find((c) => c.id === state.activeId)
   const activeTitle = activeConversation?.title ?? 'Новый разговор'
   const activeExecTarget = activeConversation?.execTarget ?? null
+  const forcedPlan = state.currentUser?.role === 'user' && (!activeExecTarget || activeExecTarget === 'none')
+  const activePermissionMode: PermissionMode = forcedPlan
+    ? 'plan'
+    : activeConversation?.permissionMode ?? state.settings.permissionMode
+
+  const changeConversationMode = async (mode: PermissionMode): Promise<void> => {
+    if (!activeConversation || mode === activePermissionMode) return
+    if (activePermissionMode === 'plan' && mode === 'bypassPermissions' && !window.confirm(
+      'Перейти из планирования в «Полный доступ»? Агент сможет выполнять команды и изменять любые доступные файлы.'
+    )) return
+    await actions.setConversationExecTarget(
+      activeConversation.id,
+      activeConversation.execTarget,
+      activeConversation.workdir,
+      activeConversation.skillNames,
+      activeConversation.llmProvider,
+      activeConversation.llmModel,
+      mode
+    )
+  }
 
   // Номера обнаруженных спикеров — из растущего транскрипта; при пустом live —
   // от режима диаризации (как в прототипе).
@@ -146,6 +167,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           if (state.activeId) void actions.renameConversation(state.activeId, t)
         }}
         onOpenConversationSettings={() => setConversationSettingsOpen(true)}
+        permissionMode={activePermissionMode}
+        onExecutePlan={(answerId) => void actions.executePlan(answerId)}
+        canExecutePlan={!forcedPlan}
         state={state.voice}
         messages={state.messages}
         loadingMessages={state.loadingMessages}
@@ -192,6 +216,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
             onCancelRequest={actions.cancelRequest}
             onAddFiles={(files) => files.forEach((f) => void actions.addAttachment(f))}
             onRemoveAttachment={actions.removeAttachment}
+            permissionMode={activePermissionMode}
+            onChangePermissionMode={(mode) => void changeConversationMode(mode)}
           />
         }
       />

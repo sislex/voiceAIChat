@@ -113,6 +113,14 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
       setError('Введите название разговора.')
       return
     }
+    const startedInPlan =
+      (role === 'user' && (!conversation.execTarget || conversation.execTarget === 'none')) ||
+      (conversation.permissionMode ?? settings.permissionMode) === 'plan'
+    if (
+      startedInPlan &&
+      permissionMode === 'bypassPermissions' &&
+      !window.confirm('Перейти из планирования в «Полный доступ»? Агент сможет выполнять команды и изменять любые доступные файлы.')
+    ) return
     setSaving(true)
     try {
       const globalModel = llmProvider === 'codex' ? settings.codexModel : clampModelForRole(normalizeClaudeModel(settings.model), role)
@@ -137,7 +145,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
   }
 
   // Фактический режим хода: сервер форсит «план», когда роль user работает без своей машины (turns.ts).
-  const forcedPlan = role === 'user' && !execTarget
+  const forcedPlan = role === 'user' && (!execTarget || execTarget === 'none')
   const effectiveMode: PermissionMode = forcedPlan ? 'plan' : permissionMode || settings.permissionMode
 
   return (

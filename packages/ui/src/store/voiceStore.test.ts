@@ -1113,6 +1113,31 @@ describe('voiceStore — правки/удаление/вложения', () => 
     )
   })
 
+  it('executePlan переключает разговор в acceptEdits и повторяет исходный запрос', async () => {
+    const { store, sendClaudePrompt } = makeClaudeStore()
+    await store.actions.init()
+    store.actions.setDraft('реализуй задачу')
+    await store.actions.submitText()
+    store.actions.applyClaudeToken('план')
+    store.actions.applyClaudeDone('план', {
+      request: { provider: 'claude', model: 'sonnet', prompt: 'реализуй задачу', promptChars: 15, permissionMode: 'plan', resumed: false }
+    })
+    await vi.advanceTimersByTimeAsync(STEP)
+    const answer = store.getState().messages.find((message) => message.role === 'ai')!
+
+    sendClaudePrompt.mockClear()
+    await store.actions.executePlan(answer.id)
+
+    expect(store.getState().conversations.find((item) => item.id === store.getState().activeId)?.permissionMode).toBe('acceptEdits')
+    expect(store.getState().messages.filter((message) => message.text === 'реализуй задачу')).toHaveLength(2)
+    expect(sendClaudePrompt).toHaveBeenCalledWith(
+      expect.any(String),
+      [{ speakerId: 1, text: 'реализуй задачу' }],
+      [],
+      true
+    )
+  })
+
   it('submitText прикрепляет вложения и очищает их', async () => {
     const { store, sendClaudePrompt } = makeClaudeStore()
     await store.actions.init()
