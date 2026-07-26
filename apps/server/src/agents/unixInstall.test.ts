@@ -18,6 +18,18 @@ describe('buildUnixInstallScript', () => {
     expect(mac).toContain('node-$NVER-darwin-$NARCH.tar.gz')
   })
 
+  it('остановка старого агента с проверкой и добиванием (SIGTERM могли проигнорировать)', () => {
+    for (const s of [linux, mac]) {
+      expect(s).toContain('agents_alive()')
+      expect(s).toContain('pkill -9 -f "voicechat-agent[.]cjs"')
+      // Если погасить не удалось — прерываемся, а не поднимаем второй агент.
+      expect(s).toContain('чтобы не поднять второй')
+      const escalate = s.indexOf('pkill -9')
+      const start = s.indexOf('setsid nohup')
+      expect(escalate).toBeLessThan(start)
+    }
+  })
+
   it('идемпотентен: гасит старый агент и сохраняет прежний скрипт как .prev', () => {
     for (const s of [linux, mac]) {
       expect(s).toContain('pkill -f "voicechat-agent[.]cjs"')

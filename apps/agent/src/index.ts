@@ -3,7 +3,8 @@
 
 import { loadConfig } from './config.js'
 import { startConnection, consoleHandlers } from './connection.js'
+import { installSignalHandlers } from './shutdown.js'
 
 const config = loadConfig()
 console.log(`[agent] подключаюсь к ${config.serverUrl}…`)
-startConnection(config, consoleHandlers())
+installSignalHandlers(startConnection(config, consoleHandlers()))
