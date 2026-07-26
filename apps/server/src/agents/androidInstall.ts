@@ -40,10 +40,10 @@ fi
 echo "  Node.js \$(node -v)"
 
 echo "[2/6] Скачиваю агента…"
-curl -fsSLk "\$SERVER/api/agents/script" -o "\$AGENT_DIR/voicechat-agent.cjs.new"
-test -s "\$AGENT_DIR/voicechat-agent.cjs.new"
-node --check "\$AGENT_DIR/voicechat-agent.cjs.new" 2>/dev/null || {
-  echo "скачанный скрипт битый — обновление отменено"; rm -f "\$AGENT_DIR/voicechat-agent.cjs.new"; exit 1
+curl -fsSLk "\$SERVER/api/agents/script" -o "\$AGENT_DIR/voicechat-agent.new.cjs"
+test -s "\$AGENT_DIR/voicechat-agent.new.cjs"
+node --check "\$AGENT_DIR/voicechat-agent.new.cjs" 2>/dev/null || {
+  echo "скачанный скрипт битый — обновление отменено"; rm -f "\$AGENT_DIR/voicechat-agent.new.cjs"; exit 1
 }
 
 echo "[3/6] Ищу строку подключения…"
@@ -65,7 +65,7 @@ echo "Останавливаю старый агент (если запущен)
 pkill -f "voicechat-agent[.]cjs" 2>/dev/null || true
 sleep 1
 [ -f "\$AGENT_DIR/voicechat-agent.cjs" ] && mv "\$AGENT_DIR/voicechat-agent.cjs" "\$AGENT_DIR/voicechat-agent.cjs.prev" || true
-mv "\$AGENT_DIR/voicechat-agent.cjs.new" "\$AGENT_DIR/voicechat-agent.cjs"
+mv "\$AGENT_DIR/voicechat-agent.new.cjs" "\$AGENT_DIR/voicechat-agent.cjs"
 
 [ -n "\$CONN" ] || {
   echo "Не нашёл строку подключения. Скопируйте команду установки из списка машин — в ней она есть."

@@ -1,13 +1,11 @@
 ---
 title: Речь: Whisper (STT) и Piper/say (TTS)
 updated: 2026-07-26
-checked: 4805be2
+checked: e0bc98e
 areas:
   - apps/server/src/stt
   - apps/server/src/tts
   - apps/server/src/system
-  - apps/desktop/src/main/stt
-  - apps/desktop/src/main/tts
   - packages/ui/src/audio
   - scripts/dev-web.sh
 ---

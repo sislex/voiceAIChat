@@ -130,11 +130,13 @@ echo "  использую $NODE_BIN ($("$NODE_BIN" -v))"
 
 # --- Свежий скрипт агента ------------------------------------------------
 echo "[2/6] Скачиваю агента…"
-curl -fsSLk "$SERVER/api/agents/script" -o "$AGENT_DIR/voicechat-agent.cjs.new"
-test -s "$AGENT_DIR/voicechat-agent.cjs.new"
-"$NODE_BIN" --check "$AGENT_DIR/voicechat-agent.cjs.new" 2>/dev/null || {
+# Имя временного файла ОБЯЗАНО оканчиваться на .cjs: node --check выбирает
+# модульную систему по расширению и на «.cjs.new» падает с UNKNOWN_FILE_EXTENSION.
+curl -fsSLk "$SERVER/api/agents/script" -o "$AGENT_DIR/voicechat-agent.new.cjs"
+test -s "$AGENT_DIR/voicechat-agent.new.cjs"
+"$NODE_BIN" --check "$AGENT_DIR/voicechat-agent.new.cjs" 2>/dev/null || {
   echo "скачанный скрипт битый — обновление отменено"
-  rm -f "$AGENT_DIR/voicechat-agent.cjs.new"
+  rm -f "$AGENT_DIR/voicechat-agent.new.cjs"
   exit 1
 }
 
@@ -175,7 +177,7 @@ sleep 1
 echo "[5/6] Ставлю новый скрипт…"
 [ -f "$AGENT_DIR/voicechat-agent.cjs" ] &&
   mv "$AGENT_DIR/voicechat-agent.cjs" "$AGENT_DIR/voicechat-agent.cjs.prev" || true
-mv "$AGENT_DIR/voicechat-agent.cjs.new" "$AGENT_DIR/voicechat-agent.cjs"
+mv "$AGENT_DIR/voicechat-agent.new.cjs" "$AGENT_DIR/voicechat-agent.cjs"
 printf '%s' "$CONN" > "$AGENT_DIR/connection"
 chmod 600 "$AGENT_DIR/connection"
 

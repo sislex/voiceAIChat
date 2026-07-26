@@ -65,7 +65,7 @@ if ((NodeMajor 'node') -lt 22) {
 Write-Host "Использую Node.js: $NodeExe"
 
 Write-Host '[2/6] Скачиваю агента…'
-$NewCjs = Join-Path $AgentDir 'voicechat-agent.cjs.new'
+$NewCjs = Join-Path $AgentDir 'voicechat-agent.new.cjs'
 Fetch "$Server/api/agents/script" $NewCjs
 if ((Get-Item $NewCjs).Length -lt 1000) { throw 'скачанный скрипт подозрительно мал' }
 & $NodeExe --check $NewCjs

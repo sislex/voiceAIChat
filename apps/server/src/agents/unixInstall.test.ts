@@ -27,7 +27,7 @@ describe('buildUnixInstallScript', () => {
 
   it('проверяет скачанный скрипт до подмены рабочего', () => {
     const check = linux.indexOf('--check')
-    const swap = linux.indexOf('mv "$AGENT_DIR/voicechat-agent.cjs.new" "$AGENT_DIR/voicechat-agent.cjs"')
+    const swap = linux.indexOf('mv "$AGENT_DIR/voicechat-agent.new.cjs" "$AGENT_DIR/voicechat-agent.cjs"')
     expect(check).toBeGreaterThan(0)
     expect(swap).toBeGreaterThan(check)
   })
