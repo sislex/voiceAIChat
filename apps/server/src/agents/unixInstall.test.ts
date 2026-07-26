@@ -18,15 +18,29 @@ describe('buildUnixInstallScript', () => {
     expect(mac).toContain('node-$NVER-darwin-$NARCH.tar.gz')
   })
 
-  it('остановка старого агента с проверкой и добиванием (SIGTERM могли проигнорировать)', () => {
+  it('перезапуск — ПОСЛЕДНИЙ шаг: файлы подменяются раньше, чем гибнет агент', () => {
+    // Установщик запускает сам агент (кнопка «обновить»), и его смерть уносит нас:
+    // на systemd — вместе со всем cgroup сервиса. Значит вся работа должна быть
+    // закончена до остановки.
     for (const s of [linux, mac]) {
-      expect(s).toContain('agents_alive()')
+      const swap = s.indexOf('voicechat-agent.new.cjs" "$AGENT_DIR/voicechat-agent.cjs"')
+      const runSh = s.indexOf('cat > "$AGENT_DIR/run.sh"')
+      const restart = s.indexOf('[6/6]')
+      expect(swap).toBeGreaterThan(0)
+      expect(swap).toBeLessThan(restart)
+      expect(runSh).toBeLessThan(restart)
+      expect(s.indexOf('pkill')).toBeGreaterThan(restart)
+    }
+  })
+
+  it('перезапуск поручен супервизору, а без него — отдельному скрипту с добиванием', () => {
+    expect(linux).toContain('systemctl --user restart voicechat-agent.service')
+    expect(mac).toContain('launchctl kickstart -k')
+    for (const s of [linux, mac]) {
+      // Имя переключателя не должно попадать под шаблон pkill, иначе он убьёт себя.
+      expect(s).toContain('vc-switch.sh')
+      expect('vc-switch.sh').not.toMatch(/voicechat-agent.cjs/)
       expect(s).toContain('pkill -9 -f "voicechat-agent[.]cjs"')
-      // Если погасить не удалось — прерываемся, а не поднимаем второй агент.
-      expect(s).toContain('чтобы не поднять второй')
-      const escalate = s.indexOf('pkill -9')
-      const start = s.indexOf('setsid nohup')
-      expect(escalate).toBeLessThan(start)
     }
   })
 
@@ -57,7 +71,7 @@ describe('buildUnixInstallScript', () => {
   })
 
   it('автозапуск: systemd на linux, launchd на macOS', () => {
-    expect(linux).toContain('systemctl --user enable --now voicechat-agent.service')
+    expect(linux).toContain('systemctl --user enable voicechat-agent.service')
     expect(linux).not.toContain('LaunchAgents')
     expect(mac).toContain('LaunchAgents/com.voicechat.agent.plist')
     expect(mac).not.toContain('systemctl --user enable')

@@ -16,7 +16,7 @@
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-26 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-26 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-26 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-26 | ✓ |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-26 | ⚠ 2 коммит(ов) в areas после сверки: d89891d fix(agents): вывод удалённого обновления писать в лог, а не в /dev/null … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 
 ## Инструкции по пакетам

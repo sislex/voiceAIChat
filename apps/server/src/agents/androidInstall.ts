@@ -60,26 +60,6 @@ else
   done
 fi
 
-echo "Останавливаю старый агент (если запущен)…"
-# Одного pkill мало: агент мог унаследовать SIG_IGN на SIGTERM от обёртки, которой
-# его запускали, — тогда он выживает, и мы поднимаем ВТОРОЙ агент с тем же токеном.
-# Шаблон со скобками — иначе pkill найдёт сам себя в своей командной строке.
-agents_alive() { pgrep -f "voicechat-agent[.]cjs" 2>/dev/null | wc -l | tr -d " "; }
-for i in 1 2 3; do
-  [ "\$(agents_alive)" = "0" ] && break
-  pkill -f "voicechat-agent[.]cjs" 2>/dev/null || true
-  sleep 1
-done
-if [ "\$(agents_alive)" != "0" ]; then
-  echo "  не отреагировал на SIGTERM — добиваю"
-  pkill -9 -f "voicechat-agent[.]cjs" 2>/dev/null || true
-  sleep 1
-fi
-if [ "\$(agents_alive)" != "0" ]; then
-  echo "Старый агент не останавливается — прерываюсь, чтобы не поднять второй."
-  exit 1
-fi
-[ -f "\$AGENT_DIR/voicechat-agent.cjs" ] && mv "\$AGENT_DIR/voicechat-agent.cjs" "\$AGENT_DIR/voicechat-agent.cjs.prev" || true
 mv "\$AGENT_DIR/voicechat-agent.new.cjs" "\$AGENT_DIR/voicechat-agent.cjs"
 
 [ -n "\$CONN" ] || {
@@ -106,7 +86,26 @@ chmod +x "\$AGENT_DIR/run.sh"
 mkdir -p "\$HOME/.termux/boot"
 ln -sf "\$AGENT_DIR/run.sh" "\$HOME/.termux/boot/voicechat-agent"
 
-echo "[6/6] Запускаю агента… (Ctrl+C — остановить; автозапуск настроен)"
-exec "\$AGENT_DIR/run.sh"
+echo "[6/6] Перезапускаю агента…"
+# Гасить старый агент нужно ПОСЛЕДНИМ действием: он мог запустить нас сам (кнопка
+# «обновить»), и его смерть уносит нас с собой. Поэтому переключение делает отдельный
+# отвязанный скрипт — его имя намеренно не совпадает с шаблоном pkill, иначе он
+# погасил бы сам себя.
+cat > "\$AGENT_DIR/vc-switch.sh" <<'SWEOF'
+#!/data/data/com.termux/files/usr/bin/bash
+cd "\$(dirname "\$0")"
+agents_alive() { pgrep -f "voicechat-agent[.]cjs" 2>/dev/null | wc -l | tr -d " "; }
+for i in 1 2 3; do
+  [ "\$(agents_alive)" = "0" ] && break
+  pkill -f "voicechat-agent[.]cjs" 2>/dev/null || true
+  sleep 1
+done
+# Агент мог унаследовать SIG_IGN на SIGTERM от обёртки — тогда добиваем.
+[ "\$(agents_alive)" != "0" ] && { pkill -9 -f "voicechat-agent[.]cjs" 2>/dev/null || true; sleep 1; }
+nohup ./run.sh >> agent.log 2>&1 &
+SWEOF
+chmod +x "\$AGENT_DIR/vc-switch.sh"
+setsid nohup "\$AGENT_DIR/vc-switch.sh" > /dev/null 2>&1 < /dev/null &
+echo "Готово. Агент перезапускается, машина вернётся в список через несколько секунд."
 `
 }
