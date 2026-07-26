@@ -63,6 +63,7 @@ export interface SystemCapabilities {
 // PATCH  /api/conversations/:id {title}      -> Conversation
 // DELETE /api/conversations/:id              -> { ok }
 // POST   /api/conversations/:id/messages AddMessageArgs -> Message
+// POST   /api/migrations/desktop DesktopMigrationBundle -> DesktopMigrationResult
 // GET    /api/settings                       -> Settings
 // PUT    /api/settings  Settings             -> Settings
 // GET    /api/system/capabilities            -> SystemCapabilities
@@ -87,6 +88,19 @@ export interface AddMessageArgs {
   execTarget?: string | null
 }
 
+/** Legacy-данные монолитного desktop для одноразового идемпотентного импорта. */
+export interface DesktopMigrationBundle {
+  conversations: Array<{
+    conversation: Pick<Conversation, 'id' | 'title' | 'createdAt' | 'updatedAt' | 'claudeSessionId' | 'execTarget'>
+    messages: Message[]
+  }>
+}
+
+export interface DesktopMigrationResult {
+  conversationsImported: number
+  messagesImported: number
+}
+
 export interface HealthResponse {
   ok: true
   version: string
@@ -102,6 +116,7 @@ export const REST = {
   conversationsSearch: '/api/conversations/search',
   conversation: (id: string) => `/api/conversations/${id}`,
   messages: (id: string) => `/api/conversations/${id}/messages`,
+  desktopMigration: '/api/migrations/desktop',
   message: (id: string, messageId: string) => `/api/conversations/${id}/messages/${messageId}`,
   uploads: '/api/uploads',
   /** Чтение файла с диска сервера (только «своя» область) — картинки от CLI. */

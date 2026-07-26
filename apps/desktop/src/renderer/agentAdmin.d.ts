@@ -16,6 +16,8 @@ interface AgentAdminBridge {
 interface RemoteClientBridge {
   getUrl(): Promise<string | null>
   setUrl(url: string | null): Promise<void>
+  exportLegacyData(): Promise<import('@shared/protocol').DesktopMigrationBundle | null>
+  markLegacyMigrated(): Promise<void>
 }
 
 interface Window {

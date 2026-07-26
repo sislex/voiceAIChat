@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-07-26
-checked: 4805be2
+checked: 6ddcdb7
 areas:
   - apps/server/src/server.ts
   - apps/server/src/session.ts
@@ -58,20 +58,17 @@ tail/PTY) — в `apps/server/src/session.ts`.
 `sessionSecret`). Отсюда тесты через `fastify.inject()` и ws-клиент с моками
 вместо реальных Whisper/CLI.
 
-## Два бэкенда, один UI — и что из этого следует
+## Один backend, два клиентских хоста
 
-`apps/desktop` — исходное монолитное Electron-приложение; сервер вырос из него
-переносом тех же абстракций (`SttEngine`/`LlmClient`/`TtsEngine`/`VoiceChatDb`).
-Поэтому в `apps/desktop/src/main/**` и `apps/server/src/**` лежат почти
-одноимённые модули (`stt/whisperEngine`, `tts/piperTts`, `claude/claudeCli`,
-`db/schema`). Это **осознанная дубликация**: desktop не переписывается. Меняешь
-поведение движка — проверь, нужна ли та же правка во втором месте, и упомяни это
-в сообщении коммита. Чистая логика, которую удалось вынести, живёт в
-`packages/shared` и общая для обоих (`streamJson`, `prompt`, `sentences`, `pcm`,
-`textPrep`, `stateMachine`).
+`apps/desktop` теперь тонкая Electron-оболочка: browser и Electron используют
+одинаковые REST/WS-мосты из `@voicechat/ui`, а единственный backend находится в
+`apps/server`. Main-процесс desktop управляет окном, URL сервера и режимом
+компаньон-агента.
 
-Desktop умеет и роль тонкого клиента: `remoteConfig.ts` + `installRemoteBridges`
-из `@voicechat/ui` — тогда он ходит на сервер вместо локальных движков.
+Старая `voicechat.db` используется только как источник одноразовой миграции. После
+успешного логина desktop отправляет разговоры через авторизованный идемпотентный
+`POST /api/migrations/desktop` и помечает URL сервера в `remote.json`. Файл БД
+автоматически не удаляется; локальных STT/TTS/LLM/IPC-сервисов в desktop больше нет.
 
 ## Голосовой цикл
 

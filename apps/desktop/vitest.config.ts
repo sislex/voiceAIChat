@@ -12,8 +12,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    // Интеграционные тесты (реальные whisper/claude/piper) грузят CPU; поднимаем
-    // общий таймаут, чтобы тесты не срывались при параллельном прогоне.
+    // Тесты legacy-ридера SQLite могут работать с нативным модулем; поднимаем
+    // таймаут для стабильного прогона на CI.
     testTimeout: 20_000,
     // UI переехал в @voicechat/ui (свои тесты); в desktop остаются тесты main-процесса.
     include: ['src/main/**/*.{test,spec}.{ts,tsx}']

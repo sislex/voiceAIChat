@@ -4,6 +4,7 @@
 
 import { Readable } from 'node:stream'
 import { randomUUID } from 'node:crypto'
+import { isIP } from 'node:net'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { LlmClient } from '../claude/types.js'
 
@@ -30,6 +31,25 @@ const RESPONSE_HEADERS = [
   'x-ratelimit-remaining-tokens',
   'x-ratelimit-reset-tokens'
 ]
+
+export function isLocalNetworkAddress(raw: string): boolean {
+  const address = raw.replace(/^\[|\]$/g, '').split('%')[0]
+  if (address === '::1') return true
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1]
+  const ipv4 = mapped ?? (isIP(address) === 4 ? address : null)
+  if (ipv4) {
+    const o = ipv4.split('.').map(Number)
+    return o[0] === 10 || o[0] === 127 || (o[0] === 169 && o[1] === 254) || (o[0] === 172 && o[1] >= 16 && o[1] <= 31) || (o[0] === 192 && o[1] === 168)
+  }
+  if (isIP(address) === 6) { const s = address.toLowerCase(); return s.startsWith('fc') || s.startsWith('fd') || /^fe[89ab]/.test(s) }
+  return false
+}
+
+function gatewayClientAddress(req: FastifyRequest): string {
+  if (!isLocalNetworkAddress(req.ip)) return req.ip
+  const forwarded = req.headers['x-forwarded-for']
+  return (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim() || req.ip
+}
 
 function endpointUrl(base: string, route: string): string {
   const url = new URL(base)
@@ -216,6 +236,7 @@ export function registerAnthropicGateway(app: FastifyInstance, opts: AnthropicGa
       route,
       { bodyLimit: 64 * 1024 * 1024 },
       async (req, reply) => {
+        if (!isLocalNetworkAddress(gatewayClientAddress(req))) return reply.code(403).send({ type: 'error', error: { type: 'permission_error', message: 'Claude gateway доступен только из локальной сети' } })
         if (opts.backend === 'codex') {
           if (!opts.codex) return reply.code(503).send({ type: 'error', error: { type: 'api_error', message: 'Codex backend не настроен' } })
           return handleCodex(req, reply, opts.codex)

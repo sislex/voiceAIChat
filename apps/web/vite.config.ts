@@ -10,11 +10,38 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: [
-      { find: '@voicechat/ui/styles.css', replacement: abs('../../packages/ui/src/styles/global.css') },
-      { find: '@voicechat/ui', replacement: abs('../../packages/ui/src/index.ts') },
+      {
+        find: '@voicechat/ui/styles.css',
+        replacement: abs('../../packages/ui/src/styles/global.css')
+      },
+      {
+        find: '@voicechat/ui',
+        replacement: abs('../../packages/ui/src/index.ts')
+      },
       { find: /^@shared\//, replacement: abs('../../packages/shared/src/') },
-      { find: '@voicechat/shared', replacement: abs('../../packages/shared/src/index.ts') }
+      {
+        find: '@voicechat/shared',
+        replacement: abs('../../packages/shared/src/index.ts')
+      }
     ]
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/@xterm')) return 'terminal'
+          if (
+            id.includes('node_modules/react-markdown') ||
+            id.includes('node_modules/remark-') ||
+            id.includes('node_modules/rehype-') ||
+            id.includes('node_modules/highlight.js')
+          )
+            return 'markdown'
+          if (id.includes('node_modules/qrcode')) return 'qrcode'
+          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom')) return 'react'
+        }
+      }
+    }
   },
   server: {
     port: 5273,

@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WsClient } from './wsClient'
 import { createHttpApi } from './httpApi'
 import { base64ToArrayBuffer } from './decode'
+import { migrateDesktopLegacy } from './index'
 
 class FakeWebSocket {
   static OPEN = 1
@@ -154,5 +155,18 @@ describe('createHttpApi', () => {
 describe('base64ToArrayBuffer', () => {
   it('декодирует RIFF', () => {
     expect(new TextDecoder().decode(base64ToArrayBuffer('UklGRg=='))).toBe('RIFF')
+  })
+})
+
+describe('desktop legacy migration', () => {
+  it('отправляет bundle с Bearer и помечает успешный импорт', async () => {
+    const bundle = { conversations: [] }
+    const markLegacyMigrated = vi.fn(async () => {})
+    ;(globalThis as unknown as { window: unknown }).window = { remoteClient: { exportLegacyData: vi.fn(async () => bundle), markLegacyMigrated } }
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200 }))
+    ;(globalThis as unknown as { fetch: unknown }).fetch = fetchMock
+    await migrateDesktopLegacy('http://srv:8787', 'secret')
+    expect(fetchMock).toHaveBeenCalledWith('http://srv:8787/api/migrations/desktop', expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ authorization: 'Bearer secret' }) }))
+    expect(markLegacyMigrated).toHaveBeenCalledOnce()
   })
 })

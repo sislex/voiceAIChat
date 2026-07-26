@@ -34,9 +34,12 @@ interface PtySession {
 let ptyMod: PtyModule | null = null
 function loadPty(): PtyModule {
   if (ptyMod) return ptyMod
-  // В CJS-бандле (esbuild) доступен глобальный require; в ESM-dev (tsx) — import.meta.url.
-  const req: NodeRequire =
-    typeof require !== 'undefined' ? (require as NodeRequire) : createRequire(import.meta.url)
+  // В CJS-бандле доступен глобальный require. В ESM-dev резолвим зависимости
+  // относительно рабочего проекта; import.meta не используем, чтобы esbuild
+  // не подменял его пустым объектом при сборке CommonJS.
+  const req: NodeRequire = typeof require !== 'undefined'
+    ? (require as NodeRequire)
+    : createRequire(`${process.cwd()}/package.json`)
   ptyMod = req('@lydell/node-pty') as PtyModule
   return ptyMod
 }

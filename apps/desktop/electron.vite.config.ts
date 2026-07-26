@@ -37,6 +37,20 @@ export default defineConfig({
           'agent-setup': resolve('src/renderer/agent-setup.html'),
           'agent-log': resolve('src/renderer/agent-log.html'),
           'remote-setup': resolve('src/renderer/remote-setup.html')
+        },
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/@xterm')) return 'terminal'
+            if (
+              id.includes('node_modules/react-markdown') ||
+              id.includes('node_modules/remark-') ||
+              id.includes('node_modules/rehype-') ||
+              id.includes('node_modules/highlight.js')
+            )
+              return 'markdown'
+            if (id.includes('node_modules/qrcode')) return 'qrcode'
+            if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom')) return 'react'
+          }
         }
       }
     }

@@ -7,6 +7,8 @@ import {
   type AgentCreated,
   type AgentPolicy,
   type Conversation,
+  type DesktopMigrationBundle,
+  type DesktopMigrationResult,
   type LlmProvider,
   type Message,
   type MessageRole,
@@ -434,6 +436,26 @@ export class VoiceChatDb {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`
       )
       .run(settingsKey(userId), JSON.stringify(settings))
+  }
+
+  /** Идемпотентно переносит legacy-разговоры desktop, сохраняя id и даты. */
+  importDesktopData(userId: string, bundle: DesktopMigrationBundle): DesktopMigrationResult {
+    const insertConversation = this.db.prepare(`INSERT OR IGNORE INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_provider, llm_model) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, '[]', NULL, NULL)`)
+    const insertMessage = this.db.prepare(`INSERT OR IGNORE INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    let conversationsImported = 0
+    let messagesImported = 0
+    this.db.transaction(() => {
+      for (const item of bundle.conversations) {
+        const c = item.conversation
+        conversationsImported += Number(insertConversation.run(c.id, c.title, c.createdAt, c.updatedAt, c.claudeSessionId, userId, c.execTarget).changes)
+        if (!this.ownsConversation(userId, c.id)) continue
+        for (const m of item.messages) {
+          if (m.conversationId !== c.id) continue
+          messagesImported += Number(insertMessage.run(m.id, c.id, m.role, m.text, m.time, m.createdAt, m.engine ?? null, m.meta ? JSON.stringify(m.meta) : null, m.execTarget ?? null).changes)
+        }
+      }
+    })()
+    return { conversationsImported, messagesImported }
   }
 
   // ---- Agents (машины для удалённого выполнения команд) ------------------

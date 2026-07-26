@@ -16,7 +16,7 @@ import type {
   RendererSttBridge,
   RendererTtsBridge
 } from '@shared/ipc'
-import { REST, type ServerFileInfo } from '@shared/protocol'
+import { REST, type DesktopMigrationBundle, type ServerFileInfo } from '@shared/protocol'
 import type { FsResult } from '@shared/agentProtocol'
 import type { SessionUser } from '@shared/types'
 import { WsClient } from './wsClient'
@@ -106,6 +106,21 @@ function makeAgentsBridge(ws: WsClient): RendererAgentsBridge {
   return { onChange: (cb) => ws.on('agents', (m) => cb(m.agents)) }
 }
 
+interface DesktopMigrationClient {
+  exportLegacyData(): Promise<DesktopMigrationBundle | null>
+  markLegacyMigrated(): Promise<void>
+}
+
+export async function migrateDesktopLegacy(httpBase: string, token: string): Promise<void> {
+  const client = (window as unknown as { remoteClient?: DesktopMigrationClient }).remoteClient
+  if (!client) return
+  const bundle = await client.exportLegacyData()
+  if (!bundle) return
+  const response = await fetch(httpBase + REST.desktopMigration, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify(bundle) })
+  if (!response.ok) throw new Error(`desktop migration: HTTP ${response.status}`)
+  await client.markLegacyMigrated()
+}
+
 /** Мост сессии поверх REST: логин сохраняет токен и перезапускает WS с ним. */
 function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessionBridge {
   const authHeaders = (): Record<string, string> => {
@@ -123,6 +138,11 @@ function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessionBridg
       const { token, user } = (await res.json()) as { token: string; user: SessionUser }
       setToken(token)
       ws.reconnect() // теперь есть токен — поднимаем WS-соединение
+      try {
+        await migrateDesktopLegacy(httpBase, token)
+      } catch (error) {
+        console.warn('[desktop migration] импорт будет повторён после следующего входа', error)
+      }
       return user
     },
     me: async () => {

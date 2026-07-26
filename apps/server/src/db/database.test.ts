@@ -442,6 +442,19 @@ describe('VoiceChatDb — агенты', () => {
   })
 })
 
+describe('VoiceChatDb — импорт desktop', () => {
+  it('сохраняет id/даты и повторно ничего не дублирует', () => {
+    const db = makeDb()
+    const bundle = { conversations: [{ conversation: { id: 'legacy-c', title: 'Старый чат', createdAt: 100, updatedAt: 200, claudeSessionId: 'sess', execTarget: null }, messages: [{ id: 'legacy-m', conversationId: 'legacy-c', role: 'u1' as const, text: 'привет', time: '10:00', createdAt: 150 }] }] }
+    expect(db.importDesktopData('alice', bundle)).toEqual({ conversationsImported: 1, messagesImported: 1 })
+    expect(db.importDesktopData('alice', bundle)).toEqual({ conversationsImported: 0, messagesImported: 0 })
+    expect(db.getConversation('alice', 'legacy-c')).toMatchObject({ title: 'Старый чат', createdAt: 100, updatedAt: 200 })
+    expect(db.listMessages('alice', 'legacy-c')[0]).toMatchObject({ id: 'legacy-m', createdAt: 150 })
+    expect(db.getConversation('bob', 'legacy-c')).toBeNull()
+    db.close()
+  })
+})
+
 describe('VoiceChatDb — пользователи и админ-данные', () => {
   let db: VoiceChatDb
   beforeEach(() => {

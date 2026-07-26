@@ -11,6 +11,7 @@ import {
   cxResumeTitle,
   cxTimeLabel,
   type AddMessageArgs,
+  type DesktopMigrationBundle,
   type Settings
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
@@ -46,6 +47,10 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
   })
 
   app.get(REST.conversations, async (req) => db.listConversations(uid(req)))
+   app.post<{ Body: DesktopMigrationBundle }>(REST.desktopMigration, async (req, reply) => {
+    if (!req.body || !Array.isArray(req.body.conversations)) return reply.code(400).send({ error: 'invalid migration bundle' })
+    return db.importDesktopData(uid(req), req.body)
+  })
 
   app.post<{ Body: { title?: string } }>(REST.conversations, async (req) =>
     db.createConversation(uid(req), req.body?.title)

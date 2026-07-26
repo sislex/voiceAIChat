@@ -10,6 +10,7 @@ import {
   type Settings,
   type TurnMeta
 } from '@shared/types'
+import type { DesktopMigrationBundle } from '@shared/protocol'
 
 /** Разбор JSON meta сообщения; битый/пустой → undefined. */
 function parseMeta(raw: string): TurnMeta | undefined {
@@ -77,7 +78,9 @@ export class VoiceChatDb {
 
   /** Лёгкие миграции существующих БД (idempotent). */
   private migrate(): void {
-    const convCols = this.db.prepare(`PRAGMA table_info(conversations)`).all() as Array<{ name: string }>
+    const convCols = this.db.prepare(`PRAGMA table_info(conversations)`).all() as Array<{
+      name: string
+    }>
     if (!convCols.some((c) => c.name === 'exec_target')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN exec_target TEXT`)
     }
@@ -123,7 +126,20 @@ export class VoiceChatDb {
          VALUES (?, ?, ?, ?, NULL, NULL)`
       )
       .run(id, title, ts, ts)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, lastExecTarget: null }
+    return {
+      id,
+      title,
+      createdAt: ts,
+      updatedAt: ts,
+      messageCount: 0,
+      claudeSessionId: null,
+      execTarget: null,
+      workdir: null,
+      skillNames: [],
+      llmProvider: null,
+      llmModel: null,
+      lastExecTarget: null
+    }
   }
 
   listConversations(): Conversation[] {
@@ -142,10 +158,12 @@ export class VoiceChatDb {
 
   getConversation(id: string): Conversation | null {
     const row = this.db
-      .prepare(`SELECT c.*,
+      .prepare(
+        `SELECT c.*,
                        (SELECT m.exec_target FROM messages m WHERE m.conversation_id = c.id
                         ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
-                FROM conversations c WHERE c.id = ?`)
+                FROM conversations c WHERE c.id = ?`
+      )
       .get(id) as ConversationRow | undefined
     if (!row) return null
     const count = (
@@ -194,9 +212,7 @@ export class VoiceChatDb {
   }
 
   setClaudeSession(id: string, sessionId: string | null): void {
-    this.db
-      .prepare(`UPDATE conversations SET claude_session_id = ? WHERE id = ?`)
-      .run(sessionId, id)
+    this.db.prepare(`UPDATE conversations SET claude_session_id = ? WHERE id = ?`).run(sessionId, id)
   }
 
   // ---- Messages ---------------------------------------------------------
@@ -242,9 +258,7 @@ export class VoiceChatDb {
 
   listMessages(conversationId: string): Message[] {
     const rows = this.db
-      .prepare(
-        `SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, id ASC`
-      )
+      .prepare(`SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, id ASC`)
       .all(conversationId) as MessageRow[]
     return rows.map((r) => ({
       id: r.id,
@@ -257,6 +271,15 @@ export class VoiceChatDb {
       ...(r.meta ? { meta: parseMeta(r.meta) } : {}),
       ...(r.exec_target !== null ? { execTarget: r.exec_target } : {})
     }))
+  }
+
+  exportDesktopMigration(): DesktopMigrationBundle {
+    return {
+      conversations: this.listConversations().map((conversation) => ({
+        conversation,
+        messages: this.listMessages(conversation.id)
+      }))
+    }
   }
 
   // ---- Settings ---------------------------------------------------------
@@ -294,6 +317,10 @@ export class VoiceChatDb {
       messageCount,
       claudeSessionId: row.claude_session_id,
       execTarget: row.exec_target,
+      workdir: null,
+      skillNames: [],
+      llmProvider: null,
+      llmModel: null,
       lastExecTarget: row.last_exec_target ?? null
     }
   }
