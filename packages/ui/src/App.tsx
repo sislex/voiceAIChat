@@ -162,6 +162,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         machineOps={machineOps}
         readServerFile={actions.readServerFile}
         onOpenImageInExplorer={(agentId, path) => actions.openUtility('explorer', agentId, path)}
+        onOpenTerminal={(agentId, cwd) => actions.openUtility('console', agentId, cwd)}
         error={state.error}
         onDismissError={actions.dismissError}
         modelMissing={!state.modelPresent}
