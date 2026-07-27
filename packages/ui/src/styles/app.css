@@ -1852,15 +1852,25 @@
   padding: 10px 16px;
   border-bottom: 1px solid var(--border-soft);
 }
-.fspath {
+.fspath-form {
   flex: 1;
+  min-width: 180px;
+}
+.fspath {
+  box-sizing: border-box;
+  width: 100%;
   min-width: 120px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  padding: 5px 8px;
   font-family: 'SF Mono', ui-monospace, Menlo, monospace;
   font-size: 12px;
-  color: var(--text-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--text);
+}
+.fspath:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 .fsbtn {
   flex: none;

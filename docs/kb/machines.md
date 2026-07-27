@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-07-27
-checked: 49465ae
+checked: 308ff71
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -186,6 +186,10 @@ Termux:Boot). Поэтому **отдельной «команды обновл�
 `FsOp` (`fs.list/read/write/delete/rename/mkdir`) идут REST'ом на сервер
 (`/api/agents/:id/fs*`), оттуда — агенту, ответ `fs.result`/`fs.error` по `opId`.
 Реализация на агенте — `apps/agent/src/fileOps.ts`, UI — `FileExplorer.tsx`.
+
+В верхней панели `FileExplorer` текущий каталог — редактируемая адресная строка:
+можно вставить абсолютный путь и перейти по Enter. После успешного `fs.list`
+строка нормализуется к `cwd`, который вернул агент.
 
 Пути в `FsOp` **абсолютные** (`absPath` просто `resolve`-ит; пусто → `rootDir`
 агента), поэтому читать можно любой файл вне зависимости от текущего каталога

@@ -15,12 +15,12 @@
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-27 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-07-27 | ✓ |
 | [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-07-27 | ✓ |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-27 | ✓ |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-27 | ⚠ 1 коммит(ов) в areas после сверки: 95f654f docs(kb): document complete project architecture |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-27 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-27 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-07-27 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-27 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-07-27 | ✓ |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-07-27 | ⚠ 2 коммит(ов) в areas после сверки: 308ff71 Merge feature/projects-kanban … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-07-27 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-07-27 | ✓ |
@@ -38,18 +38,18 @@
 
 ## Журнал сессий
 
-Всего записей: 18. Последние:
+Всего записей: 19. Последние:
 
 - [2026-07-27-repo-2-project-knowledge-base.md](log/2026-07-27-repo-2-project-knowledge-base.md) — project-knowledge-base
 - [2026-07-27-2470-com-windows-install-command-cmd.md](log/2026-07-27-2470-com-windows-install-command-cmd.md) — windows-install-command-cmd
 - [2026-07-27-2470-com-projects-kanban.md](log/2026-07-27-2470-com-projects-kanban.md) — projects-kanban
 - [2026-07-27-2470-com-project-chat-link.md](log/2026-07-27-2470-com-project-chat-link.md) — project-chat-link
 - [2026-07-27-2470-com-comprehensive-project-knowledge.md](log/2026-07-27-2470-com-comprehensive-project-knowledge.md) — comprehensive-project-knowledge
+- [2026-07-27-2470-com-codex-usage-explorer-address.md](log/2026-07-27-2470-com-codex-usage-explorer-address.md) — codex-usage-explorer-address
 - [2026-07-27-2470-com-codex-plan-read-only.md](log/2026-07-27-2470-com-codex-plan-read-only.md) — codex-plan-read-only
 - [2026-07-27-2470-com-chat-lifecycle-status.md](log/2026-07-27-2470-com-chat-lifecycle-status.md) — chat-lifecycle-status
 - [2026-07-26-localhost-popup-file-terminal-context.md](log/2026-07-26-localhost-popup-file-terminal-context.md) — popup-file-terminal-context
 - [2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md](log/2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md) — база знаний для агентов
-- [2026-07-26-alexeys-macbook-air-2-image-in-message.md](log/2026-07-26-alexeys-macbook-air-2-image-in-message.md) — image-in-message
 
 ## Исторические планы
 

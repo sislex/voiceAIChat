@@ -91,6 +91,16 @@ describe('FileExplorer (самодостаточный)', () => {
     expect(screen.getByTitle('Скачать')).toBeInTheDocument()
   })
 
+
+  it('позволяет вставить адрес и перейти по Enter', async () => {
+    const ops = makeOps()
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={ops} variant="embedded" />)
+    const address = await screen.findByLabelText('Адрес папки')
+    await userEvent.clear(address)
+    await userEvent.type(address, '/srv/project{Enter}')
+    await waitFor(() => expect(ops.list).toHaveBeenCalledWith('m1', '/srv/project'))
+  })
+
   it('initialDir открывает проводник ВНУТРИ указанной папки', async () => {
     const ops = makeOps()
     render(<FileExplorer agents={[agent()]} initialAgentId="m1" initialDir="/srv/proj" ops={ops} />)
