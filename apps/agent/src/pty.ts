@@ -10,7 +10,7 @@
 import { createRequire } from 'node:module'
 import { spawn } from 'node:child_process'
 import type { AgentToServer } from '@voicechat/shared'
-import { isWindows, which } from './platform.js'
+import { isWindows, resolveShell } from './platform.js'
 
 // Минимальная форма node-pty, которая нам нужна (без зависимости от типов пакета).
 interface IPty {
@@ -47,30 +47,13 @@ function loadPty(): PtyModule {
 /** Активные PTY-сессии: ptyId → сессия. */
 const sessions = new Map<string, PtySession>()
 
-/**
- * Выбор интерактивного shell: override → fish → zsh → bash → $SHELL → sh.
- * На Windows — PowerShell (приятнее для интерактива), иначе cmd.exe (ComSpec).
- */
-export function pickShell(
-  env: NodeJS.ProcessEnv = process.env,
-  platform: NodeJS.Platform = process.platform
-): string {
-  if (env.VC_PTY_SHELL) return env.VC_PTY_SHELL
-  if (isWindows(platform)) return which('powershell', env, platform) || env.ComSpec || 'cmd.exe'
-  for (const s of ['fish', 'zsh', 'bash']) {
-    const p = which(s, env, platform)
-    if (p) return p
-  }
-  return env.SHELL || which('sh', env, platform) || '/bin/sh'
-}
-
 function clampDim(v: number, fallback: number): number {
   return Number.isFinite(v) && v > 0 ? Math.floor(v) : fallback
 }
 
 /** Нативный терминал (node-pty). Кидает, если модуль недоступен. */
 function startNative(ptyId: string, cols: number, rows: number, cwd: string, emit: (msg: AgentToServer) => void): void {
-  const shell = pickShell()
+  const shell = resolveShell()
   const term = loadPty().spawn(shell, [], {
     name: 'xterm-256color',
     cols: clampDim(cols, 80),
@@ -91,7 +74,7 @@ function startNative(ptyId: string, cols: number, rows: number, cwd: string, emi
  * в \r\n, чтобы xterm.js не рисовал «лесенку». Ресайз игнорируется.
  */
 function startFallback(ptyId: string, cwd: string, emit: (msg: AgentToServer) => void): void {
-  const shell = pickShell()
+  const shell = resolveShell()
   // cmd.exe/PowerShell интерактивны по умолчанию и не знают флага -i.
   const child = spawn(shell, isWindows() ? [] : ['-i'], {
     cwd: cwd || process.env.HOME || process.cwd(),
