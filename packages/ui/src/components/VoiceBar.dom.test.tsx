@@ -88,6 +88,16 @@ describe('VoiceBar — состояния', () => {
     expect(props.onStartVoice).toHaveBeenCalledOnce()
   })
 
+  it('при глобальной блокировке микрофон неактивен и не запускает запись', async () => {
+    const props = setup('idle', { voiceInputEnabled: false })
+    const mic = screen.getByLabelText('Говорить')
+    expect(mic).toBeDisabled()
+    expect(mic).toHaveAttribute('title', 'Голосовой ввод временно недоступен')
+    expect(screen.getByText('Голосовой ввод временно недоступен')).toBeInTheDocument()
+    await userEvent.click(mic)
+    expect(props.onStartVoice).not.toHaveBeenCalled()
+  })
+
   it('непустой инпут: кнопка «Отправить» вместо микрофона, клик → onSubmitText', async () => {
     const props = setup('idle', { draft: 'привет' })
     expect(screen.queryByLabelText('Говорить')).not.toBeInTheDocument()

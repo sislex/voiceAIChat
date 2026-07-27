@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-07-27
-checked: 49465ae
+checked: 95f654f
 areas:
   - packages/ui/src
   - apps/web/src
@@ -49,6 +49,8 @@ web/desktop host → installRemoteBridges → HTTP + WebSocket → server
 Сообщения можно редактировать и удалять через REST. Экспорт в Markdown/JSON выполняется чистыми shared-функциями и browser download bridge.
 
 ## Голосовой конвейер
+
+`lib/featureFlags.ts` содержит временный глобальный gate `VOICE_INPUT_ENABLED`. При выключенном gate `VoiceBar` показывает неактивный микрофон, store отклоняет ручной и автоматический запуск захвата, а `SettingsModal` блокирует STT, выбор микрофона, диаризацию, hands-free и barge-in. Текстовый ввод и TTS остаются доступны.
 
 `browserAudio.ts` получает MediaStream выбранного устройства. Worklet/source переводит вход в mono PCM16 требуемой частоты и шлёт бинарные чанки. RMS поступает в VAD и индикатор.
 

@@ -8,6 +8,7 @@ import { createVoiceStore, type AppState, type StoreActions, type StoreDeps } fr
 import { createBrowserAudioController } from '../audio/browserAudio'
 import { listMicrophones } from '../audio/microphones'
 import { enqueueTtsAudio, stopTts } from '../lib/ttsPlayer'
+import { VOICE_INPUT_ENABLED } from '../lib/featureFlags'
 
 export interface UseVoiceStore {
   state: AppState
@@ -88,6 +89,7 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
       board,
       audio,
       listMics,
+      voiceInputEnabled: deps.voiceInputEnabled ?? VOICE_INPUT_ENABLED,
       sttEnabled,
       claudeEnabled,
       sendClaudePrompt,

@@ -135,6 +135,12 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().voice).toBe('idle')
   })
 
+  it('глобальная блокировка не позволяет запустить запись', () => {
+    const store = createVoiceStore({ api: createFakeApi([]), voiceInputEnabled: false })
+    store.actions.startVoice()
+    expect(store.getState().voice).toBe('idle')
+  })
+
   it('barge-in: нажатие микрофона во время speaking возвращает в listening', async () => {
     const { store } = makeStore()
     await store.actions.init()

@@ -246,6 +246,8 @@ export interface StoreDeps {
    * мок-рост транскрипта отключён. false (по умолчанию) — мок-пайплайн.
    */
   sttEnabled?: boolean
+  /** Разрешён ли запуск захвата микрофона. По умолчанию разрешён для обратной совместимости. */
+  voiceInputEnabled?: boolean
   /**
    * true — ответ приходит от реального Claude (события claude:*), мок-ответ
    * отключён. false (по умолчанию) — мок-ответ.
@@ -1905,6 +1907,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   function startVoice(): void {
+    if (deps.voiceInputEnabled === false) return
     // mic_press: idle → listening, либо barge-in speaking → listening.
     if (!dispatchVoice('mic_press')) return
     cancelTimers() // на barge-in гасим таймеры озвучки
