@@ -2004,6 +2004,27 @@
 .msgtl > .msgact-status {
   margin-bottom: 6px;
 }
+.msgtl-actions {
+  margin: 6px 0;
+}
+/* Краткая сводка секции действий (режим «Кратко»). */
+.actbrief {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 6px 0;
+  padding: 4px 8px;
+  border-left: 3px solid var(--border);
+  border-radius: 7px;
+  font-size: 12.5px;
+}
+.actbrief-meta {
+  flex: none;
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+}
 .actsec {
   border-radius: 7px;
   margin-bottom: 3px;

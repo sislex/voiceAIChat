@@ -424,7 +424,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           // Смещение действия в тексте = длина уже накопленного ответа. Клиент
           // применяет токены и лог в том же порядке, поэтому по `at` UI чередует
           // действия с абзацами (и в живом потоке, и в сохранённом сообщении).
-          const stamped: ClaudeLogEntry = { ...entry, at: turn.partial.length }
+          const stamped: ClaudeLogEntry = { ...entry, at: turn.partial.length, ts: now() }
           turn.activity.push(stamped)
           if (turn.activity.length > ACTIVITY_CAP) turn.activity.shift()
           if (req.verbose) broadcast({ t: 'claude.log', conversationId, entry: stamped }, userId)

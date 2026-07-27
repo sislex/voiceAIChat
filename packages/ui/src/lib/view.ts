@@ -144,6 +144,16 @@ function whereRan(execTarget?: string | null): string {
 }
 
 /** Множественное число для «N действий». */
+/** Человеческая длительность: «<1с», «5с», «1м 20с». */
+export function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 950) return '<1с'
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}с`
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return r ? `${m}м ${r}с` : `${m}м`
+}
+
 export function pluralActions(n: number): string {
   const m10 = n % 10
   const m100 = n % 100
