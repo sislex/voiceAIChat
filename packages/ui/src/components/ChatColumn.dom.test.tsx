@@ -174,25 +174,33 @@ describe('ChatColumn — простой/подробный вид ответа',
     }
   ]
 
-  it('простой вид по умолчанию: счётчик есть, секций нет', () => {
+  it('по умолчанию — минимальный вид: без счётчика и секций, только текст', () => {
     renderCol({ messages: withActivity })
-    expect(screen.getByTestId('activity-count').textContent).toContain('2 действия')
+    expect(screen.queryByTestId('activity-count')).toBeNull()
     expect(screen.queryByTestId('activity-sections')).toBeNull()
+    expect(screen.getByText('Ответ')).toBeInTheDocument()
   })
 
-  it('кнопка «Подробнее» раскрывает секции хода', async () => {
+  it('кнопка по кругу: минимально → кратко → подробно → минимально', async () => {
     renderCol({ messages: withActivity })
-    await userEvent.click(screen.getByTitle('Подробнее'))
+    const btn = screen.getByLabelText('Переключить вид действий')
+    // Кратко: появляется счётчик действий, секций ещё нет.
+    await userEvent.click(btn)
+    expect(screen.getByTestId('activity-count').textContent).toContain('2 действия')
+    expect(screen.queryByTestId('activity-sections')).toBeNull()
+    // Подробно: секции по каждому действию.
+    await userEvent.click(btn)
     expect(screen.getByTestId('activity-sections')).toBeInTheDocument()
     expect(screen.getAllByTestId('activity-section')).toHaveLength(2)
-    // и обратно
-    await userEvent.click(screen.getByTitle('Кратко'))
+    // Снова минимально.
+    await userEvent.click(btn)
     expect(screen.queryByTestId('activity-sections')).toBeNull()
+    expect(screen.queryByTestId('activity-count')).toBeNull()
   })
 
   it('без активности кнопки переключения нет', () => {
     renderCol()
-    expect(screen.queryByTitle('Подробнее')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Переключить вид действий')).not.toBeInTheDocument()
   })
 })
 

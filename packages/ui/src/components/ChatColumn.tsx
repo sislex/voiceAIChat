@@ -22,8 +22,13 @@ import {
 import { Dots } from './animations'
 import { QuestionsForm } from './QuestionsForm'
 import { MessageMeta } from './MessageMeta'
-import { MessageActivity } from './MessageActivity'
-import { MessageTimeline } from './MessageTimeline'
+import {
+  MessageTimeline,
+  nextTimelineMode,
+  timelineModeButtonLabel,
+  TIMELINE_MODE_LABEL,
+  type TimelineMode
+} from './MessageTimeline'
 import { copyText } from '../lib/clipboard'
 import { useAutoGrow } from '../lib/autoGrow'
 
@@ -161,18 +166,19 @@ export function ChatColumn({
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [titleEditing, setTitleEditing] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
-  // id сообщений в подробном виде (по умолчанию все в простом); плюс отдельный
-  // флаг подробного вида для живого (стримящегося) хода.
-  const [detailedIds, setDetailedIds] = useState<Set<string>>(new Set())
-  const [liveDetailed, setLiveDetailed] = useState(false)
+  // Режим отображения хода по каждому сообщению (дефолт — minimal) и отдельный
+  // режим для живого (стримящегося) хода (дефолт — brief).
+  const [modeById, setModeById] = useState<Map<string, TimelineMode>>(new Map())
+  const [liveMode, setLiveMode] = useState<TimelineMode>('brief')
 
-  const toggleDetailed = (id: string): void =>
-    setDetailedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+  const modeOf = (id: string): TimelineMode => modeById.get(id) ?? 'minimal'
+  const cycleMode = (id: string): void =>
+    setModeById((prev) => {
+      const next = new Map(prev)
+      next.set(id, nextTimelineMode(prev.get(id) ?? 'minimal'))
       return next
     })
+  const cycleLiveMode = (): void => setLiveMode((m) => nextTimelineMode(m))
 
   const startTitleEdit = (): void => {
     if (!onRenameTitle) return
@@ -417,7 +423,8 @@ export function ChatColumn({
                     <MessageTimeline
                       text={aiText}
                       activity={m.meta?.activity ?? []}
-                      detailed={detailedIds.has(m.id)}
+                      mode={modeOf(m.id)}
+                      endMs={m.createdAt}
                       execTarget={execTarget}
                     />
                     {machineOps &&
@@ -472,12 +479,11 @@ export function ChatColumn({
                     {isAi && m.meta?.activity && m.meta.activity.length > 0 && (
                       <button
                         className="msgbtn actbtn"
-                        aria-label={detailedIds.has(m.id) ? 'Свернуть подробности' : 'Показать подробности'}
-                        title={detailedIds.has(m.id) ? 'Кратко' : 'Подробнее'}
-                        aria-pressed={detailedIds.has(m.id)}
-                        onClick={() => toggleDetailed(m.id)}
+                        aria-label="Переключить вид действий"
+                        title={`Вид: ${TIMELINE_MODE_LABEL[modeOf(m.id)]}`}
+                        onClick={() => cycleMode(m.id)}
                       >
-                        {detailedIds.has(m.id) ? '≡ Кратко' : '≣ Подробнее'}
+                        {timelineModeButtonLabel(modeOf(m.id))}
                       </button>
                     )}
                     {isAi && (
@@ -562,11 +568,12 @@ export function ChatColumn({
           {isThinking && (
             <div className="think" data-testid="think">
               {liveActivity.length > 0 ? (
-                <MessageActivity
+                <MessageTimeline
                   live
                   voice={state}
+                  text=""
                   activity={liveActivity}
-                  detailed={liveDetailed}
+                  mode={liveMode}
                   execTarget={execTarget}
                 />
               ) : (
@@ -578,10 +585,11 @@ export function ChatColumn({
               {liveActivity.length > 0 && (
                 <button
                   className="msgbtn actbtn"
-                  aria-pressed={liveDetailed}
-                  onClick={() => setLiveDetailed((v) => !v)}
+                  aria-label="Переключить вид действий"
+                  title={`Вид: ${TIMELINE_MODE_LABEL[liveMode]}`}
+                  onClick={cycleLiveMode}
                 >
-                  {liveDetailed ? '≡ Кратко' : '≣ Подробнее'}
+                  {timelineModeButtonLabel(liveMode)}
                 </button>
               )}
             </div>
@@ -601,7 +609,7 @@ export function ChatColumn({
                   voice={state}
                   text={liveImages.body}
                   activity={liveActivity}
-                  detailed={liveDetailed}
+                  mode={liveMode}
                   execTarget={execTarget}
                 />
                 {machineOps &&
@@ -634,10 +642,11 @@ export function ChatColumn({
                   {liveActivity.length > 0 && (
                     <button
                       className="msgbtn actbtn actbtn--stream"
-                      aria-pressed={liveDetailed}
-                      onClick={() => setLiveDetailed((v) => !v)}
+                      aria-label="Переключить вид действий"
+                      title={`Вид: ${TIMELINE_MODE_LABEL[liveMode]}`}
+                      onClick={cycleLiveMode}
                     >
-                      {liveDetailed ? '≡ Кратко' : '≣ Подробнее'}
+                      {timelineModeButtonLabel(liveMode)}
                     </button>
                   )}
                 </div>

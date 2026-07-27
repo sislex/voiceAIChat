@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ClaudeLogEntry } from '@shared/types'
-import { activityLocation, activityStatus, chipClass, messageTime, pluralActions } from './view'
+import { activityLocation, activityStatus, chipClass, formatDuration, messageTime, pluralActions } from './view'
 
 const log = (kind: ClaudeLogEntry['kind'], summary: string): ClaudeLogEntry => ({
   kind,
@@ -87,5 +87,22 @@ describe('messageTime — время сообщения в поясе зрите
 
   it('без createdAt откатывается к запечённой строке time', () => {
     expect(messageTime({ time: '10:00', createdAt: 0 })).toBe('10:00')
+  })
+})
+
+
+describe('formatDuration — человеческая длительность', () => {
+  it('меньше секунды → «<1с»', () => {
+    expect(formatDuration(0)).toBe('<1с')
+    expect(formatDuration(400)).toBe('<1с')
+  })
+  it('секунды', () => {
+    expect(formatDuration(1000)).toBe('1с')
+    expect(formatDuration(8000)).toBe('8с')
+    expect(formatDuration(59000)).toBe('59с')
+  })
+  it('минуты и секунды', () => {
+    expect(formatDuration(60000)).toBe('1м')
+    expect(formatDuration(80000)).toBe('1м 20с')
   })
 })

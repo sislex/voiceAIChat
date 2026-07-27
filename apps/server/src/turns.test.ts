@@ -279,6 +279,7 @@ describe('turns: чередование действий (смещение at)',
     const ai = db.listMessages(U, conv.id).find((m) => m.role === 'ai')
     expect(ai?.text).toBe('Привет мир')
     expect(ai?.meta?.activity?.[0]?.at).toBe('Привет '.length)
+    expect(typeof ai?.meta?.activity?.[0]?.ts).toBe('number')
     db.close()
   })
 
@@ -290,6 +291,8 @@ describe('turns: чередование действий (смещение at)',
     const ai = db.listMessages(U, conv.id).find((m) => m.role === 'ai')
     expect(ai?.text).toBe('Совсем другой итоговый текст')
     expect(ai?.meta?.activity?.[0]?.at).toBeUndefined()
+    // ts не привязан к тексту и остаётся (для длительностей в кратком виде).
+    expect(typeof ai?.meta?.activity?.[0]?.ts).toBe('number')
     db.close()
   })
 })
