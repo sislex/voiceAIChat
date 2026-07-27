@@ -76,11 +76,13 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
       llmProvider?: string | null
       llmModel?: string | null
       permissionMode?: string | null
+      kbContextMode?: string
     }
   }>(
     '/api/conversations/:id',
     async (req, reply) => {
       if (typeof req.body.title === 'string') db.renameConversation(uid(req), req.params.id, req.body.title)
+      if (req.body.kbContextMode === 'auto' || req.body.kbContextMode === 'manual' || req.body.kbContextMode === 'off') db.setConversationKbContextMode(uid(req), req.params.id, req.body.kbContextMode)
       if (req.body.execTarget !== undefined) {
         // Неизвестное значение движка приравниваем к «из общих настроек».
         const llmProvider =

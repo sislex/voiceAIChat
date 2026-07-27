@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   workdir           TEXT,
   skill_names       TEXT NOT NULL DEFAULT '[]',
   llm_provider      TEXT,
-  llm_model         TEXT
+  llm_model         TEXT,
+  kb_context_mode   TEXT NOT NULL DEFAULT 'auto'
 );
 
 CREATE TABLE IF NOT EXISTS messages (

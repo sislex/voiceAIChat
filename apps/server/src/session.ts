@@ -106,7 +106,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
     onMessage(msg, ctx) {
       switch (msg.t) {
         case 'claude.send':
-          deps.turns.start({
+          void deps.turns.start({
             userId: deps.user.name,
             conversationId: msg.conversationId,
             segments: msg.segments,

@@ -26,6 +26,11 @@
     "test:agent-tray": "npm --prefix apps/agent-tray run test",
     "dist:agent-tray": "npm --prefix apps/agent-tray run dist",
     "docker": "docker compose up --build -d",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "kb:prepare": "node scripts/kb-search.mjs prepare",
+    "kb:verify-prepared": "node scripts/kb-search.mjs verify",
+    "kb:search": "node scripts/kb-search.mjs search",
+    "kb:context": "node scripts/kb-search.mjs context",
+    "kb:impact": "node scripts/kb-search.mjs impact"
   }
 }
