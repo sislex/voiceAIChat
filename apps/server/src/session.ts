@@ -3,7 +3,7 @@
 // Сами ходы LLM живут в процесс-глобальном TurnManager и переживают обрыв
 // соединения: обновление страницы не отменяет генерацию ответа.
 
-import type { AgentInfo, SessionUser, SystemCapabilities } from '@voicechat/shared'
+import type { AgentInfo, Board, SessionUser, SystemCapabilities } from '@voicechat/shared'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'
 import type { TurnManager } from './turns.js'
@@ -41,6 +41,11 @@ export interface SessionDeps {
     list(): AgentInfo[]
     subscribe(cb: () => void): () => void
   }
+  /** Живая канбан-доска проекта: снапшот (с проверкой членства) + подписка на изменения. */
+  board?: {
+    getBoard(projectId: string): Board | null
+    subscribe(cb: (projectId: string) => void): () => void
+  }
   /** Релей живого PTY-терминала по машине (отдельно от однострочного exec). */
   pty?: PtyRelay
 }
@@ -58,6 +63,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let tts: TtsSession | null = null
   let unsubDownload: (() => void) | null = null
   let unsubAgents: (() => void) | null = null
+  let unsubBoard: (() => void) | null = null
+  let boardProjectId: string | null = null
   let unsubTurns: (() => void) | null = null
   let ccTailStop: (() => void) | null = null
   let cxTailStop: (() => void) | null = null
@@ -86,6 +93,14 @@ export function createSession(deps: SessionDeps): WsHandlers {
         unsubAgents = deps.agentsFeed.subscribe(() =>
           ctx.send({ t: 'agents', agents: deps.agentsFeed!.list() })
         )
+      }
+      // Живая доска: при изменении подписанного проекта шлём свежий снапшот.
+      if (deps.board) {
+        unsubBoard = deps.board.subscribe((projectId) => {
+          if (projectId !== boardProjectId) return
+          const board = deps.board!.getBoard(projectId)
+          if (board) ctx.send({ t: 'board.update', projectId, board })
+        })
       }
     },
     onMessage(msg, ctx) {
@@ -207,6 +222,18 @@ export function createSession(deps: SessionDeps): WsHandlers {
           deps.pty?.kill(msg.ptyId)
           break
 
+        case 'board.subscribe': {
+          // Подписка на доску: молча игнорируем, если не участник / нет доступа.
+          const board = deps.board?.getBoard(msg.projectId) ?? null
+          if (!board) break
+          boardProjectId = msg.projectId
+          ctx.send({ t: 'board.update', projectId: msg.projectId, board })
+          break
+        }
+        case 'board.unsubscribe':
+          boardProjectId = null
+          break
+
         default:
           break
       }
@@ -224,6 +251,9 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubDownload = null
       unsubAgents?.()
       unsubAgents = null
+      unsubBoard?.()
+      unsubBoard = null
+      boardProjectId = null
       unsubTurns?.()
       unsubTurns = null
       ccTailStop?.()

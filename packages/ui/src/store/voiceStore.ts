@@ -8,6 +8,7 @@
 
 import type {
   RendererApi,
+  RendererBoardBridge,
   RendererFilesBridge,
   RendererFsBridge,
   RendererSessionBridge,
@@ -16,6 +17,7 @@ import type {
   SttUpdate,
   UploadInfo
 } from '@shared/ipc'
+import type { Board, ProjectDetail, ProjectSummary, TaskPriority } from '@shared/projects'
 import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
 import { detectOpenUtility, toolBlock, type ToolSpec } from '@shared/tools'
 import type { ActiveTurn, ServerFileInfo, SystemCapabilities } from '@shared/protocol'
@@ -61,6 +63,9 @@ import {
 
 /** Период опроса статуса входа claude/codex (ms). */
 const LOGIN_STATUS_POLL_MS = 30_000
+
+/** Шаг дробного ранга для оптимистичного порядка на клиенте. */
+const BOARD_RANK_STEP = 1024
 
 /** Полное состояние приложения в renderer. */
 export interface AppState {
@@ -177,6 +182,19 @@ export interface AppState {
   downloading: boolean
   /** Прогресс скачивания модели (0–100). */
   downloadPercent: number
+  // --- Проекты + канбан ---
+  /** Открыт ли режим «Проекты». */
+  projectsOpen: boolean
+  /** Список проектов текущего пользователя. */
+  projects: ProjectSummary[]
+  /** Проект, выбранный в панели деталей (null — не выбран). */
+  projectDetail: ProjectDetail | null
+  /** id проекта с открытой доской (null — доска закрыта). */
+  activeProjectId: string | null
+  /** Снапшот доски активного проекта (null — не загружена). */
+  board: Board | null
+  /** Идёт ли загрузка доски. */
+  boardLoading: boolean
 }
 
 export interface StoreDeps {
@@ -187,6 +205,8 @@ export interface StoreDeps {
   fs?: RendererFsBridge
   /** Мост чтения файлов с диска сервера (web) — картинки, созданные CLI. */
   files?: RendererFilesBridge
+  /** Мост живой канбан-доски (web). */
+  board?: RendererBoardBridge
   /** Источник времени (для формата HH:MM). По умолчанию Date.now. */
   now?: () => number
   /** Переопределение задержек пайплайна (для тестов). */
@@ -431,6 +451,66 @@ export interface StoreActions {
   uploadFsFile(agentId: string, dir: string, file: File): Promise<FsResult>
   /** Выполнить команду на машине (консоль). */
   agentExec(agentId: string, command: string): Promise<AgentExecResult>
+  // --- Проекты + канбан ---
+  /** Открыть режим «Проекты» (грузит список). */
+  openProjects(): Promise<void>
+  /** Закрыть режим «Проекты». */
+  closeProjects(): void
+  /** Перечитать список проектов. */
+  refreshProjects(): Promise<void>
+  /** Выбрать проект в панель деталей (грузит состав). */
+  selectProject(id: string): Promise<void>
+  /** Создать проект. */
+  createProject(input: {
+    name: string
+    description?: string
+    gitUrl?: string
+    technologies?: string[]
+    skills?: string[]
+  }): Promise<void>
+  /** Обновить поля проекта (только владелец). */
+  updateProject(
+    id: string,
+    fields: {
+      name?: string
+      description?: string
+      gitUrl?: string | null
+      technologies?: string[]
+      skills?: string[]
+    }
+  ): Promise<void>
+  /** Удалить проект (только владелец). */
+  deleteProject(id: string): Promise<void>
+  /** Добавить/убрать участника (только владелец). */
+  addProjectMember(id: string, username: string): Promise<void>
+  removeProjectMember(id: string, username: string): Promise<void>
+  /** Привязать/отвязать машину-агента (только владелец). */
+  linkProjectMachine(id: string, agentId: string): Promise<void>
+  unlinkProjectMachine(id: string, agentId: string): Promise<void>
+  /** Открыть доску проекта (грузит снапшот, подписывается на живые обновления). */
+  openBoard(id: string): Promise<void>
+  /** Закрыть доску (отписка). */
+  closeBoard(): void
+  /** Применить живой снапшот доски (из WS board.update). */
+  applyBoardUpdate(projectId: string, board: Board): void
+  /** Колонки активной доски. */
+  createColumn(name: string): Promise<void>
+  renameColumn(columnId: string, name: string): Promise<void>
+  setColumnHidden(columnId: string, hidden: boolean): Promise<void>
+  reorderColumns(order: string[]): Promise<void>
+  deleteColumn(columnId: string): Promise<void>
+  /** Задачи активной доски. */
+  createTask(
+    columnId: string,
+    input: { title: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+  ): Promise<void>
+  updateTask(
+    taskId: string,
+    fields: { title?: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+  ): Promise<void>
+  /** Переместить задачу (смена статуса = смена колонки); оптимистично. */
+  moveTask(taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null): Promise<void>
+  deleteTask(taskId: string): Promise<void>
   /** Отмена всех активных таймеров пайплайна (напр. при размонтировании). */
   dispose(): void
 }
@@ -500,7 +580,13 @@ function initialState(): AppState {
     error: null,
     modelPresent: true,
     downloading: false,
-    downloadPercent: 0
+    downloadPercent: 0,
+    projectsOpen: false,
+    projects: [],
+    projectDetail: null,
+    activeProjectId: null,
+    board: null,
+    boardLoading: false
   }
 }
 
@@ -524,6 +610,7 @@ function composeUserText(text: string, attachments: UploadInfo[]): string {
 
 export function createVoiceStore(deps: StoreDeps): VoiceStore {
   const { api } = deps
+  const boardBridge = deps.board
   const now = deps.now ?? Date.now
   const delays: PipelineDelays = { ...DEFAULT_DELAYS, ...deps.delays }
   const audio = deps.audio ?? null
@@ -2036,6 +2123,256 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
+  // --- Проекты + канбан ----------------------------------------------------
+
+  const perr = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+
+  async function refreshProjects(): Promise<void> {
+    setState({ projects: await api['projects:list']() })
+  }
+  async function openProjects(): Promise<void> {
+    setState({ projectsOpen: true })
+    try {
+      await refreshProjects()
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  function closeProjects(): void {
+    closeBoard()
+    setState({ projectsOpen: false, projects: [], projectDetail: null })
+  }
+  async function selectProject(id: string): Promise<void> {
+    try {
+      setState({ projectDetail: await api['projects:get']({ id }) })
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function createProject(input: {
+    name: string
+    description?: string
+    gitUrl?: string
+    technologies?: string[]
+    skills?: string[]
+  }): Promise<void> {
+    try {
+      const detail = await api['projects:create'](input)
+      await refreshProjects()
+      setState({ projectDetail: detail })
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function updateProject(
+    id: string,
+    fields: {
+      name?: string
+      description?: string
+      gitUrl?: string | null
+      technologies?: string[]
+      skills?: string[]
+    }
+  ): Promise<void> {
+    try {
+      const detail = await api['projects:update']({ id, ...fields })
+      setState({ projectDetail: detail })
+      await refreshProjects()
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function deleteProject(id: string): Promise<void> {
+    try {
+      await api['projects:delete']({ id })
+      if (state.activeProjectId === id) closeBoard()
+      if (state.projectDetail?.id === id) setState({ projectDetail: null })
+      await refreshProjects()
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function addProjectMember(id: string, username: string): Promise<void> {
+    try {
+      setState({ projectDetail: await api['projects:addMember']({ id, username }) })
+      await refreshProjects()
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function removeProjectMember(id: string, username: string): Promise<void> {
+    try {
+      setState({ projectDetail: await api['projects:removeMember']({ id, username }) })
+      if (state.activeProjectId === id) await refreshBoard()
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function linkProjectMachine(id: string, agentId: string): Promise<void> {
+    try {
+      setState({ projectDetail: await api['projects:linkMachine']({ id, agentId }) })
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function unlinkProjectMachine(id: string, agentId: string): Promise<void> {
+    try {
+      setState({ projectDetail: await api['projects:unlinkMachine']({ id, agentId }) })
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function refreshBoard(): Promise<void> {
+    const id = state.activeProjectId
+    if (!id) return
+    setState({ board: await api['board:get']({ id }) })
+  }
+  async function openBoard(id: string): Promise<void> {
+    setState({ activeProjectId: id, boardLoading: true, board: null })
+    try {
+      const [board, detail] = await Promise.all([api['board:get']({ id }), api['projects:get']({ id })])
+      setState({ board, projectDetail: detail, boardLoading: false })
+      boardBridge?.subscribe(id)
+    } catch (err) {
+      setState({ boardLoading: false, error: perr(err) })
+    }
+  }
+  function closeBoard(): void {
+    if (state.activeProjectId) boardBridge?.unsubscribe()
+    setState({ activeProjectId: null, board: null, boardLoading: false })
+  }
+  function applyBoardUpdate(projectId: string, board: Board): void {
+    if (projectId === state.activeProjectId) setState({ board })
+  }
+  async function createColumn(name: string): Promise<void> {
+    const id = state.activeProjectId
+    if (!id) return
+    try {
+      await api['columns:create']({ projectId: id, name })
+      await refreshBoard()
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function renameColumn(columnId: string, name: string): Promise<void> {
+    const id = state.activeProjectId
+    if (!id) return
+    try {
+      await api['columns:rename']({ projectId: id, columnId, name })
+      await refreshBoard()
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function setColumnHidden(columnId: string, hidden: boolean): Promise<void> {
+    const id = state.activeProjectId
+    if (!id) return
+    try {
+      await api['columns:setHidden']({ projectId: id, columnId, hidden })
+      await refreshBoard()
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function reorderColumns(order: string[]): Promise<void> {
+    const id = state.activeProjectId
+    const prev = state.board
+    if (!id || !prev) return
+    const byId = new Map(prev.columns.map((c) => [c.id, c]))
+    const columns = order
+      .map((cid, i) => {
+        const c = byId.get(cid)
+        return c ? { ...c, position: (i + 1) * BOARD_RANK_STEP } : null
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null)
+    setState({ board: { ...prev, columns } })
+    try {
+      await api['columns:reorder']({ projectId: id, order })
+      await refreshBoard()
+    } catch (err) {
+      setState({ board: prev, error: perr(err) })
+    }
+  }
+  async function deleteColumn(columnId: string): Promise<void> {
+    const id = state.activeProjectId
+    if (!id) return
+    try {
+      await api['columns:delete']({ projectId: id, columnId })
+      await refreshBoard()
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function createTask(
+    columnId: string,
+    input: { title: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+  ): Promise<void> {
+    const id = state.activeProjectId
+    if (!id) return
+    try {
+      await api['tasks:create']({ projectId: id, columnId, ...input })
+      await refreshBoard()
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function updateTask(
+    taskId: string,
+    fields: { title?: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+  ): Promise<void> {
+    const id = state.activeProjectId
+    if (!id) return
+    try {
+      await api['tasks:update']({ projectId: id, taskId, ...fields })
+      await refreshBoard()
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function moveTask(
+    taskId: string,
+    columnId: string,
+    afterId?: string | null,
+    beforeId?: string | null
+  ): Promise<void> {
+    const id = state.activeProjectId
+    const prev = state.board
+    if (!id || !prev) return
+    const tasks = prev.tasks.map((t) => ({ ...t }))
+    const moving = tasks.find((t) => t.id === taskId)
+    if (moving) {
+      moving.columnId = columnId
+      const after = afterId ? tasks.find((t) => t.id === afterId) : null
+      const before = beforeId ? tasks.find((t) => t.id === beforeId) : null
+      moving.position =
+        after && before
+          ? (after.position + before.position) / 2
+          : after
+            ? after.position + BOARD_RANK_STEP
+            : before
+              ? before.position - BOARD_RANK_STEP
+              : Math.max(0, ...tasks.filter((t) => t.columnId === columnId && t.id !== taskId).map((t) => t.position)) +
+                BOARD_RANK_STEP
+      setState({ board: { ...prev, tasks } })
+    }
+    try {
+      await api['tasks:move']({ projectId: id, taskId, columnId, afterId: afterId ?? null, beforeId: beforeId ?? null })
+      await refreshBoard()
+    } catch (err) {
+      setState({ board: prev, error: perr(err) })
+    }
+  }
+  async function deleteTask(taskId: string): Promise<void> {
+    const id = state.activeProjectId
+    if (!id) return
+    try {
+      await api['tasks:delete']({ projectId: id, taskId })
+      await refreshBoard()
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+
   return {
     getState,
     subscribe,
@@ -2135,6 +2472,29 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applyVoiceProgress,
       applyVoiceDone,
       applyVoiceError,
+      openProjects,
+      closeProjects,
+      refreshProjects,
+      selectProject,
+      createProject,
+      updateProject,
+      deleteProject,
+      addProjectMember,
+      removeProjectMember,
+      linkProjectMachine,
+      unlinkProjectMachine,
+      openBoard,
+      closeBoard,
+      applyBoardUpdate,
+      createColumn,
+      renameColumn,
+      setColumnHidden,
+      reorderColumns,
+      deleteColumn,
+      createTask,
+      updateTask,
+      moveTask,
+      deleteTask,
       dispose
     }
   }

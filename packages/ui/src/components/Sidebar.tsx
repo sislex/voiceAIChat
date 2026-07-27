@@ -58,6 +58,8 @@ export interface SidebarProps {
   onOpenUsers?: () => void
   /** Открыть меню «Машины» (статус агентских машин; web). */
   onOpenMachines?: () => void
+  /** Открыть режим «Проекты» (web). */
+  onOpenProjects?: () => void
   /** Текущий пользователь (web-режим); null/без имени — строка входа не показывается. */
   currentUser?: SessionUser | null
   /** Выйти из сессии (web). */
@@ -86,6 +88,7 @@ export function Sidebar({
   onOpenConsole,
   onOpenUsers,
   onOpenMachines,
+  onOpenProjects,
   currentUser,
   onLogout,
   open = false
@@ -240,6 +243,12 @@ export function Sidebar({
           <span className="footico">🧭</span>
           Codex
         </button>
+        {onOpenProjects && (
+          <button className="footbtn" onClick={onOpenProjects}>
+            <span className="footico">📋</span>
+            Проекты
+          </button>
+        )}
         {onOpenKnowledgeBase && <button className="footbtn" onClick={onOpenKnowledgeBase}>
           <span className="footico">📚</span>
           База знаний

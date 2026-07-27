@@ -3,6 +3,7 @@
 // поэтому стор и компоненты renderer переиспользуются без изменений.
 import type {
   RendererAgentsBridge,
+  RendererBoardBridge,
   RendererApi,
   RendererAudioBridge,
   RendererCcBridge,
@@ -26,6 +27,7 @@ declare global {
     cc: RendererCcBridge
     codex: RendererCodexBridge
     agents?: RendererAgentsBridge
+    board?: RendererBoardBridge
     session?: RendererSessionBridge
     fs?: RendererFsBridge
     files?: RendererFilesBridge
