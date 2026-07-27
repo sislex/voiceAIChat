@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-07-26
-checked: 9d819ac
+updated: 2026-07-27
+checked: d867705
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -42,7 +42,7 @@ esbuild'ом на сервере — `agents/agentScript.ts`, адрес и то
 (HKCU `Run` → `wscript` → скрытый `run.cmd`) и запускает агента; подробности в
 `apps/agent/WINDOWS.md`. Скрипт отдаётся с BOM — иначе PowerShell 5.1 читает
 его в ANSI и портит русские строки; готовая команда копируется из настроек
-(«Команда для Windows») и рассчитана на вставку в PowerShell, не в cmd.
+(«Команда для Windows») и рассчитана на вставку как в PowerShell, так и в обычный cmd.exe.
 
 ## Установка и обновление агента (одна команда на ОС)
 

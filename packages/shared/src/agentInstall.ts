@@ -82,12 +82,14 @@ export function installScriptUrl(os: AgentOs, base: string): string {
 export function installCommand(os: AgentOs, base: string, conn = ''): string {
   const url = installScriptUrl(os, base)
   if (os === 'windows') {
-    // ExecutionPolicy обходим у дочернего процесса; внешние кавычки одинарные,
-    // чтобы $env:TEMP не развернула оболочка, в которую вставили команду.
-    const arg = conn ? ` "${conn}"` : ''
+    // Внешние двойные кавычки понимают и cmd.exe, и PowerShell. Внутри не
+    // используем $-переменные: родительский PowerShell раскрыл бы их до запуска
+    // дочернего процесса. Строка подключения base64url, поэтому одинарные кавычки безопасны.
+    const arg = conn ? ` '${conn}'` : ''
     return (
-      `powershell -NoProfile -ExecutionPolicy Bypass -Command 'Set-Location $env:TEMP; ` +
-      `curl.exe -fsSLk ${url} -o vc-agent-install.ps1; & .\\vc-agent-install.ps1${arg}'`
+      `powershell -NoProfile -ExecutionPolicy Bypass -Command "` +
+      `Set-Location ([Environment]::GetEnvironmentVariable('TEMP')); ` +
+      `curl.exe -fsSLk ${url} -o vc-agent-install.ps1; & .\\vc-agent-install.ps1${arg}"`
     )
   }
   // bash -s -- <conn>: скрипт читается из stdin, строка подключения идёт аргументом.

@@ -17,10 +17,10 @@
    - настроит автозапуск при входе (HKCU `Run` → `wscript` — без окна консоли);
    - запустит агента в фоне.
 
-Команда выглядит так (важно: она для PowerShell, а не для cmd):
+Команда работает как в PowerShell, так и в обычном cmd.exe:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command 'Set-Location $env:TEMP; curl.exe -fsSLk https://<сервер>/api/agents/install-windows.ps1 -o vc-agent-install.ps1; & .\vc-agent-install.ps1 "vcagent:…"'
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-Location ([Environment]::GetEnvironmentVariable('TEMP')); curl.exe -fsSLk https://<сервер>/api/agents/install-windows.ps1 -o vc-agent-install.ps1; & .\vc-agent-install.ps1 'vcagent:…'"
 ```
 
 ## Вручную
