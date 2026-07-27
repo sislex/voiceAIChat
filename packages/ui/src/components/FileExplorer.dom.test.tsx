@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FileExplorer } from './FileExplorer'
 import type { AgentInfo } from '@shared/agentProtocol'
@@ -90,4 +90,11 @@ describe('FileExplorer (самодостаточный)', () => {
     expect(screen.queryByTitle('Удалить')).toBeNull()
     expect(screen.getByTitle('Скачать')).toBeInTheDocument()
   })
+
+  it('initialDir открывает проводник ВНУТРИ указанной папки', async () => {
+    const ops = makeOps()
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" initialDir="/srv/proj" ops={ops} />)
+    await waitFor(() => expect(ops.list).toHaveBeenCalledWith('m1', '/srv/proj'))
+  })
+
 })

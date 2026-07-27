@@ -217,3 +217,28 @@ describe('turns: автоматический контекст базы знан
     db.close()
   })
 })
+
+describe('turns: контекст проекта в промпте', () => {
+  it('привязанный к проекту чат получает блок «Контекст проекта» с git/технологиями', async () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const p = db.createProject(U, { name: 'Мой проект', gitUrl: 'git@x:repo.git', technologies: ['ts', 'sqlite'] })
+    const conv = db.createConversation(U, 'Чат')
+    db.setConversationProject(U, conv.id, p.id)
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+    const prompt = rec.last()!.prompt
+    expect(prompt).toContain('Контекст проекта «Мой проект»')
+    expect(prompt).toContain('git@x:repo.git')
+    expect(prompt).toContain('ts, sqlite')
+  })
+
+  it('чат без проекта не получает блок проекта', async () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+    expect(rec.last()!.prompt).not.toContain('Контекст проекта')
+  })
+})

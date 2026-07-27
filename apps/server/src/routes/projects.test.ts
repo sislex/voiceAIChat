@@ -133,3 +133,43 @@ describe('projects REST: доска', () => {
     expect(final.tasks.find((t) => t.id === a.id)).toBeUndefined()
   })
 })
+
+describe('projects REST: машины проекта (папка, дефолт) и привязка чата', () => {
+  it('путь машины и дефолт — только владелец', async () => {
+    const p = await createProject()
+    const agent = db.createAgent('admin', 'M1')
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/machines`, payload: { agentId: agent.id } })
+    // папка машины
+    const setPath = await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}/machines/${agent.id}`, payload: { path: '/srv/x' } })
+    expect(setPath.statusCode).toBe(200)
+    expect((setPath.json() as ProjectDetail).machines.find((m) => m.agentId === agent.id)!.path).toBe('/srv/x')
+    // дефолт
+    const setDef = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/default-machine`, payload: { agentId: agent.id } })
+    expect(setDef.statusCode).toBe(200)
+    expect((setDef.json() as ProjectDetail).defaultAgentId).toBe(agent.id)
+    // участник (не владелец) не может
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'bob' } })
+    expect((await inj(bobTok, { method: 'PATCH', url: `/api/projects/${p.id}/machines/${agent.id}`, payload: { path: '/y' } })).statusCode).toBe(403)
+    expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/default-machine`, payload: { agentId: agent.id } })).statusCode).toBe(403)
+  })
+
+  it('привязка чата к проекту применяет машину/папку/навыки; не-участник → 404', async () => {
+    const create = await inj(adminTok, { method: 'POST', url: '/api/projects', payload: { name: 'P', skills: ['ts'] } })
+    const p = create.json() as ProjectDetail
+    const agent = db.createAgent('admin', 'M1')
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/machines`, payload: { agentId: agent.id } })
+    await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}/machines/${agent.id}`, payload: { path: '/srv/p' } })
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/default-machine`, payload: { agentId: agent.id } })
+    const conv = db.createConversation('admin', 'Chat')
+    const linked = await inj(adminTok, { method: 'POST', url: `/api/conversations/${conv.id}/project`, payload: { projectId: p.id } })
+    expect(linked.statusCode).toBe(200)
+    const c = linked.json() as { execTarget: string | null; workdir: string | null; skillNames: string[]; projectId?: string | null }
+    expect(c.projectId).toBe(p.id)
+    expect(c.execTarget).toBe(agent.id)
+    expect(c.workdir).toBe('/srv/p')
+    expect(c.skillNames).toEqual(['ts'])
+    // не-участник bob не может привязать свой чат к чужому проекту
+    const convBob = db.createConversation('bob', 'Chat bob')
+    expect((await inj(bobTok, { method: 'POST', url: `/api/conversations/${convBob.id}/project`, payload: { projectId: p.id } })).statusCode).toBe(404)
+  })
+})

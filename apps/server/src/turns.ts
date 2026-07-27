@@ -228,6 +228,19 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         }
       }
     }
+    // Контекст проекта, к которому привязан чат (git/технологии/навыки/описание).
+    if (conv?.projectId) {
+      const project = deps.db.getProject(userId, conv.projectId)
+      if (project) {
+        const lines = [
+          project.gitUrl ? `Git-репозиторий: ${project.gitUrl}` : '',
+          project.technologies.length ? `Технологии: ${project.technologies.join(', ')}` : '',
+          project.skills.length ? `Навыки/области: ${project.skills.join(', ')}` : '',
+          project.description ? project.description : ''
+        ].filter(Boolean)
+        if (lines.length) basePrompt = `${basePrompt}\n\n## Контекст проекта «${project.name}»\n${lines.join('\n')}`
+      }
+    }
     const prompt = appendImageHint(appendToolHint(appendQuestionsHint(basePrompt)))
     // Цель выполнения команд: выбранная машина-агент. Только своя машина
     // (чужую игнорируем → выполняем на сервере). Офлайн своей — сразу ошибка.

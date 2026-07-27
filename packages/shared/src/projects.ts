@@ -36,11 +36,20 @@ export interface ProjectSummary {
   role: ProjectRole
 }
 
+/** Машина проекта: агент + рабочая папка проекта на этой машине. */
+export interface ProjectMachine {
+  agentId: string
+  /** Папка проекта на этой машине (рабочий каталог). '' — не задана. */
+  path: string
+}
+
 /** Проект со всем составом (ответ get/create/update). */
 export interface ProjectDetail extends ProjectSummary {
   members: ProjectMember[]
-  /** id машин-агентов, выбранных для проекта. */
-  machineIds: string[]
+  /** Машины проекта с папками. */
+  machines: ProjectMachine[]
+  /** Машина по умолчанию (agentId ∈ machines) или null. */
+  defaultAgentId: string | null
 }
 
 /** Колонка канбан-доски. Колонка = статус задачи. */
