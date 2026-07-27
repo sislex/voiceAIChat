@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
-updated: 2026-07-26
-checked: e0bc98e
+updated: 2026-07-27
+checked: 49465ae
 areas:
   - scripts/kb.mjs
   - AGENTS.md

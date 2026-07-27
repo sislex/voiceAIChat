@@ -9,17 +9,22 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-26 | ⚠ 9 коммит(ов) в areas после сверки: c9f17a9 feat: show live token usage while responding … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-07-26 | ⚠ 1 коммит(ов) в areas после сверки: 49ded98 feat: add project knowledge base |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-27 | ✓ |
+| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ✓ |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-07-27 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-27 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-07-26 | ⚠ 2 коммит(ов) в areas после сверки: 49ded98 feat: add project knowledge base … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-07-27 | ✓ |
 | [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-07-27 | ✓ |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-26 | ⚠ 2 коммит(ов) в areas после сверки: d867705 docs(kb): тема projects.md для режима Проекты + канбан; журнал; регенерация индекса … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-27 | ⚠ 6 коммит(ов) в areas после сверки: c9f17a9 feat: show live token usage while responding … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-27 | ⚠ 2 коммит(ов) в areas после сверки: c50ada0 chore(agent): bump AGENT_VERSION 0.9.0 → 0.9.1 (console pipe-fallback fix) … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-07-27 | ⚠ 3 коммит(ов) в areas после сверки: c9f17a9 feat: show live token usage while responding … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-27 | ✓ |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-27 | ✓ |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-27 | ✓ |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-07-27 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-27 | ✓ |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-07-27 | ✓ |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-07-27 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-07-27 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-07-27 | ✓ |
 
 ## Инструкции по пакетам
 
@@ -33,18 +38,18 @@
 
 ## Журнал сессий
 
-Всего записей: 17. Последние:
+Всего записей: 18. Последние:
 
 - [2026-07-27-repo-2-project-knowledge-base.md](log/2026-07-27-repo-2-project-knowledge-base.md) — project-knowledge-base
 - [2026-07-27-2470-com-windows-install-command-cmd.md](log/2026-07-27-2470-com-windows-install-command-cmd.md) — windows-install-command-cmd
 - [2026-07-27-2470-com-projects-kanban.md](log/2026-07-27-2470-com-projects-kanban.md) — projects-kanban
 - [2026-07-27-2470-com-project-chat-link.md](log/2026-07-27-2470-com-project-chat-link.md) — project-chat-link
+- [2026-07-27-2470-com-comprehensive-project-knowledge.md](log/2026-07-27-2470-com-comprehensive-project-knowledge.md) — comprehensive-project-knowledge
 - [2026-07-27-2470-com-codex-plan-read-only.md](log/2026-07-27-2470-com-codex-plan-read-only.md) — codex-plan-read-only
 - [2026-07-27-2470-com-chat-lifecycle-status.md](log/2026-07-27-2470-com-chat-lifecycle-status.md) — chat-lifecycle-status
 - [2026-07-26-localhost-popup-file-terminal-context.md](log/2026-07-26-localhost-popup-file-terminal-context.md) — popup-file-terminal-context
 - [2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md](log/2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md) — база знаний для агентов
 - [2026-07-26-alexeys-macbook-air-2-image-in-message.md](log/2026-07-26-alexeys-macbook-air-2-image-in-message.md) — image-in-message
-- [2026-07-26-alexeys-macbook-air-2-composer-autogrow.md](log/2026-07-26-alexeys-macbook-air-2-composer-autogrow.md) — composer-autogrow
 
 ## Исторические планы
 
