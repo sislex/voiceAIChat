@@ -92,7 +92,7 @@ SUPERVISED=0
 mkdir -p "$AGENT_DIR"
 
 # --- Node.js -------------------------------------------------------------
-echo "[1/6] Проверяю Node.js (нужна 22+)…"
+echo "[1/7] Проверяю Node.js (нужна 22+)…"
 node_major() {
   local out
   out="$("$1" -v 2>/dev/null || true)"
@@ -131,7 +131,23 @@ fi
 echo "  использую $NODE_BIN ($("$NODE_BIN" -v))"
 
 # --- Свежий скрипт агента ------------------------------------------------
-echo "[2/6] Скачиваю агента…"
+echo "[2/7] Ставлю нативный терминал…"
+NODE_DIR="$(dirname "$NODE_BIN")"
+if [ -x "$NODE_DIR/npm" ]; then
+  NPM_BIN="$NODE_DIR/npm"
+elif command -v npm >/dev/null 2>&1; then
+  NPM_BIN="$(command -v npm)"
+else
+  echo "npm не найден рядом с Node.js — невозможно установить нативный терминал"
+  exit 1
+fi
+# Пакет публикует готовые бинарники для Linux/macOS x64 и arm64, компилятор не нужен.
+# --prefix кладёт node_modules рядом с voicechat-agent.cjs, откуда обычный require
+# находит модуль даже у самодостаточного CJS-бандла.
+PATH="$NODE_DIR:$PATH" "$NPM_BIN" install --prefix "$AGENT_DIR" --omit=dev --no-save --no-audit --no-fund @lydell/node-pty@1.1.0
+"$NODE_BIN" -e "require('$AGENT_DIR/node_modules/@lydell/node-pty')"
+
+echo "[3/7] Скачиваю агента…"
 # Имя временного файла ОБЯЗАНО оканчиваться на .cjs: node --check выбирает
 # модульную систему по расширению и на «.cjs.new» падает с UNKNOWN_FILE_EXTENSION.
 curl -fsSLk "$SERVER/api/agents/script" -o "$AGENT_DIR/voicechat-agent.new.cjs"
@@ -143,7 +159,7 @@ test -s "$AGENT_DIR/voicechat-agent.new.cjs"
 }
 
 # --- Строка подключения --------------------------------------------------
-echo "[3/6] Ищу строку подключения…"
+echo "[4/7] Ищу строку подключения…"
 cmdline_of() { ${cmdlineOf}; }
 
 if [ -n "$CONN" ]; then
@@ -173,7 +189,7 @@ fi
 # перезапуск. Иначе установщик убивает сам себя: агент живёт в cgroup своего
 # systemd-сервиса, а systemctl stop гасит весь cgroup, включая процессы,
 # которые агент запустил (setsid меняет сессию, но не cgroup).
-echo "[4/6] Ставлю новый скрипт…"
+echo "[5/7] Ставлю новый скрипт…"
 [ -f "$AGENT_DIR/voicechat-agent.cjs" ] &&
   mv "$AGENT_DIR/voicechat-agent.cjs" "$AGENT_DIR/voicechat-agent.cjs.prev" || true
 mv "$AGENT_DIR/voicechat-agent.new.cjs" "$AGENT_DIR/voicechat-agent.cjs"
@@ -189,10 +205,10 @@ exec "$NODE_BIN" "$AGENT_DIR/voicechat-agent.cjs" --connection "\\$(cat "$AGENT_
 RUNEOF
 chmod +x "$AGENT_DIR/run.sh"
 
-echo "[5/6] Настраиваю автозапуск…"
+echo "[6/7] Настраиваю автозапуск…"
 ${autostart}
 
-echo "[6/6] Перезапускаю агента…"
+echo "[7/7] Перезапускаю агента…"
 # Дальше этой строки код может не выполниться: перезапуск гасит старый агент, а
 # вместе с ним — и нас (см. про cgroup выше). Поэтому всё, что нужно, уже сделано,
 # а сам перезапуск поручаем супервизору: systemd/launchd доведут его до конца даже
