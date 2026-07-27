@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createVoiceStore, type VoiceStore } from './voiceStore'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
+import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 
 function makeStore(): { store: VoiceStore; api: FakeApi } {
   const api = createFakeApi()
@@ -73,5 +74,43 @@ describe('voiceStore — проекты и доска', () => {
     expect(s.activeProjectId).toBeNull()
     expect(s.board).toBeNull()
     expect(s.projectDetail).toBeNull()
+  })
+})
+
+describe('voiceStore — связка проекта с чатом', () => {
+  it('setConversationProject применяет машину/папку/навыки проекта к активному чату', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P', skills: ['ts'] })
+    const pid = store.getState().projectDetail!.id
+    const ag = await api['agents:create']({ name: 'M1' })
+    await store.actions.linkProjectMachine(pid, ag.id)
+    await store.actions.setProjectMachinePath(pid, ag.id, '/srv/p')
+    await store.actions.setProjectDefaultMachine(pid, ag.id)
+    await store.actions.newConversation()
+    const cid = store.getState().activeId!
+    await store.actions.setConversationProject(cid, pid)
+    const conv = store.getState().conversations.find((c) => c.id === cid)!
+    expect(conv.projectId).toBe(pid)
+    expect(conv.execTarget).toBe(ag.id)
+    expect(conv.workdir).toBe('/srv/p')
+    expect(conv.skillNames).toEqual(['ts'])
+  })
+
+  it('openUtilityForActiveChat открывает на машине+папке активного чата; explorer — как папку', async () => {
+    const { store } = makeStore()
+    await store.actions.newConversation()
+    const cid = store.getState().activeId!
+    await store.actions.setConversationExecTarget(cid, 'm1', '/srv/p')
+    store.actions.applyAgents([
+      { id: 'm1', name: 'M1', online: true, createdAt: 1, lastSeen: null, policy: DEFAULT_AGENT_POLICY }
+    ])
+    store.actions.openUtilityForActiveChat('explorer')
+    const u = store.getState().utility!
+    expect(u.agentId).toBe('m1')
+    expect(u.path).toBe('/srv/p')
+    expect(u.dir).toBe(true)
+    store.actions.openUtilityForActiveChat('console')
+    expect(store.getState().utility!.dir).toBeUndefined()
+    expect(store.getState().utility!.path).toBe('/srv/p')
   })
 })

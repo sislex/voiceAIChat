@@ -57,6 +57,7 @@ interface ConversationRow {
   llm_model: string | null
   permission_mode: string | null
   kb_context_mode: string | null
+  project_id: string | null
   last_exec_target?: string | null
 }
 
@@ -149,6 +150,7 @@ interface ProjectRow {
   created_by: string
   created_at: number
   updated_at: number
+  default_agent_id: string | null
 }
 
 interface ProjectMemberRow {
@@ -279,6 +281,18 @@ export class VoiceChatDb {
     }
     if (!convCols.some((c) => c.name === 'kb_context_mode')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN kb_context_mode TEXT NOT NULL DEFAULT 'auto'`)
+    }
+    if (!convCols.some((c) => c.name === 'project_id')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN project_id TEXT`)
+    }
+    // Проекты (итерация 2): папка на машину + машина по умолчанию.
+    const projCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
+    if (projCols.length && !projCols.some((c) => c.name === 'default_agent_id')) {
+      this.db.exec(`ALTER TABLE projects ADD COLUMN default_agent_id TEXT`)
+    }
+    const pmCols = this.db.prepare(`PRAGMA table_info(project_machines)`).all() as Array<{ name: string }>
+    if (pmCols.length && !pmCols.some((c) => c.name === 'path')) {
+      this.db.exec(`ALTER TABLE project_machines ADD COLUMN path TEXT NOT NULL DEFAULT ''`)
     }
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
@@ -794,6 +808,7 @@ export class VoiceChatDb {
           ? row.permission_mode
           : null,
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
+      projectId: row.project_id ?? null,
       lastExecTarget: row.last_exec_target ?? null
     }
   }
@@ -911,12 +926,18 @@ export class VoiceChatDb {
         addedAt: m.added_at
       })
     )
-    const machineIds = (
-      this.db.prepare(`SELECT agent_id FROM project_machines WHERE project_id = ?`).all(id) as Array<{
+    const machines = (
+      this.db.prepare(`SELECT agent_id, path FROM project_machines WHERE project_id = ? ORDER BY agent_id ASC`).all(id) as Array<{
         agent_id: string
+        path: string | null
       }>
-    ).map((x) => x.agent_id)
-    return { ...this.mapProjectSummary(row, row.my_role), members, machineIds }
+    ).map((x) => ({ agentId: x.agent_id, path: x.path ?? '' }))
+    return {
+      ...this.mapProjectSummary(row, row.my_role),
+      members,
+      machines,
+      defaultAgentId: row.default_agent_id ?? null
+    }
   }
 
   updateProject(
@@ -1001,15 +1022,64 @@ export class VoiceChatDb {
       throw new Error(`Машина ${agentId} не найдена`)
     }
     this.db
-      .prepare(`INSERT OR IGNORE INTO project_machines (project_id, agent_id) VALUES (?, ?)`)
+      .prepare(`INSERT OR IGNORE INTO project_machines (project_id, agent_id, path) VALUES (?, ?, '')`)
       .run(id, agentId)
     return this.getProject(userId, id)
   }
 
   unlinkMachine(userId: string, id: string, agentId: string): ProjectDetail | null {
     if (!this.isProjectOwner(userId, id)) return null
-    this.db.prepare(`DELETE FROM project_machines WHERE project_id = ? AND agent_id = ?`).run(id, agentId)
+    this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM project_machines WHERE project_id = ? AND agent_id = ?`).run(id, agentId)
+      // Снятая машина не может оставаться дефолтной.
+      this.db.prepare(`UPDATE projects SET default_agent_id = NULL WHERE id = ? AND default_agent_id = ?`).run(id, agentId)
+    })()
     return this.getProject(userId, id)
+  }
+
+  /** Задать папку проекта на конкретной машине (только владелец). */
+  setProjectMachinePath(userId: string, id: string, agentId: string, path: string): ProjectDetail | null {
+    if (!this.isProjectOwner(userId, id)) return null
+    this.db
+      .prepare(`UPDATE project_machines SET path = ? WHERE project_id = ? AND agent_id = ?`)
+      .run(path, id, agentId)
+    this.touchProject(id)
+    return this.getProject(userId, id)
+  }
+
+  /** Назначить машину проекта по умолчанию (только владелец; машина должна быть в проекте). */
+  setProjectDefaultMachine(userId: string, id: string, agentId: string): ProjectDetail | null {
+    if (!this.isProjectOwner(userId, id)) return null
+    const inProject = this.db
+      .prepare(`SELECT 1 FROM project_machines WHERE project_id = ? AND agent_id = ?`)
+      .get(id, agentId)
+    if (!inProject) throw new Error('Машина не привязана к проекту')
+    this.db.prepare(`UPDATE projects SET default_agent_id = ? WHERE id = ?`).run(agentId, id)
+    this.touchProject(id)
+    return this.getProject(userId, id)
+  }
+
+  /**
+   * Привязать чат к проекту (или отвязать при projectId=null). При привязке
+   * ПЕРЕЗАПИСЫВАЕТ у чата машину (=дефолт проекта), рабочую папку (=папка этой
+   * машины) и навыки (=skills проекта). Гейт — членство в проекте.
+   */
+  setConversationProject(userId: string, convId: string, projectId: string | null): Conversation | null {
+    if (projectId === null) {
+      this.db.prepare(`UPDATE conversations SET project_id = NULL WHERE id = ? AND user_id = ?`).run(convId, userId)
+      return this.getConversation(userId, convId)
+    }
+    const project = this.getProject(userId, projectId)
+    if (!project) return null // не участник / проект не найден
+    const defAgent = project.defaultAgentId
+    const rawPath = defAgent ? project.machines.find((m) => m.agentId === defAgent)?.path ?? '' : ''
+    const workdir = rawPath !== '' ? rawPath : null
+    this.db
+      .prepare(
+        `UPDATE conversations SET project_id = ?, exec_target = ?, workdir = ?, skill_names = ? WHERE id = ? AND user_id = ?`
+      )
+      .run(projectId, defAgent, workdir, JSON.stringify(project.skills), convId, userId)
+    return this.getConversation(userId, convId)
   }
 
   // ---- Board (колонки + задачи) -----------------------------------------

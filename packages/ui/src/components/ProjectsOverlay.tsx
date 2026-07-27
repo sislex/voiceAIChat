@@ -2,8 +2,8 @@
 // проекта (описание, git, технологии/навыки, участники, машины) и переход к доске.
 // Управляющие контролы (правка, участники, машины, удаление) — только владельцу.
 
-import { useState } from 'react'
-import type { ProjectDetail, ProjectSummary } from '@shared/projects'
+import { useEffect, useState } from 'react'
+import type { ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { ToolFrame } from './ToolFrame'
 
@@ -19,6 +19,8 @@ export interface ProjectsOverlayProps {
   onRemoveMember: (id: string, username: string) => void
   onLinkMachine: (id: string, agentId: string) => void
   onUnlinkMachine: (id: string, agentId: string) => void
+  onSetMachinePath: (id: string, agentId: string, path: string) => void
+  onSetDefaultMachine: (id: string, agentId: string) => void
   onOpenBoard: (id: string) => void
   onClose: () => void
 }
@@ -65,6 +67,51 @@ function TagEditor({ label, tags, editable, onChange }: {
         />
       )}
     </div>
+  )
+}
+
+/** Строка машины проекта: привязка, папка проекта на ней и отметка «по умолчанию». */
+function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetDefault }: {
+  agent: AgentInfo
+  machine: ProjectMachine | undefined
+  isDefault: boolean
+  onToggle: () => void
+  onSetPath: (path: string) => void
+  onSetDefault: () => void
+}): JSX.Element {
+  const [path, setPath] = useState(machine?.path ?? '')
+  useEffect(() => {
+    setPath(machine?.path ?? '')
+  }, [machine?.path])
+  const linked = machine !== undefined
+  const commit = (): void => {
+    if (path !== (machine?.path ?? '')) onSetPath(path)
+  }
+  return (
+    <li className="proj-machine-row">
+      <label>
+        <input type="checkbox" checked={linked} onChange={onToggle} />
+        {agent.name} {agent.online ? <span className="proj-online">● online</span> : <span className="proj-muted">offline</span>}
+      </label>
+      {linked && (
+        <div className="proj-machine-cfg">
+          <input
+            className="login-input"
+            placeholder="Папка проекта на этой машине"
+            aria-label={`Папка проекта на ${agent.name}`}
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit()
+            }}
+          />
+          <label className="proj-default-toggle" title="Машина по умолчанию для проекта">
+            <input type="radio" checked={isDefault} onChange={onSetDefault} /> по умолчанию
+          </label>
+        </div>
+      )}
+    </li>
   )
 }
 
@@ -143,32 +190,36 @@ function DetailPane(props: ProjectsOverlayProps & { detail: ProjectDetail }): JS
       </div>
 
       <div className="proj-section">
-        <p className="proj-field-label">Машины разработки</p>
+        <p className="proj-field-label">Машины разработки (папка проекта на каждой)</p>
         {isOwner ? (
           <ul className="proj-machines">
-            {agents.map((a) => {
-              const linked = detail.machineIds.includes(a.id)
-              return (
-                <li key={a.id}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={linked}
-                      onChange={() => (linked ? props.onUnlinkMachine(detail.id, a.id) : props.onLinkMachine(detail.id, a.id))}
-                    />
-                    {a.name} {a.online ? <span className="proj-online">● online</span> : <span className="proj-muted">offline</span>}
-                  </label>
-                </li>
-              )
-            })}
+            {agents.map((a) => (
+              <MachineRow
+                key={a.id}
+                agent={a}
+                machine={detail.machines.find((m) => m.agentId === a.id)}
+                isDefault={detail.defaultAgentId === a.id}
+                onToggle={() =>
+                  detail.machines.some((m) => m.agentId === a.id)
+                    ? props.onUnlinkMachine(detail.id, a.id)
+                    : props.onLinkMachine(detail.id, a.id)
+                }
+                onSetPath={(path) => props.onSetMachinePath(detail.id, a.id, path)}
+                onSetDefault={() => props.onSetDefaultMachine(detail.id, a.id)}
+              />
+            ))}
             {agents.length === 0 && <span className="proj-muted">Нет машин — добавьте в меню «Машины».</span>}
           </ul>
         ) : (
           <ul className="proj-machines">
-            {detail.machineIds.map((id) => (
-              <li key={id}>{agents.find((a) => a.id === id)?.name ?? id}</li>
+            {detail.machines.map((m) => (
+              <li key={m.agentId}>
+                {agents.find((a) => a.id === m.agentId)?.name ?? m.agentId}
+                {m.path && <span className="proj-muted"> · {m.path}</span>}
+                {detail.defaultAgentId === m.agentId && <span className="proj-online"> · по умолчанию</span>}
+              </li>
             ))}
-            {detail.machineIds.length === 0 && <span className="proj-muted">—</span>}
+            {detail.machines.length === 0 && <span className="proj-muted">—</span>}
           </ul>
         )}
       </div>

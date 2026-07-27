@@ -8,6 +8,8 @@ export interface FileExplorerProps {
   initialAgentId?: string | null
   /** Файл, чью папку нужно открыть и чью строку выделить. */
   initialFilePath?: string
+  /** Открыть проводник ВНУТРИ этой папки (а не в родителе файла). */
+  initialDir?: string
   ops: MachineOps
   variant?: UtilityVariant
   onClose?: () => void
@@ -35,6 +37,7 @@ export function FileExplorer({
   agents,
   initialAgentId,
   initialFilePath,
+  initialDir,
   ops,
   variant = 'modal',
   onClose,
@@ -71,9 +74,9 @@ export function FileExplorer({
   useEffect(() => {
     setEntries([])
     setSelectedName(initialFilePath ? nameOf(initialFilePath) : '')
-    void load(initialFilePath ? parentOf(initialFilePath) : '')
+    void load(initialDir ? initialDir : initialFilePath ? parentOf(initialFilePath) : '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, initialFilePath])
+  }, [agentId, initialFilePath, initialDir])
 
   useEffect(() => {
     selectedRow.current?.scrollIntoView?.({ block: 'nearest' })

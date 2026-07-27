@@ -169,7 +169,7 @@ export interface AppState {
   /** id разговора, открытого в админ-истории (null — не открыт). */
   adminConversationId: string | null
   /** Открытая из меню машинная утилита (консоль/проводник) + машина; null — закрыта. */
-  utility: { kind: 'console' | 'explorer'; agentId: string | null; path?: string } | null
+  utility: { kind: 'console' | 'explorer'; agentId: string | null; path?: string; dir?: boolean } | null
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
   speakingMessageId: string | null
   /** Доступна ли озвучка (кнопка ▶ на ответах). */
@@ -278,6 +278,7 @@ export interface StoreActions {
   renameConversation(id: string, title: string): Promise<void>
   /** Изменить машину только одного разговора. */
   setConversationExecTarget(id: string, execTarget: string | null, workdir?: string | null, skillNames?: string[], llmProvider?: LlmProvider | null, llmModel?: string | null, permissionMode?: PermissionMode | null, kbContextMode?: KbContextMode): Promise<void>
+  setConversationProject(id: string, projectId: string | null): Promise<void>
   /** Задать поисковый запрос по разговорам (пусто — весь список). */
   setSearchQuery(query: string): Promise<void>
   /** Экспортировать активный разговор в Markdown/JSON (скачивание файла). */
@@ -433,6 +434,7 @@ export interface StoreActions {
   // --- Машинные утилиты (консоль/проводник) ---
   /** Открыть утилиту из меню (машина по умолчанию — первая онлайн-своя). */
   openUtility(kind: 'console' | 'explorer', agentId?: string | null, path?: string): void
+  openUtilityForActiveChat(kind: 'console' | 'explorer'): void
   /** Закрыть утилиту, открытую из меню. */
   closeUtility(): void
   /** Тонкие операции над машиной (используются самодостаточными виджетами). */
@@ -487,6 +489,9 @@ export interface StoreActions {
   /** Привязать/отвязать машину-агента (только владелец). */
   linkProjectMachine(id: string, agentId: string): Promise<void>
   unlinkProjectMachine(id: string, agentId: string): Promise<void>
+  setProjectMachinePath(id: string, agentId: string, path: string): Promise<void>
+  setProjectDefaultMachine(id: string, agentId: string): Promise<void>
+  fetchProjectDetail(id: string): Promise<ProjectDetail | null>
   /** Открыть доску проекта (грузит снапшот, подписывается на живые обновления). */
   openBoard(id: string): Promise<void>
   /** Закрыть доску (отписка). */
@@ -912,6 +917,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Цель активного разговора; у нового несохранённого чата — сервер. */
   function activeConversationExecTarget(): string | null {
     return state.conversations.find((c) => c.id === state.activeId)?.execTarget ?? null
+  }
+
+  function activeConversationWorkdir(): string | null {
+    return state.conversations.find((c) => c.id === state.activeId)?.workdir ?? null
   }
 
   /** Роутинг ответа: реальный Claude (стрим событиями) или мок-пайплайн. */
@@ -1494,6 +1503,20 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   function openUtility(kind: 'console' | 'explorer', agentId?: string | null, path?: string): void {
     setState({ utility: { kind, agentId: agentId ?? defaultUtilityAgent(), ...(path ? { path } : {}) } })
+  }
+
+  // Открыть проводник/консоль на ЭФФЕКТИВНОЙ машине и папке активного чата
+  // (для чата с проектом эти значения уже проектные; иначе — из настроек чата).
+  function openUtilityForActiveChat(kind: 'console' | 'explorer'): void {
+    const path = activeConversationWorkdir()
+    setState({
+      utility: {
+        kind,
+        agentId: defaultUtilityAgent(),
+        ...(path ? { path } : {}),
+        ...(path && kind === 'explorer' ? { dir: true } : {})
+      }
+    })
   }
   function closeUtility(): void {
     setState({ utility: null })
@@ -2222,6 +2245,34 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ error: perr(err) })
     }
   }
+  async function setProjectMachinePath(id: string, agentId: string, path: string): Promise<void> {
+    try {
+      setState({ projectDetail: await api['projects:setMachinePath']({ id, agentId, path }) })
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function setProjectDefaultMachine(id: string, agentId: string): Promise<void> {
+    try {
+      setState({ projectDetail: await api['projects:setDefaultMachine']({ id, agentId }) })
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  /** Загрузить детали проекта без записи в стор (для настроек чата). */
+  async function fetchProjectDetail(id: string): Promise<ProjectDetail | null> {
+    try {
+      return await api['projects:get']({ id })
+    } catch (err) {
+      setState({ error: perr(err) })
+      return null
+    }
+  }
+  /** Привязать/отвязать чат к проекту; сервер перезаписывает машину/папку/навыки. */
+  async function setConversationProject(id: string, projectId: string | null): Promise<void> {
+    const conversation = await api['conversations:setProject']({ id, projectId })
+    setState({ conversations: state.conversations.map((c) => (c.id === id ? conversation : c)) })
+  }
   async function refreshBoard(): Promise<void> {
     const id = state.activeProjectId
     if (!id) return
@@ -2458,6 +2509,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       loadAdminUsage,
       openAdminConversation,
       openUtility,
+      openUtilityForActiveChat,
       closeUtility,
       fsList,
       fsRead,
@@ -2483,6 +2535,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       removeProjectMember,
       linkProjectMachine,
       unlinkProjectMachine,
+      setProjectMachinePath,
+      setProjectDefaultMachine,
+      fetchProjectDetail,
+      setConversationProject,
       openBoard,
       closeBoard,
       applyBoardUpdate,
