@@ -15,7 +15,7 @@
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-07-26 | ⚠ 2 коммит(ов) в areas после сверки: 49ded98 feat: add project knowledge base … |
 | [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-07-27 | ✓ |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-26 | ⚠ 2 коммит(ов) в areas после сверки: d867705 docs(kb): тема projects.md для режима Проекты + канбан; журнал; регенерация индекса … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-26 | ⚠ 4 коммит(ов) в areas после сверки: 49ded98 feat: add project knowledge base … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-27 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-27 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-07-27 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-26 | ⚠ 3 коммит(ов) в areas после сверки: 7515508 Merge branch 'main' into feature/projects-kanban … |
@@ -33,18 +33,18 @@
 
 ## Журнал сессий
 
-Всего записей: 14. Последние:
+Всего записей: 15. Последние:
 
 - [2026-07-27-repo-2-project-knowledge-base.md](log/2026-07-27-repo-2-project-knowledge-base.md) — project-knowledge-base
 - [2026-07-27-2470-com-windows-install-command-cmd.md](log/2026-07-27-2470-com-windows-install-command-cmd.md) — windows-install-command-cmd
 - [2026-07-27-2470-com-projects-kanban.md](log/2026-07-27-2470-com-projects-kanban.md) — projects-kanban
+- [2026-07-27-2470-com-codex-plan-read-only.md](log/2026-07-27-2470-com-codex-plan-read-only.md) — codex-plan-read-only
 - [2026-07-26-localhost-popup-file-terminal-context.md](log/2026-07-26-localhost-popup-file-terminal-context.md) — popup-file-terminal-context
 - [2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md](log/2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md) — база знаний для агентов
 - [2026-07-26-alexeys-macbook-air-2-image-in-message.md](log/2026-07-26-alexeys-macbook-air-2-image-in-message.md) — image-in-message
 - [2026-07-26-alexeys-macbook-air-2-composer-autogrow.md](log/2026-07-26-alexeys-macbook-air-2-composer-autogrow.md) — composer-autogrow
 - [2026-07-26-2470-com-windows-agent-installer.md](log/2026-07-26-2470-com-windows-agent-installer.md) — windows-agent-installer
 - [2026-07-26-2470-com-thin-desktop-gateway-lan.md](log/2026-07-26-2470-com-thin-desktop-gateway-lan.md) — thin-desktop-gateway-lan
-- [2026-07-26-2470-com-repair-claude-oauth-profile.md](log/2026-07-26-2470-com-repair-claude-oauth-profile.md) — repair-claude-oauth-profile
 
 ## Исторические планы
 
