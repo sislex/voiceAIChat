@@ -23,6 +23,14 @@ import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
 import type { CxProject, CxSession, CxItem } from './codexSessions'
 import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult } from './agentProtocol'
+import type {
+  Board,
+  KanbanColumn,
+  ProjectDetail,
+  ProjectSummary,
+  Task,
+  TaskPriority
+} from './projects'
 
 /** Статус локальной модели Whisper. */
 export interface SttStatus {
@@ -151,6 +159,67 @@ export interface IpcInvokeMap {
   'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number }; result: UsageReport }
   'admin:conversations': { arg: { name: string }; result: Conversation[] }
   'admin:messages': { arg: { name: string; conversationId: string }; result: Message[] }
+  // --- Проекты + канбан ---
+  /** Проекты, где текущий пользователь — участник. */
+  'projects:list': { arg: void; result: ProjectSummary[] }
+  'projects:create': {
+    arg: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[] }
+    result: ProjectDetail
+  }
+  'projects:get': { arg: { id: string }; result: ProjectDetail | null }
+  'projects:update': {
+    arg: {
+      id: string
+      name?: string
+      description?: string
+      gitUrl?: string | null
+      technologies?: string[]
+      skills?: string[]
+    }
+    result: ProjectDetail
+  }
+  'projects:delete': { arg: { id: string }; result: void }
+  /** Добавить участника (только владелец). */
+  'projects:addMember': { arg: { id: string; username: string }; result: ProjectDetail }
+  'projects:removeMember': { arg: { id: string; username: string }; result: ProjectDetail }
+  /** Привязать/отвязать машину-агента к проекту (только владелец). */
+  'projects:linkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
+  'projects:unlinkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
+  /** Снапшот доски (колонки + задачи). */
+  'board:get': { arg: { id: string }; result: Board }
+  'columns:create': { arg: { projectId: string; name: string }; result: KanbanColumn }
+  'columns:rename': { arg: { projectId: string; columnId: string; name: string }; result: void }
+  'columns:setHidden': { arg: { projectId: string; columnId: string; hidden: boolean }; result: void }
+  'columns:reorder': { arg: { projectId: string; order: string[] }; result: void }
+  'columns:delete': { arg: { projectId: string; columnId: string }; result: void }
+  'tasks:create': {
+    arg: {
+      projectId: string
+      columnId: string
+      title: string
+      description?: string
+      priority?: TaskPriority
+      assignee?: string | null
+    }
+    result: Task
+  }
+  'tasks:update': {
+    arg: {
+      projectId: string
+      taskId: string
+      title?: string
+      description?: string
+      priority?: TaskPriority
+      assignee?: string | null
+    }
+    result: Task
+  }
+  /** Переместить задачу в колонку между соседями afterId/beforeId (смена статуса). */
+  'tasks:move': {
+    arg: { projectId: string; taskId: string; columnId: string; afterId?: string | null; beforeId?: string | null }
+    result: Task
+  }
+  'tasks:delete': { arg: { projectId: string; taskId: string }; result: void }
 }
 
 export type IpcChannel = keyof IpcInvokeMap
@@ -342,6 +411,19 @@ export interface RendererAgentsBridge {
 }
 
 /**
+ * Мост живой канбан-доски (web, поверх WS): подписка на доску проекта и приём
+ * снапшотов board.update. В desktop отсутствует → без живой синхронизации.
+ */
+export interface RendererBoardBridge {
+  /** Подписаться на доску проекта (сервер сразу шлёт снапшот). */
+  subscribe(projectId: string): void
+  /** Отписаться от текущей доски. */
+  unsubscribe(): void
+  /** Подписка на снапшоты доски. */
+  onUpdate(cb: (m: { projectId: string; board: Board }) => void): () => void
+}
+
+/**
  * Мост сессии (только web): вход/выход/текущий пользователь. В desktop отсутствует
  * (аутентификация приложения не нужна) — UI трактует это как «без логина».
  */
@@ -494,7 +576,26 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:deleteUser',
   'admin:usage',
   'admin:conversations',
-  'admin:messages'
+  'admin:messages',
+  'projects:list',
+  'projects:create',
+  'projects:get',
+  'projects:update',
+  'projects:delete',
+  'projects:addMember',
+  'projects:removeMember',
+  'projects:linkMachine',
+  'projects:unlinkMachine',
+  'board:get',
+  'columns:create',
+  'columns:rename',
+  'columns:setHidden',
+  'columns:reorder',
+  'columns:delete',
+  'tasks:create',
+  'tasks:update',
+  'tasks:move',
+  'tasks:delete'
 ]
 
 /**

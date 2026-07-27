@@ -7,6 +7,7 @@ import type { AdminUserInfo } from '@shared/admin'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
+import type { Board, KanbanColumn, ProjectDetail, ProjectMember, ProjectSummary, Task } from '@shared/projects'
 
 export interface FakeApi extends RendererApi {
   /** Прямой доступ к состоянию для ассертов в тестах. */
@@ -30,6 +31,46 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 0, agents: [] }
   ]
   let settings: Settings = { ...DEFAULT_SETTINGS }
+
+  // --- Проекты + канбан (in-memory) ---
+  const ME = 'admin'
+  interface FProject {
+    id: string
+    name: string
+    description: string
+    gitUrl: string | null
+    technologies: string[]
+    skills: string[]
+    createdBy: string
+    createdAt: number
+    updatedAt: number
+    members: ProjectMember[]
+    machineIds: string[]
+  }
+  const projects: FProject[] = []
+  const columns: KanbanColumn[] = []
+  const tasks: Task[] = []
+  const summary = (p: FProject): ProjectSummary => ({
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    gitUrl: p.gitUrl,
+    technologies: p.technologies,
+    skills: p.skills,
+    createdBy: p.createdBy,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+    role: p.members.find((m) => m.username === ME)?.role ?? 'owner'
+  })
+  const detail = (p: FProject): ProjectDetail => ({
+    ...summary(p),
+    members: p.members.map((m) => ({ ...m })),
+    machineIds: [...p.machineIds]
+  })
+  const boardOf = (pid: string): Board => ({
+    columns: columns.filter((c) => c.projectId === pid).sort((a, b) => a.position - b.position).map((c) => ({ ...c })),
+    tasks: tasks.filter((t) => t.projectId === pid).sort((a, b) => a.position - b.position).map((t) => ({ ...t }))
+  })
 
   function makeConversation(title: string): Conversation {
     const ts = tick()
@@ -228,6 +269,146 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     }),
     'admin:conversations': async () => [],
     'admin:messages': async () => [],
+    'projects:list': async () => projects.map(summary),
+    'projects:create': async (b) => {
+      const ts = tick()
+      const id = nextId()
+      const p: FProject = {
+        id,
+        name: b.name,
+        description: b.description ?? '',
+        gitUrl: b.gitUrl ?? null,
+        technologies: b.technologies ?? [],
+        skills: b.skills ?? [],
+        createdBy: ME,
+        createdAt: ts,
+        updatedAt: ts,
+        members: [{ username: ME, role: 'owner', addedAt: ts }],
+        machineIds: []
+      }
+      projects.push(p)
+      ;['To Do', 'In Progress', 'Done'].forEach((name, i) =>
+        columns.push({ id: nextId(), projectId: id, name, position: (i + 1) * 1024, hidden: false, createdAt: ts })
+      )
+      return detail(p)
+    },
+    'projects:get': async ({ id }) => {
+      const p = projects.find((x) => x.id === id)
+      return p ? detail(p) : null
+    },
+    'projects:update': async ({ id, ...f }) => {
+      const p = projects.find((x) => x.id === id)!
+      if (f.name !== undefined) p.name = f.name
+      if (f.description !== undefined) p.description = f.description
+      if (f.gitUrl !== undefined) p.gitUrl = f.gitUrl
+      if (f.technologies !== undefined) p.technologies = f.technologies
+      if (f.skills !== undefined) p.skills = f.skills
+      p.updatedAt = tick()
+      return detail(p)
+    },
+    'projects:delete': async ({ id }) => {
+      const i = projects.findIndex((x) => x.id === id)
+      if (i >= 0) projects.splice(i, 1)
+      for (let j = columns.length - 1; j >= 0; j--) if (columns[j].projectId === id) columns.splice(j, 1)
+      for (let j = tasks.length - 1; j >= 0; j--) if (tasks[j].projectId === id) tasks.splice(j, 1)
+    },
+    'projects:addMember': async ({ id, username }) => {
+      const p = projects.find((x) => x.id === id)!
+      if (!p.members.some((m) => m.username === username)) p.members.push({ username, role: 'member', addedAt: tick() })
+      return detail(p)
+    },
+    'projects:removeMember': async ({ id, username }) => {
+      const p = projects.find((x) => x.id === id)!
+      p.members = p.members.filter((m) => !(m.username === username && m.role !== 'owner'))
+      tasks.forEach((t) => {
+        if (t.projectId === id && t.assignee === username) t.assignee = null
+      })
+      return detail(p)
+    },
+    'projects:linkMachine': async ({ id, agentId }) => {
+      const p = projects.find((x) => x.id === id)!
+      if (!p.machineIds.includes(agentId)) p.machineIds.push(agentId)
+      return detail(p)
+    },
+    'projects:unlinkMachine': async ({ id, agentId }) => {
+      const p = projects.find((x) => x.id === id)!
+      p.machineIds = p.machineIds.filter((a) => a !== agentId)
+      return detail(p)
+    },
+    'board:get': async ({ id }) => boardOf(id),
+    'columns:create': async ({ projectId, name }) => {
+      const ts = tick()
+      const max = Math.max(0, ...columns.filter((c) => c.projectId === projectId).map((c) => c.position))
+      const col: KanbanColumn = { id: nextId(), projectId, name, position: max + 1024, hidden: false, createdAt: ts }
+      columns.push(col)
+      return col
+    },
+    'columns:rename': async ({ columnId, name }) => {
+      const c = columns.find((x) => x.id === columnId)
+      if (c) c.name = name
+    },
+    'columns:setHidden': async ({ columnId, hidden }) => {
+      const c = columns.find((x) => x.id === columnId)
+      if (c) c.hidden = hidden
+    },
+    'columns:reorder': async ({ order }) => {
+      order.forEach((cid, i) => {
+        const c = columns.find((x) => x.id === cid)
+        if (c) c.position = (i + 1) * 1024
+      })
+    },
+    'columns:delete': async ({ columnId }) => {
+      const i = columns.findIndex((x) => x.id === columnId)
+      if (i >= 0) columns.splice(i, 1)
+      for (let j = tasks.length - 1; j >= 0; j--) if (tasks[j].columnId === columnId) tasks.splice(j, 1)
+    },
+    'tasks:create': async ({ projectId, columnId, title, description, priority, assignee }) => {
+      const ts = tick()
+      const max = Math.max(0, ...tasks.filter((t) => t.columnId === columnId).map((t) => t.position))
+      const task: Task = {
+        id: nextId(),
+        projectId,
+        columnId,
+        title,
+        description: description ?? '',
+        priority: priority ?? 'medium',
+        assignee: assignee ?? null,
+        position: max + 1024,
+        createdAt: ts,
+        updatedAt: ts
+      }
+      tasks.push(task)
+      return task
+    },
+    'tasks:update': async ({ taskId, ...f }) => {
+      const t = tasks.find((x) => x.id === taskId)!
+      if (f.title !== undefined) t.title = f.title
+      if (f.description !== undefined) t.description = f.description
+      if (f.priority !== undefined) t.priority = f.priority
+      if (f.assignee !== undefined) t.assignee = f.assignee
+      t.updatedAt = tick()
+      return { ...t }
+    },
+    'tasks:move': async ({ taskId, columnId, afterId, beforeId }) => {
+      const t = tasks.find((x) => x.id === taskId)!
+      t.columnId = columnId
+      const after = afterId ? tasks.find((x) => x.id === afterId) : null
+      const before = beforeId ? tasks.find((x) => x.id === beforeId) : null
+      t.position =
+        after && before
+          ? (after.position + before.position) / 2
+          : after
+            ? after.position + 1024
+            : before
+              ? before.position - 1024
+              : Math.max(0, ...tasks.filter((x) => x.columnId === columnId && x.id !== taskId).map((x) => x.position)) + 1024
+      t.updatedAt = tick()
+      return { ...t }
+    },
+    'tasks:delete': async ({ taskId }) => {
+      const i = tasks.findIndex((x) => x.id === taskId)
+      if (i >= 0) tasks.splice(i, 1)
+    },
     _state: {
       get conversations() {
         return conversations

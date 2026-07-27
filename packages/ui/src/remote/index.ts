@@ -5,6 +5,7 @@
 
 import type {
   RendererAgentsBridge,
+  RendererBoardBridge,
   RendererAudioBridge,
   RendererCcBridge,
   RendererClaudeBridge,
@@ -104,6 +105,14 @@ function makeCodexBridge(ws: WsClient): RendererCodexBridge {
 
 function makeAgentsBridge(ws: WsClient): RendererAgentsBridge {
   return { onChange: (cb) => ws.on('agents', (m) => cb(m.agents)) }
+}
+
+function makeBoardBridge(ws: WsClient): RendererBoardBridge {
+  return {
+    subscribe: (projectId) => ws.send({ t: 'board.subscribe', projectId }),
+    unsubscribe: () => ws.send({ t: 'board.unsubscribe' }),
+    onUpdate: (cb) => ws.on('board.update', (m) => cb({ projectId: m.projectId, board: m.board }))
+  }
 }
 
 interface DesktopMigrationClient {
@@ -277,6 +286,7 @@ export function installRemoteBridges(serverHttp: string): void {
   window.cc = makeCcBridge(ws)
   window.codex = makeCodexBridge(ws)
   window.agents = makeAgentsBridge(ws)
+  window.board = makeBoardBridge(ws)
   window.session = makeSessionBridge(httpBase, ws)
   window.fs = makeFsBridge(httpBase)
   window.files = makeFilesBridge(httpBase)
