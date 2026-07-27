@@ -10,6 +10,8 @@ import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen } from './components/LoginScreen'
 import { CcObserver } from './components/CcObserver'
 import { UsersAdmin } from './components/UsersAdmin'
+import { ProjectsOverlay } from './components/ProjectsOverlay'
+import { ProjectBoard } from './components/ProjectBoard'
 import { MachineStatus } from './components/MachineStatus'
 import { MachineUtility } from './components/MachineUtility'
 import type { MachineOps } from './components/machine'
@@ -156,6 +158,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onOpenConsole={state.authRequired ? menu(() => actions.openUtility('console')) : undefined}
         onOpenUsers={state.authRequired ? menu(() => void actions.openUsers()) : undefined}
         onOpenMachines={state.authRequired ? menu(actions.openMachines) : undefined}
+        onOpenProjects={state.authRequired ? menu(() => void actions.openProjects()) : undefined}
         currentUser={state.currentUser}
         onLogout={state.authRequired ? () => void actions.logout() : undefined}
       />
@@ -314,6 +317,47 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onLoadUsage={(unit) => void actions.loadAdminUsage(unit)}
           onOpenConversation={(id) => void actions.openAdminConversation(id)}
           onClose={actions.closeUsers}
+        />
+      )}
+
+      {state.projectsOpen && (
+        <ProjectsOverlay
+          projects={state.projects}
+          detail={state.projectDetail}
+          agents={state.agents}
+          onSelect={(id) => void actions.selectProject(id)}
+          onCreate={(input) => void actions.createProject(input)}
+          onUpdate={(id, fields) => void actions.updateProject(id, fields)}
+          onDelete={(id) => void actions.deleteProject(id)}
+          onAddMember={(id, username) => void actions.addProjectMember(id, username)}
+          onRemoveMember={(id, username) => void actions.removeProjectMember(id, username)}
+          onLinkMachine={(id, agentId) => void actions.linkProjectMachine(id, agentId)}
+          onUnlinkMachine={(id, agentId) => void actions.unlinkProjectMachine(id, agentId)}
+          onOpenBoard={(id) => void actions.openBoard(id)}
+          onClose={actions.closeProjects}
+        />
+      )}
+
+      {state.activeProjectId && (
+        <ProjectBoard
+          projectName={
+            state.projectDetail?.name ??
+            state.projects.find((p) => p.id === state.activeProjectId)?.name ??
+            'Проект'
+          }
+          board={state.board}
+          loading={state.boardLoading}
+          members={state.projectDetail?.members ?? []}
+          onCreateColumn={(name) => void actions.createColumn(name)}
+          onRenameColumn={(id, name) => void actions.renameColumn(id, name)}
+          onSetColumnHidden={(id, hidden) => void actions.setColumnHidden(id, hidden)}
+          onReorderColumns={(order) => void actions.reorderColumns(order)}
+          onDeleteColumn={(id) => void actions.deleteColumn(id)}
+          onCreateTask={(columnId, input) => void actions.createTask(columnId, input)}
+          onUpdateTask={(taskId, fields) => void actions.updateTask(taskId, fields)}
+          onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
+          onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
+          onClose={actions.closeBoard}
         />
       )}
 

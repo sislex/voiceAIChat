@@ -13,6 +13,8 @@ import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerAdminRoutes } from './routes/admin.js'
+import { registerProjectRoutes } from './routes/projects.js'
+import { BoardHub } from './projects/boardHub.js'
 import { registerAuth, resolveUser } from './users/auth.js'
 import { loadOrCreateSecret } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
@@ -169,6 +171,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Админ-страница пользователей (роуты под guard requireAdmin).
   registerAdminRoutes(app, db, agentRegistry)
 
+  // Проекты + канбан-доска (членство в проекте) + живой board.update по WS.
+  const boardHub = new BoardHub()
+  registerProjectRoutes(app, db, boardHub)
+
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
   // её выбор берём у канонического пользователя (admin), а не per-user.
   const machineWhisperModel = (): WhisperModel => db.getSettings('admin').whisperModel
@@ -313,6 +319,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         input: (ptyId, data) => agentRegistry.ptyInput(ptyId, data),
         resize: (ptyId, cols, rows) => agentRegistry.ptyResize(ptyId, cols, rows),
         kill: (ptyId) => agentRegistry.ptyKill(ptyId)
+      },
+      // Живая канбан-доска: чтение снапшота (с проверкой членства) + подписка на изменения.
+      board: {
+        getBoard: (projectId) => db.getBoard(user.name, projectId),
+        subscribe: (cb) => boardHub.onChange(cb)
       }
     })
 

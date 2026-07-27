@@ -3,6 +3,7 @@
 // web — через installBridges (REST+WS). Формы контрактов общие (@shared/ipc).
 import type {
   RendererAgentsBridge,
+  RendererBoardBridge,
   RendererApi,
   RendererAudioBridge,
   RendererCcBridge,
@@ -27,6 +28,8 @@ declare global {
     codex: RendererCodexBridge
     /** Живой список агентов (web); в desktop отсутствует. */
     agents?: RendererAgentsBridge
+    /** Живая канбан-доска проекта (web); в desktop отсутствует. */
+    board?: RendererBoardBridge
     /** Сессия пользователя (web); в desktop отсутствует → без экрана логина. */
     session?: RendererSessionBridge
     /** Файловый проводник по машине-агенту (web); в desktop отсутствует. */
