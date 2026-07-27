@@ -5,6 +5,7 @@ import type {
   ClaudeLogEntry,
   Conversation,
   LlmProvider,
+  KbContextMode,
   Message,
   MessageRole,
   PermissionMode,
@@ -31,6 +32,7 @@ import type {
   Task,
   TaskPriority
 } from './projects'
+import type { KbContextBundle, KbDocument, KbDocumentSummary, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
 
 /** Статус локальной модели Whisper. */
 export interface SttStatus {
@@ -71,6 +73,11 @@ export interface UploadInfo {
  */
 export interface IpcInvokeMap {
   'app:ping': { arg: void; result: string }
+  'kb:status': { arg: void; result: KbStatus }
+  'kb:topics': { arg: void; result: KbDocumentSummary[] }
+  'kb:search': { arg: KbSearchRequest; result: KbSearchResult[] }
+  'kb:document': { arg: { id: string }; result: KbDocument | null }
+  'kb:context': { arg: { query: string; budget?: number }; result: KbContextBundle }
   'conversations:list': { arg: void; result: Conversation[] }
   'conversations:create': { arg: { title?: string }; result: Conversation }
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
@@ -89,6 +96,8 @@ export interface IpcInvokeMap {
       llmModel?: string | null
       /** Режим прав разговора; null — из общих настроек. undefined — не менять. */
       permissionMode?: PermissionMode | null
+      /** Режим автоматического KB-контекста. */
+      kbContextMode?: KbContextMode
     }
     result: Conversation
   }
@@ -533,6 +542,11 @@ export interface RendererTtsBridge {
 
 export const IPC_CHANNELS: IpcChannel[] = [
   'app:ping',
+  'kb:status',
+  'kb:topics',
+  'kb:search',
+  'kb:document',
+  'kb:context',
   'conversations:list',
   'conversations:create',
   'conversations:get',

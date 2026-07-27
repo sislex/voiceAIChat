@@ -47,6 +47,8 @@ export interface Speaker {
 }
 
 /** Разговор в сайдбаре. */
+export type KbContextMode = 'auto' | 'manual' | 'off'
+
 export interface Conversation {
   id: string
   title: string
@@ -70,6 +72,8 @@ export interface Conversation {
   llmModel: string | null
   /** Режим прав агента только этого разговора; null — из общих настроек. */
   permissionMode: PermissionMode | null
+  /** Использование базы знаний только в этом разговоре. */
+  kbContextMode?: KbContextMode
   /** Неизменяемая цель последнего сообщения; используется подписью в списке чатов. */
   lastExecTarget: string | null
 }
@@ -231,6 +235,11 @@ export interface TurnRequestInfo {
   execTarget?: string
   /** true — продолжение сессии (--resume); false — холодный старт из истории. */
   resumed: boolean
+  /** Разделы KB, автоматически добавленные перед ходом. */
+  kbContext?: {
+    confidence: 'high' | 'medium' | 'low'
+    sections: Array<{ documentId: string; title: string; heading: string; sourcePath: string; anchor: string }>
+  }
   /** Доступные инструменты (из system/init CLI). */
   tools?: string[]
   /** Доступные навыки/slash-команды (из system/init CLI). */

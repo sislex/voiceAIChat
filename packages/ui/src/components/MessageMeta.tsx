@@ -103,6 +103,7 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
           <Row label="Токены (вход → выход)" value={inOut} />
           <Row label="Токены из кэша" value={meta.cacheReadTokens ? kilo(meta.cacheReadTokens) : undefined} />
           <Row label="Размер запроса" value={req ? `${req.promptChars.toLocaleString('ru')} симв.` : undefined} />
+          <Row label="База знаний" value={req?.kbContext ? `${req.kbContext.sections.length} раздел(а)` : undefined} />
           <Row label="Время ответа" value={typeof meta.durationMs === 'number' ? seconds(meta.durationMs) : undefined} />
           <Row label="Стоимость" value={typeof meta.costUsd === 'number' ? cost(meta.costUsd) : undefined} />
           <button className="metamore" onClick={() => setOpen(true)}>
@@ -148,6 +149,7 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
                     <Row label="Продолжение сессии" value={req.resumed ? 'да (--resume)' : 'нет (новый контекст)'} />
                     <Row label="Размер запроса" value={`${req.promptChars.toLocaleString('ru')} симв.`} />
                     <Chips label="Вложения" items={req.attachments} />
+                    <Chips label="База знаний" items={req.kbContext?.sections.map((section) => `${section.title} / ${section.heading}`)} />
                   </section>
 
                   {req.messages && req.messages.length > 0 && (

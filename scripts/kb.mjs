@@ -77,21 +77,27 @@ function parseFrontMatter(text) {
 /** Файлы тем (docs/kb/*.md, кроме генерируемого индекса). */
 function topicFiles() {
   if (!existsSync(KB_DIR)) return []
-  return readdirSync(KB_DIR)
-    .filter((f) => f.endsWith('.md') && f !== 'README.md')
-    .sort()
-    .map((f) => {
-      const path = join(KB_DIR, f)
-      const { data } = parseFrontMatter(readFileSync(path, 'utf8'))
-      return {
-        file: f,
-        path,
-        title: data.title ?? f.replace(/\.md$/, ''),
-        updated: data.updated ?? '',
-        checked: data.checked ?? '',
-        areas: Array.isArray(data.areas) ? data.areas : []
-      }
-    })
+  const paths = []
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory() && entry.name !== 'log') walk(path)
+      else if (entry.isFile() && entry.name.endsWith('.md') && entry.name !== 'README.md') paths.push(path)
+    }
+  }
+  walk(KB_DIR)
+  return paths.sort().map((path) => {
+    const file = relative(KB_DIR, path).replaceAll('\\', '/')
+    const { data } = parseFrontMatter(readFileSync(path, 'utf8'))
+    return {
+      file,
+      path,
+      title: data.title ?? file.replace(/\.md$/, ''),
+      updated: data.updated ?? '',
+      checked: data.checked ?? '',
+      areas: Array.isArray(data.areas) ? data.areas : []
+    }
+  })
 }
 
 /** Дата последнего коммита, затронувшего указанные пути (YYYY-MM-DD) или ''. */

@@ -40,6 +40,10 @@ export interface ServerConfig {
   claudeGatewayAuthMode: 'x-api-key' | 'bearer' | 'both'
   /** Отображение имён моделей Claude Code в имена upstream. */
   claudeGatewayModelMap: Record<string, string>
+  /** Корень read-only базы знаний Markdown. */
+  kbRoot: string
+  /** CLI для выборочного semantic reranking; disabled оставляет чистый BM25. */
+  kbRerankProvider: 'disabled' | 'claude' | 'codex'
   /** Пароль пользователя admin при сиде новой БД (пусто — без пароля). */
   adminPassword: string
   /** Порог памяти для распознавания речи (STT), байты; undefined — дефолт по модели. */
@@ -134,6 +138,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
         ? env.VC_CLAUDE_UPSTREAM_AUTH
         : 'x-api-key',
     claudeGatewayModelMap: parseModelMap(env.VC_CLAUDE_MODEL_MAP),
+    kbRoot: env.VC_KB_ROOT ?? join(REPO_ROOT, 'docs/kb'),
+    kbRerankProvider: env.VC_KB_RERANK_PROVIDER === 'disabled' || env.VC_KB_RERANK_PROVIDER === 'claude' ? env.VC_KB_RERANK_PROVIDER : 'codex',
     adminPassword: env.VC_ADMIN_PASSWORD ?? '',
     minMemSttBytes: parseBytes(env.VC_MIN_MEM_STT),
     minMemTtsBytes: parseBytes(env.VC_MIN_MEM_TTS)

@@ -27,12 +27,15 @@ import {
 import type { VoiceChatDb } from './db/database.js'
 import { relocateImagesToMachine } from './imageRelocate.js'
 import type { LlmClient, LlmHandle } from './claude/types.js'
+import type { KnowledgeBaseService } from './kb/types.js'
 
 export interface TurnManagerDeps {
   db: VoiceChatDb
   claude: LlmClient
   /** Альтернативный движок Codex (используется при settings.llmProvider='codex'). */
   codex?: LlmClient
+  /** Поиск компактного контекста проекта перед ходом. */
+  kb?: KnowledgeBaseService
   /** Резолв id вложения → абсолютный путь на сервере (для промпта Claude). */
   resolveUpload?: (id: string) => string | undefined
   /** Онлайн-статус и политика машин-агентов (для проброса Bash на клиента). */
@@ -67,7 +70,7 @@ export interface StartTurnRequest {
 
 export interface TurnManager {
   /** Запустить ход в разговоре (прежний ход этого разговора отменяется). */
-  start(req: StartTurnRequest): void
+  start(req: StartTurnRequest): Promise<void>
   /** Отменить ход разговора; без conversationId — все активные ходы. */
   cancel(conversationId?: string): void
   /**
@@ -159,7 +162,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }
 
-  function start(req: StartTurnRequest): void {
+  async function start(req: StartTurnRequest): Promise<void> {
     const conversationId = req.conversationId
     const userId = req.userId
     // Заблокированный пользователь не может запускать ходы (страховка сверх WS-гейта).
@@ -206,15 +209,26 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // истории БД, чтобы контекст модели совпадал с видимым (без удалённых реплик).
     // Хинт о формате уточняющих вопросов (```questions) — форма ответов в чате;
     // ```image — созданная картинка показывается прямо в сообщении.
-    const prompt = appendImageHint(
-      appendToolHint(
-        appendQuestionsHint(
-          sessionId
-            ? buildPrompt(req.segments, attachmentPaths)
-            : buildConversationPrompt(deps.db.listMessages(userId, conversationId), attachmentPaths)
-        )
-      )
-    )
+    let kbContext: TurnRequestInfo['kbContext']
+    let basePrompt = sessionId
+      ? buildPrompt(req.segments, attachmentPaths)
+      : buildConversationPrompt(deps.db.listMessages(userId, conversationId), attachmentPaths)
+    if (deps.kb && (conv?.kbContextMode ?? 'auto') === 'auto') {
+      const kbQuery = req.segments.map((segment) => segment.text).join(' ').trim()
+      if (kbQuery) {
+        try {
+          const bundle = await deps.kb.context(kbQuery, 3500)
+          if (bundle.autoInjectAllowed && bundle.sections.length) {
+            kbContext = { confidence: bundle.confidence, sections: bundle.sections.map(({ documentId, title, heading, sourcePath, anchor }) => ({ documentId, title, heading, sourcePath, anchor })) }
+            const sections = bundle.sections.map((section) => `### ${section.title} / ${section.heading}\nИсточник: ${section.sourcePath}${section.anchor ? `#${section.anchor}` : ''}\n${section.excerpt}`).join('\n\n')
+            basePrompt = `${basePrompt}\n\n## Контекст базы знаний voiceAIChat\nИспользуй как навигацию и сверяй с кодом при изменении поведения.\n\n${sections}`
+          }
+        } catch {
+          // KB не должна блокировать основной ход: exact/BM25/reranker могут быть временно недоступны.
+        }
+      }
+    }
+    const prompt = appendImageHint(appendToolHint(appendQuestionsHint(basePrompt)))
     // Цель выполнения команд: выбранная машина-агент. Только своя машина
     // (чужую игнорируем → выполняем на сервере). Офлайн своей — сразу ошибка.
     const requestedTarget =
@@ -267,7 +281,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ...(cwd ? { cwd } : {}),
       ...(attachmentPaths.length ? { attachments: attachmentPaths } : {}),
       ...(executionDisabled ? { execTarget: 'Без машины (команды запрещены)' } : remote ? { execTarget: remote.agentName } : {}),
-      ...(contextMessages.length ? { messages: contextMessages } : {})
+      ...(contextMessages.length ? { messages: contextMessages } : {}),
+      ...(kbContext ? { kbContext } : {})
     }
     // Окружение хода из system/init (инструменты/навыки/mcp) — только claude.
     let initInfo: ClaudeInitInfo | undefined
