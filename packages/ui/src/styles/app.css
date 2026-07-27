@@ -1997,6 +1997,13 @@
   padding-top: 6px;
   border-top: 1px solid var(--border-soft);
 }
+/* Чередование текста и действий: действие — отдельной строкой между абзацами. */
+.msgtl > .actsec {
+  margin: 6px 0;
+}
+.msgtl > .msgact-status {
+  margin-bottom: 6px;
+}
 .actsec {
   border-radius: 7px;
   margin-bottom: 3px;

@@ -20,10 +20,10 @@ import {
   type LiveSegment
 } from '../lib/view'
 import { Dots } from './animations'
-import { Markdown } from './Markdown'
 import { QuestionsForm } from './QuestionsForm'
 import { MessageMeta } from './MessageMeta'
 import { MessageActivity } from './MessageActivity'
+import { MessageTimeline } from './MessageTimeline'
 import { copyText } from '../lib/clipboard'
 import { useAutoGrow } from '../lib/autoGrow'
 
@@ -414,14 +414,12 @@ export function ChatColumn({
                         ⚠️ Ответ прерван перезапуском сервера — сохранена набранная часть.
                       </p>
                     )}
-                    {m.meta?.activity && m.meta.activity.length > 0 && (
-                      <MessageActivity
-                        activity={m.meta.activity}
-                        detailed={detailedIds.has(m.id)}
-                        execTarget={execTarget}
-                      />
-                    )}
-                    {aiText && <Markdown>{aiText}</Markdown>}
+                    <MessageTimeline
+                      text={aiText}
+                      activity={m.meta?.activity ?? []}
+                      detailed={detailedIds.has(m.id)}
+                      execTarget={execTarget}
+                    />
                     {machineOps &&
                       imagesParsed?.images.map((img) => (
                         <MessageImage
@@ -598,16 +596,14 @@ export function ChatColumn({
                 <div className="live-machine" data-testid="live-machine">
                   Машина: {execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === execTarget)?.name ?? 'Сервер'}
                 </div>
-                {liveActivity.length > 0 && (
-                  <MessageActivity
-                    live
-                    voice={state}
-                    activity={liveActivity}
-                    detailed={liveDetailed}
-                    execTarget={execTarget}
-                  />
-                )}
-                <Markdown>{liveImages.body}</Markdown>
+                <MessageTimeline
+                  live
+                  voice={state}
+                  text={liveImages.body}
+                  activity={liveActivity}
+                  detailed={liveDetailed}
+                  execTarget={execTarget}
+                />
                 {machineOps &&
                   liveImages.images.map((img) => (
                     <MessageImage
