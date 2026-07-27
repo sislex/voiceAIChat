@@ -66,14 +66,19 @@ describe('installCommand — команда для копирования', () =
     const cmd = installCommand('windows', 'https://h', CONN)
     expect(cmd).toContain('powershell -NoProfile -ExecutionPolicy Bypass')
     expect(cmd).toContain('install-windows.ps1')
-    expect(cmd).toContain(`"${CONN}"`)
+    expect(cmd).toContain(`'${CONN}'`)
+    expect(cmd).toMatch(/-Command "Set-Location/)
+    expect(cmd).not.toContain("-Command '")
+    expect(cmd).toBe(
+      `powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-Location ([Environment]::GetEnvironmentVariable('TEMP')); curl.exe -fsSLk https://h/api/agents/install-windows.ps1 -o vc-agent-install.ps1; & .\\vc-agent-install.ps1 '${CONN}'"`
+    )
   })
 
   it('без строки подключения аргумент опускается (обновление уже установленной машины)', () => {
     expect(installCommand('linux', 'https://h')).toBe(
       'curl -fsSLk https://h/api/agents/install-linux.sh | bash'
     )
-    expect(installCommand('windows', 'https://h')).toContain('vc-agent-install.ps1\'')
+    expect(installCommand('windows', 'https://h')).toContain('vc-agent-install.ps1"')
     expect(installCommand('windows', 'https://h')).not.toContain('""')
   })
 
