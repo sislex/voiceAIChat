@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import {
   REST,
+  CONVERSATION_STATUSES,
+  type ConversationStatus,
   ccResumeMessages,
   ccResumeTitle,
   ccTimeLabel,
@@ -119,6 +121,19 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     '/api/conversations/:id/project',
     async (req, reply) => {
       const conversation = db.setConversationProject(uid(req), req.params.id, req.body?.projectId ?? null)
+      if (!conversation) return reply.code(404).send({ error: 'not found' })
+      return conversation
+    }
+  )
+
+  app.post<{ Params: { id: string }; Body: { status?: string } }>(
+    '/api/conversations/:id/status',
+    async (req, reply) => {
+      const status = req.body?.status
+      if (!CONVERSATION_STATUSES.some((s) => s.id === status)) {
+        return reply.code(400).send({ error: 'invalid status' })
+      }
+      const conversation = db.setConversationStatus(uid(req), req.params.id, status as ConversationStatus)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       return conversation
     }

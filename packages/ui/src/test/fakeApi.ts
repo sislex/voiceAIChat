@@ -76,7 +76,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
   function makeConversation(title: string): Conversation {
     const ts = tick()
-    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', lastExecTarget: null }
+    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, status: 'developing', lastExecTarget: null }
   }
 
   for (const title of seedConversations) conversations.push(makeConversation(title))
@@ -145,6 +145,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
           conv.skillNames = [...p.skills]
         }
       }
+      return withCounts(conv)
+    },
+    'conversations:setStatus': async ({ id, status }) => {
+      const conv = conversations.find((c) => c.id === id)!
+      conv.status = status
       return withCounts(conv)
     },
     'conversations:setExecTarget': async ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode }) => {

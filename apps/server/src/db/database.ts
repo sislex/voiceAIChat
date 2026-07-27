@@ -7,6 +7,8 @@ import {
   type AgentCreated,
   type AgentPolicy,
   type Conversation,
+  type ConversationStatus,
+  DEFAULT_CONVERSATION_STATUS,
   type DesktopMigrationBundle,
   type DesktopMigrationResult,
   type LlmProvider,
@@ -58,6 +60,7 @@ interface ConversationRow {
   permission_mode: string | null
   kb_context_mode: string | null
   project_id: string | null
+  status: string | null
   last_exec_target?: string | null
 }
 
@@ -181,6 +184,20 @@ interface TaskRow {
   updated_at: number
 }
 
+/** Нормализация статуса чата из колонки (мусор → дефолт). */
+const CONVERSATION_STATUS_SET = new Set<ConversationStatus>([
+  'planned',
+  'developing',
+  'planning_done',
+  'development_done',
+  'done'
+])
+function normStatus(raw: string | null): ConversationStatus {
+  return raw && CONVERSATION_STATUS_SET.has(raw as ConversationStatus)
+    ? (raw as ConversationStatus)
+    : DEFAULT_CONVERSATION_STATUS
+}
+
 /** Разбор JSON-массива строк из колонки (терпит битые значения). */
 function parseStringArray(raw: string | null): string[] {
   try {
@@ -285,6 +302,9 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'project_id')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN project_id TEXT`)
     }
+    if (!convCols.some((c) => c.name === 'status')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN status TEXT NOT NULL DEFAULT 'developing'`)
+    }
     // Проекты (итерация 2): папка на машину + машина по умолчанию.
     const projCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
     if (projCols.length && !projCols.some((c) => c.name === 'default_agent_id')) {
@@ -342,7 +362,7 @@ export class VoiceChatDb {
          VALUES (?, ?, ?, ?, NULL, ?, NULL)`
       )
       .run(id, title, ts, ts, userId)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', lastExecTarget: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
   }
 
   listConversations(userId: string): Conversation[] {
@@ -453,6 +473,11 @@ export class VoiceChatDb {
 
   setConversationKbContextMode(userId: string, id: string, mode: 'auto' | 'manual' | 'off'): Conversation | null {
     this.db.prepare(`UPDATE conversations SET kb_context_mode = ? WHERE id = ? AND user_id = ?`).run(mode, id, userId)
+    return this.getConversation(userId, id)
+  }
+
+  setConversationStatus(userId: string, id: string, status: ConversationStatus): Conversation | null {
+    this.db.prepare(`UPDATE conversations SET status = ? WHERE id = ? AND user_id = ?`).run(status, id, userId)
     return this.getConversation(userId, id)
   }
 
@@ -809,6 +834,7 @@ export class VoiceChatDb {
           : null,
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
       projectId: row.project_id ?? null,
+      status: normStatus(row.status),
       lastExecTarget: row.last_exec_target ?? null
     }
   }

@@ -36,6 +36,7 @@ import type {
   MessageRole,
   PermissionMode,
   KbContextMode,
+  ConversationStatus,
   SessionUser,
   Settings,
   TtsVoiceInfo,
@@ -67,6 +68,24 @@ const LOGIN_STATUS_POLL_MS = 30_000
 
 /** Шаг дробного ранга для оптимистичного порядка на клиенте. */
 const BOARD_RANK_STEP = 1024
+
+/** Ключ localStorage для последнего выбранного в сайдбаре проекта. */
+const SIDEBAR_PROJECT_KEY = 'vc.sidebar.project'
+function loadSidebarProject(): string | null {
+  try {
+    return localStorage.getItem(SIDEBAR_PROJECT_KEY)
+  } catch {
+    return null
+  }
+}
+function saveSidebarProject(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(SIDEBAR_PROJECT_KEY, id)
+    else localStorage.removeItem(SIDEBAR_PROJECT_KEY)
+  } catch {
+    // localStorage недоступен (приватный режим/SSR) — молча игнорируем.
+  }
+}
 
 /** Полное состояние приложения в renderer. */
 export interface AppState {
@@ -192,6 +211,8 @@ export interface AppState {
   projectsOpen: boolean
   /** Список проектов текущего пользователя. */
   projects: ProjectSummary[]
+  /** Проект, выбранный в селекте сайдбара (null — «Без проекта»). Фильтрует список/поиск чатов. */
+  sidebarProjectId: string | null
   /** Проект, выбранный в панели деталей (null — не выбран). */
   projectDetail: ProjectDetail | null
   /** id проекта с открытой доской (null — доска закрыта). */
@@ -284,8 +305,12 @@ export interface StoreActions {
   /** Изменить машину только одного разговора. */
   setConversationExecTarget(id: string, execTarget: string | null, workdir?: string | null, skillNames?: string[], llmProvider?: LlmProvider | null, llmModel?: string | null, permissionMode?: PermissionMode | null, kbContextMode?: KbContextMode): Promise<void>
   setConversationProject(id: string, projectId: string | null): Promise<void>
+  /** Сменить статус жизненного цикла чата (дропдаун в сайдбаре). */
+  setConversationStatus(id: string, status: ConversationStatus): Promise<void>
   /** Задать поисковый запрос по разговорам (пусто — весь список). */
   setSearchQuery(query: string): Promise<void>
+  /** Выбрать проект в сайдбаре (null — «Без проекта»); фильтрует список/поиск чатов. */
+  setSidebarProject(projectId: string | null): Promise<void>
   /** Экспортировать активный разговор в Markdown/JSON (скачивание файла). */
   exportConversation(format: 'md' | 'json'): void
   /** Завершить (или пропустить) приветственный мастер. */
@@ -597,6 +622,7 @@ function initialState(): AppState {
     downloadPercent: 0,
     projectsOpen: false,
     projects: [],
+    sidebarProjectId: loadSidebarProject(),
     projectDetail: null,
     activeProjectId: null,
     board: null,
@@ -726,14 +752,23 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   async function refreshConversations(): Promise<void> {
     const q = state.searchQuery.trim()
-    const conversations = q
+    const all = q
       ? await api['conversations:search']({ query: q })
       : await api['conversations:list']()
+    // Список/поиск сужаем до выбранного в сайдбаре проекта (null — чаты без проекта).
+    const pid = state.sidebarProjectId
+    const conversations = all.filter((c) => (c.projectId ?? null) === pid)
     setState({ conversations })
   }
 
   async function setSearchQuery(query: string): Promise<void> {
     setState({ searchQuery: query })
+    await refreshConversations()
+  }
+
+  async function setSidebarProject(projectId: string | null): Promise<void> {
+    saveSidebarProject(projectId)
+    setState({ sidebarProjectId: projectId })
     await refreshConversations()
   }
 
@@ -775,7 +810,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       }
       return state.activeId
     }
-    const conv = await api['conversations:create']({ title: titleFromText(titleSeed) })
+    const created = await api['conversations:create']({ title: titleFromText(titleSeed) })
+    const conv = state.sidebarProjectId
+      ? await api['conversations:setProject']({ id: created.id, projectId: state.sidebarProjectId })
+      : created
     setState({ activeId: conv.id, messages: [] })
     await refreshConversations()
     return conv.id
@@ -978,11 +1016,15 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Тяжёлая загрузка данных пользователя (после успешной аутентификации). */
   async function bootstrap(): Promise<void> {
     setState({ loadingMessages: true }) // обновление страницы: лоадер до готовности ленты
-    const [settings, conversations] = await Promise.all([
+    const [settings, conversations, projects] = await Promise.all([
       api['settings:get'](),
-      api['conversations:list']()
+      api['conversations:list'](),
+      api['projects:list']()
     ])
-    setState({ settings, conversations })
+    // Сайдбар сразу фильтруем по восстановленному из localStorage проекту.
+    const pid = state.sidebarProjectId
+    const visible = conversations.filter((c) => (c.projectId ?? null) === pid)
+    setState({ settings, projects, conversations: visible })
     await refreshMics()
     await refreshModelStatus()
     await refreshWhisperModels()
@@ -993,8 +1035,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshLoginStatus()
     startLoginStatusPolling()
     await refreshAgents()
-    if (conversations.length > 0) {
-      await selectConversation(conversations[0].id)
+    if (visible.length > 0) {
+      await selectConversation(visible[0].id)
     } else {
       setState({ loadingMessages: false })
     }
@@ -1662,7 +1704,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     stopCapture()
     resetTts() // ход текущего разговора не отменяем — он доиграет на сервере
     dispatchVoice('reset')
-    const conversation = await api['conversations:create']({ title: 'Новый разговор' })
+    const created = await api['conversations:create']({ title: 'Новый разговор' })
+    // «Новый» создаёт чат сразу в выбранном проекте (сервер применит машину/папку/навыки).
+    const conversation = state.sidebarProjectId
+      ? await api['conversations:setProject']({ id: created.id, projectId: state.sidebarProjectId })
+      : created
     setState({
       activeId: conversation.id,
       messages: [],
@@ -1981,20 +2027,28 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   ): Promise<void> {
     // Ход завершён — убираем из активных.
     const convId = conversationId ?? state.activeId
+    let statusUpdate: Promise<void> = Promise.resolve()
     if (convId) {
       const { [convId]: _done, ...rest } = state.activeTurns
       const { [convId]: _act, ...restActivity } = state.activeActivity
       const { [convId]: _usage, ...restUsage } = state.activeUsage
       setState({ activeTurns: rest, activeActivity: restActivity, activeUsage: restUsage })
+      // Обновление статуса вторично: запускаем сразу, но не задерживаем очистку
+      // живого индикатора завершившегося хода.
+      statusUpdate = bumpTurnStatus(convId, meta).catch((error: unknown) => {
+        console.warn('[conversation] не удалось обновить статус завершённого хода:', error)
+      })
     }
     if (convId !== state.activeId) {
       // Фоновый разговор: ответ уже сохранён сервером — обновляем только сайдбар.
+      await statusUpdate
       if (message) await refreshConversations()
       return
     }
     // Ход активного разговора завершён — активность живёт теперь в meta сообщения.
     if (state.liveActivity.length) setState({ liveActivity: [] })
     if (state.liveUsage) setState({ liveUsage: null }) // итог хода — в meta
+    await statusUpdate
     // Мета хода (длительность/токены/стоимость) — показываем под последним ответом.
     if (meta && Object.keys(meta).length > 0) setState({ lastTurnMeta: meta })
     if (state.voice !== 'thinking' && state.voice !== 'speaking') {
@@ -2302,6 +2356,19 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     const conversation = await api['conversations:setProject']({ id, projectId })
     setState({ conversations: state.conversations.map((c) => (c.id === id ? conversation : c)) })
   }
+  async function setConversationStatus(id: string, status: ConversationStatus): Promise<void> {
+    const conversation = await api['conversations:setStatus']({ id, status })
+    setState({ conversations: state.conversations.map((c) => (c.id === id ? conversation : c)) })
+  }
+  // Авто-переход статуса по завершению хода: режим «План» → «планирование
+  // закончено», иначе (Разработка) → «разработка закончена». Режим берём из meta
+  // завершённого хода, с фолбэком на настройку чата/общий дефолт.
+  async function bumpTurnStatus(convId: string, meta?: TurnMeta): Promise<void> {
+    const conv = state.conversations.find((c) => c.id === convId)
+    const mode = (meta?.request?.permissionMode as PermissionMode | undefined)
+      ?? conv?.permissionMode ?? state.settings.permissionMode
+    await setConversationStatus(convId, mode === 'plan' ? 'planning_done' : 'development_done')
+  }
   async function refreshBoard(): Promise<void> {
     const id = state.activeProjectId
     if (!id) return
@@ -2466,6 +2533,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       renameConversation,
       setConversationExecTarget,
       setSearchQuery,
+      setSidebarProject,
       exportConversation,
       completeOnboarding,
       openSettings,
@@ -2569,6 +2637,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setProjectDefaultMachine,
       fetchProjectDetail,
       setConversationProject,
+      setConversationStatus,
       openBoard,
       closeBoard,
       applyBoardUpdate,

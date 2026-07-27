@@ -49,6 +49,14 @@ export interface Speaker {
 /** Разговор в сайдбаре. */
 export type KbContextMode = 'auto' | 'manual' | 'off'
 
+/** Статус жизненного цикла чата (бейдж в сайдбаре). */
+export type ConversationStatus =
+  | 'planned'          // планируется
+  | 'developing'       // разрабатывается
+  | 'planning_done'    // планирование закончено
+  | 'development_done' // разработка закончена
+  | 'done'             // закончено
+
 export interface Conversation {
   id: string
   title: string
@@ -76,6 +84,8 @@ export interface Conversation {
   kbContextMode?: KbContextMode
   /** Проект, к которому привязан чат (null/undefined — не привязан). */
   projectId?: string | null
+  /** Статус жизненного цикла чата; дефолт 'developing'. */
+  status?: ConversationStatus
   /** Неизменяемая цель последнего сообщения; используется подписью в списке чатов. */
   lastExecTarget: string | null
 }
@@ -163,6 +173,23 @@ export const PERMISSION_MODES: PermissionModeInfo[] = [
   { id: 'acceptEdits', label: 'Авто-правки файлов' },
   { id: 'plan', label: 'Только планирование' }
 ]
+
+/** Значение статуса чата по умолчанию. */
+export const DEFAULT_CONVERSATION_STATUS: ConversationStatus = 'developing'
+
+/** Пункты выпадающего списка статуса на карточке чата (подписи-существительные). */
+export const CONVERSATION_STATUSES: Array<{ id: ConversationStatus; label: string }> = [
+  { id: 'planned', label: 'планируется' },
+  { id: 'developing', label: 'разрабатывается' },
+  { id: 'planning_done', label: 'планирование закончено' },
+  { id: 'development_done', label: 'разработка закончена' },
+  { id: 'done', label: 'закончено' }
+]
+
+/** Подпись пульсирующего индикатора активного хода по режиму прав. */
+export function activeStatusLabel(mode: PermissionMode | null | undefined): string {
+  return mode === 'plan' ? 'планирую' : 'разрабатываю'
+}
 
 export type WhisperModel = 'large-v3-turbo' | 'medium' | 'small'
 

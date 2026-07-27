@@ -77,6 +77,25 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(ai?.engine).toBe('codex')
   })
 
+  it('завершённый ход автоматически меняет статус по режиму запроса', async () => {
+    const { store, api } = makeStore(['Чат'])
+    const spy = vi.spyOn(api, 'conversations:setStatus')
+    await store.actions.init()
+    const id = store.getState().activeId!
+
+    await store.actions.applyClaudeDone('', {
+      request: { provider: 'claude', model: 'sonnet', prompt: 'план', promptChars: 4, permissionMode: 'plan', resumed: false }
+    }, undefined, undefined, id)
+    expect(spy).toHaveBeenLastCalledWith({ id, status: 'planning_done' })
+    expect(store.getState().conversations.find((c) => c.id === id)?.status).toBe('planning_done')
+
+    await store.actions.applyClaudeDone('', {
+      request: { provider: 'claude', model: 'sonnet', prompt: 'код', promptChars: 3, permissionMode: 'acceptEdits', resumed: true }
+    }, undefined, undefined, id)
+    expect(spy).toHaveBeenLastCalledWith({ id, status: 'development_done' })
+    expect(store.getState().conversations.find((c) => c.id === id)?.status).toBe('development_done')
+  })
+
   it('пустой черновик не отправляется', async () => {
     const { store, api } = makeStore()
     const spyAdd = vi.spyOn(api, 'messages:add')
