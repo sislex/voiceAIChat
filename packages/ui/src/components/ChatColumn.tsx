@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { ClaudeLogEntry, Message, PermissionMode, TurnMeta, VoiceState } from '@shared/types'
+import type { ClaudeLogEntry, Message, PermissionMode, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
 import { parseImages } from '@shared/images'
@@ -12,6 +12,7 @@ import {
   activityStatus,
   chipClass,
   engineLabel,
+  formatLiveUsage,
   formatTurnMeta,
   messageTime,
   pluralActions,
@@ -66,6 +67,8 @@ export interface ChatColumnProps {
   streamingReply?: string
   /** Активность текущего (незавершённого) хода — для живого статуса/секций. */
   liveActivity?: ClaudeLogEntry[]
+  /** Живые счётчики токенов текущего хода — счётчик под стрим-сообщением. */
+  liveUsage?: TurnUsage | null
   /** Текст ошибки для баннера (null/undefined — нет баннера). */
   error?: string | null
   /** Закрыть баннер ошибки. */
@@ -131,6 +134,7 @@ export function ChatColumn({
   diarization,
   streamingReply = '',
   liveActivity = [],
+  liveUsage = null,
   canSpeak = false,
   speakingMessageId = null,
   onSpeakMessage,
@@ -582,6 +586,11 @@ export function ChatColumn({
                   {aiLabel} обрабатывает запрос…
                 </>
               )}
+              {liveUsage && (
+                <span className="msgact-count msgact-tokens" data-testid="live-tokens">
+                  {formatLiveUsage(liveUsage)}
+                </span>
+              )}
               {liveActivity.length > 0 && (
                 <button
                   className="msgbtn actbtn"
@@ -634,6 +643,11 @@ export function ChatColumn({
                       ? activityStatus(liveActivity, state, execTarget)
                       : `${aiLabel} отвечает…`}
                   </span>
+                  {liveUsage && (
+                    <span className="msgact-count msgact-tokens" data-testid="live-tokens">
+                      {formatLiveUsage(liveUsage)}
+                    </span>
+                  )}
                   {liveActivity.length > 0 && (
                     <span className="msgact-count">
                       {liveActivity.length} {pluralActions(liveActivity.length)}

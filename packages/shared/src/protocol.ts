@@ -9,6 +9,7 @@ import type {
   MessageRole,
   SttSegment,
   TurnMeta,
+  TurnUsage,
   WhisperModel
 } from './types'
 import type { CcItem } from './cc'
@@ -231,6 +232,8 @@ export interface ActiveTurn {
   partial: string
   /** Активность хода — восстановление живого статуса и счётчика действий. */
   activity?: ClaudeLogEntry[]
+  /** Накопленные счётчики токенов хода — восстановление живого счётчика. */
+  usage?: TurnUsage
 }
 
 /** client → server. */
@@ -281,6 +284,7 @@ export type ServerMessage =
     }
   | { t: 'claude.error'; conversationId: string; message: string }
   | { t: 'claude.log'; conversationId: string; entry: ClaudeLogEntry }
+  | { t: 'claude.usage'; conversationId: string; usage: TurnUsage }
   | { t: 'claude.active'; turns: ActiveTurn[] }
   | { t: 'tts.audio'; audio: string } // base64 WAV (или бинарный кадр — см. реализацию)
   | { t: 'tts.error'; message: string }
@@ -331,6 +335,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'claude.done',
   'claude.error',
   'claude.log',
+  'claude.usage',
   'claude.active',
   'tts.audio',
   'tts.error',

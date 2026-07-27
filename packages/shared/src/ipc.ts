@@ -14,6 +14,7 @@ import type {
   TtsVoiceCatalog,
   TtsVoiceInfo,
   TurnMeta,
+  TurnUsage,
   WhisperModel,
   WhisperModelInfo
 } from './types'
@@ -354,8 +355,11 @@ export interface IpcEventMap {
   'claude:error': { conversationId: string; message: string }
   /** Запись активности агента (режим консоли). */
   'claude:log': { conversationId: string; entry: ClaudeLogEntry }
+
+  /** Живые счётчики токенов текущего хода (кумулятивные). */
+  'claude:usage': { conversationId: string; usage: TurnUsage }
   /** Снапшот активных ходов при (пере)подключении — восстановление стрима. */
-  'claude:active': { turns: Array<{ conversationId: string; partial: string }> }
+  'claude:active': { turns: Array<{ conversationId: string; partial: string; activity?: ClaudeLogEntry[]; usage?: TurnUsage }> }
   /** Прогресс скачивания модели Whisper (0–100). */
   'stt:downloadProgress': { percent: number }
   /** Скачивание модели завершено. */
@@ -389,6 +393,7 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'claude:done',
   'claude:error',
   'claude:log',
+  'claude:usage',
   'claude:active',
   'stt:downloadProgress',
   'stt:downloadDone',
@@ -500,6 +505,8 @@ export interface RendererClaudeBridge {
   onError(cb: (msg: IpcEventPayload<'claude:error'>) => void): () => void
   /** Подписка на активность агента (режим консоли). */
   onLog(cb: (msg: IpcEventPayload<'claude:log'>) => void): () => void
+  /** Живые счётчики токенов хода (только remote-мост; desktop-main не шлёт). */
+  onUsage?(cb: (msg: IpcEventPayload<'claude:usage'>) => void): () => void
   /** Снапшот активных ходов (только remote-мост; desktop-main его не шлёт). */
   onActive?(cb: (msg: IpcEventPayload<'claude:active'>) => void): () => void
 }

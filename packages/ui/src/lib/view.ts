@@ -4,6 +4,7 @@ import type {
   LlmProvider,
   MessageRole,
   TurnMeta,
+  TurnUsage,
   VoiceState
 } from '@shared/types'
 
@@ -108,6 +109,16 @@ export function formatTurnMeta(meta: TurnMeta): string {
 
 function kilo(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+}
+
+/** Живой счётчик токенов стримящегося ответа: «↓ 1.2k · ↑ 356 · кэш 89.1k». */
+export function formatLiveUsage(u: TurnUsage): string {
+  const parts: string[] = []
+  if (typeof u.inputTokens === 'number') parts.push(`↓ ${kilo(u.inputTokens)}`)
+  if (typeof u.outputTokens === 'number') parts.push(`↑ ${kilo(u.outputTokens)}`)
+  const cached = (u.cacheReadTokens ?? 0) + (u.cacheCreationTokens ?? 0)
+  if (cached > 0) parts.push(`кэш ${kilo(cached)}`)
+  return parts.join(' · ')
 }
 
 function pluralTurns(n: number): string {

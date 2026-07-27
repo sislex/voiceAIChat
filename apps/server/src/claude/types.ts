@@ -1,7 +1,7 @@
 // Абстракция LLM-клиента (Шаг 8). Позволяет мокать Claude в тестах и подменять
 // реализацию (сейчас — Claude Code CLI).
 
-import type { ClaudeInitInfo, ClaudeLogEntry, TurnMeta } from '@voicechat/shared'
+import type { ClaudeInitInfo, ClaudeLogEntry, TurnMeta, TurnUsage } from '@voicechat/shared'
 
 export interface LlmRequest {
   /** Владелец CLI-профиля: история одного пользователя не смешивается с другими. */
@@ -43,6 +43,8 @@ export interface LlmStreamHandlers {
   onError(message: string): void
   /** Запись активности агента (режим консоли) — необязательно. */
   onActivity?(entry: ClaudeLogEntry): void
+  /** Накопленные счётчики токенов хода (кумулятивные, растут по мере ответа). */
+  onUsage?(usage: TurnUsage): void
 }
 
 export interface LlmHandle {

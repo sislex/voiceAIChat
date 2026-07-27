@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseStreamJsonActivity, parseStreamJsonLine } from './streamJson'
+import { createUsageAccumulator, parseStreamJsonActivity, parseStreamJsonLine } from './streamJson'
 
 describe('parseStreamJsonLine', () => {
   it('извлекает session_id из system/init', () => {
@@ -210,5 +210,79 @@ describe('parseStreamJsonActivity (режим консоли)', () => {
     expect(parseStreamJsonActivity(JSON.stringify({ type: 'stream_event', event: {} }))).toBeNull()
     expect(parseStreamJsonActivity('')).toBeNull()
     expect(parseStreamJsonActivity('не json')).toBeNull()
+  })
+})
+
+describe('usage-события (живой счётчик токенов)', () => {
+  it('message_start даёт usage с message id', () => {
+    const line = JSON.stringify({
+      type: 'stream_event',
+      event: {
+        type: 'message_start',
+        message: {
+          id: 'msg_1',
+          usage: { input_tokens: 4, output_tokens: 1, cache_read_input_tokens: 100, cache_creation_input_tokens: 7 }
+        }
+      }
+    })
+    expect(parseStreamJsonLine(line)).toEqual({
+      kind: 'usage',
+      messageId: 'msg_1',
+      usage: { inputTokens: 4, outputTokens: 1, cacheReadTokens: 100, cacheCreationTokens: 7 }
+    })
+  })
+
+  it('message_delta даёт кумулятивный выход без id', () => {
+    const line = JSON.stringify({
+      type: 'stream_event',
+      event: { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 42 } }
+    })
+    expect(parseStreamJsonLine(line)).toEqual({ kind: 'usage', usage: { outputTokens: 42 } })
+  })
+
+  it('assistant-сообщение даёт полный usage с id', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      message: { id: 'msg_2', content: [{ type: 'text', text: 'привет' }], usage: { input_tokens: 10, output_tokens: 5 } }
+    })
+    expect(parseStreamJsonLine(line)).toEqual({
+      kind: 'usage',
+      messageId: 'msg_2',
+      usage: { inputTokens: 10, outputTokens: 5 }
+    })
+  })
+
+  it('события без usage остаются ignore', () => {
+    expect(parseStreamJsonLine(JSON.stringify({ type: 'assistant', message: { content: [] } })))
+      .toEqual({ kind: 'ignore' })
+    expect(parseStreamJsonLine(JSON.stringify({ type: 'stream_event', event: { type: 'message_stop' } })))
+      .toEqual({ kind: 'ignore' })
+  })
+})
+
+describe('createUsageAccumulator', () => {
+  it('суммирует последние снапшоты разных сообщений', () => {
+    const acc = createUsageAccumulator()
+    acc.add({ messageId: 'a', usage: { inputTokens: 10, outputTokens: 1, cacheReadTokens: 100 } })
+    acc.add({ messageId: 'a', usage: { outputTokens: 20 } }) // финал сообщения a
+    acc.add({ messageId: 'b', usage: { inputTokens: 15, outputTokens: 2 } })
+    expect(acc.add({ messageId: 'b', usage: { outputTokens: 30 } })).toEqual({
+      inputTokens: 25,
+      outputTokens: 50,
+      cacheReadTokens: 100
+    })
+  })
+
+  it('событие без id относится к последнему сообщению (message_delta)', () => {
+    const acc = createUsageAccumulator()
+    acc.add({ messageId: 'a', usage: { inputTokens: 5, outputTokens: 1 } })
+    expect(acc.add({ usage: { outputTokens: 9 } })).toEqual({ inputTokens: 5, outputTokens: 9 })
+  })
+
+  it('повтор одинакового снапшота не меняет итог (дубли assistant по блокам)', () => {
+    const acc = createUsageAccumulator()
+    const first = acc.add({ messageId: 'a', usage: { inputTokens: 3, outputTokens: 7 } })
+    const second = acc.add({ messageId: 'a', usage: { inputTokens: 3, outputTokens: 7 } })
+    expect(second).toEqual(first)
   })
 })

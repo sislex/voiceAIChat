@@ -4,7 +4,7 @@
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { parseStreamJsonLine, parseStreamJsonActivity } from '@voicechat/shared'
+import { createUsageAccumulator, parseStreamJsonLine, parseStreamJsonActivity } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from './types'
 import { cliProfileEnv } from '../users/cliProfiles.js'
 
@@ -87,6 +87,9 @@ export class ClaudeCli implements LlmClient {
     let finished = false
     let sawResult = false
     let stderr = ''
+    // Живые счётчики токенов: суммируем usage-события, дубли не рассылаем.
+    const usageAcc = createUsageAccumulator()
+    let lastUsageJson = ''
 
     const fail = (message: string): void => {
       if (finished) return
@@ -135,6 +138,16 @@ export class ClaudeCli implements LlmClient {
           case 'delta':
             if (!finished) handlers.onDelta(ev.text)
             break
+          case 'usage': {
+            if (finished || !handlers.onUsage) break
+            const total = usageAcc.add(ev)
+            const json = JSON.stringify(total)
+            if (json !== lastUsageJson) {
+              lastUsageJson = json
+              handlers.onUsage(total)
+            }
+            break
+          }
           case 'result':
             sawResult = true
             if (ev.sessionId) handlers.onSession(ev.sessionId)

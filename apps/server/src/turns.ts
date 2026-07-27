@@ -22,7 +22,8 @@ import {
   type ServerMessage,
   type SttSegmentWire,
   type TurnMeta,
-  type TurnRequestInfo
+  type TurnRequestInfo,
+  type TurnUsage
 } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
 import { relocateImagesToMachine } from './imageRelocate.js'
@@ -134,6 +135,8 @@ interface TurnState {
   userId: string
   /** Активность хода (для подробного вида сообщения); собирается всегда. */
   activity: ClaudeLogEntry[]
+  /** Накопленные счётчики токенов хода (живой счётчик под сообщением). */
+  usage?: TurnUsage
   /** Ход завершён (done/error/flush) — поздние события CLI игнорируются. */
   done: boolean
   /** Контекст хода — чтобы flushInterrupted мог сохранить прерванный ответ. */
@@ -330,6 +333,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           turn.partial += delta
           broadcast({ t: 'claude.token', conversationId, delta }, userId)
         },
+        // Живой счётчик токенов: рассылается всем клиентам всегда (в отличие от
+        // claude.log, который зависит от verbose) и попадает в снапшот active().
+        onUsage: (usage) => {
+          if (turn.done) return
+          turn.usage = usage
+          broadcast({ t: 'claude.usage', conversationId, usage }, userId)
+        },
         onDone: (text, meta) => {
           if (turn.done) return
           finish()
@@ -462,6 +472,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       turn.handle.cancel()
       if (!turn.partial.trim()) continue
       const meta: TurnMeta = {
+        // Usage до обрыва — result-событие CLI с итогами уже не придёт.
+        ...turn.usage,
         durationMs: now() - turn.startedAt,
         model: turn.model,
         interrupted: true,
@@ -499,7 +511,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         .map(([conversationId, t]) => ({
           conversationId,
           partial: t.partial,
-          ...(t.activity.length ? { activity: t.activity } : {})
+          ...(t.activity.length ? { activity: t.activity } : {}),
+          ...(t.usage ? { usage: t.usage } : {})
         }))
     }
   }
