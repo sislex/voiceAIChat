@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-07-26
-checked: 9d819ac
+updated: 2026-07-27
+checked: 49465ae
 areas:
   - apps/server/src/server.ts
   - apps/server/src/session.ts

@@ -68,6 +68,11 @@ npm run kb:check             # что в базе знаний устарело 
 | Файл | Когда открывать |
 |---|---|
 | [architecture.md](docs/kb/architecture.md) | как связаны клиент, сервер, CLI и машины; где чей стейт |
+| [shared.md](docs/kb/shared.md) | типы, REST/WS/agent-контракты, мосты и чистые парсеры |
+| [ui.md](docs/kb/ui.md) | React-компоненты, store, remote-мосты, voice/TTS UX |
+| [server-internals.md](docs/kb/server-internals.md) | внутренности Fastify, маршруты, сессии, DB и сервисы |
+| [clients.md](docs/kb/clients.md) | web, Electron desktop, legacy-миграция и agent-tray |
+| [testing-operations.md](docs/kb/testing-operations.md) | тестовая матрица, диагностика, backup и эксплуатация |
 | [protocol.md](docs/kb/protocol.md) | добавляешь/меняешь REST-роут, WS-сообщение, мост `window.*` |
 | [llm.md](docs/kb/llm.md) | claude/codex CLI, stream-json, ходы, наблюдатели сессий, Anthropic-gateway |
 | [stt-tts.md](docs/kb/stt-tts.md) | Whisper, Piper/say, голоса, скачивание моделей, лимиты по памяти |
