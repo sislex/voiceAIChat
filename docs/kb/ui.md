@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-07-27
-checked: 95f654f
+checked: 938d6e3
 areas:
   - packages/ui/src
   - apps/web/src
@@ -45,6 +45,11 @@ web/desktop host → installRemoteBridges → HTTP + WebSocket → server
 `submitText()` валидирует draft/attachments, фиксирует цель выполнения, сохраняет пользовательское сообщение и отправляет LLM-запрос. Поток `claude.token/activity/usage` обновляет live-состояние только соответствующего разговора. Если пользователь переключился в другой чат, генерация продолжается в `activeTurns`; возврат показывает накопленный partial.
 
 `claude.done` использует уже сохранённое сервером сообщение, когда оно пришло в событии, и не создаёт дубль. Error/cancel очищают только относящийся к ходу live-state. `executePlan` и `answerQuestions` превращают выбор пользователя в новый запрос по контракту служебных блоков.
+
+Счётчики входящих, исходящих и кэшированных токенов показываются в footer каждого
+сохранённого AI-сообщения. Пока ход активен, тот же формат показывает `liveUsage`;
+точная частота обновления зависит от событий CLI (Claude — в потоке, Codex — итог
+`turn.completed`).
 
 Сообщения можно редактировать и удалять через REST. Экспорт в Markdown/JSON выполняется чистыми shared-функциями и browser download bridge.
 

@@ -88,6 +88,17 @@ describe('ChatColumn — экспорт разговора', () => {
     expect(meta.textContent).toContain('$0.0131')
   })
 
+
+  it('показывает входящие, исходящие и кэшированные токены под сохранённым ответом', () => {
+    renderCol({
+      messages: [
+        messages[0],
+        { ...messages[1], meta: { inputTokens: 1200, outputTokens: 34, cacheReadTokens: 900 } }
+      ]
+    })
+    expect(screen.getByTestId('message-tokens-a1')).toHaveTextContent('↓ 1.2k · ↑ 34 · кэш 900')
+  })
+
   it('без сообщений кнопки экспорта нет', () => {
     render(
       <ChatColumn
