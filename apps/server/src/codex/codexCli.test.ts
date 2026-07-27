@@ -89,6 +89,30 @@ describe('CodexCli', () => {
     expect(input).toContain('сделай что-то')
   })
 
+  it('remote + plan → без MCP и bypass, только read-only sandbox', async () => {
+    const { child, stdin } = fakeChild()
+    let input = ''
+    stdin.on('data', (chunk) => (input += chunk.toString()))
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new CodexCli({ spawn }).send(
+      {
+        prompt: 'составь план',
+        sessionId: null,
+        model: '',
+        permissionMode: 'plan',
+        remote: { mcpUrl: 'http://127.0.0.1/mcp', agentName: 'Ноутбук' }
+      },
+      makeHandlers()
+    )
+    const args = argsOf(spawn)
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox')
+    expect(args.some((arg) => arg.startsWith('mcp_servers.remote.url='))).toBe(false)
+    expect(args[args.indexOf('--sandbox') + 1]).toBe('read-only')
+    await tick()
+    expect(input).toContain('Режим «План»')
+    expect(input).toContain('Не изменяй файлы')
+  })
+
   it('парсит JSONL: session, message → done с накопленным текстом', async () => {
     const { child, stdout } = fakeChild()
     const spawn: SpawnFn = vi.fn(() => child as never)

@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-07-26
-checked: 9d819ac
+updated: 2026-07-27
+checked: 44db49b
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -159,3 +159,5 @@ tools, thinking, prompt caching, SSE и beta-заголовки. Backend — л�
 путь `/mcp/remote-bash`) с инструментом `bash`, выполняющим команду на агенте.
 Эндпоинт stateless (свежий сервер и транспорт на каждый POST) и защищён секретом
 процесса в query-параметре `k`. Детали политики — `machines.md`.
+
+Для Codex удалённый MCP подключается только в режимах разработки. В режиме `plan` MCP намеренно не передаётся процессу, а Codex запускается с `--sandbox read-only`: иначе обязательный для remote-вызовов bypass позволял бы менять файлы вопреки режиму разговора.
