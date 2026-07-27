@@ -41,7 +41,7 @@ function NodeMajor([string]$Cmd) {
   return 0
 }
 
-Write-Host '[1/6] Проверяю Node.js (нужна версия 22+)…'
+Write-Host '[1/7] Проверяю Node.js (нужна версия 22+)…'
 $NodeExe = 'node'
 $LocalNode = Join-Path $AgentDir 'node\\node.exe'
 if ((NodeMajor 'node') -lt 22) {
@@ -64,14 +64,28 @@ if ((NodeMajor 'node') -lt 22) {
 }
 Write-Host "Использую Node.js: $NodeExe"
 
-Write-Host '[2/6] Скачиваю агента…'
+Write-Host '[2/7] Ставлю нативный терминал…'
+$NodeDir = if ($NodeExe -eq 'node') { Split-Path (Get-Command node).Source } else { Split-Path $NodeExe }
+$NpmCmd = Join-Path $NodeDir 'npm.cmd'
+if (-not (Test-Path $NpmCmd)) {
+  $Npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+  if (-not $Npm) { throw 'npm не найден рядом с Node.js — невозможно установить нативный терминал' }
+  $NpmCmd = $Npm.Source
+}
+# @lydell/node-pty публикует готовые ConPTY-бинарники для Windows x64/arm64.
+& $NpmCmd install --prefix $AgentDir --omit=dev --no-save --no-audit --no-fund '@lydell/node-pty@1.1.0'
+if ($LASTEXITCODE -ne 0) { throw 'не удалось установить нативный терминал' }
+& $NodeExe -e "require(process.argv[1])" (Join-Path $AgentDir 'node_modules/@lydell/node-pty')
+if ($LASTEXITCODE -ne 0) { throw 'нативный терминал установлен, но не загружается' }
+
+Write-Host '[3/7] Скачиваю агента…'
 $NewCjs = Join-Path $AgentDir 'voicechat-agent.new.cjs'
 Fetch "$Server/api/agents/script" $NewCjs
 if ((Get-Item $NewCjs).Length -lt 1000) { throw 'скачанный скрипт подозрительно мал' }
 & $NodeExe --check $NewCjs
 if ($LASTEXITCODE -ne 0) { Remove-Item $NewCjs -Force; throw 'скачанный скрипт битый — обновление отменено' }
 
-Write-Host '[3/6] Ищу строку подключения и останавливаю старый агент…'
+Write-Host '[4/7] Ищу строку подключения и останавливаю старый агент…'
 # Ищем node-процессы, у которых в командной строке наш скрипт (CIM: у Get-Process
 # командной строки нет). Повторный запуск установщика = обновление.
 $Old = @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
@@ -105,10 +119,10 @@ $Cjs = Join-Path $AgentDir 'voicechat-agent.cjs'
 if (Test-Path $Cjs) { Move-Item $Cjs (Join-Path $AgentDir 'voicechat-agent.cjs.prev') -Force }
 Move-Item $NewCjs $Cjs -Force
 
-Write-Host '[4/6] Сохраняю строку подключения…'
+Write-Host '[5/7] Сохраняю строку подключения…'
 Set-Content -Path $ConnFile -Value $Connection -NoNewline -Encoding ascii
 
-Write-Host '[5/6] Готовлю запуск и автозапуск (реестр HKCU, окно скрыто)…'
+Write-Host '[6/7] Готовлю запуск и автозапуск (реестр HKCU, окно скрыто)…'
 $RunCmd = Join-Path $AgentDir 'run.cmd'
 # OEM-кодировка: cmd.exe читает .cmd в кодовой странице консоли, иначе rem-строки в кракозябрах.
 @(
@@ -126,7 +140,7 @@ $Vbs = Join-Path $AgentDir 'run-hidden.vbs'
 Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' \`
   -Name 'voicechat-agent' -Value ('wscript.exe "{0}"' -f $Vbs)
 
-Write-Host '[6/6] Запускаю агента (в фоне; автозапуск при входе настроен)…'
+Write-Host '[7/7] Запускаю агента (в фоне; автозапуск при входе настроен)…'
 Start-Process -FilePath 'wscript.exe' -ArgumentList ('"{0}"' -f $Vbs)
 Write-Host "Готово. Машина появится в настройках через несколько секунд. Файлы агента: $AgentDir"
 `
