@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   llm_provider      TEXT,
   llm_model         TEXT,
   kb_context_mode   TEXT NOT NULL DEFAULT 'auto',
-  project_id        TEXT
+  project_id        TEXT,
+  status            TEXT NOT NULL DEFAULT 'developing'
 );
 
 CREATE TABLE IF NOT EXISTS messages (

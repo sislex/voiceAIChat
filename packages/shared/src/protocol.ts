@@ -123,6 +123,7 @@ export const REST = {
   conversationsSearch: '/api/conversations/search',
   conversation: (id: string) => `/api/conversations/${id}`,
   conversationProject: (id: string) => `/api/conversations/${encodeURIComponent(id)}/project`,
+  conversationStatus: (id: string) => `/api/conversations/${encodeURIComponent(id)}/status`,
   messages: (id: string) => `/api/conversations/${id}/messages`,
   desktopMigration: '/api/migrations/desktop',
   message: (id: string, messageId: string) => `/api/conversations/${id}/messages/${messageId}`,

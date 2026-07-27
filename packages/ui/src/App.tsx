@@ -160,9 +160,13 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         }}
         onDelete={actions.deleteConversation}
         onRename={actions.renameConversation}
+        onStatusChange={(id, status) => void actions.setConversationStatus(id, status)}
         agents={state.agents}
         searchQuery={state.searchQuery}
         onSearch={actions.setSearchQuery}
+        projects={state.projects}
+        selectedProjectId={state.sidebarProjectId}
+        onSelectProject={(id) => void actions.setSidebarProject(id)}
         onOpenObserver={menu(actions.openObserver)}
         onOpenCodexObserver={menu(actions.openCodexObserver)}
         onOpenKnowledgeBase={menu(() => setKnowledgeBaseOpen(true))}

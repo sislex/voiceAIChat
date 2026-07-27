@@ -43,6 +43,29 @@ async function createProject(name = 'P1'): Promise<ProjectDetail> {
   return res.json() as ProjectDetail
 }
 
+describe('conversation status REST', () => {
+  it('хранит статус, валидирует значение и изолирует владельца', async () => {
+    const conv = db.createConversation('admin', 'Статус')
+    expect(conv.status).toBe('developing')
+
+    const changed = await inj(adminTok, {
+      method: 'POST',
+      url: `/api/conversations/${conv.id}/status`,
+      payload: { status: 'planning_done' }
+    })
+    expect(changed.statusCode).toBe(200)
+    expect(changed.json().status).toBe('planning_done')
+    expect(db.getConversation('admin', conv.id)?.status).toBe('planning_done')
+
+    expect((await inj(adminTok, {
+      method: 'POST', url: `/api/conversations/${conv.id}/status`, payload: { status: 'unknown' }
+    })).statusCode).toBe(400)
+    expect((await inj(bobTok, {
+      method: 'POST', url: `/api/conversations/${conv.id}/status`, payload: { status: 'done' }
+    })).statusCode).toBe(404)
+  })
+})
+
 describe('projects REST: доступ', () => {
   it('без токена → 401', async () => {
     expect((await app.inject({ method: 'GET', url: '/api/projects' })).statusCode).toBe(401)

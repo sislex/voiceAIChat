@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createVoiceStore, type VoiceStore } from './voiceStore'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
@@ -8,6 +8,12 @@ function makeStore(): { store: VoiceStore; api: FakeApi } {
   const store = createVoiceStore({ api, now: () => 1_700_000_000_000 })
   return { store, api }
 }
+
+// Выбор проекта в сайдбаре персистится в localStorage — чистим между тестами,
+// иначе выбор из одного кейса протекает в следующий.
+beforeEach(() => {
+  localStorage.removeItem('vc.sidebar.project')
+})
 
 describe('voiceStore — проекты и доска', () => {
   it('createProject наполняет список и панель деталей', async () => {
@@ -112,5 +118,46 @@ describe('voiceStore — связка проекта с чатом', () => {
     store.actions.openUtilityForActiveChat('console')
     expect(store.getState().utility!.dir).toBeUndefined()
     expect(store.getState().utility!.path).toBe('/srv/p')
+  })
+})
+
+describe('voiceStore — выбор проекта в сайдбаре', () => {
+  it('setSidebarProject сужает список до чатов проекта и до «Без проекта»', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P' })
+    const pid = store.getState().projectDetail!.id
+    await store.actions.newConversation()
+    const inProj = store.getState().activeId!
+    await store.actions.setConversationProject(inProj, pid)
+    await store.actions.newConversation()
+    const noProj = store.getState().activeId!
+
+    await store.actions.setSidebarProject(pid)
+    expect(store.getState().sidebarProjectId).toBe(pid)
+    expect(store.getState().conversations.map((c) => c.id)).toEqual([inProj])
+
+    await store.actions.setSidebarProject(null)
+    expect(store.getState().conversations.map((c) => c.id)).toEqual([noProj])
+  })
+
+  it('newConversation при выбранном проекте создаёт чат сразу в нём', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P' })
+    const pid = store.getState().projectDetail!.id
+    const spy = vi.spyOn(api, 'conversations:setProject')
+    await store.actions.setSidebarProject(pid)
+    await store.actions.newConversation()
+    const cid = store.getState().activeId!
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ id: cid, projectId: pid }))
+    expect(store.getState().conversations.find((c) => c.id === cid)!.projectId).toBe(pid)
+  })
+
+  it('последний выбранный проект восстанавливается из localStorage', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P' })
+    const pid = store.getState().projectDetail!.id
+    await store.actions.setSidebarProject(pid)
+    const store2 = createVoiceStore({ api: createFakeApi(), now: () => 1_700_000_000_000 })
+    expect(store2.getState().sidebarProjectId).toBe(pid)
   })
 })
