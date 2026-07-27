@@ -40,6 +40,14 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const { state, actions } = useVoiceStore({ api, now, delays })
   // Мобильный режим: выдвинут ли сайдбар (на десктопе класс side--open не влияет).
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Десктоп: свёрнут ли сайдбар (колонка → 0). Персист в localStorage.
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem('vc:sidebarCollapsed') === '1' } catch { return false }
+  })
+  const setCollapsedPersist = (v: boolean): void => {
+    setCollapsed(v)
+    try { localStorage.setItem('vc:sidebarCollapsed', v ? '1' : '0') } catch { /* приватный режим */ }
+  }
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false)
   const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false)
   useVoiceCues(state.voice) // звуковые сигналы: старт/стоп записи, «думает»
@@ -123,11 +131,16 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
 
   return (
     <div
-      className={showConsole ? 'app app--console' : 'app'}
+      className={[
+        'app',
+        showConsole && 'app--console',
+        collapsed && 'app--sidebar-collapsed'
+      ].filter(Boolean).join(' ')}
       data-theme={state.settings.theme}
     >
       <Sidebar
         open={sidebarOpen}
+        onToggleCollapse={() => setCollapsedPersist(true)}
         conversations={state.conversations}
         activeId={state.activeId}
         workingIds={[
@@ -167,7 +180,10 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
       )}
 
       <ChatColumn
-        onToggleSidebar={() => setSidebarOpen((v) => !v)}
+        onToggleSidebar={() => {
+          if (collapsed) setCollapsedPersist(false)
+          else setSidebarOpen((v) => !v)
+        }}
         title={activeTitle}
         onRenameTitle={(t) => {
           if (state.activeId) void actions.renameConversation(state.activeId, t)
@@ -407,15 +423,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           capabilities={state.capabilities}
           mcpServers={state.mcpServers}
           loginStatus={state.loginStatus}
-          agents={state.agents}
-          onCreateAgent={actions.createAgent}
-          onDeleteAgent={(id) => void actions.deleteAgent(id)}
-          onSetAgentPolicy={(id, policy) => void actions.setAgentPolicy(id, policy)}
-          onRegenerateAgentToken={actions.regenerateAgentToken}
           onDownloadDesktopApp={() => void actions.downloadDesktopApp()}
           onDownloadAgentApp={() => void actions.downloadAgentApp()}
           onDownloadAgentScript={() => void actions.downloadAgentScript()}
-          onGetConnectionString={actions.getAgentConnectionString}
           onChange={actions.updateSettings}
           onDownloadVoice={actions.downloadVoice}
           onDeleteVoice={actions.deleteVoice}

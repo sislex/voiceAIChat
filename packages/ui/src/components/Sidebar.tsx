@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Conversation, SessionUser } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { ACCENT } from '../lib/view'
@@ -66,6 +66,8 @@ export interface SidebarProps {
   onLogout?: () => void
   /** Мобильный режим: сайдбар выдвинут поверх контента. */
   open?: boolean
+  /** Свернуть сайдбар на десктопе. */
+  onToggleCollapse?: () => void
 }
 
 export function Sidebar({
@@ -91,14 +93,33 @@ export function Sidebar({
   onOpenProjects,
   currentUser,
   onLogout,
-  open = false
+  open = false,
+  onToggleCollapse
 }: SidebarProps): JSX.Element {
   // id разговора, для которого показываем инлайн-подтверждение удаления.
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   // id разговора в режиме переименования + черновик названия.
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
+  const [acctOpen, setAcctOpen] = useState(false)
+  const acctRef = useRef<HTMLDivElement | null>(null)
   const workingSet = new Set(workingIds)
+
+  useEffect(() => {
+    if (!acctOpen) return
+    const onDoc = (e: MouseEvent): void => {
+      if (acctRef.current && !acctRef.current.contains(e.target as Node)) setAcctOpen(false)
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setAcctOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [acctOpen])
 
   const startRename = (c: Conversation): void => {
     setRenamingId(c.id)
@@ -114,6 +135,11 @@ export function Sidebar({
     setRenameDraft('')
   }
 
+  const acct = (fn: () => void) => (): void => {
+    setAcctOpen(false)
+    fn()
+  }
+
   return (
     <aside className={open ? 'side side--open' : 'side'}>
       <div className="sidehead">
@@ -121,9 +147,21 @@ export function Sidebar({
           <span className="logodot" style={{ background: ACCENT }} />
           Голос·Чат
         </span>
-        <button className="newbtn" onClick={onNew}>
-          + Новый
-        </button>
+        <div className="sidehead-actions">
+          <button className="newbtn" onClick={onNew}>
+            + Новый
+          </button>
+          {onToggleCollapse && (
+            <button
+              className="side-collapse"
+              onClick={onToggleCollapse}
+              title="Свернуть панель"
+              aria-label="Свернуть панель"
+            >
+              «
+            </button>
+          )}
+        </div>
       </div>
       <div className="sidesearch">
         <input
@@ -235,63 +273,83 @@ export function Sidebar({
         ))}
       </div>
       <div className="sidefoot">
-        <button className="footbtn" onClick={onOpenObserver}>
-          <span className="footico">🗂</span>
-          Claude Code
-        </button>
-        <button className="footbtn" onClick={onOpenCodexObserver}>
-          <span className="footico">🧭</span>
-          Codex
-        </button>
-        {onOpenProjects && (
-          <button className="footbtn" onClick={onOpenProjects}>
-            <span className="footico">📋</span>
-            Проекты
+        {/* Инструменты — компактный ряд иконок (подписи в title). */}
+        <div className="foottools">
+          <button className="footico-btn" onClick={onOpenObserver} title="Claude Code" aria-label="Claude Code">
+            🗂
           </button>
-        )}
-        {onOpenKnowledgeBase && <button className="footbtn" onClick={onOpenKnowledgeBase}>
-          <span className="footico">📚</span>
-          База знаний
-        </button>}
-        {onOpenFiles && (
-          <button className="footbtn" onClick={onOpenFiles}>
-            <span className="footico">📁</span>
-            Открыть проводник
+          <button className="footico-btn" onClick={onOpenCodexObserver} title="Codex" aria-label="Codex">
+            🧭
           </button>
-        )}
-        {onOpenConsole && (
-          <button className="footbtn" onClick={onOpenConsole}>
-            <span className="footico">⌨️</span>
-            Открыть консоль
-          </button>
-        )}
-        {onOpenUsers && currentUser?.role === 'admin' && (
-          <button className="footbtn" onClick={onOpenUsers}>
-            <span className="footico">👥</span>
-            Пользователи
-          </button>
-        )}
-        {onOpenMachines && (
-          <button className="footbtn" onClick={onOpenMachines}>
-            <span className="footico">🖥</span>
-            Машины
-          </button>
-        )}
-        <button className="footbtn" onClick={onOpenSettings}>
-          <GearIcon />
-          Настройки
-        </button>
-        {currentUser && currentUser.name && (
-          <div className="userrow">
-            <span className="username" title={`Роль: ${currentUser.role}`}>
-              👤 {currentUser.name}
-            </span>
-            {onLogout && (
-              <button className="logoutbtn" onClick={onLogout} title="Выйти">
-                Выйти
-              </button>
+          {onOpenProjects && (
+            <button className="footico-btn" onClick={onOpenProjects} title="Проекты" aria-label="Проекты">
+              📋
+            </button>
+          )}
+          {onOpenKnowledgeBase && (
+            <button className="footico-btn" onClick={onOpenKnowledgeBase} title="База знаний" aria-label="База знаний">
+              📚
+            </button>
+          )}
+          {onOpenFiles && (
+            <button className="footico-btn" onClick={onOpenFiles} title="Открыть проводник" aria-label="Открыть проводник">
+              📁
+            </button>
+          )}
+          {onOpenConsole && (
+            <button className="footico-btn" onClick={onOpenConsole} title="Открыть консоль" aria-label="Открыть консоль">
+              ⌨️
+            </button>
+          )}
+        </div>
+
+        {/* Меню аккаунта: управление (машины/пользователи), настройки, выход. */}
+        {currentUser && currentUser.name ? (
+          <div className="acct" ref={acctRef}>
+            <button
+              className="footbtn acct-toggle"
+              onClick={() => setAcctOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={acctOpen}
+              title={`Роль: ${currentUser.role}`}
+            >
+              <span className="footico">👤</span>
+              <span className="username">{currentUser.name}</span>
+              <span className="acct-caret" aria-hidden>▾</span>
+            </button>
+            {acctOpen && (
+              <div className="acct-menu" role="menu">
+                {onOpenMachines && (
+                  <button className="footbtn" role="menuitem" onClick={acct(onOpenMachines)}>
+                    <span className="footico">🖥</span>
+                    Машины
+                  </button>
+                )}
+                {onOpenUsers && currentUser.role === 'admin' && (
+                  <button className="footbtn" role="menuitem" onClick={acct(onOpenUsers)}>
+                    <span className="footico">👥</span>
+                    Пользователи
+                  </button>
+                )}
+                <button className="footbtn" role="menuitem" onClick={acct(onOpenSettings)}>
+                  <GearIcon />
+                  Настройки
+                </button>
+                {onLogout && (
+                  <button className="footbtn" role="menuitem" onClick={acct(onLogout)}>
+                    <span className="footico">🚪</span>
+                    Выйти
+                  </button>
+                )}
+              </div>
             )}
           </div>
+        ) : (
+          /* Локальный режим без учётки: меню аккаунта не нужно — только Настройки. */
+          <button className="footbtn" onClick={onOpenSettings}>
+            <GearIcon />
+            Настройки
+          </button>
         )}
       </div>
     </aside>
