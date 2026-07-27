@@ -242,3 +242,54 @@ describe('turns: контекст проекта в промпте', () => {
     expect(rec.last()!.prompt).not.toContain('Контекст проекта')
   })
 })
+
+describe('turns: чередование действий (смещение at)', () => {
+  /** Мок стрима: «Привет » → действие → «мир», затем done с заданным текстом. */
+  function streamer(finalText: string): LlmClient {
+    return {
+      send(_req, h) {
+        h.onDelta('Привет ')
+        h.onActivity?.({ kind: 'tool_use', summary: 'Bash: ls', raw: '{}' })
+        h.onDelta('мир')
+        h.onDone(finalText)
+        return { cancel: () => {} }
+      }
+    }
+  }
+
+  async function run(client: LlmClient, db: VoiceChatDb, conversationId: string): Promise<void> {
+    const turns = createTurnManager({ db, claude: client })
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((m) => {
+        if (m.t === 'claude.done' || m.t === 'claude.error') {
+          off()
+          resolve()
+        }
+      })
+      turns.start({ userId: U, conversationId, segments: [{ speakerId: 1, text: 'привет' }] })
+    })
+  }
+
+  it('onActivity проставляет at = длине уже накопленного текста', async () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    // Пустой финальный текст → сервер берёт partial, смещения валидны.
+    await run(streamer(''), db, conv.id)
+    const ai = db.listMessages(U, conv.id).find((m) => m.role === 'ai')
+    expect(ai?.text).toBe('Привет мир')
+    expect(ai?.meta?.activity?.[0]?.at).toBe('Привет '.length)
+    db.close()
+  })
+
+  it('финальный текст ≠ накопленному снимает at (fallback)', async () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    await run(streamer('Совсем другой итоговый текст'), db, conv.id)
+    const ai = db.listMessages(U, conv.id).find((m) => m.role === 'ai')
+    expect(ai?.text).toBe('Совсем другой итоговый текст')
+    expect(ai?.meta?.activity?.[0]?.at).toBeUndefined()
+    db.close()
+  })
+})

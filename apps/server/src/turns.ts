@@ -337,6 +337,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           // настройкой модель берётся из его config.toml и наружу не видна.
           const resolvedModel =
             meta?.model || model || (provider === 'codex' ? 'по умолчанию (Codex)' : model)
+          // Смещения `at` считались относительно turn.partial. Если CLI вернул
+          // финальный текст, отличный от накопленного (край: часть Codex), —
+          // чередование невалидно, снимаем `at` (fallback к «действия над текстом»).
+          // Перекладка картинок меняет длину только в хвосте ответа (после всех
+          // действий), поэтому более ранние смещения не съезжают.
+          const canInterleave = !text.trim() || text === turn.partial
+          const activity = canInterleave
+            ? turn.activity
+            : turn.activity.map(({ at: _at, ...e }) => e)
           const merged: TurnMeta = {
             ...meta,
             // Длительность из CLI, а если её нет — измеряем по стенным часам.
@@ -350,7 +359,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               ...(initInfo?.mcpServers ? { mcpServers: initInfo.mcpServers } : {})
             },
             // Активность хода — для подробного вида сообщения (персистится в meta).
-            ...(turn.activity.length ? { activity: turn.activity } : {})
+            ...(activity.length ? { activity } : {})
           }
           // Ответ сохраняет сервер: клиент мог обновить страницу или уйти.
           const rawText = text.trim() ? text : turn.partial
@@ -412,9 +421,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         // консоль (событие claude.log) шлём только если ход запрошен с verbose.
         onActivity: (entry) => {
           if (turn.done) return
-          turn.activity.push(entry)
+          // Смещение действия в тексте = длина уже накопленного ответа. Клиент
+          // применяет токены и лог в том же порядке, поэтому по `at` UI чередует
+          // действия с абзацами (и в живом потоке, и в сохранённом сообщении).
+          const stamped: ClaudeLogEntry = { ...entry, at: turn.partial.length }
+          turn.activity.push(stamped)
           if (turn.activity.length > ACTIVITY_CAP) turn.activity.shift()
-          if (req.verbose) broadcast({ t: 'claude.log', conversationId, entry }, userId)
+          if (req.verbose) broadcast({ t: 'claude.log', conversationId, entry: stamped }, userId)
         }
       }
     )

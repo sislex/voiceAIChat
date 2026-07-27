@@ -16,28 +16,35 @@ export interface MessageActivityProps {
   voice?: VoiceState
 }
 
-/** Одна секция подробного вида: клик раскрывает detail + сырой stream-json. */
-function Section({
+/**
+ * Одна секция действия: summary виден всегда. Детали (полный ввод/результат + сырой
+ * stream-json) раскрываются либо кликом по секции, либо флагом `detailed` — кнопкой
+ * «Подробнее» уровня сообщения (в чередующемся виде она раскрывает все действия).
+ */
+export function Section({
   entry,
-  execTarget
+  execTarget,
+  detailed = false
 }: {
   entry: ClaudeLogEntry
   execTarget?: string | null
+  detailed?: boolean
 }): JSX.Element {
   const [expanded, setExpanded] = useState(false)
+  const open = expanded || detailed
   const where = activityLocation(entry, execTarget)
   return (
     <div className={`actsec clk-${entry.kind}`} data-testid="activity-section">
       <button
         className="actsec-head"
         onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
+        aria-expanded={open}
       >
         <span className="clbadge">{ACTIVITY_KIND_LABEL[entry.kind]}</span>
         {where && <span className="actsec-where">{where}</span>}
         <span className="clsum">{entry.summary}</span>
       </button>
-      {expanded && (
+      {open && (
         <div className="clraw" data-testid="activity-raw">
           {entry.detail && <div className="cldetail">{entry.detail}</div>}
           <pre className="clpre">{entry.raw}</pre>
