@@ -43,6 +43,10 @@ import { detectResources } from './system/resources.js'
 import { computeCapabilities } from './system/capabilities.js'
 import type { SystemCapabilities } from '@voicechat/shared'
 import { ensureCliProfile } from './users/cliProfiles.js'
+import { FileKnowledgeBaseService } from './kb/service.js'
+import { registerKbRoutes } from './kb/routes.js'
+import type { KnowledgeBaseService } from './kb/types.js'
+import { LlmKbReranker } from './kb/reranker.js'
 
 const VERSION = '0.1.0'
 
@@ -50,6 +54,8 @@ export interface BuildOptions {
   config: ServerConfig
   /** Готовый экземпляр БД (для тестов, напр. :memory:). Иначе создаётся из config. */
   db?: VoiceChatDb
+  /** Read-only база знаний (для тестов — мок). */
+  kbService?: KnowledgeBaseService
   /** LLM-клиент (для тестов — мок). По умолчанию ClaudeCli. */
   claude?: LlmClient
   /** Codex-клиент (для тестов — мок). По умолчанию CodexCli. */
@@ -134,6 +140,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ensureCliProfile(opts.config.dataDir, userId).home
   const claude = opts.claude ?? new ClaudeCli({ profileHome })
   const codex = opts.codex ?? new CodexCli({ profileHome })
+  const reranker = opts.config.kbRerankProvider === 'disabled'
+    ? undefined
+    : new LlmKbReranker(opts.config.kbRerankProvider === 'claude' ? claude : codex)
+  const kb = opts.kbService ?? new FileKnowledgeBaseService(opts.config.kbRoot, reranker)
+  registerKbRoutes(app, kb)
 
   // Входящий Anthropic Messages API для подключения внешнего Claude Code CLI.
   // Авторизация клиента намеренно отсутствует: маршрут предназначен для закрытой сети.
@@ -241,6 +252,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     db,
     claude,
     codex,
+    kb,
     resolveUpload: (id) => uploads.pathById(id),
     agents: {
       isOnline: (id) => agentRegistry.isOnline(id),

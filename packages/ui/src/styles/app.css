@@ -3119,3 +3119,21 @@
   .mtitle-machine { display: none; }
   .vbottom { flex-direction: column; gap: 6px; }
 }
+
+/* Read-only база знаний: фильтры → результаты → документ. */
+.kbtool { width: min(96vw, 1500px); height: min(92vh, 900px); }
+.kbtool .popbody, .kbtool > .popbody { min-height: 0; }
+.kbbar { display:flex; gap:14px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); }
+.kbbar input { flex:1; min-width:180px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--text); }
+.kbstatus { color:var(--muted); font-size:12px; white-space:nowrap; }
+.kblayout { display:grid; grid-template-columns:150px minmax(260px, 370px) minmax(360px, 1fr); min-height:0; flex:1; overflow:hidden; }
+.kbfilters { padding:12px; border-right:1px solid var(--line); overflow:auto; }
+.kbfilters button { display:block; width:100%; text-align:left; border:0; background:transparent; color:var(--muted); padding:9px 10px; border-radius:8px; cursor:pointer; }
+.kbfilters button.active { background:var(--surface2); color:var(--text); font-weight:600; }
+.kbresults { border-right:1px solid var(--line); overflow:auto; padding:8px; }
+.kbresult { display:flex; width:100%; flex-direction:column; gap:4px; text-align:left; padding:11px; border:1px solid transparent; border-radius:10px; background:transparent; color:var(--text); cursor:pointer; }
+.kbresult:hover, .kbresult.active { border-color:var(--line); background:var(--surface2); }
+.kbresult-title { font-weight:700; }.kbresult-heading,.kbresult-why { color:var(--accent); font-size:12px; }.kbresult-text { color:var(--muted); font-size:13px; line-height:1.35; }
+.kbdoc { overflow:auto; padding:20px 26px 50px; }.kbdoc header { border-bottom:1px solid var(--line); margin-bottom:18px; }.kbdoc header h3 { margin:0 0 5px; }.kbdoc header p,.kbempty,.kbwelcome { color:var(--muted); }
+.kbfiles { display:flex; flex-direction:column; gap:6px; margin-top:24px; padding:14px; border:1px solid var(--line); border-radius:10px; }.kbfiles code { overflow-wrap:anywhere; }.kberror { color:var(--danger,#c44); }
+@media (max-width: 760px) { .kbtool { width:100vw; height:100vh; }.kbbar { align-items:stretch; flex-direction:column; }.kbstatus { white-space:normal; }.kblayout { grid-template-columns:1fr; overflow:auto; }.kbfilters { display:flex; gap:4px; border-right:0; border-bottom:1px solid var(--line); overflow:auto; }.kbfilters button { width:auto; white-space:nowrap; }.kbresults { border-right:0; border-bottom:1px solid var(--line); max-height:38vh; }.kbdoc { min-height:45vh; padding:18px; } }

@@ -109,6 +109,11 @@ export interface HealthResponse {
 /** Пути REST (единый источник для сервера и клиентов). */
 export const REST = {
   health: '/api/health',
+  kbStatus: '/api/kb/status',
+  kbTopics: '/api/kb/topics',
+  kbSearch: '/api/kb/search',
+  kbContext: '/api/kb/context',
+  kbDocument: (id: string) => `/api/kb/documents/${encodeURIComponent(id)}`,
   sessionLogin: '/api/session/login',
   sessionMe: '/api/session/me',
   sessionLogout: '/api/session/logout',

@@ -1,0 +1,12 @@
+services:
+  voicechat:
+    image: voicechat-kb-feature
+    ports: !override
+      - "18887:8787"
+    environment:
+      VC_KB_ROOT: /app/docs/kb
+      VC_KB_RERANK_PROVIDER: disabled
+  caddy:
+    ports: !override
+      - "18080:80"
+      - "18443:443"

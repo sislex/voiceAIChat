@@ -23,3 +23,5 @@ export * from './tools'
 export * from './images'
 export * from './agentInstall'
 export * from './questions'
+
+export * from './kb'
