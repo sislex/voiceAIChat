@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-07-27
-checked: 49465ae
+checked: 308ff71
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -59,6 +59,12 @@ Claude восстанавливается из действующего обще
 `ClaudeLogEntry` (Bash/Read/Edit, thinking, модель, режим, сырой JSON) для режима
 консоли. Два парсера намеренно независимы: поток токенов не должен ломаться из-за
 изменений в активности. Для codex — `codexStream.ts`.
+
+Usage нормализуется в `TurnUsage` и рассылается как `claude.usage`. Claude CLI
+отдаёт промежуточные usage-снапшоты, поэтому его счётчик растёт во время ответа.
+`codex exec --json` отдаёт точные input/output/cached только в `turn.completed`:
+`CodexCli` проводит этот итог через `onUsage` перед `onDone`, а `TurnManager`
+подмешивает последний usage-снапшот в сохраняемый `TurnMeta`.
 
 `session_id` сохраняется в `conversations.claude_session_id`: следующий ход идёт
 с `--resume`, поэтому в промпт кладётся только новая реплика (`buildPrompt`), а

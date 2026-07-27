@@ -47,6 +47,7 @@ export function FileExplorer({
     initialAgentId ?? agents.find((a) => a.online)?.id ?? agents[0]?.id ?? null
   )
   const [cwd, setCwd] = useState('')
+  const [address, setAddress] = useState('')
   const [root, setRoot] = useState('')
   const [entries, setEntries] = useState<FsEntry[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -63,6 +64,7 @@ export function FileExplorer({
       const res = await ops.list(agentId, path)
       setRoot(res.root)
       setCwd(res.cwd)
+      setAddress(res.cwd)
       setEntries(res.entries ?? [])
       setError(null)
     } catch (err) {
@@ -128,9 +130,23 @@ export function FileExplorer({
         <button className="fsbtn" title="Вверх" disabled={!agentId} onClick={() => void load(parentOf(cwd))}>
           ⬆
         </button>
-        <span className="fspath" title={cwd}>
-          {cwd || '—'}
-        </span>
+        <form
+          className="fspath-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void load(address.trim())
+          }}
+        >
+          <input
+            className="fspath"
+            aria-label="Адрес папки"
+            title="Введите или вставьте путь и нажмите Enter"
+            value={address}
+            placeholder="Введите путь к папке"
+            disabled={!agentId}
+            onChange={(e) => setAddress(e.target.value)}
+          />
+        </form>
         {onOpenTerminal && agentId && cwd && (
           <button className="fsbtn" title="Открыть терминал в этой папке" onClick={() => onOpenTerminal(agentId, cwd)}>
             &gt;_ Терминал

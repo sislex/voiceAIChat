@@ -357,6 +357,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             ? turn.activity
             : turn.activity.map(({ at: _at, ...e }) => e)
           const merged: TurnMeta = {
+            // Codex отдаёт usage только в самом конце. Сохраняем и последний
+            // live-снапшот: так счётчики не теряются при различиях форматов CLI.
+            ...turn.usage,
             ...meta,
             // Длительность из CLI, а если её нет — измеряем по стенным часам.
             durationMs: meta?.durationMs ?? now() - startedAt,
