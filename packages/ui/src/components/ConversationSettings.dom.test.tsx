@@ -21,7 +21,7 @@ describe('ConversationSettings', () => {
     await screen.findByText('/home/u/project')
     fireEvent.click(screen.getByRole('button', { name: 'Выбрать эту папку' }))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Новый чат', execTarget: 'm1', workdir: '/home/u/project', skillNames: ['build'], llmProvider: null, llmModel: null, permissionMode: null }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Новый чат', execTarget: 'm1', workdir: '/home/u/project', skillNames: ['build'], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto' }))
   })
 
   it('добавляет новый навык выбранной машине', async () => {
@@ -39,7 +39,7 @@ describe('ConversationSettings', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Движок разговора' }), { target: { value: 'codex' } })
     fireEvent.change(screen.getByRole('combobox', { name: 'Модель разговора' }), { target: { value: 'gpt-5-codex' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Старое имя', execTarget: 'm1', workdir: null, skillNames: [], llmProvider: 'codex', llmModel: 'gpt-5-codex', permissionMode: null }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Старое имя', execTarget: 'm1', workdir: null, skillNames: [], llmProvider: 'codex', llmModel: 'gpt-5-codex', permissionMode: null, kbContextMode: 'auto' }))
   })
 
   it('роль user не видит модели opus/fable в выборе модели разговора', () => {

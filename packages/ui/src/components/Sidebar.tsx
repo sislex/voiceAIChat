@@ -48,6 +48,7 @@ export interface SidebarProps {
   onSearch: (query: string) => void
   onOpenObserver: () => void
   onOpenCodexObserver: () => void
+  onOpenKnowledgeBase?: () => void
   onOpenSettings: () => void
   /** Открыть файловый проводник по машине-агенту (web). */
   onOpenFiles?: () => void
@@ -79,6 +80,7 @@ export function Sidebar({
   onSearch,
   onOpenObserver,
   onOpenCodexObserver,
+  onOpenKnowledgeBase,
   onOpenSettings,
   onOpenFiles,
   onOpenConsole,
@@ -238,6 +240,10 @@ export function Sidebar({
           <span className="footico">🧭</span>
           Codex
         </button>
+        {onOpenKnowledgeBase && <button className="footbtn" onClick={onOpenKnowledgeBase}>
+          <span className="footico">📚</span>
+          База знаний
+        </button>}
         {onOpenFiles && (
           <button className="footbtn" onClick={onOpenFiles}>
             <span className="footico">📁</span>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { clampModelForRole, CODEX_MODELS, modelsForRole, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
-import type { Conversation, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
+import type { Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { MachineOps } from './machine'
 import { PopupFrame } from './PopupFrame'
@@ -23,6 +23,7 @@ export interface ConversationSettingsProps {
     llmProvider: LlmProvider | null
     llmModel: string | null
     permissionMode: PermissionMode | null
+    kbContextMode: KbContextMode
   }) => Promise<void>
   onAddSkill: (agentId: string, skill: AgentSkill) => Promise<void>
   onClose: () => void
@@ -60,6 +61,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
   )
   // '' — «как в общих настройках» (в БД хранится null).
   const [permissionMode, setPermissionMode] = useState<PermissionMode | ''>(conversation.permissionMode ?? '')
+  const [kbContextMode, setKbContextMode] = useState<KbContextMode>(conversation.kbContextMode ?? 'auto')
   const [cwd, setCwd] = useState('')
   const [entries, setEntries] = useState<FsEntry[]>([])
   const [loadingDir, setLoadingDir] = useState(false)
@@ -134,7 +136,8 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         skillNames: execTarget ? skillNames : [],
         llmProvider: inheritsGlobal ? null : llmProvider,
         llmModel: inheritsGlobal ? null : llmModel,
-        permissionMode: permissionMode || null
+        permissionMode: permissionMode || null,
+        kbContextMode
       })
       onClose()
     } catch (err) {
@@ -192,6 +195,17 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
               {CODEX_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
           </label>}
+        </section>
+
+        <section className="convsettings-card">
+          <div className="convsettings-sectionhead"><div><h2>База знаний проекта</h2><p>Как добавлять сведения об устройстве voiceAIChat в задачи агента.</p></div></div>
+          <label className="convsettings-field"><span>Контекст KB</span>
+            <select aria-label="Контекст базы знаний" value={kbContextMode} onChange={(e) => setKbContextMode(e.target.value as KbContextMode)}>
+              <option value="auto">Автоматически при высокой уверенности</option>
+              <option value="manual">Только по запросу</option>
+              <option value="off">Не использовать</option>
+            </select>
+          </label>
         </section>
 
         <section className="convsettings-card">

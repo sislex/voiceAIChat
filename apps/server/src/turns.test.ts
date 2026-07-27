@@ -193,3 +193,27 @@ describe('turns: остановка сервера (flushInterrupted)', () => {
     db.close()
   })
 })
+
+describe('turns: автоматический контекст базы знаний', () => {
+  const bundle = {
+    query: 'как устроены ходы', confidence: 'high' as const, autoInjectAllowed: true,
+    sections: [{ documentId:'project-knowledge-base',chunkId:'project-knowledge-base#flow',title:'База знаний проекта',heading:'Поток поиска',excerpt:'Сначала exact и BM25.',score:12,matchTypes:['symbol' as const],explanation:'Точное совпадение символа',freshness:'current' as const,sourcePath:'docs/kb/features/project-knowledge-base.md',anchor:'flow',symbols:[],relatedFiles:[] }],
+    relatedFiles:[], relatedDocuments:['project-knowledge-base'], staleWarnings:[], estimatedTokens:20
+  }
+  const kb = { status: () => ({ available:true,mode:'source' as const,searchMode:'lexical' as const,version:'x',createdAt:'now',documents:1,chunks:1,staleDocuments:0 }), topics: () => [], document: () => null, search: async () => [], context: async () => bundle }
+
+  it('режим auto добавляет только high-confidence bundle в промпт', async () => {
+    const db = new VoiceChatDb(':memory:'); db.createUser(U,'','admin'); const conv=db.createConversation(U,'Чат'); const rec=recorder(); const turns=createTurnManager({db,claude:rec.client,kb})
+    await turns.start({userId:U,conversationId:conv.id,segments:[{speakerId:1,text:'как устроены ходы'}]})
+    expect(rec.last()?.prompt).toContain('Контекст базы знаний voiceAIChat')
+    expect(rec.last()?.prompt).toContain('Сначала exact и BM25.')
+    db.close()
+  })
+
+  it('режим off не вызывает KB и не меняет промпт', async () => {
+    const db = new VoiceChatDb(':memory:'); db.createUser(U,'','admin'); const conv=db.createConversation(U,'Чат'); db.setConversationKbContextMode(U,conv.id,'off'); let calls=0; const offKb={...kb,context:async()=>{calls++;return bundle}}; const rec=recorder(); const turns=createTurnManager({db,claude:rec.client,kb:offKb})
+    await turns.start({userId:U,conversationId:conv.id,segments:[{speakerId:1,text:'как устроены ходы'}]})
+    expect(calls).toBe(0); expect(rec.last()?.prompt).not.toContain('Контекст базы знаний voiceAIChat')
+    db.close()
+  })
+})

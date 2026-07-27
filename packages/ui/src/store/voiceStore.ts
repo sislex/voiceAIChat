@@ -33,6 +33,7 @@ import type {
   Message,
   MessageRole,
   PermissionMode,
+  KbContextMode,
   SessionUser,
   Settings,
   TtsVoiceInfo,
@@ -256,7 +257,7 @@ export interface StoreActions {
   /** Переименовать разговор (БД + список). Пустое имя игнорируется. */
   renameConversation(id: string, title: string): Promise<void>
   /** Изменить машину только одного разговора. */
-  setConversationExecTarget(id: string, execTarget: string | null, workdir?: string | null, skillNames?: string[], llmProvider?: LlmProvider | null, llmModel?: string | null, permissionMode?: PermissionMode | null): Promise<void>
+  setConversationExecTarget(id: string, execTarget: string | null, workdir?: string | null, skillNames?: string[], llmProvider?: LlmProvider | null, llmModel?: string | null, permissionMode?: PermissionMode | null, kbContextMode?: KbContextMode): Promise<void>
   /** Задать поисковый запрос по разговорам (пусто — весь список). */
   setSearchQuery(query: string): Promise<void>
   /** Экспортировать активный разговор в Markdown/JSON (скачивание файла). */
@@ -1587,9 +1588,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     skillNames?: string[],
     llmProvider?: LlmProvider | null,
     llmModel?: string | null,
-    permissionMode?: PermissionMode | null
+    permissionMode?: PermissionMode | null,
+    kbContextMode?: KbContextMode
   ): Promise<void> {
-    const conversation = await api['conversations:setExecTarget']({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode })
+    const conversation = await api['conversations:setExecTarget']({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode })
     setState({
       conversations: state.conversations.map((c) => (c.id === id ? conversation : c))
     })

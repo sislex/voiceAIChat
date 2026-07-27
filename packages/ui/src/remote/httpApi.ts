@@ -26,6 +26,19 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       const h = await req<{ version: string }>(REST.health)
       return h.version
     },
+    'kb:status': () => req(REST.kbStatus),
+    'kb:topics': () => req(REST.kbTopics),
+    'kb:search': ({ query, kinds, tags, limit }) => {
+      const q = new URLSearchParams({ q: query })
+      if (kinds?.length) q.set('kind', kinds.join(','))
+      if (tags?.length) q.set('tags', tags.join(','))
+      if (limit) q.set('limit', String(limit))
+      return req(`${REST.kbSearch}?${q.toString()}`)
+    },
+    'kb:document': async ({ id }) => {
+      try { return await req(REST.kbDocument(id)) } catch { return null }
+    },
+    'kb:context': ({ query, budget }) => req(`${REST.kbContext}?q=${encodeURIComponent(query)}${budget ? `&budget=${budget}` : ''}`),
     'conversations:list': () => req(REST.conversations),
     'conversations:create': ({ title }) =>
       req(REST.conversations, { method: 'POST', body: JSON.stringify({ title }) }),
@@ -43,7 +56,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:rename': async ({ id, title }) => {
       await req(REST.conversation(id), { method: 'PATCH', body: JSON.stringify({ title }) })
     },
-    'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode }) =>
+    'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode }) =>
       req(REST.conversation(id), {
         method: 'PATCH',
         body: JSON.stringify({
@@ -52,7 +65,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
           ...(skillNames !== undefined ? { skillNames } : {}),
           ...(llmProvider !== undefined ? { llmProvider } : {}),
           ...(llmModel !== undefined ? { llmModel } : {}),
-          ...(permissionMode !== undefined ? { permissionMode } : {})
+          ...(permissionMode !== undefined ? { permissionMode } : {}),
+          ...(kbContextMode !== undefined ? { kbContextMode } : {})
         })
       }),
     'conversations:delete': async ({ id }) => {

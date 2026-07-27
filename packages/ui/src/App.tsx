@@ -15,6 +15,7 @@ import { MachineUtility } from './components/MachineUtility'
 import type { MachineOps } from './components/machine'
 import { CodexObserver } from './components/CodexObserver'
 import { ConversationSettings } from './components/ConversationSettings'
+import { KnowledgeBase } from './components/KnowledgeBase'
 import { useVoiceStore } from './store/useVoiceStore'
 import { useVoiceCues } from './lib/useVoiceCues'
 import { useHotkeys } from './lib/useHotkeys'
@@ -38,6 +39,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   // Мобильный режим: выдвинут ли сайдбар (на десктопе класс side--open не влияет).
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false)
+  const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false)
   useVoiceCues(state.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
   // Горячие клавиши: пробел (hold) — запись, Esc — стоп/отмена по состоянию.
@@ -148,6 +150,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onSearch={actions.setSearchQuery}
         onOpenObserver={menu(actions.openObserver)}
         onOpenCodexObserver={menu(actions.openCodexObserver)}
+        onOpenKnowledgeBase={menu(() => setKnowledgeBaseOpen(true))}
         onOpenSettings={menu(actions.openSettings)}
         onOpenFiles={state.authRequired ? menu(() => actions.openUtility('explorer')) : undefined}
         onOpenConsole={state.authRequired ? menu(() => actions.openUtility('console')) : undefined}
@@ -222,6 +225,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         }
       />
 
+      {knowledgeBaseOpen && <KnowledgeBase api={api} onClose={() => setKnowledgeBaseOpen(false)} />}
+
       {conversationSettingsOpen && activeConversation && (
         <ConversationSettings
           conversation={activeConversation}
@@ -230,9 +235,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           role={state.currentUser?.role ?? 'admin'}
           settings={state.settings}
           defaultAgentId={state.settings.defaultAgentId}
-          onSave={async ({ title, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode }) => {
+          onSave={async ({ title, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode }) => {
             await actions.renameConversation(activeConversation.id, title)
-            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode)
+            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode)
           }}
           onAddSkill={async (agentId, skill) => {
             const agent = state.agents.find((item) => item.id === agentId)

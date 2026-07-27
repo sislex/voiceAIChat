@@ -537,3 +537,15 @@ describe('VoiceChatDb — пользователи и админ-данные', 
     expect(db.usageReport('alice', 'day').totals.messages).toBe(0)
   })
 })
+
+describe('VoiceChatDb — режим базы знаний разговора', () => {
+  it('по умолчанию auto и сохраняет manual/off', () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser('kb-user', '', 'user')
+    const conversation = db.createConversation('kb-user', 'KB')
+    expect(conversation.kbContextMode).toBe('auto')
+    expect(db.setConversationKbContextMode('kb-user', conversation.id, 'manual')?.kbContextMode).toBe('manual')
+    expect(db.setConversationKbContextMode('kb-user', conversation.id, 'off')?.kbContextMode).toBe('off')
+    db.close()
+  })
+})

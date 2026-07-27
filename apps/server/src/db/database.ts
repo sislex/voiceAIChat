@@ -49,6 +49,7 @@ interface ConversationRow {
   llm_provider: string | null
   llm_model: string | null
   permission_mode: string | null
+  kb_context_mode: string | null
   last_exec_target?: string | null
 }
 
@@ -183,6 +184,9 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'permission_mode')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN permission_mode TEXT`)
     }
+    if (!convCols.some((c) => c.name === 'kb_context_mode')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN kb_context_mode TEXT NOT NULL DEFAULT 'auto'`)
+    }
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN engine TEXT`)
@@ -231,7 +235,7 @@ export class VoiceChatDb {
          VALUES (?, ?, ?, ?, NULL, ?, NULL)`
       )
       .run(id, title, ts, ts, userId)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, lastExecTarget: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', lastExecTarget: null }
   }
 
   listConversations(userId: string): Conversation[] {
@@ -336,6 +340,12 @@ export class VoiceChatDb {
     this.db
       .prepare(`UPDATE conversations SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`)
       .run(...values, id, userId)
+    return this.getConversation(userId, id)
+  }
+
+
+  setConversationKbContextMode(userId: string, id: string, mode: 'auto' | 'manual' | 'off'): Conversation | null {
+    this.db.prepare(`UPDATE conversations SET kb_context_mode = ? WHERE id = ? AND user_id = ?`).run(mode, id, userId)
     return this.getConversation(userId, id)
   }
 
@@ -678,6 +688,7 @@ export class VoiceChatDb {
         row.permission_mode === 'plan' || row.permission_mode === 'acceptEdits' || row.permission_mode === 'bypassPermissions'
           ? row.permission_mode
           : null,
+      kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
       lastExecTarget: row.last_exec_target ?? null
     }
   }
