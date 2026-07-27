@@ -163,6 +163,12 @@ export class CodexCli implements LlmClient {
             break
           case 'result':
             lastMeta = ev.meta
+            // `codex exec --json` сообщает точный usage в turn.completed. Он не
+            // даёт промежуточных token-событий, но итог всё равно проводим через
+            // общий live-канал до done, чтобы UI и TurnManager получили счётчики.
+            if (!ev.isError && handlers.onUsage && Object.keys(ev.meta).length > 0) {
+              handlers.onUsage(ev.meta)
+            }
             if (ev.isError) fail('Codex вернул ошибку')
             else done(acc)
             break

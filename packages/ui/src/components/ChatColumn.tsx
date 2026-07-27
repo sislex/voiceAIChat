@@ -479,6 +479,11 @@ export function ChatColumn({
                       </span>
                     )}
                     <p className="mtime">{messageTime(m)}</p>
+                    {isAi && m.meta && formatLiveUsage(m.meta) && (
+                      <span className="msgact-count msgact-tokens" data-testid={`message-tokens-${m.id}`}>
+                        {formatLiveUsage(m.meta)}
+                      </span>
+                    )}
                     {isAi && m.meta && <MessageMeta meta={m.meta} />}
                     {isAi && m.meta?.activity && m.meta.activity.length > 0 && (
                       <button

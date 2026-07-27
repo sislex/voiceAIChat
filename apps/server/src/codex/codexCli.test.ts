@@ -132,6 +132,26 @@ describe('CodexCli', () => {
     expect(h.calls.error).toHaveLength(0)
   })
 
+
+  it('turn.completed передаёт usage в live-канал до завершения', async () => {
+    const { child, stdout } = fakeChild()
+    const spawn: SpawnFn = vi.fn(() => child as never)
+    const h = makeHandlers()
+    const order: string[] = []
+    h.onUsage = (usage) => {
+      order.push('usage')
+      expect(usage).toEqual({ inputTokens: 9, outputTokens: 2, cacheReadTokens: 7 })
+    }
+    h.onDone = () => order.push('done')
+    new CodexCli({ spawn }).send({ prompt: 'x', sessionId: null, model: '' }, h)
+    stdout.write(JSON.stringify({
+      type: 'turn.completed',
+      usage: { input_tokens: 9, output_tokens: 2, cached_input_tokens: 7 }
+    }) + '\n')
+    await tick()
+    expect(order).toEqual(['usage', 'done'])
+  })
+
   it('error-событие → onError', async () => {
     const { child, stdout } = fakeChild()
     const spawn: SpawnFn = vi.fn(() => child as never)
