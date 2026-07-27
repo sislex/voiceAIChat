@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { clampModelForRole, CODEX_MODELS, modelsForRole, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
+import type { ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
 import type { MachineOps } from './machine'
 import { PopupFrame } from './PopupFrame'
 
@@ -15,6 +16,10 @@ export interface ConversationSettingsProps {
   settings: Pick<Settings, 'llmProvider' | 'model' | 'codexModel' | 'permissionMode'>
   /** Машина по умолчанию — предвыбирается в новых разговорах и помечается в списке. */
   defaultAgentId?: string | null
+  /** Проекты пользователя — для привязки чата к проекту. */
+  projects: ProjectSummary[]
+  /** Загрузка деталей проекта (машины/папки/дефолт) для выбранного проекта. */
+  fetchProjectDetail: (id: string) => Promise<ProjectDetail | null>
   onSave: (value: {
     title: string
     execTarget: string | null
@@ -24,6 +29,7 @@ export interface ConversationSettingsProps {
     llmModel: string | null
     permissionMode: PermissionMode | null
     kbContextMode: KbContextMode
+    projectId: string | null
   }) => Promise<void>
   onAddSkill: (agentId: string, skill: AgentSkill) => Promise<void>
   onClose: () => void
@@ -42,7 +48,7 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, settings, defaultAgentId, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, settings, defaultAgentId, projects, fetchProjectDetail, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
   const [title, setTitle] = useState(conversation.title)
   const defaultExecTarget = defaultAgentId && agents.some((a) => a.id === defaultAgentId) ? defaultAgentId : null
   const [execTarget, setExecTarget] = useState<string | null>(
@@ -68,6 +74,43 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
   const [error, setError] = useState<string | null>(null)
   const [skillName, setSkillName] = useState('')
   const [skillCommand, setSkillCommand] = useState('')
+  const [projectId, setProjectId] = useState<string | null>(conversation.projectId ?? null)
+  const [projectMachines, setProjectMachines] = useState<ProjectMachine[]>([])
+  const [projectDefaultAgentId, setProjectDefaultAgentId] = useState<string | null>(null)
+  // Список машин выбранного проекта (для фильтра и подстановки папок).
+  useEffect(() => {
+    let alive = true
+    if (!projectId) {
+      setProjectMachines([])
+      setProjectDefaultAgentId(null)
+      return
+    }
+    void fetchProjectDetail(projectId).then((d) => {
+      if (alive && d) {
+        setProjectMachines(d.machines)
+        setProjectDefaultAgentId(d.defaultAgentId)
+      }
+    })
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+  // Смена проекта — применяем настройки проекта к чату (перезапись машины/папки/навыков).
+  const onChangeProject = async (id: string | null): Promise<void> => {
+    setProjectId(id)
+    if (!id) return
+    const d = await fetchProjectDetail(id)
+    if (!d) return
+    setProjectMachines(d.machines)
+    setProjectDefaultAgentId(d.defaultAgentId)
+    setExecTarget(d.defaultAgentId)
+    const dm = d.defaultAgentId ? d.machines.find((m) => m.agentId === d.defaultAgentId) : undefined
+    setWorkdir(dm && dm.path ? dm.path : null)
+    setSkillNames([...d.skills])
+    setCwd('')
+    setEntries([])
+  }
   const [skillDescription, setSkillDescription] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -137,7 +180,8 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         llmProvider: inheritsGlobal ? null : llmProvider,
         llmModel: inheritsGlobal ? null : llmModel,
         permissionMode: permissionMode || null,
-        kbContextMode
+        kbContextMode,
+        projectId
       })
       onClose()
     } catch (err) {
@@ -160,12 +204,25 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
       <main className="convsettings-body">
         <section className="convsettings-card">
           <label className="convsettings-field"><span>Название разговора</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-          <label className="convsettings-field"><span>Машина</span>
-            <select value={execTarget ?? ''} onChange={(e) => { setExecTarget(e.target.value || null); setWorkdir(null); setCwd(''); setEntries([]) }}>
-              <option value="">Сервер</option>
-              {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}{agent.id === defaultAgentId ? ' — по умолчанию' : ''}{agent.online ? '' : ' (офлайн)'}</option>)}
+          <label className="convsettings-field"><span>Проект</span>
+            <select aria-label="Проект разговора" value={projectId ?? ''} onChange={(e) => void onChangeProject(e.target.value || null)}>
+              <option value="">Без проекта</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
+          <label className="convsettings-field"><span>Машина</span>
+            <select value={execTarget ?? ''} onChange={(e) => {
+              const v = e.target.value || null
+              setExecTarget(v)
+              const pm = projectMachines.find((m) => m.agentId === v)
+              setWorkdir(projectId ? (pm && pm.path ? pm.path : null) : null)
+              setCwd(''); setEntries([])
+            }}>
+              {!projectId && <option value="">Сервер</option>}
+              {(projectId ? agents.filter((a) => projectMachines.some((m) => m.agentId === a.id)) : agents).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}{agent.id === (projectId ? projectDefaultAgentId : defaultAgentId) ? ' — по умолчанию' : ''}{agent.online ? '' : ' (офлайн)'}</option>)}
+            </select>
+          </label>
+          {projectId && <p className="convsettings-muted">Машины и папка берутся из проекта; смена проекта перезапишет их.</p>}
         </section>
 
         <section className="convsettings-card">

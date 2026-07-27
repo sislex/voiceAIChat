@@ -45,7 +45,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     createdAt: number
     updatedAt: number
     members: ProjectMember[]
-    machineIds: string[]
+    machines: Array<{ agentId: string; path: string }>
+    defaultAgentId: string | null
   }
   const projects: FProject[] = []
   const columns: KanbanColumn[] = []
@@ -65,7 +66,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const detail = (p: FProject): ProjectDetail => ({
     ...summary(p),
     members: p.members.map((m) => ({ ...m })),
-    machineIds: [...p.machineIds]
+    machines: p.machines.map((m) => ({ ...m })),
+    defaultAgentId: p.defaultAgentId
   })
   const boardOf = (pid: string): Board => ({
     columns: columns.filter((c) => c.projectId === pid).sort((a, b) => a.position - b.position).map((c) => ({ ...c })),
@@ -130,6 +132,20 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         conv.title = title
         conv.updatedAt = tick()
       }
+    },
+    'conversations:setProject': async ({ id, projectId }) => {
+      const conv = conversations.find((c) => c.id === id)!
+      conv.projectId = projectId
+      if (projectId) {
+        const p = projects.find((x) => x.id === projectId)
+        if (p) {
+          conv.execTarget = p.defaultAgentId
+          const dm = p.defaultAgentId ? p.machines.find((m) => m.agentId === p.defaultAgentId) : null
+          conv.workdir = dm && dm.path ? dm.path : null
+          conv.skillNames = [...p.skills]
+        }
+      }
+      return withCounts(conv)
     },
     'conversations:setExecTarget': async ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode }) => {
       const conv = conversations.find((c) => c.id === id)
@@ -289,7 +305,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         createdAt: ts,
         updatedAt: ts,
         members: [{ username: ME, role: 'owner', addedAt: ts }],
-        machineIds: []
+        machines: [],
+        defaultAgentId: null
       }
       projects.push(p)
       ;['To Do', 'In Progress', 'Done'].forEach((name, i) =>
@@ -332,12 +349,24 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'projects:linkMachine': async ({ id, agentId }) => {
       const p = projects.find((x) => x.id === id)!
-      if (!p.machineIds.includes(agentId)) p.machineIds.push(agentId)
+      if (!p.machines.some((m) => m.agentId === agentId)) p.machines.push({ agentId, path: '' })
       return detail(p)
     },
     'projects:unlinkMachine': async ({ id, agentId }) => {
       const p = projects.find((x) => x.id === id)!
-      p.machineIds = p.machineIds.filter((a) => a !== agentId)
+      p.machines = p.machines.filter((m) => m.agentId !== agentId)
+      if (p.defaultAgentId === agentId) p.defaultAgentId = null
+      return detail(p)
+    },
+    'projects:setMachinePath': async ({ id, agentId, path }) => {
+      const p = projects.find((x) => x.id === id)!
+      const m = p.machines.find((x) => x.agentId === agentId)
+      if (m) m.path = path
+      return detail(p)
+    },
+    'projects:setDefaultMachine': async ({ id, agentId }) => {
+      const p = projects.find((x) => x.id === id)!
+      if (p.machines.some((m) => m.agentId === agentId)) p.defaultAgentId = agentId
       return detail(p)
     },
     'board:get': async ({ id }) => boardOf(id),

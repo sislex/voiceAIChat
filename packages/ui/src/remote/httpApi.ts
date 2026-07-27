@@ -56,6 +56,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:rename': async ({ id, title }) => {
       await req(REST.conversation(id), { method: 'PATCH', body: JSON.stringify({ title }) })
     },
+    'conversations:setProject': ({ id, projectId }) =>
+      req(REST.conversationProject(id), { method: 'POST', body: JSON.stringify({ projectId }) }),
     'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode }) =>
       req(REST.conversation(id), {
         method: 'PATCH',
@@ -174,6 +176,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectMachines(id), { method: 'POST', body: JSON.stringify({ agentId }) }),
     'projects:unlinkMachine': ({ id, agentId }) =>
       req(REST.projectMachine(id, agentId), { method: 'DELETE' }),
+    'projects:setMachinePath': ({ id, agentId, path }) =>
+      req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ path }) }),
+    'projects:setDefaultMachine': ({ id, agentId }) =>
+      req(REST.projectDefaultMachine(id), { method: 'POST', body: JSON.stringify({ agentId }) }),
     'board:get': ({ id }) => req(REST.projectBoard(id)),
     'columns:create': ({ projectId, name }) =>
       req(REST.projectColumns(projectId), { method: 'POST', body: JSON.stringify({ name }) }),

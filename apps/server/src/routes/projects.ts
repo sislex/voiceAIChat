@@ -135,6 +135,34 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
     }
   )
 
+  // Папка проекта на конкретной машине.
+  app.patch<{ Params: { id: string; agentId: string }; Body: { path?: string } }>(
+    '/api/projects/:id/machines/:agentId',
+    async (req, reply) => {
+      const p = member(req, req.params.id)
+      if (!p) return nf(reply)
+      if (p.role !== 'owner') return forbidden(reply)
+      return db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? '') ?? nf(reply)
+    }
+  )
+
+  // Машина проекта по умолчанию.
+  app.post<{ Params: { id: string }; Body: { agentId?: string } }>(
+    '/api/projects/:id/default-machine',
+    async (req, reply) => {
+      const p = member(req, req.params.id)
+      if (!p) return nf(reply)
+      if (p.role !== 'owner') return forbidden(reply)
+      const agentId = (req.body?.agentId ?? '').trim()
+      if (!agentId) return badReq(reply, 'agentId required')
+      try {
+        return db.setProjectDefaultMachine(uid(req), req.params.id, agentId) ?? nf(reply)
+      } catch (err) {
+        return badReq(reply, errMessage(err))
+      }
+    }
+  )
+
   // --- Доска -----------------------------------------------------------
 
   app.get<{ Params: { id: string } }>('/api/projects/:id/board', async (req, reply): Promise<Board | FastifyReply> => {

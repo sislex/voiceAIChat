@@ -115,6 +115,15 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     }
   )
 
+  app.post<{ Params: { id: string }; Body: { projectId?: string | null } }>(
+    '/api/conversations/:id/project',
+    async (req, reply) => {
+      const conversation = db.setConversationProject(uid(req), req.params.id, req.body?.projectId ?? null)
+      if (!conversation) return reply.code(404).send({ error: 'not found' })
+      return conversation
+    }
+  )
+
   app.delete<{ Params: { id: string } }>('/api/conversations/:id', async (req) => {
     db.deleteConversation(uid(req), req.params.id)
     return { ok: true }
