@@ -154,8 +154,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onOpenCodexObserver={menu(actions.openCodexObserver)}
         onOpenKnowledgeBase={menu(() => setKnowledgeBaseOpen(true))}
         onOpenSettings={menu(actions.openSettings)}
-        onOpenFiles={state.authRequired ? menu(() => actions.openUtility('explorer')) : undefined}
-        onOpenConsole={state.authRequired ? menu(() => actions.openUtility('console')) : undefined}
+        onOpenFiles={state.authRequired ? menu(() => actions.openUtilityForActiveChat('explorer')) : undefined}
+        onOpenConsole={state.authRequired ? menu(() => actions.openUtilityForActiveChat('console')) : undefined}
         onOpenUsers={state.authRequired ? menu(() => void actions.openUsers()) : undefined}
         onOpenMachines={state.authRequired ? menu(actions.openMachines) : undefined}
         onOpenProjects={state.authRequired ? menu(() => void actions.openProjects()) : undefined}
@@ -172,7 +172,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onRenameTitle={(t) => {
           if (state.activeId) void actions.renameConversation(state.activeId, t)
         }}
-        onOpenConversationSettings={() => setConversationSettingsOpen(true)}
+        onOpenConversationSettings={() => { setConversationSettingsOpen(true); void actions.refreshProjects() }}
         permissionMode={activePermissionMode}
         onExecutePlan={(answerId) => void actions.executePlan(answerId)}
         canExecutePlan={!forcedPlan}
@@ -238,8 +238,11 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           role={state.currentUser?.role ?? 'admin'}
           settings={state.settings}
           defaultAgentId={state.settings.defaultAgentId}
-          onSave={async ({ title, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode }) => {
+          projects={state.projects}
+          fetchProjectDetail={actions.fetchProjectDetail}
+          onSave={async ({ title, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
             await actions.renameConversation(activeConversation.id, title)
+            await actions.setConversationProject(activeConversation.id, projectId)
             await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode)
           }}
           onAddSkill={async (agentId, skill) => {
@@ -333,6 +336,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onRemoveMember={(id, username) => void actions.removeProjectMember(id, username)}
           onLinkMachine={(id, agentId) => void actions.linkProjectMachine(id, agentId)}
           onUnlinkMachine={(id, agentId) => void actions.unlinkProjectMachine(id, agentId)}
+          onSetMachinePath={(id, agentId, path) => void actions.setProjectMachinePath(id, agentId, path)}
+          onSetDefaultMachine={(id, agentId) => void actions.setProjectDefaultMachine(id, agentId)}
           onOpenBoard={(id) => void actions.openBoard(id)}
           onClose={actions.closeProjects}
         />
@@ -366,7 +371,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           tool={{
             kind: state.utility.kind,
             ...(state.utility.agentId ? { agentId: state.utility.agentId } : {}),
-            ...(state.utility.path ? { path: state.utility.path } : {})
+            ...(state.utility.path ? { path: state.utility.path } : {}),
+            ...(state.utility.dir ? { dir: true } : {})
           }}
           agents={state.agents}
           ops={machineOps}

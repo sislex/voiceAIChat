@@ -56,7 +56,8 @@ export function MachineUtility({
     <FileExplorer
       agents={agents}
       initialAgentId={tool.agentId ?? null}
-      initialFilePath={tool.path}
+      initialFilePath={tool.dir ? undefined : tool.path}
+      initialDir={tool.dir ? tool.path : undefined}
       ops={ops}
       onOpenTerminal={onOpenTerminal}
       variant={variant}

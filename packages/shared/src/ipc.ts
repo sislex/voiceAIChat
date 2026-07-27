@@ -84,6 +84,8 @@ export interface IpcInvokeMap {
   /** Поиск разговоров по названию и содержимому сообщений (регистронезависимо). */
   'conversations:search': { arg: { query: string }; result: Conversation[] }
   'conversations:rename': { arg: { id: string; title: string }; result: void }
+  /** Привязать/отвязать чат к проекту; сервер применяет настройки проекта. */
+  'conversations:setProject': { arg: { id: string; projectId: string | null }; result: Conversation }
   'conversations:setExecTarget': {
     arg: {
       id: string
@@ -194,6 +196,10 @@ export interface IpcInvokeMap {
   /** Привязать/отвязать машину-агента к проекту (только владелец). */
   'projects:linkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   'projects:unlinkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
+  /** Задать папку проекта на конкретной машине (только владелец). */
+  'projects:setMachinePath': { arg: { id: string; agentId: string; path: string }; result: ProjectDetail }
+  /** Назначить машину проекта по умолчанию (только владелец). */
+  'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Снапшот доски (колонки + задачи). */
   'board:get': { arg: { id: string }; result: Board }
   'columns:create': { arg: { projectId: string; name: string }; result: KanbanColumn }
@@ -552,6 +558,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:get',
   'conversations:search',
   'conversations:rename',
+  'conversations:setProject',
   'conversations:setExecTarget',
   'conversations:delete',
   'messages:add',
@@ -600,6 +607,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:removeMember',
   'projects:linkMachine',
   'projects:unlinkMachine',
+  'projects:setMachinePath',
+  'projects:setDefaultMachine',
   'board:get',
   'columns:create',
   'columns:rename',

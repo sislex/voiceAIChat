@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   skill_names       TEXT NOT NULL DEFAULT '[]',
   llm_provider      TEXT,
   llm_model         TEXT,
-  kb_context_mode   TEXT NOT NULL DEFAULT 'auto'
+  kb_context_mode   TEXT NOT NULL DEFAULT 'auto',
+  project_id        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -74,7 +75,8 @@ CREATE TABLE IF NOT EXISTS projects (
   skills       TEXT NOT NULL DEFAULT '[]',
   created_by   TEXT NOT NULL,
   created_at   INTEGER NOT NULL,
-  updated_at   INTEGER NOT NULL
+  updated_at   INTEGER NOT NULL,
+  default_agent_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS project_members (
@@ -92,6 +94,7 @@ CREATE INDEX IF NOT EXISTS idx_project_members_user
 CREATE TABLE IF NOT EXISTS project_machines (
   project_id TEXT NOT NULL,
   agent_id   TEXT NOT NULL,
+  path       TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (project_id, agent_id),
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
   FOREIGN KEY (agent_id)   REFERENCES agents(id)   ON DELETE CASCADE

@@ -33,18 +33,18 @@
 
 ## Журнал сессий
 
-Всего записей: 14. Последние:
+Всего записей: 15. Последние:
 
 - [2026-07-27-repo-2-project-knowledge-base.md](log/2026-07-27-repo-2-project-knowledge-base.md) — project-knowledge-base
 - [2026-07-27-2470-com-windows-install-command-cmd.md](log/2026-07-27-2470-com-windows-install-command-cmd.md) — windows-install-command-cmd
 - [2026-07-27-2470-com-projects-kanban.md](log/2026-07-27-2470-com-projects-kanban.md) — projects-kanban
+- [2026-07-27-2470-com-project-chat-link.md](log/2026-07-27-2470-com-project-chat-link.md) — project-chat-link
 - [2026-07-26-localhost-popup-file-terminal-context.md](log/2026-07-26-localhost-popup-file-terminal-context.md) — popup-file-terminal-context
 - [2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md](log/2026-07-26-alexeys-macbook-air-2-база-знаний-для-агентов.md) — база знаний для агентов
 - [2026-07-26-alexeys-macbook-air-2-image-in-message.md](log/2026-07-26-alexeys-macbook-air-2-image-in-message.md) — image-in-message
 - [2026-07-26-alexeys-macbook-air-2-composer-autogrow.md](log/2026-07-26-alexeys-macbook-air-2-composer-autogrow.md) — composer-autogrow
 - [2026-07-26-2470-com-windows-agent-installer.md](log/2026-07-26-2470-com-windows-agent-installer.md) — windows-agent-installer
 - [2026-07-26-2470-com-thin-desktop-gateway-lan.md](log/2026-07-26-2470-com-thin-desktop-gateway-lan.md) — thin-desktop-gateway-lan
-- [2026-07-26-2470-com-repair-claude-oauth-profile.md](log/2026-07-26-2470-com-repair-claude-oauth-profile.md) — repair-claude-oauth-profile
 
 ## Исторические планы
 

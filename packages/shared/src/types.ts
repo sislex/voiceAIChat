@@ -74,6 +74,8 @@ export interface Conversation {
   permissionMode: PermissionMode | null
   /** Использование базы знаний только в этом разговоре. */
   kbContextMode?: KbContextMode
+  /** Проект, к которому привязан чат (null/undefined — не привязан). */
+  projectId?: string | null
   /** Неизменяемая цель последнего сообщения; используется подписью в списке чатов. */
   lastExecTarget: string | null
 }

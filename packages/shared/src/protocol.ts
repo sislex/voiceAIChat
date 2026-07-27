@@ -121,6 +121,7 @@ export const REST = {
   conversations: '/api/conversations',
   conversationsSearch: '/api/conversations/search',
   conversation: (id: string) => `/api/conversations/${id}`,
+  conversationProject: (id: string) => `/api/conversations/${encodeURIComponent(id)}/project`,
   messages: (id: string) => `/api/conversations/${id}/messages`,
   desktopMigration: '/api/migrations/desktop',
   message: (id: string, messageId: string) => `/api/conversations/${id}/messages/${messageId}`,
@@ -186,6 +187,7 @@ export const REST = {
   projectMachines: (id: string) => `/api/projects/${encodeURIComponent(id)}/machines`,
   projectMachine: (id: string, agentId: string) =>
     `/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}`,
+  projectDefaultMachine: (id: string) => `/api/projects/${encodeURIComponent(id)}/default-machine`,
   projectBoard: (id: string) => `/api/projects/${encodeURIComponent(id)}/board`,
   projectColumns: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns`,
   projectColumnsReorder: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns/reorder`,

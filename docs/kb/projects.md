@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-07-27
-checked: 0eb662c
+checked: 44db49b
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/routes/projects.ts
@@ -12,6 +12,8 @@ areas:
   - packages/ui/src/components/ProjectBoard.tsx
   - packages/ui/src/components/TaskCard.tsx
   - packages/ui/src/store/voiceStore.ts
+  - packages/ui/src/components/ConversationSettings.tsx
+  - apps/server/src/turns.ts
 ---
 
 # Проекты и канбан-доска
@@ -82,3 +84,28 @@ areas:
   `store/voiceStore.projects.test.ts`, `components/ProjectBoard.dom.test.tsx`.
 - Машины проекта в v1 — только выбор/метадата (id агентов владельца); выполнение
   задач на них ещё не реализовано (изоляция агентов и `execTarget` не затрагиваются).
+
+## Папка на машину, машина по умолчанию, связь с чатом (итерация 2)
+
+У проекта на каждой машине — своя рабочая папка: `project_machines.path`
+(`setProjectMachinePath`). Одна машина — по умолчанию: `projects.default_agent_id`
+(`setProjectDefaultMachine`; снятие машины сбрасывает дефолт). `ProjectDetail` несёт
+`machines: {agentId, path}[]` и `defaultAgentId`. Всё это правит владелец в
+`ProjectsOverlay`.
+
+Чат привязывается к проекту полем `conversations.project_id`
+(`setConversationProject`, REST `POST /api/conversations/:id/project`, канал
+`conversations:setProject`). При привязке сервер **перезаписывает** у чата машину
+(=дефолт проекта), рабочую папку (=папка дефолт-машины) и навыки (=`skills` проекта).
+В `ConversationSettings` появляется селектор «Проект»; при выбранном проекте список
+машин фильтруется машинами проекта, дефолт — проектный, смена машины подставляет её
+папку. Контекст проекта (git/технологии/навыки/описание) дописывается в промпт хода
+в `turns.ts` (по образцу KB-инъекции), если чат привязан.
+
+Кнопки сайдбара «проводник»/«консоль» открываются на ЭФФЕКТИВНОЙ машине и папке
+активного чата (`openUtilityForActiveChat` → `execTarget`+`workdir`). Для чата с
+проектом это уже проектные значения (перезаписаны при привязке). Проводник
+открывает саму папку (`FileExplorer initialDir` / `ToolSpec.dir`), а не её родителя.
+
+Проекты пока одновладельческие для выполнения: exec идёт только по своим машинам
+(изоляция агентов не меняется).

@@ -85,9 +85,9 @@ describe('projects: машины', () => {
     const foreign = db.createAgent('bob', 'M2')
     expect(() => db.linkMachine('alice', p.id, foreign.id)).toThrow() // чужой агент
     const detail = db.linkMachine('alice', p.id, agent.id)!
-    expect(detail.machineIds).toEqual([agent.id])
+    expect(detail.machines.map((m) => m.agentId)).toEqual([agent.id])
     db.deleteAgent('alice', agent.id) // CASCADE снимает связь
-    expect(db.getProject('alice', p.id)!.machineIds).toEqual([])
+    expect(db.getProject('alice', p.id)!.machines).toEqual([])
   })
 })
 
@@ -188,5 +188,50 @@ describe('projects: deleteUserData', () => {
     // теперь удалим владельца — оба проекта осиротеют и удалятся
     db.deleteUserData('alice')
     expect(db.listProjects('alice')).toEqual([])
+  })
+})
+
+describe('projects: папка машины, дефолт, привязка чата', () => {
+  it('setProjectMachinePath и setProjectDefaultMachine; unlink сбрасывает дефолт', () => {
+    const p = db.createProject('alice', { name: 'P1' })
+    const a1 = db.createAgent('alice', 'M1')
+    const a2 = db.createAgent('alice', 'M2')
+    db.linkMachine('alice', p.id, a1.id)
+    db.linkMachine('alice', p.id, a2.id)
+    // папка на машине
+    let d = db.setProjectMachinePath('alice', p.id, a1.id, '/srv/proj')!
+    expect(d.machines.find((m) => m.agentId === a1.id)!.path).toBe('/srv/proj')
+    // дефолт
+    d = db.setProjectDefaultMachine('alice', p.id, a1.id)!
+    expect(d.defaultAgentId).toBe(a1.id)
+    // дефолтом нельзя назначить машину не из проекта
+    const foreign = db.createAgent('alice', 'X')
+    expect(() => db.setProjectDefaultMachine('alice', p.id, foreign.id)).toThrow()
+    // не-владелец не может
+    db.addMember('alice', p.id, 'bob')
+    expect(db.setProjectMachinePath('bob', p.id, a1.id, '/x')).toBeNull()
+    // снятие дефолтной машины сбрасывает дефолт
+    db.unlinkMachine('alice', p.id, a1.id)
+    expect(db.getProject('alice', p.id)!.defaultAgentId).toBeNull()
+  })
+
+  it('setConversationProject перезаписывает машину/папку/навыки и projectId; null отвязывает', () => {
+    const p = db.createProject('alice', { name: 'P1', skills: ['ts', 'sql'] })
+    const a1 = db.createAgent('alice', 'M1')
+    db.linkMachine('alice', p.id, a1.id)
+    db.setProjectMachinePath('alice', p.id, a1.id, '/srv/proj')
+    db.setProjectDefaultMachine('alice', p.id, a1.id)
+    const conv = db.createConversation('alice', 'Чат')
+    const linked = db.setConversationProject('alice', conv.id, p.id)!
+    expect(linked.projectId).toBe(p.id)
+    expect(linked.execTarget).toBe(a1.id)
+    expect(linked.workdir).toBe('/srv/proj')
+    expect(linked.skillNames).toEqual(['ts', 'sql'])
+    // не-участник проекта не может привязать
+    const conv2 = db.createConversation('bob', 'Чат bob')
+    expect(db.setConversationProject('bob', conv2.id, p.id)).toBeNull()
+    // отвязка
+    const unl = db.setConversationProject('alice', conv.id, null)!
+    expect(unl.projectId).toBeNull()
   })
 })
