@@ -79,11 +79,13 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
       deps.session ?? (typeof window !== 'undefined' ? window.session : undefined)
     const fs = deps.fs ?? (typeof window !== 'undefined' ? window.fs : undefined)
     const files = deps.files ?? (typeof window !== 'undefined' ? window.files : undefined)
+    const board = deps.board ?? (typeof window !== 'undefined' ? window.board : undefined)
     storeRef.current = createVoiceStore({
       ...deps,
       session,
       fs,
       files,
+      board,
       audio,
       listMics,
       sttEnabled,
@@ -145,6 +147,9 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
     }
     if (typeof window !== 'undefined' && window.agents) {
       unsubs.push(window.agents.onChange((list) => store.actions.applyAgents(list)))
+    }
+    if (typeof window !== 'undefined' && window.board) {
+      unsubs.push(window.board.onUpdate((m) => store.actions.applyBoardUpdate(m.projectId, m.board)))
     }
     if (typeof window !== 'undefined' && window.tts) {
       unsubs.push(

@@ -20,7 +20,14 @@ import {
   type UsageReport,
   type UsageTotals,
   type UsageUnit,
-  type UserRole
+  type UserRole,
+  type Board,
+  type KanbanColumn,
+  type ProjectDetail,
+  type ProjectMember,
+  type ProjectSummary,
+  type Task,
+  type TaskPriority
 } from '@voicechat/shared'
 import { hashPassword, verifyPassword } from '../users/passwords.js'
 
@@ -124,6 +131,92 @@ interface MessageRow {
   engine: string | null
   meta: string | null
   exec_target: string | null
+}
+
+/** Шаг дробного ранга для порядка колонок/задач. */
+const RANK_STEP = 1024
+/** Порог схлопывания дробного ранга — ниже него колонка ренормализуется. */
+const RANK_EPS = 1e-6
+
+interface ProjectRow {
+  id: string
+  name: string
+  description: string
+  git_url: string | null
+  technologies: string
+  skills: string
+  created_by: string
+  created_at: number
+  updated_at: number
+}
+
+interface ProjectMemberRow {
+  username: string
+  role: string
+  added_at: number
+}
+
+interface ColumnRow {
+  id: string
+  project_id: string
+  name: string
+  position: number
+  hidden: number
+  created_at: number
+}
+
+interface TaskRow {
+  id: string
+  project_id: string
+  column_id: string
+  title: string
+  description: string
+  priority: string
+  assignee: string | null
+  position: number
+  created_at: number
+  updated_at: number
+}
+
+/** Разбор JSON-массива строк из колонки (терпит битые значения). */
+function parseStringArray(raw: string | null): string[] {
+  try {
+    const v = JSON.parse(raw ?? '[]') as unknown
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/** Валидный приоритет (неизвестное → medium). */
+function normPriority(raw: string): TaskPriority {
+  return raw === 'low' || raw === 'high' || raw === 'urgent' || raw === 'medium' ? raw : 'medium'
+}
+
+function mapColumn(r: ColumnRow): KanbanColumn {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    name: r.name,
+    position: r.position,
+    hidden: r.hidden !== 0,
+    createdAt: r.created_at
+  }
+}
+
+function mapTask(r: TaskRow): Task {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    columnId: r.column_id,
+    title: r.title,
+    description: r.description,
+    priority: normPriority(r.priority),
+    assignee: r.assignee,
+    position: r.position,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }
 }
 
 /**
@@ -601,6 +694,18 @@ export class VoiceChatDb {
       this.db.prepare(`DELETE FROM conversations WHERE user_id = ?`).run(userId)
       this.db.prepare(`DELETE FROM agents WHERE user_id = ?`).run(userId)
       this.db.prepare(`DELETE FROM settings WHERE key = ?`).run(settingsKey(userId))
+      // Проекты: снять назначения, убрать членства и удалить осиротевшие проекты
+      // (project_machines уйдут по CASCADE при удалении агентов выше и/или проектов).
+      this.db.prepare(`UPDATE tasks SET assignee = NULL WHERE assignee = ?`).run(userId)
+      this.db.prepare(`DELETE FROM project_members WHERE username = ?`).run(userId)
+      this.db
+        .prepare(
+          `DELETE FROM projects WHERE id IN (
+             SELECT p.id FROM projects p
+             WHERE NOT EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = p.id AND m.role = 'owner')
+           )`
+        )
+        .run()
       this.db.prepare(`DELETE FROM users WHERE name = ?`).run(userId)
     })()
   }
@@ -680,5 +785,449 @@ export class VoiceChatDb {
           : null,
       lastExecTarget: row.last_exec_target ?? null
     }
+  }
+
+  // ---- Projects (многопользовательские) ---------------------------------
+
+  private isProjectMember(userId: string, projectId: string): boolean {
+    return (
+      this.db
+        .prepare(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ?`)
+        .get(projectId, userId) !== undefined
+    )
+  }
+
+  private isProjectOwner(userId: string, projectId: string): boolean {
+    return (
+      this.db
+        .prepare(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ? AND role = 'owner'`)
+        .get(projectId, userId) !== undefined
+    )
+  }
+
+  private touchProject(projectId: string, ts: number = this.now()): void {
+    this.db.prepare(`UPDATE projects SET updated_at = ? WHERE id = ?`).run(ts, projectId)
+  }
+
+  private columnInProject(projectId: string, columnId: string): boolean {
+    return (
+      this.db
+        .prepare(`SELECT 1 FROM kanban_columns WHERE id = ? AND project_id = ?`)
+        .get(columnId, projectId) !== undefined
+    )
+  }
+
+  private mapProjectSummary(r: ProjectRow, myRole: string): ProjectSummary {
+    return {
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      gitUrl: r.git_url,
+      technologies: parseStringArray(r.technologies),
+      skills: parseStringArray(r.skills),
+      createdBy: r.created_by,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      role: myRole === 'owner' ? 'owner' : 'member'
+    }
+  }
+
+  /** Создаёт проект: владелец-участник + дефолтные колонки (в одной транзакции). */
+  createProject(
+    userId: string,
+    args: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[] }
+  ): ProjectDetail {
+    const id = this.newId()
+    const ts = this.now()
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO projects (id, name, description, git_url, technologies, skills, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          id,
+          args.name,
+          args.description ?? '',
+          args.gitUrl ?? null,
+          JSON.stringify(args.technologies ?? []),
+          JSON.stringify(args.skills ?? []),
+          userId,
+          ts,
+          ts
+        )
+      this.db
+        .prepare(`INSERT INTO project_members (project_id, username, role, added_at) VALUES (?, ?, 'owner', ?)`)
+        .run(id, userId, ts)
+      const insCol = this.db.prepare(
+        `INSERT INTO kanban_columns (id, project_id, name, position, hidden, created_at) VALUES (?, ?, ?, ?, 0, ?)`
+      )
+      ;['To Do', 'In Progress', 'Done'].forEach((name, i) =>
+        insCol.run(this.newId(), id, name, (i + 1) * RANK_STEP, ts)
+      )
+    })()
+    return this.getProject(userId, id) as ProjectDetail
+  }
+
+  listProjects(userId: string): ProjectSummary[] {
+    const rows = this.db
+      .prepare(
+        `SELECT p.*, m.role AS my_role FROM projects p
+         JOIN project_members m ON m.project_id = p.id
+         WHERE m.username = ? ORDER BY p.updated_at DESC`
+      )
+      .all(userId) as Array<ProjectRow & { my_role: string }>
+    return rows.map((r) => this.mapProjectSummary(r, r.my_role))
+  }
+
+  getProject(userId: string, id: string): ProjectDetail | null {
+    const row = this.db
+      .prepare(
+        `SELECT p.*, m.role AS my_role FROM projects p
+         JOIN project_members m ON m.project_id = p.id
+         WHERE p.id = ? AND m.username = ?`
+      )
+      .get(id, userId) as (ProjectRow & { my_role: string }) | undefined
+    if (!row) return null
+    const members = (
+      this.db
+        .prepare(`SELECT username, role, added_at FROM project_members WHERE project_id = ? ORDER BY added_at ASC`)
+        .all(id) as ProjectMemberRow[]
+    ).map(
+      (m): ProjectMember => ({
+        username: m.username,
+        role: m.role === 'owner' ? 'owner' : 'member',
+        addedAt: m.added_at
+      })
+    )
+    const machineIds = (
+      this.db.prepare(`SELECT agent_id FROM project_machines WHERE project_id = ?`).all(id) as Array<{
+        agent_id: string
+      }>
+    ).map((x) => x.agent_id)
+    return { ...this.mapProjectSummary(row, row.my_role), members, machineIds }
+  }
+
+  updateProject(
+    userId: string,
+    id: string,
+    fields: {
+      name?: string
+      description?: string
+      gitUrl?: string | null
+      technologies?: string[]
+      skills?: string[]
+    }
+  ): ProjectDetail | null {
+    if (!this.isProjectOwner(userId, id)) return null
+    const set: string[] = []
+    const vals: unknown[] = []
+    if (fields.name !== undefined) {
+      set.push('name = ?')
+      vals.push(fields.name)
+    }
+    if (fields.description !== undefined) {
+      set.push('description = ?')
+      vals.push(fields.description)
+    }
+    if (fields.gitUrl !== undefined) {
+      set.push('git_url = ?')
+      vals.push(fields.gitUrl)
+    }
+    if (fields.technologies !== undefined) {
+      set.push('technologies = ?')
+      vals.push(JSON.stringify(fields.technologies))
+    }
+    if (fields.skills !== undefined) {
+      set.push('skills = ?')
+      vals.push(JSON.stringify(fields.skills))
+    }
+    const ts = this.now()
+    set.push('updated_at = ?')
+    vals.push(ts)
+    this.db.prepare(`UPDATE projects SET ${set.join(', ')} WHERE id = ?`).run(...vals, id)
+    return this.getProject(userId, id)
+  }
+
+  deleteProject(userId: string, id: string): boolean {
+    if (!this.isProjectOwner(userId, id)) return false
+    // CASCADE удалит members/machines/columns/tasks.
+    this.db.prepare(`DELETE FROM projects WHERE id = ?`).run(id)
+    return true
+  }
+
+  addMember(userId: string, id: string, username: string): ProjectDetail | null {
+    if (!this.isProjectOwner(userId, id)) return null
+    if (!this.db.prepare(`SELECT 1 FROM users WHERE name = ?`).get(username)) {
+      throw new Error(`Пользователь ${username} не найден`)
+    }
+    this.db
+      .prepare(`INSERT OR IGNORE INTO project_members (project_id, username, role, added_at) VALUES (?, ?, 'member', ?)`)
+      .run(id, username, this.now())
+    return this.getProject(userId, id)
+  }
+
+  removeMember(userId: string, id: string, username: string): ProjectDetail | null {
+    if (!this.isProjectOwner(userId, id)) return null
+    const row = this.db
+      .prepare(`SELECT role FROM project_members WHERE project_id = ? AND username = ?`)
+      .get(id, username) as { role: string } | undefined
+    // Владельца не удаляем этим путём (нет «осиротевших» проектов).
+    if (row && row.role !== 'owner') {
+      this.db.transaction(() => {
+        this.db.prepare(`DELETE FROM project_members WHERE project_id = ? AND username = ?`).run(id, username)
+        this.db
+          .prepare(`UPDATE tasks SET assignee = NULL, updated_at = ? WHERE project_id = ? AND assignee = ?`)
+          .run(this.now(), id, username)
+      })()
+    }
+    return this.getProject(userId, id)
+  }
+
+  linkMachine(userId: string, id: string, agentId: string): ProjectDetail | null {
+    if (!this.isProjectOwner(userId, id)) return null
+    if (!this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(agentId, userId)) {
+      throw new Error(`Машина ${agentId} не найдена`)
+    }
+    this.db
+      .prepare(`INSERT OR IGNORE INTO project_machines (project_id, agent_id) VALUES (?, ?)`)
+      .run(id, agentId)
+    return this.getProject(userId, id)
+  }
+
+  unlinkMachine(userId: string, id: string, agentId: string): ProjectDetail | null {
+    if (!this.isProjectOwner(userId, id)) return null
+    this.db.prepare(`DELETE FROM project_machines WHERE project_id = ? AND agent_id = ?`).run(id, agentId)
+    return this.getProject(userId, id)
+  }
+
+  // ---- Board (колонки + задачи) -----------------------------------------
+
+  getBoard(userId: string, projectId: string): Board | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const columns = (
+      this.db
+        .prepare(`SELECT * FROM kanban_columns WHERE project_id = ? ORDER BY position ASC, created_at ASC`)
+        .all(projectId) as ColumnRow[]
+    ).map(mapColumn)
+    const tasks = (
+      this.db
+        .prepare(`SELECT * FROM tasks WHERE project_id = ? ORDER BY column_id ASC, position ASC`)
+        .all(projectId) as TaskRow[]
+    ).map(mapTask)
+    return { columns, tasks }
+  }
+
+  private getTask(projectId: string, taskId: string): Task | null {
+    const r = this.db.prepare(`SELECT * FROM tasks WHERE id = ? AND project_id = ?`).get(taskId, projectId) as
+      | TaskRow
+      | undefined
+    return r ? mapTask(r) : null
+  }
+
+  createColumn(userId: string, projectId: string, name: string): KanbanColumn | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const id = this.newId()
+    const ts = this.now()
+    const max = (
+      this.db.prepare(`SELECT MAX(position) AS m FROM kanban_columns WHERE project_id = ?`).get(projectId) as {
+        m: number | null
+      }
+    ).m
+    const position = (max ?? 0) + RANK_STEP
+    this.db
+      .prepare(
+        `INSERT INTO kanban_columns (id, project_id, name, position, hidden, created_at) VALUES (?, ?, ?, ?, 0, ?)`
+      )
+      .run(id, projectId, name, position, ts)
+    this.touchProject(projectId, ts)
+    return mapColumn({ id, project_id: projectId, name, position, hidden: 0, created_at: ts })
+  }
+
+  renameColumn(userId: string, projectId: string, columnId: string, name: string): boolean {
+    if (!this.isProjectMember(userId, projectId) || !this.columnInProject(projectId, columnId)) return false
+    this.db.prepare(`UPDATE kanban_columns SET name = ? WHERE id = ? AND project_id = ?`).run(name, columnId, projectId)
+    this.touchProject(projectId)
+    return true
+  }
+
+  setColumnHidden(userId: string, projectId: string, columnId: string, hidden: boolean): boolean {
+    if (!this.isProjectMember(userId, projectId) || !this.columnInProject(projectId, columnId)) return false
+    this.db
+      .prepare(`UPDATE kanban_columns SET hidden = ? WHERE id = ? AND project_id = ?`)
+      .run(hidden ? 1 : 0, columnId, projectId)
+    this.touchProject(projectId)
+    return true
+  }
+
+  reorderColumns(userId: string, projectId: string, order: string[]): boolean {
+    if (!this.isProjectMember(userId, projectId)) return false
+    const ids = (
+      this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id = ?`).all(projectId) as Array<{ id: string }>
+    ).map((x) => x.id)
+    const known = new Set(ids)
+    if (order.length !== ids.length || !order.every((o) => known.has(o))) return false
+    const upd = this.db.prepare(`UPDATE kanban_columns SET position = ? WHERE id = ? AND project_id = ?`)
+    this.db.transaction(() => {
+      order.forEach((cid, i) => upd.run((i + 1) * RANK_STEP, cid, projectId))
+    })()
+    this.touchProject(projectId)
+    return true
+  }
+
+  deleteColumn(userId: string, projectId: string, columnId: string): boolean {
+    if (!this.isProjectMember(userId, projectId)) return false
+    // CASCADE удалит задачи колонки.
+    const info = this.db.prepare(`DELETE FROM kanban_columns WHERE id = ? AND project_id = ?`).run(columnId, projectId)
+    if (info.changes) this.touchProject(projectId)
+    return info.changes > 0
+  }
+
+  createTask(
+    userId: string,
+    projectId: string,
+    args: {
+      columnId: string
+      title: string
+      description?: string
+      priority?: TaskPriority
+      assignee?: string | null
+    }
+  ): Task | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.columnInProject(projectId, args.columnId)) return null
+    if (args.assignee != null && !this.isProjectMember(args.assignee, projectId)) {
+      throw new Error('Исполнитель не участник проекта')
+    }
+    const id = this.newId()
+    const ts = this.now()
+    const max = (
+      this.db
+        .prepare(`SELECT MAX(position) AS m FROM tasks WHERE project_id = ? AND column_id = ?`)
+        .get(projectId, args.columnId) as { m: number | null }
+    ).m
+    const position = (max ?? 0) + RANK_STEP
+    this.db
+      .prepare(
+        `INSERT INTO tasks (id, project_id, column_id, title, description, priority, assignee, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        id,
+        projectId,
+        args.columnId,
+        args.title,
+        args.description ?? '',
+        normPriority(args.priority ?? 'medium'),
+        args.assignee ?? null,
+        position,
+        ts,
+        ts
+      )
+    this.touchProject(projectId, ts)
+    return this.getTask(projectId, id)
+  }
+
+  updateTask(
+    userId: string,
+    projectId: string,
+    taskId: string,
+    fields: { title?: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+  ): Task | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const current = this.getTask(projectId, taskId)
+    if (!current) return null
+    if (fields.assignee != null && !this.isProjectMember(fields.assignee, projectId)) {
+      throw new Error('Исполнитель не участник проекта')
+    }
+    const set: string[] = []
+    const vals: unknown[] = []
+    if (fields.title !== undefined) {
+      set.push('title = ?')
+      vals.push(fields.title)
+    }
+    if (fields.description !== undefined) {
+      set.push('description = ?')
+      vals.push(fields.description)
+    }
+    if (fields.priority !== undefined) {
+      set.push('priority = ?')
+      vals.push(normPriority(fields.priority))
+    }
+    if (fields.assignee !== undefined) {
+      set.push('assignee = ?')
+      vals.push(fields.assignee)
+    }
+    if (!set.length) return current
+    const ts = this.now()
+    set.push('updated_at = ?')
+    vals.push(ts)
+    this.db.prepare(`UPDATE tasks SET ${set.join(', ')} WHERE id = ? AND project_id = ?`).run(...vals, taskId, projectId)
+    this.touchProject(projectId, ts)
+    return this.getTask(projectId, taskId)
+  }
+
+  private renormalizeColumn(projectId: string, columnId: string): void {
+    const rows = this.db
+      .prepare(`SELECT id FROM tasks WHERE project_id = ? AND column_id = ? ORDER BY position ASC, id ASC`)
+      .all(projectId, columnId) as Array<{ id: string }>
+    const upd = this.db.prepare(`UPDATE tasks SET position = ? WHERE id = ?`)
+    rows.forEach((r, i) => upd.run((i + 1) * RANK_STEP, r.id))
+  }
+
+  /** Переместить задачу в колонку между соседями afterId (выше) и beforeId (ниже). */
+  moveTask(
+    userId: string,
+    projectId: string,
+    taskId: string,
+    args: { columnId: string; afterId?: string | null; beforeId?: string | null }
+  ): Task | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.getTask(projectId, taskId)) return null
+    if (!this.columnInProject(projectId, args.columnId)) return null
+    const ts = this.now()
+    this.db.transaction(() => {
+      const rankOf = (nid: string | null | undefined): number | null => {
+        if (!nid) return null
+        const r = this.db
+          .prepare(`SELECT position FROM tasks WHERE id = ? AND project_id = ? AND column_id = ?`)
+          .get(nid, projectId, args.columnId) as { position: number } | undefined
+        return r ? r.position : null
+      }
+      let after = rankOf(args.afterId)
+      let before = rankOf(args.beforeId)
+      let pos: number
+      if (after != null && before != null) {
+        if (Math.abs(after - before) < RANK_EPS) {
+          this.renormalizeColumn(projectId, args.columnId)
+          after = rankOf(args.afterId)
+          before = rankOf(args.beforeId)
+        }
+        pos = ((after ?? 0) + (before ?? (after ?? 0) + 2 * RANK_STEP)) / 2
+      } else if (after != null) {
+        pos = after + RANK_STEP
+      } else if (before != null) {
+        pos = before - RANK_STEP
+      } else {
+        const max = (
+          this.db
+            .prepare(`SELECT MAX(position) AS m FROM tasks WHERE project_id = ? AND column_id = ?`)
+            .get(projectId, args.columnId) as { m: number | null }
+        ).m
+        pos = (max ?? 0) + RANK_STEP
+      }
+      this.db
+        .prepare(`UPDATE tasks SET column_id = ?, position = ?, updated_at = ? WHERE id = ? AND project_id = ?`)
+        .run(args.columnId, pos, ts, taskId, projectId)
+    })()
+    this.touchProject(projectId, ts)
+    return this.getTask(projectId, taskId)
+  }
+
+  deleteTask(userId: string, projectId: string, taskId: string): boolean {
+    if (!this.isProjectMember(userId, projectId)) return false
+    const info = this.db.prepare(`DELETE FROM tasks WHERE id = ? AND project_id = ?`).run(taskId, projectId)
+    if (info.changes) this.touchProject(projectId)
+    return info.changes > 0
   }
 }

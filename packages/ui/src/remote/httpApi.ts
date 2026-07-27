@@ -134,6 +134,55 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'admin:conversations': ({ name }) => req(REST.adminUserConversations(name)),
     'admin:messages': ({ name, conversationId }) =>
-      req(`${REST.adminUserMessages(name)}?conversationId=${encodeURIComponent(conversationId)}`)
+      req(`${REST.adminUserMessages(name)}?conversationId=${encodeURIComponent(conversationId)}`),
+    // --- Проекты + канбан ---
+    'projects:list': () => req(REST.projects),
+    'projects:create': (b) => req(REST.projects, { method: 'POST', body: JSON.stringify(b) }),
+    'projects:get': async ({ id }) => {
+      const token = getToken()
+      const res = await fetch(httpBase + REST.project(id), {
+        headers: token ? { authorization: `Bearer ${token}` } : undefined
+      })
+      if (res.status === 404) return null
+      if (!res.ok) throw new Error(`GET ${REST.project(id)} → ${res.status}`)
+      return res.json()
+    },
+    'projects:update': ({ id, ...fields }) =>
+      req(REST.project(id), { method: 'PATCH', body: JSON.stringify(fields) }),
+    'projects:delete': async ({ id }) => {
+      await req(REST.project(id), { method: 'DELETE' })
+    },
+    'projects:addMember': ({ id, username }) =>
+      req(REST.projectMembers(id), { method: 'POST', body: JSON.stringify({ username }) }),
+    'projects:removeMember': ({ id, username }) =>
+      req(REST.projectMember(id, username), { method: 'DELETE' }),
+    'projects:linkMachine': ({ id, agentId }) =>
+      req(REST.projectMachines(id), { method: 'POST', body: JSON.stringify({ agentId }) }),
+    'projects:unlinkMachine': ({ id, agentId }) =>
+      req(REST.projectMachine(id, agentId), { method: 'DELETE' }),
+    'board:get': ({ id }) => req(REST.projectBoard(id)),
+    'columns:create': ({ projectId, name }) =>
+      req(REST.projectColumns(projectId), { method: 'POST', body: JSON.stringify({ name }) }),
+    'columns:rename': async ({ projectId, columnId, name }) => {
+      await req(REST.projectColumn(projectId, columnId), { method: 'PATCH', body: JSON.stringify({ name }) })
+    },
+    'columns:setHidden': async ({ projectId, columnId, hidden }) => {
+      await req(REST.projectColumnHidden(projectId, columnId), { method: 'POST', body: JSON.stringify({ hidden }) })
+    },
+    'columns:reorder': async ({ projectId, order }) => {
+      await req(REST.projectColumnsReorder(projectId), { method: 'POST', body: JSON.stringify({ order }) })
+    },
+    'columns:delete': async ({ projectId, columnId }) => {
+      await req(REST.projectColumn(projectId, columnId), { method: 'DELETE' })
+    },
+    'tasks:create': ({ projectId, ...b }) =>
+      req(REST.projectTasks(projectId), { method: 'POST', body: JSON.stringify(b) }),
+    'tasks:update': ({ projectId, taskId, ...b }) =>
+      req(REST.projectTask(projectId, taskId), { method: 'PATCH', body: JSON.stringify(b) }),
+    'tasks:move': ({ projectId, taskId, ...b }) =>
+      req(REST.projectTaskMove(projectId, taskId), { method: 'POST', body: JSON.stringify(b) }),
+    'tasks:delete': async ({ projectId, taskId }) => {
+      await req(REST.projectTask(projectId, taskId), { method: 'DELETE' })
+    }
   }
 }

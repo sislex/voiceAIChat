@@ -14,6 +14,7 @@ import type {
 import type { CcItem } from './cc'
 import type { CxItem } from './codexSessions'
 import type { AgentInfo } from './agentProtocol'
+import type { Board } from './projects'
 
 // --- Общие ---------------------------------------------------------------
 
@@ -170,7 +171,28 @@ export const REST = {
   adminUserUsage: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/usage`,
   adminUserConversations: (name: string) =>
     `/api/admin/users/${encodeURIComponent(name)}/conversations`,
-  adminUserMessages: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/messages`
+  adminUserMessages: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/messages`,
+  // --- Проекты + канбан ---
+  projects: '/api/projects',
+  project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,
+  projectMembers: (id: string) => `/api/projects/${encodeURIComponent(id)}/members`,
+  projectMember: (id: string, username: string) =>
+    `/api/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(username)}`,
+  projectMachines: (id: string) => `/api/projects/${encodeURIComponent(id)}/machines`,
+  projectMachine: (id: string, agentId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}`,
+  projectBoard: (id: string) => `/api/projects/${encodeURIComponent(id)}/board`,
+  projectColumns: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns`,
+  projectColumnsReorder: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns/reorder`,
+  projectColumn: (id: string, columnId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/columns/${encodeURIComponent(columnId)}`,
+  projectColumnHidden: (id: string, columnId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/columns/${encodeURIComponent(columnId)}/hidden`,
+  projectTasks: (id: string) => `/api/projects/${encodeURIComponent(id)}/tasks`,
+  projectTask: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`,
+  projectTaskMove: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/move`
 } as const
 
 // --- WebSocket -----------------------------------------------------------
@@ -232,6 +254,8 @@ export type ClientMessage =
   | { t: 'pty.input'; ptyId: string; data: string }
   | { t: 'pty.resize'; ptyId: string; cols: number; rows: number }
   | { t: 'pty.kill'; ptyId: string }
+  | { t: 'board.subscribe'; projectId: string }
+  | { t: 'board.unsubscribe' }
 
 /** server → client. */
 export type ServerMessage =
@@ -265,6 +289,7 @@ export type ServerMessage =
   | { t: 'pty.output'; ptyId: string; data: string }
   | { t: 'pty.exit'; ptyId: string; exitCode: number | null }
   | { t: 'pty.error'; ptyId: string; message: string }
+  | { t: 'board.update'; projectId: string; board: Board }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']
@@ -286,7 +311,9 @@ export const CLIENT_MESSAGE_TYPES: ClientMessageType[] = [
   'pty.start',
   'pty.input',
   'pty.resize',
-  'pty.kill'
+  'pty.kill',
+  'board.subscribe',
+  'board.unsubscribe'
 ]
 
 export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
@@ -311,5 +338,6 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'agents',
   'pty.output',
   'pty.exit',
-  'pty.error'
+  'pty.error',
+  'board.update'
 ]
