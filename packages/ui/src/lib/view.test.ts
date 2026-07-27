@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ClaudeLogEntry } from '@shared/types'
-import { activityLocation, activityStatus, chipClass, formatDuration, messageTime, pluralActions } from './view'
+import { activityLocation, activityStatus, chipClass, formatDuration, formatLiveUsage, messageTime, pluralActions } from './view'
 
 const log = (kind: ClaudeLogEntry['kind'], summary: string): ClaudeLogEntry => ({
   kind,
@@ -90,6 +90,17 @@ describe('messageTime — время сообщения в поясе зрите
   })
 })
 
+
+describe('formatLiveUsage — живые токены', () => {
+  it('показывает входящие, исходящие и весь кэш в компактном виде', () => {
+    expect(formatLiveUsage({
+      inputTokens: 1200,
+      outputTokens: 356,
+      cacheReadTokens: 89000,
+      cacheCreationTokens: 100
+    })).toBe('↓ 1.2k · ↑ 356 · кэш 89.1k')
+  })
+})
 
 describe('formatDuration — человеческая длительность', () => {
   it('меньше секунды → «<1с»', () => {

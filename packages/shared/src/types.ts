@@ -180,14 +180,8 @@ export type ClaudeLogKind =
   | 'tts' // тайминг генерации речи (клиентский замер)
   | 'other'
 
-/** Метаданные завершённого хода Claude (из result-события stream-json). */
-export interface TurnMeta {
-  /** Длительность хода, мс. */
-  durationMs?: number
-  /** Число ходов агента (num_turns). */
-  numTurns?: number
-  /** Стоимость хода в USD (total_cost_usd), если доступна. */
-  costUsd?: number
+/** Счётчики токенов хода. Во время ответа растут (claude.usage), финал — в TurnMeta. */
+export interface TurnUsage {
   /** Токены ввода. */
   inputTokens?: number
   /** Токены вывода. */
@@ -196,6 +190,16 @@ export interface TurnMeta {
   cacheReadTokens?: number
   /** Токены, записанные в кэш промпта (cache_creation_input_tokens). */
   cacheCreationTokens?: number
+}
+
+/** Метаданные завершённого хода Claude (из result-события stream-json). */
+export interface TurnMeta extends TurnUsage {
+  /** Длительность хода, мс. */
+  durationMs?: number
+  /** Число ходов агента (num_turns). */
+  numTurns?: number
+  /** Стоимость хода в USD (total_cost_usd), если доступна. */
+  costUsd?: number
   /** Модель, которой отправлен ход (алиас claude / id codex). */
   model?: string
   /** Что именно ушло модели этим ходом — для панели «Подробнее». */

@@ -7,12 +7,13 @@
 //   {"type":"assistant","message":{"content":[{"type":"text","text":"..."}]},...}
 //   {"type":"result","subtype":"success","is_error":false,"result":"...","session_id":"..."}
 
-import type { ClaudeInitInfo, ClaudeLogEntry, TurnMeta } from './types'
+import type { ClaudeInitInfo, ClaudeLogEntry, TurnMeta, TurnUsage } from './types'
 
 export type ClaudeStreamEvent =
   | { kind: 'session'; sessionId: string; init?: ClaudeInitInfo }
   | { kind: 'delta'; text: string }
   | { kind: 'result'; text: string; sessionId?: string; isError: boolean; meta: TurnMeta }
+  | { kind: 'usage'; messageId?: string; usage: TurnUsage }
   | { kind: 'ignore' }
 
 /** Массив строк из произвольного значения (для tools/slash_commands). */
@@ -48,15 +49,28 @@ function parseTurnMeta(obj: Record<string, unknown>): TurnMeta {
   if (typeof obj.duration_ms === 'number') meta.durationMs = obj.duration_ms
   if (typeof obj.num_turns === 'number') meta.numTurns = obj.num_turns
   if (typeof obj.total_cost_usd === 'number') meta.costUsd = obj.total_cost_usd
-  const usage = obj.usage as { input_tokens?: unknown; output_tokens?: unknown } | undefined
-  if (usage && typeof usage.input_tokens === 'number') meta.inputTokens = usage.input_tokens
-  if (usage && typeof usage.output_tokens === 'number') meta.outputTokens = usage.output_tokens
-  const u = usage as { cache_read_input_tokens?: unknown; cache_creation_input_tokens?: unknown } | undefined
-  if (u && typeof u.cache_read_input_tokens === 'number') meta.cacheReadTokens = u.cache_read_input_tokens
-  if (u && typeof u.cache_creation_input_tokens === 'number') {
-    meta.cacheCreationTokens = u.cache_creation_input_tokens
-  }
+  Object.assign(meta, parseUsage(obj.usage))
   return meta
+}
+
+/** Достаёт счётчики токенов из usage-объекта API (снапшот одного сообщения). */
+export function parseUsage(usage: unknown): TurnUsage {
+  const u = (usage ?? {}) as Record<string, unknown>
+  const out: TurnUsage = {}
+  if (typeof u.input_tokens === 'number') out.inputTokens = u.input_tokens
+  if (typeof u.output_tokens === 'number') out.outputTokens = u.output_tokens
+  if (typeof u.cache_read_input_tokens === 'number') out.cacheReadTokens = u.cache_read_input_tokens
+  if (typeof u.cache_creation_input_tokens === 'number') {
+    out.cacheCreationTokens = u.cache_creation_input_tokens
+  }
+  return out
+}
+
+/** Событие usage из снапшота сообщения; null, если счётчиков в нём нет. */
+function usageEvent(id: unknown, usage: unknown): ClaudeStreamEvent | null {
+  const parsed = parseUsage(usage)
+  if (!Object.keys(parsed).length) return null
+  return { kind: 'usage', ...(typeof id === 'string' ? { messageId: id } : {}), usage: parsed }
 }
 
 /**
@@ -82,7 +96,14 @@ export function parseStreamJsonLine(line: string): ClaudeStreamEvent | null {
       return { kind: 'ignore' }
     }
     case 'stream_event': {
-      const event = obj.event as { type?: string; delta?: { type?: string; text?: string } } | undefined
+      const event = obj.event as
+        | {
+            type?: string
+            delta?: { type?: string; text?: string }
+            message?: { id?: unknown; usage?: unknown }
+            usage?: unknown
+          }
+        | undefined
       if (
         event?.type === 'content_block_delta' &&
         event.delta?.type === 'text_delta' &&
@@ -90,7 +111,20 @@ export function parseStreamJsonLine(line: string): ClaudeStreamEvent | null {
       ) {
         return { kind: 'delta', text: event.delta.text }
       }
+      // Живые счётчики токенов: вход/кэш известны с message_start, кумулятивный
+      // выход сообщения приходит в message_delta (без id — относим к последнему).
+      if (event?.type === 'message_start') {
+        return usageEvent(event.message?.id, event.message?.usage) ?? { kind: 'ignore' }
+      }
+      if (event?.type === 'message_delta') {
+        return usageEvent(undefined, event.usage) ?? { kind: 'ignore' }
+      }
       return { kind: 'ignore' }
+    }
+    case 'assistant': {
+      // Полный usage сообщения (повторяется на каждый content-блок — дедуп по id).
+      const msg = obj.message as { id?: unknown; usage?: unknown } | undefined
+      return usageEvent(msg?.id, msg?.usage) ?? { kind: 'ignore' }
     }
     case 'result': {
       return {
@@ -217,5 +251,36 @@ export function parseStreamJsonActivity(line: string): ClaudeLogEntry | null {
       return null // партиалы-токены — шум для консоли
     default:
       return { kind: 'other', summary: typeof obj.type === 'string' ? obj.type : 'событие', raw }
+  }
+}
+
+// --- Аккумулятор usage за ход ---------------------------------------------
+
+/**
+ * Суммирует usage-события хода. Каждое событие — снапшот счётчиков ОДНОГО
+ * API-сообщения (по message id, кумулятивный внутри сообщения); итог хода —
+ * сумма последних снапшотов всех сообщений агентного цикла. Событие без id
+ * (message_delta) относится к последнему виденному сообщению.
+ */
+export function createUsageAccumulator(): {
+  add(ev: { messageId?: string; usage: TurnUsage }): TurnUsage
+} {
+  const byMessage = new Map<string, TurnUsage>()
+  let lastId = ''
+  return {
+    add(ev) {
+      const id = ev.messageId ?? lastId
+      lastId = id
+      // Снапшоты одного сообщения кумулятивны — новое значение поля побеждает.
+      byMessage.set(id, { ...byMessage.get(id), ...ev.usage })
+      const total: TurnUsage = {}
+      for (const u of byMessage.values()) {
+        for (const key of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheCreationTokens'] as const) {
+          const v = u[key]
+          if (typeof v === 'number') total[key] = (total[key] ?? 0) + v
+        }
+      }
+      return total
+    }
   }
 }

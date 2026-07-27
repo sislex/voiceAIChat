@@ -70,7 +70,9 @@ function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
       ws.on('claude.error', (m) => cb({ conversationId: m.conversationId, message: m.message })),
     onLog: (cb) =>
       ws.on('claude.log', (m) => cb({ conversationId: m.conversationId, entry: m.entry })),
-    onActive: (cb) => ws.on('claude.active', (m) => cb({ turns: m.turns }))
+    onActive: (cb) => ws.on('claude.active', (m) => cb({ turns: m.turns })),
+    onUsage: (cb) =>
+      ws.on('claude.usage', (m) => cb({ conversationId: m.conversationId, usage: m.usage }))
   }
 }
 

@@ -40,6 +40,7 @@ import type {
   Settings,
   TtsVoiceInfo,
   TurnMeta,
+  TurnUsage,
   WhisperModel,
   WhisperModelInfo
 } from '@shared/types'
@@ -122,6 +123,10 @@ export interface AppState {
   activeActivity: Record<string, ClaudeLogEntry[]>
   /** Метаданные последнего завершённого хода (длительность/токены/стоимость). */
   lastTurnMeta: TurnMeta | null
+  /** Живые счётчики токенов текущего хода активного разговора (растут по мере ответа). */
+  liveUsage: TurnUsage | null
+  /** Счётчики токенов незавершённых ходов по разговорам — восстановление живого счётчика. */
+  activeUsage: Record<string, TurnUsage>
   /** Подключённые MCP-серверы (read-only показ в настройках). */
   mcpServers: McpServer[]
   /** Статус входа claude/codex (показ в настройках); null — ещё не загружен. */
@@ -329,6 +334,8 @@ export interface StoreActions {
   applyClaudeError(message: string, conversationId?: string): void
   /** Применить снапшот активных ходов (claude:active) — восстановление стрима. */
   applyClaudeActive(turns: ActiveTurn[]): void
+  /** Применить живые счётчики токенов хода (claude:usage); conversationId — чей ход. */
+  applyClaudeUsage(usage: TurnUsage, conversationId?: string): void
   /** Скрыть баннер ошибки. */
   dismissError(): void
   /** Запустить скачивание модели Whisper. */
@@ -556,6 +563,8 @@ function initialState(): AppState {
     activeTurns: {},
     activeActivity: {},
     lastTurnMeta: null,
+    liveUsage: null,
+    activeUsage: {},
     mcpServers: [],
     loginStatus: null,
     agents: [],
@@ -811,8 +820,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       streamingReply: partial,
       voice: 'thinking',
       lastTurnMeta: null,
-      // Счётчик действий продолжается с накопленного, а не с нуля.
-      liveActivity: state.activeActivity[id] ?? []
+      // Счётчики действий и токенов продолжаются с накопленного, а не с нуля.
+      liveActivity: state.activeActivity[id] ?? [],
+      liveUsage: state.activeUsage[id] ?? null
     })
   }
 
@@ -926,7 +936,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Роутинг ответа: реальный Claude (стрим событиями) или мок-пайплайн. */
   function beginReply(segments: SttSegmentWire[], attachments: string[] = [], execTarget: string | null = activeConversationExecTarget()): void {
     if (claudeEnabled && deps.sendClaudePrompt && state.activeId) {
-      setState({ streamingReply: '', lastTurnMeta: null, liveActivity: [] })
+      setState({ streamingReply: '', lastTurnMeta: null, liveActivity: [], liveUsage: null })
       ttsBuffer = ''
       // verbose=true всегда: активность нужна для живого статуса и подробного вида
       // сообщения (глобальная консоль всё равно рендерится только при showConsole).
@@ -1663,7 +1673,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       liveActivity: [],
       voice: 'idle',
       streamingReply: '',
-      lastTurnMeta: null
+      lastTurnMeta: null,
+      liveUsage: null
     })
     await refreshConversations()
   }
@@ -1672,7 +1683,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     cancelTimers()
     stopCapture()
     resetTts() // ход прежнего разговора не отменяем — он доиграет на сервере
-    setState({ liveSegments: [], consoleLog: [], liveActivity: [], voice: 'idle', streamingReply: '', lastTurnMeta: null, messages: [], loadingMessages: true })
+    setState({ liveSegments: [], consoleLog: [], liveActivity: [], voice: 'idle', streamingReply: '', lastTurnMeta: null, liveUsage: null, messages: [], loadingMessages: true })
     try {
       const res = await api['conversations:get']({ id })
       if (res) {
@@ -1973,7 +1984,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (convId) {
       const { [convId]: _done, ...rest } = state.activeTurns
       const { [convId]: _act, ...restActivity } = state.activeActivity
-      setState({ activeTurns: rest, activeActivity: restActivity })
+      const { [convId]: _usage, ...restUsage } = state.activeUsage
+      setState({ activeTurns: rest, activeActivity: restActivity, activeUsage: restUsage })
     }
     if (convId !== state.activeId) {
       // Фоновый разговор: ответ уже сохранён сервером — обновляем только сайдбар.
@@ -1982,6 +1994,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
     // Ход активного разговора завершён — активность живёт теперь в meta сообщения.
     if (state.liveActivity.length) setState({ liveActivity: [] })
+    if (state.liveUsage) setState({ liveUsage: null }) // итог хода — в meta
     // Мета хода (длительность/токены/стоимость) — показываем под последним ответом.
     if (meta && Object.keys(meta).length > 0) setState({ lastTurnMeta: meta })
     if (state.voice !== 'thinking' && state.voice !== 'speaking') {
@@ -2032,12 +2045,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (convId) {
       const { [convId]: _failed, ...rest } = state.activeTurns
       const { [convId]: _act, ...restActivity } = state.activeActivity
-      setState({ activeTurns: rest, activeActivity: restActivity })
+      const { [convId]: _usage, ...restUsage } = state.activeUsage
+      setState({ activeTurns: rest, activeActivity: restActivity, activeUsage: restUsage })
     }
     if (convId !== state.activeId) return // ошибка фонового хода — текущий UI не трогаем
     console.warn('[claude] ошибка:', message)
     resetTts()
-    setState({ streamingReply: '', error: message, liveActivity: [] })
+    setState({ streamingReply: '', error: message, liveActivity: [], liveUsage: null })
     if (state.voice === 'thinking' || state.voice === 'speaking') dispatchVoice('error')
   }
 
@@ -2049,9 +2063,24 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         turns
           .filter((t) => t.activity && t.activity.length > 0)
           .map((t) => [t.conversationId, t.activity ?? []])
+      ),
+      activeUsage: Object.fromEntries(
+        turns.flatMap((t) => (t.usage ? [[t.conversationId, t.usage] as const] : []))
       )
     })
     restoreStreamIfActive()
+  }
+
+  /** Живые счётчики токенов хода (claude:usage): per-разговор и, если ход активного, в liveUsage. */
+  function applyClaudeUsage(usage: TurnUsage, conversationId?: string): void {
+    const patch: Partial<AppState> = {}
+    if (conversationId !== undefined) {
+      patch.activeUsage = { ...state.activeUsage, [conversationId]: usage }
+    }
+    if (conversationId === undefined || conversationId === state.activeId) {
+      patch.liveUsage = usage
+    }
+    setState(patch)
   }
 
   function dismissError(): void {
@@ -2462,6 +2491,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applyClaudeDone,
       applyClaudeError,
       applyClaudeActive,
+      applyClaudeUsage,
       dismissError,
       downloadModel,
       applyDownloadProgress,

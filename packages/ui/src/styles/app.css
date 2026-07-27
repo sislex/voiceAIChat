@@ -1992,6 +1992,9 @@
   border: 1px solid var(--border);
   color: var(--text-dim);
 }
+.msgact-tokens {
+  font-variant-numeric: tabular-nums;
+}
 .msgact-sections {
   margin-top: 8px;
   padding-top: 6px;

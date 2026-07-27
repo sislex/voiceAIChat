@@ -184,3 +184,47 @@ describe('ClaudeCli', () => {
     expect(String(h.calls.error[0])).toMatch(/вход|login/i)
   })
 })
+
+describe('ClaudeCli: живой счётчик токенов (onUsage)', () => {
+  it('шлёт кумулятивные итоги по сообщениям и не дублирует одинаковые', async () => {
+    const { child, stdout } = fakeChild()
+    const spawn: SpawnFn = vi.fn(() => child as never)
+    const cli = new ClaudeCli({ spawn })
+    const h = makeHandlers()
+    const usage: unknown[] = []
+    h.onUsage = (u) => usage.push(u)
+
+    cli.send({ prompt: 'x', sessionId: null, model: 'sonnet' }, h)
+    const tickWrite = (obj: unknown): boolean => stdout.write(JSON.stringify(obj) + '\n')
+    tickWrite({
+      type: 'stream_event',
+      event: {
+        type: 'message_start',
+        message: { id: 'm1', usage: { input_tokens: 10, output_tokens: 1, cache_read_input_tokens: 50 } }
+      }
+    })
+    tickWrite({
+      type: 'assistant',
+      message: { id: 'm1', content: [], usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 50 } }
+    })
+    // Дубль usage (assistant повторяется на каждый content-блок) — не рассылается.
+    tickWrite({
+      type: 'assistant',
+      message: { id: 'm1', content: [], usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 50 } }
+    })
+    // Второе API-сообщение агентного цикла: вход суммируется, выход растёт.
+    tickWrite({
+      type: 'stream_event',
+      event: { type: 'message_start', message: { id: 'm2', usage: { input_tokens: 12, output_tokens: 1 } } }
+    })
+    tickWrite({ type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 30 } } })
+    await tick()
+
+    expect(usage).toEqual([
+      { inputTokens: 10, outputTokens: 1, cacheReadTokens: 50 },
+      { inputTokens: 10, outputTokens: 20, cacheReadTokens: 50 },
+      { inputTokens: 22, outputTokens: 21, cacheReadTokens: 50 },
+      { inputTokens: 22, outputTokens: 50, cacheReadTokens: 50 }
+    ])
+  })
+})
