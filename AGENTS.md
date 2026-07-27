@@ -73,6 +73,7 @@ npm run kb:check             # что в базе знаний устарело 
 | [stt-tts.md](docs/kb/stt-tts.md) | Whisper, Piper/say, голоса, скачивание моделей, лимиты по памяти |
 | [machines.md](docs/kb/machines.md) | компаньон-агент, политика команд, PTY, проводник, телеметрия, версии |
 | [data-auth.md](docs/kb/data-auth.md) | SQLite-схема, пользователи, роли, токены, права |
+| [projects.md](docs/kb/projects.md) | проекты + канбан: членство, доска, порядок задач, живой board.update |
 | [deploy.md](docs/kb/deploy.md) | Docker, Caddy/HTTPS, прод-сервер, переменные окружения |
 | [conventions.md](docs/kb/conventions.md) | стиль кода, тесты, как устроены гейты и коммиты |
 | [kb-workflow.md](docs/kb/kb-workflow.md) | правила ведения самой базы знаний |
