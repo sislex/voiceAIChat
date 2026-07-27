@@ -1,7 +1,7 @@
 // LLM-клиент через Codex CLI: spawn('codex', ['exec', '--json', ...]) + построчный
 // разбор JSONL. Аналог ClaudeCli; spawn инжектируется для тестов. Паритет по
-// пробросу команд на агентов достигается MCP-конфигом (streamable HTTP) + read-only
-// sandbox (блокирует локальный shell) + инструкцией в промпте.
+// пробросу команд на агентов достигается MCP-конфигом (streamable HTTP). В режиме
+// плана MCP не подключается, а локальный процесс жёстко ограничен read-only sandbox.
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
@@ -69,10 +69,9 @@ export class CodexCli implements LlmClient {
         `Для этого сообщения машина не выбрана. Не выполняй shell-команды и не запускай команды никаким способом.\n\n${prompt}`
     }
 
-    if (req.remote) {
-      // Проброс на агента через MCP-инструмент. bypass — иначе codex в exec-режиме
-      // отменяет вызовы инструментов («user cancelled»); использовать именно remote
-      // (а не локальный shell) codex обязывает инструкция в промпте ниже.
+    if (req.remote && req.permissionMode !== 'plan') {
+      // В режиме разработки пробрасываем команды на агента через MCP. Для remote
+      // нужен bypass: иначе codex exec отменяет вызовы инструментов как user cancelled.
       args.push(
         '-c',
         `mcp_servers.remote.url="${req.remote.mcpUrl}"`,
@@ -84,7 +83,14 @@ export class CodexCli implements LlmClient {
         (req.remote.policySummary ? `\n${req.remote.policySummary}` : '') +
         `\n\n${prompt}`
     } else {
+      // План — жёстко read-only. Особенно важно не подключать remote MCP: его bash
+      // выполняется вне локального sandbox и раньше позволял Codex менять файлы.
       args.push(...sandboxArgs(req.permissionMode))
+      if (req.remote && req.permissionMode === 'plan') {
+        prompt =
+          `Режим «План»: только исследуй и составляй план. Не изменяй файлы и не выполняй ` +
+          `команды на машине пользователя. Удалённые инструменты намеренно недоступны.\n\n${prompt}`
+      }
     }
 
     // Prompt всегда читается из stdin (`-`), а не передаётся argv: полный контекст
