@@ -3231,3 +3231,71 @@
 .kbdoc { overflow:auto; padding:20px 26px 50px; }.kbdoc header { border-bottom:1px solid var(--line); margin-bottom:18px; }.kbdoc header h3 { margin:0 0 5px; }.kbdoc header p,.kbempty,.kbwelcome { color:var(--muted); }
 .kbfiles { display:flex; flex-direction:column; gap:6px; margin-top:24px; padding:14px; border:1px solid var(--line); border-radius:10px; }.kbfiles code { overflow-wrap:anywhere; }.kberror { color:var(--danger,#c44); }
 @media (max-width: 760px) { .kbtool { width:100vw; height:100vh; }.kbbar { align-items:stretch; flex-direction:column; }.kbstatus { white-space:normal; }.kblayout { grid-template-columns:1fr; overflow:auto; }.kbfilters { display:flex; gap:4px; border-right:0; border-bottom:1px solid var(--line); overflow:auto; }.kbfilters button { width:auto; white-space:nowrap; }.kbresults { border-right:0; border-bottom:1px solid var(--line); max-height:38vh; }.kbdoc { min-height:45vh; padding:18px; } }
+
+/* ---- Сворачивание сайдбара + компактный футер ---- */
+/* Шапка сайдбара: «+ Новый» + кнопка сворачивания рядом. */
+.sidehead-actions { display: flex; align-items: center; gap: 6px; }
+.side-collapse {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 6px;
+  font-family: inherit;
+}
+.side-collapse:hover { background: #e9e7e0; }
+
+/* Инструменты — ряд иконок вместо столбца кнопок. */
+.foottools { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.footico-btn {
+  flex: 1 1 auto;
+  min-width: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  color: #55534a;
+  font-family: inherit;
+}
+.footico-btn:hover { background: #e9e7e0; }
+
+/* Меню аккаунта. */
+.acct { position: relative; }
+.acct-toggle { width: 100%; }
+.acct-caret { margin-left: auto; color: var(--text-dim); }
+.acct-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.18);
+  z-index: 40;
+}
+
+[data-theme='dark'] .side-collapse:hover,
+[data-theme='dark'] .footico-btn:hover { background: #262620; }
+[data-theme='dark'] .footico-btn { color: var(--text-dim); }
+
+/* Свёрнутый сайдбар — только десктоп; на мобильном действует выдвижной drawer. */
+@media (min-width: 769px) {
+  .app--sidebar-collapsed { grid-template-columns: 0 1fr; }
+  .app--sidebar-collapsed.app--console { grid-template-columns: 0 1fr auto; }
+  .app--sidebar-collapsed .side { transform: translateX(-100%); overflow: hidden; }
+  .app--sidebar-collapsed .burger { display: inline-flex; }
+}

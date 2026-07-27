@@ -13,9 +13,6 @@ import { CODEX_MODELS, modelsForRole, normalizeClaudeModel, PERMISSION_MODES } f
 import type { PermissionMode, LlmProvider, UserRole } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
-import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
-import { AgentCard } from './AgentCard'
-import { AgentCommands } from './AgentCommands'
 
 export interface MicOption {
   deviceId: string
@@ -59,24 +56,12 @@ export interface SettingsModalProps {
   mcpServers: McpServer[]
   /** Статус входа claude/codex (read-only показ); null — ещё не загружен. */
   loginStatus?: LoginStatusMap | null
-  /** Машины-агенты для удалённого выполнения команд. */
-  agents: AgentInfo[]
-  /** Создать машину; возвращает данные с одноразовым токеном (null при ошибке). */
-  onCreateAgent: (name: string) => Promise<AgentCreated | null>
-  /** Удалить машину (отзыв токена). */
-  onDeleteAgent: (id: string) => void
-  /** Сохранить политику возможностей машины. */
-  onSetAgentPolicy: (id: string, policy: AgentPolicy) => void
-  /** Перевыпустить токен машины → новая строка подключения. */
-  onRegenerateAgentToken: (id: string) => Promise<string | null>
   /** Скачать десктоп-приложение (Mac, .dmg). */
   onDownloadDesktopApp: () => void
   /** Скачать трей-приложение агента (Mac, .dmg). */
   onDownloadAgentApp: () => void
   /** Скачать скрипт агента (Node, .cjs). */
   onDownloadAgentScript: () => void
-  /** Получить строку подключения для настройки агента (для копирования). */
-  onGetConnectionString: (token: string) => Promise<string | null>
   onChange: (patch: Partial<Settings>) => void
   onDownloadVoice: (id: string) => void
   /** Удалить установленный голос Piper. */
@@ -99,15 +84,9 @@ export function SettingsModal({
   capabilities,
   mcpServers,
   loginStatus,
-  agents,
-  onCreateAgent,
-  onDeleteAgent,
-  onSetAgentPolicy,
-  onRegenerateAgentToken,
   onDownloadDesktopApp,
   onDownloadAgentApp,
   onDownloadAgentScript,
-  onGetConnectionString,
   onChange,
   onDownloadVoice,
   onDeleteVoice,
@@ -119,18 +98,6 @@ export function SettingsModal({
   const sttBlocked = capabilities != null && !capabilities.stt.available
   const ttsBlocked = capabilities != null && !capabilities.tts.available
   const [section, setSection] = useState<SettingsSection>('agent')
-  // Добавление машины: поле имени и одноразовый показ токена после создания.
-  const [agentName, setAgentName] = useState('')
-  const [createdAgent, setCreatedAgent] = useState<AgentCreated | null>(null)
-  const addAgent = async (): Promise<void> => {
-    const name = agentName.trim()
-    if (!name) return
-    const created = await onCreateAgent(name)
-    if (created) {
-      setCreatedAgent(created)
-      setAgentName('')
-    }
-  }
 
   return (
     <PopupFrame title="Настройки" onClose={onClose} testId="overlay" panelClassName="modal settings">
@@ -277,46 +244,6 @@ export function SettingsModal({
                   />
                 </div>
 
-                <div className="voicedl" data-testid="agent-list">
-                  <p className="flab">Машины</p>
-                  {agents.map((a) => (
-                    <AgentCard
-                      key={a.id}
-                      agent={a}
-                      onSetPolicy={onSetAgentPolicy}
-                      onDelete={onDeleteAgent}
-                      onRegenerateToken={onRegenerateAgentToken}
-                    />
-                  ))}
-                  <div className="vrow2">
-                    <input
-                      className="sel"
-                      type="text"
-                      aria-label="Имя новой машины"
-                      placeholder="Имя машины (напр. MacBook)"
-                      value={agentName}
-                      onChange={(e) => setAgentName(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && void addAgent()}
-                    />
-                    <button
-                      className="vdl"
-                      aria-label="Добавить машину"
-                      disabled={!agentName.trim()}
-                      onClick={() => void addAgent()}
-                    >
-                      Добавить
-                    </button>
-                  </div>
-                  {createdAgent && (
-                    <AgentCommands
-                      name={createdAgent.name}
-                      token={createdAgent.token}
-                      onGetConnectionString={onGetConnectionString}
-                      onHide={() => setCreatedAgent(null)}
-                    />
-                  )}
-                </div>
-
                 {mcpServers.length > 0 && (
                   <div className="voicedl" data-testid="mcp-list">
                     <p className="flab">MCP-серверы</p>
@@ -373,7 +300,7 @@ export function SettingsModal({
                     <p className="flab">Агент — Android (Termux)</p>
                     <p className="fsub">
                       Установите <a href="https://f-droid.org/packages/com.termux/" target="_blank" rel="noreferrer">Termux</a> (лучше с F-Droid),
-                      создайте машину в разделе «Агент» и вставьте её команду
+                      создайте машину в меню «Машины» и вставьте её команду
                       <code> «📱 Команда для Termux»</code> в Termux — она поставит Node.js,
                       скачает агента и настроит автозапуск.
                     </p>
@@ -384,7 +311,7 @@ export function SettingsModal({
                   <div>
                     <p className="flab">Агент — Windows (PowerShell)</p>
                     <p className="fsub">
-                      Создайте машину в разделе «Агент» и вставьте её команду
+                      Создайте машину в меню «Машины» и вставьте её команду
                       <code> «🪟 Команда для Windows»</code> в PowerShell — она поставит
                       Node.js 22+ (портативно, без прав администратора), скачает агента
                       и настроит автозапуск при входе.
@@ -393,7 +320,7 @@ export function SettingsModal({
                 </div>
 
                 <p className="fsub">
-                  Чтобы подключить агента: создайте машину в разделе «Агент», скопируйте строку
+                  Чтобы подключить агента: создайте машину в меню «Машины», скопируйте строку
                   подключения и вставьте её при первом запуске приложения (или передайте скрипту).
                 </p>
               </>
