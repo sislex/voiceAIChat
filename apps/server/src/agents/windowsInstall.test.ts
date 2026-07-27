@@ -19,6 +19,13 @@ describe('buildWindowsInstallScript', () => {
     expect(s).toContain('https://nodejs.org/dist/index.json')
     expect(s).toContain('node-$Ver-win-$Arch.zip')
   })
+  it('ставит и проверяет нативный ConPTY рядом с агентом', () => {
+    const s = buildWindowsInstallScript('http://h')
+    expect(s).toContain("install --prefix $AgentDir")
+    expect(s).toContain('@lydell/node-pty@1.1.0')
+    expect(s).toContain('node_modules/@lydell/node-pty')
+  })
+
   it('настраивает автозапуск через HKCU Run и скрытый запуск wscript', () => {
     const s = buildWindowsInstallScript('http://h')
     expect(s).toContain('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run')

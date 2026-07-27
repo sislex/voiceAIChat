@@ -18,6 +18,17 @@ describe('buildUnixInstallScript', () => {
     expect(mac).toContain('node-$NVER-darwin-$NARCH.tar.gz')
   })
 
+  it('ставит и проверяет нативный PTY рядом с агентом до перезапуска', () => {
+    for (const s of [linux, mac]) {
+      const install = s.indexOf('$NPM_BIN" install --prefix "$AGENT_DIR"')
+      const verify = s.indexOf("require('$AGENT_DIR/node_modules/@lydell/node-pty')")
+      const restart = s.indexOf('[7/7]')
+      expect(install).toBeGreaterThan(0)
+      expect(verify).toBeGreaterThan(install)
+      expect(verify).toBeLessThan(restart)
+    }
+  })
+
   it('перезапуск — ПОСЛЕДНИЙ шаг: файлы подменяются раньше, чем гибнет агент', () => {
     // Установщик запускает сам агент (кнопка «обновить»), и его смерть уносит нас:
     // на systemd — вместе со всем cgroup сервиса. Значит вся работа должна быть
@@ -25,7 +36,7 @@ describe('buildUnixInstallScript', () => {
     for (const s of [linux, mac]) {
       const swap = s.indexOf('voicechat-agent.new.cjs" "$AGENT_DIR/voicechat-agent.cjs"')
       const runSh = s.indexOf('cat > "$AGENT_DIR/run.sh"')
-      const restart = s.indexOf('[6/6]')
+      const restart = s.indexOf('[7/7]')
       expect(swap).toBeGreaterThan(0)
       expect(swap).toBeLessThan(restart)
       expect(runSh).toBeLessThan(restart)
