@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { Sidebar } from './Sidebar'
 import type { Conversation } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
 
 function conv(id: string, title: string): Conversation {
-  return { id, title, updatedAt: 1, messageCount: 2, execTarget: null, lastExecTarget: id === 'c1' ? 'm1' : 'none' } as Conversation
+  return { id, title, updatedAt: 1, messageCount: 2, execTarget: null, lastExecTarget: id === 'c1' ? 'm1' : 'none', status: id === 'c1' ? 'developing' : 'planned', permissionMode: id === 'c1' ? 'plan' : 'default' } as Conversation
 }
 
 function setup(overrides: Record<string, unknown> = {}) {
@@ -29,20 +29,31 @@ function setup(overrides: Record<string, unknown> = {}) {
 }
 
 describe('Sidebar — статус работы чата', () => {
-  it('чат с активным ходом → «идёт работа», остальные → «не ведётся»', () => {
-    setup({ workingIds: ['c1'] })
-    expect(screen.getAllByText(/идёт работа|не ведётся/)).toHaveLength(2)
-    expect(screen.getByText('идёт работа')).toBeInTheDocument()
-    expect(screen.getByText('не ведётся')).toBeInTheDocument()
+  it('в простое показывает persistent-статусы в выпадающих списках', () => {
+    setup({ workingIds: [] })
+    const statuses = screen.getAllByRole('combobox') as HTMLSelectElement[]
+    expect(statuses.map((select) => select.value)).toEqual(['developing', 'planned'])
+    expect(screen.queryByText('планирую')).not.toBeInTheDocument()
   })
 
-  it('без активных ходов → у всех «не ведётся»', () => {
-    setup({ workingIds: [] })
-    expect(screen.getAllByText('не ведётся')).toHaveLength(2)
-    expect(screen.queryByText('идёт работа')).not.toBeInTheDocument()
+  it('во время хода пульсирует режимом: «планирую» или «разрабатываю»', () => {
+    setup({ workingIds: ['c1', 'c2'] })
+    expect(screen.getByText('планирую')).toBeInTheDocument()
+    expect(screen.getByText('разрабатываю')).toBeInTheDocument()
+    expect(document.querySelectorAll('.cstatus.on')).toHaveLength(2)
+  })
+
+  it('передаёт ручную смену статуса и не открывает чат', () => {
+    const onStatusChange = vi.fn()
+    const onPick = vi.fn()
+    setup({ workingIds: [], onStatusChange, onPick })
+    fireEvent.change(screen.getByLabelText('Статус разговора «Чат 1»'), {
+      target: { value: 'development_done' }
+    })
+    expect(onStatusChange).toHaveBeenCalledWith('c1', 'development_done')
+    expect(onPick).not.toHaveBeenCalled()
   })
 })
-
 
 
 describe('Sidebar — машина последнего сообщения', () => {
@@ -60,6 +71,7 @@ describe('Sidebar — машина последнего сообщения', () 
 
     expect(screen.getByText('Последнее: MacBook')).toBeInTheDocument()
     expect(screen.getByText('Последнее: Без машины')).toBeInTheDocument()
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/машин/i)).not.toBeInTheDocument()
+    expect(screen.getAllByLabelText(/Статус разговора/)).toHaveLength(2)
   })
 })
