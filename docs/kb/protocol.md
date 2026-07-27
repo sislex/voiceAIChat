@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-07-26
-checked: 7e8a605
+updated: 2026-07-27
+checked: 59635ab
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -91,6 +91,13 @@ SIGTERM) `flushInterrupted` сохраняет частичный текст а�
 настроек разговора; рядом с названием чата шапка показывает машину разговора. Мост
 `conversations:setExecTarget` сохраняет поля одним `PATCH /api/conversations/:id`.
 При отправке `claude.send.execTarget` получает цель активного разговора.
+
+Статус жизненного цикла разговора хранится в `Conversation.status` и меняется
+через мост `conversations:setStatus` → `POST /api/conversations/:id/status`.
+Допустимые значения задаёт общий список `CONVERSATION_STATUSES`: `planned`,
+`developing`, `planning_done`, `development_done`, `done`. После успешного хода UI
+автоматически ставит `planning_done` для фактического режима `plan` и
+`development_done` для режима разработки; ошибка или отмена статус не меняют.
 
 `Message.execTarget` — неизменяемый снимок фактической цели конкретного вопроса
 или ответа. UI показывает его текстовой подписью и не даёт редактировать.

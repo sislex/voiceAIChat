@@ -4,6 +4,7 @@
 import type {
   ClaudeLogEntry,
   Conversation,
+  ConversationStatus,
   LlmProvider,
   KbContextMode,
   Message,
@@ -87,6 +88,8 @@ export interface IpcInvokeMap {
   'conversations:rename': { arg: { id: string; title: string }; result: void }
   /** Привязать/отвязать чат к проекту; сервер применяет настройки проекта. */
   'conversations:setProject': { arg: { id: string; projectId: string | null }; result: Conversation }
+  /** Сменить статус жизненного цикла чата. */
+  'conversations:setStatus': { arg: { id: string; status: ConversationStatus }; result: Conversation }
   'conversations:setExecTarget': {
     arg: {
       id: string
@@ -566,6 +569,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:search',
   'conversations:rename',
   'conversations:setProject',
+  'conversations:setStatus',
   'conversations:setExecTarget',
   'conversations:delete',
   'messages:add',

@@ -111,6 +111,25 @@
   margin: 3px 0 0 0;
   color: var(--text-dim);
 }
+.cstatus-select {
+  display: block;
+  max-width: 100%;
+  margin-top: 3px;
+  padding: 1px 20px 1px 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.cstatus-select:hover,
+.cstatus-select:focus {
+  outline: none;
+  background: #e9e7e0;
+  color: var(--text);
+}
 .cstatus-dot {
   width: 7px;
   height: 7px;
@@ -122,7 +141,26 @@
   color: #2e8b57;
   font-weight: 700;
 }
-.cstatus.on .cstatus-dot {
+.cstatus.on .cstatus-select {
+  display: block;
+  max-width: 100%;
+  margin-top: 3px;
+  padding: 1px 20px 1px 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.cstatus-select:hover,
+.cstatus-select:focus {
+  outline: none;
+  background: #e9e7e0;
+  color: var(--text);
+}
+.cstatus-dot {
   background: #37b26b;
   animation: pulse 1.2s ease-in-out infinite;
 }
@@ -161,6 +199,24 @@
 .cinfo {
   min-width: 0;
   flex: 1;
+}
+.sideproject {
+  padding: 0 14px 10px 14px;
+}
+.projectselect {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+.projectselect:focus {
+  outline: none;
+  border-color: #b9b6a8;
 }
 .sidesearch {
   padding: 0 14px 10px 14px;
@@ -2099,6 +2155,7 @@
 }
 [data-theme='dark'] .newbtn:hover,
 [data-theme='dark'] .searchinput:focus,
+[data-theme='dark'] .projectselect:focus,
 [data-theme='dark'] .exportbtn:hover,
 [data-theme='dark'] .ctitle-edit,
 [data-theme='dark'] .mtitle-edit {
@@ -3288,6 +3345,8 @@
   z-index: 40;
 }
 
+[data-theme='dark'] .cstatus-select:hover,
+[data-theme='dark'] .cstatus-select:focus,
 [data-theme='dark'] .side-collapse:hover,
 [data-theme='dark'] .footico-btn:hover { background: #262620; }
 [data-theme='dark'] .footico-btn { color: var(--text-dim); }

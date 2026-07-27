@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Conversation, SessionUser } from '@shared/types'
+import {
+  activeStatusLabel,
+  CONVERSATION_STATUSES,
+  DEFAULT_CONVERSATION_STATUS,
+  type Conversation,
+  type ConversationStatus,
+  type SessionUser
+} from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
+import type { ProjectSummary } from '@shared/projects'
 import { ACCENT } from '../lib/view'
 import { GearIcon } from './icons'
 
@@ -42,10 +50,18 @@ export interface SidebarProps {
   onPick: (id: string) => void
   onDelete: (id: string) => void
   onRename: (id: string, title: string) => void
+  /** Сменить persistent-статус жизненного цикла чата. */
+  onStatusChange?: (id: string, status: ConversationStatus) => void
   /** Живой список нужен только для имени машины последнего сообщения. */
   agents?: AgentInfo[]
   searchQuery: string
   onSearch: (query: string) => void
+  /** Проекты пользователя для селекта над поиском. */
+  projects?: ProjectSummary[]
+  /** Выбранный в сайдбаре проект (null — «Без проекта»). */
+  selectedProjectId?: string | null
+  /** Сменить выбранный проект (фильтрует список/поиск, влияет на «Новый»). */
+  onSelectProject?: (id: string | null) => void
   onOpenObserver: () => void
   onOpenCodexObserver: () => void
   onOpenKnowledgeBase?: () => void
@@ -66,7 +82,7 @@ export interface SidebarProps {
   onLogout?: () => void
   /** Мобильный режим: сайдбар выдвинут поверх контента. */
   open?: boolean
-  /** Свернуть сайдбар на десктопе. */
+  /** Свернуть сайдбар на десктопе (шеврон в шапке); undefined — кнопку не показываем. */
   onToggleCollapse?: () => void
 }
 
@@ -79,9 +95,13 @@ export function Sidebar({
   onPick,
   onDelete,
   onRename,
+  onStatusChange,
   agents = [],
   searchQuery,
   onSearch,
+  projects = [],
+  selectedProjectId = null,
+  onSelectProject,
   onOpenObserver,
   onOpenCodexObserver,
   onOpenKnowledgeBase,
@@ -101,10 +121,12 @@ export function Sidebar({
   // id разговора в режиме переименования + черновик названия.
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
+  // Открыто ли меню аккаунта (Машины/Пользователи/Настройки/Выйти).
   const [acctOpen, setAcctOpen] = useState(false)
   const acctRef = useRef<HTMLDivElement | null>(null)
   const workingSet = new Set(workingIds)
 
+  // Меню аккаунта закрывается по клику вне и по Esc.
   useEffect(() => {
     if (!acctOpen) return
     const onDoc = (e: MouseEvent): void => {
@@ -135,6 +157,7 @@ export function Sidebar({
     setRenameDraft('')
   }
 
+  // Пункт меню аккаунта: закрыть меню и выполнить действие.
   const acct = (fn: () => void) => (): void => {
     setAcctOpen(false)
     fn()
@@ -163,6 +186,23 @@ export function Sidebar({
           )}
         </div>
       </div>
+      {projects.length > 0 && (
+        <div className="sideproject">
+          <select
+            className="projectselect"
+            aria-label="Проект"
+            value={selectedProjectId ?? ''}
+            onChange={(e) => onSelectProject?.(e.target.value || null)}
+          >
+            <option value="">Без проекта</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="sidesearch">
         <input
           className="searchinput"
@@ -220,10 +260,27 @@ export function Sidebar({
                     Последнее: {c.lastExecTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === c.lastExecTarget)?.name ?? 'Сервер'}
                   </p>
                 )}
-                <p className={workingSet.has(c.id) ? 'cstatus on' : 'cstatus'}>
-                  <span className="cstatus-dot" aria-hidden />
-                  {workingSet.has(c.id) ? 'идёт работа' : 'не ведётся'}
-                </p>
+                {workingSet.has(c.id) ? (
+                  <p className="cstatus on">
+                    <span className="cstatus-dot" aria-hidden />
+                    {activeStatusLabel(c.permissionMode)}
+                  </p>
+                ) : (
+                  <select
+                    className="cstatus-select"
+                    aria-label={`Статус разговора «${c.title}»`}
+                    value={c.status ?? DEFAULT_CONVERSATION_STATUS}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      e.stopPropagation()
+                      onStatusChange?.(c.id, e.target.value as ConversationStatus)
+                    }}
+                  >
+                    {CONVERSATION_STATUSES.map((status) => (
+                      <option key={status.id} value={status.id}>{status.label}</option>
+                    ))}
+                  </select>
+                )}
               </div>
               {confirmingId !== c.id && renamingId !== c.id && (
                 <span className="crow-actions">
