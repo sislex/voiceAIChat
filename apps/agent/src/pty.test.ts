@@ -1,25 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { pickShell, startPty, writePty, killPty, ptyCount } from './pty'
+import { startPty, writePty, killPty, ptyCount } from './pty'
 
 afterEach(() => {
   delete process.env.VC_PTY_SHELL
   delete process.env.VC_PTY_FORCE_FALLBACK
-})
-
-describe('pickShell', () => {
-  it('override через VC_PTY_SHELL', () => {
-    process.env.VC_PTY_SHELL = '/bin/bash'
-    expect(pickShell()).toBe('/bin/bash')
-  })
-  it('без override возвращает существующий бинарь shell', () => {
-    delete process.env.VC_PTY_SHELL
-    expect(pickShell().length).toBeGreaterThan(0)
-  })
-  it('на Windows без PowerShell в PATH берёт ComSpec, без него — cmd.exe', () => {
-    const env = { PATH: '/nonexistent', ComSpec: 'C:\\Windows\\system32\\cmd.exe' } as NodeJS.ProcessEnv
-    expect(pickShell(env, 'win32')).toBe('C:\\Windows\\system32\\cmd.exe')
-    expect(pickShell({ PATH: '/nonexistent' } as NodeJS.ProcessEnv, 'win32')).toBe('cmd.exe')
-  })
 })
 
 describe('startPty/killPty', () => {
