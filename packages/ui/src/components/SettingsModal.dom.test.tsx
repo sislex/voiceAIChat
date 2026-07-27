@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { SettingsModal, type SettingsModalProps } from './SettingsModal'
 import { DEFAULT_SETTINGS, type UserRole } from '@shared/types'
 
@@ -53,5 +54,28 @@ describe('SettingsModal — машины вынесены отдельно', () 
     renderModal('admin')
     expect(screen.queryByTestId('agent-list')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Имя новой машины')).not.toBeInTheDocument()
+  })
+})
+
+
+describe('SettingsModal — глобальная блокировка голосового ввода', () => {
+  it('отключает настройки распознавания и микрофона', async () => {
+    renderModal('admin', { voiceInputEnabled: false })
+    await userEvent.click(screen.getByRole('button', { name: 'Распознавание' }))
+
+    expect(screen.getByTestId('stt-blocked')).toHaveTextContent(
+      'Голосовой ввод временно недоступен для всех пользователей'
+    )
+    expect(screen.getByLabelText('Модель распознавания')).toBeDisabled()
+    expect(screen.getByLabelText('Диаризация спикеров')).toBeDisabled()
+    expect(screen.getByLabelText('Микрофон')).toBeDisabled()
+  })
+
+  it('отключает hands-free и перебивание голосом', async () => {
+    renderModal('admin', { voiceInputEnabled: false })
+    await userEvent.click(screen.getByRole('button', { name: 'Голосовой диалог' }))
+
+    expect(screen.getByLabelText('Режим hands-free')).toBeDisabled()
+    expect(screen.getByLabelText('Перебивание голосом')).toBeDisabled()
   })
 })

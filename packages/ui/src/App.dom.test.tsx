@@ -87,21 +87,14 @@ describe('App — интеграция UI со стором и IPC', () => {
     ).toBeInTheDocument()
   })
 
-  it('клик по микрофону → запись: live-блок и бейдж «● Запись»', async () => {
+  it('блокирует голосовой ввод для всех пользователей', async () => {
     await renderApp()
-    await userEvent.click(screen.getByLabelText('Говорить'))
-    expect(screen.getByText('● Запись')).toBeInTheDocument()
-    expect(screen.getByTestId('live-block')).toBeInTheDocument()
-    expect(screen.getByText('РАСПОЗНАВАНИЕ · ЛОКАЛЬНО (WHISPER)')).toBeInTheDocument()
-  })
-
-  it('запись → стоп → распознавание с индикатором (think-блок)', async () => {
-    await renderApp()
-    await userEvent.click(screen.getByLabelText('Говорить'))
-    await userEvent.click(screen.getByLabelText('Остановить запись'))
-    // transcribing показывает think-блок и бейдж «Распознавание».
-    expect(screen.getByText('Распознавание')).toBeInTheDocument()
-    expect(screen.getByTestId('think')).toBeInTheDocument()
+    const mic = screen.getByLabelText('Говорить')
+    expect(mic).toBeDisabled()
+    expect(mic).toHaveAttribute('title', 'Голосовой ввод временно недоступен')
+    await userEvent.click(mic)
+    expect(screen.getByText('Готов')).toBeInTheDocument()
+    expect(screen.queryByTestId('live-block')).not.toBeInTheDocument()
   })
 
   it('отправка текста Enter создаёт сообщение и переводит в «Claude думает»', async () => {
@@ -189,14 +182,14 @@ describe('App — интеграция UI со стором и IPC', () => {
     expect(document.querySelector('.app')?.getAttribute('data-theme')).toBe('dark')
   })
 
-  it('тумблер диаризации переключает aria-checked и сохраняется в api', async () => {
+  it('настройки голосового ввода неактивны', async () => {
     const api = await renderApp()
     await openSettings('Распознавание')
     const sw = screen.getByRole('switch', { name: 'Диаризация спикеров' })
-    expect(sw).toHaveAttribute('aria-checked', 'true')
+    expect(sw).toBeDisabled()
     await userEvent.click(sw)
-    expect(sw).toHaveAttribute('aria-checked', 'false')
-    expect(api._state.settings.diarization).toBe(false)
+    expect(sw).toHaveAttribute('aria-checked', 'true')
+    expect(api._state.settings.diarization).toBe(true)
   })
 
   it('тумблер «Режим консоли» включает панель консоли и сохраняется', async () => {
@@ -254,12 +247,11 @@ describe('App — интеграция UI со стором и IPC', () => {
     await openSettings() // «Агент» — модель здесь
     await userEvent.selectOptions(screen.getByLabelText('Модель Claude'), 'sonnet')
     await userEvent.click(screen.getByRole('button', { name: 'Распознавание' }))
-    await userEvent.click(screen.getByRole('switch', { name: 'Диаризация спикеров' }))
     await userEvent.click(screen.getByRole('button', { name: 'Озвучка' }))
     // Голос выбирается по реальному названию из активного движка (см. fakeApi).
     await userEvent.selectOptions(screen.getByLabelText('Голос озвучки'), 'ru_RU-dmitri-medium')
     expect(api._state.settings).toMatchObject({
-      diarization: false,
+      diarization: true,
       model: 'sonnet',
       voice: 'ru_RU-dmitri-medium'
     })
@@ -273,7 +265,7 @@ describe('App — интеграция UI со стором и IPC', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Распознавание' }))
     expect(screen.getByRole('switch', { name: 'Диаризация спикеров' })).toHaveAttribute(
       'aria-checked',
-      'false'
+      'true'
     )
     await userEvent.click(screen.getByRole('button', { name: 'Озвучка' }))
     expect(screen.getByLabelText<HTMLSelectElement>('Голос озвучки').value).toBe('ru_RU-dmitri-medium')

@@ -36,6 +36,8 @@ export interface VoiceBarProps {
   permissionMode?: PermissionMode
   /** Быстро переключить планирование/разработку для всего разговора. */
   onChangePermissionMode?: (mode: PermissionMode) => void
+  /** Глобальная доступность голосового ввода. */
+  voiceInputEnabled?: boolean
 }
 
 export function VoiceBar({
@@ -55,7 +57,8 @@ export function VoiceBar({
   aiLabel = 'Claude',
   replyStarted = false,
   permissionMode = 'plan',
-  onChangePermissionMode
+  onChangePermissionMode,
+  voiceInputEnabled = true
 }: VoiceBarProps): JSX.Element {
   const isIdle = state === 'idle'
   const isListening = state === 'listening'
@@ -180,9 +183,10 @@ export function VoiceBar({
                 ) : (
                   <button
                     className="micbtn"
-                    style={{ background: ACCENT }}
+                    style={{ background: voiceInputEnabled ? ACCENT : undefined }}
                     onClick={onStartVoice}
-                    title="Говорить"
+                    disabled={!voiceInputEnabled}
+                    title={voiceInputEnabled ? 'Говорить' : 'Голосовой ввод временно недоступен'}
                     aria-label="Говорить"
                   >
                     <MicIcon />
@@ -269,7 +273,9 @@ export function VoiceBar({
               </button>
             </div>
           )}
-          <p className="vstatus">{statusLine(state, aiLabel)}</p>
+          <p className="vstatus">
+            {voiceInputEnabled ? statusLine(state, aiLabel) : 'Голосовой ввод временно недоступен'}
+          </p>
         </div>
       </div>
     </div>

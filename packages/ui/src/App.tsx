@@ -4,6 +4,7 @@ import type { PermissionMode } from '@shared/types'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { VoiceBar } from './components/VoiceBar'
+import { VOICE_INPUT_ENABLED } from './lib/featureFlags'
 import { SettingsModal } from './components/SettingsModal'
 import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
@@ -245,6 +246,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
             onRemoveAttachment={actions.removeAttachment}
             permissionMode={activePermissionMode}
             onChangePermissionMode={(mode) => void changeConversationMode(mode)}
+            voiceInputEnabled={VOICE_INPUT_ENABLED}
           />
         }
       />
@@ -435,6 +437,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onDeleteVoice={actions.deleteVoice}
           onDeleteModel={actions.deleteModel}
           role={state.currentUser?.role ?? 'admin'}
+          voiceInputEnabled={VOICE_INPUT_ENABLED}
           onClose={actions.closeSettings}
         />
       )}

@@ -71,6 +71,8 @@ export interface SettingsModalProps {
   /** Роль текущего пользователя — ограничивает список моделей Claude. */
   role: UserRole
   onClose: () => void
+  /** Глобальная доступность голосового ввода. */
+  voiceInputEnabled?: boolean
 }
 
 export function SettingsModal({
@@ -92,10 +94,11 @@ export function SettingsModal({
   onDeleteVoice,
   onDeleteModel,
   role,
-  onClose
+  onClose,
+  voiceInputEnabled = true
 }: SettingsModalProps): JSX.Element {
   // Блокировка функций при нехватке ресурсов контейнера (null — ещё не загружено, не блокируем).
-  const sttBlocked = capabilities != null && !capabilities.stt.available
+  const sttBlocked = !voiceInputEnabled || (capabilities != null && !capabilities.stt.available)
   const ttsBlocked = capabilities != null && !capabilities.tts.available
   const [section, setSection] = useState<SettingsSection>('agent')
 
@@ -332,7 +335,11 @@ export function SettingsModal({
                   <div className="frow" data-testid="stt-blocked">
                     <div>
                       <p className="flab">Распознавание отключено</p>
-                      <p className="fsub">{capabilities?.stt.reason}</p>
+                      <p className="fsub">
+                        {voiceInputEnabled
+                          ? capabilities?.stt.reason
+                          : 'Голосовой ввод временно недоступен для всех пользователей'}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -367,6 +374,7 @@ export function SettingsModal({
                           <button
                             className="vdl vdel"
                             aria-label={`Удалить модель ${m.model}`}
+                            disabled={sttBlocked}
                             onClick={() => onDeleteModel(m.model)}
                           >
                             Удалить
@@ -508,6 +516,7 @@ export function SettingsModal({
                   <button
                     className={settings.handsFree ? 'sw on' : 'sw'}
                     onClick={() => onChange({ handsFree: !settings.handsFree })}
+                    disabled={!voiceInputEnabled}
                     role="switch"
                     aria-checked={settings.handsFree}
                     aria-label="Режим hands-free" title="Режим hands-free"
@@ -522,6 +531,7 @@ export function SettingsModal({
                   <button
                     className={settings.bargeIn ? 'sw on' : 'sw'}
                     onClick={() => onChange({ bargeIn: !settings.bargeIn })}
+                    disabled={!voiceInputEnabled}
                     role="switch"
                     aria-checked={settings.bargeIn}
                     aria-label="Перебивание голосом" title="Перебивание голосом"
