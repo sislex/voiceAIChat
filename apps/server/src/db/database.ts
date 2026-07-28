@@ -672,7 +672,17 @@ export class VoiceChatDb {
   }
 
   deleteConversation(userId: string, id: string): void {
-    // ON DELETE CASCADE удалит сообщения и спикеров.
+    const activeFeature = this.db.prepare(
+      `SELECT f.id FROM features f
+       JOIN conversations c ON c.id = f.conversation_id
+       WHERE c.id = ? AND c.user_id = ?
+         AND f.status NOT IN ('completed', 'cancelled', 'failed')
+       LIMIT 1`
+    ).get(id, userId) as { id: string } | undefined
+    if (activeFeature) {
+      throw new Error('Этот чат связан с активной Feature. Сначала завершите или отмените Feature')
+    }
+    // ON DELETE CASCADE удалит сообщения и спикеров; завершённая Feature сохранится с conversation_id=NULL.
     this.db.prepare(`DELETE FROM conversations WHERE id = ? AND user_id = ?`).run(id, userId)
   }
 

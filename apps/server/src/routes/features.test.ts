@@ -26,7 +26,7 @@ beforeEach(async () => {
   bob = signToken({ name: 'bob', role: 'user' }, SECRET)
 })
 afterEach(async () => { await app.close(); db.close() })
-const inj = (token: string, opts: { method: 'GET' | 'POST'; url: string; payload?: object }) => app.inject({ ...opts, headers: { authorization: `Bearer ${token}` } })
+const inj = (token: string, opts: { method: 'GET' | 'POST' | 'DELETE'; url: string; payload?: object }) => app.inject({ ...opts, headers: { authorization: `Bearer ${token}` } })
 
 function setupTask() {
   const project = db.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
@@ -54,5 +54,22 @@ describe('feature routes', () => {
     const { project, task } = setupTask()
     expect((await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/feature` })).statusCode).toBe(202)
     expect((await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/feature` })).statusCode).toBe(409)
+  })
+
+  it('запрещает удалять чат активной Feature и разрешает после отмены', async () => {
+    const { project, task } = setupTask()
+    const created = await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/feature` })
+    const feature = created.json()
+
+    const blocked = await inj(admin, { method: 'DELETE', url: `/api/conversations/${feature.conversationId}` })
+    expect(blocked.statusCode).toBe(409)
+    expect(blocked.json().error).toContain('активной Feature')
+    expect(db.getConversation('admin', feature.conversationId)).not.toBeNull()
+
+    db.transitionFeature('admin', feature.id, 'cancelled')
+    const removed = await inj(admin, { method: 'DELETE', url: `/api/conversations/${feature.conversationId}` })
+    expect(removed.statusCode).toBe(200)
+    expect(db.getConversation('admin', feature.conversationId)).toBeNull()
+    expect(db.getFeature('admin', feature.id)?.conversationId).toBeNull()
   })
 })
