@@ -6,12 +6,12 @@ import type { Board } from '@shared/projects'
 
 const board: Board = {
   columns: [
-    { id: 'c1', projectId: 'p1', name: 'To Do', position: 1024, hidden: false, createdAt: 1 },
-    { id: 'c2', projectId: 'p1', name: 'Done', position: 2048, hidden: false, createdAt: 1 }
+    { id: 'c1', projectId: 'p1', name: 'To Do', semanticType: 'backlog', position: 1024, hidden: false, createdAt: 1 },
+    { id: 'c2', projectId: 'p1', name: 'Done', semanticType: 'done', position: 2048, hidden: false, createdAt: 1 }
   ],
   tasks: [
-    { id: 't1', projectId: 'p1', columnId: 'c1', title: 'A', description: '', priority: 'medium', assignee: null, position: 1024, createdAt: 1, updatedAt: 1 },
-    { id: 't2', projectId: 'p1', columnId: 'c1', title: 'B', description: '', priority: 'high', assignee: null, position: 2048, createdAt: 1, updatedAt: 1 }
+    { id: 't1', projectId: 'p1', columnId: 'c1', type: 'task', parentId: null, acceptanceCriteria: '', title: 'A', description: '', priority: 'medium', assignee: null, position: 1024, createdAt: 1, updatedAt: 1 },
+    { id: 't2', projectId: 'p1', columnId: 'c1', type: 'task', parentId: null, acceptanceCriteria: '', title: 'B', description: '', priority: 'high', assignee: null, position: 2048, createdAt: 1, updatedAt: 1 }
   ]
 }
 
@@ -48,7 +48,7 @@ describe('ProjectBoard', () => {
     const p = renderBoard()
     const input = screen.getByLabelText('Новая задача в «To Do»')
     await userEvent.type(input, 'Новая{enter}')
-    expect(p.onCreateTask).toHaveBeenCalledWith('c1', { title: 'Новая' })
+    expect(p.onCreateTask).toHaveBeenCalledWith('c1', { title: 'Новая', type: 'task' })
   })
 
   it('добавление колонки зовёт onCreateColumn', async () => {
