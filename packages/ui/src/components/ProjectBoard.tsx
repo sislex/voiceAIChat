@@ -20,7 +20,7 @@ export interface ProjectBoardProps {
   onSetColumnHidden: (columnId: string, hidden: boolean) => void
   onReorderColumns: (order: string[]) => void
   onDeleteColumn: (columnId: string) => void
-  onCreateTask: (columnId: string, input: { title: string; type?: WorkItemType; priority?: TaskPriority }) => void
+  onCreateTask: (columnId: string, input: { title: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority }) => void
   onUpdateTask: (taskId: string, fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }) => void
   onMoveTask: (taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null) => void
   onDeleteTask: (taskId: string) => void
@@ -39,6 +39,7 @@ export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
   const [renameDraft, setRenameDraft] = useState('')
   const [newTask, setNewTask] = useState<Record<string, string>>({})
   const [newType, setNewType] = useState<Record<string, WorkItemType>>({})
+  const [newParent, setNewParent] = useState<Record<string, string>>({})
 
   const columns = (board?.columns ?? []).filter((c) => showHidden || !c.hidden)
   const tasksOf = (columnId: string) =>
@@ -53,9 +54,12 @@ export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
 
   const addTask = (columnId: string): void => {
     const title = (newTask[columnId] ?? '').trim()
-    if (!title) return
-    props.onCreateTask(columnId, { title, type: newType[columnId] ?? 'task' })
+    const type = newType[columnId] ?? 'task'
+    const parentId = newParent[columnId] || null
+    if (!title || (type === 'story' && !parentId)) return
+    props.onCreateTask(columnId, { title, type, ...(type === 'story' ? { parentId } : {}) })
     setNewTask((m) => ({ ...m, [columnId]: '' }))
+    setNewParent((m) => ({ ...m, [columnId]: '' }))
   }
 
   // Перенос колонки dragColumn перед target.
@@ -186,9 +190,30 @@ export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
         </div>
 
         <div className="kanban-add-task">
-          <select className="sel" aria-label={`Тип нового элемента в «${col.name}»`} value={newType[col.id] ?? 'task'} onChange={(e) => setNewType((m) => ({ ...m, [col.id]: e.target.value as WorkItemType }))}>
+          <select
+            className="sel"
+            aria-label={`Тип нового элемента в «${col.name}»`}
+            value={newType[col.id] ?? 'task'}
+            onChange={(e) => {
+              const type = e.target.value as WorkItemType
+              setNewType((m) => ({ ...m, [col.id]: type }))
+              if (type !== 'story') setNewParent((m) => ({ ...m, [col.id]: '' }))
+            }}
+          >
             <option value="epic">Эпик</option><option value="story">История</option><option value="task">Задача</option>
           </select>
+          {(newType[col.id] ?? 'task') === 'story' && (
+            <select
+              className="sel"
+              aria-label={`Родительский эпик для истории в «${col.name}»`}
+              value={newParent[col.id] ?? ''}
+              onChange={(e) => setNewParent((m) => ({ ...m, [col.id]: e.target.value }))}
+              required
+            >
+              <option value="">{(board?.tasks ?? []).some((t) => t.type === 'epic') ? 'Выберите эпик' : 'Сначала создайте эпик'}</option>
+              {(board?.tasks ?? []).filter((t) => t.type === 'epic').map((epic) => <option key={epic.id} value={epic.id}>{epic.title}</option>)}
+            </select>
+          )}
           <input
             className="login-input"
             placeholder="+ задача"

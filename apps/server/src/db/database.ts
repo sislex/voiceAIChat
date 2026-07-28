@@ -1700,7 +1700,15 @@ export class VoiceChatDb {
   failFeature(userId: string, featureId: string, error: string): FeatureRun | null {
     const feature = this.getFeature(userId, featureId)
     if (!feature || feature.status === 'completed' || feature.status === 'cancelled') return feature
-    this.db.prepare(`UPDATE features SET status = 'failed', last_error = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(error, this.now(), featureId)
+    const ts = this.now()
+    this.db.transaction(() => {
+      this.db.prepare(`UPDATE features SET status = 'failed', last_error = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(error, ts, featureId)
+      const ready = this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = 'ready' LIMIT 1`).get(feature.projectId) as { id: string } | undefined
+      if (ready) this.db.prepare(`UPDATE tasks SET column_id = ?, updated_at = ? WHERE id = ?`).run(ready.id, ts, feature.sourceTaskId)
+      this.syncWorkItemAncestors(feature.projectId, feature.sourceTaskId, ts)
+      this.db.prepare(`INSERT INTO feature_events (id, feature_id, type, actor_type, actor_id, payload, created_at) VALUES (?, ?, 'failed', 'system', NULL, ?, ?)`).run(this.newId(), featureId, JSON.stringify({ error }), ts)
+      this.touchProject(feature.projectId, ts)
+    })()
     return this.getFeature(userId, featureId)
   }
 

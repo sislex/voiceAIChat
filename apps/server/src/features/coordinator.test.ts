@@ -74,6 +74,16 @@ describe('FeatureCoordinator', () => {
     expect(deployments[0].status).toBe('succeeded')
   })
 
+  it('ошибка подготовки возвращает Task в ready и оставляет Feature для новой попытки', async () => {
+    const feature = setup()
+    vi.mocked(workspace.prepare).mockRejectedValueOnce(new Error('clone failed'))
+    await coordinator.prepare('alice', feature)
+    expect(db.getFeature('alice', feature.id)).toMatchObject({ status: 'failed', lastError: 'clone failed' })
+    const board = db.getBoard('alice', feature.projectId)!
+    const task = board.tasks.find((t) => t.id === feature.sourceTaskId)!
+    expect(board.columns.find((c) => c.id === task.columnId)?.semanticType).toBe('ready')
+  })
+
   it('отмена сохраняет workspace заблокированным и возвращает Task в ready', async () => {
     const feature = setup()
     await coordinator.prepare('alice', feature)

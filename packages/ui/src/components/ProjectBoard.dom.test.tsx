@@ -51,6 +51,28 @@ describe('ProjectBoard', () => {
     expect(p.onCreateTask).toHaveBeenCalledWith('c1', { title: 'Новая', type: 'task' })
   })
 
+  it('для Story требует выбрать родительский Epic и передаёт parentId', async () => {
+    const epic = { id: 'e1', projectId: 'p1', columnId: 'c1', type: 'epic' as const, parentId: null, acceptanceCriteria: '', title: 'Авторизация', description: '', priority: 'medium' as const, assignee: null, position: 3072, createdAt: 1, updatedAt: 1 }
+    const p = renderBoard({ board: { ...board, tasks: [...board.tasks, epic] } })
+    await userEvent.selectOptions(screen.getByLabelText('Тип нового элемента в «To Do»'), 'story')
+    const input = screen.getByLabelText('Новая задача в «To Do»')
+    await userEvent.type(input, 'OAuth{enter}')
+    expect(p.onCreateTask).not.toHaveBeenCalled()
+
+    await userEvent.selectOptions(screen.getByLabelText('Родительский эпик для истории в «To Do»'), 'e1')
+    await userEvent.type(input, '{enter}')
+    expect(p.onCreateTask).toHaveBeenCalledWith('c1', { title: 'OAuth', type: 'story', parentId: 'e1' })
+  })
+
+  it('после failed Feature показывает кнопку повторной попытки', async () => {
+    const p = renderBoard({
+      features: [{ id: 'f1', projectId: 'p1', sourceTaskId: 't1', attempt: 1, previousFeatureId: null, conversationId: 'chat1', repositorySlotId: null, title: 'A', description: '', status: 'failed', deployStatus: 'not_requested', baseBranch: 'main', featureBranch: 'feature/f1', baseCommitSha: null, testedCommitSha: null, mergedCommitSha: null, commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'automatic', autoMerge: false, autoDeployProduction: false, createdAt: 1, updatedAt: 2, completedAt: null, lastError: 'clone failed', version: 2 }],
+      onStartFeature: vi.fn()
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить фичу' }))
+    expect(p.onStartFeature).toHaveBeenCalledWith('t1', 'task')
+  })
+
   it('добавление колонки зовёт onCreateColumn', async () => {
     const p = renderBoard()
     await userEvent.type(screen.getByLabelText('Новая колонка'), 'Review')
