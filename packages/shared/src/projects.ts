@@ -89,6 +89,8 @@ export interface KanbanColumn {
   position: number
   /** Скрыта из основного вида доски (задачи сохраняют статус). */
   hidden: boolean
+  /** WIP-лимит (макс. карточек в колонке) или null — без лимита. */
+  wipLimit: number | null
   createdAt: number
 }
 
@@ -105,6 +107,16 @@ export interface Task {
   priority: TaskPriority
   /** Логин исполнителя (участник проекта) или null. */
   assignee: string | null
+  /** Метки (свободные строки), как labels в Jira. */
+  labels: string[]
+  /** Оценка в стори-поинтах или null. */
+  storyPoints: number | null
+  /** Срок (unix ms) или null. */
+  dueDate: number | null
+  /** Помечена флагом «внимание» (Jira flag). */
+  flagged: boolean
+  /** Порядковый номер задачи в проекте — основа ключа «PRJ-42». */
+  seq: number
   /** Дробный ранг для порядка внутри колонки. */
   position: number
   createdAt: number

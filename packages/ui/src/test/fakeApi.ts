@@ -332,7 +332,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         ['Бэклог', 'backlog'], ['Готово к разработке', 'ready'], ['В разработке', 'development'],
         ['Тестирование', 'testing'], ['Ожидает мержа', 'awaiting_merge'], ['Готово', 'done']
       ].forEach(([name, semanticType], i) =>
-        columns.push({ id: nextId(), projectId: id, name, semanticType: semanticType as KanbanColumn['semanticType'], position: (i + 1) * 1024, hidden: false, createdAt: ts })
+        columns.push({ id: nextId(), projectId: id, name, semanticType: semanticType as KanbanColumn['semanticType'], position: (i + 1) * 1024, hidden: false, wipLimit: null, createdAt: ts })
       )
       return detail(p)
     },
@@ -399,13 +399,15 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'columns:create': async ({ projectId, name }) => {
       const ts = tick()
       const max = Math.max(0, ...columns.filter((c) => c.projectId === projectId).map((c) => c.position))
-      const col: KanbanColumn = { id: nextId(), projectId, name, semanticType: 'custom', position: max + 1024, hidden: false, createdAt: ts }
+      const col: KanbanColumn = { id: nextId(), projectId, name, semanticType: 'custom', position: max + 1024, hidden: false, wipLimit: null, createdAt: ts }
       columns.push(col)
       return col
     },
-    'columns:rename': async ({ columnId, name }) => {
+    'columns:rename': async ({ columnId, name, wipLimit }) => {
       const c = columns.find((x) => x.id === columnId)
-      if (c) c.name = name
+      if (!c) return
+      if (name !== undefined) c.name = name
+      if (wipLimit !== undefined) c.wipLimit = wipLimit
     },
     'columns:setHidden': async ({ columnId, hidden }) => {
       const c = columns.find((x) => x.id === columnId)
@@ -436,6 +438,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         acceptanceCriteria: acceptanceCriteria ?? '',
         priority: priority ?? 'medium',
         assignee: assignee ?? null,
+        labels: [],
+        storyPoints: null,
+        dueDate: null,
+        flagged: false,
+        seq: tasks.length + 1,
         position: max + 1024,
         createdAt: ts,
         updatedAt: ts
@@ -452,6 +459,10 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (f.parentId !== undefined) t.parentId = f.parentId
       if (f.priority !== undefined) t.priority = f.priority
       if (f.assignee !== undefined) t.assignee = f.assignee
+      if (f.labels !== undefined) t.labels = f.labels
+      if (f.storyPoints !== undefined) t.storyPoints = f.storyPoints
+      if (f.dueDate !== undefined) t.dueDate = f.dueDate
+      if (f.flagged !== undefined) t.flagged = f.flagged
       t.updatedAt = tick()
       return { ...t }
     },

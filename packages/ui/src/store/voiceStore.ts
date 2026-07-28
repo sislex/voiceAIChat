@@ -229,6 +229,8 @@ export interface AppState {
   projectDetail: ProjectDetail | null
   /** id проекта с открытой доской (null — доска закрыта). */
   activeProjectId: string | null
+  /** Открыт ли оверлей настроек проекта поверх его доски. */
+  projectSettingsOpen: boolean
   /** Снапшот доски активного проекта (null — не загружена). */
   board: Board | null
   /** Идёт ли загрузка доски. */
@@ -562,11 +564,14 @@ export interface StoreActions {
   openBoard(id: string): Promise<void>
   /** Закрыть доску (отписка). */
   closeBoard(): void
+  /** Открыть/закрыть оверлей настроек проекта на его странице. */
+  openProjectSettings(): void
+  closeProjectSettings(): void
   /** Применить живой снапшот доски (из WS board.update). */
   applyBoardUpdate(projectId: string, board: Board): void
   /** Колонки активной доски. */
   createColumn(name: string): Promise<void>
-  renameColumn(columnId: string, name: string): Promise<void>
+  updateColumn(columnId: string, fields: { name?: string; wipLimit?: number | null }): Promise<void>
   setColumnHidden(columnId: string, hidden: boolean): Promise<void>
   reorderColumns(order: string[]): Promise<void>
   deleteColumn(columnId: string): Promise<void>
@@ -577,7 +582,7 @@ export interface StoreActions {
   ): Promise<void>
   updateTask(
     taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
   ): Promise<void>
   /** Переместить задачу (смена статуса = смена колонки); оптимистично. */
   moveTask(taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null): Promise<void>
@@ -668,6 +673,7 @@ function initialState(): AppState {
     sidebarProjectId: loadSidebarProject(),
     projectDetail: null,
     activeProjectId: null,
+    projectSettingsOpen: false,
     board: null,
     boardLoading: false,
     featureRuns: [],
@@ -2471,7 +2477,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ board: await api['board:get']({ id }) })
   }
   async function openBoard(id: string): Promise<void> {
-    setState({ activeProjectId: id, boardLoading: true, board: null })
+    setState({ activeProjectId: id, boardLoading: true, board: null, projectSettingsOpen: false })
     try {
       const [board, detail, featureRuns] = await Promise.all([api['board:get']({ id }), api['projects:get']({ id }), api['features:list']({ projectId: id })])
       setState({ board, projectDetail: detail, featureRuns, boardLoading: false })
@@ -2482,7 +2488,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   function closeBoard(): void {
     if (state.activeProjectId) boardBridge?.unsubscribe()
-    setState({ activeProjectId: null, board: null, boardLoading: false, featureRuns: [], activeFeature: null, agentTasks: [] })
+    setState({ activeProjectId: null, projectSettingsOpen: false, board: null, boardLoading: false, featureRuns: [], activeFeature: null, agentTasks: [] })
+  }
+  function openProjectSettings(): void {
+    setState({ projectSettingsOpen: true })
+  }
+  function closeProjectSettings(): void {
+    setState({ projectSettingsOpen: false })
   }
   function applyBoardUpdate(projectId: string, board: Board): void {
     if (projectId !== state.activeProjectId) return
@@ -2504,11 +2516,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ error: perr(err) })
     }
   }
-  async function renameColumn(columnId: string, name: string): Promise<void> {
+  async function updateColumn(columnId: string, fields: { name?: string; wipLimit?: number | null }): Promise<void> {
     const id = state.activeProjectId
     if (!id) return
     try {
-      await api['columns:rename']({ projectId: id, columnId, name })
+      await api['columns:rename']({ projectId: id, columnId, ...fields })
       await refreshBoard()
     } catch (err) {
       setState({ error: perr(err) })
@@ -2568,7 +2580,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   async function updateTask(
     taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
   ): Promise<void> {
     const id = state.activeProjectId
     if (!id) return
@@ -2806,9 +2818,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setConversationStatus,
       openBoard,
       closeBoard,
+      openProjectSettings,
+      closeProjectSettings,
       applyBoardUpdate,
       createColumn,
-      renameColumn,
+      updateColumn,
       setColumnHidden,
       reorderColumns,
       deleteColumn,

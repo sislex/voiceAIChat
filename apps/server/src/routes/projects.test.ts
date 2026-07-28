@@ -158,6 +158,61 @@ describe('projects REST: доска', () => {
   })
 })
 
+describe('projects REST: поля Jira-доски', () => {
+  it('метки, стори-поинты, срок, флаг и сквозной номер задачи', async () => {
+    const p = await createProject()
+    const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    const col = board.columns[0]
+
+    const a = (await inj(adminTok, {
+      method: 'POST',
+      url: `/api/projects/${p.id}/tasks`,
+      payload: { columnId: col.id, title: 'A', labels: ['ui', 'срочно'], storyPoints: 3, dueDate: 1_700_000_000_000 }
+    })).json() as Task
+    expect(a.seq).toBe(1)
+    expect(a.labels).toEqual(['ui', 'срочно'])
+    expect(a.storyPoints).toBe(3)
+    expect(a.dueDate).toBe(1_700_000_000_000)
+    expect(a.flagged).toBe(false)
+
+    const b = (await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: col.id, title: 'B' } })).json() as Task
+    expect(b.seq).toBe(2)
+
+    // Номера не переиспользуются после удаления — как ключи в Jira.
+    expect((await inj(adminTok, { method: 'DELETE', url: `/api/projects/${p.id}/tasks/${b.id}` })).statusCode).toBe(200)
+    const c = (await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: col.id, title: 'C' } })).json() as Task
+    expect(c.seq).toBe(3)
+
+    const upd = (await inj(adminTok, {
+      method: 'PATCH',
+      url: `/api/projects/${p.id}/tasks/${a.id}`,
+      payload: { flagged: true, labels: ['api'], storyPoints: null }
+    })).json() as Task
+    expect(upd.flagged).toBe(true)
+    expect(upd.labels).toEqual(['api'])
+    expect(upd.storyPoints).toBeNull()
+  })
+
+  it('WIP-лимит колонки задаётся, сбрасывается и не принимает мусор', async () => {
+    const p = await createProject()
+    const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    const col = board.columns[0]
+    expect(col.wipLimit).toBeNull()
+
+    expect((await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}/columns/${col.id}`, payload: { wipLimit: 5 } })).statusCode).toBe(200)
+    let after = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    expect(after.columns[0].wipLimit).toBe(5)
+
+    // Одновременно имя и лимит; нулевой лимит = снять.
+    expect((await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}/columns/${col.id}`, payload: { name: 'Очередь', wipLimit: 0 } })).statusCode).toBe(200)
+    after = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    expect(after.columns[0].name).toBe('Очередь')
+    expect(after.columns[0].wipLimit).toBeNull()
+
+    expect((await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}/columns/${col.id}`, payload: {} })).statusCode).toBe(400)
+  })
+})
+
 describe('projects REST: машины проекта (папка, дефолт) и привязка чата', () => {
   it('путь машины и дефолт — только владелец', async () => {
     const p = await createProject()
