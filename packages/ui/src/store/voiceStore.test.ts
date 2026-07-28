@@ -1534,3 +1534,79 @@ describe('voiceStore — админ-страница пользователей'
     expect(store.getState().adminUsers.map((u) => u.name)).toContain('bob')
   })
 })
+
+describe('voiceStore — помощник промптов', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
+  })
+
+  it('suggestPrompts: открывает панель с вариантами от api', async () => {
+    const { store, api } = makeStore()
+    const spy = vi.spyOn(api, 'prompt:suggest')
+    await store.actions.init()
+    store.actions.setDraft('сделай форму')
+
+    await store.actions.suggestPrompts()
+
+    expect(spy).toHaveBeenCalledWith({ text: 'сделай форму' })
+    const helper = store.getState().promptHelper
+    expect(helper.open).toBe(true)
+    expect(helper.loading).toBe(false)
+    expect(helper.variants).toEqual(['сделай форму — уточнённый вариант'])
+    expect(helper.error).toBeNull()
+  })
+
+  it('suggestPrompts: пустой черновик — панель не открывается, api не дёргается', async () => {
+    const { store, api } = makeStore()
+    const spy = vi.spyOn(api, 'prompt:suggest')
+    await store.actions.init()
+    store.actions.setDraft('   ')
+
+    await store.actions.suggestPrompts()
+
+    expect(spy).not.toHaveBeenCalled()
+    expect(store.getState().promptHelper.open).toBe(false)
+  })
+
+  it('applyPromptSuggestion: заполняет черновик и закрывает панель', async () => {
+    const { store } = makeStore()
+    await store.actions.init()
+    store.actions.setDraft('черновик')
+    await store.actions.suggestPrompts()
+
+    store.actions.applyPromptSuggestion('готовая формулировка')
+
+    expect(store.getState().draft).toBe('готовая формулировка')
+    expect(store.getState().promptHelper.open).toBe(false)
+    expect(store.getState().promptHelper.variants).toEqual([])
+  })
+
+  it('closePromptSuggestions: закрывает панель, черновик не трогает', async () => {
+    const { store } = makeStore()
+    await store.actions.init()
+    store.actions.setDraft('черновик')
+    await store.actions.suggestPrompts()
+
+    store.actions.closePromptSuggestions()
+
+    expect(store.getState().promptHelper.open).toBe(false)
+    expect(store.getState().draft).toBe('черновик')
+  })
+
+  it('suggestPrompts: ошибка api → панель показывает текст ошибки', async () => {
+    const { store, api } = makeStore()
+    vi.spyOn(api, 'prompt:suggest').mockRejectedValueOnce(new Error('Движок недоступен'))
+    await store.actions.init()
+    store.actions.setDraft('текст')
+
+    await store.actions.suggestPrompts()
+
+    const helper = store.getState().promptHelper
+    expect(helper.open).toBe(true)
+    expect(helper.loading).toBe(false)
+    expect(helper.error).toBe('Движок недоступен')
+    expect(helper.variants).toEqual([])
+  })
+})

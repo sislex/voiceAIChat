@@ -110,6 +110,17 @@ export interface AppState {
   settings: Settings
   settingsOpen: boolean
   draft: string
+  /** Помощник промптов: список переформулировок черновика и состояние панели. */
+  promptHelper: {
+    /** Открыта ли панель вариантов над композером. */
+    open: boolean
+    /** Идёт запрос вариантов к LLM. */
+    loading: boolean
+    /** Полученные переформулировки. */
+    variants: string[]
+    /** Текст ошибки запроса (панель показывает его вместо списка). */
+    error: string | null
+  }
   /** Вложения, прикреплённые к следующему сообщению (ещё не отправлены). */
   attachments: UploadInfo[]
   /** Доступные микрофоны для выбора в настройках. */
@@ -326,6 +337,12 @@ export interface StoreActions {
   updateSettings(patch: Partial<Settings>): Promise<void>
   setDraft(value: string): void
   submitText(): Promise<void>
+  /** Помощник промптов: запросить переформулировки текущего черновика у LLM. */
+  suggestPrompts(): Promise<void>
+  /** Применить выбранный вариант: заполнить черновик и закрыть панель. */
+  applyPromptSuggestion(text: string): void
+  /** Закрыть панель помощника промптов, ничего не меняя. */
+  closePromptSuggestions(): void
   /** Отправить собранные ответы на вопросы модели (форма в чате) как реплику. */
   answerQuestions(text: string): Promise<void>
   /** Повторить исходный запрос планового ответа уже в режиме авто-правок. */
@@ -598,6 +615,7 @@ function initialState(): AppState {
     settings: { ...DEFAULT_SETTINGS },
     settingsOpen: false,
     draft: '',
+    promptHelper: { open: false, loading: false, variants: [], error: null },
     attachments: [],
     mics: [],
     ttsVoices: [],
@@ -1742,6 +1760,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       messages: [],
       liveSegments: [],
       draft: '',
+      promptHelper: { open: false, loading: false, variants: [], error: null },
       attachments: [],
       consoleLog: [],
       liveActivity: [],
@@ -1825,6 +1844,33 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   function setDraft(value: string): void {
     setState({ draft: value })
+  }
+
+  // Помощник промптов: параллельные запросы не нужны — панель открывается по одному
+  // черновику за раз; повторный клик по палочке во время загрузки игнорируем.
+  async function suggestPrompts(): Promise<void> {
+    const text = state.draft.trim()
+    if (!text || state.promptHelper.loading) return
+    setState({ promptHelper: { open: true, loading: true, variants: [], error: null } })
+    try {
+      const { variants } = await api['prompt:suggest']({ text })
+      // Черновик мог поменяться, пока ждали ответ, но панель по-прежнему про этот
+      // запрос — показываем варианты (пользователь сам решит, применять ли).
+      if (!state.promptHelper.open) return
+      setState({ promptHelper: { open: true, loading: false, variants, error: variants.length ? null : 'Не удалось предложить варианты' } })
+    } catch (err) {
+      if (!state.promptHelper.open) return
+      const message = err instanceof Error ? err.message : 'Не удалось получить подсказки'
+      setState({ promptHelper: { open: true, loading: false, variants: [], error: message } })
+    }
+  }
+
+  function applyPromptSuggestion(text: string): void {
+    setState({ draft: text, promptHelper: { open: false, loading: false, variants: [], error: null } })
+  }
+
+  function closePromptSuggestions(): void {
+    setState({ promptHelper: { open: false, loading: false, variants: [], error: null } })
   }
 
   async function submitText(): Promise<void> {
@@ -2657,6 +2703,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       updateSettings,
       setDraft,
       submitText,
+      suggestPrompts,
+      applyPromptSuggestion,
+      closePromptSuggestions,
       answerQuestions,
       executePlan,
       cancelRequest,

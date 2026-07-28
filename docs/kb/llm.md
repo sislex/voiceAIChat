@@ -1,11 +1,12 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-07-27
+updated: 2026-07-28
 checked: 308ff71
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
   - apps/server/src/turns.ts
+  - apps/server/src/prompt
   - apps/server/src/anthropic
   - apps/server/src/cc
   - apps/server/src/users/cliProfiles.ts
@@ -36,6 +37,14 @@ areas:
 хосте или в контейнере, ключей в конфиге нет; (2) ошибки CLI переводятся в
 человеческие сообщения (`ENOENT` → «установите Claude Code», stderr про
 авторизацию → «выполните `claude login`»), не выбрасывай их наружу как есть.
+
+**Одноразовые вызовы без разговора.** Не всё идёт через `TurnManager`: KB-reranker
+(`kb/reranker.ts`) и помощник промптов (`prompt/suggester.ts`) дергают тот же
+`LlmClient.send` напрямую с `sessionId: null`, `permissionMode: 'plan'`,
+`executionDisabled: true` и ждут единственный `onDone`. Помощник промптов
+(`PromptSuggester`, модель `haiku`) по черновику возвращает переформулировки —
+роут `POST /api/prompt/suggest`, конструируется из инъектированного `claude` в
+`server.ts`, поэтому тесты мокают его через `opts.claude`.
 
 Статус входа обоих CLI сервер отдаёт на `/api/auth/status`
 (`apps/server/src/auth/loginStatus.ts`), UI опрашивает его раз в 30 с.
