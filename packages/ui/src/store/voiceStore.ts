@@ -17,7 +17,8 @@ import type {
   SttUpdate,
   UploadInfo
 } from '@shared/ipc'
-import type { Board, ProjectDetail, ProjectSummary, TaskPriority } from '@shared/projects'
+import type { Board, ProjectDetail, ProjectSummary, TaskPriority, WorkItemType } from '@shared/projects'
+import type { FeatureRun, AgentTask, FeatureStatus } from '@shared/features'
 import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
 import { detectOpenUtility, toolBlock, type ToolSpec } from '@shared/tools'
 import type { ActiveTurn, ServerFileInfo, SystemCapabilities } from '@shared/protocol'
@@ -221,6 +222,9 @@ export interface AppState {
   board: Board | null
   /** Идёт ли загрузка доски. */
   boardLoading: boolean
+  featureRuns: FeatureRun[]
+  activeFeature: FeatureRun | null
+  agentTasks: AgentTask[]
 }
 
 export interface StoreDeps {
@@ -503,6 +507,11 @@ export interface StoreActions {
     gitUrl?: string
     technologies?: string[]
     skills?: string[]
+    commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+    mergeTransport?: 'local' | 'github_pull_request'
+    agentPlanApprovalMode?: 'manual' | 'automatic'
+    testCommand?: string
+    productionDeployCommand?: string
   }): Promise<void>
   /** Обновить поля проекта (только владелец). */
   updateProject(
@@ -513,6 +522,11 @@ export interface StoreActions {
       gitUrl?: string | null
       technologies?: string[]
       skills?: string[]
+    commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+    mergeTransport?: 'local' | 'github_pull_request'
+    agentPlanApprovalMode?: 'manual' | 'automatic'
+    testCommand?: string
+    productionDeployCommand?: string
     }
   ): Promise<void>
   /** Удалить проект (только владелец). */
@@ -524,6 +538,7 @@ export interface StoreActions {
   linkProjectMachine(id: string, agentId: string): Promise<void>
   unlinkProjectMachine(id: string, agentId: string): Promise<void>
   setProjectMachinePath(id: string, agentId: string, path: string): Promise<void>
+  setProjectFeatureReposRoot(id: string, agentId: string, featureReposRoot: string): Promise<void>
   setProjectDefaultMachine(id: string, agentId: string): Promise<void>
   fetchProjectDetail(id: string): Promise<ProjectDetail | null>
   /** Открыть доску проекта (грузит снапшот, подписывается на живые обновления). */
@@ -541,15 +556,23 @@ export interface StoreActions {
   /** Задачи активной доски. */
   createTask(
     columnId: string,
-    input: { title: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+    input: { title: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }
   ): Promise<void>
   updateTask(
     taskId: string,
-    fields: { title?: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }
   ): Promise<void>
   /** Переместить задачу (смена статуса = смена колонки); оптимистично. */
   moveTask(taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null): Promise<void>
   deleteTask(taskId: string): Promise<void>
+  startFeature(taskId: string, automation?: { autoMerge?: boolean; autoDeployProduction?: boolean }): Promise<void>
+  startFeatureFromStory(storyId: string, automation?: { autoMerge?: boolean; autoDeployProduction?: boolean }): Promise<void>
+  openFeature(featureId: string): Promise<void>
+  closeFeature(): void
+  transitionFeature(status: FeatureStatus): Promise<void>
+  setFeatureAutomation(fields: { autoMerge?: boolean; autoDeployProduction?: boolean }): Promise<void>
+  deployFeature(): Promise<void>
+  createAgentTask(input: { title: string; description?: string; kind?: AgentTask['kind'] }): Promise<void>
   /** Отмена всех активных таймеров пайплайна (напр. при размонтировании). */
   dispose(): void
 }
@@ -628,7 +651,10 @@ function initialState(): AppState {
     projectDetail: null,
     activeProjectId: null,
     board: null,
-    boardLoading: false
+    boardLoading: false,
+    featureRuns: [],
+    activeFeature: null,
+    agentTasks: []
   }
 }
 
@@ -2264,6 +2290,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     gitUrl?: string
     technologies?: string[]
     skills?: string[]
+    commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+    mergeTransport?: 'local' | 'github_pull_request'
+    agentPlanApprovalMode?: 'manual' | 'automatic'
+    testCommand?: string
+    productionDeployCommand?: string
   }): Promise<void> {
     try {
       const detail = await api['projects:create'](input)
@@ -2281,6 +2312,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       gitUrl?: string | null
       technologies?: string[]
       skills?: string[]
+    commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+    mergeTransport?: 'local' | 'github_pull_request'
+    agentPlanApprovalMode?: 'manual' | 'automatic'
+    testCommand?: string
+    productionDeployCommand?: string
     }
   ): Promise<void> {
     try {
@@ -2338,6 +2374,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ error: perr(err) })
     }
   }
+  async function setProjectFeatureReposRoot(id: string, agentId: string, featureReposRoot: string): Promise<void> {
+    try {
+      setState({ projectDetail: await api['projects:setFeatureReposRoot']({ id, agentId, featureReposRoot }) })
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
   async function setProjectDefaultMachine(id: string, agentId: string): Promise<void> {
     try {
       setState({ projectDetail: await api['projects:setDefaultMachine']({ id, agentId }) })
@@ -2380,8 +2423,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function openBoard(id: string): Promise<void> {
     setState({ activeProjectId: id, boardLoading: true, board: null })
     try {
-      const [board, detail] = await Promise.all([api['board:get']({ id }), api['projects:get']({ id })])
-      setState({ board, projectDetail: detail, boardLoading: false })
+      const [board, detail, featureRuns] = await Promise.all([api['board:get']({ id }), api['projects:get']({ id }), api['features:list']({ projectId: id })])
+      setState({ board, projectDetail: detail, featureRuns, boardLoading: false })
       boardBridge?.subscribe(id)
     } catch (err) {
       setState({ boardLoading: false, error: perr(err) })
@@ -2389,10 +2432,17 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   function closeBoard(): void {
     if (state.activeProjectId) boardBridge?.unsubscribe()
-    setState({ activeProjectId: null, board: null, boardLoading: false })
+    setState({ activeProjectId: null, board: null, boardLoading: false, featureRuns: [], activeFeature: null, agentTasks: [] })
   }
   function applyBoardUpdate(projectId: string, board: Board): void {
-    if (projectId === state.activeProjectId) setState({ board })
+    if (projectId !== state.activeProjectId) return
+    const summaries = board.features ?? []
+    const featureRuns = state.featureRuns.map((feature) => {
+      const summary = summaries.find((item) => item.id === feature.id)
+      return summary ? { ...feature, status: summary.status, deployStatus: summary.deployStatus } : feature
+    })
+    const activeSummary = state.activeFeature ? summaries.find((item) => item.id === state.activeFeature!.id) : undefined
+    setState({ board, featureRuns, activeFeature: activeSummary && state.activeFeature ? { ...state.activeFeature, status: activeSummary.status, deployStatus: activeSummary.deployStatus } : state.activeFeature })
   }
   async function createColumn(name: string): Promise<void> {
     const id = state.activeProjectId
@@ -2455,7 +2505,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   async function createTask(
     columnId: string,
-    input: { title: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+    input: { title: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }
   ): Promise<void> {
     const id = state.activeProjectId
     if (!id) return
@@ -2468,7 +2518,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   async function updateTask(
     taskId: string,
-    fields: { title?: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }
   ): Promise<void> {
     const id = state.activeProjectId
     if (!id) return
@@ -2521,6 +2571,63 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     } catch (err) {
       setState({ error: perr(err) })
     }
+  }
+
+  async function refreshFeatures(): Promise<void> {
+    if (state.activeProjectId) setState({ featureRuns: await api['features:list']({ projectId: state.activeProjectId }) })
+  }
+  async function startFeature(taskId: string, automation: { autoMerge?: boolean; autoDeployProduction?: boolean } = {}): Promise<void> {
+    if (!state.activeProjectId) return
+    try {
+      const feature = await api['features:createFromTask']({ projectId: state.activeProjectId, taskId, ...automation })
+      setState({ activeFeature: feature, agentTasks: [] })
+      await Promise.all([refreshBoard(), refreshFeatures()])
+    } catch (err) { setState({ error: perr(err) }) }
+  }
+  async function startFeatureFromStory(storyId: string, automation: { autoMerge?: boolean; autoDeployProduction?: boolean } = {}): Promise<void> {
+    if (!state.activeProjectId) return
+    try {
+      const feature = await api['features:createFromStory']({ projectId: state.activeProjectId, storyId, ...automation })
+      setState({ activeFeature: feature, agentTasks: [] })
+      await Promise.all([refreshBoard(), refreshFeatures()])
+    } catch (err) { setState({ error: perr(err) }) }
+  }
+  async function openFeature(featureId: string): Promise<void> {
+    try {
+      const feature = await api['features:get']({ id: featureId })
+      if (!feature) return
+      setState({ activeFeature: feature, agentTasks: await api['agentTasks:list']({ featureId }) })
+      if (feature.conversationId) await selectConversation(feature.conversationId)
+    } catch (err) { setState({ error: perr(err) }) }
+  }
+  function closeFeature(): void { setState({ activeFeature: null, agentTasks: [] }) }
+  async function transitionFeature(status: FeatureStatus): Promise<void> {
+    if (!state.activeFeature) return
+    try {
+      const feature = await api['features:transition']({ id: state.activeFeature.id, status, expectedVersion: state.activeFeature.version })
+      setState({ activeFeature: feature })
+      await Promise.all([refreshBoard(), refreshFeatures()])
+    } catch (err) { setState({ error: perr(err) }) }
+  }
+  async function setFeatureAutomation(fields: { autoMerge?: boolean; autoDeployProduction?: boolean }): Promise<void> {
+    const current = state.activeFeature ?? state.featureRuns.find((f) => f.conversationId === state.activeId)
+    if (!current) return
+    try {
+      const updated = await api['features:setAutomation']({ id: current.id, ...fields })
+      setState({ activeFeature: state.activeFeature?.id === updated.id ? updated : state.activeFeature, featureRuns: state.featureRuns.map((f) => f.id === updated.id ? updated : f) })
+    } catch (err) { setState({ error: perr(err) }) }
+  }
+  async function deployFeature(): Promise<void> {
+    if (!state.activeFeature) return
+    try { setState({ activeFeature: await api['features:deploy']({ id: state.activeFeature.id }) }) }
+    catch (err) { setState({ error: perr(err) }) }
+  }
+  async function createAgentTask(input: { title: string; description?: string; kind?: AgentTask['kind'] }): Promise<void> {
+    if (!state.activeFeature) return
+    try {
+      await api['agentTasks:create']({ featureId: state.activeFeature.id, ...input })
+      setState({ agentTasks: await api['agentTasks:list']({ featureId: state.activeFeature.id }) })
+    } catch (err) { setState({ error: perr(err) }) }
   }
 
   return {
@@ -2637,6 +2744,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       linkProjectMachine,
       unlinkProjectMachine,
       setProjectMachinePath,
+      setProjectFeatureReposRoot,
       setProjectDefaultMachine,
       fetchProjectDetail,
       setConversationProject,
@@ -2653,6 +2761,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       updateTask,
       moveTask,
       deleteTask,
+      startFeature,
+      startFeatureFromStory,
+      openFeature,
+      closeFeature,
+      transitionFeature,
+      setFeatureAutomation,
+      deployFeature,
+      createAgentTask,
       dispose
     }
   }

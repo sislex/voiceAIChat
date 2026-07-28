@@ -13,6 +13,7 @@ import { CcObserver } from './components/CcObserver'
 import { UsersAdmin } from './components/UsersAdmin'
 import { ProjectsOverlay } from './components/ProjectsOverlay'
 import { ProjectBoard } from './components/ProjectBoard'
+import { FeatureDetail } from './components/FeatureDetail'
 import { MachineStatus } from './components/MachineStatus'
 import { MachineUtility } from './components/MachineUtility'
 import type { MachineOps } from './components/machine'
@@ -67,6 +68,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   })
 
   const activeConversation = state.conversations.find((c) => c.id === state.activeId)
+  const conversationFeature = state.featureRuns.find((f) => f.conversationId === state.activeId) ?? (state.activeFeature?.conversationId === state.activeId ? state.activeFeature : undefined)
   const activeTitle = activeConversation?.title ?? 'Новый разговор'
   const activeExecTarget = activeConversation?.execTarget ?? null
   const forcedPlan = state.currentUser?.role === 'user' && (!activeExecTarget || activeExecTarget === 'none')
@@ -247,6 +249,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
             permissionMode={activePermissionMode}
             onChangePermissionMode={(mode) => void changeConversationMode(mode)}
             voiceInputEnabled={VOICE_INPUT_ENABLED}
+            featureAutomation={conversationFeature ? { autoMerge: conversationFeature.autoMerge, autoDeployProduction: conversationFeature.autoDeployProduction } : undefined}
+            onFeatureAutomationChange={(fields) => void actions.setFeatureAutomation(fields)}
           />
         }
       />
@@ -360,9 +364,22 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onLinkMachine={(id, agentId) => void actions.linkProjectMachine(id, agentId)}
           onUnlinkMachine={(id, agentId) => void actions.unlinkProjectMachine(id, agentId)}
           onSetMachinePath={(id, agentId, path) => void actions.setProjectMachinePath(id, agentId, path)}
+          onSetFeatureReposRoot={(id, agentId, root) => void actions.setProjectFeatureReposRoot(id, agentId, root)}
           onSetDefaultMachine={(id, agentId) => void actions.setProjectDefaultMachine(id, agentId)}
           onOpenBoard={(id) => void actions.openBoard(id)}
           onClose={actions.closeProjects}
+        />
+      )}
+
+      {state.activeFeature && (
+        <FeatureDetail
+          feature={state.activeFeature}
+          tasks={state.agentTasks}
+          onTransition={(status) => void actions.transitionFeature(status)}
+          onAutomation={(fields) => void actions.setFeatureAutomation(fields)}
+          onAddTask={(input) => void actions.createAgentTask(input)}
+          onDeploy={() => void actions.deployFeature()}
+          onClose={actions.closeFeature}
         />
       )}
 
@@ -376,6 +393,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           board={state.board}
           loading={state.boardLoading}
           members={state.projectDetail?.members ?? []}
+          features={state.featureRuns}
           onCreateColumn={(name) => void actions.createColumn(name)}
           onRenameColumn={(id, name) => void actions.renameColumn(id, name)}
           onSetColumnHidden={(id, hidden) => void actions.setColumnHidden(id, hidden)}
@@ -385,6 +403,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onUpdateTask={(taskId, fields) => void actions.updateTask(taskId, fields)}
           onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
           onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
+          onStartFeature={(itemId, type) => void (type === 'story' ? actions.startFeatureFromStory(itemId) : actions.startFeature(itemId))}
+          onOpenFeature={(id) => void actions.openFeature(id)}
           onClose={actions.closeBoard}
         />
       )}

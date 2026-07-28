@@ -14,6 +14,7 @@ import { registerRest } from './routes/rest.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerAdminRoutes } from './routes/admin.js'
 import { registerProjectRoutes } from './routes/projects.js'
+import { registerFeatureRoutes } from './routes/features.js'
 import { BoardHub } from './projects/boardHub.js'
 import { registerAuth, resolveUser } from './users/auth.js'
 import { loadOrCreateSecret } from './users/accounts.js'
@@ -45,6 +46,9 @@ import { detectResources } from './system/resources.js'
 import { computeCapabilities } from './system/capabilities.js'
 import type { SystemCapabilities } from '@voicechat/shared'
 import { ensureCliProfile } from './users/cliProfiles.js'
+import { AgentWorkspaceExecutor, type WorkspaceExecutor } from './features/workspace.js'
+import { GitHubPullRequestService, type PullRequestService } from './features/pullRequests.js'
+import { FeatureCoordinator } from './features/coordinator.js'
 import { FileKnowledgeBaseService } from './kb/service.js'
 import { registerKbRoutes } from './kb/routes.js'
 import type { KnowledgeBaseService } from './kb/types.js'
@@ -70,6 +74,9 @@ export interface BuildOptions {
   createWsHandlers?: () => WsHandlers
   /** Секрет подписи токенов сессии (для тестов). Иначе — из dataDir/эфемерный. */
   sessionSecret?: string
+  /** Выполнение Git-команд в рабочих копиях Feature Run (в тестах — fake). */
+  workspaceExecutor?: WorkspaceExecutor
+  pullRequestService?: PullRequestService
 }
 
 function makeTtsEngine(config: ServerConfig): TtsEngine {
@@ -174,6 +181,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Проекты + канбан-доска (членство в проекте) + живой board.update по WS.
   const boardHub = new BoardHub()
   registerProjectRoutes(app, db, boardHub)
+  const featureCoordinator = new FeatureCoordinator(db, opts.workspaceExecutor ?? new AgentWorkspaceExecutor(agentRegistry), opts.pullRequestService ?? new GitHubPullRequestService(opts.config.githubToken), (projectId) => boardHub.emit(projectId))
+  registerFeatureRoutes(app, db, boardHub, featureCoordinator)
 
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
   // её выбор берём у канонического пользователя (admin), а не per-user.

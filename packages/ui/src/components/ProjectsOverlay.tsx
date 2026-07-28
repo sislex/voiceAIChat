@@ -12,14 +12,15 @@ export interface ProjectsOverlayProps {
   detail: ProjectDetail | null
   agents: AgentInfo[]
   onSelect: (id: string) => void
-  onCreate: (input: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[] }) => void
-  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; technologies?: string[]; skills?: string[] }) => void
+  onCreate: (input: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string }) => void
+  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; technologies?: string[]; skills?: string[]; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string }) => void
   onDelete: (id: string) => void
   onAddMember: (id: string, username: string) => void
   onRemoveMember: (id: string, username: string) => void
   onLinkMachine: (id: string, agentId: string) => void
   onUnlinkMachine: (id: string, agentId: string) => void
   onSetMachinePath: (id: string, agentId: string, path: string) => void
+  onSetFeatureReposRoot: (id: string, agentId: string, featureReposRoot: string) => void
   onSetDefaultMachine: (id: string, agentId: string) => void
   onOpenBoard: (id: string) => void
   onClose: () => void
@@ -71,21 +72,29 @@ function TagEditor({ label, tags, editable, onChange }: {
 }
 
 /** Строка машины проекта: привязка, папка проекта на ней и отметка «по умолчанию». */
-function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetDefault }: {
+function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetFeatureReposRoot, onSetDefault }: {
   agent: AgentInfo
   machine: ProjectMachine | undefined
   isDefault: boolean
   onToggle: () => void
   onSetPath: (path: string) => void
+  onSetFeatureReposRoot: (path: string) => void
   onSetDefault: () => void
 }): JSX.Element {
   const [path, setPath] = useState(machine?.path ?? '')
+  const [featureReposRoot, setFeatureReposRoot] = useState(machine?.featureReposRoot ?? '')
   useEffect(() => {
     setPath(machine?.path ?? '')
   }, [machine?.path])
+  useEffect(() => {
+    setFeatureReposRoot(machine?.featureReposRoot ?? '')
+  }, [machine?.featureReposRoot])
   const linked = machine !== undefined
   const commit = (): void => {
     if (path !== (machine?.path ?? '')) onSetPath(path)
+  }
+  const commitFeatureReposRoot = (): void => {
+    if (featureReposRoot !== (machine?.featureReposRoot ?? '')) onSetFeatureReposRoot(featureReposRoot)
   }
   return (
     <li className="proj-machine-row">
@@ -104,6 +113,17 @@ function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetDefau
             onBlur={commit}
             onKeyDown={(e) => {
               if (e.key === 'Enter') commit()
+            }}
+          />
+          <input
+            className="login-input"
+            placeholder="Корень VoiceAIChatRepos для Feature Run"
+            aria-label={`Корень Feature-репозиториев на ${agent.name}`}
+            value={featureReposRoot}
+            onChange={(e) => setFeatureReposRoot(e.target.value)}
+            onBlur={commitFeatureReposRoot}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitFeatureReposRoot()
             }}
           />
           <label className="proj-default-toggle" title="Машина по умолчанию для проекта">
@@ -153,6 +173,14 @@ function DetailPane(props: ProjectsOverlayProps & { detail: ProjectDetail }): JS
 
       <TagEditor label="Технологии" tags={detail.technologies} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { technologies: next })} />
       <TagEditor label="Навыки" tags={detail.skills} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { skills: next })} />
+      <div className="proj-section feature-policy">
+        <p className="proj-field-label">Workflow фич</p>
+        <label>Коммиты<select className="sel" disabled={!isOwner} value={detail.commitPolicy} onChange={(e) => props.onUpdate(detail.id, { commitPolicy: e.target.value as ProjectSummary['commitPolicy'] })}><option value="agent_commits">Агент создаёт коммиты</option><option value="final_system_commit">Итоговый системный коммит</option><option value="manual_user_confirmation">Подтверждать коммит</option></select></label>
+        <label>Merge<select className="sel" disabled={!isOwner} value={detail.mergeTransport} onChange={(e) => props.onUpdate(detail.id, { mergeTransport: e.target.value as ProjectSummary['mergeTransport'] })}><option value="local">Локальный merge commit</option><option value="github_pull_request">GitHub Pull Request</option></select></label>
+        <label>План агента<select className="sel" disabled={!isOwner} value={detail.agentPlanApprovalMode} onChange={(e) => props.onUpdate(detail.id, { agentPlanApprovalMode: e.target.value as ProjectSummary['agentPlanApprovalMode'] })}><option value="manual">Подтверждать</option><option value="automatic">Запускать автоматически</option></select></label>
+        <label>Команда тестирования<input className="login-input" disabled={!isOwner} value={detail.testCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { testCommand: e.target.value })} placeholder="npm test" /></label>
+        <label>Команда production-деплоя<input className="login-input" disabled={!isOwner} value={detail.productionDeployCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionDeployCommand: e.target.value })} placeholder="docker compose up --build -d" /></label>
+      </div>
 
       <div className="proj-section">
         <p className="proj-field-label">Участники</p>
@@ -205,6 +233,7 @@ function DetailPane(props: ProjectsOverlayProps & { detail: ProjectDetail }): JS
                     : props.onLinkMachine(detail.id, a.id)
                 }
                 onSetPath={(path) => props.onSetMachinePath(detail.id, a.id, path)}
+                onSetFeatureReposRoot={(root) => props.onSetFeatureReposRoot(detail.id, a.id, root)}
                 onSetDefault={() => props.onSetDefaultMachine(detail.id, a.id)}
               />
             ))}

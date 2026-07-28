@@ -24,7 +24,7 @@ describe('projects: создание и членство', () => {
     expect(p.members.map((m) => m.username)).toEqual(['alice'])
     expect(p.members[0].role).toBe('owner')
     const board = db.getBoard('alice', p.id)!
-    expect(board.columns.map((c) => c.name)).toEqual(['To Do', 'In Progress', 'Done'])
+    expect(board.columns.map((c) => c.name)).toEqual(['Бэклог', 'Готово к разработке', 'В разработке', 'Тестирование', 'Ожидает мержа', 'Готово'])
     expect(board.tasks).toEqual([])
   })
 
@@ -96,7 +96,7 @@ describe('board: колонки и порядок', () => {
     const p = db.createProject('alice', { name: 'P1' })
     const c4 = db.createColumn('alice', p.id, 'Review')!
     let cols = db.getBoard('alice', p.id)!.columns
-    expect(cols.map((c) => c.name)).toEqual(['To Do', 'In Progress', 'Done', 'Review'])
+    expect(cols.map((c) => c.name)).toEqual(['Бэклог', 'Готово к разработке', 'В разработке', 'Тестирование', 'Ожидает мержа', 'Готово', 'Review'])
     const reversed = cols.map((c) => c.id).reverse()
     expect(db.reorderColumns('alice', p.id, reversed)).toBe(true)
     cols = db.getBoard('alice', p.id)!.columns
@@ -107,10 +107,10 @@ describe('board: колонки и порядок', () => {
 
   it('setColumnHidden и deleteColumn (каскад задач)', () => {
     const p = db.createProject('alice', { name: 'P1' })
-    const col = db.getBoard('alice', p.id)!.columns[0]
+    const col = db.createColumn('alice', p.id, 'Custom')!
     db.createTask('alice', p.id, { columnId: col.id, title: 'T' })
     expect(db.setColumnHidden('alice', p.id, col.id, true)).toBe(true)
-    expect(db.getBoard('alice', p.id)!.columns[0].hidden).toBe(true)
+    expect(db.getBoard('alice', p.id)!.columns.find((c) => c.id === col.id)!.hidden).toBe(true)
     expect(db.deleteColumn('alice', p.id, col.id)).toBe(true)
     const board = db.getBoard('alice', p.id)!
     expect(board.columns.find((c) => c.id === col.id)).toBeUndefined()
@@ -233,5 +233,60 @@ describe('projects: папка машины, дефолт, привязка ча
     // отвязка
     const unl = db.setConversationProject('alice', conv.id, null)!
     expect(unl.projectId).toBeNull()
+  })
+})
+
+
+describe('work items + feature runs', () => {
+  it('строит иерархию Epic → Story → Task и запрещает неверного родителя', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const backlog = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'backlog')!
+    const epic = db.createTask('alice', p.id, { columnId: backlog.id, title: 'E', type: 'epic' })!
+    const story = db.createTask('alice', p.id, { columnId: backlog.id, title: 'S', type: 'story', parentId: epic.id })!
+    const task = db.createTask('alice', p.id, { columnId: backlog.id, title: 'T', type: 'task', parentId: story.id, acceptanceCriteria: 'ok' })!
+    expect(task.parentId).toBe(story.id)
+    expect(task.acceptanceCriteria).toBe('ok')
+    expect(() => db.createTask('alice', p.id, { columnId: backlog.id, title: 'bad', type: 'epic', parentId: story.id })).toThrow()
+    expect(() => db.updateTask('alice', p.id, epic.id, { parentId: task.id })).toThrow()
+  })
+
+  it('хранит историю Feature Run и синхронизирует системные колонки', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const agent = db.createAgent('alice', 'M')
+    db.linkMachine('alice', p.id, agent.id)
+    db.setProjectMachineFeatureReposRoot('alice', p.id, agent.id, '/repos')
+    db.setProjectDefaultMachine('alice', p.id, agent.id)
+    const ready = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'ready')!
+    const task = db.createTask('alice', p.id, { columnId: ready.id, title: 'Feature task' })!
+    let feature = db.createFeatureFromTask('alice', p.id, task.id, { autoMerge: true })!
+    expect(feature.attempt).toBe(1)
+    expect(db.getBoard('alice', p.id)!.tasks.find((t) => t.id === task.id)!.columnId).not.toBe(ready.id)
+    feature = db.transitionFeature('alice', feature.id, 'planning')!
+    feature = db.transitionFeature('alice', feature.id, 'awaiting_plan_approval')!
+    feature = db.transitionFeature('alice', feature.id, 'development')!
+    feature = db.transitionFeature('alice', feature.id, 'testing')!
+    expect(db.getBoard('alice', p.id)!.columns.find((c) => c.id === db.getBoard('alice', p.id)!.tasks.find((t) => t.id === task.id)!.columnId)!.semanticType).toBe('testing')
+    feature = db.transitionFeature('alice', feature.id, 'cancelled')!
+    expect(db.getBoard('alice', p.id)!.columns.find((c) => c.id === db.getBoard('alice', p.id)!.tasks.find((t) => t.id === task.id)!.columnId)!.semanticType).toBe('ready')
+    const retry = db.createFeatureFromTask('alice', p.id, task.id, {})!
+    expect(retry.attempt).toBe(2)
+    expect(retry.previousFeatureId).toBe(feature.id)
+  })
+
+  it('атомарно резервирует разные repository slots для параллельных фич', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const agent = db.createAgent('alice', 'M')
+    db.linkMachine('alice', p.id, agent.id)
+    db.setProjectMachineFeatureReposRoot('alice', p.id, agent.id, '/repos')
+    db.setProjectDefaultMachine('alice', p.id, agent.id)
+    const ready = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'ready')!
+    const t1 = db.createTask('alice', p.id, { columnId: ready.id, title: 'A' })!
+    const t2 = db.createTask('alice', p.id, { columnId: ready.id, title: 'B' })!
+    const f1 = db.createFeatureFromTask('alice', p.id, t1.id, {})!
+    const f2 = db.createFeatureFromTask('alice', p.id, t2.id, {})!
+    const s1 = db.reserveRepositorySlot('alice', f1.id)!
+    const s2 = db.reserveRepositorySlot('alice', f2.id)!
+    expect(s1.id).not.toBe(s2.id)
+    expect(s1.path).not.toBe(s2.path)
   })
 })
