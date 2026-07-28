@@ -1760,7 +1760,15 @@ export class VoiceChatDb {
     const slug = task.title.toLowerCase().replace(/[^a-zа-яё0-9]+/giu, '-').replace(/^-|-$/g, '').slice(0, 48) || 'task'
     const branch = `feature/${id}-${slug}`
     this.db.transaction(() => {
-      this.db.prepare(`INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, project_id, skill_names) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`).run(conversationId, task.title, ts, ts, userId, project.defaultAgentId, projectId, JSON.stringify(project.skills))
+      this.db.prepare(`INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, project_id, skill_names, permission_mode) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`).run(conversationId, task.title, ts, ts, userId, project.defaultAgentId, projectId, JSON.stringify(project.skills), project.agentPlanApprovalMode === 'automatic' ? 'acceptEdits' : 'plan')
+      const initialPrompt = [
+        'Начни выполнение задачи и веди весь процесс в этом чате: сообщай план, текущий прогресс, результаты проверок и возникающие проблемы.',
+        `Название: ${task.title}`,
+        `Описание: ${task.description || 'не указано'}`,
+        `Критерии приёмки: ${task.acceptanceCriteria || 'не указаны'}`,
+        project.agentPlanApprovalMode === 'manual' ? 'Сначала составь план и дождись подтверждения перед изменением файлов.' : 'Приступай к реализации сразу после проверки рабочего окружения.'
+      ].join('\n\n')
+      this.db.prepare(`INSERT INTO messages (id, conversation_id, role, text, time, created_at) VALUES (?, ?, 'u1', ?, ?, ?)`).run(this.newId(), conversationId, initialPrompt, new Date(ts).toISOString().slice(11, 16), ts)
       this.db.prepare(`INSERT INTO features (id, project_id, source_task_id, attempt, previous_feature_id, conversation_id, title, description, status, feature_branch, commit_policy, merge_transport, agent_plan_approval_mode, auto_merge, auto_deploy_production, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'preparing', ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, projectId, taskId, attempt, previous?.id ?? null, conversationId, task.title, task.description, branch, project.commitPolicy, project.mergeTransport, project.agentPlanApprovalMode, args.autoMerge ? 1 : 0, args.autoDeployProduction ? 1 : 0, ts, ts)
       const development = this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = 'development' LIMIT 1`).get(projectId) as { id: string } | undefined
       if (development) this.db.prepare(`UPDATE tasks SET column_id = ?, updated_at = ? WHERE id = ?`).run(development.id, ts, taskId)
@@ -1799,6 +1807,7 @@ export class VoiceChatDb {
       const semantic = featureColumnSemantic(to)
       const column = this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = ? LIMIT 1`).get(current.projectId, semantic) as { id: string } | undefined
       if (column) this.db.prepare(`UPDATE tasks SET column_id = ?, updated_at = ? WHERE id = ?`).run(column.id, ts, current.sourceTaskId)
+      if (to === 'development') this.db.prepare(`UPDATE conversations SET permission_mode = 'acceptEdits', updated_at = ? WHERE id = ?`).run(ts, current.conversationId)
       this.syncWorkItemAncestors(current.projectId, current.sourceTaskId, ts)
       this.db.prepare(`INSERT INTO feature_events (id, feature_id, type, actor_type, actor_id, payload, created_at) VALUES (?, ?, 'status_changed', 'user', ?, ?, ?)`).run(this.newId(), featureId, userId, JSON.stringify({ from: current.status, to }), ts)
       this.touchProject(current.projectId, ts)

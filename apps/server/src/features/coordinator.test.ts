@@ -7,6 +7,7 @@ import type { PullRequestService } from './pullRequests.js'
 let db: VoiceChatDb
 let workspace: WorkspaceExecutor
 let coordinator: FeatureCoordinator
+let startTurn: ReturnType<typeof vi.fn>
 let n = 0
 const sha = 'a'.repeat(40)
 
@@ -25,7 +26,8 @@ beforeEach(() => {
     checkout: vi.fn().mockResolvedValue(undefined)
   }
   const prs: PullRequestService = { merge: vi.fn().mockResolvedValue({ mergeCommitSha: 'b'.repeat(40), url: 'https://github.test/pr/1' }) }
-  coordinator = new FeatureCoordinator(db, workspace, prs)
+  startTurn = vi.fn().mockResolvedValue(undefined)
+  coordinator = new FeatureCoordinator(db, workspace, prs, () => {}, startTurn)
 })
 afterEach(() => db.close())
 
@@ -50,6 +52,8 @@ describe('FeatureCoordinator', () => {
     expect(ready.baseCommitSha).toBe(sha)
     expect(db.getRepositorySlotForFeature('alice', feature.id)?.status).toBe('busy')
     expect(db.listAgentTasks('alice', feature.id)).toHaveLength(1)
+    expect(db.listMessages('alice', feature.conversationId!)[0]?.text).toContain('Начни выполнение задачи')
+    expect(startTurn).toHaveBeenCalledWith(expect.objectContaining({ userId: 'alice', conversationId: feature.conversationId, text: expect.stringContaining('Название: T') }))
   })
 
   it('тестирует, автоматически мержит и освобождает slot', async () => {
