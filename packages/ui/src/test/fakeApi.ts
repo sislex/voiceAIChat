@@ -105,6 +105,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'kb:status': async () => ({ available: true, mode: 'source', searchMode: 'lexical', version: 'test', createdAt: new Date(0).toISOString(), documents: 0, chunks: 0, staleDocuments: 0 }),
     'kb:topics': async () => [],
     'kb:search': async () => [],
+    'prompt:suggest': async ({ text }) => ({ variants: [`${text} — уточнённый вариант`] }),
     'kb:document': async () => null,
     'kb:context': async ({ query }) => ({ query, confidence: 'low', autoInjectAllowed: false, sections: [], relatedFiles: [], relatedDocuments: [], staleWarnings: [], estimatedTokens: 0 }),
     'conversations:list': async () =>

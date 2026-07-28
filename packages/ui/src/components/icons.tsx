@@ -49,3 +49,14 @@ export function StopIcon(): JSX.Element {
     </svg>
   )
 }
+
+export function WandIcon(): JSX.Element {
+  // Волшебная палочка со «звёздами» — помощник промптов.
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path d="M11 3 4 10l-1.5 4.5L7 13l7-7-3-3Z" stroke="#55534A" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M9.5 4.5 12.5 7.5" stroke="#55534A" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M13.5 1.5v2M16 2.5h-2M14.5 12v1.6M16.3 12.8h-1.6" stroke="#55534A" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}

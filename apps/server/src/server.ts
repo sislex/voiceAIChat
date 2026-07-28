@@ -16,7 +16,7 @@ import { registerAdminRoutes } from './routes/admin.js'
 import { registerProjectRoutes } from './routes/projects.js'
 import { registerFeatureRoutes } from './routes/features.js'
 import { BoardHub } from './projects/boardHub.js'
-import { registerAuth, resolveUser } from './users/auth.js'
+import { registerAuth, resolveUser, uid } from './users/auth.js'
 import { loadOrCreateSecret } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
 import { AgentRegistry } from './agents/registry.js'
@@ -25,6 +25,7 @@ import { registerRemoteBashMcp, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp
 import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
 import { ClaudeCli } from './claude/claudeCli.js'
+import { PromptSuggester } from './prompt/suggester.js'
 import { CodexCli } from './codex/codexCli.js'
 import type { LlmClient } from './claude/types.js'
 import { WhisperEngine } from './stt/whisperEngine.js'
@@ -154,6 +155,20 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     : new LlmKbReranker(opts.config.kbRerankProvider === 'claude' ? claude : codex)
   const kb = opts.kbService ?? new FileKnowledgeBaseService(opts.config.kbRoot, reranker)
   registerKbRoutes(app, kb)
+
+  // Помощник промптов: переформулировки черновика запроса (одноразовый LLM-вызов
+  // на claude/haiku). Историю разговора не трогает, shell выключен.
+  const promptSuggester = new PromptSuggester(claude)
+  app.post<{ Body: { text?: string } }>(REST.promptSuggest, async (req, reply) => {
+    const text = (req.body?.text ?? '').trim()
+    if (!text) return { variants: [] as string[] }
+    try {
+      return { variants: await promptSuggester.suggest(text, uid(req)) }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Не удалось получить подсказки'
+      return reply.code(502).send({ error: message }) as never
+    }
+  })
 
   // Входящий Anthropic Messages API для подключения внешнего Claude Code CLI.
   // Авторизация клиента намеренно отсутствует: маршрут предназначен для закрытой сети.

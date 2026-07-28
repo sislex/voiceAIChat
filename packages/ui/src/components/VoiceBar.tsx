@@ -1,10 +1,10 @@
-import { useRef, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import type { PermissionMode, VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import { useAutoGrow } from '../lib/autoGrow'
 import { ACCENT, chipClass, speakerName, statusLine } from '../lib/view'
 import { WaveBars, Dots } from './animations'
-import { MicIcon, SendIcon, StopIcon } from './icons'
+import { MicIcon, SendIcon, StopIcon, WandIcon } from './icons'
 
 const DRAFT_MIN_ROWS = 2
 const DRAFT_MAX_ROWS = 4
@@ -40,6 +40,14 @@ export interface VoiceBarProps {
   voiceInputEnabled?: boolean
   featureAutomation?: { autoMerge: boolean; autoDeployProduction: boolean }
   onFeatureAutomationChange?: (fields: { autoMerge?: boolean; autoDeployProduction?: boolean }) => void
+  /** Состояние помощника промптов (панель переформулировок). */
+  promptHelper?: { open: boolean; loading: boolean; variants: string[]; error: string | null }
+  /** Запросить у LLM варианты переформулировки текущего черновика. */
+  onSuggestPrompts?: () => void
+  /** Применить выбранный вариант (заполнить поле ввода). */
+  onApplyPromptSuggestion?: (text: string) => void
+  /** Закрыть панель помощника, ничего не меняя. */
+  onClosePromptSuggestions?: () => void
 }
 
 export function VoiceBar({
@@ -62,7 +70,11 @@ export function VoiceBar({
   onChangePermissionMode,
   voiceInputEnabled = true,
   featureAutomation,
-  onFeatureAutomationChange
+  onFeatureAutomationChange,
+  promptHelper,
+  onSuggestPrompts,
+  onApplyPromptSuggestion,
+  onClosePromptSuggestions
 }: VoiceBarProps): JSX.Element {
   const isIdle = state === 'idle'
   const isListening = state === 'listening'
@@ -77,6 +89,23 @@ export function VoiceBar({
   const draftRef = useAutoGrow(draft, DRAFT_MIN_ROWS, DRAFT_MAX_ROWS)
   const canSend = draft.trim().length > 0 || attachments.length > 0
   const canSubmit = isIdle && canSend
+  const helper = promptHelper ?? { open: false, loading: false, variants: [], error: null }
+  // Палочку показываем в idle, когда есть что переформулировать.
+  const canSuggest = isIdle && draft.trim().length > 0 && !!onSuggestPrompts
+
+  // Esc закрывает панель вариантов. Слушатель на фазе перехвата со stopPropagation,
+  // чтобы не сработали глобальные хоткеи (как в ToolFrame).
+  useEffect(() => {
+    if (!helper.open) return
+    const onKey = (e: WindowEventMap['keydown']): void => {
+      if (e.key !== 'Escape' && e.code !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      onClosePromptSuggestions?.()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [helper.open, onClosePromptSuggestions])
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     // Enter — отправить, Shift+Enter — перенос строки (многострочный ввод).
@@ -111,6 +140,43 @@ export function VoiceBar({
   return (
     <div className="voicebar">
       <div className="vinner">
+        {helper.open && (
+          <div className="prompt-helper" data-testid="prompt-helper" role="listbox" aria-label="Варианты формулировки запроса">
+            <div className="prompt-helper-head">
+              <span>Варианты формулировки</span>
+              <button
+                className="prompt-helper-close"
+                onClick={() => onClosePromptSuggestions?.()}
+                aria-label="Закрыть варианты"
+                title="Закрыть"
+              >
+                ✕
+              </button>
+            </div>
+            {helper.loading ? (
+              <div className="prompt-helper-msg">
+                <Dots />
+                Подбираю варианты…
+              </div>
+            ) : helper.error ? (
+              <div className="prompt-helper-msg">{helper.error}</div>
+            ) : helper.variants.length === 0 ? (
+              <div className="prompt-helper-msg">Вариантов нет</div>
+            ) : (
+              helper.variants.map((variant, i) => (
+                <button
+                  key={i}
+                  className="prompt-variant"
+                  role="option"
+                  onClick={() => onApplyPromptSuggestion?.(variant)}
+                >
+                  {variant}
+                </button>
+              ))
+            )}
+          </div>
+        )}
+
         {isListening && (
           <div className="spkline" data-testid="spkline">
             Обнаружено говорящих:
@@ -170,6 +236,18 @@ export function VoiceBar({
                 data-testid="file-input"
                 aria-hidden="true"
               />
+              {canSuggest && (
+                <button
+                  className={`attachbtn wandbtn${helper.open ? ' active' : ''}`}
+                  onClick={() => (helper.open ? onClosePromptSuggestions?.() : onSuggestPrompts?.())}
+                  disabled={helper.loading}
+                  aria-expanded={helper.open}
+                  title="Подсказать формулировку"
+                  aria-label="Подсказать формулировку запроса"
+                >
+                  <WandIcon />
+                </button>
+              )}
               <button
                 className="attachbtn"
                 onClick={() => fileRef.current?.click()}
