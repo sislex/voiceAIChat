@@ -3353,6 +3353,14 @@
   border-radius: 10px;
   box-shadow: 0 10px 34px rgba(0, 0, 0, 0.18);
   z-index: 40;
+  max-height: min(70vh, 460px);
+  overflow-y: auto;
+}
+/* Разделитель между инструментами-виджетами и управлением в меню аккаунта. */
+.acct-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
 }
 
 [data-theme='dark'] .cstatus-select:hover,
