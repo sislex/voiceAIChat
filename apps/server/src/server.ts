@@ -48,7 +48,7 @@ import type { SystemCapabilities } from '@voicechat/shared'
 import { ensureCliProfile } from './users/cliProfiles.js'
 import { AgentWorkspaceExecutor, type WorkspaceExecutor } from './features/workspace.js'
 import { GitHubPullRequestService, type PullRequestService } from './features/pullRequests.js'
-import { FeatureCoordinator } from './features/coordinator.js'
+import { FeatureCoordinator, type FeatureTurnStarter } from './features/coordinator.js'
 import { FileKnowledgeBaseService } from './kb/service.js'
 import { registerKbRoutes } from './kb/routes.js'
 import type { KnowledgeBaseService } from './kb/types.js'
@@ -181,7 +181,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Проекты + канбан-доска (членство в проекте) + живой board.update по WS.
   const boardHub = new BoardHub()
   registerProjectRoutes(app, db, boardHub)
-  const featureCoordinator = new FeatureCoordinator(db, opts.workspaceExecutor ?? new AgentWorkspaceExecutor(agentRegistry), opts.pullRequestService ?? new GitHubPullRequestService(opts.config.githubToken), (projectId) => boardHub.emit(projectId))
+  let startFeatureTurn: FeatureTurnStarter = async () => {}
+  const featureCoordinator = new FeatureCoordinator(
+    db,
+    opts.workspaceExecutor ?? new AgentWorkspaceExecutor(agentRegistry),
+    opts.pullRequestService ?? new GitHubPullRequestService(opts.config.githubToken),
+    (projectId) => boardHub.emit(projectId),
+    (input) => startFeatureTurn(input)
+  )
   registerFeatureRoutes(app, db, boardHub, featureCoordinator)
 
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
@@ -289,6 +296,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // claude спавнится на этом же хосте — loopback работает при любом HOST.
     mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`
   })
+
+  startFeatureTurn = ({ userId, conversationId, text }) =>
+    turnManager.start({ userId, conversationId, segments: [{ speakerId: 1, text }], verbose: true })
 
   // Плановая остановка (деплой/SIGTERM → app.close()): сохранить частичные
   // ответы активных ходов, чтобы рестарт контейнера не терял набранный текст.

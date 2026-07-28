@@ -2585,7 +2585,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       const feature = await api['features:createFromTask']({ projectId: state.activeProjectId, taskId, ...automation })
       setState({ activeFeature: feature, agentTasks: [] })
-      await Promise.all([refreshBoard(), refreshFeatures()])
+      await Promise.all([refreshBoard(), refreshFeatures(), refreshConversations()])
+      if (feature.conversationId) await selectConversation(feature.conversationId)
     } catch (err) { setState({ error: perr(err) }) }
   }
   async function startFeatureFromStory(storyId: string, automation: { autoMerge?: boolean; autoDeployProduction?: boolean } = {}): Promise<void> {
@@ -2593,7 +2594,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       const feature = await api['features:createFromStory']({ projectId: state.activeProjectId, storyId, ...automation })
       setState({ activeFeature: feature, agentTasks: [] })
-      await Promise.all([refreshBoard(), refreshFeatures()])
+      await Promise.all([refreshBoard(), refreshFeatures(), refreshConversations()])
+      if (feature.conversationId) await selectConversation(feature.conversationId)
     } catch (err) { setState({ error: perr(err) }) }
   }
   async function openFeature(featureId: string): Promise<void> {

@@ -12,20 +12,20 @@
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-27 | ⚠ 2 коммит(ов) в areas после сверки: 02dc1b7 feat(projects): add agent feature workflow … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-07-27 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-27 | ⚠ 2 коммит(ов) в areas после сверки: 6bdc23c fix(features): protect active feature chats … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-27 | ⚠ 3 коммит(ов) в areas после сверки: 0cc0cbd fix(features): support hierarchy creation and retries … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-07-28 | ⚠ 1 коммит(ов) в areas после сверки: 02dc1b7 feat(projects): add agent feature workflow |
 | [features/feature-workflow.md](features/feature-workflow.md) | Feature Run — выполнение задач агентом в изолированных Git-workspace | 2026-07-28 | ✓ |
 | [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-07-27 | ⚠ код изменён 2026-07-28, сверка 2026-07-27 (по датам: правки того же дня не видны — поставь checked) |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-27 | ⚠ 1 коммит(ов) в areas после сверки: 95f654f docs(kb): document complete project architecture |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-27 | ⚠ 1 коммит(ов) в areas после сверки: 938d6e3 fix(ui): show Codex token usage and add explorer address bar |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-27 | ✓ |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-07-28 | ✓ |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-07-28 | ⚠ 1 коммит(ов) в areas после сверки: 0cc0cbd fix(features): support hierarchy creation and retries |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-28 | ⚠ 2 коммит(ов) в areas после сверки: 6bdc23c fix(features): protect active feature chats … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-07-27 | ⚠ 5 коммит(ов) в areas после сверки: 6bdc23c fix(features): protect active feature chats … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-07-27 | ⚠ 6 коммит(ов) в areas после сверки: 0cc0cbd fix(features): support hierarchy creation and retries … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-07-27 | ⚠ 1 коммит(ов) в areas после сверки: 02dc1b7 feat(projects): add agent feature workflow |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-07-27 | ✓ |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-07-27 | ⚠ 4 коммит(ов) в areas после сверки: 6bdc23c fix(features): protect active feature chats … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-07-27 | ⚠ 5 коммит(ов) в areas после сверки: 0cc0cbd fix(features): support hierarchy creation and retries … |
 
 ## Инструкции по пакетам
 

@@ -5,8 +5,10 @@ import type { WorkspaceExecutor } from './workspace.js'
 
 const mergeLocks = new Set<string>()
 
+export type FeatureTurnStarter = (input: { userId: string; conversationId: string; text: string }) => Promise<void>
+
 export class FeatureCoordinator {
-  constructor(private readonly db: VoiceChatDb, private readonly workspace: WorkspaceExecutor, private readonly pullRequests: PullRequestService, private readonly onChange: (projectId: string) => void = () => {}) {}
+  constructor(private readonly db: VoiceChatDb, private readonly workspace: WorkspaceExecutor, private readonly pullRequests: PullRequestService, private readonly onChange: (projectId: string) => void = () => {}, private readonly startTurn: FeatureTurnStarter = async () => {}) {}
 
   async prepare(userId: string, feature: FeatureRun): Promise<void> {
     let slot
@@ -23,6 +25,16 @@ export class FeatureCoordinator {
       const planned = this.db.transitionFeature(userId, feature.id, 'planning')!
       this.db.createAgentTask(userId, feature.id, { title: `Реализовать: ${feature.title}`, description: feature.description, kind: 'implementation', createdBy: 'system' })
       this.db.transitionFeature(userId, feature.id, planned.agentPlanApprovalMode === 'automatic' ? 'development' : 'awaiting_plan_approval')
+      const conversationId = feature.conversationId
+      const initialMessage = conversationId ? this.db.listMessages(userId, conversationId).at(-1) : undefined
+      if (conversationId && initialMessage) {
+        try {
+          await this.startTurn({ userId, conversationId, text: initialMessage.text })
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          this.db.addMessage(userId, conversationId, 'ai', `Не удалось автоматически запустить агента: ${message}`, new Date().toISOString().slice(11, 16))
+        }
+      }
     } catch (err) {
       if (slot) this.db.setRepositorySlotState(feature.id, 'repair_required', { error: err instanceof Error ? err.message : String(err) })
       this.db.failFeature(userId, feature.id, err instanceof Error ? err.message : String(err))
