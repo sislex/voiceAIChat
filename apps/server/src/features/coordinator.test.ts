@@ -31,8 +31,8 @@ beforeEach(() => {
 })
 afterEach(() => db.close())
 
-function setup(autoMerge = false) {
-  let project = db.createProject('alice', { name: 'P', gitUrl: 'git@github.com:x/y.git', agentPlanApprovalMode: 'automatic' })
+function setup(autoMerge = false, agentPlanApprovalMode: 'manual' | 'automatic' = 'automatic') {
+  let project = db.createProject('alice', { name: 'P', gitUrl: 'git@github.com:x/y.git', agentPlanApprovalMode })
   project = db.updateProject('alice', project.id, { testCommand: 'npm test', productionDeployCommand: 'deploy' })!
   const agent = db.createAgent('alice', 'machine')
   db.linkMachine('alice', project.id, agent.id)
@@ -54,6 +54,15 @@ describe('FeatureCoordinator', () => {
     expect(db.listAgentTasks('alice', feature.id)).toHaveLength(1)
     expect(db.listMessages('alice', feature.conversationId!)[0]?.text).toContain('Начни выполнение задачи')
     expect(startTurn).toHaveBeenCalledWith(expect.objectContaining({ userId: 'alice', conversationId: feature.conversationId, text: expect.stringContaining('Название: T') }))
+  })
+
+  it('ручной режим: задача остаётся в planning и запускает агента в режиме плана', async () => {
+    const feature = setup(false, 'manual')
+    await coordinator.prepare('alice', feature)
+    const ready = db.getFeature('alice', feature.id)!
+    expect(ready.status).toBe('planning')
+    expect(db.getConversation('alice', feature.conversationId!)?.permissionMode).toBe('plan')
+    expect(startTurn).toHaveBeenCalledWith(expect.objectContaining({ conversationId: feature.conversationId }))
   })
 
   it('тестирует, автоматически мержит и освобождает slot', async () => {

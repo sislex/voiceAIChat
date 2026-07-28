@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { PermissionMode } from '@shared/types'
 import { Sidebar } from './components/Sidebar'
@@ -12,6 +12,7 @@ import { LoginScreen } from './components/LoginScreen'
 import { CcObserver } from './components/CcObserver'
 import { UsersAdmin } from './components/UsersAdmin'
 import { ProjectsOverlay } from './components/ProjectsOverlay'
+import { ProjectSettings } from './components/ProjectSettings'
 import { ProjectBoard } from './components/ProjectBoard'
 import { FeatureDetail } from './components/FeatureDetail'
 import { MachineStatus } from './components/MachineStatus'
@@ -22,6 +23,7 @@ import { ConversationSettings } from './components/ConversationSettings'
 import { KnowledgeBase } from './components/KnowledgeBase'
 import { useVoiceStore } from './store/useVoiceStore'
 import { useVoiceCues } from './lib/useVoiceCues'
+import { useHashRoute } from './lib/useHashRoute'
 import { useHotkeys } from './lib/useHotkeys'
 import './styles/app.css'
 
@@ -40,6 +42,12 @@ export interface AppProps {
 
 export default function App({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
   const { state, actions } = useVoiceStore({ api, now, delays })
+  // Hash-роутинг раздела «Проекты»: URL — источник навигации (см. useHashRoute).
+  const { segments, navigate } = useHashRoute()
+  const inProjects = segments[0] === 'projects'
+  const routeProjectId = inProjects ? (segments[1] ?? null) : null
+  const routeSettings = inProjects && segments[2] === 'settings'
+  const authed = !state.authRequired || Boolean(state.currentUser)
   // Мобильный режим: выдвинут ли сайдбар (на десктопе класс side--open не влияет).
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Десктоп: свёрнут ли сайдбар (колонка → 0). Персист в localStorage.
@@ -66,6 +74,27 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
       else if (v === 'listening') actions.stopVoice()
     }
   })
+
+  // URL → данные стора: вход/выход в раздел «Проекты», загрузка доски и
+  // оверлея настроек. Навигацию делают клики (navigate), данные грузятся тут.
+  useEffect(() => {
+    if (!authed) return
+    if (inProjects) { if (!state.projectsOpen) void actions.openProjects() }
+    else if (state.projectsOpen) actions.closeProjects()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, inProjects])
+  useEffect(() => {
+    if (!authed || !inProjects) return
+    if (routeProjectId) { if (state.activeProjectId !== routeProjectId) void actions.openBoard(routeProjectId) }
+    else if (state.activeProjectId) actions.closeBoard()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, inProjects, routeProjectId])
+  useEffect(() => {
+    if (!authed) return
+    if (routeSettings) { if (!state.projectSettingsOpen) actions.openProjectSettings() }
+    else if (state.projectSettingsOpen) actions.closeProjectSettings()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, routeSettings])
 
   const activeConversation = state.conversations.find((c) => c.id === state.activeId)
   const conversationFeature = state.featureRuns.find((f) => f.conversationId === state.activeId) ?? (state.activeFeature?.conversationId === state.activeId ? state.activeFeature : undefined)
@@ -156,10 +185,12 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onNew={() => {
           void actions.newConversation()
           setSidebarOpen(false)
+          if (inProjects) navigate('/')
         }}
         onPick={(id) => {
           void actions.selectConversation(id)
           setSidebarOpen(false)
+          if (inProjects) navigate('/')
         }}
         onDelete={actions.deleteConversation}
         onRename={actions.renameConversation}
@@ -178,7 +209,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onOpenConsole={state.authRequired ? menu(() => actions.openUtilityForActiveChat('console')) : undefined}
         onOpenUsers={state.authRequired ? menu(() => void actions.openUsers()) : undefined}
         onOpenMachines={state.authRequired ? menu(actions.openMachines) : undefined}
-        onOpenProjects={state.authRequired ? menu(() => void actions.openProjects()) : undefined}
+        onOpenProjects={state.authRequired ? menu(() => navigate('/projects')) : undefined}
         currentUser={state.currentUser}
         onLogout={state.authRequired ? () => void actions.logout() : undefined}
       />
@@ -186,6 +217,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         <div className="side-backdrop" aria-hidden onClick={() => setSidebarOpen(false)} />
       )}
 
+      {!inProjects && (
       <ChatColumn
         onToggleSidebar={() => {
           if (collapsed) setCollapsedPersist(false)
@@ -258,6 +290,60 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           />
         }
       />
+      )}
+
+      {inProjects && !routeProjectId && (
+        <ProjectsOverlay
+          projects={state.projects}
+          onOpenProject={(id) => navigate(`/projects/${id}`)}
+          onCreate={(input) => void actions.createProject(input)}
+          onClose={() => navigate(`/`)}
+        />
+      )}
+
+      {inProjects && routeProjectId && !routeSettings && (
+        <ProjectBoard
+          projectName={
+            state.projectDetail?.name ??
+            state.projects.find((p) => p.id === routeProjectId)?.name ??
+            `Проект`
+          }
+          board={state.board}
+          loading={state.boardLoading || state.activeProjectId !== routeProjectId}
+          members={state.projectDetail?.members ?? []}
+          features={state.featureRuns}
+          onCreateColumn={(name) => void actions.createColumn(name)}
+          onRenameColumn={(id, name) => void actions.renameColumn(id, name)}
+          onSetColumnHidden={(id, hidden) => void actions.setColumnHidden(id, hidden)}
+          onReorderColumns={(order) => void actions.reorderColumns(order)}
+          onDeleteColumn={(id) => void actions.deleteColumn(id)}
+          onCreateTask={(columnId, input) => void actions.createTask(columnId, input)}
+          onUpdateTask={(taskId, fields) => void actions.updateTask(taskId, fields)}
+          onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
+          onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
+          onStartFeature={(itemId, type) => void (type === `story` ? actions.startFeatureFromStory(itemId) : actions.startFeature(itemId))}
+          onOpenFeature={(id) => void actions.openFeature(id)}
+          onOpenSettings={() => navigate(`/projects/${routeProjectId}/settings`)}
+          onClose={() => navigate(`/projects`)}
+        />
+      )}
+
+      {inProjects && routeProjectId && routeSettings && state.projectDetail?.id === routeProjectId && (
+        <ProjectSettings
+          detail={state.projectDetail}
+          agents={state.agents}
+          onUpdate={(id, fields) => void actions.updateProject(id, fields)}
+          onDelete={(id) => { void actions.deleteProject(id); navigate(`/projects`) }}
+          onAddMember={(id, username) => void actions.addProjectMember(id, username)}
+          onRemoveMember={(id, username) => void actions.removeProjectMember(id, username)}
+          onLinkMachine={(id, agentId) => void actions.linkProjectMachine(id, agentId)}
+          onUnlinkMachine={(id, agentId) => void actions.unlinkProjectMachine(id, agentId)}
+          onSetMachinePath={(id, agentId, path) => void actions.setProjectMachinePath(id, agentId, path)}
+          onSetFeatureReposRoot={(id, agentId, root) => void actions.setProjectFeatureReposRoot(id, agentId, root)}
+          onSetDefaultMachine={(id, agentId) => void actions.setProjectDefaultMachine(id, agentId)}
+          onClose={() => navigate(`/projects/${routeProjectId}`)}
+        />
+      )}
 
       {knowledgeBaseOpen && <KnowledgeBase api={api} onClose={() => setKnowledgeBaseOpen(false)} />}
 
@@ -354,27 +440,6 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         />
       )}
 
-      {state.projectsOpen && (
-        <ProjectsOverlay
-          projects={state.projects}
-          detail={state.projectDetail}
-          agents={state.agents}
-          onSelect={(id) => void actions.selectProject(id)}
-          onCreate={(input) => void actions.createProject(input)}
-          onUpdate={(id, fields) => void actions.updateProject(id, fields)}
-          onDelete={(id) => void actions.deleteProject(id)}
-          onAddMember={(id, username) => void actions.addProjectMember(id, username)}
-          onRemoveMember={(id, username) => void actions.removeProjectMember(id, username)}
-          onLinkMachine={(id, agentId) => void actions.linkProjectMachine(id, agentId)}
-          onUnlinkMachine={(id, agentId) => void actions.unlinkProjectMachine(id, agentId)}
-          onSetMachinePath={(id, agentId, path) => void actions.setProjectMachinePath(id, agentId, path)}
-          onSetFeatureReposRoot={(id, agentId, root) => void actions.setProjectFeatureReposRoot(id, agentId, root)}
-          onSetDefaultMachine={(id, agentId) => void actions.setProjectDefaultMachine(id, agentId)}
-          onOpenBoard={(id) => void actions.openBoard(id)}
-          onClose={actions.closeProjects}
-        />
-      )}
-
       {state.activeFeature && (
         <FeatureDetail
           feature={state.activeFeature}
@@ -384,32 +449,6 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onAddTask={(input) => void actions.createAgentTask(input)}
           onDeploy={() => void actions.deployFeature()}
           onClose={actions.closeFeature}
-        />
-      )}
-
-      {state.activeProjectId && (
-        <ProjectBoard
-          projectName={
-            state.projectDetail?.name ??
-            state.projects.find((p) => p.id === state.activeProjectId)?.name ??
-            'Проект'
-          }
-          board={state.board}
-          loading={state.boardLoading}
-          members={state.projectDetail?.members ?? []}
-          features={state.featureRuns}
-          onCreateColumn={(name) => void actions.createColumn(name)}
-          onRenameColumn={(id, name) => void actions.renameColumn(id, name)}
-          onSetColumnHidden={(id, hidden) => void actions.setColumnHidden(id, hidden)}
-          onReorderColumns={(order) => void actions.reorderColumns(order)}
-          onDeleteColumn={(id) => void actions.deleteColumn(id)}
-          onCreateTask={(columnId, input) => void actions.createTask(columnId, input)}
-          onUpdateTask={(taskId, fields) => void actions.updateTask(taskId, fields)}
-          onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
-          onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
-          onStartFeature={(itemId, type) => void (type === 'story' ? actions.startFeatureFromStory(itemId) : actions.startFeature(itemId))}
-          onOpenFeature={(id) => void actions.openFeature(id)}
-          onClose={actions.closeBoard}
         />
       )}
 

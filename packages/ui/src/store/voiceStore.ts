@@ -229,6 +229,8 @@ export interface AppState {
   projectDetail: ProjectDetail | null
   /** id проекта с открытой доской (null — доска закрыта). */
   activeProjectId: string | null
+  /** Открыт ли оверлей настроек проекта поверх его доски. */
+  projectSettingsOpen: boolean
   /** Снапшот доски активного проекта (null — не загружена). */
   board: Board | null
   /** Идёт ли загрузка доски. */
@@ -562,6 +564,9 @@ export interface StoreActions {
   openBoard(id: string): Promise<void>
   /** Закрыть доску (отписка). */
   closeBoard(): void
+  /** Открыть/закрыть оверлей настроек проекта на его странице. */
+  openProjectSettings(): void
+  closeProjectSettings(): void
   /** Применить живой снапшот доски (из WS board.update). */
   applyBoardUpdate(projectId: string, board: Board): void
   /** Колонки активной доски. */
@@ -668,6 +673,7 @@ function initialState(): AppState {
     sidebarProjectId: loadSidebarProject(),
     projectDetail: null,
     activeProjectId: null,
+    projectSettingsOpen: false,
     board: null,
     boardLoading: false,
     featureRuns: [],
@@ -2471,7 +2477,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ board: await api['board:get']({ id }) })
   }
   async function openBoard(id: string): Promise<void> {
-    setState({ activeProjectId: id, boardLoading: true, board: null })
+    setState({ activeProjectId: id, boardLoading: true, board: null, projectSettingsOpen: false })
     try {
       const [board, detail, featureRuns] = await Promise.all([api['board:get']({ id }), api['projects:get']({ id }), api['features:list']({ projectId: id })])
       setState({ board, projectDetail: detail, featureRuns, boardLoading: false })
@@ -2482,7 +2488,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   function closeBoard(): void {
     if (state.activeProjectId) boardBridge?.unsubscribe()
-    setState({ activeProjectId: null, board: null, boardLoading: false, featureRuns: [], activeFeature: null, agentTasks: [] })
+    setState({ activeProjectId: null, projectSettingsOpen: false, board: null, boardLoading: false, featureRuns: [], activeFeature: null, agentTasks: [] })
+  }
+  function openProjectSettings(): void {
+    setState({ projectSettingsOpen: true })
+  }
+  function closeProjectSettings(): void {
+    setState({ projectSettingsOpen: false })
   }
   function applyBoardUpdate(projectId: string, board: Board): void {
     if (projectId !== state.activeProjectId) return
@@ -2806,6 +2818,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setConversationStatus,
       openBoard,
       closeBoard,
+      openProjectSettings,
+      closeProjectSettings,
       applyBoardUpdate,
       createColumn,
       renameColumn,
