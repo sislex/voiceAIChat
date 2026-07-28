@@ -183,6 +183,7 @@ interface ColumnRow {
   semantic_type: string
   position: number
   hidden: number
+  wip_limit: number | null
   created_at: number
 }
 
@@ -270,6 +271,11 @@ interface TaskRow {
   parent_id: string | null
   priority: string
   assignee: string | null
+  labels: string | null
+  story_points: number | null
+  due_date: number | null
+  flagged: number
+  seq: number | null
   position: number
   created_at: number
   updated_at: number
@@ -320,6 +326,7 @@ function mapColumn(r: ColumnRow): KanbanColumn {
     semanticType: normColumnSemantic(r.semantic_type),
     position: r.position,
     hidden: r.hidden !== 0,
+    wipLimit: r.wip_limit ?? null,
     createdAt: r.created_at
   }
 }
@@ -336,6 +343,11 @@ function mapTask(r: TaskRow): Task {
     acceptanceCriteria: r.acceptance_criteria,
     priority: normPriority(r.priority),
     assignee: r.assignee,
+    labels: parseStringArray(r.labels),
+    storyPoints: r.story_points ?? null,
+    dueDate: r.due_date ?? null,
+    flagged: r.flagged !== 0,
+    seq: r.seq ?? 0,
     position: r.position,
     createdAt: r.created_at,
     updatedAt: r.updated_at
@@ -470,8 +482,27 @@ export class VoiceChatDb {
     if (taskCols.length && !taskCols.some((c) => c.name === 'type')) this.db.exec(`ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'task'`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'parent_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN parent_id TEXT`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'acceptance_criteria')) this.db.exec(`ALTER TABLE tasks ADD COLUMN acceptance_criteria TEXT NOT NULL DEFAULT ''`)
+    if (taskCols.length && !taskCols.some((c) => c.name === 'labels')) this.db.exec(`ALTER TABLE tasks ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'`)
+    if (taskCols.length && !taskCols.some((c) => c.name === 'story_points')) this.db.exec(`ALTER TABLE tasks ADD COLUMN story_points REAL`)
+    if (taskCols.length && !taskCols.some((c) => c.name === 'due_date')) this.db.exec(`ALTER TABLE tasks ADD COLUMN due_date INTEGER`)
+    if (taskCols.length && !taskCols.some((c) => c.name === 'flagged')) this.db.exec(`ALTER TABLE tasks ADD COLUMN flagged INTEGER NOT NULL DEFAULT 0`)
+    if (taskCols.length && !taskCols.some((c) => c.name === 'seq')) {
+      this.db.exec(`ALTER TABLE tasks ADD COLUMN seq INTEGER`)
+      // Номер по порядку создания в проекте — как ключи PRJ-1, PRJ-2 в Jira.
+      this.db.exec(`UPDATE tasks SET seq = (
+        SELECT COUNT(*) FROM tasks t2
+        WHERE t2.project_id = tasks.project_id
+          AND (t2.created_at < tasks.created_at OR (t2.created_at = tasks.created_at AND t2.id <= tasks.id))
+      ) WHERE seq IS NULL`)
+    }
+    // Счётчик ключей задач проекта: номера не переиспользуются (как в Jira).
+    if (projCols.length && !projCols.some((c) => c.name === 'task_seq')) {
+      this.db.exec(`ALTER TABLE projects ADD COLUMN task_seq INTEGER NOT NULL DEFAULT 0`)
+      this.db.exec(`UPDATE projects SET task_seq = (SELECT COALESCE(MAX(seq), 0) FROM tasks WHERE tasks.project_id = projects.id)`)
+    }
     const colCols = this.db.prepare(`PRAGMA table_info(kanban_columns)`).all() as Array<{ name: string }>
     if (colCols.length && !colCols.some((c) => c.name === 'semantic_type')) this.db.exec(`ALTER TABLE kanban_columns ADD COLUMN semantic_type TEXT NOT NULL DEFAULT 'custom'`)
+    if (colCols.length && !colCols.some((c) => c.name === 'wip_limit')) this.db.exec(`ALTER TABLE kanban_columns ADD COLUMN wip_limit INTEGER`)
     // Старые доски имели To Do / In Progress / Done без стабильной семантики.
     // Названия сохраняем, назначаем крайним колонкам базовые роли и досеиваем
     // обязательные этапы workflow. SQL idempotent и не зависит от newId.
@@ -1386,12 +1417,27 @@ export class VoiceChatDb {
       )
       .run(id, projectId, name, position, ts)
     this.touchProject(projectId, ts)
-    return mapColumn({ id, project_id: projectId, name, semantic_type: 'custom', position, hidden: 0, created_at: ts })
+    return mapColumn({ id, project_id: projectId, name, semantic_type: 'custom', position, hidden: 0, wip_limit: null, created_at: ts })
   }
 
   renameColumn(userId: string, projectId: string, columnId: string, name: string): boolean {
+    return this.updateColumn(userId, projectId, columnId, { name })
+  }
+
+  updateColumn(userId: string, projectId: string, columnId: string, fields: { name?: string; wipLimit?: number | null }): boolean {
     if (!this.isProjectMember(userId, projectId) || !this.columnInProject(projectId, columnId)) return false
-    this.db.prepare(`UPDATE kanban_columns SET name = ? WHERE id = ? AND project_id = ?`).run(name, columnId, projectId)
+    const set: string[] = []
+    const vals: unknown[] = []
+    if (fields.name !== undefined) {
+      set.push('name = ?')
+      vals.push(fields.name)
+    }
+    if (fields.wipLimit !== undefined) {
+      set.push('wip_limit = ?')
+      vals.push(fields.wipLimit != null && fields.wipLimit > 0 ? Math.floor(fields.wipLimit) : null)
+    }
+    if (!set.length) return true
+    this.db.prepare(`UPDATE kanban_columns SET ${set.join(', ')} WHERE id = ? AND project_id = ?`).run(...vals, columnId, projectId)
     this.touchProject(projectId)
     return true
   }
@@ -1442,6 +1488,9 @@ export class VoiceChatDb {
       parentId?: string | null
       priority?: TaskPriority
       assignee?: string | null
+      labels?: string[]
+      storyPoints?: number | null
+      dueDate?: number | null
     }
   ): Task | null {
     if (!this.isProjectMember(userId, projectId)) return null
@@ -1463,10 +1512,13 @@ export class VoiceChatDb {
         .get(projectId, args.columnId) as { m: number | null }
     ).m
     const position = (max ?? 0) + RANK_STEP
+    const seq = (
+      this.db.prepare(`UPDATE projects SET task_seq = task_seq + 1 WHERE id = ? RETURNING task_seq`).get(projectId) as { task_seq: number }
+    ).task_seq
     this.db
       .prepare(
-        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, position, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, labels, story_points, due_date, flagged, seq, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -1479,6 +1531,10 @@ export class VoiceChatDb {
         args.parentId ?? null,
         normPriority(args.priority ?? 'medium'),
         args.assignee ?? null,
+        JSON.stringify(args.labels ?? []),
+        args.storyPoints ?? null,
+        args.dueDate ?? null,
+        seq,
         position,
         ts,
         ts
@@ -1491,7 +1547,7 @@ export class VoiceChatDb {
     userId: string,
     projectId: string,
     taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
   ): Task | null {
     if (!this.isProjectMember(userId, projectId)) return null
     const current = this.getTask(projectId, taskId)
@@ -1541,6 +1597,22 @@ export class VoiceChatDb {
     if (fields.assignee !== undefined) {
       set.push('assignee = ?')
       vals.push(fields.assignee)
+    }
+    if (fields.labels !== undefined) {
+      set.push('labels = ?')
+      vals.push(JSON.stringify(fields.labels.map((l) => l.trim()).filter(Boolean)))
+    }
+    if (fields.storyPoints !== undefined) {
+      set.push('story_points = ?')
+      vals.push(fields.storyPoints != null && fields.storyPoints >= 0 ? fields.storyPoints : null)
+    }
+    if (fields.dueDate !== undefined) {
+      set.push('due_date = ?')
+      vals.push(fields.dueDate)
+    }
+    if (fields.flagged !== undefined) {
+      set.push('flagged = ?')
+      vals.push(fields.flagged ? 1 : 0)
     }
     if (!set.length) return current
     const ts = this.now()

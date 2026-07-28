@@ -188,8 +188,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'board:get': ({ id }) => req(REST.projectBoard(id)),
     'columns:create': ({ projectId, name }) =>
       req(REST.projectColumns(projectId), { method: 'POST', body: JSON.stringify({ name }) }),
-    'columns:rename': async ({ projectId, columnId, name }) => {
-      await req(REST.projectColumn(projectId, columnId), { method: 'PATCH', body: JSON.stringify({ name }) })
+    'columns:rename': async ({ projectId, columnId, name, wipLimit }) => {
+      await req(REST.projectColumn(projectId, columnId), { method: 'PATCH', body: JSON.stringify({ name, wipLimit }) })
     },
     'columns:setHidden': async ({ projectId, columnId, hidden }) => {
       await req(REST.projectColumnHidden(projectId, columnId), { method: 'POST', body: JSON.stringify({ hidden }) })

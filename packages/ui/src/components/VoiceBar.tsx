@@ -267,18 +267,17 @@ export function VoiceBar({
                   >
                     <SendIcon />
                   </button>
-                ) : (
+                ) : voiceInputEnabled ? (
                   <button
                     className="micbtn"
-                    style={{ background: voiceInputEnabled ? ACCENT : undefined }}
+                    style={{ background: ACCENT }}
                     onClick={onStartVoice}
-                    disabled={!voiceInputEnabled}
-                    title={voiceInputEnabled ? 'Говорить' : 'Голосовой ввод временно недоступен'}
+                    title="Говорить"
                     aria-label="Говорить"
                   >
                     <MicIcon />
                   </button>
-                )
+                ) : null
               ) : (
                 <>
                   <button
@@ -361,7 +360,7 @@ export function VoiceBar({
             </div>
           )}
           <p className="vstatus">
-            {voiceInputEnabled ? statusLine(state, aiLabel) : 'Голосовой ввод временно недоступен'}
+            {voiceInputEnabled ? statusLine(state, aiLabel) : (state === 'idle' ? '' : statusLine(state, aiLabel))}
           </p>
         </div>
       </div>

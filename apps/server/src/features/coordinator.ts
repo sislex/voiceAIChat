@@ -24,7 +24,11 @@ export class FeatureCoordinator {
       this.db.setFeatureBaseCommit(userId, feature.id, prepared.baseCommitSha)
       const planned = this.db.transitionFeature(userId, feature.id, 'planning')!
       this.db.createAgentTask(userId, feature.id, { title: `Реализовать: ${feature.title}`, description: feature.description, kind: 'implementation', createdBy: 'system' })
-      this.db.transitionFeature(userId, feature.id, planned.agentPlanApprovalMode === 'automatic' ? 'development' : 'awaiting_plan_approval')
+      // Ручное подтверждение плана: фича остаётся в `planning`, а первый ход агента идёт
+      // в режиме плана (read-only) — задача «начинается в режиме планирования». Пользователь
+      // сам двигает planning → awaiting_plan_approval → development существующими кнопками UI.
+      // Автоматический режим пропускает планирование и сразу идёт в разработку.
+      if (planned.agentPlanApprovalMode === 'automatic') this.db.transitionFeature(userId, feature.id, 'development')
       const conversationId = feature.conversationId
       const initialMessage = conversationId ? this.db.listMessages(userId, conversationId).at(-1) : undefined
       if (conversationId && initialMessage) {
