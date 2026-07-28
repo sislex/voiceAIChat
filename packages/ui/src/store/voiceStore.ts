@@ -571,7 +571,7 @@ export interface StoreActions {
   applyBoardUpdate(projectId: string, board: Board): void
   /** Колонки активной доски. */
   createColumn(name: string): Promise<void>
-  renameColumn(columnId: string, name: string): Promise<void>
+  updateColumn(columnId: string, fields: { name?: string; wipLimit?: number | null }): Promise<void>
   setColumnHidden(columnId: string, hidden: boolean): Promise<void>
   reorderColumns(order: string[]): Promise<void>
   deleteColumn(columnId: string): Promise<void>
@@ -582,7 +582,7 @@ export interface StoreActions {
   ): Promise<void>
   updateTask(
     taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
   ): Promise<void>
   /** Переместить задачу (смена статуса = смена колонки); оптимистично. */
   moveTask(taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null): Promise<void>
@@ -2516,11 +2516,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ error: perr(err) })
     }
   }
-  async function renameColumn(columnId: string, name: string): Promise<void> {
+  async function updateColumn(columnId: string, fields: { name?: string; wipLimit?: number | null }): Promise<void> {
     const id = state.activeProjectId
     if (!id) return
     try {
-      await api['columns:rename']({ projectId: id, columnId, name })
+      await api['columns:rename']({ projectId: id, columnId, ...fields })
       await refreshBoard()
     } catch (err) {
       setState({ error: perr(err) })
@@ -2580,7 +2580,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   async function updateTask(
     taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
   ): Promise<void> {
     const id = state.activeProjectId
     if (!id) return
@@ -2822,7 +2822,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       closeProjectSettings,
       applyBoardUpdate,
       createColumn,
-      renameColumn,
+      updateColumn,
       setColumnHidden,
       reorderColumns,
       deleteColumn,

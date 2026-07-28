@@ -89,11 +89,8 @@ describe('App — интеграция UI со стором и IPC', () => {
 
   it('блокирует голосовой ввод для всех пользователей', async () => {
     await renderApp()
-    const mic = screen.getByLabelText('Говорить')
-    expect(mic).toBeDisabled()
-    expect(mic).toHaveAttribute('title', 'Голосовой ввод временно недоступен')
-    await userEvent.click(mic)
-    expect(screen.getByText('Готов')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Говорить')).not.toBeInTheDocument()
+    expect(screen.queryByText('Голосовой ввод временно недоступен')).not.toBeInTheDocument()
     expect(screen.queryByTestId('live-block')).not.toBeInTheDocument()
   })
 

@@ -219,7 +219,7 @@ export interface IpcInvokeMap {
   /** Снапшот доски (колонки + задачи). */
   'board:get': { arg: { id: string }; result: Board }
   'columns:create': { arg: { projectId: string; name: string }; result: KanbanColumn }
-  'columns:rename': { arg: { projectId: string; columnId: string; name: string }; result: void }
+  'columns:rename': { arg: { projectId: string; columnId: string; name?: string; wipLimit?: number | null }; result: void }
   'columns:setHidden': { arg: { projectId: string; columnId: string; hidden: boolean }; result: void }
   'columns:reorder': { arg: { projectId: string; order: string[] }; result: void }
   'columns:delete': { arg: { projectId: string; columnId: string }; result: void }
@@ -234,6 +234,9 @@ export interface IpcInvokeMap {
       parentId?: string | null
       priority?: TaskPriority
       assignee?: string | null
+      labels?: string[]
+      storyPoints?: number | null
+      dueDate?: number | null
     }
     result: Task
   }
@@ -248,6 +251,10 @@ export interface IpcInvokeMap {
       parentId?: string | null
       priority?: TaskPriority
       assignee?: string | null
+      labels?: string[]
+      storyPoints?: number | null
+      dueDate?: number | null
+      flagged?: boolean
     }
     result: Task
   }
