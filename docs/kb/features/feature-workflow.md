@@ -1,7 +1,7 @@
 ---
 title: Feature Run — выполнение задач агентом в изолированных Git-workspace
 updated: 2026-07-28
-checked: d57b42b
+checked: db8cf03
 areas:
   - packages/shared/src/features.ts
   - packages/shared/src/projects.ts
@@ -68,7 +68,9 @@ merge/rebase; затем обновляет base и создаёт `feature/<id>
 Общий автомат `packages/shared/src/features.ts` валидирует переходы:
 `preparing → planning → awaiting_plan_approval/development → awaiting_commit →
 testing → awaiting_merge → merging → completed`; тестовые ошибки возвращают в
-`development`, терминалы — `completed`, `cancelled`, `failed`. План подтверждается
+`development`, терминалы — `completed`, `cancelled`, `failed`. Любой `failed`
+возвращает исходную Task в системную колонку `ready`; карточка сохраняет ссылку на
+неудачную попытку и предлагает запустить следующую. План подтверждается
 вручную или автоматически по настройке проекта. Политика коммитов и способ merge
 снимаются в Feature при создании, чтобы изменение настроек проекта не меняло уже
 идущую попытку.

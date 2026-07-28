@@ -44,6 +44,7 @@ export function TaskCard({ task, members, children = [], parents = [], feature, 
         <span className="kanban-card-title">{task.title}</span>
       </div>
       {feature && <button className="feature-link" onClick={(e) => { e.stopPropagation(); onOpenFeature?.(feature.id) }}>Фича #{feature.attempt} · {feature.status}</button>}
+      {feature && task.type === 'task' && ['completed', 'cancelled', 'failed'].includes(feature.status) && <button className="feature-start" onClick={(e) => { e.stopPropagation(); onStartFeature?.(task.id) }}>{feature.status === 'failed' ? 'Повторить фичу' : 'Новая фича'}</button>}
       {!feature && task.type === 'task' && <button className="feature-start" onClick={(e) => { e.stopPropagation(); onStartFeature?.(task.id) }}>Запустить фичу</button>}
       {!feature && task.type === 'story' && children.length === 0 && <button className="feature-start" onClick={(e) => { e.stopPropagation(); onStartFeature?.(task.id) }}>Создать задачу и запустить фичу</button>}
       {task.assignee && !open && <span className="kanban-assignee">👤 {task.assignee}</span>}

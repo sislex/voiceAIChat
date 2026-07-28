@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-07-28
-checked: 6e1cbfb
+checked: db8cf03
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/routes/projects.ts
@@ -116,8 +116,9 @@ areas:
 Новые проекты получают шесть системных колонок: «Бэклог», «Готово к разработке»,
 «Разработка», «Тестирование», «Ожидает merge», «Готово». Их машинный смысл хранит
 `semantic_type`, поэтому пользовательские подписи не участвуют в автоматизации.
-Задачи образуют иерархию Epic → Story → Task. Feature Run запускается для Task;
-запуск из Story без Task создаёт её автоматически. Полный workflow, Git-workspace,
+Задачи образуют иерархию Epic → Story → Task. В быстрой форме доски для Story
+обязательно выбирается родительский Epic; без него UI не отправляет запрос. Feature
+Run запускается для Task; запуск из Story без Task создаёт её автоматически. Полный workflow, Git-workspace,
 merge и deploy описаны в [features/feature-workflow.md](features/feature-workflow.md).
 
 Для Feature-пула используется отдельное `project_machines.feature_repos_root`;
