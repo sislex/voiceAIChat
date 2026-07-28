@@ -81,6 +81,11 @@ export interface IpcInvokeMap {
   'kb:search': { arg: KbSearchRequest; result: KbSearchResult[] }
   'kb:document': { arg: { id: string }; result: KbDocument | null }
   'kb:context': { arg: { query: string; budget?: number }; result: KbContextBundle }
+  /**
+   * Помощник промптов: по черновику запроса вернуть несколько переформулировок.
+   * Одноразовый LLM-вызов, историю разговора не трогает.
+   */
+  'prompt:suggest': { arg: { text: string }; result: { variants: string[] } }
   'conversations:list': { arg: void; result: Conversation[] }
   'conversations:create': { arg: { title?: string }; result: Conversation }
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
@@ -586,6 +591,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'kb:search',
   'kb:document',
   'kb:context',
+  'prompt:suggest',
   'conversations:list',
   'conversations:create',
   'conversations:get',

@@ -131,6 +131,8 @@ export const REST = {
   /** Чтение файла с диска сервера (только «своя» область) — картинки от CLI. */
   serverFile: '/api/files/read',
   settings: '/api/settings',
+  /** Помощник промптов: переформулировки черновика запроса (одноразовый LLM-вызов). */
+  promptSuggest: '/api/prompt/suggest',
   systemCapabilities: '/api/system/capabilities',
   sttStatus: '/api/stt/status',
   sttModels: '/api/stt/models',

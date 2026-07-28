@@ -193,3 +193,54 @@ describe('VoiceBar — быстрый режим', () => {
     expect(screen.getByRole('button', { name: 'Разработка' })).toBeDisabled()
   })
 })
+
+describe('VoiceBar — помощник промптов', () => {
+  const openHelper = { open: true, loading: false, variants: ['Вариант A', 'Вариант B'], error: null }
+
+  it('палочка появляется только когда в черновике есть текст', () => {
+    const { rerender } = render(<VoiceBar {...makeProps('idle', { draft: '', onSuggestPrompts: vi.fn() })} />)
+    expect(screen.queryByLabelText('Подсказать формулировку запроса')).not.toBeInTheDocument()
+    rerender(<VoiceBar {...makeProps('idle', { draft: 'сделай форму', onSuggestPrompts: vi.fn() })} />)
+    expect(screen.getByLabelText('Подсказать формулировку запроса')).toBeInTheDocument()
+  })
+
+  it('клик по палочке запрашивает варианты', async () => {
+    const onSuggestPrompts = vi.fn()
+    setup('idle', { draft: 'сделай форму', onSuggestPrompts })
+    await userEvent.click(screen.getByLabelText('Подсказать формулировку запроса'))
+    expect(onSuggestPrompts).toHaveBeenCalledOnce()
+  })
+
+  it('показывает варианты и заполняет черновик по клику', async () => {
+    const onApplyPromptSuggestion = vi.fn()
+    setup('idle', { draft: 'сделай форму', promptHelper: openHelper, onSuggestPrompts: vi.fn(), onApplyPromptSuggestion })
+    expect(screen.getByTestId('prompt-helper')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('option', { name: 'Вариант B' }))
+    expect(onApplyPromptSuggestion).toHaveBeenCalledWith('Вариант B')
+  })
+
+  it('открытая палочка закрывает панель повторным кликом', async () => {
+    const onClosePromptSuggestions = vi.fn()
+    setup('idle', { draft: 'сделай форму', promptHelper: openHelper, onSuggestPrompts: vi.fn(), onClosePromptSuggestions })
+    await userEvent.click(screen.getByLabelText('Подсказать формулировку запроса'))
+    expect(onClosePromptSuggestions).toHaveBeenCalledOnce()
+  })
+
+  it('крестик закрывает панель', async () => {
+    const onClosePromptSuggestions = vi.fn()
+    setup('idle', { draft: 'x', promptHelper: openHelper, onSuggestPrompts: vi.fn(), onClosePromptSuggestions })
+    await userEvent.click(screen.getByLabelText('Закрыть варианты'))
+    expect(onClosePromptSuggestions).toHaveBeenCalledOnce()
+  })
+
+  it('показывает индикатор загрузки и текст ошибки', () => {
+    const { rerender } = render(
+      <VoiceBar {...makeProps('idle', { draft: 'x', promptHelper: { open: true, loading: true, variants: [], error: null }, onSuggestPrompts: vi.fn() })} />
+    )
+    expect(screen.getByText('Подбираю варианты…')).toBeInTheDocument()
+    rerender(
+      <VoiceBar {...makeProps('idle', { draft: 'x', promptHelper: { open: true, loading: false, variants: [], error: 'Сбой' }, onSuggestPrompts: vi.fn() })} />
+    )
+    expect(screen.getByText('Сбой')).toBeInTheDocument()
+  })
+})
