@@ -26,6 +26,7 @@ export interface ProjectBoardProps {
   onDeleteTask: (taskId: string) => void
   onStartFeature?: (itemId: string, type: WorkItemType) => void
   onOpenFeature?: (featureId: string) => void
+  onOpenSettings?: () => void
   onClose: () => void
 }
 
@@ -231,14 +232,22 @@ export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
 
   return (
     <ToolFrame
-      title={`Доска · ${props.projectName}`}
+      title={props.projectName}
       onClose={props.onClose}
       testId="project-board"
+      variant="page"
       className="kanban-frame"
       actions={
-        <label className="kanban-showhidden">
-          <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> скрытые
-        </label>
+        <>
+          {props.onOpenSettings && (
+            <button className="renbtn kanban-settings" title="Настройки проекта" onClick={props.onOpenSettings}>
+              ⚙ Настройки
+            </button>
+          )}
+          <label className="kanban-showhidden">
+            <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> скрытые
+          </label>
+        </>
       }
     >
       {loading && <p className="kanban-empty">Загрузка доски…</p>}
