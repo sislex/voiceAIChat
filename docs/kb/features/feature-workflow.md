@@ -1,7 +1,7 @@
 ---
 title: Feature Run — выполнение задач агентом в изолированных Git-workspace
 updated: 2026-07-28
-checked: 6e1cbfb
+checked: d57b42b
 areas:
   - packages/shared/src/features.ts
   - packages/shared/src/projects.ts
@@ -87,6 +87,14 @@ testing → awaiting_merge → merging → completed`; тестовые ошиб
 успеха workspace возвращается на base-ветку. Команды теста и деплоя задаёт только
 владелец проекта; это намеренно доверенная конфигурация, не пользовательский ввод
 в момент запуска.
+
+## Жизненный цикл связанного чата
+
+Пока Feature имеет активный статус, её разговор нельзя удалить: `deleteConversation`
+проверяет связь и REST возвращает `409` с предложением сначала завершить или отменить
+Feature. Это сохраняет канал управления агентом и не оставляет занятый workspace без
+доступного чата. Для `completed`, `cancelled` и `failed` удаление разрешено;
+внешний ключ ставит `features.conversation_id` в `NULL`, не удаляя историю попытки.
 
 ## Контракт и UI
 

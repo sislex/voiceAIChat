@@ -139,9 +139,13 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     }
   )
 
-  app.delete<{ Params: { id: string } }>('/api/conversations/:id', async (req) => {
-    db.deleteConversation(uid(req), req.params.id)
-    return { ok: true }
+  app.delete<{ Params: { id: string } }>('/api/conversations/:id', async (req, reply) => {
+    try {
+      db.deleteConversation(uid(req), req.params.id)
+      return { ok: true }
+    } catch (err) {
+      return reply.code(409).send({ error: err instanceof Error ? err.message : String(err) })
+    }
   })
 
   app.post<{ Params: { id: string }; Body: AddMessageArgs }>(

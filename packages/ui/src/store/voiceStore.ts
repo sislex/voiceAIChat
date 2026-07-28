@@ -1793,13 +1793,17 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   async function deleteConversation(id: string): Promise<void> {
-    await api['conversations:delete']({ id })
-    const wasActive = state.activeId === id
-    await refreshConversations()
-    if (wasActive) {
-      const next = state.conversations[0]
-      if (next) await selectConversation(next.id)
-      else await newConversation()
+    try {
+      await api['conversations:delete']({ id })
+      const wasActive = state.activeId === id
+      await refreshConversations()
+      if (wasActive) {
+        const next = state.conversations[0]
+        if (next) await selectConversation(next.id)
+        else await newConversation()
+      }
+    } catch (err) {
+      setState({ error: perr(err) })
     }
   }
 
