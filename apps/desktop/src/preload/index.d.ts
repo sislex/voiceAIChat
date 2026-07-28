@@ -2,6 +2,7 @@ import type {
   RendererAgentsBridge,
   RendererApi,
   RendererAudioBridge,
+  RendererBoardBridge,
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
@@ -24,6 +25,8 @@ declare global {
     codex: RendererCodexBridge
     /** Живой список агентов (web); в desktop отсутствует. */
     agents?: RendererAgentsBridge
+    /** Живая канбан-доска проекта (web); в desktop отсутствует. */
+    board?: RendererBoardBridge
     /** Сессия пользователя (web); в desktop отсутствует → без экрана логина. */
     session?: RendererSessionBridge
     /** Файловый проводник по машине-агенту (web); в desktop отсутствует. */
