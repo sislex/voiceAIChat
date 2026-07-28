@@ -201,7 +201,16 @@ export const REST = {
   projectTask: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`,
   projectTaskMove: (id: string, taskId: string) =>
-    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/move`
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/move`,
+  projectFeatures: (id: string) => `/api/projects/${encodeURIComponent(id)}/features`,
+  taskFeature: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/feature`,
+  storyFeature: (id: string, storyId: string) => `/api/projects/${encodeURIComponent(id)}/stories/${encodeURIComponent(storyId)}/feature`,
+  feature: (id: string) => `/api/features/${encodeURIComponent(id)}`,
+  featureAutomation: (id: string) => `/api/features/${encodeURIComponent(id)}/automation`,
+  featureTransition: (id: string) => `/api/features/${encodeURIComponent(id)}/transition`,
+  featureAgentTasks: (id: string) => `/api/features/${encodeURIComponent(id)}/agent-tasks`,
+  featureDeploy: (id: string) => `/api/features/${encodeURIComponent(id)}/deploy`,
+  featureDeployments: (id: string) => `/api/features/${encodeURIComponent(id)}/deployments`
 } as const
 
 // --- WebSocket -----------------------------------------------------------

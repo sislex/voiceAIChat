@@ -1,3 +1,5 @@
+import type { FeatureRunSummary } from './features'
+
 // Типы домена «Проекты» + канбан-доска. Разделяются server/web/desktop.
 
 /** Приоритет задачи. */
@@ -5,6 +7,24 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 
 /** Все приоритеты (порядок = порядок в меню, по возрастанию важности). */
 export const TASK_PRIORITIES: TaskPriority[] = ['low', 'medium', 'high', 'urgent']
+
+/** Тип элемента планирования. В БД исторически все элементы лежат в tasks. */
+export type WorkItemType = 'epic' | 'story' | 'task'
+export const WORK_ITEM_TYPES: WorkItemType[] = ['epic', 'story', 'task']
+
+/** Стабильное назначение колонки, не зависящее от отображаемого имени. */
+export type KanbanColumnSemanticType =
+  | 'backlog'
+  | 'ready'
+  | 'development'
+  | 'testing'
+  | 'awaiting_merge'
+  | 'done'
+  | 'custom'
+
+export const KANBAN_COLUMN_SEMANTIC_TYPES: KanbanColumnSemanticType[] = [
+  'backlog', 'ready', 'development', 'testing', 'awaiting_merge', 'done', 'custom'
+]
 
 /** Роль пользователя в проекте. */
 export type ProjectRole = 'owner' | 'member'
@@ -34,6 +54,11 @@ export interface ProjectSummary {
   updatedAt: number
   /** Роль текущего пользователя в этом проекте. */
   role: ProjectRole
+  commitPolicy: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+  mergeTransport: 'local' | 'github_pull_request'
+  agentPlanApprovalMode: 'manual' | 'automatic'
+  testCommand?: string
+  productionDeployCommand?: string
 }
 
 /** Машина проекта: агент + рабочая папка проекта на этой машине. */
@@ -41,6 +66,8 @@ export interface ProjectMachine {
   agentId: string
   /** Папка проекта на этой машине (рабочий каталог). '' — не задана. */
   path: string
+  /** Корень пула изолированных копий Feature Run на этой машине. */
+  featureReposRoot: string
 }
 
 /** Проект со всем составом (ответ get/create/update). */
@@ -57,6 +84,7 @@ export interface KanbanColumn {
   id: string
   projectId: string
   name: string
+  semanticType: KanbanColumnSemanticType
   /** Дробный ранг для порядка колонок. */
   position: number
   /** Скрыта из основного вида доски (задачи сохраняют статус). */
@@ -69,8 +97,11 @@ export interface Task {
   id: string
   projectId: string
   columnId: string
+  type: WorkItemType
+  parentId: string | null
   title: string
   description: string
+  acceptanceCriteria: string
   priority: TaskPriority
   /** Логин исполнителя (участник проекта) или null. */
   assignee: string | null
@@ -80,8 +111,12 @@ export interface Task {
   updatedAt: number
 }
 
+/** Новое доменное имя; Task остаётся alias для совместимости. */
+export type WorkItem = Task
+
 /** Снапшот доски проекта. */
 export interface Board {
   columns: KanbanColumn[]
   tasks: Task[]
+  features?: FeatureRunSummary[]
 }

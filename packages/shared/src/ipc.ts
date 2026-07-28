@@ -34,6 +34,7 @@ import type {
   Task,
   TaskPriority
 } from './projects'
+import type { FeatureRun, FeatureStatus, AgentTask, FeatureDeployment } from './features'
 import type { KbContextBundle, KbDocument, KbDocumentSummary, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
 
 /** Статус локальной модели Whisper. */
@@ -178,7 +179,7 @@ export interface IpcInvokeMap {
   /** Проекты, где текущий пользователь — участник. */
   'projects:list': { arg: void; result: ProjectSummary[] }
   'projects:create': {
-    arg: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[] }
+    arg: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
     result: ProjectDetail
   }
   'projects:get': { arg: { id: string }; result: ProjectDetail | null }
@@ -190,6 +191,11 @@ export interface IpcInvokeMap {
       gitUrl?: string | null
       technologies?: string[]
       skills?: string[]
+      commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+      mergeTransport?: 'local' | 'github_pull_request'
+      agentPlanApprovalMode?: 'manual' | 'automatic'
+      testCommand?: string
+      productionDeployCommand?: string
     }
     result: ProjectDetail
   }
@@ -202,6 +208,7 @@ export interface IpcInvokeMap {
   'projects:unlinkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Задать папку проекта на конкретной машине (только владелец). */
   'projects:setMachinePath': { arg: { id: string; agentId: string; path: string }; result: ProjectDetail }
+  'projects:setFeatureReposRoot': { arg: { id: string; agentId: string; featureReposRoot: string }; result: ProjectDetail }
   /** Назначить машину проекта по умолчанию (только владелец). */
   'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Снапшот доски (колонки + задачи). */
@@ -217,6 +224,9 @@ export interface IpcInvokeMap {
       columnId: string
       title: string
       description?: string
+      acceptanceCriteria?: string
+      type?: 'epic' | 'story' | 'task'
+      parentId?: string | null
       priority?: TaskPriority
       assignee?: string | null
     }
@@ -228,6 +238,9 @@ export interface IpcInvokeMap {
       taskId: string
       title?: string
       description?: string
+      acceptanceCriteria?: string
+      type?: 'epic' | 'story' | 'task'
+      parentId?: string | null
       priority?: TaskPriority
       assignee?: string | null
     }
@@ -239,6 +252,16 @@ export interface IpcInvokeMap {
     result: Task
   }
   'tasks:delete': { arg: { projectId: string; taskId: string }; result: void }
+  'features:list': { arg: { projectId: string }; result: FeatureRun[] }
+  'features:createFromTask': { arg: { projectId: string; taskId: string; autoMerge?: boolean; autoDeployProduction?: boolean }; result: FeatureRun }
+  'features:createFromStory': { arg: { projectId: string; storyId: string; autoMerge?: boolean; autoDeployProduction?: boolean }; result: FeatureRun }
+  'features:get': { arg: { id: string }; result: FeatureRun | null }
+  'features:setAutomation': { arg: { id: string; autoMerge?: boolean; autoDeployProduction?: boolean }; result: FeatureRun }
+  'features:transition': { arg: { id: string; status: FeatureStatus; expectedVersion?: number }; result: FeatureRun }
+  'features:deploy': { arg: { id: string }; result: FeatureRun }
+  'features:deployments': { arg: { id: string }; result: FeatureDeployment[] }
+  'agentTasks:list': { arg: { featureId: string }; result: AgentTask[] }
+  'agentTasks:create': { arg: { featureId: string; title: string; description?: string; kind?: AgentTask['kind']; dependsOn?: string[] }; result: AgentTask }
 }
 
 export type IpcChannel = keyof IpcInvokeMap
@@ -619,6 +642,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:linkMachine',
   'projects:unlinkMachine',
   'projects:setMachinePath',
+  'projects:setFeatureReposRoot',
   'projects:setDefaultMachine',
   'board:get',
   'columns:create',
@@ -629,7 +653,17 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:create',
   'tasks:update',
   'tasks:move',
-  'tasks:delete'
+  'tasks:delete',
+  'features:list',
+  'features:createFromTask',
+  'features:createFromStory',
+  'features:get',
+  'features:setAutomation',
+  'features:transition',
+  'features:deploy',
+  'features:deployments',
+  'agentTasks:list',
+  'agentTasks:create'
 ]
 
 /**

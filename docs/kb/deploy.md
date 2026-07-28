@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-07-27
-checked: 49465ae
+updated: 2026-07-28
+checked: 6e1cbfb
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -72,7 +72,7 @@ docker compose exec -u node voicechat codex login
 (`VC_AGENT_APP`, `VC_DESKTOP_APP`); первый админ (`VC_ADMIN_PASSWORD`); пороги
 памяти (`VC_MIN_MEM_STT`, `VC_MIN_MEM_TTS`); входящий gateway
 (`VC_CLAUDE_GATEWAY_BACKEND`, `VC_CLAUDE_UPSTREAM_URL`,
-`VC_CLAUDE_UPSTREAM_API_KEY`, `VC_CLAUDE_UPSTREAM_AUTH`, `VC_CLAUDE_MODEL_MAP`).
+`VC_CLAUDE_UPSTREAM_API_KEY`, `VC_CLAUDE_UPSTREAM_AUTH`, `VC_CLAUDE_MODEL_MAP`); GitHub PR merge (`VC_GITHUB_TOKEN`).
 `VC_CLAUDE_MODEL_MAP` — JSON-объект; невалидный JSON валит старт с понятной
 ошибкой (это осознанно, а не баг).
 

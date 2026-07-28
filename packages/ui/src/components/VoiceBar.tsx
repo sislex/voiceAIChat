@@ -38,6 +38,8 @@ export interface VoiceBarProps {
   onChangePermissionMode?: (mode: PermissionMode) => void
   /** Глобальная доступность голосового ввода. */
   voiceInputEnabled?: boolean
+  featureAutomation?: { autoMerge: boolean; autoDeployProduction: boolean }
+  onFeatureAutomationChange?: (fields: { autoMerge?: boolean; autoDeployProduction?: boolean }) => void
 }
 
 export function VoiceBar({
@@ -58,7 +60,9 @@ export function VoiceBar({
   replyStarted = false,
   permissionMode = 'plan',
   onChangePermissionMode,
-  voiceInputEnabled = true
+  voiceInputEnabled = true,
+  featureAutomation,
+  onFeatureAutomationChange
 }: VoiceBarProps): JSX.Element {
   const isIdle = state === 'idle'
   const isListening = state === 'listening'
@@ -137,6 +141,11 @@ export function VoiceBar({
             ))}
           </div>
         )}
+
+        {featureAutomation && <div className="feature-composer-options">
+          <label><input type="checkbox" checked={featureAutomation.autoMerge} onChange={(e) => onFeatureAutomationChange?.({ autoMerge: e.target.checked })} /> Автомерж</label>
+          <label><input type="checkbox" checked={featureAutomation.autoDeployProduction} onChange={(e) => onFeatureAutomationChange?.({ autoDeployProduction: e.target.checked })} /> Автодеплой production</label>
+        </div>}
 
         <div className="vrow" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
           {composerMode && (

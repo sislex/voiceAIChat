@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-07-27
-checked: 49465ae
+updated: 2026-07-28
+checked: 6e1cbfb
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -130,3 +130,6 @@ WS дозванивается только при наличии токена с
 Сообщение `pty.start` на участках client→server и server→agent содержит необязательное поле `cwd`. Сервер проверяет владение машиной и передаёт поле реестру; агент запускает native PTY или pipe-fallback в указанной папке, а при отсутствии поля использует свой корень.
 
 **Проекты и канбан** (REST `projects:*`/`columns:*`/`tasks:*`, WS `board.subscribe`/`board.update`, мост `window.board`) — отдельная подсистема, см. [projects.md](projects.md).
+
+
+**Feature Run** (REST `features:*`, Agent Tasks и deployments) описан в [features/feature-workflow.md](features/feature-workflow.md). Живые краткие состояния приходят в существующем `board.update`.

@@ -29,7 +29,16 @@ import {
   type ProjectMember,
   type ProjectSummary,
   type Task,
-  type TaskPriority
+  type TaskPriority,
+  type WorkItemType,
+  type KanbanColumnSemanticType,
+  type FeatureRun,
+  type FeatureStatus,
+  type AgentTask,
+  type RepositorySlot,
+  type FeatureDeployment,
+  canTransitionFeature,
+  featureColumnSemantic
 } from '@voicechat/shared'
 import { hashPassword, verifyPassword } from '../users/passwords.js'
 
@@ -154,6 +163,11 @@ interface ProjectRow {
   created_at: number
   updated_at: number
   default_agent_id: string | null
+  commit_policy: string
+  merge_transport: string
+  agent_plan_approval_mode: string
+  test_command: string
+  production_deploy_command: string
 }
 
 interface ProjectMemberRow {
@@ -166,9 +180,83 @@ interface ColumnRow {
   id: string
   project_id: string
   name: string
+  semantic_type: string
   position: number
   hidden: number
   created_at: number
+}
+
+interface RepositorySlotRow {
+  id: string
+  project_id: string
+  agent_id: string
+  path: string
+  status: string
+  feature_id: string | null
+  current_branch: string | null
+  reserved_at: number | null
+  heartbeat_at: number | null
+  block_reason: string | null
+  last_error: string | null
+}
+
+interface FeatureRow {
+  id: string
+  project_id: string
+  source_task_id: string
+  attempt: number
+  previous_feature_id: string | null
+  conversation_id: string | null
+  repository_slot_id: string | null
+  title: string
+  description: string
+  status: string
+  deploy_status: string
+  base_branch: string
+  feature_branch: string
+  base_commit_sha: string | null
+  tested_commit_sha: string | null
+  merged_commit_sha: string | null
+  commit_policy: string
+  merge_transport: string
+  agent_plan_approval_mode: string
+  auto_merge: number
+  auto_deploy_production: number
+  created_at: number
+  updated_at: number
+  completed_at: number | null
+  last_error: string | null
+  version: number
+}
+
+interface FeatureDeploymentRow {
+  id: string
+  feature_id: string
+  requested_main_sha: string
+  deployed_main_sha: string | null
+  trigger: string
+  status: string
+  created_at: number
+  started_at: number | null
+  finished_at: number | null
+  error: string | null
+}
+
+interface AgentTaskRow {
+  id: string
+  feature_id: string
+  title: string
+  description: string
+  kind: string
+  status: string
+  created_by: string
+  depends_on: string
+  attempt: number
+  result_summary: string | null
+  error: string | null
+  created_at: number
+  started_at: number | null
+  finished_at: number | null
 }
 
 interface TaskRow {
@@ -177,6 +265,9 @@ interface TaskRow {
   column_id: string
   title: string
   description: string
+  acceptance_criteria: string
+  type: string
+  parent_id: string | null
   priority: string
   assignee: string | null
   position: number
@@ -213,11 +304,20 @@ function normPriority(raw: string): TaskPriority {
   return raw === 'low' || raw === 'high' || raw === 'urgent' || raw === 'medium' ? raw : 'medium'
 }
 
+function normColumnSemantic(raw: string): KanbanColumnSemanticType {
+  return raw === 'backlog' || raw === 'ready' || raw === 'development' || raw === 'testing' || raw === 'awaiting_merge' || raw === 'done' ? raw : 'custom'
+}
+
+function normWorkItemType(raw: string): WorkItemType {
+  return raw === 'epic' || raw === 'story' ? raw : 'task'
+}
+
 function mapColumn(r: ColumnRow): KanbanColumn {
   return {
     id: r.id,
     projectId: r.project_id,
     name: r.name,
+    semanticType: normColumnSemantic(r.semantic_type),
     position: r.position,
     hidden: r.hidden !== 0,
     createdAt: r.created_at
@@ -229,13 +329,64 @@ function mapTask(r: TaskRow): Task {
     id: r.id,
     projectId: r.project_id,
     columnId: r.column_id,
+    type: normWorkItemType(r.type),
+    parentId: r.parent_id,
     title: r.title,
     description: r.description,
+    acceptanceCriteria: r.acceptance_criteria,
     priority: normPriority(r.priority),
     assignee: r.assignee,
     position: r.position,
     createdAt: r.created_at,
     updatedAt: r.updated_at
+  }
+}
+
+function mapRepositorySlot(r: RepositorySlotRow): RepositorySlot {
+  const statuses = new Set(['available', 'reserved', 'busy', 'cleaning', 'blocked', 'repair_required', 'disabled'])
+  return { id: r.id, projectId: r.project_id, agentId: r.agent_id, path: r.path,
+    status: (statuses.has(r.status) ? r.status : 'repair_required') as RepositorySlot['status'],
+    featureId: r.feature_id, currentBranch: r.current_branch, reservedAt: r.reserved_at,
+    heartbeatAt: r.heartbeat_at, blockReason: r.block_reason, lastError: r.last_error }
+}
+
+const FEATURE_STATUSES = new Set<FeatureStatus>(['preparing', 'planning', 'awaiting_plan_approval', 'development', 'awaiting_commit', 'testing', 'awaiting_merge', 'merging', 'completed', 'failed', 'cancelled'])
+function mapFeature(r: FeatureRow): FeatureRun {
+  return {
+    id: r.id, projectId: r.project_id, sourceTaskId: r.source_task_id, attempt: r.attempt,
+    previousFeatureId: r.previous_feature_id, conversationId: r.conversation_id,
+    repositorySlotId: r.repository_slot_id, title: r.title, description: r.description,
+    status: FEATURE_STATUSES.has(r.status as FeatureStatus) ? r.status as FeatureStatus : 'failed',
+    deployStatus: r.deploy_status === 'awaiting_confirmation' || r.deploy_status === 'queued' || r.deploy_status === 'deploying' || r.deploy_status === 'succeeded' || r.deploy_status === 'failed' ? r.deploy_status : 'not_requested',
+    baseBranch: r.base_branch, featureBranch: r.feature_branch, baseCommitSha: r.base_commit_sha,
+    testedCommitSha: r.tested_commit_sha, mergedCommitSha: r.merged_commit_sha,
+    commitPolicy: r.commit_policy === 'final_system_commit' || r.commit_policy === 'manual_user_confirmation' ? r.commit_policy : 'agent_commits',
+    mergeTransport: r.merge_transport === 'github_pull_request' ? 'github_pull_request' : 'local',
+    agentPlanApprovalMode: r.agent_plan_approval_mode === 'automatic' ? 'automatic' : 'manual',
+    autoMerge: r.auto_merge !== 0, autoDeployProduction: r.auto_deploy_production !== 0,
+    createdAt: r.created_at, updatedAt: r.updated_at, completedAt: r.completed_at,
+    lastError: r.last_error, version: r.version
+  }
+}
+
+function mapDeployment(r: FeatureDeploymentRow): FeatureDeployment {
+  const statuses = new Set(['queued', 'running', 'succeeded', 'failed', 'cancelled'])
+  return { id: r.id, featureId: r.feature_id, requestedMainSha: r.requested_main_sha,
+    deployedMainSha: r.deployed_main_sha, trigger: r.trigger === 'automatic' ? 'automatic' : 'manual',
+    status: (statuses.has(r.status) ? r.status : 'failed') as FeatureDeployment['status'], createdAt: r.created_at,
+    startedAt: r.started_at, finishedAt: r.finished_at, error: r.error }
+}
+
+function mapAgentTask(r: AgentTaskRow): AgentTask {
+  const kinds = new Set(['research', 'implementation', 'test', 'bugfix', 'review', 'documentation', 'git', 'custom'])
+  const statuses = new Set(['planned', 'ready', 'running', 'blocked', 'succeeded', 'failed', 'cancelled'])
+  return {
+    id: r.id, featureId: r.feature_id, title: r.title, description: r.description,
+    kind: (kinds.has(r.kind) ? r.kind : 'custom') as AgentTask['kind'],
+    status: (statuses.has(r.status) ? r.status : 'failed') as AgentTask['status'],
+    createdBy: (r.created_by === 'agent' || r.created_by === 'system' ? r.created_by : 'user'),
+    dependsOn: parseStringArray(r.depends_on), attempt: r.attempt, resultSummary: r.result_summary,
+    error: r.error, createdAt: r.created_at, startedAt: r.started_at, finishedAt: r.finished_at
   }
 }
 
@@ -314,6 +465,39 @@ export class VoiceChatDb {
     if (pmCols.length && !pmCols.some((c) => c.name === 'path')) {
       this.db.exec(`ALTER TABLE project_machines ADD COLUMN path TEXT NOT NULL DEFAULT ''`)
     }
+    if (pmCols.length && !pmCols.some((c) => c.name === 'feature_repos_root')) this.db.exec(`ALTER TABLE project_machines ADD COLUMN feature_repos_root TEXT NOT NULL DEFAULT ''`)
+    const taskCols = this.db.prepare(`PRAGMA table_info(tasks)`).all() as Array<{ name: string }>
+    if (taskCols.length && !taskCols.some((c) => c.name === 'type')) this.db.exec(`ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'task'`)
+    if (taskCols.length && !taskCols.some((c) => c.name === 'parent_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN parent_id TEXT`)
+    if (taskCols.length && !taskCols.some((c) => c.name === 'acceptance_criteria')) this.db.exec(`ALTER TABLE tasks ADD COLUMN acceptance_criteria TEXT NOT NULL DEFAULT ''`)
+    const colCols = this.db.prepare(`PRAGMA table_info(kanban_columns)`).all() as Array<{ name: string }>
+    if (colCols.length && !colCols.some((c) => c.name === 'semantic_type')) this.db.exec(`ALTER TABLE kanban_columns ADD COLUMN semantic_type TEXT NOT NULL DEFAULT 'custom'`)
+    // Старые доски имели To Do / In Progress / Done без стабильной семантики.
+    // Названия сохраняем, назначаем крайним колонкам базовые роли и досеиваем
+    // обязательные этапы workflow. SQL idempotent и не зависит от newId.
+    this.db.exec(`
+      UPDATE kanban_columns SET semantic_type = 'backlog'
+      WHERE semantic_type = 'custom' AND id IN (SELECT id FROM kanban_columns c2 WHERE c2.project_id = kanban_columns.project_id ORDER BY position LIMIT 1);
+      UPDATE kanban_columns SET semantic_type = 'done'
+      WHERE semantic_type = 'custom' AND id IN (SELECT id FROM kanban_columns c2 WHERE c2.project_id = kanban_columns.project_id ORDER BY position DESC LIMIT 1);
+      UPDATE kanban_columns SET semantic_type = 'development'
+      WHERE semantic_type = 'custom' AND id IN (SELECT id FROM kanban_columns c2 WHERE c2.project_id = kanban_columns.project_id ORDER BY position LIMIT 1 OFFSET 1);
+      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
+        SELECT lower(hex(randomblob(16))), p.id, 'Готово к разработке', 'ready', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
+        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='ready');
+      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
+        SELECT lower(hex(randomblob(16))), p.id, 'Тестирование', 'testing', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
+        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='testing');
+      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
+        SELECT lower(hex(randomblob(16))), p.id, 'Ожидает мержа', 'awaiting_merge', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
+        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='awaiting_merge');
+    `)
+    const featureProjectCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'commit_policy')) this.db.exec(`ALTER TABLE projects ADD COLUMN commit_policy TEXT NOT NULL DEFAULT 'agent_commits'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'merge_transport')) this.db.exec(`ALTER TABLE projects ADD COLUMN merge_transport TEXT NOT NULL DEFAULT 'local'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'agent_plan_approval_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'test_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN test_command TEXT NOT NULL DEFAULT ''`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_deploy_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_deploy_command TEXT NOT NULL DEFAULT ''`)
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN engine TEXT`)
@@ -880,22 +1064,27 @@ export class VoiceChatDb {
       createdBy: r.created_by,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
-      role: myRole === 'owner' ? 'owner' : 'member'
+      role: myRole === 'owner' ? 'owner' : 'member',
+      commitPolicy: r.commit_policy === 'final_system_commit' || r.commit_policy === 'manual_user_confirmation' ? r.commit_policy : 'agent_commits',
+      mergeTransport: r.merge_transport === 'github_pull_request' ? 'github_pull_request' : 'local',
+      agentPlanApprovalMode: r.agent_plan_approval_mode === 'automatic' ? 'automatic' : 'manual',
+      testCommand: r.test_command || undefined,
+      productionDeployCommand: r.production_deploy_command || undefined
     }
   }
 
   /** Создаёт проект: владелец-участник + дефолтные колонки (в одной транзакции). */
   createProject(
     userId: string,
-    args: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[] }
+    args: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
   ): ProjectDetail {
     const id = this.newId()
     const ts = this.now()
     this.db.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO projects (id, name, description, git_url, technologies, skills, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO projects (id, name, description, git_url, technologies, skills, created_by, created_at, updated_at, commit_policy, merge_transport, agent_plan_approval_mode)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           id,
@@ -906,16 +1095,23 @@ export class VoiceChatDb {
           JSON.stringify(args.skills ?? []),
           userId,
           ts,
-          ts
+          ts,
+          args.commitPolicy ?? 'agent_commits',
+          args.mergeTransport ?? 'local',
+          args.agentPlanApprovalMode ?? 'manual'
         )
       this.db
         .prepare(`INSERT INTO project_members (project_id, username, role, added_at) VALUES (?, ?, 'owner', ?)`)
         .run(id, userId, ts)
-      const insCol = this.db.prepare(
-        `INSERT INTO kanban_columns (id, project_id, name, position, hidden, created_at) VALUES (?, ?, ?, ?, 0, ?)`
-      )
-      ;['To Do', 'In Progress', 'Done'].forEach((name, i) =>
-        insCol.run(this.newId(), id, name, (i + 1) * RANK_STEP, ts)
+      ;[
+        ['Бэклог', 'backlog'],
+        ['Готово к разработке', 'ready'],
+        ['В разработке', 'development'],
+        ['Тестирование', 'testing'],
+        ['Ожидает мержа', 'awaiting_merge'],
+        ['Готово', 'done']
+      ].forEach(([name, semantic], i) =>
+        this.db.prepare(`INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`).run(this.newId(), id, name, semantic, (i + 1) * RANK_STEP, ts)
       )
     })()
     return this.getProject(userId, id) as ProjectDetail
@@ -953,11 +1149,12 @@ export class VoiceChatDb {
       })
     )
     const machines = (
-      this.db.prepare(`SELECT agent_id, path FROM project_machines WHERE project_id = ? ORDER BY agent_id ASC`).all(id) as Array<{
+      this.db.prepare(`SELECT agent_id, path, feature_repos_root FROM project_machines WHERE project_id = ? ORDER BY agent_id ASC`).all(id) as Array<{
         agent_id: string
         path: string | null
+        feature_repos_root: string | null
       }>
-    ).map((x) => ({ agentId: x.agent_id, path: x.path ?? '' }))
+    ).map((x) => ({ agentId: x.agent_id, path: x.path ?? '', featureReposRoot: x.feature_repos_root ?? '' }))
     return {
       ...this.mapProjectSummary(row, row.my_role),
       members,
@@ -975,6 +1172,11 @@ export class VoiceChatDb {
       gitUrl?: string | null
       technologies?: string[]
       skills?: string[]
+      commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+      mergeTransport?: 'local' | 'github_pull_request'
+      agentPlanApprovalMode?: 'manual' | 'automatic'
+      testCommand?: string
+      productionDeployCommand?: string
     }
   ): ProjectDetail | null {
     if (!this.isProjectOwner(userId, id)) return null
@@ -1000,6 +1202,20 @@ export class VoiceChatDb {
       set.push('skills = ?')
       vals.push(JSON.stringify(fields.skills))
     }
+    if (fields.commitPolicy !== undefined) {
+      set.push('commit_policy = ?')
+      vals.push(fields.commitPolicy)
+    }
+    if (fields.mergeTransport !== undefined) {
+      set.push('merge_transport = ?')
+      vals.push(fields.mergeTransport)
+    }
+    if (fields.agentPlanApprovalMode !== undefined) {
+      set.push('agent_plan_approval_mode = ?')
+      vals.push(fields.agentPlanApprovalMode)
+    }
+    if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
+    if (fields.productionDeployCommand !== undefined) { set.push('production_deploy_command = ?'); vals.push(fields.productionDeployCommand) }
     const ts = this.now()
     set.push('updated_at = ?')
     vals.push(ts)
@@ -1073,6 +1289,14 @@ export class VoiceChatDb {
     return this.getProject(userId, id)
   }
 
+  /** Задать корень пула Feature Run на конкретной машине. */
+  setProjectMachineFeatureReposRoot(userId: string, id: string, agentId: string, root: string): ProjectDetail | null {
+    if (!this.isProjectOwner(userId, id)) return null
+    this.db.prepare(`UPDATE project_machines SET feature_repos_root = ? WHERE project_id = ? AND agent_id = ?`).run(root, id, agentId)
+    this.touchProject(id)
+    return this.getProject(userId, id)
+  }
+
   /** Назначить машину проекта по умолчанию (только владелец; машина должна быть в проекте). */
   setProjectDefaultMachine(userId: string, id: string, agentId: string): ProjectDetail | null {
     if (!this.isProjectOwner(userId, id)) return null
@@ -1122,7 +1346,11 @@ export class VoiceChatDb {
         .prepare(`SELECT * FROM tasks WHERE project_id = ? ORDER BY column_id ASC, position ASC`)
         .all(projectId) as TaskRow[]
     ).map(mapTask)
-    return { columns, tasks }
+    const features = (this.db.prepare(`SELECT * FROM features WHERE project_id = ? ORDER BY created_at DESC`).all(projectId) as FeatureRow[]).map((r) => {
+      const f = mapFeature(r)
+      return { id: f.id, sourceTaskId: f.sourceTaskId, attempt: f.attempt, status: f.status, deployStatus: f.deployStatus, featureBranch: f.featureBranch, agentActive: false }
+    })
+    return { columns, tasks, features }
   }
 
   private getTask(projectId: string, taskId: string): Task | null {
@@ -1148,7 +1376,7 @@ export class VoiceChatDb {
       )
       .run(id, projectId, name, position, ts)
     this.touchProject(projectId, ts)
-    return mapColumn({ id, project_id: projectId, name, position, hidden: 0, created_at: ts })
+    return mapColumn({ id, project_id: projectId, name, semantic_type: 'custom', position, hidden: 0, created_at: ts })
   }
 
   renameColumn(userId: string, projectId: string, columnId: string, name: string): boolean {
@@ -1184,7 +1412,9 @@ export class VoiceChatDb {
 
   deleteColumn(userId: string, projectId: string, columnId: string): boolean {
     if (!this.isProjectMember(userId, projectId)) return false
-    // CASCADE удалит задачи колонки.
+    const semantic = this.db.prepare(`SELECT semantic_type FROM kanban_columns WHERE id = ? AND project_id = ?`).get(columnId, projectId) as { semantic_type: string } | undefined
+    if (!semantic || semantic.semantic_type !== 'custom') return false
+    // CASCADE удалит задачи пользовательской колонки.
     const info = this.db.prepare(`DELETE FROM kanban_columns WHERE id = ? AND project_id = ?`).run(columnId, projectId)
     if (info.changes) this.touchProject(projectId)
     return info.changes > 0
@@ -1197,6 +1427,9 @@ export class VoiceChatDb {
       columnId: string
       title: string
       description?: string
+      acceptanceCriteria?: string
+      type?: WorkItemType
+      parentId?: string | null
       priority?: TaskPriority
       assignee?: string | null
     }
@@ -1206,6 +1439,12 @@ export class VoiceChatDb {
     if (args.assignee != null && !this.isProjectMember(args.assignee, projectId)) {
       throw new Error('Исполнитель не участник проекта')
     }
+    const itemType = args.type ?? 'task'
+    const parent = args.parentId ? this.getTask(projectId, args.parentId) : null
+    if (itemType === 'epic' && args.parentId) throw new Error('Эпик не может иметь родителя')
+    if (args.parentId && !parent) throw new Error('Родитель не найден в проекте')
+    if (itemType === 'story' && parent?.type !== 'epic') throw new Error('Родителем истории может быть только эпик')
+    if (itemType === 'task' && parent && parent.type !== 'story' && parent.type !== 'epic') throw new Error('Недопустимый родитель задачи')
     const id = this.newId()
     const ts = this.now()
     const max = (
@@ -1216,8 +1455,8 @@ export class VoiceChatDb {
     const position = (max ?? 0) + RANK_STEP
     this.db
       .prepare(
-        `INSERT INTO tasks (id, project_id, column_id, title, description, priority, assignee, position, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -1225,6 +1464,9 @@ export class VoiceChatDb {
         args.columnId,
         args.title,
         args.description ?? '',
+        args.acceptanceCriteria ?? '',
+        itemType,
+        args.parentId ?? null,
         normPriority(args.priority ?? 'medium'),
         args.assignee ?? null,
         position,
@@ -1239,13 +1481,26 @@ export class VoiceChatDb {
     userId: string,
     projectId: string,
     taskId: string,
-    fields: { title?: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }
   ): Task | null {
     if (!this.isProjectMember(userId, projectId)) return null
     const current = this.getTask(projectId, taskId)
     if (!current) return null
     if (fields.assignee != null && !this.isProjectMember(fields.assignee, projectId)) {
       throw new Error('Исполнитель не участник проекта')
+    }
+    const nextType = fields.type ?? current.type
+    const nextParentId = fields.parentId === undefined ? current.parentId : fields.parentId
+    if (nextParentId === taskId) throw new Error('Элемент не может быть своим родителем')
+    const nextParent = nextParentId ? this.getTask(projectId, nextParentId) : null
+    if (nextType === 'epic' && nextParentId) throw new Error('Эпик не может иметь родителя')
+    if (nextParentId && !nextParent) throw new Error('Родитель не найден в проекте')
+    if (nextType === 'story' && nextParent?.type !== 'epic') throw new Error('Родителем истории может быть только эпик')
+    if (nextType === 'task' && nextParent && nextParent.type !== 'story' && nextParent.type !== 'epic') throw new Error('Недопустимый родитель задачи')
+    let ancestor = nextParent
+    while (ancestor) {
+      if (ancestor.id === taskId) throw new Error('Циклическая иерархия')
+      ancestor = ancestor.parentId ? this.getTask(projectId, ancestor.parentId) : null
     }
     const set: string[] = []
     const vals: unknown[] = []
@@ -1256,6 +1511,18 @@ export class VoiceChatDb {
     if (fields.description !== undefined) {
       set.push('description = ?')
       vals.push(fields.description)
+    }
+    if (fields.acceptanceCriteria !== undefined) {
+      set.push('acceptance_criteria = ?')
+      vals.push(fields.acceptanceCriteria)
+    }
+    if (fields.type !== undefined) {
+      set.push('type = ?')
+      vals.push(fields.type)
+    }
+    if (fields.parentId !== undefined) {
+      set.push('parent_id = ?')
+      vals.push(fields.parentId)
     }
     if (fields.priority !== undefined) {
       set.push('priority = ?')
@@ -1337,4 +1604,208 @@ export class VoiceChatDb {
     if (info.changes) this.touchProject(projectId)
     return info.changes > 0
   }
+
+  reserveRepositorySlot(userId: string, featureId: string): RepositorySlot | null {
+    const feature = this.getFeature(userId, featureId)
+    if (!feature) return null
+    const project = this.getProject(userId, feature.projectId)
+    if (!project?.defaultAgentId) throw new Error('У проекта не задана машина по умолчанию')
+    const machine = project.machines.find((m) => m.agentId === project.defaultAgentId)
+    if (!machine?.featureReposRoot) throw new Error('У машины проекта не задан корень репозиториев Feature Run')
+    const ts = this.now()
+    let slot!: RepositorySlot
+    this.db.transaction(() => {
+      const free = this.db.prepare(`SELECT * FROM repository_slots WHERE project_id = ? AND agent_id = ? AND status = 'available' ORDER BY heartbeat_at DESC, id LIMIT 1`).get(feature.projectId, project.defaultAgentId) as RepositorySlotRow | undefined
+      if (free) {
+        const info = this.db.prepare(`UPDATE repository_slots SET status = 'reserved', feature_id = ?, reserved_at = ?, heartbeat_at = ? WHERE id = ? AND status = 'available'`).run(featureId, ts, ts, free.id)
+        if (info.changes !== 1) throw new Error('Рабочая копия уже занята')
+        slot = mapRepositorySlot({ ...free, status: 'reserved', feature_id: featureId, reserved_at: ts, heartbeat_at: ts })
+      } else {
+        const id = this.newId()
+        const safeProject = project.name.toLowerCase().replace(/[^a-zа-яё0-9]+/giu, '-').replace(/^-|-$/g, '').slice(0, 32) || 'project'
+        const path = `${machine.featureReposRoot.replace(/\/$/, '')}/${safeProject}-${id.slice(0, 8)}`
+        this.db.prepare(`INSERT INTO repository_slots (id, project_id, agent_id, path, status, feature_id, reserved_at, heartbeat_at) VALUES (?, ?, ?, ?, 'reserved', ?, ?, ?)`).run(id, feature.projectId, project.defaultAgentId, path, featureId, ts, ts)
+        slot = { id, projectId: feature.projectId, agentId: project.defaultAgentId!, path, status: 'reserved', featureId, currentBranch: null, reservedAt: ts, heartbeatAt: ts, blockReason: null, lastError: null }
+      }
+      this.db.prepare(`UPDATE features SET repository_slot_id = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(slot.id, ts, featureId)
+      this.db.prepare(`UPDATE conversations SET exec_target = ?, workdir = ? WHERE id = ?`).run(slot.agentId, slot.path, feature.conversationId)
+    })()
+    return slot
+  }
+
+  setRepositorySlotState(featureId: string, status: RepositorySlot['status'], fields: { branch?: string | null; error?: string | null; blockReason?: string | null } = {}): RepositorySlot | null {
+    const ts = this.now()
+    this.db.prepare(`UPDATE repository_slots SET status = ?, current_branch = COALESCE(?, current_branch), last_error = ?, block_reason = ?, heartbeat_at = ? WHERE feature_id = ?`).run(status, fields.branch ?? null, fields.error ?? null, fields.blockReason ?? null, ts, featureId)
+    const row = this.db.prepare(`SELECT * FROM repository_slots WHERE feature_id = ?`).get(featureId) as RepositorySlotRow | undefined
+    return row ? mapRepositorySlot(row) : null
+  }
+
+  getRepositorySlotForFeature(userId: string, featureId: string): RepositorySlot | null {
+    if (!this.getFeature(userId, featureId)) return null
+    const row = this.db.prepare(`SELECT s.* FROM repository_slots s JOIN features f ON f.repository_slot_id = s.id WHERE f.id = ?`).get(featureId) as RepositorySlotRow | undefined
+    return row ? mapRepositorySlot(row) : null
+  }
+
+  setFeatureTestedCommit(userId: string, featureId: string, sha: string): FeatureRun | null {
+    if (!this.getFeature(userId, featureId)) return null
+    this.db.prepare(`UPDATE features SET tested_commit_sha = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(sha, this.now(), featureId)
+    return this.getFeature(userId, featureId)
+  }
+
+  setFeatureMergedCommit(userId: string, featureId: string, sha: string): FeatureRun | null {
+    if (!this.getFeature(userId, featureId)) return null
+    this.db.prepare(`UPDATE features SET merged_commit_sha = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(sha, this.now(), featureId)
+    return this.getFeature(userId, featureId)
+  }
+
+  createFeatureDeployment(userId: string, featureId: string, requestedMainSha: string, trigger: FeatureDeployment['trigger']): FeatureDeployment | null {
+    if (!this.getFeature(userId, featureId)) return null
+    const id = this.newId(), ts = this.now()
+    this.db.prepare(`INSERT INTO feature_deployments (id, feature_id, requested_main_sha, trigger, status, created_at) VALUES (?, ?, ?, ?, 'queued', ?)`).run(id, featureId, requestedMainSha, trigger, ts)
+    return mapDeployment(this.db.prepare(`SELECT * FROM feature_deployments WHERE id = ?`).get(id) as FeatureDeploymentRow)
+  }
+
+  updateFeatureDeployment(id: string, status: FeatureDeployment['status'], fields: { deployedMainSha?: string; error?: string } = {}): void {
+    const ts = this.now()
+    this.db.prepare(`UPDATE feature_deployments SET status = ?, deployed_main_sha = COALESCE(?, deployed_main_sha), error = ?, started_at = CASE WHEN ? = 'running' THEN COALESCE(started_at, ?) ELSE started_at END, finished_at = CASE WHEN ? IN ('succeeded','failed','cancelled') THEN ? ELSE finished_at END WHERE id = ?`).run(status, fields.deployedMainSha ?? null, fields.error ?? null, status, ts, status, ts, id)
+  }
+
+  listFeatureDeployments(userId: string, featureId: string): FeatureDeployment[] | null {
+    if (!this.getFeature(userId, featureId)) return null
+    return (this.db.prepare(`SELECT * FROM feature_deployments WHERE feature_id = ? ORDER BY created_at DESC`).all(featureId) as FeatureDeploymentRow[]).map(mapDeployment)
+  }
+
+  setFeatureDeployStatus(userId: string, featureId: string, status: FeatureRun['deployStatus'], error?: string): FeatureRun | null {
+    if (!this.getFeature(userId, featureId)) return null
+    this.db.prepare(`UPDATE features SET deploy_status = ?, last_error = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(status, error ?? null, this.now(), featureId)
+    return this.getFeature(userId, featureId)
+  }
+
+  setFeatureBaseCommit(userId: string, featureId: string, sha: string): FeatureRun | null {
+    if (!this.getFeature(userId, featureId)) return null
+    this.db.prepare(`UPDATE features SET base_commit_sha = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(sha, this.now(), featureId)
+    return this.getFeature(userId, featureId)
+  }
+
+  failFeature(userId: string, featureId: string, error: string): FeatureRun | null {
+    const feature = this.getFeature(userId, featureId)
+    if (!feature || feature.status === 'completed' || feature.status === 'cancelled') return feature
+    this.db.prepare(`UPDATE features SET status = 'failed', last_error = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(error, this.now(), featureId)
+    return this.getFeature(userId, featureId)
+  }
+
+  /** Jira-подобный агрегат: первый активный ребёнок двигает родителя в development, все готовые — в done. */
+  private syncWorkItemAncestors(projectId: string, taskId: string, ts: number): void {
+    let current = this.getTask(projectId, taskId)
+    while (current?.parentId) {
+      const parent = this.getTask(projectId, current.parentId)
+      if (!parent) break
+      const children = this.db.prepare(`SELECT c.semantic_type FROM tasks t JOIN kanban_columns c ON c.id = t.column_id WHERE t.parent_id = ?`).all(parent.id) as Array<{ semantic_type: string }>
+      const target = children.length > 0 && children.every((c) => c.semantic_type === 'done')
+        ? 'done'
+        : children.some((c) => c.semantic_type === 'development' || c.semantic_type === 'testing' || c.semantic_type === 'awaiting_merge')
+          ? 'development'
+          : null
+      if (target) {
+        const column = this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = ? LIMIT 1`).get(projectId, target) as { id: string } | undefined
+        if (column) this.db.prepare(`UPDATE tasks SET column_id = ?, updated_at = ? WHERE id = ?`).run(column.id, ts, parent.id)
+      }
+      current = parent
+    }
+  }
+
+  // ---- Feature workflow -------------------------------------------------
+
+  listFeatures(userId: string, projectId: string): FeatureRun[] | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    return (this.db.prepare(`SELECT * FROM features WHERE project_id = ? ORDER BY created_at DESC`).all(projectId) as FeatureRow[]).map(mapFeature)
+  }
+
+  getFeature(userId: string, featureId: string): FeatureRun | null {
+    const row = this.db.prepare(`SELECT f.* FROM features f JOIN project_members m ON m.project_id = f.project_id WHERE f.id = ? AND m.username = ?`).get(featureId, userId) as FeatureRow | undefined
+    return row ? mapFeature(row) : null
+  }
+
+  createFeatureFromTask(userId: string, projectId: string, taskId: string, args: { autoMerge?: boolean; autoDeployProduction?: boolean }): FeatureRun | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const task = this.getTask(projectId, taskId)
+    if (!task || task.type !== 'task') return null
+    const project = this.getProject(userId, projectId)
+    if (!project) return null
+    const active = this.db.prepare(`SELECT 1 FROM features WHERE source_task_id = ? AND status NOT IN ('completed','cancelled','failed')`).get(taskId)
+    if (active) throw new Error('У задачи уже есть активная фича')
+    const previous = this.db.prepare(`SELECT id, attempt FROM features WHERE source_task_id = ? ORDER BY attempt DESC LIMIT 1`).get(taskId) as { id: string; attempt: number } | undefined
+    const id = this.newId()
+    const conversationId = this.newId()
+    const ts = this.now()
+    const attempt = (previous?.attempt ?? 0) + 1
+    const slug = task.title.toLowerCase().replace(/[^a-zа-яё0-9]+/giu, '-').replace(/^-|-$/g, '').slice(0, 48) || 'task'
+    const branch = `feature/${id}-${slug}`
+    this.db.transaction(() => {
+      this.db.prepare(`INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, project_id, skill_names) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`).run(conversationId, task.title, ts, ts, userId, project.defaultAgentId, projectId, JSON.stringify(project.skills))
+      this.db.prepare(`INSERT INTO features (id, project_id, source_task_id, attempt, previous_feature_id, conversation_id, title, description, status, feature_branch, commit_policy, merge_transport, agent_plan_approval_mode, auto_merge, auto_deploy_production, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'preparing', ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, projectId, taskId, attempt, previous?.id ?? null, conversationId, task.title, task.description, branch, project.commitPolicy, project.mergeTransport, project.agentPlanApprovalMode, args.autoMerge ? 1 : 0, args.autoDeployProduction ? 1 : 0, ts, ts)
+      const development = this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = 'development' LIMIT 1`).get(projectId) as { id: string } | undefined
+      if (development) this.db.prepare(`UPDATE tasks SET column_id = ?, updated_at = ? WHERE id = ?`).run(development.id, ts, taskId)
+      this.syncWorkItemAncestors(projectId, taskId, ts)
+      this.db.prepare(`INSERT INTO feature_events (id, feature_id, type, actor_type, actor_id, payload, created_at) VALUES (?, ?, 'created', 'user', ?, '{}', ?)`).run(this.newId(), id, userId, ts)
+      this.touchProject(projectId, ts)
+    })()
+    return this.getFeature(userId, id)
+  }
+
+  /** Story без дочерней Task получает Task и Feature в одной транзакционной операции. */
+  createFeatureFromStory(userId: string, projectId: string, storyId: string, args: { autoMerge?: boolean; autoDeployProduction?: boolean }): FeatureRun | null {
+    const story = this.getTask(projectId, storyId)
+    if (!story || story.type !== 'story' || !this.isProjectMember(userId, projectId)) return null
+    const ready = this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = 'ready' LIMIT 1`).get(projectId) as { id: string } | undefined
+    if (!ready) throw new Error('В проекте нет колонки «Готово к разработке»')
+    let result: FeatureRun | null = null
+    this.db.transaction(() => {
+      const task = this.createTask(userId, projectId, { columnId: ready.id, title: `Реализовать: ${story.title}`, description: story.description, acceptanceCriteria: story.acceptanceCriteria, type: 'task', parentId: story.id, priority: story.priority, assignee: story.assignee })
+      if (!task) throw new Error('Не удалось создать дочернюю задачу')
+      result = this.createFeatureFromTask(userId, projectId, task.id, args)
+      if (!result) throw new Error('Не удалось создать Feature Run')
+    })()
+    return result
+  }
+
+  transitionFeature(userId: string, featureId: string, to: FeatureStatus, expectedVersion?: number): FeatureRun | null {
+    const current = this.getFeature(userId, featureId)
+    if (!current) return null
+    if (!canTransitionFeature(current.status, to)) throw new Error(`Недопустимый переход ${current.status} → ${to}`)
+    if (expectedVersion !== undefined && expectedVersion !== current.version) throw new Error('Фича уже была изменена')
+    const ts = this.now()
+    this.db.transaction(() => {
+      const info = this.db.prepare(`UPDATE features SET status = ?, updated_at = ?, completed_at = ?, version = version + 1 WHERE id = ? AND version = ?`).run(to, ts, to === 'completed' ? ts : current.completedAt, featureId, current.version)
+      if (info.changes !== 1) throw new Error('Фича уже была изменена')
+      const semantic = featureColumnSemantic(to)
+      const column = this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = ? LIMIT 1`).get(current.projectId, semantic) as { id: string } | undefined
+      if (column) this.db.prepare(`UPDATE tasks SET column_id = ?, updated_at = ? WHERE id = ?`).run(column.id, ts, current.sourceTaskId)
+      this.syncWorkItemAncestors(current.projectId, current.sourceTaskId, ts)
+      this.db.prepare(`INSERT INTO feature_events (id, feature_id, type, actor_type, actor_id, payload, created_at) VALUES (?, ?, 'status_changed', 'user', ?, ?, ?)`).run(this.newId(), featureId, userId, JSON.stringify({ from: current.status, to }), ts)
+      this.touchProject(current.projectId, ts)
+    })()
+    return this.getFeature(userId, featureId)
+  }
+
+  updateFeatureAutomation(userId: string, featureId: string, fields: { autoMerge?: boolean; autoDeployProduction?: boolean }): FeatureRun | null {
+    const feature = this.getFeature(userId, featureId)
+    if (!feature) return null
+    this.db.prepare(`UPDATE features SET auto_merge = ?, auto_deploy_production = ?, updated_at = ?, version = version + 1 WHERE id = ?`).run(fields.autoMerge ?? feature.autoMerge ? 1 : 0, fields.autoDeployProduction ?? feature.autoDeployProduction ? 1 : 0, this.now(), featureId)
+    return this.getFeature(userId, featureId)
+  }
+
+  listAgentTasks(userId: string, featureId: string): AgentTask[] | null {
+    if (!this.getFeature(userId, featureId)) return null
+    return (this.db.prepare(`SELECT * FROM agent_tasks WHERE feature_id = ? ORDER BY created_at, id`).all(featureId) as AgentTaskRow[]).map(mapAgentTask)
+  }
+
+  createAgentTask(userId: string, featureId: string, args: { title: string; description?: string; kind?: AgentTask['kind']; createdBy?: AgentTask['createdBy']; dependsOn?: string[] }): AgentTask | null {
+    if (!this.getFeature(userId, featureId)) return null
+    const id = this.newId(), ts = this.now()
+    this.db.prepare(`INSERT INTO agent_tasks (id, feature_id, title, description, kind, status, created_by, depends_on, created_at) VALUES (?, ?, ?, ?, ?, 'planned', ?, ?, ?)`).run(id, featureId, args.title, args.description ?? '', args.kind ?? 'custom', args.createdBy ?? 'user', JSON.stringify(args.dependsOn ?? []), ts)
+    const row = this.db.prepare(`SELECT * FROM agent_tasks WHERE id = ?`).get(id) as AgentTaskRow
+    return mapAgentTask(row)
+  }
+
 }
