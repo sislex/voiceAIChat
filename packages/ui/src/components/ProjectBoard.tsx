@@ -4,8 +4,9 @@
 // Колонка = статус; скрытые колонки (hidden) не показываются, если не включён показ.
 
 import { useState } from 'react'
-import type { Board, KanbanColumn, ProjectMember, TaskPriority } from '@shared/projects'
+import type { Board, KanbanColumn, ProjectMember, TaskPriority, WorkItemType } from '@shared/projects'
 import { ToolFrame } from './ToolFrame'
+import type { FeatureRun } from '@shared/features'
 import { TaskCard } from './TaskCard'
 
 export interface ProjectBoardProps {
@@ -13,15 +14,18 @@ export interface ProjectBoardProps {
   board: Board | null
   loading: boolean
   members: ProjectMember[]
+  features?: FeatureRun[]
   onCreateColumn: (name: string) => void
   onRenameColumn: (columnId: string, name: string) => void
   onSetColumnHidden: (columnId: string, hidden: boolean) => void
   onReorderColumns: (order: string[]) => void
   onDeleteColumn: (columnId: string) => void
-  onCreateTask: (columnId: string, input: { title: string; priority?: TaskPriority }) => void
-  onUpdateTask: (taskId: string, fields: { title?: string; description?: string; priority?: TaskPriority; assignee?: string | null }) => void
+  onCreateTask: (columnId: string, input: { title: string; type?: WorkItemType; priority?: TaskPriority }) => void
+  onUpdateTask: (taskId: string, fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }) => void
   onMoveTask: (taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null) => void
   onDeleteTask: (taskId: string) => void
+  onStartFeature?: (itemId: string, type: WorkItemType) => void
+  onOpenFeature?: (featureId: string) => void
   onClose: () => void
 }
 
@@ -34,6 +38,7 @@ export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [newTask, setNewTask] = useState<Record<string, string>>({})
+  const [newType, setNewType] = useState<Record<string, WorkItemType>>({})
 
   const columns = (board?.columns ?? []).filter((c) => showHidden || !c.hidden)
   const tasksOf = (columnId: string) =>
@@ -49,7 +54,7 @@ export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
   const addTask = (columnId: string): void => {
     const title = (newTask[columnId] ?? '').trim()
     if (!title) return
-    props.onCreateTask(columnId, { title })
+    props.onCreateTask(columnId, { title, type: newType[columnId] ?? 'task' })
     setNewTask((m) => ({ ...m, [columnId]: '' }))
   }
 
@@ -144,7 +149,7 @@ export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
             >
               {col.hidden ? '🙈' : '👁'}
             </button>
-            <button
+            {col.semanticType === 'custom' && <button
               className="delbtn"
               aria-label={`Удалить колонку «${col.name}»`}
               title="Удалить колонку"
@@ -153,7 +158,7 @@ export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
               }}
             >
               ✕
-            </button>
+            </button>}
           </span>
         </header>
 
@@ -164,6 +169,11 @@ export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
               <TaskCard
                 task={t}
                 members={members}
+                children={(board?.tasks ?? []).filter((x) => x.parentId === t.id)}
+                parents={(board?.tasks ?? []).filter((x) => x.id !== t.id)}
+                feature={props.features?.filter((f) => f.sourceTaskId === t.id).sort((a, b) => b.attempt - a.attempt)[0]}
+                onStartFeature={(id) => props.onStartFeature?.(id, t.type)}
+                onOpenFeature={props.onOpenFeature}
                 onUpdate={props.onUpdateTask}
                 onDelete={props.onDeleteTask}
                 onDragStart={setDragTask}
@@ -176,6 +186,9 @@ export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
         </div>
 
         <div className="kanban-add-task">
+          <select className="sel" aria-label={`Тип нового элемента в «${col.name}»`} value={newType[col.id] ?? 'task'} onChange={(e) => setNewType((m) => ({ ...m, [col.id]: e.target.value as WorkItemType }))}>
+            <option value="epic">Эпик</option><option value="story">История</option><option value="task">Задача</option>
+          </select>
           <input
             className="login-input"
             placeholder="+ задача"

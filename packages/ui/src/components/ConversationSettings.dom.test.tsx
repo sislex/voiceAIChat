@@ -104,8 +104,8 @@ describe('ConversationSettings', () => {
 
   it('привязка к проекту подставляет машину/папку проекта и сохраняет projectId', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
-    const summary: ProjectSummary = { id: 'p1', name: 'Proj', description: '', gitUrl: null, technologies: [], skills: ['ts'], createdBy: 'admin', createdAt: 1, updatedAt: 1, role: 'owner' }
-    const detail: ProjectDetail = { ...summary, members: [], machines: [{ agentId: 'm1', path: '/srv/p' }], defaultAgentId: 'm1' }
+    const summary: ProjectSummary = { id: 'p1', name: 'Proj', description: '', gitUrl: null, technologies: [], skills: ['ts'], createdBy: 'admin', createdAt: 1, updatedAt: 1, role: 'owner', commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual' }
+    const detail: ProjectDetail = { ...summary, members: [], machines: [{ agentId: 'm1', path: '/srv/p', featureReposRoot: '/srv/repos' }], defaultAgentId: 'm1' }
     const fetchProjectDetail = vi.fn().mockResolvedValue(detail)
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[summary]} fetchProjectDetail={fetchProjectDetail} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Проект разговора' }), { target: { value: 'p1' } })

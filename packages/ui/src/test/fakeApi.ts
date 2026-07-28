@@ -8,6 +8,7 @@ import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { Board, KanbanColumn, ProjectDetail, ProjectMember, ProjectSummary, Task } from '@shared/projects'
+import type { FeatureRun, AgentTask } from '@shared/features'
 
 export interface FakeApi extends RendererApi {
   /** Прямой доступ к состоянию для ассертов в тестах. */
@@ -45,12 +46,17 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     createdAt: number
     updatedAt: number
     members: ProjectMember[]
-    machines: Array<{ agentId: string; path: string }>
+    machines: Array<{ agentId: string; path: string; featureReposRoot: string }>
     defaultAgentId: string | null
+    commitPolicy: ProjectSummary['commitPolicy']
+    mergeTransport: ProjectSummary['mergeTransport']
+    agentPlanApprovalMode: ProjectSummary['agentPlanApprovalMode']
   }
   const projects: FProject[] = []
   const columns: KanbanColumn[] = []
   const tasks: Task[] = []
+  const features: FeatureRun[] = []
+  const agentTasks: AgentTask[] = []
   const summary = (p: FProject): ProjectSummary => ({
     id: p.id,
     name: p.name,
@@ -61,7 +67,10 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     createdBy: p.createdBy,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
-    role: p.members.find((m) => m.username === ME)?.role ?? 'owner'
+    role: p.members.find((m) => m.username === ME)?.role ?? 'owner',
+    commitPolicy: p.commitPolicy,
+    mergeTransport: p.mergeTransport,
+    agentPlanApprovalMode: p.agentPlanApprovalMode
   })
   const detail = (p: FProject): ProjectDetail => ({
     ...summary(p),
@@ -71,7 +80,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   })
   const boardOf = (pid: string): Board => ({
     columns: columns.filter((c) => c.projectId === pid).sort((a, b) => a.position - b.position).map((c) => ({ ...c })),
-    tasks: tasks.filter((t) => t.projectId === pid).sort((a, b) => a.position - b.position).map((t) => ({ ...t }))
+    tasks: tasks.filter((t) => t.projectId === pid).sort((a, b) => a.position - b.position).map((t) => ({ ...t })),
+    features: features.filter((f) => f.projectId === pid).map((f) => ({ id: f.id, sourceTaskId: f.sourceTaskId, attempt: f.attempt, status: f.status, deployStatus: f.deployStatus, featureBranch: f.featureBranch, agentActive: false }))
   })
 
   function makeConversation(title: string): Conversation {
@@ -311,11 +321,17 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         updatedAt: ts,
         members: [{ username: ME, role: 'owner', addedAt: ts }],
         machines: [],
-        defaultAgentId: null
+        defaultAgentId: null,
+        commitPolicy: b.commitPolicy ?? 'agent_commits',
+        mergeTransport: b.mergeTransport ?? 'local',
+        agentPlanApprovalMode: b.agentPlanApprovalMode ?? 'manual'
       }
       projects.push(p)
-      ;['To Do', 'In Progress', 'Done'].forEach((name, i) =>
-        columns.push({ id: nextId(), projectId: id, name, position: (i + 1) * 1024, hidden: false, createdAt: ts })
+      ;[
+        ['Бэклог', 'backlog'], ['Готово к разработке', 'ready'], ['В разработке', 'development'],
+        ['Тестирование', 'testing'], ['Ожидает мержа', 'awaiting_merge'], ['Готово', 'done']
+      ].forEach(([name, semanticType], i) =>
+        columns.push({ id: nextId(), projectId: id, name, semanticType: semanticType as KanbanColumn['semanticType'], position: (i + 1) * 1024, hidden: false, createdAt: ts })
       )
       return detail(p)
     },
@@ -330,6 +346,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (f.gitUrl !== undefined) p.gitUrl = f.gitUrl
       if (f.technologies !== undefined) p.technologies = f.technologies
       if (f.skills !== undefined) p.skills = f.skills
+      if (f.commitPolicy !== undefined) p.commitPolicy = f.commitPolicy
+      if (f.mergeTransport !== undefined) p.mergeTransport = f.mergeTransport
+      if (f.agentPlanApprovalMode !== undefined) p.agentPlanApprovalMode = f.agentPlanApprovalMode
       p.updatedAt = tick()
       return detail(p)
     },
@@ -354,7 +373,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'projects:linkMachine': async ({ id, agentId }) => {
       const p = projects.find((x) => x.id === id)!
-      if (!p.machines.some((m) => m.agentId === agentId)) p.machines.push({ agentId, path: '' })
+      if (!p.machines.some((m) => m.agentId === agentId)) p.machines.push({ agentId, path: '', featureReposRoot: '' })
       return detail(p)
     },
     'projects:unlinkMachine': async ({ id, agentId }) => {
@@ -369,6 +388,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (m) m.path = path
       return detail(p)
     },
+    'projects:setFeatureReposRoot': async ({ id, agentId, featureReposRoot }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) m.featureReposRoot = featureReposRoot; return detail(p) },
     'projects:setDefaultMachine': async ({ id, agentId }) => {
       const p = projects.find((x) => x.id === id)!
       if (p.machines.some((m) => m.agentId === agentId)) p.defaultAgentId = agentId
@@ -378,7 +398,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'columns:create': async ({ projectId, name }) => {
       const ts = tick()
       const max = Math.max(0, ...columns.filter((c) => c.projectId === projectId).map((c) => c.position))
-      const col: KanbanColumn = { id: nextId(), projectId, name, position: max + 1024, hidden: false, createdAt: ts }
+      const col: KanbanColumn = { id: nextId(), projectId, name, semanticType: 'custom', position: max + 1024, hidden: false, createdAt: ts }
       columns.push(col)
       return col
     },
@@ -401,15 +421,18 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (i >= 0) columns.splice(i, 1)
       for (let j = tasks.length - 1; j >= 0; j--) if (tasks[j].columnId === columnId) tasks.splice(j, 1)
     },
-    'tasks:create': async ({ projectId, columnId, title, description, priority, assignee }) => {
+    'tasks:create': async ({ projectId, columnId, title, description, acceptanceCriteria, type, parentId, priority, assignee }) => {
       const ts = tick()
       const max = Math.max(0, ...tasks.filter((t) => t.columnId === columnId).map((t) => t.position))
       const task: Task = {
         id: nextId(),
         projectId,
         columnId,
+        type: type ?? 'task',
+        parentId: parentId ?? null,
         title,
         description: description ?? '',
+        acceptanceCriteria: acceptanceCriteria ?? '',
         priority: priority ?? 'medium',
         assignee: assignee ?? null,
         position: max + 1024,
@@ -423,6 +446,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const t = tasks.find((x) => x.id === taskId)!
       if (f.title !== undefined) t.title = f.title
       if (f.description !== undefined) t.description = f.description
+      if (f.acceptanceCriteria !== undefined) t.acceptanceCriteria = f.acceptanceCriteria
+      if (f.type !== undefined) t.type = f.type
+      if (f.parentId !== undefined) t.parentId = f.parentId
       if (f.priority !== undefined) t.priority = f.priority
       if (f.assignee !== undefined) t.assignee = f.assignee
       t.updatedAt = tick()
@@ -447,6 +473,41 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'tasks:delete': async ({ taskId }) => {
       const i = tasks.findIndex((x) => x.id === taskId)
       if (i >= 0) tasks.splice(i, 1)
+    },
+    'features:list': async ({ projectId }) => features.filter((f) => f.projectId === projectId),
+    'features:createFromTask': async ({ projectId, taskId, autoMerge, autoDeployProduction }) => {
+      const task = tasks.find((t) => t.id === taskId)!
+      const previous = features.filter((f) => f.sourceTaskId === taskId).at(-1)
+      const ts = tick(), id = nextId()
+      const feature: FeatureRun = { id, projectId, sourceTaskId: taskId, attempt: (previous?.attempt ?? 0) + 1, previousFeatureId: previous?.id ?? null, conversationId: null, repositorySlotId: null, title: task.title, description: task.description, status: 'preparing', deployStatus: 'not_requested', baseBranch: 'main', featureBranch: `feature/${id}`, baseCommitSha: null, testedCommitSha: null, mergedCommitSha: null, commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual', autoMerge: !!autoMerge, autoDeployProduction: !!autoDeployProduction, createdAt: ts, updatedAt: ts, completedAt: null, lastError: null, version: 1 }
+      features.push(feature)
+      return feature
+    },
+    'features:createFromStory': async ({ projectId, storyId, ...opts }) => {
+      const story = tasks.find((t) => t.id === storyId)!
+      const ready = columns.find((c) => c.projectId === projectId && c.semanticType === 'ready')!
+      const task = await api['tasks:create']({ projectId, columnId: ready.id, title: `Реализовать: ${story.title}`, description: story.description, acceptanceCriteria: story.acceptanceCriteria, type: 'task', parentId: storyId })
+      return api['features:createFromTask']({ projectId, taskId: task.id, ...opts })
+    },
+    'features:get': async ({ id }) => features.find((f) => f.id === id) ?? null,
+    'features:setAutomation': async ({ id, autoMerge, autoDeployProduction }) => {
+      const f = features.find((x) => x.id === id)!
+      if (autoMerge !== undefined) f.autoMerge = autoMerge
+      if (autoDeployProduction !== undefined) f.autoDeployProduction = autoDeployProduction
+      f.version++
+      return { ...f }
+    },
+    'features:deployments': async () => [],
+    'features:deploy': async ({ id }) => { const f = features.find((x) => x.id === id)!; f.deployStatus = 'queued'; return { ...f } },
+    'features:transition': async ({ id, status }) => {
+      const f = features.find((x) => x.id === id)!
+      f.status = status; f.version++; f.updatedAt = tick()
+      return { ...f }
+    },
+    'agentTasks:list': async ({ featureId }) => agentTasks.filter((t) => t.featureId === featureId),
+    'agentTasks:create': async ({ featureId, title, description, kind, dependsOn }) => {
+      const task: AgentTask = { id: nextId(), featureId, title, description: description ?? '', kind: kind ?? 'custom', status: 'planned', createdBy: 'user', dependsOn: dependsOn ?? [], attempt: 1, resultSummary: null, error: null, createdAt: tick(), startedAt: null, finishedAt: null }
+      agentTasks.push(task); return task
     },
     _state: {
       get conversations() {

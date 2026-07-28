@@ -50,6 +50,8 @@ export interface ServerConfig {
   minMemSttBytes?: number
   /** Порог памяти для озвучки (TTS), байты; undefined — дефолт. */
   minMemTtsBytes?: number
+  /** GitHub token для server-side PR merge. */
+  githubToken?: string
 }
 
 const DEFAULT_DATA_DIR = join(homedir(), '.voicechat-server')
@@ -142,6 +144,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     kbRerankProvider: env.VC_KB_RERANK_PROVIDER === 'disabled' || env.VC_KB_RERANK_PROVIDER === 'claude' ? env.VC_KB_RERANK_PROVIDER : 'codex',
     adminPassword: env.VC_ADMIN_PASSWORD ?? '',
     minMemSttBytes: parseBytes(env.VC_MIN_MEM_STT),
-    minMemTtsBytes: parseBytes(env.VC_MIN_MEM_TTS)
+    minMemTtsBytes: parseBytes(env.VC_MIN_MEM_TTS),
+    githubToken: env.VC_GITHUB_TOKEN
   }
 }

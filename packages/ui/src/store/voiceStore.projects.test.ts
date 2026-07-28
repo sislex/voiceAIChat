@@ -30,7 +30,7 @@ describe('voiceStore — проекты и доска', () => {
     const id = store.getState().projectDetail!.id
     await store.actions.openBoard(id)
     expect(store.getState().activeProjectId).toBe(id)
-    expect(store.getState().board?.columns.map((c) => c.name)).toEqual(['To Do', 'In Progress', 'Done'])
+    expect(store.getState().board?.columns.map((c) => c.name)).toEqual(['Бэклог', 'Готово к разработке', 'В разработке', 'Тестирование', 'Ожидает мержа', 'Готово'])
   })
 
   it('createColumn и createTask отражаются в board', async () => {
@@ -38,7 +38,7 @@ describe('voiceStore — проекты и доска', () => {
     await store.actions.createProject({ name: 'P1' })
     await store.actions.openBoard(store.getState().projectDetail!.id)
     await store.actions.createColumn('Review')
-    expect(store.getState().board!.columns.map((c) => c.name)).toEqual(['To Do', 'In Progress', 'Done', 'Review'])
+    expect(store.getState().board!.columns.map((c) => c.name)).toEqual(['Бэклог', 'Готово к разработке', 'В разработке', 'Тестирование', 'Ожидает мержа', 'Готово', 'Review'])
     const todo = store.getState().board!.columns[0]
     await store.actions.createTask(todo.id, { title: 'Задача A' })
     expect(store.getState().board!.tasks.map((t) => t.title)).toContain('Задача A')

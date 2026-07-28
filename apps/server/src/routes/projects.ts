@@ -34,7 +34,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
   app.get(REST.projects, async (req): Promise<ProjectSummary[]> => db.listProjects(uid(req)))
 
   app.post<{
-    Body: { name?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[] }
+    Body: { name?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
   }>(REST.projects, async (req, reply): Promise<ProjectDetail | FastifyReply> => {
     const b = req.body ?? {}
     const name = (b.name ?? '').trim()
@@ -44,7 +44,10 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
       description: b.description,
       gitUrl: b.gitUrl,
       technologies: b.technologies,
-      skills: b.skills
+      skills: b.skills,
+      commitPolicy: b.commitPolicy,
+      mergeTransport: b.mergeTransport,
+      agentPlanApprovalMode: b.agentPlanApprovalMode
     })
   })
 
@@ -61,6 +64,11 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
       gitUrl?: string | null
       technologies?: string[]
       skills?: string[]
+      commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+      mergeTransport?: 'local' | 'github_pull_request'
+      agentPlanApprovalMode?: 'manual' | 'automatic'
+      testCommand?: string
+      productionDeployCommand?: string
     }
   }>('/api/projects/:id', async (req, reply) => {
     const p = member(req, req.params.id)
@@ -136,13 +144,15 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
   )
 
   // Папка проекта на конкретной машине.
-  app.patch<{ Params: { id: string; agentId: string }; Body: { path?: string } }>(
+  app.patch<{ Params: { id: string; agentId: string }; Body: { path?: string; featureReposRoot?: string } }>(
     '/api/projects/:id/machines/:agentId',
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
       if (p.role !== 'owner') return forbidden(reply)
-      return db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? '') ?? nf(reply)
+      return req.body?.featureReposRoot !== undefined
+        ? db.setProjectMachineFeatureReposRoot(uid(req), req.params.id, req.params.agentId, req.body.featureReposRoot) ?? nf(reply)
+        : db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? '') ?? nf(reply)
     }
   )
 
@@ -230,7 +240,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
 
   app.post<{
     Params: { id: string }
-    Body: { columnId?: string; title?: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+    Body: { columnId?: string; title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }
   }>('/api/projects/:id/tasks', async (req, reply): Promise<Task | FastifyReply> => {
     const b = req.body ?? {}
     const title = (b.title ?? '').trim()
@@ -240,6 +250,9 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
         columnId: b.columnId,
         title,
         description: b.description,
+        acceptanceCriteria: b.acceptanceCriteria,
+        type: b.type,
+        parentId: b.parentId,
         priority: b.priority,
         assignee: b.assignee ?? null
       })
@@ -253,7 +266,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
 
   app.patch<{
     Params: { id: string; taskId: string }
-    Body: { title?: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+    Body: { title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }
   }>('/api/projects/:id/tasks/:taskId', async (req, reply): Promise<Task | FastifyReply> => {
     try {
       const task = db.updateTask(uid(req), req.params.id, req.params.taskId, req.body ?? {})
