@@ -312,8 +312,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           loading={state.boardLoading || state.activeProjectId !== routeProjectId}
           members={state.projectDetail?.members ?? []}
           features={state.featureRuns}
+          currentUser={state.currentUser?.name ?? null}
           onCreateColumn={(name) => void actions.createColumn(name)}
-          onRenameColumn={(id, name) => void actions.renameColumn(id, name)}
+          onUpdateColumn={(id, fields) => void actions.updateColumn(id, fields)}
           onSetColumnHidden={(id, hidden) => void actions.setColumnHidden(id, hidden)}
           onReorderColumns={(order) => void actions.reorderColumns(order)}
           onDeleteColumn={(id) => void actions.deleteColumn(id)}

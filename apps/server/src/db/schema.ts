@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS projects (
   merge_transport TEXT NOT NULL DEFAULT 'local',
   agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual',
   test_command TEXT NOT NULL DEFAULT '',
-  production_deploy_command TEXT NOT NULL DEFAULT ''
+  production_deploy_command TEXT NOT NULL DEFAULT '',
+  task_seq INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS project_members (
@@ -114,6 +115,7 @@ CREATE TABLE IF NOT EXISTS kanban_columns (
   semantic_type TEXT NOT NULL DEFAULT 'custom',
   position   REAL NOT NULL,
   hidden     INTEGER NOT NULL DEFAULT 0,
+  wip_limit  INTEGER,
   created_at INTEGER NOT NULL,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
@@ -132,6 +134,11 @@ CREATE TABLE IF NOT EXISTS tasks (
   parent_id   TEXT,
   priority    TEXT NOT NULL DEFAULT 'medium',
   assignee    TEXT,
+  labels      TEXT NOT NULL DEFAULT '[]',
+  story_points REAL,
+  due_date    INTEGER,
+  flagged     INTEGER NOT NULL DEFAULT 0,
+  seq         INTEGER,
   position    REAL NOT NULL,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL,
