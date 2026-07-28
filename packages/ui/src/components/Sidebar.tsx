@@ -330,37 +330,9 @@ export function Sidebar({
         ))}
       </div>
       <div className="sidefoot">
-        {/* Инструменты — компактный ряд иконок (подписи в title). */}
-        <div className="foottools">
-          <button className="footico-btn" onClick={onOpenObserver} title="Claude Code" aria-label="Claude Code">
-            🗂
-          </button>
-          <button className="footico-btn" onClick={onOpenCodexObserver} title="Codex" aria-label="Codex">
-            🧭
-          </button>
-          {onOpenProjects && (
-            <button className="footico-btn" onClick={onOpenProjects} title="Проекты" aria-label="Проекты">
-              📋
-            </button>
-          )}
-          {onOpenKnowledgeBase && (
-            <button className="footico-btn" onClick={onOpenKnowledgeBase} title="База знаний" aria-label="База знаний">
-              📚
-            </button>
-          )}
-          {onOpenFiles && (
-            <button className="footico-btn" onClick={onOpenFiles} title="Открыть проводник" aria-label="Открыть проводник">
-              📁
-            </button>
-          )}
-          {onOpenConsole && (
-            <button className="footico-btn" onClick={onOpenConsole} title="Открыть консоль" aria-label="Открыть консоль">
-              ⌨️
-            </button>
-          )}
-        </div>
-
-        {/* Меню аккаунта: управление (машины/пользователи), настройки, выход. */}
+        {/* Меню аккаунта: инструменты-виджеты + управление, настройки, выход.
+            Иконки виджетов перенесены сюда из отдельного нижнего ряда —
+            всплывают по клику на пользователя. */}
         {currentUser && currentUser.name ? (
           <div className="acct" ref={acctRef}>
             <button
@@ -376,6 +348,39 @@ export function Sidebar({
             </button>
             {acctOpen && (
               <div className="acct-menu" role="menu">
+                <button className="footbtn" role="menuitem" onClick={acct(onOpenObserver)}>
+                  <span className="footico">🗂</span>
+                  Claude Code
+                </button>
+                <button className="footbtn" role="menuitem" onClick={acct(onOpenCodexObserver)}>
+                  <span className="footico">🧭</span>
+                  Codex
+                </button>
+                {onOpenProjects && (
+                  <button className="footbtn" role="menuitem" onClick={acct(onOpenProjects)}>
+                    <span className="footico">📋</span>
+                    Проекты
+                  </button>
+                )}
+                {onOpenKnowledgeBase && (
+                  <button className="footbtn" role="menuitem" onClick={acct(onOpenKnowledgeBase)}>
+                    <span className="footico">📚</span>
+                    База знаний
+                  </button>
+                )}
+                {onOpenFiles && (
+                  <button className="footbtn" role="menuitem" onClick={acct(onOpenFiles)}>
+                    <span className="footico">📁</span>
+                    Проводник
+                  </button>
+                )}
+                {onOpenConsole && (
+                  <button className="footbtn" role="menuitem" onClick={acct(onOpenConsole)}>
+                    <span className="footico">⌨️</span>
+                    Консоль
+                  </button>
+                )}
+                <div className="acct-sep" aria-hidden />
                 {onOpenMachines && (
                   <button className="footbtn" role="menuitem" onClick={acct(onOpenMachines)}>
                     <span className="footico">🖥</span>
@@ -402,11 +407,42 @@ export function Sidebar({
             )}
           </div>
         ) : (
-          /* Локальный режим без учётки: меню аккаунта не нужно — только Настройки. */
-          <button className="footbtn" onClick={onOpenSettings}>
-            <GearIcon />
-            Настройки
-          </button>
+          /* Локальный режим без учётки: нет кнопки пользователя, поэтому
+             инструменты остаются компактным рядом иконок + Настройки. */
+          <>
+            <div className="foottools">
+              <button className="footico-btn" onClick={onOpenObserver} title="Claude Code" aria-label="Claude Code">
+                🗂
+              </button>
+              <button className="footico-btn" onClick={onOpenCodexObserver} title="Codex" aria-label="Codex">
+                🧭
+              </button>
+              {onOpenProjects && (
+                <button className="footico-btn" onClick={onOpenProjects} title="Проекты" aria-label="Проекты">
+                  📋
+                </button>
+              )}
+              {onOpenKnowledgeBase && (
+                <button className="footico-btn" onClick={onOpenKnowledgeBase} title="База знаний" aria-label="База знаний">
+                  📚
+                </button>
+              )}
+              {onOpenFiles && (
+                <button className="footico-btn" onClick={onOpenFiles} title="Открыть проводник" aria-label="Открыть проводник">
+                  📁
+                </button>
+              )}
+              {onOpenConsole && (
+                <button className="footico-btn" onClick={onOpenConsole} title="Открыть консоль" aria-label="Открыть консоль">
+                  ⌨️
+                </button>
+              )}
+            </div>
+            <button className="footbtn" onClick={onOpenSettings}>
+              <GearIcon />
+              Настройки
+            </button>
+          </>
         )}
       </div>
     </aside>

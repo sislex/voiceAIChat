@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { Sidebar } from './Sidebar'
-import type { Conversation } from '@shared/types'
+import type { Conversation, SessionUser } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
 
 function conv(id: string, title: string): Conversation {
@@ -73,5 +73,52 @@ describe('Sidebar — машина последнего сообщения', () 
     expect(screen.getByText('Последнее: Без машины')).toBeInTheDocument()
     expect(screen.queryByLabelText(/машин/i)).not.toBeInTheDocument()
     expect(screen.getAllByLabelText(/Статус разговора/)).toHaveLength(2)
+  })
+})
+
+
+describe('Sidebar — инструменты в меню по клику на пользователя', () => {
+  const user = { name: 'Алекс', role: 'admin' } as SessionUser
+
+  it('иконки виджетов лежат в меню аккаунта, а не в отдельном ряду', () => {
+    const onOpenObserver = vi.fn()
+    setup({
+      currentUser: user,
+      onOpenObserver,
+      onOpenCodexObserver: vi.fn(),
+      onOpenKnowledgeBase: vi.fn(),
+      onOpenProjects: vi.fn(),
+      onOpenFiles: vi.fn(),
+      onOpenConsole: vi.fn(),
+      onOpenMachines: vi.fn(),
+      onOpenUsers: vi.fn(),
+      onLogout: vi.fn()
+    })
+
+    // Отдельного нижнего ряда иконок больше нет.
+    expect(document.querySelector('.foottools')).toBeNull()
+    // До клика меню (и его пункты) не отрисованы.
+    expect(screen.queryByText('Claude Code')).not.toBeInTheDocument()
+
+    // Клик по пользователю открывает всплывающее меню с инструментами.
+    fireEvent.click(screen.getByRole('button', { name: /Алекс/ }))
+    const menu = screen.getByRole('menu')
+    for (const label of ['Claude Code', 'Codex', 'Проекты', 'База знаний', 'Проводник', 'Консоль']) {
+      expect(within(menu).getByText(label)).toBeInTheDocument()
+    }
+    // Управление и настройки — там же.
+    expect(within(menu).getByText('Машины')).toBeInTheDocument()
+    expect(within(menu).getByText('Настройки')).toBeInTheDocument()
+
+    // Пункт-инструмент кликабелен и вызывает свой обработчик.
+    fireEvent.click(within(menu).getByText('Claude Code'))
+    expect(onOpenObserver).toHaveBeenCalledTimes(1)
+  })
+
+  it('в локальном режиме без учётки инструменты остаются рядом иконок', () => {
+    setup({ onOpenFiles: vi.fn(), onOpenConsole: vi.fn() })
+    expect(document.querySelector('.foottools')).not.toBeNull()
+    expect(screen.getByLabelText('Claude Code')).toBeInTheDocument()
+    expect(screen.getByLabelText('Открыть консоль')).toBeInTheDocument()
   })
 })
