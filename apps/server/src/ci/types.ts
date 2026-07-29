@@ -1,4 +1,4 @@
-// Контракты CI-раннера, инъектируемые в buildServer (как workspaceExecutor).
+// Контракты CI-раннера, инъектируемые в buildServer для изоляции внешнего исполнения в тестах.
 
 /** Запрос выполнения одного скрипта на машине. */
 export interface CommandExecRequest {

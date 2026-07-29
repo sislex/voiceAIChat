@@ -14,7 +14,6 @@ import { registerRest } from './routes/rest.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerAdminRoutes } from './routes/admin.js'
 import { registerProjectRoutes } from './routes/projects.js'
-import { registerFeatureRoutes } from './routes/features.js'
 import { registerCiRoutes } from './routes/ci.js'
 import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
@@ -53,9 +52,6 @@ import { detectResources } from './system/resources.js'
 import { computeCapabilities } from './system/capabilities.js'
 import type { SystemCapabilities } from '@voicechat/shared'
 import { ensureCliProfile } from './users/cliProfiles.js'
-import { AgentWorkspaceExecutor, type WorkspaceExecutor } from './features/workspace.js'
-import { GitHubPullRequestService, type PullRequestService } from './features/pullRequests.js'
-import { FeatureCoordinator, type FeatureTurnStarter } from './features/coordinator.js'
 import { FileKnowledgeBaseService } from './kb/service.js'
 import { registerKbRoutes } from './kb/routes.js'
 import type { KnowledgeBaseService } from './kb/types.js'
@@ -81,9 +77,6 @@ export interface BuildOptions {
   createWsHandlers?: () => WsHandlers
   /** Секрет подписи токенов сессии (для тестов). Иначе — из dataDir/эфемерный. */
   sessionSecret?: string
-  /** Выполнение Git-команд в рабочих копиях Feature Run (в тестах — fake). */
-  workspaceExecutor?: WorkspaceExecutor
-  pullRequestService?: PullRequestService
   /** Исполнитель CI-команд (в тестах — мок). По умолчанию поверх AgentRegistry. */
   ciExecutor?: CommandExecutor
 }
@@ -209,16 +202,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Проекты + канбан-доска (членство в проекте) + живой board.update по WS.
   const boardHub = new BoardHub()
   registerProjectRoutes(app, db, boardHub)
-  let startFeatureTurn: FeatureTurnStarter = async () => {}
-  const featureCoordinator = new FeatureCoordinator(
-    db,
-    opts.workspaceExecutor ?? new AgentWorkspaceExecutor(agentRegistry),
-    opts.pullRequestService ?? new GitHubPullRequestService(opts.config.githubToken),
-    (projectId) => boardHub.emit(projectId),
-    (input) => startFeatureTurn(input)
-  )
-  registerFeatureRoutes(app, db, boardHub, featureCoordinator)
-
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
   // её выбор берём у канонического пользователя (admin), а не per-user.
   const machineWhisperModel = (): WhisperModel => db.getSettings('admin').whisperModel
@@ -324,9 +307,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // claude спавнится на этом же хосте — loopback работает при любом HOST.
     mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`
   })
-
-  startFeatureTurn = ({ userId, conversationId, text }) =>
-    turnManager.start({ userId, conversationId, segments: [{ speakerId: 1, text }], verbose: true })
 
   // CI-раннер (Авто-подготовка окружения для таска): процесс-глобальный менеджер
   // ранов. Исполнитель команд — поверх потокового exec машины. Хуки модели/фикса

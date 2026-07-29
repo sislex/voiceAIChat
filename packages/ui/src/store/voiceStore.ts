@@ -19,7 +19,6 @@ import type {
 } from '@shared/ipc'
 import type { Board, ProjectDetail, ProjectSummary, TaskPriority, WorkItemType, WorkItemDefaultSkills } from '@shared/projects'
 
-import type { FeatureRun, AgentTask, FeatureStatus } from '@shared/features'
 import type {
   CiCommand,
   CiCommandInput,
@@ -275,9 +274,6 @@ export interface AppState {
   board: Board | null
   /** Идёт ли загрузка доски. */
   boardLoading: boolean
-  featureRuns: FeatureRun[]
-  activeFeature: FeatureRun | null
-  agentTasks: AgentTask[]
   /** Открыта ли страница «Команды» (CI-раннер). */
   ciOpen: boolean
   /** Справочник CI-команд (страница «Команды»). */
@@ -664,14 +660,6 @@ export interface StoreActions {
   /** Открыть (создав при необходимости) связанный с задачей чат и переключиться на него. */
   openTaskChat(taskId: string): Promise<void>
 
-  startFeature(taskId: string, automation?: { autoMerge?: boolean; autoDeployProduction?: boolean }): Promise<void>
-  startFeatureFromStory(storyId: string, automation?: { autoMerge?: boolean; autoDeployProduction?: boolean }): Promise<void>
-  openFeature(featureId: string): Promise<void>
-  closeFeature(): void
-  transitionFeature(status: FeatureStatus): Promise<void>
-  setFeatureAutomation(fields: { autoMerge?: boolean; autoDeployProduction?: boolean }): Promise<void>
-  deployFeature(): Promise<void>
-  createAgentTask(input: { title: string; description?: string; kind?: AgentTask['kind'] }): Promise<void>
   // --- CI-раннер ---
   openCi(): Promise<void>
   closeCi(): void
@@ -783,9 +771,6 @@ function initialState(): AppState {
     projectSettingsOpen: false,
     board: null,
     boardLoading: false,
-    featureRuns: [],
-    activeFeature: null,
-    agentTasks: [],
     ciOpen: false,
     ciCommands: [],
     ciSettings: null,
@@ -2612,10 +2597,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     saveLastProject(id)
     setState({ activeProjectId: id, boardLoading: true, board: null, projectSettingsOpen: false, lastProjectId: id })
     try {
-      const [board, detail, featureRuns] = await Promise.all([api['board:get']({ id }), api['projects:get']({ id }), api['features:list']({ projectId: id })])
+      const [board, detail] = await Promise.all([api['board:get']({ id }), api['projects:get']({ id })])
       const ciSummaries = { ...state.ciSummaries }
       for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
-      setState({ board, projectDetail: detail, featureRuns, ciSummaries, boardLoading: false })
+      setState({ board, projectDetail: detail, ciSummaries, boardLoading: false })
       boardBridge?.subscribe(id)
     } catch (err) {
       setState({ boardLoading: false, error: perr(err) })
@@ -2623,7 +2608,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   function closeBoard(): void {
     if (state.activeProjectId) boardBridge?.unsubscribe()
-    setState({ activeProjectId: null, projectSettingsOpen: false, board: null, boardLoading: false, featureRuns: [], activeFeature: null, agentTasks: [] })
+    setState({ activeProjectId: null, projectSettingsOpen: false, board: null, boardLoading: false })
   }
   function openProjectSettings(): void {
     setState({ projectSettingsOpen: true })
@@ -2633,15 +2618,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   function applyBoardUpdate(projectId: string, board: Board): void {
     if (projectId !== state.activeProjectId) return
-    const summaries = board.features ?? []
-    const featureRuns = state.featureRuns.map((feature) => {
-      const summary = summaries.find((item) => item.id === feature.id)
-      return summary ? { ...feature, status: summary.status, deployStatus: summary.deployStatus } : feature
-    })
-    const activeSummary = state.activeFeature ? summaries.find((item) => item.id === state.activeFeature!.id) : undefined
     const ciSummaries = { ...state.ciSummaries }
     for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
-    setState({ board, featureRuns, ciSummaries, activeFeature: activeSummary && state.activeFeature ? { ...state.activeFeature, status: activeSummary.status, deployStatus: activeSummary.deployStatus } : state.activeFeature })
+    setState({ board, ciSummaries })
   }
 
   // --- CI-раннер ---------------------------------------------------------
@@ -2954,65 +2933,6 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
 
-  async function refreshFeatures(): Promise<void> {
-    if (state.activeProjectId) setState({ featureRuns: await api['features:list']({ projectId: state.activeProjectId }) })
-  }
-
-  async function startFeature(taskId: string, automation: { autoMerge?: boolean; autoDeployProduction?: boolean } = {}): Promise<void> {
-    if (!state.activeProjectId) return
-    try {
-      const feature = await api['features:createFromTask']({ projectId: state.activeProjectId, taskId, ...automation })
-      setState({ activeFeature: feature, agentTasks: [] })
-      await Promise.all([refreshBoard(), refreshFeatures(), refreshConversations()])
-      if (feature.conversationId) await selectConversation(feature.conversationId)
-    } catch (err) { setState({ error: perr(err) }) }
-  }
-  async function startFeatureFromStory(storyId: string, automation: { autoMerge?: boolean; autoDeployProduction?: boolean } = {}): Promise<void> {
-    if (!state.activeProjectId) return
-    try {
-      const feature = await api['features:createFromStory']({ projectId: state.activeProjectId, storyId, ...automation })
-      setState({ activeFeature: feature, agentTasks: [] })
-      await Promise.all([refreshBoard(), refreshFeatures(), refreshConversations()])
-      if (feature.conversationId) await selectConversation(feature.conversationId)
-    } catch (err) { setState({ error: perr(err) }) }
-  }
-  async function openFeature(featureId: string): Promise<void> {
-    try {
-      const feature = await api['features:get']({ id: featureId })
-      if (!feature) return
-      setState({ activeFeature: feature, agentTasks: await api['agentTasks:list']({ featureId }) })
-      if (feature.conversationId) await selectConversation(feature.conversationId)
-    } catch (err) { setState({ error: perr(err) }) }
-  }
-  function closeFeature(): void { setState({ activeFeature: null, agentTasks: [] }) }
-  async function transitionFeature(status: FeatureStatus): Promise<void> {
-    if (!state.activeFeature) return
-    try {
-      const feature = await api['features:transition']({ id: state.activeFeature.id, status, expectedVersion: state.activeFeature.version })
-      setState({ activeFeature: feature })
-      await Promise.all([refreshBoard(), refreshFeatures()])
-    } catch (err) { setState({ error: perr(err) }) }
-  }
-  async function setFeatureAutomation(fields: { autoMerge?: boolean; autoDeployProduction?: boolean }): Promise<void> {
-    const current = state.activeFeature ?? state.featureRuns.find((f) => f.conversationId === state.activeId)
-    if (!current) return
-    try {
-      const updated = await api['features:setAutomation']({ id: current.id, ...fields })
-      setState({ activeFeature: state.activeFeature?.id === updated.id ? updated : state.activeFeature, featureRuns: state.featureRuns.map((f) => f.id === updated.id ? updated : f) })
-    } catch (err) { setState({ error: perr(err) }) }
-  }
-  async function deployFeature(): Promise<void> {
-    if (!state.activeFeature) return
-    try { setState({ activeFeature: await api['features:deploy']({ id: state.activeFeature.id }) }) }
-    catch (err) { setState({ error: perr(err) }) }
-  }
-  async function createAgentTask(input: { title: string; description?: string; kind?: AgentTask['kind'] }): Promise<void> {
-    if (!state.activeFeature) return
-    try {
-      await api['agentTasks:create']({ featureId: state.activeFeature.id, ...input })
-      setState({ agentTasks: await api['agentTasks:list']({ featureId: state.activeFeature.id }) })
-    } catch (err) { setState({ error: perr(err) }) }
-  }
 
   return {
     getState,
@@ -3178,14 +3098,6 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
       moveTask,
       deleteTask,
-      startFeature,
-      startFeatureFromStory,
-      openFeature,
-      closeFeature,
-      transitionFeature,
-      setFeatureAutomation,
-      deployFeature,
-      createAgentTask,
       dispose
     }
   }

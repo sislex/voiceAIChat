@@ -9,7 +9,6 @@
 import { useMemo, useRef, useState } from 'react'
 import type { Board, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { TASK_PRIORITIES, WORK_ITEM_TYPES } from '@shared/projects'
-import type { FeatureRun } from '@shared/features'
 import type { CiRunSummary } from '@shared/ci'
 import type { ModifierPrompt } from '@shared/types'
 import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
@@ -27,7 +26,6 @@ export interface KanbanBoardProps {
   /** Текст ошибки загрузки/операции: баннер вместо доски (board=null) или над ней. */
   error?: string | null
   members: ProjectMember[]
-  features?: FeatureRun[]
   /** Логин текущего пользователя — для быстрого фильтра «Только мои». */
   currentUser?: string | null
   /** Управляемая открытая задача (обёртке-странице нужен перехват Esc);
@@ -47,9 +45,6 @@ export interface KanbanBoardProps {
   onDeleteTask: (taskId: string) => void
   /** Открыть связанный с задачей чат (кнопка на карточке и в модалке). */
   onOpenChat?: (taskId: string) => void
-  onStartFeature?: (itemId: string, type: WorkItemType) => void
-
-  onOpenFeature?: (featureId: string) => void
   /** Сводки CI-ранов по taskId. */
   ciSummaries?: Record<string, CiRunSummary>
   /** Запустить CI-воркфлоу для задачи. */
@@ -236,14 +231,11 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       projectName={props.projectName}
       allTasks={allTasks}
       doneColumnIds={doneColumnIds}
-      feature={props.features?.filter((f) => f.sourceTaskId === t.id).sort((a, b) => b.attempt - a.attempt)[0]}
       onOpen={setOpenTaskId}
       onUpdate={props.onUpdateTask}
       onDelete={props.onDeleteTask}
       onMoveTop={moveTop}
       onMoveBottom={moveBottom}
-      onStartFeature={(id) => props.onStartFeature?.(id, t.type)}
-      onOpenFeature={props.onOpenFeature}
       onOpenChat={props.onOpenChat}
       ciSummary={props.ciSummaries?.[t.id]}
       onStartCi={props.onStartCi}
@@ -703,12 +695,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           board={board}
           projectName={props.projectName}
           members={members}
-          feature={props.features?.filter((f) => f.sourceTaskId === openTask.id).sort((a, b) => b.attempt - a.attempt)[0]}
           onUpdate={props.onUpdateTask}
           onDelete={props.onDeleteTask}
           onMoveToColumn={(taskId, columnId) => props.onMoveTask(taskId, columnId, null, null)}
-          onStartFeature={props.onStartFeature}
-          onOpenFeature={props.onOpenFeature}
           onOpenChat={props.onOpenChat}
 
           aiAssistPrompts={props.aiAssistPrompts}

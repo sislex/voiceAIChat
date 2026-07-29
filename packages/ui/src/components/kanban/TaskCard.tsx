@@ -4,7 +4,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { Task } from '@shared/projects'
-import type { FeatureRun } from '@shared/features'
 import type { CiRunSummary } from '@shared/ci'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
@@ -16,14 +15,11 @@ export interface TaskCardProps {
   allTasks: Task[]
   /** Колонки со смыслом «done» — для прогресса и зачёркивания ключа. */
   doneColumnIds: ReadonlySet<string>
-  feature?: FeatureRun
   onOpen: (taskId: string) => void
   onUpdate: (taskId: string, fields: { flagged?: boolean }) => void
   onDelete: (taskId: string) => void
   onMoveTop: (taskId: string) => void
   onMoveBottom: (taskId: string) => void
-  onStartFeature?: (taskId: string) => void
-  onOpenFeature?: (featureId: string) => void
   /** Открыть связанный с задачей чат (кнопка на карточке). */
   onOpenChat?: (taskId: string) => void
   /** Сводка последнего CI-рана задачи (доска). */

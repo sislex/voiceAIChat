@@ -2,7 +2,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import type { Task } from '@shared/projects'
 import { TaskCard } from './TaskCard'
-import { makeFeature, makeTask } from './fixtures'
+import { makeTask } from './fixtures'
 
 const epic = makeTask({ id: 'ep1', type: 'epic', title: 'Платёжная система' })
 
@@ -78,30 +78,6 @@ export const AllAttributes: Story = {
 /** В колонке «Готово» — ключ зачёркнут. */
 export const DoneColumn: Story = {
   args: { task: makeTask({ title: 'Выпущено в прод', columnId: 'done', assignee: 'admin' }) }
-}
-
-/** Идёт работа агента над фичей. */
-export const WithFeatureRunning: Story = {
-  args: {
-    task: makeTask({ id: 'ft', title: 'Реализовать поиск' }),
-    feature: makeFeature({ sourceTaskId: 'ft', status: 'development', attempt: 1 })
-  }
-}
-
-/** Фича упала — кнопка повторной попытки. */
-export const WithFeatureFailed: Story = {
-  args: {
-    task: makeTask({ id: 'ff', title: 'Реализовать поиск' }),
-    feature: makeFeature({ sourceTaskId: 'ff', status: 'failed', attempt: 2, lastError: 'clone failed' })
-  }
-}
-
-/** История без подзадач — кнопка «Создать задачу и запустить фичу». */
-export const StoryWithoutChildren: Story = {
-  args: {
-    task: makeTask({ type: 'story', parentId: 'ep1', title: 'Экспорт истории чата' }),
-    onStartFeature: () => {}
-  }
 }
 
 /** Очень длинный заголовок и слово без пробелов. */
