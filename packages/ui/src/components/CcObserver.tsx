@@ -3,6 +3,8 @@ import { Markdown } from './Markdown'
 import { ToolFrame } from './ToolFrame'
 
 export interface CcObserverProps {
+  /** Размещение: модалка из меню (по умолчанию) или страница контентной колонки. */
+  variant?: 'modal' | 'page'
   projects: CcProject[]
   sessions: CcSession[]
   transcript: CcItem[]
@@ -71,10 +73,11 @@ export function CcObserver({
   onSelectProject,
   onSelectSession,
   onResumeSession,
-  onClose
+  onClose,
+  variant = 'modal'
 }: CcObserverProps): JSX.Element {
   return (
-    <ToolFrame title="Проводник Claude Code" onClose={onClose} testId="cc-overlay">
+    <ToolFrame title="Проводник Claude Code" variant={variant} onClose={onClose} testId="cc-overlay">
       <div className="ccobs-body">
         <nav className="cc-col cc-projects" aria-label="Проекты">
           {projects.length === 0 && <p className="cc-empty">Проектов не найдено</p>}

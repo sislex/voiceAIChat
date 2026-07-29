@@ -40,6 +40,9 @@ export interface AppProps {
   delays?: Parameters<typeof useVoiceStore>[0]['delays']
 }
 
+// Разделы-страницы утилит в контентной колонке (как «Проекты»).
+const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users']
+
 export default function App({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
   const { state, actions } = useVoiceStore({ api, now, delays })
   // Hash-роутинг раздела «Проекты»: URL — источник навигации (см. useHashRoute).
@@ -47,6 +50,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const inProjects = segments[0] === 'projects'
   const routeProjectId = inProjects ? (segments[1] ?? null) : null
   const routeSettings = inProjects && segments[2] === 'settings'
+  // Утилиты-страницы: один сегмент из белого списка (#/machines, #/kb, …).
+  const utilitySeg = segments.length === 1 && UTILITY_PAGES.includes(segments[0]) ? segments[0] : null
+  const onUtilityPage = utilitySeg !== null
   const authed = !state.authRequired || Boolean(state.currentUser)
   // Мобильный режим: выдвинут ли сайдбар (на десктопе класс side--open не влияет).
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -59,7 +65,10 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
     try { localStorage.setItem('vc:sidebarCollapsed', v ? '1' : '0') } catch { /* приватный режим */ }
   }
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false)
-  const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false)
+  // Режим списка сайдбара: маршрут ведёт его автоматически, ручной выбор
+  // (переключатель) живёт до следующей смены маршрута.
+  const [sidebarMode, setSidebarMode] = useState<'chats' | 'projects'>('chats')
+  useEffect(() => { setSidebarMode(inProjects ? 'projects' : 'chats') }, [inProjects])
   useVoiceCues(state.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
   // Горячие клавиши: пробел (hold) — запись, Esc — стоп/отмена по состоянию.
@@ -95,6 +104,36 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
     else if (state.projectSettingsOpen) actions.closeProjectSettings()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, routeSettings])
+  // URL → данные стора: утилиты-страницы. Вход на маршрут грузит данные, уход
+  // зовёт close* — store-экшены прежние, поменялся только триггер (URL).
+  useEffect(() => {
+    if (utilitySeg === 'claude-code') { if (!state.ccOpen) void actions.openObserver() }
+    else if (state.ccOpen) actions.closeObserver()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [utilitySeg])
+  useEffect(() => {
+    if (utilitySeg === 'codex') { if (!state.cxOpen) void actions.openCodexObserver() }
+    else if (state.cxOpen) actions.closeCodexObserver()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [utilitySeg])
+  useEffect(() => {
+    if (!state.authRequired) return
+    if (utilitySeg === 'machines') { if (!state.machinesOpen) actions.openMachines() }
+    else if (state.machinesOpen) actions.closeMachines()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [utilitySeg])
+  useEffect(() => {
+    if (!state.authRequired) return
+    if (utilitySeg === 'users') { if (!state.usersOpen) void actions.openUsers() }
+    else if (state.usersOpen) actions.closeUsers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [utilitySeg])
+  // Гейты: «Пользователи» — только админ; машины/пользователи — только web.
+  useEffect(() => {
+    if (utilitySeg === 'users' && state.currentUser && state.currentUser.role !== 'admin') navigate('/')
+    if ((utilitySeg === 'users' || utilitySeg === 'machines') && !state.authRequired) navigate('/')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [utilitySeg, state.currentUser, state.authRequired])
 
   const activeConversation = state.conversations.find((c) => c.id === state.activeId)
   const conversationFeature = state.featureRuns.find((f) => f.conversationId === state.activeId) ?? (state.activeFeature?.conversationId === state.activeId ? state.activeFeature : undefined)
@@ -201,23 +240,39 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         projects={state.projects}
         selectedProjectId={state.sidebarProjectId}
         onSelectProject={(id) => void actions.setSidebarProject(id)}
-        onOpenObserver={menu(actions.openObserver)}
-        onOpenCodexObserver={menu(actions.openCodexObserver)}
-        onOpenKnowledgeBase={menu(() => setKnowledgeBaseOpen(true))}
+        onOpenObserver={menu(() => navigate('/claude-code'))}
+        onOpenCodexObserver={menu(() => navigate('/codex'))}
+        onOpenKnowledgeBase={menu(() => navigate('/kb'))}
         onOpenSettings={menu(actions.openSettings)}
         onOpenFiles={state.authRequired ? menu(() => actions.openUtilityForActiveChat('explorer')) : undefined}
         onOpenConsole={state.authRequired ? menu(() => actions.openUtilityForActiveChat('console')) : undefined}
-        onOpenUsers={state.authRequired ? menu(() => void actions.openUsers()) : undefined}
-        onOpenMachines={state.authRequired ? menu(actions.openMachines) : undefined}
+        onOpenUsers={state.authRequired ? menu(() => navigate('/users')) : undefined}
+        onOpenMachines={state.authRequired ? menu(() => navigate('/machines')) : undefined}
         onOpenProjects={state.authRequired ? menu(() => navigate('/projects')) : undefined}
         currentUser={state.currentUser}
         onLogout={state.authRequired ? () => void actions.logout() : undefined}
+        mode={sidebarMode}
+        onModeChange={state.authRequired ? (m) => {
+          setSidebarMode(m)
+          if (m === 'projects') void actions.refreshProjects()
+        } : undefined}
+        activeProjectId={routeProjectId}
+        onPickProject={(id) => {
+          setSidebarOpen(false)
+          navigate(`/projects/${id}`)
+        }}
+        onCreateProject={(name) => {
+          setSidebarOpen(false)
+          void actions.createProject({ name }).then((detail) => {
+            if (detail) navigate(`/projects/${detail.id}`)
+          })
+        }}
       />
       {sidebarOpen && (
         <div className="side-backdrop" aria-hidden onClick={() => setSidebarOpen(false)} />
       )}
 
-      {!inProjects && (
+      {!inProjects && !onUtilityPage && (
       <ChatColumn
         onToggleSidebar={() => {
           if (collapsed) setCollapsedPersist(false)
@@ -346,7 +401,72 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         />
       )}
 
-      {knowledgeBaseOpen && <KnowledgeBase api={api} onClose={() => setKnowledgeBaseOpen(false)} />}
+      {utilitySeg === 'kb' && <KnowledgeBase api={api} variant="page" onClose={() => navigate('/')} />}
+
+      {utilitySeg === 'claude-code' && state.ccOpen && (
+        <CcObserver
+          variant="page"
+          projects={state.ccProjects}
+          sessions={state.ccSessions}
+          transcript={state.ccTranscript}
+          activeProject={state.ccProjectSlug}
+          activeSession={state.ccSessionId}
+          onSelectProject={actions.selectCcProject}
+          onSelectSession={actions.selectCcSession}
+          onResumeSession={(slug, id) => void actions.resumeCcSession(slug, id)}
+          onClose={() => navigate('/')}
+        />
+      )}
+
+      {utilitySeg === 'codex' && state.cxOpen && (
+        <CodexObserver
+          variant="page"
+          projects={state.cxProjects}
+          sessions={state.cxSessions}
+          transcript={state.cxTranscript}
+          activeProject={state.cxProjectCwd}
+          activeSession={state.cxSessionId}
+          onSelectProject={actions.selectCxProject}
+          onSelectSession={actions.selectCxSession}
+          onResumeSession={(id) => void actions.resumeCxSession(id)}
+          onClose={() => navigate('/')}
+        />
+      )}
+
+      {utilitySeg === 'machines' && state.machinesOpen && (
+        <MachineStatus
+          variant="page"
+          agents={state.agents}
+          onSetPolicy={(id, policy) => void actions.setAgentPolicy(id, policy)}
+          onCreateAgent={actions.createAgent}
+          onRegenerateToken={actions.regenerateAgentToken}
+          onGetConnectionString={actions.getAgentConnectionString}
+          onUpdateAgent={actions.updateAgent}
+          defaultAgentId={state.settings.defaultAgentId}
+          onSetDefault={(id) => void actions.updateSettings({ defaultAgentId: id })}
+          onClose={() => navigate('/')}
+        />
+      )}
+
+      {utilitySeg === 'users' && state.usersOpen && (
+        <UsersAdmin
+          variant="page"
+          users={state.adminUsers}
+          selected={state.adminSelected}
+          usage={state.adminUsage}
+          conversations={state.adminConversations}
+          messages={state.adminMessages}
+          conversationId={state.adminConversationId}
+          currentUserName={state.currentUser?.name ?? ''}
+          onSelect={(name) => void actions.selectAdminUser(name)}
+          onCreate={(name, password, role) => void actions.createUserAccount(name, password, role)}
+          onSetBlocked={(name, blocked) => void actions.setUserBlocked(name, blocked)}
+          onDelete={(name) => void actions.deleteUserAccount(name)}
+          onLoadUsage={(unit) => void actions.loadAdminUsage(unit)}
+          onOpenConversation={(id) => void actions.openAdminConversation(id)}
+          onClose={() => navigate('/')}
+        />
+      )}
 
       {conversationSettingsOpen && activeConversation && (
         <ConversationSettings
@@ -377,67 +497,6 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           log={state.consoleLog}
           open={state.consoleOpen}
           onToggle={actions.toggleConsole}
-        />
-      )}
-
-      {state.ccOpen && (
-        <CcObserver
-          projects={state.ccProjects}
-          sessions={state.ccSessions}
-          transcript={state.ccTranscript}
-          activeProject={state.ccProjectSlug}
-          activeSession={state.ccSessionId}
-          onSelectProject={actions.selectCcProject}
-          onSelectSession={actions.selectCcSession}
-          onResumeSession={(slug, id) => void actions.resumeCcSession(slug, id)}
-          onClose={actions.closeObserver}
-        />
-      )}
-
-      {state.cxOpen && (
-        <CodexObserver
-          projects={state.cxProjects}
-          sessions={state.cxSessions}
-          transcript={state.cxTranscript}
-          activeProject={state.cxProjectCwd}
-          activeSession={state.cxSessionId}
-          onSelectProject={actions.selectCxProject}
-          onSelectSession={actions.selectCxSession}
-          onResumeSession={(id) => void actions.resumeCxSession(id)}
-          onClose={actions.closeCodexObserver}
-        />
-      )}
-
-      {state.machinesOpen && (
-        <MachineStatus
-          agents={state.agents}
-          onSetPolicy={(id, policy) => void actions.setAgentPolicy(id, policy)}
-          onCreateAgent={actions.createAgent}
-          onRegenerateToken={actions.regenerateAgentToken}
-          onGetConnectionString={actions.getAgentConnectionString}
-          onUpdateAgent={actions.updateAgent}
-          defaultAgentId={state.settings.defaultAgentId}
-          onSetDefault={(id) => void actions.updateSettings({ defaultAgentId: id })}
-          onClose={actions.closeMachines}
-        />
-      )}
-
-      {state.usersOpen && (
-        <UsersAdmin
-          users={state.adminUsers}
-          selected={state.adminSelected}
-          usage={state.adminUsage}
-          conversations={state.adminConversations}
-          messages={state.adminMessages}
-          conversationId={state.adminConversationId}
-          currentUserName={state.currentUser?.name ?? ''}
-          onSelect={(name) => void actions.selectAdminUser(name)}
-          onCreate={(name, password, role) => void actions.createUserAccount(name, password, role)}
-          onSetBlocked={(name, blocked) => void actions.setUserBlocked(name, blocked)}
-          onDelete={(name) => void actions.deleteUserAccount(name)}
-          onLoadUsage={(unit) => void actions.loadAdminUsage(unit)}
-          onOpenConversation={(id) => void actions.openAdminConversation(id)}
-          onClose={actions.closeUsers}
         />
       )}
 

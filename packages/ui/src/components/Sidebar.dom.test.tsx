@@ -122,3 +122,48 @@ describe('Sidebar — инструменты в меню по клику на п
     expect(screen.getByLabelText('Открыть консоль')).toBeInTheDocument()
   })
 })
+
+describe('Sidebar — режим «Проекты»', () => {
+  const projects = [
+    { id: 'p1', name: 'Альфа', role: 'owner' },
+    { id: 'p2', name: 'Бета', role: 'member' }
+  ] as never[]
+
+  it('без onModeChange переключателя нет, список чатов как раньше', () => {
+    setup({ projects })
+    expect(screen.queryByRole('group', { name: 'Тип списка' })).not.toBeInTheDocument()
+    expect(screen.getByText('Чат 1')).toBeInTheDocument()
+  })
+
+  it('переключатель показывает проекты с ролями, клик по проекту зовёт onPickProject', async () => {
+    const onPickProject = vi.fn()
+    const onModeChange = vi.fn()
+    setup({ projects, mode: 'projects', onModeChange, onPickProject, activeProjectId: 'p2' })
+    // Список чатов и его поиск скрыты, вместо них — проекты.
+    expect(screen.queryByText('Чат 1')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Поиск по разговорам')).not.toBeInTheDocument()
+    expect(screen.getByText('Альфа')).toBeInTheDocument()
+    expect(screen.getByText('владелец')).toBeInTheDocument()
+    expect(screen.getByText('участник')).toBeInTheDocument()
+    // Активный проект подсвечен.
+    expect(screen.getByText('Бета').closest('button')?.className).toContain('on')
+    fireEvent.click(screen.getByText('Альфа'))
+    expect(onPickProject).toHaveBeenCalledWith('p1')
+    // Возврат к чатам через сегмент.
+    fireEvent.click(within(screen.getByRole('group', { name: 'Тип списка' })).getByRole('button', { name: 'Чаты' }))
+    expect(onModeChange).toHaveBeenCalledWith('chats')
+  })
+
+  it('«+ Проект» раскрывает инлайн-форму, Enter создаёт проект', async () => {
+    const onCreateProject = vi.fn()
+    setup({ projects: [], mode: 'projects', onModeChange: vi.fn(), onCreateProject })
+    expect(screen.getByText('Проектов пока нет')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '+ Проект' }))
+    const input = screen.getByLabelText('Название нового проекта')
+    fireEvent.change(input, { target: { value: '  Новый проект  ' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onCreateProject).toHaveBeenCalledWith('Новый проект')
+    // Форма закрылась.
+    expect(screen.queryByLabelText('Название нового проекта')).not.toBeInTheDocument()
+  })
+})

@@ -54,3 +54,4 @@ scrins/
 # Личные разрешения агентов — у каждой машины свои. Сами команды и скиллы
 # (.claude/commands/**) наоборот коммитятся: они нужны всем агентам.
 **/.claude/settings.local.json
+storybook-static/
