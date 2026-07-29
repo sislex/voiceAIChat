@@ -31,7 +31,9 @@ import {
   type Task,
   type TaskPriority,
   type WorkItemType,
+  type WorkItemDefaultSkills,
   type KanbanColumnSemanticType,
+
   type FeatureRun,
   type FeatureStatus,
   type AgentTask,
@@ -69,9 +71,11 @@ interface ConversationRow {
   permission_mode: string | null
   kb_context_mode: string | null
   project_id: string | null
+  task_id: string | null
   status: string | null
   last_exec_target?: string | null
 }
+
 
 interface AgentRow {
   id: string
@@ -168,9 +172,13 @@ interface ProjectRow {
   agent_plan_approval_mode: string
   test_command: string
   production_deploy_command: string
+  default_skills_epic: string
+  default_skills_story: string
+  default_skills_task: string
 }
 
 interface ProjectMemberRow {
+
   username: string
   role: string
   added_at: number
@@ -272,6 +280,7 @@ interface TaskRow {
   priority: string
   assignee: string | null
   labels: string | null
+  skills: string | null
   story_points: number | null
   due_date: number | null
   flagged: number
@@ -279,7 +288,9 @@ interface TaskRow {
   position: number
   created_at: number
   updated_at: number
+  chat_id?: string | null
 }
+
 
 /** Нормализация статуса чата из колонки (мусор → дефолт). */
 const CONVERSATION_STATUS_SET = new Set<ConversationStatus>([
@@ -344,15 +355,19 @@ function mapTask(r: TaskRow): Task {
     priority: normPriority(r.priority),
     assignee: r.assignee,
     labels: parseStringArray(r.labels),
+    skills: parseStringArray(r.skills),
     storyPoints: r.story_points ?? null,
+
     dueDate: r.due_date ?? null,
     flagged: r.flagged !== 0,
     seq: r.seq ?? 0,
     position: r.position,
     createdAt: r.created_at,
-    updatedAt: r.updated_at
+    updatedAt: r.updated_at,
+    chatId: r.chat_id ?? null
   }
 }
+
 
 function mapRepositorySlot(r: RepositorySlotRow): RepositorySlot {
   const statuses = new Set(['available', 'reserved', 'busy', 'cleaning', 'blocked', 'repair_required', 'disabled'])
@@ -465,6 +480,10 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'project_id')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN project_id TEXT`)
     }
+    if (!convCols.some((c) => c.name === 'task_id')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN task_id TEXT`)
+    }
+
     if (!convCols.some((c) => c.name === 'status')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN status TEXT NOT NULL DEFAULT 'developing'`)
     }
@@ -483,6 +502,8 @@ export class VoiceChatDb {
     if (taskCols.length && !taskCols.some((c) => c.name === 'parent_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN parent_id TEXT`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'acceptance_criteria')) this.db.exec(`ALTER TABLE tasks ADD COLUMN acceptance_criteria TEXT NOT NULL DEFAULT ''`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'labels')) this.db.exec(`ALTER TABLE tasks ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'`)
+    if (taskCols.length && !taskCols.some((c) => c.name === 'skills')) this.db.exec(`ALTER TABLE tasks ADD COLUMN skills TEXT NOT NULL DEFAULT '[]'`)
+
     if (taskCols.length && !taskCols.some((c) => c.name === 'story_points')) this.db.exec(`ALTER TABLE tasks ADD COLUMN story_points REAL`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'due_date')) this.db.exec(`ALTER TABLE tasks ADD COLUMN due_date INTEGER`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'flagged')) this.db.exec(`ALTER TABLE tasks ADD COLUMN flagged INTEGER NOT NULL DEFAULT 0`)
@@ -529,6 +550,10 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'agent_plan_approval_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'test_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN test_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_deploy_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_deploy_command TEXT NOT NULL DEFAULT ''`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_epic')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_epic TEXT NOT NULL DEFAULT '[]'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_story')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_story TEXT NOT NULL DEFAULT '[]'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_task')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_task TEXT NOT NULL DEFAULT '[]'`)
+
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN engine TEXT`)
@@ -1059,10 +1084,12 @@ export class VoiceChatDb {
           : null,
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
       projectId: row.project_id ?? null,
+      taskId: row.task_id ?? null,
       status: normStatus(row.status),
       lastExecTarget: row.last_exec_target ?? null
     }
   }
+
 
   // ---- Projects (многопользовательские) ---------------------------------
 
@@ -1102,7 +1129,13 @@ export class VoiceChatDb {
       gitUrl: r.git_url,
       technologies: parseStringArray(r.technologies),
       skills: parseStringArray(r.skills),
+      defaultSkills: {
+        epic: parseStringArray(r.default_skills_epic),
+        story: parseStringArray(r.default_skills_story),
+        task: parseStringArray(r.default_skills_task)
+      },
       createdBy: r.created_by,
+
       createdAt: r.created_at,
       updatedAt: r.updated_at,
       role: myRole === 'owner' ? 'owner' : 'member',
@@ -1117,15 +1150,16 @@ export class VoiceChatDb {
   /** Создаёт проект: владелец-участник + дефолтные колонки (в одной транзакции). */
   createProject(
     userId: string,
-    args: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
+    args: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
   ): ProjectDetail {
+
     const id = this.newId()
     const ts = this.now()
     this.db.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO projects (id, name, description, git_url, technologies, skills, created_by, created_at, updated_at, commit_policy, merge_transport, agent_plan_approval_mode)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO projects (id, name, description, git_url, technologies, skills, created_by, created_at, updated_at, commit_policy, merge_transport, agent_plan_approval_mode, default_skills_epic, default_skills_story, default_skills_task)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           id,
@@ -1139,8 +1173,12 @@ export class VoiceChatDb {
           ts,
           args.commitPolicy ?? 'agent_commits',
           args.mergeTransport ?? 'local',
-          args.agentPlanApprovalMode ?? 'manual'
+          args.agentPlanApprovalMode ?? 'manual',
+          JSON.stringify(args.defaultSkills?.epic ?? []),
+          JSON.stringify(args.defaultSkills?.story ?? []),
+          JSON.stringify(args.defaultSkills?.task ?? [])
         )
+
       this.db
         .prepare(`INSERT INTO project_members (project_id, username, role, added_at) VALUES (?, ?, 'owner', ?)`)
         .run(id, userId, ts)
@@ -1213,6 +1251,7 @@ export class VoiceChatDb {
       gitUrl?: string | null
       technologies?: string[]
       skills?: string[]
+      defaultSkills?: Partial<WorkItemDefaultSkills>
       commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
@@ -1220,6 +1259,7 @@ export class VoiceChatDb {
       productionDeployCommand?: string
     }
   ): ProjectDetail | null {
+
     if (!this.isProjectOwner(userId, id)) return null
     const set: string[] = []
     const vals: unknown[] = []
@@ -1257,6 +1297,10 @@ export class VoiceChatDb {
     }
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
     if (fields.productionDeployCommand !== undefined) { set.push('production_deploy_command = ?'); vals.push(fields.productionDeployCommand) }
+    if (fields.defaultSkills?.epic !== undefined) { set.push('default_skills_epic = ?'); vals.push(JSON.stringify(fields.defaultSkills.epic)) }
+    if (fields.defaultSkills?.story !== undefined) { set.push('default_skills_story = ?'); vals.push(JSON.stringify(fields.defaultSkills.story)) }
+    if (fields.defaultSkills?.task !== undefined) { set.push('default_skills_task = ?'); vals.push(JSON.stringify(fields.defaultSkills.task)) }
+
     const ts = this.now()
     set.push('updated_at = ?')
     vals.push(ts)
@@ -1373,7 +1417,38 @@ export class VoiceChatDb {
     return this.getConversation(userId, convId)
   }
 
+  /**
+   * Открыть связанный с задачей чат текущего пользователя, создав его при
+   * отсутствии. Новый чат привязывается к задаче (`task_id`) и её проекту:
+   * машина/папка — из дефолта проекта, навыки — навыки самой карточки (`Task.skills`).
+   * Идемпотентно по (userId, taskId): одна задача — не более одного чата на юзера.
+   */
+  openOrCreateTaskChat(userId: string, projectId: string, taskId: string): Conversation | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const task = this.getTask(projectId, taskId)
+    if (!task) return null
+    const existing = this.db
+      .prepare(`SELECT id FROM conversations WHERE task_id = ? AND user_id = ? ORDER BY created_at ASC LIMIT 1`)
+      .get(taskId, userId) as { id: string } | undefined
+    if (existing) return this.getConversation(userId, existing.id)
+    const project = this.getProject(userId, projectId)
+    const defAgent = project?.defaultAgentId ?? null
+    const rawPath = defAgent ? project?.machines.find((m) => m.agentId === defAgent)?.path ?? '' : ''
+    const workdir = rawPath !== '' ? rawPath : null
+    const id = this.newId()
+    const ts = this.now()
+    const title = task.title.trim() || 'Задача'
+    this.db
+      .prepare(
+        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, project_id, task_id)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(id, title, ts, ts, userId, defAgent, workdir, JSON.stringify(task.skills), projectId, taskId)
+    return this.getConversation(userId, id)
+  }
+
   // ---- Board (колонки + задачи) -----------------------------------------
+
 
   getBoard(userId: string, projectId: string): Board | null {
     if (!this.isProjectMember(userId, projectId)) return null
@@ -1384,9 +1459,14 @@ export class VoiceChatDb {
     ).map(mapColumn)
     const tasks = (
       this.db
-        .prepare(`SELECT * FROM tasks WHERE project_id = ? ORDER BY column_id ASC, position ASC`)
-        .all(projectId) as TaskRow[]
+        .prepare(
+          `SELECT t.*, (SELECT c.id FROM conversations c WHERE c.task_id = t.id AND c.user_id = ?
+                        ORDER BY c.created_at ASC LIMIT 1) AS chat_id
+           FROM tasks t WHERE t.project_id = ? ORDER BY t.column_id ASC, t.position ASC`
+        )
+        .all(userId, projectId) as TaskRow[]
     ).map(mapTask)
+
     const features = (this.db.prepare(`SELECT * FROM features WHERE project_id = ? ORDER BY created_at DESC`).all(projectId) as FeatureRow[]).map((r) => {
       const f = mapFeature(r)
       return { id: f.id, sourceTaskId: f.sourceTaskId, attempt: f.attempt, status: f.status, deployStatus: f.deployStatus, featureBranch: f.featureBranch, agentActive: false }
@@ -1476,11 +1556,24 @@ export class VoiceChatDb {
     return info.changes > 0
   }
 
+  /** Навыки по умолчанию проекта для типа элемента (из настроек проекта). */
+  private projectDefaultSkills(projectId: string, type: WorkItemType): string[] {
+    const row = this.db
+      .prepare(`SELECT default_skills_epic, default_skills_story, default_skills_task FROM projects WHERE id = ?`)
+      .get(projectId) as
+      | { default_skills_epic: string; default_skills_story: string; default_skills_task: string }
+      | undefined
+    if (!row) return []
+    const raw = type === 'epic' ? row.default_skills_epic : type === 'story' ? row.default_skills_story : row.default_skills_task
+    return parseStringArray(raw)
+  }
+
   createTask(
     userId: string,
     projectId: string,
     args: {
       columnId: string
+
       title: string
       description?: string
       acceptanceCriteria?: string
@@ -1489,17 +1582,23 @@ export class VoiceChatDb {
       priority?: TaskPriority
       assignee?: string | null
       labels?: string[]
+      skills?: string[]
       storyPoints?: number | null
       dueDate?: number | null
     }
   ): Task | null {
     if (!this.isProjectMember(userId, projectId)) return null
+
     if (!this.columnInProject(projectId, args.columnId)) return null
     if (args.assignee != null && !this.isProjectMember(args.assignee, projectId)) {
       throw new Error('Исполнитель не участник проекта')
     }
     const itemType = args.type ?? 'task'
+    // Навыки карточки: явно переданные, иначе — навыки по умолчанию из настроек
+    // проекта для этого типа элемента (эпик/стори/таск).
+    const skills = args.skills ?? this.projectDefaultSkills(projectId, itemType)
     const parent = args.parentId ? this.getTask(projectId, args.parentId) : null
+
     if (itemType === 'epic' && args.parentId) throw new Error('Эпик не может иметь родителя')
     if (args.parentId && !parent) throw new Error('Родитель не найден в проекте')
     if (itemType === 'story' && parent?.type !== 'epic') throw new Error('Родителем истории может быть только эпик')
@@ -1517,8 +1616,8 @@ export class VoiceChatDb {
     ).task_seq
     this.db
       .prepare(
-        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, labels, story_points, due_date, flagged, seq, position, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`
+        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, labels, skills, story_points, due_date, flagged, seq, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -1532,7 +1631,9 @@ export class VoiceChatDb {
         normPriority(args.priority ?? 'medium'),
         args.assignee ?? null,
         JSON.stringify(args.labels ?? []),
+        JSON.stringify(skills),
         args.storyPoints ?? null,
+
         args.dueDate ?? null,
         seq,
         position,
@@ -1547,10 +1648,11 @@ export class VoiceChatDb {
     userId: string,
     projectId: string,
     taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
   ): Task | null {
     if (!this.isProjectMember(userId, projectId)) return null
     const current = this.getTask(projectId, taskId)
+
     if (!current) return null
     if (fields.assignee != null && !this.isProjectMember(fields.assignee, projectId)) {
       throw new Error('Исполнитель не участник проекта')
@@ -1602,7 +1704,12 @@ export class VoiceChatDb {
       set.push('labels = ?')
       vals.push(JSON.stringify(fields.labels.map((l) => l.trim()).filter(Boolean)))
     }
+    if (fields.skills !== undefined) {
+      set.push('skills = ?')
+      vals.push(JSON.stringify(fields.skills.map((s) => s.trim()).filter(Boolean)))
+    }
     if (fields.storyPoints !== undefined) {
+
       set.push('story_points = ?')
       vals.push(fields.storyPoints != null && fields.storyPoints >= 0 ? fields.storyPoints : null)
     }

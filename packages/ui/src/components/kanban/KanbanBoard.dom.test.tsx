@@ -7,7 +7,8 @@ import type { GenerateParams } from '../prompt-builder/PromptBuilder'
 
 const task = (over: Partial<Task>): Task => ({
   id: 't', projectId: 'p1', columnId: 'c1', type: 'task', parentId: null, title: 'T', description: '',
-  acceptanceCriteria: '', priority: 'medium', assignee: null, labels: [], storyPoints: null, dueDate: null,
+  acceptanceCriteria: '', priority: 'medium', assignee: null, labels: [], skills: [], storyPoints: null, dueDate: null,
+
   flagged: false, seq: 1, position: 1024, createdAt: 1, updatedAt: 1, ...over
 })
 

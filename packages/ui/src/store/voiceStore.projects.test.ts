@@ -33,7 +33,27 @@ describe('voiceStore — проекты и доска', () => {
     expect(store.getState().board?.columns.map((c) => c.name)).toEqual(['Бэклог', 'Готово к разработке', 'В разработке', 'Тестирование', 'Ожидает мержа', 'Готово'])
   })
 
+  it('навыки по умолчанию проекта попадают в новую задачу, openTaskChat открывает связанный чат', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P1', defaultSkills: { epic: [], story: [], task: ['ts'] } })
+    await store.actions.openBoard(store.getState().projectDetail!.id)
+    const todo = store.getState().board!.columns[0]
+    await store.actions.createTask(todo.id, { title: 'Задача A' })
+    const task = store.getState().board!.tasks.find((t) => t.title === 'Задача A')!
+    expect(task.skills).toEqual(['ts'])
+    await store.actions.setSidebarProject(store.getState().projectDetail!.id)
+    await store.actions.openTaskChat(task.id)
+    const active = store.getState().activeId
+    const conv = store.getState().conversations.find((c) => c.id === active)!
+    expect(conv.taskId).toBe(task.id)
+    expect(conv.skillNames).toEqual(['ts'])
+    // Карточка на доске теперь знает про связанный чат.
+    expect(store.getState().board!.tasks.find((t) => t.id === task.id)!.chatId).toBe(active)
+  })
+
+
   it('createColumn и createTask отражаются в board', async () => {
+
     const { store } = makeStore()
     await store.actions.createProject({ name: 'P1' })
     await store.actions.openBoard(store.getState().projectDetail!.id)

@@ -3,14 +3,16 @@
 // Управляющие контролы (правка, участники, машины, удаление) — только владельцу.
 
 import { useEffect, useState } from 'react'
-import type { ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
+import type { ProjectDetail, ProjectMachine, ProjectSummary, WorkItemDefaultSkills } from '@shared/projects'
+
 import type { AgentInfo } from '@shared/agentProtocol'
 import { ToolFrame } from './ToolFrame'
 
 export interface ProjectSettingsProps {
   detail: ProjectDetail
   agents: AgentInfo[]
-  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; technologies?: string[]; skills?: string[]; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string }) => void
+  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string }) => void
+
   onDelete: (id: string) => void
   onAddMember: (id: string, username: string) => void
   onRemoveMember: (id: string, username: string) => void
@@ -163,7 +165,17 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
 
         <TagEditor label="Технологии" tags={detail.technologies} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { technologies: next })} />
         <TagEditor label="Навыки" tags={detail.skills} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { skills: next })} />
+
+        <div className="proj-section proj-default-skills">
+          <p className="proj-field-label">Навыки по умолчанию</p>
+          <p className="proj-hint">Автоматически добавляются в карточку при создании элемента соответствующего типа. В самой карточке их можно убрать или дополнить.</p>
+          <TagEditor label="Эпики" tags={detail.defaultSkills.epic} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { defaultSkills: { epic: next } })} />
+          <TagEditor label="Стори" tags={detail.defaultSkills.story} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { defaultSkills: { story: next } })} />
+          <TagEditor label="Таски" tags={detail.defaultSkills.task} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { defaultSkills: { task: next } })} />
+        </div>
+
         <div className="proj-section feature-policy">
+
           <p className="proj-field-label">Workflow фич</p>
           <label>Коммиты<select className="sel" disabled={!isOwner} value={detail.commitPolicy} onChange={(e) => props.onUpdate(detail.id, { commitPolicy: e.target.value as ProjectSummary['commitPolicy'] })}><option value="agent_commits">Агент создаёт коммиты</option><option value="final_system_commit">Итоговый системный коммит</option><option value="manual_user_confirmation">Подтверждать коммит</option></select></label>
           <label>Merge<select className="sel" disabled={!isOwner} value={detail.mergeTransport} onChange={(e) => props.onUpdate(detail.id, { mergeTransport: e.target.value as ProjectSummary['mergeTransport'] })}><option value="local">Локальный merge commit</option><option value="github_pull_request">GitHub Pull Request</option></select></label>

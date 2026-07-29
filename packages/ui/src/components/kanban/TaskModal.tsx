@@ -22,10 +22,12 @@ export interface TaskUpdateFields {
   priority?: TaskPriority
   assignee?: string | null
   labels?: string[]
+  skills?: string[]
   storyPoints?: number | null
   dueDate?: number | null
   flagged?: boolean
 }
+
 
 export interface TaskModalProps {
   task: Task
@@ -35,6 +37,9 @@ export interface TaskModalProps {
   feature?: FeatureRun
   onUpdate: (taskId: string, fields: TaskUpdateFields) => void
   onDelete: (taskId: string) => void
+  /** Открыть связанный с задачей чат (кнопка в шапке модалки). */
+  onOpenChat?: (taskId: string) => void
+
   /** Смена статуса = перенос в конец выбранной колонки. */
   onMoveToColumn: (taskId: string, columnId: string) => void
   onStartFeature?: (itemId: string, type: WorkItemType) => void
@@ -66,7 +71,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [description, setDescription] = useState(task.description)
   const [criteria, setCriteria] = useState(task.acceptanceCriteria)
   const [labelDraft, setLabelDraft] = useState('')
+  const [skillDraft, setSkillDraft] = useState('')
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
+
   const aiAssist = useAiAssist({
     value: description,
     onChange: (value) => {
@@ -86,7 +93,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     setDescription(task.description)
     setCriteria(task.acceptanceCriteria)
     setLabelDraft('')
+    setSkillDraft('')
   }, [task.id, task.title, task.description, task.acceptanceCriteria])
+
 
   const column = board.columns.find((c) => c.id === task.columnId)
   const parent = task.parentId ? board.tasks.find((t) => t.id === task.parentId) : null
@@ -109,6 +118,14 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     setLabelDraft('')
   }
 
+  const addSkill = (): void => {
+    const s = skillDraft.trim()
+    if (!s) return
+    if (!task.skills.includes(s)) props.onUpdate(task.id, { skills: [...task.skills, s] })
+    setSkillDraft('')
+  }
+
+
   return (
     <>
     <ToolFrame
@@ -121,6 +138,15 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       className="jmodal-frame"
       actions={
         <>
+          {props.onOpenChat && (
+            <button
+              className="renbtn jmodal-chat-btn"
+              title="Открыть связанный чат"
+              onClick={() => props.onOpenChat?.(task.id)}
+            >
+              💬 {task.chatId ? 'Открыть чат' : 'Создать чат'}
+            </button>
+          )}
           <button
             className="renbtn"
             title={task.flagged ? 'Снять флаг' : 'Добавить флаг'}
@@ -128,6 +154,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           >
             {task.flagged ? '⚑ Снять флаг' : '⚑ Флаг'}
           </button>
+
           <button
             className="delbtn"
             aria-label="Удалить задачу"
@@ -288,6 +315,36 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               />
             </span>
           </div>
+          <div className="jmodal-field">
+            Навыки
+            <span className="jmodal-labels jmodal-skills">
+              {task.skills.map((s) => (
+                <span key={s} className="jcard-skill">
+                  {s}
+                  <button
+                    className="jlabel-x"
+                    aria-label={`Убрать навык ${s}`}
+                    title="Убрать навык"
+                    onClick={() => props.onUpdate(task.id, { skills: task.skills.filter((x) => x !== s) })}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <input
+                className="login-input jlabel-input"
+                aria-label="Новый навык"
+                placeholder="+ навык"
+                value={skillDraft}
+                onChange={(e) => setSkillDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') addSkill()
+                }}
+                onBlur={addSkill}
+              />
+            </span>
+          </div>
+
           {task.type !== 'epic' && (
             <label className="jmodal-field">
               Родитель

@@ -20,7 +20,9 @@ export function makeTask(over: Partial<Task> = {}): Task {
     priority: 'medium',
     assignee: null,
     labels: [],
+    skills: [],
     storyPoints: null,
+
     dueDate: null,
     flagged: false,
     seq,

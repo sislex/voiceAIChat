@@ -4,7 +4,8 @@ import { normalizeBoard, normalizeColumn, normalizeTask } from './normalize'
 
 const base: Task = {
   id: 't1', projectId: 'p1', columnId: 'c1', type: 'task', parentId: null, title: 'T', description: '',
-  acceptanceCriteria: '', priority: 'medium', assignee: null, labels: [], storyPoints: null, dueDate: null,
+  acceptanceCriteria: '', priority: 'medium', assignee: null, labels: [], skills: [], storyPoints: null, dueDate: null,
+
   flagged: false, seq: 1, position: 1024, createdAt: 1, updatedAt: 1
 }
 

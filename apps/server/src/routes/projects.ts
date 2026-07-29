@@ -10,8 +10,10 @@ import {
   type ProjectDetail,
   type ProjectSummary,
   type Task,
-  type TaskPriority
+  type TaskPriority,
+  type WorkItemDefaultSkills
 } from '@voicechat/shared'
+
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import type { BoardHub } from '../projects/boardHub.js'
@@ -34,7 +36,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
   app.get(REST.projects, async (req): Promise<ProjectSummary[]> => db.listProjects(uid(req)))
 
   app.post<{
-    Body: { name?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
+    Body: { name?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
   }>(REST.projects, async (req, reply): Promise<ProjectDetail | FastifyReply> => {
     const b = req.body ?? {}
     const name = (b.name ?? '').trim()
@@ -45,11 +47,13 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
       gitUrl: b.gitUrl,
       technologies: b.technologies,
       skills: b.skills,
+      defaultSkills: b.defaultSkills,
       commitPolicy: b.commitPolicy,
       mergeTransport: b.mergeTransport,
       agentPlanApprovalMode: b.agentPlanApprovalMode
     })
   })
+
 
   app.get<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
     const p = member(req, req.params.id)
@@ -64,6 +68,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
       gitUrl?: string | null
       technologies?: string[]
       skills?: string[]
+      defaultSkills?: Partial<WorkItemDefaultSkills>
       commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
@@ -71,6 +76,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
       productionDeployCommand?: string
     }
   }>('/api/projects/:id', async (req, reply) => {
+
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
     if (p.role !== 'owner') return forbidden(reply)
@@ -247,7 +253,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
 
   app.post<{
     Params: { id: string }
-    Body: { columnId?: string; title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; storyPoints?: number | null; dueDate?: number | null }
+    Body: { columnId?: string; title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null }
   }>('/api/projects/:id/tasks', async (req, reply): Promise<Task | FastifyReply> => {
     const b = req.body ?? {}
     const title = (b.title ?? '').trim()
@@ -263,9 +269,11 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
         priority: b.priority,
         assignee: b.assignee ?? null,
         labels: b.labels,
+        skills: b.skills,
         storyPoints: b.storyPoints,
         dueDate: b.dueDate
       })
+
       if (!task) return nf(reply)
       boardHub.emit(req.params.id)
       return task
@@ -276,8 +284,9 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
 
   app.patch<{
     Params: { id: string; taskId: string }
-    Body: { title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
+    Body: { title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
   }>('/api/projects/:id/tasks/:taskId', async (req, reply): Promise<Task | FastifyReply> => {
+
     try {
       const task = db.updateTask(uid(req), req.params.id, req.params.taskId, req.body ?? {})
       if (!task) return nf(reply)
@@ -312,4 +321,14 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
       return { ok: true }
     }
   )
+
+  // Открыть/создать связанный с задачей чат текущего пользователя.
+  app.post<{ Params: { id: string; taskId: string } }>(
+    '/api/projects/:id/tasks/:taskId/chat',
+    async (req, reply) => {
+      const conv = db.openOrCreateTaskChat(uid(req), req.params.id, req.params.taskId)
+      return conv ?? nf(reply)
+    }
+  )
 }
+

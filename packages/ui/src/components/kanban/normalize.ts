@@ -27,7 +27,9 @@ export function normalizeTask(raw: Task): Task {
     parentId: strOrNull(raw.parentId),
     assignee: strOrNull(raw.assignee),
     labels: Array.isArray(raw.labels) ? raw.labels.filter((l): l is string => typeof l === 'string') : [],
-    storyPoints: raw.storyPoints != null && num(raw.storyPoints, -1) >= 0 ? raw.storyPoints : null,
+    skills: Array.isArray(raw.skills) ? raw.skills.filter((s): s is string => typeof s === 'string') : [],
+    storyPoints:
+ raw.storyPoints != null && num(raw.storyPoints, -1) >= 0 ? raw.storyPoints : null,
     dueDate: raw.dueDate != null && num(raw.dueDate, 0) > 0 ? raw.dueDate : null,
     flagged: raw.flagged === true,
     seq: Math.max(0, Math.floor(num(raw.seq))),

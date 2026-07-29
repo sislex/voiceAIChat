@@ -126,7 +126,8 @@ export const BrokenData: Story = {
     task: {
       id: 'br', projectId: 'p1', columnId: 'x', type: 'task', parentId: 'ghost', title: 'Битая задача',
       description: '', acceptanceCriteria: '', priority: 'medium', assignee: null,
-      labels: [], storyPoints: null, dueDate: null, flagged: false, seq: 0, position: 0, createdAt: 1, updatedAt: 1
+      labels: [], skills: [], storyPoints: null, dueDate: null, flagged: false, seq: 0, position: 0, createdAt: 1, updatedAt: 1
     } as Task
+
   }
 }

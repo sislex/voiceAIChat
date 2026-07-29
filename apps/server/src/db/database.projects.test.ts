@@ -311,3 +311,61 @@ describe('work items + feature runs', () => {
     expect(s1.path).not.toBe(s2.path)
   })
 })
+
+describe('projects: навыки по умолчанию и связанный чат', () => {
+  it('createProject/updateProject хранят навыки по умолчанию по типам', () => {
+    const p = db.createProject('alice', { name: 'P', defaultSkills: { epic: ['arch'], story: ['ux'], task: ['ts'] } })
+    expect(p.defaultSkills).toEqual({ epic: ['arch'], story: ['ux'], task: ['ts'] })
+    const upd = db.updateProject('alice', p.id, { defaultSkills: { task: ['ts', 'sql'] } })!
+    expect(upd.defaultSkills).toEqual({ epic: ['arch'], story: ['ux'], task: ['ts', 'sql'] })
+  })
+
+  it('createTask копирует навыки по умолчанию для своего типа; явные — перекрывают', () => {
+    const p = db.createProject('alice', { name: 'P', defaultSkills: { epic: ['arch'], story: ['ux'], task: ['ts'] } })
+    const col = db.getBoard('alice', p.id)!.columns[0]
+    const epic = db.createTask('alice', p.id, { columnId: col.id, title: 'E', type: 'epic' })!
+    expect(epic.skills).toEqual(['arch'])
+    const story = db.createTask('alice', p.id, { columnId: col.id, title: 'S', type: 'story', parentId: epic.id })!
+    expect(story.skills).toEqual(['ux'])
+    const task = db.createTask('alice', p.id, { columnId: col.id, title: 'T', type: 'task' })!
+    expect(task.skills).toEqual(['ts'])
+    const custom = db.createTask('alice', p.id, { columnId: col.id, title: 'C', type: 'task', skills: ['redis'] })!
+    expect(custom.skills).toEqual(['redis'])
+  })
+
+  it('updateTask правит навыки карточки (удаление авто-добавленных + свои)', () => {
+    const p = db.createProject('alice', { name: 'P', defaultSkills: { epic: [], story: [], task: ['ts', 'sql'] } })
+    const col = db.getBoard('alice', p.id)!.columns[0]
+    const t = db.createTask('alice', p.id, { columnId: col.id, title: 'T' })!
+    expect(t.skills).toEqual(['ts', 'sql'])
+    const upd = db.updateTask('alice', p.id, t.id, { skills: ['ts', 'redis'] })!
+    expect(upd.skills).toEqual(['ts', 'redis'])
+  })
+
+  it('openOrCreateTaskChat: идемпотентен, привязывает задачу/проект/навыки, виден в board.chatId', () => {
+    const p = db.createProject('alice', { name: 'P', defaultSkills: { epic: [], story: [], task: ['ts'] } })
+    const col = db.getBoard('alice', p.id)!.columns[0]
+    const t = db.createTask('alice', p.id, { columnId: col.id, title: 'Задача X' })!
+    const chat = db.openOrCreateTaskChat('alice', p.id, t.id)!
+    expect(chat.taskId).toBe(t.id)
+    expect(chat.projectId).toBe(p.id)
+    expect(chat.title).toBe('Задача X')
+    expect(chat.skillNames).toEqual(['ts'])
+    const again = db.openOrCreateTaskChat('alice', p.id, t.id)!
+    expect(again.id).toBe(chat.id) // не плодит второй чат
+    expect(db.getBoard('alice', p.id)!.tasks.find((x) => x.id === t.id)!.chatId).toBe(chat.id)
+  })
+
+  it('openOrCreateTaskChat изолирован по пользователю и требует членства', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const col = db.getBoard('alice', p.id)!.columns[0]
+    const t = db.createTask('alice', p.id, { columnId: col.id, title: 'T' })!
+    expect(db.openOrCreateTaskChat('bob', p.id, t.id)).toBeNull() // не участник
+    db.addMember('alice', p.id, 'bob')
+    const chatA = db.openOrCreateTaskChat('alice', p.id, t.id)!
+    const chatB = db.openOrCreateTaskChat('bob', p.id, t.id)!
+    expect(chatB.id).not.toBe(chatA.id) // у каждого свой связанный чат
+    expect(db.getBoard('bob', p.id)!.tasks.find((x) => x.id === t.id)!.chatId).toBe(chatB.id)
+    expect(db.getBoard('alice', p.id)!.tasks.find((x) => x.id === t.id)!.chatId).toBe(chatA.id)
+  })
+})
