@@ -24,6 +24,7 @@ export interface RunFeedProps {
   onUnsubscribe: (runId: string) => void
   onLoad: (runId: string) => void
   onRetry: (runId: string) => void
+  onRetryFromStep?: (runId: string) => void
   onCancel: (runId: string) => void
   onLoadMetrics?: (projectId: string) => void
   now?: () => number
@@ -150,7 +151,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
           <label className="ci-mode-indicator"><input type="checkbox" checked={autoscroll} onChange={(e) => setAutoscroll(e.target.checked)} /> автоскролл</label>
           {running && <button className="ci-btn" onClick={() => props.onCancel(runId)}>Отменить</button>}
           <button className="ci-btn" onClick={() => props.onRetry(runId)}>Повторить весь воркфлоу</button>
-          <button className="ci-btn" onClick={() => props.onRetry(runId)} title="Пока перезапускает весь воркфлоу">Повторить с упавшего шага</button>
+          <button className="ci-btn" onClick={() => (props.onRetryFromStep ?? props.onRetry)(runId)} disabled={running} title="Перезапустить упавший шаг и всё после него в этом же ране">Повторить с упавшего шага</button>
           <button className="ci-btn" onClick={() => download(`ci-run-${runId}.log`, logText())}>Скачать лог</button>
           <button className="ci-btn" onClick={() => setConsoleOpen(true)}>Консоль</button>
         </div>
