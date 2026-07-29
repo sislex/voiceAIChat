@@ -4,6 +4,7 @@
 // Работа модели и fix-loop подключаются хуками (реальная реализация — в Срезе 4).
 
 import type { ServerMessage, CiRun, CiRunStep, CiStatus, CiSlot, CiSlotProgress, CiCommand } from '@voicechat/shared'
+import { isTerminalCiStatus } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiRunPrimitives } from './types.js'
 import { isReadOnlyCommand } from './console.js'
@@ -28,6 +29,7 @@ interface ActiveRun {
 
 export interface CiRunManager {
   start(userId: string, projectId: string, taskId: string): { run: CiRun } | { error: string }
+  retryFromFailed(userId: string, runId: string): { run: CiRun } | { error: string }
   cancel(userId: string, runId: string): boolean
   subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
   snapshot(userId: string, runId: string): void | ServerMessage
@@ -122,6 +124,47 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (!a || a.userId !== userId) return false
     a.abort.abort()
     return true
+  }
+
+  /** Повтор с упавшего шага: тот же ран, переиспользуем рабочую директорию,
+   *  перезапускаем стоп-шаг и всё после него; успешные ранее шаги сохраняются. */
+  function retryFromFailed(userId: string, runId: string): { run: CiRun } | { error: string } {
+    const detail = deps.db.getCiRun(userId, runId)
+    if (!detail) return { error: 'Ран недоступен' }
+    const run = detail.run
+    if (!isTerminalCiStatus(run.status) || run.status === 'success' || run.status === 'cancelled') {
+      return { error: 'Повтор с шага доступен только для упавшего рана' }
+    }
+    // Стоп-шаг — первый по позиции упавший командный шаг без allow_failure.
+    const failed = detail.steps
+      .filter((st) => st.kind === 'command' && st.commandId != null && (st.status === 'failed' || st.status === 'timeout'))
+      .sort((a2, b2) => a2.position - b2.position)
+      .find((st) => {
+        const c = deps.db.getCiCommand(userId, st.commandId as string)
+        return c ? !c.allowFailure : true
+      })
+    if (!failed || !failed.slot) return { error: 'Не найден упавший шаг для повтора' }
+    const slot = failed.slot
+    // Индекс в списке команд слота = число командных шагов этого слота до упавшего.
+    const index = detail.steps.filter((st) => st.kind === 'command' && st.commandId != null && st.slot === slot && st.position < failed.position).length
+
+    const ctl = new AbortController()
+    active.set(run.id, { userId, projectId: run.projectId, abort: ctl })
+    deps.db.addCiEvent({ projectId: run.projectId, runId: run.id, type: 'run.retry_from_step', actorType: 'user', actorId: userId, payload: { slot, index } })
+    const queued = deps.db.updateCiRun(run.id, { status: 'queued' })!
+    emitRun(queued, userId)
+
+    const prev = projectChains.get(run.projectId) ?? Promise.resolve()
+    const chain = prev
+      .then(() => acquireSlot())
+      .then(() => execute(run.id, userId, ctl, { slot, index }))
+      .catch(() => {})
+      .finally(() => {
+        releaseSlot()
+        active.delete(run.id)
+      })
+    projectChains.set(run.projectId, chain)
+    return { run: queued }
   }
 
   function progress(runId: string, done: number, total: number, phase: string, userId: string): void {
@@ -231,7 +274,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
   }
 
-  async function execute(runId: string, userId: string, ctl: AbortController): Promise<void> {
+  async function execute(runId: string, userId: string, ctl: AbortController, resume?: { slot: CiSlot; index: number }): Promise<void> {
     const runRow = deps.db.getCiRunRaw(runId)
     if (!runRow) return
     const project = deps.db.getProject(userId, runRow.projectId)
@@ -268,15 +311,22 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     // Рабочая директория: подготовка по стратегии повтора + запись workspace.
     const strategy = project.ciReuseStrategy || 'fail'
     const prep = strategy === 'clean' ? `rm -rf ${shq(workspacePath)}; mkdir -p ${shq(workspacePath)}` : strategy === 'fail' ? `if [ -d ${shq(workspacePath)} ] && [ -n "$(ls -A ${shq(workspacePath)} 2>/dev/null)" ]; then echo "Рабочая директория уже существует (стратегия fail)" >&2; exit 65; fi; mkdir -p ${shq(workspacePath)}` : `mkdir -p ${shq(workspacePath)}`
-    const ws = deps.db.createCiWorkspace({ projectId: runRow.projectId, taskId: runRow.taskId, agentId: agentId ?? null, path: workspacePath })
-    deps.db.updateCiRun(runId, { workspaceId: ws.id })
+    if (!resume) {
+      // Новый ран: создаём запись рабочей директории. При повторе — переиспользуем.
+      const ws = deps.db.createCiWorkspace({ projectId: runRow.projectId, taskId: runRow.taskId, agentId: agentId ?? null, path: workspacePath })
+      deps.db.updateCiRun(runId, { workspaceId: ws.id })
+    }
 
     const slots = deps.db.resolveTaskSlots(runRow.projectId, runRow.taskId)
     const total = slots.beforeModel.length + slots.afterModel.length + 2
-    let done = 0
+    const beforeLen = slots.beforeModel.length
+    // Точка возобновления при «повторе с упавшего шага»: сколько шагов уже пройдено
+    // и с какого номера нумеровать новые шаги (чтобы не пересекаться со старыми).
+    let done = resume ? (resume.slot === 'before_model' ? resume.index : beforeLen + 1 + resume.index) : 0
+    const posBase = resume ? (deps.db.getCiRun(userId, runId)?.steps.length ?? 0) : 0
 
-    // Системный шаг подготовки директории.
-    if (repoRoot && agentId) {
+    // Системный шаг подготовки директории (пропускаем при повторе — директория есть).
+    if (!resume && repoRoot && agentId) {
       const prepStep = deps.db.addCiRunStep({ runId, slot: 'before_model', position: 0, kind: 'command', initiatedBy: 'system', title: 'Подготовка рабочей директории', status: 'running' })
       emitStep(prepStep, userId)
       const ps = now()
@@ -300,8 +350,8 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
 
     // Хелпер обработки одного слота команд.
-    const runSlot = async (slot: CiSlot, commandIds: string[], phaseLabel: string): Promise<boolean> => {
-      for (let i = 0; i < commandIds.length; i++) {
+    const runSlot = async (slot: CiSlot, commandIds: string[], phaseLabel: string, startIndex = 0): Promise<boolean> => {
+      for (let i = startIndex; i < commandIds.length; i++) {
         if (signal.aborted) {
           finalize(runId, userId, 'cancelled')
           return false
@@ -312,7 +362,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
           done++
           continue
         }
-        const res = await runCommandStep(runId, userId, agentId, workspacePath, env, slot, done + 1, command, 'user', null, signal)
+        const res = await runCommandStep(runId, userId, agentId, workspacePath, env, slot, posBase + done + 1, command, 'user', null, signal)
         if (res.status !== 'success' && !command.allowFailure) {
           // fix-loop (если подключён) на упавший шаг.
           const fixed = await tryFix(runId, userId, agentId, workspacePath, env, project, task, signal)
@@ -334,44 +384,44 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
 
     // 1) Слот «до».
-    const beforeOk = await runSlot('before_model', slots.beforeModel, 'Подготовка')
+    const beforeOk = await runSlot('before_model', slots.beforeModel, 'Подготовка', resume?.slot === 'before_model' ? resume.index : resume ? slots.beforeModel.length : 0)
     if (!beforeOk) return
     if (signal.aborted) return finalize(runId, userId, 'cancelled')
 
-    // 2) Работа модели.
-    progress(runId, done, total, 'Модель работает', userId)
-    const mwStep = deps.db.addCiRunStep({ runId, slot: null, position: done + 1, kind: 'model_work', initiatedBy: 'system', title: 'Работа модели', status: 'running' })
-    emitStep(mwStep, userId)
-    const mwStart = now()
-    let modelOk = true
+    // 2) Работа модели (при повторе из слота «после» — уже сделана, пропускаем).
     const prim = makePrimitives(runId, userId, agentId, workspacePath, env, signal)
-    if (deps.modelWork) {
-      const ctx: CiModelContext = { ...prim, run: deps.db.getCiRunRaw(runId)!, task, project, parentStepId: mwStep.id }
-      try {
-        modelOk = (await deps.modelWork(ctx)).ok
-      } catch {
-        modelOk = false
+    let modelOk = true
+    if (resume?.slot !== 'after_model') {
+      progress(runId, done, total, 'Модель работает', userId)
+      const mwStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1, kind: 'model_work', initiatedBy: 'system', title: 'Работа модели', status: 'running' })
+      emitStep(mwStep, userId)
+      const mwStart = now()
+      if (deps.modelWork) {
+        const ctx: CiModelContext = { ...prim, run: deps.db.getCiRunRaw(runId)!, task, project, parentStepId: mwStep.id }
+        try {
+          modelOk = (await deps.modelWork(ctx)).ok
+        } catch {
+          modelOk = false
+        }
+      } else {
+        const line = deps.db.appendCiLog(runId, mwStep.id, 'system', 'Работа модели пропущена (хук не подключён)\n')
+        broadcast({ t: 'ci.log', runId, line }, userId)
       }
-    } else {
-      const line = deps.db.appendCiLog(runId, mwStep.id, 'system', 'Работа модели пропущена (хук не подключён)\n')
-      broadcast({ t: 'ci.log', runId, line }, userId)
-    }
-    {
       const upd = deps.db.updateCiRunStep(mwStep.id, { status: modelOk ? 'success' : 'failed', finishedAt: now(), durationMs: now() - mwStart })!
       emitStep(upd, userId)
+      done++
     }
-    done++
 
     // 3) Слот «после» (выполняется даже если работа модели неуспешна — тесты/cleanup).
     let afterFailed = false
     if (signal.aborted) return finalize(runId, userId, 'cancelled')
-    const afterOk = await runSlot('after_model', slots.afterModel, 'Финальные команды')
+    const afterOk = await runSlot('after_model', slots.afterModel, 'Финальные команды', resume?.slot === 'after_model' ? resume.index : 0)
     if (!afterOk && !signal.aborted) afterFailed = true
 
     // 4) Резюме модели.
     if (!signal.aborted) {
       progress(runId, done, total, 'Резюме', userId)
-      const sumStep = deps.db.addCiRunStep({ runId, slot: null, position: done + 1, kind: 'model_summary', initiatedBy: 'system', title: 'Резюме модели', status: 'running' })
+      const sumStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1, kind: 'model_summary', initiatedBy: 'system', title: 'Резюме модели', status: 'running' })
       emitStep(sumStep, userId)
       let summaryText = 'Ран завершён.'
       if (deps.modelSummary) {
@@ -504,7 +554,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
   }
 
-  return { start, cancel, subscribe, snapshot, activeRunIds, consoleExec }
+  return { start, retryFromFailed, cancel, subscribe, snapshot, activeRunIds, consoleExec }
 }
 
 /** shell-quote для системных префиксов раннера. */

@@ -233,6 +233,7 @@ export const REST = {
   ciRunLog: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/log`,
   ciRunCancel: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/cancel`,
   ciRunRetry: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/retry`,
+  ciRunRetryFromStep: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/retry-from-step`,
   ciConsoleExec: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/console`,
   ciConsoleMode: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/console/mode`
 } as const

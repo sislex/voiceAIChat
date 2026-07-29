@@ -194,4 +194,25 @@ describe('ci run manager', () => {
     expect(nested).toBeTruthy()
     expect(nested!.title).toBe('model-tool')
   })
+  it('повтор с упавшего шага: тот же ран возобновляется, успешный шаг не перезапускается', async () => {
+    const { project, task } = setup()
+    db.updateCiSettings({ maxFixAttempts: 0 }) // без авто-фикса — чтобы ран упал
+    const ok = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'ok', script: 'echo ok' })
+    const flaky = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'flaky', script: 'FLAKY build' })
+    db.setCiSlotCommands('task', task.id, 'before_model', [ok.id, flaky.id])
+    const runId = await run(project.id, task.id)
+    const d1 = await waitRun(runId)
+    expect(d1.run.status).toBe('failed')
+    expect(scripts.filter((x) => x === 'echo ok').length).toBe(1)
+    // Повтор с упавшего шага — тот же runId.
+    const res = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step` })
+    expect(res.statusCode).toBe(202)
+    expect(res.json().id).toBe(runId)
+    const d2 = await waitRun(runId)
+    expect(d2.run.status).toBe('success')
+    // Успешный шаг «echo ok» НЕ перезапускался (по-прежнему один вызов).
+    expect(scripts.filter((x) => x === 'echo ok').length).toBe(1)
+    // FLAKY выполнялся дважды (упал, затем прошёл на повторе).
+    expect(scripts.filter((x) => x === 'FLAKY build').length).toBe(2)
+  })
 })
