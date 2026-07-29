@@ -18,13 +18,17 @@ function setup(overrides: Partial<PromptBuilderProps> = {}) {
 }
 async function generateReady(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Что нужно сформулировать'), 'описание')
+  await user.click(screen.getByRole('button', { name: 'Предложить варианты' }))
   await screen.findByText('Первый вариант')
 }
 
 describe('PromptBuilder', () => {
-  it('debounce вызывает generate с активными модификаторами в исходном порядке', async () => {
-    const { generate } = setup()
+  it('вызывает generate только по палочке и передаёт активные модификаторы в исходном порядке', async () => {
+    const { generate, user } = setup()
     fireEvent.change(screen.getByLabelText('Что нужно сформулировать'), { target: { value: 'текст' } })
+    await new Promise((resolve) => window.setTimeout(resolve, 20))
+    expect(generate).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Предложить варианты' }))
     await waitFor(() => expect(generate).toHaveBeenCalledTimes(1))
     expect(generate.mock.calls[0][0].modifiers.map((p: ModifierPrompt) => p.id)).toEqual(['a', 'c'])
   })
