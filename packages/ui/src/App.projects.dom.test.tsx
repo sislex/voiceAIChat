@@ -12,6 +12,7 @@ const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_0
 // иначе маршрут протекает в соседние кейсы и ломает их (там ожидается чат).
 afterEach(() => {
   window.location.hash = ''
+  try { localStorage.removeItem('vc.lastProject') } catch { /* ignore */ }
 })
 
 async function renderWithProject(): Promise<{ api: FakeApi; projectId: string }> {
@@ -54,5 +55,33 @@ describe('App — страница «Проекты» по URL', () => {
     // Крестик закрытия страницы возвращает к доске.
     await userEvent.click(within(settings).getByRole('button', { name: 'Закрыть' }))
     await waitFor(() => expect(window.location.hash).toBe(`#/projects/${projectId}`))
+  })
+})
+
+describe('App — авто-редирект на последний проект', () => {
+  it('#/projects уводит на последний использованный проект, если он доступен', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const p = await api['projects:create']({ name: 'Мой проект' })
+    localStorage.setItem('vc.lastProject', p.id)
+    window.location.hash = '#/projects'
+    render(<App api={api} delays={SLOW} />)
+    await waitFor(() => expect(window.location.hash).toBe(`#/projects/${p.id}`))
+    const board = await screen.findByTestId('project-board')
+    await waitFor(() => expect(within(board).getByTestId('kanban-board')).toBeInTheDocument())
+  })
+
+  it('если последнего проекта нет в списке — остаётся на списке проектов', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    await api['projects:create']({ name: 'Мой проект' })
+    localStorage.setItem('vc.lastProject', 'ghost-project-id')
+    window.location.hash = '#/projects'
+    render(<App api={api} delays={SLOW} />)
+    const page = await screen.findByTestId('projects-overlay')
+    expect(page).toBeInTheDocument()
+    // Редиректа не было — остались на #/projects.
+    await new Promise((r) => setTimeout(r, 50))
+    expect(window.location.hash).toBe('#/projects')
   })
 })
