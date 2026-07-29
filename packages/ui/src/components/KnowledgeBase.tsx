@@ -10,7 +10,7 @@ const KINDS: Array<{ id: KbDocumentKind | ''; label: string }> = [
   { id: 'convention', label: 'Подходы' }, { id: 'runbook', label: 'Диагностика' }
 ]
 
-export function KnowledgeBase({ api, onClose }: { api: RendererApi; onClose: () => void }): JSX.Element {
+export function KnowledgeBase({ api, onClose, variant = 'modal' }: { api: RendererApi; onClose: () => void; variant?: 'modal' | 'page' }): JSX.Element {
   const [status, setStatus] = useState<KbStatus | null>(null)
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState<KbDocumentKind | ''>('')
@@ -37,7 +37,7 @@ export function KnowledgeBase({ api, onClose }: { api: RendererApi; onClose: () 
 
   const open = async (id: string): Promise<void> => { setError(null); const found = await api['kb:document']({ id }); if (found) setDocument(found); else setError('Документ не найден') }
   return (
-    <ToolFrame title="База знаний проекта" onClose={onClose} testId="kb-overlay" className="kbtool">
+    <ToolFrame title="База знаний проекта" variant={variant} onClose={onClose} testId="kb-overlay" className="kbtool">
       <div className="kbbar">
         <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Фича, функция, класс, API или подход…" aria-label="Поиск по базе знаний" autoFocus />
         <span className="kbstatus">{statusText}</span>
