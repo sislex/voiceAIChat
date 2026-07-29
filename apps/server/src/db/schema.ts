@@ -260,4 +260,166 @@ CREATE TABLE IF NOT EXISTS feature_events (
 
 CREATE INDEX IF NOT EXISTS idx_feature_events_feature ON feature_events(feature_id, created_at);
 
+
+-- ============================ CI-раннер ============================
+
+CREATE TABLE IF NOT EXISTS ci_commands (
+  id                TEXT PRIMARY KEY,
+  scope             TEXT NOT NULL DEFAULT 'project',
+  project_id        TEXT,
+  name              TEXT NOT NULL,
+  script            TEXT NOT NULL,
+  description       TEXT NOT NULL DEFAULT '',
+  workdir           TEXT NOT NULL DEFAULT '',
+  timeout_sec       INTEGER,
+  env_json          TEXT NOT NULL DEFAULT '{}',
+  allow_failure     INTEGER NOT NULL DEFAULT 0,
+  is_cleanup        INTEGER NOT NULL DEFAULT 0,
+  available_to_model INTEGER NOT NULL DEFAULT 1,
+  version           INTEGER NOT NULL DEFAULT 1,
+  created_by        TEXT NOT NULL,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL,
+  deleted_at        INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_commands_scope ON ci_commands(scope, project_id, deleted_at);
+
+CREATE TABLE IF NOT EXISTS ci_slot_commands (
+  id          TEXT PRIMARY KEY,
+  owner_type  TEXT NOT NULL,
+  owner_id    TEXT NOT NULL,
+  slot        TEXT NOT NULL,
+  command_id  TEXT NOT NULL,
+  position    INTEGER NOT NULL,
+  FOREIGN KEY (command_id) REFERENCES ci_commands(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_slot_commands_owner ON ci_slot_commands(owner_type, owner_id, slot, position);
+
+CREATE TABLE IF NOT EXISTS ci_workspaces (
+  id                 TEXT PRIMARY KEY,
+  project_id         TEXT NOT NULL,
+  task_id            TEXT NOT NULL,
+  agent_id           TEXT,
+  path               TEXT NOT NULL,
+  state              TEXT NOT NULL DEFAULT 'active',
+  size_bytes         INTEGER,
+  created_at         INTEGER NOT NULL,
+  released_by_step_id TEXT,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_workspaces_project ON ci_workspaces(project_id, state);
+
+CREATE TABLE IF NOT EXISTS ci_runs (
+  id             TEXT PRIMARY KEY,
+  project_id     TEXT NOT NULL,
+  task_id        TEXT NOT NULL,
+  agent_id       TEXT,
+  status         TEXT NOT NULL DEFAULT 'queued',
+  workspace_id   TEXT,
+  triggered_by   TEXT NOT NULL,
+  prev_column_id TEXT,
+  slot_progress_json TEXT NOT NULL DEFAULT '{}',
+  started_at     INTEGER,
+  finished_at    INTEGER,
+  duration_ms    INTEGER,
+  created_at     INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (workspace_id) REFERENCES ci_workspaces(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ci_runs_project ON ci_runs(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ci_runs_task ON ci_runs(task_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ci_run_steps (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL,
+  slot            TEXT,
+  position        INTEGER NOT NULL,
+  kind            TEXT NOT NULL,
+  parent_step_id  TEXT,
+  initiated_by    TEXT NOT NULL DEFAULT 'system',
+  command_id      TEXT,
+  command_snapshot TEXT,
+  title           TEXT NOT NULL DEFAULT '',
+  workdir         TEXT,
+  status          TEXT NOT NULL DEFAULT 'queued',
+  exit_code       INTEGER,
+  attempt         INTEGER NOT NULL DEFAULT 1,
+  fixed_by_model  INTEGER NOT NULL DEFAULT 0,
+  started_at      INTEGER,
+  finished_at     INTEGER,
+  duration_ms     INTEGER,
+  FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE,
+  FOREIGN KEY (command_id) REFERENCES ci_commands(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ci_run_steps_run ON ci_run_steps(run_id, position);
+
+CREATE TABLE IF NOT EXISTS ci_run_logs (
+  id       TEXT PRIMARY KEY,
+  run_id   TEXT NOT NULL,
+  step_id  TEXT NOT NULL,
+  seq      INTEGER NOT NULL,
+  stream   TEXT NOT NULL DEFAULT 'stdout',
+  chunk    TEXT NOT NULL,
+  at       INTEGER NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_run_logs_run ON ci_run_logs(run_id, seq);
+
+CREATE TABLE IF NOT EXISTS ci_fix_attempts (
+  id           TEXT PRIMARY KEY,
+  run_step_id  TEXT NOT NULL,
+  attempt_no   INTEGER NOT NULL,
+  diagnosis    TEXT NOT NULL DEFAULT '',
+  action       TEXT NOT NULL DEFAULT '',
+  result       TEXT NOT NULL DEFAULT 'retrying',
+  diff         TEXT,
+  duration_ms  INTEGER,
+  tokens_used  INTEGER,
+  created_at   INTEGER NOT NULL,
+  FOREIGN KEY (run_step_id) REFERENCES ci_run_steps(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_fix_attempts_step ON ci_fix_attempts(run_step_id, attempt_no);
+
+CREATE TABLE IF NOT EXISTS ci_command_suggestions (
+  id             TEXT PRIMARY KEY,
+  command_id     TEXT NOT NULL,
+  run_step_id    TEXT,
+  reason         TEXT NOT NULL DEFAULT '',
+  proposed_script TEXT NOT NULL DEFAULT '',
+  status         TEXT NOT NULL DEFAULT 'new',
+  occurrences    INTEGER NOT NULL DEFAULT 1,
+  created_at     INTEGER NOT NULL,
+  resolved_by    TEXT,
+  resolved_at    INTEGER,
+  FOREIGN KEY (command_id) REFERENCES ci_commands(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_suggestions_command ON ci_command_suggestions(command_id, status);
+
+CREATE TABLE IF NOT EXISTS ci_events (
+  id         TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  run_id     TEXT,
+  command_id TEXT,
+  type       TEXT NOT NULL,
+  actor_type TEXT NOT NULL,
+  actor_id   TEXT,
+  payload    TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_events_project ON ci_events(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ci_events_run ON ci_events(run_id, created_at);
+
+CREATE TABLE IF NOT EXISTS ci_settings (
+  id                     INTEGER PRIMARY KEY CHECK (id = 1),
+  max_fix_attempts       INTEGER NOT NULL,
+  fix_time_limit_ms      INTEGER NOT NULL,
+  fix_token_limit        INTEGER NOT NULL,
+  default_step_timeout_sec INTEGER NOT NULL,
+  metrics_window         INTEGER NOT NULL,
+  max_concurrent_runs    INTEGER NOT NULL,
+  max_model_command_calls INTEGER NOT NULL
+);
+
 `

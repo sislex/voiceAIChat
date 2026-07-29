@@ -1,4 +1,5 @@
 import type { FeatureRunSummary } from './features'
+import type { CiRunSummary, CiReuseStrategy } from './ci'
 
 // Типы домена «Проекты» + канбан-доска. Разделяются server/web/desktop.
 
@@ -77,6 +78,14 @@ export interface ProjectSummary {
   agentPlanApprovalMode: 'manual' | 'automatic'
   testCommand?: string
   productionDeployCommand?: string
+  /** CI-раннер: базовая ветка воркфлоу. */
+  ciBaseBranch?: string
+  /** CI-раннер: шаблон ветки, напр. `feature/{task_number}-{slug}`. */
+  ciBranchTemplate?: string
+  /** CI-раннер: стратегия повтора при существующей рабочей директории. */
+  ciReuseStrategy?: CiReuseStrategy
+  /** CI-раннер: ссылка на секрет авторизации выполнения (или ''). */
+  ciExecAuthRef?: string
 }
 
 /** Машина проекта: агент + рабочая папка проекта на этой машине. */
@@ -161,4 +170,6 @@ export interface Board {
   columns: KanbanColumn[]
   tasks: Task[]
   features?: FeatureRunSummary[]
+  /** Сводки CI-ранов по задачам проекта (последний ран на задачу). */
+  ciRuns?: CiRunSummary[]
 }

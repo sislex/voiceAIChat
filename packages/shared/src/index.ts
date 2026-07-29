@@ -26,5 +26,6 @@ export * from './agentInstall'
 export * from './questions'
 export * from './projects'
 export * from './features'
+export * from './ci'
 
 export * from './kb'

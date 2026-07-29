@@ -16,6 +16,7 @@ import type { CcItem } from './cc'
 import type { CxItem } from './codexSessions'
 import type { AgentInfo } from './agentProtocol'
 import type { Board } from './projects'
+import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary } from './ci'
 
 // --- Общие ---------------------------------------------------------------
 
@@ -215,7 +216,25 @@ export const REST = {
   featureTransition: (id: string) => `/api/features/${encodeURIComponent(id)}/transition`,
   featureAgentTasks: (id: string) => `/api/features/${encodeURIComponent(id)}/agent-tasks`,
   featureDeploy: (id: string) => `/api/features/${encodeURIComponent(id)}/deploy`,
-  featureDeployments: (id: string) => `/api/features/${encodeURIComponent(id)}/deployments`
+  featureDeployments: (id: string) => `/api/features/${encodeURIComponent(id)}/deployments`,
+  // --- CI-раннер (Авто-подготовка окружения для таска) ---
+  ciCommands: '/api/ci/commands',
+  ciCommand: (id: string) => `/api/ci/commands/${encodeURIComponent(id)}`,
+  ciCommandUsage: (id: string) => `/api/ci/commands/${encodeURIComponent(id)}/usage`,
+  ciSettings: '/api/ci/settings',
+  ciSuggestions: '/api/ci/suggestions',
+  ciSuggestion: (id: string) => `/api/ci/suggestions/${encodeURIComponent(id)}`,
+  ciWorkspaces: '/api/ci/workspaces',
+  projectCi: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci`,
+  taskCi: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/ci`,
+  ciRunStart: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/ci/run`,
+  ciMetrics: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci/metrics`,
+  ciRun: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}`,
+  ciRunLog: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/log`,
+  ciRunCancel: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/cancel`,
+  ciRunRetry: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/retry`,
+  ciConsoleExec: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/console`,
+  ciConsoleMode: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/console/mode`
 } as const
 
 // --- WebSocket -----------------------------------------------------------
@@ -281,6 +300,8 @@ export type ClientMessage =
   | { t: 'pty.kill'; ptyId: string }
   | { t: 'board.subscribe'; projectId: string }
   | { t: 'board.unsubscribe' }
+  | { t: 'ci.subscribe'; runId: string }
+  | { t: 'ci.unsubscribe'; runId: string }
 
 /** server → client. */
 export type ServerMessage =
@@ -316,6 +337,13 @@ export type ServerMessage =
   | { t: 'pty.exit'; ptyId: string; exitCode: number | null }
   | { t: 'pty.error'; ptyId: string; message: string }
   | { t: 'board.update'; projectId: string; board: Board }
+  | { t: 'ci.snapshot'; runId: string; detail: CiRunDetail; log: CiLogLine[] }
+  | { t: 'ci.run'; runId: string; run: CiRun }
+  | { t: 'ci.step'; runId: string; step: CiRunStep }
+  | { t: 'ci.log'; runId: string; line: CiLogLine }
+  | { t: 'ci.fix'; runId: string; attempt: CiFixAttempt }
+  | { t: 'ci.done'; runId: string; run: CiRun; conclusion?: CiRunConclusion }
+  | { t: 'ci.summary'; projectId: string; summary: CiRunSummary }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']
@@ -339,7 +367,9 @@ export const CLIENT_MESSAGE_TYPES: ClientMessageType[] = [
   'pty.resize',
   'pty.kill',
   'board.subscribe',
-  'board.unsubscribe'
+  'board.unsubscribe',
+  'ci.subscribe',
+  'ci.unsubscribe'
 ]
 
 export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
@@ -366,5 +396,12 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'pty.output',
   'pty.exit',
   'pty.error',
-  'board.update'
+  'board.update',
+  'ci.snapshot',
+  'ci.run',
+  'ci.step',
+  'ci.log',
+  'ci.fix',
+  'ci.done',
+  'ci.summary'
 ]

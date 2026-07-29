@@ -40,7 +40,30 @@ import {
   type RepositorySlot,
   type FeatureDeployment,
   canTransitionFeature,
-  featureColumnSemantic
+  featureColumnSemantic,
+  type CiCommand,
+  type CiCommandInput,
+  type CiCommandScope,
+  type CiSlot,
+  type CiSlotConfig,
+  type CiGlobalSettings,
+  DEFAULT_CI_GLOBAL_SETTINGS,
+  type CiRun,
+  type CiRunDetail,
+  type CiRunStep,
+  type CiStatus,
+  type CiStepKind,
+  type CiInitiatedBy,
+  type CiSlotProgress,
+  type CiLogLine,
+  type CiFixAttempt,
+  type CiWorkspace,
+  type CiWorkspaceReportItem,
+  type CiCommandSuggestion,
+  type CiRunSummary,
+  type CiCommandMetric,
+  type CiModelWorkMetric,
+  type CiEventActor
 } from '@voicechat/shared'
 import { hashPassword, verifyPassword } from '../users/passwords.js'
 
@@ -175,6 +198,10 @@ interface ProjectRow {
   default_skills_epic: string
   default_skills_story: string
   default_skills_task: string
+  ci_base_branch: string
+  ci_branch_template: string
+  ci_reuse_strategy: string
+  ci_exec_auth_ref: string
 }
 
 interface ProjectMemberRow {
@@ -553,6 +580,10 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_epic')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_epic TEXT NOT NULL DEFAULT '[]'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_story')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_story TEXT NOT NULL DEFAULT '[]'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_task')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_task TEXT NOT NULL DEFAULT '[]'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_base_branch')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_base_branch TEXT NOT NULL DEFAULT 'main'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_branch_template')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_branch_template TEXT NOT NULL DEFAULT 'feature/{task_number}-{slug}'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_reuse_strategy')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_reuse_strategy TEXT NOT NULL DEFAULT 'fail'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_exec_auth_ref')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_exec_auth_ref TEXT NOT NULL DEFAULT ''`)
 
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
@@ -1143,7 +1174,11 @@ export class VoiceChatDb {
       mergeTransport: r.merge_transport === 'github_pull_request' ? 'github_pull_request' : 'local',
       agentPlanApprovalMode: r.agent_plan_approval_mode === 'automatic' ? 'automatic' : 'manual',
       testCommand: r.test_command || undefined,
-      productionDeployCommand: r.production_deploy_command || undefined
+      productionDeployCommand: r.production_deploy_command || undefined,
+      ciBaseBranch: r.ci_base_branch,
+      ciBranchTemplate: r.ci_branch_template,
+      ciReuseStrategy: r.ci_reuse_strategy === 'reuse' || r.ci_reuse_strategy === 'clean' ? r.ci_reuse_strategy : 'fail',
+      ciExecAuthRef: r.ci_exec_auth_ref
     }
   }
 
@@ -1257,6 +1292,10 @@ export class VoiceChatDb {
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
       productionDeployCommand?: string
+      ciBaseBranch?: string
+      ciBranchTemplate?: string
+      ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
+      ciExecAuthRef?: string
     }
   ): ProjectDetail | null {
 
@@ -1297,6 +1336,10 @@ export class VoiceChatDb {
     }
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
     if (fields.productionDeployCommand !== undefined) { set.push('production_deploy_command = ?'); vals.push(fields.productionDeployCommand) }
+    if (fields.ciBaseBranch !== undefined) { set.push('ci_base_branch = ?'); vals.push(fields.ciBaseBranch) }
+    if (fields.ciBranchTemplate !== undefined) { set.push('ci_branch_template = ?'); vals.push(fields.ciBranchTemplate) }
+    if (fields.ciReuseStrategy !== undefined) { set.push('ci_reuse_strategy = ?'); vals.push(fields.ciReuseStrategy) }
+    if (fields.ciExecAuthRef !== undefined) { set.push('ci_exec_auth_ref = ?'); vals.push(fields.ciExecAuthRef) }
     if (fields.defaultSkills?.epic !== undefined) { set.push('default_skills_epic = ?'); vals.push(JSON.stringify(fields.defaultSkills.epic)) }
     if (fields.defaultSkills?.story !== undefined) { set.push('default_skills_story = ?'); vals.push(JSON.stringify(fields.defaultSkills.story)) }
     if (fields.defaultSkills?.task !== undefined) { set.push('default_skills_task = ?'); vals.push(JSON.stringify(fields.defaultSkills.task)) }
@@ -1471,7 +1514,7 @@ export class VoiceChatDb {
       const f = mapFeature(r)
       return { id: f.id, sourceTaskId: f.sourceTaskId, attempt: f.attempt, status: f.status, deployStatus: f.deployStatus, featureBranch: f.featureBranch, agentActive: false }
     })
-    return { columns, tasks, features }
+    return { columns, tasks, features, ciRuns: this.latestCiRunSummaries(projectId) }
   }
 
   private getTask(projectId: string, taskId: string): Task | null {
@@ -2031,4 +2074,525 @@ export class VoiceChatDb {
     return mapAgentTask(row)
   }
 
+
+  // ============================ CI-раннер ============================
+
+  /** Видима ли команда пользователю (глобальная — всем; проектная — участнику). */
+  private ciCommandVisible(userId: string, r: CiCommandRow): boolean {
+    if (r.scope === 'global') return true
+    return r.project_id ? this.isProjectMember(userId, r.project_id) : false
+  }
+
+  getCiCommand(userId: string, id: string): CiCommand | null {
+    const r = this.db.prepare(`SELECT * FROM ci_commands WHERE id = ? AND deleted_at IS NULL`).get(id) as CiCommandRow | undefined
+    if (!r || !this.ciCommandVisible(userId, r)) return null
+    return mapCiCommand(r)
+  }
+
+  /** Команды, видимые пользователю: глобальные + команды переданного проекта. */
+  listCiCommands(userId: string, projectId?: string): CiCommand[] {
+    const rows = this.db.prepare(`SELECT * FROM ci_commands WHERE deleted_at IS NULL ORDER BY scope DESC, name ASC`).all() as CiCommandRow[]
+    return rows
+      .filter((r) => (r.scope === 'global' ? true : projectId ? r.project_id === projectId && this.isProjectMember(userId, projectId) : false))
+      .map(mapCiCommand)
+  }
+
+  private ciNameTaken(scope: CiCommandScope, projectId: string | null, name: string, exceptId?: string): boolean {
+    const row = this.db
+      .prepare(`SELECT id FROM ci_commands WHERE deleted_at IS NULL AND scope = ? AND name = ? AND (project_id IS ? OR project_id = ?)`)
+      .get(scope, name, scope === 'global' ? null : projectId, projectId) as { id: string } | undefined
+    return !!row && row.id !== exceptId
+  }
+
+  createCiCommand(userId: string, input: CiCommandInput): CiCommand {
+    const scope: CiCommandScope = input.scope === 'global' ? 'global' : 'project'
+    const projectId = scope === 'global' ? null : input.projectId ?? null
+    const name = (input.name ?? '').trim()
+    if (!name) throw new Error('Имя команды обязательно')
+    if (!(input.script ?? '').trim()) throw new Error('Скрипт команды обязателен')
+    if (this.ciNameTaken(scope, projectId, name)) throw new Error('Команда с таким именем уже существует в этой области')
+    const id = this.newId()
+    const ts = this.now()
+    this.db
+      .prepare(
+        `INSERT INTO ci_commands (id, scope, project_id, name, script, description, workdir, timeout_sec, env_json, allow_failure, is_cleanup, available_to_model, version, created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+      )
+      .run(
+        id, scope, projectId, name, input.script ?? '', input.description ?? '', input.workdir ?? '',
+        input.timeoutSec ?? null, JSON.stringify(input.env ?? {}),
+        input.allowFailure ? 1 : 0, input.isCleanup ? 1 : 0, input.availableToModel === false ? 0 : 1,
+        userId, ts, ts
+      )
+    return mapCiCommand(this.db.prepare(`SELECT * FROM ci_commands WHERE id = ?`).get(id) as CiCommandRow)
+  }
+
+  updateCiCommand(userId: string, id: string, input: CiCommandInput): CiCommand | null {
+    const cur = this.db.prepare(`SELECT * FROM ci_commands WHERE id = ? AND deleted_at IS NULL`).get(id) as CiCommandRow | undefined
+    if (!cur) return null
+    const set: string[] = []
+    const vals: unknown[] = []
+    const nextName = input.name !== undefined ? input.name.trim() : cur.name
+    if (input.name !== undefined) {
+      if (!nextName) throw new Error('Имя команды обязательно')
+      if (this.ciNameTaken(cur.scope === 'global' ? 'global' : 'project', cur.project_id, nextName, id)) throw new Error('Команда с таким именем уже существует в этой области')
+      set.push('name = ?'); vals.push(nextName)
+    }
+    if (input.script !== undefined) { set.push('script = ?'); vals.push(input.script) }
+    if (input.description !== undefined) { set.push('description = ?'); vals.push(input.description) }
+    if (input.workdir !== undefined) { set.push('workdir = ?'); vals.push(input.workdir) }
+    if (input.timeoutSec !== undefined) { set.push('timeout_sec = ?'); vals.push(input.timeoutSec) }
+    if (input.env !== undefined) { set.push('env_json = ?'); vals.push(JSON.stringify(input.env)) }
+    if (input.allowFailure !== undefined) { set.push('allow_failure = ?'); vals.push(input.allowFailure ? 1 : 0) }
+    if (input.isCleanup !== undefined) { set.push('is_cleanup = ?'); vals.push(input.isCleanup ? 1 : 0) }
+    if (input.availableToModel !== undefined) { set.push('available_to_model = ?'); vals.push(input.availableToModel ? 1 : 0) }
+    // Правка текста скрипта поднимает версию (снапшоты завершённых ранов неизменны).
+    if (input.script !== undefined && input.script !== cur.script) set.push('version = version + 1')
+    set.push('updated_at = ?'); vals.push(this.now())
+    this.db.prepare(`UPDATE ci_commands SET ${set.join(', ')} WHERE id = ?`).run(...vals, id)
+    return mapCiCommand(this.db.prepare(`SELECT * FROM ci_commands WHERE id = ?`).get(id) as CiCommandRow)
+  }
+
+  softDeleteCiCommand(userId: string, id: string): boolean {
+    const cur = this.db.prepare(`SELECT * FROM ci_commands WHERE id = ? AND deleted_at IS NULL`).get(id) as CiCommandRow | undefined
+    if (!cur) return false
+    this.db.prepare(`UPDATE ci_commands SET deleted_at = ?, updated_at = ? WHERE id = ?`).run(this.now(), this.now(), id)
+    return true
+  }
+
+  /** Привязки команды: проекты и задачи, где она используется в слотах. */
+  ciCommandUsage(commandId: string): { projects: Array<{ id: string; name: string }>; tasks: Array<{ id: string; title: string }> } {
+    const rows = this.db.prepare(`SELECT owner_type, owner_id FROM ci_slot_commands WHERE command_id = ?`).all(commandId) as Array<{ owner_type: string; owner_id: string }>
+    const projects: Array<{ id: string; name: string }> = []
+    const tasks: Array<{ id: string; title: string }> = []
+    const seenP = new Set<string>()
+    const seenT = new Set<string>()
+    for (const r of rows) {
+      if (r.owner_type === 'project' && !seenP.has(r.owner_id)) {
+        seenP.add(r.owner_id)
+        const p = this.db.prepare(`SELECT name FROM projects WHERE id = ?`).get(r.owner_id) as { name: string } | undefined
+        if (p) projects.push({ id: r.owner_id, name: p.name })
+      } else if (r.owner_type === 'task' && !seenT.has(r.owner_id)) {
+        seenT.add(r.owner_id)
+        const t = this.db.prepare(`SELECT title FROM tasks WHERE id = ?`).get(r.owner_id) as { title: string } | undefined
+        if (t) tasks.push({ id: r.owner_id, title: t.title })
+      }
+    }
+    return { projects, tasks }
+  }
+
+  // --- Слот-конфиг (дефолты проекта / переопределение задачи) ---
+
+  private readSlot(ownerType: 'project' | 'task', ownerId: string, slot: CiSlot): string[] {
+    return (this.db.prepare(`SELECT command_id FROM ci_slot_commands WHERE owner_type = ? AND owner_id = ? AND slot = ? ORDER BY position ASC`).all(ownerType, ownerId, slot) as Array<{ command_id: string }>).map((r) => r.command_id)
+  }
+
+  getCiSlotConfig(ownerType: 'project' | 'task', ownerId: string): CiSlotConfig {
+    return { beforeModel: this.readSlot(ownerType, ownerId, 'before_model'), afterModel: this.readSlot(ownerType, ownerId, 'after_model') }
+  }
+
+  /** Есть ли у владельца хоть одна привязка (для метки «унаследовано/переопределено»). */
+  hasCiSlotConfig(ownerType: 'project' | 'task', ownerId: string): boolean {
+    return this.db.prepare(`SELECT 1 FROM ci_slot_commands WHERE owner_type = ? AND owner_id = ? LIMIT 1`).get(ownerType, ownerId) !== undefined
+  }
+
+  setCiSlotCommands(ownerType: 'project' | 'task', ownerId: string, slot: CiSlot, commandIds: string[]): void {
+    this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM ci_slot_commands WHERE owner_type = ? AND owner_id = ? AND slot = ?`).run(ownerType, ownerId, slot)
+      commandIds.forEach((commandId, i) => this.db.prepare(`INSERT INTO ci_slot_commands (id, owner_type, owner_id, slot, command_id, position) VALUES (?, ?, ?, ?, ?, ?)`).run(this.newId(), ownerType, ownerId, slot, commandId, i))
+    })()
+  }
+
+  /** Эффективные слоты задачи: её переопределение либо дефолты проекта. */
+  resolveTaskSlots(projectId: string, taskId: string): CiSlotConfig {
+    if (this.hasCiSlotConfig('task', taskId)) return this.getCiSlotConfig('task', taskId)
+    return this.getCiSlotConfig('project', projectId)
+  }
+
+  /** Публичный доступ к задаче для CI-раннера (по членству проекта). */
+  getCiTask(userId: string, projectId: string, taskId: string): Task | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    return this.getTask(projectId, taskId)
+  }
+
+  // --- Глобальные настройки CI ---
+
+  getCiSettings(): CiGlobalSettings {
+    const r = this.db.prepare(`SELECT * FROM ci_settings WHERE id = 1`).get() as Record<string, number> | undefined
+    if (!r) {
+      const d = DEFAULT_CI_GLOBAL_SETTINGS
+      this.db.prepare(`INSERT INTO ci_settings (id, max_fix_attempts, fix_time_limit_ms, fix_token_limit, default_step_timeout_sec, metrics_window, max_concurrent_runs, max_model_command_calls) VALUES (1, ?, ?, ?, ?, ?, ?, ?)`).run(d.maxFixAttempts, d.fixTimeLimitMs, d.fixTokenLimit, d.defaultStepTimeoutSec, d.metricsWindow, d.maxConcurrentRuns, d.maxModelCommandCalls)
+      return { ...d }
+    }
+    return {
+      maxFixAttempts: r.max_fix_attempts, fixTimeLimitMs: r.fix_time_limit_ms, fixTokenLimit: r.fix_token_limit,
+      defaultStepTimeoutSec: r.default_step_timeout_sec, metricsWindow: r.metrics_window,
+      maxConcurrentRuns: r.max_concurrent_runs, maxModelCommandCalls: r.max_model_command_calls
+    }
+  }
+
+  updateCiSettings(patch: Partial<CiGlobalSettings>): CiGlobalSettings {
+    const cur = this.getCiSettings()
+    const next = { ...cur, ...patch }
+    this.db.prepare(`UPDATE ci_settings SET max_fix_attempts=?, fix_time_limit_ms=?, fix_token_limit=?, default_step_timeout_sec=?, metrics_window=?, max_concurrent_runs=?, max_model_command_calls=? WHERE id=1`).run(next.maxFixAttempts, next.fixTimeLimitMs, next.fixTokenLimit, next.defaultStepTimeoutSec, next.metricsWindow, next.maxConcurrentRuns, next.maxModelCommandCalls)
+    return next
+  }
+
+  // --- Раны и шаги ---
+
+  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; triggeredBy: string; prevColumnId: string | null; slotProgress: CiSlotProgress }): CiRun {
+    const id = this.newId()
+    const ts = this.now()
+    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, status, triggered_by, prev_column_id, slot_progress_json, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.triggeredBy, args.prevColumnId, JSON.stringify(args.slotProgress), ts)
+    return mapCiRun(this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(id) as CiRunRow)
+  }
+
+  getCiRunRaw(runId: string): CiRun | null {
+    const r = this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(runId) as CiRunRow | undefined
+    return r ? mapCiRun(r) : null
+  }
+
+  getCiRun(userId: string, runId: string): CiRunDetail | null {
+    const r = this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(runId) as CiRunRow | undefined
+    if (!r || !this.isProjectMember(userId, r.project_id)) return null
+    const run = mapCiRun(r)
+    const steps = (this.db.prepare(`SELECT * FROM ci_run_steps WHERE run_id = ? ORDER BY position ASC, id ASC`).all(runId) as CiRunStepRow[]).map(mapCiRunStep)
+    const fixAttempts = (this.db.prepare(`SELECT f.* FROM ci_fix_attempts f JOIN ci_run_steps s ON s.id = f.run_step_id WHERE s.run_id = ? ORDER BY f.created_at ASC`).all(runId) as CiFixRow[]).map(mapCiFix)
+    return { run, steps, fixAttempts }
+  }
+
+  listCiRunsForTask(userId: string, projectId: string, taskId: string): CiRun[] {
+    if (!this.isProjectMember(userId, projectId)) return []
+    return (this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC`).all(taskId) as CiRunRow[]).map(mapCiRun)
+  }
+
+  updateCiRun(runId: string, patch: { status?: CiStatus; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress }): CiRun | null {
+    const set: string[] = []
+    const vals: unknown[] = []
+    if (patch.status !== undefined) { set.push('status = ?'); vals.push(patch.status) }
+    if (patch.workspaceId !== undefined) { set.push('workspace_id = ?'); vals.push(patch.workspaceId) }
+    if (patch.startedAt !== undefined) { set.push('started_at = ?'); vals.push(patch.startedAt) }
+    if (patch.finishedAt !== undefined) { set.push('finished_at = ?'); vals.push(patch.finishedAt) }
+    if (patch.durationMs !== undefined) { set.push('duration_ms = ?'); vals.push(patch.durationMs) }
+    if (patch.slotProgress !== undefined) { set.push('slot_progress_json = ?'); vals.push(JSON.stringify(patch.slotProgress)) }
+    if (!set.length) return this.getCiRunRaw(runId)
+    this.db.prepare(`UPDATE ci_runs SET ${set.join(', ')} WHERE id = ?`).run(...vals, runId)
+    return this.getCiRunRaw(runId)
+  }
+
+  addCiRunStep(args: { runId: string; slot: CiSlot | null; position: number; kind: CiStepKind; parentStepId?: string | null; initiatedBy?: CiInitiatedBy; commandId?: string | null; commandSnapshot?: string | null; title: string; workdir?: string | null; status?: CiStatus }): CiRunStep {
+    const id = this.newId()
+    this.db.prepare(`INSERT INTO ci_run_steps (id, run_id, slot, position, kind, parent_step_id, initiated_by, command_id, command_snapshot, title, workdir, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.runId, args.slot, args.position, args.kind, args.parentStepId ?? null, args.initiatedBy ?? 'system', args.commandId ?? null, args.commandSnapshot ?? null, args.title, args.workdir ?? null, args.status ?? 'queued')
+    return mapCiRunStep(this.db.prepare(`SELECT * FROM ci_run_steps WHERE id = ?`).get(id) as CiRunStepRow)
+  }
+
+  updateCiRunStep(stepId: string, patch: { status?: CiStatus; exitCode?: number | null; attempt?: number; fixedByModel?: boolean; startedAt?: number; finishedAt?: number; durationMs?: number }): CiRunStep | null {
+    const set: string[] = []
+    const vals: unknown[] = []
+    if (patch.status !== undefined) { set.push('status = ?'); vals.push(patch.status) }
+    if (patch.exitCode !== undefined) { set.push('exit_code = ?'); vals.push(patch.exitCode) }
+    if (patch.attempt !== undefined) { set.push('attempt = ?'); vals.push(patch.attempt) }
+    if (patch.fixedByModel !== undefined) { set.push('fixed_by_model = ?'); vals.push(patch.fixedByModel ? 1 : 0) }
+    if (patch.startedAt !== undefined) { set.push('started_at = ?'); vals.push(patch.startedAt) }
+    if (patch.finishedAt !== undefined) { set.push('finished_at = ?'); vals.push(patch.finishedAt) }
+    if (patch.durationMs !== undefined) { set.push('duration_ms = ?'); vals.push(patch.durationMs) }
+    if (!set.length) { const r = this.db.prepare(`SELECT * FROM ci_run_steps WHERE id = ?`).get(stepId) as CiRunStepRow | undefined; return r ? mapCiRunStep(r) : null }
+    this.db.prepare(`UPDATE ci_run_steps SET ${set.join(', ')} WHERE id = ?`).run(...vals, stepId)
+    const r = this.db.prepare(`SELECT * FROM ci_run_steps WHERE id = ?`).get(stepId) as CiRunStepRow | undefined
+    return r ? mapCiRunStep(r) : null
+  }
+
+  // --- Лог (потоковый, с монотонным seq для реплея) ---
+
+  appendCiLog(runId: string, stepId: string, stream: 'stdout' | 'stderr' | 'system', chunk: string): CiLogLine {
+    const at = this.now()
+    const row = this.db.prepare(`SELECT COALESCE(MAX(seq), 0) AS m FROM ci_run_logs WHERE run_id = ?`).get(runId) as { m: number }
+    const seq = row.m + 1
+    this.db.prepare(`INSERT INTO ci_run_logs (id, run_id, step_id, seq, stream, chunk, at) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(this.newId(), runId, stepId, seq, stream, chunk, at)
+    return { runId, stepId, seq, stream, chunk, at }
+  }
+
+  getCiRunLog(userId: string, runId: string): CiLogLine[] {
+    const r = this.db.prepare(`SELECT project_id FROM ci_runs WHERE id = ?`).get(runId) as { project_id: string } | undefined
+    if (!r || !this.isProjectMember(userId, r.project_id)) return []
+    return (this.db.prepare(`SELECT * FROM ci_run_logs WHERE run_id = ? ORDER BY seq ASC`).all(runId) as CiLogRow[]).map(mapCiLog)
+  }
+
+  // --- fix-loop ---
+
+  addCiFixAttempt(args: { runStepId: string; attemptNo: number; diagnosis: string; action: string; result: CiFixAttempt['result']; diff?: string | null; durationMs?: number | null; tokensUsed?: number | null }): CiFixAttempt {
+    const id = this.newId()
+    this.db.prepare(`INSERT INTO ci_fix_attempts (id, run_step_id, attempt_no, diagnosis, action, result, diff, duration_ms, tokens_used, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.runStepId, args.attemptNo, args.diagnosis, args.action, args.result, args.diff ?? null, args.durationMs ?? null, args.tokensUsed ?? null, this.now())
+    return mapCiFix(this.db.prepare(`SELECT * FROM ci_fix_attempts WHERE id = ?`).get(id) as CiFixRow)
+  }
+
+  // --- Рабочие директории ---
+
+  createCiWorkspace(args: { projectId: string; taskId: string; agentId: string | null; path: string }): CiWorkspace {
+    const id = this.newId()
+    this.db.prepare(`INSERT INTO ci_workspaces (id, project_id, task_id, agent_id, path, state, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?)`).run(id, args.projectId, args.taskId, args.agentId, args.path, this.now())
+    return mapCiWorkspace(this.db.prepare(`SELECT * FROM ci_workspaces WHERE id = ?`).get(id) as CiWorkspaceRow)
+  }
+
+  getCiWorkspaceById(id: string): CiWorkspace | null {
+    const r = this.db.prepare(`SELECT * FROM ci_workspaces WHERE id = ?`).get(id) as CiWorkspaceRow | undefined
+    return r ? mapCiWorkspace(r) : null
+  }
+
+  findActiveCiWorkspace(projectId: string, taskId: string): CiWorkspace | null {
+    const r = this.db.prepare(`SELECT * FROM ci_workspaces WHERE project_id = ? AND task_id = ? AND state = 'active' ORDER BY created_at DESC LIMIT 1`).get(projectId, taskId) as CiWorkspaceRow | undefined
+    return r ? mapCiWorkspace(r) : null
+  }
+
+  releaseCiWorkspace(workspaceId: string, releasedByStepId: string | null): void {
+    this.db.prepare(`UPDATE ci_workspaces SET state = 'released', released_by_step_id = ? WHERE id = ?`).run(releasedByStepId, workspaceId)
+  }
+
+  setCiWorkspaceSize(workspaceId: string, sizeBytes: number): void {
+    this.db.prepare(`UPDATE ci_workspaces SET size_bytes = ? WHERE id = ?`).run(sizeBytes, workspaceId)
+  }
+
+  /** Отчёт по занятому месту: активные + осиротевшие (задача закрыта/удалена). */
+  listCiWorkspaceReport(userId: string, projectId?: string): CiWorkspaceReportItem[] {
+    const rows = (projectId
+      ? this.db.prepare(`SELECT * FROM ci_workspaces WHERE project_id = ? ORDER BY created_at DESC`).all(projectId)
+      : this.db.prepare(`SELECT * FROM ci_workspaces ORDER BY created_at DESC`).all()) as CiWorkspaceRow[]
+    const out: CiWorkspaceReportItem[] = []
+    for (const r of rows) {
+      if (!this.isProjectMember(userId, r.project_id)) continue
+      const task = this.db.prepare(`SELECT t.title, c.semantic_type FROM tasks t LEFT JOIN kanban_columns c ON c.id = t.column_id WHERE t.id = ?`).get(r.task_id) as { title: string; semantic_type: string } | undefined
+      const taskClosed = !task || task.semantic_type === 'done'
+      out.push({ ...mapCiWorkspace(r), taskTitle: task?.title ?? null, orphaned: r.state === 'active' && taskClosed })
+    }
+    return out
+  }
+
+  // --- Предложения модели ---
+
+  addCiSuggestion(args: { commandId: string; runStepId: string | null; reason: string; proposedScript: string }): CiCommandSuggestion {
+    // Однотипные (та же команда + та же причина) группируются со счётчиком.
+    const existing = this.db.prepare(`SELECT * FROM ci_command_suggestions WHERE command_id = ? AND reason = ? AND status = 'new'`).get(args.commandId, args.reason) as CiSuggestionRow | undefined
+    if (existing) {
+      this.db.prepare(`UPDATE ci_command_suggestions SET occurrences = occurrences + 1, proposed_script = ?, run_step_id = ? WHERE id = ?`).run(args.proposedScript, args.runStepId, existing.id)
+      return mapCiSuggestion(this.db.prepare(`SELECT * FROM ci_command_suggestions WHERE id = ?`).get(existing.id) as CiSuggestionRow)
+    }
+    const id = this.newId()
+    this.db.prepare(`INSERT INTO ci_command_suggestions (id, command_id, run_step_id, reason, proposed_script, status, occurrences, created_at) VALUES (?, ?, ?, ?, ?, 'new', 1, ?)`).run(id, args.commandId, args.runStepId, args.reason, args.proposedScript, this.now())
+    return mapCiSuggestion(this.db.prepare(`SELECT * FROM ci_command_suggestions WHERE id = ?`).get(id) as CiSuggestionRow)
+  }
+
+  listCiSuggestions(userId: string, projectId?: string): CiCommandSuggestion[] {
+    const rows = this.db.prepare(`SELECT s.* FROM ci_command_suggestions s JOIN ci_commands c ON c.id = s.command_id WHERE s.status = 'new' ORDER BY s.created_at DESC`).all() as Array<CiSuggestionRow>
+    return rows.filter((s) => {
+      const c = this.db.prepare(`SELECT scope, project_id FROM ci_commands WHERE id = ?`).get(s.command_id) as { scope: string; project_id: string | null } | undefined
+      if (!c) return false
+      if (c.scope === 'global') return true
+      return c.project_id ? this.isProjectMember(userId, c.project_id) && (!projectId || c.project_id === projectId) : false
+    }).map(mapCiSuggestion)
+  }
+
+  countNewCiSuggestions(commandId: string): number {
+    const r = this.db.prepare(`SELECT COUNT(*) AS n FROM ci_command_suggestions WHERE command_id = ? AND status = 'new'`).get(commandId) as { n: number }
+    return r.n
+  }
+
+  resolveCiSuggestion(userId: string, id: string, accept: boolean): CiCommandSuggestion | null {
+    const s = this.db.prepare(`SELECT * FROM ci_command_suggestions WHERE id = ?`).get(id) as CiSuggestionRow | undefined
+    if (!s) return null
+    this.db.transaction(() => {
+      this.db.prepare(`UPDATE ci_command_suggestions SET status = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`).run(accept ? 'accepted' : 'rejected', userId, this.now(), id)
+      if (accept) {
+        // Принятие создаёт новую версию команды (текст скрипта заменяется).
+        this.db.prepare(`UPDATE ci_commands SET script = ?, version = version + 1, updated_at = ? WHERE id = ?`).run(s.proposed_script, this.now(), s.command_id)
+      }
+    })()
+    return mapCiSuggestion(this.db.prepare(`SELECT * FROM ci_command_suggestions WHERE id = ?`).get(id) as CiSuggestionRow)
+  }
+
+  // --- Аудит / история ---
+
+  addCiEvent(args: { projectId: string; runId?: string | null; commandId?: string | null; type: string; actorType: CiEventActor; actorId?: string | null; payload?: Record<string, unknown> }): void {
+    this.db.prepare(`INSERT INTO ci_events (id, project_id, run_id, command_id, type, actor_type, actor_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(this.newId(), args.projectId, args.runId ?? null, args.commandId ?? null, args.type, args.actorType, args.actorId ?? null, JSON.stringify(args.payload ?? {}), this.now())
+  }
+
+  // --- Метрики (на лету, окно metrics_window) ---
+
+  ciCommandMetrics(userId: string, projectId: string): CiCommandMetric[] {
+    if (!this.isProjectMember(userId, projectId)) return []
+    const window = this.getCiSettings().metricsWindow
+    const cmds = this.db.prepare(`SELECT DISTINCT command_id FROM ci_run_steps s JOIN ci_runs r ON r.id = s.run_id WHERE r.project_id = ? AND s.command_id IS NOT NULL AND s.kind = 'command'`).all(projectId) as Array<{ command_id: string }>
+    const out: CiCommandMetric[] = []
+    for (const { command_id } of cmds) {
+      const rows = this.db.prepare(`SELECT s.status, s.duration_ms FROM ci_run_steps s JOIN ci_runs r ON r.id = s.run_id WHERE r.project_id = ? AND s.command_id = ? AND s.kind = 'command' AND s.status IN ('success','failed','timeout') ORDER BY s.finished_at DESC LIMIT ?`).all(projectId, command_id, window) as Array<{ status: string; duration_ms: number | null }>
+      if (!rows.length) continue
+      const succ = rows.filter((r) => r.status === 'success' && r.duration_ms != null).map((r) => r.duration_ms as number).sort((a, b) => a - b)
+      const median = succ.length ? succ[Math.floor((succ.length - 1) / 2)] : null
+      const avg = succ.length ? Math.round(succ.reduce((a, b) => a + b, 0) / succ.length) : null
+      const p90 = succ.length ? succ[Math.min(succ.length - 1, Math.floor(succ.length * 0.9))] : null
+      const successRate = rows.length ? rows.filter((r) => r.status === 'success').length / rows.length : 0
+      out.push({ projectId, commandId: command_id, medianMs: median, avgMs: avg, p90Ms: p90, samples: succ.length, successRate })
+    }
+    return out
+  }
+
+  ciModelWorkMetric(userId: string, projectId: string): CiModelWorkMetric {
+    if (!this.isProjectMember(userId, projectId)) return { projectId, avgMs: null, samples: 0 }
+    const rows = this.db.prepare(`SELECT s.duration_ms FROM ci_run_steps s JOIN ci_runs r ON r.id = s.run_id WHERE r.project_id = ? AND s.kind = 'model_work' AND s.status = 'success' AND s.duration_ms IS NOT NULL ORDER BY s.finished_at DESC LIMIT 10`).all(projectId) as Array<{ duration_ms: number }>
+    if (!rows.length) return { projectId, avgMs: null, samples: 0 }
+    return { projectId, avgMs: Math.round(rows.reduce((a, r) => a + r.duration_ms, 0) / rows.length), samples: rows.length }
+  }
+
+  /** Сводки последних ранов по задачам проекта — для доски/карточки. */
+  latestCiRunSummaries(projectId: string): CiRunSummary[] {
+    const rows = this.db.prepare(`SELECT * FROM ci_runs WHERE project_id = ? ORDER BY created_at DESC`).all(projectId) as CiRunRow[]
+    const seen = new Set<string>()
+    const out: CiRunSummary[] = []
+    for (const r of rows) {
+      if (seen.has(r.task_id)) continue
+      seen.add(r.task_id)
+      const run = mapCiRun(r)
+      const modelActive = run.status === 'running' && this.db.prepare(`SELECT 1 FROM ci_run_steps WHERE run_id = ? AND kind = 'model_work' AND status = 'running' LIMIT 1`).get(r.id) !== undefined
+      out.push({ id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive })
+    }
+    return out
+  }
+}
+
+// ======================= CI-раннер: строки БД и мапперы =======================
+
+interface CiCommandRow {
+  id: string; scope: string; project_id: string | null; name: string; script: string
+  description: string; workdir: string; timeout_sec: number | null; env_json: string
+  allow_failure: number; is_cleanup: number; available_to_model: number; version: number
+  created_by: string; created_at: number; updated_at: number; deleted_at: number | null
+}
+function parseCiEnv(j: string): Record<string, string> {
+  try {
+    const o = JSON.parse(j) as unknown
+    if (o && typeof o === 'object') {
+      const out: Record<string, string> = {}
+      for (const [k, v] of Object.entries(o as Record<string, unknown>)) out[k] = String(v)
+      return out
+    }
+  } catch {
+    /* битый JSON — пустое окружение */
+  }
+  return {}
+}
+function mapCiCommand(r: CiCommandRow): CiCommand {
+  return {
+    id: r.id,
+    scope: r.scope === 'global' ? 'global' : 'project',
+    projectId: r.project_id,
+    name: r.name,
+    script: r.script,
+    description: r.description,
+    workdir: r.workdir,
+    timeoutSec: r.timeout_sec,
+    env: parseCiEnv(r.env_json),
+    allowFailure: !!r.allow_failure,
+    isCleanup: !!r.is_cleanup,
+    availableToModel: !!r.available_to_model,
+    version: r.version,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    deletedAt: r.deleted_at
+  }
+}
+
+function normCiStatus(s: string): CiStatus {
+  return s === 'running' || s === 'success' || s === 'failed' || s === 'cancelled' || s === 'timeout' || s === 'skipped' ? s : 'queued'
+}
+function parseSlotProgress(j: string): CiSlotProgress {
+  try {
+    const o = JSON.parse(j) as Partial<CiSlotProgress>
+    return { done: Number(o.done ?? 0), total: Number(o.total ?? 0), phase: String(o.phase ?? '') }
+  } catch {
+    return { done: 0, total: 0, phase: '' }
+  }
+}
+
+interface CiRunRow {
+  id: string; project_id: string; task_id: string; agent_id: string | null; status: string
+  workspace_id: string | null; triggered_by: string; prev_column_id: string | null
+  slot_progress_json: string; started_at: number | null; finished_at: number | null
+  duration_ms: number | null; created_at: number
+}
+function mapCiRun(r: CiRunRow): CiRun {
+  return {
+    id: r.id, projectId: r.project_id, taskId: r.task_id, agentId: r.agent_id,
+    status: normCiStatus(r.status), workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
+    prevColumnId: r.prev_column_id, slotProgress: parseSlotProgress(r.slot_progress_json),
+    startedAt: r.started_at, finishedAt: r.finished_at, durationMs: r.duration_ms, createdAt: r.created_at
+  }
+}
+
+interface CiRunStepRow {
+  id: string; run_id: string; slot: string | null; position: number; kind: string
+  parent_step_id: string | null; initiated_by: string; command_id: string | null
+  command_snapshot: string | null; title: string; workdir: string | null; status: string
+  exit_code: number | null; attempt: number; fixed_by_model: number
+  started_at: number | null; finished_at: number | null; duration_ms: number | null
+}
+function normStepKind(k: string): CiStepKind {
+  return k === 'model_work' || k === 'model_command' || k === 'model_summary' ? k : 'command'
+}
+function normInitiatedBy(v: string): CiInitiatedBy {
+  return v === 'user' || v === 'model' ? v : 'system'
+}
+function mapCiRunStep(r: CiRunStepRow): CiRunStep {
+  return {
+    id: r.id, runId: r.run_id, slot: r.slot === 'before_model' || r.slot === 'after_model' ? r.slot : null,
+    position: r.position, kind: normStepKind(r.kind), parentStepId: r.parent_step_id,
+    initiatedBy: normInitiatedBy(r.initiated_by), commandId: r.command_id, commandSnapshot: r.command_snapshot,
+    title: r.title, workdir: r.workdir, status: normCiStatus(r.status), exitCode: r.exit_code,
+    attempt: r.attempt, fixedByModel: !!r.fixed_by_model, startedAt: r.started_at,
+    finishedAt: r.finished_at, durationMs: r.duration_ms
+  }
+}
+
+interface CiLogRow { run_id: string; step_id: string; seq: number; stream: string; chunk: string; at: number }
+function mapCiLog(r: CiLogRow): CiLogLine {
+  return {
+    runId: r.run_id, stepId: r.step_id, seq: r.seq,
+    stream: r.stream === 'stderr' || r.stream === 'system' ? r.stream : 'stdout',
+    chunk: r.chunk, at: r.at
+  }
+}
+
+interface CiFixRow {
+  id: string; run_step_id: string; attempt_no: number; diagnosis: string; action: string
+  result: string; diff: string | null; duration_ms: number | null; tokens_used: number | null; created_at: number
+}
+function mapCiFix(r: CiFixRow): CiFixAttempt {
+  return {
+    id: r.id, runStepId: r.run_step_id, attemptNo: r.attempt_no, diagnosis: r.diagnosis, action: r.action,
+    result: r.result === 'fixed' || r.result === 'gave_up' ? r.result : 'retrying',
+    diff: r.diff, durationMs: r.duration_ms, tokensUsed: r.tokens_used, createdAt: r.created_at
+  }
+}
+
+interface CiWorkspaceRow {
+  id: string; project_id: string; task_id: string; agent_id: string | null; path: string
+  state: string; size_bytes: number | null; created_at: number; released_by_step_id: string | null
+}
+function mapCiWorkspace(r: CiWorkspaceRow): CiWorkspace {
+  return {
+    id: r.id, projectId: r.project_id, taskId: r.task_id, agentId: r.agent_id, path: r.path,
+    state: r.state === 'released' ? 'released' : 'active', sizeBytes: r.size_bytes,
+    createdAt: r.created_at, releasedByStepId: r.released_by_step_id
+  }
+}
+
+interface CiSuggestionRow {
+  id: string; command_id: string; run_step_id: string | null; reason: string; proposed_script: string
+  status: string; occurrences: number; created_at: number; resolved_by: string | null; resolved_at: number | null
+}
+function mapCiSuggestion(r: CiSuggestionRow): CiCommandSuggestion {
+  return {
+    id: r.id, commandId: r.command_id, runStepId: r.run_step_id, reason: r.reason, proposedScript: r.proposed_script,
+    status: r.status === 'accepted' || r.status === 'rejected' ? r.status : 'new',
+    occurrences: r.occurrences, createdAt: r.created_at, resolvedBy: r.resolved_by, resolvedAt: r.resolved_at
+  }
 }

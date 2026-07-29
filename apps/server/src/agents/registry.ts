@@ -58,6 +58,8 @@ interface PendingExec {
   timer: NodeJS.Timeout
   resolve(result: ExecResult): void
   reject(err: Error): void
+  /** Стриминговый режим: каждый chunk уходит сюда, не копится в буфере. */
+  onChunk?: (data: string) => void
 }
 
 interface PendingFs {
@@ -295,6 +297,64 @@ export class AgentRegistry {
     })
   }
 
+  /**
+   * Стриминговый exec: как exec(), но каждый chunk вывода уходит в onChunk по мере
+   * поступления (агент уже шлёт exec.chunk потоком — здесь их не буферизуем, а
+   * форвардим, как PTY-релей). Возвращает финальный exitCode/timedOut; output пуст
+   * (полный лог собирает вызывающий из onChunk). Для потокового CI-лога.
+   */
+  execStream(
+    agentId: string,
+    command: string,
+    timeoutMs: number,
+    onChunk: (data: string) => void,
+    signal?: AbortSignal
+  ): Promise<ExecResult> {
+    const agent = this.online.get(agentId)
+    if (!agent) return Promise.reject(new Error('Машина не в сети'))
+    if (signal?.aborted) return Promise.reject(new Error('Команда отменена'))
+    const ve = this.versionError(agentId, 'exec')
+    if (ve) return Promise.reject(ve)
+    const verdict = evaluateAgentCommand(agent.policy, command)
+    if (!verdict.allowed) {
+      return Promise.reject(new Error(`Запрещено политикой машины: ${verdict.reason}`))
+    }
+    const execId = this.newId()
+    return new Promise<ExecResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(execId)
+        signal?.removeEventListener('abort', onAbort)
+        this.send(agentId, { t: 'exec.cancel', execId })
+        resolve({ exitCode: null, output: '', timedOut: true })
+      }, timeoutMs + GUARD_EXTRA_MS)
+      const onAbort = (): void => {
+        if (!this.pending.delete(execId)) return
+        clearTimeout(timer)
+        this.send(agentId, { t: 'exec.cancel', execId })
+        reject(new Error('Команда отменена'))
+      }
+      const entryRef: PendingExec = {
+        agentId,
+        chunks: [],
+        bytes: 0,
+        truncated: false,
+        timer,
+        onChunk,
+        resolve: (r) => {
+          signal?.removeEventListener('abort', onAbort)
+          resolve(r)
+        },
+        reject: (e) => {
+          signal?.removeEventListener('abort', onAbort)
+          reject(e)
+        }
+      }
+      this.pending.set(execId, entryRef)
+      signal?.addEventListener('abort', onAbort, { once: true })
+      this.send(agentId, { t: 'exec.start', execId, command, timeoutMs })
+    })
+  }
+
   // --- Файловый проводник по машине (по образцу exec, корреляция по opId) ---
 
   /** Отправляет файловую операцию агенту и ждёт fs.result/fs.error (по opId). */
@@ -425,6 +485,11 @@ export class AgentRegistry {
     if (!p || p.agentId !== agentId) return
     switch (msg.t) {
       case 'exec.chunk': {
+        if (p.onChunk) {
+          // Стриминговый ран: чанк уходит в лог сразу, буфер не растёт.
+          p.onChunk(msg.data)
+          return
+        }
         if (p.truncated) return
         p.bytes += Buffer.byteLength(msg.data)
         if (p.bytes > OUTPUT_CAP_BYTES) {

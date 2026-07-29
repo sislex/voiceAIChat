@@ -69,18 +69,32 @@ export class ClaudeCli implements LlmClient {
     if (req.remote) {
       // Проброс Bash на машину пользователя: встроенный Bash выключаем, вместо него —
       // MCP-инструмент bash (сервер `remote`), который выполняет команду на агенте.
+      // Опционально — сервер `ci`: именованные команды CI-справочника как инструмент.
+      const mcpServers: Record<string, { type: 'http'; url: string }> = {
+        remote: { type: 'http', url: req.remote.mcpUrl }
+      }
+      const allowed = ['mcp__remote__bash']
+      let ciHint = ''
+      if (req.remote.ciMcpUrl) {
+        mcpServers.ci = { type: 'http', url: req.remote.ciMcpUrl }
+        allowed.push('mcp__ci__run_command', 'mcp__ci__list_commands')
+        ciHint =
+          `\n\nДоступны именованные команды CI-справочника: инструмент mcp__ci__run_command ` +
+          `(аргумент name), список — mcp__ci__list_commands.`
+      }
       args.push(
         '--mcp-config',
-        JSON.stringify({ mcpServers: { remote: { type: 'http', url: req.remote.mcpUrl } } }),
+        JSON.stringify({ mcpServers }),
         '--disallowedTools',
         'Bash',
         '--allowedTools',
-        'mcp__remote__bash',
+        allowed.join(','),
         '--append-system-prompt',
         `Встроенный инструмент Bash отключён. Все shell-команды выполняй инструментом ` +
           `mcp__remote__bash — они выполняются на машине пользователя «${req.remote.agentName}», ` +
           `а не на сервере.` +
-          (req.remote.policySummary ? `\n\n${req.remote.policySummary}` : '')
+          (req.remote.policySummary ? `\n\n${req.remote.policySummary}` : '') +
+          ciHint
       )
     }
 
