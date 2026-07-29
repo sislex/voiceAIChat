@@ -76,8 +76,6 @@ export interface SidebarProps {
   onOpenUsers?: () => void
   /** Открыть меню «Машины» (статус агентских машин; web). */
   onOpenMachines?: () => void
-  /** Открыть режим «Проекты» (web). */
-  onOpenProjects?: () => void
   /** Текущий пользователь (web-режим); null/без имени — строка входа не показывается. */
   currentUser?: SessionUser | null
   /** Выйти из сессии (web). */
@@ -122,7 +120,6 @@ export function Sidebar({
   onOpenConsole,
   onOpenUsers,
   onOpenMachines,
-  onOpenProjects,
   currentUser,
   onLogout,
   mode = 'chats',
@@ -426,12 +423,6 @@ export function Sidebar({
                   <span className="footico">🧭</span>
                   Codex
                 </button>
-                {onOpenProjects && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onOpenProjects)}>
-                    <span className="footico">📋</span>
-                    Проекты
-                  </button>
-                )}
                 {onOpenKnowledgeBase && (
                   <button className="footbtn" role="menuitem" onClick={acct(onOpenKnowledgeBase)}>
                     <span className="footico">📚</span>
@@ -487,11 +478,6 @@ export function Sidebar({
               <button className="footico-btn" onClick={onOpenCodexObserver} title="Codex" aria-label="Codex">
                 🧭
               </button>
-              {onOpenProjects && (
-                <button className="footico-btn" onClick={onOpenProjects} title="Проекты" aria-label="Проекты">
-                  📋
-                </button>
-              )}
               {onOpenKnowledgeBase && (
                 <button className="footico-btn" onClick={onOpenKnowledgeBase} title="База знаний" aria-label="База знаний">
                   📚

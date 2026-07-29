@@ -88,6 +88,23 @@ function saveSidebarProject(id: string | null): void {
   }
 }
 
+/** Ключ localStorage для последнего открытого проекта-доски (для авто-редиректа). */
+const LAST_PROJECT_KEY = 'vc.lastProject'
+function loadLastProject(): string | null {
+  try {
+    return localStorage.getItem(LAST_PROJECT_KEY)
+  } catch {
+    return null
+  }
+}
+function saveLastProject(id: string): void {
+  try {
+    localStorage.setItem(LAST_PROJECT_KEY, id)
+  } catch {
+    // localStorage недоступен — молча игнорируем.
+  }
+}
+
 /** Полное состояние приложения в renderer. */
 export interface AppState {
   /**
@@ -225,6 +242,8 @@ export interface AppState {
   projects: ProjectSummary[]
   /** Проект, выбранный в селекте сайдбара (null — «Без проекта»). Фильтрует список/поиск чатов. */
   sidebarProjectId: string | null
+  /** Последний открытый проект-доска (для авто-редиректа с #/projects). */
+  lastProjectId: string | null
   /** Проект, выбранный в панели деталей (null — не выбран). */
   projectDetail: ProjectDetail | null
   /** id проекта с открытой доской (null — доска закрыта). */
@@ -671,6 +690,7 @@ function initialState(): AppState {
     projectsOpen: false,
     projects: [],
     sidebarProjectId: loadSidebarProject(),
+    lastProjectId: loadLastProject(),
     projectDetail: null,
     activeProjectId: null,
     projectSettingsOpen: false,
@@ -2479,7 +2499,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ board: await api['board:get']({ id }) })
   }
   async function openBoard(id: string): Promise<void> {
-    setState({ activeProjectId: id, boardLoading: true, board: null, projectSettingsOpen: false })
+    saveLastProject(id)
+    setState({ activeProjectId: id, boardLoading: true, board: null, projectSettingsOpen: false, lastProjectId: id })
     try {
       const [board, detail, featureRuns] = await Promise.all([api['board:get']({ id }), api['projects:get']({ id }), api['features:list']({ projectId: id })])
       setState({ board, projectDetail: detail, featureRuns, boardLoading: false })
