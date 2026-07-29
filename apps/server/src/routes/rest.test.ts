@@ -202,10 +202,11 @@ describe('REST: conversations/messages/settings', () => {
       ).json()
       expect(sessions[0].title).toBe('Помоги с фичей')
 
-      const items = (
+      const body = (
         await inj({ method: 'GET', url: `/api/cc/projects/${demo.slug}/sessions/sess` })
       ).json()
-      expect(items.map((i: { kind: string }) => i.kind)).toEqual(['user', 'assistant'])
+      expect(body.items.map((i: { kind: string }) => i.kind)).toEqual(['user', 'assistant'])
+      expect(body.usage).toBeDefined()
     } finally {
       if (prev === undefined) delete process.env.VC_CC_DIR
       else process.env.VC_CC_DIR = prev

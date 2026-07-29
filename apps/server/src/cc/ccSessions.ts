@@ -7,11 +7,13 @@ import { homedir } from 'node:os'
 import {
   parseCcTranscript,
   parseCcLine,
+  ccSessionUsage,
   ccSessionTitle,
   ccCwdFromHead,
   type CcProject,
   type CcSession,
-  type CcItem
+  type CcItem,
+  type SessionUsage
 } from '@voicechat/shared'
 
 /** Каталог проектов Claude Code (env VC_CC_DIR → иначе ~/.claude/projects). */
@@ -127,6 +129,17 @@ export function readTranscript(
   const items = parseCcTranscript(text)
   const limit = opts.limit ?? 2000
   return items.length > limit ? items.slice(-limit) : items
+}
+
+/** Сводка расхода сессии (модель/токены/оценка стоимости) — по всему файлу. */
+export function readUsage(slug: string, id: string, baseDir = ccBaseDir()): SessionUsage {
+  const p = sessionPath(slug, id, baseDir)
+  if (!p) return {}
+  try {
+    return ccSessionUsage(readFileSync(p, 'utf8'))
+  } catch {
+    return {}
+  }
 }
 
 /** Читает добавленные с `offset` байты файла; возвращает текст и новый offset. */

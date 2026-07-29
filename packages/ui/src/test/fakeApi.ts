@@ -258,7 +258,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'agents:connectionString': async ({ token }) => `vcagent:fake-${token}`,
     'cc:projects': async () => [],
     'cc:sessions': async () => [],
-    'cc:transcript': async () => [],
+    'cc:transcript': async () => ({ items: [], usage: {} }),
     'cc:resume': async ({ id }) => {
       const conv = makeConversation(`Продолжение ${id}`)
       conversations.push(conv)
@@ -266,7 +266,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'cx:projects': async () => [],
     'cx:sessions': async () => [],
-    'cx:transcript': async () => [],
+    'cx:transcript': async () => ({ items: [], usage: {} }),
     'cx:resume': async ({ id }) => {
       const conv = makeConversation(`Продолжение Codex ${id}`)
       conversations.push(conv)

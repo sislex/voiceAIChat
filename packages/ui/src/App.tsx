@@ -9,7 +9,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen } from './components/LoginScreen'
-import { CcObserver } from './components/CcObserver'
+import { EnginesObserver, type ObserverEngine } from './components/EnginesObserver'
 import { UsersAdmin } from './components/UsersAdmin'
 import { ProjectsOverlay } from './components/ProjectsOverlay'
 import { ProjectSettings } from './components/ProjectSettings'
@@ -18,7 +18,6 @@ import { FeatureDetail } from './components/FeatureDetail'
 import { MachineStatus } from './components/MachineStatus'
 import { MachineUtility } from './components/MachineUtility'
 import type { MachineOps } from './components/machine'
-import { CodexObserver } from './components/CodexObserver'
 import { ConversationSettings } from './components/ConversationSettings'
 import { KnowledgeBase } from './components/KnowledgeBase'
 import { useVoiceStore } from './store/useVoiceStore'
@@ -253,7 +252,6 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         selectedProjectId={state.sidebarProjectId}
         onSelectProject={(id) => void actions.setSidebarProject(id)}
         onOpenObserver={menu(() => navigate('/claude-code'))}
-        onOpenCodexObserver={menu(() => navigate('/codex'))}
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
         onOpenSettings={menu(actions.openSettings)}
         onOpenFiles={state.authRequired ? menu(() => actions.openUtilityForActiveChat('explorer')) : undefined}
@@ -418,35 +416,45 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
 
       {utilitySeg === 'kb' && <KnowledgeBase api={api} variant="page" onClose={() => navigate('/')} />}
 
-      {utilitySeg === 'claude-code' && state.ccOpen && (
-        <CcObserver
-          variant="page"
-          projects={state.ccProjects}
-          sessions={state.ccSessions}
-          transcript={state.ccTranscript}
-          activeProject={state.ccProjectSlug}
-          activeSession={state.ccSessionId}
-          onSelectProject={actions.selectCcProject}
-          onSelectSession={actions.selectCcSession}
-          onResumeSession={(slug, id) => void actions.resumeCcSession(slug, id)}
-          onClose={() => navigate('/')}
-        />
-      )}
-
-      {utilitySeg === 'codex' && state.cxOpen && (
-        <CodexObserver
-          variant="page"
-          projects={state.cxProjects}
-          sessions={state.cxSessions}
-          transcript={state.cxTranscript}
-          activeProject={state.cxProjectCwd}
-          activeSession={state.cxSessionId}
-          onSelectProject={actions.selectCxProject}
-          onSelectSession={actions.selectCxSession}
-          onResumeSession={(id) => void actions.resumeCxSession(id)}
-          onClose={() => navigate('/')}
-        />
-      )}
+      {/* Объединённый наблюдатель агентов: один компонент с переключателем
+          движка Claude/Codex. Движок и открытость выводятся из маршрута
+          (/claude-code | /codex) — переключатель просто навигирует между ними. */}
+      {(() => {
+        const engine: ObserverEngine | null =
+          utilitySeg === 'claude-code' ? 'claude' : utilitySeg === 'codex' ? 'codex' : null
+        const open = engine === 'claude' ? state.ccOpen : engine === 'codex' ? state.cxOpen : false
+        if (!engine || !open) return null
+        return (
+          <EnginesObserver
+            variant="page"
+            engine={engine}
+            onSwitchEngine={(e) => navigate(e === 'claude' ? '/claude-code' : '/codex')}
+            onClose={() => navigate('/')}
+            claude={{
+              projects: state.ccProjects,
+              sessions: state.ccSessions,
+              transcript: state.ccTranscript,
+              activeProject: state.ccProjectSlug,
+              activeSession: state.ccSessionId,
+              usage: state.ccUsage,
+              onSelectProject: actions.selectCcProject,
+              onSelectSession: actions.selectCcSession,
+              onResumeSession: (slug, id) => void actions.resumeCcSession(slug, id)
+            }}
+            codex={{
+              projects: state.cxProjects,
+              sessions: state.cxSessions,
+              transcript: state.cxTranscript,
+              activeProject: state.cxProjectCwd,
+              activeSession: state.cxSessionId,
+              usage: state.cxUsage,
+              onSelectProject: actions.selectCxProject,
+              onSelectSession: actions.selectCxSession,
+              onResumeSession: (id) => void actions.resumeCxSession(id)
+            }}
+          />
+        )
+      })()}
 
       {utilitySeg === 'machines' && state.machinesOpen && (
         <MachineStatus

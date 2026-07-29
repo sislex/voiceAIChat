@@ -2388,6 +2388,69 @@
   min-height: 0;
   flex: 1;
 }
+
+/* Объединённый наблюдатель агентов: переключатель движка в шапке + панель сводки. */
+.eng-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--bg-soft, rgba(127, 127, 127, 0.12));
+}
+.eng-tab {
+  border: none;
+  background: transparent;
+  color: var(--text-soft, inherit);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.eng-tab:hover {
+  background: rgba(127, 127, 127, 0.14);
+}
+.eng-tab.on {
+  background: var(--bg, #fff);
+  color: var(--text, inherit);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  font-weight: 600;
+}
+.usagebar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 22px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-soft, rgba(127, 127, 127, 0.05));
+  font-size: 13px;
+}
+.usagebar--empty {
+  color: var(--text-soft, rgba(127, 127, 127, 0.9));
+}
+.usage-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--bg, #fff);
+  border: 1px solid var(--border-soft);
+}
+.usage-k {
+  color: var(--text-soft, rgba(127, 127, 127, 0.9));
+  font-size: 12px;
+}
+.usage-v {
+  font-weight: 600;
+}
+.usage-sub {
+  font-weight: 400;
+  color: var(--text-soft, rgba(127, 127, 127, 0.9));
+  font-size: 12px;
+}
 .cc-col {
   overflow-y: auto;
   min-height: 0;

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { CcProject, CcSession, CcItem, CcItemKind } from '@shared/cc'
 import { Markdown } from './Markdown'
 import { ToolFrame } from './ToolFrame'
@@ -15,6 +16,10 @@ export interface CcObserverProps {
   /** Продолжить сессию в приложении (импорт истории + привязка session-id). */
   onResumeSession: (slug: string, id: string) => void
   onClose: () => void
+  /** Узел в шапку ToolFrame (переключатель движка объединённого наблюдателя). */
+  toolbar?: ReactNode
+  /** Панель над телом (сводка расхода: модель/токены/стоимость). */
+  banner?: ReactNode
 }
 
 const KIND_LABEL: Record<CcItemKind, string> = {
@@ -74,10 +79,13 @@ export function CcObserver({
   onSelectSession,
   onResumeSession,
   onClose,
+  toolbar,
+  banner,
   variant = 'modal'
 }: CcObserverProps): JSX.Element {
   return (
-    <ToolFrame title="Проводник Claude Code" variant={variant} onClose={onClose} testId="cc-overlay">
+    <ToolFrame title="Проводник Claude Code" variant={variant} onClose={onClose} testId="cc-overlay" actions={toolbar}>
+      {banner}
       <div className="ccobs-body">
         <nav className="cc-col cc-projects" aria-label="Проекты">
           {projects.length === 0 && <p className="cc-empty">Проектов не найдено</p>}

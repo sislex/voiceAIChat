@@ -7,6 +7,7 @@ import {
   ccResumeMessages,
   ccResumeTitle,
   ccTimeLabel,
+  ccSessionUsage,
   type CcItem
 } from './cc'
 
@@ -112,5 +113,41 @@ describe('продолжение сессии', () => {
   it('ccTimeLabel форматирует HH:MM (ts или fallback)', () => {
     expect(/^\d{2}:\d{2}$/.test(ccTimeLabel(undefined, 1_700_000_000_000))).toBe(true)
     expect(/^\d{2}:\d{2}$/.test(ccTimeLabel(1_700_000_000_000, 0))).toBe(true)
+  })
+})
+
+describe('ccSessionUsage', () => {
+  const a1 = JSON.stringify({
+    type: 'assistant',
+    message: {
+      model: 'claude-opus-4-8',
+      usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 20 }
+    }
+  })
+  const a2 = JSON.stringify({
+    type: 'assistant',
+    message: {
+      model: 'claude-opus-4-8',
+      usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 50 }
+    }
+  })
+
+  it('суммирует usage по ходам, берёт модель и оценивает стоимость', () => {
+    const u = ccSessionUsage([userStr, a1, a2, noise].join('\n'))
+    expect(u.model).toBe('claude-opus-4-8')
+    expect(u.inputTokens).toBe(12)
+    expect(u.outputTokens).toBe(8)
+    expect(u.cacheReadTokens).toBe(150)
+    expect(u.cacheCreationTokens).toBe(20)
+    expect(u.turns).toBe(2)
+    expect(u.costUsd).toBeGreaterThan(0)
+  })
+
+  it('пустой транскрипт → нулевая сводка без стоимости', () => {
+    const u = ccSessionUsage([userStr, noise].join('\n'))
+    expect(u.inputTokens).toBe(0)
+    expect(u.turns).toBe(0)
+    expect(u.model).toBeUndefined()
+    expect(u.costUsd).toBeUndefined()
   })
 })

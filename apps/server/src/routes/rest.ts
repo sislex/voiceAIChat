@@ -22,11 +22,12 @@ import { ensureCliProfile } from '../users/cliProfiles.js'
 import { readUserFile } from '../serverFiles.js'
 import { listMcpServers } from '../claude/mcp.js'
 import { getLoginStatus } from '../auth/loginStatus.js'
-import { listProjects, listSessions, readTranscript } from '../cc/ccSessions.js'
+import { listProjects, listSessions, readTranscript, readUsage } from '../cc/ccSessions.js'
 import {
   listCxProjects,
   listCxSessions,
-  readCxTranscript
+  readCxTranscript,
+  readCxUsage
 } from '../codex/codexSessions.js'
 
 export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDir: string): Promise<void> {
@@ -178,10 +179,13 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
   )
   app.get<{ Params: { slug: string; id: string }; Querystring: { limit?: string } }>(
     '/api/cc/projects/:slug/sessions/:id',
-    async (req) =>
-      readTranscript(req.params.slug, req.params.id, {
+    async (req) => {
+      const dir = ccDir(req)
+      const items = readTranscript(req.params.slug, req.params.id, {
         limit: req.query.limit ? Number(req.query.limit) : undefined
-      }, ccDir(req))
+      }, dir)
+      return { items, usage: readUsage(req.params.slug, req.params.id, dir) }
+    }
   )
 
   app.post<{ Body: { slug: string; id: string } }>(REST.ccResume, async (req, reply) => {
@@ -204,11 +208,14 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
   app.get<{ Querystring: { cwd?: string } }>(REST.cxSessions, async (req) =>
     listCxSessions(req.query.cwd ?? '', cxDir(req))
   )
-  app.get<{ Querystring: { id?: string; limit?: string } }>(REST.cxTranscript, async (req) =>
-    readCxTranscript(req.query.id ?? '', {
+  app.get<{ Querystring: { id?: string; limit?: string } }>(REST.cxTranscript, async (req) => {
+    const dir = cxDir(req)
+    const id = req.query.id ?? ''
+    const items = readCxTranscript(id, {
       limit: req.query.limit ? Number(req.query.limit) : undefined
-    }, cxDir(req))
-  )
+    }, dir)
+    return { items, usage: readCxUsage(id, dir) }
+  })
 
   app.post<{ Body: { id: string } }>(REST.cxResume, async (req, reply) => {
     const u = uid(req)

@@ -20,7 +20,6 @@ function setup(overrides: Record<string, unknown> = {}) {
     searchQuery: '',
     onSearch: vi.fn(),
     onOpenObserver: vi.fn(),
-    onOpenCodexObserver: vi.fn(),
     onOpenSettings: vi.fn(),
     ...overrides
   }
@@ -85,7 +84,6 @@ describe('Sidebar — инструменты в меню по клику на п
     setup({
       currentUser: user,
       onOpenObserver,
-      onOpenCodexObserver: vi.fn(),
       onOpenKnowledgeBase: vi.fn(),
         onOpenFiles: vi.fn(),
       onOpenConsole: vi.fn(),
@@ -97,12 +95,12 @@ describe('Sidebar — инструменты в меню по клику на п
     // Отдельного нижнего ряда иконок больше нет.
     expect(document.querySelector('.foottools')).toBeNull()
     // До клика меню (и его пункты) не отрисованы.
-    expect(screen.queryByText('Claude Code')).not.toBeInTheDocument()
+    expect(screen.queryByText('Агенты')).not.toBeInTheDocument()
 
     // Клик по пользователю открывает всплывающее меню с инструментами.
     fireEvent.click(screen.getByRole('button', { name: /Алекс/ }))
     const menu = screen.getByRole('menu')
-    for (const label of ['Claude Code', 'Codex', 'База знаний', 'Проводник', 'Консоль']) {
+    for (const label of ['Агенты', 'База знаний', 'Проводник', 'Консоль']) {
       expect(within(menu).getByText(label)).toBeInTheDocument()
     }
     // Управление и настройки — там же.
@@ -110,14 +108,14 @@ describe('Sidebar — инструменты в меню по клику на п
     expect(within(menu).getByText('Настройки')).toBeInTheDocument()
 
     // Пункт-инструмент кликабелен и вызывает свой обработчик.
-    fireEvent.click(within(menu).getByText('Claude Code'))
+    fireEvent.click(within(menu).getByText('Агенты'))
     expect(onOpenObserver).toHaveBeenCalledTimes(1)
   })
 
   it('в локальном режиме без учётки инструменты остаются рядом иконок', () => {
     setup({ onOpenFiles: vi.fn(), onOpenConsole: vi.fn() })
     expect(document.querySelector('.foottools')).not.toBeNull()
-    expect(screen.getByLabelText('Claude Code')).toBeInTheDocument()
+    expect(screen.getByLabelText('Агенты')).toBeInTheDocument()
     expect(screen.getByLabelText('Открыть консоль')).toBeInTheDocument()
   })
 })

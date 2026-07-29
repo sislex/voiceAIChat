@@ -2,7 +2,8 @@
 // Источник — ~/.claude/projects/<слаг>/<session-id>.jsonl (по строке-событию).
 // Чистые функции — тестируются на фикстурах строк.
 
-import type { MessageRole } from './types'
+import type { MessageRole, SessionUsage } from './types'
+import { estimateCostUsd } from './pricing'
 
 /** Проект Claude Code (папка в ~/.claude/projects). */
 export interface CcProject {
@@ -142,6 +143,44 @@ export function parseCcTranscript(text: string): CcItem[] {
     for (const item of parseCcLine(line)) out.push(item)
   }
   return out
+}
+
+/**
+ * Сводка расхода сессии Claude Code: суммирует usage по всем assistant-событиям
+ * транскрипта (у каждого — свой `message.usage`), берёт последнюю встреченную
+ * модель и оценивает стоимость по прайс-таблице. Пустая сводка, если данных нет.
+ */
+export function ccSessionUsage(text: string): SessionUsage {
+  let inputTokens = 0
+  let outputTokens = 0
+  let cacheReadTokens = 0
+  let cacheCreationTokens = 0
+  let turns = 0
+  let model: string | undefined
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    let o: Record<string, unknown>
+    try {
+      o = JSON.parse(trimmed)
+    } catch {
+      continue
+    }
+    if (o.type !== 'assistant') continue
+    const msg = (o.message && typeof o.message === 'object' ? o.message : {}) as Record<string, unknown>
+    if (typeof msg.model === 'string' && msg.model) model = msg.model
+    const u = msg.usage && typeof msg.usage === 'object' ? (msg.usage as Record<string, unknown>) : null
+    if (!u) continue
+    const num = (v: unknown): number => (typeof v === 'number' ? v : 0)
+    inputTokens += num(u.input_tokens)
+    outputTokens += num(u.output_tokens)
+    cacheReadTokens += num(u.cache_read_input_tokens)
+    cacheCreationTokens += num(u.cache_creation_input_tokens)
+    turns += 1
+  }
+  const usage: SessionUsage = { inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, turns, model }
+  usage.costUsd = estimateCostUsd(model, usage)
+  return usage
 }
 
 /** Первая реплика пользователя из «головы» транскрипта — как заголовок сессии. */

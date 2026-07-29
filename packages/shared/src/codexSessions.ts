@@ -3,7 +3,8 @@
 // Чистые функции — тестируются на фикстурах строк. Формат rollout отличается от
 // Claude Code: чистый диалог лежит в записях {type:'event_msg',payload:{type,...}}.
 
-import type { MessageRole } from './types'
+import type { MessageRole, SessionUsage } from './types'
+import { estimateCostUsd } from './pricing'
 
 /** «Проект» Codex — рабочий каталог (cwd), под которым сгруппированы сессии. */
 export interface CxProject {
@@ -178,6 +179,49 @@ export function parseCxTranscript(text: string): CxItem[] {
     for (const item of parseCxLine(line)) out.push(item)
   }
   return out
+}
+
+/**
+ * Сводка расхода сессии Codex. Токены — из ПОСЛЕДНЕЙ записи `token_count`
+ * (там кумулятивный `info.total_token_usage` за всю сессию), модель — из
+ * `turn_context`/`session_meta`. Внимание: у Codex `input_tokens` уже включает
+ * `cached_input_tokens`, поэтому не-кэшированный вход = input - cached.
+ * Стоимость — оценка по прайс-таблице.
+ */
+export function cxSessionUsage(text: string): SessionUsage {
+  let model: string | undefined
+  let total: Record<string, unknown> | null = null
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    let o: Record<string, unknown>
+    try {
+      o = JSON.parse(trimmed)
+    } catch {
+      continue
+    }
+    const p = (o.payload && typeof o.payload === 'object' ? o.payload : {}) as Record<string, unknown>
+    if ((o.type === 'turn_context' || o.type === 'session_meta') && typeof p.model === 'string' && p.model) {
+      model = p.model
+    }
+    if (p.type === 'token_count' && p.info && typeof p.info === 'object') {
+      const info = p.info as Record<string, unknown>
+      const t = info.total_token_usage
+      if (t && typeof t === 'object') total = t as Record<string, unknown>
+    }
+  }
+  const num = (v: unknown): number => (typeof v === 'number' ? v : 0)
+  const inTotal = num(total?.input_tokens)
+  const cached = num(total?.cached_input_tokens)
+  const usage: SessionUsage = {
+    inputTokens: Math.max(0, inTotal - cached),
+    outputTokens: num(total?.output_tokens),
+    cacheReadTokens: cached,
+    cacheCreationTokens: num(total?.cache_write_input_tokens),
+    model
+  }
+  usage.costUsd = estimateCostUsd(model, usage)
+  return usage
 }
 
 /** Метаданные сессии из «головы» rollout (запись session_meta). */

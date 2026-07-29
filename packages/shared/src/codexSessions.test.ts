@@ -5,7 +5,8 @@ import {
   cxMetaFromHead,
   cxSessionTitle,
   cxResumeMessages,
-  cxResumeTitle
+  cxResumeTitle,
+  cxSessionUsage
 } from './codexSessions'
 
 // Фикстуры по форме реальных строк rollout (~/.codex/sessions/**/rollout-*.jsonl).
@@ -137,5 +138,40 @@ describe('parseCxTranscript / resume-хелперы', () => {
 
   it('cxResumeTitle — первая реплика пользователя', () => {
     expect(cxResumeTitle(parseCxTranscript(transcript))).toBe('вопрос')
+  })
+})
+
+describe('cxSessionUsage', () => {
+  const turnCtx = JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.6-sol' } })
+  const tc1 = JSON.stringify({
+    type: 'event_msg',
+    payload: {
+      type: 'token_count',
+      info: { total_token_usage: { input_tokens: 1000, cached_input_tokens: 800, cache_write_input_tokens: 0, output_tokens: 10 } }
+    }
+  })
+  // Кумулятивная запись — вторая перекрывает первую (берётся последняя).
+  const tc2 = JSON.stringify({
+    type: 'event_msg',
+    payload: {
+      type: 'token_count',
+      info: { total_token_usage: { input_tokens: 5000, cached_input_tokens: 4000, cache_write_input_tokens: 12, output_tokens: 40 } }
+    }
+  })
+
+  it('берёт последний кумулятивный token_count и модель из turn_context', () => {
+    const u = cxSessionUsage([turnCtx, tc1, tc2].join('\n'))
+    expect(u.model).toBe('gpt-5.6-sol')
+    expect(u.inputTokens).toBe(1000) // 5000 - 4000 (не-кэшированный вход)
+    expect(u.cacheReadTokens).toBe(4000)
+    expect(u.cacheCreationTokens).toBe(12)
+    expect(u.outputTokens).toBe(40)
+    expect(u.costUsd).toBeGreaterThan(0)
+  })
+
+  it('без token_count → нули', () => {
+    const u = cxSessionUsage([turnCtx].join('\n'))
+    expect(u.inputTokens).toBe(0)
+    expect(u.outputTokens).toBe(0)
   })
 })
