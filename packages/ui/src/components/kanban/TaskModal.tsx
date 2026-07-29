@@ -2,11 +2,15 @@
 // справа панель деталей (статус, исполнитель, метки, родитель, приоритет,
 // стори-поинты, срок, флаг). Поля сохраняются по blur/change — как в Jira.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Board, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { TASK_PRIORITIES } from '@shared/projects'
 import type { FeatureRun } from '@shared/features'
+import type { ModifierPrompt } from '@shared/types'
 import { ToolFrame } from '../ToolFrame'
+import { WandIcon } from '../icons'
+import { PromptBuilder, type GenerateParams, type Suggestion } from '../prompt-builder/PromptBuilder'
+import { applyNativeInputValue, useAiAssist } from '../prompt-builder/useAiAssist'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanbanMeta'
 
 export interface TaskUpdateFields {
@@ -35,6 +39,9 @@ export interface TaskModalProps {
   onMoveToColumn: (taskId: string, columnId: string) => void
   onStartFeature?: (itemId: string, type: WorkItemType) => void
   onOpenFeature?: (featureId: string) => void
+  aiAssistPrompts?: ModifierPrompt[]
+  onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
+  generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>
   /** Открыть другую задачу в этой же модалке (подзадача/родитель). */
   onOpenTask: (taskId: string) => void
   onClose: () => void
@@ -59,6 +66,19 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [description, setDescription] = useState(task.description)
   const [criteria, setCriteria] = useState(task.acceptanceCriteria)
   const [labelDraft, setLabelDraft] = useState('')
+  const descriptionRef = useRef<HTMLTextAreaElement>(null)
+  const aiAssist = useAiAssist({
+    value: description,
+    onChange: (value) => {
+      if (descriptionRef.current) applyNativeInputValue(descriptionRef.current, value)
+      else setDescription(value)
+      props.onUpdate(task.id, { description: value })
+    },
+    prompts: props.aiAssistPrompts ?? [],
+    onPromptsChange: props.onAiAssistPromptsChange,
+    generate: props.generateAiAssist ?? (async () => [])
+  })
+  const aiAssistEnabled = !!props.generateAiAssist
 
   // Переключение на другую задачу (подзадачу) — сбросить черновики полей.
   useEffect(() => {
@@ -90,9 +110,13 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   }
 
   return (
+    <>
     <ToolFrame
       title={`${TYPE_LABEL[task.type]} · ${key}`}
-      onClose={props.onClose}
+      onClose={() => {
+        if (aiAssist.popupProps.open) aiAssist.popupProps.onClose()
+        else props.onClose()
+      }}
       testId="task-modal"
       className="jmodal-frame"
       actions={
@@ -142,16 +166,25 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             }}
           />
           <h3 className="jmodal-h">Описание</h3>
-          <textarea
-            className="login-input jmodal-desc"
-            aria-label="Описание задачи"
-            placeholder="Добавьте описание…"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            onBlur={() => {
-              if (description !== task.description) props.onUpdate(task.id, { description })
-            }}
-          />
+          <div className="ai-assist-wrap jmodal-desc-wrap">
+            <textarea
+              ref={descriptionRef}
+              data-ai-assist={aiAssistEnabled ? '' : undefined}
+              className="login-input jmodal-desc"
+              aria-label="Описание задачи"
+              placeholder="Добавьте описание…"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              onBlur={() => {
+                if (description !== task.description) props.onUpdate(task.id, { description })
+              }}
+            />
+            {aiAssistEnabled && (
+              <button className="ai-assist-trigger jmodal-ai-trigger" {...aiAssist.triggerProps}>
+                <WandIcon />
+              </button>
+            )}
+          </div>
           <h3 className="jmodal-h">Критерии приёмки</h3>
           <textarea
             className="login-input jmodal-desc"
@@ -318,5 +351,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         </aside>
       </div>
     </ToolFrame>
+    <PromptBuilder {...aiAssist.popupProps} />
+    </>
   )
 }

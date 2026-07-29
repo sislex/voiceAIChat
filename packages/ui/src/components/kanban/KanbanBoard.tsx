@@ -10,6 +10,8 @@ import { useMemo, useRef, useState } from 'react'
 import type { Board, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { TASK_PRIORITIES, WORK_ITEM_TYPES } from '@shared/projects'
 import type { FeatureRun } from '@shared/features'
+import type { ModifierPrompt } from '@shared/types'
+import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
 import { TaskCard, epicOf } from './TaskCard'
 import { TaskModal, type TaskUpdateFields } from './TaskModal'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, epicColor, issueKey } from './kanbanMeta'
@@ -44,6 +46,9 @@ export interface KanbanBoardProps {
   onDeleteTask: (taskId: string) => void
   onStartFeature?: (itemId: string, type: WorkItemType) => void
   onOpenFeature?: (featureId: string) => void
+  aiAssistPrompts?: ModifierPrompt[]
+  onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
+  generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>
 }
 
 const RECENT_MS = 24 * 60 * 60 * 1000
@@ -689,6 +694,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onMoveToColumn={(taskId, columnId) => props.onMoveTask(taskId, columnId, null, null)}
           onStartFeature={props.onStartFeature}
           onOpenFeature={props.onOpenFeature}
+          aiAssistPrompts={props.aiAssistPrompts}
+          onAiAssistPromptsChange={props.onAiAssistPromptsChange}
+          generateAiAssist={props.generateAiAssist}
           onOpenTask={setOpenTaskId}
           onClose={() => setOpenTaskId(null)}
         />

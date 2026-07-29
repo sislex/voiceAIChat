@@ -351,7 +351,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
             onFeatureAutomationChange={(fields) => void actions.setFeatureAutomation(fields)}
             aiAssistPrompts={state.settings.aiAssistPrompts}
             onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
-            generateAiAssist={async ({ prompt, modifiers }) => (await window.api['prompt:suggest']({ prompt, modifiers })).variants}
+            generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
           />
         }
       />
@@ -389,6 +389,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
           onStartFeature={(itemId, type) => void (type === `story` ? actions.startFeatureFromStory(itemId) : actions.startFeature(itemId))}
           onOpenFeature={(id) => void actions.openFeature(id)}
+          aiAssistPrompts={state.settings.aiAssistPrompts}
+          onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
+          generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
           onOpenSettings={() => navigate(`/projects/${routeProjectId}/settings`)}
           onClose={() => navigate(`/projects`)}
         />
