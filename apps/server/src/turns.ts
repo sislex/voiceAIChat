@@ -153,6 +153,11 @@ const ACTIVITY_CAP = 500
 export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   const listeners = new Set<(m: ServerMessage, ownerUserId: string) => void>()
   const turns = new Map<string, TurnState>()
+  // Завершённые ходы, чьё сохранение в БД ещё в полёте (перекладка картинок —
+  // сетевой шаг). Держим их отдельно от активных `turns`, чтобы flushInterrupted
+  // при остановке сервера успел сохранить готовый ответ, если async-запись не
+  // завершилась (иначе последнее сообщение модели теряется без следа).
+  const pendingSaves = new Set<() => void>()
   const now = deps.now ?? (() => Date.now())
 
   function broadcast(m: ServerMessage, ownerUserId: string): void {
@@ -381,6 +386,53 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           // машину разговора, откуда браузер возьмёт их напрямую. Шаг сетевой,
           // поэтому сохранение и claude.done ждут его; осечка не критична —
           // relocate вернёт исходный текст, и картинка покажется через сервер.
+          //
+          // Ход уже убран из `turns` (finish), а запись в БД идёт ПОСЛЕ этого
+          // сетевого шага — есть окно, где ответа нет ни в реестре, ни в БД.
+          // Если сервер остановится в этом окне (пересборка контейнера),
+          // flushInterrupted не найдёт ход и последнее сообщение пропадёт.
+          // Поэтому регистрируем отложенное сохранение: оно выполнится РОВНО
+          // один раз (guard `saved`) — либо здесь после перекладки, либо из
+          // flushInterrupted готовым текстом, если сервер останавливается раньше.
+          let saved = false
+          const persist = (finalText: string): Message | undefined => {
+            if (saved) return undefined
+            saved = true
+            pendingSaves.delete(finalize)
+            if (!finalText.trim()) return undefined
+            return deps.db.addMessage(
+              userId,
+              conversationId,
+              'ai',
+              finalText,
+              timeHHMM(),
+              provider,
+              merged,
+              requestedTarget
+            )
+          }
+          const emitDone = (finalText: string, message?: Message): void => {
+            broadcast(
+              {
+                t: 'claude.done',
+                conversationId,
+                text: finalText,
+                meta: merged,
+                engine: provider,
+                ...(message ? { message } : {})
+              },
+              userId
+            )
+          }
+          // Аварийное сохранение из flushInterrupted: ответ уже полный (модель
+          // завершила ход), поэтому пишем как есть — без пометки interrupted и
+          // без перекладки (картинки останутся серверными, но покажутся).
+          function finalize(): void {
+            if (saved) return
+            emitDone(rawText, persist(rawText))
+          }
+          pendingSaves.add(finalize)
+
           const prepared = (async (): Promise<string> => {
             const a = deps.agents
             if (!target || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.serverFileRoots) {
@@ -399,30 +451,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           })()
 
           void prepared.then((finalText) => {
-            let message: Message | undefined
-            if (finalText.trim()) {
-              message = deps.db.addMessage(
-                userId,
-                conversationId,
-                'ai',
-                finalText,
-                timeHHMM(),
-                provider,
-                merged,
-                requestedTarget
-              )
-            }
-            broadcast(
-              {
-                t: 'claude.done',
-                conversationId,
-                text: finalText,
-                meta: merged,
-                engine: provider,
-                ...(message ? { message } : {})
-              },
-              userId
-            )
+            if (saved) return // flushInterrupted уже сохранил (сервер останавливается)
+            emitDone(finalText, persist(finalText))
           })
         },
         onError: (message) => {
@@ -469,6 +499,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
    * активностью) — после рестарта пользователь видит уже набранную часть.
    */
   function flushInterrupted(): void {
+    // Сперва — ходы, которые уже завершились, но не успели записаться в БД
+    // (перекладка картинок в полёте): сохраняем готовый ответ целиком.
+    for (const finalize of [...pendingSaves]) {
+      pendingSaves.delete(finalize)
+      finalize()
+    }
     for (const [conversationId, turn] of [...turns]) {
       turns.delete(conversationId)
       turn.done = true

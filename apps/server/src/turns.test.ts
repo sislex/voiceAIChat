@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { createTurnManager } from './turns.js'
 import { VoiceChatDb } from './db/database.js'
-import { DEFAULT_AGENT_POLICY } from '@voicechat/shared'
+import { DEFAULT_AGENT_POLICY, imageBlock } from '@voicechat/shared'
 import type { LlmClient, LlmRequest } from './claude/types.js'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const U = 'admin'
 
@@ -190,6 +193,58 @@ describe('turns: остановка сервера (flushInterrupted)', () => {
     turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'привет' }] })
     turns.flushInterrupted()
     expect(db.listMessages(U, conv.id).some((m) => m.role === 'ai')).toBe(false)
+    db.close()
+  })
+
+  it('завершённый ход сохраняется при остановке сервера, пока перекладка картинок в полёте', async () => {
+    // Регрессия: модель ЗАВЕРШИЛА ответ (onDone), но запись в БД идёт после
+    // перекладки картинок на машину — сетевого шага. В этом окне ход уже убран
+    // из активных, поэтому прежде flushInterrupted его не находил и последнее
+    // сообщение пропадало насовсем при пересборке контейнера.
+    const dir = mkdtempSync(join(tmpdir(), 'vc-relocate-'))
+    const imgPath = join(dir, 'pic.png')
+    writeFileSync(imgPath, Buffer.from('89504e470d0a1a0a', 'hex')) // PNG-заголовок
+    const answer = `Готово.\n\n${imageBlock({ path: imgPath })}`
+
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    const agent = db.createAgent(U, 'Ноутбук')
+    db.setConversationExecTarget(U, conv.id, agent.id)
+
+    // Движок сразу отдаёт готовый ответ с картинкой.
+    const client: LlmClient = {
+      send: (_r, h) => {
+        h.onDone(answer)
+        return { cancel: () => {} }
+      }
+    }
+    const turns = createTurnManager({
+      db,
+      claude: client,
+      agents: {
+        ...onlineAgents,
+        fsList: () => new Promise(() => {}), // машина «зависла» — перекладка не завершается
+        fsMkdir: async () => ({}),
+        fsWrite: async () => ({})
+      },
+      serverFileRoots: () => [dir],
+      mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret'
+    })
+
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'нарисуй' }] })
+
+    // Ход уже не активен, но в БД его ещё нет (сохранение висит на перекладке).
+    expect(turns.active(U)).toHaveLength(0)
+    expect(db.listMessages(U, conv.id).some((m) => m.role === 'ai')).toBe(false)
+
+    // Остановка сервера: аварийно сохраняем готовый ответ целиком, без interrupted.
+    turns.flushInterrupted()
+    const ai = db.listMessages(U, conv.id).find((m) => m.role === 'ai')
+    expect(ai?.text).toBe(answer)
+    expect(ai?.meta?.interrupted).toBeUndefined()
+
+    rmSync(dir, { recursive: true, force: true })
     db.close()
   })
 })
