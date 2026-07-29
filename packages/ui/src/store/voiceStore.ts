@@ -531,7 +531,7 @@ export interface StoreActions {
     agentPlanApprovalMode?: 'manual' | 'automatic'
     testCommand?: string
     productionDeployCommand?: string
-  }): Promise<void>
+  }): Promise<ProjectDetail | null>
   /** Обновить поля проекта (только владелец). */
   updateProject(
     id: string,
@@ -2351,13 +2351,15 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     agentPlanApprovalMode?: 'manual' | 'automatic'
     testCommand?: string
     productionDeployCommand?: string
-  }): Promise<void> {
+  }): Promise<ProjectDetail | null> {
     try {
       const detail = await api['projects:create'](input)
       await refreshProjects()
       setState({ projectDetail: detail })
+      return detail
     } catch (err) {
       setState({ error: perr(err) })
+      return null
     }
   }
   async function updateProject(

@@ -3,6 +3,8 @@ import { Markdown } from './Markdown'
 import { ToolFrame } from './ToolFrame'
 
 export interface CodexObserverProps {
+  /** Размещение: модалка из меню (по умолчанию) или страница контентной колонки. */
+  variant?: 'modal' | 'page'
   projects: CxProject[]
   sessions: CxSession[]
   transcript: CxItem[]
@@ -73,10 +75,11 @@ export function CodexObserver({
   onSelectProject,
   onSelectSession,
   onResumeSession,
-  onClose
+  onClose,
+  variant = 'modal'
 }: CodexObserverProps): JSX.Element {
   return (
-    <ToolFrame title="Проводник Codex" onClose={onClose} testId="cx-overlay">
+    <ToolFrame title="Проводник Codex" variant={variant} onClose={onClose} testId="cx-overlay">
       <div className="ccobs-body">
         <nav className="cc-col cc-projects" aria-label="Проекты">
           {projects.length === 0 && <p className="cc-empty">Проектов не найдено</p>}

@@ -4,6 +4,8 @@ import type { Conversation, Message } from '@shared/types'
 import { ToolFrame } from './ToolFrame'
 
 export interface UsersAdminProps {
+  /** Размещение: модалка из меню (по умолчанию) или страница контентной колонки. */
+  variant?: 'modal' | 'page'
   users: AdminUserInfo[]
   selected: string | null
   usage: UsageReport | null
@@ -49,7 +51,8 @@ export function UsersAdmin({
   onDelete,
   onLoadUsage,
   onOpenConversation,
-  onClose
+  onClose,
+  variant = 'modal'
 }: UsersAdminProps): JSX.Element {
   const [newName, setNewName] = useState('')
   const [newPass, setNewPass] = useState('')
@@ -69,7 +72,7 @@ export function UsersAdmin({
   }
 
   return (
-    <ToolFrame title="Пользователи" onClose={onClose} testId="users-overlay">
+    <ToolFrame title="Пользователи" variant={variant} onClose={onClose} testId="users-overlay">
       <div className="ccobs-body">
         {/* Левая колонка: список + форма создания */}
         <nav className="cc-col cc-projects" aria-label="Список пользователей">
