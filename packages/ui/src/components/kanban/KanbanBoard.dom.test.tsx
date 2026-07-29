@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { KanbanBoard, type KanbanBoardProps } from './KanbanBoard'
 import type { Board, Task } from '@shared/projects'
+import type { GenerateParams } from '../prompt-builder/PromptBuilder'
 
 const task = (over: Partial<Task>): Task => ({
   id: 't', projectId: 'p1', columnId: 'c1', type: 'task', parentId: null, title: 'T', description: '',
@@ -66,6 +67,35 @@ describe('KanbanBoard (изолированный)', () => {
     expect(screen.getByText('(без названия)')).toBeInTheDocument()
     expect(screen.getByText('P1-?')).toBeInTheDocument()
     expect(screen.getByText('(колонка)')).toBeInTheDocument()
+  })
+
+
+  it('AI-помощник применяет результат в описание карточки и сохраняет задачу', async () => {
+    const generateAiAssist = vi.fn(async (_params: GenerateParams) => [{ id: 's1', text: 'Готовое AI-описание задачи' }])
+    const props = renderBoard({
+      aiAssistPrompts: [
+        { id: 'system', title: 'Кратко', text: 'Пиши кратко', enabled: true, readonly: true },
+        { id: 'off', title: 'Неактивный', text: 'Не использовать', enabled: false }
+      ],
+      generateAiAssist
+    })
+
+    await userEvent.click(screen.getByText('A'))
+    const description = await screen.findByLabelText('Описание задачи')
+    expect(description).toHaveAttribute('data-ai-assist')
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть AI-помощник' }))
+    await userEvent.type(screen.getByLabelText('Что нужно сформулировать'), 'Опиши задачу')
+    expect(await screen.findByText('Готовое AI-описание задачи', {}, { timeout: 2000 })).toBeInTheDocument()
+
+    expect(generateAiAssist).toHaveBeenCalledTimes(1)
+    expect(generateAiAssist.mock.calls[0]![0].modifiers.map((item) => item.id)).toEqual(['system'])
+    const assistant = within(screen.getByRole('dialog', { name: 'AI-помощник формулировки' }))
+    await userEvent.click(assistant.getByRole('button', { name: 'Добавить' }))
+    await userEvent.click(assistant.getByRole('button', { name: 'Применить' }))
+
+    expect(description).toHaveValue('Готовое AI-описание задачи')
+    expect(props.onUpdateTask).toHaveBeenCalledWith('t1', { description: 'Готовое AI-описание задачи' })
+    expect(screen.queryByRole('dialog', { name: 'AI-помощник формулировки' })).not.toBeInTheDocument()
   })
 
   it('без openTaskId-пропсов модалка управляется внутренним состоянием', async () => {
