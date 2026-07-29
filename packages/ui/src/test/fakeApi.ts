@@ -639,6 +639,8 @@ export function createFakeCi(): FakeCi {
     workspaceId: null,
     triggeredBy: 'admin',
     prevColumnId: null,
+    llmProvider: 'claude',
+    llmModel: 'sonnet',
     slotProgress: { done: 0, total: 4, phase: 'подготовка' },
     startedAt: now(),
     finishedAt: null,

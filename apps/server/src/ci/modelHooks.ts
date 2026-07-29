@@ -11,6 +11,7 @@ import type { CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook,
 export interface CiModelHooksDeps {
   db: VoiceChatDb
   claude: LlmClient
+  codex: LlmClient
   /** База URL MCP remote-bash (с ?k=секрет); агент/cwd дописываются на ход. */
   mcpBaseUrl: string
   /** База URL MCP команд CI (с ?k=секрет); &run=<token> дописывается на ход. */
@@ -71,6 +72,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   attemptFix: CiFixHook
 } {
   const now = deps.now ?? (() => Date.now())
+  const clientFor = (ctx: CiModelContext): LlmClient => ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
+  const modelFor = (ctx: CiModelContext): string => ctx.run.llmModel || (ctx.run.llmProvider === 'codex' ? 'gpt-5-codex' : 'sonnet')
 
   const modelWork: CiModelWorkHook = async (ctx: CiModelContext) => {
     // Публикуем модели команды справочника как инструмент на время шага (лимит
@@ -99,13 +102,13 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       userId: ctx.run.triggeredBy,
       prompt: taskPrompt(ctx),
       sessionId: null,
-      model: 'sonnet',
+      model: modelFor(ctx),
       permissionMode: 'acceptEdits',
       cwd: ctx.workspacePath,
       ...base
     }
     try {
-      const r = await runTurn(deps.claude, req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk))
+      const r = await runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk))
       return { ok: r.ok }
     } finally {
       ciToolBroker.unregister(token)
@@ -119,11 +122,11 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       userId: ctx.run.triggeredBy,
       prompt: `Кратко резюмируй результат воркфлоу по задаче «${ctx.task.title}». Шаги:\n${stepLines}\nДай сжатое резюме: что сделано и в каком состоянии задача.`,
       sessionId: null,
-      model: 'sonnet',
+      model: modelFor(ctx),
       permissionMode: 'plan',
       executionDisabled: true
     }
-    const r = await runTurn(deps.claude, req, () => {})
+    const r = await runTurn(clientFor(ctx), req, () => {})
     return r.text.trim() || 'Резюме недоступно.'
   }
 
@@ -148,12 +151,12 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
           .filter(Boolean)
           .join('\n'),
         sessionId: null,
-        model: 'sonnet',
+        model: modelFor(ctx),
         permissionMode: 'acceptEdits',
         cwd: ctx.workspacePath,
         ...remoteOf(deps, ctx)
       }
-      const turn = await runTurn(deps.claude, req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk))
+      const turn = await runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk))
       const diagnosis = turn.text.split('\n').find((l) => l.trim())?.slice(0, 200) ?? ''
       const rr = await ctx.rerunFailedStep()
       const fixed = rr.exitCode === 0

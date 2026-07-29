@@ -315,6 +315,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const ciModelHooks = createCiModelHooks({
     db,
     claude,
+    codex,
     mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`,
     ciMcpBaseUrl: `http://127.0.0.1:${opts.config.port}${CI_COMMANDS_MCP_PATH}?k=${mcpSecret}`,
     agentNameOf: (agentId) => agentRegistry.nameOf(agentId)

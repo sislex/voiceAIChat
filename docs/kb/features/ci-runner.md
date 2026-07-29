@@ -43,8 +43,8 @@ packages:
 «Выполнить» на карточке задачи: команды слота **до** → работа модели → команды
 слота **после** → резюме модели. Один **ран** с общим статусом, единой лентой,
 потоковым логом, метриками длительности, fix-loop и диагностической консолью.
-Заменяет собой пользовательский вход Feature Run (серверный код Feature Run
-оставлен нетронутым, но из UI не вызывается).
+Заменяет Feature Run: старые UI, маршруты и серверный координатор удалены; исторические
+таблицы сохранены для совместимости существующих данных.
 
 ## Модель данных
 
@@ -52,7 +52,7 @@ packages:
 версия текста), `ci_slot_commands` (привязка к слоту для проекта/задачи с
 наследованием), `ci_runs`, `ci_run_steps` (kind: command/model_work/model_command/
 model_summary, `parent_step_id` для вложенных вызовов), `ci_run_logs` (монотонный
-`seq` для реплея после reconnect), `ci_fix_attempts`, `ci_workspaces`,
+`seq` для реплея после reconnect; `ci_runs.llm_provider/llm_model` фиксируют выбор модели), `ci_fix_attempts`, `ci_workspaces`,
 `ci_command_suggestions` (группировка по причине), `ci_events` (аудит), `ci_settings`
 (единственная строка глобальных настроек). CI-поля проекта (`ci_base_branch`,
 `ci_branch_template`, `ci_reuse_strategy`, `ci_exec_auth_ref`) добавляются в
@@ -77,6 +77,9 @@ cwd/env собираются с shell-escape (пользовательский �
 скрипта). Команды справочника доступны модели как MCP-инструмент `mcp__ci__run_command`
 (`ci/ciCommandsMcp.ts`, брокер `ciToolBroker` по токену рана; лимит
 `maxModelCommandCalls`, `is_cleanup` исключены). Каждый вызов — вложенный шаг ленты.
+Ошибка `model_work` останавливает ран до after-слота и сохраняет workspace. В `RunFeed`
+можно выбрать Claude/Codex и модель, затем повторить с `model_work`; подготовительные
+команды не запускаются повторно, выбранные provider/model сохраняются в ране и аудите.
 
 ## Контракт и UI
 
@@ -90,7 +93,7 @@ cwd/env собираются с shell-escape (пользовательский �
 
 ## Проверка
 
-`apps/server/src/ci/*.test.ts` и `db/database.ci.test.ts` (25 тестов): пустые слоты,
+`apps/server/src/ci/*.test.ts` и `db/database.ci.test.ts` (27+ тестов): пустые слоты,
 падение слота «до» с откатом, `allow_failure`, `is_cleanup`, конкурентные раны,
 fix-loop и исчерпание попыток, вызов команды моделью, консоль read-only. UI —
 `components/ci/*.dom.test.tsx`. Гейт: `npm run -w @voicechat/server typecheck && test`;

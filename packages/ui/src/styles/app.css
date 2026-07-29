@@ -19,6 +19,11 @@
   --ci-success-bg: #d8efe2;
   --ci-removed: #ae2a19;
   --ci-removed-bg: #f7dcd7;
+  --surface-warning: var(--ci-progress-bg);
+  --space-050: 4px;
+  --space-100: 8px;
+  --space-150: 12px;
+  --radius-medium: 6px;
 }
 [data-theme='dark'] {
   --bg: #191916;
@@ -3935,3 +3940,6 @@
 .ci-console-input { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); }
 .ci-console-input input { flex: 1; }
 .ci-console-prompt, .ci-console-input .ci-console-prompt { color: var(--text-dim); font-family: ui-monospace, monospace; }
+
+.ci-model-retry { display: flex; align-items: end; gap: var(--space-100); flex-wrap: wrap; margin-top: var(--space-100); padding: var(--space-150); background: var(--surface-warning); border-radius: var(--radius-medium); }
+.ci-model-retry label { display: grid; gap: var(--space-050); }

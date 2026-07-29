@@ -13,10 +13,13 @@ import { ciToolBroker } from './ciCommandsMcp.js'
 const SECRET = 'ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
 let scripts: string[] = []
+let failClaude = false
+let codexModel = ''
 
 const fakeClaude: LlmClient = {
   send: (req, handlers) => {
     void (async () => {
+      if (failClaude) { handlers.onError('лимит исчерпан'); return }
       // Эмуляция MCP-вызова: если модели доступна команда 'model-tool', вызываем её
       // через брокер по токену из ciMcpUrl (как реальный /mcp/ci-commands эндпоинт).
       const m = /run=([^&]+)/.exec(req.remote?.ciMcpUrl ?? '')
@@ -27,6 +30,14 @@ const fakeClaude: LlmClient = {
       handlers.onDelta('готово')
       handlers.onDone('готово')
     })()
+    return { cancel: () => {} }
+  }
+}
+
+const fakeCodex: LlmClient = {
+  send: (req, handlers) => {
+    codexModel = req.model
+    queueMicrotask(() => { handlers.onDelta('готово codex'); handlers.onDone('готово codex') })
     return { cancel: () => {} }
   }
 }
@@ -48,9 +59,11 @@ const ciExecutor: CommandExecutor = {
 beforeEach(async () => {
   let id = 0
   scripts = []
+  failClaude = false
+  codexModel = ''
   counts.clear()
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => Date.now() })
-  app = await buildServer({ config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-ci-${Date.now()}`) }), db, sessionSecret: SECRET, ciExecutor, claude: fakeClaude })
+  app = await buildServer({ config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-ci-${Date.now()}`) }), db, sessionSecret: SECRET, ciExecutor, claude: fakeClaude, codex: fakeCodex })
   admin = signToken({ name: 'admin', role: 'admin' }, SECRET)
 })
 afterEach(async () => { await app.close(); db.close() })
@@ -179,6 +192,31 @@ describe('ci run manager', () => {
     expect(ok.json().rejected).toBe(false)
     const denied = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/console`, payload: { command: 'rm -rf /' } })
     expect(denied.json().rejected).toBe(true)
+  })
+
+  it('ошибка модели останавливает after-слот; выбор другой модели продолжает с model_work', async () => {
+    const { project, task } = setup()
+    const before = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'prepare', script: 'PREPARE' })
+    const after = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'tests', script: 'TESTS' })
+    db.setCiSlotCommands('task', task.id, 'before_model', [before.id])
+    db.setCiSlotCommands('task', task.id, 'after_model', [after.id])
+    failClaude = true
+    const runId = await run(project.id, task.id)
+    const failed = await waitRun(runId)
+    expect(failed.run.status).toBe('failed')
+    expect(scripts).toEqual(expect.arrayContaining(['PREPARE']))
+    expect(scripts).not.toContain('TESTS')
+    expect(failed.steps.some((s) => s.kind === 'model_summary')).toBe(false)
+
+    failClaude = false
+    const retry = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step`, payload: { provider: 'codex', model: 'gpt-5-codex' } })
+    expect(retry.statusCode).toBe(202)
+    const done = await waitRun(runId)
+    expect(done.run.status).toBe('success')
+    expect(scripts.filter((x) => x === 'PREPARE')).toHaveLength(1)
+    expect(scripts).toContain('TESTS')
+    expect(codexModel).toBe('gpt-5-codex')
+    expect(db.getCiRunRaw(runId)).toMatchObject({ llmProvider: 'codex', llmModel: 'gpt-5-codex' })
   })
 
   it('модель вызывает команду справочника как MCP-инструмент → вложенный шаг model_command', async () => {
