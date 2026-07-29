@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import type { Board, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { TASK_PRIORITIES } from '@shared/projects'
 import type { FeatureRun } from '@shared/features'
-import { ToolFrame } from './ToolFrame'
+import { ToolFrame } from '../ToolFrame'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanbanMeta'
 
 export interface TaskUpdateFields {

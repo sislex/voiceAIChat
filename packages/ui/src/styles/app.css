@@ -3502,6 +3502,8 @@
 
 /* ===== Канбан в стиле Jira ============================================== */
 .toolpage > .jboard-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.kanban-error { margin: 12px; padding: 10px 14px; border-radius: 6px; background: #ffd2cc; color: #ae2a19; font-size: 13px; }
+[data-theme='dark'] .kanban-error { background: #5d1f1a; color: #ff9c8f; }
 
 /* Панель фильтров */
 .jboard-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px 4px; }
