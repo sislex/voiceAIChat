@@ -222,6 +222,20 @@ export interface TurnUsage {
   cacheCreationTokens?: number
 }
 
+/**
+ * Сводка расхода одной сессии наблюдателя (агрегат по всему транскрипту).
+ * Токены — суммарные по сессии; `costUsd` — ОЦЕНКА по прайс-таблице (в файлах
+ * сессий CLI реальной стоимости нет), поэтому в UI помечается «≈».
+ */
+export interface SessionUsage extends TurnUsage {
+  /** Модель сессии (последняя замеченная в транскрипте). */
+  model?: string
+  /** Оценка стоимости сессии в USD; undefined — прайс модели неизвестен. */
+  costUsd?: number
+  /** Число ходов ассистента в сессии. */
+  turns?: number
+}
+
 /** Метаданные завершённого хода Claude (из result-события stream-json). */
 export interface TurnMeta extends TurnUsage {
   /** Длительность хода, мс. */

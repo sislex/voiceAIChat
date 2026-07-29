@@ -9,11 +9,13 @@ import { homedir } from 'node:os'
 import {
   parseCxTranscript,
   parseCxLine,
+  cxSessionUsage,
   cxSessionTitle,
   cxMetaFromHead,
   type CxProject,
   type CxSession,
-  type CxItem
+  type CxItem,
+  type SessionUsage
 } from '@voicechat/shared'
 
 /** Каталог сессий Codex (env VC_CODEX_DIR → иначе ~/.codex/sessions). */
@@ -156,6 +158,17 @@ export function readCxTranscript(
   const items = parseCxTranscript(text)
   const limit = opts.limit ?? 2000
   return items.length > limit ? items.slice(-limit) : items
+}
+
+/** Сводка расхода сессии Codex (модель/токены/оценка стоимости) — по всему файлу. */
+export function readCxUsage(id: string, baseDir = codexBaseDir()): SessionUsage {
+  const p = resolveCxSessionPath(id, baseDir)
+  if (!p) return {}
+  try {
+    return cxSessionUsage(readFileSync(p, 'utf8'))
+  } catch {
+    return {}
+  }
 }
 
 /** Читает добавленные с `offset` байты файла; возвращает текст и новый offset. */

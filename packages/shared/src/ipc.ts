@@ -12,6 +12,7 @@ import type {
   MessageRole,
   PermissionMode,
   SessionUser,
+  SessionUsage,
   Settings,
   TtsVoiceCatalog,
   TtsVoiceInfo,
@@ -161,7 +162,10 @@ export interface IpcInvokeMap {
   /** Сессии проекта Claude Code. */
   'cc:sessions': { arg: { slug: string }; result: CcSession[] }
   /** Транскрипт сессии (последние `limit` записей). */
-  'cc:transcript': { arg: { slug: string; id: string; limit?: number }; result: CcItem[] }
+  'cc:transcript': {
+    arg: { slug: string; id: string; limit?: number }
+    result: { items: CcItem[]; usage: SessionUsage }
+  }
   /**
    * Продолжить сессию Claude Code: создаёт разговор с импортом истории и
    * привязкой к session-id (следующий ход — через `claude --resume`).
@@ -172,7 +176,7 @@ export interface IpcInvokeMap {
   /** Сессии Codex с указанным cwd. */
   'cx:sessions': { arg: { cwd: string }; result: CxSession[] }
   /** Транскрипт сессии Codex по id (последние `limit` записей). */
-  'cx:transcript': { arg: { id: string; limit?: number }; result: CxItem[] }
+  'cx:transcript': { arg: { id: string; limit?: number }; result: { items: CxItem[]; usage: SessionUsage } }
   /**
    * Продолжить сессию Codex: создаёт разговор с импортом истории и привязкой
    * к session-id (следующий ход — через `codex exec resume <id>`).

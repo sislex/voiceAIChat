@@ -65,7 +65,6 @@ export interface SidebarProps {
   /** Сменить выбранный проект (фильтрует список/поиск, влияет на «Новый»). */
   onSelectProject?: (id: string | null) => void
   onOpenObserver: () => void
-  onOpenCodexObserver: () => void
   onOpenKnowledgeBase?: () => void
   onOpenSettings: () => void
   /** Открыть файловый проводник по машине-агенту (web). */
@@ -113,7 +112,6 @@ export function Sidebar({
   selectedProjectId = null,
   onSelectProject,
   onOpenObserver,
-  onOpenCodexObserver,
   onOpenKnowledgeBase,
   onOpenSettings,
   onOpenFiles,
@@ -416,12 +414,8 @@ export function Sidebar({
             {acctOpen && (
               <div className="acct-menu" role="menu">
                 <button className="footbtn" role="menuitem" onClick={acct(onOpenObserver)}>
-                  <span className="footico">🗂</span>
-                  Claude Code
-                </button>
-                <button className="footbtn" role="menuitem" onClick={acct(onOpenCodexObserver)}>
-                  <span className="footico">🧭</span>
-                  Codex
+                  <span className="footico">🤖</span>
+                  Агенты
                 </button>
                 {onOpenKnowledgeBase && (
                   <button className="footbtn" role="menuitem" onClick={acct(onOpenKnowledgeBase)}>
@@ -472,11 +466,8 @@ export function Sidebar({
              инструменты остаются компактным рядом иконок + Настройки. */
           <>
             <div className="foottools">
-              <button className="footico-btn" onClick={onOpenObserver} title="Claude Code" aria-label="Claude Code">
-                🗂
-              </button>
-              <button className="footico-btn" onClick={onOpenCodexObserver} title="Codex" aria-label="Codex">
-                🧭
+              <button className="footico-btn" onClick={onOpenObserver} title="Агенты (Claude / Codex)" aria-label="Агенты">
+                🤖
               </button>
               {onOpenKnowledgeBase && (
                 <button className="footico-btn" onClick={onOpenKnowledgeBase} title="База знаний" aria-label="База знаний">

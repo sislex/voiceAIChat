@@ -677,7 +677,7 @@ describe('voiceStore — Проводник Claude Code', () => {
     vi.spyOn(api, 'cc:sessions').mockResolvedValue([
       { id: 's1', title: 'Первая', updatedAt: 2, sizeBytes: 10 }
     ])
-    vi.spyOn(api, 'cc:transcript').mockResolvedValue([{ kind: 'user', text: 'Привет' }])
+    vi.spyOn(api, 'cc:transcript').mockResolvedValue({ items: [{ kind: 'user', text: 'Привет' }], usage: {} })
     const ccTailStart = vi.fn()
     const ccTailStop = vi.fn()
     const store = createVoiceStore({ api, now: () => 1, ccTailStart, ccTailStop })

@@ -28,6 +28,7 @@ import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
 import type { AdminUserInfo, UsageReport, UsageUnit } from '@shared/admin'
 import type { CcProject, CcSession, CcItem } from '@shared/cc'
+import type { SessionUsage } from '@shared/types'
 import type { CxProject, CxSession, CxItem } from '@shared/codexSessions'
 import type {
   CatalogVoice,
@@ -194,6 +195,8 @@ export interface AppState {
   ccProjectSlug: string | null
   /** id выбранной сессии (null — не выбрана). */
   ccSessionId: string | null
+  /** Сводка расхода выбранной сессии CC (модель/токены/оценка стоимости). */
+  ccUsage: SessionUsage | null
   /** Открыт ли Проводник Codex. */
   cxOpen: boolean
   /** «Проекты» Codex (cwd-группы сессий ~/.codex/sessions). */
@@ -206,6 +209,8 @@ export interface AppState {
   cxProjectCwd: string | null
   /** id выбранной сессии Codex (null — не выбрана). */
   cxSessionId: string | null
+  /** Сводка расхода выбранной сессии Codex (модель/токены/оценка стоимости). */
+  cxUsage: SessionUsage | null
   /** Открыта ли админ-страница пользователей (только admin). */
   usersOpen: boolean
   /** Открыто ли меню «Машины» (статус агентских машин). */
@@ -675,12 +680,14 @@ function initialState(): AppState {
     ccTranscript: [],
     ccProjectSlug: null,
     ccSessionId: null,
+    ccUsage: null,
     cxOpen: false,
     cxProjects: [],
     cxSessions: [],
     cxTranscript: [],
     cxProjectCwd: null,
     cxSessionId: null,
+    cxUsage: null,
     usersOpen: false,
     machinesOpen: false,
     adminUsers: [],
@@ -1406,7 +1413,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       ccProjectSlug: null,
       ccSessionId: null,
       ccSessions: [],
-      ccTranscript: []
+      ccTranscript: [],
+      ccUsage: null
     })
   }
 
@@ -1423,7 +1431,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         ccProjectSlug: null,
         ccSessionId: null,
         ccSessions: [],
-        ccTranscript: []
+        ccTranscript: [],
+        ccUsage: null
       })
       await refreshConversations()
     } catch (err) {
@@ -1433,7 +1442,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   async function selectCcProject(slug: string): Promise<void> {
     deps.ccTailStop?.()
-    setState({ ccProjectSlug: slug, ccSessionId: null, ccSessions: [], ccTranscript: [] })
+    setState({ ccProjectSlug: slug, ccSessionId: null, ccSessions: [], ccTranscript: [], ccUsage: null })
     try {
       setState({ ccSessions: await api['cc:sessions']({ slug }) })
     } catch (err) {
@@ -1443,9 +1452,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   async function selectCcSession(slug: string, id: string): Promise<void> {
     deps.ccTailStop?.()
-    setState({ ccProjectSlug: slug, ccSessionId: id, ccTranscript: [] })
+    setState({ ccProjectSlug: slug, ccSessionId: id, ccTranscript: [], ccUsage: null })
     try {
-      setState({ ccTranscript: await api['cc:transcript']({ slug, id }) })
+      const { items, usage } = await api['cc:transcript']({ slug, id })
+      setState({ ccTranscript: items, ccUsage: usage })
     } catch (err) {
       console.warn('[cc] не удалось получить транскрипт', err)
     }
@@ -1476,13 +1486,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       cxProjectCwd: null,
       cxSessionId: null,
       cxSessions: [],
-      cxTranscript: []
+      cxTranscript: [],
+      cxUsage: null
     })
   }
 
   async function selectCxProject(cwd: string): Promise<void> {
     deps.cxTailStop?.()
-    setState({ cxProjectCwd: cwd, cxSessionId: null, cxSessions: [], cxTranscript: [] })
+    setState({ cxProjectCwd: cwd, cxSessionId: null, cxSessions: [], cxTranscript: [], cxUsage: null })
     try {
       setState({ cxSessions: await api['cx:sessions']({ cwd }) })
     } catch (err) {
@@ -1492,9 +1503,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   async function selectCxSession(id: string): Promise<void> {
     deps.cxTailStop?.()
-    setState({ cxSessionId: id, cxTranscript: [] })
+    setState({ cxSessionId: id, cxTranscript: [], cxUsage: null })
     try {
-      setState({ cxTranscript: await api['cx:transcript']({ id }) })
+      const { items, usage } = await api['cx:transcript']({ id })
+      setState({ cxTranscript: items, cxUsage: usage })
     } catch (err) {
       console.warn('[cx] не удалось получить транскрипт', err)
     }
@@ -1514,7 +1526,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         cxProjectCwd: null,
         cxSessionId: null,
         cxSessions: [],
-        cxTranscript: []
+        cxTranscript: [],
+        cxUsage: null
       })
       // Следующий ход должен продолжить именно через Codex.
       if (state.settings.llmProvider !== 'codex') await updateSettings({ llmProvider: 'codex' })

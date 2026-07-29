@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { CxProject, CxSession, CxItem, CxItemKind } from '@shared/codexSessions'
 import { Markdown } from './Markdown'
 import { ToolFrame } from './ToolFrame'
@@ -17,6 +18,10 @@ export interface CodexObserverProps {
   /** Продолжить сессию в приложении (импорт истории + привязка session-id). */
   onResumeSession: (id: string) => void
   onClose: () => void
+  /** Узел в шапку ToolFrame (переключатель движка объединённого наблюдателя). */
+  toolbar?: ReactNode
+  /** Панель над телом (сводка расхода: модель/токены/стоимость). */
+  banner?: ReactNode
 }
 
 const KIND_LABEL: Record<CxItemKind, string> = {
@@ -76,10 +81,13 @@ export function CodexObserver({
   onSelectSession,
   onResumeSession,
   onClose,
+  toolbar,
+  banner,
   variant = 'modal'
 }: CodexObserverProps): JSX.Element {
   return (
-    <ToolFrame title="Проводник Codex" variant={variant} onClose={onClose} testId="cx-overlay">
+    <ToolFrame title="Проводник Codex" variant={variant} onClose={onClose} testId="cx-overlay" actions={toolbar}>
+      {banner}
       <div className="ccobs-body">
         <nav className="cc-col cc-projects" aria-label="Проекты">
           {projects.length === 0 && <p className="cc-empty">Проектов не найдено</p>}
