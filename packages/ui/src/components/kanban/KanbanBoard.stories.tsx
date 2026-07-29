@@ -3,7 +3,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import type { Board } from '@shared/projects'
 import { KanbanBoard } from './KanbanBoard'
-import { makeBoard, makeColumn, makeDefaultColumns, makeFeature, makeMembers, makeTask, noopHandlers } from './fixtures'
+import { makeBoard, makeColumn, makeDefaultColumns, makeMembers, makeTask, noopHandlers } from './fixtures'
 
 const meta: Meta<typeof KanbanBoard> = {
   title: 'Kanban/KanbanBoard',
@@ -179,8 +179,7 @@ export const FullFeaturedCard: Story = {
         makeTask({ id: 'sub2', parentId: 'st', title: 'Интеграция шлюза', columnId: 'col-done' }),
         makeTask({ id: 'sub3', parentId: 'st', title: 'Обработка отказов', columnId: 'col-development' })
       ])
-    })(),
-    features: [makeFeature({ sourceTaskId: 'st', status: 'development' })]
+    })()
   }
 }
 

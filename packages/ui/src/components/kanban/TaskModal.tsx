@@ -5,7 +5,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Board, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { TASK_PRIORITIES } from '@shared/projects'
-import type { FeatureRun } from '@shared/features'
 import type { ModifierPrompt } from '@shared/types'
 import { ToolFrame } from '../ToolFrame'
 import { WandIcon } from '../icons'
@@ -35,7 +34,6 @@ export interface TaskModalProps {
   board: Board
   projectName: string
   members: ProjectMember[]
-  feature?: FeatureRun
   onUpdate: (taskId: string, fields: TaskUpdateFields) => void
   onDelete: (taskId: string) => void
   /** Открыть связанный с задачей чат (кнопка в шапке модалки). */
@@ -43,8 +41,6 @@ export interface TaskModalProps {
 
   /** Смена статуса = перенос в конец выбранной колонки. */
   onMoveToColumn: (taskId: string, columnId: string) => void
-  onStartFeature?: (itemId: string, type: WorkItemType) => void
-  onOpenFeature?: (featureId: string) => void
   aiAssistPrompts?: ModifierPrompt[]
   onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
   generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>
@@ -243,16 +239,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                 })}
               </ul>
             </>
-          )}
-          {props.feature && (
-            <button className="jcard-feature" onClick={() => props.onOpenFeature?.(props.feature!.id)}>
-              Фича #{props.feature.attempt} · {props.feature.status}
-            </button>
-          )}
-          {task.type !== 'epic' && props.onStartFeature && (!props.feature || ['completed', 'cancelled', 'failed'].includes(props.feature.status)) && (
-            <button className="jcard-feature-start" onClick={() => props.onStartFeature?.(task.id, task.type)}>
-              {props.feature ? (props.feature.status === 'failed' ? 'Повторить фичу' : 'Новая фича') : 'Запустить фичу'}
-            </button>
           )}
         </div>
 

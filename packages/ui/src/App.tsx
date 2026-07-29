@@ -14,7 +14,6 @@ import { UsersAdmin } from './components/UsersAdmin'
 import { ProjectsOverlay } from './components/ProjectsOverlay'
 import { ProjectSettings } from './components/ProjectSettings'
 import { ProjectBoard } from './components/ProjectBoard'
-import { FeatureDetail } from './components/FeatureDetail'
 import { MachineStatus } from './components/MachineStatus'
 import { MachineUtility } from './components/MachineUtility'
 import { CiCommands } from './components/ci/CiCommands'
@@ -381,7 +380,6 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           board={state.board}
           loading={state.boardLoading || state.activeProjectId !== routeProjectId}
           members={state.projectDetail?.members ?? []}
-          features={state.featureRuns}
           currentUser={state.currentUser?.name ?? null}
           onCreateColumn={(name) => void actions.createColumn(name)}
           onUpdateColumn={(id, fields) => void actions.updateColumn(id, fields)}
@@ -393,9 +391,6 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
           onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
           onOpenChat={(taskId) => void actions.openTaskChat(taskId).then(() => navigate('/'))}
-          onStartFeature={(itemId, type) => void (type === `story` ? actions.startFeatureFromStory(itemId) : actions.startFeature(itemId))}
-
-          onOpenFeature={(id) => void actions.openFeature(id)}
           ciSummaries={state.ciSummaries}
           onStartCi={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId).then((run) => { if (run) actions.openCiRun(run.id) }) }}
           onOpenCiRun={(runId) => actions.openCiRun(runId)}
@@ -551,17 +546,6 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         />
       )}
 
-      {state.activeFeature && (
-        <FeatureDetail
-          feature={state.activeFeature}
-          tasks={state.agentTasks}
-          onTransition={(status) => void actions.transitionFeature(status)}
-          onAutomation={(fields) => void actions.setFeatureAutomation(fields)}
-          onAddTask={(input) => void actions.createAgentTask(input)}
-          onDeploy={() => void actions.deployFeature()}
-          onClose={actions.closeFeature}
-        />
-      )}
 
       {state.utility && machineOps && (
         <MachineUtility
