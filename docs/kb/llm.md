@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-07-28
-checked: 308ff71
+updated: 2026-07-29
+checked: 0115f12
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -176,3 +176,7 @@ tools, thinking, prompt caching, SSE и beta-заголовки. Backend — л�
 процесса в query-параметре `k`. Детали политики — `machines.md`.
 
 Для Codex удалённый MCP подключается только в режимах разработки. В режиме `plan` MCP намеренно не передаётся процессу, а Codex запускается с `--sandbox read-only`: иначе обязательный для remote-вызовов bypass позволял бы менять файлы вопреки режиму разговора.
+
+## AI-помощник формулировки
+
+`PromptSuggester` выполняет короткий одноразовый CLI-вызов без session id и с `executionDisabled: true`. В отличие от разговорного хода, движок и модель берутся из `Settings.aiAssistProvider` и `Settings.aiAssistModel`; пустая модель означает дефолт движка (для Claude по умолчанию используется `haiku`). Активные `ModifierPrompt` добавляются в системную инструкцию в порядке массива. Ответ ожидается как JSON `variants`, очищается, дедуплицируется и ограничивается четырьмя элементами.

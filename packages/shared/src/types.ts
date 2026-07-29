@@ -351,6 +351,22 @@ export interface TtsVoiceCatalog {
   voices: CatalogVoice[]
 }
 
+/** Дополнительная инструкция AI-помощнику формулировки. */
+export interface ModifierPrompt {
+  id: string
+  title: string
+  text: string
+  enabled: boolean
+  readonly?: boolean
+}
+
+/** Системные подсказки помощника, с которых начинается новый профиль. */
+export const DEFAULT_AI_ASSIST_PROMPTS: ModifierPrompt[] = [
+  { id: 'clear', title: 'Ясно и конкретно', text: 'Сделай формулировку ясной, конкретной и однозначной.', enabled: true, readonly: true },
+  { id: 'concise', title: 'Кратко', text: 'Убери повторы и лишние слова, сохранив важные детали.', enabled: true },
+  { id: 'structured', title: 'Структурированно', text: 'Если уместно, добавь структуру и явный ожидаемый результат.', enabled: true }
+]
+
 /** Пользовательские настройки приложения. */
 export interface Settings {
   model: ClaudeModel
@@ -384,6 +400,12 @@ export interface Settings {
   codexModel: string
   /** id машины-агента по умолчанию для новых разговоров; null — сервер. */
   defaultAgentId: string | null
+  /** Отдельный движок AI-помощника формулировки. */
+  aiAssistProvider: LlmProvider
+  /** Модель AI-помощника; пусто — быстрая модель по умолчанию движка. */
+  aiAssistModel: string
+  /** Дефолтные модификаторы для полей ввода. */
+  aiAssistPrompts: ModifierPrompt[]
 }
 
 /** Поддерживаемые LLM-движки (CLI). */
@@ -425,7 +447,11 @@ export const DEFAULT_SETTINGS: Settings = {
   execTarget: null,
   llmProvider: 'claude',
   codexModel: '',
-  defaultAgentId: null
+  defaultAgentId: null,
+  aiAssistProvider: 'claude',
+  aiAssistModel: 'haiku',
+  aiAssistPrompts: DEFAULT_AI_ASSIST_PROMPTS
+
 }
 
 /** Один сегмент распознанной речи (speakerId=1 до диаризации). */

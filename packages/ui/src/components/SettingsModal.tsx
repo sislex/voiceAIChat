@@ -27,9 +27,10 @@ function formatBytes(bytes: number): string {
 }
 
 /** Разделы меню настроек. */
-type SettingsSection = 'agent' | 'download' | 'stt' | 'tts' | 'dialog' | 'ui'
+type SettingsSection = 'agent' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'ui'
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'agent', label: 'Агент' },
+  { id: 'aiAssist', label: 'AI-помощник' },
   { id: 'download', label: 'Скачать' },
   { id: 'stt', label: 'Распознавание' },
   { id: 'tts', label: 'Озвучка' },
@@ -263,6 +264,37 @@ export function SettingsModal({
                     ))}
                   </div>
                 )}
+              </>
+            )}
+
+            {section === 'aiAssist' && (
+              <>
+                <div className="frow">
+                  <div><p className="flab">Движок помощника</p><p className="fsub">Отдельный CLI для генерации вариантов формулировки</p></div>
+                  <select className="sel" aria-label="Движок AI-помощника" value={settings.aiAssistProvider} onChange={(e) => onChange({ aiAssistProvider: e.target.value as LlmProvider, aiAssistModel: e.target.value === 'claude' ? 'haiku' : '' })}>
+                    <option value="claude">Claude Code</option><option value="codex">Codex</option>
+                  </select>
+                </div>
+                <div className="frow">
+                  <div><p className="flab">Модель помощника</p><p className="fsub">Быструю модель можно выбрать независимо от основного чата</p></div>
+                  {settings.aiAssistProvider === 'claude' ? <select className="sel" aria-label="Модель AI-помощника" value={settings.aiAssistModel || 'haiku'} onChange={(e) => onChange({ aiAssistModel: e.target.value })}>
+                    {modelsForRole(role).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select> : <select className="sel" aria-label="Модель AI-помощника" value={settings.aiAssistModel} onChange={(e) => onChange({ aiAssistModel: e.target.value })}>
+                    {CODEX_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>}
+                </div>
+                <div className="voicedl ai-default-prompts">
+                  <p className="flab">Промпты по умолчанию</p><p className="fsub">Порядок активных инструкций учитывается при генерации.</p>
+                  {settings.aiAssistPrompts.map((item, index) => <div className="ai-default-row" key={item.id}>
+                    <input type="checkbox" aria-label={`Активен: ${item.title}`} checked={item.enabled} onChange={(e) => onChange({ aiAssistPrompts: settings.aiAssistPrompts.map((p) => p.id === item.id ? { ...p, enabled: e.target.checked } : p) })}/>
+                    <input className="sel" aria-label={`Название: ${item.title}`} value={item.title} readOnly={item.readonly} onChange={(e) => onChange({ aiAssistPrompts: settings.aiAssistPrompts.map((p) => p.id === item.id ? { ...p, title: e.target.value } : p) })}/>
+                    <textarea className="sel" aria-label={`Текст: ${item.title}`} value={item.text} readOnly={item.readonly} onChange={(e) => onChange({ aiAssistPrompts: settings.aiAssistPrompts.map((p) => p.id === item.id ? { ...p, text: e.target.value } : p) })}/>
+                    <button className="vdl" aria-label={`Вверх: ${item.title}`} title="Вверх" disabled={index === 0} onClick={() => { const next = [...settings.aiAssistPrompts]; const [moved] = next.splice(index, 1); next.splice(index - 1, 0, moved); onChange({ aiAssistPrompts: next }) }}>↑</button>
+                    <button className="vdl" aria-label={`Вниз: ${item.title}`} title="Вниз" disabled={index === settings.aiAssistPrompts.length - 1} onClick={() => { const next = [...settings.aiAssistPrompts]; const [moved] = next.splice(index, 1); next.splice(index + 1, 0, moved); onChange({ aiAssistPrompts: next }) }}>↓</button>
+                    {!item.readonly && <button className="vdl" aria-label={`Удалить: ${item.title}`} title="Удалить" onClick={() => { if (window.confirm('Удалить этот промпт?')) onChange({ aiAssistPrompts: settings.aiAssistPrompts.filter((p) => p.id !== item.id) }) }}>✕</button>}
+                  </div>)}
+                  <button className="vdl" onClick={() => onChange({ aiAssistPrompts: [...settings.aiAssistPrompts, { id: globalThis.crypto?.randomUUID?.() ?? String(Date.now()), title: 'Новая подсказка', text: 'Опишите дополнительную инструкцию', enabled: true }] })}>Добавить промпт</button>
+                </div>
               </>
             )}
 
