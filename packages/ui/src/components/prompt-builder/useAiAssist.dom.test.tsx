@@ -12,7 +12,7 @@ function Harness(): JSX.Element {
 }
 describe('useAiAssist', () => {
   it('применение посылает нативный input-event и возвращает фокус на палочку', async () => {
-    const user = userEvent.setup(); render(<Harness/>); await user.click(screen.getByText('Палочка')); await user.type(screen.getByLabelText('Что нужно сформулировать'), 'x'); await screen.findByText('Готовый текст')
+    const user = userEvent.setup(); render(<Harness/>); await user.click(screen.getByText('Палочка')); await user.type(screen.getByLabelText('Что нужно сформулировать'), 'x'); await user.click(screen.getByRole('button', { name: 'Предложить варианты' })); await screen.findByText('Готовый текст')
     await user.click(screen.getByText('Добавить')); await user.click(screen.getByText('Применить'))
     expect(screen.getByRole('textbox')).toHaveValue('Готовый текст'); await vi.waitFor(() => expect(screen.getByText('Палочка')).toHaveFocus())
   })

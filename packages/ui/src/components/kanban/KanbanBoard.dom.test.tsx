@@ -85,6 +85,8 @@ describe('KanbanBoard (изолированный)', () => {
     expect(description).toHaveAttribute('data-ai-assist')
     await userEvent.click(screen.getByRole('button', { name: 'Открыть AI-помощник' }))
     await userEvent.type(screen.getByLabelText('Что нужно сформулировать'), 'Опиши задачу')
+    expect(generateAiAssist).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Предложить варианты' }))
     expect(await screen.findByText('Готовое AI-описание задачи', {}, { timeout: 2000 })).toBeInTheDocument()
 
     expect(generateAiAssist).toHaveBeenCalledTimes(1)

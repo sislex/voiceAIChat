@@ -23,7 +23,7 @@ function Demo({ generator = generate, initialPrompts = prompts, writable = true,
 }
 
 async function enter(canvasElement: HTMLElement, value = 'описание продукта') {
-  const canvas = within(canvasElement); await userEvent.type(canvas.getByLabelText('Что нужно сформулировать'), value); await canvas.findByText(ready[0].text); return canvas
+  const canvas = within(canvasElement); await userEvent.type(canvas.getByLabelText('Что нужно сформулировать'), value); await userEvent.click(canvas.getByRole('button', { name: 'Предложить варианты' })); await canvas.findByText(ready[0].text); return canvas
 }
 async function addBlocks(canvasElement: HTMLElement, count = 2) {
   const canvas = await enter(canvasElement); const add = await canvas.findAllByText('Добавить'); for (let i = 0; i < count; i++) await userEvent.click(add[i]); return canvas
@@ -34,14 +34,14 @@ const meta: Meta = { title: 'AI Assist/PromptBuilder', parameters: { layout: 'fu
 export default meta
 type Story = StoryObj
 export const Default: Story = {}
-export const Loading: Story = { render: () => <Demo generator={() => new Promise(() => {})}/>, play: async ({ canvasElement }) => { await userEvent.type(within(canvasElement).getByLabelText('Что нужно сформулировать'), 'текст'); await expect(await within(canvasElement).findByText('Генерирую варианты…')).toBeInTheDocument() } }
+export const Loading: Story = { render: () => <Demo generator={() => new Promise(() => {})}/>, play: async ({ canvasElement }) => { await userEvent.type(within(canvasElement).getByLabelText('Что нужно сформулировать'), 'текст'); await userEvent.click(within(canvasElement).getByRole('button', { name: 'Предложить варианты' })); await expect(await within(canvasElement).findByText('Генерирую варианты…')).toBeInTheDocument() } }
 export const SuggestionsReady: Story = { play: async ({ canvasElement }) => { await enter(canvasElement) } }
-export const EmptyResult: Story = { render: () => <Demo generator={async () => []}/>, play: async ({ canvasElement }) => { await userEvent.type(within(canvasElement).getByLabelText('Что нужно сформулировать'), 'текст'); await expect(await within(canvasElement).findByText('Вариантов нет')).toBeInTheDocument() } }
-export const Error: Story = { render: () => <Demo generator={async () => { throw new globalThis.Error('mock') }}/>, play: async ({ canvasElement }) => { await userEvent.type(within(canvasElement).getByLabelText('Что нужно сформулировать'), 'текст'); await expect(await within(canvasElement).findByText('Не удалось получить варианты')).toBeInTheDocument() } }
+export const EmptyResult: Story = { render: () => <Demo generator={async () => []}/>, play: async ({ canvasElement }) => { await userEvent.type(within(canvasElement).getByLabelText('Что нужно сформулировать'), 'текст'); await userEvent.click(within(canvasElement).getByRole('button', { name: 'Предложить варианты' })); await expect(await within(canvasElement).findByText('Вариантов нет')).toBeInTheDocument() } }
+export const Error: Story = { render: () => <Demo generator={async () => { throw new globalThis.Error('mock') }}/>, play: async ({ canvasElement }) => { await userEvent.type(within(canvasElement).getByLabelText('Что нужно сформулировать'), 'текст'); await userEvent.click(within(canvasElement).getByRole('button', { name: 'Предложить варианты' })); await expect(await within(canvasElement).findByText('Не удалось получить варианты')).toBeInTheDocument() } }
 export const WithBlocks: Story = { play: async ({ canvasElement }) => { await addBlocks(canvasElement, 2) } }
 export const WithPreview: Story = WithBlocks
 export const MaxBlocksReached: Story = { render: () => <Demo maxBlocks={1}/>, play: async ({ canvasElement }) => { const c = await addBlocks(canvasElement, 1); expect(c.getAllByText('Добавить')[1]).toBeDisabled() } }
-export const LongContent: Story = { render: () => <Demo generator={async () => [{ id: 'long', text: 'Очень длинный текст. '.repeat(80) }]}/>, play: async ({ canvasElement }) => { await userEvent.type(within(canvasElement).getByLabelText('Что нужно сформулировать'), 'длинный текст') } }
+export const LongContent: Story = { render: () => <Demo generator={async () => [{ id: 'long', text: 'Очень длинный текст. '.repeat(80) }]}/>, play: async ({ canvasElement }) => { await userEvent.type(within(canvasElement).getByLabelText('Что нужно сформулировать'), 'длинный текст'); await userEvent.click(within(canvasElement).getByRole('button', { name: 'Предложить варианты' })) } }
 export const DarkTheme: Story = { render: () => <Demo dark/> }
 export const SettingsEmpty: Story = { render: () => <Demo initialPrompts={[]}/>, play: async ({ canvasElement }) => { await settings(canvasElement) } }
 export const SettingsWithPrompts: Story = { play: async ({ canvasElement }) => { await settings(canvasElement) } }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { WandIcon } from '../icons'
 import type { ModifierPrompt } from '@shared/types'
 
 export type { ModifierPrompt }
@@ -14,7 +15,7 @@ export interface Labels {
   blocks: string; moveUp: string; moveDown: string; refine: string; apply: string
   addPrompt: string; edit: string; view: string; save: string; cancel: string; delete: string
   deleteConfirm: string; titleLabel: string; textLabel: string; enabled: string; noPrompts: string
-  duplicateTitle: string; requiredText: string; tooLong: string; maxBlocks: string
+  duplicateTitle: string; requiredText: string; tooLong: string; maxBlocks: string; generate: string
 }
 
 const RU: Labels = {
@@ -25,7 +26,7 @@ const RU: Labels = {
   blocks: 'Абзацы результата', moveUp: 'Вверх', moveDown: 'Вниз', refine: 'На доработку', apply: 'Применить', addPrompt: 'Добавить промпт',
   edit: 'Изменить', view: 'Просмотр', save: 'Сохранить', cancel: 'Отмена', delete: 'Удалить', deleteConfirm: 'Удалить этот промпт?', titleLabel: 'Название',
   textLabel: 'Текст промпта', enabled: 'Активен', noPrompts: 'Дополнительных подсказок пока нет.', duplicateTitle: 'Название должно быть уникальным', requiredText: 'Введите текст промпта',
-  tooLong: 'Текст слишком длинный', maxBlocks: 'Достигнут лимит абзацев'
+  tooLong: 'Текст слишком длинный', maxBlocks: 'Достигнут лимит абзацев', generate: 'Предложить варианты'
 }
 
 export interface PromptBuilderProps {
@@ -46,7 +47,7 @@ type Status = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
 type Editor = { id: string | null; title: string; text: string } | null
 const id = (): string => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
 
-export function PromptBuilder({ open, initialValue: _initialValue = '', prompts, onPromptsChange, generate, onApply, onClose, joinSeparator = '\n\n', maxBlocks = 12, debounceMs = 400, labels }: PromptBuilderProps): JSX.Element | null {
+export function PromptBuilder({ open, initialValue: _initialValue = '', prompts, onPromptsChange, generate, onApply, onClose, joinSeparator = '\n\n', maxBlocks = 12, labels }: PromptBuilderProps): JSX.Element | null {
   void _initialValue
   const l = { ...RU, ...labels }
   const [mode, setMode] = useState<'builder' | 'settings'>('builder')
@@ -54,7 +55,6 @@ export function PromptBuilder({ open, initialValue: _initialValue = '', prompts,
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [blocks, setBlocks] = useState<Block[]>([])
   const [status, setStatus] = useState<Status>('idle')
-  const [retry, setRetry] = useState(0)
   const [collapsed, setCollapsed] = useState(false)
   const [localPrompts, setLocalPrompts] = useState(prompts)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -62,6 +62,7 @@ export function PromptBuilder({ open, initialValue: _initialValue = '', prompts,
   const panelRef = useRef<HTMLDivElement>(null)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const wasOpen = useRef(false)
+  const generationRef = useRef<AbortController | null>(null)
   const assembled = useMemo(() => blocks.map((b) => b.text).join(joinSeparator), [blocks, joinSeparator])
   const active = useMemo(() => localPrompts.filter((p) => p.enabled), [localPrompts])
   const activeKey = active.map((p) => `${p.id}:${p.text}`).join('|')
@@ -77,17 +78,33 @@ export function PromptBuilder({ open, initialValue: _initialValue = '', prompts,
   useEffect(() => { if (!open) setLocalPrompts(prompts) }, [open, prompts])
 
   useEffect(() => {
-    if (!open || !prompt.trim()) { setStatus('idle'); setSuggestions([]); return }
+    generationRef.current?.abort()
+    generationRef.current = null
+    setSuggestions([])
+    setStatus('idle')
+  }, [open, prompt, activeKey])
+
+  useEffect(() => () => generationRef.current?.abort(), [])
+
+  const generateSuggestions = (): void => {
+    const text = prompt.trim()
+    if (!open || !text || status === 'loading') return
+    generationRef.current?.abort()
     const controller = new AbortController()
-    const timer = window.setTimeout(() => {
-      setStatus('loading')
-      void generate({ prompt: prompt.trim(), modifiers: active, signal: controller.signal }).then((next) => {
-        if (controller.signal.aborted) return
-        setSuggestions(next); setStatus(next.length ? 'ready' : 'empty')
-      }).catch(() => { if (!controller.signal.aborted) setStatus('error') })
-    }, debounceMs)
-    return () => { window.clearTimeout(timer); controller.abort() }
-  }, [open, prompt, activeKey, retry, debounceMs, generate])
+    generationRef.current = controller
+    setSuggestions([])
+    setStatus('loading')
+    void generate({ prompt: text, modifiers: active, signal: controller.signal }).then((next) => {
+      if (controller.signal.aborted) return
+      generationRef.current = null
+      setSuggestions(next)
+      setStatus(next.length ? 'ready' : 'empty')
+    }).catch(() => {
+      if (controller.signal.aborted) return
+      generationRef.current = null
+      setStatus('error')
+    })
+  }
 
   useEffect(() => {
     if (!open) return
@@ -134,9 +151,9 @@ export function PromptBuilder({ open, initialValue: _initialValue = '', prompts,
       </div></header>
       {mode === 'builder' ? <div className="pb-builder">
         <section className="pb-column pb-generation">
-          <label className="pb-label">{l.promptLabel}<textarea ref={promptRef} rows={4} value={prompt} placeholder={l.promptPlaceholder} onChange={(e) => setPrompt(e.target.value)} /></label>
+          <label className="pb-label">{l.promptLabel}<span className="pb-prompt-wrap"><textarea ref={promptRef} rows={4} value={prompt} placeholder={l.promptPlaceholder} onChange={(e) => setPrompt(e.target.value)} /><button type="button" className="pb-generate" disabled={!prompt.trim() || status === 'loading'} onClick={generateSuggestions} aria-label={l.generate} title={l.generate}><WandIcon /></button></span></label>
           {blocks.length > 0 && <div className="pb-preview"><div className="pb-row"><strong>{l.preview}</strong><div><button onClick={() => setCollapsed(!collapsed)}>{collapsed ? l.expand : l.collapse}</button><button onClick={() => void navigator.clipboard?.writeText(assembled)}>{l.copy}</button><button onClick={() => { if (window.confirm(l.clearConfirm)) setBlocks([]) }}>{l.clearAll}</button></div></div>{!collapsed && <div data-testid="prompt-preview">{assembled}</div>}</div>}
-          <div className="pb-status" aria-live="polite">{status === 'loading' ? l.loading : status === 'empty' ? l.empty : status === 'error' ? <>{l.error} <button onClick={() => setRetry((n) => n + 1)}>{l.retry}</button></> : null}</div>
+          <div className="pb-status" aria-live="polite">{status === 'loading' ? l.loading : status === 'empty' ? l.empty : status === 'error' ? <>{l.error} <button onClick={generateSuggestions}>{l.retry}</button></> : null}</div>
           {status === 'loading' && <div className="pb-skeletons" aria-hidden="true"><i/><i/><i/></div>}
           <div className="pb-list">{suggestions.map((s) => <article className="pb-item" key={s.id}><p>{s.text}</p><div><button aria-label={`${l.remove}: ${s.text}`} onClick={() => setSuggestions((all) => all.filter((x) => x.id !== s.id))}>{l.remove}</button><button onClick={() => setPrompt(s.text)}>{l.replace}</button><button disabled={blocks.length >= maxBlocks} title={blocks.length >= maxBlocks ? l.maxBlocks : undefined} onClick={() => setBlocks((all) => [...all, { id: id(), text: s.text }])}>{l.add}</button></div></article>)}</div>
         </section>
