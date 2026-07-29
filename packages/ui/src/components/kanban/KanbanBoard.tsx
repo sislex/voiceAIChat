@@ -10,6 +10,7 @@ import { useMemo, useRef, useState } from 'react'
 import type { Board, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { TASK_PRIORITIES, WORK_ITEM_TYPES } from '@shared/projects'
 import type { FeatureRun } from '@shared/features'
+import type { CiRunSummary } from '@shared/ci'
 import type { ModifierPrompt } from '@shared/types'
 import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
 import { TaskCard, epicOf } from './TaskCard'
@@ -49,6 +50,12 @@ export interface KanbanBoardProps {
   onStartFeature?: (itemId: string, type: WorkItemType) => void
 
   onOpenFeature?: (featureId: string) => void
+  /** Сводки CI-ранов по taskId. */
+  ciSummaries?: Record<string, CiRunSummary>
+  /** Запустить CI-воркфлоу для задачи. */
+  onStartCi?: (taskId: string) => void
+  /** Открыть ленту CI-рана. */
+  onOpenCiRun?: (runId: string) => void
   aiAssistPrompts?: ModifierPrompt[]
   onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
   generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>
@@ -238,6 +245,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onStartFeature={(id) => props.onStartFeature?.(id, t.type)}
       onOpenFeature={props.onOpenFeature}
       onOpenChat={props.onOpenChat}
+      ciSummary={props.ciSummaries?.[t.id]}
+      onStartCi={props.onStartCi}
+      onOpenCiRun={props.onOpenCiRun}
       onDragStart={setDragTask}
 
       onDragEnd={() => setDragTask(null)}

@@ -20,6 +20,21 @@ import type {
 import type { Board, ProjectDetail, ProjectSummary, TaskPriority, WorkItemType, WorkItemDefaultSkills } from '@shared/projects'
 
 import type { FeatureRun, AgentTask, FeatureStatus } from '@shared/features'
+import type {
+  CiCommand,
+  CiCommandInput,
+  CiGlobalSettings,
+  CiCommandSuggestion,
+  CiWorkspaceReportItem,
+  CiRun,
+  CiRunDetail,
+  CiRunStep,
+  CiFixAttempt,
+  CiRunSummary,
+  CiRunConclusion,
+  CiLogLine
+} from '@shared/ci'
+import type { RendererCiBridge } from '../remote/ciBridge'
 import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
 import { detectOpenUtility, toolBlock, type ToolSpec } from '@shared/tools'
 import type { ActiveTurn, ServerFileInfo, SystemCapabilities } from '@shared/protocol'
@@ -263,6 +278,29 @@ export interface AppState {
   featureRuns: FeatureRun[]
   activeFeature: FeatureRun | null
   agentTasks: AgentTask[]
+  /** Открыта ли страница «Команды» (CI-раннер). */
+  ciOpen: boolean
+  /** Справочник CI-команд (страница «Команды»). */
+  ciCommands: CiCommand[]
+  /** Глобальные настройки CI (null — не загружены). */
+  ciSettings: CiGlobalSettings | null
+  /** Предложения модели по правке команд. */
+  ciSuggestions: CiCommandSuggestion[]
+  /** Отчёт по занятому месту рабочих директорий. */
+  ciWorkspaces: CiWorkspaceReportItem[]
+  /** Кэш деталей ранов по runId (лента + лог, realtime). */
+  ciRuns: Record<string, CiRunCache>
+  /** Краткие сводки ранов по taskId (доска/карточка). */
+  ciSummaries: Record<string, CiRunSummary>
+  /** Открытый в модалке ран (лента), null — закрыта. */
+  ciActiveRunId: string | null
+}
+
+/** Кэш одного рана: снимок ленты + накопленный лог + заключение. */
+export interface CiRunCache {
+  detail: CiRunDetail | null
+  log: CiLogLine[]
+  conclusion: CiRunConclusion | null
 }
 
 export interface StoreDeps {
@@ -275,6 +313,8 @@ export interface StoreDeps {
   files?: RendererFilesBridge
   /** Мост живой канбан-доски (web). */
   board?: RendererBoardBridge
+  /** Мост CI-раннера (web). */
+  ci?: RendererCiBridge
   /** Источник времени (для формата HH:MM). По умолчанию Date.now. */
   now?: () => number
   /** Переопределение задержек пайплайна (для тестов). */
@@ -575,6 +615,10 @@ export interface StoreActions {
     agentPlanApprovalMode?: 'manual' | 'automatic'
     testCommand?: string
     productionDeployCommand?: string
+    ciBaseBranch?: string
+    ciBranchTemplate?: string
+    ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
+    ciExecAuthRef?: string
     }
   ): Promise<void>
   /** Удалить проект (только владелец). */
@@ -628,6 +672,32 @@ export interface StoreActions {
   setFeatureAutomation(fields: { autoMerge?: boolean; autoDeployProduction?: boolean }): Promise<void>
   deployFeature(): Promise<void>
   createAgentTask(input: { title: string; description?: string; kind?: AgentTask['kind'] }): Promise<void>
+  // --- CI-раннер ---
+  openCi(): Promise<void>
+  closeCi(): void
+  reloadCiCommands(projectId?: string): Promise<void>
+  createCiCommand(input: CiCommandInput): Promise<CiCommand | null>
+  updateCiCommand(id: string, input: CiCommandInput): Promise<void>
+  deleteCiCommand(id: string): Promise<void>
+  ciCommandUsage(id: string): Promise<{ projects: Array<{ id: string; name: string }>; tasks: Array<{ id: string; title: string }> }>
+  saveCiSettings(settings: Partial<CiGlobalSettings>): Promise<void>
+  resolveCiSuggestion(id: string, accept: boolean): Promise<void>
+  reloadCiWorkspaces(projectId?: string): Promise<void>
+  startCiRun(projectId: string, taskId: string): Promise<CiRun | null>
+  cancelCiRun(runId: string): Promise<void>
+  retryCiRun(runId: string): Promise<CiRun | null>
+  loadCiRun(runId: string): Promise<void>
+  openCiRun(runId: string): void
+  closeCiRun(): void
+  ciSubscribe(runId: string): void
+  ciUnsubscribe(runId: string): void
+  applyCiSnapshot(runId: string, detail: CiRunDetail, log: CiLogLine[]): void
+  applyCiRun(runId: string, run: CiRun): void
+  applyCiStep(runId: string, step: CiRunStep): void
+  applyCiLog(runId: string, line: CiLogLine): void
+  applyCiFix(runId: string, attempt: CiFixAttempt): void
+  applyCiDone(runId: string, run: CiRun, conclusion?: CiRunConclusion): void
+  applyCiSummary(projectId: string, summary: CiRunSummary): void
   /** Отмена всех активных таймеров пайплайна (напр. при размонтировании). */
   dispose(): void
 }
@@ -714,7 +784,15 @@ function initialState(): AppState {
     boardLoading: false,
     featureRuns: [],
     activeFeature: null,
-    agentTasks: []
+    agentTasks: [],
+    ciOpen: false,
+    ciCommands: [],
+    ciSettings: null,
+    ciSuggestions: [],
+    ciWorkspaces: [],
+    ciRuns: {},
+    ciSummaries: {},
+    ciActiveRunId: null
   }
 }
 
@@ -739,6 +817,7 @@ function composeUserText(text: string, attachments: UploadInfo[]): string {
 export function createVoiceStore(deps: StoreDeps): VoiceStore {
   const { api } = deps
   const boardBridge = deps.board
+  const ciBridge = deps.ci
   const now = deps.now ?? Date.now
   const delays: PipelineDelays = { ...DEFAULT_DELAYS, ...deps.delays }
   const audio = deps.audio ?? null
@@ -2421,6 +2500,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     agentPlanApprovalMode?: 'manual' | 'automatic'
     testCommand?: string
     productionDeployCommand?: string
+    ciBaseBranch?: string
+    ciBranchTemplate?: string
+    ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
+    ciExecAuthRef?: string
     }
   ): Promise<void> {
     try {
@@ -2529,7 +2612,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ activeProjectId: id, boardLoading: true, board: null, projectSettingsOpen: false, lastProjectId: id })
     try {
       const [board, detail, featureRuns] = await Promise.all([api['board:get']({ id }), api['projects:get']({ id }), api['features:list']({ projectId: id })])
-      setState({ board, projectDetail: detail, featureRuns, boardLoading: false })
+      const ciSummaries = { ...state.ciSummaries }
+      for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
+      setState({ board, projectDetail: detail, featureRuns, ciSummaries, boardLoading: false })
       boardBridge?.subscribe(id)
     } catch (err) {
       setState({ boardLoading: false, error: perr(err) })
@@ -2553,8 +2638,173 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       return summary ? { ...feature, status: summary.status, deployStatus: summary.deployStatus } : feature
     })
     const activeSummary = state.activeFeature ? summaries.find((item) => item.id === state.activeFeature!.id) : undefined
-    setState({ board, featureRuns, activeFeature: activeSummary && state.activeFeature ? { ...state.activeFeature, status: activeSummary.status, deployStatus: activeSummary.deployStatus } : state.activeFeature })
+    const ciSummaries = { ...state.ciSummaries }
+    for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
+    setState({ board, featureRuns, ciSummaries, activeFeature: activeSummary && state.activeFeature ? { ...state.activeFeature, status: activeSummary.status, deployStatus: activeSummary.deployStatus } : state.activeFeature })
   }
+
+  // --- CI-раннер ---------------------------------------------------------
+
+  function patchCiRun(runId: string, fn: (cache: CiRunCache) => CiRunCache): void {
+    const prev = state.ciRuns[runId] ?? { detail: null, log: [], conclusion: null }
+    setState({ ciRuns: { ...state.ciRuns, [runId]: fn(prev) } })
+  }
+  function mergeStep(detail: CiRunDetail | null, step: CiRunStep): CiRunDetail | null {
+    if (!detail) return { run: { id: step.runId } as CiRun, steps: [step], fixAttempts: [] }
+    const steps = detail.steps.some((x) => x.id === step.id)
+      ? detail.steps.map((x) => (x.id === step.id ? step : x))
+      : [...detail.steps, step]
+    return { ...detail, steps }
+  }
+
+  async function openCi(): Promise<void> {
+    setState({ ciOpen: true })
+    if (!ciBridge) return
+    try {
+      const [commands, settings, suggestions, workspaces] = await Promise.all([
+        ciBridge.listCommands(),
+        ciBridge.getSettings(),
+        ciBridge.listSuggestions(),
+        ciBridge.listWorkspaces()
+      ])
+      setState({ ciCommands: commands, ciSettings: settings, ciSuggestions: suggestions, ciWorkspaces: workspaces })
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  function closeCi(): void {
+    setState({ ciOpen: false })
+  }
+  async function reloadCiCommands(projectId?: string): Promise<void> {
+    if (!ciBridge) return
+    setState({ ciCommands: await ciBridge.listCommands(projectId) })
+  }
+  async function createCiCommand(input: CiCommandInput): Promise<CiCommand | null> {
+    if (!ciBridge) return null
+    try {
+      const cmd = await ciBridge.createCommand(input)
+      setState({ ciCommands: [...state.ciCommands, cmd] })
+      return cmd
+    } catch (err) {
+      setState({ error: perr(err) })
+      return null
+    }
+  }
+  async function updateCiCommand(id: string, input: CiCommandInput): Promise<void> {
+    if (!ciBridge) return
+    try {
+      const cmd = await ciBridge.updateCommand(id, input)
+      setState({ ciCommands: state.ciCommands.map((c) => (c.id === id ? cmd : c)) })
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function deleteCiCommand(id: string): Promise<void> {
+    if (!ciBridge) return
+    try {
+      await ciBridge.deleteCommand(id)
+      setState({ ciCommands: state.ciCommands.filter((c) => c.id !== id) })
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function ciCommandUsage(id: string): Promise<{ projects: Array<{ id: string; name: string }>; tasks: Array<{ id: string; title: string }> }> {
+    if (!ciBridge) return { projects: [], tasks: [] }
+    return ciBridge.commandUsage(id)
+  }
+  async function saveCiSettings(settings: Partial<CiGlobalSettings>): Promise<void> {
+    if (!ciBridge) return
+    try {
+      setState({ ciSettings: await ciBridge.putSettings(settings) })
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function resolveCiSuggestion(id: string, accept: boolean): Promise<void> {
+    if (!ciBridge) return
+    try {
+      await ciBridge.resolveSuggestion(id, accept)
+      setState({ ciSuggestions: state.ciSuggestions.filter((x) => x.id !== id) })
+      if (accept) await reloadCiCommands()
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  async function reloadCiWorkspaces(projectId?: string): Promise<void> {
+    if (!ciBridge) return
+    setState({ ciWorkspaces: await ciBridge.listWorkspaces(projectId) })
+  }
+  async function startCiRun(projectId: string, taskId: string): Promise<CiRun | null> {
+    if (!ciBridge) return null
+    try {
+      const run = await ciBridge.startRun(projectId, taskId)
+      setState({ ciSummaries: { ...state.ciSummaries, [taskId]: { id: run.id, taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false } } })
+      patchCiRun(run.id, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [] } }))
+      return run
+    } catch (err) {
+      setState({ error: perr(err) })
+      return null
+    }
+  }
+  async function cancelCiRun(runId: string): Promise<void> {
+    if (!ciBridge) return
+    try { await ciBridge.cancelRun(runId) } catch (err) { setState({ error: perr(err) }) }
+  }
+  async function retryCiRun(runId: string): Promise<CiRun | null> {
+    if (!ciBridge) return null
+    try { return await ciBridge.retryRun(runId) } catch (err) { setState({ error: perr(err) }); return null }
+  }
+  async function loadCiRun(runId: string): Promise<void> {
+    if (!ciBridge) return
+    try {
+      const [detail, log] = await Promise.all([ciBridge.getRun(runId), ciBridge.getRunLog(runId)])
+      patchCiRun(runId, (c) => ({ ...c, detail, log }))
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+  function ciSubscribe(runId: string): void {
+    ciBridge?.subscribe(runId)
+  }
+  function ciUnsubscribe(runId: string): void {
+    ciBridge?.unsubscribe(runId)
+  }
+  function openCiRun(runId: string): void {
+    setState({ ciActiveRunId: runId })
+  }
+  function closeCiRun(): void {
+    setState({ ciActiveRunId: null })
+  }
+  function applyCiSnapshot(runId: string, detail: CiRunDetail, log: CiLogLine[]): void {
+    patchCiRun(runId, (c) => ({ ...c, detail, log }))
+  }
+  function applyCiRun(runId: string, run: CiRun): void {
+    patchCiRun(runId, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [] } }))
+    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: state.ciSummaries[run.taskId]?.modelActive ?? false } } })
+  }
+  function applyCiStep(runId: string, step: CiRunStep): void {
+    patchCiRun(runId, (c) => ({ ...c, detail: mergeStep(c.detail, step) }))
+  }
+  function applyCiLog(runId: string, line: CiLogLine): void {
+    patchCiRun(runId, (c) => ({ ...c, log: [...c.log, line] }))
+  }
+  function applyCiFix(runId: string, attempt: CiFixAttempt): void {
+    patchCiRun(runId, (c) => {
+      if (!c.detail) return c
+      const fixAttempts = c.detail.fixAttempts.some((x) => x.id === attempt.id)
+        ? c.detail.fixAttempts.map((x) => (x.id === attempt.id ? attempt : x))
+        : [...c.detail.fixAttempts, attempt]
+      return { ...c, detail: { ...c.detail, fixAttempts } }
+    })
+  }
+  function applyCiDone(runId: string, run: CiRun, conclusion?: CiRunConclusion): void {
+    patchCiRun(runId, (c) => ({ ...c, conclusion: conclusion ?? c.conclusion, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [] } }))
+    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false } } })
+  }
+  function applyCiSummary(_projectId: string, summary: CiRunSummary): void {
+    setState({ ciSummaries: { ...state.ciSummaries, [summary.taskId]: summary } })
+  }
+
   async function createColumn(name: string): Promise<void> {
     const id = state.activeProjectId
     if (!id) return
@@ -2885,6 +3135,31 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       openProjectSettings,
       closeProjectSettings,
       applyBoardUpdate,
+      openCi,
+      closeCi,
+      reloadCiCommands,
+      createCiCommand,
+      updateCiCommand,
+      deleteCiCommand,
+      ciCommandUsage,
+      saveCiSettings,
+      resolveCiSuggestion,
+      reloadCiWorkspaces,
+      startCiRun,
+      cancelCiRun,
+      retryCiRun,
+      loadCiRun,
+      openCiRun,
+      closeCiRun,
+      ciSubscribe,
+      ciUnsubscribe,
+      applyCiSnapshot,
+      applyCiRun,
+      applyCiStep,
+      applyCiLog,
+      applyCiFix,
+      applyCiDone,
+      applyCiSummary,
       createColumn,
       updateColumn,
       setColumnHidden,

@@ -3,6 +3,23 @@
 // ('' = same-origin), agentWsUrl — ws-адрес /agent для строки подключения.
 
 import { REST } from '@shared/protocol'
+import type {
+  RendererCiRest,
+  CiCommandUsage,
+  CiTaskConfig,
+  CiMetrics
+} from './ciBridge'
+import type {
+  CiCommand,
+  CiGlobalSettings,
+  CiCommandSuggestion,
+  CiWorkspaceReportItem,
+  CiSlotConfig,
+  CiRun,
+  CiRunDetail,
+  CiLogLine,
+  CiConsoleExecResult
+} from '@shared/ci'
 import { encodeAgentConnection } from '@shared/agentProtocol'
 import type { RendererApi } from '@shared/ipc'
 import { getToken } from './session'
@@ -224,5 +241,48 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'features:deployments': ({ id }) => req(REST.featureDeployments(id)),
     'agentTasks:list': ({ featureId }) => req(REST.featureAgentTasks(featureId)),
     'agentTasks:create': ({ featureId, ...body }) => req(REST.featureAgentTasks(featureId), { method: 'POST', body: JSON.stringify(body) })
+  }
+}
+
+
+/**
+ * REST-часть моста window.ci. WS-часть добавляется в remote/index.ts.
+ * Повторяет схему createHttpApi (Bearer-токен, JSON-тело только при наличии).
+ */
+export function createCiRest(httpBase: string): RendererCiRest {
+  async function req<T>(path: string, init?: RequestInit): Promise<T> {
+    const headers: Record<string, string> = {}
+    if (init?.body != null) headers['content-type'] = 'application/json'
+    const token = getToken()
+    if (token) headers['authorization'] = `Bearer ${token}`
+    const res = await fetch(httpBase + path, { ...init, headers })
+    if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
+    const text = await res.text()
+    return (text ? JSON.parse(text) : undefined) as T
+  }
+  const qs = (projectId?: string): string => (projectId ? `?projectId=${encodeURIComponent(projectId)}` : '')
+  return {
+    listCommands: (projectId) => req<CiCommand[]>(REST.ciCommands + qs(projectId)),
+    getCommand: (id) => req<CiCommand>(REST.ciCommand(id)),
+    createCommand: (input) => req<CiCommand>(REST.ciCommands, { method: 'POST', body: JSON.stringify(input) }),
+    updateCommand: (id, input) => req<CiCommand>(REST.ciCommand(id), { method: 'PATCH', body: JSON.stringify(input) }),
+    deleteCommand: (id) => req<{ ok: boolean }>(REST.ciCommand(id), { method: 'DELETE' }),
+    commandUsage: (id) => req<CiCommandUsage>(REST.ciCommandUsage(id)),
+    getSettings: () => req<CiGlobalSettings>(REST.ciSettings),
+    putSettings: (settings) => req<CiGlobalSettings>(REST.ciSettings, { method: 'PUT', body: JSON.stringify(settings) }),
+    listSuggestions: (projectId) => req<CiCommandSuggestion[]>(REST.ciSuggestions + qs(projectId)),
+    resolveSuggestion: (id, accept) => req<CiCommandSuggestion>(REST.ciSuggestion(id), { method: 'POST', body: JSON.stringify({ accept }) }),
+    listWorkspaces: (projectId) => req<CiWorkspaceReportItem[]>(REST.ciWorkspaces + qs(projectId)),
+    getProjectCi: (projectId) => req<CiSlotConfig>(REST.projectCi(projectId)),
+    putProjectCi: (projectId, config) => req<CiSlotConfig>(REST.projectCi(projectId), { method: 'PUT', body: JSON.stringify(config) }),
+    getTaskCi: (projectId, taskId) => req<CiTaskConfig>(REST.taskCi(projectId, taskId)),
+    putTaskCi: (projectId, taskId, config) => req<CiSlotConfig>(REST.taskCi(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
+    startRun: (projectId, taskId) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST' }),
+    getRun: (runId) => req<CiRunDetail>(REST.ciRun(runId)),
+    getRunLog: (runId) => req<CiLogLine[]>(REST.ciRunLog(runId)),
+    cancelRun: (runId) => req<{ ok: boolean }>(REST.ciRunCancel(runId), { method: 'POST' }),
+    retryRun: (runId) => req<CiRun>(REST.ciRunRetry(runId), { method: 'POST' }),
+    getMetrics: (projectId) => req<CiMetrics>(REST.ciMetrics(projectId)),
+    consoleExec: (runId, command, editMode) => req<CiConsoleExecResult>(REST.ciConsoleExec(runId), { method: 'POST', body: JSON.stringify({ command, editMode }) })
   }
 }
