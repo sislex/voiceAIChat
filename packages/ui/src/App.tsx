@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { PermissionMode } from '@shared/types'
 import { Sidebar } from './components/Sidebar'
@@ -98,6 +98,18 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
     else if (state.activeProjectId) actions.closeBoard()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects, routeProjectId])
+  // Авто-редирект при запуске: открыли #/projects (список) — уводим на последний
+  // использованный проект, если он ещё доступен. Срабатывает один раз за сессию
+  // (ref-гард), поэтому закрытие доски к списку потом не перекидывает обратно.
+  const redirectedToLastProject = useRef(false)
+  useEffect(() => {
+    if (!authed || redirectedToLastProject.current) return
+    if (!inProjects || routeProjectId || state.projects.length === 0) return
+    redirectedToLastProject.current = true
+    const last = state.lastProjectId
+    if (last && state.projects.some((p) => p.id === last)) navigate(`/projects/${last}`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, inProjects, routeProjectId, state.projects, state.lastProjectId])
   useEffect(() => {
     if (!authed) return
     if (routeSettings) { if (!state.projectSettingsOpen) actions.openProjectSettings() }
@@ -248,7 +260,6 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onOpenConsole={state.authRequired ? menu(() => actions.openUtilityForActiveChat('console')) : undefined}
         onOpenUsers={state.authRequired ? menu(() => navigate('/users')) : undefined}
         onOpenMachines={state.authRequired ? menu(() => navigate('/machines')) : undefined}
-        onOpenProjects={state.authRequired ? menu(() => navigate('/projects')) : undefined}
         currentUser={state.currentUser}
         onLogout={state.authRequired ? () => void actions.logout() : undefined}
         mode={sidebarMode}

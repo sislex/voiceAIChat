@@ -87,8 +87,7 @@ describe('Sidebar — инструменты в меню по клику на п
       onOpenObserver,
       onOpenCodexObserver: vi.fn(),
       onOpenKnowledgeBase: vi.fn(),
-      onOpenProjects: vi.fn(),
-      onOpenFiles: vi.fn(),
+        onOpenFiles: vi.fn(),
       onOpenConsole: vi.fn(),
       onOpenMachines: vi.fn(),
       onOpenUsers: vi.fn(),
@@ -103,7 +102,7 @@ describe('Sidebar — инструменты в меню по клику на п
     // Клик по пользователю открывает всплывающее меню с инструментами.
     fireEvent.click(screen.getByRole('button', { name: /Алекс/ }))
     const menu = screen.getByRole('menu')
-    for (const label of ['Claude Code', 'Codex', 'Проекты', 'База знаний', 'Проводник', 'Консоль']) {
+    for (const label of ['Claude Code', 'Codex', 'База знаний', 'Проводник', 'Консоль']) {
       expect(within(menu).getByText(label)).toBeInTheDocument()
     }
     // Управление и настройки — там же.
