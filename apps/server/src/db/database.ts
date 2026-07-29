@@ -1682,9 +1682,26 @@ export class VoiceChatDb {
 
   deleteTask(userId: string, projectId: string, taskId: string): boolean {
     if (!this.isProjectMember(userId, projectId)) return false
-    const info = this.db.prepare(`DELETE FROM tasks WHERE id = ? AND project_id = ?`).run(taskId, projectId)
-    if (info.changes) this.touchProject(projectId)
-    return info.changes > 0
+    let changes = 0
+    this.db.transaction(() => {
+      // features.source_task_id -> tasks(id) идёт с ON DELETE RESTRICT, поэтому
+      // задачу с историей Feature Run иначе не удалить (FK constraint failed).
+      // Сначала освобождаем занятые фичами рабочие копии и сносим сами фичи
+      // (каскад чистит agent_tasks / deployments / events), затем — задачу.
+      const featIds = (
+        this.db.prepare(`SELECT id FROM features WHERE source_task_id = ?`).all(taskId) as Array<{ id: string }>
+      ).map((r) => r.id)
+      if (featIds.length) {
+        const ph = featIds.map(() => '?').join(',')
+        this.db
+          .prepare(`UPDATE repository_slots SET status = 'available' WHERE status != 'available' AND feature_id IN (${ph})`)
+          .run(...featIds)
+        this.db.prepare(`DELETE FROM features WHERE id IN (${ph})`).run(...featIds)
+      }
+      changes = this.db.prepare(`DELETE FROM tasks WHERE id = ? AND project_id = ?`).run(taskId, projectId).changes
+    })()
+    if (changes) this.touchProject(projectId)
+    return changes > 0
   }
 
   reserveRepositorySlot(userId: string, featureId: string): RepositorySlot | null {
