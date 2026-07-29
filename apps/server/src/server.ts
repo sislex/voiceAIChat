@@ -15,6 +15,12 @@ import { registerAgentRoutes } from './routes/agents.js'
 import { registerAdminRoutes } from './routes/admin.js'
 import { registerProjectRoutes } from './routes/projects.js'
 import { registerFeatureRoutes } from './routes/features.js'
+import { registerCiRoutes } from './routes/ci.js'
+import { createCiRunManager } from './ci/runManager.js'
+import { AgentCommandExecutor } from './ci/executor.js'
+import { createCiModelHooks } from './ci/modelHooks.js'
+import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
+import type { CommandExecutor } from './ci/types.js'
 import { BoardHub } from './projects/boardHub.js'
 import { registerAuth, resolveUser, uid } from './users/auth.js'
 import { loadOrCreateSecret } from './users/accounts.js'
@@ -78,6 +84,8 @@ export interface BuildOptions {
   /** Выполнение Git-команд в рабочих копиях Feature Run (в тестах — fake). */
   workspaceExecutor?: WorkspaceExecutor
   pullRequestService?: PullRequestService
+  /** Исполнитель CI-команд (в тестах — мок). По умолчанию поверх AgentRegistry. */
+  ciExecutor?: CommandExecutor
 }
 
 function makeTtsEngine(config: ServerConfig): TtsEngine {
@@ -193,6 +201,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   const mcpSecret = randomBytes(16).toString('hex')
   registerRemoteBashMcp(app, agentRegistry, mcpSecret)
+  registerCiCommandsMcp(app, mcpSecret)
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
   registerAdminRoutes(app, db, agentRegistry)
@@ -319,6 +328,27 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   startFeatureTurn = ({ userId, conversationId, text }) =>
     turnManager.start({ userId, conversationId, segments: [{ speakerId: 1, text }], verbose: true })
 
+  // CI-раннер (Авто-подготовка окружения для таска): процесс-глобальный менеджер
+  // ранов. Исполнитель команд — поверх потокового exec машины. Хуки модели/фикса
+  // подключаются здесь же (Срез 4).
+  const ciExecutor = opts.ciExecutor ?? new AgentCommandExecutor(agentRegistry)
+  const ciModelHooks = createCiModelHooks({
+    db,
+    claude,
+    mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`,
+    ciMcpBaseUrl: `http://127.0.0.1:${opts.config.port}${CI_COMMANDS_MCP_PATH}?k=${mcpSecret}`,
+    agentNameOf: (agentId) => agentRegistry.nameOf(agentId)
+  })
+  const ciRunManager = createCiRunManager({
+    db,
+    executor: ciExecutor,
+    boardChanged: (projectId) => boardHub.emit(projectId),
+    modelWork: ciModelHooks.modelWork,
+    modelSummary: ciModelHooks.modelSummary,
+    attemptFix: ciModelHooks.attemptFix
+  })
+  registerCiRoutes(app, db, ciRunManager)
+
   // Плановая остановка (деплой/SIGTERM → app.close()): сохранить частичные
   // ответы активных ходов, чтобы рестарт контейнера не терял набранный текст.
   app.addHook('onClose', async () => {
@@ -362,7 +392,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       board: {
         getBoard: (projectId) => db.getBoard(user.name, projectId),
         subscribe: (cb) => boardHub.onChange(cb)
-      }
+      },
+      ci: ciRunManager
     })
 
   await app.register(async (scoped) => {

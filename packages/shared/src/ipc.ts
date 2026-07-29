@@ -213,6 +213,10 @@ export interface IpcInvokeMap {
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
       productionDeployCommand?: string
+      ciBaseBranch?: string
+      ciBranchTemplate?: string
+      ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
+      ciExecAuthRef?: string
     }
     result: ProjectDetail
   }

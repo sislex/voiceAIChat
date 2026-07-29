@@ -17,6 +17,8 @@ import { createTtsSession, type TtsSession } from './tts/ttsSession.js'
 import { watchTranscript } from './cc/ccSessions.js'
 import { watchCxTranscript } from './codex/codexSessions.js'
 
+import type { CiRunManager } from './ci/runManager.js'
+
 export interface SessionDeps {
   db: VoiceChatDb
   /** Пользователь этого соединения (изоляция данных/ходов). */
@@ -48,6 +50,8 @@ export interface SessionDeps {
   }
   /** Релей живого PTY-терминала по машине (отдельно от однострочного exec). */
   pty?: PtyRelay
+  /** Процесс-глобальный менеджер CI-ранов (события переживают reconnect). */
+  ci?: CiRunManager
 }
 
 /** Минимальный релей PTY для сессии (реализует AgentRegistry). */
@@ -66,6 +70,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubBoard: (() => void) | null = null
   let boardProjectId: string | null = null
   let unsubTurns: (() => void) | null = null
+  let unsubCi: (() => void) | null = null
   let ccTailStop: (() => void) | null = null
   let cxTailStop: (() => void) | null = null
   const ptyIds = new Set<string>()
@@ -87,6 +92,12 @@ export function createSession(deps: SessionDeps): WsHandlers {
         if (ownerUserId === deps.user.name) ctx.send(m)
       })
       ctx.send({ t: 'claude.active', turns: deps.turns.active(deps.user.name) })
+      // События CI-ранов — только своему пользователю (лог/шаги/статус).
+      if (deps.ci) {
+        unsubCi = deps.ci.subscribe((m, ownerUserId) => {
+          if (ownerUserId === deps.user.name) ctx.send(m)
+        })
+      }
       // Живой список машин-агентов: начальное состояние + пуш при изменениях.
       if (deps.agentsFeed) {
         ctx.send({ t: 'agents', agents: deps.agentsFeed.list() })
@@ -233,6 +244,14 @@ export function createSession(deps: SessionDeps): WsHandlers {
         case 'board.unsubscribe':
           boardProjectId = null
           break
+        case 'ci.subscribe': {
+          // Снапшот рана для восстановления ленты + лога (реплей с начала).
+          const snap = deps.ci?.snapshot(deps.user.name, msg.runId)
+          if (snap) ctx.send(snap)
+          break
+        }
+        case 'ci.unsubscribe':
+          break
 
         default:
           break
@@ -256,6 +275,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       boardProjectId = null
       unsubTurns?.()
       unsubTurns = null
+      unsubCi?.()
+      unsubCi = null
       ccTailStop?.()
       ccTailStop = null
       cxTailStop?.()

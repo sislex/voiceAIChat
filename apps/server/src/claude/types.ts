@@ -26,6 +26,8 @@ export interface LlmRequest {
     agentName: string
     /** Краткое описание политики машины для системного промпта (что разрешено). */
     policySummary?: string
+    /** URL MCP-эндпоинта команд CI-справочника (инструмент модели), если доступен. */
+    ciMcpUrl?: string
   }
 }
 
