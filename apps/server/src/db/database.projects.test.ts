@@ -273,6 +273,27 @@ describe('work items + feature runs', () => {
     expect(retry.previousFeatureId).toBe(feature.id)
   })
 
+  it('deleteTask удаляет задачу вместе с её Feature Run и освобождает рабочую копию', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const agent = db.createAgent('alice', 'M')
+    db.linkMachine('alice', p.id, agent.id)
+    db.setProjectMachineFeatureReposRoot('alice', p.id, agent.id, '/repos')
+    db.setProjectDefaultMachine('alice', p.id, agent.id)
+    const ready = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'ready')!
+    const task = db.createTask('alice', p.id, { columnId: ready.id, title: 'Feature task' })!
+    const feature = db.createFeatureFromTask('alice', p.id, task.id, {})!
+    const slot = db.reserveRepositorySlot('alice', feature.id)!
+    // Задача с фичей раньше не удалялась: FK features.source_task_id RESTRICT.
+    expect(db.deleteTask('alice', p.id, task.id)).toBe(true)
+    expect(db.getBoard('alice', p.id)!.tasks.find((t) => t.id === task.id)).toBeUndefined()
+    expect(db.listFeatures('alice', p.id)!.find((f) => f.id === feature.id)).toBeUndefined()
+    // Рабочая копия освобождена и снова доступна к резервированию.
+    const t2 = db.createTask('alice', p.id, { columnId: ready.id, title: 'Next' })!
+    const f2 = db.createFeatureFromTask('alice', p.id, t2.id, {})!
+    const reused = db.reserveRepositorySlot('alice', f2.id)!
+    expect(reused.id).toBe(slot.id)
+  })
+
   it('атомарно резервирует разные repository slots для параллельных фич', () => {
     const p = db.createProject('alice', { name: 'P' })
     const agent = db.createAgent('alice', 'M')
