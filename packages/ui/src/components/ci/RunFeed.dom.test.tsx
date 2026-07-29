@@ -63,7 +63,7 @@ describe('RunFeed', () => {
     expect(screen.getByText(/Финальные команды не запускались/)).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Провайдер'), { target: { value: 'codex' } })
     fireEvent.click(screen.getByRole('button', { name: 'Повторить работу модели' }))
-    expect(onRetryFromStep).toHaveBeenCalledWith('run-1', { provider: 'codex', model: 'gpt-5-codex' })
+    expect(onRetryFromStep).toHaveBeenCalledWith('run-1', { provider: 'codex', model: '' })
   })
 
   it('кнопка «Повторить весь воркфлоу» вызывает onRetry', () => {

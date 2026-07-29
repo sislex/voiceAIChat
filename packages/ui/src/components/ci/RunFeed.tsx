@@ -144,7 +144,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
                   <select className="sel" value={modelProvider} onChange={(e) => {
                     const provider = e.target.value === 'codex' ? 'codex' : 'claude'
                     setModelProvider(provider)
-                    setModelName(provider === 'codex' ? 'gpt-5-codex' : 'sonnet')
+                    setModelName(provider === 'codex' ? '' : 'sonnet')
                   }}>
                     <option value="claude">Claude</option>
                     <option value="codex">Codex</option>
@@ -153,10 +153,10 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
                 <label>
                   Модель
                   <select className="sel" value={modelName} onChange={(e) => setModelName(e.target.value)}>
-                    {(modelProvider === 'codex' ? CODEX_MODELS.filter((m) => m.id) : CLAUDE_MODELS).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                    {(modelProvider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                   </select>
                 </label>
-                <button className="ci-btn" disabled={!props.onRetryFromStep || !modelName} onClick={() => props.onRetryFromStep?.(runId, { provider: modelProvider, model: modelName })}>
+                <button className="ci-btn" disabled={!props.onRetryFromStep || (modelProvider === 'claude' && !modelName)} onClick={() => props.onRetryFromStep?.(runId, { provider: modelProvider, model: modelName })}>
                   Повторить работу модели
                 </button>
               </div>

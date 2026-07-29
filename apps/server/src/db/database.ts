@@ -2529,7 +2529,7 @@ function mapCiRun(r: CiRunRow): CiRun {
   return {
     id: r.id, projectId: r.project_id, taskId: r.task_id, agentId: r.agent_id,
     status: normCiStatus(r.status), workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
-    prevColumnId: r.prev_column_id, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_model || (r.llm_provider === 'codex' ? 'gpt-5.3-codex' : 'sonnet'), slotProgress: parseSlotProgress(r.slot_progress_json),
+    prevColumnId: r.prev_column_id, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || 'sonnet'), slotProgress: parseSlotProgress(r.slot_progress_json),
     startedAt: r.started_at, finishedAt: r.finished_at, durationMs: r.duration_ms, createdAt: r.created_at
   }
 }
