@@ -44,5 +44,9 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   `src/test/fakeApi.ts`), проверяем поведение: клик → вызван мост → изменился экран.
   Логика стора — `store/voiceStore.test.ts` без DOM.
 
+Storybook: сториз канбана лежат в `src/components/kanban/*.stories.tsx`;
+`npm run -w @voicechat/ui storybook` (dev, порт 6006) и `build-storybook`
+(смоук-сборка). В общий гейт не входят, но `*.stories.tsx` проверяются tsc.
+
 Гейт: `npm run -w @voicechat/ui typecheck && npm run -w @voicechat/ui test`
 (+ `npm run -w @voicechat/web build`, если менялась сборка/стили).

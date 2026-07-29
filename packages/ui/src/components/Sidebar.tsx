@@ -40,6 +40,8 @@ function pluralMessages(n: number): string {
   return 'сообщений'
 }
 
+export type SidebarMode = 'chats' | 'projects'
+
 export interface SidebarProps {
   conversations: Conversation[]
   activeId: string | null
@@ -80,6 +82,16 @@ export interface SidebarProps {
   currentUser?: SessionUser | null
   /** Выйти из сессии (web). */
   onLogout?: () => void
+  /** Режим списка: чаты или проекты. По умолчанию 'chats'. */
+  mode?: SidebarMode
+  /** Сегмент «Чаты | Проекты»; не задан — переключатель скрыт (desktop/local). */
+  onModeChange?: (mode: SidebarMode) => void
+  /** Активный проект (открыта его доска) — подсветка в списке проектов. */
+  activeProjectId?: string | null
+  /** Открыть доску проекта из списка. */
+  onPickProject?: (id: string) => void
+  /** Создать проект из инлайн-формы списка (имя уже обрезано и не пустое). */
+  onCreateProject?: (name: string) => void
   /** Мобильный режим: сайдбар выдвинут поверх контента. */
   open?: boolean
   /** Свернуть сайдбар на десктопе (шеврон в шапке); undefined — кнопку не показываем. */
@@ -113,6 +125,11 @@ export function Sidebar({
   onOpenProjects,
   currentUser,
   onLogout,
+  mode = 'chats',
+  onModeChange,
+  activeProjectId = null,
+  onPickProject,
+  onCreateProject,
   open = false,
   onToggleCollapse
 }: SidebarProps): JSX.Element {
@@ -123,6 +140,9 @@ export function Sidebar({
   const [renameDraft, setRenameDraft] = useState('')
   // Открыто ли меню аккаунта (Машины/Пользователи/Настройки/Выйти).
   const [acctOpen, setAcctOpen] = useState(false)
+  // Инлайн-форма создания проекта в списке проектов.
+  const [creatingProject, setCreatingProject] = useState(false)
+  const [projectDraft, setProjectDraft] = useState('')
   const acctRef = useRef<HTMLDivElement | null>(null)
   const workingSet = new Set(workingIds)
 
@@ -186,7 +206,17 @@ export function Sidebar({
           )}
         </div>
       </div>
-      {projects.length > 0 && (
+      {onModeChange && (
+        <div className="sideswitch" role="group" aria-label="Тип списка">
+          <button className={mode === 'chats' ? 'on' : ''} aria-pressed={mode === 'chats'} onClick={() => onModeChange('chats')}>
+            Чаты
+          </button>
+          <button className={mode === 'projects' ? 'on' : ''} aria-pressed={mode === 'projects'} onClick={() => onModeChange('projects')}>
+            Проекты
+          </button>
+        </div>
+      )}
+      {mode === 'chats' && projects.length > 0 && (
         <div className="sideproject">
           <select
             className="projectselect"
@@ -203,6 +233,7 @@ export function Sidebar({
           </select>
         </div>
       )}
+      {mode === 'chats' && (<>
       <div className="sidesearch">
         <input
           className="searchinput"
@@ -329,6 +360,45 @@ export function Sidebar({
           </div>
         ))}
       </div>
+      </>)}
+      {mode === 'projects' && (
+        <div className="convolist projlist">
+          {onCreateProject &&
+            (creatingProject ? (
+              <input
+                className="login-input projcreate"
+                autoFocus
+                placeholder="Название проекта"
+                aria-label="Название нового проекта"
+                value={projectDraft}
+                onChange={(e) => setProjectDraft(e.target.value)}
+                onBlur={() => setCreatingProject(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && projectDraft.trim()) {
+                    onCreateProject(projectDraft.trim())
+                    setProjectDraft('')
+                    setCreatingProject(false)
+                  } else if (e.key === 'Escape') setCreatingProject(false)
+                }}
+              />
+            ) : (
+              <button className="projadd" onClick={() => setCreatingProject(true)}>
+                + Проект
+              </button>
+            ))}
+          {projects.length === 0 && <p className="convo-empty">Проектов пока нет</p>}
+          {projects.map((p) => (
+            <button
+              key={p.id}
+              className={p.id === activeProjectId ? 'convo projitem on' : 'convo projitem'}
+              onClick={() => onPickProject?.(p.id)}
+            >
+              <span className="ctitle">{p.name}</span>
+              <span className="projitem-role">{p.role === 'owner' ? 'владелец' : 'участник'}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="sidefoot">
         {/* Меню аккаунта: инструменты-виджеты + управление, настройки, выход.
             Иконки виджетов перенесены сюда из отдельного нижнего ряда —

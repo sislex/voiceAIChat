@@ -12,6 +12,8 @@ import { AgentCommands } from './AgentCommands'
 import { ToolFrame } from './ToolFrame'
 
 export interface MachineStatusProps {
+  /** Размещение: модалка из меню (по умолчанию) или страница контентной колонки. */
+  variant?: 'modal' | 'page'
   agents: AgentInfo[]
   /** Быстрое изменение разрешений (сервер сразу применит онлайн-агенту). */
   onSetPolicy: (id: string, policy: AgentPolicy) => void
@@ -213,7 +215,8 @@ export function MachineStatus({
   onUpdateAgent,
   defaultAgentId,
   onSetDefault,
-  onClose
+  onClose,
+  variant = 'modal'
 }: MachineStatusProps): JSX.Element {
   const [name, setName] = useState('')
   const [created, setCreated] = useState<AgentCreated | null>(null)
@@ -277,7 +280,7 @@ export function MachineStatus({
   }
 
   return (
-    <ToolFrame title="Машины" onClose={onClose} testId="machines-overlay">
+    <ToolFrame title="Машины" variant={variant} onClose={onClose} testId="machines-overlay">
       <div className="mst-body">
         {agents.length === 0 ? (
           <p className="mst-empty">Нет добавленных машин — добавьте первую ниже.</p>

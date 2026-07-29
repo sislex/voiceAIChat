@@ -75,12 +75,13 @@ areas:
 (`projectsOpen`, `projects`, `projectDetail`, `activeProjectId`, `board`;
 оптимистичные `moveTask`/`reorderColumns`, мерж `applyBoardUpdate` из WS). Экраны —
 оверлеи через флаги стора (эталон — `UsersAdmin`): `ProjectsOverlay` (список +
-детали), доска в стиле Jira: `ProjectBoard` (панель фильтров — поиск, аватары
-исполнителей, быстрые фильтры, тип/приоритет/метка/эпик; свимлейны по эпикам или
-исполнителям; WIP-лимиты; инлайн-композер «+ Создать»), `TaskCard` (иконка типа,
-ключ, чип эпика, метки, флаг, срок, поинты, аватар, прогресс подзадач, меню «⋯»),
-`TaskModal` (модалка задачи, поля сохраняются по blur), атрибутика — в
-`kanbanMeta.tsx` (ключи/иконки/цвета). Перетаскивание — нативный HTML5 DnD:
+детали), доска в стиле Jira — изолированный компонент `components/kanban/`:
+`KanbanBoard` (самодостаточный, только пропсы: панель фильтров с чекбоксом
+«скрытые», свимлейны, WIP-лимиты, композер «+ Создать», состояние `error`,
+нормализация битых данных в `normalize.ts`), `TaskCard`, `TaskModal`,
+атрибутика в `kanbanMeta.tsx`; страничная обёртка — `ProjectBoard`
+(ToolFrame + настройки + Esc). Сториз — `*.stories.tsx` рядом
+(`npm run -w @voicechat/ui storybook`). Перетаскивание — нативный HTML5 DnD:
 карточки (MIME `application/x-task`) и колонки (`application/x-column`) с раздельными
 типами; вставка задачи — через drop-зоны между карточками. Кнопка «Проекты» — в
 `Sidebar`.
