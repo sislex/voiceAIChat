@@ -1550,7 +1550,7 @@ describe('voiceStore — помощник промптов', () => {
 
     await store.actions.suggestPrompts()
 
-    expect(spy).toHaveBeenCalledWith({ text: 'сделай форму' })
+    expect(spy).toHaveBeenCalledWith({ prompt: 'сделай форму', modifiers: expect.arrayContaining([expect.objectContaining({ id: 'clear' })]) })
     const helper = store.getState().promptHelper
     expect(helper.open).toBe(true)
     expect(helper.loading).toBe(false)

@@ -8,6 +8,7 @@ import type {
   LlmProvider,
   KbContextMode,
   Message,
+  ModifierPrompt,
   MessageRole,
   PermissionMode,
   SessionUser,
@@ -85,7 +86,10 @@ export interface IpcInvokeMap {
    * Помощник промптов: по черновику запроса вернуть несколько переформулировок.
    * Одноразовый LLM-вызов, историю разговора не трогает.
    */
-  'prompt:suggest': { arg: { text: string }; result: { variants: string[] } }
+  'prompt:suggest': {
+    arg: { prompt: string; modifiers: ModifierPrompt[] }
+    result: { variants: Array<{ id: string; text: string }> }
+  }
   'conversations:list': { arg: void; result: Conversation[] }
   'conversations:create': { arg: { title?: string }; result: Conversation }
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }

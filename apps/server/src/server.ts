@@ -156,14 +156,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const kb = opts.kbService ?? new FileKnowledgeBaseService(opts.config.kbRoot, reranker)
   registerKbRoutes(app, kb)
 
-  // Помощник промптов: переформулировки черновика запроса (одноразовый LLM-вызов
-  // на claude/haiku). Историю разговора не трогает, shell выключен.
-  const promptSuggester = new PromptSuggester(claude)
-  app.post<{ Body: { text?: string } }>(REST.promptSuggest, async (req, reply) => {
-    const text = (req.body?.text ?? '').trim()
-    if (!text) return { variants: [] as string[] }
+  // Помощник формулировки — одноразовый вызов выбранного пользователем CLI.
+  // Историю разговора не трогает, shell выключен.
+  app.post<{ Body: { prompt?: string; modifiers?: import('@voicechat/shared').ModifierPrompt[] } }>(REST.promptSuggest, async (req, reply) => {
+    const prompt = (req.body?.prompt ?? '').trim()
+    if (!prompt) return { variants: [] as Array<{ id: string; text: string }> }
+    const settings = db.getSettings(uid(req))
+    const client = settings.aiAssistProvider === 'codex' ? codex : claude
+    const model = settings.aiAssistModel || (settings.aiAssistProvider === 'claude' ? 'haiku' : '')
+    const modifiers = (req.body?.modifiers ?? []).filter((item) => item.enabled && item.text.trim())
     try {
-      return { variants: await promptSuggester.suggest(text, uid(req)) }
+      const texts = await new PromptSuggester(client, model).suggest(prompt, modifiers, uid(req))
+      return { variants: texts.map((text, index) => ({ id: `${Date.now()}-${index}`, text })) }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Не удалось получить подсказки'
       return reply.code(502).send({ error: message }) as never

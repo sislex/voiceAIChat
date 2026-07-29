@@ -1879,11 +1879,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!text || state.promptHelper.loading) return
     setState({ promptHelper: { open: true, loading: true, variants: [], error: null } })
     try {
-      const { variants } = await api['prompt:suggest']({ text })
+      const { variants } = await api['prompt:suggest']({ prompt: text, modifiers: state.settings.aiAssistPrompts.filter((item) => item.enabled) })
       // Черновик мог поменяться, пока ждали ответ, но панель по-прежнему про этот
       // запрос — показываем варианты (пользователь сам решит, применять ли).
       if (!state.promptHelper.open) return
-      setState({ promptHelper: { open: true, loading: false, variants, error: variants.length ? null : 'Не удалось предложить варианты' } })
+      setState({ promptHelper: { open: true, loading: false, variants: variants.map((item) => item.text), error: variants.length ? null : 'Не удалось предложить варианты' } })
     } catch (err) {
       if (!state.promptHelper.open) return
       const message = err instanceof Error ? err.message : 'Не удалось получить подсказки'
