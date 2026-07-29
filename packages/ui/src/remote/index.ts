@@ -21,7 +21,8 @@ import { REST, type DesktopMigrationBundle, type ServerFileInfo } from '@shared/
 import type { FsResult } from '@shared/agentProtocol'
 import type { SessionUser } from '@shared/types'
 import { WsClient } from './wsClient'
-import { createHttpApi } from './httpApi'
+import { createHttpApi, createCiRest } from './httpApi'
+import type { RendererCiBridge } from './ciBridge'
 import { getToken, setToken } from './session'
 import { base64ToArrayBuffer } from './decode'
 
@@ -114,6 +115,22 @@ function makeBoardBridge(ws: WsClient): RendererBoardBridge {
     subscribe: (projectId) => ws.send({ t: 'board.subscribe', projectId }),
     unsubscribe: () => ws.send({ t: 'board.unsubscribe' }),
     onUpdate: (cb) => ws.on('board.update', (m) => cb({ projectId: m.projectId, board: m.board }))
+  }
+}
+
+/** Мост CI-раннера: REST (createCiRest) + realtime WS поверх одного соединения. */
+function makeCiBridge(httpBase: string, ws: WsClient): RendererCiBridge {
+  return {
+    ...createCiRest(httpBase),
+    subscribe: (runId) => ws.send({ t: 'ci.subscribe', runId }),
+    unsubscribe: (runId) => ws.send({ t: 'ci.unsubscribe', runId }),
+    onSnapshot: (cb) => ws.on('ci.snapshot', (m) => cb({ runId: m.runId, detail: m.detail, log: m.log })),
+    onRun: (cb) => ws.on('ci.run', (m) => cb({ runId: m.runId, run: m.run })),
+    onStep: (cb) => ws.on('ci.step', (m) => cb({ runId: m.runId, step: m.step })),
+    onLog: (cb) => ws.on('ci.log', (m) => cb({ runId: m.runId, line: m.line })),
+    onFix: (cb) => ws.on('ci.fix', (m) => cb({ runId: m.runId, attempt: m.attempt })),
+    onDone: (cb) => ws.on('ci.done', (m) => cb({ runId: m.runId, run: m.run, conclusion: m.conclusion })),
+    onSummary: (cb) => ws.on('ci.summary', (m) => cb({ projectId: m.projectId, summary: m.summary }))
   }
 }
 
@@ -289,6 +306,7 @@ export function installRemoteBridges(serverHttp: string): void {
   window.codex = makeCodexBridge(ws)
   window.agents = makeAgentsBridge(ws)
   window.board = makeBoardBridge(ws)
+  window.ci = makeCiBridge(httpBase, ws)
   window.session = makeSessionBridge(httpBase, ws)
   window.fs = makeFsBridge(httpBase)
   window.files = makeFilesBridge(httpBase)

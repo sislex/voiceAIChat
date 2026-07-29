@@ -5,6 +5,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Task } from '@shared/projects'
 import type { FeatureRun } from '@shared/features'
+import type { CiRunSummary } from '@shared/ci'
+import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
 
 export interface TaskCardProps {
@@ -24,6 +26,12 @@ export interface TaskCardProps {
   onOpenFeature?: (featureId: string) => void
   /** Открыть связанный с задачей чат (кнопка на карточке). */
   onOpenChat?: (taskId: string) => void
+  /** Сводка последнего CI-рана задачи (доска). */
+  ciSummary?: CiRunSummary
+  /** Запустить CI-воркфлоу для задачи. */
+  onStartCi?: (taskId: string) => void
+  /** Открыть ленту рана. */
+  onOpenCiRun?: (runId: string) => void
 
   onDragStart: (taskId: string) => void
   onDragEnd: () => void
@@ -41,7 +49,7 @@ export function epicOf(task: Task, all: Task[]): Task | null {
 }
 
 export function TaskCard(props: TaskCardProps): JSX.Element {
-  const { task, feature } = props
+  const { task, ciSummary } = props
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
@@ -60,16 +68,6 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const doneChildren = children.filter((t) => props.doneColumnIds.has(t.columnId))
   const done = props.doneColumnIds.has(task.columnId)
   const key = issueKey(props.projectName, task)
-
-  const featureButton = (): JSX.Element | null => {
-    if (feature && task.type === 'task' && ['completed', 'cancelled', 'failed'].includes(feature.status))
-      return <button className="jcard-feature-start" onClick={(e) => { e.stopPropagation(); props.onStartFeature?.(task.id) }}>{feature.status === 'failed' ? 'Повторить фичу' : 'Новая фича'}</button>
-    if (!feature && task.type === 'task')
-      return <button className="jcard-feature-start" onClick={(e) => { e.stopPropagation(); props.onStartFeature?.(task.id) }}>Запустить фичу</button>
-    if (!feature && task.type === 'story' && children.length === 0)
-      return <button className="jcard-feature-start" onClick={(e) => { e.stopPropagation(); props.onStartFeature?.(task.id) }}>Создать задачу и запустить фичу</button>
-    return null
-  }
 
   return (
     <div
@@ -149,12 +147,32 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </div>
       )}
 
-      {feature && (
-        <button className="jcard-feature" onClick={(e) => { e.stopPropagation(); props.onOpenFeature?.(feature.id) }}>
-          Фича #{feature.attempt} · {feature.status}
-        </button>
+      {task.type === 'task' && (props.onStartCi || ciSummary) && (
+        <div className="jcard-ci" data-testid="task-ci-panel" onClick={(e) => e.stopPropagation()}>
+          {ciSummary && (() => {
+            const tone = ciTone(ciSummary.status)
+            const fillMod = tone === 'success' ? ' jcard-ci-fill--success' : tone === 'removed' ? ' jcard-ci-fill--removed' : ''
+            const total = ciSummary.slotProgress.total || 1
+            const pct = ciSummary.status === 'success' ? 100 : Math.round((ciSummary.slotProgress.done / total) * 100)
+            return (
+              <>
+                <div className="jcard-ci-row">
+                  <span className={`ci-lozenge ci-lozenge--${tone}`}>{ciStatusLabel(ciSummary.status)}</span>
+                  <span className="jcard-ci-phase">{ciSummary.slotProgress.phase} {ciSummary.slotProgress.done}/{ciSummary.slotProgress.total}</span>
+                  {ciSummary.durationMs != null && <span className="jcard-ci-phase">{fmtDuration(ciSummary.durationMs)}</span>}
+                </div>
+                <div className="jcard-ci-row">
+                  <span className="jcard-ci-bar"><span className={`jcard-ci-fill${fillMod}`} style={{ width: `${pct}%` }} /></span>
+                </div>
+              </>
+            )
+          })()}
+          <div className="jcard-ci-row">
+            {ciSummary && <button className="jcard-ci-open" onClick={() => props.onOpenCiRun?.(ciSummary.id)}>Лента рана</button>}
+            <button className="jcard-ci-run" onClick={() => props.onStartCi?.(task.id)}>Выполнить</button>
+          </div>
+        </div>
       )}
-      {featureButton()}
 
       <div className="jcard-foot">
         <span className="jcard-foot-left">

@@ -75,15 +75,6 @@ describe('ProjectBoard', () => {
     expect(p.onCreateTask).toHaveBeenCalledWith('c1', { title: 'OAuth', type: 'story', parentId: 'e1' })
   })
 
-  it('после failed Feature показывает кнопку повторной попытки', async () => {
-    const p = renderBoard({
-      features: [{ id: 'f1', projectId: 'p1', sourceTaskId: 't1', attempt: 1, previousFeatureId: null, conversationId: 'chat1', repositorySlotId: null, title: 'A', description: '', status: 'failed', deployStatus: 'not_requested', baseBranch: 'main', featureBranch: 'feature/f1', baseCommitSha: null, testedCommitSha: null, mergedCommitSha: null, commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'automatic', autoMerge: false, autoDeployProduction: false, createdAt: 1, updatedAt: 2, completedAt: null, lastError: 'clone failed', version: 2 }],
-      onStartFeature: vi.fn()
-    })
-    await userEvent.click(screen.getByRole('button', { name: 'Повторить фичу' }))
-    expect(p.onStartFeature).toHaveBeenCalledWith('t1', 'task')
-  })
-
   it('добавление колонки зовёт onCreateColumn', async () => {
     const p = renderBoard()
     await userEvent.type(screen.getByLabelText('Новая колонка'), 'Review')

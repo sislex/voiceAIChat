@@ -12,6 +12,7 @@ import { WandIcon } from '../icons'
 import { PromptBuilder, type GenerateParams, type Suggestion } from '../prompt-builder/PromptBuilder'
 import { applyNativeInputValue, useAiAssist } from '../prompt-builder/useAiAssist'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanbanMeta'
+import { CiTaskSettings } from '../ci/CiTaskSettings'
 
 export interface TaskUpdateFields {
   title?: string
@@ -405,6 +406,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             <br />Создано: {new Date(task.createdAt).toLocaleDateString('ru')}
             <br />Обновлено: {new Date(task.updatedAt).toLocaleDateString('ru')}
           </p>
+          <CiTaskSettings projectId={task.projectId} taskId={task.id} />
         </aside>
       </div>
     </ToolFrame>

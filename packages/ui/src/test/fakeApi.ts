@@ -570,3 +570,119 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
   return api
 }
+
+
+// --- Фейк window.ci (RendererCiBridge) для тестов CI-раннера ------------
+import type { RendererCiBridge } from '../remote/ciBridge'
+import type {
+  CiCommand,
+  CiCommandInput,
+  CiGlobalSettings,
+  CiRun,
+  CiRunDetail,
+  CiRunStep,
+  CiLogLine
+} from '@shared/ci'
+import { DEFAULT_CI_GLOBAL_SETTINGS } from '@shared/ci'
+
+export interface FakeCi extends RendererCiBridge {
+  /** Тест-хелперы: прямой прогон realtime-событий. */
+  _emitRun(run: CiRun): void
+  _emitStep(runId: string, step: CiRunStep): void
+  _emitLog(runId: string, line: CiLogLine): void
+  _emitDone(run: CiRun): void
+  _commands: CiCommand[]
+}
+
+export function createFakeCi(): FakeCi {
+  let n = 0
+  const id = (pfx: string): string => `${pfx}-${++n}`
+  const now = (): number => 1_700_000_000_000 + n * 1000
+  const commands: CiCommand[] = []
+  let settings: CiGlobalSettings = { ...DEFAULT_CI_GLOBAL_SETTINGS }
+  const runs = new Map<string, CiRunDetail>()
+  const logs = new Map<string, CiLogLine[]>()
+  type L = (...args: never[]) => void
+  const listeners: Record<string, Set<L>> = {}
+  const on = (t: string, cb: L): (() => void) => {
+    ;(listeners[t] ??= new Set()).add(cb)
+    return () => listeners[t]?.delete(cb)
+  }
+  const emit = (t: string, m: unknown): void => { for (const cb of listeners[t] ?? []) (cb as (x: unknown) => void)(m) }
+
+  const mkCommand = (input: CiCommandInput): CiCommand => ({
+    id: id('cmd'),
+    scope: input.scope ?? 'global',
+    projectId: input.projectId ?? null,
+    name: input.name ?? '',
+    script: input.script ?? '',
+    description: input.description ?? '',
+    workdir: input.workdir ?? '',
+    timeoutSec: input.timeoutSec ?? null,
+    env: input.env ?? {},
+    allowFailure: input.allowFailure ?? false,
+    isCleanup: input.isCleanup ?? false,
+    availableToModel: input.availableToModel ?? false,
+    version: 1,
+    createdBy: 'admin',
+    createdAt: now(),
+    updatedAt: now(),
+    deletedAt: null
+  })
+
+  const mkRun = (projectId: string, taskId: string): CiRun => ({
+    id: id('run'),
+    projectId,
+    taskId,
+    agentId: null,
+    status: 'queued',
+    workspaceId: null,
+    triggeredBy: 'admin',
+    prevColumnId: null,
+    slotProgress: { done: 0, total: 4, phase: 'подготовка' },
+    startedAt: now(),
+    finishedAt: null,
+    durationMs: null,
+    createdAt: now()
+  })
+
+  const bridge: FakeCi = {
+    listCommands: async () => commands.map((c) => ({ ...c })),
+    getCommand: async (cid) => ({ ...commands.find((c) => c.id === cid)! }),
+    createCommand: async (input) => { const c = mkCommand(input); commands.push(c); return { ...c } },
+    updateCommand: async (cid, input) => { const c = commands.find((x) => x.id === cid)!; Object.assign(c, input, { updatedAt: now(), version: c.version + 1 }); return { ...c } },
+    deleteCommand: async (cid) => { const i = commands.findIndex((x) => x.id === cid); if (i >= 0) commands.splice(i, 1); return { ok: true } },
+    commandUsage: async () => ({ projects: [], tasks: [] }),
+    getSettings: async () => ({ ...settings }),
+    putSettings: async (next) => { settings = { ...settings, ...next }; return { ...settings } },
+    listSuggestions: async () => [],
+    resolveSuggestion: async (sid) => ({ id: sid, commandId: '', runStepId: null, reason: '', proposedScript: '', status: 'accepted', occurrences: 1, createdAt: now(), resolvedBy: 'admin', resolvedAt: now() }),
+    listWorkspaces: async () => [],
+    getProjectCi: async () => ({ beforeModel: [], afterModel: [] }),
+    putProjectCi: async (_pid, config) => config,
+    getTaskCi: async () => ({ config: { beforeModel: [], afterModel: [] }, overridden: false, projectDefault: { beforeModel: [], afterModel: [] } }),
+    putTaskCi: async (_pid, _tid, config) => config,
+    startRun: async (projectId, taskId) => { const run = mkRun(projectId, taskId); runs.set(run.id, { run, steps: [], fixAttempts: [] }); logs.set(run.id, []); return { ...run } },
+    getRun: async (rid) => runs.get(rid) ?? { run: mkRun('p', 't'), steps: [], fixAttempts: [] },
+    getRunLog: async (rid) => logs.get(rid) ?? [],
+    cancelRun: async () => ({ ok: true }),
+    retryRun: async (rid) => { const d = runs.get(rid)!; return await bridge.startRun(d.run.projectId, d.run.taskId) },
+    getMetrics: async () => ({ commands: [], modelWork: { projectId: 'p', avgMs: null, samples: 0 } }),
+    consoleExec: async () => ({ output: '', exitCode: 0, rejected: false, message: '' }),
+    subscribe: (runId) => { const d = runs.get(runId); if (d) emit('ci.snapshot', { runId, detail: d, log: logs.get(runId) ?? [] }) },
+    unsubscribe: () => {},
+    onSnapshot: (cb) => on('ci.snapshot', cb as L),
+    onRun: (cb) => on('ci.run', cb as L),
+    onStep: (cb) => on('ci.step', cb as L),
+    onLog: (cb) => on('ci.log', cb as L),
+    onFix: (cb) => on('ci.fix', cb as L),
+    onDone: (cb) => on('ci.done', cb as L),
+    onSummary: (cb) => on('ci.summary', cb as L),
+    _emitRun: (run) => { runs.set(run.id, runs.get(run.id) ?? { run, steps: [], fixAttempts: [] }); emit('ci.run', { runId: run.id, run }) },
+    _emitStep: (runId, step) => { const d = runs.get(runId); if (d) d.steps.push(step); emit('ci.step', { runId, step }) },
+    _emitLog: (runId, line) => { const l = logs.get(runId) ?? []; l.push(line); logs.set(runId, l); emit('ci.log', { runId, line }) },
+    _emitDone: (run) => emit('ci.done', { runId: run.id, run }),
+    _commands: commands
+  }
+  return bridge
+}

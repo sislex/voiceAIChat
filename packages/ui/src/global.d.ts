@@ -16,6 +16,7 @@ import type {
   RendererSttBridge,
   RendererTtsBridge
 } from '@shared/ipc'
+import type { RendererCiBridge } from './remote/ciBridge'
 
 declare global {
   interface Window {
@@ -38,6 +39,8 @@ declare global {
     files?: RendererFilesBridge
     /** Живой PTY-терминал по машине (web); в desktop отсутствует. */
     pty?: RendererPtyBridge
+    /** CI-раннер (web); в desktop отсутствует. */
+    ci?: RendererCiBridge
   }
 }
 

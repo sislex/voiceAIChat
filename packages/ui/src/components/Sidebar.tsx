@@ -75,6 +75,8 @@ export interface SidebarProps {
   onOpenUsers?: () => void
   /** Открыть меню «Машины» (статус агентских машин; web). */
   onOpenMachines?: () => void
+  /** Открыть страницу «Команды» (CI-раннер; web). */
+  onOpenCi?: () => void
   /** Текущий пользователь (web-режим); null/без имени — строка входа не показывается. */
   currentUser?: SessionUser | null
   /** Выйти из сессии (web). */
@@ -118,6 +120,7 @@ export function Sidebar({
   onOpenConsole,
   onOpenUsers,
   onOpenMachines,
+  onOpenCi,
   currentUser,
   onLogout,
   mode = 'chats',
@@ -440,6 +443,12 @@ export function Sidebar({
                   <button className="footbtn" role="menuitem" onClick={acct(onOpenMachines)}>
                     <span className="footico">🖥</span>
                     Машины
+                  </button>
+                )}
+                {onOpenCi && (
+                  <button className="footbtn" role="menuitem" onClick={acct(onOpenCi)}>
+                    <span className="footico">🧩</span>
+                    Команды
                   </button>
                 )}
                 {onOpenUsers && currentUser.role === 'admin' && (

@@ -40,8 +40,6 @@ export interface VoiceBarProps {
   onChangePermissionMode?: (mode: PermissionMode) => void
   /** Глобальная доступность голосового ввода. */
   voiceInputEnabled?: boolean
-  featureAutomation?: { autoMerge: boolean; autoDeployProduction: boolean }
-  onFeatureAutomationChange?: (fields: { autoMerge?: boolean; autoDeployProduction?: boolean }) => void
   aiAssistPrompts?: ModifierPrompt[]
   onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
   generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>
@@ -74,8 +72,6 @@ export function VoiceBar({
   permissionMode = 'plan',
   onChangePermissionMode,
   voiceInputEnabled = true,
-  featureAutomation,
-  onFeatureAutomationChange,
   aiAssistPrompts = [],
   onAiAssistPromptsChange,
   generateAiAssist,
@@ -227,11 +223,6 @@ export function VoiceBar({
             ))}
           </div>
         )}
-
-        {featureAutomation && <div className="feature-composer-options">
-          <label><input type="checkbox" checked={featureAutomation.autoMerge} onChange={(e) => onFeatureAutomationChange?.({ autoMerge: e.target.checked })} /> Автомерж</label>
-          <label><input type="checkbox" checked={featureAutomation.autoDeployProduction} onChange={(e) => onFeatureAutomationChange?.({ autoDeployProduction: e.target.checked })} /> Автодеплой production</label>
-        </div>}
 
         <div className="vrow" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
           {composerMode && (

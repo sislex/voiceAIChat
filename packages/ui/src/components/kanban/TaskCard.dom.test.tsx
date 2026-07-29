@@ -1,0 +1,40 @@
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
+import type { Task } from '@shared/projects'
+import type { CiRunSummary } from '@shared/ci'
+import { TaskCard, type TaskCardProps } from './TaskCard'
+
+function mkTask(over: Partial<Task> = {}): Task {
+  return {
+    id: 't1', projectId: 'p1', columnId: 'c1', type: 'task', parentId: null, title: 'Задача A',
+    description: '', acceptanceCriteria: '', priority: 'medium', assignee: null, labels: [], skills: [],
+    storyPoints: null, dueDate: null, flagged: false, seq: 1, position: 1024, createdAt: 1, updatedAt: 1, ...over
+  } as Task
+}
+
+function props(over: Partial<TaskCardProps> = {}): TaskCardProps {
+  return {
+    task: mkTask(), projectName: 'Proj', allTasks: [], doneColumnIds: new Set(),
+    onOpen: vi.fn(), onUpdate: vi.fn(), onDelete: vi.fn(), onMoveTop: vi.fn(), onMoveBottom: vi.fn(),
+    onDragStart: vi.fn(), onDragEnd: vi.fn(), dragging: false, ...over
+  }
+}
+
+describe('TaskCard CI-панель', () => {
+  it('кнопка «Выполнить» вызывает onStartCi', () => {
+    const onStartCi = vi.fn()
+    render(<TaskCard {...props({ onStartCi })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Выполнить' }))
+    expect(onStartCi).toHaveBeenCalledWith('t1')
+  })
+
+  it('показывает сводку рана и открывает ленту', () => {
+    const onOpenCiRun = vi.fn()
+    const ciSummary: CiRunSummary = { id: 'run-1', taskId: 't1', status: 'running', slotProgress: { done: 1, total: 4, phase: 'до модели' }, durationMs: null, modelActive: false }
+    render(<TaskCard {...props({ ciSummary, onOpenCiRun, onStartCi: vi.fn() })} />)
+    expect(screen.getByText('выполняется')).toBeInTheDocument()
+    expect(screen.getByText(/до модели 1\/4/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Лента рана' }))
+    expect(onOpenCiRun).toHaveBeenCalledWith('run-1')
+  })
+})

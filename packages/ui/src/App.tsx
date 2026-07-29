@@ -17,6 +17,9 @@ import { ProjectBoard } from './components/ProjectBoard'
 import { FeatureDetail } from './components/FeatureDetail'
 import { MachineStatus } from './components/MachineStatus'
 import { MachineUtility } from './components/MachineUtility'
+import { CiCommands } from './components/ci/CiCommands'
+import { RunFeed } from './components/ci/RunFeed'
+import { ToolFrame } from './components/ToolFrame'
 import type { MachineOps } from './components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
 import { KnowledgeBase } from './components/KnowledgeBase'
@@ -40,7 +43,7 @@ export interface AppProps {
 }
 
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
-const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users']
+const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users', 'ci']
 
 export default function App({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
   const { state, actions } = useVoiceStore({ api, now, delays })
@@ -135,6 +138,12 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   }, [utilitySeg])
   useEffect(() => {
     if (!state.authRequired) return
+    if (utilitySeg === 'ci') { if (!state.ciOpen) void actions.openCi() }
+    else if (state.ciOpen) actions.closeCi()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [utilitySeg])
+  useEffect(() => {
+    if (!state.authRequired) return
     if (utilitySeg === 'users') { if (!state.usersOpen) void actions.openUsers() }
     else if (state.usersOpen) actions.closeUsers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -142,12 +151,11 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   // Гейты: «Пользователи» — только админ; машины/пользователи — только web.
   useEffect(() => {
     if (utilitySeg === 'users' && state.currentUser && state.currentUser.role !== 'admin') navigate('/')
-    if ((utilitySeg === 'users' || utilitySeg === 'machines') && !state.authRequired) navigate('/')
+    if ((utilitySeg === 'users' || utilitySeg === 'machines' || utilitySeg === 'ci') && !state.authRequired) navigate('/')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg, state.currentUser, state.authRequired])
 
   const activeConversation = state.conversations.find((c) => c.id === state.activeId)
-  const conversationFeature = state.featureRuns.find((f) => f.conversationId === state.activeId) ?? (state.activeFeature?.conversationId === state.activeId ? state.activeFeature : undefined)
   const activeTitle = activeConversation?.title ?? 'Новый разговор'
   const activeExecTarget = activeConversation?.execTarget ?? null
   const forcedPlan = state.currentUser?.role === 'user' && (!activeExecTarget || activeExecTarget === 'none')
@@ -258,6 +266,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onOpenConsole={state.authRequired ? menu(() => actions.openUtilityForActiveChat('console')) : undefined}
         onOpenUsers={state.authRequired ? menu(() => navigate('/users')) : undefined}
         onOpenMachines={state.authRequired ? menu(() => navigate('/machines')) : undefined}
+        onOpenCi={state.authRequired ? menu(() => navigate('/ci')) : undefined}
         currentUser={state.currentUser}
         onLogout={state.authRequired ? () => void actions.logout() : undefined}
         mode={sidebarMode}
@@ -345,8 +354,6 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
             permissionMode={activePermissionMode}
             onChangePermissionMode={(mode) => void changeConversationMode(mode)}
             voiceInputEnabled={VOICE_INPUT_ENABLED}
-            featureAutomation={conversationFeature ? { autoMerge: conversationFeature.autoMerge, autoDeployProduction: conversationFeature.autoDeployProduction } : undefined}
-            onFeatureAutomationChange={(fields) => void actions.setFeatureAutomation(fields)}
             aiAssistPrompts={state.settings.aiAssistPrompts}
             onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
             generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
@@ -389,6 +396,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onStartFeature={(itemId, type) => void (type === `story` ? actions.startFeatureFromStory(itemId) : actions.startFeature(itemId))}
 
           onOpenFeature={(id) => void actions.openFeature(id)}
+          ciSummaries={state.ciSummaries}
+          onStartCi={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId).then((run) => { if (run) actions.openCiRun(run.id) }) }}
+          onOpenCiRun={(runId) => actions.openCiRun(runId)}
           aiAssistPrompts={state.settings.aiAssistPrompts}
           onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
           generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
@@ -491,6 +501,24 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         />
       )}
 
+      {utilitySeg === 'ci' && state.ciOpen && (
+        <CiCommands
+          commands={state.ciCommands}
+          settings={state.ciSettings}
+          suggestions={state.ciSuggestions}
+          workspaces={state.ciWorkspaces}
+          role={state.currentUser?.role ?? 'admin'}
+          projects={state.projects.map((p) => ({ id: p.id, name: p.name }))}
+          onCreate={(input) => actions.createCiCommand(input)}
+          onUpdate={(id, input) => actions.updateCiCommand(id, input)}
+          onDelete={(id) => actions.deleteCiCommand(id)}
+          onUsage={(id) => actions.ciCommandUsage(id)}
+          onSaveSettings={(next) => actions.saveCiSettings(next)}
+          onResolveSuggestion={(id, accept) => actions.resolveCiSuggestion(id, accept)}
+          onClose={() => navigate('/')}
+        />
+      )}
+
       {conversationSettingsOpen && activeConversation && (
         <ConversationSettings
           conversation={activeConversation}
@@ -549,6 +577,22 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onOpenTerminal={(agentId, cwd) => actions.openUtility('console', agentId, cwd)}
           onClose={actions.closeUtility}
         />
+      )}
+
+      {state.ciActiveRunId && (
+        <ToolFrame title="Лента CI-рана" variant="modal" testId="ci-run-modal" onClose={actions.closeCiRun}>
+          <div style={{ padding: '12px', overflow: 'auto' }}>
+            <RunFeed
+              runId={state.ciActiveRunId}
+              cache={state.ciRuns[state.ciActiveRunId]}
+              onSubscribe={actions.ciSubscribe}
+              onUnsubscribe={actions.ciUnsubscribe}
+              onLoad={(runId) => void actions.loadCiRun(runId)}
+              onRetry={(runId) => void actions.retryCiRun(runId).then((run) => { if (run) actions.openCiRun(run.id) })}
+              onCancel={(runId) => void actions.cancelCiRun(runId)}
+            />
+          </div>
+        </ToolFrame>
       )}
 
       {!state.settings.onboarded && (

@@ -81,12 +81,14 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
     const fs = deps.fs ?? (typeof window !== 'undefined' ? window.fs : undefined)
     const files = deps.files ?? (typeof window !== 'undefined' ? window.files : undefined)
     const board = deps.board ?? (typeof window !== 'undefined' ? window.board : undefined)
+    const ci = deps.ci ?? (typeof window !== 'undefined' ? window.ci : undefined)
     storeRef.current = createVoiceStore({
       ...deps,
       session,
       fs,
       files,
       board,
+      ci,
       audio,
       listMics,
       voiceInputEnabled: deps.voiceInputEnabled ?? VOICE_INPUT_ENABLED,
@@ -157,6 +159,16 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
     }
     if (typeof window !== 'undefined' && window.board) {
       unsubs.push(window.board.onUpdate((m) => store.actions.applyBoardUpdate(m.projectId, m.board)))
+    }
+    if (typeof window !== 'undefined' && window.ci) {
+      const ci = window.ci
+      unsubs.push(ci.onSnapshot((m) => store.actions.applyCiSnapshot(m.runId, m.detail, m.log)))
+      unsubs.push(ci.onRun((m) => store.actions.applyCiRun(m.runId, m.run)))
+      unsubs.push(ci.onStep((m) => store.actions.applyCiStep(m.runId, m.step)))
+      unsubs.push(ci.onLog((m) => store.actions.applyCiLog(m.runId, m.line)))
+      unsubs.push(ci.onFix((m) => store.actions.applyCiFix(m.runId, m.attempt)))
+      unsubs.push(ci.onDone((m) => store.actions.applyCiDone(m.runId, m.run, m.conclusion)))
+      unsubs.push(ci.onSummary((m) => store.actions.applyCiSummary(m.projectId, m.summary)))
     }
     if (typeof window !== 'undefined' && window.tts) {
       unsubs.push(
