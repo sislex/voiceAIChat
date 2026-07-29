@@ -1,10 +1,12 @@
 import { useEffect, useRef, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
-import type { PermissionMode, VoiceState } from '@shared/types'
+import type { ModifierPrompt, PermissionMode, VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import { useAutoGrow } from '../lib/autoGrow'
 import { ACCENT, chipClass, speakerName, statusLine } from '../lib/view'
 import { WaveBars, Dots } from './animations'
 import { MicIcon, SendIcon, StopIcon, WandIcon } from './icons'
+import { PromptBuilder, type GenerateParams, type Suggestion } from './prompt-builder/PromptBuilder'
+import { applyNativeInputValue, useAiAssist } from './prompt-builder/useAiAssist'
 
 const DRAFT_MIN_ROWS = 2
 const DRAFT_MAX_ROWS = 4
@@ -40,6 +42,9 @@ export interface VoiceBarProps {
   voiceInputEnabled?: boolean
   featureAutomation?: { autoMerge: boolean; autoDeployProduction: boolean }
   onFeatureAutomationChange?: (fields: { autoMerge?: boolean; autoDeployProduction?: boolean }) => void
+  aiAssistPrompts?: ModifierPrompt[]
+  onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
+  generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>
   /** Состояние помощника промптов (панель переформулировок). */
   promptHelper?: { open: boolean; loading: boolean; variants: string[]; error: string | null }
   /** Запросить у LLM варианты переформулировки текущего черновика. */
@@ -71,6 +76,9 @@ export function VoiceBar({
   voiceInputEnabled = true,
   featureAutomation,
   onFeatureAutomationChange,
+  aiAssistPrompts = [],
+  onAiAssistPromptsChange,
+  generateAiAssist,
   promptHelper,
   onSuggestPrompts,
   onApplyPromptSuggestion,
@@ -87,11 +95,23 @@ export function VoiceBar({
   const fileRef = useRef<HTMLInputElement>(null)
   // Композер начинается с двух строк и растёт с текстом до четырёх, дальше — скролл.
   const draftRef = useAutoGrow(draft, DRAFT_MIN_ROWS, DRAFT_MAX_ROWS)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const canSend = draft.trim().length > 0 || attachments.length > 0
   const canSubmit = isIdle && canSend
   const helper = promptHelper ?? { open: false, loading: false, variants: [], error: null }
   // Палочку показываем в idle, когда есть что переформулировать.
   const canSuggest = isIdle && draft.trim().length > 0 && !!onSuggestPrompts
+  const aiAssist = useAiAssist({
+    value: draft,
+    onChange: (value) => {
+      if (inputRef.current) applyNativeInputValue(inputRef.current, value)
+      else onDraftChange(value)
+    },
+    prompts: aiAssistPrompts,
+    onPromptsChange: onAiAssistPromptsChange,
+    generate: generateAiAssist ?? (async () => [])
+  })
+  const aiAssistEnabled = isIdle && !!generateAiAssist
 
   // Esc закрывает панель вариантов. Слушатель на фазе перехвата со stopPropagation,
   // чтобы не сработали глобальные хоткеи (как в ToolFrame).
@@ -217,7 +237,7 @@ export function VoiceBar({
           {composerMode && (
             <>
               <textarea
-                ref={draftRef}
+                ref={(element) => { inputRef.current = element; draftRef(element) }}
                 className="tin"
                 placeholder="Напишите сообщение (Shift+Enter — новая строка)…"
                 value={draft}
@@ -226,6 +246,7 @@ export function VoiceBar({
                 onKeyDown={onKey}
                 onPaste={onPaste}
                 aria-label="Поле ввода сообщения"
+                data-ai-assist={aiAssistEnabled ? '' : undefined}
               />
               <input
                 ref={fileRef}
@@ -236,6 +257,9 @@ export function VoiceBar({
                 data-testid="file-input"
                 aria-hidden="true"
               />
+              {aiAssistEnabled && (
+                <button className="attachbtn wandbtn" {...aiAssist.triggerProps}><WandIcon /></button>
+              )}
               {canSuggest && (
                 <button
                   className={`attachbtn wandbtn${helper.open ? ' active' : ''}`}
@@ -364,6 +388,7 @@ export function VoiceBar({
           </p>
         </div>
       </div>
+      <PromptBuilder {...aiAssist.popupProps} />
     </div>
   )
 }

@@ -55,7 +55,7 @@ describe('PromptSuggester', () => {
   })
   it('шлёт запрос без сессии, в plan-режиме, без выполнения shell', async () => {
     const { client, last } = fakeClient('{"variants":["Уточни задачу"]}')
-    const out = await new PromptSuggester(client).suggest('сделай штуку', 'admin')
+    const out = await new PromptSuggester(client).suggest('сделай штуку', [{ id: 'm1', title: 'Кратко', text: 'Сделай короче', enabled: true }], 'admin')
     expect(out).toEqual(['Уточни задачу'])
     const req = last()!
     expect(req.sessionId).toBeNull()
@@ -64,6 +64,7 @@ describe('PromptSuggester', () => {
     expect(req.model).toBe('haiku')
     expect(req.userId).toBe('admin')
     expect(req.prompt).toContain('сделай штуку')
+    expect(req.prompt).toContain('Сделай короче')
   })
   it('ошибка движка пробрасывается', async () => {
     const { client } = fakeClient({ error: 'CLI не найден' })
@@ -103,7 +104,7 @@ describe('REST /api/prompt/suggest', () => {
 
   it('требует токен', async () => {
     await build('{"variants":["x"]}')
-    const res = await app.inject({ method: 'POST', url: REST.promptSuggest, payload: { text: 'привет' } })
+    const res = await app.inject({ method: 'POST', url: REST.promptSuggest, payload: { prompt: 'привет', modifiers: [] } })
     expect(res.statusCode).toBe(401)
   })
 
@@ -113,10 +114,10 @@ describe('REST /api/prompt/suggest', () => {
       method: 'POST',
       url: REST.promptSuggest,
       headers: { authorization: `Bearer ${token}` },
-      payload: { text: 'сделай форму' }
+      payload: { prompt: 'сделай форму', modifiers: [] }
     })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ variants: ['Опиши задачу подробнее', 'Переформулируй как ТЗ'] })
+    expect(res.json().variants.map((item: { text: string }) => item.text)).toEqual(['Опиши задачу подробнее', 'Переформулируй как ТЗ'])
   })
 
   it('пустой текст → пустой список без обращения к движку', async () => {
@@ -125,7 +126,7 @@ describe('REST /api/prompt/suggest', () => {
       method: 'POST',
       url: REST.promptSuggest,
       headers: { authorization: `Bearer ${token}` },
-      payload: { text: '   ' }
+      payload: { prompt: '   ', modifiers: [] }
     })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ variants: [] })
@@ -137,7 +138,7 @@ describe('REST /api/prompt/suggest', () => {
       method: 'POST',
       url: REST.promptSuggest,
       headers: { authorization: `Bearer ${token}` },
-      payload: { text: 'сделай штуку' }
+      payload: { prompt: 'сделай штуку', modifiers: [] }
     })
     expect(res.statusCode).toBe(502)
     expect(res.json().error).toContain('Claude CLI не найден')

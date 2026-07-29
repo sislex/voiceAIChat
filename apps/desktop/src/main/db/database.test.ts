@@ -202,7 +202,10 @@ describe('VoiceChatDb — настройки', () => {
       execTarget: 'agent-1',
       llmProvider: 'claude',
       codexModel: '',
-      defaultAgentId: null
+      defaultAgentId: null,
+      aiAssistProvider: 'claude',
+      aiAssistModel: 'haiku',
+      aiAssistPrompts: DEFAULT_SETTINGS.aiAssistPrompts
     })
     expect(db.getSettings()).toEqual({
       model: 'opus',
@@ -221,7 +224,10 @@ describe('VoiceChatDb — настройки', () => {
       execTarget: 'agent-1',
       llmProvider: 'claude',
       codexModel: '',
-      defaultAgentId: null
+      defaultAgentId: null,
+      aiAssistProvider: 'claude',
+      aiAssistModel: 'haiku',
+      aiAssistPrompts: DEFAULT_SETTINGS.aiAssistPrompts
     })
   })
 

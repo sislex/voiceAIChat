@@ -349,10 +349,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
             voiceInputEnabled={VOICE_INPUT_ENABLED}
             featureAutomation={conversationFeature ? { autoMerge: conversationFeature.autoMerge, autoDeployProduction: conversationFeature.autoDeployProduction } : undefined}
             onFeatureAutomationChange={(fields) => void actions.setFeatureAutomation(fields)}
-            promptHelper={state.promptHelper}
-            onSuggestPrompts={() => void actions.suggestPrompts()}
-            onApplyPromptSuggestion={actions.applyPromptSuggestion}
-            onClosePromptSuggestions={actions.closePromptSuggestions}
+            aiAssistPrompts={state.settings.aiAssistPrompts}
+            onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
+            generateAiAssist={async ({ prompt, modifiers }) => (await window.api['prompt:suggest']({ prompt, modifiers })).variants}
           />
         }
       />
