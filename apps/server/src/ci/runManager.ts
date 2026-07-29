@@ -21,6 +21,8 @@ export interface CiRunManagerDeps {
   attemptFix?: CiFixHook
 }
 
+type ResumePoint = { kind: 'command'; slot: CiSlot; index: number } | { kind: 'model' }
+
 interface ActiveRun {
   userId: string
   projectId: string
@@ -29,7 +31,7 @@ interface ActiveRun {
 
 export interface CiRunManager {
   start(userId: string, projectId: string, taskId: string): { run: CiRun } | { error: string }
-  retryFromFailed(userId: string, runId: string): { run: CiRun } | { error: string }
+  retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string }): { run: CiRun } | { error: string }
   cancel(userId: string, runId: string): boolean
   subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
   snapshot(userId: string, runId: string): void | ServerMessage
@@ -128,36 +130,53 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
 
   /** Повтор с упавшего шага: тот же ран, переиспользуем рабочую директорию,
    *  перезапускаем стоп-шаг и всё после него; успешные ранее шаги сохраняются. */
-  function retryFromFailed(userId: string, runId: string): { run: CiRun } | { error: string } {
+  function retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string }): { run: CiRun } | { error: string } {
     const detail = deps.db.getCiRun(userId, runId)
     if (!detail) return { error: 'Ран недоступен' }
     const run = detail.run
     if (!isTerminalCiStatus(run.status) || run.status === 'success' || run.status === 'cancelled') {
       return { error: 'Повтор с шага доступен только для упавшего рана' }
     }
-    // Стоп-шаг — первый по позиции упавший командный шаг без allow_failure.
-    const failed = detail.steps
+    const failedModel = detail.steps
+      .filter((st) => st.kind === 'model_work' && (st.status === 'failed' || st.status === 'timeout'))
+      .sort((a2, b2) => b2.position - a2.position)[0]
+    const failedCommand = detail.steps
       .filter((st) => st.kind === 'command' && st.commandId != null && (st.status === 'failed' || st.status === 'timeout'))
-      .sort((a2, b2) => a2.position - b2.position)
+      .sort((a2, b2) => b2.position - a2.position)
       .find((st) => {
         const c = deps.db.getCiCommand(userId, st.commandId as string)
         return c ? !c.allowFailure : true
       })
-    if (!failed || !failed.slot) return { error: 'Не найден упавший шаг для повтора' }
-    const slot = failed.slot
-    // Индекс в списке команд слота = число командных шагов этого слота до упавшего.
-    const index = detail.steps.filter((st) => st.kind === 'command' && st.commandId != null && st.slot === slot && st.position < failed.position).length
+    let resume: ResumePoint
+    let eventPayload: Record<string, unknown>
+    if (failedModel && (!failedCommand || failedModel.position > failedCommand.position)) {
+      const provider = model?.provider ?? run.llmProvider
+      const selectedModel = model?.model.trim() || run.llmModel
+      if (provider !== 'claude' && provider !== 'codex') return { error: 'Неизвестный провайдер модели' }
+      if (!selectedModel) return { error: 'Модель не выбрана' }
+      deps.db.updateCiRun(run.id, { llmProvider: provider, llmModel: selectedModel })
+      resume = { kind: 'model' }
+      eventPayload = { step: 'model_work', provider, model: selectedModel }
+    } else {
+      if (!failedCommand || !failedCommand.slot) return { error: 'Не найден упавший шаг для повтора' }
+      const failed = failedCommand
+      const slot = failed.slot as CiSlot
+      const slotIds = deps.db.resolveTaskSlots(run.projectId, run.taskId)[slot === 'before_model' ? 'beforeModel' : 'afterModel']
+      const index = Math.max(0, slotIds.indexOf(failed.commandId as string))
+      resume = { kind: 'command', slot, index }
+      eventPayload = { slot, index }
+    }
 
     const ctl = new AbortController()
     active.set(run.id, { userId, projectId: run.projectId, abort: ctl })
-    deps.db.addCiEvent({ projectId: run.projectId, runId: run.id, type: 'run.retry_from_step', actorType: 'user', actorId: userId, payload: { slot, index } })
+    deps.db.addCiEvent({ projectId: run.projectId, runId: run.id, type: 'run.retry_from_step', actorType: 'user', actorId: userId, payload: eventPayload })
     const queued = deps.db.updateCiRun(run.id, { status: 'queued' })!
     emitRun(queued, userId)
 
     const prev = projectChains.get(run.projectId) ?? Promise.resolve()
     const chain = prev
       .then(() => acquireSlot())
-      .then(() => execute(run.id, userId, ctl, { slot, index }))
+      .then(() => execute(run.id, userId, ctl, resume))
       .catch(() => {})
       .finally(() => {
         releaseSlot()
@@ -274,7 +293,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
   }
 
-  async function execute(runId: string, userId: string, ctl: AbortController, resume?: { slot: CiSlot; index: number }): Promise<void> {
+  async function execute(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint): Promise<void> {
     const runRow = deps.db.getCiRunRaw(runId)
     if (!runRow) return
     const project = deps.db.getProject(userId, runRow.projectId)
@@ -322,7 +341,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const beforeLen = slots.beforeModel.length
     // Точка возобновления при «повторе с упавшего шага»: сколько шагов уже пройдено
     // и с какого номера нумеровать новые шаги (чтобы не пересекаться со старыми).
-    let done = resume ? (resume.slot === 'before_model' ? resume.index : beforeLen + 1 + resume.index) : 0
+    let done = resume ? (resume.kind === 'model' ? beforeLen : resume.slot === 'before_model' ? resume.index : beforeLen + 1 + resume.index) : 0
     const posBase = resume ? (deps.db.getCiRun(userId, runId)?.steps.length ?? 0) : 0
 
     // Системный шаг подготовки директории (пропускаем при повторе — директория есть).
@@ -384,14 +403,14 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
 
     // 1) Слот «до».
-    const beforeOk = await runSlot('before_model', slots.beforeModel, 'Подготовка', resume?.slot === 'before_model' ? resume.index : resume ? slots.beforeModel.length : 0)
+    const beforeOk = await runSlot('before_model', slots.beforeModel, 'Подготовка', resume?.kind === 'command' && resume.slot === 'before_model' ? resume.index : resume ? slots.beforeModel.length : 0)
     if (!beforeOk) return
     if (signal.aborted) return finalize(runId, userId, 'cancelled')
 
     // 2) Работа модели (при повторе из слота «после» — уже сделана, пропускаем).
     const prim = makePrimitives(runId, userId, agentId, workspacePath, env, signal)
     let modelOk = true
-    if (resume?.slot !== 'after_model') {
+    if (!(resume?.kind === 'command' && resume.slot === 'after_model')) {
       progress(runId, done, total, 'Модель работает', userId)
       const mwStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1, kind: 'model_work', initiatedBy: 'system', title: 'Работа модели', status: 'running' })
       emitStep(mwStep, userId)
@@ -409,13 +428,18 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       }
       const upd = deps.db.updateCiRunStep(mwStep.id, { status: modelOk ? 'success' : 'failed', finishedAt: now(), durationMs: now() - mwStart })!
       emitStep(upd, userId)
+      if (!modelOk) {
+        progress(runId, done, total, 'Ошибка модели — выберите другую модель и повторите шаг', userId)
+        finalize(runId, userId, 'failed')
+        return
+      }
       done++
     }
 
-    // 3) Слот «после» (выполняется даже если работа модели неуспешна — тесты/cleanup).
+    // 3) Слот «после» запускается только после успешной работы модели.
     let afterFailed = false
     if (signal.aborted) return finalize(runId, userId, 'cancelled')
-    const afterOk = await runSlot('after_model', slots.afterModel, 'Финальные команды', resume?.slot === 'after_model' ? resume.index : 0)
+    const afterOk = await runSlot('after_model', slots.afterModel, 'Финальные команды', resume?.kind === 'command' && resume.slot === 'after_model' ? resume.index : 0)
     if (!afterOk && !signal.aborted) afterFailed = true
 
     // 4) Резюме модели.

@@ -319,6 +319,8 @@ CREATE TABLE IF NOT EXISTS ci_runs (
   workspace_id   TEXT,
   triggered_by   TEXT NOT NULL,
   prev_column_id TEXT,
+  llm_provider   TEXT NOT NULL DEFAULT 'claude',
+  llm_model      TEXT NOT NULL DEFAULT 'sonnet',
   slot_progress_json TEXT NOT NULL DEFAULT '{}',
   started_at     INTEGER,
   finished_at    INTEGER,

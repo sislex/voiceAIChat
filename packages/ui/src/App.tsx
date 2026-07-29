@@ -573,7 +573,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
               onUnsubscribe={actions.ciUnsubscribe}
               onLoad={(runId) => void actions.loadCiRun(runId)}
               onRetry={(runId) => void actions.retryCiRun(runId).then((run) => { if (run) actions.openCiRun(run.id) })}
-              onRetryFromStep={(runId) => { void actions.retryCiRunFromStep(runId); actions.openCiRun(runId) }}
+              onRetryFromStep={(runId, selection) => { void actions.retryCiRunFromStep(runId, selection); actions.openCiRun(runId) }}
               onCancel={(runId) => void actions.cancelCiRun(runId)}
             />
           </div>

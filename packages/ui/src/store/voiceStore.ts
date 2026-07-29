@@ -674,7 +674,7 @@ export interface StoreActions {
   startCiRun(projectId: string, taskId: string): Promise<CiRun | null>
   cancelCiRun(runId: string): Promise<void>
   retryCiRun(runId: string): Promise<CiRun | null>
-  retryCiRunFromStep(runId: string): Promise<CiRun | null>
+  retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun | null>
   loadCiRun(runId: string): Promise<void>
   openCiRun(runId: string): void
   closeCiRun(): void
@@ -2734,10 +2734,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!ciBridge) return null
     try { return await ciBridge.retryRun(runId) } catch (err) { setState({ error: perr(err) }); return null }
   }
-  async function retryCiRunFromStep(runId: string): Promise<CiRun | null> {
+  async function retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun | null> {
     // Повтор с упавшего шага — тот же ран; после запуска перечитываем деталь/лог.
     if (!ciBridge) return null
-    try { const r = await ciBridge.retryRunFromStep(runId); await loadCiRun(runId); return r } catch (err) { setState({ error: perr(err) }); return null }
+    try { const r = await ciBridge.retryRunFromStep(runId, selection); await loadCiRun(runId); return r } catch (err) { setState({ error: perr(err) }); return null }
   }
   async function loadCiRun(runId: string): Promise<void> {
     if (!ciBridge) return

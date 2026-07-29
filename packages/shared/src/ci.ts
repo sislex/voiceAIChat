@@ -120,6 +120,8 @@ export interface CiProjectSettings {
 // --- Ран и шаги ----------------------------------------------------------
 
 /** Общий статус рана и шага. */
+export type CiLlmProvider = 'claude' | 'codex'
+
 export type CiStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled' | 'timeout' | 'skipped'
 export const CI_STATUSES: CiStatus[] = ['queued', 'running', 'success', 'failed', 'cancelled', 'timeout', 'skipped']
 
@@ -147,6 +149,9 @@ export interface CiRun {
   triggeredBy: string
   /** Колонка задачи до рана — для отката при Исходе B. */
   prevColumnId: string | null
+  /** Провайдер и модель шага разработки; можно сменить при повторе упавшего model_work. */
+  llmProvider: CiLlmProvider
+  llmModel: string
   /** Прогресс по слотам: {done,total} для шкалы «1/4». */
   slotProgress: CiSlotProgress
   startedAt: number | null

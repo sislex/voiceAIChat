@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CiRunDetail, CiRunStep, CiLogLine, CiRunConclusion } from '@shared/ci'
+import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import { isTerminalCiStatus } from '@shared/ci'
 import type { CiMetrics } from '../../remote/ciBridge'
 import { ciStatusIcon, ciStatusLabel, ciTone, fmtDuration } from './ciFormat'
@@ -24,7 +25,7 @@ export interface RunFeedProps {
   onUnsubscribe: (runId: string) => void
   onLoad: (runId: string) => void
   onRetry: (runId: string) => void
-  onRetryFromStep?: (runId: string) => void
+  onRetryFromStep?: (runId: string, selection?: { provider: 'claude' | 'codex'; model: string }) => void
   onCancel: (runId: string) => void
   onLoadMetrics?: (projectId: string) => void
   now?: () => number
@@ -50,6 +51,8 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   const now = props.now ?? Date.now
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [autoscroll, setAutoscroll] = useState(true)
+  const [modelProvider, setModelProvider] = useState<'claude' | 'codex'>('claude')
+  const [modelName, setModelName] = useState('sonnet')
   const loadedMetricsFor = useRef<string | null>(null)
 
   useEffect(() => {
@@ -62,6 +65,12 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   const detail = cache?.detail ?? null
   const run = detail?.run ?? null
   const log = cache?.log ?? []
+
+  useEffect(() => {
+    if (!run) return
+    setModelProvider(run.llmProvider)
+    setModelName(run.llmModel)
+  }, [run?.id, run?.llmProvider, run?.llmModel])
 
   // Метрики (текущее vs типичное) — по projectId рана, один раз.
   useEffect(() => {
@@ -126,6 +135,31 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
             )}
             {lines.length > 0 && (
               <StepLog lines={lines} autoscroll={autoscroll} />
+            )}
+            {step.kind === 'model_work' && step.status === 'failed' && run?.status === 'failed' && (
+              <div className="ci-model-retry" data-testid="ci-model-retry">
+                <strong>Модель завершилась с ошибкой. Финальные команды не запускались.</strong>
+                <label>
+                  Провайдер
+                  <select className="sel" value={modelProvider} onChange={(e) => {
+                    const provider = e.target.value === 'codex' ? 'codex' : 'claude'
+                    setModelProvider(provider)
+                    setModelName(provider === 'codex' ? 'gpt-5-codex' : 'sonnet')
+                  }}>
+                    <option value="claude">Claude</option>
+                    <option value="codex">Codex</option>
+                  </select>
+                </label>
+                <label>
+                  Модель
+                  <select className="sel" value={modelName} onChange={(e) => setModelName(e.target.value)}>
+                    {(modelProvider === 'codex' ? CODEX_MODELS.filter((m) => m.id) : CLAUDE_MODELS).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                </label>
+                <button className="ci-btn" disabled={!props.onRetryFromStep || !modelName} onClick={() => props.onRetryFromStep?.(runId, { provider: modelProvider, model: modelName })}>
+                  Повторить работу модели
+                </button>
+              </div>
             )}
             {topSteps.childrenOf(step.id).length > 0 && (
               <ul className="ci-steps ci-steps--nested">
