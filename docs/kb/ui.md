@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-07-27
-checked: 938d6e3
+updated: 2026-07-29
+checked: 0115f12
 areas:
   - packages/ui/src
   - apps/web/src
@@ -98,3 +98,8 @@ Partial STT обновляет живые сегменты; final формиру
 Логика store тестируется прямыми действиями с подставленными мостами и детерминированными таймерами. DOM-тесты используют `src/test/fakeApi.ts`; проверяют цепочку «действие пользователя → вызов bridge → новое состояние экрана». Аудио/VAD/TTS тестируются как отдельные чистые модули.
 
 Гейт: `npm run -w @voicechat/ui typecheck && npm run -w @voicechat/ui test`. При CSS, host-init или сборке дополнительно `npm run -w @voicechat/web build`.
+## AI-помощник формулировки
+
+Переиспользуемые `PromptBuilder` и `useAiAssist` живут в `packages/ui/src/components/prompt-builder/` и экспортируются из `@voicechat/ui`. Компонент транспорт-нейтрален: генератор, модификаторы, применение и персистентность приходят через props. Builder собирает результат из вариантов и сохраняет работу при переходе в настройки; закрытие сбрасывает сессию. `applyNativeInputValue` использует нативный setter и bubbling `input`, поэтому интеграция совместима с управляемыми полями и библиотеками форм. Композер `VoiceBar` — первая production-интеграция.
+
+Настройки AI-помощника (`aiAssistProvider`, `aiAssistModel`, `aiAssistPrompts`) хранятся в общих per-user `Settings`. В `SettingsModal` им соответствует отдельный раздел «AI-помощник»; настройки внутри `PromptBuilder` могут временно редактироваться локально или сохраняться через `onPromptsChange`. Storybook содержит состояния builder/settings и интеграции с input/textarea; DOM-тесты дополнительно запускают axe в обоих режимах.

@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-07-28
-checked: 6e1cbfb
+updated: 2026-07-29
+checked: 0115f12
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -134,3 +134,6 @@ WS дозванивается только при наличии токена с
 
 
 **Feature Run** (REST `features:*`, Agent Tasks и deployments) описан в [features/feature-workflow.md](features/feature-workflow.md). Живые краткие состояния приходят в существующем `board.update`.
+## AI-помощник формулировки
+
+`POST /api/prompt/suggest` принимает `{ prompt, modifiers }`, где `modifiers` — упорядоченный массив `ModifierPrompt`; UI передаёт только активные элементы. Ответ — `{ variants: Suggestion[] }`. Маршрут требует Bearer-токен, не создаёт разговор и не сохраняет ход. Движок и модель берутся из per-user настроек `aiAssistProvider`/`aiAssistModel`; вызов CLI идёт с `executionDisabled: true` и без session id. Web-мост предоставляет тот же контракт как `window.api['prompt:suggest']`.

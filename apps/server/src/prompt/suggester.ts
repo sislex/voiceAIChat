@@ -2,6 +2,7 @@
 // переформулировок. Одноразовый вызов (как KB-reranker): собственную сессию не
 // заводим, историю разговора не трогаем, инструменты и shell выключены.
 
+import type { ModifierPrompt } from '@voicechat/shared'
 import type { LlmClient } from '../claude/types.js'
 
 /** Сколько вариантов просим и сколько максимум возвращаем. */
@@ -14,7 +15,7 @@ const TIMEOUT_MS = 25_000
 export class PromptSuggester {
   constructor(private readonly client: LlmClient, private readonly model = SUGGEST_MODEL) {}
 
-  suggest(text: string, userId?: string): Promise<string[]> {
+  suggest(text: string, modifiers: ModifierPrompt[] = [], userId?: string): Promise<string[]> {
     const draft = text.trim()
     if (!draft) return Promise.resolve([])
     const prompt = [
@@ -24,6 +25,9 @@ export class PromptSuggester {
         'того же запроса. Сохраняй исходный смысл, намерение и язык черновика.',
       'Не отвечай на запрос и не выполняй его. Не задавай вопросов. Не вызывай инструменты.',
       'Верни только JSON без пояснений: {"variants":["...","..."]}.',
+      ...(modifiers.length > 0
+        ? ['Дополнительные инструкции (применяй строго в указанном порядке):', ...modifiers.map((item, index) => `${index + 1}. ${item.text.trim()}`)]
+        : []),
       `Черновик запроса:\n${draft}`
     ].join('\n\n')
 

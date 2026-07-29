@@ -8,3 +8,6 @@ export { default as App } from './App'
 export { installRemoteBridges } from './remote'
 
 // Стили подключаются приложениями через '@voicechat/ui/styles.css' либо напрямую.
+
+export * from './components/prompt-builder/PromptBuilder'
+export * from './components/prompt-builder/useAiAssist'

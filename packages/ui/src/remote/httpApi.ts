@@ -39,7 +39,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       try { return await req(REST.kbDocument(id)) } catch { return null }
     },
     'kb:context': ({ query, budget }) => req(`${REST.kbContext}?q=${encodeURIComponent(query)}${budget ? `&budget=${budget}` : ''}`),
-    'prompt:suggest': ({ text }) => req(REST.promptSuggest, { method: 'POST', body: JSON.stringify({ text }) }),
+    'prompt:suggest': ({ prompt, modifiers }) => req(REST.promptSuggest, { method: 'POST', body: JSON.stringify({ prompt, modifiers }) }),
     'conversations:list': () => req(REST.conversations),
     'conversations:create': ({ title }) =>
       req(REST.conversations, { method: 'POST', body: JSON.stringify({ title }) }),
