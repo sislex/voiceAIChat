@@ -84,6 +84,9 @@ export interface Conversation {
   kbContextMode?: KbContextMode
   /** Проект, к которому привязан чат (null/undefined — не привязан). */
   projectId?: string | null
+  /** Задача, с которой связан чат (кнопка «Чат» на карточке); null — не связан. */
+  taskId?: string | null
+
   /** Статус жизненного цикла чата; дефолт 'developing'. */
   status?: ConversationStatus
   /** Неизменяемая цель последнего сообщения; используется подписью в списке чатов. */

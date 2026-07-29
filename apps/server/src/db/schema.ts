@@ -17,8 +17,10 @@ CREATE TABLE IF NOT EXISTS conversations (
   llm_model         TEXT,
   kb_context_mode   TEXT NOT NULL DEFAULT 'auto',
   project_id        TEXT,
+  task_id           TEXT,
   status            TEXT NOT NULL DEFAULT 'developing'
 );
+
 
 CREATE TABLE IF NOT EXISTS messages (
   id              TEXT PRIMARY KEY,
@@ -83,8 +85,12 @@ CREATE TABLE IF NOT EXISTS projects (
   agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual',
   test_command TEXT NOT NULL DEFAULT '',
   production_deploy_command TEXT NOT NULL DEFAULT '',
+  default_skills_epic  TEXT NOT NULL DEFAULT '[]',
+  default_skills_story TEXT NOT NULL DEFAULT '[]',
+  default_skills_task  TEXT NOT NULL DEFAULT '[]',
   task_seq INTEGER NOT NULL DEFAULT 0
 );
+
 
 CREATE TABLE IF NOT EXISTS project_members (
   project_id TEXT NOT NULL,
@@ -135,6 +141,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   priority    TEXT NOT NULL DEFAULT 'medium',
   assignee    TEXT,
   labels      TEXT NOT NULL DEFAULT '[]',
+  skills      TEXT NOT NULL DEFAULT '[]',
+
   story_points REAL,
   due_date    INTEGER,
   flagged     INTEGER NOT NULL DEFAULT 0,

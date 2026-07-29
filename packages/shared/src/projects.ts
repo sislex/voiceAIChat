@@ -12,6 +12,21 @@ export const TASK_PRIORITIES: TaskPriority[] = ['low', 'medium', 'high', 'urgent
 export type WorkItemType = 'epic' | 'story' | 'task'
 export const WORK_ITEM_TYPES: WorkItemType[] = ['epic', 'story', 'task']
 
+/**
+ * Навыки по умолчанию, задаваемые в настройках проекта отдельно для каждого
+ * типа элемента. При создании эпика/стори/таска эти навыки автоматически
+ * копируются в его карточку (`Task.skills`), где их можно править.
+ */
+export interface WorkItemDefaultSkills {
+  epic: string[]
+  story: string[]
+  task: string[]
+}
+
+/** Пустой набор навыков по умолчанию (все типы — []). */
+export const EMPTY_DEFAULT_SKILLS: WorkItemDefaultSkills = { epic: [], story: [], task: [] }
+
+
 /** Стабильное назначение колонки, не зависящее от отображаемого имени. */
 export type KanbanColumnSemanticType =
   | 'backlog'
@@ -48,7 +63,10 @@ export interface ProjectSummary {
   gitUrl: string | null
   technologies: string[]
   skills: string[]
+  /** Навыки по умолчанию для новых элементов, отдельно по типу. */
+  defaultSkills: WorkItemDefaultSkills
   /** Логин создателя проекта. */
+
   createdBy: string
   createdAt: number
   updatedAt: number
@@ -109,6 +127,12 @@ export interface Task {
   assignee: string | null
   /** Метки (свободные строки), как labels в Jira. */
   labels: string[]
+  /**
+   * Навыки карточки. При создании заполняются навыками по умолчанию из настроек
+   * проекта (по типу), дальше правятся вручную в карточке.
+   */
+  skills: string[]
+
   /** Оценка в стори-поинтах или null. */
   storyPoints: number | null
   /** Срок (unix ms) или null. */
@@ -121,9 +145,15 @@ export interface Task {
   position: number
   createdAt: number
   updatedAt: number
+  /**
+   * Id связанного с задачей чата текущего пользователя (или null, если чат ещё
+   * не создан). Заполняется только в снапшоте доски; в ответах create/update — null.
+   */
+  chatId?: string | null
 }
 
 /** Новое доменное имя; Task остаётся alias для совместимости. */
+
 export type WorkItem = Task
 
 /** Снапшот доски проекта. */

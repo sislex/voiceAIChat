@@ -204,6 +204,9 @@ export const REST = {
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`,
   projectTaskMove: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/move`,
+  projectTaskChat: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/chat`,
+
   projectFeatures: (id: string) => `/api/projects/${encodeURIComponent(id)}/features`,
   taskFeature: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/feature`,
   storyFeature: (id: string, storyId: string) => `/api/projects/${encodeURIComponent(id)}/stories/${encodeURIComponent(storyId)}/feature`,

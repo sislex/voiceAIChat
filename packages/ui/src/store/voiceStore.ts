@@ -17,7 +17,8 @@ import type {
   SttUpdate,
   UploadInfo
 } from '@shared/ipc'
-import type { Board, ProjectDetail, ProjectSummary, TaskPriority, WorkItemType } from '@shared/projects'
+import type { Board, ProjectDetail, ProjectSummary, TaskPriority, WorkItemType, WorkItemDefaultSkills } from '@shared/projects'
+
 import type { FeatureRun, AgentTask, FeatureStatus } from '@shared/features'
 import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
 import { detectOpenUtility, toolBlock, type ToolSpec } from '@shared/tools'
@@ -545,7 +546,9 @@ export interface StoreActions {
     gitUrl?: string
     technologies?: string[]
     skills?: string[]
+    defaultSkills?: Partial<WorkItemDefaultSkills>
     commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+
     mergeTransport?: 'local' | 'github_pull_request'
     agentPlanApprovalMode?: 'manual' | 'automatic'
     testCommand?: string
@@ -560,7 +563,9 @@ export interface StoreActions {
       gitUrl?: string | null
       technologies?: string[]
       skills?: string[]
+      defaultSkills?: Partial<WorkItemDefaultSkills>
     commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+
     mergeTransport?: 'local' | 'github_pull_request'
     agentPlanApprovalMode?: 'manual' | 'automatic'
     testCommand?: string
@@ -601,11 +606,15 @@ export interface StoreActions {
   ): Promise<void>
   updateTask(
     taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
   ): Promise<void>
+
   /** Переместить задачу (смена статуса = смена колонки); оптимистично. */
   moveTask(taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null): Promise<void>
   deleteTask(taskId: string): Promise<void>
+  /** Открыть (создав при необходимости) связанный с задачей чат и переключиться на него. */
+  openTaskChat(taskId: string): Promise<void>
+
   startFeature(taskId: string, automation?: { autoMerge?: boolean; autoDeployProduction?: boolean }): Promise<void>
   startFeatureFromStory(storyId: string, automation?: { autoMerge?: boolean; autoDeployProduction?: boolean }): Promise<void>
   openFeature(featureId: string): Promise<void>
@@ -2366,7 +2375,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     gitUrl?: string
     technologies?: string[]
     skills?: string[]
+    defaultSkills?: Partial<WorkItemDefaultSkills>
     commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+
     mergeTransport?: 'local' | 'github_pull_request'
     agentPlanApprovalMode?: 'manual' | 'automatic'
     testCommand?: string
@@ -2390,7 +2401,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       gitUrl?: string | null
       technologies?: string[]
       skills?: string[]
+      defaultSkills?: Partial<WorkItemDefaultSkills>
     commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+
     mergeTransport?: 'local' | 'github_pull_request'
     agentPlanApprovalMode?: 'manual' | 'automatic'
     testCommand?: string
@@ -2603,9 +2616,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   async function updateTask(
     taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
   ): Promise<void> {
     const id = state.activeProjectId
+
     if (!id) return
     try {
       await api['tasks:update']({ projectId: id, taskId, ...fields })
@@ -2658,9 +2672,23 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
+  async function openTaskChat(taskId: string): Promise<void> {
+    const id = state.activeProjectId
+    if (!id) return
+    try {
+      const conv = await api['tasks:openChat']({ projectId: id, taskId })
+      await Promise.all([refreshConversations(), refreshBoard()])
+      await selectConversation(conv.id)
+    } catch (err) {
+      setState({ error: perr(err) })
+    }
+  }
+
+
   async function refreshFeatures(): Promise<void> {
     if (state.activeProjectId) setState({ featureRuns: await api['features:list']({ projectId: state.activeProjectId }) })
   }
+
   async function startFeature(taskId: string, automation: { autoMerge?: boolean; autoDeployProduction?: boolean } = {}): Promise<void> {
     if (!state.activeProjectId) return
     try {
@@ -2851,6 +2879,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       deleteColumn,
       createTask,
       updateTask,
+      openTaskChat,
+
       moveTask,
       deleteTask,
       startFeature,

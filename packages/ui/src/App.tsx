@@ -387,7 +387,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onUpdateTask={(taskId, fields) => void actions.updateTask(taskId, fields)}
           onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
           onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
+          onOpenChat={(taskId) => void actions.openTaskChat(taskId).then(() => navigate('/'))}
           onStartFeature={(itemId, type) => void (type === `story` ? actions.startFeatureFromStory(itemId) : actions.startFeature(itemId))}
+
           onOpenFeature={(id) => void actions.openFeature(id)}
           aiAssistPrompts={state.settings.aiAssistPrompts}
           onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}

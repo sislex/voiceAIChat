@@ -22,6 +22,9 @@ export interface TaskCardProps {
   onMoveBottom: (taskId: string) => void
   onStartFeature?: (taskId: string) => void
   onOpenFeature?: (featureId: string) => void
+  /** Открыть связанный с задачей чат (кнопка на карточке). */
+  onOpenChat?: (taskId: string) => void
+
   onDragStart: (taskId: string) => void
   onDragEnd: () => void
   dragging: boolean
@@ -118,7 +121,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </span>
       </div>
 
-      {(task.flagged || epic || task.labels.length > 0) && (
+      {(task.flagged || epic || task.labels.length > 0 || task.skills.length > 0) && (
         <div className="jcard-chips">
           {task.flagged && <span className="jcard-flag" title="Помечена флагом">⚑ Флаг</span>}
           {epic && (
@@ -130,8 +133,12 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
           {task.labels.map((l) => (
             <span key={l} className="jcard-label">{l}</span>
           ))}
+          {task.skills.map((s) => (
+            <span key={`skill-${s}`} className="jcard-skill" title={`Навык: ${s}`}>{s}</span>
+          ))}
         </div>
       )}
+
 
       {children.length > 0 && (
         <div className="jcard-progress" title={`Подзадачи: ${doneChildren.length} из ${children.length}`}>
@@ -153,7 +160,21 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         <span className="jcard-foot-left">
           <TypeIcon type={task.type} />
           <span className={`jcard-key${done ? ' jcard-key--done' : ''}`}>{key}</span>
+          {props.onOpenChat && (
+            <button
+              className={`jcard-chat${task.chatId ? ' jcard-chat--linked' : ''}`}
+              title={task.chatId ? 'Открыть связанный чат' : 'Создать связанный чат'}
+              aria-label="Связанный чат"
+              onClick={(e) => {
+                e.stopPropagation()
+                props.onOpenChat?.(task.id)
+              }}
+            >
+              💬
+            </button>
+          )}
         </span>
+
         <span className="jcard-foot-right">
           {task.dueDate != null && (
             <span className={`jcard-due jcard-due--${dueState(task.dueDate)}`} title="Срок">

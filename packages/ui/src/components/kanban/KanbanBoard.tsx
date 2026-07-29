@@ -44,7 +44,10 @@ export interface KanbanBoardProps {
   onUpdateTask: (taskId: string, fields: TaskUpdateFields) => void
   onMoveTask: (taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null) => void
   onDeleteTask: (taskId: string) => void
+  /** Открыть связанный с задачей чат (кнопка на карточке и в модалке). */
+  onOpenChat?: (taskId: string) => void
   onStartFeature?: (itemId: string, type: WorkItemType) => void
+
   onOpenFeature?: (featureId: string) => void
   aiAssistPrompts?: ModifierPrompt[]
   onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
@@ -234,7 +237,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onMoveBottom={moveBottom}
       onStartFeature={(id) => props.onStartFeature?.(id, t.type)}
       onOpenFeature={props.onOpenFeature}
+      onOpenChat={props.onOpenChat}
       onDragStart={setDragTask}
+
       onDragEnd={() => setDragTask(null)}
       dragging={dragTask === t.id}
     />
@@ -694,6 +699,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onMoveToColumn={(taskId, columnId) => props.onMoveTask(taskId, columnId, null, null)}
           onStartFeature={props.onStartFeature}
           onOpenFeature={props.onOpenFeature}
+          onOpenChat={props.onOpenChat}
+
           aiAssistPrompts={props.aiAssistPrompts}
           onAiAssistPromptsChange={props.onAiAssistPromptsChange}
           generateAiAssist={props.generateAiAssist}

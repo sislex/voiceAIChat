@@ -7,7 +7,9 @@ import type { AdminUserInfo } from '@shared/admin'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
-import type { Board, KanbanColumn, ProjectDetail, ProjectMember, ProjectSummary, Task } from '@shared/projects'
+import type { Board, KanbanColumn, ProjectDetail, ProjectMember, ProjectSummary, Task, WorkItemDefaultSkills } from '@shared/projects'
+
+
 import type { FeatureRun, AgentTask } from '@shared/features'
 
 export interface FakeApi extends RendererApi {
@@ -42,7 +44,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     gitUrl: string | null
     technologies: string[]
     skills: string[]
+    defaultSkills: WorkItemDefaultSkills
     createdBy: string
+
     createdAt: number
     updatedAt: number
     members: ProjectMember[]
@@ -64,7 +68,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     gitUrl: p.gitUrl,
     technologies: p.technologies,
     skills: p.skills,
+    defaultSkills: p.defaultSkills,
     createdBy: p.createdBy,
+
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     role: p.members.find((m) => m.username === ME)?.role ?? 'owner',
@@ -317,7 +323,13 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         gitUrl: b.gitUrl ?? null,
         technologies: b.technologies ?? [],
         skills: b.skills ?? [],
+        defaultSkills: {
+          epic: b.defaultSkills?.epic ?? [],
+          story: b.defaultSkills?.story ?? [],
+          task: b.defaultSkills?.task ?? []
+        },
         createdBy: ME,
+
         createdAt: ts,
         updatedAt: ts,
         members: [{ username: ME, role: 'owner', addedAt: ts }],
@@ -347,7 +359,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (f.gitUrl !== undefined) p.gitUrl = f.gitUrl
       if (f.technologies !== undefined) p.technologies = f.technologies
       if (f.skills !== undefined) p.skills = f.skills
+      if (f.defaultSkills !== undefined) p.defaultSkills = { ...p.defaultSkills, ...f.defaultSkills }
       if (f.commitPolicy !== undefined) p.commitPolicy = f.commitPolicy
+
       if (f.mergeTransport !== undefined) p.mergeTransport = f.mergeTransport
       if (f.agentPlanApprovalMode !== undefined) p.agentPlanApprovalMode = f.agentPlanApprovalMode
       p.updatedAt = tick()
@@ -424,14 +438,17 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (i >= 0) columns.splice(i, 1)
       for (let j = tasks.length - 1; j >= 0; j--) if (tasks[j].columnId === columnId) tasks.splice(j, 1)
     },
-    'tasks:create': async ({ projectId, columnId, title, description, acceptanceCriteria, type, parentId, priority, assignee }) => {
+    'tasks:create': async ({ projectId, columnId, title, description, acceptanceCriteria, type, parentId, priority, assignee, skills }) => {
       const ts = tick()
       const max = Math.max(0, ...tasks.filter((t) => t.columnId === columnId).map((t) => t.position))
+      const itemType = type ?? 'task'
+      const proj = projects.find((p) => p.id === projectId)
+      const seededSkills = skills ?? (proj ? proj.defaultSkills[itemType] : [])
       const task: Task = {
         id: nextId(),
         projectId,
         columnId,
-        type: type ?? 'task',
+        type: itemType,
         parentId: parentId ?? null,
         title,
         description: description ?? '',
@@ -439,7 +456,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         priority: priority ?? 'medium',
         assignee: assignee ?? null,
         labels: [],
+        skills: [...seededSkills],
         storyPoints: null,
+
         dueDate: null,
         flagged: false,
         seq: tasks.length + 1,
@@ -460,7 +479,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (f.priority !== undefined) t.priority = f.priority
       if (f.assignee !== undefined) t.assignee = f.assignee
       if (f.labels !== undefined) t.labels = f.labels
+      if (f.skills !== undefined) t.skills = f.skills
       if (f.storyPoints !== undefined) t.storyPoints = f.storyPoints
+
       if (f.dueDate !== undefined) t.dueDate = f.dueDate
       if (f.flagged !== undefined) t.flagged = f.flagged
       t.updatedAt = tick()
@@ -486,6 +507,19 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const i = tasks.findIndex((x) => x.id === taskId)
       if (i >= 0) tasks.splice(i, 1)
     },
+    'tasks:openChat': async ({ projectId, taskId }) => {
+      const task = tasks.find((x) => x.id === taskId)!
+      const existing = conversations.find((c) => c.taskId === taskId)
+      if (existing) return withCounts(existing)
+      const conv = makeConversation(task.title || 'Задача')
+      conv.projectId = projectId
+      conv.taskId = taskId
+      conv.skillNames = [...task.skills]
+      conversations.push(conv)
+      task.chatId = conv.id
+      return withCounts(conv)
+    },
+
     'features:list': async ({ projectId }) => features.filter((f) => f.projectId === projectId),
     'features:createFromTask': async ({ projectId, taskId, autoMerge, autoDeployProduction }) => {
       const task = tasks.find((t) => t.id === taskId)!

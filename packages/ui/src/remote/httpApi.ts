@@ -206,8 +206,11 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectTask(projectId, taskId), { method: 'PATCH', body: JSON.stringify(b) }),
     'tasks:move': ({ projectId, taskId, ...b }) =>
       req(REST.projectTaskMove(projectId, taskId), { method: 'POST', body: JSON.stringify(b) }),
+    'tasks:openChat': ({ projectId, taskId }) =>
+      req(REST.projectTaskChat(projectId, taskId), { method: 'POST' }),
     'tasks:delete': async ({ projectId, taskId }) => {
       await req(REST.projectTask(projectId, taskId), { method: 'DELETE' })
+
     },
     'features:list': ({ projectId }) => req(REST.projectFeatures(projectId)),
     'features:createFromTask': ({ projectId, taskId, ...body }) => req(REST.taskFeature(projectId, taskId), { method: 'POST', body: JSON.stringify(body) }),

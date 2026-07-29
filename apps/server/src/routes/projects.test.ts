@@ -252,3 +252,30 @@ describe('projects REST: машины проекта (папка, дефолт) 
     expect((await inj(bobTok, { method: 'POST', url: `/api/conversations/${convBob.id}/project`, payload: { projectId: p.id } })).statusCode).toBe(404)
   })
 })
+
+describe('projects REST: навыки по умолчанию, навыки задачи и связанный чат', () => {
+  it('PATCH проекта хранит defaultSkills; создание задачи наследует навыки по типу', async () => {
+    const p = await createProject('Skills')
+    const patched = await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { defaultSkills: { task: ['ts'], story: ['ux'] } } })
+    expect(patched.statusCode).toBe(200)
+    expect((patched.json() as ProjectSummary).defaultSkills).toEqual({ epic: [], story: ['ux'], task: ['ts'] })
+    const col = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    const created = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: col.columns[0].id, title: 'T' } })
+    expect((created.json() as Task).skills).toEqual(['ts'])
+  })
+
+  it('POST .../tasks/:id/chat создаёт/возвращает связанный чат (идемпотентно, гейт членства)', async () => {
+    const p = await createProject('Chat')
+    const col = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    const task = (await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: col.columns[0].id, title: 'Задача' } })).json() as Task
+    const r1 = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${task.id}/chat` })
+    expect(r1.statusCode).toBe(200)
+    const c1 = r1.json() as { id: string; taskId?: string | null; projectId?: string | null }
+    expect(c1.taskId).toBe(task.id)
+    expect(c1.projectId).toBe(p.id)
+    const r2 = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${task.id}/chat` })
+    expect((r2.json() as { id: string }).id).toBe(c1.id)
+    // не-участник не может
+    expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${task.id}/chat` })).statusCode).toBe(404)
+  })
+})

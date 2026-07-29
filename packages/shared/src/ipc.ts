@@ -33,8 +33,10 @@ import type {
   ProjectDetail,
   ProjectSummary,
   Task,
-  TaskPriority
+  TaskPriority,
+  WorkItemDefaultSkills
 } from './projects'
+
 import type { FeatureRun, FeatureStatus, AgentTask, FeatureDeployment } from './features'
 import type { KbContextBundle, KbDocument, KbDocumentSummary, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
 
@@ -188,9 +190,10 @@ export interface IpcInvokeMap {
   /** Проекты, где текущий пользователь — участник. */
   'projects:list': { arg: void; result: ProjectSummary[] }
   'projects:create': {
-    arg: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
+    arg: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
     result: ProjectDetail
   }
+
   'projects:get': { arg: { id: string }; result: ProjectDetail | null }
   'projects:update': {
     arg: {
@@ -200,6 +203,7 @@ export interface IpcInvokeMap {
       gitUrl?: string | null
       technologies?: string[]
       skills?: string[]
+      defaultSkills?: Partial<WorkItemDefaultSkills>
       commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
@@ -209,6 +213,7 @@ export interface IpcInvokeMap {
     result: ProjectDetail
   }
   'projects:delete': { arg: { id: string }; result: void }
+
   /** Добавить участника (только владелец). */
   'projects:addMember': { arg: { id: string; username: string }; result: ProjectDetail }
   'projects:removeMember': { arg: { id: string; username: string }; result: ProjectDetail }
@@ -239,12 +244,14 @@ export interface IpcInvokeMap {
       priority?: TaskPriority
       assignee?: string | null
       labels?: string[]
+      skills?: string[]
       storyPoints?: number | null
       dueDate?: number | null
     }
     result: Task
   }
   'tasks:update': {
+
     arg: {
       projectId: string
       taskId: string
@@ -256,18 +263,23 @@ export interface IpcInvokeMap {
       priority?: TaskPriority
       assignee?: string | null
       labels?: string[]
+      skills?: string[]
       storyPoints?: number | null
       dueDate?: number | null
       flagged?: boolean
     }
     result: Task
   }
+
   /** Переместить задачу в колонку между соседями afterId/beforeId (смена статуса). */
   'tasks:move': {
     arg: { projectId: string; taskId: string; columnId: string; afterId?: string | null; beforeId?: string | null }
     result: Task
   }
   'tasks:delete': { arg: { projectId: string; taskId: string }; result: void }
+  /** Открыть (или создать) связанный с задачей чат текущего пользователя. */
+  'tasks:openChat': { arg: { projectId: string; taskId: string }; result: Conversation }
+
   'features:list': { arg: { projectId: string }; result: FeatureRun[] }
   'features:createFromTask': { arg: { projectId: string; taskId: string; autoMerge?: boolean; autoDeployProduction?: boolean }; result: FeatureRun }
   'features:createFromStory': { arg: { projectId: string; storyId: string; autoMerge?: boolean; autoDeployProduction?: boolean }; result: FeatureRun }
@@ -671,6 +683,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:update',
   'tasks:move',
   'tasks:delete',
+  'tasks:openChat',
+
   'features:list',
   'features:createFromTask',
   'features:createFromStory',

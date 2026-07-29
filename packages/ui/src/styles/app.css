@@ -3333,6 +3333,22 @@
 .proj-danger { border-top: 1px solid rgba(128,128,128,0.2); padding-top: 10px; }
 .proj-delete { color: #f85149; }
 
+/* ===== Jira design-system alignment (страница настроек проекта) ===== */
+.proj-detail, .kanban-frame {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
+}
+/* Подписи полей — в стиле Atlassian: капс, разрядка, серый */
+.proj-field-label { font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px;
+  color: #626f86; margin: 10px 0 4px; opacity: 1; }
+[data-theme='dark'] .proj-field-label { color: #96a0b5; }
+.proj-hint { font-size: 12px; color: #626f86; margin: 2px 0 8px; line-height: 1.5; max-width: 640px; }
+[data-theme='dark'] .proj-hint { color: #96a0b5; }
+.proj-default-skills .proj-tags { margin-top: 4px; }
+/* Чипы навыков по умолчанию — Atlassian-«subtle» вид */
+.proj-default-skills .proj-chip { background: #dcfff1; color: #216e4e; }
+[data-theme='dark'] .proj-default-skills .proj-chip { background: #133527; color: #7ee2b8; }
+
+
 /* Доска */
 .kanban-frame .ccobs-body, .kanban-frame { display: block; }
 .kanban-empty { padding: 24px; opacity: 0.6; }
@@ -3619,7 +3635,24 @@
 [data-theme='dark'] .jcard-pts { background: rgba(255, 255, 255, 0.16); }
 .jprio { flex: 0 0 auto; }
 
+/* Навыки задачи (чипы) — по образцу меток, но в «зелёном» акценте Jira */
+.jcard-skill { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; font-weight: 500;
+  background: #dcfff1; color: #216e4e; border-radius: 3px; padding: 1px 6px; }
+[data-theme='dark'] .jcard-skill { background: #133527; color: #7ee2b8; }
+.jmodal-skills .jcard-skill { font-weight: 500; }
+
+/* Кнопка перехода в связанный чат на карточке */
+.jcard-chat { border: none; background: none; cursor: pointer; padding: 0 3px; font-size: 12px; line-height: 18px;
+  border-radius: 4px; opacity: 0; filter: grayscale(1); transition: opacity 0.1s; }
+.jcard:hover .jcard-chat { opacity: 0.7; }
+.jcard-chat--linked { opacity: 0.95; filter: none; }
+.jcard-chat:hover { opacity: 1; filter: none; background: rgba(9, 30, 66, 0.13); }
+[data-theme='dark'] .jcard-chat:hover { background: rgba(255, 255, 255, 0.12); }
+.jmodal-chat-btn { color: #0c66e4; font-weight: 600; }
+[data-theme='dark'] .jmodal-chat-btn { color: #579dff; }
+
 /* Композер и зоны вставки */
+
 .jcompose-open { border: none; background: none; color: #6b778c; text-align: left; font-size: 13px; padding: 8px 10px; border-radius: 0 0 8px 8px; cursor: pointer; }
 .jcompose-open:hover { background: rgba(9, 30, 66, 0.08); color: inherit; }
 [data-theme='dark'] .jcompose-open:hover { background: rgba(255, 255, 255, 0.08); }
