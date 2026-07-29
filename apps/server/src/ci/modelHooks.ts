@@ -73,7 +73,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
 } {
   const now = deps.now ?? (() => Date.now())
   const clientFor = (ctx: CiModelContext): LlmClient => ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
-  const modelFor = (ctx: CiModelContext): string => ctx.run.llmModel || (ctx.run.llmProvider === 'codex' ? 'gpt-5-codex' : 'sonnet')
+  const modelFor = (ctx: CiModelContext): string => ctx.run.llmProvider === 'codex' ? ctx.run.llmModel : (ctx.run.llmModel || 'sonnet')
 
   const modelWork: CiModelWorkHook = async (ctx: CiModelContext) => {
     // Публикуем модели команды справочника как инструмент на время шага (лимит

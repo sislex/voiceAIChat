@@ -151,9 +151,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     let eventPayload: Record<string, unknown>
     if (failedModel && (!failedCommand || failedModel.position > failedCommand.position)) {
       const provider = model?.provider ?? run.llmProvider
-      const selectedModel = model?.model.trim() || run.llmModel
+      const selectedModel = model ? model.model.trim() : run.llmModel
       if (provider !== 'claude' && provider !== 'codex') return { error: 'Неизвестный провайдер модели' }
-      if (!selectedModel) return { error: 'Модель не выбрана' }
+      if (provider === 'claude' && !selectedModel) return { error: 'Модель Claude не выбрана' }
       deps.db.updateCiRun(run.id, { llmProvider: provider, llmModel: selectedModel })
       resume = { kind: 'model' }
       eventPayload = { step: 'model_work', provider, model: selectedModel }

@@ -209,14 +209,14 @@ describe('ci run manager', () => {
     expect(failed.steps.some((s) => s.kind === 'model_summary')).toBe(false)
 
     failClaude = false
-    const retry = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step`, payload: { provider: 'codex', model: 'gpt-5-codex' } })
+    const retry = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step`, payload: { provider: 'codex', model: '' } })
     expect(retry.statusCode).toBe(202)
     const done = await waitRun(runId)
     expect(done.run.status).toBe('success')
     expect(scripts.filter((x) => x === 'PREPARE')).toHaveLength(1)
     expect(scripts).toContain('TESTS')
-    expect(codexModel).toBe('gpt-5-codex')
-    expect(db.getCiRunRaw(runId)).toMatchObject({ llmProvider: 'codex', llmModel: 'gpt-5-codex' })
+    expect(codexModel).toBe('')
+    expect(db.getCiRunRaw(runId)).toMatchObject({ llmProvider: 'codex', llmModel: '' })
   })
 
   it('модель вызывает команду справочника как MCP-инструмент → вложенный шаг model_command', async () => {
