@@ -5,6 +5,8 @@ import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
 import type { MachineOps } from './machine'
 import { PopupFrame } from './PopupFrame'
+import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
 import { useConfirm } from './ui/useConfirm'
 import { useToast } from './ui/Toast'
 
@@ -207,7 +209,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
   return (
     <PopupFrame title="Настройки разговора" onClose={onClose} testId="conversation-settings-overlay" panelClassName="convsettings">
       <header className="convsettings-head">
-        <button className="convsettings-back" onClick={onClose} aria-label="Вернуться в разговор" title="Вернуться в разговор">←</button>
+        <IconButton className="convsettings-back" onClick={onClose} aria-label="Вернуться в разговор" title="Вернуться в разговор">←</IconButton>
         <div><h1>Настройки разговора</h1><p>Параметры применяются только к этому разговору</p></div>
       </header>
       <main className="convsettings-body">
@@ -290,10 +292,10 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
 
         {selectedAgent && <>
           <section className="convsettings-card">
-            <div className="convsettings-sectionhead"><div><h2>Корневая директория</h2><p>Команды этого разговора будут начинаться в выбранной папке.</p></div><button onClick={() => void loadDir(workdir ?? '')} disabled={!selectedAgent.online || loadingDir}>Выбрать</button></div>
+            <div className="convsettings-sectionhead"><div><h2>Корневая директория</h2><p>Команды этого разговора будут начинаться в выбранной папке.</p></div><Button onClick={() => void loadDir(workdir ?? '')} loading={loadingDir} disabled={!selectedAgent.online}>Выбрать</Button></div>
             <div className="convsettings-path">{workdir || 'Корень машины'}</div>
             {(cwd || entries.length > 0 || loadingDir) && <div className="convsettings-picker">
-              <div className="convsettings-pickerbar"><button onClick={() => void loadDir(parentOf(cwd))} title="На уровень выше" aria-label="На уровень выше">↑</button><span>{cwd}</span><button onClick={() => { setWorkdir(cwd); setEntries([]) }}>Выбрать эту папку</button></div>
+              <div className="convsettings-pickerbar"><IconButton onClick={() => void loadDir(parentOf(cwd))} title="На уровень выше" aria-label="На уровень выше">↑</IconButton><span>{cwd}</span><Button onClick={() => { setWorkdir(cwd); setEntries([]) }}>Выбрать эту папку</Button></div>
               {loadingDir ? <p>Загрузка…</p> : entries.filter((entry) => entry.kind === 'dir').map((entry) => <button className="convsettings-dir" key={entry.name} onClick={() => void loadDir(joinPath(cwd, entry.name))}>📁 {entry.name}</button>)}
             </div>}
           </section>
@@ -304,12 +306,12 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
               {skills.length === 0 && <p className="convsettings-muted">У машины пока нет навыков.</p>}
               {skills.map((skill) => <label className="convsettings-skill" key={skill.name}><input type="checkbox" checked={skillNames.includes(skill.name)} onChange={(e) => setSkillNames((current) => e.target.checked ? [...current, skill.name] : current.filter((name) => name !== skill.name))} /><span><b>{skill.name}</b>{skill.description && <small>{skill.description}</small>}<code>{skill.command}</code></span></label>)}
             </div>
-            <div className="convsettings-add"><h3>Добавить навык</h3><input placeholder="Название" value={skillName} onChange={(e) => setSkillName(e.target.value)} /><input placeholder="Команда" value={skillCommand} onChange={(e) => setSkillCommand(e.target.value)} /><input placeholder="Описание (необязательно)" value={skillDescription} onChange={(e) => setSkillDescription(e.target.value)} /><button disabled={!skillName.trim() || !skillCommand.trim()} onClick={() => void addSkill()}>Добавить</button></div>
+            <div className="convsettings-add"><h3>Добавить навык</h3><input placeholder="Название" value={skillName} onChange={(e) => setSkillName(e.target.value)} /><input placeholder="Команда" value={skillCommand} onChange={(e) => setSkillCommand(e.target.value)} /><input placeholder="Описание (необязательно)" value={skillDescription} onChange={(e) => setSkillDescription(e.target.value)} /><Button disabled={!skillName.trim() || !skillCommand.trim()} onClick={() => void addSkill()}>Добавить</Button></div>
           </section>
         </>}
         {error && <p className="convsettings-error" role="alert">{error}</p>}
       </main>
-      <footer className="convsettings-footer"><button onClick={onClose}>Отмена</button><button className="primary" disabled={saving} onClick={() => void save()}>{saving ? 'Сохранение…' : 'Сохранить'}</button></footer>
+      <footer className="convsettings-footer"><Button onClick={onClose}>Отмена</Button><Button variant="primary" loading={saving} onClick={() => void save()}>{saving ? 'Сохранение…' : 'Сохранить'}</Button></footer>
     </PopupFrame>
   )
 }

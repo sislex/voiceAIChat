@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Dialog } from './ui/Dialog'
+import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
 import { useConfirm } from './ui/useConfirm'
 import type {
   CatalogVoice,
@@ -285,11 +287,11 @@ export function SettingsModal({
                     <input type="checkbox" aria-label={`Активен: ${item.title}`} checked={item.enabled} onChange={(e) => onChange({ aiAssistPrompts: settings.aiAssistPrompts.map((p) => p.id === item.id ? { ...p, enabled: e.target.checked } : p) })}/>
                     <input className="sel" aria-label={`Название: ${item.title}`} value={item.title} readOnly={item.readonly} onChange={(e) => onChange({ aiAssistPrompts: settings.aiAssistPrompts.map((p) => p.id === item.id ? { ...p, title: e.target.value } : p) })}/>
                     <textarea className="sel" aria-label={`Текст: ${item.title}`} value={item.text} readOnly={item.readonly} onChange={(e) => onChange({ aiAssistPrompts: settings.aiAssistPrompts.map((p) => p.id === item.id ? { ...p, text: e.target.value } : p) })}/>
-                    <button className="vdl" aria-label={`Вверх: ${item.title}`} title="Вверх" disabled={index === 0} onClick={() => { const next = [...settings.aiAssistPrompts]; const [moved] = next.splice(index, 1); next.splice(index - 1, 0, moved); onChange({ aiAssistPrompts: next }) }}>↑</button>
-                    <button className="vdl" aria-label={`Вниз: ${item.title}`} title="Вниз" disabled={index === settings.aiAssistPrompts.length - 1} onClick={() => { const next = [...settings.aiAssistPrompts]; const [moved] = next.splice(index, 1); next.splice(index + 1, 0, moved); onChange({ aiAssistPrompts: next }) }}>↓</button>
-                    {!item.readonly && <button className="vdl" aria-label={`Удалить: ${item.title}`} title="Удалить" onClick={() => { void confirm({ title: 'Удалить этот промпт?', variant: 'danger', confirmLabel: 'Удалить' }).then((ok) => { if (ok) onChange({ aiAssistPrompts: settings.aiAssistPrompts.filter((p) => p.id !== item.id) }) }) }}>✕</button>}
+                    <IconButton size="sm" aria-label={`Вверх: ${item.title}`} title="Вверх" disabled={index === 0} onClick={() => { const next = [...settings.aiAssistPrompts]; const [moved] = next.splice(index, 1); next.splice(index - 1, 0, moved); onChange({ aiAssistPrompts: next }) }}>↑</IconButton>
+                    <IconButton size="sm" aria-label={`Вниз: ${item.title}`} title="Вниз" disabled={index === settings.aiAssistPrompts.length - 1} onClick={() => { const next = [...settings.aiAssistPrompts]; const [moved] = next.splice(index, 1); next.splice(index + 1, 0, moved); onChange({ aiAssistPrompts: next }) }}>↓</IconButton>
+                    {!item.readonly && <IconButton size="sm" aria-label={`Удалить: ${item.title}`} title="Удалить" onClick={() => { void confirm({ title: 'Удалить этот промпт?', variant: 'danger', confirmLabel: 'Удалить' }).then((ok) => { if (ok) onChange({ aiAssistPrompts: settings.aiAssistPrompts.filter((p) => p.id !== item.id) }) }) }}>✕</IconButton>}
                   </div>)}
-                  <button className="vdl" onClick={() => onChange({ aiAssistPrompts: [...settings.aiAssistPrompts, { id: globalThis.crypto?.randomUUID?.() ?? String(Date.now()), title: 'Новая подсказка', text: 'Опишите дополнительную инструкцию', enabled: true }] })}>Добавить промпт</button>
+                  <Button variant="primary" size="sm" onClick={() => onChange({ aiAssistPrompts: [...settings.aiAssistPrompts, { id: globalThis.crypto?.randomUUID?.() ?? String(Date.now()), title: 'Новая подсказка', text: 'Опишите дополнительную инструкцию', enabled: true }] })}>Добавить промпт</Button>
                 </div>
               </>
             )}
@@ -301,9 +303,9 @@ export function SettingsModal({
                     <p className="flab">Десктоп-приложение</p>
                     <p className="fsub">Основной клиент Голос·Чат для Mac (.dmg)</p>
                   </div>
-                  <button className="vdl" aria-label="Скачать десктоп" title="Скачать десктоп" onClick={() => onDownloadDesktopApp()}>
+                  <Button variant="primary" size="sm" aria-label="Скачать десктоп" title="Скачать десктоп" onClick={() => onDownloadDesktopApp()}>
                     ⬇ Скачать
-                  </button>
+                  </Button>
                 </div>
 
                 <div className="frow">
@@ -311,9 +313,9 @@ export function SettingsModal({
                     <p className="flab">Агент — приложение</p>
                     <p className="fsub">Иконка в трее, выполнение команд на этой машине (Mac, .dmg)</p>
                   </div>
-                  <button className="vdl" aria-label="Скачать приложение агента" title="Скачать приложение агента" onClick={() => onDownloadAgentApp()}>
+                  <Button variant="primary" size="sm" aria-label="Скачать приложение агента" title="Скачать приложение агента" onClick={() => onDownloadAgentApp()}>
                     ⬇ Скачать
-                  </button>
+                  </Button>
                 </div>
 
                 <div className="frow">
@@ -321,9 +323,9 @@ export function SettingsModal({
                     <p className="flab">Агент — скрипт</p>
                     <p className="fsub">Запуск в терминале: <code>node voicechat-agent.cjs</code> (нужен Node.js)</p>
                   </div>
-                  <button className="vdl" aria-label="Скачать скрипт агента" title="Скачать скрипт агента" onClick={() => onDownloadAgentScript()}>
+                  <Button variant="primary" size="sm" aria-label="Скачать скрипт агента" title="Скачать скрипт агента" onClick={() => onDownloadAgentScript()}>
                     ⬇ Скачать
-                  </button>
+                  </Button>
                 </div>
 
                 <div className="frow">
@@ -399,14 +401,14 @@ export function SettingsModal({
                           <span className="vname">
                             Whisper {m.model} · {formatBytes(m.sizeBytes)}
                           </span>
-                          <button
-                            className="vdl vdel"
+                          <Button variant="danger" size="sm"
+                            
                             aria-label={`Удалить модель ${m.model}`}
                             disabled={sttBlocked}
                             onClick={() => onDeleteModel(m.model)}
                           >
                             Удалить
-                          </button>
+                          </Button>
                         </div>
                       ))}
                   </div>
@@ -507,24 +509,24 @@ export function SettingsModal({
                           {v.installed ? (
                             <span className="vrowr">
                               <span className="vinstalled">✓ установлен</span>
-                              <button
-                                className="vdl vdel"
+                              <Button variant="danger" size="sm"
+                                
                                 aria-label={`Удалить голос ${v.label}`}
                                 onClick={() => onDeleteVoice(v.id)}
                               >
                                 Удалить
-                              </button>
+                              </Button>
                             </span>
                           ) : downloading ? (
                             <span className="vprog">{percent}%</span>
                           ) : (
-                            <button
-                              className="vdl"
+                            <Button variant="primary" size="sm"
+                              
                               aria-label={`Скачать голос ${v.label}`}
                               onClick={() => onDownloadVoice(v.id)}
                             >
                               Скачать
-                            </button>
+                            </Button>
                           )}
                         </div>
                       )
