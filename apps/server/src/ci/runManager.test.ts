@@ -14,12 +14,15 @@ const SECRET = 'ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
 let scripts: string[] = []
 let failClaude = false
+let failPush = false
+let onModelSend: (() => void) | null = null
 let codexModel = ''
 let modelRequests: LlmRequest[] = []
 
 const fakeClaude: LlmClient = {
   send: (req, handlers) => {
     modelRequests.push(req)
+    onModelSend?.()
     void (async () => {
       if (failClaude) { handlers.onError('лимит исчерпан'); return }
       // Эмуляция MCP-вызова: если модели доступна команда 'model-tool', вызываем её
@@ -55,6 +58,7 @@ const ciExecutor: CommandExecutor = {
     // FLAKY падает на первом прогоне и проходит на повторе (эмуляция «исправлено моделью»).
     const flakyOk = req.script.includes('FLAKY') && n >= 2
     if (req.script === 'DIRTY') return { exitCode: 66, timedOut: false }
+    if (req.script.includes('git push')) return { exitCode: failPush ? 1 : 0, timedOut: false }
     const fail = req.script.includes('FAIL') || (req.script.includes('FLAKY') && !flakyOk)
     return { exitCode: fail ? 1 : 0, timedOut: false }
   }
@@ -64,6 +68,8 @@ beforeEach(async () => {
   let id = 0
   scripts = []
   failClaude = false
+  failPush = false
+  onModelSend = null
   codexModel = ''
   modelRequests = []
   counts.clear()
@@ -191,6 +197,60 @@ describe('ci run manager', () => {
     await waitRun(runId)
     const report = db.listCiWorkspaceReport('admin', project.id)
     expect(report.some((w) => w.state === 'released')).toBe(true)
+  })
+
+  it('перед cleanup отправляет ветку задачи в origin', async () => {
+    const { project, task } = setup()
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'cleanup', script: 'rm -rf', isCleanup: true })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('success')
+    // Пуш идёт до удаления рабочей директории, иначе коммиты модели пропадут.
+    const pushIdx = scripts.findIndex((x) => x.includes('git push origin "HEAD:refs/heads/$BRANCH"'))
+    const cleanupIdx = scripts.indexOf('rm -rf')
+    expect(pushIdx).toBeGreaterThanOrEqual(0)
+    expect(pushIdx).toBeLessThan(cleanupIdx)
+    const steps = db.getCiRun('admin', runId)!.steps
+    const push = steps.find((x) => x.title === 'Отправить ветку задачи в origin')!
+    const cleanup = steps.find((x) => x.title === 'cleanup')!
+    expect(push.status).toBe('success')
+    expect(push.position).toBeLessThan(cleanup.position)
+    // Позиции не пересекаются: резюме остаётся последним шагом ленты.
+    expect(new Set(steps.map((x) => x.position)).size).toBe(steps.length)
+    expect(steps[steps.length - 1].kind).toBe('model_summary')
+  })
+
+  it('пуш ветки не удался → cleanup не выполняется, рабочая директория сохранена', async () => {
+    const { project, task } = setup()
+    failPush = true
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'cleanup', script: 'rm -rf', isCleanup: true })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('failed')
+    expect(scripts).not.toContain('rm -rf')
+    const report = db.listCiWorkspaceReport('admin', project.id)
+    expect(report.some((w) => w.state === 'released')).toBe(false)
+  })
+
+  it('пока модель разбирается с упавшим шагом, в прогрессе рана поднят fixing', async () => {
+    const { project, task } = setup()
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'build', script: 'FLAKY build' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    // Снимок сводки доски на каждый запрос к модели: первый — работа, второй — fix-loop.
+    const fixingSeen: boolean[] = []
+    onModelSend = () => {
+      const summary = db.latestCiRunSummaries(project.id)[0]
+      if (summary) fixingSeen.push(summary.slotProgress.fixing === true)
+    }
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('success')
+    expect(fixingSeen[0]).toBe(false)
+    expect(fixingSeen).toContain(true)
+    // После fix-loop флаг снят — карточка снова «голубая».
+    expect(db.getCiRunRaw(runId)!.slotProgress.fixing).toBe(false)
   })
 
   it('конкурентные раны одного проекта сериализуются очередью', async () => {

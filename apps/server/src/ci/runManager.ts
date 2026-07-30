@@ -356,6 +356,78 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     return { status, exitCode, output: collected.join('') }
   }
 
+  /**
+   * Cleanup-команда удаляет рабочую директорию вместе с коммитами модели, поэтому
+   * перед ней ветку задачи обязательно отправляем в origin. Скрипт идемпотентен:
+   * без новых коммитов ничего не делает, при незакоммиченных изменениях падает —
+   * тогда рабочая директория остаётся на машине и работу можно забрать руками.
+   */
+  const PUSH_BRANCH_SCRIPT = `set -eu
+test -n "$SLUG"
+test -n "$BRANCH"
+cd -- "$SLUG"
+if [ ! -d .git ]; then echo "Git-репозиторий не найден — сохранять нечего"; exit 0; fi
+if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
+  echo "В рабочей директории есть незакоммиченные изменения — не отдаю её на удаление" >&2
+  git status --short >&2
+  exit 69
+fi
+head=$(git rev-parse HEAD)
+base=$(git rev-parse "refs/remotes/origin/$BASE_BRANCH" 2>/dev/null || echo "")
+if [ "$head" = "$base" ]; then echo "Новых коммитов нет — отправлять нечего"; exit 0; fi
+git push origin "HEAD:refs/heads/$BRANCH" || git push --force-with-lease origin "HEAD:refs/heads/$BRANCH"
+echo "Ветка $BRANCH отправлена в origin ($head)"`
+
+  /** Системный шаг «сохранить работу модели»: пуш ветки перед cleanup. */
+  async function pushTaskBranch(
+    runId: string,
+    userId: string,
+    agentId: string | null,
+    workspacePath: string,
+    env: Record<string, string>,
+    slot: CiSlot | null,
+    position: number,
+    signal: AbortSignal
+  ): Promise<boolean> {
+    // Без машины команды не выполнялись вовсе — сохранять нечего.
+    if (!agentId) return true
+    const step = deps.db.addCiRunStep({
+      runId, slot, position, kind: 'command', initiatedBy: 'system',
+      title: 'Отправить ветку задачи в origin', status: 'running'
+    })
+    emitStep(step, userId)
+    const started = now()
+    const logLine = (stream: 'stdout' | 'system', chunk: string): void => {
+      const line = deps.db.appendCiLog(runId, step.id, stream, chunk)
+      broadcast({ t: 'ci.log', runId, line }, userId)
+    }
+    let exitCode: number | null = null
+    try {
+      const r = await deps.executor.run(
+        { agentId, script: PUSH_BRANCH_SCRIPT, workdir: workspacePath, env, timeoutMs: 300_000, secrets: [] },
+        (d) => logLine('stdout', d),
+        signal
+      )
+      exitCode = r.exitCode
+    } catch (err) {
+      logLine('system', (err instanceof Error ? err.message : String(err)) + '\n')
+    }
+    const ok = exitCode === 0
+    if (!ok) logLine('system', 'Ветка не отправлена — рабочая директория сохранена, работа модели не потеряна\n')
+    const upd = deps.db.updateCiRunStep(step.id, { status: ok ? 'success' : 'failed', exitCode, finishedAt: now(), durationMs: now() - started })
+    if (upd) emitStep(upd, userId)
+    return ok
+  }
+
+  /** Отметить, что модель разбирается с упавшим шагом (карточка мигает красным медленно). */
+  function setFixing(runId: string, userId: string, fixing: boolean, phase?: string): void {
+    const row = deps.db.getCiRunRaw(runId)
+    if (!row) return
+    const sp = row.slotProgress
+    const run = deps.db.updateCiRun(runId, { slotProgress: { ...sp, phase: phase ?? sp.phase, fixing } })
+    if (run) emitRun(run, userId)
+  }
+
   function makePrimitives(runId: string, userId: string, agentId: string | null, workspacePath: string, env: Record<string, string>, signal: AbortSignal): CiRunPrimitives {
     return {
       runId,
@@ -553,6 +625,8 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     // и с какого номера нумеровать новые шаги (чтобы не пересекаться со старыми).
     let done = resume ? (resume.kind === 'model' ? beforeLen : resume.slot === 'before_model' ? resume.index : beforeLen + 1 + resume.index) : 0
     const posBase = resume ? (deps.db.getCiRun(userId, runId)?.steps.length ?? 0) : 0
+    // Системные шаги, вставленные между командами слота, сдвигают позиции в ленте.
+    let extraSteps = 0
 
     // Системный шаг подготовки директории (пропускаем при повторе — директория есть).
     if (!resume && repoRoot && agentId) {
@@ -591,7 +665,21 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
           done++
           continue
         }
-        const res = await runCommandStep(runId, userId, agentId, workspacePath, env, slot, posBase + done + 1, command, 'user', null, signal)
+        // Cleanup сносит рабочую директорию вместе с коммитами модели — сначала
+        // отправляем ветку в origin; не получилось — не удаляем и падаем.
+        if (command.isCleanup) {
+          const pushed = await pushTaskBranch(runId, userId, agentId, workspacePath, env, slot, posBase + done + 1 + extraSteps, signal)
+          extraSteps++
+          if (!pushed) {
+            if (slot === 'before_model') {
+              rollbackAndFail(runId, userId, runRow.prevColumnId, 'script_error')
+              return false
+            }
+            deps.db.updateCiRun(runId, { status: 'failed' })
+            return false
+          }
+        }
+        const res = await runCommandStep(runId, userId, agentId, workspacePath, env, slot, posBase + done + 1 + extraSteps, command, 'user', null, signal)
         if (res.status !== 'success' && !command.allowFailure) {
           // fix-loop (если подключён) на упавший шаг.
           const fixed = await tryFix(runId, userId, agentId, workspacePath, env, project, task, signal)
@@ -623,7 +711,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     let modelCancelled = false
     if (!(resume?.kind === 'command' && resume.slot === 'after_model')) {
       progress(runId, done, total, 'Модель работает', userId)
-      const mwStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1, kind: 'model_work', initiatedBy: 'system', title: 'Работа модели', status: 'running' })
+      const mwStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1 + extraSteps, kind: 'model_work', initiatedBy: 'system', title: 'Работа модели', status: 'running' })
       emitStep(mwStep, userId)
       const mwStart = now()
       if (deps.modelWork) {
@@ -665,7 +753,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     // 4) Резюме модели.
     if (!signal.aborted) {
       progress(runId, done, total, 'Резюме', userId)
-      const sumStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1, kind: 'model_summary', initiatedBy: 'system', title: 'Резюме модели', status: 'running' })
+      const sumStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1 + extraSteps, kind: 'model_summary', initiatedBy: 'system', title: 'Резюме модели', status: 'running' })
       emitStep(sumStep, userId)
       let summaryText = 'Ран завершён.'
       if (deps.modelSummary) {
@@ -723,13 +811,17 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
         return { exitCode: r.exitCode, timedOut: r.status === 'timeout' }
       }
     }
+    setFixing(runId, userId, true, 'Модель исправляет ошибку')
+    let fixed = false
     try {
       const r = await deps.attemptFix(ctx)
-      if (r.fixed) deps.db.updateCiRunStep(failedStep.id, { fixedByModel: true, status: 'success' })
-      return r.fixed
+      fixed = r.fixed
+      if (fixed) deps.db.updateCiRunStep(failedStep.id, { fixedByModel: true, status: 'success' })
     } catch {
-      return false
+      fixed = false
     }
+    setFixing(runId, userId, false, fixed ? 'Ошибка исправлена — продолжаю' : 'Не удалось исправить ошибку')
+    return fixed
   }
 
   function rollbackTask(runId: string, userId: string, prevColumnId: string | null): void {
