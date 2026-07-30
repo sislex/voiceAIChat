@@ -205,7 +205,6 @@ export function MessageImage({
     <>
       {agentId && onOpenInExplorer && (
         <IconButton size="sm"
-          
           title="Показать в проводнике"
           aria-label="Показать картинку в проводнике"
           onClick={() => onOpenInExplorer(agentId, image.path)}
@@ -217,7 +216,6 @@ export function MessageImage({
         ⬇
       </IconButton>
       <IconButton size="sm"
-        
         title={copied === 'fail' ? 'Не удалось скопировать' : 'Копировать картинку'}
         aria-label="Копировать картинку"
         disabled={!ready}

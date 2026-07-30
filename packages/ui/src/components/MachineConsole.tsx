@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import type { AgentExecResult, AgentInfo } from '@shared/agentProtocol'
 import type { UtilityVariant } from './machine'
+import { IconButton } from './ui/IconButton'
 import { ToolFrame } from './ToolFrame'
 
 export interface MachineConsoleProps {
@@ -106,15 +107,16 @@ export function MachineConsole({
           disabled={!agentId || running}
           onChange={(e) => setCmd(e.target.value)}
         />
-        <button
-          className="fsbtn"
+        <IconButton
+          size="sm"
           type="submit"
           title="Выполнить команду"
           aria-label="Выполнить команду"
-          disabled={!agentId || running || !cmd.trim()}
+          loading={running}
+          disabled={!agentId || !cmd.trim()}
         >
           ▶
-        </button>
+        </IconButton>
       </form>
     </ToolFrame>
   )

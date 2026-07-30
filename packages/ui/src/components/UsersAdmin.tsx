@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { AdminUserInfo, UsageReport, UsageUnit } from '@shared/admin'
 import type { Conversation, Message } from '@shared/types'
+import { Button } from './ui/Button'
 import { ToolFrame } from './ToolFrame'
 
 export interface UsersAdminProps {
@@ -117,9 +118,9 @@ export function UsersAdmin({
               <option value="user">user</option>
               <option value="admin">admin</option>
             </select>
-            <button className="login-submit" disabled={!newName.trim()} onClick={submitCreate}>
+            <Button variant="primary" disabled={!newName.trim()} onClick={submitCreate}>
               Создать
-            </button>
+            </Button>
           </div>
         </nav>
 
@@ -135,25 +136,24 @@ export function UsersAdmin({
                 <span className="uadmin-actions">
                   {canManage(cur.name) && (
                     <>
-                      <button
-                        className="footbtn"
+                      <Button size="sm"
                         onClick={() => onSetBlocked(cur.name, !cur.blocked)}
                       >
                         {cur.blocked ? 'Разблокировать' : 'Заблокировать'}
-                      </button>
+                      </Button>
                       {confirmDel === cur.name ? (
                         <>
-                          <button className="delyes" onClick={() => onDelete(cur.name)}>
+                          <Button variant="danger" size="sm" onClick={() => onDelete(cur.name)}>
                             Удалить всё
-                          </button>
-                          <button className="delno" onClick={() => setConfirmDel(null)}>
+                          </Button>
+                          <Button size="sm" onClick={() => setConfirmDel(null)}>
                             Отмена
-                          </button>
+                          </Button>
                         </>
                       ) : (
-                        <button className="delbtn" onClick={() => setConfirmDel(cur.name)}>
+                        <Button variant="danger" size="sm" onClick={() => setConfirmDel(cur.name)}>
                           Удалить учётку
-                        </button>
+                        </Button>
                       )}
                     </>
                   )}

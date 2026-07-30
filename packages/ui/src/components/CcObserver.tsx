@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { CcProject, CcSession, CcItem, CcItemKind } from '@shared/cc'
 import { Markdown } from './Markdown'
+import { Button } from './ui/Button'
 import { ToolFrame } from './ToolFrame'
 
 export interface CcObserverProps {
@@ -123,13 +124,12 @@ export function CcObserver({
               <span className="cc-live">
                 <span className="reddot" /> LIVE · слежение за сессией
               </span>
-              <button
-                className="vdl"
+              <Button variant="primary" size="sm"
                 aria-label="Продолжить эту сессию"
                 onClick={() => activeProject && onResumeSession(activeProject, activeSession)}
               >
                 ▶ Продолжить эту сессию
-              </button>
+              </Button>
             </div>
           )}
           {!activeSession && <p className="cc-empty">Выберите сессию</p>}

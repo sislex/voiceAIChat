@@ -12,6 +12,7 @@ import {
   serverBaseFromConnection,
   type AgentOs
 } from '@shared/agentInstall'
+import { Button } from './ui/Button'
 import { copyText } from '../lib/clipboard'
 
 export interface AgentCommandsProps {
@@ -89,36 +90,35 @@ export function AgentCommands({
       </p>
       <div className="agcmd-os">
         {AGENT_OS_LIST.map((os) => (
-          <button
+          <Button variant="primary" size="sm"
             key={os.id}
-            className="vdl"
+            
             title={`Скопировать команду установки для ${os.name} (${os.shell})`}
             aria-label={`Скопировать команду установки для ${os.name}`}
             onClick={() => void copyCommand(os.id)}
           >
             {copied === os.id ? '✓ скопировано' : `${os.icon} ${os.name}`}
             <span className="agcmd-shell">{os.shell}</span>
-          </button>
+          </Button>
         ))}
       </div>
       <div className="agcmd-extra">
-        <button className="vdl" title="Скопировать строку подключения" onClick={() => void copyConn()}>
+        <Button variant="primary" size="sm" title="Скопировать строку подключения" onClick={() => void copyConn()}>
           {copied === 'conn' ? '✓ строка скопирована' : 'Строка подключения'}
-        </button>
-        <button
-          className="vdl"
+        </Button>
+        <Button variant="primary" size="sm"
           title="Скопировать только токен машины"
           onClick={() => void copyText(token).then((ok) => mark('token', ok))}
         >
           {copied === 'token' ? '✓ токен скопирован' : 'Только токен'}
-        </button>
-        <button className="vdl" title="QR-код строки подключения (отсканировать телефоном)" onClick={() => void toggleQr()}>
+        </Button>
+        <Button variant="primary" size="sm" title="QR-код строки подключения (отсканировать телефоном)" onClick={() => void toggleQr()}>
           {qr ? 'Скрыть QR' : '▦ QR-код'}
-        </button>
+        </Button>
         {onHide && (
-          <button className="vdl" title="Скрыть команды" onClick={onHide}>
+          <Button variant="primary" size="sm" title="Скрыть команды" onClick={onHide}>
             Скрыть
-          </button>
+          </Button>
         )}
       </div>
       {qr && <img className="agcmd-qr" src={qr} alt="QR-код строки подключения" width={220} height={220} />}
