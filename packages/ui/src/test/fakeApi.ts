@@ -602,6 +602,8 @@ export function createFakeCi(): FakeCi {
   let settings: CiGlobalSettings = { ...DEFAULT_CI_GLOBAL_SETTINGS }
   const runs = new Map<string, CiRunDetail>()
   const logs = new Map<string, CiLogLine[]>()
+  let projectLlm = { provider: 'claude' as const, model: 'sonnet' }
+  let taskLlm: { provider: 'claude' | 'codex'; model: string } | null = null
   type L = (...args: never[]) => void
   const listeners: Record<string, Set<L>> = {}
   const on = (t: string, cb: L): (() => void) => {
@@ -662,6 +664,10 @@ export function createFakeCi(): FakeCi {
     listWorkspaces: async () => [],
     getProjectCi: async () => ({ beforeModel: [], afterModel: [] }),
     putProjectCi: async (_pid, config) => config,
+    getProjectCiLlm: async () => ({ ...projectLlm }),
+    putProjectCiLlm: async (_pid, config) => { projectLlm = config as typeof projectLlm; return { ...config } },
+    getTaskCiLlm: async () => ({ config: { ...(taskLlm ?? projectLlm) }, overridden: taskLlm !== null, projectDefault: { ...projectLlm } }),
+    putTaskCiLlm: async (_pid, _tid, config) => { taskLlm = { ...config }; return { ...config } },
     getTaskCi: async () => ({ config: { beforeModel: [], afterModel: [] }, overridden: false, projectDefault: { beforeModel: [], afterModel: [] } }),
     putTaskCi: async (_pid, _tid, config) => config,
     startRun: async (projectId, taskId) => { const run = mkRun(projectId, taskId); runs.set(run.id, { run, steps: [], fixAttempts: [] }); logs.set(run.id, []); return { ...run } },

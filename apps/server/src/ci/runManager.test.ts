@@ -105,6 +105,17 @@ async function waitRun(runId: string): Promise<{ run: { status: string; taskId: 
 }
 
 describe('ci run manager', () => {
+  it('при запуске переносит карточку в колонку development и использует наследуемую модель', async () => {
+    const { project, task } = setup()
+    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.4' })
+    const runId = await run(project.id, task.id)
+    const development = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(development.id)
+    const detail = await waitRun(runId)
+    expect(detail.run.status).toBe('success')
+    expect(codexModel).toBe('gpt-5.4')
+  })
+
   it('пустые слоты: ран = работа модели + резюме → success', async () => {
     const { project, task } = setup()
     const runId = await run(project.id, task.id)

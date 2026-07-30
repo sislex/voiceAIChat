@@ -74,6 +74,12 @@ export interface CiSlotConfig {
   afterModel: string[]
 }
 
+/** Движок и модель шага разработки; задача наследует настройку проекта. */
+export interface CiLlmConfig {
+  provider: CiLlmProvider
+  model: string
+}
+
 // --- Глобальные настройки CI ---------------------------------------------
 
 export interface CiGlobalSettings {

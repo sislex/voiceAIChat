@@ -4,7 +4,7 @@
 // команды и глобальные настройки — глобальный admin; запуск — любой участник проекта.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import type { CiCommandInput, CiSlot } from '@voicechat/shared'
+import type { CiCommandInput, CiLlmConfig, CiSlot } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CiRunManager } from '../ci/runManager.js'
 import { uid } from '../users/auth.js'
@@ -77,6 +77,28 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     if (b.beforeModel) db.setCiSlotCommands('project', req.params.id, 'before_model', b.beforeModel)
     if (b.afterModel) db.setCiSlotCommands('project', req.params.id, 'after_model', b.afterModel)
     return db.getCiSlotConfig('project', req.params.id)
+  })
+
+  // --- Движок/модель проекта и задачи (с наследованием) ---
+  app.get<{ Params: { id: string } }>('/api/projects/:id/ci/llm', async (req, reply) => {
+    if (!db.getProject(uid(req), req.params.id)) return nf(reply)
+    return db.getCiLlmConfig('project', req.params.id) ?? { provider: 'claude', model: 'sonnet' }
+  })
+  app.put<{ Params: { id: string }; Body: CiLlmConfig }>('/api/projects/:id/ci/llm', async (req, reply) => {
+    if (!isOwner(req, req.params.id)) return forbid(reply)
+    return db.setCiLlmConfig('project', req.params.id, req.body)
+  })
+  app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci/llm', async (req, reply) => {
+    if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
+    return {
+      config: db.resolveTaskLlmConfig(req.params.id, req.params.taskId),
+      overridden: db.getCiLlmConfig('task', req.params.taskId) !== null,
+      projectDefault: db.getCiLlmConfig('project', req.params.id) ?? { provider: 'claude', model: 'sonnet' }
+    }
+  })
+  app.put<{ Params: { id: string; taskId: string }; Body: CiLlmConfig }>('/api/projects/:id/tasks/:taskId/ci/llm', async (req, reply) => {
+    if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
+    return db.setCiLlmConfig('task', req.params.taskId, req.body)
   })
 
   // --- Слот-конфиг задачи (переопределение + метка наследования) ---

@@ -7,6 +7,7 @@ import type {
   RendererCiRest,
   CiCommandUsage,
   CiTaskConfig,
+  CiTaskLlmConfig,
   CiMetrics
 } from './ciBridge'
 import type {
@@ -15,6 +16,7 @@ import type {
   CiCommandSuggestion,
   CiWorkspaceReportItem,
   CiSlotConfig,
+  CiLlmConfig,
   CiRun,
   CiRunDetail,
   CiLogLine,
@@ -275,6 +277,10 @@ export function createCiRest(httpBase: string): RendererCiRest {
     listWorkspaces: (projectId) => req<CiWorkspaceReportItem[]>(REST.ciWorkspaces + qs(projectId)),
     getProjectCi: (projectId) => req<CiSlotConfig>(REST.projectCi(projectId)),
     putProjectCi: (projectId, config) => req<CiSlotConfig>(REST.projectCi(projectId), { method: 'PUT', body: JSON.stringify(config) }),
+    getProjectCiLlm: (projectId) => req<CiLlmConfig>(REST.projectCiLlm(projectId)),
+    putProjectCiLlm: (projectId, config) => req<CiLlmConfig>(REST.projectCiLlm(projectId), { method: 'PUT', body: JSON.stringify(config) }),
+    getTaskCiLlm: (projectId, taskId) => req<CiTaskLlmConfig>(REST.taskCiLlm(projectId, taskId)),
+    putTaskCiLlm: (projectId, taskId, config) => req<CiLlmConfig>(REST.taskCiLlm(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
     getTaskCi: (projectId, taskId) => req<CiTaskConfig>(REST.taskCi(projectId, taskId)),
     putTaskCi: (projectId, taskId, config) => req<CiSlotConfig>(REST.taskCi(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
     startRun: (projectId, taskId) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST' }),

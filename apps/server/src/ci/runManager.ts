@@ -94,6 +94,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (!task) return { error: 'Задача не найдена' }
     const agentId = project.defaultAgentId
     const slots = deps.db.resolveTaskSlots(projectId, taskId)
+    const llm = deps.db.resolveTaskLlmConfig(projectId, taskId)
     const total = slots.beforeModel.length + slots.afterModel.length + 2
     const run = deps.db.createCiRun({
       projectId,
@@ -101,8 +102,14 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       agentId,
       triggeredBy: userId,
       prevColumnId: task.columnId,
+      llmProvider: llm.provider,
+      llmModel: llm.model,
       slotProgress: { done: 0, total, phase: 'В очереди' }
     })
+    const developmentColumnId = deps.db.getColumnIdBySemantic(projectId, 'development')
+    if (developmentColumnId && developmentColumnId !== task.columnId) {
+      deps.db.moveTask(userId, projectId, taskId, { columnId: developmentColumnId })
+    }
     deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.started', actorType: 'user', actorId: userId, payload: { taskId } })
     emitRun(run, userId)
 

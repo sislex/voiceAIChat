@@ -296,6 +296,14 @@ CREATE TABLE IF NOT EXISTS ci_slot_commands (
 );
 CREATE INDEX IF NOT EXISTS idx_ci_slot_commands_owner ON ci_slot_commands(owner_type, owner_id, slot, position);
 
+CREATE TABLE IF NOT EXISTS ci_llm_configs (
+  owner_type TEXT NOT NULL,
+  owner_id   TEXT NOT NULL,
+  provider   TEXT NOT NULL,
+  model      TEXT NOT NULL,
+  PRIMARY KEY (owner_type, owner_id)
+);
+
 CREATE TABLE IF NOT EXISTS ci_workspaces (
   id                 TEXT PRIMARY KEY,
   project_id         TEXT NOT NULL,
