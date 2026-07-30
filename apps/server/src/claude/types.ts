@@ -19,6 +19,11 @@ export interface LlmRequest {
   /** Удалённое выполнение Bash через MCP-мост; undefined — Bash на сервере. */
   /** true — shell-команды запрещены полностью, даже на сервере. */
   executionDisabled?: boolean
+  /**
+   * true — remote-инструменты доступны, но только для чтения (фаза плана CI):
+   * модель исследует рабочую копию на машине, но ничего в ней не меняет.
+   */
+  readOnlyRemote?: boolean
   remote?: {
     /** URL MCP-эндпоинта с agent id и секретом в query. */
     mcpUrl: string

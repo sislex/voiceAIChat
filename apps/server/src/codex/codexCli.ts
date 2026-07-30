@@ -80,6 +80,10 @@ export class CodexCli implements LlmClient {
       prompt =
         `Локальный shell недоступен. Все команды выполняй ТОЛЬКО инструментом MCP-сервера ` +
         `«remote» (bash) — они выполняются на машине пользователя «${req.remote.agentName}».` +
+        (req.readOnlyRemote
+          ? `\nРежим «План»: только исследование — читай файлы и историю (ls, cat, grep, ` +
+            `git log/diff/status). Ничего не меняй: мост отклонит изменяющие команды.`
+          : '') +
         (req.remote.policySummary ? `\n${req.remote.policySummary}` : '') +
         `\n\n${prompt}`
     } else {

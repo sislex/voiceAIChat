@@ -117,6 +117,45 @@ describe('remoteBashMcp', () => {
     expect(body.result.content[0].text).toContain('не в сети')
   })
 
+  it('ro=1 (фаза плана): чтение проходит, изменяющая команда отклоняется без exec', async () => {
+    let execCalls = 0
+    const registry = {
+      exec: async () => {
+        execCalls++
+        return { exitCode: 0, output: 'ok', timedOut: false }
+      },
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    app = await makeApp(registry)
+    const ro = `?k=${SECRET}&agent=a1&ro=1`
+    await rpc(app, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } }
+    }, ro)
+
+    const read = await rpc(app, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'bash', arguments: { command: 'git log --oneline -5' } }
+    }, ro)
+    expect((read.json() as { result: { isError?: boolean } }).result.isError).toBeFalsy()
+    expect(execCalls).toBe(1)
+
+    const write = await rpc(app, {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'bash', arguments: { command: 'rm -rf src' } }
+    }, ro)
+    const body = write.json() as { result: { content: Array<{ text: string }>; isError?: boolean } }
+    expect(body.result.isError).toBe(true)
+    expect(body.result.content[0].text).toContain('режим «План»')
+    expect(execCalls).toBe(1)
+  })
+
   it('регресс: нормальный tools/call не отменяет команду (close ответа, не запроса)', async () => {
     // Реестр с задержкой: запоминает, сработал ли signal.abort к моменту резолва.
     // Баг был в том, что отмена висела на close запроса и срабатывала до ответа —

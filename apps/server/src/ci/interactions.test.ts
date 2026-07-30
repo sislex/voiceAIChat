@@ -171,8 +171,10 @@ describe('гейт одобрения плана', () => {
     const pending = await waitPending(runId)
     expect(pending.kind).toBe('plan_approval')
     expect(pending.planText).toContain('План:')
-    // Планирование идёт в режиме «только чтение».
-    expect(requests[0].permissionMode).toBe('plan')
+    // Планирование — не CLI-режим `plan` (он глушит remote MCP), а `default` с
+    // remote-bash только на чтение: иначе модель не видит рабочую копию.
+    expect(requests[0].permissionMode).toBe('default')
+    expect(requests[0].readOnlyRemote).toBe(true)
 
     await inj({ method: 'POST', url: `/api/ci/runs/${runId}/interactions/${pending.id}`, payload: { decision: 'approved' } })
     const detail = await waitTerminal(runId)
@@ -193,7 +195,8 @@ describe('гейт одобрения плана', () => {
     await inj({ method: 'POST', url: `/api/ci/runs/${runId}/interactions/${first.id}`, payload: { decision: 'rework', text: 'учти миграции' } })
     const second = await waitPending(runId)
     expect(second.planText).toBe('План v2')
-    expect(requests[1].permissionMode).toBe('plan')
+    expect(requests[1].permissionMode).toBe('default')
+    expect(requests[1].readOnlyRemote).toBe(true)
     expect(requests[1].prompt).toContain('учти миграции')
 
     await inj({ method: 'POST', url: `/api/ci/runs/${runId}/interactions/${second.id}`, payload: { decision: 'approved' } })

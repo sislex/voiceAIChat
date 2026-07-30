@@ -2057,6 +2057,27 @@ export class VoiceChatDb {
     return this.getCiRunRaw(runId)
   }
 
+  /**
+   * Раны, оставшиеся активными после остановки процесса (рестарт контейнера,
+   * падение): исполнителя в памяти уже нет, а карточка задачи всё ещё считает CI
+   * занятым и не даёт запустить его заново. При старте сервера закрываем такие
+   * раны и их незавершённые шаги.
+   */
+  failInterruptedCiRuns(): CiRun[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM ci_runs WHERE status IN ('queued', 'running', 'awaiting_input')`)
+      .all() as CiRunRow[]
+    const ts = this.now()
+    for (const r of rows) {
+      this.db.prepare(`UPDATE ci_run_steps SET status = 'failed', finished_at = ? WHERE run_id = ? AND status IN ('running', 'awaiting_input')`).run(ts, r.id)
+      this.db.prepare(`UPDATE ci_run_steps SET status = 'skipped' WHERE run_id = ? AND status = 'queued'`).run(r.id)
+      this.db.prepare(`UPDATE ci_interactions SET status = 'cancelled', answered_at = ? WHERE run_id = ? AND status = 'pending'`).run(ts, r.id)
+      this.db.prepare(`UPDATE ci_runs SET status = 'failed', finished_at = ?, duration_ms = ? WHERE id = ?`).run(ts, r.started_at ? ts - r.started_at : null, r.id)
+      this.addCiEvent({ projectId: r.project_id, runId: r.id, type: 'run.finished', actorType: 'system', payload: { status: 'failed', reason: 'server_restart' } })
+    }
+    return rows.map((r) => this.getCiRunRaw(r.id)).filter((r): r is CiRun => r !== null)
+  }
+
   addCiRunStep(args: { runId: string; slot: CiSlot | null; position: number; kind: CiStepKind; parentStepId?: string | null; initiatedBy?: CiInitiatedBy; commandId?: string | null; commandSnapshot?: string | null; title: string; workdir?: string | null; status?: CiStatus }): CiRunStep {
     const id = this.newId()
     this.db.prepare(`INSERT INTO ci_run_steps (id, run_id, slot, position, kind, parent_step_id, initiated_by, command_id, command_snapshot, title, workdir, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.runId, args.slot, args.position, args.kind, args.parentStepId ?? null, args.initiatedBy ?? 'system', args.commandId ?? null, args.commandSnapshot ?? null, args.title, args.workdir ?? null, args.status ?? 'queued')
