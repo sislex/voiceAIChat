@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-07-28
-checked: 6e1cbfb
+updated: 2026-07-30
+checked: 3a5b554
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -86,3 +86,16 @@ git pull && docker compose up -d --build
 
 Секреты (`VC_ADMIN_PASSWORD`, upstream-ключи) задаются в shell/`.env` на сервере и
 в репозиторий не попадают.
+
+**Не запускай деплой из сессии внутри контейнера `voicechat`** (ни через
+`docker compose exec voicechat bash`, ни через PTY/агента, живущего в этом
+контейнере). `docker compose up -d --build` первым делом убивает старый
+контейнер — то есть убивает и сам процесс деплоя, поэтому новый контейнер
+остаётся в статусе `Created` и никогда не стартует. Симптом: Caddy жив, а
+`https://45.135.182.251/` отдаёт `502`; `docker compose ps -a` показывает
+`voicechat` в `Created` без логов, а имя контейнера получает хеш-префикс
+(`<hash>_voiceaichat-voicechat-1` — так docker разводит конфликт имён при
+пересоздании). Лечится `cd /root/voiceAIChat && docker compose up -d`
+(образ уже собран, нужен только старт); префикс в имени безвреден и уйдёт при
+следующем полном деплое. Деплой запускай из ssh-сессии хоста или через
+`nohup`/`systemd-run`, чтобы он переживал остановку контейнера.
