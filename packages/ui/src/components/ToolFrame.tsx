@@ -6,6 +6,7 @@
 
 import { useState, type ReactNode } from 'react'
 import { PopupFrame } from './PopupFrame'
+import { IconButton } from './ui/IconButton'
 import { useDialogStack } from './ui/useDialogStack'
 import type { UtilityVariant } from './machine'
 
@@ -65,20 +66,20 @@ export function ToolFrame({
       <span className="util-head-btns">
         {typeof actions === 'function' ? actions(ctl) : actions}
         {variant !== 'page' && (
-          <button
-            className="xbtn"
+          <IconButton
             title={fullscreen ? 'Свернуть' : 'На весь экран'}
+            aria-label={fullscreen ? 'Свернуть' : 'Развернуть на весь экран'}
             aria-pressed={fullscreen}
             onClick={() => setFullscreen((v) => !v)}
           >
             {/* Не эмодзи: 🗕 (U+1F5D5) в Chrome/macOS рисуется пустым квадратом. */}
             {fullscreen ? '▭' : '⛶'}
-          </button>
+          </IconButton>
         )}
         {onClose && (
-          <button className="xbtn" aria-label="Закрыть" title="Закрыть" onClick={onClose}>
+          <IconButton aria-label="Закрыть" title="Закрыть" onClick={onClose}>
             ✕
-          </button>
+          </IconButton>
         )}
       </span>
     </div>

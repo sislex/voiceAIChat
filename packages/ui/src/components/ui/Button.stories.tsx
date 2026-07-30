@@ -115,6 +115,12 @@ export const Shapes: Story = {
         Сохранение…
       </Button>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <IconButton className="vc-btn--danger-quiet" aria-label="Удалить" title="Удалить">
+          ✕
+        </IconButton>
+        <span className="fsub">тихий danger: краснеет под курсором</span>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <IconButton className="vc-btn--circle" variant="secondary" size="sm" aria-label="Прикрепить" title="Прикрепить">
           📎
         </IconButton>

@@ -12,6 +12,7 @@
 //     защита от «нажал не думая», а не тест на слепую печать.
 
 import { useRef, useState, type ReactNode } from 'react'
+import { Button } from './Button'
 import { Dialog } from './Dialog'
 
 /** Что спрашиваем. Ровно этот объект принимает confirm() из useConfirm. */
@@ -65,16 +66,12 @@ export function ConfirmDialog({
       className="vc-confirm"
       footer={
         <>
-          <button className="vc-confirm-btn" ref={cancelRef} onClick={onCancel}>
+          <Button ref={cancelRef} onClick={onCancel}>
             {cancelLabel}
-          </button>
-          <button
-            className={`vc-confirm-btn vc-confirm-btn--${variant === 'danger' ? 'danger' : 'primary'}`}
-            disabled={!armed}
-            onClick={confirm}
-          >
+          </Button>
+          <Button variant={variant === 'danger' ? 'danger' : 'primary'} disabled={!armed} onClick={confirm}>
             {confirmLabel}
-          </button>
+          </Button>
         </>
       }
     >

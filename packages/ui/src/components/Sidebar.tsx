@@ -13,6 +13,8 @@ import type { AgentInfo } from '@shared/agentProtocol'
 import type { ProjectSummary } from '@shared/projects'
 import { ACCENT } from '../lib/view'
 import { splitSnippet } from '../lib/snippet'
+import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
 import { GearIcon } from './icons'
 
 /** Человекочитаемая мета разговора: «Сегодня · 6 сообщений». */
@@ -337,9 +339,9 @@ export function Sidebar({
           Голос·Чат
         </span>
         <div className="sidehead-actions">
-          <button className="newbtn" onClick={onNew}>
+          <Button size="sm" onClick={onNew}>
             + Новый
-          </button>
+          </Button>
           {onToggleCollapse && (
             <button
               className="side-collapse"
@@ -488,8 +490,8 @@ export function Sidebar({
               </div>
               {confirmingId !== c.id && renamingId !== c.id && (
                 <span className="crow-actions">
-                  <button
-                    className="renbtn"
+                  <IconButton size="sm"
+                    
                     aria-label={`Переименовать разговор «${c.title}»`}
                     title="Переименовать"
                     onClick={(e) => {
@@ -498,9 +500,9 @@ export function Sidebar({
                     }}
                   >
                     ✎
-                  </button>
-                  <button
-                    className="delbtn"
+                  </IconButton>
+                  <IconButton size="sm" className="vc-btn--danger-quiet"
+                    
                     aria-label={`Удалить разговор «${c.title}»`}
                     title="Удалить разговор"
                     onClick={(e) => {
@@ -509,25 +511,25 @@ export function Sidebar({
                     }}
                   >
                     ✕
-                  </button>
+                  </IconButton>
                 </span>
               )}
             </div>
             {confirmingId === c.id && (
               <div className="delconfirm" onClick={(e) => e.stopPropagation()}>
                 <span>Удалить?</span>
-                <button
-                  className="delyes"
+                <Button variant="danger" size="sm"
+                  
                   onClick={() => {
                     setConfirmingId(null)
                     onDelete(c.id)
                   }}
                 >
                   Удалить
-                </button>
-                <button className="delno" onClick={() => setConfirmingId(null)}>
+                </Button>
+                <Button size="sm" onClick={() => setConfirmingId(null)}>
                   Отмена
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -579,8 +581,8 @@ export function Sidebar({
             всплывают по клику на пользователя. */}
         {currentUser && currentUser.name ? (
           <div className="acct" ref={acctRef}>
-            <button
-              className="footbtn acct-toggle"
+            <Button variant="ghost" fullWidth className="sidefoot-row acct-toggle"
+              
               onClick={() => setAcctOpen((v) => !v)}
               aria-haspopup="menu"
               aria-expanded={acctOpen}
@@ -589,59 +591,59 @@ export function Sidebar({
               <span className="footico">👤</span>
               <span className="username">{currentUser.name}</span>
               <span className="acct-caret" aria-hidden>▾</span>
-            </button>
+            </Button>
             {acctOpen && (
               <div className="acct-menu" role="menu">
-                <button className="footbtn" role="menuitem" onClick={acct(onOpenObserver)}>
+                <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenObserver)}>
                   <span className="footico">🤖</span>
                   Агенты
-                </button>
+                </Button>
                 {onOpenKnowledgeBase && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onOpenKnowledgeBase)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenKnowledgeBase)}>
                     <span className="footico">📚</span>
                     База знаний
-                  </button>
+                  </Button>
                 )}
                 {onOpenFiles && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onOpenFiles)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenFiles)}>
                     <span className="footico">📁</span>
                     Проводник
-                  </button>
+                  </Button>
                 )}
                 {onOpenConsole && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onOpenConsole)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenConsole)}>
                     <span className="footico">⌨️</span>
                     Консоль
-                  </button>
+                  </Button>
                 )}
                 <div className="acct-sep" aria-hidden />
                 {onOpenMachines && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onOpenMachines)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenMachines)}>
                     <span className="footico">🖥</span>
                     Машины
-                  </button>
+                  </Button>
                 )}
                 {onOpenCi && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onOpenCi)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenCi)}>
                     <span className="footico">🧩</span>
                     Команды
-                  </button>
+                  </Button>
                 )}
                 {onOpenUsers && currentUser.role === 'admin' && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onOpenUsers)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenUsers)}>
                     <span className="footico">👥</span>
                     Пользователи
-                  </button>
+                  </Button>
                 )}
-                <button className="footbtn" role="menuitem" onClick={acct(onOpenSettings)}>
+                <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenSettings)}>
                   <GearIcon />
                   Настройки
-                </button>
+                </Button>
                 {onLogout && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onLogout)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onLogout)}>
                     <span className="footico">🚪</span>
                     Выйти
-                  </button>
+                  </Button>
                 )}
               </div>
             )}
@@ -651,29 +653,29 @@ export function Sidebar({
              инструменты остаются компактным рядом иконок + Настройки. */
           <>
             <div className="foottools">
-              <button className="footico-btn" onClick={onOpenObserver} title="Агенты (Claude / Codex)" aria-label="Агенты">
+              <IconButton className="foottools-item" onClick={onOpenObserver} title="Агенты (Claude / Codex)" aria-label="Агенты">
                 🤖
-              </button>
+              </IconButton>
               {onOpenKnowledgeBase && (
-                <button className="footico-btn" onClick={onOpenKnowledgeBase} title="База знаний" aria-label="База знаний">
+                <IconButton className="foottools-item" onClick={onOpenKnowledgeBase} title="База знаний" aria-label="База знаний">
                   📚
-                </button>
+                </IconButton>
               )}
               {onOpenFiles && (
-                <button className="footico-btn" onClick={onOpenFiles} title="Открыть проводник" aria-label="Открыть проводник">
+                <IconButton className="foottools-item" onClick={onOpenFiles} title="Открыть проводник" aria-label="Открыть проводник">
                   📁
-                </button>
+                </IconButton>
               )}
               {onOpenConsole && (
-                <button className="footico-btn" onClick={onOpenConsole} title="Открыть консоль" aria-label="Открыть консоль">
+                <IconButton className="foottools-item" onClick={onOpenConsole} title="Открыть консоль" aria-label="Открыть консоль">
                   ⌨️
-                </button>
+                </IconButton>
               )}
             </div>
-            <button className="footbtn" onClick={onOpenSettings}>
+            <Button variant="ghost" fullWidth className="sidefoot-row" onClick={onOpenSettings}>
               <GearIcon />
               Настройки
-            </button>
+            </Button>
           </>
         )}
       </div>

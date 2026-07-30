@@ -4,6 +4,7 @@
 
 import { useState } from 'react'
 import type { ProjectSummary } from '@shared/projects'
+import { Button } from './ui/Button'
 import { ToolFrame } from './ToolFrame'
 
 export interface ProjectsOverlayProps {
@@ -53,9 +54,9 @@ export function ProjectsOverlay(props: ProjectsOverlayProps): JSX.Element {
                 if (e.key === 'Enter') submitCreate()
               }}
             />
-            <button className="login-submit" disabled={!newName.trim()} onClick={submitCreate}>
+            <Button variant="primary" disabled={!newName.trim()} onClick={submitCreate}>
               Создать
-            </button>
+            </Button>
           </div>
         </nav>
       </div>
