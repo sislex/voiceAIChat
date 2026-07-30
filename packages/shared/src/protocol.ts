@@ -226,6 +226,8 @@ export const REST = {
   ciSuggestion: (id: string) => `/api/ci/suggestions/${encodeURIComponent(id)}`,
   ciWorkspaces: '/api/ci/workspaces',
   projectCi: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci`,
+  projectCiLlm: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci/llm`,
+  taskCiLlm: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/ci/llm`,
   taskCi: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/ci`,
   ciRunStart: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/ci/run`,
   ciMetrics: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci/metrics`,

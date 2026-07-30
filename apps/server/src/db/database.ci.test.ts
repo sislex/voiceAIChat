@@ -73,6 +73,17 @@ describe('ci: слот-конфиг и наследование', () => {
   })
 })
 
+describe('ci: движок и модель', () => {
+  it('задача наследует настройку проекта и может переопределить её', () => {
+    const { p, task } = project()
+    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'claude', model: 'sonnet' })
+    db.setCiLlmConfig('project', p.id, { provider: 'codex', model: 'gpt-5.4' })
+    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'codex', model: 'gpt-5.4' })
+    db.setCiLlmConfig('task', task.id, { provider: 'claude', model: 'haiku' })
+    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'claude', model: 'haiku' })
+  })
+})
+
 describe('ci: глобальные настройки', () => {
   it('возвращает дефолты и обновляется', () => {
     expect(db.getCiSettings().maxFixAttempts).toBe(3)

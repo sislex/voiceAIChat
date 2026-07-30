@@ -3668,7 +3668,7 @@
 .jcol-body--over { background: linear-gradient(rgba(255, 86, 48, 0.06), rgba(255, 86, 48, 0.06)); }
 
 /* Карточка */
-.jcard { background: var(--card-bg, #fff); border-radius: 3px; box-shadow: 0 1px 2px rgba(9, 30, 66, 0.25); padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
+.jcard { background: var(--card-bg, #fff); border-radius: 3px; box-shadow: 0 1px 2px rgba(9, 30, 66, 0.25); padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow-y: auto; }
 [data-theme='dark'] .jcard { background: #1c2128; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
 .jcard:hover { background: #f4f5f7; }
 [data-theme='dark'] .jcard:hover { background: #22272e; }
@@ -3762,6 +3762,9 @@
 .jmodal-frame .ccobs-body { overflow-y: auto; }
 .jmodal { display: flex; gap: 24px; padding: 16px 20px; align-items: flex-start; }
 .jmodal-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.jmodal-desc-wrap { position: relative; display: block; width: 100%; }
+.jmodal-desc-wrap .jmodal-desc { width: 100%; box-sizing: border-box; padding-right: 42px; }
+.jmodal-ai-trigger { position: absolute; top: 7px; right: 7px; }
 .jmodal-breadcrumb { display: inline-flex; align-items: center; gap: 6px; border: none; background: none; color: #6b778c; font-size: 12px; cursor: pointer; padding: 0; align-self: flex-start; }
 .jmodal-breadcrumb:hover { text-decoration: underline; }
 .jmodal-title { font-size: 20px; font-weight: 600; border: 1px solid transparent; border-radius: 4px; background: none; color: inherit; resize: none; padding: 4px 6px; font-family: inherit; }
@@ -3911,6 +3914,9 @@
 .ci-task-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .ci-task-title { font-weight: 600; font-size: 13px; color: var(--text); }
 .ci-task-save, .ci-defaults .btn-primary { margin-top: 8px; }
+.ci-task-llm-head { margin-top: 14px; }
+.ci-task-llm { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ci-task-llm label { display: grid; gap: 4px; font-size: 12px; color: var(--text-dim); }
 .lozenge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; background: var(--panel); color: var(--text-dim); }
 .lozenge-neutral { background: var(--panel); color: var(--text-dim); }
 .lozenge-progress { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }

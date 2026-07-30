@@ -10,6 +10,7 @@ import type {
   CiCommandSuggestion,
   CiWorkspaceReportItem,
   CiSlotConfig,
+  CiLlmConfig,
   CiRun,
   CiRunDetail,
   CiRunStep,
@@ -28,6 +29,12 @@ export interface CiCommandUsage {
 }
 
 /** Ответ GET конфига задачи: разрешённый конфиг + флаги наследования. */
+export interface CiTaskLlmConfig {
+  config: CiLlmConfig
+  overridden: boolean
+  projectDefault: CiLlmConfig
+}
+
 export interface CiTaskConfig {
   config: CiSlotConfig
   overridden: boolean
@@ -55,6 +62,10 @@ export interface RendererCiRest {
   listWorkspaces(projectId?: string): Promise<CiWorkspaceReportItem[]>
   getProjectCi(projectId: string): Promise<CiSlotConfig>
   putProjectCi(projectId: string, config: CiSlotConfig): Promise<CiSlotConfig>
+  getProjectCiLlm(projectId: string): Promise<CiLlmConfig>
+  putProjectCiLlm(projectId: string, config: CiLlmConfig): Promise<CiLlmConfig>
+  getTaskCiLlm(projectId: string, taskId: string): Promise<CiTaskLlmConfig>
+  putTaskCiLlm(projectId: string, taskId: string, config: CiLlmConfig): Promise<CiLlmConfig>
   getTaskCi(projectId: string, taskId: string): Promise<CiTaskConfig>
   putTaskCi(projectId: string, taskId: string, config: CiSlotConfig): Promise<CiSlotConfig>
   startRun(projectId: string, taskId: string): Promise<CiRun>
