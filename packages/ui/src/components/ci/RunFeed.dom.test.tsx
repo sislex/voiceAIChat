@@ -55,6 +55,18 @@ describe('RunFeed', () => {
     expect(screen.getByText('model: npm test')).toBeInTheDocument()
   })
 
+  it('dirty workspace требует подтверждение перед откатом', () => {
+    const dirty = mkStep({ id: 'dirty', status: 'failed', exitCode: 66 })
+    const cache: RunFeedCache = { detail: { run: mkRun({ status: 'failed' }), steps: [dirty], fixAttempts: [] }, log: [], conclusion: null }
+    const onDiscardAndRetry = vi.fn()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<RunFeed {...baseProps(cache)} onDiscardAndRetry={onDiscardAndRetry} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Откатить изменения и начать заново' }))
+    expect(confirm).toHaveBeenCalled()
+    expect(onDiscardAndRetry).toHaveBeenCalledWith('run-1')
+    confirm.mockRestore()
+  })
+
   it('при падении model_work позволяет выбрать Codex и повторить только модель', () => {
     const model = mkStep({ id: 'model-1', kind: 'model_work', slot: null, commandId: null, title: 'Работа модели', status: 'failed' })
     const cache: RunFeedCache = { detail: { run: mkRun({ status: 'failed' }), steps: [model], fixAttempts: [] }, log: [], conclusion: null }

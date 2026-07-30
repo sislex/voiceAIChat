@@ -44,8 +44,11 @@ describe('ci: справочник команд', () => {
     const { p } = project()
     db.createCiCommand('alice', { scope: 'project', projectId: p.id, name: 'clone', script: 'x' })
     expect(() => db.createCiCommand('alice', { scope: 'project', projectId: p.id, name: 'clone', script: 'y' })).toThrow()
-    // bob не участник — проектную команду не видит.
+    // Страница справочника без projectId показывает команды всех доступных проектов.
+    expect(db.listCiCommands('alice').map((x) => x.name)).toContain('clone')
+    // bob не участник — проектную команду не видит ни с фильтром, ни в общем списке.
     expect(db.listCiCommands('bob', p.id)).toEqual([])
+    expect(db.listCiCommands('bob').map((x) => x.name)).not.toContain('clone')
   })
 
   it('глобальные команды видны всем', () => {

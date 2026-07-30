@@ -122,6 +122,12 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     return reply.code(202).send(res.run)
   })
 
+  app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/discard-and-retry', async (req, reply) => {
+    const res = await ci.discardChangesAndRetry(uid(req), req.params.runId)
+    if ('error' in res) return reply.code(409).send({ error: res.error })
+    return reply.code(202).send(res.run)
+  })
+
   // --- Метрики ---
   app.get<{ Params: { id: string } }>('/api/projects/:id/ci/metrics', async (req, reply) => {
     if (!db.getProject(uid(req), req.params.id)) return nf(reply)

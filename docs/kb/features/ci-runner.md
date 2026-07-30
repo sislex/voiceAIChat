@@ -63,7 +63,7 @@ model_summary, `parent_step_id` для вложенных вызовов), `ci_r
 `createCiRunManager` (`ci/runManager.ts`) — процесс-глобальный менеджер по образцу
 `TurnManager`: последовательный прогон слот-за-слотом, очередь на проект + лимит
 `maxConcurrentRuns` на сервер, отмена, откат Task в `prev_column_id` при Исходе B,
-`is_cleanup`/`allow_failure`/таймаут. Команды выполняются на машине по умолчанию
+`is_cleanup`/`allow_failure`/таймаут. Exit code `66` означает dirty workspace: ран останавливается, UI требует явного подтверждения, затем `discardChangesAndRetry` выполняет `git reset --hard` + `git clean -fdx`, пишет аудит и запускает новый полный ран. Команды выполняются на машине по умолчанию
 проекта через `AgentCommandExecutor` (`ci/executor.ts`) поверх нового
 `AgentRegistry.execStream` — потоковый форвард `exec.chunk` (агент не пересобирается);
 cwd/env собираются с shell-escape (пользовательский ввод — только через env, не

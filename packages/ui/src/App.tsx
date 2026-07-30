@@ -574,6 +574,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
               onLoad={(runId) => void actions.loadCiRun(runId)}
               onRetry={(runId) => void actions.retryCiRun(runId).then((run) => { if (run) actions.openCiRun(run.id) })}
               onRetryFromStep={(runId, selection) => { void actions.retryCiRunFromStep(runId, selection); actions.openCiRun(runId) }}
+              onDiscardAndRetry={(runId) => void actions.discardCiWorkspaceAndRetry(runId).then((run) => { if (run) actions.openCiRun(run.id) })}
               onCancel={(runId) => void actions.cancelCiRun(runId)}
             />
           </div>
