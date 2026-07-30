@@ -126,7 +126,9 @@ export function CodexObserver({
               <span className="cc-live">
                 <span className="reddot" /> LIVE · слежение за сессией
               </span>
-              <Button variant="primary" size="sm"
+              <Button
+                variant="primary"
+                size="sm"
                 aria-label="Продолжить эту сессию"
                 onClick={() => onResumeSession(activeSession)}
               >

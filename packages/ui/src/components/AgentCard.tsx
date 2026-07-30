@@ -116,7 +116,9 @@ export function AgentCard({ agent, onSetPolicy, onDelete, onRegenerateToken }: A
                 <code className="fsub ac-mono" style={{ userSelect: 'all', wordBreak: 'break-all' }}>
                   {newToken}
                 </code>
-                <Button variant="primary" size="sm"
+                <Button
+                  variant="primary"
+                  size="sm"
                   onClick={() => void copyText(newToken).then((ok) => setTokenCopied(ok))}
                 >
                   {tokenCopied ? '✓ скопирована' : 'Скопировать строку подключения'}
@@ -209,7 +211,9 @@ export function AgentCard({ agent, onSetPolicy, onDelete, onRegenerateToken }: A
           </div>
 
           <div className="vrow2">
-            <Button variant="primary" size="sm"
+            <Button
+              variant="primary"
+              size="sm"
               disabled={!dirty}
               aria-label="Сохранить разрешения"
               onClick={() => onSetPolicy(agent.id, policy)}

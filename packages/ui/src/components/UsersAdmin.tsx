@@ -136,7 +136,8 @@ export function UsersAdmin({
                 <span className="uadmin-actions">
                   {canManage(cur.name) && (
                     <>
-                      <Button size="sm"
+                      <Button
+                        size="sm"
                         onClick={() => onSetBlocked(cur.name, !cur.blocked)}
                       >
                         {cur.blocked ? 'Разблокировать' : 'Заблокировать'}

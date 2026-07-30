@@ -204,7 +204,8 @@ export function MessageImage({
   const actions = (
     <>
       {agentId && onOpenInExplorer && (
-        <IconButton size="sm"
+        <IconButton
+          size="sm"
           title="Показать в проводнике"
           aria-label="Показать картинку в проводнике"
           onClick={() => onOpenInExplorer(agentId, image.path)}
@@ -215,7 +216,8 @@ export function MessageImage({
       <IconButton size="sm" title="Скачать" aria-label="Скачать картинку" disabled={!ready} onClick={download}>
         ⬇
       </IconButton>
-      <IconButton size="sm"
+      <IconButton
+        size="sm"
         title={copied === 'fail' ? 'Не удалось скопировать' : 'Копировать картинку'}
         aria-label="Копировать картинку"
         disabled={!ready}

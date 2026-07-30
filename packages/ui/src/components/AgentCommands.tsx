@@ -90,7 +90,9 @@ export function AgentCommands({
       </p>
       <div className="agcmd-os">
         {AGENT_OS_LIST.map((os) => (
-          <Button variant="primary" size="sm"
+          <Button
+            variant="primary"
+            size="sm"
             key={os.id}
             
             title={`Скопировать команду установки для ${os.name} (${os.shell})`}
@@ -106,7 +108,9 @@ export function AgentCommands({
         <Button variant="primary" size="sm" title="Скопировать строку подключения" onClick={() => void copyConn()}>
           {copied === 'conn' ? '✓ строка скопирована' : 'Строка подключения'}
         </Button>
-        <Button variant="primary" size="sm"
+        <Button
+          variant="primary"
+          size="sm"
           title="Скопировать только токен машины"
           onClick={() => void copyText(token).then((ok) => mark('token', ok))}
         >

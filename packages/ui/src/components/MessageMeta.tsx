@@ -88,7 +88,8 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
 
   return (
     <span className="metawrap" onMouseEnter={openTip} onMouseLeave={scheduleClose}>
-      <IconButton size="sm"
+      <IconButton
+        size="sm"
         aria-label="Сведения об ответе"
         title="Сведения об ответе"
         onClick={() => setOpen(true)}

@@ -490,7 +490,8 @@ export function Sidebar({
               </div>
               {confirmingId !== c.id && renamingId !== c.id && (
                 <span className="crow-actions">
-                  <IconButton size="sm"
+                  <IconButton
+                    size="sm"
                     
                     aria-label={`Переименовать разговор «${c.title}»`}
                     title="Переименовать"
@@ -501,7 +502,9 @@ export function Sidebar({
                   >
                     ✎
                   </IconButton>
-                  <IconButton size="sm" className="vc-btn--danger-quiet"
+                  <IconButton
+                    size="sm"
+                    className="vc-btn--danger-quiet"
                     
                     aria-label={`Удалить разговор «${c.title}»`}
                     title="Удалить разговор"
@@ -518,7 +521,9 @@ export function Sidebar({
             {confirmingId === c.id && (
               <div className="delconfirm" onClick={(e) => e.stopPropagation()}>
                 <span>Удалить?</span>
-                <Button variant="danger" size="sm"
+                <Button
+                  variant="danger"
+                  size="sm"
                   
                   onClick={() => {
                     setConfirmingId(null)
@@ -581,7 +586,10 @@ export function Sidebar({
             всплывают по клику на пользователя. */}
         {currentUser && currentUser.name ? (
           <div className="acct" ref={acctRef}>
-            <Button variant="ghost" fullWidth className="sidefoot-row acct-toggle"
+            <Button
+              variant="ghost"
+              fullWidth
+              className="sidefoot-row acct-toggle"
               
               onClick={() => setAcctOpen((v) => !v)}
               aria-haspopup="menu"
