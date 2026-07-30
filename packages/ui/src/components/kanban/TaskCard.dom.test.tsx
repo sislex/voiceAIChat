@@ -20,6 +20,30 @@ function props(over: Partial<TaskCardProps> = {}): TaskCardProps {
   }
 }
 
+
+describe('TaskCard связанный чат', () => {
+  it('постоянно показывает действие и открывает чат, не открывая карточку', () => {
+    const onOpenChat = vi.fn()
+    const onOpen = vi.fn()
+    render(<TaskCard {...props({ onOpenChat, onOpen })} />)
+
+    const chatButton = screen.getByRole('button', { name: 'Связанный чат' })
+    expect(chatButton).toHaveTextContent('Чат')
+    fireEvent.click(chatButton)
+
+    expect(onOpenChat).toHaveBeenCalledWith('t1')
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it('объясняет, создаст ли новый чат или откроет существующий', () => {
+    const { rerender } = render(<TaskCard {...props({ onOpenChat: vi.fn() })} />)
+    expect(screen.getByRole('button', { name: 'Связанный чат' })).toHaveAttribute('title', 'Создать связанный чат')
+
+    rerender(<TaskCard {...props({ task: mkTask({ chatId: 'chat-1' }), onOpenChat: vi.fn() })} />)
+    expect(screen.getByRole('button', { name: 'Связанный чат' })).toHaveAttribute('title', 'Открыть связанный чат')
+  })
+})
+
 describe('TaskCard CI-панель', () => {
   it('кнопка «Выполнить» вызывает onStartCi', () => {
     const onStartCi = vi.fn()
