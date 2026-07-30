@@ -186,6 +186,44 @@ export function isTerminalCiStatus(s: CiStatus): boolean {
   return s === 'success' || s === 'failed' || s === 'cancelled' || s === 'timeout'
 }
 
+/**
+ * Ран ещё идёт (в очереди, работает или ждёт ответа): повторный запуск задачи
+ * недоступен, из действий остаётся только лента рана.
+ */
+export function isActiveCiStatus(s: CiStatus): boolean {
+  return s === 'queued' || s === 'running' || s === 'awaiting_input'
+}
+
+/**
+ * Как подсветить карточку задачи по последнему рану:
+ * `running` — медленно «дышит» голубым, `fixing` — модель разбирается с ошибкой
+ * (медленно мигает красным), `awaiting` — ждёт ответа пользователя (часто мигает
+ * жёлтым), `failed` — свалился окончательно (часто мигает красным), `done` —
+ * разработка закончена, ждёт пересборки прода (статичная зелёная рамка).
+ * `null` — подсветки нет (рана не было, отменён или пропущен).
+ */
+export type CiCardPulse = 'running' | 'fixing' | 'awaiting' | 'failed' | 'done'
+
+export function ciCardPulse(
+  summary: { status: CiStatus; slotProgress: Pick<CiSlotProgress, 'fixing'> } | null | undefined
+): CiCardPulse | null {
+  if (!summary) return null
+  switch (summary.status) {
+    case 'awaiting_input':
+      return 'awaiting'
+    case 'queued':
+    case 'running':
+      return summary.slotProgress.fixing ? 'fixing' : 'running'
+    case 'failed':
+    case 'timeout':
+      return 'failed'
+    case 'success':
+      return 'done'
+    default:
+      return null
+  }
+}
+
 /** Вид шага ленты рана. */
 export type CiStepKind = 'command' | 'model_work' | 'model_command' | 'model_summary'
 
@@ -228,6 +266,8 @@ export interface CiSlotProgress {
   total: number
   /** Читаемая фаза для шкалы карточки. */
   phase: string
+  /** Модель прямо сейчас разбирается с упавшим шагом (fix-loop). */
+  fixing?: boolean
 }
 
 /** Элемент ленты рана. */

@@ -2363,7 +2363,7 @@ interface CiInteractionRow {
 function parseSlotProgress(j: string): CiSlotProgress {
   try {
     const o = JSON.parse(j) as Partial<CiSlotProgress>
-    return { done: Number(o.done ?? 0), total: Number(o.total ?? 0), phase: String(o.phase ?? '') }
+    return { done: Number(o.done ?? 0), total: Number(o.total ?? 0), phase: String(o.phase ?? ''), fixing: o.fixing === true }
   } catch {
     return { done: 0, total: 0, phase: '' }
   }

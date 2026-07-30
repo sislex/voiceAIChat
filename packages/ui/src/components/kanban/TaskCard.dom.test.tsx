@@ -21,6 +21,10 @@ function props(over: Partial<TaskCardProps> = {}): TaskCardProps {
 }
 
 
+function mkSummary(over: Partial<CiRunSummary> = {}): CiRunSummary {
+  return { id: 'run-1', taskId: 't1', status: 'running', slotProgress: { done: 1, total: 4, phase: 'Модель работает' }, durationMs: null, modelActive: true, awaitingInput: false, ...over }
+}
+
 describe('TaskCard связанный чат', () => {
   it('постоянно показывает действие и открывает чат, не открывая карточку', () => {
     const onOpenChat = vi.fn()
@@ -60,5 +64,47 @@ describe('TaskCard CI-панель', () => {
     expect(screen.getByText(/до модели 1\/4/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Лента рана' }))
     expect(onOpenCiRun).toHaveBeenCalledWith('run-1')
+  })
+
+  it('пока ран идёт, «Выполнить» недоступна — остаётся только лента', () => {
+    for (const status of ['queued', 'running', 'awaiting_input'] as const) {
+      const ciSummary = mkSummary({ status, awaitingInput: status === 'awaiting_input' })
+      const { unmount } = render(<TaskCard {...props({ ciSummary, onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+      expect(screen.queryByRole('button', { name: 'Выполнить' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: status === 'awaiting_input' ? 'Ответить модели' : 'Лента рана' })).toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('после завершения рана кнопка запуска возвращается', () => {
+    const onStartCi = vi.fn()
+    render(<TaskCard {...props({ ciSummary: mkSummary({ status: 'success' }), onOpenCiRun: vi.fn(), onStartCi })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Выполнить' }))
+    expect(onStartCi).toHaveBeenCalledWith('t1')
+  })
+})
+
+describe('TaskCard подсветка по состоянию рана', () => {
+  const cases: Array<[string, CiRunSummary, string]> = [
+    ['ран идёт — голубая рамка', mkSummary({ status: 'running' }), 'jcard--ci-running'],
+    ['модель чинит ошибку — красная', mkSummary({ status: 'running', slotProgress: { done: 2, total: 4, phase: 'Модель исправляет ошибку', fixing: true } }), 'jcard--ci-fixing'],
+    ['ждёт ответа — жёлтая', mkSummary({ status: 'awaiting_input', awaitingInput: true }), 'jcard--ci-awaiting'],
+    ['упал — красная', mkSummary({ status: 'failed' }), 'jcard--ci-failed'],
+    ['успех — зелёная', mkSummary({ status: 'success' }), 'jcard--ci-done']
+  ]
+
+  for (const [name, ciSummary, cls] of cases) {
+    it(name, () => {
+      render(<TaskCard {...props({ ciSummary, onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+      expect(screen.getByTestId('task-card').className).toContain(cls)
+    })
+  }
+
+  it('без рана и после отмены подсветки нет', () => {
+    const { unmount } = render(<TaskCard {...props({ onStartCi: vi.fn() })} />)
+    expect(screen.getByTestId('task-card').className).not.toContain('jcard--ci-')
+    unmount()
+    render(<TaskCard {...props({ ciSummary: mkSummary({ status: 'cancelled' }), onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+    expect(screen.getByTestId('task-card').className).not.toContain('jcard--ci-')
   })
 })

@@ -2,7 +2,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import type { Task } from '@shared/projects'
 import { TaskCard } from './TaskCard'
-import { makeTask } from './fixtures'
+import { makeCiSummary, makeTask } from './fixtures'
 
 const epic = makeTask({ id: 'ep1', type: 'epic', title: 'Платёжная система' })
 
@@ -105,5 +105,57 @@ export const BrokenData: Story = {
       labels: [], skills: [], storyPoints: null, dueDate: null, flagged: false, seq: 0, position: 0, createdAt: 1, updatedAt: 1
     } as Task
 
+  }
+}
+
+// --- Состояния CI-рана: подсветка карточки и доступные действия ------------
+
+/** Ран идёт: голубая рамка медленно «дышит», запуск недоступен — только лента. */
+export const CiRunning: Story = {
+  args: {
+    task: makeTask({ title: 'Ран выполняется' }),
+    ciSummary: makeCiSummary(),
+    onStartCi: () => {},
+    onOpenCiRun: () => {}
+  }
+}
+
+/** Шаг упал, модель разбирается: медленное красное мигание. */
+export const CiFixing: Story = {
+  args: {
+    task: makeTask({ title: 'Модель исправляет ошибку' }),
+    ciSummary: makeCiSummary({ slotProgress: { done: 4, total: 6, phase: 'Модель исправляет ошибку', fixing: true } }),
+    onStartCi: () => {},
+    onOpenCiRun: () => {}
+  }
+}
+
+/** Ран ждёт ответа пользователя: частое жёлтое мигание. */
+export const CiAwaitingInput: Story = {
+  args: {
+    task: makeTask({ title: 'Есть вопросы к пользователю' }),
+    ciSummary: makeCiSummary({ status: 'awaiting_input', awaitingInput: true, slotProgress: { done: 3, total: 6, phase: 'Модель ждёт ответа' } }),
+    onStartCi: () => {},
+    onOpenCiRun: () => {}
+  }
+}
+
+/** Ран свалился окончательно: частое красное мигание. */
+export const CiFailed: Story = {
+  args: {
+    task: makeTask({ title: 'Ран упал' }),
+    ciSummary: makeCiSummary({ status: 'failed', modelActive: false, slotProgress: { done: 4, total: 6, phase: 'Финальные команды (1/2)' } }),
+    onStartCi: () => {},
+    onOpenCiRun: () => {}
+  }
+}
+
+/** Разработка закончена, ждёт пересборки прода: статичная зелёная рамка. */
+export const CiSuccess: Story = {
+  args: {
+    task: makeTask({ title: 'Готово к пересборке прода' }),
+    ciSummary: makeCiSummary({ status: 'success', modelActive: false, slotProgress: { done: 6, total: 6, phase: 'Резюме' } }),
+    onStartCi: () => {},
+    onOpenCiRun: () => {}
   }
 }

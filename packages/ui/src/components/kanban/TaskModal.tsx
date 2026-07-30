@@ -13,7 +13,7 @@ import { applyNativeInputValue, useAiAssist } from '../prompt-builder/useAiAssis
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanbanMeta'
 import { CiTaskSettings } from '../ci/CiTaskSettings'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
-import type { CiRunSummary } from '@shared/ci'
+import { isActiveCiStatus, type CiRunSummary } from '@shared/ci'
 
 export interface TaskUpdateFields {
   title?: string
@@ -111,6 +111,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   useEffect(() => {
     if (task.type === 'task' && !task.chatId && ensureChat) ensureChat(task.id)
   }, [task.id, task.type, task.chatId, ensureChat])
+
+  // Пока ран задачи идёт, запуск недоступен (см. isActiveCiStatus).
+  const ciActive = props.ciSummary != null && isActiveCiStatus(props.ciSummary.status)
 
   const column = board.columns.find((c) => c.id === task.columnId)
   const parent = task.parentId ? board.tasks.find((t) => t.id === task.parentId) : null
@@ -433,7 +436,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                     {props.ciSummary.awaitingInput ? 'Ответить модели' : 'Лента рана'}
                   </button>
                 )}
-                {props.onStartCi && (
+                {/* Активный ран нельзя запустить второй раз — только смотреть ленту. */}
+                {props.onStartCi && !ciActive && (
                   <button className="btn-primary" onClick={() => props.onStartCi?.(task.id)}>Выполнить</button>
                 )}
               </div>
