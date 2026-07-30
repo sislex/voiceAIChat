@@ -13,6 +13,8 @@ import type {
 } from '@shared/ci'
 import { DEFAULT_CI_GLOBAL_SETTINGS } from '@shared/ci'
 import { ToolFrame } from '../ToolFrame'
+import { Button } from '../ui/Button'
+import { IconButton } from '../ui/IconButton'
 import { useConfirm } from '../ui/useConfirm'
 import { useToast } from '../ui/Toast'
 
@@ -231,8 +233,8 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
             <label><input type="checkbox" checked={draft.availableToModel} onChange={(e) => setDraft({ ...draft, availableToModel: e.target.checked })} /> Доступна модели</label>
           </div>
           <div className="ci-form-actions">
-            <button className="ci-btn ci-btn--primary" disabled={saving || !draft.name.trim()} onClick={() => void save()}>Сохранить</button>
-            <button className="ci-btn" onClick={cancel}>Отмена</button>
+            <Button variant="primary" disabled={saving || !draft.name.trim()} onClick={() => void save()}>Сохранить</Button>
+            <Button onClick={cancel}>Отмена</Button>
           </div>
         </>
       )}
@@ -246,7 +248,7 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
           <div className="ci-list-pane">
             <div className="ci-list-head">
               <span>{commands.length} команд</span>
-              <button className="ci-btn ci-btn--primary" onClick={startCreate}>+ Команда</button>
+              <Button variant="primary" onClick={startCreate}>+ Команда</Button>
             </div>
             <table className="ci-table" data-testid="ci-command-table">
               <thead>
@@ -262,7 +264,7 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
                     <td><span className="ci-lozenge ci-lozenge--neutral">{c.scope === 'global' ? 'глоб.' : 'проект'}</span></td>
                     <td>{new Date(c.updatedAt).toLocaleDateString()}</td>
                     <td>{c.createdBy}</td>
-                    <td><button className="ci-icon-btn" title="Удалить" onClick={(e) => { e.stopPropagation(); void remove(c) }}>🗑</button></td>
+                    <td><IconButton size="sm" aria-label={`Удалить команду «${c.name}»`} title="Удалить" onClick={(e) => { e.stopPropagation(); void remove(c) }}>🗑</IconButton></td>
                   </tr>
                 ))}
                 {commands.length === 0 && (
@@ -294,8 +296,8 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
                     <div className="ci-suggestion-reason">{sug.reason}</div>
                     <pre className="ci-suggestion-script">{sug.proposedScript}</pre>
                     <div className="ci-form-actions">
-                      <button className="ci-btn ci-btn--primary" onClick={() => void props.onResolveSuggestion(sug.id, true)}>Принять</button>
-                      <button className="ci-btn" onClick={() => void props.onResolveSuggestion(sug.id, false)}>Отклонить</button>
+                      <Button variant="primary" onClick={() => void props.onResolveSuggestion(sug.id, true)}>Принять</Button>
+                      <Button onClick={() => void props.onResolveSuggestion(sug.id, false)}>Отклонить</Button>
                     </div>
                   </li>
                 )
@@ -363,7 +365,7 @@ function CiSettingsSection({ open, onToggle, settings, editable, onSave }: CiSet
           {numField('Макс. вызовов команд моделью', 'maxModelCommandCalls')}
           {editable && (
             <div className="ci-form-actions">
-              <button className="ci-btn ci-btn--primary" onClick={() => void onSave(form)}>Сохранить настройки</button>
+              <Button variant="primary" onClick={() => void onSave(form)}>Сохранить настройки</Button>
             </div>
           )}
         </div>

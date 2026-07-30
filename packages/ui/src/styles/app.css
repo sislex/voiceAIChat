@@ -3975,13 +3975,6 @@
 .ci-flags label { display: flex; align-items: center; gap: 6px; }
 .ci-form-actions { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 
-.ci-btn { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
-.ci-btn:hover { background: var(--panel); }
-.ci-btn:disabled { opacity: 0.5; cursor: default; }
-.ci-btn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.ci-btn--primary:hover { filter: brightness(1.05); }
-.ci-icon-btn { background: none; border: none; cursor: pointer; font-size: 14px; opacity: 0.7; }
-.ci-icon-btn:hover { opacity: 1; }
 
 .ci-section { border-top: 1px solid var(--border); padding-top: 14px; }
 .ci-section-title { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
@@ -4109,7 +4102,7 @@
 .ci-task { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
 .ci-task-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .ci-task-title { font-weight: 600; font-size: 13px; color: var(--text); }
-.ci-task-save, .ci-defaults .btn-primary { margin-top: 8px; }
+.ci-task-save, .ci-defaults .vc-btn { margin-top: var(--space-100); }
 .ci-task-llm-head { margin-top: 14px; }
 .ci-task-llm { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .ci-task-llm label { display: grid; gap: 4px; font-size: 12px; color: var(--text-dim); }

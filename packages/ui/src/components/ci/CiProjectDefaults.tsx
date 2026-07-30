@@ -3,6 +3,7 @@
 import { useEffect, useState, type JSX } from 'react'
 import type { CiClarifyLevel, CiCommand, CiLlmConfig, CiRunMode } from '@shared/ci'
 import { CI_CLARIFY_MAX_LIMIT, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
+import { Button } from '../ui/Button'
 import { CiSlotEditor } from './CiSlotEditor'
 import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 
@@ -32,7 +33,7 @@ export function CiProjectDefaults(props: { projectId: string; editable: boolean 
     <div className="ci-defaults">
       <CiSlotEditor label="До работы модели (по умолчанию)" commands={commands} value={before} disabled={!props.editable} onChange={(v) => { setBefore(v); setDirty(true) }} />
       <CiSlotEditor label="После работы модели (по умолчанию)" commands={commands} value={after} disabled={!props.editable} onChange={(v) => { setAfter(v); setDirty(true) }} />
-      {props.editable && dirty && <button type="button" className="btn-primary" onClick={save}>Сохранить команды проекта</button>}
+      {props.editable && dirty && <Button variant="primary" onClick={save}>Сохранить команды проекта</Button>}
       <div className="ci-task-llm">
         <label>Режим запуска по умолчанию<select
           aria-label="Режим запуска по умолчанию"
@@ -65,7 +66,7 @@ export function CiProjectDefaults(props: { projectId: string; editable: boolean 
           }}
         /></label>
       )}
-      {props.editable && llmDirty && <button type="button" className="btn-primary" onClick={saveLlm}>Сохранить режим проекта</button>}
+      {props.editable && llmDirty && <Button variant="primary" onClick={saveLlm}>Сохранить режим проекта</Button>}
     </div>
   )
 }

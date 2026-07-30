@@ -4,6 +4,7 @@ import type { CiCommand, CiClarifyLevel, CiLlmConfig, CiRunMode, CiSlotConfig } 
 import { CI_CLARIFY_MAX_LIMIT, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
 import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
+import { Button } from '../ui/Button'
 import { CiSlotEditor } from './CiSlotEditor'
 
 export interface CiTaskSettingsProps { projectId: string; taskId: string }
@@ -52,7 +53,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     <CiSlotEditor label="До работы модели" commands={commands} value={before} onChange={(v) => { setBefore(v); setSaved(false) }} />
     <CiSlotEditor label="После работы модели" commands={commands} value={after} onChange={(v) => { setAfter(v); setSaved(false) }} />
     {cleanupWarn && <div className="ci-warn">В слоте «после» есть cleanup-команда, но в «до» нет команды, создающей рабочую директорию.</div>}
-    {!saved && <button type="button" className="btn-primary ci-task-save" onClick={save}>Сохранить команды</button>}
+    {!saved && <Button variant="primary" className="ci-task-save" onClick={save}>Сохранить команды</Button>}
     <div className="ci-task-head ci-task-llm-head"><span className="ci-task-title">Движок модели</span><span className={`lozenge ${llmOverridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{llmOverridden ? 'переопределено' : 'унаследовано'}</span></div>
     <div className="ci-task-llm">
       <label>Движок<select aria-label="Движок модели" className="sel" value={llm.provider} onChange={(e) => changeProvider(e.target.value as 'claude' | 'codex')}><option value="claude">Claude</option><option value="codex">Codex</option></select></label>
@@ -93,7 +94,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
         : 'Модель сразу приступит к разработке.'}
     </p>
     <div className="ci-task-llm-actions">
-      {!llmSaved && <button type="button" className="btn-primary ci-task-save" onClick={saveLlm}>Сохранить движок и модель</button>}
+      {!llmSaved && <Button variant="primary" className="ci-task-save" onClick={saveLlm}>Сохранить движок и модель</Button>}
       {llmOverridden && <button type="button" className="ci-task-reset" onClick={resetLlm}>Вернуть настройку проекта</button>}
     </div>
   </section>
