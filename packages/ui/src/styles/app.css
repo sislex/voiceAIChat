@@ -20,6 +20,10 @@
   --ci-removed: #ae2a19;
   --ci-removed-bg: #f7dcd7;
   --surface-warning: var(--ci-progress-bg);
+  --accent-fg: #fff;
+  --danger: var(--ci-removed);
+  --danger-fg: #fff;
+  --surface-hover: #e9e7e0;
   --space-050: 4px;
   --space-100: 8px;
   --space-150: 12px;
@@ -42,6 +46,12 @@
   --ci-success-bg: #163326;
   --ci-removed: #e8897c;
   --ci-removed-bg: #3a1f1a;
+  /* Акцент и красный в тёмной теме светлые — подпись на них тёмная, иначе
+     кнопка «выцветает» и текст не читается. */
+  --accent-fg: #191916;
+  --danger: var(--ci-removed);
+  --danger-fg: #191916;
+  --surface-hover: #2c2c25;
   color-scheme: dark;
 }
 
@@ -4141,6 +4151,145 @@
 
 .ci-model-retry { display: flex; align-items: end; gap: var(--space-100); flex-wrap: wrap; margin-top: var(--space-100); padding: var(--space-150); background: var(--surface-warning); border-radius: var(--radius-medium); }
 .ci-model-retry label { display: grid; gap: var(--space-050); }
+
+/* ---- Кнопка (components/ui/Button, IconButton) ---- */
+/* Единственный блок кнопок приложения: четыре варианта (primary / secondary /
+   ghost / danger) × два размера (sm / md). Эталон — прежняя основная кнопка с
+   акцентной заливкой; остальные подтянуты к ней.
+   Цвета только токенами, поэтому тёмная тема достаётся без отдельных правил, а
+   :focus-visible-кольцо есть у всех вариантов, не у избранных.
+   Классы .is-hover/.is-focus — крючки для сториз: матрица состояний показывает
+   те же правила, а не их копию (см. Button.stories.tsx). */
+.vc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-050);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vc-btn--md {
+  padding: var(--space-100) var(--space-150);
+  font-size: 13px;
+}
+.vc-btn--sm {
+  padding: var(--space-050) var(--space-100);
+  font-size: 12px;
+}
+/* Без видимой подписи (IconButton) — квадрат: падинг по кругу, а не по бокам. */
+.vc-btn--icon.vc-btn--md {
+  padding: var(--space-100);
+}
+.vc-btn--icon.vc-btn--sm {
+  padding: var(--space-050);
+}
+.vc-btn--block {
+  display: flex;
+  width: 100%;
+}
+
+.vc-btn:focus-visible,
+.vc-btn.is-focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.vc-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.vc-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.vc-btn--danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-fg);
+}
+.vc-btn--primary:hover:not(:disabled),
+.vc-btn--primary.is-hover,
+.vc-btn--danger:hover:not(:disabled),
+.vc-btn--danger.is-hover {
+  filter: brightness(1.07);
+}
+
+.vc-btn--secondary:hover:not(:disabled),
+.vc-btn--secondary.is-hover {
+  background: var(--surface-hover);
+}
+
+/* ghost — действие без рамки: иконки в шапках, ряды в подвале сайдбара,
+   мелкие действия под сообщением. Приглушён, пока на него не наведёшь. */
+.vc-btn--ghost {
+  border-color: transparent;
+  background: none;
+  color: var(--text-dim);
+}
+.vc-btn--ghost:hover:not(:disabled),
+.vc-btn--ghost.is-hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* Круглые кнопки композера (микрофон, отправка, скрепка): та же кнопка, другая
+   геометрия — md 48px, sm 44px, как было у .micbtn и .attachbtn. */
+.vc-btn--circle {
+  border-radius: 50%;
+  padding: 0;
+  flex-shrink: 0;
+}
+.vc-btn--circle.vc-btn--md {
+  width: 48px;
+  height: 48px;
+}
+.vc-btn--circle.vc-btn--sm {
+  width: 44px;
+  height: 44px;
+}
+
+.vc-btn__ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+/* Спиннер на currentColor: цвет берётся от варианта, отдельных правил не нужно.
+   Кнопка в loading заблокирована, но гасим её слабее обычного disabled —
+   спиннер должно быть видно. */
+.vc-btn.is-loading:disabled {
+  opacity: 0.8;
+  cursor: progress;
+}
+.vc-btn__spinner {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: vc-btn-spin 0.7s linear infinite;
+}
+@keyframes vc-btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vc-btn__spinner {
+    animation-duration: 2.4s;
+  }
+}
 
 /* ---- Тосты (components/ui/Toast) ---- */
 /* Стек в правом нижнем углу; на телефоне — во всю ширину над композером
