@@ -383,13 +383,19 @@ export interface StoreDeps {
 
 /** Действия, дергаемые из UI. Все асинхронные операции инкапсулированы здесь. */
 export interface StoreActions {
-  init(): Promise<void>
+  /**
+   * Первичная загрузка. `preferredChatId` — id чата из адреса (#/chat/:id):
+   * открываем именно его, а не самый свежий.
+   */
+  init(preferredChatId?: string | null): Promise<void>
   /** Войти по логину/паролю (web). Успех → загрузка данных пользователя. */
   login(name: string, password: string): Promise<void>
   /** Выйти: очистить сессию и данные, показать экран логина (web). */
   logout(): Promise<void>
-  newConversation(): Promise<void>
-  selectConversation(id: string): Promise<void>
+  /** Создать разговор и переключиться на него. Возвращает id созданного. */
+  newConversation(): Promise<string>
+  /** Открыть разговор. `false` — такого разговора нет (удалён/чужой). */
+  selectConversation(id: string): Promise<boolean>
   deleteConversation(id: string): Promise<void>
   /** Переименовать разговор (БД + список). Пустое имя игнорируется. */
   renameConversation(id: string, title: string): Promise<void>
@@ -522,7 +528,7 @@ export interface StoreActions {
   /** Выбрать сессию (грузит транскрипт + запускает live-tail). */
   selectCcSession(slug: string, id: string): Promise<void>
   /** Продолжить сессию: создать разговор с импортом истории и привязкой к session-id. */
-  resumeCcSession(slug: string, id: string): Promise<void>
+  resumeCcSession(slug: string, id: string): Promise<string | null>
   /** Добавить пришедшие по live-tail записи в транскрипт. */
   applyCcTailItems(items: CcItem[]): void
   /** Открыть Проводник Codex (грузит проекты). */
@@ -534,7 +540,7 @@ export interface StoreActions {
   /** Выбрать сессию Codex (грузит транскрипт + запускает live-tail). */
   selectCxSession(id: string): Promise<void>
   /** Продолжить сессию Codex: создать разговор с импортом истории и переключить движок на Codex. */
-  resumeCxSession(id: string): Promise<void>
+  resumeCxSession(id: string): Promise<string | null>
   /** Добавить пришедшие по live-tail записи в транскрипт Codex. */
   applyCxTailItems(items: CxItem[]): void
   /** Прогресс скачивания голоса (tts:voiceProgress). */
@@ -669,7 +675,7 @@ export interface StoreActions {
   moveTask(taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null): Promise<void>
   deleteTask(taskId: string): Promise<void>
   /** Открыть (создав при необходимости) связанный с задачей чат и переключиться на него. */
-  openTaskChat(taskId: string): Promise<void>
+  openTaskChat(taskId: string): Promise<string | null>
   /** Создать связанный чат, не переключаясь на него (открытие карточки). */
   ensureTaskChat(taskId: string): Promise<void>
   loadTaskChatContext(id: string): Promise<void>
@@ -1169,7 +1175,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   // --- Публичные действия -------------------------------------------------
 
-  async function init(): Promise<void> {
+  // Чат из адреса (#/chat/:id) на момент загрузки страницы: bootstrap откроет
+  // его вместо самого свежего. Одноразовый — после первой загрузки данных
+  // выбором рулит маршрут (см. App.tsx).
+  let preferredChatId: string | null = null
+
+  async function init(wantedChatId?: string | null): Promise<void> {
+    preferredChatId = wantedChatId ?? null
     // Без моста сессии (desktop) — аутентификация не нужна: полный доступ (admin).
     if (!deps.session) {
       setState({ authRequired: false, currentUser: { name: '', role: 'admin' } })
@@ -1209,8 +1221,15 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshLoginStatus()
     startLoginStatusPolling()
     await refreshAgents()
-    if (visible.length > 0) {
-      await selectConversation(visible[0].id)
+    // Адрес важнее «самого свежего»: чат по ссылке может быть и из другого
+    // проекта — selectConversation сам переключит фильтр сайдбара.
+    const wanted = preferredChatId
+    preferredChatId = null
+    const target = (wanted && conversations.some((c) => c.id === wanted) ? wanted : null) ?? visible[0]?.id ?? null
+    // Ссылка на удалённый/чужой чат — открываем обычный список и говорим об этом.
+    if (wanted && target !== wanted) setState({ error: 'Разговор не найден: возможно, он удалён.' })
+    if (target) {
+      await selectConversation(target)
     } else {
       setState({ loadingMessages: false })
     }
@@ -1505,8 +1524,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Продолжить выбранную сессию Claude Code: импорт истории + привязка session-id. */
-  async function resumeCcSession(slug: string, id: string): Promise<void> {
-    if (!api['cc:resume']) return
+  async function resumeCcSession(slug: string, id: string): Promise<string | null> {
+    if (!api['cc:resume']) return null
     try {
       const { conversation, messages } = await api['cc:resume']({ slug, id })
       deps.ccTailStop?.()
@@ -1521,8 +1540,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         ccUsage: null
       })
       await refreshConversations()
+      return conversation.id
     } catch (err) {
       setState({ error: err instanceof Error ? err.message : String(err) })
+      return null
     }
   }
 
@@ -1600,8 +1621,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Продолжить сессию Codex: импорт истории + привязка session-id + переключение движка на Codex. */
-  async function resumeCxSession(id: string): Promise<void> {
-    if (!api['cx:resume']) return
+  async function resumeCxSession(id: string): Promise<string | null> {
+    if (!api['cx:resume']) return null
     try {
       const { conversation, messages } = await api['cx:resume']({ id })
       deps.cxTailStop?.()
@@ -1618,8 +1639,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       // Следующий ход должен продолжить именно через Codex.
       if (state.settings.llmProvider !== 'codex') await updateSettings({ llmProvider: 'codex' })
       await refreshConversations()
+      return conversation.id
     } catch (err) {
       setState({ error: err instanceof Error ? err.message : String(err) })
+      return null
     }
   }
 
@@ -1879,7 +1902,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     void audio.stop().catch((err) => console.warn('[audio] остановка захвата не удалась', err))
   }
 
-  async function newConversation(): Promise<void> {
+  async function newConversation(): Promise<string> {
     cancelTimers()
     stopCapture()
     resetTts() // ход текущего разговора не отменяем — он доиграет на сервере
@@ -1904,25 +1927,38 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       liveUsage: null
     })
     await refreshConversations()
+    return conversation.id
   }
 
-  async function selectConversation(id: string): Promise<void> {
+  async function selectConversation(id: string): Promise<boolean> {
     cancelTimers()
     stopCapture()
     resetTts() // ход прежнего разговора не отменяем — он доиграет на сервере
     setState({ liveSegments: [], consoleLog: [], liveActivity: [], voice: 'idle', streamingReply: '', lastTurnMeta: null, liveUsage: null, messages: [], loadingMessages: true })
+    let opened: Conversation | null = null
+    let known = true
     try {
       const res = await api['conversations:get']({ id })
       if (res) {
+        opened = res.conversation
+        known = state.conversations.some((c) => c.id === res.conversation.id)
         setState({ activeId: res.conversation.id, messages: res.messages })
         restoreStreamIfActive() // у разговора есть недоигранный ход → показываем стрим
       }
     } finally {
       setState({ loadingMessages: false })
     }
+    if (!opened) {
+      setState({ error: 'Разговор не найден: возможно, он удалён.' })
+      return false
+    }
+    // Чата нет в списке сайдбара (пришли по ссылке на чат другого проекта) —
+    // переключаем фильтр, иначе активный чат не виден.
+    if (!known) await setSidebarProject(opened.projectId ?? null)
     // Шапка чата задачи: иерархия, этап, машина/папка, ран. Грузим отдельно,
     // чтобы не задерживать показ сообщений.
     void loadTaskChatContext(id)
+    return true
   }
 
   /** Контекст задачи активного чата (null — чат не привязан к задаче). */
@@ -3000,15 +3036,17 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
-  async function openTaskChat(taskId: string): Promise<void> {
+  async function openTaskChat(taskId: string): Promise<string | null> {
     const id = state.activeProjectId
-    if (!id) return
+    if (!id) return null
     try {
       const conv = await api['tasks:openChat']({ projectId: id, taskId })
       await Promise.all([refreshConversations(), refreshBoard()])
       await selectConversation(conv.id)
+      return conv.id
     } catch (err) {
       setState({ error: perr(err) })
+      return null
     }
   }
 

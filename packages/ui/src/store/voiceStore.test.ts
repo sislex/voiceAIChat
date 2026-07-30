@@ -36,6 +36,37 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().voice).toBe('idle')
   })
 
+  it('init с id из адреса открывает именно этот разговор, а не самый свежий', async () => {
+    const { store, api } = makeStore(['Первый', 'Второй'])
+    const list = await api['conversations:list']()
+    const oldest = list[list.length - 1].id
+
+    await store.actions.init(oldest)
+
+    expect(store.getState().activeId).toBe(oldest)
+    // Самый свежий остался первым в списке — открыли не его, а чат из адреса.
+    expect(store.getState().conversations[0].id).not.toBe(oldest)
+  })
+
+  it('selectConversation возвращает false и показывает ошибку для несуществующего id', async () => {
+    const { store } = makeStore(['Первый'])
+    await store.actions.init()
+    const before = store.getState().activeId
+
+    const ok = await store.actions.selectConversation('нет-такого')
+
+    expect(ok).toBe(false)
+    expect(store.getState().error).toMatch(/не найден/)
+    expect(store.getState().activeId).toBe(before)
+  })
+
+  it('newConversation возвращает id созданного разговора', async () => {
+    const { store } = makeStore()
+    await store.actions.init()
+    const id = await store.actions.newConversation()
+    expect(id).toBe(store.getState().activeId)
+  })
+
   it('submitText: создаёт разговор, персистит реплику и проходит thinking → speaking → idle', async () => {
     const { store, api } = makeStore()
     const spyAdd = vi.spyOn(api, 'messages:add')
