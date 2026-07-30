@@ -1857,6 +1857,11 @@ export class VoiceChatDb {
     return { provider, model }
   }
 
+  /** Снять переопределение (задача снова наследует настройку проекта). */
+  clearCiLlmConfig(ownerType: 'project' | 'task', ownerId: string): boolean {
+    return this.db.prepare(`DELETE FROM ci_llm_configs WHERE owner_type = ? AND owner_id = ?`).run(ownerType, ownerId).changes > 0
+  }
+
   resolveTaskLlmConfig(projectId: string, taskId: string): CiLlmConfig {
     return this.getCiLlmConfig('task', taskId) ?? this.getCiLlmConfig('project', projectId) ?? { provider: 'claude', model: 'sonnet' }
   }

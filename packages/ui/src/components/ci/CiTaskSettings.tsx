@@ -41,6 +41,9 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const saveLlm = (): void => {
     void window.ci?.putTaskCiLlm(props.projectId, props.taskId, llm).then(() => { setLlmSaved(true); setLlmOverridden(true) })
   }
+  const resetLlm = (): void => {
+    void window.ci?.resetTaskCiLlm(props.projectId, props.taskId).then((r) => { setLlm(r.config); setLlmOverridden(r.overridden); setLlmSaved(true) })
+  }
 
   return <section className="ci-task">
     <div className="ci-task-head"><span className="ci-task-title">Команды воркфлоу</span><span className={`lozenge ${overridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{overridden ? 'переопределено' : 'унаследовано'}</span></div>
@@ -53,6 +56,9 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
       <label>Движок<select aria-label="Движок модели" className="sel" value={llm.provider} onChange={(e) => changeProvider(e.target.value as 'claude' | 'codex')}><option value="claude">Claude</option><option value="codex">Codex</option></select></label>
       <label>Модель<select aria-label="Модель" className="sel" value={llm.model} onChange={(e) => { setLlm({ ...llm, model: e.target.value }); setLlmSaved(false) }}>{!models.some((m) => m.id === llm.model) && <option value={llm.model}>{llm.model}</option>}{models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
     </div>
-    {!llmSaved && <button type="button" className="btn-primary ci-task-save" onClick={saveLlm}>Сохранить движок и модель</button>}
+    <div className="ci-task-llm-actions">
+      {!llmSaved && <button type="button" className="btn-primary ci-task-save" onClick={saveLlm}>Сохранить движок и модель</button>}
+      {llmOverridden && <button type="button" className="ci-task-reset" onClick={resetLlm}>Вернуть настройку проекта</button>}
+    </div>
   </section>
 }

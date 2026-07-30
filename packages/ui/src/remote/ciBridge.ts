@@ -66,6 +66,8 @@ export interface RendererCiRest {
   putProjectCiLlm(projectId: string, config: CiLlmConfig): Promise<CiLlmConfig>
   getTaskCiLlm(projectId: string, taskId: string): Promise<CiTaskLlmConfig>
   putTaskCiLlm(projectId: string, taskId: string, config: CiLlmConfig): Promise<CiLlmConfig>
+  /** Снять переопределение задачи — вернуться к движку/модели проекта. */
+  resetTaskCiLlm(projectId: string, taskId: string): Promise<CiTaskLlmConfig>
   getTaskCi(projectId: string, taskId: string): Promise<CiTaskConfig>
   putTaskCi(projectId: string, taskId: string, config: CiSlotConfig): Promise<CiSlotConfig>
   startRun(projectId: string, taskId: string): Promise<CiRun>

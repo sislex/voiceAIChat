@@ -3917,6 +3917,9 @@
 .ci-task-llm-head { margin-top: 14px; }
 .ci-task-llm { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .ci-task-llm label { display: grid; gap: 4px; font-size: 12px; color: var(--text-dim); }
+.ci-task-llm-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ci-task-reset { margin-top: 8px; background: none; border: none; padding: 0; font-size: 12px; color: var(--text-dim); text-decoration: underline; cursor: pointer; }
+.ci-task-reset:hover { color: var(--text); }
 .lozenge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; background: var(--panel); color: var(--text-dim); }
 .lozenge-neutral { background: var(--panel); color: var(--text-dim); }
 .lozenge-progress { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }

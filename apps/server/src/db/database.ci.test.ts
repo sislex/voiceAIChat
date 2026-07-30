@@ -82,6 +82,18 @@ describe('ci: движок и модель', () => {
     db.setCiLlmConfig('task', task.id, { provider: 'claude', model: 'haiku' })
     expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'claude', model: 'haiku' })
   })
+
+  it('снятие переопределения возвращает наследование от проекта', () => {
+    const { p, task } = project()
+    db.setCiLlmConfig('project', p.id, { provider: 'codex', model: 'gpt-5.4' })
+    db.setCiLlmConfig('task', task.id, { provider: 'claude', model: 'haiku' })
+    expect(db.clearCiLlmConfig('task', task.id)).toBe(true)
+    expect(db.getCiLlmConfig('task', task.id)).toBeNull()
+    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'codex', model: 'gpt-5.4' })
+    // повторный сброс — идемпотентен, настройка проекта не задета
+    expect(db.clearCiLlmConfig('task', task.id)).toBe(false)
+    expect(db.getCiLlmConfig('project', p.id)).toEqual({ provider: 'codex', model: 'gpt-5.4' })
+  })
 })
 
 describe('ci: глобальные настройки', () => {

@@ -88,17 +88,24 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     if (!isOwner(req, req.params.id)) return forbid(reply)
     return db.setCiLlmConfig('project', req.params.id, req.body)
   })
+  const taskLlmView = (projectId: string, taskId: string): { config: CiLlmConfig; overridden: boolean; projectDefault: CiLlmConfig } => ({
+    config: db.resolveTaskLlmConfig(projectId, taskId),
+    overridden: db.getCiLlmConfig('task', taskId) !== null,
+    projectDefault: db.getCiLlmConfig('project', projectId) ?? { provider: 'claude', model: 'sonnet' }
+  })
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci/llm', async (req, reply) => {
     if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
-    return {
-      config: db.resolveTaskLlmConfig(req.params.id, req.params.taskId),
-      overridden: db.getCiLlmConfig('task', req.params.taskId) !== null,
-      projectDefault: db.getCiLlmConfig('project', req.params.id) ?? { provider: 'claude', model: 'sonnet' }
-    }
+    return taskLlmView(req.params.id, req.params.taskId)
   })
   app.put<{ Params: { id: string; taskId: string }; Body: CiLlmConfig }>('/api/projects/:id/tasks/:taskId/ci/llm', async (req, reply) => {
     if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     return db.setCiLlmConfig('task', req.params.taskId, req.body)
+  })
+  // Снять переопределение: задача снова наследует движок/модель проекта.
+  app.delete<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci/llm', async (req, reply) => {
+    if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
+    db.clearCiLlmConfig('task', req.params.taskId)
+    return taskLlmView(req.params.id, req.params.taskId)
   })
 
   // --- Слот-конфиг задачи (переопределение + метка наследования) ---
