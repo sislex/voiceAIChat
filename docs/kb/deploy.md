@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-07-30
-checked: 3a5b554
+checked: 102bfbf
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -78,24 +78,50 @@ docker compose exec -u node voicechat codex login
 
 ## Прод
 
-`ssh root@45.135.182.251`, каталог `/root/voiceAIChat`. Обновление:
+`ssh root@45.135.182.251`, каталог `/root/voiceAIChat`. Обновление — **только через
+`voicechat-deploy`** (ставится `bash scripts/prod/install.sh`, см. ниже):
 
 ```bash
-git pull && docker compose up -d --build
+voicechat-deploy               # вернётся сразу, деплой идёт в фоне
+tail -f /var/log/voicechat-deploy.log
 ```
 
 Секреты (`VC_ADMIN_PASSWORD`, upstream-ключи) задаются в shell/`.env` на сервере и
 в репозиторий не попадают.
 
-**Не запускай деплой из сессии внутри контейнера `voicechat`** (ни через
-`docker compose exec voicechat bash`, ни через PTY/агента, живущего в этом
-контейнере). `docker compose up -d --build` первым делом убивает старый
-контейнер — то есть убивает и сам процесс деплоя, поэтому новый контейнер
-остаётся в статусе `Created` и никогда не стартует. Симптом: Caddy жив, а
-`https://45.135.182.251/` отдаёт `502`; `docker compose ps -a` показывает
-`voicechat` в `Created` без логов, а имя контейнера получает хеш-префикс
-(`<hash>_voiceaichat-voicechat-1` — так docker разводит конфликт имён при
-пересоздании). Лечится `cd /root/voiceAIChat && docker compose up -d`
-(образ уже собран, нужен только старт); префикс в имени безвреден и уйдёт при
-следующем полном деплое. Деплой запускай из ssh-сессии хоста или через
-`nohup`/`systemd-run`, чтобы он переживал остановку контейнера.
+### Почему нельзя звать `docker compose up -d --build` напрямую
+
+Любая команда, пришедшая через канал «модель → сервер → агент», живёт ограниченное
+время: сервер передаёт агенту `timeoutMs` (MCP-мост `remoteBashMcp.ts` — 120 с по
+умолчанию, максимум 300 с), а агент по истечении делает `SIGKILL`
+(`apps/agent/src/exec.ts`). Через ssh похожая история — SIGHUP при обрыве сессии.
+`docker compose up -d --build` в этот лимит не укладывается, и убийство приходит в
+самую опасную точку: старый контейнер уже удалён, новый ещё **создан, но не
+запущен**. `restart: unless-stopped` не помогает — политика рестарта применяется
+только к контейнеру, который хоть раз стартовал.
+
+Симптом (инцидент 2026-07-30): Caddy жив, `https://45.135.182.251/` отдаёт `502`,
+`docker compose ps -a` показывает `voicechat` в `Created` без единой строки логов,
+а имя контейнера получает хеш-префикс (`<hash>_voiceaichat-voicechat-1` — так docker
+разводит конфликт имён при пересоздании; префикс безвреден и уйдёт при следующем
+полном деплое). Разовое лечение — `docker compose up -d`: образ уже собран,
+не хватает только старта.
+
+### Две линии защиты (`scripts/prod/`)
+
+- `deploy.sh` → `/usr/local/bin/voicechat-deploy` — первым делом перезапускает себя
+  через `setsid nohup` и возвращает управление, поэтому смерть канала деплою
+  безразлична (проверено: `SIGKILL` по группе процессов родителя, потомок дошёл до
+  конца). Дальше — `flock` (лок на дескрипторе, освобождается даже при `SIGKILL`),
+  `git pull --ff-only`, `up -d --build`, ожидание `/api/health` до 5 минут; при
+  неудаче в лог попадают `ps -a` и последние 50 строк логов контейнера.
+- `watchdog.sh` → `/usr/local/bin/voicechat-watchdog`, systemd-таймер
+  `voicechat-watchdog.timer` раз в минуту — поднимает контейнер, если тот в
+  `created` или отсутствует. Из `exited`/`paused` **не** поднимает: это результат
+  намеренного `docker compose stop`. Глушится файлом
+  `/root/voiceAIChat/.deploy-paused`. Берёт тот же lock, что деплой, — во время
+  деплоя не вмешивается. Лог: `/var/log/voicechat-watchdog.log`.
+
+Установка/переустановка (идемпотентна): `cd /root/voiceAIChat && bash scripts/prod/install.sh`.
+Скрипты копируются в `/usr/local/bin` намеренно — деплой делает `git pull`, и
+запускаться из файла, который этот pull перезаписывает, ему нельзя.
