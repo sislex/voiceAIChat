@@ -2,6 +2,8 @@
 // рабочие директории, предложения модели, метрики и payload'ы realtime-событий.
 // Разделяются server/web (desktop CI не получает). Чистые типы + пара хелперов.
 
+import type { QuestionSpec } from './questions'
+
 // --- Справочник команд ---------------------------------------------------
 
 /** Область видимости команды. */
@@ -74,10 +76,55 @@ export interface CiSlotConfig {
   afterModel: string[]
 }
 
-/** Движок и модель шага разработки; задача наследует настройку проекта. */
+/** Режим шага модели: сначала план с одобрением, либо сразу разработка. */
+export type CiRunMode = 'plan' | 'development'
+export const CI_RUN_MODES: CiRunMode[] = ['plan', 'development']
+
+/**
+ * Глубина уточнений: сколько вопросов модель имеет право задать за ран.
+ * `none` — ни одного, `few` — до 3, `medium` — до 6, `detailed` — `clarifyMax` (1..30).
+ */
+export type CiClarifyLevel = 'none' | 'few' | 'medium' | 'detailed'
+export const CI_CLARIFY_LEVELS: CiClarifyLevel[] = ['none', 'few', 'medium', 'detailed']
+
+/** Верхняя граница числа вопросов для «детального уточнения». */
+export const CI_CLARIFY_MAX_LIMIT = 30
+
+/**
+ * Движок, модель и режим запуска шага разработки; задача наследует настройку
+ * проекта (см. `resolveTaskLlmConfig`).
+ */
 export interface CiLlmConfig {
   provider: CiLlmProvider
   model: string
+  mode: CiRunMode
+  clarifyLevel: CiClarifyLevel
+  /** Используется только при `clarifyLevel === 'detailed'`. */
+  clarifyMax: number
+}
+
+export const DEFAULT_CI_LLM_CONFIG: CiLlmConfig = {
+  provider: 'claude',
+  model: 'sonnet',
+  mode: 'development',
+  clarifyLevel: 'few',
+  clarifyMax: 3
+}
+
+/** Сколько вопросов модель может задать за ран при данной настройке. */
+export function clarifyBudget(c: Pick<CiLlmConfig, 'clarifyLevel' | 'clarifyMax'>): number {
+  switch (c.clarifyLevel) {
+    case 'none':
+      return 0
+    case 'few':
+      return 3
+    case 'medium':
+      return 6
+    case 'detailed':
+      return Math.min(CI_CLARIFY_MAX_LIMIT, Math.max(1, Math.round(c.clarifyMax) || 1))
+    default:
+      return 0
+  }
 }
 
 // --- Глобальные настройки CI ---------------------------------------------
@@ -97,6 +144,8 @@ export interface CiGlobalSettings {
   maxConcurrentRuns: number
   /** Лимит вызовов команд моделью на один ран. */
   maxModelCommandCalls: number
+  /** Сколько ждать ответа пользователя на вопрос/одобрение, мс (0 — без лимита). */
+  interactionWaitMs: number
 }
 
 export const DEFAULT_CI_GLOBAL_SETTINGS: CiGlobalSettings = {
@@ -106,7 +155,8 @@ export const DEFAULT_CI_GLOBAL_SETTINGS: CiGlobalSettings = {
   defaultStepTimeoutSec: 600,
   metricsWindow: 20,
   maxConcurrentRuns: 2,
-  maxModelCommandCalls: 20
+  maxModelCommandCalls: 20,
+  interactionWaitMs: 30 * 60 * 1000
 }
 
 /** Стратегия повторного запуска при существующей рабочей директории. */
@@ -128,8 +178,8 @@ export interface CiProjectSettings {
 /** Общий статус рана и шага. */
 export type CiLlmProvider = 'claude' | 'codex'
 
-export type CiStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled' | 'timeout' | 'skipped'
-export const CI_STATUSES: CiStatus[] = ['queued', 'running', 'success', 'failed', 'cancelled', 'timeout', 'skipped']
+export type CiStatus = 'queued' | 'running' | 'awaiting_input' | 'success' | 'failed' | 'cancelled' | 'timeout' | 'skipped'
+export const CI_STATUSES: CiStatus[] = ['queued', 'running', 'awaiting_input', 'success', 'failed', 'cancelled', 'timeout', 'skipped']
 
 /** Терминальные статусы рана. */
 export function isTerminalCiStatus(s: CiStatus): boolean {
@@ -158,6 +208,12 @@ export interface CiRun {
   /** Провайдер и модель шага разработки; можно сменить при повторе упавшего model_work. */
   llmProvider: CiLlmProvider
   llmModel: string
+  /** Снимок режима и глубины уточнений на момент запуска (повтор их сохраняет). */
+  mode: CiRunMode
+  clarifyLevel: CiClarifyLevel
+  clarifyMax: number
+  /** Связанный чат задачи, куда дублируются вопросы модели. */
+  conversationId: string | null
   /** Прогресс по слотам: {done,total} для шкалы «1/4». */
   slotProgress: CiSlotProgress
   startedAt: number | null
@@ -213,11 +269,57 @@ export interface CiLogLine {
   at: number
 }
 
+// --- Интеракция: пауза рана в ожидании пользователя -----------------------
+
+/** Что именно ждёт ран: уточняющие вопросы модели или одобрение плана. */
+export type CiInteractionKind = 'clarify' | 'plan_approval'
+
+export type CiInteractionStatus = 'pending' | 'answered' | 'cancelled'
+
+/** Решение пользователя по плану. */
+export type CiPlanDecision = 'approved' | 'rework'
+
+/**
+ * Одна пауза рана. Пока `status === 'pending'`, ран стоит в `awaiting_input`.
+ * Ответить можно из ленты рана или из связанного чата — засчитывается первый.
+ */
+export interface CiInteraction {
+  id: string
+  runId: string
+  /** Шаг ленты, внутри которого висит пауза (обычно `model_work`). */
+  stepId: string
+  /** Монотонный номер интеракции в пределах рана. */
+  seq: number
+  kind: CiInteractionKind
+  /** Для `clarify` — вопросы модели; для `plan_approval` пусто. */
+  questions: QuestionSpec[]
+  /** Для `plan_approval` — текст плана. */
+  planText: string | null
+  /** Ответ пользователя (для плана — комментарий к доработке). */
+  answerText: string | null
+  decision: CiPlanDecision | null
+  status: CiInteractionStatus
+  /** Чат, куда продублирован вопрос, и id сообщения в нём. */
+  conversationId: string | null
+  messageId: string | null
+  createdAt: number
+  answeredAt: number | null
+  answeredBy: string | null
+}
+
+/** Тело ответа на интеракцию (REST). */
+export interface CiInteractionAnswer {
+  text?: string
+  decision?: CiPlanDecision
+}
+
 /** Полный снимок рана с шагами (ответ GET деталь рана). */
 export interface CiRunDetail {
   run: CiRun
   steps: CiRunStep[]
   fixAttempts: CiFixAttempt[]
+  /** Паузы рана — без них после reload pending-вопрос не восстановить. */
+  interactions: CiInteraction[]
 }
 
 /** Краткая сводка рана по задаче — для доски/карточки. */
@@ -229,6 +331,8 @@ export interface CiRunSummary {
   durationMs: number | null
   /** Активна ли работа модели прямо сейчас. */
   modelActive: boolean
+  /** Ран стоит и ждёт ответа пользователя. */
+  awaitingInput: boolean
 }
 
 // --- fix-loop ------------------------------------------------------------

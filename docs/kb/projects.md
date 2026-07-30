@@ -1,8 +1,8 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-07-29
+updated: 2026-07-30
 
-checked: db8cf03
+checked: 2e2b231
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/routes/projects.ts
@@ -155,6 +155,29 @@ areas:
 подтягивает `Task.chatId` (id чата текущего юзера) корр. подзапросом. REST —
 `POST /api/projects/:id/tasks/:taskId/chat` (`tasks:openChat`); стор-экшен
 `openTaskChat` открывает чат и (в `App`) уводит на страницу чата `navigate('/')`.
+
+Чат к **таску** создаётся автоматически при первом открытии карточки:
+`TaskModal` зовёт `ensureTaskChat` (тот же идемпотентный `tasks:openChat`, но без
+перехода на чат). У эпиков и стори автосоздания нет — ранов у них не бывает.
+`CiRunManager.start` тоже вызывает `openOrCreateTaskChat` и пишет
+`ci_runs.conversation_id`: туда дублируются вопросы модели.
+
+Чат задачи знает свой контекст с двух сторон. Для модели — блок
+«## Контекст задачи» в промпте хода (`turns.ts`, рядом с контекстом проекта):
+иерархия, критерии приёмки, этап воркфлоу, машина, рабочая папка, режим
+последнего рана. Для пользователя — шапка `components/chat/TaskChatHeader.tsx`
+над лентой сообщений: крошки Проект/Эпик/Стори/Задача, лозенг этапа, режим и
+статус рана, живой таймер работы, машина и папка, «Открыть задачу»
+(`#/projects/:id/task/:taskId` → `ProjectBoard initialOpenTaskId`) и разворот в
+ленту рана (`RunFeed`) по клику. Источник — `GET /api/conversations/:id/task-context`
+(`db.getTaskChatContext`, канал `conversations:taskContext`), в сторе —
+`taskChatContext`. Ключи задач (`issueKey`/`projectKey`) переехали из
+`kanbanMeta.tsx` в `packages/shared/src/projects.ts`, потому что их считает и сервер.
+
+В модалке задачи, помимо `CiTaskSettings`, есть панель CI-рана (статус, фаза,
+«Выполнить», «Лента рана» / «Ответить модели»), а боковая колонка `.jmodal-side`
+и `.jmodal-main` скроллятся независимо: модалка живёт в `.ccobs`
+(`height: 88vh; overflow: hidden`), а `ToolFrame` не рендерит `.ccobs-body`.
 
 Оформление доски и настроек выровнено под дизайн-систему Jira (Atlassian): палитра
 `#0052CC`/`#0C66E4`, нейтрали `#626f86`/`#f7f8f9`, шрифтовой стек Atlassian,

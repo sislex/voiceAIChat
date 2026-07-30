@@ -145,6 +145,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         conv.updatedAt = tick()
       }
     },
+    'conversations:taskContext': async () => null,
     'conversations:setProject': async ({ id, projectId }) => {
       const conv = conversations.find((c) => c.id === id)!
       conv.projectId = projectId
@@ -540,10 +541,12 @@ import type {
   CiGlobalSettings,
   CiRun,
   CiRunDetail,
+  CiInteraction,
+  CiLlmConfig,
   CiRunStep,
   CiLogLine
 } from '@shared/ci'
-import { DEFAULT_CI_GLOBAL_SETTINGS } from '@shared/ci'
+import { DEFAULT_CI_GLOBAL_SETTINGS, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
 
 export interface FakeCi extends RendererCiBridge {
   /** Тест-хелперы: прямой прогон realtime-событий. */
@@ -551,6 +554,7 @@ export interface FakeCi extends RendererCiBridge {
   _emitStep(runId: string, step: CiRunStep): void
   _emitLog(runId: string, line: CiLogLine): void
   _emitDone(run: CiRun): void
+  _emitInteraction(runId: string, interaction: CiInteraction): void
   _commands: CiCommand[]
 }
 
@@ -562,8 +566,10 @@ export function createFakeCi(): FakeCi {
   let settings: CiGlobalSettings = { ...DEFAULT_CI_GLOBAL_SETTINGS }
   const runs = new Map<string, CiRunDetail>()
   const logs = new Map<string, CiLogLine[]>()
-  let projectLlm = { provider: 'claude' as const, model: 'sonnet' }
-  let taskLlm: { provider: 'claude' | 'codex'; model: string } | null = null
+  let projectLlm: CiLlmConfig = { ...DEFAULT_CI_LLM_CONFIG }
+  let taskLlm: CiLlmConfig | null = null
+  /** Паузы ранов, чтобы Storybook/dom-тесты умели показывать вопрос модели. */
+  const interactions = new Map<string, CiInteraction[]>()
   type L = (...args: never[]) => void
   const listeners: Record<string, Set<L>> = {}
   const on = (t: string, cb: L): (() => void) => {
@@ -603,6 +609,10 @@ export function createFakeCi(): FakeCi {
     prevColumnId: null,
     llmProvider: 'claude',
     llmModel: 'sonnet',
+    mode: 'development',
+    clarifyLevel: 'few',
+    clarifyMax: 3,
+    conversationId: null,
     slotProgress: { done: 0, total: 4, phase: 'подготовка' },
     startedAt: now(),
     finishedAt: null,
@@ -625,14 +635,14 @@ export function createFakeCi(): FakeCi {
     getProjectCi: async () => ({ beforeModel: [], afterModel: [] }),
     putProjectCi: async (_pid, config) => config,
     getProjectCiLlm: async () => ({ ...projectLlm }),
-    putProjectCiLlm: async (_pid, config) => { projectLlm = config as typeof projectLlm; return { ...config } },
+    putProjectCiLlm: async (_pid, config) => { projectLlm = { ...config }; return { ...config } },
     getTaskCiLlm: async () => ({ config: { ...(taskLlm ?? projectLlm) }, overridden: taskLlm !== null, projectDefault: { ...projectLlm } }),
     putTaskCiLlm: async (_pid, _tid, config) => { taskLlm = { ...config }; return { ...config } },
     resetTaskCiLlm: async () => { taskLlm = null; return { config: { ...projectLlm }, overridden: false, projectDefault: { ...projectLlm } } },
     getTaskCi: async () => ({ config: { beforeModel: [], afterModel: [] }, overridden: false, projectDefault: { beforeModel: [], afterModel: [] } }),
     putTaskCi: async (_pid, _tid, config) => config,
-    startRun: async (projectId, taskId) => { const run = mkRun(projectId, taskId); runs.set(run.id, { run, steps: [], fixAttempts: [] }); logs.set(run.id, []); return { ...run } },
-    getRun: async (rid) => runs.get(rid) ?? { run: mkRun('p', 't'), steps: [], fixAttempts: [] },
+    startRun: async (projectId, taskId, mode) => { const run = { ...mkRun(projectId, taskId), mode: mode ?? projectLlm.mode }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
+    getRun: async (rid) => runs.get(rid) ?? { run: mkRun('p', 't'), steps: [], fixAttempts: [], interactions: [] },
     getRunLog: async (rid) => logs.get(rid) ?? [],
     cancelRun: async () => ({ ok: true }),
     retryRun: async (rid) => { const d = runs.get(rid)!; return await bridge.startRun(d.run.projectId, d.run.taskId) },
@@ -640,6 +650,16 @@ export function createFakeCi(): FakeCi {
     discardChangesAndRetry: async (runId: string) => ({ id: runId } as unknown as CiRun),
     getMetrics: async () => ({ commands: [], modelWork: { projectId: 'p', avgMs: null, samples: 0 } }),
     consoleExec: async () => ({ output: '', exitCode: 0, rejected: false, message: '' }),
+    answerInteraction: async (runId, interactionId, answer) => {
+      const list = interactions.get(runId) ?? []
+      const it = list.find((x) => x.id === interactionId)!
+      const next: CiInteraction = { ...it, status: 'answered', answerText: answer.text ?? null, decision: answer.decision ?? null, answeredAt: now(), answeredBy: 'admin' }
+      interactions.set(runId, list.map((x) => (x.id === interactionId ? next : x)))
+      const d = runs.get(runId)
+      if (d) d.interactions = interactions.get(runId) ?? []
+      emit('ci.interaction', { runId, interaction: next })
+      return next
+    },
     subscribe: (runId) => { const d = runs.get(runId); if (d) emit('ci.snapshot', { runId, detail: d, log: logs.get(runId) ?? [] }) },
     unsubscribe: () => {},
     onSnapshot: (cb) => on('ci.snapshot', cb as L),
@@ -649,10 +669,19 @@ export function createFakeCi(): FakeCi {
     onFix: (cb) => on('ci.fix', cb as L),
     onDone: (cb) => on('ci.done', cb as L),
     onSummary: (cb) => on('ci.summary', cb as L),
-    _emitRun: (run) => { runs.set(run.id, runs.get(run.id) ?? { run, steps: [], fixAttempts: [] }); emit('ci.run', { runId: run.id, run }) },
+    onInteraction: (cb) => on('ci.interaction', cb as L),
+    _emitRun: (run) => { runs.set(run.id, runs.get(run.id) ?? { run, steps: [], fixAttempts: [], interactions: [] }); emit('ci.run', { runId: run.id, run }) },
     _emitStep: (runId, step) => { const d = runs.get(runId); if (d) d.steps.push(step); emit('ci.step', { runId, step }) },
     _emitLog: (runId, line) => { const l = logs.get(runId) ?? []; l.push(line); logs.set(runId, l); emit('ci.log', { runId, line }) },
     _emitDone: (run) => emit('ci.done', { runId: run.id, run }),
+    _emitInteraction: (runId, interaction) => {
+      const list = interactions.get(runId) ?? []
+      list.push(interaction)
+      interactions.set(runId, list)
+      const d = runs.get(runId)
+      if (d) d.interactions = list
+      emit('ci.interaction', { runId, interaction })
+    },
     _commands: commands
   }
   return bridge

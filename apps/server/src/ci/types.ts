@@ -32,7 +32,7 @@ export interface CommandExecutor {
 
 // --- Контекст для инъектируемых шагов «работа модели» и «fix-loop» ---------
 
-import type { CiRun, CiRunStep, CiStatus, CiSlot, CiInitiatedBy, CiStepKind } from '@voicechat/shared'
+import type { CiRun, CiRunStep, CiStatus, CiSlot, CiInitiatedBy, CiStepKind, CiPlanDecision, QuestionSpec } from '@voicechat/shared'
 import type { Task, ProjectDetail } from '@voicechat/shared'
 
 /** Примитивы, которые раннер даёт хукам модели/фикса. */
@@ -62,6 +62,17 @@ export interface CiRunPrimitives {
   recordFix(args: { runStepId: string; attemptNo: number; diagnosis: string; action: string; result: 'fixed' | 'retrying' | 'gave_up'; diff?: string | null; durationMs?: number | null; tokensUsed?: number | null }): void
   /** Предложить правку скрипта команды (Исход A: рекомендация). */
   suggest(commandId: string, runStepId: string | null, reason: string, proposedScript: string): void
+  /**
+   * Задать уточняющие вопросы и дождаться ответа: ран встаёт в `awaiting_input`,
+   * вопрос дублируется в связанный чат. `null` — ответа не дождались (таймаут или
+   * отмена рана), модель должна продолжить без уточнений.
+   */
+  askUser(stepId: string, questions: QuestionSpec[]): Promise<string | null>
+  /**
+   * Показать план и дождаться решения. `null` — не дождались/отменено.
+   * `rework` возвращается вместе с комментарием пользователя.
+   */
+  askPlanApproval(stepId: string, planText: string): Promise<{ decision: CiPlanDecision; comment: string } | null>
 }
 
 export interface CiModelContext extends CiRunPrimitives {
@@ -81,8 +92,11 @@ export interface CiFixContext extends CiModelContext {
   rerunFailedStep(): Promise<{ exitCode: number | null; timedOut: boolean }>
 }
 
-/** Хук «работа модели»: разработка + возможные вызовы команд. */
-export type CiModelWorkHook = (ctx: CiModelContext) => Promise<{ ok: boolean }>
+/**
+ * Хук «работа модели»: разработка + возможные вызовы команд. `cancelled` — план
+ * отклонён пользователем: слот «после» и резюме не запускаются.
+ */
+export type CiModelWorkHook = (ctx: CiModelContext) => Promise<{ ok: boolean; cancelled?: boolean }>
 /** Хук «резюме модели». */
 export type CiModelSummaryHook = (ctx: CiModelContext) => Promise<string>
 /** Хук fix-loop: попытаться довести упавший шаг до успеха. */

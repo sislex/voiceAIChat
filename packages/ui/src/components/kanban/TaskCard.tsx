@@ -164,7 +164,14 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
             )
           })()}
           <div className="jcard-ci-row">
-            {ciSummary && <button className="jcard-ci-open" onClick={() => props.onOpenCiRun?.(ciSummary.id)}>Лента рана</button>}
+            {ciSummary && (
+              <button
+                className={`jcard-ci-open${ciSummary.awaitingInput ? ' jcard-ci-open--attention' : ''}`}
+                onClick={() => props.onOpenCiRun?.(ciSummary.id)}
+              >
+                {ciSummary.awaitingInput ? 'Ответить модели' : 'Лента рана'}
+              </button>
+            )}
             <button className="jcard-ci-run" onClick={() => props.onStartCi?.(task.id)}>Выполнить</button>
           </div>
         </div>

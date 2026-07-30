@@ -3,20 +3,26 @@
 // закрывается модалка задачи, потом страница». Сама доска ничего не знает про
 // приложение — все данные и колбэки идут пропсами насквозь.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ToolFrame } from './ToolFrame'
 import { KanbanBoard, type KanbanBoardProps } from './kanban'
 
 export interface ProjectBoardProps extends Omit<KanbanBoardProps, 'openTaskId' | 'onOpenTaskChange' | 'defaultSwimlane'> {
   onOpenSettings?: () => void
   onClose: () => void
+  /** Открыть карточку сразу при входе (переход «в задачу» из связанного чата). */
+  initialOpenTaskId?: string | null
 }
 
 export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
-  const { onOpenSettings, onClose, ...boardProps } = props
+  const { onOpenSettings, onClose, initialOpenTaskId, ...boardProps } = props
   // Esc-хендлеры страницы и модалки оба висят на window (capture), stopPropagation
   // соседей не гасит — поэтому страница сама закрывает модалку первой.
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
+  const [openTaskId, setOpenTaskId] = useState<string | null>(initialOpenTaskId ?? null)
+  // Приход из чата: URL несёт задачу, её карточку открываем сразу.
+  useEffect(() => {
+    if (initialOpenTaskId) setOpenTaskId(initialOpenTaskId)
+  }, [initialOpenTaskId])
   return (
     <ToolFrame
       title={props.projectName}

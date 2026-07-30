@@ -34,6 +34,7 @@ import type {
   ProjectDetail,
   ProjectSummary,
   Task,
+  TaskChatContext,
   TaskPriority,
   WorkItemDefaultSkills
 } from './projects'
@@ -100,6 +101,8 @@ export interface IpcInvokeMap {
   'conversations:rename': { arg: { id: string; title: string }; result: void }
   /** Привязать/отвязать чат к проекту; сервер применяет настройки проекта. */
   'conversations:setProject': { arg: { id: string; projectId: string | null }; result: Conversation }
+  /** Контекст задачи для шапки связанного чата; null — чат не привязан к задаче. */
+  'conversations:taskContext': { arg: { id: string }; result: TaskChatContext | null }
   /** Сменить статус жизненного цикла чата. */
   'conversations:setStatus': { arg: { id: string; status: ConversationStatus }; result: Conversation }
   'conversations:setExecTarget': {
@@ -617,6 +620,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:search',
   'conversations:rename',
   'conversations:setProject',
+  'conversations:taskContext',
   'conversations:setStatus',
   'conversations:setExecTarget',
   'conversations:delete',

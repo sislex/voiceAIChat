@@ -4,6 +4,8 @@
 
 import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
+import { appendQuestionsHint, clarifyBudget, parseQuestions } from '@voicechat/shared'
+import type { CiRunMode } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook } from './types.js'
@@ -20,24 +22,38 @@ export interface CiModelHooksDeps {
   now?: () => number
 }
 
-/** Один ход модели как Promise: собирает текст, стримит активность в лог шага. */
+/**
+ * Верхний предел ходов CLI внутри одного шага модели: бюджет вопросов и
+ * доработки плана уже ограничены, это страховка от зацикливания.
+ */
+const MAX_MODEL_TURNS = 40
+
+/**
+ * Один ход модели как Promise: собирает текст, стримит активность в лог шага и
+ * запоминает id сессии CLI — по нему следующий ход продолжает тот же диалог
+ * (`claude --resume` / `codex resume`), что и делает возможными уточняющие
+ * вопросы и одобрение плана внутри одного шага ленты.
+ */
 function runTurn(
   claude: LlmClient,
   req: LlmRequest,
   onLog: (stream: 'stdout' | 'system', chunk: string) => void
-): Promise<{ ok: boolean; text: string }> {
+): Promise<{ ok: boolean; text: string; sessionId: string | null }> {
   return new Promise((resolve) => {
     let text = ''
+    let sessionId: string | null = null
     const handlers: LlmStreamHandlers = {
       onDelta: (t) => {
         text += t
         onLog('stdout', t)
       },
-      onSession: () => {},
-      onDone: () => resolve({ ok: true, text }),
+      onSession: (sid) => {
+        sessionId = sid
+      },
+      onDone: () => resolve({ ok: true, text, sessionId }),
       onError: (m) => {
         onLog('system', `Ошибка модели: ${m}\n`)
-        resolve({ ok: false, text })
+        resolve({ ok: false, text, sessionId })
       },
       onActivity: (e) => onLog('system', `[${e.kind}] ${e.summary}\n`)
     }
@@ -52,7 +68,13 @@ function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmReque
   return { remote: { mcpUrl, agentName: deps.agentNameOf(ctx.agentId) ?? ctx.agentId } }
 }
 
-function taskPrompt(ctx: CiModelContext): string {
+function taskPrompt(ctx: CiModelContext, mode: CiRunMode): string {
+  const tail = mode === 'plan'
+    ? [
+        'Режим «План»: только исследуй код и составь план работы, файлы не меняй.',
+        'Изложи план по шагам — пользователь его одобрит, и тогда ты приступишь к разработке.'
+      ]
+    : ['Реализуй задачу в рабочей директории. Команды выполняй через доступный инструмент bash.']
   return [
     `Задача: ${ctx.task.title}`,
     ctx.task.description ? `Описание: ${ctx.task.description}` : '',
@@ -60,10 +82,17 @@ function taskPrompt(ctx: CiModelContext): string {
     `Рабочая директория: ${ctx.workspacePath}`,
     `Ветка: ${ctx.env.BRANCH ?? ''}`,
     '',
-    'Реализуй задачу в рабочей директории. Команды выполняй через доступный инструмент bash.'
+    ...tail
   ]
     .filter(Boolean)
     .join('\n')
+}
+
+/** Хинт о формате вопросов с явным остатком бюджета. */
+function clarifyHint(left: number): string {
+  return appendQuestionsHint(
+    `Ты можешь задать пользователю не больше ${left} уточняющих ${left === 1 ? 'вопроса' : 'вопросов'} — только если без ответа не сможешь сделать задачу правильно.`
+  )
 }
 
 export function createCiModelHooks(deps: CiModelHooksDeps): {
@@ -98,19 +127,74 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     })
     const base = remoteOf(deps, ctx)
     if (ctx.agentId && base.remote) base.remote.ciMcpUrl = `${deps.ciMcpBaseUrl}&run=${token}`
-    const req: LlmRequest = {
-      userId: ctx.run.triggeredBy,
-      prompt: taskPrompt(ctx),
-      sessionId: null,
-      model: modelFor(ctx),
-      permissionMode: 'acceptEdits',
-      // CLI работает внутри server-контейнера; workspace существует на удалённой машине
-      // и доступен модели только через remote MCP. Хостовый путь нельзя передавать в spawn cwd.
-      ...base
-    }
+    const log = (stream: 'stdout' | 'system', chunk: string): void => ctx.log(ctx.parentStepId, stream, chunk)
+
+    // Шаг модели — это несколько ходов CLI в одной сессии: уточняющие вопросы и
+    // одобрение плана ставят ран на паузу и продолжают тот же диалог по sessionId.
+    let phase: CiRunMode = ctx.run.mode === 'plan' ? 'plan' : 'development'
+    let budget = clarifyBudget(ctx.run)
+    let sessionId: string | null = null
+    let prompt = taskPrompt(ctx, phase)
+    if (budget > 0) prompt = `${prompt}\n\n${clarifyHint(budget)}`
+
     try {
-      const r = await runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk))
-      return { ok: r.ok }
+      // Страховка от бесконечного цикла: паузы ограничены бюджетом вопросов и
+      // числом доработок плана, но верхний предел ходов задаём явно.
+      for (let turnNo = 0; turnNo < MAX_MODEL_TURNS; turnNo++) {
+        const req: LlmRequest = {
+          userId: ctx.run.triggeredBy,
+          prompt,
+          sessionId,
+          model: modelFor(ctx),
+          permissionMode: phase === 'plan' ? 'plan' : 'acceptEdits',
+          // CLI работает внутри server-контейнера; workspace существует на удалённой машине
+          // и доступен модели только через remote MCP. Хостовый путь нельзя передавать в spawn cwd.
+          ...base
+        }
+        const r = await runTurn(clientFor(ctx), req, log)
+        if (!r.ok) return { ok: false }
+        if (r.sessionId) sessionId = r.sessionId
+
+        // 1) Уточняющие вопросы — пока есть бюджет.
+        const parsed = budget > 0 ? parseQuestions(r.text) : null
+        if (parsed) {
+          budget -= parsed.questions.length
+          const answer = await ctx.askUser(ctx.parentStepId, parsed.questions)
+          if (answer === null) {
+            log('system', 'Продолжаю без уточнений.\n')
+            prompt = 'Ответа не будет — действуй по своему усмотрению и продолжай.'
+          } else {
+            prompt = answer.trim() || 'Ответа не будет — действуй по своему усмотрению и продолжай.'
+          }
+          if (budget > 0) prompt = `${prompt}\n\n${clarifyHint(budget)}`
+          continue
+        }
+
+        // 2) Гейт плана: одобрение переводит тот же диалог в разработку.
+        if (phase === 'plan') {
+          const decision = await ctx.askPlanApproval(ctx.parentStepId, r.text)
+          if (!decision) {
+            log('system', 'Решение по плану не получено — ран остановлен.\n')
+            return { ok: false, cancelled: true }
+          }
+          if (decision.decision === 'rework') {
+            log('system', 'План отправлен на доработку.\n')
+            prompt = decision.comment.trim()
+              ? `Пользователь просит доработать план: ${decision.comment.trim()}\nПредложи исправленный план, файлы не меняй.`
+              : 'Пользователь просит доработать план. Предложи исправленный вариант, файлы не меняй.'
+            continue
+          }
+          log('system', 'План одобрен — перехожу к разработке.\n')
+          phase = 'development'
+          prompt = 'План одобрен. Реализуй его в рабочей директории. Команды выполняй через доступный инструмент bash.'
+          continue
+        }
+
+        // 3) Разработка закончена.
+        return { ok: true }
+      }
+      log('system', `Достигнут предел ходов модели (${MAX_MODEL_TURNS}).\n`)
+      return { ok: false }
     } finally {
       ciToolBroker.unregister(token)
     }

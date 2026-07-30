@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   appendQuestionsHint,
   formatAnswers,
+  formatQuestionsBlock,
   parseQuestions,
-  QUESTIONS_HINT
+  QUESTIONS_HINT,
+  type QuestionSpec
 } from './questions'
 
 describe('parseQuestions', () => {
@@ -86,5 +88,19 @@ describe('formatAnswers', () => {
 
   it('пустые ответы отбрасываются', () => {
     expect(formatAnswers([{ q: 'В?', answer: '  ' }])).toBe('')
+  })
+})
+
+describe('formatQuestionsBlock', () => {
+  it('собранный блок читается обратно parseQuestions', () => {
+    const questions: QuestionSpec[] = [
+      { q: 'Какой режим?', options: ['План', 'Разработка'] },
+      { q: 'Что затронуть?', options: ['UI', 'Сервер'], multi: true }
+    ]
+    const text = `Нужны уточнения.\n\n${formatQuestionsBlock(questions)}`
+    const parsed = parseQuestions(text)
+    expect(parsed).not.toBeNull()
+    expect(parsed?.questions).toEqual(questions)
+    expect(parsed?.body).toBe('Нужны уточнения.')
   })
 })

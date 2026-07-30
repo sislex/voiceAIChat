@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import Database from 'better-sqlite3'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { VoiceChatDb } from './database.js'
 
 let db: VoiceChatDb
@@ -76,23 +80,23 @@ describe('ci: слот-конфиг и наследование', () => {
 describe('ci: движок и модель', () => {
   it('задача наследует настройку проекта и может переопределить её', () => {
     const { p, task } = project()
-    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'claude', model: 'sonnet' })
-    db.setCiLlmConfig('project', p.id, { provider: 'codex', model: 'gpt-5.4' })
-    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'codex', model: 'gpt-5.4' })
-    db.setCiLlmConfig('task', task.id, { provider: 'claude', model: 'haiku' })
-    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'claude', model: 'haiku' })
+    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'claude', model: 'sonnet', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.setCiLlmConfig('project', p.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.setCiLlmConfig('task', task.id, { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
   })
 
   it('снятие переопределения возвращает наследование от проекта', () => {
     const { p, task } = project()
-    db.setCiLlmConfig('project', p.id, { provider: 'codex', model: 'gpt-5.4' })
-    db.setCiLlmConfig('task', task.id, { provider: 'claude', model: 'haiku' })
+    db.setCiLlmConfig('project', p.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.setCiLlmConfig('task', task.id, { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     expect(db.clearCiLlmConfig('task', task.id)).toBe(true)
     expect(db.getCiLlmConfig('task', task.id)).toBeNull()
-    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'codex', model: 'gpt-5.4' })
+    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     // повторный сброс — идемпотентен, настройка проекта не задета
     expect(db.clearCiLlmConfig('task', task.id)).toBe(false)
-    expect(db.getCiLlmConfig('project', p.id)).toEqual({ provider: 'codex', model: 'gpt-5.4' })
+    expect(db.getCiLlmConfig('project', p.id)).toEqual({ provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
   })
 })
 
@@ -172,5 +176,64 @@ describe('ci: рабочие директории и предложения', ()
     expect(db.getCiCommand('alice', cmd.id)!.version).toBe(2)
     expect(db.getCiCommand('alice', cmd.id)!.script).toBe('npm ci --cache2')
     expect(db.countNewCiSuggestions(cmd.id)).toBe(0)
+  })
+})
+
+// В `:memory:` таблицы создаёт SCHEMA_SQL уже с новыми колонками, поэтому ветка
+// ALTER TABLE в migrate() там не исполняется вовсе. Прод-БД идёт именно по ней —
+// проверяем на файловой БД со «старой» схемой.
+describe('VoiceChatDb — миграция существующей БД под режим запуска и паузы', () => {
+  it('добавляет колонки режима/уточнений в ci_llm_configs, ci_runs и ci_settings', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-ci-migrate-'))
+    const file = join(dir, 'old.db')
+    const raw = new Database(file)
+    // Старая форма таблиц: без mode/clarify_*/conversation_id/interaction_wait_ms.
+    raw.exec(`CREATE TABLE ci_llm_configs (
+      owner_type TEXT NOT NULL, owner_id TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL,
+      PRIMARY KEY (owner_type, owner_id))`)
+    raw.exec(`CREATE TABLE ci_runs (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, task_id TEXT NOT NULL, agent_id TEXT,
+      status TEXT NOT NULL DEFAULT 'queued', workspace_id TEXT, triggered_by TEXT NOT NULL,
+      prev_column_id TEXT, llm_provider TEXT NOT NULL DEFAULT 'claude', llm_model TEXT NOT NULL DEFAULT 'sonnet',
+      slot_progress_json TEXT NOT NULL DEFAULT '{}', started_at INTEGER, finished_at INTEGER,
+      duration_ms INTEGER, created_at INTEGER NOT NULL)`)
+    raw.exec(`CREATE TABLE ci_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1), max_fix_attempts INTEGER NOT NULL,
+      fix_time_limit_ms INTEGER NOT NULL, fix_token_limit INTEGER NOT NULL,
+      default_step_timeout_sec INTEGER NOT NULL, metrics_window INTEGER NOT NULL,
+      max_concurrent_runs INTEGER NOT NULL, max_model_command_calls INTEGER NOT NULL)`)
+    raw.prepare(`INSERT INTO ci_llm_configs (owner_type, owner_id, provider, model) VALUES (?,?,?,?)`)
+      .run('project', 'p-old', 'codex', 'gpt-5.4')
+    raw.prepare(`INSERT INTO ci_runs (id, project_id, task_id, triggered_by, created_at) VALUES (?,?,?,?,?)`)
+      .run('run-old', 'p-old', 't-old', 'alice', 1)
+    raw.prepare(`INSERT INTO ci_settings (id, max_fix_attempts, fix_time_limit_ms, fix_token_limit,
+      default_step_timeout_sec, metrics_window, max_concurrent_runs, max_model_command_calls)
+      VALUES (1,3,600000,200000,600,20,2,20)`).run()
+    raw.close()
+
+    const migrated = new VoiceChatDb(file)
+    const cols = (name: string): string[] =>
+      ((migrated as unknown as { db: Database.Database }).db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>)
+        .map((c) => c.name)
+
+    expect(cols('ci_llm_configs')).toEqual(expect.arrayContaining(['mode', 'clarify_level', 'clarify_max']))
+    expect(cols('ci_runs')).toEqual(expect.arrayContaining(['mode', 'clarify_level', 'clarify_max', 'conversation_id']))
+    expect(cols('ci_settings')).toContain('interaction_wait_ms')
+    // Таблица пауз появляется как новая (CREATE TABLE IF NOT EXISTS).
+    expect(migrated.listCiInteractions('run-old')).toEqual([])
+
+    // Старые строки получают осмысленные значения по умолчанию, а не NULL.
+    expect(migrated.getCiLlmConfig('project', 'p-old')).toEqual({
+      provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3
+    })
+    const run = migrated.getCiRunRaw('run-old')!
+    expect(run.mode).toBe('development')
+    expect(run.clarifyLevel).toBe('few')
+    expect(run.clarifyMax).toBe(3)
+    expect(run.conversationId).toBeNull()
+    expect(migrated.getCiSettings().interactionWaitMs).toBe(30 * 60 * 1000)
+
+    migrated.close()
+    rmSync(dir, { recursive: true, force: true })
   })
 })

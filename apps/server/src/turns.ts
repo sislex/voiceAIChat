@@ -249,6 +249,26 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         if (lines.length) basePrompt = `${basePrompt}\n\n## Контекст проекта «${project.name}»\n${lines.join('\n')}`
       }
     }
+    // Контекст задачи, к которой привязан чат: иерархия, этап воркфлоу, папка и
+    // ветка разработки. Без этого чат «знает» только проект, хотя task_id есть.
+    if (conv?.taskId) {
+      const tc = deps.db.getTaskChatContext(userId, conversationId)
+      if (tc) {
+        const lines = [
+          `Задача: ${tc.task.key} · ${tc.task.title}`,
+          tc.epic ? `Эпик: ${tc.epic.key} · ${tc.epic.title}` : '',
+          tc.story ? `История: ${tc.story.key} · ${tc.story.title}` : '',
+          tc.columnName ? `Этап разработки: ${tc.columnName}${tc.columnSemantic ? ` (${tc.columnSemantic})` : ''}` : '',
+          tc.agentName ? `Машина разработки: ${tc.agentName}` : '',
+          tc.workdir ? `Рабочая директория: ${tc.workdir}` : '',
+          tc.run ? `Последний CI-ран: ${tc.run.status}, режим ${tc.run.mode === 'plan' ? 'план' : 'разработка'}` : ''
+        ].filter(Boolean)
+        const task = conv.projectId ? deps.db.getCiTask(userId, conv.projectId, conv.taskId) : null
+        if (task?.description) lines.push(`Описание задачи: ${task.description}`)
+        if (task?.acceptanceCriteria) lines.push(`Критерии приёмки: ${task.acceptanceCriteria}`)
+        basePrompt = `${basePrompt}\n\n## Контекст задачи\n${lines.join('\n')}`
+      }
+    }
     const prompt = appendImageHint(appendToolHint(appendQuestionsHint(basePrompt)))
     // Цель выполнения команд: выбранная машина-агент. Только своя машина
     // (чужую игнорируем → выполняем на сервере). Офлайн своей — сразу ошибка.

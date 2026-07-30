@@ -4,7 +4,8 @@
 // команды и глобальные настройки — глобальный admin; запуск — любой участник проекта.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import type { CiCommandInput, CiLlmConfig, CiSlot } from '@voicechat/shared'
+import type { CiCommandInput, CiLlmConfig, CiSlot, CiRunMode, CiPlanDecision } from '@voicechat/shared'
+import { DEFAULT_CI_LLM_CONFIG } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CiRunManager } from '../ci/runManager.js'
 import { uid } from '../users/auth.js'
@@ -82,7 +83,7 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   // --- Движок/модель проекта и задачи (с наследованием) ---
   app.get<{ Params: { id: string } }>('/api/projects/:id/ci/llm', async (req, reply) => {
     if (!db.getProject(uid(req), req.params.id)) return nf(reply)
-    return db.getCiLlmConfig('project', req.params.id) ?? { provider: 'claude', model: 'sonnet' }
+    return db.getCiLlmConfig('project', req.params.id) ?? DEFAULT_CI_LLM_CONFIG
   })
   app.put<{ Params: { id: string }; Body: CiLlmConfig }>('/api/projects/:id/ci/llm', async (req, reply) => {
     if (!isOwner(req, req.params.id)) return forbid(reply)
@@ -91,7 +92,7 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   const taskLlmView = (projectId: string, taskId: string): { config: CiLlmConfig; overridden: boolean; projectDefault: CiLlmConfig } => ({
     config: db.resolveTaskLlmConfig(projectId, taskId),
     overridden: db.getCiLlmConfig('task', taskId) !== null,
-    projectDefault: db.getCiLlmConfig('project', projectId) ?? { provider: 'claude', model: 'sonnet' }
+    projectDefault: db.getCiLlmConfig('project', projectId) ?? DEFAULT_CI_LLM_CONFIG
   })
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci/llm', async (req, reply) => {
     if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
@@ -126,11 +127,24 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   })
 
   // --- Запуск / отмена / повтор рана ---
-  app.post<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci/run', async (req, reply) => {
-    const res = ci.start(uid(req), req.params.id, req.params.taskId)
+  app.post<{ Params: { id: string; taskId: string }; Body: { mode?: CiRunMode } | undefined }>('/api/projects/:id/tasks/:taskId/ci/run', async (req, reply) => {
+    const mode = req.body?.mode === 'plan' || req.body?.mode === 'development' ? req.body.mode : undefined
+    const res = ci.start(uid(req), req.params.id, req.params.taskId, mode)
     if ('error' in res) return reply.code(409).send({ error: res.error })
     return reply.code(202).send(res.run)
   })
+  // Ответ на паузу рана: уточняющий вопрос модели или решение по плану.
+  // Ответить можно и отсюда (лента), и из связанного чата — первый победил.
+  app.post<{ Params: { runId: string; interactionId: string }; Body: { text?: string; decision?: CiPlanDecision } | undefined }>(
+    '/api/ci/runs/:runId/interactions/:interactionId',
+    async (req, reply) => {
+      const body = req.body ?? {}
+      const decision = body.decision === 'approved' || body.decision === 'rework' ? body.decision : undefined
+      const res = ci.answerInteraction(uid(req), req.params.runId, req.params.interactionId, { text: body.text, decision })
+      if ('error' in res) return reply.code(409).send({ error: res.error })
+      return res.interaction
+    }
+  )
   app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId', async (req, reply) => db.getCiRun(uid(req), req.params.runId) ?? nf(reply))
   app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId/log', async (req, reply) => {
     if (!db.getCiRun(uid(req), req.params.runId)) return nf(reply)

@@ -54,7 +54,7 @@ describe('TaskCard CI-панель', () => {
 
   it('показывает сводку рана и открывает ленту', () => {
     const onOpenCiRun = vi.fn()
-    const ciSummary: CiRunSummary = { id: 'run-1', taskId: 't1', status: 'running', slotProgress: { done: 1, total: 4, phase: 'до модели' }, durationMs: null, modelActive: false }
+    const ciSummary: CiRunSummary = { id: 'run-1', taskId: 't1', status: 'running', slotProgress: { done: 1, total: 4, phase: 'до модели' }, durationMs: null, modelActive: false, awaitingInput: false }
     render(<TaskCard {...props({ ciSummary, onOpenCiRun, onStartCi: vi.fn() })} />)
     expect(screen.getByText('выполняется')).toBeInTheDocument()
     expect(screen.getByText(/до модели 1\/4/)).toBeInTheDocument()

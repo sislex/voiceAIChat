@@ -118,6 +118,12 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     }
   )
 
+  // Контекст задачи для шапки связанного чата (проект/эпик/стори/этап/машина/ран).
+  app.get<{ Params: { id: string } }>('/api/conversations/:id/task-context', async (req, reply) => {
+    if (!db.getConversation(uid(req), req.params.id)) return reply.code(404).send({ error: 'not found' })
+    return db.getTaskChatContext(uid(req), req.params.id)
+  })
+
   app.post<{ Params: { id: string }; Body: { projectId?: string | null } }>(
     '/api/conversations/:id/project',
     async (req, reply) => {

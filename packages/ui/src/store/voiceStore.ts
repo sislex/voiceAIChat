@@ -17,7 +17,7 @@ import type {
   SttUpdate,
   UploadInfo
 } from '@shared/ipc'
-import type { Board, ProjectDetail, ProjectSummary, TaskPriority, WorkItemType, WorkItemDefaultSkills } from '@shared/projects'
+import type { Board, ProjectDetail, ProjectSummary, TaskChatContext, TaskPriority, WorkItemType, WorkItemDefaultSkills } from '@shared/projects'
 
 import type {
   CiCommand,
@@ -31,6 +31,9 @@ import type {
   CiFixAttempt,
   CiRunSummary,
   CiRunConclusion,
+  CiInteraction,
+  CiInteractionAnswer,
+  CiRunMode,
   CiLogLine
 } from '@shared/ci'
 import type { RendererCiBridge } from '../remote/ciBridge'
@@ -290,6 +293,14 @@ export interface AppState {
   ciSummaries: Record<string, CiRunSummary>
   /** Открытый в модалке ран (лента), null — закрыта. */
   ciActiveRunId: string | null
+  /** Контекст задачи активного чата для шапки; null — чат не привязан к задаче. */
+  taskChatContext: TaskChatContext | null
+  /**
+   * Id закрытых пауз рана. Нужен чату: вопрос продублирован туда сообщением,
+   * и после ответа (из чата или из ленты) форму надо погасить — сам текст
+   * сообщения при этом не меняется.
+   */
+  answeredCiInteractions: string[]
 }
 
 /** Кэш одного рана: снимок ленты + накопленный лог + заключение. */
@@ -659,6 +670,9 @@ export interface StoreActions {
   deleteTask(taskId: string): Promise<void>
   /** Открыть (создав при необходимости) связанный с задачей чат и переключиться на него. */
   openTaskChat(taskId: string): Promise<void>
+  /** Создать связанный чат, не переключаясь на него (открытие карточки). */
+  ensureTaskChat(taskId: string): Promise<void>
+  loadTaskChatContext(id: string): Promise<void>
 
   // --- CI-раннер ---
   openCi(): Promise<void>
@@ -671,7 +685,7 @@ export interface StoreActions {
   saveCiSettings(settings: Partial<CiGlobalSettings>): Promise<void>
   resolveCiSuggestion(id: string, accept: boolean): Promise<void>
   reloadCiWorkspaces(projectId?: string): Promise<void>
-  startCiRun(projectId: string, taskId: string): Promise<CiRun | null>
+  startCiRun(projectId: string, taskId: string, mode?: CiRunMode): Promise<CiRun | null>
   cancelCiRun(runId: string): Promise<void>
   retryCiRun(runId: string): Promise<CiRun | null>
   retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun | null>
@@ -688,6 +702,8 @@ export interface StoreActions {
   applyCiFix(runId: string, attempt: CiFixAttempt): void
   applyCiDone(runId: string, run: CiRun, conclusion?: CiRunConclusion): void
   applyCiSummary(projectId: string, summary: CiRunSummary): void
+  applyCiInteraction(runId: string, interaction: CiInteraction): void
+  answerCiInteraction(runId: string, interactionId: string, answer: CiInteractionAnswer): Promise<void>
   /** Отмена всех активных таймеров пайплайна (напр. при размонтировании). */
   dispose(): void
 }
@@ -779,7 +795,9 @@ function initialState(): AppState {
     ciWorkspaces: [],
     ciRuns: {},
     ciSummaries: {},
-    ciActiveRunId: null
+    ciActiveRunId: null,
+    taskChatContext: null,
+    answeredCiInteractions: []
   }
 }
 
@@ -1900,6 +1918,20 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     } finally {
       setState({ loadingMessages: false })
     }
+    // Шапка чата задачи: иерархия, этап, машина/папка, ран. Грузим отдельно,
+    // чтобы не задерживать показ сообщений.
+    void loadTaskChatContext(id)
+  }
+
+  /** Контекст задачи активного чата (null — чат не привязан к задаче). */
+  async function loadTaskChatContext(id: string): Promise<void> {
+    setState({ taskChatContext: null })
+    try {
+      const ctx = await api['conversations:taskContext']({ id })
+      if (state.activeId === id) setState({ taskChatContext: ctx })
+    } catch {
+      /* шапка необязательна — молча без неё */
+    }
   }
 
   async function renameConversation(id: string, title: string): Promise<void> {
@@ -2631,7 +2663,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ ciRuns: { ...state.ciRuns, [runId]: fn(prev) } })
   }
   function mergeStep(detail: CiRunDetail | null, step: CiRunStep): CiRunDetail | null {
-    if (!detail) return { run: { id: step.runId } as CiRun, steps: [step], fixAttempts: [] }
+    if (!detail) return { run: { id: step.runId } as CiRun, steps: [step], fixAttempts: [], interactions: [] }
     const steps = detail.steps.some((x) => x.id === step.id)
       ? detail.steps.map((x) => (x.id === step.id ? step : x))
       : [...detail.steps, step]
@@ -2715,12 +2747,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!ciBridge) return
     setState({ ciWorkspaces: await ciBridge.listWorkspaces(projectId) })
   }
-  async function startCiRun(projectId: string, taskId: string): Promise<CiRun | null> {
+  async function startCiRun(projectId: string, taskId: string, mode?: CiRunMode): Promise<CiRun | null> {
     if (!ciBridge) return null
     try {
-      const run = await ciBridge.startRun(projectId, taskId)
-      setState({ ciSummaries: { ...state.ciSummaries, [taskId]: { id: run.id, taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false } } })
-      patchCiRun(run.id, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [] } }))
+      const run = await ciBridge.startRun(projectId, taskId, mode)
+      setState({ ciSummaries: { ...state.ciSummaries, [taskId]: { id: run.id, taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false, awaitingInput: false } } })
+      patchCiRun(run.id, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [], interactions: [] } }))
       return run
     } catch (err) {
       setState({ error: perr(err) })
@@ -2769,8 +2801,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     patchCiRun(runId, (c) => ({ ...c, detail, log }))
   }
   function applyCiRun(runId: string, run: CiRun): void {
-    patchCiRun(runId, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [] } }))
-    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: state.ciSummaries[run.taskId]?.modelActive ?? false } } })
+    patchCiRun(runId, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [], interactions: [] } }))
+    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: state.ciSummaries[run.taskId]?.modelActive ?? false, awaitingInput: run.status === 'awaiting_input' } } })
   }
   function applyCiStep(runId: string, step: CiRunStep): void {
     patchCiRun(runId, (c) => ({ ...c, detail: mergeStep(c.detail, step) }))
@@ -2788,11 +2820,44 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     })
   }
   function applyCiDone(runId: string, run: CiRun, conclusion?: CiRunConclusion): void {
-    patchCiRun(runId, (c) => ({ ...c, conclusion: conclusion ?? c.conclusion, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [] } }))
-    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false } } })
+    patchCiRun(runId, (c) => ({ ...c, conclusion: conclusion ?? c.conclusion, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [], interactions: [] } }))
+    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false, awaitingInput: false } } })
   }
   function applyCiSummary(_projectId: string, summary: CiRunSummary): void {
     setState({ ciSummaries: { ...state.ciSummaries, [summary.taskId]: summary } })
+  }
+  /** Пауза рана: вопрос модели или гейт плана (создание и ответ приходят одним типом). */
+  function applyCiInteraction(runId: string, interaction: CiInteraction): void {
+    if (interaction.status !== 'pending' && !state.answeredCiInteractions.includes(interaction.id)) {
+      setState({ answeredCiInteractions: [...state.answeredCiInteractions, interaction.id] })
+    }
+    patchCiRun(runId, (c) => {
+      if (!c.detail) return c
+      const list = c.detail.interactions ?? []
+      const interactions = list.some((x) => x.id === interaction.id)
+        ? list.map((x) => (x.id === interaction.id ? interaction : x))
+        : [...list, interaction]
+      return { ...c, detail: { ...c.detail, interactions } }
+    })
+  }
+  /** Ответить на паузу рана из ленты. Ошибка 409 (ответили из чата) — не фатальна. */
+  async function answerCiInteraction(runId: string, interactionId: string, answer: CiInteractionAnswer): Promise<void> {
+    // Пауза гасится сразу, даже если запрос упал с 409 (ответили из другого места).
+    if (!state.answeredCiInteractions.includes(interactionId)) {
+      setState({ answeredCiInteractions: [...state.answeredCiInteractions, interactionId] })
+    }
+    try {
+      const updated = await ciBridge?.answerInteraction(runId, interactionId, answer)
+      if (updated) applyCiInteraction(runId, updated)
+    } catch (err) {
+      setState({ error: perr(err) })
+      void loadCiRun(runId)
+    }
+    // Сервер дописывает ответ репликой в связанный чат — подтягиваем ленту.
+    if (state.activeId) {
+      const res = await api['conversations:get']({ id: state.activeId }).catch(() => null)
+      if (res && res.conversation.id === state.activeId) setState({ messages: res.messages })
+    }
   }
 
   async function createColumn(name: string): Promise<void> {
@@ -2934,6 +2999,21 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await selectConversation(conv.id)
     } catch (err) {
       setState({ error: perr(err) })
+    }
+  }
+
+  /**
+   * Создать связанный чат, не переключаясь на него: карточку открыли — чат уже
+   * есть. Идемпотентно на сервере, поэтому повторный вызов безопасен.
+   */
+  async function ensureTaskChat(taskId: string): Promise<void> {
+    const id = state.activeProjectId
+    if (!id) return
+    try {
+      await api['tasks:openChat']({ projectId: id, taskId })
+      await refreshBoard()
+    } catch {
+      /* без чата карточка всё равно работает */
     }
   }
 
@@ -3093,6 +3173,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applyCiFix,
       applyCiDone,
       applyCiSummary,
+      applyCiInteraction,
+      answerCiInteraction,
+      ensureTaskChat,
+      loadTaskChatContext,
       createColumn,
       updateColumn,
       setColumnHidden,

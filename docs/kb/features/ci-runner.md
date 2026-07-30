@@ -2,7 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-07-29
+updated: 2026-07-30
+checked: 2e2b231
 areas:
   - packages/shared/src/ci.ts
   - apps/server/src/ci
@@ -15,6 +16,8 @@ areas:
   - packages/ui/src/store/voiceStore.ts
 symbols:
   - createCiRunManager
+  - clarifyBudget
+  - CiInteraction
   - AgentCommandExecutor
   - createCiModelHooks
   - registerCiCommandsMcp
@@ -69,10 +72,47 @@ model_summary, `parent_step_id` для вложенных вызовов), `ci_r
 cwd/env собираются с shell-escape (пользовательский ввод — только через env, не
 конкатенацией). Секреты маскируются в логе.
 
+## Режим запуска и глубина уточнений
+
+`CiLlmConfig` несёт не только `provider`/`model`, но и `mode` (`plan`|`development`),
+`clarifyLevel` (`none`|`few`|`medium`|`detailed`) и `clarifyMax` (1..30, только для
+`detailed`); бюджет вопросов считает `clarifyBudget()`. Наследование то же, что у
+движка: задача → проект → `DEFAULT_CI_LLM_CONFIG` (`resolveTaskLlmConfig`), правится
+в `CiTaskSettings` (под выбором модели) и `CiProjectDefaults`. Выбор снимком
+фиксируется в `ci_runs.mode/clarify_level/clarify_max`, поэтому повтор рана его
+сохраняет; `POST …/ci/run` принимает разовый `{ mode }`.
+
+## Пауза рана: вопросы модели и одобрение плана
+
+Один механизм на оба случая — таблица `ci_interactions` (`kind: clarify|plan_approval`)
+и нетерминальный статус рана `awaiting_input`. Работа модели (`modelWork`) —
+фазовый цикл ходов CLI в **одной сессии**: `runTurn` захватывает `onSession`, и
+следующий ход идёт с `--resume`/`codex resume`. В режиме `plan` первый ход идёт с
+`permissionMode: 'plan'`, затем гейт `askPlanApproval`: `approved` переводит тот же
+диалог в `acceptEdits` (слот «после» и резюме идут как обычно), `rework` даёт
+модели комментарий и новый план, отсутствие решения (таймаут/отмена) завершает ран
+как `cancelled` без слота «после». Уточняющие вопросы разбираются существующим
+`parseQuestions` из `@shared/questions` — нового формата нет.
+
+Ожидание **отпускает серверный слот** (`releaseSlot`/`acquireSlot` вокруг await):
+одобрение плана может длиться часами, а `maxConcurrentRuns` по умолчанию 2.
+Очередь внутри проекта остаётся последовательной, как и была. Лимит ожидания —
+`CiGlobalSettings.interactionWaitMs` (30 мин, `0` — без лимита); по таймауту
+для `clarify` модель продолжает без уточнений, для гейта плана ран отменяется.
+
+Вопрос дублируется в **связанный чат задачи** обычным AI-сообщением с блоком
+```` ```questions ```` и меткой `TurnMeta.ciInteraction` — `ChatColumn` рисует его
+готовым `QuestionsForm`, нового UI в чате нет. Ответить можно из ленты или из чата,
+побеждает первый (`answerCiInteraction` обновляет строку только пока она `pending`,
+повторный ответ — 409). Сервер дописывает ответ репликой в тот же чат.
+REST — `POST /api/ci/runs/:runId/interactions/:id`, WS — `ci.interaction`,
+`CiRunDetail.interactions` нужен для реплея после reload.
+
 ## Модель в цикле
 
 `createCiModelHooks` (`ci/modelHooks.ts`) на инъектируемом `LlmClient`: работа
-модели (remote-bash MCP в рабочей папке), резюме, fix-loop (диагноз→правка→повтор
+модели (remote-bash MCP в рабочей папке, многоходовый цикл с паузами, предел
+`MAX_MODEL_TURNS`), резюме, fix-loop (диагноз→правка→повтор
 упавшего шага, лимиты `maxFixAttempts`/`fixTimeLimitMs`, предложения по правке
 скрипта). Команды справочника доступны модели как MCP-инструмент `mcp__ci__run_command`
 Удалённый workspace передаётся только через `remote.mcpUrl`; его хостовый путь нельзя задавать как локальный `LlmRequest.cwd`, потому что CLI запускается внутри server-контейнера.
@@ -94,7 +134,9 @@ cwd/env собираются с shell-escape (пользовательский �
 
 ## Проверка
 
-`apps/server/src/ci/*.test.ts` и `db/database.ci.test.ts` (27+ тестов): пустые слоты,
+`apps/server/src/ci/*.test.ts` (включая `interactions.test.ts`: пауза на вопрос,
+409 на повторный ответ, бюджет уточнений, гейт плана approved/rework/отмена,
+разовый оверрайд режима) и `db/database.ci.test.ts` (35+ тестов): пустые слоты,
 падение слота «до» с откатом, `allow_failure`, `is_cleanup`, конкурентные раны,
 fix-loop и исчерпание попыток, вызов команды моделью, консоль read-only. UI —
 `components/ci/*.dom.test.tsx`. Гейт: `npm run -w @voicechat/server typecheck && test`;

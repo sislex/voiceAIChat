@@ -1,6 +1,8 @@
 // CI-настройки задачи: команды и наследуемый движок/модель.
 import { useEffect, useState, type JSX } from 'react'
-import type { CiCommand, CiLlmConfig, CiSlotConfig } from '@shared/ci'
+import type { CiCommand, CiClarifyLevel, CiLlmConfig, CiRunMode, CiSlotConfig } from '@shared/ci'
+import { CI_CLARIFY_MAX_LIMIT, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
+import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import { CiSlotEditor } from './CiSlotEditor'
 
@@ -12,7 +14,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const [after, setAfter] = useState<string[]>([])
   const [overridden, setOverridden] = useState(false)
   const [saved, setSaved] = useState(true)
-  const [llm, setLlm] = useState<CiLlmConfig>({ provider: 'claude', model: 'sonnet' })
+  const [llm, setLlm] = useState<CiLlmConfig>({ ...DEFAULT_CI_LLM_CONFIG })
   const [llmOverridden, setLlmOverridden] = useState(false)
   const [llmSaved, setLlmSaved] = useState(true)
 
@@ -36,7 +38,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   }
   const models = llm.provider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS
   const changeProvider = (provider: 'claude' | 'codex'): void => {
-    setLlm({ provider, model: provider === 'codex' ? CODEX_MODELS[0].id : 'sonnet' }); setLlmSaved(false)
+    setLlm({ ...llm, provider, model: provider === 'codex' ? CODEX_MODELS[0].id : 'sonnet' }); setLlmSaved(false)
   }
   const saveLlm = (): void => {
     void window.ci?.putTaskCiLlm(props.projectId, props.taskId, llm).then(() => { setLlmSaved(true); setLlmOverridden(true) })
@@ -56,6 +58,40 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
       <label>Движок<select aria-label="Движок модели" className="sel" value={llm.provider} onChange={(e) => changeProvider(e.target.value as 'claude' | 'codex')}><option value="claude">Claude</option><option value="codex">Codex</option></select></label>
       <label>Модель<select aria-label="Модель" className="sel" value={llm.model} onChange={(e) => { setLlm({ ...llm, model: e.target.value }); setLlmSaved(false) }}>{!models.some((m) => m.id === llm.model) && <option value={llm.model}>{llm.model}</option>}{models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
     </div>
+    <div className="ci-task-llm">
+      <label>Режим запуска<select
+        aria-label="Режим запуска"
+        className="sel"
+        value={llm.mode}
+        onChange={(e) => { setLlm({ ...llm, mode: e.target.value as CiRunMode }); setLlmSaved(false) }}
+      >{(['plan', 'development'] as CiRunMode[]).map((m) => <option key={m} value={m}>{RUN_MODE_LABEL[m]}</option>)}</select></label>
+      <label>Уточнения<select
+        aria-label="Степень уточнения"
+        className="sel"
+        value={llm.clarifyLevel}
+        onChange={(e) => { setLlm({ ...llm, clarifyLevel: e.target.value as CiClarifyLevel }); setLlmSaved(false) }}
+      >{(['none', 'few', 'medium', 'detailed'] as CiClarifyLevel[]).map((l) => <option key={l} value={l}>{CLARIFY_LEVEL_LABEL[l]}</option>)}</select></label>
+    </div>
+    {llm.clarifyLevel === 'detailed' && (
+      <label className="ci-task-clarify-max">Сколько вопросов (1–{CI_CLARIFY_MAX_LIMIT})<input
+        aria-label="Число вопросов"
+        className="login-input"
+        type="number"
+        min={1}
+        max={CI_CLARIFY_MAX_LIMIT}
+        value={llm.clarifyMax}
+        onChange={(e) => {
+          const n = Number(e.target.value)
+          setLlm({ ...llm, clarifyMax: Number.isFinite(n) ? Math.min(CI_CLARIFY_MAX_LIMIT, Math.max(1, Math.round(n))) : 1 })
+          setLlmSaved(false)
+        }}
+      /></label>
+    )}
+    <p className="ci-task-hint">
+      {llm.mode === 'plan'
+        ? 'Модель сначала предложит план и дождётся одобрения в ленте рана.'
+        : 'Модель сразу приступит к разработке.'}
+    </p>
     <div className="ci-task-llm-actions">
       {!llmSaved && <button type="button" className="btn-primary ci-task-save" onClick={saveLlm}>Сохранить движок и модель</button>}
       {llmOverridden && <button type="button" className="ci-task-reset" onClick={resetLlm}>Вернуть настройку проекта</button>}

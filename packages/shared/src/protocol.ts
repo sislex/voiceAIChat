@@ -16,7 +16,7 @@ import type { CcItem } from './cc'
 import type { CxItem } from './codexSessions'
 import type { AgentInfo } from './agentProtocol'
 import type { Board } from './projects'
-import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary } from './ci'
+import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary, CiInteraction } from './ci'
 
 // --- Общие ---------------------------------------------------------------
 
@@ -229,7 +229,10 @@ export const REST = {
   ciRunRetryFromStep: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/retry-from-step`,
   ciRunDiscardAndRetry: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/discard-and-retry`,
   ciConsoleExec: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/console`,
-  ciConsoleMode: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/console/mode`
+  ciConsoleMode: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/console/mode`,
+  ciRunInteraction: (runId: string, interactionId: string) =>
+    `/api/ci/runs/${encodeURIComponent(runId)}/interactions/${encodeURIComponent(interactionId)}`,
+  conversationTaskContext: (id: string) => `/api/conversations/${encodeURIComponent(id)}/task-context`
 } as const
 
 // --- WebSocket -----------------------------------------------------------
@@ -339,6 +342,7 @@ export type ServerMessage =
   | { t: 'ci.fix'; runId: string; attempt: CiFixAttempt }
   | { t: 'ci.done'; runId: string; run: CiRun; conclusion?: CiRunConclusion }
   | { t: 'ci.summary'; projectId: string; summary: CiRunSummary }
+  | { t: 'ci.interaction'; runId: string; interaction: CiInteraction }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']
@@ -398,5 +402,6 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'ci.log',
   'ci.fix',
   'ci.done',
-  'ci.summary'
+  'ci.summary',
+  'ci.interaction'
 ]

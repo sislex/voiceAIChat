@@ -12,6 +12,8 @@ import { PromptBuilder, type GenerateParams, type Suggestion } from '../prompt-b
 import { applyNativeInputValue, useAiAssist } from '../prompt-builder/useAiAssist'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanbanMeta'
 import { CiTaskSettings } from '../ci/CiTaskSettings'
+import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
+import type { CiRunSummary } from '@shared/ci'
 
 export interface TaskUpdateFields {
   title?: string
@@ -38,6 +40,15 @@ export interface TaskModalProps {
   onDelete: (taskId: string) => void
   /** Открыть связанный с задачей чат (кнопка в шапке модалки). */
   onOpenChat?: (taskId: string) => void
+  /**
+   * Создать связанный чат, не уходя с доски. Зовётся при первом открытии
+   * карточки задачи, чтобы у неё сразу был чат (идемпотентно на сервере).
+   */
+  onEnsureChat?: (taskId: string) => void
+  /** Сводка последнего CI-рана задачи и переходы в его ленту. */
+  ciSummary?: CiRunSummary
+  onStartCi?: (taskId: string) => void
+  onOpenCiRun?: (runId: string) => void
 
   /** Смена статуса = перенос в конец выбранной колонки. */
   onMoveToColumn: (taskId: string, columnId: string) => void
@@ -93,6 +104,13 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     setSkillDraft('')
   }, [task.id, task.title, task.description, task.acceptanceCriteria])
 
+
+  // Чат к задаче создаётся сам при первом открытии карточки: дальше в него
+  // дублируются вопросы модели из CI-рана.
+  const ensureChat = props.onEnsureChat
+  useEffect(() => {
+    if (task.type === 'task' && !task.chatId && ensureChat) ensureChat(task.id)
+  }, [task.id, task.type, task.chatId, ensureChat])
 
   const column = board.columns.find((c) => c.id === task.columnId)
   const parent = task.parentId ? board.tasks.find((t) => t.id === task.parentId) : null
@@ -392,6 +410,35 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             <br />Создано: {new Date(task.createdAt).toLocaleDateString('ru')}
             <br />Обновлено: {new Date(task.updatedAt).toLocaleDateString('ru')}
           </p>
+          {task.type === 'task' && (props.onStartCi || props.ciSummary) && (
+            <div className="jmodal-ci" data-testid="task-modal-ci">
+              <div className="jmodal-ci-head">
+                <span className="ci-task-title">CI-ран</span>
+                {props.ciSummary && (
+                  <span className={`lozenge ci-lozenge--${ciTone(props.ciSummary.status)}`}>{ciStatusLabel(props.ciSummary.status)}</span>
+                )}
+              </div>
+              {props.ciSummary && (
+                <p className="jcard-ci-phase">
+                  {props.ciSummary.slotProgress.phase} {props.ciSummary.slotProgress.done}/{props.ciSummary.slotProgress.total}
+                  {props.ciSummary.durationMs != null ? ` · ${fmtDuration(props.ciSummary.durationMs)}` : ''}
+                </p>
+              )}
+              <div className="jmodal-ci-actions">
+                {props.ciSummary && props.onOpenCiRun && (
+                  <button
+                    className={`ci-btn${props.ciSummary.awaitingInput ? ' jcard-ci-open--attention' : ''}`}
+                    onClick={() => props.onOpenCiRun?.(props.ciSummary!.id)}
+                  >
+                    {props.ciSummary.awaitingInput ? 'Ответить модели' : 'Лента рана'}
+                  </button>
+                )}
+                {props.onStartCi && (
+                  <button className="btn-primary" onClick={() => props.onStartCi?.(task.id)}>Выполнить</button>
+                )}
+              </div>
+            </div>
+          )}
           <CiTaskSettings projectId={task.projectId} taskId={task.id} />
         </aside>
       </div>

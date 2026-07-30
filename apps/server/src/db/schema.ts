@@ -198,6 +198,9 @@ CREATE TABLE IF NOT EXISTS ci_llm_configs (
   owner_id   TEXT NOT NULL,
   provider   TEXT NOT NULL,
   model      TEXT NOT NULL,
+  mode           TEXT NOT NULL DEFAULT 'development',
+  clarify_level  TEXT NOT NULL DEFAULT 'few',
+  clarify_max    INTEGER NOT NULL DEFAULT 3,
   PRIMARY KEY (owner_type, owner_id)
 );
 
@@ -226,6 +229,10 @@ CREATE TABLE IF NOT EXISTS ci_runs (
   prev_column_id TEXT,
   llm_provider   TEXT NOT NULL DEFAULT 'claude',
   llm_model      TEXT NOT NULL DEFAULT 'sonnet',
+  mode           TEXT NOT NULL DEFAULT 'development',
+  clarify_level  TEXT NOT NULL DEFAULT 'few',
+  clarify_max    INTEGER NOT NULL DEFAULT 3,
+  conversation_id TEXT,
   slot_progress_json TEXT NOT NULL DEFAULT '{}',
   started_at     INTEGER,
   finished_at    INTEGER,
@@ -272,6 +279,28 @@ CREATE TABLE IF NOT EXISTS ci_run_logs (
   FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_ci_run_logs_run ON ci_run_logs(run_id, seq);
+
+-- Пауза рана в ожидании пользователя: уточняющие вопросы модели или одобрение
+-- плана. Ответить можно из ленты рана или из связанного чата — первый победил.
+CREATE TABLE IF NOT EXISTS ci_interactions (
+  id              TEXT PRIMARY KEY,
+  run_id          TEXT NOT NULL,
+  step_id         TEXT NOT NULL,
+  seq             INTEGER NOT NULL,
+  kind            TEXT NOT NULL,
+  questions_json  TEXT NOT NULL DEFAULT '[]',
+  plan_text       TEXT,
+  answer_text     TEXT,
+  decision        TEXT,
+  status          TEXT NOT NULL DEFAULT 'pending',
+  conversation_id TEXT,
+  message_id      TEXT,
+  created_at      INTEGER NOT NULL,
+  answered_at     INTEGER,
+  answered_by     TEXT,
+  FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_interactions_run ON ci_interactions(run_id, seq);
 
 CREATE TABLE IF NOT EXISTS ci_fix_attempts (
   id           TEXT PRIMARY KEY,
@@ -326,7 +355,8 @@ CREATE TABLE IF NOT EXISTS ci_settings (
   default_step_timeout_sec INTEGER NOT NULL,
   metrics_window         INTEGER NOT NULL,
   max_concurrent_runs    INTEGER NOT NULL,
-  max_model_command_calls INTEGER NOT NULL
+  max_model_command_calls INTEGER NOT NULL,
+  interaction_wait_ms    INTEGER NOT NULL DEFAULT 1800000
 );
 
 `
