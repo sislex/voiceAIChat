@@ -675,6 +675,7 @@ export interface StoreActions {
   cancelCiRun(runId: string): Promise<void>
   retryCiRun(runId: string): Promise<CiRun | null>
   retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun | null>
+  discardCiWorkspaceAndRetry(runId: string): Promise<CiRun | null>
   loadCiRun(runId: string): Promise<void>
   openCiRun(runId: string): void
   closeCiRun(): void
@@ -2739,6 +2740,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!ciBridge) return null
     try { const r = await ciBridge.retryRunFromStep(runId, selection); await loadCiRun(runId); return r } catch (err) { setState({ error: perr(err) }); return null }
   }
+  async function discardCiWorkspaceAndRetry(runId: string): Promise<CiRun | null> {
+    if (!ciBridge) return null
+    try { return await ciBridge.discardChangesAndRetry(runId) } catch (err) { setState({ error: perr(err) }); return null }
+  }
   async function loadCiRun(runId: string): Promise<void> {
     if (!ciBridge) return
     try {
@@ -3075,6 +3080,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       cancelCiRun,
       retryCiRun,
       retryCiRunFromStep,
+      discardCiWorkspaceAndRetry,
       loadCiRun,
       openCiRun,
       closeCiRun,

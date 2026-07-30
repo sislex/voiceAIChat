@@ -670,6 +670,7 @@ export function createFakeCi(): FakeCi {
     cancelRun: async () => ({ ok: true }),
     retryRun: async (rid) => { const d = runs.get(rid)!; return await bridge.startRun(d.run.projectId, d.run.taskId) },
     retryRunFromStep: async (runId: string) => ({ id: runId } as unknown as CiRun),
+    discardChangesAndRetry: async (runId: string) => ({ id: runId } as unknown as CiRun),
     getMetrics: async () => ({ commands: [], modelWork: { projectId: 'p', avgMs: null, samples: 0 } }),
     consoleExec: async () => ({ output: '', exitCode: 0, rejected: false, message: '' }),
     subscribe: (runId) => { const d = runs.get(runId); if (d) emit('ci.snapshot', { runId, detail: d, log: logs.get(runId) ?? [] }) },

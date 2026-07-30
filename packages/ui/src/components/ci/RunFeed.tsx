@@ -26,6 +26,7 @@ export interface RunFeedProps {
   onLoad: (runId: string) => void
   onRetry: (runId: string) => void
   onRetryFromStep?: (runId: string, selection?: { provider: 'claude' | 'codex'; model: string }) => void
+  onDiscardAndRetry?: (runId: string) => void
   onCancel: (runId: string) => void
   onLoadMetrics?: (projectId: string) => void
   now?: () => number
@@ -158,6 +159,17 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
                 </label>
                 <button className="ci-btn" disabled={!props.onRetryFromStep || (modelProvider === 'claude' && !modelName)} onClick={() => props.onRetryFromStep?.(runId, { provider: modelProvider, model: modelName })}>
                   Повторить работу модели
+                </button>
+              </div>
+            )}
+            {step.kind === 'command' && step.status === 'failed' && step.exitCode === 66 && run?.status === 'failed' && (
+              <div className="ci-model-retry" data-testid="ci-dirty-workspace">
+                <strong>В рабочем репозитории есть локальные изменения.</strong>
+                <span>Можно сохранить их для диагностики или безвозвратно откатить и начать workflow заново.</span>
+                <button className="ci-btn" disabled={!props.onDiscardAndRetry} onClick={() => {
+                  if (window.confirm('Все незакоммиченные и неотслеживаемые файлы в рабочем репозитории будут удалены. Продолжить?')) props.onDiscardAndRetry?.(runId)
+                }}>
+                  Откатить изменения и начать заново
                 </button>
               </div>
             )}

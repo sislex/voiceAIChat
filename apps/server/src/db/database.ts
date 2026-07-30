@@ -2096,7 +2096,7 @@ export class VoiceChatDb {
   listCiCommands(userId: string, projectId?: string): CiCommand[] {
     const rows = this.db.prepare(`SELECT * FROM ci_commands WHERE deleted_at IS NULL ORDER BY scope DESC, name ASC`).all() as CiCommandRow[]
     return rows
-      .filter((r) => (r.scope === 'global' ? true : projectId ? r.project_id === projectId && this.isProjectMember(userId, projectId) : false))
+      .filter((r) => (r.scope === 'global' ? true : projectId ? r.project_id === projectId && this.isProjectMember(userId, projectId) : !!r.project_id && this.isProjectMember(userId, r.project_id)))
       .map(mapCiCommand)
   }
 

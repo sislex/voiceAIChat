@@ -51,6 +51,7 @@ const ciExecutor: CommandExecutor = {
     onChunk(`run:${req.script.slice(0, 20)}\n`)
     // FLAKY падает на первом прогоне и проходит на повторе (эмуляция «исправлено моделью»).
     const flakyOk = req.script.includes('FLAKY') && n >= 2
+    if (req.script === 'DIRTY') return { exitCode: 66, timedOut: false }
     const fail = req.script.includes('FAIL') || (req.script.includes('FLAKY') && !flakyOk)
     return { exitCode: fail ? 1 : 0, timedOut: false }
   }
@@ -192,6 +193,19 @@ describe('ci run manager', () => {
     expect(ok.json().rejected).toBe(false)
     const denied = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/console`, payload: { command: 'rm -rf /' } })
     expect(denied.json().rejected).toBe(true)
+  })
+
+  it('dirty workspace: по подтверждению сбрасывает файлы и запускает новый полный ран', async () => {
+    const { project, task } = setup()
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'checkout', script: 'DIRTY' })
+    db.setCiSlotCommands('task', task.id, 'before_model', [cmd.id])
+    const runId = await run(project.id, task.id)
+    const failed = await waitRun(runId)
+    expect(failed.run.status).toBe('failed')
+    const response = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/discard-and-retry` })
+    expect(response.statusCode).toBe(202)
+    expect(response.json().id).not.toBe(runId)
+    expect(scripts.some((script) => script.includes('reset --hard HEAD') && script.includes('clean -fdx'))).toBe(true)
   })
 
   it('ошибка модели останавливает after-слот; выбор другой модели продолжает с model_work', async () => {

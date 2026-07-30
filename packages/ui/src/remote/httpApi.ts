@@ -283,6 +283,7 @@ export function createCiRest(httpBase: string): RendererCiRest {
     cancelRun: (runId) => req<{ ok: boolean }>(REST.ciRunCancel(runId), { method: 'POST' }),
     retryRun: (runId) => req<CiRun>(REST.ciRunRetry(runId), { method: 'POST' }),
     retryRunFromStep: (runId, selection) => req<CiRun>(REST.ciRunRetryFromStep(runId), { method: 'POST', body: JSON.stringify(selection ?? {}) }),
+    discardChangesAndRetry: (runId) => req<CiRun>(REST.ciRunDiscardAndRetry(runId), { method: 'POST' }),
     getMetrics: (projectId) => req<CiMetrics>(REST.ciMetrics(projectId)),
     consoleExec: (runId, command, editMode) => req<CiConsoleExecResult>(REST.ciConsoleExec(runId), { method: 'POST', body: JSON.stringify({ command, editMode }) })
   }

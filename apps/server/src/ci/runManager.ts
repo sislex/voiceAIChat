@@ -32,6 +32,7 @@ interface ActiveRun {
 export interface CiRunManager {
   start(userId: string, projectId: string, taskId: string): { run: CiRun } | { error: string }
   retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string }): { run: CiRun } | { error: string }
+  discardChangesAndRetry(userId: string, runId: string): Promise<{ run: CiRun } | { error: string }>
   cancel(userId: string, runId: string): boolean
   subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
   snapshot(userId: string, runId: string): void | ServerMessage
@@ -119,6 +120,33 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       })
     projectChains.set(projectId, chain)
     return { run }
+  }
+
+  async function discardChangesAndRetry(userId: string, runId: string): Promise<{ run: CiRun } | { error: string }> {
+    const detail = deps.db.getCiRun(userId, runId)
+    if (!detail || detail.run.status !== 'failed') return { error: 'Действие доступно только для упавшего рана' }
+    const dirtyStep = [...detail.steps].reverse().find((step) => step.kind === 'command' && step.status === 'failed' && step.exitCode === 66)
+    if (!dirtyStep) return { error: 'Ран не остановлен из-за локальных изменений' }
+    if ([...active.values()].some((a) => a.projectId === detail.run.projectId)) return { error: 'В проекте уже выполняется другой ран' }
+    const project = deps.db.getProject(userId, detail.run.projectId)
+    const task = deps.db.getCiTask(userId, detail.run.projectId, detail.run.taskId)
+    const workspace = detail.run.workspaceId ? deps.db.getCiWorkspaceById(detail.run.workspaceId) : null
+    if (!project || !task || !workspace || !detail.run.agentId) return { error: 'Рабочая директория рана недоступна' }
+    const repoPath = `${workspace.path}/${slugify(task.title)}`
+    const script = `test -d ${shq(`${repoPath}/.git`)} || { echo "Git-репозиторий не найден" >&2; exit 67; }; git -C ${shq(repoPath)} reset --hard HEAD; git -C ${shq(repoPath)} clean -fdx`
+    const ctl = new AbortController()
+    let result: Awaited<ReturnType<CommandExecutor['run']>>
+    try {
+      result = await deps.executor.run({ agentId: detail.run.agentId, script, workdir: workspace.path, env: {}, timeoutMs: 120_000, secrets: [] }, (data) => {
+        const line = deps.db.appendCiLog(runId, dirtyStep.id, 'system', data)
+        broadcast({ t: 'ci.log', runId, line }, userId)
+      }, ctl.signal)
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+    if (result.exitCode !== 0) return { error: `Не удалось откатить изменения (exit ${result.exitCode ?? 'unknown'})` }
+    deps.db.addCiEvent({ projectId: detail.run.projectId, runId, type: 'workspace.discarded', actorType: 'user', actorId: userId, payload: { path: repoPath } })
+    return start(userId, detail.run.projectId, detail.run.taskId)
   }
 
   function cancel(userId: string, runId: string): boolean {
@@ -578,7 +606,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
   }
 
-  return { start, retryFromFailed, cancel, subscribe, snapshot, activeRunIds, consoleExec }
+  return { start, retryFromFailed, discardChangesAndRetry, cancel, subscribe, snapshot, activeRunIds, consoleExec }
 }
 
 /** shell-quote для системных префиксов раннера. */
