@@ -24,6 +24,7 @@ import type {
   CiCommandMetric,
   CiModelWorkMetric
 } from '@shared/ci'
+import type { Message } from '@shared/types'
 
 /** Ответ GET usage: где команда используется (проекты/задачи). */
 export interface CiCommandUsage {
@@ -98,4 +99,10 @@ export interface RendererCiBridge extends RendererCiRest {
   onDone(cb: (m: { runId: string; run: CiRun; conclusion?: CiRunConclusion }) => void): () => void
   onSummary(cb: (m: { projectId: string; summary: CiRunSummary }) => void): () => void
   onInteraction(cb: (m: { runId: string; interaction: CiInteraction }) => void): () => void
+  /**
+   * Сообщение, дописанное сервером в чат задачи (резюме рана). Живёт в мосте CI,
+   * потому что автор этих сообщений — раннер; мост ходов (`window.claude`) шлёт
+   * только события собственного хода.
+   */
+  onChatMessage(cb: (m: { conversationId: string; message: Message }) => void): () => void
 }

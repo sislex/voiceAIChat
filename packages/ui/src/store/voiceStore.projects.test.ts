@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createVoiceStore, type VoiceStore } from './voiceStore'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
+import type { Message } from '@shared/types'
 
 function makeStore(): { store: VoiceStore; api: FakeApi } {
   const api = createFakeApi()
@@ -179,5 +180,39 @@ describe('voiceStore — выбор проекта в сайдбаре', () => {
     await store.actions.setSidebarProject(pid)
     const store2 = createVoiceStore({ api: createFakeApi(), now: () => 1_700_000_000_000 })
     expect(store2.getState().sidebarProjectId).toBe(pid)
+  })
+})
+
+describe('voiceStore — резюме CI-рана в связанном чате', () => {
+  it('applyChatMessage дописывает резюме в открытый чат, чужое и повторное — игнорирует', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    await store.actions.openBoard(store.getState().projectDetail!.id)
+    const todo = store.getState().board!.columns[0]
+    await store.actions.createTask(todo.id, { title: 'Скролл' })
+    const task = store.getState().board!.tasks.find((t) => t.title === 'Скролл')!
+    await store.actions.setSidebarProject(store.getState().projectDetail!.id)
+    await store.actions.openTaskChat(task.id)
+    const chatId = store.getState().activeId!
+    // Имя связанного чата по умолчанию — «Задача <заголовок>».
+    expect(store.getState().conversations.find((c) => c.id === chatId)!.title).toBe('Задача Скролл')
+
+    const summary: Message = {
+      id: 'sum-1',
+      conversationId: chatId,
+      role: 'ai',
+      text: 'Резюме по задаче P1-1 · Скролл\n\nготово',
+      time: '10:00',
+      createdAt: 1,
+      meta: { ciRunSummary: { runId: 'run-1' } }
+    }
+    store.actions.applyChatMessage(chatId, summary)
+    expect(store.getState().messages.map((m) => m.id)).toContain('sum-1')
+    // Реплей того же сообщения после reconnect не даёт дубля.
+    store.actions.applyChatMessage(chatId, summary)
+    expect(store.getState().messages.filter((m) => m.id === 'sum-1')).toHaveLength(1)
+    // Резюме другого чата в открытый не попадает — оно придёт с историей.
+    store.actions.applyChatMessage('other', { ...summary, id: 'sum-2', conversationId: 'other' })
+    expect(store.getState().messages.map((m) => m.id)).not.toContain('sum-2')
   })
 })

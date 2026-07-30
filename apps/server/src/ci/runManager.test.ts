@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { WebSocket } from 'ws'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -161,6 +163,57 @@ describe('ci run manager', () => {
     const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json()
     expect(Array.isArray(log)).toBe(true)
     expect(log.length).toBeGreaterThan(0)
+  })
+
+  it('резюме рана уходит отдельным сообщением в связанный чат задачи', async () => {
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('success')
+    const chatId = db.getCiRunRaw(runId)!.conversationId!
+    expect(chatId).toBeTruthy()
+    const summary = db.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary)!
+    expect(summary.role).toBe('ai')
+    expect(summary.meta!.ciRunSummary).toEqual({ runId })
+    // Шапка сообщения — ключ и заголовок задачи, дальше текст модели.
+    expect(summary.text).toContain('Резюме по задаче P-1 · T1')
+    expect(summary.text).toContain('готово')
+    // Тот же текст остаётся и в ленте рана: чат её не заменяет.
+    const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json() as Array<{ chunk: string }>
+    expect(log.some((l) => l.chunk.includes('готово'))).toBe(true)
+  })
+
+  it('резюме приходит по WS сообщением chat.message — открытый чат обновляется сам', async () => {
+    const { project, task } = setup()
+    // Чат создаём заранее, чтобы знать его id до старта рана.
+    const chat = db.openOrCreateTaskChat('admin', project.id, task.id)!
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const port = (app.server.address() as AddressInfo).port
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${admin}`)
+    await new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej) })
+    const got = new Promise<{ conversationId: string; message: { text: string } }>((resolve) => {
+      ws.on('message', (d: Buffer) => {
+        const m = JSON.parse(d.toString()) as { t: string; conversationId: string; message: { text: string } }
+        if (m.t === 'chat.message') resolve({ conversationId: m.conversationId, message: m.message })
+      })
+    })
+    const runId = await run(project.id, task.id)
+    const pushed = await got
+    expect(pushed.conversationId).toBe(chat.id)
+    expect(pushed.message.text).toContain('Резюме по задаче')
+    await waitRun(runId)
+    ws.close()
+  })
+
+  it('упавший слот «после»: резюме всё равно попадает в чат', async () => {
+    const { project, task } = setup()
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'test', script: 'FAIL test' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('failed')
+    const chatId = db.getCiRunRaw(runId)!.conversationId!
+    expect(db.listMessages('admin', chatId).some((m) => m.meta?.ciRunSummary?.runId === runId)).toBe(true)
   })
 
   it('падение в слоте «до» → ран failed и откат задачи в предыдущую колонку', async () => {

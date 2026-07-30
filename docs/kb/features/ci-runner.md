@@ -3,11 +3,12 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-07-30
-checked: fb95c77
+checked: f2b04f0
 areas:
   - packages/shared/src/ci.ts
   - apps/server/src/ci
   - apps/server/src/routes/ci.ts
+  - apps/server/src/server.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - apps/server/src/agents/registry.ts
@@ -153,6 +154,23 @@ cwd/env собираются с shell-escape (пользовательский �
 REST — `POST /api/ci/runs/:runId/interactions/:id`, WS — `ci.interaction`,
 `CiRunDetail.interactions` нужен для реплея после reload.
 
+## Резюме рана в связанном чате
+
+Шаг «Резюме модели» не только пишется в лог рана, но и уходит **отдельным
+AI-сообщением в связанный чат задачи** (`postSummaryToChat` в `CiRunManagerDeps`,
+проводка — в `server.ts`): работу обсуждают в чате, а лента рана служебная и
+перекрывается следующим запуском. Текст = шапка `Резюме по задаче <PRJ-N> · <заголовок>`
+плюс текст модели; метка `TurnMeta.ciRunSummary = { runId }` отличает его от ответа
+хода. Сообщение появляется при любом исходе, где шаг резюме вообще выполнялся
+(в том числе при упавшем слоте «после»); отмена рана резюме не даёт. Чат удалён —
+`addMessage` бросает, дep возвращает `null`, ран это не роняет.
+
+Кадр `chat.message` (`{ conversationId, message }`) рассылается тем же каналом,
+что события рана (`CiRunManager.subscribe` → `session.ts` → сокеты владельца), мост —
+`window.ci.onChatMessage`, стор — `applyChatMessage` (дописывает через
+`appendPersisted`, только если этот чат открыт; дубли по `id` отбрасываются).
+Имя нового связанного чата — «Задача <заголовок>», см. [projects.md](../projects.md).
+
 ## Модель в цикле
 
 `createCiModelHooks` (`ci/modelHooks.ts`) на инъектируемом `LlmClient`: работа
@@ -203,7 +221,8 @@ REST — `POST /api/ci/runs/:runId/interactions/:id`, WS — `ci.interaction`,
 
 `apps/server/src/ci/*.test.ts` (включая `interactions.test.ts`: пауза на вопрос,
 409 на повторный ответ, бюджет уточнений, гейт плана approved/rework/отмена,
-разовый оверрайд режима) и `db/database.ci.test.ts` (35+ тестов): пустые слоты,
+разовый оверрайд режима; в `runManager.test.ts` — резюме в чате: сообщение с меткой
+`ciRunSummary`, кадр `chat.message` по WS и резюме при упавшем слоте «после») и `db/database.ci.test.ts` (35+ тестов): пустые слоты,
 падение слота «до» с откатом, `allow_failure`, `is_cleanup`, конкурентные раны,
 fix-loop и исчерпание попыток, вызов команды моделью, консоль read-only. UI —
 `components/ci/*.dom.test.tsx`, состояния карточки — `kanban/TaskCard.dom.test.tsx`

@@ -344,6 +344,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         /* чат мог быть удалён — не роняем ответ на вопрос */
       }
     },
+    // Резюме законченного рана — обычное AI-сообщение чата; метка `ciRunSummary`
+    // связывает его с раном и отличает от ответа хода модели.
+    postSummaryToChat: ({ userId, conversationId, text, runId }) => {
+      try {
+        return db.addMessage(userId, conversationId, 'ai', text, ciChatTime(), undefined, { ciRunSummary: { runId } })
+      } catch {
+        return null // чат удалён — резюме от этого не падает
+      }
+    },
     modelWork: ciModelHooks.modelWork,
     modelSummary: ciModelHooks.modelSummary,
     attemptFix: ciModelHooks.attemptFix

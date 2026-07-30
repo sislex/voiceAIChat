@@ -343,6 +343,12 @@ export type ServerMessage =
   | { t: 'ci.done'; runId: string; run: CiRun; conclusion?: CiRunConclusion }
   | { t: 'ci.summary'; projectId: string; summary: CiRunSummary }
   | { t: 'ci.interaction'; runId: string; interaction: CiInteraction }
+  /**
+   * Сообщение, которое сервер сам дописал в чат (резюме CI-рана): открытый чат
+   * должен показать его сразу, а не после переоткрытия. Ход модели здесь не при
+   * чём — поэтому это не `claude.done`.
+   */
+  | { t: 'chat.message'; conversationId: string; message: Message }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']
@@ -403,5 +409,6 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'ci.fix',
   'ci.done',
   'ci.summary',
-  'ci.interaction'
+  'ci.interaction',
+  'chat.message'
 ]
