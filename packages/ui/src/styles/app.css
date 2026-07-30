@@ -852,9 +852,7 @@
 .metamore:hover {
   text-decoration: underline;
 }
-.modal.metamodal {
-  width: 640px;
-}
+/* Ширина окна — size="md" у Dialog; здесь только внутренняя раскладка. */
 .metamodal-body {
   padding: 6px 22px 22px;
   overflow-y: auto;
@@ -1420,11 +1418,13 @@
   animation: wave 0.7s ease-in-out infinite;
 }
 
-/* ---- Модалка настроек ---- */
+/* ---- Модальные окна ---- */
 /* Шкала слоёв (чтобы не пересекались): .side-backdrop 50 < мобильный сайдбар
-   .side 60 < модалки (.ovl, .util-embed--fs) 70 < .convsettings 90 <
-   .ci-console 1000 < .pb-overlay 1200. Раньше .ovl был на 50 и выдвижной
-   сайдбар на телефоне закрывал собой всю карточку задачи. */
+   .side 60 < панели тулов (.ovl, .util-embed--fs) 70 < .convsettings 90 <
+   .ci-console 1000 < окна .vc-dialog-overlay 1200 и выше. Раньше .ovl был на 50
+   и выдвижной сайдбар на телефоне закрывал собой всю карточку задачи.
+   Итоговый z-index окон и панелей выдаёт useDialogStack по глубине стека —
+   вложенное окно (подтверждение из карточки задачи) всегда выше родителя. */
 .ovl {
   position: fixed;
   inset: 0;
@@ -1434,16 +1434,73 @@
   justify-content: center;
   z-index: 70;
 }
-.modal {
+
+/* Единый примитив окна (components/ui/Dialog): раньше то же самое было пять раз —
+   .modal, .jmodal-frame, .metamodal, .pb-overlay/.pb-dialog и своя разметка
+   онбординга. Шапка окна — общие .mdhead/.mdh/.xbtn, как у тулов. */
+.vc-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 27, 24, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  /* Появление — те же кадры, что у панелей тулов (ниже, «Анимации попапов»). */
+  animation: tf-fade 0.18s ease-out;
+}
+.vc-dialog {
+  animation: tf-pop 0.18s ease-out;
   background: var(--bg);
+  color: var(--text);
   border-radius: 16px;
-  width: 480px;
-  max-width: 90vw;
+  max-width: 94vw;
   max-height: 90vh; /* не вылезаем за экран */
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
   overflow: hidden;
   display: flex;
   flex-direction: column; /* шапка фиксирована, тело скроллится */
+}
+/* Окно фокусируемо (tabIndex=-1), но обводка на нём самом не нужна. */
+.vc-dialog:focus {
+  outline: none;
+}
+.vc-dialog--sm {
+  width: 480px;
+}
+.vc-dialog--md {
+  width: 640px;
+}
+.vc-dialog--lg {
+  width: 1120px;
+}
+.vc-dialog--full {
+  width: calc(100vw - 32px);
+  height: calc(100vh - 32px);
+}
+/* Телефон: окно на весь экран. Граница 720px совпадает с MOBILE_QUERY в
+   lib/mediaQuery.ts — класс ставит сам Dialog, правь вместе. Два класса в
+   селекторе — чтобы перебить размеры конкретных окон (.jmodal-frame). */
+.vc-dialog.vc-dialog--phone {
+  width: 100vw;
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+  box-shadow: none;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.vc-dialog-overlay--phone {
+  align-items: stretch;
+  justify-content: stretch;
+}
+.vc-dialog-foot {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--border-soft);
 }
 .mdhead {
   padding: 18px 22px;
@@ -1475,10 +1532,7 @@
   flex: 1;
 }
 
-/* ---- Настройки: меню слева + панель раздела справа ---- */
-.modal.settings {
-  width: 640px;
-}
+/* ---- Настройки: меню слева + панель раздела справа (ширина — size="md") ---- */
 .settbody {
   display: flex;
   min-height: 0;
@@ -2312,10 +2366,7 @@
   color: #e9e7dd;
 }
 
-/* ---- Онбординг ---- */
-.modal.onboarding {
-  max-width: 480px;
-}
+/* ---- Онбординг (ширина окна — size="sm" у Dialog) ---- */
 .ob-lead {
   color: var(--text-dim);
   font-size: 13.5px;
@@ -2750,20 +2801,12 @@
   color: var(--text-dim);
 }
 
-/* ==== Мобильные модалки: настройки и прочие — на весь экран ==== */
+/* ==== Мобильные панели тулов — на весь экран ====
+   Окна Dialog переключает сам компонент по MOBILE_QUERY (720px), см. .vc-dialog--phone. */
 @media (max-width: 768px) {
   .ovl {
     align-items: stretch;
     justify-content: stretch;
-  }
-  .modal,
-  .modal.settings {
-    width: 100vw;
-    max-width: 100vw;
-    height: 100dvh;
-    max-height: 100dvh;
-    border-radius: 0;
-    box-shadow: none;
   }
   /* Модальные тулы ToolFrame (.ccobs — карточка задачи, наблюдатели, консоль) —
      тоже во весь экран. Свои 94vw/88vh на телефоне давали панель в углу, а 88vh
@@ -2854,7 +2897,9 @@
 @media (prefers-reduced-motion: reduce) {
   .ovl--anim,
   .ccobs--anim,
-  .util-embed--fs {
+  .util-embed--fs,
+  .vc-dialog-overlay,
+  .vc-dialog {
     animation: none;
   }
   .ccobs--anim {
@@ -3780,9 +3825,11 @@
 .jlane-cols .jcol--incell { flex: 0 0 272px; width: 272px; min-height: 40px; }
 
 /* Модалка задачи */
-/* Модалка живёт в панели .ccobs (height: 88vh; overflow: hidden), а ToolFrame не
-   рендерит .ccobs-body — поэтому скролл вешаем на сами колонки. Без min-height: 0
-   и align-items: stretch колонки растут по контенту и высокая карточка обрезается. */
+/* Карточка крупнее обычного окна и фиксированной высоты: колонки скроллятся
+   каждая своя, поэтому у .jmodal overflow: hidden. Без min-height: 0 и
+   align-items: stretch колонки растут по контенту и высокая карточка обрезается.
+   Размеры перебивают .vc-dialog--lg — правило ниже него в файле. */
+.jmodal-frame { width: 1040px; height: 88vh; }
 .jmodal-frame .jmodal { flex: 1; min-height: 0; overflow: hidden; }
 .jmodal { display: flex; gap: 24px; padding: 16px 20px; align-items: stretch; }
 .jmodal-main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
@@ -3887,9 +3934,11 @@
 .projadd:hover { opacity: 1; background: rgba(128, 128, 128, 0.1); }
 .projcreate { display: block; width: calc(100% - 24px); margin: 0 12px 8px; box-sizing: border-box; }
 
-/* AI-помощник формулировки: самостоятельная модалка и две прокручиваемые колонки. */
-.pb-overlay{position:fixed;inset:0;z-index:1200;background:#1118;display:grid;place-items:center;padding:20px}.pb-dialog{width:min(1120px,96vw);max-height:90vh;background:var(--panel,#fff);color:var(--text,#172033);border-radius:16px;box-shadow:0 24px 80px #0005;display:flex;flex-direction:column;overflow:hidden}.pb-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border,#d9deea)}.pb-head h2{font-size:18px;margin:0}.pb-head button,.pb-item button,.pb-preview button,.pb-editor button,.pb-add-prompt{margin-left:6px}.pb-icon{width:36px;height:36px}.pb-builder{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);min-height:0;height:min(690px,75vh)}.pb-column,.pb-settings{padding:18px;overflow:auto;min-width:0}.pb-generation{border-right:1px solid var(--border,#d9deea)}.pb-label,.pb-editor label{display:grid;gap:7px;font-weight:600}.pb-label textarea,.pb-editor textarea,.pb-editor input{box-sizing:border-box;width:100%;padding:10px;border:1px solid var(--border,#cbd2df);border-radius:9px;background:var(--panel,#fff);color:inherit}.pb-prompt-wrap{position:relative;display:block}.pb-prompt-wrap textarea{padding-right:52px}.pb-generate{position:absolute;right:8px;top:8px;width:36px;height:36px;display:grid;place-items:center;border-radius:9px}.pb-generate svg{width:18px;height:18px}.pb-preview{margin:14px 0;padding:12px;border:1px solid #7b61ff;border-radius:10px;white-space:pre-wrap}.pb-row{display:flex;justify-content:space-between;gap:10px;align-items:center}.pb-list{display:grid;gap:10px}.pb-item{border:1px solid var(--border,#d9deea);border-radius:10px;padding:11px;background:color-mix(in srgb,var(--panel,#fff) 94%,#7b61ff)}.pb-item p{margin:0 0 9px;white-space:pre-wrap;overflow-wrap:anywhere}.pb-item>div:last-child{text-align:right}.pb-status{min-height:28px;padding:5px 0}.pb-skeletons{display:grid;gap:8px}.pb-skeletons i{height:54px;border-radius:8px;background:linear-gradient(90deg,#ddd,#f4f4f4,#ddd);background-size:200%;animation:pb-shine 1.2s infinite}.pb-blocks{display:flex;flex-direction:column}.pb-blocks h3{margin-top:0}.pb-blocks>.pb-list{flex:1}.pb-apply{margin-top:14px;padding:11px}.pb-settings{min-height:480px}.pb-modifier{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:start}.pb-ellipsis{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis}.pb-editor{margin-top:14px;padding:14px;border:1px solid var(--border,#d9deea);border-radius:10px;display:grid;gap:12px}.pb-editor [role=alert]{color:#b42318}.pb-empty{padding:40px;text-align:center}.pb-switch input{width:20px;height:20px}.pb-add-prompt{margin-top:14px}.ai-assist-wrap{position:relative}.ai-assist-trigger{position:absolute;right:8px;top:50%;transform:translateY(-50%);z-index:2}.ai-assist-wrap>input[data-ai-assist],.ai-assist-wrap>textarea[data-ai-assist]{padding-right:48px!important}@keyframes pb-shine{to{background-position:-200%}}
-@media(max-width:760px){.pb-overlay{padding:0}.pb-dialog{width:100vw;max-height:100vh;height:100vh;border-radius:0}.pb-builder{grid-template-columns:1fr;height:auto;overflow:auto}.pb-column{overflow:visible}.pb-generation{border-right:0;border-bottom:1px solid var(--border,#d9deea)}.pb-modifier{grid-template-columns:auto 1fr}.pb-modifier>div:last-child{grid-column:1/-1}}
+/* AI-помощник формулировки: две прокручиваемые колонки внутри общего окна
+   (рамка, оверлей и шапка — .vc-dialog, см. components/ui/Dialog). */
+.pb-item button,.pb-preview button,.pb-editor button,.pb-add-prompt{margin-left:6px}.pb-icon{width:36px;height:36px}.pb-builder{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);min-height:0;height:min(690px,75vh)}.pb-column,.pb-settings{padding:18px;overflow:auto;min-width:0}.pb-generation{border-right:1px solid var(--border,#d9deea)}.pb-label,.pb-editor label{display:grid;gap:7px;font-weight:600}.pb-label textarea,.pb-editor textarea,.pb-editor input{box-sizing:border-box;width:100%;padding:10px;border:1px solid var(--border,#cbd2df);border-radius:9px;background:var(--panel,#fff);color:inherit}.pb-prompt-wrap{position:relative;display:block}.pb-prompt-wrap textarea{padding-right:52px}.pb-generate{position:absolute;right:8px;top:8px;width:36px;height:36px;display:grid;place-items:center;border-radius:9px}.pb-generate svg{width:18px;height:18px}.pb-preview{margin:14px 0;padding:12px;border:1px solid #7b61ff;border-radius:10px;white-space:pre-wrap}.pb-row{display:flex;justify-content:space-between;gap:10px;align-items:center}.pb-list{display:grid;gap:10px}.pb-item{border:1px solid var(--border,#d9deea);border-radius:10px;padding:11px;background:color-mix(in srgb,var(--panel,#fff) 94%,#7b61ff)}.pb-item p{margin:0 0 9px;white-space:pre-wrap;overflow-wrap:anywhere}.pb-item>div:last-child{text-align:right}.pb-status{min-height:28px;padding:5px 0}.pb-skeletons{display:grid;gap:8px}.pb-skeletons i{height:54px;border-radius:8px;background:linear-gradient(90deg,#ddd,#f4f4f4,#ddd);background-size:200%;animation:pb-shine 1.2s infinite}.pb-blocks{display:flex;flex-direction:column}.pb-blocks h3{margin-top:0}.pb-blocks>.pb-list{flex:1}.pb-apply{margin-top:14px;padding:11px}.pb-settings{min-height:480px}.pb-modifier{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:start}.pb-ellipsis{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis}.pb-editor{margin-top:14px;padding:14px;border:1px solid var(--border,#d9deea);border-radius:10px;display:grid;gap:12px}.pb-editor [role=alert]{color:#b42318}.pb-empty{padding:40px;text-align:center}.pb-switch input{width:20px;height:20px}.pb-add-prompt{margin-top:14px}.ai-assist-wrap{position:relative}.ai-assist-trigger{position:absolute;right:8px;top:50%;transform:translateY(-50%);z-index:2}.ai-assist-wrap>input[data-ai-assist],.ai-assist-wrap>textarea[data-ai-assist]{padding-right:48px!important}@keyframes pb-shine{to{background-position:-200%}}
+/* Граница та же, что у полноэкранного окна на телефоне (MOBILE_QUERY, 720px). */
+@media(max-width:720px){.pb-builder{grid-template-columns:1fr;height:auto;overflow:auto}.pb-column{overflow:visible}.pb-generation{border-right:0;border-bottom:1px solid var(--border,#d9deea)}.pb-modifier{grid-template-columns:auto 1fr}.pb-modifier>div:last-child{grid-column:1/-1}}
 .ai-default-prompts{display:grid;gap:10px}.ai-default-row{display:grid;grid-template-columns:auto minmax(110px,.5fr) minmax(180px,1fr) repeat(3,auto);gap:7px;align-items:center}.ai-default-row textarea{min-height:58px;resize:vertical}@media(max-width:760px){.ai-default-row{grid-template-columns:auto 1fr auto auto auto}.ai-default-row textarea{grid-column:2/-1}.ai-default-row input.sel{grid-column:2/-1}}
 
 /* ---- CI-раннер (страница «Команды», лента рана, консоль) ---- */

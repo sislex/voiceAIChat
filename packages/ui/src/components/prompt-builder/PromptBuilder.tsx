@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Dialog } from '../ui/Dialog'
 import { WandIcon } from '../icons'
 import type { ModifierPrompt } from '@shared/types'
 
@@ -59,7 +60,6 @@ export function PromptBuilder({ open, initialValue: _initialValue = '', prompts,
   const [localPrompts, setLocalPrompts] = useState(prompts)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [editor, setEditor] = useState<Editor>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const wasOpen = useRef(false)
   const generationRef = useRef<AbortController | null>(null)
@@ -70,7 +70,6 @@ export function PromptBuilder({ open, initialValue: _initialValue = '', prompts,
   useEffect(() => {
     if (open && !wasOpen.current) {
       setMode('builder'); setPrompt(''); setSuggestions([]); setBlocks([]); setStatus('idle'); setCollapsed(false); setEditor(null); setLocalPrompts(prompts)
-      queueMicrotask(() => promptRef.current?.focus())
     }
     wasOpen.current = open
   }, [open, prompts])
@@ -106,26 +105,6 @@ export function PromptBuilder({ open, initialValue: _initialValue = '', prompts,
     })
   }
 
-  useEffect(() => {
-    if (!open) return
-    const key = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        event.preventDefault(); event.stopPropagation()
-        if (mode === 'settings' && editor) { setEditor(null); return }
-        requestClose()
-        return
-      }
-      if (event.key !== 'Tab') return
-      const nodes = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex="0"]') ?? [])
-      if (!nodes.length) return
-      const first = nodes[0], last = nodes[nodes.length - 1]
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
-    }
-    window.addEventListener('keydown', key, true)
-    return () => window.removeEventListener('keydown', key, true)
-  })
-
   const requestClose = (): void => {
     if (mode === 'settings' && editor) { setEditor(null); return }
     if (blocks.length && !window.confirm(l.cancelConfirm)) return
@@ -143,12 +122,19 @@ export function PromptBuilder({ open, initialValue: _initialValue = '', prompts,
   const editorError = editor ? (!editor.text.trim() ? l.requiredText : editor.text.length > 2000 ? l.tooLong : localPrompts.some((p) => p.id !== editor.id && p.title.trim().toLocaleLowerCase() === editor.title.trim().toLocaleLowerCase()) ? l.duplicateTitle : '') : ''
 
   if (!open) return null
-  return <div className="pb-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) requestClose() }}>
-    <div className="pb-dialog" ref={panelRef} role="dialog" aria-modal="true" aria-label={mode === 'builder' ? l.title : l.settingsTitle}>
-      <header className="pb-head"><h2>{mode === 'builder' ? l.title : l.settingsTitle}</h2><div>
-        {mode === 'builder' ? <button className="pb-icon" onClick={() => setMode('settings')} aria-label={l.settings} title={l.settings}>⚙</button> : <button onClick={() => { setEditor(null); setMode('builder') }}>{l.back}</button>}
-        <button className="pb-icon" onClick={requestClose} aria-label={l.close} title={l.close}>✕</button>
-      </div></header>
+  // Окно живёт в общей рамке Dialog: фокус, Esc, клик по фону и полный экран на
+  // телефоне — оттуда; здесь только две колонки сборки и раздел настроек.
+  return <Dialog
+    size="lg"
+    testId="prompt-builder"
+    title={mode === 'builder' ? l.title : l.settingsTitle}
+    closeLabel={l.close}
+    onClose={requestClose}
+    initialFocusRef={promptRef}
+    actions={mode === 'builder'
+      ? <button className="pb-icon xbtn" onClick={() => setMode('settings')} aria-label={l.settings} title={l.settings}>⚙</button>
+      : <button onClick={() => { setEditor(null); setMode('builder') }}>{l.back}</button>}
+  >
       {mode === 'builder' ? <div className="pb-builder">
         <section className="pb-column pb-generation">
           <label className="pb-label">{l.promptLabel}<span className="pb-prompt-wrap"><textarea ref={promptRef} rows={4} value={prompt} placeholder={l.promptPlaceholder} onChange={(e) => setPrompt(e.target.value)} /><button type="button" className="pb-generate" disabled={!prompt.trim() || status === 'loading'} onClick={generateSuggestions} aria-label={l.generate} title={l.generate}><WandIcon /></button></span></label>
@@ -168,6 +154,5 @@ export function PromptBuilder({ open, initialValue: _initialValue = '', prompts,
         {editor && <div className="pb-editor"><label>{l.titleLabel}<input value={editor.title} onChange={(e) => setEditor({ ...editor, title: e.target.value })}/></label><label>{l.textLabel}<textarea rows={5} value={editor.text} onChange={(e) => setEditor({ ...editor, text: e.target.value })}/></label>{editorError && <p role="alert">{editorError}</p>}<div><button onClick={() => setEditor(null)}>{l.cancel}</button><button disabled={!!editorError} onClick={saveEditor}>{l.save}</button></div></div>}
         {onPromptsChange && !editor && <button className="pb-add-prompt" onClick={() => setEditor({ id: null, title: '', text: '' })}>{l.addPrompt}</button>}
       </section>}
-    </div>
-  </div>
+  </Dialog>
 }

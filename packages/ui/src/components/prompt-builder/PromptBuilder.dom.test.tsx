@@ -84,10 +84,11 @@ describe('PromptBuilder', () => {
   })
 
   it('не имеет базовых axe-нарушений в builder и settings', async () => {
-    const { user, container } = setup()
-    expect((await axe.run(container)).violations).toEqual([])
+    // Окно уходит порталом в document.body — проверяем его, а не контейнер рендера.
+    const { user } = setup()
+    expect((await axe.run(document.body)).violations).toEqual([])
     await user.click(screen.getByLabelText('Настройки'))
-    expect((await axe.run(container)).violations).toEqual([])
+    expect((await axe.run(document.body)).violations).toEqual([])
   })
   it('Esc при сборке запрашивает подтверждение', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true); const onClose = vi.fn(); const { user } = setup({ onClose }); await generateReady(user)

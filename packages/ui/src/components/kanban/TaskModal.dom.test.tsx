@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { Board, Task } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import { TaskModal, type TaskModalProps } from './TaskModal'
@@ -48,6 +49,27 @@ describe('TaskModal — связанный чат создаётся при от
     const onEnsureChat = vi.fn()
     render(<TaskModal {...props({ task: mkTask({ type: 'epic' }), onEnsureChat })} />)
     expect(onEnsureChat).not.toHaveBeenCalled()
+  })
+})
+
+describe('TaskModal — вложенное окно AI-помощника', () => {
+  beforeEach(() => { window.ci = createFakeCi() })
+
+  it('Esc закрывает только помощника, карточка остаётся открытой', async () => {
+    const onClose = vi.fn()
+    render(<TaskModal {...props({ onClose, generateAiAssist: async () => [] })} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть AI-помощник' }))
+    expect(screen.getByRole('dialog', { name: 'AI-помощник формулировки' })).toBeInTheDocument()
+
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'AI-помощник формулировки' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('task-modal')).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+
+    // Второй Esc достаётся уже карточке.
+    await userEvent.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
 
