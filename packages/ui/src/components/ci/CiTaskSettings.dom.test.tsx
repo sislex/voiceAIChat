@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { render } from '../../test/uiRender'
 import { CiTaskSettings } from './CiTaskSettings'
 import { createFakeCi } from '../../test/fakeApi'
 

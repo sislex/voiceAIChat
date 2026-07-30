@@ -5,6 +5,8 @@ import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
 import type { MachineOps } from './machine'
 import { PopupFrame } from './PopupFrame'
+import { useConfirm } from './ui/useConfirm'
+import { useToast } from './ui/Toast'
 
 export interface ConversationSettingsProps {
   conversation: Conversation
@@ -49,6 +51,8 @@ function modeLabel(id: PermissionMode): string {
 }
 
 export function ConversationSettings({ conversation, agents, machineOps, role, settings, defaultAgentId, projects, fetchProjectDetail, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+  const confirm = useConfirm()
+  const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
   const defaultExecTarget = defaultAgentId && agents.some((a) => a.id === defaultAgentId) ? defaultAgentId : null
   const [execTarget, setExecTarget] = useState<string | null>(
@@ -164,7 +168,11 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
     if (
       startedInPlan &&
       permissionMode === 'bypassPermissions' &&
-      !window.confirm('Перейти из планирования в «Полный доступ»? Агент сможет выполнять команды и изменять любые доступные файлы.')
+      !(await confirm({
+        title: 'Полный доступ',
+        message: 'Перейти из планирования в «Полный доступ»? Агент сможет выполнять команды и изменять любые доступные файлы.',
+        confirmLabel: 'Перейти'
+      }))
     ) return
     setSaving(true)
     try {
@@ -183,6 +191,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         kbContextMode,
         projectId
       })
+      toast.success('Настройки сохранены')
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

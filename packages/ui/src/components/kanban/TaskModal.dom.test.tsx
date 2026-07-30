@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { screen, fireEvent, within, waitFor } from '@testing-library/react'
+import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import type { Board, Task } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
@@ -187,8 +188,7 @@ describe('TaskModal — мобильная раскладка (как в Jira)',
     expect(screen.queryByRole('button', { name: /Удалить задачу/ })).not.toBeInTheDocument()
   })
 
-  it('удаление из ⋯-меню спрашивает подтверждение и закрывает карточку', () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+  it('удаление из ⋯-меню спрашивает подтверждение и закрывает карточку', async () => {
     const onDelete = vi.fn()
     const onClose = vi.fn()
     setMobile(true)
@@ -196,10 +196,27 @@ describe('TaskModal — мобильная раскладка (как в Jira)',
 
     fireEvent.click(screen.getByLabelText('Действия с задачей'))
     fireEvent.click(screen.getByRole('button', { name: /Удалить задачу/ }))
-    expect(confirm).toHaveBeenCalledWith('Удалить «Задача A»?')
-    expect(onDelete).toHaveBeenCalledWith('t1')
+    // Своё окно подтверждения, а не window.confirm: его видно и по нему кликают.
+    const dialog = await screen.findByTestId('confirm-dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Удалить «Задача A»?' })).toBeInTheDocument()
+    expect(onDelete).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить' }))
+    // Ответ приходит промисом (useConfirm), поэтому ждём следующего такта.
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith('t1'))
     expect(onClose).toHaveBeenCalled()
-    confirm.mockRestore()
+  })
+
+  it('отказ в подтверждении оставляет задачу на месте', async () => {
+    const onDelete = vi.fn()
+    setMobile(true)
+    render(<TaskModal {...props({ onDelete })} />)
+
+    fireEvent.click(screen.getByLabelText('Действия с задачей'))
+    fireEvent.click(screen.getByRole('button', { name: /Удалить задачу/ }))
+    const dialog = await screen.findByTestId('confirm-dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }))
+    await waitFor(() => expect(screen.queryByTestId('confirm-dialog')).toBeNull())
+    expect(onDelete).not.toHaveBeenCalled()
   })
 
   it('панель CI-рана видна и при свёрнутых «Подробностях»', () => {

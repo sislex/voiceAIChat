@@ -12,6 +12,7 @@ import type { Board, ProjectMember, Task, TaskPriority, WorkItemType } from '@sh
 import { TASK_PRIORITIES } from '@shared/projects'
 import type { ModifierPrompt } from '@shared/types'
 import { Dialog } from '../ui/Dialog'
+import { useConfirm } from '../ui/useConfirm'
 import { WandIcon } from '../icons'
 import { PromptBuilder, type GenerateParams, type Suggestion } from '../prompt-builder/PromptBuilder'
 import { applyNativeInputValue, useAiAssist } from '../prompt-builder/useAiAssist'
@@ -82,6 +83,7 @@ function fromDateInput(v: string): number | null {
 
 export function TaskModal(props: TaskModalProps): JSX.Element {
   const { task, board } = props
+  const confirm = useConfirm()
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description)
   const [criteria, setCriteria] = useState(task.acceptanceCriteria)
@@ -173,11 +175,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
 
   const toggleFlag = (): void => props.onUpdate(task.id, { flagged: !task.flagged })
 
-  const confirmDelete = (): void => {
-    if (window.confirm(`Удалить «${task.title}»?`)) {
-      props.onDelete(task.id)
-      props.onClose()
-    }
+  const confirmDelete = async (): Promise<void> => {
+    if (!(await confirm({ title: `Удалить «${task.title}»?`, variant: 'danger', confirmLabel: 'Удалить' }))) return
+    props.onDelete(task.id)
+    props.onClose()
   }
 
   // Статус и исполнитель: на телефоне — строкой под заголовком (как в Jira),
@@ -239,7 +240,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           <button onClick={() => { setMenuOpen(false); toggleFlag() }}>
             {task.flagged ? '⚑ Снять флаг' : '⚑ Флаг'}
           </button>
-          <button className="jcard-menu-danger" onClick={() => { setMenuOpen(false); confirmDelete() }}>
+          <button className="jcard-menu-danger" onClick={() => { setMenuOpen(false); void confirmDelete() }}>
             🗑 Удалить задачу
           </button>
         </div>
@@ -268,7 +269,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         className="delbtn"
         aria-label="Удалить задачу"
         title="Удалить задачу"
-        onClick={confirmDelete}
+        onClick={() => void confirmDelete()}
       >
         🗑
       </button>

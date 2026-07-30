@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Dialog } from '../ui/Dialog'
+import { useConfirm } from '../ui/useConfirm'
+import { useToast } from '../ui/Toast'
+import { copyText } from '../../lib/clipboard'
 import { WandIcon } from '../icons'
 import type { ModifierPrompt } from '@shared/types'
 
@@ -17,6 +20,7 @@ export interface Labels {
   addPrompt: string; edit: string; view: string; save: string; cancel: string; delete: string
   deleteConfirm: string; titleLabel: string; textLabel: string; enabled: string; noPrompts: string
   duplicateTitle: string; requiredText: string; tooLong: string; maxBlocks: string; generate: string
+  confirm: string; copied: string
 }
 
 const RU: Labels = {
@@ -27,7 +31,8 @@ const RU: Labels = {
   blocks: 'Абзацы результата', moveUp: 'Вверх', moveDown: 'Вниз', refine: 'На доработку', apply: 'Применить', addPrompt: 'Добавить промпт',
   edit: 'Изменить', view: 'Просмотр', save: 'Сохранить', cancel: 'Отмена', delete: 'Удалить', deleteConfirm: 'Удалить этот промпт?', titleLabel: 'Название',
   textLabel: 'Текст промпта', enabled: 'Активен', noPrompts: 'Дополнительных подсказок пока нет.', duplicateTitle: 'Название должно быть уникальным', requiredText: 'Введите текст промпта',
-  tooLong: 'Текст слишком длинный', maxBlocks: 'Достигнут лимит абзацев', generate: 'Предложить варианты'
+  tooLong: 'Текст слишком длинный', maxBlocks: 'Достигнут лимит абзацев', generate: 'Предложить варианты',
+  confirm: 'Подтвердить', copied: 'Скопировано'
 }
 
 export interface PromptBuilderProps {
@@ -51,6 +56,8 @@ const id = (): string => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${M
 export function PromptBuilder({ open, initialValue: _initialValue = '', prompts, onPromptsChange, generate, onApply, onClose, joinSeparator = '\n\n', maxBlocks = 12, labels }: PromptBuilderProps): JSX.Element | null {
   void _initialValue
   const l = { ...RU, ...labels }
+  const confirm = useConfirm()
+  const toast = useToast()
   const [mode, setMode] = useState<'builder' | 'settings'>('builder')
   const [prompt, setPrompt] = useState('')
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
@@ -105,9 +112,11 @@ export function PromptBuilder({ open, initialValue: _initialValue = '', prompts,
     })
   }
 
-  const requestClose = (): void => {
+  // Dialog ждёт синхронный обработчик, а подтверждение — промис: закрываем после ответа.
+  const requestClose = (): void => { void confirmClose() }
+  const confirmClose = async (): Promise<void> => {
     if (mode === 'settings' && editor) { setEditor(null); return }
-    if (blocks.length && !window.confirm(l.cancelConfirm)) return
+    if (blocks.length && !(await confirm({ title: l.cancelConfirm, confirmLabel: l.confirm, cancelLabel: l.back }))) return
     onClose()
   }
   const changePrompts = (next: ModifierPrompt[]): void => { setLocalPrompts(next); onPromptsChange?.(next) }
@@ -138,7 +147,7 @@ export function PromptBuilder({ open, initialValue: _initialValue = '', prompts,
       {mode === 'builder' ? <div className="pb-builder">
         <section className="pb-column pb-generation">
           <label className="pb-label">{l.promptLabel}<span className="pb-prompt-wrap"><textarea ref={promptRef} rows={4} value={prompt} placeholder={l.promptPlaceholder} onChange={(e) => setPrompt(e.target.value)} /><button type="button" className="pb-generate" disabled={!prompt.trim() || status === 'loading'} onClick={generateSuggestions} aria-label={l.generate} title={l.generate}><WandIcon /></button></span></label>
-          {blocks.length > 0 && <div className="pb-preview"><div className="pb-row"><strong>{l.preview}</strong><div><button onClick={() => setCollapsed(!collapsed)}>{collapsed ? l.expand : l.collapse}</button><button onClick={() => void navigator.clipboard?.writeText(assembled)}>{l.copy}</button><button onClick={() => { if (window.confirm(l.clearConfirm)) setBlocks([]) }}>{l.clearAll}</button></div></div>{!collapsed && <div data-testid="prompt-preview">{assembled}</div>}</div>}
+          {blocks.length > 0 && <div className="pb-preview"><div className="pb-row"><strong>{l.preview}</strong><div><button onClick={() => setCollapsed(!collapsed)}>{collapsed ? l.expand : l.collapse}</button><button onClick={() => void copyText(assembled).then((ok) => { if (ok) toast.success(l.copied) })}>{l.copy}</button><button onClick={() => void confirm({ title: l.clearConfirm, variant: 'danger', confirmLabel: l.clearAll, cancelLabel: l.cancel }).then((ok) => { if (ok) setBlocks([]) })}>{l.clearAll}</button></div></div>{!collapsed && <div data-testid="prompt-preview">{assembled}</div>}</div>}
           <div className="pb-status" aria-live="polite">{status === 'loading' ? l.loading : status === 'empty' ? l.empty : status === 'error' ? <>{l.error} <button onClick={generateSuggestions}>{l.retry}</button></> : null}</div>
           {status === 'loading' && <div className="pb-skeletons" aria-hidden="true"><i/><i/><i/></div>}
           <div className="pb-list">{suggestions.map((s) => <article className="pb-item" key={s.id}><p>{s.text}</p><div><button aria-label={`${l.remove}: ${s.text}`} onClick={() => setSuggestions((all) => all.filter((x) => x.id !== s.id))}>{l.remove}</button><button onClick={() => setPrompt(s.text)}>{l.replace}</button><button disabled={blocks.length >= maxBlocks} title={blocks.length >= maxBlocks ? l.maxBlocks : undefined} onClick={() => setBlocks((all) => [...all, { id: id(), text: s.text }])}>{l.add}</button></div></article>)}</div>
@@ -149,7 +158,7 @@ export function PromptBuilder({ open, initialValue: _initialValue = '', prompts,
         <div className="pb-list">{localPrompts.map((item, index) => <article className="pb-item pb-modifier" key={item.id}>
           <label className="pb-switch"><input type="checkbox" checked={item.enabled} aria-label={`${l.enabled}: ${item.title}`} onChange={(e) => changePrompts(localPrompts.map((p) => p.id === item.id ? { ...p, enabled: e.target.checked } : p))}/><span/></label>
           <div><strong>{item.title}</strong><p className={expanded === item.id ? '' : 'pb-ellipsis'}>{item.text}</p></div>
-          <div><button onClick={() => setExpanded(expanded === item.id ? null : item.id)}>{l.view}</button>{!item.readonly && <><button onClick={() => setEditor({ id: item.id, title: item.title, text: item.text })}>{l.edit}</button>{onPromptsChange && <button onClick={() => { if (window.confirm(l.deleteConfirm)) changePrompts(localPrompts.filter((p) => p.id !== item.id)) }}>{l.delete}</button>}</>}<button disabled={index === 0} onClick={() => changePrompts(move(localPrompts, index, -1))}>{l.moveUp}</button><button disabled={index === localPrompts.length - 1} onClick={() => changePrompts(move(localPrompts, index, 1))}>{l.moveDown}</button></div>
+          <div><button onClick={() => setExpanded(expanded === item.id ? null : item.id)}>{l.view}</button>{!item.readonly && <><button onClick={() => setEditor({ id: item.id, title: item.title, text: item.text })}>{l.edit}</button>{onPromptsChange && <button onClick={() => void confirm({ title: l.deleteConfirm, variant: 'danger', confirmLabel: l.delete, cancelLabel: l.cancel }).then((ok) => { if (ok) changePrompts(localPrompts.filter((p) => p.id !== item.id)) })}>{l.delete}</button>}</>}<button disabled={index === 0} onClick={() => changePrompts(move(localPrompts, index, -1))}>{l.moveUp}</button><button disabled={index === localPrompts.length - 1} onClick={() => changePrompts(move(localPrompts, index, 1))}>{l.moveDown}</button></div>
         </article>)}</div>
         {editor && <div className="pb-editor"><label>{l.titleLabel}<input value={editor.title} onChange={(e) => setEditor({ ...editor, title: e.target.value })}/></label><label>{l.textLabel}<textarea rows={5} value={editor.text} onChange={(e) => setEditor({ ...editor, text: e.target.value })}/></label>{editorError && <p role="alert">{editorError}</p>}<div><button onClick={() => setEditor(null)}>{l.cancel}</button><button disabled={!!editorError} onClick={saveEditor}>{l.save}</button></div></div>}
         {onPromptsChange && !editor && <button className="pb-add-prompt" onClick={() => setEditor({ id: null, title: '', text: '' })}>{l.addPrompt}</button>}

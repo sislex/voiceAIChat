@@ -4,10 +4,13 @@
 // авто-возвратом в read-only по таймеру. Выполнение — через window.ci.consoleExec.
 import { useEffect, useRef, useState, type JSX } from 'react'
 import type { CiLogLine } from '@shared/ci'
+import { copyText } from '../../lib/clipboard'
+import { useToast } from '../ui/Toast'
 
 const EDIT_LIMIT_MS = 5 * 60 * 1000
 
 export function CiConsole(props: { runId: string; onClose: () => void }): JSX.Element {
+  const toast = useToast()
   const [log, setLog] = useState<CiLogLine[]>([])
   const [search, setSearch] = useState('')
   const [cmd, setCmd] = useState('')
@@ -26,7 +29,10 @@ export function CiConsole(props: { runId: string; onClose: () => void }): JSX.El
 
   const filtered = search ? log.filter((l) => l.chunk.includes(search)) : log
   const logText = (): string => log.map((l) => l.chunk).join('')
-  const copy = (): void => { void navigator.clipboard?.writeText(logText()) }
+  // Кнопка «Копировать лог» ничем себя не выдавала — ни успехом, ни отказом.
+  const copy = (): void => {
+    void copyText(logText()).then((ok) => (ok ? toast.success('Скопировано') : toast.error('Не удалось скопировать лог')))
+  }
   const exec = async (): Promise<void> => {
     const c = cmd.trim()
     if (!c) return

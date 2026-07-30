@@ -11,6 +11,7 @@ import type { CiMetrics } from '../../remote/ciBridge'
 import { ciStatusIcon, ciStatusLabel, ciTone, fmtDuration } from './ciFormat'
 import { CiConsole } from './CiConsole'
 import { QuestionsForm } from '../QuestionsForm'
+import { useConfirm } from '../ui/useConfirm'
 
 export interface RunFeedCache {
   detail: CiRunDetail | null
@@ -36,6 +37,9 @@ export interface RunFeedProps {
   download?: (filename: string, text: string) => void
 }
 
+/** Слово-подтверждение для необратимого отката рабочего репозитория. */
+const DISCARD_CONFIRM_WORD = 'откатить'
+
 function defaultDownload(filename: string, text: string): void {
   try {
     const blob = new Blob([text], { type: 'text/plain' })
@@ -52,6 +56,7 @@ function defaultDownload(filename: string, text: string): void {
 
 export function RunFeed(props: RunFeedProps): JSX.Element {
   const { runId, cache } = props
+  const confirm = useConfirm()
   const now = props.now ?? Date.now
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [autoscroll, setAutoscroll] = useState(true)
@@ -192,7 +197,16 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
                 <strong>В рабочем репозитории есть локальные изменения.</strong>
                 <span>Можно сохранить их для диагностики или безвозвратно откатить и начать workflow заново.</span>
                 <button className="ci-btn" disabled={!props.onDiscardAndRetry} onClick={() => {
-                  if (window.confirm('Все незакоммиченные и неотслеживаемые файлы в рабочем репозитории будут удалены. Продолжить?')) props.onDiscardAndRetry?.(runId)
+                  // Файлы уходят безвозвратно — просим набрать слово, а не просто «ОК».
+                  void confirm({
+                    title: 'Откатить изменения и начать заново?',
+                    message: 'Все незакоммиченные и неотслеживаемые файлы в рабочем репозитории будут удалены. Продолжить?',
+                    variant: 'danger',
+                    confirmLabel: 'Откатить и начать заново',
+                    requireText: DISCARD_CONFIRM_WORD
+                  }).then((ok) => {
+                    if (ok) props.onDiscardAndRetry?.(runId)
+                  })
                 }}>
                   Откатить изменения и начать заново
                 </button>

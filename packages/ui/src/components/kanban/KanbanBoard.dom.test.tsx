@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { screen, within, waitFor } from '@testing-library/react'
+import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { KanbanBoard, type KanbanBoardProps } from './KanbanBoard'
 import type { Board, Task } from '@shared/projects'
@@ -99,6 +100,24 @@ describe('KanbanBoard (изолированный)', () => {
     expect(description).toHaveValue('Готовое AI-описание задачи')
     expect(props.onUpdateTask).toHaveBeenCalledWith('t1', { description: 'Готовое AI-описание задачи' })
     expect(screen.queryByRole('dialog', { name: 'AI-помощник формулировки' })).not.toBeInTheDocument()
+  })
+
+  it('удаление колонки требует набрать её название', async () => {
+    const props = renderBoard()
+    const filters = screen.getByTestId('board-filters')
+    await userEvent.click(within(filters).getByRole('checkbox', { name: /скрытые/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Меню колонки «Скрытая»' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить' }))
+
+    const dialog = await screen.findByTestId('confirm-dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Удалить колонку «Скрытая» со всеми задачами?' })).toBeInTheDocument()
+    // Необратимо и уносит задачи — пока название не набрано, кнопка выключена.
+    const ok = within(dialog).getByRole('button', { name: 'Удалить колонку' })
+    expect(ok).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Скрытая')
+    await userEvent.click(ok)
+    // Ответ приходит промисом (useConfirm) — ждём следующего такта.
+    await waitFor(() => expect(props.onDeleteColumn).toHaveBeenCalledWith('c2'))
   })
 
   it('без openTaskId-пропсов модалка управляется внутренним состоянием', async () => {

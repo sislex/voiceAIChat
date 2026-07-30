@@ -233,3 +233,52 @@ describe('voiceStore — резюме CI-рана в связанном чате
     expect(store.getState().messages.map((m) => m.id)).not.toContain('sum-2')
   })
 })
+
+describe('voiceStore — канал уведомлений', () => {
+  it('упавший вызов моста кладёт ошибку с безопасным повтором', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    const real = api['board:get']
+    let broken = true
+    api['board:get'] = async (input) => {
+      if (!broken) return real(input)
+      broken = false
+      throw new Error('Сервер недоступен')
+    }
+
+    await store.actions.openBoard(id)
+    const [notice] = store.getState().notices
+    expect(notice.kind).toBe('error')
+    expect(notice.text).toBe('Сервер недоступен')
+    // Загрузка доски идемпотентна — повтор безопасен, поэтому он есть.
+    expect(notice.retry).toBeTypeOf('function')
+    expect(store.getState().boardLoading).toBe(false)
+
+    notice.retry?.()
+    await vi.waitFor(() => expect(store.getState().board).not.toBeNull())
+
+    // Показанное уведомление снимает тот, кто его показал (App).
+    store.actions.dismissNotice(notice.id)
+    expect(store.getState().notices).toHaveLength(0)
+  })
+
+  it('создание не получает «Повторить» — иначе после «упало, но применилось» будет дубль', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    await store.actions.openBoard(store.getState().projectDetail!.id)
+    api['columns:create'] = async () => {
+      throw new Error('нет сети')
+    }
+    await store.actions.createColumn('Новая')
+    const notice = store.getState().notices.at(-1)!
+    expect(notice.text).toBe('нет сети')
+    expect(notice.retry).toBeUndefined()
+  })
+
+  it('notify кладёт успех в ту же очередь', () => {
+    const { store } = makeStore()
+    store.actions.notify({ kind: 'success', text: 'Настройки сохранены' })
+    expect(store.getState().notices).toEqual([{ id: expect.any(String), kind: 'success', text: 'Настройки сохранены' }])
+  })
+})

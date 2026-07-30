@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render } from '../../test/uiRender'
 import type { CiCommand, CiGlobalSettings } from '@shared/ci'
 import { DEFAULT_CI_GLOBAL_SETTINGS } from '@shared/ci'
 import { CiCommands, type CiCommandsProps } from './CiCommands'
@@ -43,12 +44,16 @@ describe('CiCommands', () => {
 
   it('показывает команды и удаляет с подтверждением', async () => {
     const p = props({ commands: [mkCommand({ id: 'cmd-9', name: 'deploy' })] })
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<CiCommands {...p} />)
     expect(screen.getByText('deploy')).toBeInTheDocument()
     fireEvent.click(screen.getByTitle('Удалить'))
+    const dialog = await screen.findByTestId('confirm-dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Удалить команду «deploy»?' })).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить' }))
     await waitFor(() => expect(p.onDelete).toHaveBeenCalledWith('cmd-9'))
     expect(p.onUsage).toHaveBeenCalledWith('cmd-9')
+    // Удаление ничем себя не показывало — теперь есть тост.
+    expect(await screen.findByText('Команда удалена')).toBeInTheDocument()
   })
 
   it('глобальные настройки только для чтения у обычного пользователя', () => {

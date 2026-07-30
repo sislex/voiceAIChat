@@ -4,6 +4,7 @@
 import { useEffect, type ReactNode } from 'react'
 import type { Preview } from '@storybook/react'
 import '../src/styles/app.css'
+import { UiProviders } from '../src/components/ui/UiProviders'
 
 // Как и в App: тема дублируется на <html>, иначе модальные окна (портал в
 // document.body) остаются без токенов [data-theme='dark'].
@@ -28,9 +29,13 @@ const preview: Preview = {
   },
   initialGlobals: { theme: 'light' },
   decorators: [
+    // Провайдеры примитивов, как в корне App: иначе клик «Удалить» в сториз
+    // канбана падал бы — подтверждение приходит из ConfirmProvider.
     (Story, ctx) => (
       <Frame theme={ctx.globals.theme}>
-        <Story />
+        <UiProviders>
+          <Story />
+        </UiProviders>
       </Frame>
     )
   ]

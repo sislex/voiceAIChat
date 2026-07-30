@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { render } from '../test/uiRender'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { ConversationSettings } from './ConversationSettings'
@@ -90,15 +91,17 @@ describe('ConversationSettings', () => {
   })
 
   it('просит подтверждение при переходе из плана в полный доступ', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     const onSave = vi.fn().mockResolvedValue(undefined)
     const conv = { ...conversation, permissionMode: 'plan' as const }
     render(<ConversationSettings conversation={conv} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Режим разговора' }), { target: { value: 'bypassPermissions' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    expect(confirm).toHaveBeenCalledOnce()
+    // Предупреждение дословно то же, что было в window.confirm.
+    const dialog = await screen.findByTestId('confirm-dialog')
+    expect(within(dialog).getByText('Перейти из планирования в «Полный доступ»? Агент сможет выполнять команды и изменять любые доступные файлы.')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }))
+    await waitFor(() => expect(screen.queryByTestId('confirm-dialog')).toBeNull())
     expect(onSave).not.toHaveBeenCalled()
-    confirm.mockRestore()
   })
 
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { screen, fireEvent } from '@testing-library/react'
+import { render } from '../../test/uiRender'
 import type { Task } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import { TaskCard, type TaskCardProps } from './TaskCard'

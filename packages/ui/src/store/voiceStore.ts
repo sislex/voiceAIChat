@@ -124,6 +124,18 @@ function saveLastProject(id: string): void {
   }
 }
 
+/**
+ * Уведомление для тоста. Стор их только копит: показывает App (useToast), потому
+ * что рисовать умеет React, а стор фреймворк-независим.
+ */
+export interface AppNotice {
+  id: string
+  kind: 'error' | 'success' | 'info'
+  text: string
+  /** Безопасный повтор операции: тост покажет кнопку «Повторить». */
+  retry?: () => void
+}
+
 /** Полное состояние приложения в renderer. */
 export interface AppState {
   /**
@@ -252,6 +264,11 @@ export interface AppState {
   ttsAvailable: boolean
   /** Текст последней ошибки для баннера (null — нет). */
   error: string | null
+  /**
+   * Очередь уведомлений для тостов: неудавшиеся вызовы мостов, успех операций
+   * без видимого результата. App показывает и сразу снимает их (dismissNotice).
+   */
+  notices: AppNotice[]
   /** Наличие локальной модели Whisper (для баннера первого запуска). */
   modelPresent: boolean
   /** Идёт ли скачивание модели. */
@@ -466,6 +483,10 @@ export interface StoreActions {
   applyClaudeUsage(usage: TurnUsage, conversationId?: string): void
   /** Скрыть баннер ошибки. */
   dismissError(): void
+  /** Поставить уведомление в очередь тостов (успех операции, ошибка). */
+  notify(notice: Omit<AppNotice, 'id'>): void
+  /** Снять показанное уведомление из очереди. */
+  dismissNotice(id: string): void
   /** Запустить скачивание модели Whisper. */
   downloadModel(): void
   /** Прогресс скачивания модели (stt:downloadProgress). */
@@ -784,6 +805,7 @@ function initialState(): AppState {
     speakingMessageId: null,
     ttsAvailable: false,
     error: null,
+    notices: [],
     modelPresent: true,
     downloading: false,
     downloadPercent: 0,
@@ -1304,7 +1326,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await refreshAgents()
       return created
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
       return null
     }
   }
@@ -1336,7 +1358,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       if (deps.openUrl) deps.openUrl(url)
       else window.location.assign(url)
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void downloadArtifact(kind))
     }
   }
   const downloadDesktopApp = (): Promise<void> => downloadArtifact('desktop')
@@ -1348,7 +1370,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       return await api['agents:connectionString']({ token })
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
       return null
     }
   }
@@ -1375,7 +1397,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['agents:setPolicy']({ id, policy })
       setState({ agents: state.agents.map((a) => (a.id === id ? { ...a, policy } : a)) })
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void setAgentPolicy(id, policy))
     }
   }
 
@@ -1389,7 +1411,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       const { token } = await api['agents:regenerateToken']({ id })
       return token
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
       return null
     }
   }
@@ -1542,7 +1564,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await refreshConversations()
       return conversation.id
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
       return null
     }
   }
@@ -1641,7 +1663,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await refreshConversations()
       return conversation.id
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
       return null
     }
   }
@@ -1664,7 +1686,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       await refreshAdminUsers()
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void openUsers())
     }
   }
 
@@ -1684,7 +1706,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['admin:createUser']({ name, password, role })
       await refreshAdminUsers()
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
     }
   }
 
@@ -1693,7 +1715,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['admin:setBlocked']({ name, blocked })
       await refreshAdminUsers()
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void setUserBlocked(name, blocked))
     }
   }
 
@@ -1703,7 +1725,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       if (state.adminSelected === name) closeUsers()
       await refreshAdminUsers()
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
     }
   }
 
@@ -1722,7 +1744,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       ])
       setState({ adminUsage: usage, adminConversations: conversations })
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void selectAdminUser(name))
     }
   }
 
@@ -1732,7 +1754,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       setState({ adminUsage: await api['admin:usage']({ name, unit, from, to }) })
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void loadAdminUsage(unit, from, to))
     }
   }
 
@@ -1743,7 +1765,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       setState({ adminMessages: await api['admin:messages']({ name, conversationId }) })
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void openAdminConversation(conversationId))
     }
   }
 
@@ -2006,7 +2028,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         else await newConversation()
       }
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
 
@@ -2404,6 +2426,29 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ error: null })
   }
 
+  // --- Канал уведомлений ---------------------------------------------------
+  // Ошибка вызова моста раньше в лучшем случае писалась в баннер чата, а на
+  // страницах проектов/CI/машин не было видно вообще ничего: запрос упал, экран
+  // не изменился. Теперь любой такой промах кладётся сюда, а App показывает
+  // тостом — с кнопкой «Повторить» там, где повтор безопасен (чтение и
+  // идемпотентная правка; создание, удаление и запуск рана повтора не получают).
+
+  let noticeSeq = 0
+
+  function notify(notice: Omit<AppNotice, 'id'>): void {
+    noticeSeq += 1
+    setState({ notices: [...state.notices, { ...notice, id: `n${noticeSeq}` }] })
+  }
+
+  function dismissNotice(id: string): void {
+    setState({ notices: state.notices.filter((item) => item.id !== id) })
+  }
+
+  /** Показать ошибку упавшего вызова моста; retry — если повтор безопасен. */
+  function fail(err: unknown, retry?: () => void): void {
+    notify({ kind: 'error', text: err instanceof Error ? err.message : String(err), ...(retry ? { retry } : {}) })
+  }
+
   function downloadModel(): void {
     if (!deps.startModelDownload || state.downloading) return
     setState({ downloading: true, downloadPercent: 0, error: null })
@@ -2494,8 +2539,6 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   // --- Проекты + канбан ----------------------------------------------------
 
-  const perr = (e: unknown): string => (e instanceof Error ? e.message : String(e))
-
   async function refreshProjects(): Promise<void> {
     setState({ projects: await api['projects:list']() })
   }
@@ -2504,7 +2547,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       await refreshProjects()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void openProjects())
     }
   }
   function closeProjects(): void {
@@ -2515,7 +2558,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       setState({ projectDetail: await api['projects:get']({ id }) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void selectProject(id))
     }
   }
   async function createProject(input: {
@@ -2538,7 +2581,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ projectDetail: detail })
       return detail
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
       return null
     }
   }
@@ -2568,7 +2611,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ projectDetail: detail })
       await refreshProjects()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void updateProject(id, fields))
     }
   }
   async function deleteProject(id: string): Promise<void> {
@@ -2578,7 +2621,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       if (state.projectDetail?.id === id) setState({ projectDetail: null })
       await refreshProjects()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function addProjectMember(id: string, username: string): Promise<void> {
@@ -2586,7 +2629,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ projectDetail: await api['projects:addMember']({ id, username }) })
       await refreshProjects()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function removeProjectMember(id: string, username: string): Promise<void> {
@@ -2594,42 +2637,42 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ projectDetail: await api['projects:removeMember']({ id, username }) })
       if (state.activeProjectId === id) await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function linkProjectMachine(id: string, agentId: string): Promise<void> {
     try {
       setState({ projectDetail: await api['projects:linkMachine']({ id, agentId }) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function unlinkProjectMachine(id: string, agentId: string): Promise<void> {
     try {
       setState({ projectDetail: await api['projects:unlinkMachine']({ id, agentId }) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function setProjectMachinePath(id: string, agentId: string, path: string): Promise<void> {
     try {
       setState({ projectDetail: await api['projects:setMachinePath']({ id, agentId, path }) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void setProjectMachinePath(id, agentId, path))
     }
   }
   async function setProjectReposRoot(id: string, agentId: string, reposRoot: string): Promise<void> {
     try {
       setState({ projectDetail: await api['projects:setReposRoot']({ id, agentId, reposRoot }) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void setProjectReposRoot(id, agentId, reposRoot))
     }
   }
   async function setProjectDefaultMachine(id: string, agentId: string): Promise<void> {
     try {
       setState({ projectDetail: await api['projects:setDefaultMachine']({ id, agentId }) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void setProjectDefaultMachine(id, agentId))
     }
   }
   /** Загрузить детали проекта без записи в стор (для настроек чата). */
@@ -2637,7 +2680,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       return await api['projects:get']({ id })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
       return null
     }
   }
@@ -2674,7 +2717,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ board, projectDetail: detail, ciSummaries, boardLoading: false })
       boardBridge?.subscribe(id)
     } catch (err) {
-      setState({ boardLoading: false, error: perr(err) })
+      setState({ boardLoading: false })
+      fail(err, () => void openBoard(id))
     }
   }
   function closeBoard(): void {
@@ -2720,7 +2764,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       ])
       setState({ ciCommands: commands, ciSettings: settings, ciSuggestions: suggestions, ciWorkspaces: workspaces })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void openCi())
     }
   }
   function closeCi(): void {
@@ -2737,7 +2781,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ ciCommands: [...state.ciCommands, cmd] })
       return cmd
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
       return null
     }
   }
@@ -2747,7 +2791,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       const cmd = await ciBridge.updateCommand(id, input)
       setState({ ciCommands: state.ciCommands.map((c) => (c.id === id ? cmd : c)) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void updateCiCommand(id, input))
     }
   }
   async function deleteCiCommand(id: string): Promise<void> {
@@ -2756,7 +2800,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await ciBridge.deleteCommand(id)
       setState({ ciCommands: state.ciCommands.filter((c) => c.id !== id) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function ciCommandUsage(id: string): Promise<{ projects: Array<{ id: string; name: string }>; tasks: Array<{ id: string; title: string }> }> {
@@ -2768,7 +2812,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       setState({ ciSettings: await ciBridge.putSettings(settings) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void saveCiSettings(settings))
     }
   }
   async function resolveCiSuggestion(id: string, accept: boolean): Promise<void> {
@@ -2778,7 +2822,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ ciSuggestions: state.ciSuggestions.filter((x) => x.id !== id) })
       if (accept) await reloadCiCommands()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function reloadCiWorkspaces(projectId?: string): Promise<void> {
@@ -2793,26 +2837,26 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       patchCiRun(run.id, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [], interactions: [] } }))
       return run
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
       return null
     }
   }
   async function cancelCiRun(runId: string): Promise<void> {
     if (!ciBridge) return
-    try { await ciBridge.cancelRun(runId) } catch (err) { setState({ error: perr(err) }) }
+    try { await ciBridge.cancelRun(runId) } catch (err) { fail(err) }
   }
   async function retryCiRun(runId: string): Promise<CiRun | null> {
     if (!ciBridge) return null
-    try { return await ciBridge.retryRun(runId) } catch (err) { setState({ error: perr(err) }); return null }
+    try { return await ciBridge.retryRun(runId) } catch (err) { fail(err); return null }
   }
   async function retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun | null> {
     // Повтор с упавшего шага — тот же ран; после запуска перечитываем деталь/лог.
     if (!ciBridge) return null
-    try { const r = await ciBridge.retryRunFromStep(runId, selection); await loadCiRun(runId); return r } catch (err) { setState({ error: perr(err) }); return null }
+    try { const r = await ciBridge.retryRunFromStep(runId, selection); await loadCiRun(runId); return r } catch (err) { fail(err); return null }
   }
   async function discardCiWorkspaceAndRetry(runId: string): Promise<CiRun | null> {
     if (!ciBridge) return null
-    try { return await ciBridge.discardChangesAndRetry(runId) } catch (err) { setState({ error: perr(err) }); return null }
+    try { return await ciBridge.discardChangesAndRetry(runId) } catch (err) { fail(err); return null }
   }
   async function loadCiRun(runId: string): Promise<void> {
     if (!ciBridge) return
@@ -2820,7 +2864,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       const [detail, log] = await Promise.all([ciBridge.getRun(runId), ciBridge.getRunLog(runId)])
       patchCiRun(runId, (c) => ({ ...c, detail, log }))
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void loadCiRun(runId))
     }
   }
   function ciSubscribe(runId: string): void {
@@ -2896,7 +2940,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       const updated = await ciBridge?.answerInteraction(runId, interactionId, answer)
       if (updated) applyCiInteraction(runId, updated)
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
       void loadCiRun(runId)
     }
     // Сервер дописывает ответ репликой в связанный чат — подтягиваем ленту.
@@ -2913,7 +2957,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['columns:create']({ projectId: id, name })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function updateColumn(columnId: string, fields: { name?: string; wipLimit?: number | null }): Promise<void> {
@@ -2923,7 +2967,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['columns:rename']({ projectId: id, columnId, ...fields })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void updateColumn(columnId, fields))
     }
   }
   async function setColumnHidden(columnId: string, hidden: boolean): Promise<void> {
@@ -2933,7 +2977,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['columns:setHidden']({ projectId: id, columnId, hidden })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void setColumnHidden(columnId, hidden))
     }
   }
   async function reorderColumns(order: string[]): Promise<void> {
@@ -2952,7 +2996,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['columns:reorder']({ projectId: id, order })
       await refreshBoard()
     } catch (err) {
-      setState({ board: prev, error: perr(err) })
+      setState({ board: prev })
+      fail(err, () => void reorderColumns(order))
     }
   }
   async function deleteColumn(columnId: string): Promise<void> {
@@ -2962,7 +3007,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['columns:delete']({ projectId: id, columnId })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function createTask(
@@ -2975,7 +3020,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['tasks:create']({ projectId: id, columnId, ...input })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function updateTask(
@@ -2989,7 +3034,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['tasks:update']({ projectId: id, taskId, ...fields })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void updateTask(taskId, fields))
     }
   }
   async function moveTask(
@@ -3022,7 +3067,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['tasks:move']({ projectId: id, taskId, columnId, afterId: afterId ?? null, beforeId: beforeId ?? null })
       await refreshBoard()
     } catch (err) {
-      setState({ board: prev, error: perr(err) })
+      setState({ board: prev })
+      fail(err, () => void moveTask(taskId, columnId, afterId, beforeId))
     }
   }
   async function deleteTask(taskId: string): Promise<void> {
@@ -3032,7 +3078,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['tasks:delete']({ projectId: id, taskId })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
 
@@ -3045,7 +3091,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await selectConversation(conv.id)
       return conv.id
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
       return null
     }
   }
@@ -3111,6 +3157,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applyClaudeActive,
       applyClaudeUsage,
       dismissError,
+      notify,
+      dismissNotice,
       downloadModel,
       applyDownloadProgress,
       applyDownloadDone,

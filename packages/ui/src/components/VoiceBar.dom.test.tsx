@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
+import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { VoiceBar } from './VoiceBar'
 import '../styles/app.css'

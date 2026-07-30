@@ -13,6 +13,8 @@ import type {
 } from '@shared/ci'
 import { DEFAULT_CI_GLOBAL_SETTINGS } from '@shared/ci'
 import { ToolFrame } from '../ToolFrame'
+import { useConfirm } from '../ui/useConfirm'
+import { useToast } from '../ui/Toast'
 
 export interface CiCommandUsage {
   projects: Array<{ id: string; name: string }>
@@ -106,6 +108,8 @@ function draftToInput(d: Draft): CiCommandInput {
 
 export function CiCommands(props: CiCommandsProps): JSX.Element {
   const { commands } = props
+  const confirm = useConfirm()
+  const toast = useToast()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [draft, setDraft] = useState<Draft>(EMPTY)
@@ -138,9 +142,11 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
         if (cmd) {
           setCreating(false)
           setSelectedId(cmd.id)
+          toast.success('Команда создана')
         }
       } else if (selected) {
         await props.onUpdate(selected.id, draftToInput(draft))
+        toast.success('Команда сохранена')
       }
     } finally {
       setSaving(false)
@@ -156,13 +162,20 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
     try {
       const usage = await props.onUsage(cmd.id)
       const n = usage.projects.length + usage.tasks.length
-      if (n > 0) extra = `\n\nИспользуется: проектов ${usage.projects.length}, задач ${usage.tasks.length}.`
+      if (n > 0) extra = `Используется: проектов ${usage.projects.length}, задач ${usage.tasks.length}.`
     } catch {
       /* usage опционально */
     }
-    if (!window.confirm(`Удалить команду «${cmd.name}»?${extra}`)) return
+    const ok = await confirm({
+      title: `Удалить команду «${cmd.name}»?`,
+      ...(extra ? { message: extra } : {}),
+      variant: 'danger',
+      confirmLabel: 'Удалить'
+    })
+    if (!ok) return
     await props.onDelete(cmd.id)
     if (selectedId === cmd.id) setSelectedId(null)
+    toast.success('Команда удалена')
   }
 
   const editForm = (
@@ -261,7 +274,10 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
           <div className="ci-edit-pane">{editForm}</div>
         </div>
 
-        <CiSettingsSection open={settingsOpen} onToggle={() => setSettingsOpen((v) => !v)} settings={props.settings} editable={props.role === 'admin'} onSave={props.onSaveSettings} />
+        <CiSettingsSection open={settingsOpen} onToggle={() => setSettingsOpen((v) => !v)} settings={props.settings} editable={props.role === 'admin'} onSave={async (next) => {
+          await props.onSaveSettings(next)
+          toast.success('Настройки сохранены')
+        }} />
 
         {props.suggestions.length > 0 && (
           <section className="ci-section" data-testid="ci-suggestions">
