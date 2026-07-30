@@ -184,7 +184,8 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 props.onOpenChat?.(task.id)
               }}
             >
-              💬
+              <span aria-hidden="true">💬</span>
+              <span>Чат</span>
             </button>
           )}
         </span>

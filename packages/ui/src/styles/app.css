@@ -3730,14 +3730,12 @@
 .jmodal-skills .jcard-skill { font-weight: 500; }
 
 /* Кнопка перехода в связанный чат на карточке */
-.jcard-chat { border: none; background: none; cursor: pointer; padding: 0 3px; font-size: 12px; line-height: 18px;
-  border-radius: 4px; opacity: 0; filter: grayscale(1); transition: opacity 0.1s; }
-.jcard:hover .jcard-chat { opacity: 0.7; }
-.jcard-chat--linked { opacity: 0.95; filter: none; }
-.jcard-chat:hover { opacity: 1; filter: none; background: rgba(9, 30, 66, 0.13); }
-[data-theme='dark'] .jcard-chat:hover { background: rgba(255, 255, 255, 0.12); }
-.jmodal-chat-btn { color: #0c66e4; font-weight: 600; }
-[data-theme='dark'] .jmodal-chat-btn { color: #579dff; }
+.jcard-chat { display: inline-flex; align-items: center; gap: var(--space-050); border: none;
+  background: transparent; color: var(--accent); cursor: pointer; padding: 0 var(--space-050);
+  font: inherit; font-size: 11px; font-weight: 600; line-height: 18px; border-radius: var(--space-050); }
+.jcard-chat:hover, .jcard-chat:focus-visible { background: var(--border-soft); }
+.jcard-chat--linked { color: var(--accent); }
+.jmodal-chat-btn { color: var(--accent); font-weight: 600; }
 
 /* Композер и зоны вставки */
 
