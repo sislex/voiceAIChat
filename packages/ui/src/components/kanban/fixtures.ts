@@ -2,6 +2,7 @@
 // Никакой связи с fakeApi: сториз нужны синхронные готовые объекты.
 
 import type { Board, KanbanColumn, ProjectMember, Task } from '@shared/projects'
+import type { CiRunSummary, CiStatus } from '@shared/ci'
 
 let seq = 0
 
@@ -82,5 +83,19 @@ export function noopHandlers() {
     onUpdateTask: () => {},
     onMoveTask: () => {},
     onDeleteTask: () => {}
+  }
+}
+
+/** Сводка последнего CI-рана задачи (для сториз состояний карточки). */
+export function makeCiSummary(over: Partial<CiRunSummary> & { status?: CiStatus } = {}): CiRunSummary {
+  return {
+    id: 'run-1',
+    taskId: 't1',
+    status: 'running',
+    slotProgress: { done: 2, total: 6, phase: 'Модель работает' },
+    durationMs: 92_000,
+    modelActive: true,
+    awaitingInput: false,
+    ...over
   }
 }

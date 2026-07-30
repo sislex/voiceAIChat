@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { Task } from '@shared/projects'
-import type { CiRunSummary } from '@shared/ci'
+import { ciCardPulse, isActiveCiStatus, type CiRunSummary } from '@shared/ci'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
 
@@ -59,6 +59,10 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
     return () => document.removeEventListener('mousedown', onDown)
   }, [menuOpen])
 
+  // Состояние последнего рана: подсветка карточки и блокировка повторного запуска.
+  const pulse = ciCardPulse(ciSummary)
+  const ciActive = ciSummary != null && isActiveCiStatus(ciSummary.status)
+
   const epic = epicOf(task, props.allTasks)
   const children = props.allTasks.filter((t) => t.parentId === task.id)
   const doneChildren = children.filter((t) => props.doneColumnIds.has(t.columnId))
@@ -67,7 +71,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
 
   return (
     <div
-      className={`jcard${task.flagged ? ' jcard--flagged' : ''}${props.dragging ? ' dragging' : ''}`}
+      className={`jcard${task.flagged ? ' jcard--flagged' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${props.dragging ? ' dragging' : ''}`}
       draggable
       data-testid="task-card"
       onClick={() => props.onOpen(task.id)}
@@ -172,7 +176,10 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 {ciSummary.awaitingInput ? 'Ответить модели' : 'Лента рана'}
               </button>
             )}
-            <button className="jcard-ci-run" onClick={() => props.onStartCi?.(task.id)}>Выполнить</button>
+            {/* Пока ран идёт, запускать нечего — остаётся только лента. */}
+            {!ciActive && props.onStartCi && (
+              <button className="jcard-ci-run" onClick={() => props.onStartCi?.(task.id)}>Выполнить</button>
+            )}
           </div>
         </div>
       )}

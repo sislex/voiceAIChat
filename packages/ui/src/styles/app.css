@@ -3887,6 +3887,37 @@
 .jcard-ci-run:hover { filter: brightness(1.05); }
 .jcard-ci-open { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
 
+/* Состояние CI-рана на карточке колонки: ран идёт — медленное голубое «дыхание»,
+   модель разбирается с ошибкой — медленное красное мигание, ждёт ответа
+   пользователя — частое жёлтое, упал окончательно — частое красное, успех
+   (разработка закончена, ждёт пересборки прода) — статичная зелёная рамка. */
+.jcard--ci-running { animation: jcard-ci-blue 2.6s ease-in-out infinite; }
+.jcard--ci-fixing { animation: jcard-ci-red 2.2s ease-in-out infinite; }
+.jcard--ci-awaiting { animation: jcard-ci-yellow 0.9s ease-in-out infinite; }
+.jcard--ci-failed { animation: jcard-ci-red 0.7s ease-in-out infinite; }
+.jcard--ci-done { box-shadow: 0 0 0 2px var(--ci-success), 0 1px 2px rgba(9, 30, 66, 0.25); }
+
+@keyframes jcard-ci-blue {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(76, 154, 255, 0.3), 0 1px 2px rgba(9, 30, 66, 0.25); }
+  50% { box-shadow: 0 0 0 3px rgba(76, 154, 255, 0.95), 0 0 12px rgba(76, 154, 255, 0.55); }
+}
+@keyframes jcard-ci-red {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(222, 53, 11, 0.25), 0 1px 2px rgba(9, 30, 66, 0.25); }
+  50% { box-shadow: 0 0 0 3px rgba(222, 53, 11, 0.95), 0 0 12px rgba(222, 53, 11, 0.5); }
+}
+@keyframes jcard-ci-yellow {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 171, 0, 0.3), 0 1px 2px rgba(9, 30, 66, 0.25); }
+  50% { box-shadow: 0 0 0 3px rgba(255, 171, 0, 1), 0 0 12px rgba(255, 171, 0, 0.55); }
+}
+
+/* Без анимации подсветка остаётся, но статичной рамкой. */
+@media (prefers-reduced-motion: reduce) {
+  .jcard--ci-running, .jcard--ci-fixing, .jcard--ci-awaiting, .jcard--ci-failed { animation: none; }
+  .jcard--ci-running { box-shadow: 0 0 0 2px #4c9aff, 0 1px 2px rgba(9, 30, 66, 0.25); }
+  .jcard--ci-fixing, .jcard--ci-failed { box-shadow: 0 0 0 2px var(--ci-removed), 0 1px 2px rgba(9, 30, 66, 0.25); }
+  .jcard--ci-awaiting { box-shadow: 0 0 0 2px #ffab00, 0 1px 2px rgba(9, 30, 66, 0.25); }
+}
+
 /* Пауза рана: вопрос модели / гейт плана в ленте */
 .ci-interaction { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--ci-progress); border-radius: 6px; padding: 10px; margin: 8px 0; background: var(--ci-neutral-bg); }
 .ci-interaction-title { font-size: 13px; }

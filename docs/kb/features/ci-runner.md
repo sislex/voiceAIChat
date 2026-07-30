@@ -66,7 +66,13 @@ model_summary, `parent_step_id` для вложенных вызовов), `ci_r
 `createCiRunManager` (`ci/runManager.ts`) — процесс-глобальный менеджер по образцу
 `TurnManager`: последовательный прогон слот-за-слотом, очередь на проект + лимит
 `maxConcurrentRuns` на сервер, отмена, откат Task в `prev_column_id` при Исходе B,
-`is_cleanup`/`allow_failure`/таймаут. Exit code `66` означает dirty workspace: ран останавливается, UI требует явного подтверждения, затем `discardChangesAndRetry` выполняет `git reset --hard` + `git clean -fdx`, пишет аудит и запускает новый полный ран. Команды выполняются на машине по умолчанию
+`is_cleanup`/`allow_failure`/таймаут. Перед **любой** `is_cleanup`-командой раннер
+вставляет системный шаг «Отправить ветку задачи в origin» (`pushTaskBranch`):
+cleanup удаляет рабочую директорию вместе с коммитами модели, поэтому без пуша
+результат рана терялся безвозвратно. Скрипт идемпотентен (нет новых коммитов —
+ничего не делает), при незакоммиченных изменениях падает с кодом `69`, и тогда
+cleanup **не выполняется**: ран становится `failed`, а рабочая копия остаётся на
+машине. Модели в промпте сказано коммитить в `$BRANCH` и не пушить самой. Exit code `66` означает dirty workspace: ран останавливается, UI требует явного подтверждения, затем `discardChangesAndRetry` выполняет `git reset --hard` + `git clean -fdx`, пишет аудит и запускает новый полный ран. Команды выполняются на машине по умолчанию
 проекта через `AgentCommandExecutor` (`ci/executor.ts`) поверх нового
 `AgentRegistry.execStream` — потоковый форвард `exec.chunk` (агент не пересобирается);
 cwd/env собираются с shell-escape (пользовательский ввод — только через env, не
@@ -122,6 +128,28 @@ REST — `POST /api/ci/runs/:runId/interactions/:id`, WS — `ci.interaction`,
 можно выбрать Claude/Codex и модель (включая «По умолчанию из codex», пустой id без `-m`), затем повторить с `model_work`; подготовительные
 команды не запускаются повторно, выбранные provider/model сохраняются в ране и аудите.
 
+## Состояние задачи на доске
+
+Карточка колонки подсвечивается по последнему рану — чистые хелперы в
+`shared/src/ci.ts`, никакой логики в компоненте:
+
+- `isActiveCiStatus(status)` — `queued`/`running`/`awaiting_input`. Пока активен,
+  кнопка «Выполнить» скрыта и на карточке, и в модалке: остаётся «Лента рана» /
+  «Ответить модели».
+- `ciCardPulse(summary)` → `running` | `fixing` | `awaiting` | `failed` | `done` |
+  `null` → класс `jcard--ci-*` и анимация в `app.css`: ран идёт — голубая рамка
+  медленно «дышит» (2.6с); модель разбирается с упавшим шагом — медленное красное
+  мигание (2.2с) и снова голубое после успешного фикса; ждёт ответа пользователя —
+  частое жёлтое (0.9с); свалился окончательно — частое красное (0.7с); успех
+  (разработка закончена, ждёт пересборки прода) — статичная зелёная рамка.
+  `cancelled`/`skipped` подсветки не дают. При `prefers-reduced-motion` рамка
+  остаётся, анимация выключается.
+
+Признак «модель чинит ошибку» — флаг `CiSlotProgress.fixing`: `tryFix` поднимает
+его на входе в fix-loop (фаза «Модель исправляет ошибку») и снимает на выходе,
+доска получает это через `ci.run` и через `latestCiRunSummaries` после перезагрузки.
+Флаг транзитный: обычный `progress()` его не проставляет.
+
 ## Контракт и UI
 
 Типы — `packages/shared/src/ci.ts`; REST-пути и WS-сообщения `ci.*` — в
@@ -139,5 +167,7 @@ REST — `POST /api/ci/runs/:runId/interactions/:id`, WS — `ci.interaction`,
 разовый оверрайд режима) и `db/database.ci.test.ts` (35+ тестов): пустые слоты,
 падение слота «до» с откатом, `allow_failure`, `is_cleanup`, конкурентные раны,
 fix-loop и исчерпание попыток, вызов команды моделью, консоль read-only. UI —
-`components/ci/*.dom.test.tsx`. Гейт: `npm run -w @voicechat/server typecheck && test`;
+`components/ci/*.dom.test.tsx`, состояния карточки — `kanban/TaskCard.dom.test.tsx`
+(+ сториз `CiRunning`/`CiFixing`/`CiAwaitingInput`/`CiFailed`/`CiSuccess`) и
+`TaskModal.dom.test.tsx`; хелперы — `shared/src/ci.test.ts`. Гейт: `npm run -w @voicechat/server typecheck && test`;
 UI — `typecheck` + `@voicechat/web build`.

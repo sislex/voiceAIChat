@@ -1,12 +1,14 @@
 // Чистая логика домена CI: бюджет уточняющих вопросов и полнота списков.
 import { describe, it, expect } from 'vitest'
 import {
+  ciCardPulse,
   clarifyBudget,
   CI_CLARIFY_LEVELS,
   CI_CLARIFY_MAX_LIMIT,
   CI_RUN_MODES,
   CI_STATUSES,
   DEFAULT_CI_LLM_CONFIG,
+  isActiveCiStatus,
   isTerminalCiStatus
 } from './ci'
 
@@ -46,5 +48,50 @@ describe('списки и статусы', () => {
     expect(CI_STATUSES).toContain('awaiting_input')
     expect(isTerminalCiStatus('awaiting_input')).toBe(false)
     expect(isTerminalCiStatus('success')).toBe(true)
+  })
+})
+
+describe('isActiveCiStatus', () => {
+  it('активны очередь, работа и ожидание ответа', () => {
+    expect(isActiveCiStatus('queued')).toBe(true)
+    expect(isActiveCiStatus('running')).toBe(true)
+    expect(isActiveCiStatus('awaiting_input')).toBe(true)
+  })
+
+  it('терминальные статусы неактивны — запуск снова доступен', () => {
+    for (const s of CI_STATUSES.filter(isTerminalCiStatus)) expect(isActiveCiStatus(s)).toBe(false)
+    expect(isActiveCiStatus('skipped')).toBe(false)
+  })
+})
+
+describe('ciCardPulse', () => {
+  const sp = (fixing?: boolean): { done: number; total: number; phase: string; fixing?: boolean } =>
+    ({ done: 1, total: 4, phase: 'ф', fixing })
+
+  it('без рана подсветки нет', () => {
+    expect(ciCardPulse(null)).toBeNull()
+    expect(ciCardPulse(undefined)).toBeNull()
+  })
+
+  it('ран идёт — голубое «дыхание», а с флагом fixing — красное мигание', () => {
+    expect(ciCardPulse({ status: 'running', slotProgress: sp() })).toBe('running')
+    expect(ciCardPulse({ status: 'queued', slotProgress: sp() })).toBe('running')
+    expect(ciCardPulse({ status: 'running', slotProgress: sp(true) })).toBe('fixing')
+  })
+
+  it('ожидание ответа, падение и успех дают свои состояния', () => {
+    expect(ciCardPulse({ status: 'awaiting_input', slotProgress: sp() })).toBe('awaiting')
+    expect(ciCardPulse({ status: 'failed', slotProgress: sp() })).toBe('failed')
+    expect(ciCardPulse({ status: 'timeout', slotProgress: sp() })).toBe('failed')
+    expect(ciCardPulse({ status: 'success', slotProgress: sp() })).toBe('done')
+  })
+
+  it('ожидание ответа важнее флага fixing', () => {
+    expect(ciCardPulse({ status: 'awaiting_input', slotProgress: sp(true) })).toBe('awaiting')
+  })
+
+  it('отменённый и пропущенный ран карточку не подсвечивают', () => {
+    expect(ciCardPulse({ status: 'cancelled', slotProgress: sp() })).toBeNull()
+    expect(ciCardPulse({ status: 'skipped', slotProgress: sp() })).toBeNull()
   })
 })
