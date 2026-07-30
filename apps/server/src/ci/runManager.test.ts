@@ -116,6 +116,31 @@ describe('ci run manager', () => {
     expect(codexModel).toBe('gpt-5.4')
   })
 
+  it('DELETE ci/llm снимает переопределение задачи и возвращает наследование', async () => {
+    const { project, task } = setup()
+    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.4' })
+    await inj(admin, { method: 'PUT', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm`, payload: { provider: 'claude', model: 'haiku' } })
+    const before = await inj(admin, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm` })
+    expect(before.json()).toMatchObject({ config: { provider: 'claude', model: 'haiku' }, overridden: true })
+
+    const res = await inj(admin, { method: 'DELETE', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm` })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      config: { provider: 'codex', model: 'gpt-5.4' },
+      overridden: false,
+      projectDefault: { provider: 'codex', model: 'gpt-5.4' }
+    })
+    // настройка проекта не затронута, GET согласован с ответом DELETE
+    const after = await inj(admin, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm` })
+    expect(after.json()).toEqual(res.json())
+  })
+
+  it('DELETE ci/llm для несуществующей задачи → 404', async () => {
+    const { project } = setup()
+    const res = await inj(admin, { method: 'DELETE', url: `/api/projects/${project.id}/tasks/нет-такой/ci/llm` })
+    expect(res.statusCode).toBe(404)
+  })
+
   it('пустые слоты: ран = работа модели + резюме → success', async () => {
     const { project, task } = setup()
     const runId = await run(project.id, task.id)

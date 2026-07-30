@@ -628,6 +628,7 @@ export function createFakeCi(): FakeCi {
     putProjectCiLlm: async (_pid, config) => { projectLlm = config as typeof projectLlm; return { ...config } },
     getTaskCiLlm: async () => ({ config: { ...(taskLlm ?? projectLlm) }, overridden: taskLlm !== null, projectDefault: { ...projectLlm } }),
     putTaskCiLlm: async (_pid, _tid, config) => { taskLlm = { ...config }; return { ...config } },
+    resetTaskCiLlm: async () => { taskLlm = null; return { config: { ...projectLlm }, overridden: false, projectDefault: { ...projectLlm } } },
     getTaskCi: async () => ({ config: { beforeModel: [], afterModel: [] }, overridden: false, projectDefault: { beforeModel: [], afterModel: [] } }),
     putTaskCi: async (_pid, _tid, config) => config,
     startRun: async (projectId, taskId) => { const run = mkRun(projectId, taskId); runs.set(run.id, { run, steps: [], fixAttempts: [] }); logs.set(run.id, []); return { ...run } },
