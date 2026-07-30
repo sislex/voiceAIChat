@@ -22,7 +22,8 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   `SettingsModal`, `MachineConsole`/`MachineTerminal`/`MachineStatus`/`AgentCard`,
   `FileExplorer`, `CcObserver`/`CodexObserver`, `UsersAdmin`, `QuestionsForm`,
   `MessageActivity`, `MessageImage`, `AgentCommands`, `Markdown`.
-- `components/ui/` — примитивы без предметной логики: `Dialog` (модальное окно),
+- `components/ui/` — примитивы без предметной логики: `Button`/`IconButton`
+  (единая кнопка), `Dialog` (модальное окно),
   `useDialogStack` (стек открытых окон), `Toast`/`ToastProvider` (уведомления),
   `ConfirmDialog` + `useConfirm` (подтверждение как `await`) и `UiProviders`
   (обёртка из провайдеров тостов и подтверждений — стоит в корне `App`).
@@ -45,7 +46,18 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   анимация разворота) — не делай свою. Нужны свои кнопки в шапке — проп
   `actions`; нужно содержимому знать про разворот (зум картинки, клик по
   превью) — `children`/`actions` принимают функцию от `ToolFrameControl`.
-- **Кнопка без видимой подписи обязана иметь и `aria-label`, и `title`**: первый —
+- **Кнопка — только `Button`/`IconButton`** (`components/ui/Button.tsx`): варианты
+  `primary`/`secondary`/`ghost`/`danger`, размеры `sm`/`md`, `loading` (спиннер,
+  `aria-busy` и блокировка от двойной отправки), `fullWidth`, `iconLeft`/`iconRight`.
+  Своих `*btn`-классов больше не заводим: раньше их было тридцать, и одинаковые по
+  смыслу действия выглядели по-разному на канбане, в CI-панели и в настройках.
+  Стили — блок `.vc-btn` в `app.css`, целиком на токенах (`--accent`,
+  `--accent-fg`, `--danger`, `--danger-fg`, `--surface-hover`, `--space-*`,
+  `--radius-medium`); не хватает токена — добавь его в `:root` **и** в тёмную
+  тему, а не хардкодь цвет в правиле. Своя геометрия — модификатор рядом
+  (`.vc-btn--circle` для круглых кнопок композера), а не новый класс кнопки.
+- **Кнопка без видимой подписи — `IconButton`**, и у неё обязаны быть `aria-label`
+  и `title` (в типах оба поля обязательные — сборка падает без них): первый —
   для скринридера, второй — тултип мышью. Одного `aria-label` мало, браузер его
   не показывает. У кнопок с текстом тултип не дублируй — только когда подписи
   одинаковые и различает их лишь контекст (три «⬇ Скачать» в настройках).
@@ -81,7 +93,8 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   кнопке окна ждите `waitFor`/`findBy`.
   Логика стора — `store/voiceStore.test.ts` без DOM.
 
-Storybook: сториз примитивов — `src/components/ui/{Dialog,Toast,ConfirmDialog}.stories.tsx`,
+Storybook: сториз примитивов — `src/components/ui/{Button,Dialog,Toast,ConfirmDialog}.stories.tsx`
+(у `Button` — матрица «вариант × размер × состояние» сразу в двух темах),
 канбана — `src/components/kanban/*.stories.tsx`; провайдеры примитивов подключены
 глобальным декоратором в `.storybook/preview.tsx`;
 `npm run -w @voicechat/ui storybook` (dev, порт 6006) и `build-storybook`
