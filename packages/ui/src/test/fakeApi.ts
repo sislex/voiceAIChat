@@ -507,7 +507,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const task = tasks.find((x) => x.id === taskId)!
       const existing = conversations.find((c) => c.taskId === taskId)
       if (existing) return withCounts(existing)
-      const conv = makeConversation(task.title || 'Задача')
+      const conv = makeConversation(task.title ? `Задача ${task.title}` : 'Задача') // как на сервере
       conv.projectId = projectId
       conv.taskId = taskId
       conv.skillNames = [...task.skills]
@@ -555,6 +555,8 @@ export interface FakeCi extends RendererCiBridge {
   _emitLog(runId: string, line: CiLogLine): void
   _emitDone(run: CiRun): void
   _emitInteraction(runId: string, interaction: CiInteraction): void
+  /** Сервер дописал сообщение в чат (резюме рана). */
+  _emitChatMessage(conversationId: string, message: Message): void
   _commands: CiCommand[]
 }
 
@@ -670,6 +672,7 @@ export function createFakeCi(): FakeCi {
     onDone: (cb) => on('ci.done', cb as L),
     onSummary: (cb) => on('ci.summary', cb as L),
     onInteraction: (cb) => on('ci.interaction', cb as L),
+    onChatMessage: (cb) => on('chat.message', cb as L),
     _emitRun: (run) => { runs.set(run.id, runs.get(run.id) ?? { run, steps: [], fixAttempts: [], interactions: [] }); emit('ci.run', { runId: run.id, run }) },
     _emitStep: (runId, step) => { const d = runs.get(runId); if (d) d.steps.push(step); emit('ci.step', { runId, step }) },
     _emitLog: (runId, line) => { const l = logs.get(runId) ?? []; l.push(line); logs.set(runId, l); emit('ci.log', { runId, line }) },
@@ -682,6 +685,7 @@ export function createFakeCi(): FakeCi {
       if (d) d.interactions = list
       emit('ci.interaction', { runId, interaction })
     },
+    _emitChatMessage: (conversationId, message) => emit('chat.message', { conversationId, message }),
     _commands: commands
   }
   return bridge

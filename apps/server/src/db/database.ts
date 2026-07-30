@@ -436,6 +436,18 @@ export class VoiceChatDb {
           AND (t2.created_at < tasks.created_at OR (t2.created_at = tasks.created_at AND t2.id <= tasks.id))
       ) WHERE seq IS NULL`)
     }
+    // Связанные чаты задач раньше назывались просто заголовком карточки. Префикс
+    // ставим только тем, кого пользователь не переименовывал (имя = заголовок
+    // задачи) — чужие названия не трогаем. Повторно не срабатывает: после правки
+    // имя уже не совпадает с заголовком.
+    if (taskCols.length) {
+      this.db.exec(`
+        UPDATE conversations SET title = 'Задача ' || title
+        WHERE task_id IS NOT NULL
+          AND title NOT LIKE 'Задача %'
+          AND title = (SELECT t.title FROM tasks t WHERE t.id = conversations.task_id)
+      `)
+    }
     // Счётчик ключей задач проекта: номера не переиспользуются (как в Jira).
     if (projCols.length && !projCols.some((c) => c.name === 'task_seq')) {
       this.db.exec(`ALTER TABLE projects ADD COLUMN task_seq INTEGER NOT NULL DEFAULT 0`)
@@ -1362,6 +1374,8 @@ export class VoiceChatDb {
    * отсутствии. Новый чат привязывается к задаче (`task_id`) и её проекту:
    * машина/папка — из дефолта проекта, навыки — навыки самой карточки (`Task.skills`).
    * Идемпотентно по (userId, taskId): одна задача — не более одного чата на юзера.
+   * Имя по умолчанию — «Задача <заголовок>»: в общем списке чатов такой чат сразу
+   * отличим от обычного разговора. Дальше его можно переименовать вручную.
    */
   openOrCreateTaskChat(userId: string, projectId: string, taskId: string): Conversation | null {
     if (!this.isProjectMember(userId, projectId)) return null
@@ -1377,7 +1391,7 @@ export class VoiceChatDb {
     const workdir = rawPath !== '' ? rawPath : null
     const id = this.newId()
     const ts = this.now()
-    const title = task.title.trim() || 'Задача'
+    const title = task.title.trim() ? `Задача ${task.title.trim()}` : 'Задача'
     this.db
       .prepare(
         `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, project_id, task_id)

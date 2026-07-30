@@ -5,9 +5,9 @@
 
 import type {
   ServerMessage, CiRun, CiRunStep, CiStatus, CiSlot, CiSlotProgress, CiCommand,
-  CiRunMode, CiInteraction, CiInteractionAnswer, CiPlanDecision, QuestionSpec
+  CiRunMode, CiInteraction, CiInteractionAnswer, CiPlanDecision, QuestionSpec, Message, Task
 } from '@voicechat/shared'
-import { formatQuestionsBlock } from '@voicechat/shared'
+import { formatQuestionsBlock, issueKey } from '@voicechat/shared'
 import { isTerminalCiStatus } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiRunPrimitives } from './types.js'
@@ -26,6 +26,12 @@ export interface CiRunManagerDeps {
   postToChat?: (args: { userId: string; conversationId: string; text: string; runId: string; interactionId: string }) => string | null
   /** Дописать в чат ответ пользователя (чтобы лента и чат не расходились). */
   postAnswerToChat?: (args: { userId: string; conversationId: string; text: string }) => void
+  /**
+   * Дописать в связанный чат задачи резюме рана и вернуть сохранённое сообщение
+   * (или `null`, если чат уже удалён). Инъектируется по той же причине, что и
+   * `postToChat`: раннер не должен знать про хранилище сообщений.
+   */
+  postSummaryToChat?: (args: { userId: string; conversationId: string; text: string; runId: string }) => Message | null
   now?: () => number
   modelWork?: CiModelWorkHook
   modelSummary?: CiModelSummaryHook
@@ -768,6 +774,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       broadcast({ t: 'ci.log', runId, line }, userId)
       const upd = deps.db.updateCiRunStep(sumStep.id, { status: 'success', finishedAt: now() })!
       emitStep(upd, userId)
+      postSummaryMessage(runId, userId, project.name, task, summaryText)
       done++
     }
 
@@ -837,6 +844,21 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
   function rollbackAndFail(runId: string, userId: string, prevColumnId: string | null, _failureClass: string, status: CiStatus = 'failed'): void {
     rollbackTask(runId, userId, prevColumnId)
     finalize(runId, userId, status)
+  }
+
+  /**
+   * Резюме рана уходит отдельным сообщением в связанный чат задачи: работу
+   * обсуждают в чате, а лента рана — служебная и живёт до следующего запуска.
+   * Промах (чат удалён, резюме не сложилось) ран не роняет.
+   */
+  function postSummaryMessage(runId: string, userId: string, projectName: string, task: Task, summaryText: string): void {
+    if (!deps.postSummaryToChat) return
+    const conversationId = deps.db.getCiRunRaw(runId)?.conversationId
+    if (!conversationId) return
+    const head = `Резюме по задаче ${issueKey(projectName, task)} · ${task.title}`
+    const message = deps.postSummaryToChat({ userId, conversationId, text: `${head}\n\n${summaryText}`, runId })
+    // Открытый чат показывает резюме сразу; закрытый увидит его при открытии.
+    if (message) broadcast({ t: 'chat.message', conversationId, message }, userId)
   }
 
   function finalize(runId: string, userId: string, status: CiStatus): void {

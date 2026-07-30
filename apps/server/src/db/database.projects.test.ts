@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { VoiceChatDb } from './database.js'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 let db: VoiceChatDb
 
@@ -13,6 +16,37 @@ beforeEach(() => {
 })
 
 afterEach(() => db.close())
+
+describe('projects: миграция имён связанных чатов', () => {
+  it('старый чат задачи получает префикс «Задача », переименованный вручную — нет', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-taskchat-'))
+    const file = join(dir, 'db.sqlite')
+    const first = new VoiceChatDb(file)
+    first.createUser('alice', '', 'user')
+    const p = first.createProject('alice', { name: 'P' })
+    const col = first.getBoard('alice', p.id)!.columns[0]
+    const t1 = first.createTask('alice', p.id, { columnId: col.id, title: 'Скролл' })!
+    const t2 = first.createTask('alice', p.id, { columnId: col.id, title: 'Пагинация' })!
+    const old1 = first.openOrCreateTaskChat('alice', p.id, t1.id)!
+    const old2 = first.openOrCreateTaskChat('alice', p.id, t2.id)!
+    // Имитируем чаты, созданные до префикса: имя = заголовок задачи.
+    first.renameConversation('alice', old1.id, 'Скролл')
+    first.renameConversation('alice', old2.id, 'Мои заметки по пагинации')
+    first.close()
+
+    const migrated = new VoiceChatDb(file)
+    expect(migrated.getConversation('alice', old1.id)!.title).toBe('Задача Скролл')
+    // Пользовательское имя не трогаем.
+    expect(migrated.getConversation('alice', old2.id)!.title).toBe('Мои заметки по пагинации')
+    migrated.close()
+
+    // Повторный старт не наращивает префикс.
+    const again = new VoiceChatDb(file)
+    expect(again.getConversation('alice', old1.id)!.title).toBe('Задача Скролл')
+    again.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
 
 describe('projects: создание и членство', () => {
   it('createProject сеет владельца и дефолтные колонки', () => {
@@ -292,11 +326,12 @@ describe('projects: навыки по умолчанию и связанный �
   it('openOrCreateTaskChat: идемпотентен, привязывает задачу/проект/навыки, виден в board.chatId', () => {
     const p = db.createProject('alice', { name: 'P', defaultSkills: { epic: [], story: [], task: ['ts'] } })
     const col = db.getBoard('alice', p.id)!.columns[0]
-    const t = db.createTask('alice', p.id, { columnId: col.id, title: 'Задача X' })!
+    const t = db.createTask('alice', p.id, { columnId: col.id, title: 'Скролл в модалке' })!
     const chat = db.openOrCreateTaskChat('alice', p.id, t.id)!
     expect(chat.taskId).toBe(t.id)
     expect(chat.projectId).toBe(p.id)
-    expect(chat.title).toBe('Задача X')
+    // Имя по умолчанию — «Задача <заголовок>»: чат задачи виден в общем списке.
+    expect(chat.title).toBe('Задача Скролл в модалке')
     expect(chat.skillNames).toEqual(['ts'])
     const again = db.openOrCreateTaskChat('alice', p.id, t.id)!
     expect(again.id).toBe(chat.id) // не плодит второй чат

@@ -703,6 +703,8 @@ export interface StoreActions {
   applyCiDone(runId: string, run: CiRun, conclusion?: CiRunConclusion): void
   applyCiSummary(projectId: string, summary: CiRunSummary): void
   applyCiInteraction(runId: string, interaction: CiInteraction): void
+  /** Сообщение, дописанное сервером в чат (резюме CI-рана). */
+  applyChatMessage(conversationId: string, message: Message): void
   answerCiInteraction(runId: string, interactionId: string, answer: CiInteractionAnswer): Promise<void>
   /** Отмена всех активных таймеров пайплайна (напр. при размонтировании). */
   dispose(): void
@@ -2840,6 +2842,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       return { ...c, detail: { ...c.detail, interactions } }
     })
   }
+  /**
+   * Сервер сам дописал сообщение в чат (резюме законченного рана). Показываем
+   * только в открытом чате: в остальных оно уже сохранено и придёт с историей.
+   */
+  function applyChatMessage(conversationId: string, message: Message): void {
+    if (conversationId !== state.activeId) return
+    appendPersisted(message)
+  }
   /** Ответить на паузу рана из ленты. Ошибка 409 (ответили из чата) — не фатальна. */
   async function answerCiInteraction(runId: string, interactionId: string, answer: CiInteractionAnswer): Promise<void> {
     // Пауза гасится сразу, даже если запрос упал с 409 (ответили из другого места).
@@ -3174,6 +3184,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applyCiDone,
       applyCiSummary,
       applyCiInteraction,
+      applyChatMessage,
       answerCiInteraction,
       ensureTaskChat,
       loadTaskChatContext,

@@ -36,6 +36,12 @@ describe('контракт протокола', () => {
   })
 })
 
+describe('сообщения, дописанные сервером в чат', () => {
+  it('содержит chat.message (резюме CI-рана в связанном чате)', () => {
+    expect(SERVER_MESSAGE_TYPES).toContain('chat.message')
+  })
+})
+
 describe('ходы, переживающие reconnect', () => {
   it('содержит claude.active (снапшот активных ходов) и адресный claude.cancel', () => {
     expect(SERVER_MESSAGE_TYPES).toContain('claude.active')

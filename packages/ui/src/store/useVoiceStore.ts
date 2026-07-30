@@ -170,6 +170,7 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
       unsubs.push(ci.onDone((m) => store.actions.applyCiDone(m.runId, m.run, m.conclusion)))
       unsubs.push(ci.onSummary((m) => store.actions.applyCiSummary(m.projectId, m.summary)))
       unsubs.push(ci.onInteraction((m) => store.actions.applyCiInteraction(m.runId, m.interaction)))
+      unsubs.push(ci.onChatMessage((m) => store.actions.applyChatMessage(m.conversationId, m.message)))
     }
     if (typeof window !== 'undefined' && window.tts) {
       unsubs.push(
