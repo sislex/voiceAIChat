@@ -46,8 +46,7 @@ export interface AppProps {
 const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users', 'ci']
 
 export default function App({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
-  const { state, actions } = useVoiceStore({ api, now, delays })
-  // Hash-роутинг раздела «Проекты»: URL — источник навигации (см. useHashRoute).
+  // Hash-роутинг: URL — источник навигации (см. useHashRoute).
   const { segments, navigate } = useHashRoute()
   const inProjects = segments[0] === 'projects'
   const routeProjectId = inProjects ? (segments[1] ?? null) : null
@@ -57,6 +56,11 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   // Утилиты-страницы: один сегмент из белого списка (#/machines, #/kb, …).
   const utilitySeg = segments.length === 1 && UTILITY_PAGES.includes(segments[0]) ? segments[0] : null
   const onUtilityPage = utilitySeg !== null
+  // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
+  // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
+  const routeChatId = segments[0] === 'chat' ? (segments[1] ?? null) : null
+  const inChat = !inProjects && !onUtilityPage
+  const { state, actions } = useVoiceStore({ api, now, delays, initialChatId: routeChatId })
   const authed = !state.authRequired || Boolean(state.currentUser)
   // Мобильный режим: выдвинут ли сайдбар (на десктопе класс side--open не влияет).
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -87,6 +91,38 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
       else if (v === 'listening') actions.stopVoice()
     }
   })
+
+  // Маршрут ↔ активный чат. Одна точка синхронизации, чтобы стороны не тянули
+  // адрес друг у друга: syncedChatId — последний согласованный id. Изменился
+  // адрес (клик по чату, «Назад», ссылка извне) — грузим чат из адреса;
+  // изменился активный чат в сторе (создание, удаление, resume, автосоздание
+  // первой репликой) — переписываем адрес без новой записи в истории.
+  const syncedChatId = useRef<string | null>(routeChatId)
+  useEffect(() => {
+    if (!authed || !inChat) return
+    if (routeChatId && routeChatId !== syncedChatId.current) {
+      syncedChatId.current = routeChatId
+      if (routeChatId === state.activeId) return // стор уже открыл этот чат
+      const fallback = state.activeId
+      void actions.selectConversation(routeChatId).then((ok) => {
+        if (ok || syncedChatId.current !== routeChatId) return
+        // Чата нет (удалён или чужой) — возвращаемся к прежнему.
+        syncedChatId.current = fallback
+        if (fallback) {
+          void actions.selectConversation(fallback)
+          navigate(`/chat/${fallback}`, { replace: true })
+        } else {
+          navigate('/', { replace: true })
+        }
+      })
+      return
+    }
+    if (state.activeId && (routeChatId === null || state.activeId !== syncedChatId.current)) {
+      syncedChatId.current = state.activeId
+      navigate(`/chat/${state.activeId}`, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, inChat, routeChatId, state.activeId])
 
   // URL → данные стора: вход/выход в раздел «Проекты», загрузка доски и
   // оверлея настроек. Навигацию делают клики (navigate), данные грузятся тут.
@@ -243,14 +279,12 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         ]}
         now={now ? now() : Date.now()}
         onNew={() => {
-          void actions.newConversation()
           setSidebarOpen(false)
-          if (inProjects) navigate('/')
+          void actions.newConversation().then((id) => navigate(`/chat/${id}`))
         }}
         onPick={(id) => {
-          void actions.selectConversation(id)
           setSidebarOpen(false)
-          if (inProjects) navigate('/')
+          navigate(`/chat/${id}`)
         }}
         onDelete={actions.deleteConversation}
         onRename={actions.renameConversation}
@@ -418,7 +452,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onUpdateTask={(taskId, fields) => void actions.updateTask(taskId, fields)}
           onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
           onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
-          onOpenChat={(taskId) => void actions.openTaskChat(taskId).then(() => navigate('/'))}
+          onOpenChat={(taskId) => void actions.openTaskChat(taskId).then((id) => navigate(id ? `/chat/${id}` : '/'))}
           onEnsureChat={(taskId) => void actions.ensureTaskChat(taskId)}
           ciSummaries={state.ciSummaries}
           onStartCi={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId).then((run) => { if (run) actions.openCiRun(run.id) }) }}
@@ -473,7 +507,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
               usage: state.ccUsage,
               onSelectProject: actions.selectCcProject,
               onSelectSession: actions.selectCcSession,
-              onResumeSession: (slug, id) => void actions.resumeCcSession(slug, id)
+              onResumeSession: (slug, id) =>
+                void actions.resumeCcSession(slug, id).then((cid) => navigate(cid ? `/chat/${cid}` : '/'))
             }}
             codex={{
               projects: state.cxProjects,
@@ -484,7 +519,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
               usage: state.cxUsage,
               onSelectProject: actions.selectCxProject,
               onSelectSession: actions.selectCxSession,
-              onResumeSession: (id) => void actions.resumeCxSession(id)
+              onResumeSession: (id) =>
+                void actions.resumeCxSession(id).then((cid) => navigate(cid ? `/chat/${cid}` : '/'))
             }}
           />
         )

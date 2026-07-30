@@ -21,8 +21,15 @@ export interface UseVoiceStore {
  * по умолчанию из окружения (window.audio / enumerateDevices / window.stt);
  * в тестах их можно переопределить через deps.
  */
-export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
+export interface UseVoiceStoreDeps extends StoreDeps {
+  /** Чат из адреса (#/chat/:id) на момент монтирования — открыть его первым. */
+  initialChatId?: string | null
+}
+
+export function useVoiceStore(deps: UseVoiceStoreDeps): UseVoiceStore {
   const storeRef = useRef<ReturnType<typeof createVoiceStore>>()
+  // Адрес читаем один раз: дальше выбором чата рулит маршрут (App.tsx).
+  const initialChatId = useRef(deps.initialChatId ?? null)
   if (!storeRef.current) {
     const hasStt = typeof window !== 'undefined' && !!window.stt
     const hasClaude = typeof window !== 'undefined' && !!window.claude
@@ -113,7 +120,7 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
   const state = useSyncExternalStore(store.subscribe, store.getState)
 
   useEffect(() => {
-    void store.actions.init()
+    void store.actions.init(initialChatId.current)
 
     const unsubs: Array<() => void> = []
     if (typeof window !== 'undefined' && window.stt) {

@@ -53,6 +53,23 @@ describe('voiceStore — проекты и доска', () => {
   })
 
 
+  it('ссылка на чат другого проекта переключает фильтр сайдбара', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const p1 = store.getState().projectDetail!.id
+    await store.actions.setSidebarProject(p1)
+    const inP1 = await store.actions.newConversation() // чат создаётся в выбранном проекте
+    await store.actions.setSidebarProject(null)
+    expect(store.getState().conversations.some((c) => c.id === inP1)).toBe(false)
+
+    const ok = await store.actions.selectConversation(inP1)
+
+    expect(ok).toBe(true)
+    expect(store.getState().activeId).toBe(inP1)
+    expect(store.getState().sidebarProjectId).toBe(p1)
+    expect(store.getState().conversations.some((c) => c.id === inP1)).toBe(true)
+  })
+
   it('createColumn и createTask отражаются в board', async () => {
 
     const { store } = makeStore()
