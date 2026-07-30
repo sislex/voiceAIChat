@@ -294,6 +294,18 @@ describe('work items + feature runs', () => {
     expect(reused.id).toBe(slot.id)
   })
 
+  it('чат с незавершённой Feature всё равно удаляется (Feature Run убран)', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const ready = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'ready')!
+    const task = db.createTask('alice', p.id, { columnId: ready.id, title: 'Feature task' })!
+    const feature = db.createFeatureFromTask('alice', p.id, task.id, {})!
+    expect(feature.status).not.toBe('completed')
+    db.deleteConversation('alice', feature.conversationId!)
+    expect(db.getConversation('alice', feature.conversationId!)).toBeNull()
+    // Сама Feature жива, ссылка на чат обнулена (ON DELETE SET NULL).
+    expect(db.getFeature('alice', feature.id)!.conversationId).toBeNull()
+  })
+
   it('атомарно резервирует разные repository slots для параллельных фич', () => {
     const p = db.createProject('alice', { name: 'P' })
     const agent = db.createAgent('alice', 'M')

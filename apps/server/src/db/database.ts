@@ -46,6 +46,7 @@ import {
   type CiCommandScope,
   type CiSlot,
   type CiSlotConfig,
+  type CiLlmConfig,
   type CiGlobalSettings,
   DEFAULT_CI_GLOBAL_SETTINGS,
   type CiRun,
@@ -762,17 +763,10 @@ export class VoiceChatDb {
   }
 
   deleteConversation(userId: string, id: string): void {
-    const activeFeature = this.db.prepare(
-      `SELECT f.id FROM features f
-       JOIN conversations c ON c.id = f.conversation_id
-       WHERE c.id = ? AND c.user_id = ?
-         AND f.status NOT IN ('completed', 'cancelled', 'failed')
-       LIMIT 1`
-    ).get(id, userId) as { id: string } | undefined
-    if (activeFeature) {
-      throw new Error('Этот чат связан с активной Feature. Сначала завершите или отмените Feature')
-    }
-    // ON DELETE CASCADE удалит сообщения и спикеров; завершённая Feature сохранится с conversation_id=NULL.
+    // Раньше здесь была блокировка «чат связан с активной Feature». После замены
+    // Feature Run на CI-воркфлоу переводить `features` в терминальный статус некому:
+    // старые строки висли бы в 'development' вечно и навсегда запрещали удаление чата (409).
+    // ON DELETE CASCADE удалит сообщения и спикеров; Feature сохранится с conversation_id=NULL.
     this.db.prepare(`DELETE FROM conversations WHERE id = ? AND user_id = ?`).run(id, userId)
   }
 
@@ -2210,6 +2204,29 @@ export class VoiceChatDb {
   resolveTaskSlots(projectId: string, taskId: string): CiSlotConfig {
     if (this.hasCiSlotConfig('task', taskId)) return this.getCiSlotConfig('task', taskId)
     return this.getCiSlotConfig('project', projectId)
+  }
+
+  getCiLlmConfig(ownerType: 'project' | 'task', ownerId: string): CiLlmConfig | null {
+    const row = this.db.prepare(`SELECT provider, model FROM ci_llm_configs WHERE owner_type = ? AND owner_id = ?`).get(ownerType, ownerId) as { provider: string; model: string } | undefined
+    if (!row) return null
+    return { provider: row.provider === 'codex' ? 'codex' : 'claude', model: row.model }
+  }
+
+  setCiLlmConfig(ownerType: 'project' | 'task', ownerId: string, config: CiLlmConfig): CiLlmConfig {
+    const provider = config.provider === 'codex' ? 'codex' : 'claude'
+    const model = config.model.trim() || (provider === 'codex' ? 'gpt-5.4' : 'sonnet')
+    this.db.prepare(`INSERT INTO ci_llm_configs (owner_type, owner_id, provider, model) VALUES (?, ?, ?, ?) ON CONFLICT(owner_type, owner_id) DO UPDATE SET provider=excluded.provider, model=excluded.model`).run(ownerType, ownerId, provider, model)
+    return { provider, model }
+  }
+
+  resolveTaskLlmConfig(projectId: string, taskId: string): CiLlmConfig {
+    return this.getCiLlmConfig('task', taskId) ?? this.getCiLlmConfig('project', projectId) ?? { provider: 'claude', model: 'sonnet' }
+  }
+
+  /** Найти системную колонку проекта для автоматического перехода CI. */
+  getColumnIdBySemantic(projectId: string, semanticType: KanbanColumnSemanticType): string | null {
+    const row = this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = ? ORDER BY position LIMIT 1`).get(projectId, semanticType) as { id: string } | undefined
+    return row?.id ?? null
   }
 
   /** Публичный доступ к задаче для CI-раннера (по членству проекта). */
