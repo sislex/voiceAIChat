@@ -196,7 +196,7 @@ describe('TaskModal — мобильная раскладка (как в Jira)',
 
     fireEvent.click(screen.getByLabelText('Действия с задачей'))
     fireEvent.click(screen.getByRole('button', { name: /Удалить задачу/ }))
-    // Своё окно подтверждения, а не window.confirm: его видно и по нему кликают.
+    // Своё окно подтверждения, а не нативный диалог: его видно и по нему кликают.
     const dialog = await screen.findByTestId('confirm-dialog')
     expect(within(dialog).getByRole('heading', { name: 'Удалить «Задача A»?' })).toBeInTheDocument()
     expect(onDelete).not.toHaveBeenCalled()
