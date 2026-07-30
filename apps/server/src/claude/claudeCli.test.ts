@@ -116,6 +116,8 @@ describe('ClaudeCli', () => {
     expect(args[args.indexOf('--disallowedTools') + 1]).toBe('Bash')
     expect(args[args.indexOf('--allowedTools') + 1]).toBe('mcp__remote__bash')
     expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('Мак')
+    // Долгие команды (тесты/сборка) не должны срезаться дефолтным таймаутом моста.
+    expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('timeout_ms')
 
     const { child: c2 } = fakeChild()
     const spawn2 = vi.fn(() => c2 as never) as unknown as SpawnFn
