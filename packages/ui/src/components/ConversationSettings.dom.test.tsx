@@ -96,7 +96,7 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conv} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Режим разговора' }), { target: { value: 'bypassPermissions' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    // Предупреждение дословно то же, что было в window.confirm.
+    // Предупреждение дословно то же, что было в нативном диалоге.
     const dialog = await screen.findByTestId('confirm-dialog')
     expect(within(dialog).getByText('Перейти из планирования в «Полный доступ»? Агент сможет выполнять команды и изменять любые доступные файлы.')).toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }))

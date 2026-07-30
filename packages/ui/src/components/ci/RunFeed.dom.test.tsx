@@ -74,7 +74,7 @@ describe('RunFeed', () => {
     render(<RunFeed {...baseProps(cache)} onDiscardAndRetry={onDiscardAndRetry} />)
     fireEvent.click(screen.getByRole('button', { name: 'Откатить изменения и начать заново' }))
     const dialog = await screen.findByTestId('confirm-dialog')
-    // Предупреждение дословно то же, что было в window.confirm.
+    // Предупреждение дословно то же, что было в нативном диалоге.
     expect(within(dialog).getByText('Все незакоммиченные и неотслеживаемые файлы в рабочем репозитории будут удалены. Продолжить?')).toBeInTheDocument()
     // Необратимо: пока слово не набрано, подтвердить нельзя.
     const ok = within(dialog).getByRole('button', { name: 'Откатить и начать заново' })
