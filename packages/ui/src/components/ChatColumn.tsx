@@ -22,6 +22,8 @@ import {
 } from '../lib/view'
 import { Dots } from './animations'
 import { QuestionsForm } from './QuestionsForm'
+import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
 import { MessageMeta } from './MessageMeta'
 import {
   MessageTimeline,
@@ -338,14 +340,14 @@ export function ChatColumn({
           <span className="badge">{statusBadge(state, aiLabel)}</span>
           {onExport && messages.length > 0 && (
             <span className="exportwrap">
-              <button
-                className="exportbtn"
+              <IconButton size="sm" variant="secondary"
+                
                 aria-label="Экспорт разговора"
                 title="Экспорт разговора"
                 onClick={() => setExportOpen((v) => !v)}
               >
                 ⇩
-              </button>
+              </IconButton>
               {exportOpen && (
                 <span className="exportmenu" data-testid="export-menu">
                   <button
@@ -545,33 +547,33 @@ export function ChatColumn({
                     )}
                     {isAi && m.meta && <MessageMeta meta={m.meta} />}
                     {isAi && m.meta?.activity && m.meta.activity.length > 0 && (
-                      <button
-                        className="msgbtn actbtn"
+                      <Button variant="ghost" size="sm" className="msgact-mode"
+                        
                         aria-label="Переключить вид действий"
                         title={`Вид: ${TIMELINE_MODE_LABEL[modeOf(m.id)]}`}
                         onClick={() => cycleMode(m.id)}
                       >
                         {timelineModeButtonLabel(modeOf(m.id))}
-                      </button>
+                      </Button>
                     )}
                     {isAi && (
-                      <button
-                        className="msgbtn"
+                      <IconButton size="sm"
+                        
                         aria-label="Копировать ответ"
                         title="Копировать ответ"
                         onClick={() => copyMessage(m)}
                       >
                         {copiedId === m.id ? '✓' : '📋'}
-                      </button>
+                      </IconButton>
                     )}
                     {isAi && isLast && m.meta?.request?.permissionMode === 'plan' && onExecutePlan && canExecutePlan && state === 'idle' && (
-                      <button className="execute-plan" onClick={() => onExecutePlan(m.id)}>
+                      <Button size="sm" className="execute-plan" onClick={() => onExecutePlan(m.id)}>
                         Выполнить план
-                      </button>
+                      </Button>
                     )}
                     {isAi && canSpeak && onSpeakMessage && (
-                      <button
-                        className="speakbtn"
+                      <IconButton size="sm"
+                        
                         aria-label={
                           speakingMessageId === m.id ? 'Остановить озвучку' : 'Озвучить ответ'
                         }
@@ -579,27 +581,27 @@ export function ChatColumn({
                         onClick={() => onSpeakMessage(m.id, aiText)}
                       >
                         {speakingMessageId === m.id ? '⏹' : '🔊'}
-                      </button>
+                      </IconButton>
                     )}
                     {!isAi && canEdit && onEditMessage && (
-                      <button
-                        className="msgbtn"
+                      <IconButton size="sm"
+                        
                         aria-label="Изменить сообщение"
                         title="Изменить и переспросить"
                         onClick={() => startEdit(m)}
                       >
                         ✏️
-                      </button>
+                      </IconButton>
                     )}
                     {onDeleteMessage && (
-                      <button
-                        className="msgbtn"
+                      <IconButton size="sm"
+                        
                         aria-label="Удалить сообщение"
                         title="Удалить из истории"
                         onClick={() => onDeleteMessage(m.id)}
                       >
                         🗑
-                      </button>
+                      </IconButton>
                     )}
                   </div>
                 )}
@@ -656,14 +658,14 @@ export function ChatColumn({
                 </span>
               )}
               {liveActivity.length > 0 && (
-                <button
-                  className="msgbtn actbtn"
+                <Button variant="ghost" size="sm" className="msgact-mode"
+                  
                   aria-label="Переключить вид действий"
                   title={`Вид: ${TIMELINE_MODE_LABEL[liveMode]}`}
                   onClick={cycleLiveMode}
                 >
                   {timelineModeButtonLabel(liveMode)}
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -718,14 +720,14 @@ export function ChatColumn({
                     </span>
                   )}
                   {liveActivity.length > 0 && (
-                    <button
-                      className="msgbtn actbtn actbtn--stream"
+                    <Button variant="ghost" size="sm" className="msgact-mode msgact-mode--stream"
+                      
                       aria-label="Переключить вид действий"
                       title={`Вид: ${TIMELINE_MODE_LABEL[liveMode]}`}
                       onClick={cycleLiveMode}
                     >
                       {timelineModeButtonLabel(liveMode)}
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>

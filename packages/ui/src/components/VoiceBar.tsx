@@ -2,8 +2,9 @@ import { useEffect, useRef, type ClipboardEvent, type DragEvent, type KeyboardEv
 import type { ModifierPrompt, PermissionMode, VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import { useAutoGrow } from '../lib/autoGrow'
-import { ACCENT, chipClass, speakerName, statusLine } from '../lib/view'
+import { chipClass, speakerName, statusLine } from '../lib/view'
 import { WaveBars, Dots } from './animations'
+import { IconButton } from './ui/IconButton'
 import { MicIcon, SendIcon, StopIcon, WandIcon } from './icons'
 import { PromptBuilder, type GenerateParams, type Suggestion } from './prompt-builder/PromptBuilder'
 import { applyNativeInputValue, useAiAssist } from './prompt-builder/useAiAssist'
@@ -249,68 +250,72 @@ export function VoiceBar({
                 aria-hidden="true"
               />
               {aiAssistEnabled && (
-                <button className="attachbtn wandbtn" {...aiAssist.triggerProps}><WandIcon /></button>
+                <IconButton className="vc-btn--circle composer-wand" size="sm" {...aiAssist.triggerProps}><WandIcon /></IconButton>
               )}
               {canSuggest && (
-                <button
-                  className={`attachbtn wandbtn${helper.open ? ' active' : ''}`}
+                <IconButton
+                  className="vc-btn--circle composer-wand"
+                  size="sm"
                   onClick={() => (helper.open ? onClosePromptSuggestions?.() : onSuggestPrompts?.())}
-                  disabled={helper.loading}
+                  loading={helper.loading}
                   aria-expanded={helper.open}
                   title="Подсказать формулировку"
                   aria-label="Подсказать формулировку запроса"
                 >
                   <WandIcon />
-                </button>
+                </IconButton>
               )}
-              <button
-                className="attachbtn"
+              <IconButton
+                className="vc-btn--circle"
+                size="sm"
                 onClick={() => fileRef.current?.click()}
                 title="Прикрепить файл"
                 aria-label="Прикрепить файл"
               >
                 📎
-              </button>
+              </IconButton>
               {isIdle ? (
                 canSend ? (
-                  <button
-                    className="micbtn sendbtn"
-                    style={{ background: ACCENT }}
+                  <IconButton
+                    className="vc-btn--circle"
+                    variant="primary"
                     onClick={onSubmitText}
                     title="Отправить сообщение"
                     aria-label="Отправить сообщение"
                   >
                     <SendIcon />
-                  </button>
+                  </IconButton>
                 ) : voiceInputEnabled ? (
-                  <button
-                    className="micbtn"
-                    style={{ background: ACCENT }}
+                  <IconButton
+                    className="vc-btn--circle"
+                    variant="primary"
                     onClick={onStartVoice}
                     title="Говорить"
                     aria-label="Говорить"
                   >
                     <MicIcon />
-                  </button>
+                  </IconButton>
                 ) : null
               ) : (
                 <>
-                  <button
-                    className="micbtn sendbtn"
+                  <IconButton
+                    className="vc-btn--circle"
+                    variant="primary"
                     disabled
                     title="Дождитесь завершения ответа, затем отправьте"
                     aria-label="Отправить сообщение"
                   >
                     <SendIcon />
-                  </button>
-                  <button
-                    className="stopbtn"
+                  </IconButton>
+                  <IconButton
+                    className="vc-btn--circle"
+                    variant="danger"
                     onClick={isSpeaking ? onStopSpeak : onCancelRequest}
                     title={isSpeaking ? 'Остановить озвучку' : 'Остановить запрос'}
                     aria-label={isSpeaking ? 'Остановить озвучку' : 'Остановить запрос'}
                   >
                     <StopIcon />
-                  </button>
+                  </IconButton>
                 </>
               )}
             </>
@@ -321,14 +326,15 @@ export function VoiceBar({
               <div className="wavewrap" data-testid="wave">
                 <WaveBars />
               </div>
-              <button
-                className="stopbtn"
+              <IconButton
+                className="vc-btn--circle"
+                variant="danger"
                 onClick={onStopVoice}
                 title="Готово"
                 aria-label="Остановить запись"
               >
                 <StopIcon />
-              </button>
+              </IconButton>
             </>
           )}
 
@@ -340,14 +346,15 @@ export function VoiceBar({
                   Запрос отправлен движку {aiLabel}…
                 </span>
               </div>
-              <button
-                className="stopbtn"
+              <IconButton
+                className="vc-btn--circle"
+                variant="danger"
                 onClick={onCancelRequest}
                 title="Остановить запрос"
                 aria-label="Остановить запрос"
               >
                 <StopIcon />
-              </button>
+              </IconButton>
             </>
           )}
 

@@ -13,6 +13,7 @@ import type { ServerFileInfo } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { copyImage } from '../lib/clipboard'
 import { Dots } from './animations'
+import { IconButton } from './ui/IconButton'
 import { ToolFrame, type ToolFrameControl } from './ToolFrame'
 import type { MachineOps, UtilityVariant } from './machine'
 
@@ -203,27 +204,27 @@ export function MessageImage({
   const actions = (
     <>
       {agentId && onOpenInExplorer && (
-        <button
-          className="xbtn"
+        <IconButton size="sm"
+          
           title="Показать в проводнике"
           aria-label="Показать картинку в проводнике"
           onClick={() => onOpenInExplorer(agentId, image.path)}
         >
           📂
-        </button>
+        </IconButton>
       )}
-      <button className="xbtn" title="Скачать" aria-label="Скачать картинку" disabled={!ready} onClick={download}>
+      <IconButton size="sm" title="Скачать" aria-label="Скачать картинку" disabled={!ready} onClick={download}>
         ⬇
-      </button>
-      <button
-        className="xbtn"
+      </IconButton>
+      <IconButton size="sm"
+        
         title={copied === 'fail' ? 'Не удалось скопировать' : 'Копировать картинку'}
         aria-label="Копировать картинку"
         disabled={!ready}
         onClick={copy}
       >
         {copied === 'ok' ? '✓' : copied === 'fail' ? '✕' : '⧉'}
-      </button>
+      </IconButton>
     </>
   )
 
