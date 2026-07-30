@@ -11,6 +11,7 @@ import type { CiMetrics } from '../../remote/ciBridge'
 import { ciStatusIcon, ciStatusLabel, ciTone, fmtDuration } from './ciFormat'
 import { CiConsole } from './CiConsole'
 import { QuestionsForm } from '../QuestionsForm'
+import { Button } from '../ui/Button'
 import { useConfirm } from '../ui/useConfirm'
 
 export interface RunFeedCache {
@@ -187,16 +188,16 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
                     {(modelProvider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                   </select>
                 </label>
-                <button className="ci-btn" disabled={!props.onRetryFromStep || (modelProvider === 'claude' && !modelName)} onClick={() => props.onRetryFromStep?.(runId, { provider: modelProvider, model: modelName })}>
+                <Button disabled={!props.onRetryFromStep || (modelProvider === 'claude' && !modelName)} onClick={() => props.onRetryFromStep?.(runId, { provider: modelProvider, model: modelName })}>
                   Повторить работу модели
-                </button>
+                </Button>
               </div>
             )}
             {step.kind === 'command' && step.status === 'failed' && step.exitCode === 66 && run?.status === 'failed' && (
               <div className="ci-model-retry" data-testid="ci-dirty-workspace">
                 <strong>В рабочем репозитории есть локальные изменения.</strong>
                 <span>Можно сохранить их для диагностики или безвозвратно откатить и начать workflow заново.</span>
-                <button className="ci-btn" disabled={!props.onDiscardAndRetry} onClick={() => {
+                <Button disabled={!props.onDiscardAndRetry} onClick={() => {
                   // Файлы уходят безвозвратно — просим набрать слово, а не просто «ОК».
                   void confirm({
                     title: 'Откатить изменения и начать заново?',
@@ -209,7 +210,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
                   })
                 }}>
                   Откатить изменения и начать заново
-                </button>
+                </Button>
               </div>
             )}
             {topSteps.childrenOf(step.id).length > 0 && (
@@ -234,11 +235,11 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
         {run && run.durationMs != null && <span className="ci-step-dur">{fmtDuration(run.durationMs)}</span>}
         <div className="ci-runfeed-actions">
           <label className="ci-mode-indicator"><input type="checkbox" checked={autoscroll} onChange={(e) => setAutoscroll(e.target.checked)} /> автоскролл</label>
-          {running && <button className="ci-btn" onClick={() => props.onCancel(runId)}>Отменить</button>}
-          <button className="ci-btn" onClick={() => props.onRetry(runId)}>Повторить весь воркфлоу</button>
-          <button className="ci-btn" onClick={() => (props.onRetryFromStep ?? props.onRetry)(runId)} disabled={running} title="Перезапустить упавший шаг и всё после него в этом же ране">Повторить с упавшего шага</button>
-          <button className="ci-btn" onClick={() => download(`ci-run-${runId}.log`, logText())}>Скачать лог</button>
-          <button className="ci-btn" onClick={() => setConsoleOpen(true)}>Консоль</button>
+          {running && <Button onClick={() => props.onCancel(runId)}>Отменить</Button>}
+          <Button onClick={() => props.onRetry(runId)}>Повторить весь воркфлоу</Button>
+          <Button onClick={() => (props.onRetryFromStep ?? props.onRetry)(runId)} disabled={running} title="Перезапустить упавший шаг и всё после него в этом же ране">Повторить с упавшего шага</Button>
+          <Button onClick={() => download(`ci-run-${runId}.log`, logText())}>Скачать лог</Button>
+          <Button onClick={() => setConsoleOpen(true)}>Консоль</Button>
         </div>
       </div>
 
@@ -309,12 +310,12 @@ function InteractionCard(props: {
               onChange={(e) => setComment(e.target.value)}
             />
             <div className="ci-interaction-actions">
-              <button className="btn-primary" disabled={props.disabled} onClick={() => props.onAnswer({ decision: 'approved', text: comment })}>
+              <Button variant="primary" disabled={props.disabled} onClick={() => props.onAnswer({ decision: 'approved', text: comment })}>
                 Одобрить и разрабатывать
-              </button>
-              <button className="ci-btn" disabled={props.disabled} onClick={() => props.onAnswer({ decision: 'rework', text: comment })}>
+              </Button>
+              <Button disabled={props.disabled} onClick={() => props.onAnswer({ decision: 'rework', text: comment })}>
                 На доработку
-              </button>
+              </Button>
             </div>
           </>
         ) : (
