@@ -320,10 +320,30 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ciMcpBaseUrl: `http://127.0.0.1:${opts.config.port}${CI_COMMANDS_MCP_PATH}?k=${mcpSecret}`,
     agentNameOf: (agentId) => agentRegistry.nameOf(agentId)
   })
+  // Вопросы модели дублируются в связанный чат задачи обычными сообщениями:
+  // UI разбирает блок ```questions тем же парсером, что и вопросы в чате.
+  const ciChatTime = (): string => {
+    const d = new Date()
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
   const ciRunManager = createCiRunManager({
     db,
     executor: ciExecutor,
     boardChanged: (projectId) => boardHub.emit(projectId),
+    postToChat: ({ userId, conversationId, text, runId, interactionId }) => {
+      try {
+        return db.addMessage(userId, conversationId, 'ai', text, ciChatTime(), undefined, { ciInteraction: { runId, interactionId } }).id
+      } catch {
+        return null
+      }
+    },
+    postAnswerToChat: ({ userId, conversationId, text }) => {
+      try {
+        db.addMessage(userId, conversationId, 'u1', text, ciChatTime())
+      } catch {
+        /* чат мог быть удалён — не роняем ответ на вопрос */
+      }
+    },
     modelWork: ciModelHooks.modelWork,
     modelSummary: ciModelHooks.modelSummary,
     attemptFix: ciModelHooks.attemptFix

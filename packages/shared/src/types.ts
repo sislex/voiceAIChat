@@ -259,6 +259,11 @@ export interface TurnMeta extends TurnUsage {
    * набранная к этому моменту часть ответа.
    */
   interrupted?: boolean
+  /**
+   * Сообщение не является ответом хода, а продублированный в чат вопрос
+   * CI-рана: ответ на него уходит в ран, а не запускает новый ход чата.
+   */
+  ciInteraction?: { runId: string; interactionId: string }
 }
 
 /**

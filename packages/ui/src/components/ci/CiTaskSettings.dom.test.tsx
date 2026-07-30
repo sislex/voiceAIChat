@@ -15,6 +15,34 @@ describe('CiTaskSettings', () => {
     await waitFor(() => expect(screen.getByText('переопределено')).toBeInTheDocument())
   })
 
+  it('режим и глубина уточнений сохраняются вместе с моделью', async () => {
+    render(<CiTaskSettings projectId="p1" taskId="t1" />)
+    await waitFor(() => expect(screen.getByLabelText('Режим запуска')).toHaveValue('development'))
+    // Число вопросов появляется только у «детального уточнения».
+    expect(screen.queryByLabelText('Число вопросов')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Режим запуска'), { target: { value: 'plan' } })
+    expect(screen.getByText(/дождётся одобрения/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Степень уточнения'), { target: { value: 'detailed' } })
+    fireEvent.change(await screen.findByLabelText('Число вопросов'), { target: { value: '12' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить движок и модель' }))
+
+    await waitFor(() => expect(screen.getByText('переопределено')).toBeInTheDocument())
+    const saved = await window.ci!.getTaskCiLlm('p1', 't1')
+    expect(saved.config).toMatchObject({ mode: 'plan', clarifyLevel: 'detailed', clarifyMax: 12 })
+  })
+
+  it('число вопросов зажимается в 1..30', async () => {
+    render(<CiTaskSettings projectId="p1" taskId="t1" />)
+    await waitFor(() => expect(screen.getByLabelText('Степень уточнения')).toHaveValue('few'))
+    fireEvent.change(screen.getByLabelText('Степень уточнения'), { target: { value: 'detailed' } })
+    const input = await screen.findByLabelText('Число вопросов')
+    fireEvent.change(input, { target: { value: '99' } })
+    expect(input).toHaveValue(30)
+    fireEvent.change(input, { target: { value: '0' } })
+    expect(input).toHaveValue(1)
+  })
+
   it('возвращает настройку проекта: кнопка сброса видна только при переопределении', async () => {
     render(<CiTaskSettings projectId="p1" taskId="t1" />)
     await waitFor(() => expect(screen.getByLabelText('Движок модели')).toHaveValue('claude'))

@@ -3,7 +3,11 @@
 // отмена, откат задачи при Исходе B, снапшот для восстановления после reconnect.
 // Работа модели и fix-loop подключаются хуками (реальная реализация — в Срезе 4).
 
-import type { ServerMessage, CiRun, CiRunStep, CiStatus, CiSlot, CiSlotProgress, CiCommand } from '@voicechat/shared'
+import type {
+  ServerMessage, CiRun, CiRunStep, CiStatus, CiSlot, CiSlotProgress, CiCommand,
+  CiRunMode, CiInteraction, CiInteractionAnswer, CiPlanDecision, QuestionSpec
+} from '@voicechat/shared'
+import { formatQuestionsBlock } from '@voicechat/shared'
 import { isTerminalCiStatus } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiRunPrimitives } from './types.js'
@@ -15,6 +19,13 @@ export interface CiRunManagerDeps {
   executor: CommandExecutor
   /** Дёрнуть обновление доски (сводка рана на карточке). */
   boardChanged: (projectId: string) => void
+  /**
+   * Продублировать вопрос/план в связанный чат задачи и вернуть id сообщения.
+   * Инъектируется, чтобы раннер не зависел от TurnManager; `undefined` — не дублируем.
+   */
+  postToChat?: (args: { userId: string; conversationId: string; text: string; runId: string; interactionId: string }) => string | null
+  /** Дописать в чат ответ пользователя (чтобы лента и чат не расходились). */
+  postAnswerToChat?: (args: { userId: string; conversationId: string; text: string }) => void
   now?: () => number
   modelWork?: CiModelWorkHook
   modelSummary?: CiModelSummaryHook
@@ -30,7 +41,7 @@ interface ActiveRun {
 }
 
 export interface CiRunManager {
-  start(userId: string, projectId: string, taskId: string): { run: CiRun } | { error: string }
+  start(userId: string, projectId: string, taskId: string, mode?: CiRunMode): { run: CiRun } | { error: string }
   retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string }): { run: CiRun } | { error: string }
   discardChangesAndRetry(userId: string, runId: string): Promise<{ run: CiRun } | { error: string }>
   cancel(userId: string, runId: string): boolean
@@ -38,6 +49,8 @@ export interface CiRunManager {
   snapshot(userId: string, runId: string): void | ServerMessage
   activeRunIds(): string[]
   consoleExec(userId: string, runId: string, command: string, editMode: boolean): Promise<CiConsoleExecResult>
+  /** Ответить на паузу рана (из ленты или из связанного чата). */
+  answerInteraction(userId: string, runId: string, interactionId: string, answer: CiInteractionAnswer): { interaction: CiInteraction } | { error: string }
 }
 
 /** Слаг из заголовка задачи для ветки/пути. */
@@ -56,6 +69,8 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   const listeners = new Set<(m: ServerMessage, ownerUserId: string) => void>()
   const active = new Map<string, ActiveRun>()
   const projectChains = new Map<string, Promise<void>>()
+  /** Ожидающие ответа паузы: runId → как разбудить `execute`. */
+  const pendingInteractions = new Map<string, { interactionId: string; resolve: (v: CiInteraction | null) => void }>()
 
   // Серверный лимит одновременных ранов (значение читаем при каждом захвате).
   let running = 0
@@ -87,7 +102,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     broadcast({ t: 'ci.step', runId: step.runId, step }, userId)
   }
 
-  function start(userId: string, projectId: string, taskId: string): { run: CiRun } | { error: string } {
+  function start(userId: string, projectId: string, taskId: string, modeOverride?: CiRunMode): { run: CiRun } | { error: string } {
     const project = deps.db.getProject(userId, projectId)
     if (!project) return { error: 'Проект недоступен' }
     const task = deps.db.getCiTask(userId, projectId, taskId)
@@ -96,6 +111,14 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const slots = deps.db.resolveTaskSlots(projectId, taskId)
     const llm = deps.db.resolveTaskLlmConfig(projectId, taskId)
     const total = slots.beforeModel.length + slots.afterModel.length + 2
+    // Связанный чат нужен, чтобы дублировать туда вопросы модели. Идемпотентно:
+    // если пользователь уже открывал карточку, вернётся существующий чат.
+    let conversationId: string | null = null
+    try {
+      conversationId = deps.db.openOrCreateTaskChat(userId, projectId, taskId)?.id ?? null
+    } catch {
+      conversationId = null
+    }
     const run = deps.db.createCiRun({
       projectId,
       taskId,
@@ -104,6 +127,10 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       prevColumnId: task.columnId,
       llmProvider: llm.provider,
       llmModel: llm.model,
+      mode: modeOverride ?? llm.mode,
+      clarifyLevel: llm.clarifyLevel,
+      clarifyMax: llm.clarifyMax,
+      conversationId,
       slotProgress: { done: 0, total, phase: 'В очереди' }
     })
     const developmentColumnId = deps.db.getColumnIdBySemantic(projectId, 'development')
@@ -160,7 +187,46 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const a = active.get(runId)
     if (!a || a.userId !== userId) return false
     a.abort.abort()
+    // Ран мог стоять на паузе: без этого промис ожидания никогда не разрешится.
+    resolvePending(runId, null)
     return true
+  }
+
+  /** Снять ожидание паузы (ответ, таймаут или отмена рана). */
+  function resolvePending(runId: string, interaction: CiInteraction | null): void {
+    const waiter = pendingInteractions.get(runId)
+    if (!waiter) return
+    pendingInteractions.delete(runId)
+    if (!interaction) deps.db.cancelCiInteraction(waiter.interactionId)
+    waiter.resolve(interaction)
+  }
+
+  /**
+   * Ответ на паузу из ленты рана или из связанного чата. Первый ответ побеждает:
+   * `answerCiInteraction` обновляет строку только пока она `pending`.
+   */
+  function answerInteraction(userId: string, runId: string, interactionId: string, answer: CiInteractionAnswer): { interaction: CiInteraction } | { error: string } {
+    const detail = deps.db.getCiRun(userId, runId)
+    if (!detail) return { error: 'Ран недоступен' }
+    const existing = deps.db.getCiInteraction(interactionId)
+    if (!existing || existing.runId !== runId) return { error: 'Вопрос не найден' }
+    if (existing.status !== 'pending') return { error: 'На этот вопрос уже ответили' }
+    const decision = answer.decision === 'approved' || answer.decision === 'rework' ? answer.decision : null
+    if (existing.kind === 'plan_approval' && !decision) return { error: 'Нужно решение по плану' }
+    const text = (answer.text ?? '').trim()
+    const updated = deps.db.answerCiInteraction(interactionId, { userId, text: text || null, decision })
+    if (!updated) return { error: 'На этот вопрос уже ответили' }
+    broadcast({ t: 'ci.interaction', runId, interaction: updated }, detail.run.triggeredBy)
+    deps.db.addCiEvent({ projectId: detail.run.projectId, runId, type: 'run.interaction_answered', actorType: 'user', actorId: userId, payload: { interactionId, kind: existing.kind, decision } })
+    // Ответ виден и в чате: иначе лента и чат разойдутся.
+    const answerLine = existing.kind === 'plan_approval'
+      ? `${decision === 'approved' ? 'План одобрен.' : 'План на доработку.'}${text ? `\n${text}` : ''}`
+      : text
+    if (updated.conversationId && answerLine && deps.postAnswerToChat) {
+      deps.postAnswerToChat({ userId, conversationId: updated.conversationId, text: answerLine })
+    }
+    resolvePending(runId, updated)
+    return { interaction: updated }
   }
 
   /** Повтор с упавшего шага: тот же ран, переиспользуем рабочую директорию,
@@ -324,8 +390,117 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       },
       suggest: (commandId, runStepId, reason, proposedScript) => {
         deps.db.addCiSuggestion({ commandId, runStepId, reason, proposedScript })
+      },
+      askUser: async (stepId, questions) => {
+        const it = await waitForUser(runId, userId, stepId, { kind: 'clarify', questions }, signal)
+        return it && it.status === 'answered' ? (it.answerText ?? '') : null
+      },
+      askPlanApproval: async (stepId, planText) => {
+        const it = await waitForUser(runId, userId, stepId, { kind: 'plan_approval', planText }, signal)
+        if (!it || it.status !== 'answered' || !it.decision) return null
+        return { decision: it.decision, comment: it.answerText ?? '' }
       }
     }
+  }
+
+  /**
+   * Поставить ран на паузу и дождаться пользователя. Пока ждём, отпускаем
+   * серверный слот: одобрение плана может занять часы, а `maxConcurrentRuns`
+   * по умолчанию 2 — иначе одна пауза перекрывает раны других проектов.
+   * Очередь внутри проекта при этом остаётся последовательной, как и раньше.
+   */
+  async function waitForUser(
+    runId: string,
+    userId: string,
+    stepId: string,
+    payload: { kind: 'clarify'; questions: QuestionSpec[] } | { kind: 'plan_approval'; planText: string },
+    signal: AbortSignal
+  ): Promise<CiInteraction | null> {
+    if (signal.aborted) return null
+    const run = deps.db.getCiRunRaw(runId)
+    const interaction = deps.db.addCiInteraction({
+      runId,
+      stepId,
+      kind: payload.kind,
+      questions: payload.kind === 'clarify' ? payload.questions : [],
+      planText: payload.kind === 'plan_approval' ? payload.planText : null,
+      conversationId: run?.conversationId ?? null
+    })
+
+    // Дублируем в связанный чат: UI разберёт блок ```questions тем же парсером.
+    if (run?.conversationId && deps.postToChat) {
+      const questions: QuestionSpec[] = payload.kind === 'clarify'
+        ? payload.questions
+        : [{ q: 'Одобрить план и перейти к разработке?', options: ['Одобрить', 'На доработку'] }]
+      const head = payload.kind === 'clarify'
+        ? 'Уточняющие вопросы по задаче (ответ уйдёт в CI-ран):'
+        : `План работы по задаче:\n\n${payload.planText}`
+      const messageId = deps.postToChat({
+        userId,
+        conversationId: run.conversationId,
+        text: `${head}\n\n${formatQuestionsBlock(questions)}`,
+        runId,
+        interactionId: interaction.id
+      })
+      if (messageId) deps.db.setCiInteractionMessage(interaction.id, run.conversationId, messageId)
+    }
+
+    const phase = payload.kind === 'plan_approval' ? 'План готов — ждёт одобрения' : 'Модель ждёт ответа'
+    const before = deps.db.getCiRunRaw(runId)
+    const progressNow = before?.slotProgress ?? { done: 0, total: 0, phase }
+    const paused = deps.db.updateCiRun(runId, { status: 'awaiting_input', slotProgress: { ...progressNow, phase } })
+    if (paused) emitRun(paused, userId)
+    broadcast({ t: 'ci.interaction', runId, interaction: deps.db.getCiInteraction(interaction.id) ?? interaction }, userId)
+    deps.db.addCiEvent({
+      projectId: before?.projectId ?? '',
+      runId,
+      type: 'run.interaction_asked',
+      actorType: 'model',
+      payload: { kind: payload.kind, interactionId: interaction.id }
+    })
+
+    const waitMs = deps.db.getCiSettings().interactionWaitMs
+    releaseSlot()
+    let answered: CiInteraction | null = null
+    try {
+      answered = await new Promise<CiInteraction | null>((resolve) => {
+        let timer: ReturnType<typeof setTimeout> | null = null
+        const onAbort = (): void => resolvePending(runId, null)
+        pendingInteractions.set(runId, {
+          interactionId: interaction.id,
+          resolve: (v) => {
+            if (timer) clearTimeout(timer)
+            signal.removeEventListener('abort', onAbort)
+            resolve(v)
+          }
+        })
+        if (waitMs > 0) {
+          timer = setTimeout(() => {
+            const line = deps.db.appendCiLog(runId, stepId, 'system', 'Ответ пользователя не получен — продолжаю без уточнений\n')
+            broadcast({ t: 'ci.log', runId, line }, userId)
+            resolvePending(runId, null)
+          }, waitMs)
+        }
+        // Ран могли отменить пока мы ставили паузу — тогда не зависаем.
+        if (signal.aborted) resolvePending(runId, null)
+        else signal.addEventListener('abort', onAbort, { once: true })
+      })
+    } finally {
+      await acquireSlot()
+    }
+
+    if (answered) {
+      const after = deps.db.getCiRunRaw(runId)
+      const resumed = deps.db.updateCiRun(runId, {
+        status: 'running',
+        slotProgress: { ...(after?.slotProgress ?? progressNow), phase: 'Модель работает' }
+      })
+      if (resumed) emitRun(resumed, userId)
+    } else {
+      const dropped = deps.db.getCiInteraction(interaction.id)
+      if (dropped) broadcast({ t: 'ci.interaction', runId, interaction: dropped }, userId)
+    }
+    return answered
   }
 
   async function execute(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint): Promise<void> {
@@ -445,6 +620,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     // 2) Работа модели (при повторе из слота «после» — уже сделана, пропускаем).
     const prim = makePrimitives(runId, userId, agentId, workspacePath, env, signal)
     let modelOk = true
+    let modelCancelled = false
     if (!(resume?.kind === 'command' && resume.slot === 'after_model')) {
       progress(runId, done, total, 'Модель работает', userId)
       const mwStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1, kind: 'model_work', initiatedBy: 'system', title: 'Работа модели', status: 'running' })
@@ -453,7 +629,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       if (deps.modelWork) {
         const ctx: CiModelContext = { ...prim, run: deps.db.getCiRunRaw(runId)!, task, project, parentStepId: mwStep.id }
         try {
-          modelOk = (await deps.modelWork(ctx)).ok
+          const r = await deps.modelWork(ctx)
+          modelOk = r.ok
+          modelCancelled = r.cancelled === true
         } catch {
           modelOk = false
         }
@@ -461,8 +639,15 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
         const line = deps.db.appendCiLog(runId, mwStep.id, 'system', 'Работа модели пропущена (хук не подключён)\n')
         broadcast({ t: 'ci.log', runId, line }, userId)
       }
-      const upd = deps.db.updateCiRunStep(mwStep.id, { status: modelOk ? 'success' : 'failed', finishedAt: now(), durationMs: now() - mwStart })!
+      const stepStatus: CiStatus = modelOk ? 'success' : modelCancelled ? 'cancelled' : 'failed'
+      const upd = deps.db.updateCiRunStep(mwStep.id, { status: stepStatus, finishedAt: now(), durationMs: now() - mwStart })!
       emitStep(upd, userId)
+      if (modelCancelled) {
+        progress(runId, done, total, 'План не одобрен — ран остановлен', userId)
+        rollbackTask(runId, userId, runRow.prevColumnId)
+        finalize(runId, userId, 'cancelled')
+        return
+      }
       if (!modelOk) {
         progress(runId, done, total, 'Ошибка модели — выберите другую модель и повторите шаг', userId)
         finalize(runId, userId, 'failed')
@@ -613,7 +798,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
   }
 
-  return { start, retryFromFailed, discardChangesAndRetry, cancel, subscribe, snapshot, activeRunIds, consoleExec }
+  return { start, retryFromFailed, discardChangesAndRetry, cancel, subscribe, snapshot, activeRunIds, consoleExec, answerInteraction }
 }
 
 /** shell-quote для системных префиксов раннера. */

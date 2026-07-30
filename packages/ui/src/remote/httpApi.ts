@@ -17,6 +17,7 @@ import type {
   CiWorkspaceReportItem,
   CiSlotConfig,
   CiLlmConfig,
+  CiInteraction,
   CiRun,
   CiRunDetail,
   CiLogLine,
@@ -78,6 +79,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'conversations:setProject': ({ id, projectId }) =>
       req(REST.conversationProject(id), { method: 'POST', body: JSON.stringify({ projectId }) }),
+    'conversations:taskContext': ({ id }) => req(REST.conversationTaskContext(id)),
     'conversations:setStatus': ({ id, status }) =>
       req(REST.conversationStatus(id), { method: 'POST', body: JSON.stringify({ status }) }),
     'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode }) =>
@@ -271,7 +273,7 @@ export function createCiRest(httpBase: string): RendererCiRest {
     resetTaskCiLlm: (projectId, taskId) => req<CiTaskLlmConfig>(REST.taskCiLlm(projectId, taskId), { method: 'DELETE' }),
     getTaskCi: (projectId, taskId) => req<CiTaskConfig>(REST.taskCi(projectId, taskId)),
     putTaskCi: (projectId, taskId, config) => req<CiSlotConfig>(REST.taskCi(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
-    startRun: (projectId, taskId) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST' }),
+    startRun: (projectId, taskId, mode) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST', body: JSON.stringify(mode ? { mode } : {}) }),
     getRun: (runId) => req<CiRunDetail>(REST.ciRun(runId)),
     getRunLog: (runId) => req<CiLogLine[]>(REST.ciRunLog(runId)),
     cancelRun: (runId) => req<{ ok: boolean }>(REST.ciRunCancel(runId), { method: 'POST' }),
@@ -279,6 +281,8 @@ export function createCiRest(httpBase: string): RendererCiRest {
     retryRunFromStep: (runId, selection) => req<CiRun>(REST.ciRunRetryFromStep(runId), { method: 'POST', body: JSON.stringify(selection ?? {}) }),
     discardChangesAndRetry: (runId) => req<CiRun>(REST.ciRunDiscardAndRetry(runId), { method: 'POST' }),
     getMetrics: (projectId) => req<CiMetrics>(REST.ciMetrics(projectId)),
-    consoleExec: (runId, command, editMode) => req<CiConsoleExecResult>(REST.ciConsoleExec(runId), { method: 'POST', body: JSON.stringify({ command, editMode }) })
+    consoleExec: (runId, command, editMode) => req<CiConsoleExecResult>(REST.ciConsoleExec(runId), { method: 'POST', body: JSON.stringify({ command, editMode }) }),
+    answerInteraction: (runId, interactionId, answer) =>
+      req<CiInteraction>(REST.ciRunInteraction(runId, interactionId), { method: 'POST', body: JSON.stringify(answer) })
   }
 }

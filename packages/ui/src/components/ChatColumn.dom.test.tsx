@@ -499,3 +499,48 @@ describe('ChatColumn — режим работы', () => {
     expect(screen.queryByRole('button', { name: 'Выполнить план' })).not.toBeInTheDocument()
   })
 })
+
+describe('ChatColumn — вопрос CI-рана, продублированный в чат', () => {
+  const QBLOCK = '```questions\n[{"q":"Какую БД взять?","options":["SQLite","Postgres"]}]\n```'
+  const ciMessages: Message[] = [
+    { id: 'u1', conversationId: 'c', role: 'u1', text: 'старт', time: '10:00', createdAt: 1 },
+    {
+      id: 'a1', conversationId: 'c', role: 'ai', time: '10:01', createdAt: 2,
+      text: `Уточняющие вопросы по задаче:\n\n${QBLOCK}`,
+      meta: { ciInteraction: { runId: 'run-1', interactionId: 'it-1' } }
+    },
+    { id: 'u2', conversationId: 'c', role: 'u1', text: 'что-то ещё', time: '10:02', createdAt: 3 }
+  ]
+
+  it('ответ уходит в ран, а не запускает новый ход чата', async () => {
+    const onAnswerCiInteraction = vi.fn()
+    const onAnswerQuestions = vi.fn()
+    render(
+      <ChatColumn
+        title="Тест" state="idle" messages={ciMessages} liveSegments={[]} diarization={false} voiceBar={null}
+        onAnswerQuestions={onAnswerQuestions}
+        onAnswerCiInteraction={onAnswerCiInteraction}
+      />
+    )
+    // Сырой JSON блока в тексте не виден.
+    expect(screen.queryByText(/```questions/)).not.toBeInTheDocument()
+    // Форма доступна, хотя сообщение не последнее в ленте.
+    await userEvent.click(screen.getByLabelText('SQLite'))
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить ответы' }))
+    expect(onAnswerCiInteraction).toHaveBeenCalledWith('run-1', 'it-1', 'SQLite')
+    expect(onAnswerQuestions).not.toHaveBeenCalled()
+  })
+
+  it('после ответа (в т.ч. из ленты рана) форма гаснет и остаётся статика', () => {
+    render(
+      <ChatColumn
+        title="Тест" state="idle" messages={ciMessages} liveSegments={[]} diarization={false} voiceBar={null}
+        onAnswerQuestions={vi.fn()}
+        onAnswerCiInteraction={vi.fn()}
+        answeredCiInteractions={['it-1']}
+      />
+    )
+    expect(screen.queryByRole('button', { name: 'Отправить ответы' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('questions-static')).toHaveTextContent('Какую БД взять?')
+  })
+})

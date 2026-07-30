@@ -107,7 +107,7 @@ async function waitRun(runId: string): Promise<{ run: { status: string; taskId: 
 describe('ci run manager', () => {
   it('при запуске переносит карточку в колонку development и использует наследуемую модель', async () => {
     const { project, task } = setup()
-    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.4' })
+    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     const runId = await run(project.id, task.id)
     const development = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
     expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(development.id)
@@ -118,17 +118,17 @@ describe('ci run manager', () => {
 
   it('DELETE ci/llm снимает переопределение задачи и возвращает наследование', async () => {
     const { project, task } = setup()
-    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.4' })
-    await inj(admin, { method: 'PUT', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm`, payload: { provider: 'claude', model: 'haiku' } })
+    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    await inj(admin, { method: 'PUT', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm`, payload: { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 } })
     const before = await inj(admin, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm` })
-    expect(before.json()).toMatchObject({ config: { provider: 'claude', model: 'haiku' }, overridden: true })
+    expect(before.json()).toMatchObject({ config: { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 }, overridden: true })
 
     const res = await inj(admin, { method: 'DELETE', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm` })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({
-      config: { provider: 'codex', model: 'gpt-5.4' },
+      config: { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 },
       overridden: false,
-      projectDefault: { provider: 'codex', model: 'gpt-5.4' }
+      projectDefault: { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 }
     })
     // настройка проекта не затронута, GET согласован с ответом DELETE
     const after = await inj(admin, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm` })
@@ -266,7 +266,7 @@ describe('ci run manager', () => {
     expect(failed.steps.some((s) => s.kind === 'model_summary')).toBe(false)
 
     failClaude = false
-    const retry = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step`, payload: { provider: 'codex', model: '' } })
+    const retry = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step`, payload: { provider: 'codex', model: '', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 } })
     expect(retry.statusCode).toBe(202)
     const done = await waitRun(runId)
     expect(done.run.status).toBe('success')

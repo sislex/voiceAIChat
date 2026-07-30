@@ -1,4 +1,4 @@
-import type { CiRunSummary, CiReuseStrategy } from './ci'
+import type { CiRunSummary, CiReuseStrategy, CiStatus, CiRunMode } from './ci'
 
 // Типы домена «Проекты» + канбан-доска. Разделяются server/web/desktop.
 
@@ -163,6 +163,65 @@ export interface Task {
 /** Новое доменное имя; Task остаётся alias для совместимости. */
 
 export type WorkItem = Task
+
+// Транслитерация кириллицы: ключ проекта в Jira — латинский (ЧатАИ → CHA).
+const CYR: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y',
+  к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f',
+  х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya'
+}
+
+/** Ключ проекта из имени: латинские заглавные, как в Jira (Voice Chat → VC). */
+export function projectKey(name: string): string {
+  const words = [...name.toLowerCase()]
+    .map((ch) => CYR[ch] ?? ch)
+    .join('')
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+  if (!words.length) return 'PRJ'
+  const key = words.length === 1 ? words[0].slice(0, 4) : words.map((w) => w[0]).join('').slice(0, 4)
+  return key.toUpperCase()
+}
+
+/** Ключ задачи «PRJ-42» из имени проекта и порядкового номера. */
+export function issueKey(projectName: string, task: Pick<Task, 'seq'>): string {
+  return `${projectKey(projectName)}-${task.seq || '?'}`
+}
+
+/** Ссылка на элемент иерархии для крошек связанного чата. */
+export interface TaskChatCrumb {
+  id: string
+  title: string
+  /** Ключ вида `PRJ-42`. */
+  key: string
+}
+
+/**
+ * Контекст задачи для чата, привязанного к ней (`conversations.task_id`):
+ * иерархия, этап воркфлоу, машина и папка разработки, последний CI-ран.
+ * `null`, если чат не привязан к задаче.
+ */
+export interface TaskChatContext {
+  projectId: string
+  projectName: string
+  epic: TaskChatCrumb | null
+  story: TaskChatCrumb | null
+  task: TaskChatCrumb & { type: WorkItemType }
+  /** Подпись колонки и её машинный смысл — этап жизненного цикла разработки. */
+  columnName: string
+  columnSemantic: KanbanColumnSemanticType | null
+  agentId: string | null
+  agentName: string | null
+  /** Рабочая директория, в которой идёт разработка. */
+  workdir: string | null
+  run: {
+    id: string
+    status: CiStatus
+    mode: CiRunMode
+    startedAt: number | null
+    durationMs: number | null
+  } | null
+}
 
 /** Снапшот доски проекта. */
 export interface Board {

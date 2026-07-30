@@ -109,6 +109,15 @@ export interface ChatColumnProps {
   aiLabel?: string
   /** Отправить собранные ответы на вопросы модели (форма под последним ответом). */
   onAnswerQuestions?: (text: string) => void
+  /**
+   * Ответ на вопрос CI-рана, продублированный в этот чат: уходит в ран, а не
+   * запускает новый ход чата (сообщение помечено `meta.ciInteraction`).
+   */
+  onAnswerCiInteraction?: (runId: string, interactionId: string, text: string) => void
+  /** Id пауз рана, на которые уже ответили (форма гаснет, остаётся статика). */
+  answeredCiInteractions?: string[]
+  /** Шапка чата задачи (контекст канбана + лента рана); рендерится снаружи. */
+  taskHeader?: JSX.Element | null
   /** Операции над машиной для встроенных утилит; отсутствуют → виджеты не рендерятся. */
   machineOps?: MachineOps
   /** Чтение файла с диска сервера — картинки, созданные самим CLI. */
@@ -155,6 +164,9 @@ export function ChatColumn({
   onChangeExecTarget,
   aiLabel = 'Claude',
   onAnswerQuestions,
+  onAnswerCiInteraction,
+  answeredCiInteractions,
+  taskHeader,
   machineOps,
   readServerFile,
   onOpenImageInExplorer,
@@ -334,6 +346,8 @@ export function ChatColumn({
         </span>
       </header>
 
+      {taskHeader}
+
       {error && (
         <div className="errbar" role="alert" data-testid="error-bar">
           <span>{error}</span>
@@ -453,6 +467,20 @@ export function ChatColumn({
                       />
                     )}
                     {parsed &&
+                      (() => {
+                        const ci = m.meta?.ciInteraction
+                        const closed = ci ? answeredCiInteractions?.includes(ci.interactionId) : false
+                        if (ci && onAnswerCiInteraction && !closed) {
+                          return (
+                            <QuestionsForm
+                              questions={parsed.questions}
+                              onSubmit={(text) => onAnswerCiInteraction(ci.runId, ci.interactionId, text)}
+                            />
+                          )
+                        }
+                        return null
+                      })()}
+                    {parsed && (!m.meta?.ciInteraction || answeredCiInteractions?.includes(m.meta.ciInteraction.interactionId)) &&
                       (isLast && onAnswerQuestions && state === 'idle' ? (
                         <QuestionsForm questions={parsed.questions} onSubmit={onAnswerQuestions} />
                       ) : (

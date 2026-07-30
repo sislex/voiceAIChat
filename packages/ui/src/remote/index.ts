@@ -130,7 +130,8 @@ function makeCiBridge(httpBase: string, ws: WsClient): RendererCiBridge {
     onLog: (cb) => ws.on('ci.log', (m) => cb({ runId: m.runId, line: m.line })),
     onFix: (cb) => ws.on('ci.fix', (m) => cb({ runId: m.runId, attempt: m.attempt })),
     onDone: (cb) => ws.on('ci.done', (m) => cb({ runId: m.runId, run: m.run, conclusion: m.conclusion })),
-    onSummary: (cb) => ws.on('ci.summary', (m) => cb({ projectId: m.projectId, summary: m.summary }))
+    onSummary: (cb) => ws.on('ci.summary', (m) => cb({ projectId: m.projectId, summary: m.summary })),
+    onInteraction: (cb) => ws.on('ci.interaction', (m) => cb({ runId: m.runId, interaction: m.interaction }))
   }
 }
 

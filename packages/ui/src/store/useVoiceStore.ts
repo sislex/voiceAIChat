@@ -169,6 +169,7 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
       unsubs.push(ci.onFix((m) => store.actions.applyCiFix(m.runId, m.attempt)))
       unsubs.push(ci.onDone((m) => store.actions.applyCiDone(m.runId, m.run, m.conclusion)))
       unsubs.push(ci.onSummary((m) => store.actions.applyCiSummary(m.projectId, m.summary)))
+      unsubs.push(ci.onInteraction((m) => store.actions.applyCiInteraction(m.runId, m.interaction)))
     }
     if (typeof window !== 'undefined' && window.tts) {
       unsubs.push(

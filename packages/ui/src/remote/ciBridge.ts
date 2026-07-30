@@ -11,6 +11,9 @@ import type {
   CiWorkspaceReportItem,
   CiSlotConfig,
   CiLlmConfig,
+  CiRunMode,
+  CiInteraction,
+  CiInteractionAnswer,
   CiRun,
   CiRunDetail,
   CiRunStep,
@@ -70,7 +73,7 @@ export interface RendererCiRest {
   resetTaskCiLlm(projectId: string, taskId: string): Promise<CiTaskLlmConfig>
   getTaskCi(projectId: string, taskId: string): Promise<CiTaskConfig>
   putTaskCi(projectId: string, taskId: string, config: CiSlotConfig): Promise<CiSlotConfig>
-  startRun(projectId: string, taskId: string): Promise<CiRun>
+  startRun(projectId: string, taskId: string, mode?: CiRunMode): Promise<CiRun>
   getRun(runId: string): Promise<CiRunDetail>
   getRunLog(runId: string): Promise<CiLogLine[]>
   cancelRun(runId: string): Promise<{ ok: boolean }>
@@ -79,6 +82,8 @@ export interface RendererCiRest {
   discardChangesAndRetry(runId: string): Promise<CiRun>
   getMetrics(projectId: string): Promise<CiMetrics>
   consoleExec(runId: string, command: string, editMode: boolean): Promise<CiConsoleExecResult>
+  /** Ответить на паузу рана: текст уточнения или решение по плану. */
+  answerInteraction(runId: string, interactionId: string, answer: CiInteractionAnswer): Promise<CiInteraction>
 }
 
 /** Полный мост: REST + realtime WS (подписка на ран + слушатели событий). */
@@ -92,4 +97,5 @@ export interface RendererCiBridge extends RendererCiRest {
   onFix(cb: (m: { runId: string; attempt: CiFixAttempt }) => void): () => void
   onDone(cb: (m: { runId: string; run: CiRun; conclusion?: CiRunConclusion }) => void): () => void
   onSummary(cb: (m: { projectId: string; summary: CiRunSummary }) => void): () => void
+  onInteraction(cb: (m: { runId: string; interaction: CiInteraction }) => void): () => void
 }

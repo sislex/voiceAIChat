@@ -40,6 +40,18 @@ import {
   type CiSlot,
   type CiSlotConfig,
   type CiLlmConfig,
+  DEFAULT_CI_LLM_CONFIG,
+  type CiRunMode,
+  type CiClarifyLevel,
+  CI_CLARIFY_MAX_LIMIT,
+  type CiInteraction,
+  type CiInteractionKind,
+  type CiInteractionStatus,
+  type CiPlanDecision,
+  type QuestionSpec,
+  type TaskChatContext,
+  type TaskChatCrumb,
+  issueKey,
   type CiGlobalSettings,
   DEFAULT_CI_GLOBAL_SETTINGS,
   type CiRun,
@@ -468,6 +480,17 @@ export class VoiceChatDb {
     const ciRunCols = this.db.prepare(`PRAGMA table_info(ci_runs)`).all() as Array<{ name: string }>
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_provider')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_provider TEXT NOT NULL DEFAULT 'claude'`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_model')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_model TEXT NOT NULL DEFAULT 'sonnet'`)
+    // Режим запуска (план/разработка), глубина уточнений и связанный чат рана.
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'mode')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN mode TEXT NOT NULL DEFAULT 'development'`)
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'clarify_level')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN clarify_level TEXT NOT NULL DEFAULT 'few'`)
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'clarify_max')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN clarify_max INTEGER NOT NULL DEFAULT 3`)
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'conversation_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN conversation_id TEXT`)
+    const ciLlmCols = this.db.prepare(`PRAGMA table_info(ci_llm_configs)`).all() as Array<{ name: string }>
+    if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'mode')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN mode TEXT NOT NULL DEFAULT 'development'`)
+    if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'clarify_level')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN clarify_level TEXT NOT NULL DEFAULT 'few'`)
+    if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'clarify_max')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN clarify_max INTEGER NOT NULL DEFAULT 3`)
+    const ciSettingsCols = this.db.prepare(`PRAGMA table_info(ci_settings)`).all() as Array<{ name: string }>
+    if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === 'interaction_wait_ms')) this.db.exec(`ALTER TABLE ci_settings ADD COLUMN interaction_wait_ms INTEGER NOT NULL DEFAULT 1800000`)
 
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
@@ -1387,6 +1410,56 @@ export class VoiceChatDb {
     return { columns, tasks, ciRuns: this.latestCiRunSummaries(projectId) }
   }
 
+  /**
+   * Контекст задачи для шапки связанного чата: иерархия Эпик→Стори→Задача,
+   * этап воркфлоу (колонка), машина и папка разработки, последний CI-ран.
+   * `null`, если чат не привязан к задаче.
+   */
+  getTaskChatContext(userId: string, conversationId: string): TaskChatContext | null {
+    const conv = this.getConversation(userId, conversationId)
+    if (!conv?.taskId || !conv.projectId) return null
+    const project = this.getProject(userId, conv.projectId)
+    if (!project) return null
+    const task = this.getTask(conv.projectId, conv.taskId)
+    if (!task) return null
+
+    const crumb = (t: Task): TaskChatCrumb => ({ id: t.id, title: t.title, key: issueKey(project.name, t) })
+    const parent = task.parentId ? this.getTask(conv.projectId, task.parentId) : null
+    const grandParent = parent?.parentId ? this.getTask(conv.projectId, parent.parentId) : null
+    // Родитель задачи — стори или сразу эпик; у стори родитель всегда эпик.
+    const story = parent?.type === 'story' ? parent : null
+    const epic = parent?.type === 'epic' ? parent : grandParent?.type === 'epic' ? grandParent : null
+
+    const column = this.db.prepare(`SELECT name, semantic_type FROM kanban_columns WHERE id = ?`).get(task.columnId) as
+      | { name: string; semantic_type: string | null }
+      | undefined
+    const agentId = conv.execTarget && conv.execTarget !== 'none' ? conv.execTarget : project.defaultAgentId
+    const machine = agentId ? project.machines.find((m) => m.agentId === agentId) : undefined
+    const runRow = this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`).get(task.id) as CiRunRow | undefined
+    const run = runRow ? mapCiRun(runRow) : null
+
+    return {
+      projectId: project.id,
+      projectName: project.name,
+      epic: epic ? crumb(epic) : null,
+      story: story ? crumb(story) : null,
+      task: { ...crumb(task), type: task.type },
+      columnName: column?.name ?? '',
+      columnSemantic: (column?.semantic_type as TaskChatContext['columnSemantic']) ?? null,
+      agentId: agentId ?? null,
+      agentName: agentId ? this.agentName(agentId) : null,
+      // Папка чата приоритетнее: пользователь мог сменить её вручную.
+      workdir: conv.workdir || machine?.path || null,
+      run: run ? { id: run.id, status: run.status, mode: run.mode, startedAt: run.startedAt, durationMs: run.durationMs } : null
+    }
+  }
+
+  /** Имя машины по id (для читаемой подписи в шапке чата). */
+  private agentName(agentId: string): string | null {
+    const r = this.db.prepare(`SELECT name FROM agents WHERE id = ?`).get(agentId) as { name: string } | undefined
+    return r?.name ?? null
+  }
+
   private getTask(projectId: string, taskId: string): Task | null {
     const r = this.db.prepare(`SELECT * FROM tasks WHERE id = ? AND project_id = ?`).get(taskId, projectId) as
       | TaskRow
@@ -1845,16 +1918,38 @@ export class VoiceChatDb {
   }
 
   getCiLlmConfig(ownerType: 'project' | 'task', ownerId: string): CiLlmConfig | null {
-    const row = this.db.prepare(`SELECT provider, model FROM ci_llm_configs WHERE owner_type = ? AND owner_id = ?`).get(ownerType, ownerId) as { provider: string; model: string } | undefined
+    const row = this.db.prepare(`SELECT provider, model, mode, clarify_level, clarify_max FROM ci_llm_configs WHERE owner_type = ? AND owner_id = ?`).get(ownerType, ownerId) as
+      | { provider: string; model: string; mode: string; clarify_level: string; clarify_max: number }
+      | undefined
     if (!row) return null
-    return { provider: row.provider === 'codex' ? 'codex' : 'claude', model: row.model }
+    return {
+      provider: row.provider === 'codex' ? 'codex' : 'claude',
+      model: row.model,
+      mode: normRunMode(row.mode),
+      clarifyLevel: normClarifyLevel(row.clarify_level),
+      clarifyMax: clampClarifyMax(row.clarify_max)
+    }
   }
 
   setCiLlmConfig(ownerType: 'project' | 'task', ownerId: string, config: CiLlmConfig): CiLlmConfig {
     const provider = config.provider === 'codex' ? 'codex' : 'claude'
     const model = config.model.trim() || (provider === 'codex' ? 'gpt-5.4' : 'sonnet')
-    this.db.prepare(`INSERT INTO ci_llm_configs (owner_type, owner_id, provider, model) VALUES (?, ?, ?, ?) ON CONFLICT(owner_type, owner_id) DO UPDATE SET provider=excluded.provider, model=excluded.model`).run(ownerType, ownerId, provider, model)
-    return { provider, model }
+    const next: CiLlmConfig = {
+      provider,
+      model,
+      mode: normRunMode(config.mode),
+      clarifyLevel: normClarifyLevel(config.clarifyLevel),
+      clarifyMax: clampClarifyMax(config.clarifyMax)
+    }
+    this.db
+      .prepare(
+        `INSERT INTO ci_llm_configs (owner_type, owner_id, provider, model, mode, clarify_level, clarify_max)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(owner_type, owner_id) DO UPDATE SET provider=excluded.provider, model=excluded.model,
+           mode=excluded.mode, clarify_level=excluded.clarify_level, clarify_max=excluded.clarify_max`
+      )
+      .run(ownerType, ownerId, next.provider, next.model, next.mode, next.clarifyLevel, next.clarifyMax)
+    return next
   }
 
   /** Снять переопределение (задача снова наследует настройку проекта). */
@@ -1863,7 +1958,7 @@ export class VoiceChatDb {
   }
 
   resolveTaskLlmConfig(projectId: string, taskId: string): CiLlmConfig {
-    return this.getCiLlmConfig('task', taskId) ?? this.getCiLlmConfig('project', projectId) ?? { provider: 'claude', model: 'sonnet' }
+    return this.getCiLlmConfig('task', taskId) ?? this.getCiLlmConfig('project', projectId) ?? { ...DEFAULT_CI_LLM_CONFIG }
   }
 
   /** Найти системную колонку проекта для автоматического перехода CI. */
@@ -1884,29 +1979,30 @@ export class VoiceChatDb {
     const r = this.db.prepare(`SELECT * FROM ci_settings WHERE id = 1`).get() as Record<string, number> | undefined
     if (!r) {
       const d = DEFAULT_CI_GLOBAL_SETTINGS
-      this.db.prepare(`INSERT INTO ci_settings (id, max_fix_attempts, fix_time_limit_ms, fix_token_limit, default_step_timeout_sec, metrics_window, max_concurrent_runs, max_model_command_calls) VALUES (1, ?, ?, ?, ?, ?, ?, ?)`).run(d.maxFixAttempts, d.fixTimeLimitMs, d.fixTokenLimit, d.defaultStepTimeoutSec, d.metricsWindow, d.maxConcurrentRuns, d.maxModelCommandCalls)
+      this.db.prepare(`INSERT INTO ci_settings (id, max_fix_attempts, fix_time_limit_ms, fix_token_limit, default_step_timeout_sec, metrics_window, max_concurrent_runs, max_model_command_calls, interaction_wait_ms) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.maxFixAttempts, d.fixTimeLimitMs, d.fixTokenLimit, d.defaultStepTimeoutSec, d.metricsWindow, d.maxConcurrentRuns, d.maxModelCommandCalls, d.interactionWaitMs)
       return { ...d }
     }
     return {
       maxFixAttempts: r.max_fix_attempts, fixTimeLimitMs: r.fix_time_limit_ms, fixTokenLimit: r.fix_token_limit,
       defaultStepTimeoutSec: r.default_step_timeout_sec, metricsWindow: r.metrics_window,
-      maxConcurrentRuns: r.max_concurrent_runs, maxModelCommandCalls: r.max_model_command_calls
+      maxConcurrentRuns: r.max_concurrent_runs, maxModelCommandCalls: r.max_model_command_calls,
+      interactionWaitMs: r.interaction_wait_ms ?? DEFAULT_CI_GLOBAL_SETTINGS.interactionWaitMs
     }
   }
 
   updateCiSettings(patch: Partial<CiGlobalSettings>): CiGlobalSettings {
     const cur = this.getCiSettings()
     const next = { ...cur, ...patch }
-    this.db.prepare(`UPDATE ci_settings SET max_fix_attempts=?, fix_time_limit_ms=?, fix_token_limit=?, default_step_timeout_sec=?, metrics_window=?, max_concurrent_runs=?, max_model_command_calls=? WHERE id=1`).run(next.maxFixAttempts, next.fixTimeLimitMs, next.fixTokenLimit, next.defaultStepTimeoutSec, next.metricsWindow, next.maxConcurrentRuns, next.maxModelCommandCalls)
+    this.db.prepare(`UPDATE ci_settings SET max_fix_attempts=?, fix_time_limit_ms=?, fix_token_limit=?, default_step_timeout_sec=?, metrics_window=?, max_concurrent_runs=?, max_model_command_calls=?, interaction_wait_ms=? WHERE id=1`).run(next.maxFixAttempts, next.fixTimeLimitMs, next.fixTokenLimit, next.defaultStepTimeoutSec, next.metricsWindow, next.maxConcurrentRuns, next.maxModelCommandCalls, next.interactionWaitMs)
     return next
   }
 
   // --- Раны и шаги ---
 
-  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; triggeredBy: string; prevColumnId: string | null; slotProgress: CiSlotProgress; llmProvider?: 'claude' | 'codex'; llmModel?: string }): CiRun {
+  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; triggeredBy: string; prevColumnId: string | null; slotProgress: CiSlotProgress; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null }): CiRun {
     const id = this.newId()
     const ts = this.now()
-    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, status, triggered_by, prev_column_id, llm_provider, llm_model, slot_progress_json, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.triggeredBy, args.prevColumnId, args.llmProvider ?? 'claude', args.llmModel ?? 'sonnet', JSON.stringify(args.slotProgress), ts)
+    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, status, triggered_by, prev_column_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, slot_progress_json, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.triggeredBy, args.prevColumnId, args.llmProvider ?? 'claude', args.llmModel ?? 'sonnet', normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, JSON.stringify(args.slotProgress), ts)
     return mapCiRun(this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(id) as CiRunRow)
   }
 
@@ -1921,7 +2017,7 @@ export class VoiceChatDb {
     const run = mapCiRun(r)
     const steps = (this.db.prepare(`SELECT * FROM ci_run_steps WHERE run_id = ? ORDER BY position ASC, id ASC`).all(runId) as CiRunStepRow[]).map(mapCiRunStep)
     const fixAttempts = (this.db.prepare(`SELECT f.* FROM ci_fix_attempts f JOIN ci_run_steps s ON s.id = f.run_step_id WHERE s.run_id = ? ORDER BY f.created_at ASC`).all(runId) as CiFixRow[]).map(mapCiFix)
-    return { run, steps, fixAttempts }
+    return { run, steps, fixAttempts, interactions: this.listCiInteractions(runId) }
   }
 
   listCiRunsForTask(userId: string, projectId: string, taskId: string): CiRun[] {
@@ -1929,7 +2025,7 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC`).all(taskId) as CiRunRow[]).map(mapCiRun)
   }
 
-  updateCiRun(runId: string, patch: { status?: CiStatus; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmProvider?: 'claude' | 'codex'; llmModel?: string }): CiRun | null {
+  updateCiRun(runId: string, patch: { status?: CiStatus; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null }): CiRun | null {
     const set: string[] = []
     const vals: unknown[] = []
     if (patch.status !== undefined) { set.push('status = ?'); vals.push(patch.status) }
@@ -1940,6 +2036,8 @@ export class VoiceChatDb {
     if (patch.slotProgress !== undefined) { set.push('slot_progress_json = ?'); vals.push(JSON.stringify(patch.slotProgress)) }
     if (patch.llmProvider !== undefined) { set.push('llm_provider = ?'); vals.push(patch.llmProvider) }
     if (patch.llmModel !== undefined) { set.push('llm_model = ?'); vals.push(patch.llmModel) }
+    if (patch.mode !== undefined) { set.push('mode = ?'); vals.push(normRunMode(patch.mode)) }
+    if (patch.conversationId !== undefined) { set.push('conversation_id = ?'); vals.push(patch.conversationId) }
     if (!set.length) return this.getCiRunRaw(runId)
     this.db.prepare(`UPDATE ci_runs SET ${set.join(', ')} WHERE id = ?`).run(...vals, runId)
     return this.getCiRunRaw(runId)
@@ -1984,6 +2082,60 @@ export class VoiceChatDb {
   }
 
   // --- fix-loop ---
+
+  // --- Интеракции рана (вопросы модели / одобрение плана) ---
+
+  /** Создать паузу рана. Монотонный `seq` — как у лога, для устойчивого порядка. */
+  addCiInteraction(args: {
+    runId: string
+    stepId: string
+    kind: CiInteractionKind
+    questions?: QuestionSpec[]
+    planText?: string | null
+    conversationId?: string | null
+  }): CiInteraction {
+    const id = this.newId()
+    const row = this.db.prepare(`SELECT MAX(seq) AS m FROM ci_interactions WHERE run_id = ?`).get(args.runId) as { m: number | null }
+    const seq = (row?.m ?? 0) + 1
+    this.db
+      .prepare(
+        `INSERT INTO ci_interactions (id, run_id, step_id, seq, kind, questions_json, plan_text, status, conversation_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
+      )
+      .run(id, args.runId, args.stepId, seq, args.kind, JSON.stringify(args.questions ?? []), args.planText ?? null, args.conversationId ?? null, this.now())
+    return mapCiInteraction(this.db.prepare(`SELECT * FROM ci_interactions WHERE id = ?`).get(id) as CiInteractionRow)
+  }
+
+  getCiInteraction(id: string): CiInteraction | null {
+    const r = this.db.prepare(`SELECT * FROM ci_interactions WHERE id = ?`).get(id) as CiInteractionRow | undefined
+    return r ? mapCiInteraction(r) : null
+  }
+
+  listCiInteractions(runId: string): CiInteraction[] {
+    return (this.db.prepare(`SELECT * FROM ci_interactions WHERE run_id = ? ORDER BY seq ASC`).all(runId) as CiInteractionRow[]).map(mapCiInteraction)
+  }
+
+  /** Запомнить id продублированного в чат сообщения. */
+  setCiInteractionMessage(id: string, conversationId: string, messageId: string): void {
+    this.db.prepare(`UPDATE ci_interactions SET conversation_id = ?, message_id = ? WHERE id = ?`).run(conversationId, messageId, id)
+  }
+
+  /**
+   * Ответить на паузу. Условие `status = 'pending'` в WHERE делает первый ответ
+   * победителем: второй (из ленты или из чата) не проходит и получает `null`.
+   */
+  answerCiInteraction(id: string, args: { userId: string; text?: string | null; decision?: CiPlanDecision | null }): CiInteraction | null {
+    const changed = this.db
+      .prepare(`UPDATE ci_interactions SET status = 'answered', answer_text = ?, decision = ?, answered_at = ?, answered_by = ? WHERE id = ? AND status = 'pending'`)
+      .run(args.text ?? null, args.decision ?? null, this.now(), args.userId, id).changes
+    return changed > 0 ? this.getCiInteraction(id) : null
+  }
+
+  /** Снять паузу без ответа (таймаут/отмена рана). */
+  cancelCiInteraction(id: string): CiInteraction | null {
+    this.db.prepare(`UPDATE ci_interactions SET status = 'cancelled', answered_at = ? WHERE id = ? AND status = 'pending'`).run(this.now(), id)
+    return this.getCiInteraction(id)
+  }
 
   addCiFixAttempt(args: { runStepId: string; attemptNo: number; diagnosis: string; action: string; result: CiFixAttempt['result']; diff?: string | null; durationMs?: number | null; tokensUsed?: number | null }): CiFixAttempt {
     const id = this.newId()
@@ -2117,7 +2269,7 @@ export class VoiceChatDb {
       seen.add(r.task_id)
       const run = mapCiRun(r)
       const modelActive = run.status === 'running' && this.db.prepare(`SELECT 1 FROM ci_run_steps WHERE run_id = ? AND kind = 'model_work' AND status = 'running' LIMIT 1`).get(r.id) !== undefined
-      out.push({ id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive })
+      out.push({ id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive, awaitingInput: run.status === 'awaiting_input' })
     }
     return out
   }
@@ -2167,7 +2319,46 @@ function mapCiCommand(r: CiCommandRow): CiCommand {
 }
 
 function normCiStatus(s: string): CiStatus {
-  return s === 'running' || s === 'success' || s === 'failed' || s === 'cancelled' || s === 'timeout' || s === 'skipped' ? s : 'queued'
+  return s === 'running' || s === 'awaiting_input' || s === 'success' || s === 'failed' || s === 'cancelled' || s === 'timeout' || s === 'skipped' ? s : 'queued'
+}
+function normRunMode(m: string | null | undefined): CiRunMode {
+  return m === 'plan' ? 'plan' : 'development'
+}
+function normClarifyLevel(l: string | null | undefined): CiClarifyLevel {
+  return l === 'none' || l === 'medium' || l === 'detailed' ? l : 'few'
+}
+function clampClarifyMax(n: number | null | undefined): number {
+  return Math.min(CI_CLARIFY_MAX_LIMIT, Math.max(1, Math.round(Number(n ?? 3)) || 1))
+}
+function normInteractionKind(k: string): CiInteractionKind {
+  return k === 'plan_approval' ? 'plan_approval' : 'clarify'
+}
+function normInteractionStatus(st: string): CiInteractionStatus {
+  return st === 'answered' || st === 'cancelled' ? st : 'pending'
+}
+function parseQuestionSpecs(j: string | null): QuestionSpec[] {
+  if (!j) return []
+  try {
+    const v = JSON.parse(j)
+    return Array.isArray(v) ? (v as QuestionSpec[]) : []
+  } catch {
+    return []
+  }
+}
+function mapCiInteraction(r: CiInteractionRow): CiInteraction {
+  return {
+    id: r.id, runId: r.run_id, stepId: r.step_id, seq: r.seq, kind: normInteractionKind(r.kind),
+    questions: parseQuestionSpecs(r.questions_json), planText: r.plan_text, answerText: r.answer_text,
+    decision: r.decision === 'approved' || r.decision === 'rework' ? r.decision : null,
+    status: normInteractionStatus(r.status), conversationId: r.conversation_id, messageId: r.message_id,
+    createdAt: r.created_at, answeredAt: r.answered_at, answeredBy: r.answered_by
+  }
+}
+interface CiInteractionRow {
+  id: string; run_id: string; step_id: string; seq: number; kind: string
+  questions_json: string | null; plan_text: string | null; answer_text: string | null
+  decision: string | null; status: string; conversation_id: string | null; message_id: string | null
+  created_at: number; answered_at: number | null; answered_by: string | null
 }
 function parseSlotProgress(j: string): CiSlotProgress {
   try {
@@ -2182,6 +2373,8 @@ interface CiRunRow {
   id: string; project_id: string; task_id: string; agent_id: string | null; status: string
   workspace_id: string | null; triggered_by: string; prev_column_id: string | null
   llm_provider: string; llm_model: string
+  mode: string | null; clarify_level: string | null; clarify_max: number | null
+  conversation_id: string | null
   slot_progress_json: string; started_at: number | null; finished_at: number | null
   duration_ms: number | null; created_at: number
 }
@@ -2189,7 +2382,9 @@ function mapCiRun(r: CiRunRow): CiRun {
   return {
     id: r.id, projectId: r.project_id, taskId: r.task_id, agentId: r.agent_id,
     status: normCiStatus(r.status), workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
-    prevColumnId: r.prev_column_id, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || 'sonnet'), slotProgress: parseSlotProgress(r.slot_progress_json),
+    prevColumnId: r.prev_column_id, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || 'sonnet'),
+    mode: normRunMode(r.mode), clarifyLevel: normClarifyLevel(r.clarify_level), clarifyMax: clampClarifyMax(r.clarify_max),
+    conversationId: r.conversation_id, slotProgress: parseSlotProgress(r.slot_progress_json),
     startedAt: r.started_at, finishedAt: r.finished_at, durationMs: r.duration_ms, createdAt: r.created_at
   }
 }

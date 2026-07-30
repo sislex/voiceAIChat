@@ -4,12 +4,13 @@
 // при монтировании, отписка при закрытии; REST-подгрузка как фолбэк.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CiRunDetail, CiRunStep, CiLogLine, CiRunConclusion } from '@shared/ci'
+import type { CiRunDetail, CiRunStep, CiLogLine, CiRunConclusion, CiInteraction, CiInteractionAnswer } from '@shared/ci'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import { isTerminalCiStatus } from '@shared/ci'
 import type { CiMetrics } from '../../remote/ciBridge'
 import { ciStatusIcon, ciStatusLabel, ciTone, fmtDuration } from './ciFormat'
 import { CiConsole } from './CiConsole'
+import { QuestionsForm } from '../QuestionsForm'
 
 export interface RunFeedCache {
   detail: CiRunDetail | null
@@ -29,6 +30,8 @@ export interface RunFeedProps {
   onDiscardAndRetry?: (runId: string) => void
   onCancel: (runId: string) => void
   onLoadMetrics?: (projectId: string) => void
+  /** Ответить на паузу рана: уточнение модели или решение по плану. */
+  onAnswerInteraction?: (runId: string, interactionId: string, answer: CiInteractionAnswer) => void
   now?: () => number
   download?: (filename: string, text: string) => void
 }
@@ -110,8 +113,22 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
     return props.metrics.commands.find((c) => c.commandId === commandId)?.medianMs ?? null
   }
 
+  // Паузы группируем по шагу, чтобы вопрос показывался внутри «Работы модели».
+  const interactionsByStep = useMemo(() => {
+    const map = new Map<string, CiInteraction[]>()
+    for (const it of detail?.interactions ?? []) {
+      const list = map.get(it.stepId) ?? []
+      list.push(it)
+      map.set(it.stepId, list)
+    }
+    for (const list of map.values()) list.sort((a, b) => a.seq - b.seq)
+    return map
+  }, [detail?.interactions])
+  const interactionsOf = (stepId: string): CiInteraction[] => interactionsByStep.get(stepId) ?? []
+
   const renderStep = (step: CiRunStep, nested: boolean): JSX.Element => {
-    const open = expanded[step.id] ?? (step.status === 'running' || step.status === 'failed')
+    const hasPending = interactionsOf(step.id).some((it) => it.status === 'pending')
+    const open = expanded[step.id] ?? (hasPending || step.status === 'running' || step.status === 'failed')
     const tone = ciTone(step.status)
     const lines = logByStep.get(step.id) ?? []
     const typical = metricFor(step.commandId)
@@ -137,6 +154,14 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
             {lines.length > 0 && (
               <StepLog lines={lines} autoscroll={autoscroll} />
             )}
+            {interactionsOf(step.id).map((it) => (
+              <InteractionCard
+                key={it.id}
+                interaction={it}
+                disabled={!props.onAnswerInteraction}
+                onAnswer={(answer) => props.onAnswerInteraction?.(runId, it.id, answer)}
+              />
+            ))}
             {step.kind === 'model_work' && step.status === 'failed' && run?.status === 'failed' && (
               <div className="ci-model-retry" data-testid="ci-model-retry">
                 <strong>Модель завершилась с ошибкой. Финальные команды не запускались.</strong>
@@ -238,6 +263,73 @@ interface StepLogProps {
 }
 
 const LOG_CAP = 500
+
+/**
+ * Пауза рана внутри шага: уточняющие вопросы (та же форма, что в чате) либо
+ * гейт плана с кнопками «Одобрить» / «На доработку». Отвеченная пауза
+ * показывается статично — ответить могли и из связанного чата.
+ */
+function InteractionCard(props: {
+  interaction: CiInteraction
+  disabled: boolean
+  onAnswer: (answer: CiInteractionAnswer) => void
+}): JSX.Element {
+  const it = props.interaction
+  const [comment, setComment] = useState('')
+  const pending = it.status === 'pending'
+
+  if (it.kind === 'plan_approval') {
+    return (
+      <div className="ci-interaction" data-testid="ci-plan-gate">
+        <strong className="ci-interaction-title">
+          {pending ? 'План готов — нужно решение' : it.decision === 'approved' ? 'План одобрен' : 'План отправлен на доработку'}
+        </strong>
+        {it.planText && <pre className="ci-interaction-plan">{it.planText}</pre>}
+        {pending ? (
+          <>
+            <input
+              className="login-input"
+              aria-label="Комментарий к плану"
+              placeholder="Что поправить (для доработки)…"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+            />
+            <div className="ci-interaction-actions">
+              <button className="btn-primary" disabled={props.disabled} onClick={() => props.onAnswer({ decision: 'approved', text: comment })}>
+                Одобрить и разрабатывать
+              </button>
+              <button className="ci-btn" disabled={props.disabled} onClick={() => props.onAnswer({ decision: 'rework', text: comment })}>
+                На доработку
+              </button>
+            </div>
+          </>
+        ) : (
+          it.answerText && <p className="ci-interaction-answer">{it.answerText}</p>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="ci-interaction" data-testid="ci-clarify">
+      <strong className="ci-interaction-title">{pending ? 'Модель спрашивает' : 'Вопрос модели'}</strong>
+      {pending ? (
+        <QuestionsForm questions={it.questions} disabled={props.disabled} onSubmit={(text) => props.onAnswer({ text })} />
+      ) : (
+        <div className="qstatic">
+          {it.questions.map((q, i) => (
+            <p className="qstaticitem" key={i}>
+              {q.q} <span className="qstaticopts">({q.options.join(' / ')})</span>
+            </p>
+          ))}
+          {it.answerText
+            ? <p className="ci-interaction-answer">Ответ: {it.answerText}</p>
+            : <p className="ci-interaction-answer">Ответа не было — модель продолжила сама.</p>}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function StepLog({ lines, autoscroll }: StepLogProps): JSX.Element {
   const ref = useRef<HTMLDivElement | null>(null)

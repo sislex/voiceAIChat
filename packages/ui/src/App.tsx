@@ -3,6 +3,7 @@ import type { RendererApi } from '@shared/ipc'
 import type { PermissionMode } from '@shared/types'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
+import { TaskChatHeader } from './components/chat/TaskChatHeader'
 import { VoiceBar } from './components/VoiceBar'
 import { VOICE_INPUT_ENABLED } from './lib/featureFlags'
 import { SettingsModal } from './components/SettingsModal'
@@ -51,6 +52,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const inProjects = segments[0] === 'projects'
   const routeProjectId = inProjects ? (segments[1] ?? null) : null
   const routeSettings = inProjects && segments[2] === 'settings'
+  // «Открыть задачу» из шапки связанного чата: #/projects/:id/task/:taskId.
+  const routeTaskId = inProjects && segments[2] === 'task' ? (segments[3] ?? null) : null
   // Утилиты-страницы: один сегмент из белого списка (#/machines, #/kb, …).
   const utilitySeg = segments.length === 1 && UTILITY_PAGES.includes(segments[0]) ? segments[0] : null
   const onUtilityPage = utilitySeg !== null
@@ -317,6 +320,30 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onDeleteMessage={actions.deleteMessage}
         onEditMessage={actions.editMessage}
         onAnswerQuestions={(text) => void actions.answerQuestions(text)}
+        onAnswerCiInteraction={(runId, interactionId, text) => void actions.answerCiInteraction(runId, interactionId, { text })}
+        answeredCiInteractions={state.answeredCiInteractions}
+        taskHeader={
+          state.taskChatContext ? (
+            <TaskChatHeader
+              context={state.taskChatContext}
+              onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)}
+              renderRunFeed={(runId) => (
+                <RunFeed
+                  runId={runId}
+                  cache={state.ciRuns[runId]}
+                  onSubscribe={actions.ciSubscribe}
+                  onUnsubscribe={actions.ciUnsubscribe}
+                  onLoad={(id) => void actions.loadCiRun(id)}
+                  onRetry={(id) => void actions.retryCiRun(id)}
+                  onRetryFromStep={(id, selection) => void actions.retryCiRunFromStep(id, selection)}
+                  onDiscardAndRetry={(id) => void actions.discardCiWorkspaceAndRetry(id)}
+                  onCancel={(id) => void actions.cancelCiRun(id)}
+                  onAnswerInteraction={(id, interactionId, answer) => void actions.answerCiInteraction(id, interactionId, answer)}
+                />
+              )}
+            />
+          ) : null
+        }
         machineOps={machineOps}
         readServerFile={actions.readServerFile}
         onOpenImageInExplorer={(agentId, path) => actions.openUtility('explorer', agentId, path)}
@@ -372,6 +399,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
 
       {inProjects && routeProjectId && !routeSettings && (
         <ProjectBoard
+          initialOpenTaskId={routeTaskId}
           projectName={
             state.projectDetail?.name ??
             state.projects.find((p) => p.id === routeProjectId)?.name ??
@@ -391,6 +419,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
           onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
           onOpenChat={(taskId) => void actions.openTaskChat(taskId).then(() => navigate('/'))}
+          onEnsureChat={(taskId) => void actions.ensureTaskChat(taskId)}
           ciSummaries={state.ciSummaries}
           onStartCi={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId).then((run) => { if (run) actions.openCiRun(run.id) }) }}
           onOpenCiRun={(runId) => actions.openCiRun(runId)}
@@ -576,6 +605,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
               onRetryFromStep={(runId, selection) => { void actions.retryCiRunFromStep(runId, selection); actions.openCiRun(runId) }}
               onDiscardAndRetry={(runId) => void actions.discardCiWorkspaceAndRetry(runId).then((run) => { if (run) actions.openCiRun(run.id) })}
               onCancel={(runId) => void actions.cancelCiRun(runId)}
+              onAnswerInteraction={(runId, interactionId, answer) => void actions.answerCiInteraction(runId, interactionId, answer)}
             />
           </div>
         </ToolFrame>
