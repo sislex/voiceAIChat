@@ -7,6 +7,8 @@ import type { Task } from '@shared/projects'
 import { ciCardPulse, isActiveCiStatus, type CiRunSummary } from '@shared/ci'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
+import { Button } from '../ui/Button'
+import { IconButton } from '../ui/IconButton'
 import { useConfirm } from '../ui/useConfirm'
 
 export interface TaskCardProps {
@@ -87,8 +89,9 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
       <div className="jcard-top">
         <span className="jcard-title">{task.title}</span>
         <span className="jcard-menuwrap" ref={menuRef}>
-          <button
-            className="jcard-menubtn"
+          <IconButton
+            className="jcard-reveal"
+            size="sm"
             aria-label={`Действия с «${task.title}»`}
             title="Действия"
             aria-expanded={menuOpen}
@@ -98,7 +101,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
             }}
           >
             ⋯
-          </button>
+          </IconButton>
           {menuOpen && (
             <div className="jcard-menu" onClick={(e) => e.stopPropagation()}>
               <button onClick={() => { setMenuOpen(false); props.onOpen(task.id) }}>Открыть</button>
@@ -173,16 +176,17 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
           })()}
           <div className="jcard-ci-row">
             {ciSummary && (
-              <button
-                className={`jcard-ci-open${ciSummary.awaitingInput ? ' jcard-ci-open--attention' : ''}`}
+              <Button
+                size="sm"
+                className={ciSummary.awaitingInput ? 'jcard-ci-attention' : undefined}
                 onClick={() => props.onOpenCiRun?.(ciSummary.id)}
               >
                 {ciSummary.awaitingInput ? 'Ответить модели' : 'Лента рана'}
-              </button>
+              </Button>
             )}
             {/* Пока ран идёт, запускать нечего — остаётся только лента. */}
             {!ciActive && props.onStartCi && (
-              <button className="jcard-ci-run" onClick={() => props.onStartCi?.(task.id)}>Выполнить</button>
+              <Button variant="primary" size="sm" onClick={() => props.onStartCi?.(task.id)}>Выполнить</Button>
             )}
           </div>
         </div>
@@ -193,8 +197,11 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
           <TypeIcon type={task.type} />
           <span className={`jcard-key${done ? ' jcard-key--done' : ''}`}>{key}</span>
           {props.onOpenChat && (
-            <button
-              className={`jcard-chat${task.chatId ? ' jcard-chat--linked' : ''}`}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="jcard-chat"
+              iconLeft={<span aria-hidden="true">💬</span>}
               title={task.chatId ? 'Открыть связанный чат' : 'Создать связанный чат'}
               aria-label="Связанный чат"
               onClick={(e) => {
@@ -202,9 +209,8 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 props.onOpenChat?.(task.id)
               }}
             >
-              <span aria-hidden="true">💬</span>
-              <span>Чат</span>
-            </button>
+              Чат
+            </Button>
           )}
         </span>
 
