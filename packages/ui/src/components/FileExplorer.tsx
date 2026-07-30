@@ -221,7 +221,9 @@ export function FileExplorer({
                 {writable &&
                   (confirmDel === abs ? (
                     <>
-                      <Button variant="danger" size="sm"
+                      <Button
+                        variant="danger"
+                        size="sm"
                         onClick={() => {
                           setConfirmDel(null)
                           if (agentId) void run(ops.remove(agentId, abs))

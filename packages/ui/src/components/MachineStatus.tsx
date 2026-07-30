@@ -172,7 +172,8 @@ function AgentActions({
       </span>
       <span className="mst-agent-btns">
         {outdated && onCopyCommand && (
-          <Button size="sm"
+          <Button
+            size="sm"
             title={`Скопировать команду обновления. ${UPDATE_HINT}`}
             aria-label={`Скопировать команду обновления для ${agent.name}`}
             onClick={onCopyCommand}
@@ -181,7 +182,9 @@ function AgentActions({
           </Button>
         )}
         {outdated && onUpdate && (
-          <Button variant="primary" size="sm"
+          <Button
+            variant="primary"
+            size="sm"
             title="Обновить агента на машине: сервер выполнит на ней ту же команду"
             aria-label={`Обновить агента на ${agent.name}`}
             disabled={busy}
@@ -191,7 +194,8 @@ function AgentActions({
           </Button>
         )}
         {onRegenerate && (
-          <Button size="sm"
+          <Button
+            size="sm"
             title="Перевыпустить токен: старый перестанет работать, агента нужно переустановить новой командой"
             aria-label={`Перевыпустить токен для ${agent.name}`}
             onClick={onRegenerate}
@@ -375,7 +379,9 @@ export function MachineStatus({
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && void add()}
             />
-            <Button variant="primary" size="sm"
+            <Button
+              variant="primary"
+              size="sm"
               title="Добавить машину и получить команду установки"
               aria-label="Добавить машину"
               disabled={!name.trim()}
