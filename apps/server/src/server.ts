@@ -359,6 +359,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   registerCiRoutes(app, db, ciRunManager)
 
+  // Раны предыдущего процесса живут только в его памяти: после рестарта они
+  // навсегда остались бы «running» и блокировали карточку задачи.
+  const interrupted = db.failInterruptedCiRuns()
+  if (interrupted.length) app.log.warn({ runs: interrupted.map((r) => r.id) }, 'ci: прерванные раны закрыты как failed')
+
   // Плановая остановка (деплой/SIGTERM → app.close()): сохранить частичные
   // ответы активных ходов, чтобы рестарт контейнера не терял набранный текст.
   app.addHook('onClose', async () => {

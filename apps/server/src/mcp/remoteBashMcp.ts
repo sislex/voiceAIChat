@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { AgentRegistry } from '../agents/registry.js'
+import { evaluatePlanModeCommand } from './planMode.js'
 
 export const REMOTE_BASH_MCP_PATH = '/mcp/remote-bash'
 
@@ -19,11 +20,14 @@ export function registerRemoteBashMcp(
   registry: AgentRegistry,
   secret: string
 ): void {
-  app.post<{ Querystring: { agent?: string; k?: string; cwd?: string } }>(
+  app.post<{ Querystring: { agent?: string; k?: string; cwd?: string; ro?: string } }>(
     REMOTE_BASH_MCP_PATH,
     async (req, reply) => {
       if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
       const agentId = req.query.agent ?? ''
+      // ro=1 — фаза плана CI: инструмент нужен для исследования рабочей копии,
+      // но менять её нельзя (см. planMode.ts).
+      const readOnly = req.query.ro === '1'
 
       // Отмена команды именно этого запроса при обрыве (claude убит на barge-in),
       // не затрагивая параллельные команды на той же машине. Слушаем close ОТВЕТА,
@@ -49,6 +53,22 @@ export function registerRemoteBashMcp(
         },
         async ({ command, timeout_ms }) => {
           try {
+            if (readOnly) {
+              const verdict = evaluatePlanModeCommand(command)
+              if (!verdict.allowed) {
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text:
+                        `Отклонено: режим «План» — ${verdict.reason}. Исследуй только чтением ` +
+                        `(ls, cat, grep, git log/diff/status); правки начнутся после одобрения плана.`
+                    }
+                  ],
+                  isError: true
+                }
+              }
+            }
             const timeoutMs = Math.min(timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
             const cwd = req.query.cwd
             const shellCommand = cwd

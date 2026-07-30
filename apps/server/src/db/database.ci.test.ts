@@ -237,3 +237,37 @@ describe('VoiceChatDb — миграция существующей БД под 
     rmSync(dir, { recursive: true, force: true })
   })
 })
+
+describe('ci: раны, прерванные рестартом сервера', () => {
+  it('закрывает активные раны и их шаги, снимает ожидание ответа', () => {
+    const { p, task } = project()
+    const run = db.createCiRun({
+      projectId: p.id,
+      taskId: task.id,
+      agentId: null,
+      triggeredBy: 'alice',
+      prevColumnId: null,
+      slotProgress: { done: 0, total: 3, phase: 'Старт' }
+    })
+    db.updateCiRun(run.id, { status: 'running', startedAt: 1000 })
+    const done = db.addCiRunStep({ runId: run.id, slot: 'before_model', position: 0, kind: 'command', title: 'клон', status: 'success' })
+    const stuck = db.addCiRunStep({ runId: run.id, slot: null, position: 1, kind: 'model_work', title: 'Работа модели', status: 'running' })
+    const later = db.addCiRunStep({ runId: run.id, slot: 'after_model', position: 2, kind: 'command', title: 'тесты', status: 'queued' })
+    const it0 = db.addCiInteraction({ runId: run.id, stepId: stuck.id, kind: 'clarify', questions: [{ q: 'а?', options: ['да'], multi: false }] })
+
+    const closed = db.failInterruptedCiRuns()
+    expect(closed.map((r) => r.id)).toEqual([run.id])
+    expect(db.getCiRunRaw(run.id)?.status).toBe('failed')
+    expect(db.getCiRunRaw(run.id)?.finishedAt).not.toBeNull()
+
+    const steps = db.getCiRun('alice', run.id)!.steps
+    const byId = (id: string) => steps.find((s) => s.id === id)!.status
+    expect(byId(done.id)).toBe('success')
+    expect(byId(stuck.id)).toBe('failed')
+    expect(byId(later.id)).toBe('skipped')
+    expect(db.getCiInteraction(it0.id)?.status).toBe('cancelled')
+
+    // Повторный вызов ничего не находит: закрытые раны уже терминальны.
+    expect(db.failInterruptedCiRuns()).toHaveLength(0)
+  })
+})

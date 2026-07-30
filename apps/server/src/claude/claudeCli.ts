@@ -93,6 +93,10 @@ export class ClaudeCli implements LlmClient {
         `Встроенный инструмент Bash отключён. Все shell-команды выполняй инструментом ` +
           `mcp__remote__bash — они выполняются на машине пользователя «${req.remote.agentName}», ` +
           `а не на сервере.` +
+          (req.readOnlyRemote
+            ? `\n\nРежим «План»: только исследование. Читай файлы и историю (ls, cat, grep, ` +
+              `git log/diff/status), но ничего не меняй — правки, установки и сборки будут отклонены.`
+            : '') +
           (req.remote.policySummary ? `\n\n${req.remote.policySummary}` : '') +
           ciHint
       )

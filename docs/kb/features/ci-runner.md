@@ -133,12 +133,22 @@ cwd/env собираются с shell-escape (пользовательский �
 Один механизм на оба случая — таблица `ci_interactions` (`kind: clarify|plan_approval`)
 и нетерминальный статус рана `awaiting_input`. Работа модели (`modelWork`) —
 фазовый цикл ходов CLI в **одной сессии**: `runTurn` захватывает `onSession`, и
-следующий ход идёт с `--resume`/`codex resume`. В режиме `plan` первый ход идёт с
-`permissionMode: 'plan'`, затем гейт `askPlanApproval`: `approved` переводит тот же
-диалог в `acceptEdits` (слот «после» и резюме идут как обычно), `rework` даёт
+следующий ход идёт с `--resume`/`codex resume`. В режиме `plan` первый ход идёт
+**не** в CLI-режиме `plan` (он глушит MCP целиком — «Cannot call mcp__remote__bash
+while in plan mode», а рабочая копия доступна модели только через remote MCP), а в
+`permissionMode: 'default'` с белым списком инструментов: правки файлов CLI отклоняет
+сам, remote-bash подключается с `&ro=1` (только чтение, `mcp/planMode.ts`), команды
+CI-справочника в план-фазе не публикуются. Затем гейт `askPlanApproval`: `approved`
+переводит тот же диалог в `acceptEdits` (слот «после» и резюме идут как обычно), `rework` даёт
 модели комментарий и новый план, отсутствие решения (таймаут/отмена) завершает ран
 как `cancelled` без слота «после». Уточняющие вопросы разбираются существующим
 `parseQuestions` из `@shared/questions` — нового формата нет.
+
+Раны переживают только свой процесс: при старте `buildServer` вызывает
+`db.failInterruptedCiRuns()` — раны в `queued`/`running`/`awaiting_input` от прошлого
+процесса закрываются как `failed` (незавершённые шаги — `failed`/`skipped`, ожидание
+ответа снимается). Иначе после рестарта контейнера карточка задачи навсегда считала
+бы CI занятым.
 
 Ожидание **отпускает серверный слот** (`releaseSlot`/`acquireSlot` вокруг await):
 одобрение плана может длиться часами, а `maxConcurrentRuns` по умолчанию 2.

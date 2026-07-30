@@ -144,15 +144,28 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       // Страховка от бесконечного цикла: паузы ограничены бюджетом вопросов и
       // числом доработок плана, но верхний предел ходов задаём явно.
       for (let turnNo = 0; turnNo < MAX_MODEL_TURNS; turnNo++) {
+        // Фаза плана НЕ идёт в CLI-режиме `plan`: он блокирует MCP-инструменты целиком
+        // («Cannot call mcp__remote__bash while in plan mode»), а рабочая копия доступна
+        // модели только через remote MCP — в плане она оказывалась слепой. Вместо этого
+        // `default` с белым списком инструментов (правки файлов CLI отклонит сам) плюс
+        // remote-bash в режиме только чтения (`ro=1`) и без команд CI-справочника.
         const req: LlmRequest = {
           userId: ctx.run.triggeredBy,
           prompt,
           sessionId,
           model: modelFor(ctx),
-          permissionMode: phase === 'plan' ? 'plan' : 'acceptEdits',
+          permissionMode: phase === 'plan' ? 'default' : 'acceptEdits',
           // CLI работает внутри server-контейнера; workspace существует на удалённой машине
           // и доступен модели только через remote MCP. Хостовый путь нельзя передавать в spawn cwd.
-          ...base
+          ...base,
+          ...(phase === 'plan'
+            ? {
+                readOnlyRemote: true,
+                ...(base.remote
+                  ? { remote: { mcpUrl: `${base.remote.mcpUrl}&ro=1`, agentName: base.remote.agentName } }
+                  : {})
+              }
+            : {})
         }
         const r = await runTurn(clientFor(ctx), req, log)
         if (!r.ok) return { ok: false }
