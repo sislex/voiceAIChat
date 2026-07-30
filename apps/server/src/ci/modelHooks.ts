@@ -104,7 +104,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       sessionId: null,
       model: modelFor(ctx),
       permissionMode: 'acceptEdits',
-      cwd: ctx.workspacePath,
+      // CLI работает внутри server-контейнера; workspace существует на удалённой машине
+      // и доступен модели только через remote MCP. Хостовый путь нельзя передавать в spawn cwd.
       ...base
     }
     try {
@@ -153,7 +154,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         sessionId: null,
         model: modelFor(ctx),
         permissionMode: 'acceptEdits',
-        cwd: ctx.workspacePath,
+        // См. modelWork: рабочая директория удалённой машины задаётся в MCP URL.
         ...remoteOf(deps, ctx)
       }
       const turn = await runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk))

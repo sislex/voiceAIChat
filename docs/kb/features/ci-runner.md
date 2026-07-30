@@ -75,6 +75,7 @@ cwd/env собираются с shell-escape (пользовательский �
 модели (remote-bash MCP в рабочей папке), резюме, fix-loop (диагноз→правка→повтор
 упавшего шага, лимиты `maxFixAttempts`/`fixTimeLimitMs`, предложения по правке
 скрипта). Команды справочника доступны модели как MCP-инструмент `mcp__ci__run_command`
+Удалённый workspace передаётся только через `remote.mcpUrl`; его хостовый путь нельзя задавать как локальный `LlmRequest.cwd`, потому что CLI запускается внутри server-контейнера.
 (`ci/ciCommandsMcp.ts`, брокер `ciToolBroker` по токену рана; лимит
 `maxModelCommandCalls`, `is_cleanup` исключены). Каждый вызов — вложенный шаг ленты.
 Ошибка `model_work` останавливает ран до after-слота и сохраняет workspace. В `RunFeed`

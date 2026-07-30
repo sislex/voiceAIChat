@@ -7,7 +7,7 @@ import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from '../users/accounts.js'
 import type { CommandExecutor } from './types.js'
-import type { LlmClient } from '../claude/types.js'
+import type { LlmClient, LlmRequest } from '../claude/types.js'
 import { ciToolBroker } from './ciCommandsMcp.js'
 
 const SECRET = 'ci-secret'
@@ -15,9 +15,11 @@ let app: FastifyInstance, db: VoiceChatDb, admin: string
 let scripts: string[] = []
 let failClaude = false
 let codexModel = ''
+let modelRequests: LlmRequest[] = []
 
 const fakeClaude: LlmClient = {
   send: (req, handlers) => {
+    modelRequests.push(req)
     void (async () => {
       if (failClaude) { handlers.onError('лимит исчерпан'); return }
       // Эмуляция MCP-вызова: если модели доступна команда 'model-tool', вызываем её
@@ -36,6 +38,7 @@ const fakeClaude: LlmClient = {
 
 const fakeCodex: LlmClient = {
   send: (req, handlers) => {
+    modelRequests.push(req)
     codexModel = req.model
     queueMicrotask(() => { handlers.onDelta('готово codex'); handlers.onDone('готово codex') })
     return { cancel: () => {} }
@@ -62,6 +65,7 @@ beforeEach(async () => {
   scripts = []
   failClaude = false
   codexModel = ''
+  modelRequests = []
   counts.clear()
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => Date.now() })
   app = await buildServer({ config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-ci-${Date.now()}`) }), db, sessionSecret: SECRET, ciExecutor, claude: fakeClaude, codex: fakeCodex })
@@ -108,6 +112,9 @@ describe('ci run manager', () => {
     expect(d.run.status).toBe('success')
     expect(d.steps.map((s) => s.kind)).toContain('model_work')
     expect(d.steps.map((s) => s.kind)).toContain('model_summary')
+    const workRequest = modelRequests.find((req) => req.permissionMode === 'acceptEdits')!
+    expect(workRequest.cwd).toBeUndefined()
+    expect(workRequest.remote?.mcpUrl).toContain('cwd=%2Frepos%2Fp%2F1')
     // Лог рана содержит строки.
     const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json()
     expect(Array.isArray(log)).toBe(true)
