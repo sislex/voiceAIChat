@@ -7,6 +7,8 @@ import { useEffect, useState } from 'react'
 import type { ProjectDetail, ProjectMachine, ProjectSummary, WorkItemDefaultSkills } from '@shared/projects'
 
 import type { AgentInfo } from '@shared/agentProtocol'
+import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
 import { ToolFrame } from './ToolFrame'
 
 export interface ProjectSettingsProps {
@@ -198,9 +200,9 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
                   {m.username} <span className="proj-muted">{m.role}</span>
                 </span>
                 {isOwner && m.role !== 'owner' && (
-                  <button className="delbtn" aria-label={`Убрать ${m.username}`} title="Убрать участника" onClick={() => props.onRemoveMember(detail.id, m.username)}>
+                  <IconButton size="sm" className="vc-btn--danger-quiet" aria-label={`Убрать ${m.username}`} title="Убрать участника" onClick={() => props.onRemoveMember(detail.id, m.username)}>
                     ✕
-                  </button>
+                  </IconButton>
                 )}
               </li>
             ))}
@@ -265,17 +267,17 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
             {confirmDel ? (
               <span className="delconfirm">
                 <span>Удалить проект?</span>
-                <button className="delyes" onClick={() => props.onDelete(detail.id)}>
+                <Button variant="danger" size="sm" onClick={() => props.onDelete(detail.id)}>
                   Удалить
-                </button>
-                <button className="delno" onClick={() => setConfirmDel(false)}>
+                </Button>
+                <Button size="sm" onClick={() => setConfirmDel(false)}>
                   Отмена
-                </button>
+                </Button>
               </span>
             ) : (
-              <button className="delbtn proj-delete" onClick={() => setConfirmDel(true)}>
+              <Button variant="danger" size="sm" className="proj-delete" onClick={() => setConfirmDel(true)}>
                 Удалить проект
-              </button>
+              </Button>
             )}
           </div>
         )}

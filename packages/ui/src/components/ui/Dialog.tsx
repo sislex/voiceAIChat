@@ -12,6 +12,7 @@
 import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
+import { IconButton } from './IconButton'
 import { useDialogStack } from './useDialogStack'
 
 /** Ширина окна: sm — короткая форма, md — настройки, lg — две колонки, full — почти весь экран. */
@@ -123,9 +124,9 @@ export function Dialog({
 
   const label = ariaLabel ? { 'aria-label': ariaLabel } : { 'aria-labelledby': titleId }
   const closeButton = onClose && showClose && (
-    <button className="xbtn" aria-label={closeLabel} title={closeLabel} onClick={requestClose}>
+    <IconButton aria-label={closeLabel} title={closeLabel} onClick={requestClose}>
       ✕
-    </button>
+    </IconButton>
   )
 
   return createPortal(

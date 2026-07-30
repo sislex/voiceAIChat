@@ -3,6 +3,7 @@
 // на matchMedia, поэтому важна именно ширина фрейма, а не размер контейнера.
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
+import { Button } from './Button'
 import { Dialog, type DialogSize } from './Dialog'
 
 const meta: Meta<typeof Dialog> = {
@@ -33,7 +34,7 @@ function Body({ rows = 4 }: { rows?: number }): JSX.Element {
             <p className="flab">Настройка {i + 1}</p>
             <p className="fsub">Короткое пояснение, зачем она нужна</p>
           </div>
-          <button className="renbtn">Изменить</button>
+          <Button size="sm">Изменить</Button>
         </div>
       ))}
     </div>
@@ -56,7 +57,7 @@ export const Full: Story = sized('full')
 /** Слоты шапки и подвала. */
 export const WithActionsAndFooter: Story = {
   render: (args) => (
-    <Dialog {...args} actions={<button className="renbtn">Действие</button>} footer={<><button className="renbtn">Отмена</button><button className="btn-primary">Сохранить</button></>}>
+    <Dialog {...args} actions={<Button size="sm">Действие</Button>} footer={<><Button>Отмена</Button><Button variant="primary">Сохранить</Button></>}>
       <Body rows={2} />
     </Dialog>
   )
@@ -76,7 +77,7 @@ export const Nested: Story = {
       return (
         <Dialog {...args} title="Карточка задачи" size="lg">
           <div className="mdbody">
-            <button className="delbtn" onClick={() => setConfirm(true)}>🗑 Удалить задачу</button>
+            <Button variant="danger" iconLeft={<span aria-hidden="true">🗑</span>} onClick={() => setConfirm(true)}>Удалить задачу</Button>
           </div>
           {confirm && (
             <Dialog title="Удалить задачу?" size="sm" onClose={() => setConfirm(false)}>

@@ -4,6 +4,7 @@
 // приложение — все данные и колбэки идут пропсами насквозь.
 
 import { useEffect, useState } from 'react'
+import { IconButton } from './ui/IconButton'
 import { ToolFrame } from './ToolFrame'
 import { KanbanBoard, type KanbanBoardProps } from './kanban'
 
@@ -35,9 +36,9 @@ export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
       className="kanban-frame"
       actions={
         onOpenSettings && (
-          <button className="renbtn kanban-settings" title="Настройки проекта" onClick={onOpenSettings}>
+          <IconButton size="sm" className="kanban-settings" aria-label="Настройки проекта" title="Настройки проекта" onClick={onOpenSettings}>
             ⚙ Настройки
-          </button>
+          </IconButton>
         )
       }
     >
