@@ -413,7 +413,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onLinkMachine={(id, agentId) => void actions.linkProjectMachine(id, agentId)}
           onUnlinkMachine={(id, agentId) => void actions.unlinkProjectMachine(id, agentId)}
           onSetMachinePath={(id, agentId, path) => void actions.setProjectMachinePath(id, agentId, path)}
-          onSetFeatureReposRoot={(id, agentId, root) => void actions.setProjectFeatureReposRoot(id, agentId, root)}
+          onSetReposRoot={(id, agentId, root) => void actions.setProjectReposRoot(id, agentId, root)}
           onSetDefaultMachine={(id, agentId) => void actions.setProjectDefaultMachine(id, agentId)}
           onClose={() => navigate(`/projects/${routeProjectId}`)}
         />

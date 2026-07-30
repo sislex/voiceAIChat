@@ -14,7 +14,6 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-07-27 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-27 | ⚠ 5 коммит(ов) в areas после сверки: f4364e2 feat(projects): канбан-доска в стиле Jira … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-07-28 | ⚠ 1 коммит(ов) в areas после сверки: 02dc1b7 feat(projects): add agent feature workflow |
-| [features/feature-workflow.md](features/feature-workflow.md) | Feature Run — выполнение задач агентом в изолированных Git-workspace | 2026-07-28 | ⚠ 7 коммит(ов) в areas после сверки: 725b419 feat(ui): авто-редирект на последний проект; убрать «Проекты» из меню … |
 | [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-07-27 | ⚠ код изменён 2026-07-29, сверка 2026-07-27 (по датам: правки того же дня не видны — поставь checked) |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-27 | ⚠ 1 коммит(ов) в areas после сверки: 95f654f docs(kb): document complete project architecture |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-29 | ✓ |

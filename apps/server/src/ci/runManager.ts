@@ -339,7 +339,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
     const agentId = project.defaultAgentId
     const machine = project.machines.find((m) => m.agentId === agentId)
-    const repoRoot = machine?.featureReposRoot?.replace(/\/$/, '') || ''
+    const repoRoot = machine?.reposRoot?.replace(/\/$/, '') || ''
     const projectSlug = slugify(project.name)
     const taskNumber = String(task.seq ?? 0)
     const slug = slugify(task.title)

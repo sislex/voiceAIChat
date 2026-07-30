@@ -1,4 +1,3 @@
-import type { FeatureRunSummary } from './features'
 import type { CiRunSummary, CiReuseStrategy } from './ci'
 
 // Типы домена «Проекты» + канбан-доска. Разделяются server/web/desktop.
@@ -93,8 +92,8 @@ export interface ProjectMachine {
   agentId: string
   /** Папка проекта на этой машине (рабочий каталог). '' — не задана. */
   path: string
-  /** Корень пула изолированных копий Feature Run на этой машине. */
-  featureReposRoot: string
+  /** Корень пула рабочих копий CI на этой машине. */
+  reposRoot: string
 }
 
 /** Проект со всем составом (ответ get/create/update). */
@@ -169,7 +168,6 @@ export type WorkItem = Task
 export interface Board {
   columns: KanbanColumn[]
   tasks: Task[]
-  features?: FeatureRunSummary[]
   /** Сводки CI-ранов по задачам проекта (последний ран на задачу). */
   ciRuns?: CiRunSummary[]
 }

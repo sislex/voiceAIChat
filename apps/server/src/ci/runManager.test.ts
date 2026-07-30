@@ -80,7 +80,7 @@ function setup() {
   const project = db.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
   const agent = db.createAgent('admin', 'M')
   db.linkMachine('admin', project.id, agent.id)
-  db.setProjectMachineFeatureReposRoot('admin', project.id, agent.id, '/repos')
+  db.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
   db.setProjectDefaultMachine('admin', project.id, agent.id)
   const board = db.getBoard('admin', project.id)!
   const ready = board.columns.find((c) => c.semanticType === 'ready')!

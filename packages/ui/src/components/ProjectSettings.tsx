@@ -20,7 +20,7 @@ export interface ProjectSettingsProps {
   onLinkMachine: (id: string, agentId: string) => void
   onUnlinkMachine: (id: string, agentId: string) => void
   onSetMachinePath: (id: string, agentId: string, path: string) => void
-  onSetFeatureReposRoot: (id: string, agentId: string, featureReposRoot: string) => void
+  onSetReposRoot: (id: string, agentId: string, reposRoot: string) => void
   onSetDefaultMachine: (id: string, agentId: string) => void
   onClose: () => void
 }
@@ -71,29 +71,29 @@ function TagEditor({ label, tags, editable, onChange }: {
 }
 
 /** Строка машины проекта: привязка, папка проекта на ней и отметка «по умолчанию». */
-function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetFeatureReposRoot, onSetDefault }: {
+function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetReposRoot, onSetDefault }: {
   agent: AgentInfo
   machine: ProjectMachine | undefined
   isDefault: boolean
   onToggle: () => void
   onSetPath: (path: string) => void
-  onSetFeatureReposRoot: (path: string) => void
+  onSetReposRoot: (path: string) => void
   onSetDefault: () => void
 }): JSX.Element {
   const [path, setPath] = useState(machine?.path ?? '')
-  const [featureReposRoot, setFeatureReposRoot] = useState(machine?.featureReposRoot ?? '')
+  const [reposRoot, setReposRoot] = useState(machine?.reposRoot ?? '')
   useEffect(() => {
     setPath(machine?.path ?? '')
   }, [machine?.path])
   useEffect(() => {
-    setFeatureReposRoot(machine?.featureReposRoot ?? '')
-  }, [machine?.featureReposRoot])
+    setReposRoot(machine?.reposRoot ?? '')
+  }, [machine?.reposRoot])
   const linked = machine !== undefined
   const commit = (): void => {
     if (path !== (machine?.path ?? '')) onSetPath(path)
   }
-  const commitFeatureReposRoot = (): void => {
-    if (featureReposRoot !== (machine?.featureReposRoot ?? '')) onSetFeatureReposRoot(featureReposRoot)
+  const commitReposRoot = (): void => {
+    if (reposRoot !== (machine?.reposRoot ?? '')) onSetReposRoot(reposRoot)
   }
   return (
     <li className="proj-machine-row">
@@ -118,11 +118,11 @@ function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetFeatu
             className="login-input"
             placeholder="Корень VoiceAIChatRepos для Feature Run"
             aria-label={`Корень Feature-репозиториев на ${agent.name}`}
-            value={featureReposRoot}
-            onChange={(e) => setFeatureReposRoot(e.target.value)}
-            onBlur={commitFeatureReposRoot}
+            value={reposRoot}
+            onChange={(e) => setReposRoot(e.target.value)}
+            onBlur={commitReposRoot}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') commitFeatureReposRoot()
+              if (e.key === 'Enter') commitReposRoot()
             }}
           />
           <label className="proj-default-toggle" title="Машина по умолчанию для проекта">
@@ -240,7 +240,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
                       : props.onLinkMachine(detail.id, a.id)
                   }
                   onSetPath={(path) => props.onSetMachinePath(detail.id, a.id, path)}
-                  onSetFeatureReposRoot={(root) => props.onSetFeatureReposRoot(detail.id, a.id, root)}
+                  onSetReposRoot={(root) => props.onSetReposRoot(detail.id, a.id, root)}
                   onSetDefault={() => props.onSetDefaultMachine(detail.id, a.id)}
                 />
               ))}
