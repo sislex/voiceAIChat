@@ -48,7 +48,10 @@ export function registerRemoteBashMcp(
             'Возвращает stdout+stderr и код выхода.',
           inputSchema: {
             command: z.string().describe('Команда для /bin/bash'),
-            timeout_ms: z.number().optional().describe('Таймаут в мс (по умолчанию 120000)')
+            timeout_ms: z
+              .number()
+              .optional()
+              .describe('Таймаут в мс (по умолчанию 120000, максимум 300000)')
           }
         },
         async ({ command, timeout_ms }) => {
