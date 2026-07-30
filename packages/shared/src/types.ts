@@ -93,6 +93,40 @@ export interface Conversation {
   lastExecTarget: string | null
 }
 
+/** Найденное сообщение: карточка результата полнотекстового поиска. */
+export interface MessageSearchHit {
+  messageId: string
+  conversationId: string
+  /** Заголовок беседы — карточка результата показывает его вместо id. */
+  conversationTitle: string
+  /** Проект беседы (null — беседа без проекта). */
+  projectId: string | null
+  role: MessageRole
+  createdAt: number
+  /** Локальное время сообщения (HH:MM) — как в ленте чата. */
+  time: string
+  /**
+   * Фрагмент текста вокруг совпадений: совпавшие слова обёрнуты в
+   * `<mark>…</mark>`. Это **не HTML для вставки** — текст сообщения произволен,
+   * поэтому клиент разбирает разметку сам (`splitSnippet` в UI).
+   */
+  snippet: string
+  /** Оценка bm25: меньше — релевантнее (используется курсором пагинации). */
+  score: number
+}
+
+/** Страница результатов поиска по сообщениям. */
+export interface MessageSearchResult {
+  hits: MessageSearchHit[]
+  /** Курсор следующей страницы; null — результаты закончились. */
+  nextCursor: string | null
+  /**
+   * Запрос, ушедший в FTS5 после экранирования. Пустая строка — искать было
+   * нечего (только спецсимволы или пробелы), результат заведомо пустой.
+   */
+  match: string
+}
+
 /**
  * Алиас модели Claude. В `claude --model` уходит именно алиас — конкретную
  * версию («latest») резолвит сам CLI, поэтому версии тут не фиксируем.

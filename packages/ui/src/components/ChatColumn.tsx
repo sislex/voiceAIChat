@@ -33,6 +33,9 @@ import {
 import { copyText } from '../lib/clipboard'
 import { useAutoGrow } from '../lib/autoGrow'
 
+/** Сколько держим подсветку сообщения, к которому перешли из поиска. */
+const HIGHLIGHT_MS = 2000
+
 const EDIT_MIN_ROWS = 2
 const EDIT_MAX_ROWS = 4
 
@@ -61,6 +64,13 @@ export interface ChatColumnProps {
   messages: Message[]
   /** Идёт загрузка сообщений разговора — показываем лоадер вместо ленты. */
   loadingMessages?: boolean
+  /**
+   * Сообщение, к которому надо прокрутить ленту и подсветить его (переход из
+   * результатов поиска). Подсветка гаснет сама — через `onHighlightDone`.
+   */
+  highlightMessageId?: string | null
+  /** Подсветка отработала: стор гасит `highlightMessageId`. */
+  onHighlightDone?: () => void
   liveSegments: LiveSegment[]
   diarization: boolean
   /** Стримящийся ответ Claude (растёт по токенам); пусто — нет активного стрима. */
@@ -139,6 +149,8 @@ export function ChatColumn({
   state,
   messages,
   loadingMessages = false,
+  highlightMessageId = null,
+  onHighlightDone,
   liveSegments,
   diarization,
   streamingReply = '',
@@ -237,6 +249,19 @@ export function ChatColumn({
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [messages.length, liveSegments, state, streamingReply])
+
+  // Переход из поиска: прокручиваем к найденному сообщению и держим подсветку
+  // HIGHLIGHT_MS. Эффект стоит после автоскролла вниз — иначе тот перебил бы
+  // прокрутку. Сообщения могут ещё грузиться: пока элемента нет, ждём рендера.
+  useEffect(() => {
+    if (!highlightMessageId) return
+    const el = scrollRef.current?.querySelector(`[data-mid="${highlightMessageId}"]`)
+    if (!el) return
+    // jsdom не умеет scrollIntoView — в тестах просто нет прокрутки.
+    el.scrollIntoView?.({ block: 'center' })
+    const timer = setTimeout(() => onHighlightDone?.(), HIGHLIGHT_MS)
+    return () => clearTimeout(timer)
+  }, [highlightMessageId, messages, onHighlightDone])
 
   const isListening = state === 'listening'
   const hasStream = streamingReply.length > 0
@@ -399,7 +424,13 @@ export function ChatColumn({
             const aiText = parsed ? parsed.body : imageText
             const isLast = messages[messages.length - 1]?.id === m.id
             return (
-              <div key={m.id} className={isAi ? 'msg ai' : 'msg me'}>
+              <div
+                key={m.id}
+                data-mid={m.id}
+                className={[isAi ? 'msg ai' : 'msg me', m.id === highlightMessageId && 'msg--found']
+                  .filter(Boolean)
+                  .join(' ')}
+              >
                 <span className={chipClass(m.role, diarization, isAi ? m.engine : undefined)}>
                   {speakerName(m.role, diarization, isAi ? engineLabel(m.engine) : aiLabel)}
                 </span>

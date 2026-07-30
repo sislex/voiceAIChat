@@ -4290,3 +4290,162 @@
   cursor: default;
   filter: none;
 }
+
+/* ---- Поиск по сообщениям (сайдбар) ---- */
+.searchscope {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.searchscope button {
+  flex: 1;
+  border: none;
+  background: rgba(128, 128, 128, 0.12);
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.searchscope button:hover {
+  background: rgba(128, 128, 128, 0.22);
+}
+.searchscope button.on {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.msgfound-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 10px 10px;
+}
+.msgfound-hint {
+  padding: 8px 6px;
+  line-height: 1.45;
+}
+.msgfound {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.msgfound:hover {
+  border-color: var(--accent);
+}
+.msgfound-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+.msgfound-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msgfound-date,
+.msgfound-role {
+  color: var(--text-dim);
+  font-size: 11px;
+  flex: none;
+}
+.msgfound-snippet {
+  /* Сниппет — обрезанный кусок текста: переносим по словам, но не растим карточку. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.msgfound-snippet mark {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+.msgfound-error {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid #d9a2a2;
+  border-radius: 9px;
+  font-size: 13px;
+}
+.msgfound-error p {
+  margin: 0;
+}
+.msgfound-retry,
+.msgfound-more {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.msgfound-more {
+  align-self: center;
+}
+.msgfound-more:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.msgfound--skeleton {
+  cursor: default;
+  gap: 7px;
+}
+.skelline {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, rgba(128, 128, 128, 0.14), rgba(128, 128, 128, 0.28), rgba(128, 128, 128, 0.14));
+  background-size: 200% 100%;
+  animation: skelshine 1.2s linear infinite;
+}
+.skelline--title {
+  width: 60%;
+  height: 12px;
+}
+.skelline--short {
+  width: 35%;
+}
+@keyframes skelshine {
+  to {
+    background-position: -200% 0;
+  }
+}
+/* Сообщение, к которому перешли из поиска: подсветка живёт две секунды. */
+.msg--found {
+  animation: msgfound-flash 2s ease-out;
+  border-radius: 10px;
+}
+@keyframes msgfound-flash {
+  0%,
+  70% {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
+}

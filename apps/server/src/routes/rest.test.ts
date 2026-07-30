@@ -574,3 +574,91 @@ describe('REST: чтение файла с диска сервера (/api/files
     expect(res.statusCode).toBe(404)
   })
 })
+
+describe('REST: GET /api/search — полнотекстовый поиск по сообщениям', () => {
+  /** Беседа с сообщениями пользователя (по умолчанию — admin из токена). */
+  const seed = (user: string, title: string, texts: string[]): string => {
+    const conv = db.createConversation(user, title)
+    for (const t of texts) db.addMessage(user, conv.id, 'u1', t, '12:00')
+    return conv.id
+  }
+
+  it('без токена → 401', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/search?q=миграция' })).statusCode).toBe(401)
+  })
+
+  it('отдаёт ранжированные результаты со сниппетом и курсором', async () => {
+    const id = seed(U, 'Канбан', [
+      'Обсудили миграцию канбана и схему БД',
+      'Ещё раз про миграцию',
+      'Совсем про другое'
+    ])
+
+    const first = await inj({ method: 'GET', url: '/api/search?q=миграцию%20&limit=1' })
+    expect(first.statusCode).toBe(200)
+    const page1 = first.json()
+    expect(page1.hits).toHaveLength(1)
+    expect(page1.hits[0].conversationId).toBe(id)
+    expect(page1.hits[0].conversationTitle).toBe('Канбан')
+    expect(page1.hits[0].snippet).toContain('<mark>')
+    expect(typeof page1.nextCursor).toBe('string')
+
+    const second = await inj({
+      method: 'GET',
+      url: `/api/search?q=${encodeURIComponent('миграцию ')}&limit=1&cursor=${encodeURIComponent(page1.nextCursor)}`
+    })
+    const page2 = second.json()
+    expect(page2.hits).toHaveLength(1)
+    expect(page2.hits[0].messageId).not.toBe(page1.hits[0].messageId)
+  })
+
+  it('не выдаёт сообщения другого пользователя', async () => {
+    db.createUser('mallory', '', 'user')
+    const theirs = seed('mallory', 'Чужая беседа', ['чужой секрет про миграцию'])
+    seed(U, 'Своя беседа', ['свой текст про миграцию'])
+
+    const all = await inj({ method: 'GET', url: '/api/search?q=миграцию%20' })
+    expect(all.json().hits.map((h: { conversationTitle: string }) => h.conversationTitle)).toEqual(['Своя беседа'])
+
+    // Явная чужая беседа — тоже пусто, а не 403/500: чужого просто «не существует».
+    const direct = await inj({ method: 'GET', url: `/api/search?q=миграцию%20&conversationId=${theirs}` })
+    expect(direct.statusCode).toBe(200)
+    expect(direct.json().hits).toEqual([])
+  })
+
+  it('сужает по проекту, projectId=none — только беседы без проекта', async () => {
+    const project = db.createProject(U, { name: 'Проект' })
+    const inProject = seed(U, 'С проектом', ['миграция схемы'])
+    db.setConversationProject(U, inProject, project.id)
+    seed(U, 'Без проекта', ['миграция схемы'])
+
+    const byProject = await inj({ method: 'GET', url: `/api/search?q=миграция%20&projectId=${project.id}` })
+    expect(byProject.json().hits.map((h: { conversationTitle: string }) => h.conversationTitle)).toEqual(['С проектом'])
+
+    const none = await inj({ method: 'GET', url: '/api/search?q=миграция%20&projectId=none' })
+    expect(none.json().hits.map((h: { conversationTitle: string }) => h.conversationTitle)).toEqual(['Без проекта'])
+  })
+
+  it('пробел в конце запроса приезжает и как «+» (URLSearchParams)', async () => {
+    seed(U, 'Канбан', ['миграция канбана'])
+
+    // «мигра» — префикс, находит; «мигра+» — слово закончено, не находит.
+    expect((await inj({ method: 'GET', url: '/api/search?q=мигра' })).json().hits).toHaveLength(1)
+    expect((await inj({ method: 'GET', url: '/api/search?q=мигра+' })).json().hits).toHaveLength(0)
+  })
+
+  it('спецсимволы и мусорные параметры не дают 500', async () => {
+    seed(U, 'Канбан', ['миграция канбана'])
+
+    const bad = ['', '*', '"', '-', 'NEAR(', '^)(', '%%%', 'a".."b', '\\\\', '(((']
+    for (const q of bad) {
+      const res = await inj({ method: 'GET', url: `/api/search?q=${encodeURIComponent(q)}` })
+      expect(res.statusCode, `q=${JSON.stringify(q)}`).toBe(200)
+      expect(Array.isArray(res.json().hits)).toBe(true)
+    }
+    // Мусор в limit/cursor тоже не ошибка.
+    const res = await inj({ method: 'GET', url: '/api/search?q=миграция%20&limit=abc&cursor=%00%01' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().hits).toHaveLength(1)
+  })
+})

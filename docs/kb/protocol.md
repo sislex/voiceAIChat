@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-07-30
-checked: f2b04f0
+checked: a2c30d6
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -49,6 +49,16 @@ URL руками. Параметризованные пути — функции
 
 Владелец данных — логин пользователя (`uid(req)` = `req.user.name`); запросы к
 разговорам и машинам фильтруются по нему.
+
+`GET /api/search` (`REST.messagesSearch`) — полнотекстовый поиск по сообщениям:
+`q` (ввод пользователя, экранируется на сервере), `projectId` (`none` или пусто —
+только беседы без проекта; параметра нет — по всем), `conversationId`, `limit`
+(1–50, по умолчанию 20), `cursor` из прошлого ответа. Ответ —
+`MessageSearchResult` (`hits` со сниппетами `<mark>…</mark>`, `nextCursor`,
+`match` — то, что реально ушло в FTS5). Мост — канал `messages:search`; он же
+**отменяет предыдущий незавершённый запрос** (AbortController в `httpApi`), потому
+что при наборе с клавиатуры прошлая заявка уже никому не нужна. Детали индекса —
+`data-auth.md`.
 
 ## WebSocket `/ws`
 

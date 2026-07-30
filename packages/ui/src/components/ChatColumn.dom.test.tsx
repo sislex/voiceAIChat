@@ -544,3 +544,35 @@ describe('ChatColumn — вопрос CI-рана, продублированн�
     expect(screen.getByTestId('questions-static')).toHaveTextContent('Какую БД взять?')
   })
 })
+
+describe('ChatColumn — переход из поиска по сообщениям', () => {
+  it('подсвечивает и прокручивает к сообщению, через 2 секунды гасит подсветку', () => {
+    vi.useFakeTimers()
+    try {
+      const scrollIntoView = vi.fn()
+      // jsdom не реализует прокрутку — подставляем свою, чтобы проверить вызов.
+      Object.defineProperty(Element.prototype, 'scrollIntoView', { value: scrollIntoView, configurable: true })
+      const onHighlightDone = vi.fn()
+      renderCol({ highlightMessageId: 'a1', onHighlightDone })
+
+      const found = document.querySelector('[data-mid="a1"]')
+      expect(found).toHaveClass('msg--found')
+      expect(document.querySelector('[data-mid="u1"]')).not.toHaveClass('msg--found')
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center' })
+
+      expect(onHighlightDone).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(2000)
+      expect(onHighlightDone).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('без подсветки ничего не прокручивает', () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { value: scrollIntoView, configurable: true })
+    renderCol()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    expect(document.querySelector('.msg--found')).toBeNull()
+  })
+})

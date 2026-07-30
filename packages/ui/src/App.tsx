@@ -341,6 +341,18 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         agents={state.agents}
         searchQuery={state.searchQuery}
         onSearch={actions.setSearchQuery}
+        searchScope={state.searchScope}
+        onSearchScopeChange={(scope) => void actions.setSearchScope(scope)}
+        messageSearch={state.messageSearch}
+        onPickMessage={(hit) => {
+          setSidebarOpen(false)
+          // Подсветку просим заранее: лента прокрутится к сообщению, как только
+          // оно окажется в DOM (беседа может ещё грузиться).
+          actions.focusMessage(hit.messageId)
+          navigate(`/chat/${hit.conversationId}`)
+        }}
+        onRetryMessageSearch={() => void actions.retryMessageSearch()}
+        onLoadMoreMessages={() => void actions.loadMoreMessageSearch()}
         projects={state.projects}
         selectedProjectId={state.sidebarProjectId}
         onSelectProject={(id) => void actions.setSidebarProject(id)}
@@ -392,6 +404,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         state={state.voice}
         messages={state.messages}
         loadingMessages={state.loadingMessages}
+        highlightMessageId={state.highlightMessageId}
+        onHighlightDone={actions.clearMessageHighlight}
         liveSegments={state.liveSegments}
         diarization={state.settings.diarization}
         streamingReply={state.streamingReply}

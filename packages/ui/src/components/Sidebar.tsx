@@ -5,11 +5,14 @@ import {
   DEFAULT_CONVERSATION_STATUS,
   type Conversation,
   type ConversationStatus,
+  type MessageRole,
+  type MessageSearchHit,
   type SessionUser
 } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { ProjectSummary } from '@shared/projects'
 import { ACCENT } from '../lib/view'
+import { splitSnippet } from '../lib/snippet'
 import { GearIcon } from './icons'
 
 /** Человекочитаемая мета разговора: «Сегодня · 6 сообщений». */
@@ -40,7 +43,133 @@ function pluralMessages(n: number): string {
   return 'сообщений'
 }
 
+/** Что показывает панель результатов поиска по сообщениям (данные из стора). */
+export interface MessageSearchView {
+  query: string
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  hits: MessageSearchHit[]
+  nextCursor: string | null
+  loadingMore: boolean
+  error: string | null
+}
+
+const EMPTY_SEARCH_VIEW: MessageSearchView = {
+  query: '',
+  status: 'idle',
+  hits: [],
+  nextCursor: null,
+  loadingMore: false,
+  error: null
+}
+
+/** Автор найденного сообщения: у пользователя может быть несколько спикеров. */
+function roleLabel(role: MessageRole): string {
+  if (role === 'ai') return 'Модель'
+  return role === 'u1' ? 'Вы' : `Спикер ${role.slice(1)}`
+}
+
+/** «Сегодня, 14:05» — дата беседы плюс готовое локальное время сообщения. */
+function formatHitDate(hit: MessageSearchHit, now: number): string {
+  const d = new Date(hit.createdAt)
+  const today = new Date(now)
+  const yesterday = new Date(now - 86_400_000)
+  const sameDay = (a: Date, b: Date): boolean =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  const day = sameDay(d, today)
+    ? 'Сегодня'
+    : sameDay(d, yesterday)
+      ? 'Вчера'
+      : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+  return hit.time ? `${day}, ${hit.time}` : day
+}
+
+interface MessageResultsProps {
+  search: MessageSearchView
+  now: number
+  onPick: (hit: MessageSearchHit) => void
+  onRetry?: () => void
+  onLoadMore?: () => void
+}
+
+/**
+ * Результаты поиска по сообщениям. Четыре состояния: пусто (подсказка про
+ * синтаксис), загрузка (скелетоны), ошибка (с «Повторить») и найденное.
+ */
+function MessageResults({ search, now, onPick, onRetry, onLoadMore }: MessageResultsProps): JSX.Element {
+  const { status, hits, error } = search
+  if (status === 'error') {
+    return (
+      <div className="convolist msgfound-list">
+        <div className="msgfound-error" role="alert">
+          <p>Поиск не удался: {error}</p>
+          {onRetry && (
+            <button className="msgfound-retry" onClick={onRetry}>
+              Повторить
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+  if (status === 'loading' && hits.length === 0) {
+    return (
+      <div className="convolist msgfound-list" aria-busy="true">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="msgfound msgfound--skeleton" data-testid="msgfound-skeleton" aria-hidden>
+            <span className="skelline skelline--title" />
+            <span className="skelline" />
+            <span className="skelline skelline--short" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (status === 'idle' || search.query === '') {
+    return (
+      <div className="convolist msgfound-list">
+        <p className="convo-empty msgfound-hint">
+          Ищем по тексту всех ваших сообщений. Несколько слов — все должны встретиться в сообщении;
+          последнее слово ищется по началу («мигра» найдёт «миграцию»). Регистр не важен.
+        </p>
+      </div>
+    )
+  }
+  if (hits.length === 0) {
+    return (
+      <div className="convolist msgfound-list">
+        <p className="convo-empty">Ничего не найдено</p>
+      </div>
+    )
+  }
+  return (
+    <div className="convolist msgfound-list">
+      {hits.map((hit) => (
+        <button key={hit.messageId} className="msgfound" onClick={() => onPick(hit)}>
+          <span className="msgfound-head">
+            <span className="msgfound-title">{hit.conversationTitle}</span>
+            <span className="msgfound-date">{formatHitDate(hit, now)}</span>
+          </span>
+          <span className="msgfound-snippet">
+            {splitSnippet(hit.snippet).map((part, i) =>
+              part.hit ? <mark key={i}>{part.text}</mark> : <span key={i}>{part.text}</span>
+            )}
+          </span>
+          <span className="msgfound-role">{roleLabel(hit.role)}</span>
+        </button>
+      ))}
+      {search.nextCursor && onLoadMore && (
+        <button className="msgfound-more" onClick={onLoadMore} disabled={search.loadingMore}>
+          {search.loadingMore ? 'Загружаем…' : 'Показать ещё'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export type SidebarMode = 'chats' | 'projects'
+
+/** Область поиска в сайдбаре: названия бесед или текст сообщений. */
+export type SearchScope = 'chats' | 'messages'
 
 export interface SidebarProps {
   conversations: Conversation[]
@@ -58,6 +187,17 @@ export interface SidebarProps {
   agents?: AgentInfo[]
   searchQuery: string
   onSearch: (query: string) => void
+  /** Область поиска; не задан `onSearchScopeChange` — переключатель скрыт. */
+  searchScope?: SearchScope
+  onSearchScopeChange?: (scope: SearchScope) => void
+  /** Результаты поиска по сообщениям (режим «Сообщения»). */
+  messageSearch?: MessageSearchView
+  /** Открыть найденное сообщение: беседа + прокрутка к нему. */
+  onPickMessage?: (hit: MessageSearchHit) => void
+  /** Повторить упавший поиск. */
+  onRetryMessageSearch?: () => void
+  /** Догрузить следующую страницу результатов. */
+  onLoadMoreMessages?: () => void
   /** Проекты пользователя для селекта над поиском. */
   projects?: ProjectSummary[]
   /** Выбранный в сайдбаре проект (null — «Без проекта»). */
@@ -110,6 +250,12 @@ export function Sidebar({
   agents = [],
   searchQuery,
   onSearch,
+  searchScope = 'chats',
+  onSearchScopeChange,
+  messageSearch = EMPTY_SEARCH_VIEW,
+  onPickMessage,
+  onRetryMessageSearch,
+  onLoadMoreMessages,
   projects = [],
   selectedProjectId = null,
   onSelectProject,
@@ -143,6 +289,8 @@ export function Sidebar({
   const [projectDraft, setProjectDraft] = useState('')
   const acctRef = useRef<HTMLDivElement | null>(null)
   const workingSet = new Set(workingIds)
+  // Поиск по сообщениям заменяет список бесед: у панели свои состояния и карточки.
+  const inMessages = searchScope === 'messages'
 
   // Меню аккаунта закрывается по клику вне и по Esc.
   useEffect(() => {
@@ -233,15 +381,42 @@ export function Sidebar({
       )}
       {mode === 'chats' && (<>
       <div className="sidesearch">
+        {onSearchScopeChange && (
+          <div className="searchscope" role="group" aria-label="Область поиска">
+            <button
+              className={searchScope === 'chats' ? 'on' : ''}
+              aria-pressed={searchScope === 'chats'}
+              onClick={() => onSearchScopeChange('chats')}
+            >
+              Беседы
+            </button>
+            <button
+              className={searchScope === 'messages' ? 'on' : ''}
+              aria-pressed={searchScope === 'messages'}
+              onClick={() => onSearchScopeChange('messages')}
+            >
+              Сообщения
+            </button>
+          </div>
+        )}
         <input
           className="searchinput"
           type="search"
           value={searchQuery}
-          placeholder="Поиск по разговорам…"
-          aria-label="Поиск по разговорам"
+          placeholder={inMessages ? 'Поиск по сообщениям…' : 'Поиск по разговорам…'}
+          aria-label={inMessages ? 'Поиск по сообщениям' : 'Поиск по разговорам'}
           onChange={(e) => onSearch(e.target.value)}
         />
       </div>
+      {inMessages ? (
+        <MessageResults
+          search={messageSearch}
+          now={now}
+          onPick={(hit) => onPickMessage?.(hit)}
+          {...(onRetryMessageSearch ? { onRetry: onRetryMessageSearch } : {})}
+          {...(onLoadMoreMessages ? { onLoadMore: onLoadMoreMessages } : {})}
+        />
+      ) : (
       <div className="convolist">
         {conversations.length === 0 && searchQuery.trim() !== '' && (
           <p className="convo-empty">Ничего не найдено</p>
@@ -358,6 +533,7 @@ export function Sidebar({
           </div>
         ))}
       </div>
+      )}
       </>)}
       {mode === 'projects' && (
         <div className="convolist projlist">

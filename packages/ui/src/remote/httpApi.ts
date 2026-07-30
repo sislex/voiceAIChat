@@ -25,9 +25,17 @@ import type {
 } from '@shared/ci'
 import { encodeAgentConnection } from '@shared/agentProtocol'
 import type { RendererApi } from '@shared/ipc'
+import type { MessageSearchResult } from '@shared/types'
 import { getToken } from './session'
 
 export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi {
+  /**
+   * Живой запрос поиска по сообщениям: пользователь печатает, и каждый новый
+   * ввод обесценивает предыдущий запрос. Отменяем его здесь, в транспорте, —
+   * стор про fetch не знает, а сервер не тратит время на никому не нужный ответ.
+   */
+  let searchAbort: AbortController | null = null
+
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
     // Content-Type ставим только при наличии тела: иначе Fastify пытается распарсить
     // пустое JSON-тело у DELETE и отвечает 400. Токен сессии — в Authorization.
@@ -74,6 +82,20 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'conversations:search': ({ query }) =>
       req(`${REST.conversationsSearch}?q=${encodeURIComponent(query)}`),
+    'messages:search': ({ query, projectId, conversationId, limit, cursor }) => {
+      searchAbort?.abort()
+      const ctl = new AbortController()
+      searchAbort = ctl
+      const q = new URLSearchParams({ q: query })
+      // undefined — по всем беседам, null — только беседы без проекта.
+      if (projectId !== undefined) q.set('projectId', projectId ?? 'none')
+      if (conversationId) q.set('conversationId', conversationId)
+      if (limit) q.set('limit', String(limit))
+      if (cursor) q.set('cursor', cursor)
+      return req<MessageSearchResult>(`${REST.messagesSearch}?${q.toString()}`, { signal: ctl.signal }).finally(() => {
+        if (searchAbort === ctl) searchAbort = null
+      })
+    },
     'conversations:rename': async ({ id, title }) => {
       await req(REST.conversation(id), { method: 'PATCH', body: JSON.stringify({ title }) })
     },
