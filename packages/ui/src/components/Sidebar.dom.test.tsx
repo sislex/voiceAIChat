@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { Sidebar } from './Sidebar'
-import type { Conversation, SessionUser } from '@shared/types'
+import { Sidebar, type MessageSearchView } from './Sidebar'
+import type { Conversation, MessageSearchHit, SessionUser } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
 
 function conv(id: string, title: string): Conversation {
@@ -162,5 +162,131 @@ describe('Sidebar — режим «Проекты»', () => {
     expect(onCreateProject).toHaveBeenCalledWith('Новый проект')
     // Форма закрылась.
     expect(screen.queryByLabelText('Название нового проекта')).not.toBeInTheDocument()
+  })
+})
+
+describe('Sidebar — режим поиска «Сообщения»', () => {
+  const hit = (id: string, snippet: string, over: Partial<MessageSearchHit> = {}): MessageSearchHit => ({
+    messageId: id,
+    conversationId: `c-${id}`,
+    conversationTitle: `Беседа ${id}`,
+    projectId: null,
+    role: 'u1',
+    createdAt: 1,
+    time: '12:00',
+    snippet,
+    score: -1,
+    ...over
+  })
+  const view = (over: Partial<MessageSearchView> = {}): MessageSearchView => ({
+    query: 'миграция',
+    status: 'ready',
+    hits: [],
+    nextCursor: null,
+    loadingMore: false,
+    error: null,
+    ...over
+  })
+
+  it('переключатель области сообщает о смене режима', () => {
+    const onSearchScopeChange = vi.fn()
+    setup({ onSearchScopeChange })
+
+    expect(screen.getByLabelText('Поиск по разговорам')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Сообщения' }))
+    expect(onSearchScopeChange).toHaveBeenCalledWith('messages')
+  })
+
+  it('в режиме сообщений меняется подпись поля, а список бесед уступает место результатам', () => {
+    setup({
+      onSearchScopeChange: vi.fn(),
+      searchScope: 'messages',
+      messageSearch: view({ status: 'idle', query: '' })
+    })
+
+    expect(screen.getByLabelText('Поиск по сообщениям')).toBeInTheDocument()
+    expect(screen.queryByText('Чат 1')).not.toBeInTheDocument()
+  })
+
+  it('без запроса показывает подсказку про синтаксис', () => {
+    setup({ onSearchScopeChange: vi.fn(), searchScope: 'messages', messageSearch: view({ status: 'idle', query: '' }) })
+    expect(screen.getByText(/последнее слово ищется по началу/i)).toBeInTheDocument()
+  })
+
+  it('во время запроса показывает скелетоны', () => {
+    setup({ onSearchScopeChange: vi.fn(), searchScope: 'messages', messageSearch: view({ status: 'loading' }) })
+    expect(screen.getAllByTestId('msgfound-skeleton')).toHaveLength(3)
+  })
+
+  it('пустой результат — «Ничего не найдено»', () => {
+    setup({ onSearchScopeChange: vi.fn(), searchScope: 'messages', messageSearch: view({ hits: [] }) })
+    expect(screen.getByText('Ничего не найдено')).toBeInTheDocument()
+  })
+
+  it('ошибка показывается с кнопкой «Повторить»', () => {
+    const onRetryMessageSearch = vi.fn()
+    setup({
+      onSearchScopeChange: vi.fn(),
+      searchScope: 'messages',
+      messageSearch: view({ status: 'error', error: 'сервер недоступен' }),
+      onRetryMessageSearch
+    })
+
+    expect(screen.getByRole('alert')).toHaveTextContent('сервер недоступен')
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(onRetryMessageSearch).toHaveBeenCalled()
+  })
+
+  it('карточка: заголовок, дата, роль и подсветка совпадения; клик открывает сообщение', () => {
+    const onPickMessage = vi.fn()
+    const found = hit('m1', 'обсудили <mark>миграцию</mark> канбана')
+    setup({
+      onSearchScopeChange: vi.fn(),
+      searchScope: 'messages',
+      messageSearch: view({ hits: [found, hit('m2', 'ещё про <mark>миграцию</mark>', { role: 'ai' })] }),
+      onPickMessage
+    })
+
+    const card = screen.getByText('Беседа m1').closest('button')!
+    expect(card).toHaveTextContent('обсудили миграцию канбана')
+    expect(within(card as HTMLElement).getByText('миграцию').tagName).toBe('MARK')
+    expect(card).toHaveTextContent('Вы')
+    expect(screen.getByText('Беседа m2').closest('button')).toHaveTextContent('Модель')
+
+    fireEvent.click(card as HTMLElement)
+    expect(onPickMessage).toHaveBeenCalledWith(found)
+  })
+
+  it('разметка из текста сообщения остаётся текстом, а не HTML', () => {
+    setup({
+      onSearchScopeChange: vi.fn(),
+      searchScope: 'messages',
+      messageSearch: view({ hits: [hit('m1', '<img src=x onerror=alert(1)> <mark>миграция</mark>')] })
+    })
+
+    expect(document.querySelector('.msgfound-snippet img')).toBeNull()
+    expect(screen.getByText(/<img src=x onerror=alert\(1\)>/)).toBeInTheDocument()
+  })
+
+  it('«Показать ещё» появляется при курсоре и блокируется на время догрузки', () => {
+    const onLoadMoreMessages = vi.fn()
+    setup({
+      onSearchScopeChange: vi.fn(),
+      searchScope: 'messages',
+      messageSearch: view({ hits: [hit('m1', '<mark>миграция</mark>')], nextCursor: 'c1' }),
+      onLoadMoreMessages
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Показать ещё' }))
+    expect(onLoadMoreMessages).toHaveBeenCalled()
+  })
+
+  it('во время догрузки кнопка заблокирована', () => {
+    setup({
+      onSearchScopeChange: vi.fn(),
+      searchScope: 'messages',
+      messageSearch: view({ hits: [hit('m1', '<mark>миграция</mark>')], nextCursor: 'c1', loadingMore: true }),
+      onLoadMoreMessages: vi.fn()
+    })
+    expect(screen.getByRole('button', { name: 'Загружаем…' })).toBeDisabled()
   })
 })

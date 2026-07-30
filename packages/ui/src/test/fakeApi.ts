@@ -138,6 +138,45 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map(withCounts)
     },
+    /**
+     * Поиск по сообщениям: подстрокой вместо FTS5, но с той же формой ответа —
+     * сниппет с `<mark>`, курсор постранично, порядок «свежее выше».
+     */
+    'messages:search': async ({ query, projectId, conversationId, limit, cursor }) => {
+      const q = query.trim().toLowerCase()
+      if (!q) return { hits: [], nextCursor: null, match: '' }
+      const size = limit ?? 20
+      const from = cursor ? Number(cursor) : 0
+      const found = messages
+        .filter((m) => m.text.toLowerCase().includes(q))
+        .filter((m) => !conversationId || m.conversationId === conversationId)
+        .filter((m) => {
+          if (projectId === undefined) return true
+          const conv = conversations.find((c) => c.id === m.conversationId)
+          return (conv?.projectId ?? null) === projectId
+        })
+        .sort((a, b) => b.createdAt - a.createdAt)
+      const page = found.slice(from, from + size)
+      return {
+        hits: page.map((m) => {
+          const at = m.text.toLowerCase().indexOf(q)
+          const conv = conversations.find((c) => c.id === m.conversationId)
+          return {
+            messageId: m.id,
+            conversationId: m.conversationId,
+            conversationTitle: conv?.title ?? '',
+            projectId: conv?.projectId ?? null,
+            role: m.role,
+            createdAt: m.createdAt,
+            time: m.time,
+            snippet: `${m.text.slice(0, at)}<mark>${m.text.slice(at, at + q.length)}</mark>${m.text.slice(at + q.length)}`,
+            score: -1 - at / 100
+          }
+        }),
+        nextCursor: from + size < found.length ? String(from + size) : null,
+        match: `"${q}"*`
+      }
+    },
     'conversations:rename': async ({ id, title }) => {
       const conv = conversations.find((c) => c.id === id)
       if (conv) {

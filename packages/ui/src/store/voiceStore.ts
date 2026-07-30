@@ -54,6 +54,7 @@ import type {
   LlmProvider,
   Message,
   MessageRole,
+  MessageSearchHit,
   PermissionMode,
   KbContextMode,
   ConversationStatus,
@@ -136,6 +137,40 @@ export interface AppNotice {
   retry?: () => void
 }
 
+/** Область поиска в сайдбаре: названия бесед или текст сообщений (FTS5). */
+export type SearchScope = 'chats' | 'messages'
+
+/** Состояние панели поиска по сообщениям (режим «Сообщения» в сайдбаре). */
+export interface MessageSearchState {
+  /**
+   * Запрос, которому соответствуют `hits`. Отстаёт от `state.searchQuery`: тот
+   * меняется на каждое нажатие клавиши, а этот — на каждый ушедший запрос.
+   */
+  query: string
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  hits: MessageSearchHit[]
+  /** Курсор следующей страницы; null — результаты закончились. */
+  nextCursor: string | null
+  /** Идёт догрузка следующей страницы (кнопка «Показать ещё»). */
+  loadingMore: boolean
+  /** Текст ошибки: панель показывает его вместо результатов, с «Повторить». */
+  error: string | null
+}
+
+/** Пауза перед запросом: пользователь печатает быстрее, чем ходит сервер. */
+const MESSAGE_SEARCH_DEBOUNCE_MS = 250
+/** Размер страницы результатов. */
+const MESSAGE_SEARCH_PAGE = 20
+
+const EMPTY_MESSAGE_SEARCH: MessageSearchState = {
+  query: '',
+  status: 'idle',
+  hits: [],
+  nextCursor: null,
+  loadingMore: false,
+  error: null
+}
+
 /** Полное состояние приложения в renderer. */
 export interface AppState {
   /**
@@ -150,6 +185,15 @@ export interface AppState {
   conversations: Conversation[]
   /** Текущий поисковый запрос по разговорам (пусто — показываем все). */
   searchQuery: string
+  /** Что ищем этим запросом: беседы по названию или сообщения по тексту. */
+  searchScope: SearchScope
+  /** Результаты поиска по сообщениям (пустые, пока область — «Беседы»). */
+  messageSearch: MessageSearchState
+  /**
+   * Сообщение, к которому надо прокрутить ленту и подсветить его (переход из
+   * результатов поиска). Гасит подсветку сама лента — через `clearMessageHighlight`.
+   */
+  highlightMessageId: string | null
   activeId: string | null
   messages: Message[]
   /** Идёт загрузка сообщений разговора (обновление страницы / открытие чата). */
@@ -421,8 +465,18 @@ export interface StoreActions {
   setConversationProject(id: string, projectId: string | null): Promise<void>
   /** Сменить статус жизненного цикла чата (дропдаун в сайдбаре). */
   setConversationStatus(id: string, status: ConversationStatus): Promise<void>
-  /** Задать поисковый запрос по разговорам (пусто — весь список). */
+  /** Задать поисковый запрос (пусто — весь список / пустая панель поиска). */
   setSearchQuery(query: string): Promise<void>
+  /** Переключить область поиска: беседы или сообщения. */
+  setSearchScope(scope: SearchScope): Promise<void>
+  /** Повторить упавший поиск по сообщениям (кнопка «Повторить»). */
+  retryMessageSearch(): Promise<void>
+  /** Догрузить следующую страницу результатов поиска по сообщениям. */
+  loadMoreMessageSearch(): Promise<void>
+  /** Прокрутить ленту к сообщению и подсветить его (переход из поиска). */
+  focusMessage(messageId: string): void
+  /** Снять подсветку сообщения (лента отсветила своё). */
+  clearMessageHighlight(): void
   /** Выбрать проект в сайдбаре (null — «Без проекта»); фильтрует список/поиск чатов. */
   setSidebarProject(projectId: string | null): Promise<void>
   /** Экспортировать активный разговор в Markdown/JSON (скачивание файла). */
@@ -751,6 +805,9 @@ function initialState(): AppState {
     voice: 'idle',
     conversations: [],
     searchQuery: '',
+    searchScope: 'chats',
+    messageSearch: { ...EMPTY_MESSAGE_SEARCH },
+    highlightMessageId: null,
     activeId: null,
     messages: [],
     loadingMessages: false,
@@ -965,12 +1022,141 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   async function setSearchQuery(query: string): Promise<void> {
     setState({ searchQuery: query })
+    if (state.searchScope === 'messages') {
+      scheduleMessageSearch()
+      return
+    }
     await refreshConversations()
+  }
+
+  // --- Поиск по сообщениям (FTS5 на сервере) -------------------------------
+  //
+  // Запрос уходит с задержкой, а ответы обесцененных запросов отбрасываются по
+  // номеру: сам HTTP-запрос предыдущей заявки отменяет мост (`httpApi`), но
+  // отменённым может оказаться и уже улетевший ответ.
+  let searchTimer: ReturnType<typeof setTimeout> | null = null
+  let searchSeq = 0
+
+  function cancelPendingMessageSearch(): void {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = null
+    // Инкремент номера обесценивает ответы всех улетевших запросов.
+    searchSeq += 1
+  }
+
+  /** Ставит поиск в очередь после паузы; пустой запрос просто чистит панель. */
+  function scheduleMessageSearch(): void {
+    cancelPendingMessageSearch()
+    const query = state.searchQuery.trim()
+    if (!query) {
+      setState({ messageSearch: { ...EMPTY_MESSAGE_SEARCH } })
+      return
+    }
+    // Скелетоны показываем сразу, не дожидаясь конца паузы: иначе панель
+    // выглядит замершей на первом же символе.
+    setState({ messageSearch: { ...state.messageSearch, status: 'loading', error: null } })
+    searchTimer = setTimeout(() => {
+      searchTimer = null
+      void runMessageSearch(query)
+    }, MESSAGE_SEARCH_DEBOUNCE_MS)
+  }
+
+  async function runMessageSearch(query: string): Promise<void> {
+    if (!query) return
+    searchSeq += 1
+    const seq = searchSeq
+    setState({ messageSearch: { ...state.messageSearch, query, status: 'loading', error: null } })
+    try {
+      const res = await api['messages:search']({
+        query,
+        // Поиск живёт в сайдбаре и подчиняется его фильтру проекта.
+        projectId: state.sidebarProjectId,
+        limit: MESSAGE_SEARCH_PAGE
+      })
+      if (seq !== searchSeq) return // ответ на устаревший запрос
+      setState({
+        messageSearch: { query, status: 'ready', hits: res.hits, nextCursor: res.nextCursor, loadingMore: false, error: null }
+      })
+    } catch (err) {
+      if (seq !== searchSeq) return
+      // Ошибку показывает сама панель с кнопкой «Повторить» — она рядом с
+      // запросом, в отличие от тоста, и не мешает продолжать печатать.
+      setState({
+        messageSearch: {
+          ...state.messageSearch,
+          query,
+          status: 'error',
+          error: err instanceof Error ? err.message : String(err)
+        }
+      })
+    }
+  }
+
+  async function setSearchScope(scope: SearchScope): Promise<void> {
+    if (scope === state.searchScope) return
+    setState({ searchScope: scope })
+    if (scope === 'messages') {
+      scheduleMessageSearch()
+      return
+    }
+    cancelPendingMessageSearch()
+    setState({ messageSearch: { ...EMPTY_MESSAGE_SEARCH } })
+    await refreshConversations()
+  }
+
+  async function retryMessageSearch(): Promise<void> {
+    cancelPendingMessageSearch()
+    await runMessageSearch(state.searchQuery.trim())
+  }
+
+  async function loadMoreMessageSearch(): Promise<void> {
+    const cursor = state.messageSearch.nextCursor
+    if (!cursor || state.messageSearch.loadingMore || state.messageSearch.status !== 'ready') return
+    const seq = searchSeq
+    const query = state.messageSearch.query
+    setState({ messageSearch: { ...state.messageSearch, loadingMore: true } })
+    try {
+      const res = await api['messages:search']({
+        query,
+        projectId: state.sidebarProjectId,
+        limit: MESSAGE_SEARCH_PAGE,
+        cursor
+      })
+      if (seq !== searchSeq) return // запрос успел смениться — страница уже не та
+      setState({
+        messageSearch: {
+          ...state.messageSearch,
+          hits: [...state.messageSearch.hits, ...res.hits],
+          nextCursor: res.nextCursor,
+          loadingMore: false
+        }
+      })
+    } catch (err) {
+      if (seq !== searchSeq) return
+      setState({
+        messageSearch: {
+          ...state.messageSearch,
+          loadingMore: false,
+          status: 'error',
+          error: err instanceof Error ? err.message : String(err)
+        }
+      })
+    }
+  }
+
+  function focusMessage(messageId: string): void {
+    setState({ highlightMessageId: messageId })
+  }
+
+  function clearMessageHighlight(): void {
+    if (state.highlightMessageId) setState({ highlightMessageId: null })
   }
 
   async function setSidebarProject(projectId: string | null): Promise<void> {
     saveSidebarProject(projectId)
     setState({ sidebarProjectId: projectId })
+    // Поиск по сообщениям тоже сужен проектом — перезапрашиваем.
+    if (state.searchScope === 'messages') scheduleMessageSearch()
     await refreshConversations()
   }
 
@@ -3126,6 +3312,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       renameConversation,
       setConversationExecTarget,
       setSearchQuery,
+      setSearchScope,
+      retryMessageSearch,
+      loadMoreMessageSearch,
+      focusMessage,
+      clearMessageHighlight,
       setSidebarProject,
       exportConversation,
       completeOnboarding,

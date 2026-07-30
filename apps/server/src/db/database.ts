@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { SCHEMA_SQL } from './schema'
+import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
+import { toFtsMatchQuery } from './fts.js'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_AGENT_POLICY,
@@ -14,6 +15,8 @@ import {
   type LlmProvider,
   type Message,
   type MessageRole,
+  type MessageSearchHit,
+  type MessageSearchResult,
   type PermissionMode,
   type Settings,
   type TurnMeta,
@@ -329,6 +332,74 @@ function mapTask(r: TaskRow): Task {
 }
 
 
+// ---- Полнотекстовый поиск: константы и служебные типы --------------------
+
+/** Имя индекса в `fts_state` (пока индексируются только сообщения). */
+const FTS_MESSAGES = 'messages'
+/** Сколько сообщений индексируем за одну порцию бэкфилла. */
+const FTS_BACKFILL_CHUNK = 500
+/** Пауза между порциями: старт и запросы не должны стоять в очереди за индексом. */
+const FTS_BACKFILL_PAUSE_MS = 25
+/** Предохранитель для `ensureMessagesIndexed` (500 × 20000 = 10 млн сообщений). */
+const FTS_BACKFILL_MAX_CHUNKS = 20_000
+/** Сколько раз готовы пересобрать индекс после проваленной integrity-check. */
+const FTS_MAX_REPAIRS = 1
+/** Длина сниппета в токенах (максимум, который допускает FTS5, — 64). */
+const SNIPPET_TOKENS = 12
+/** Границы размера страницы результатов. */
+const SEARCH_LIMIT_DEFAULT = 20
+const SEARCH_LIMIT_MAX = 50
+
+/** Параметры поиска по сообщениям. */
+export interface MessageSearchOptions {
+  q: string
+  /** undefined — по всем беседам, null — только беседы без проекта. */
+  projectId?: string | null
+  conversationId?: string
+  limit?: number
+  cursor?: string | null
+}
+
+interface MessageSearchRow {
+  message_id: string
+  conversation_id: string
+  role: string
+  created_at: number
+  time: string
+  rid: number
+  conversation_title: string
+  project_id: string | null
+  score: number
+  snippet: string
+}
+
+interface FtsStateRow {
+  lastRowid: number
+  maxRowid: number
+  done: number
+  repairs: number
+}
+
+function clampSearchLimit(limit: number | undefined): number {
+  if (!limit || !Number.isFinite(limit)) return SEARCH_LIMIT_DEFAULT
+  return Math.min(Math.max(Math.trunc(limit), 1), SEARCH_LIMIT_MAX)
+}
+
+/** Курсор — непрозрачная строка: пара (bm25, rowid) последней выданной строки. */
+function encodeSearchCursor(score: number, rowid: number): string {
+  return Buffer.from(`${score}|${rowid}`, 'utf8').toString('base64url')
+}
+
+function decodeSearchCursor(cursor: string | null | undefined): { score: number; rowid: number } | null {
+  if (!cursor) return null
+  // Подделанный/устаревший курсор — не ошибка запроса: просто первая страница.
+  const [rawScore, rawRowid] = Buffer.from(cursor, 'base64url').toString('utf8').split('|')
+  const score = Number(rawScore)
+  const rowid = Number(rawRowid)
+  if (!Number.isFinite(score) || !Number.isInteger(rowid)) return null
+  return { score, rowid }
+}
+
 /**
  * Обёртка над SQLite: разговоры, сообщения, спикеры, настройки.
  * Не зависит от Electron — путь к файлу передаётся снаружи
@@ -340,6 +411,10 @@ export class VoiceChatDb {
   private readonly now: () => number
   /** Close-события WebSocket могут прийти после teardown; закрытую БД больше не трогаем. */
   private closed = false
+  /** Доступен ли FTS5 в этой сборке SQLite (иначе поиск по сообщениям пустой). */
+  private ftsReady = false
+  /** Таймер следующей порции бэкфилла индекса; null — порция не запланирована. */
+  private ftsTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(filename: string, deps: DbDeps = {}) {
     this.db = new Database(filename)
@@ -351,6 +426,7 @@ export class VoiceChatDb {
     this.migrate()
     this.newId = deps.newId ?? (() => randomUUID())
     this.now = deps.now ?? (() => Date.now())
+    this.setupMessagesFts()
   }
 
   /** Лёгкие миграции существующих БД (idempotent). */
@@ -538,6 +614,8 @@ export class VoiceChatDb {
   close(): void {
     if (this.closed) return
     this.closed = true
+    if (this.ftsTimer) clearTimeout(this.ftsTimer)
+    this.ftsTimer = null
     this.db.close()
   }
 
@@ -755,6 +833,196 @@ export class VoiceChatDb {
       ...(r.meta ? { meta: parseMeta(r.meta) } : {}),
       ...(r.exec_target !== null ? { execTarget: r.exec_target } : {})
     }))
+  }
+
+
+  // ---- Полнотекстовый поиск по сообщениям (FTS5) -------------------------
+
+  /**
+   * Ищет сообщения пользователя по индексу `messages_fts`.
+   *
+   * Владелец фильтруется джойном на `conversations.user_id` — чужие сообщения
+   * недостижимы при любых параметрах (в том числе при явном `conversationId`).
+   * Порядок — bm25 (меньше = релевантнее), при равенстве — по rowid, чтобы
+   * страницы не «дышали»: курсор кодирует именно эту пару.
+   *
+   * `projectId`: undefined — по всем беседам, null — только беседы без проекта.
+   */
+  searchMessages(userId: string, opts: MessageSearchOptions): MessageSearchResult {
+    const match = toFtsMatchQuery(opts.q ?? '')
+    const limit = clampSearchLimit(opts.limit)
+    // Индекса нет (сборка SQLite без FTS5) или искать нечего — пустая страница.
+    if (!match || !this.ftsReady) return { hits: [], nextCursor: null, match }
+
+    const where = ['messages_fts MATCH ?', 'c.user_id = ?']
+    const params: unknown[] = [match, userId]
+    if (opts.projectId !== undefined) {
+      if (opts.projectId === null) where.push('c.project_id IS NULL')
+      else {
+        where.push('c.project_id = ?')
+        params.push(opts.projectId)
+      }
+    }
+    if (opts.conversationId) {
+      where.push('m.conversation_id = ?')
+      params.push(opts.conversationId)
+    }
+    const cursor = decodeSearchCursor(opts.cursor)
+    if (cursor) {
+      where.push('(bm25(messages_fts) > ? OR (bm25(messages_fts) = ? AND m.rowid > ?))')
+      params.push(cursor.score, cursor.score, cursor.rowid)
+    }
+
+    const rows = this.db
+      .prepare(
+        `SELECT m.id            AS message_id,
+                m.conversation_id,
+                m.role,
+                m.created_at,
+                m.time,
+                m.rowid         AS rid,
+                c.title         AS conversation_title,
+                c.project_id,
+                bm25(messages_fts) AS score,
+                snippet(messages_fts, 0, '<mark>', '</mark>', '…', ${SNIPPET_TOKENS}) AS snippet
+           FROM messages_fts
+           JOIN messages m      ON m.rowid = messages_fts.rowid
+           JOIN conversations c ON c.id = m.conversation_id
+          WHERE ${where.join(' AND ')}
+          ORDER BY score ASC, rid ASC
+          LIMIT ?`
+      )
+      .all(...params, limit) as MessageSearchRow[]
+
+    const hits: MessageSearchHit[] = rows.map((r) => ({
+      messageId: r.message_id,
+      conversationId: r.conversation_id,
+      conversationTitle: r.conversation_title,
+      projectId: r.project_id,
+      role: r.role as MessageRole,
+      createdAt: r.created_at,
+      time: r.time,
+      snippet: r.snippet,
+      score: r.score
+    }))
+    // Полная страница — предполагаем продолжение: следующий запрос либо добьёт
+    // остаток, либо вернёт пусто. Это дешевле, чем считать общее число совпадений.
+    const last = rows[rows.length - 1]
+    const nextCursor = last && rows.length === limit ? encodeSearchCursor(last.score, last.rid) : null
+    return { hits, nextCursor, match }
+  }
+
+  /**
+   * Подключает FTS5-индекс: DDL с триггерами + запуск бэкфилла истории.
+   * Вызывается на каждом старте и обязана быть идемпотентной.
+   */
+  private setupMessagesFts(): void {
+    try {
+      this.db.exec(MESSAGES_FTS_SQL)
+      this.ftsReady = true
+    } catch {
+      // SQLite без FTS5: поиск по сообщениям недоступен, но сервер поднимается —
+      // остальная БД работоспособна, а роут вернёт пустой результат.
+      this.ftsReady = false
+      return
+    }
+    const state = this.ftsState()
+    if (!state) {
+      // Первый старт с индексом (новая БД или миграция боевой): историю
+      // проиндексируем порциями, чтобы не держать старт на 100k сообщений.
+      this.db.prepare(`INSERT INTO fts_state (name, last_rowid, max_rowid, done) VALUES (?, 0, 0, 0)`).run(FTS_MESSAGES)
+    }
+    this.scheduleFtsBackfill()
+  }
+
+  private ftsState(): FtsStateRow | undefined {
+    return this.db
+      .prepare(`SELECT last_rowid AS lastRowid, max_rowid AS maxRowid, done, repairs FROM fts_state WHERE name = ?`)
+      .get(FTS_MESSAGES) as FtsStateRow | undefined
+  }
+
+  /**
+   * Ставит следующую порцию бэкфилла в очередь макротаска. Таймер `unref`-нут:
+   * незаконченный бэкфилл не должен держать процесс живым (важно и в тестах).
+   */
+  private scheduleFtsBackfill(): void {
+    if (this.closed || !this.ftsReady || this.ftsTimer) return
+    const state = this.ftsState()
+    if (!state || state.done) return
+    const timer = setTimeout(() => {
+      this.ftsTimer = null
+      try {
+        const res = this.backfillMessagesFts()
+        if (!res.done) this.scheduleFtsBackfill()
+      } catch {
+        // Бэкфилл — не критичный путь: недоиндексированная история просто не
+        // находится. Сервер и запись сообщений при этом целы.
+      }
+    }, FTS_BACKFILL_PAUSE_MS)
+    timer.unref?.()
+    this.ftsTimer = timer
+  }
+
+  /**
+   * Одна порция бэкфилла (открыта для тестов и разогрева).
+   *
+   * Границу `max_rowid` фиксируем на старте: всё, что появилось позже, уже
+   * проиндексировано триггерами, и повторная вставка тех же rowid раздула бы
+   * индекс дублями. Старт с нуля начинается с `delete-all`, поэтому повторный
+   * запуск (или потерянное состояние) пересобирает индекс, а не удваивает его.
+   */
+  backfillMessagesFts(chunk = FTS_BACKFILL_CHUNK): { indexed: number; done: boolean } {
+    if (this.closed || !this.ftsReady) return { indexed: 0, done: true }
+    const state = this.ftsState()
+    if (!state || state.done) return { indexed: 0, done: true }
+
+    let maxRowid = state.maxRowid
+    if (state.lastRowid === 0) {
+      this.db.exec(`INSERT INTO messages_fts (messages_fts) VALUES ('delete-all')`)
+      maxRowid = (this.db.prepare(`SELECT COALESCE(MAX(rowid), 0) AS m FROM messages`).get() as { m: number }).m
+      this.db.prepare(`UPDATE fts_state SET max_rowid = ? WHERE name = ?`).run(maxRowid, FTS_MESSAGES)
+    }
+    const rows = this.db
+      .prepare(`SELECT rowid AS rid, text FROM messages WHERE rowid > ? AND rowid <= ? ORDER BY rowid LIMIT ?`)
+      .all(state.lastRowid, maxRowid, chunk) as Array<{ rid: number; text: string }>
+
+    const insert = this.db.prepare(`INSERT INTO messages_fts (rowid, text) VALUES (?, ?)`)
+    const done = rows.length < chunk
+    const lastRowid = rows.length ? rows[rows.length - 1].rid : state.lastRowid
+    this.db.transaction(() => {
+      for (const r of rows) insert.run(r.rid, r.text)
+      this.db
+        .prepare(`UPDATE fts_state SET last_rowid = ?, done = ? WHERE name = ?`)
+        .run(lastRowid, done ? 1 : 0, FTS_MESSAGES)
+    })()
+    if (done && rows.length > 0) this.verifyMessagesFts()
+    return { indexed: rows.length, done }
+  }
+
+  /** Догоняет бэкфилл целиком (тесты и bench: им нужен готовый индекс). */
+  ensureMessagesIndexed(): void {
+    for (let i = 0; i < FTS_BACKFILL_MAX_CHUNKS; i++) {
+      if (this.backfillMessagesFts().done) return
+    }
+  }
+
+  /**
+   * Проверяет индекс после бэкфилла. Удаление сообщения в момент бэкфилла может
+   * оставить в индексе мусор (триггер удаляет то, чего там ещё нет), поэтому
+   * один раз честно пересобираем — иначе поиск начнёт врать молча.
+   */
+  private verifyMessagesFts(): void {
+    const state = this.ftsState()
+    if (!state) return
+    try {
+      this.db.exec(`INSERT INTO messages_fts (messages_fts) VALUES ('integrity-check')`)
+    } catch {
+      if (state.repairs >= FTS_MAX_REPAIRS) return
+      this.db
+        .prepare(`UPDATE fts_state SET last_rowid = 0, max_rowid = 0, done = 0, repairs = repairs + 1 WHERE name = ?`)
+        .run(FTS_MESSAGES)
+      this.scheduleFtsBackfill()
+    }
   }
 
   // ---- Settings ---------------------------------------------------------

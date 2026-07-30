@@ -38,6 +38,19 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_conversation
   ON messages(conversation_id, created_at);
 
+-- Состояние бэкфилла FTS-индексов. Живёт отдельно от settings: это внутренняя
+-- служебная запись движка, а не настройка пользователя.
+CREATE TABLE IF NOT EXISTS fts_state (
+  name       TEXT PRIMARY KEY,
+  -- Докуда дошёл бэкфилл (rowid messages) и до какого rowid он вообще идёт:
+  -- всё, что появилось после старта бэкфилла, уже проиндексировано триггерами.
+  last_rowid INTEGER NOT NULL DEFAULT 0,
+  max_rowid  INTEGER NOT NULL DEFAULT 0,
+  done       INTEGER NOT NULL DEFAULT 0,
+  -- Сколько раз индекс пересобирали после проваленной integrity-check.
+  repairs    INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS speakers (
   conversation_id TEXT NOT NULL,
   speaker_id      INTEGER NOT NULL,
@@ -359,4 +372,39 @@ CREATE TABLE IF NOT EXISTS ci_settings (
   interaction_wait_ms    INTEGER NOT NULL DEFAULT 1800000
 );
 
+`
+
+/**
+ * FTS5-индекс сообщений: отдельно от `SCHEMA_SQL`, потому что сборка SQLite
+ * может быть без FTS5 — тогда `exec` бросает, а сервер обязан подняться
+ * (поиск деградирует до «ничего не найдено», см. `setupMessagesFts`).
+ *
+ * `content='messages'` — внешнее содержимое: индекс не дублирует текст, а
+ * читает его из таблицы. Синхронизацию держат триггеры, поэтому любая правка
+ * `messages` обязана проходить через них (не через `INSERT OR REPLACE` в обход).
+ * Токенайзер `unicode61 remove_diacritics 2` нужен русскому: он режет по
+ * юникод-границам и складывает регистр кириллицы («СЕРВЕРНОЙ» = «серверной»),
+ * а диакритику снимает с латиницы («café» = «cafe»). Кириллическую «ё» он в «е»
+ * не превращает — это разные токены, и поиск по «елка» «ёлку» не найдёт.
+ */
+export const MESSAGES_FTS_SQL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+  text,
+  content='messages',
+  content_rowid='rowid',
+  tokenize='unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+  INSERT INTO messages_fts (rowid, text) VALUES (new.rowid, new.text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+  INSERT INTO messages_fts (messages_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+  INSERT INTO messages_fts (messages_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+  INSERT INTO messages_fts (rowid, text) VALUES (new.rowid, new.text);
+END;
 `

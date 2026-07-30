@@ -10,6 +10,7 @@ import type {
   Message,
   ModifierPrompt,
   MessageRole,
+  MessageSearchResult,
   PermissionMode,
   SessionUser,
   SessionUsage,
@@ -98,6 +99,21 @@ export interface IpcInvokeMap {
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
   /** Поиск разговоров по названию и содержимому сообщений (регистронезависимо). */
   'conversations:search': { arg: { query: string }; result: Conversation[] }
+  /**
+   * Полнотекстовый поиск по сообщениям (FTS5 на сервере). Пустой `query` —
+   * пустой результат. `projectId`: undefined — по всем беседам, null — только
+   * беседы без проекта. Постранично через `cursor` из прошлого ответа.
+   */
+  'messages:search': {
+    arg: {
+      query: string
+      projectId?: string | null
+      conversationId?: string
+      limit?: number
+      cursor?: string | null
+    }
+    result: MessageSearchResult
+  }
   'conversations:rename': { arg: { id: string; title: string }; result: void }
   /** Привязать/отвязать чат к проекту; сервер применяет настройки проекта. */
   'conversations:setProject': { arg: { id: string; projectId: string | null }; result: Conversation }
@@ -618,6 +634,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:create',
   'conversations:get',
   'conversations:search',
+  'messages:search',
   'conversations:rename',
   'conversations:setProject',
   'conversations:taskContext',

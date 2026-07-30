@@ -63,6 +63,24 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     db.searchConversations(uid(req), req.query.q ?? '')
   )
 
+  /**
+   * Полнотекстовый поиск по сообщениям (FTS5). `projectId` со значением `none`
+   * (или пустым) — только беседы без проекта, параметра нет — по всем.
+   * Владельца подставляет `uid(req)`: чужие сообщения не выдаются никогда.
+   */
+  app.get<{
+    Querystring: { q?: string; projectId?: string; conversationId?: string; limit?: string; cursor?: string }
+  }>(REST.messagesSearch, async (req) => {
+    const { q, projectId, conversationId, limit, cursor } = req.query
+    return db.searchMessages(uid(req), {
+      q: q ?? '',
+      projectId: projectId === undefined ? undefined : projectId === '' || projectId === 'none' ? null : projectId,
+      ...(conversationId ? { conversationId } : {}),
+      ...(limit ? { limit: Number(limit) } : {}),
+      cursor: cursor ?? null
+    })
+  })
+
   app.get<{ Params: { id: string } }>('/api/conversations/:id', async (req, reply) => {
     const conversation = db.getConversation(uid(req), req.params.id)
     if (!conversation) return reply.code(404).send({ error: 'not found' })
