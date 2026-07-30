@@ -48,7 +48,7 @@ const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'k
 export default function App({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
   const { state, actions } = useVoiceStore({ api, now, delays })
   // Hash-роутинг раздела «Проекты»: URL — источник навигации (см. useHashRoute).
-  const { segments, navigate } = useHashRoute()
+  const { path, segments, navigate } = useHashRoute()
   const inProjects = segments[0] === 'projects'
   const routeProjectId = inProjects ? (segments[1] ?? null) : null
   const routeSettings = inProjects && segments[2] === 'settings'
@@ -60,6 +60,10 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const authed = !state.authRequired || Boolean(state.currentUser)
   // Мобильный режим: выдвинут ли сайдбар (на десктопе класс side--open не влияет).
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Любой переход закрывает выдвижной сайдбар: он рисуется поверх контента, и
+  // забытая открытой панель закрывала собой открытую страницу или карточку
+  // (напр. переход «Открыть задачу» из шапки связанного чата).
+  useEffect(() => { setSidebarOpen(false) }, [path])
   // Десктоп: свёрнут ли сайдбар (колонка → 0). Персист в localStorage.
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('vc:sidebarCollapsed') === '1' } catch { return false }
