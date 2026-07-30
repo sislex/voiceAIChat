@@ -1,6 +1,11 @@
 // Модалка задачи в стиле Jira: слева заголовок/описание/критерии/подзадачи,
 // справа панель деталей (статус, исполнитель, метки, родитель, приоритет,
 // стори-поинты, срок, флаг). Поля сохраняются по blur/change — как в Jira.
+//
+// На телефоне раскладка — как в мобильной Jira: карточка на весь экран, статус и
+// исполнитель сразу под заголовком, остальные поля — в свёрнутой секции
+// «Подробности», а действия шапки (чат, флаг, удаление) — в ⋯-меню. Разметка
+// разная, поэтому ширина проверяется через useMediaQuery, а не только в CSS.
 
 import { useEffect, useRef, useState } from 'react'
 import type { Board, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
@@ -14,6 +19,8 @@ import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanban
 import { CiTaskSettings } from '../ci/CiTaskSettings'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { isActiveCiStatus, type CiRunSummary } from '@shared/ci'
+import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
+import { useAutoGrow } from '../../lib/autoGrow'
 
 export interface TaskUpdateFields {
   title?: string
@@ -81,6 +88,27 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [labelDraft, setLabelDraft] = useState('')
   const [skillDraft, setSkillDraft] = useState('')
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
+  // Заголовок растёт под текст: на узком экране он занимает три-четыре строки, а
+  // rows={1} со скроллом внутри поля прятал бы его конец.
+  const titleGrow = useAutoGrow(title, 1, 6)
+
+  const mobile = useMediaQuery(MOBILE_QUERY)
+  // «Подробности»: на телефоне свёрнуты, на десктопе это всегда открытая колонка.
+  const [detailsOpen, setDetailsOpen] = useState(!mobile)
+  useEffect(() => { setDetailsOpen(!mobile) }, [mobile])
+
+  // ⋯-меню действий в шапке (только на телефоне): закрывается кликом мимо него.
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLSpanElement | null>(null)
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (e: MouseEvent): void => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [menuOpen])
+  useEffect(() => { if (!mobile) setMenuOpen(false) }, [mobile])
 
   const aiAssist = useAiAssist({
     value: description,
@@ -143,6 +171,109 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     setSkillDraft('')
   }
 
+  const toggleFlag = (): void => props.onUpdate(task.id, { flagged: !task.flagged })
+
+  const confirmDelete = (): void => {
+    if (window.confirm(`Удалить «${task.title}»?`)) {
+      props.onDelete(task.id)
+      props.onClose()
+    }
+  }
+
+  // Статус и исполнитель: на телефоне — строкой под заголовком (как в Jira),
+  // на десктопе — первыми полями правой панели. Разметка одна, место разное.
+  const statusField = (
+    <label className="jmodal-field jmodal-field--status">
+      Статус
+      <select
+        className="sel jmodal-status"
+        aria-label="Статус"
+        value={task.columnId}
+        onChange={(e) => props.onMoveToColumn(task.id, e.target.value)}
+      >
+        {board.columns.map((c) => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </select>
+    </label>
+  )
+
+  const assigneeField = (
+    <label className="jmodal-field">
+      Исполнитель
+      <span className="jmodal-assignee">
+        {task.assignee && <Avatar username={task.assignee} size={20} />}
+        <select
+          className="sel"
+          aria-label="Исполнитель"
+          value={task.assignee ?? ''}
+          onChange={(e) => props.onUpdate(task.id, { assignee: e.target.value || null })}
+        >
+          <option value="">Не назначен</option>
+          {props.members.map((m) => (
+            <option key={m.username} value={m.username}>{m.username}</option>
+          ))}
+        </select>
+      </span>
+    </label>
+  )
+
+  const headActions = mobile ? (
+    <span className="jmodal-menuwrap" ref={menuRef}>
+      <button
+        className="jmodal-menubtn"
+        aria-label="Действия с задачей"
+        title="Действия"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((v) => !v)}
+      >
+        ⋯
+      </button>
+      {menuOpen && (
+        <div className="jcard-menu jmodal-menu">
+          {props.onOpenChat && (
+            <button onClick={() => { setMenuOpen(false); props.onOpenChat?.(task.id) }}>
+              💬 {task.chatId ? 'Открыть чат' : 'Создать чат'}
+            </button>
+          )}
+          <button onClick={() => { setMenuOpen(false); toggleFlag() }}>
+            {task.flagged ? '⚑ Снять флаг' : '⚑ Флаг'}
+          </button>
+          <button className="jcard-menu-danger" onClick={() => { setMenuOpen(false); confirmDelete() }}>
+            🗑 Удалить задачу
+          </button>
+        </div>
+      )}
+    </span>
+  ) : (
+    <>
+      {props.onOpenChat && (
+        <button
+          className="renbtn jmodal-chat-btn"
+          title="Открыть связанный чат"
+          onClick={() => props.onOpenChat?.(task.id)}
+        >
+          💬 {task.chatId ? 'Открыть чат' : 'Создать чат'}
+        </button>
+      )}
+      <button
+        className="renbtn"
+        title={task.flagged ? 'Снять флаг' : 'Добавить флаг'}
+        onClick={toggleFlag}
+      >
+        {task.flagged ? '⚑ Снять флаг' : '⚑ Флаг'}
+      </button>
+
+      <button
+        className="delbtn"
+        aria-label="Удалить задачу"
+        title="Удалить задачу"
+        onClick={confirmDelete}
+      >
+        🗑
+      </button>
+    </>
+  )
 
   return (
     <>
@@ -154,40 +285,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       }}
       testId="task-modal"
       className="jmodal-frame"
-      actions={
-        <>
-          {props.onOpenChat && (
-            <button
-              className="renbtn jmodal-chat-btn"
-              title="Открыть связанный чат"
-              onClick={() => props.onOpenChat?.(task.id)}
-            >
-              💬 {task.chatId ? 'Открыть чат' : 'Создать чат'}
-            </button>
-          )}
-          <button
-            className="renbtn"
-            title={task.flagged ? 'Снять флаг' : 'Добавить флаг'}
-            onClick={() => props.onUpdate(task.id, { flagged: !task.flagged })}
-          >
-            {task.flagged ? '⚑ Снять флаг' : '⚑ Флаг'}
-          </button>
-
-          <button
-            className="delbtn"
-            aria-label="Удалить задачу"
-            title="Удалить задачу"
-            onClick={() => {
-              if (window.confirm(`Удалить «${task.title}»?`)) {
-                props.onDelete(task.id)
-                props.onClose()
-              }
-            }}
-          >
-            🗑
-          </button>
-        </>
-      }
+      actions={headActions}
     >
       <div className="jmodal">
         <div className="jmodal-main">
@@ -199,6 +297,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           <textarea
             className="jmodal-title"
             aria-label="Заголовок задачи"
+            ref={titleGrow}
             value={title}
             rows={1}
             onChange={(e) => setTitle(e.target.value)}
@@ -210,6 +309,12 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               }
             }}
           />
+          {mobile && (
+            <div className="jmodal-quick" data-testid="task-modal-quick">
+              {statusField}
+              {assigneeField}
+            </div>
+          )}
           <h3 className="jmodal-h">Описание</h3>
           <div className="ai-assist-wrap jmodal-desc-wrap">
             <textarea
@@ -264,155 +369,141 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         </div>
 
         <aside className="jmodal-side">
-          <label className="jmodal-field">
-            Статус
-            <select
-              className="sel"
-              aria-label="Статус"
-              value={task.columnId}
-              onChange={(e) => props.onMoveToColumn(task.id, e.target.value)}
+          {mobile && (
+            <button
+              className="jmodal-side-toggle"
+              aria-expanded={detailsOpen}
+              onClick={() => setDetailsOpen((v) => !v)}
             >
-              {board.columns.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="jmodal-field">
-            Исполнитель
-            <span className="jmodal-assignee">
-              {task.assignee && <Avatar username={task.assignee} size={20} />}
-              <select
-                className="sel"
-                aria-label="Исполнитель"
-                value={task.assignee ?? ''}
-                onChange={(e) => props.onUpdate(task.id, { assignee: e.target.value || null })}
-              >
-                <option value="">Не назначен</option>
-                {props.members.map((m) => (
-                  <option key={m.username} value={m.username}>{m.username}</option>
-                ))}
-              </select>
-            </span>
-          </label>
-          <div className="jmodal-field">
-            Метки
-            <span className="jmodal-labels">
-              {task.labels.map((l) => (
-                <span key={l} className="jcard-label">
-                  {l}
-                  <button
-                    className="jlabel-x"
-                    aria-label={`Убрать метку ${l}`}
-                    title="Убрать метку"
-                    onClick={() => props.onUpdate(task.id, { labels: task.labels.filter((x) => x !== l) })}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-              <input
-                className="login-input jlabel-input"
-                aria-label="Новая метка"
-                placeholder="+ метка"
-                value={labelDraft}
-                onChange={(e) => setLabelDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') addLabel()
-                }}
-                onBlur={addLabel}
-              />
-            </span>
-          </div>
-          <div className="jmodal-field">
-            Навыки
-            <span className="jmodal-labels jmodal-skills">
-              {task.skills.map((s) => (
-                <span key={s} className="jcard-skill">
-                  {s}
-                  <button
-                    className="jlabel-x"
-                    aria-label={`Убрать навык ${s}`}
-                    title="Убрать навык"
-                    onClick={() => props.onUpdate(task.id, { skills: task.skills.filter((x) => x !== s) })}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-              <input
-                className="login-input jlabel-input"
-                aria-label="Новый навык"
-                placeholder="+ навык"
-                value={skillDraft}
-                onChange={(e) => setSkillDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') addSkill()
-                }}
-                onBlur={addSkill}
-              />
-            </span>
-          </div>
-
-          {task.type !== 'epic' && (
-            <label className="jmodal-field">
-              Родитель
-              <select
-                className="sel"
-                aria-label="Родитель"
-                value={task.parentId ?? ''}
-                onChange={(e) => props.onUpdate(task.id, { parentId: e.target.value || null })}
-              >
-                <option value="">Без родителя</option>
-                {parentOptions.map((p) => (
-                  <option key={p.id} value={p.id}>{TYPE_LABEL[p.type]} · {p.title}</option>
-                ))}
-              </select>
-            </label>
+              <span className="jmodal-side-caret" aria-hidden>{detailsOpen ? '▾' : '▸'}</span>
+              Подробности
+            </button>
           )}
-          <label className="jmodal-field">
-            Приоритет
-            <select
-              className="sel"
-              aria-label="Приоритет"
-              value={task.priority}
-              onChange={(e) => props.onUpdate(task.id, { priority: e.target.value as TaskPriority })}
-            >
-              {TASK_PRIORITIES.map((p) => (
-                <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>
-              ))}
-            </select>
-          </label>
-          <label className="jmodal-field">
-            Стори-поинты
-            <input
-              className="login-input"
-              aria-label="Стори-поинты"
-              type="number"
-              min="0"
-              step="0.5"
-              defaultValue={task.storyPoints ?? ''}
-              key={`pts-${task.id}-${task.storyPoints}`}
-              onBlur={(e) => {
-                const v = e.target.value === '' ? null : Number(e.target.value)
-                if (v !== task.storyPoints) props.onUpdate(task.id, { storyPoints: v })
-              }}
-            />
-          </label>
-          <label className="jmodal-field">
-            Срок
-            <input
-              className="login-input"
-              aria-label="Срок"
-              type="date"
-              value={toDateInput(task.dueDate)}
-              onChange={(e) => props.onUpdate(task.id, { dueDate: fromDateInput(e.target.value) })}
-            />
-          </label>
-          <p className="jmodal-dates">
-            Статус: {column?.name ?? '—'}
-            <br />Создано: {new Date(task.createdAt).toLocaleDateString('ru')}
-            <br />Обновлено: {new Date(task.updatedAt).toLocaleDateString('ru')}
-          </p>
+          {(!mobile || detailsOpen) && (
+            <div className="jmodal-side-fields" data-testid="task-modal-details">
+              {!mobile && statusField}
+              {!mobile && assigneeField}
+              <div className="jmodal-field">
+                Метки
+                <span className="jmodal-labels">
+                  {task.labels.map((l) => (
+                    <span key={l} className="jcard-label">
+                      {l}
+                      <button
+                        className="jlabel-x"
+                        aria-label={`Убрать метку ${l}`}
+                        title="Убрать метку"
+                        onClick={() => props.onUpdate(task.id, { labels: task.labels.filter((x) => x !== l) })}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    className="login-input jlabel-input"
+                    aria-label="Новая метка"
+                    placeholder="+ метка"
+                    value={labelDraft}
+                    onChange={(e) => setLabelDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') addLabel()
+                    }}
+                    onBlur={addLabel}
+                  />
+                </span>
+              </div>
+              <div className="jmodal-field">
+                Навыки
+                <span className="jmodal-labels jmodal-skills">
+                  {task.skills.map((s) => (
+                    <span key={s} className="jcard-skill">
+                      {s}
+                      <button
+                        className="jlabel-x"
+                        aria-label={`Убрать навык ${s}`}
+                        title="Убрать навык"
+                        onClick={() => props.onUpdate(task.id, { skills: task.skills.filter((x) => x !== s) })}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    className="login-input jlabel-input"
+                    aria-label="Новый навык"
+                    placeholder="+ навык"
+                    value={skillDraft}
+                    onChange={(e) => setSkillDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') addSkill()
+                    }}
+                    onBlur={addSkill}
+                  />
+                </span>
+              </div>
+
+              {task.type !== 'epic' && (
+                <label className="jmodal-field">
+                  Родитель
+                  <select
+                    className="sel"
+                    aria-label="Родитель"
+                    value={task.parentId ?? ''}
+                    onChange={(e) => props.onUpdate(task.id, { parentId: e.target.value || null })}
+                  >
+                    <option value="">Без родителя</option>
+                    {parentOptions.map((p) => (
+                      <option key={p.id} value={p.id}>{TYPE_LABEL[p.type]} · {p.title}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="jmodal-field">
+                Приоритет
+                <select
+                  className="sel"
+                  aria-label="Приоритет"
+                  value={task.priority}
+                  onChange={(e) => props.onUpdate(task.id, { priority: e.target.value as TaskPriority })}
+                >
+                  {TASK_PRIORITIES.map((p) => (
+                    <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="jmodal-field">
+                Стори-поинты
+                <input
+                  className="login-input"
+                  aria-label="Стори-поинты"
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  defaultValue={task.storyPoints ?? ''}
+                  key={`pts-${task.id}-${task.storyPoints}`}
+                  onBlur={(e) => {
+                    const v = e.target.value === '' ? null : Number(e.target.value)
+                    if (v !== task.storyPoints) props.onUpdate(task.id, { storyPoints: v })
+                  }}
+                />
+              </label>
+              <label className="jmodal-field">
+                Срок
+                <input
+                  className="login-input"
+                  aria-label="Срок"
+                  type="date"
+                  value={toDateInput(task.dueDate)}
+                  onChange={(e) => props.onUpdate(task.id, { dueDate: fromDateInput(e.target.value) })}
+                />
+              </label>
+              <p className="jmodal-dates">
+                Статус: {column?.name ?? '—'}
+                <br />Создано: {new Date(task.createdAt).toLocaleDateString('ru')}
+                <br />Обновлено: {new Date(task.updatedAt).toLocaleDateString('ru')}
+              </p>
+            </div>
+          )}
           {task.type === 'task' && (props.onStartCi || props.ciSummary) && (
             <div className="jmodal-ci" data-testid="task-modal-ci">
               <div className="jmodal-ci-head">

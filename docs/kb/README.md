@@ -43,6 +43,7 @@
 
 - [2026-07-30-2470-com-ssylka-na-chat.md](log/2026-07-30-2470-com-ssylka-na-chat.md) — ссылка-на-чат
 - [2026-07-30-2470-com-rezyume-rana-v-chate.md](log/2026-07-30-2470-com-rezyume-rana-v-chate.md) — Резюме CI-рана в связанном чате + имя чата задачи
+- [2026-07-30-2470-com-mobilnaya-kartochka-zadachi.md](log/2026-07-30-2470-com-mobilnaya-kartochka-zadachi.md) — Мобильная версия карточки задачи (как в Jira)
 - [2026-07-29-2470-com-ai-prompt-builder.md](log/2026-07-29-2470-com-ai-prompt-builder.md) — ai-prompt-builder
 - [2026-07-27-repo-2-project-knowledge-base.md](log/2026-07-27-repo-2-project-knowledge-base.md) — project-knowledge-base
 - [2026-07-27-2470-com-windows-install-command-cmd.md](log/2026-07-27-2470-com-windows-install-command-cmd.md) — windows-install-command-cmd
