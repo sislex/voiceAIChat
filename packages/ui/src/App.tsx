@@ -22,6 +22,9 @@ import { RunFeed } from './components/ci/RunFeed'
 import { ToolFrame } from './components/ToolFrame'
 import type { MachineOps } from './components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
+import { UiProviders } from './components/ui/UiProviders'
+import { useToast } from './components/ui/Toast'
+import { useConfirm } from './components/ui/useConfirm'
 import { KnowledgeBase } from './components/KnowledgeBase'
 import { useVoiceStore } from './store/useVoiceStore'
 import { useVoiceCues } from './lib/useVoiceCues'
@@ -45,7 +48,20 @@ export interface AppProps {
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
 const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users', 'ci']
 
-export default function App({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
+/**
+ * Корень приложения. Тосты и подтверждения — провайдеры вокруг всего дерева:
+ * спросить подтверждение или показать ошибку может любой экран на любой глубине.
+ * avoidSelector — композер: на телефоне стек тостов стоит над ним, а не поверх.
+ */
+export default function App(props: AppProps = {}): JSX.Element {
+  return (
+    <UiProviders avoidSelector=".voicebar">
+      <AppBody {...props} />
+    </UiProviders>
+  )
+}
+
+function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
   // Hash-роутинг: URL — источник навигации (см. useHashRoute).
   const { path, segments, navigate } = useHashRoute()
   const inProjects = segments[0] === 'projects'
@@ -61,6 +77,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const routeChatId = segments[0] === 'chat' ? (segments[1] ?? null) : null
   const inChat = !inProjects && !onUtilityPage
   const { state, actions } = useVoiceStore({ api, now, delays, initialChatId: routeChatId })
+  const toast = useToast()
+  const confirm = useConfirm()
   const authed = !state.authRequired || Boolean(state.currentUser)
   // Мобильный режим: выдвинут ли сайдбар (на десктопе класс side--open не влияет).
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -82,6 +100,21 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const [sidebarMode, setSidebarMode] = useState<'chats' | 'projects'>('chats')
   useEffect(() => { setSidebarMode(inProjects ? 'projects' : 'chats') }, [inProjects])
   useVoiceCues(state.voice) // звуковые сигналы: старт/стоп записи, «думает»
+
+  // Канал уведомлений стора → тосты. Показанные сразу снимаем из очереди, а
+  // отданные id помним: без этого повторный прогон эффекта (StrictMode) показал
+  // бы каждое уведомление дважды.
+  const shownNotices = useRef(new Set<string>())
+  useEffect(() => {
+    for (const notice of state.notices) {
+      if (!shownNotices.current.has(notice.id)) {
+        shownNotices.current.add(notice.id)
+        toast[notice.kind](notice.text, notice.retry ? { action: { label: 'Повторить', onClick: notice.retry } } : undefined)
+      }
+      actions.dismissNotice(notice.id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.notices])
 
   // Тема дублируется на <html>: модальные окна уходят порталом в document.body,
   // вне .app, и без этого теряли бы токены [data-theme='dark'].
@@ -213,9 +246,15 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
 
   const changeConversationMode = async (mode: PermissionMode): Promise<void> => {
     if (!activeConversation || mode === activePermissionMode) return
-    if (activePermissionMode === 'plan' && mode === 'bypassPermissions' && !window.confirm(
-      'Перейти из планирования в «Полный доступ»? Агент сможет выполнять команды и изменять любые доступные файлы.'
-    )) return
+    if (
+      activePermissionMode === 'plan' &&
+      mode === 'bypassPermissions' &&
+      !(await confirm({
+        title: 'Полный доступ',
+        message: 'Перейти из планирования в «Полный доступ»? Агент сможет выполнять команды и изменять любые доступные файлы.',
+        confirmLabel: 'Перейти'
+      }))
+    ) return
     await actions.setConversationExecTarget(
       activeConversation.id,
       activeConversation.execTarget,

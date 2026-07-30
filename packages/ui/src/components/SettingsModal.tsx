@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Dialog } from './ui/Dialog'
+import { useConfirm } from './ui/useConfirm'
 import type {
   CatalogVoice,
   ClaudeModel,
@@ -98,6 +99,7 @@ export function SettingsModal({
   onClose,
   voiceInputEnabled = true
 }: SettingsModalProps): JSX.Element {
+  const confirm = useConfirm()
   // Блокировка функций при нехватке ресурсов контейнера (null — ещё не загружено, не блокируем).
   const sttBlocked = !voiceInputEnabled || (capabilities != null && !capabilities.stt.available)
   const ttsBlocked = capabilities != null && !capabilities.tts.available
@@ -285,7 +287,7 @@ export function SettingsModal({
                     <textarea className="sel" aria-label={`Текст: ${item.title}`} value={item.text} readOnly={item.readonly} onChange={(e) => onChange({ aiAssistPrompts: settings.aiAssistPrompts.map((p) => p.id === item.id ? { ...p, text: e.target.value } : p) })}/>
                     <button className="vdl" aria-label={`Вверх: ${item.title}`} title="Вверх" disabled={index === 0} onClick={() => { const next = [...settings.aiAssistPrompts]; const [moved] = next.splice(index, 1); next.splice(index - 1, 0, moved); onChange({ aiAssistPrompts: next }) }}>↑</button>
                     <button className="vdl" aria-label={`Вниз: ${item.title}`} title="Вниз" disabled={index === settings.aiAssistPrompts.length - 1} onClick={() => { const next = [...settings.aiAssistPrompts]; const [moved] = next.splice(index, 1); next.splice(index + 1, 0, moved); onChange({ aiAssistPrompts: next }) }}>↓</button>
-                    {!item.readonly && <button className="vdl" aria-label={`Удалить: ${item.title}`} title="Удалить" onClick={() => { if (window.confirm('Удалить этот промпт?')) onChange({ aiAssistPrompts: settings.aiAssistPrompts.filter((p) => p.id !== item.id) }) }}>✕</button>}
+                    {!item.readonly && <button className="vdl" aria-label={`Удалить: ${item.title}`} title="Удалить" onClick={() => { void confirm({ title: 'Удалить этот промпт?', variant: 'danger', confirmLabel: 'Удалить' }).then((ok) => { if (ok) onChange({ aiAssistPrompts: settings.aiAssistPrompts.filter((p) => p.id !== item.id) }) }) }}>✕</button>}
                   </div>)}
                   <button className="vdl" onClick={() => onChange({ aiAssistPrompts: [...settings.aiAssistPrompts, { id: globalThis.crypto?.randomUUID?.() ?? String(Date.now()), title: 'Новая подсказка', text: 'Опишите дополнительную инструкцию', enabled: true }] })}>Добавить промпт</button>
                 </div>

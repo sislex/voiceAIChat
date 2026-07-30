@@ -58,6 +58,32 @@ describe('App — страница «Проекты» по URL', () => {
   })
 })
 
+describe('App — упавший вызов моста показывается тостом', () => {
+  it('ошибка загрузки доски даёт тост с текстом и «Повторить»', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const project = await api['projects:create']({ name: 'Мой проект' })
+    // Первый запрос доски падает, повтор проходит: раньше на странице проектов
+    // не было видно вообще ничего — ни ошибки, ни доски.
+    const realBoard = api['board:get']
+    let broken = true
+    api['board:get'] = async (input) => {
+      if (!broken) return realBoard(input)
+      broken = false
+      throw new Error('Сервер недоступен')
+    }
+    window.location.hash = `#/projects/${project.id}`
+    render(<App api={api} delays={SLOW} />)
+
+    const toast = await screen.findByTestId('toast-error')
+    expect(toast).toHaveTextContent('Сервер недоступен')
+    await userEvent.click(within(toast).getByRole('button', { name: 'Повторить' }))
+
+    const board = await screen.findByTestId('project-board')
+    await waitFor(() => expect(within(board).getByTestId('kanban-board')).toBeInTheDocument())
+  })
+})
+
 describe('App — авто-редирект на последний проект', () => {
   it('#/projects уводит на последний использованный проект, если он доступен', async () => {
     const api = createFakeApi([])

@@ -16,6 +16,7 @@ import { TaskCard, epicOf } from './TaskCard'
 import { TaskModal, type TaskUpdateFields } from './TaskModal'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, epicColor, issueKey } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
+import { useConfirm } from '../ui/useConfirm'
 
 export type Swimlane = 'none' | 'epic' | 'assignee'
 
@@ -75,6 +76,7 @@ function FilterDropdown({ label, active, children }: { label: string; active: nu
 
 export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const { loading, members } = props
+  const confirm = useConfirm()
   const [showHidden, setShowHidden] = useState(false)
   const [search, setSearch] = useState('')
   const [assignees, setAssignees] = useState<ReadonlySet<string>>(new Set())
@@ -366,7 +368,15 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                   className="jcard-menu-danger"
                   onClick={() => {
                     setColMenu(null)
-                    if (window.confirm(`Удалить колонку «${col.name}» со всеми задачами?`)) props.onDeleteColumn(col.id)
+                    // Необратимо и уносит задачи с собой — включаем ввод названия.
+                    void confirm({
+                      title: `Удалить колонку «${col.name}» со всеми задачами?`,
+                      variant: 'danger',
+                      confirmLabel: 'Удалить колонку',
+                      requireText: col.name
+                    }).then((ok) => {
+                      if (ok) props.onDeleteColumn(col.id)
+                    })
                   }}
                 >
                   Удалить

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { screen, fireEvent, within, waitFor } from '@testing-library/react'
+import { render } from '../../test/uiRender'
 import type { CiRun, CiRunStep, CiLogLine, CiInteraction } from '@shared/ci'
 import { RunFeed, type RunFeedCache } from './RunFeed'
 
@@ -66,16 +67,24 @@ describe('RunFeed', () => {
     expect(screen.getByText('model: npm test')).toBeInTheDocument()
   })
 
-  it('dirty workspace требует подтверждение перед откатом', () => {
+  it('dirty workspace требует подтверждение перед откатом', async () => {
     const dirty = mkStep({ id: 'dirty', status: 'failed', exitCode: 66 })
     const cache: RunFeedCache = { detail: { run: mkRun({ status: 'failed' }), steps: [dirty], fixAttempts: [], interactions: [] }, log: [], conclusion: null }
     const onDiscardAndRetry = vi.fn()
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<RunFeed {...baseProps(cache)} onDiscardAndRetry={onDiscardAndRetry} />)
     fireEvent.click(screen.getByRole('button', { name: 'Откатить изменения и начать заново' }))
-    expect(confirm).toHaveBeenCalled()
-    expect(onDiscardAndRetry).toHaveBeenCalledWith('run-1')
-    confirm.mockRestore()
+    const dialog = await screen.findByTestId('confirm-dialog')
+    // Предупреждение дословно то же, что было в window.confirm.
+    expect(within(dialog).getByText('Все незакоммиченные и неотслеживаемые файлы в рабочем репозитории будут удалены. Продолжить?')).toBeInTheDocument()
+    // Необратимо: пока слово не набрано, подтвердить нельзя.
+    const ok = within(dialog).getByRole('button', { name: 'Откатить и начать заново' })
+    expect(ok).toBeDisabled()
+    fireEvent.click(ok)
+    expect(onDiscardAndRetry).not.toHaveBeenCalled()
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'откатить' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Откатить и начать заново' }))
+    // Ответ приходит промисом (useConfirm) — ждём следующего такта.
+    await waitFor(() => expect(onDiscardAndRetry).toHaveBeenCalledWith('run-1'))
   })
 
   it('при падении model_work позволяет выбрать Codex и повторить только модель', () => {

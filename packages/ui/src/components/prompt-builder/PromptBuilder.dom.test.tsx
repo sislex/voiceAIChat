@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import axe from 'axe-core'
@@ -91,8 +92,22 @@ describe('PromptBuilder', () => {
     expect((await axe.run(document.body)).violations).toEqual([])
   })
   it('Esc при сборке запрашивает подтверждение', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true); const onClose = vi.fn(); const { user } = setup({ onClose }); await generateReady(user)
+    const onClose = vi.fn(); const { user } = setup({ onClose }); await generateReady(user)
     await user.click(within(screen.getByText('Первый вариант').closest('article')!).getByText('Добавить')); fireEvent.keyDown(window, { key: 'Escape' })
-    expect(confirm).toHaveBeenCalledWith('Отменить сборку?'); expect(onClose).toHaveBeenCalled(); confirm.mockRestore()
+    // Подтверждение — своё окно поверх помощника: закрываем сборку кликом в нём.
+    const dialog = await screen.findByTestId('confirm-dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Отменить сборку?' })).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Подтвердить' }))
+    // Ответ приходит промисом (useConfirm) — ждём следующего такта.
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+  it('копирование собранного текста подтверждается тостом', async () => {
+    // Буфер — стаб userEvent.setup(): он подменяет navigator.clipboard сам.
+    const { user } = setup(); await generateReady(user)
+    await user.click(within(screen.getByText('Первый вариант').closest('article')!).getByText('Добавить'))
+    await user.click(screen.getByText('Копировать'))
+    expect(await screen.findByText('Скопировано')).toBeInTheDocument()
+    expect(await navigator.clipboard.readText()).toBe('Первый вариант')
   })
 })

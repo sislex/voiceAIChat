@@ -7,6 +7,7 @@ import type { Task } from '@shared/projects'
 import { ciCardPulse, isActiveCiStatus, type CiRunSummary } from '@shared/ci'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
+import { useConfirm } from '../ui/useConfirm'
 
 export interface TaskCardProps {
   task: Task
@@ -46,6 +47,7 @@ export function epicOf(task: Task, all: Task[]): Task | null {
 
 export function TaskCard(props: TaskCardProps): JSX.Element {
   const { task, ciSummary } = props
+  const confirm = useConfirm()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
@@ -109,7 +111,9 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 className="jcard-menu-danger"
                 onClick={() => {
                   setMenuOpen(false)
-                  if (window.confirm(`Удалить «${task.title}»?`)) props.onDelete(task.id)
+                  void confirm({ title: `Удалить «${task.title}»?`, variant: 'danger', confirmLabel: 'Удалить' }).then((ok) => {
+                    if (ok) props.onDelete(task.id)
+                  })
                 }}
               >
                 Удалить
