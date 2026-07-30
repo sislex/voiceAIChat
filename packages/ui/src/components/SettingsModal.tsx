@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { PopupFrame } from './PopupFrame'
+import { Dialog } from './ui/Dialog'
 import type {
   CatalogVoice,
   ClaudeModel,
@@ -104,13 +104,7 @@ export function SettingsModal({
   const [section, setSection] = useState<SettingsSection>('agent')
 
   return (
-    <PopupFrame title="Настройки" onClose={onClose} testId="overlay" panelClassName="modal settings">
-        <div className="mdhead">
-          <h2 className="mdh">Настройки</h2>
-          <button className="xbtn" onClick={onClose} aria-label="Закрыть" title="Закрыть">
-            ✕
-          </button>
-        </div>
+    <Dialog title="Настройки" size="md" testId="overlay" onClose={onClose}>
         <div className="settbody">
           <nav className="settnav" aria-label="Разделы настроек">
             {SECTIONS.map((s) => (
@@ -605,6 +599,6 @@ export function SettingsModal({
             )}
           </div>
         </div>
-    </PopupFrame>
+    </Dialog>
   )
 }

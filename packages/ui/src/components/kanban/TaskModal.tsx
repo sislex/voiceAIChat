@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Board, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { TASK_PRIORITIES } from '@shared/projects'
 import type { ModifierPrompt } from '@shared/types'
-import { ToolFrame } from '../ToolFrame'
+import { Dialog } from '../ui/Dialog'
 import { WandIcon } from '../icons'
 import { PromptBuilder, type GenerateParams, type Suggestion } from '../prompt-builder/PromptBuilder'
 import { applyNativeInputValue, useAiAssist } from '../prompt-builder/useAiAssist'
@@ -277,12 +277,12 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
 
   return (
     <>
-    <ToolFrame
+    {/* Esc и клик по фону — забота Dialog. Пока сверху открыт AI-помощник, карточка
+        их не получает: окна лежат в общем стеке (useDialogStack). */}
+    <Dialog
       title={`${TYPE_LABEL[task.type]} · ${key}`}
-      onClose={() => {
-        if (aiAssist.popupProps.open) aiAssist.popupProps.onClose()
-        else props.onClose()
-      }}
+      size="lg"
+      onClose={props.onClose}
       testId="task-modal"
       className="jmodal-frame"
       actions={headActions}
@@ -537,7 +537,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           <CiTaskSettings projectId={task.projectId} taskId={task.id} />
         </aside>
       </div>
-    </ToolFrame>
+    </Dialog>
     <PromptBuilder {...aiAssist.popupProps} />
     </>
   )

@@ -83,6 +83,12 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   useEffect(() => { setSidebarMode(inProjects ? 'projects' : 'chats') }, [inProjects])
   useVoiceCues(state.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
+  // Тема дублируется на <html>: модальные окна уходят порталом в document.body,
+  // вне .app, и без этого теряли бы токены [data-theme='dark'].
+  useEffect(() => {
+    document.documentElement.dataset.theme = state.settings.theme
+  }, [state.settings.theme])
+
   // Горячие клавиши: пробел (hold) — запись, Esc — стоп/отмена по состоянию.
   // Выключены при открытом модале настроек (там свои поля/фокус).
   useHotkeys({

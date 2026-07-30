@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { PopupFrame } from './PopupFrame'
+import { Dialog } from './ui/Dialog'
 import type { MessageRole, TurnMeta } from '@shared/types'
 
 /** Человекочитаемая роль сообщения контекста. */
@@ -113,14 +113,13 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
       )}
 
       {open && (
-        <PopupFrame title="Подробности запроса" onClose={() => setOpen(false)} testId="meta-overlay" panelClassName="modal metamodal">
-            <div className="mdhead">
-              <h2 className="mdh">Что было отправлено модели</h2>
-              <button className="xbtn" aria-label="Закрыть" title="Закрыть" onClick={() => setOpen(false)}>
-                ✕
-              </button>
-            </div>
-
+        <Dialog
+          title="Что было отправлено модели"
+          ariaLabel="Подробности запроса"
+          size="md"
+          testId="meta-overlay"
+          onClose={() => setOpen(false)}
+        >
             <div className="metamodal-body">
               <section className="metasec">
                 <h3 className="metasech">Метрики хода</h3>
@@ -195,7 +194,7 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
                 </>
               )}
             </div>
-        </PopupFrame>
+        </Dialog>
       )}
     </span>
   )
