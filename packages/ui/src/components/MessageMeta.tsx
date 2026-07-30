@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Dialog } from './ui/Dialog'
+import { IconButton } from './ui/IconButton'
 import type { MessageRole, TurnMeta } from '@shared/types'
 
 /** Человекочитаемая роль сообщения контекста. */
@@ -87,14 +88,14 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
 
   return (
     <span className="metawrap" onMouseEnter={openTip} onMouseLeave={scheduleClose}>
-      <button
-        className="msgbtn metabtn"
+      <IconButton size="sm"
+        
         aria-label="Сведения об ответе"
         title="Сведения об ответе"
         onClick={() => setOpen(true)}
       >
         ⓘ
-      </button>
+      </IconButton>
 
       {hover && !open && (
         <span className="metatip" role="tooltip" data-testid="meta-tip">

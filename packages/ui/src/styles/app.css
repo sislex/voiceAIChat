@@ -21,6 +21,7 @@
   --ci-removed-bg: #f7dcd7;
   --surface-warning: var(--ci-progress-bg);
   --accent-fg: #fff;
+  --accent-soft: #eef1fb;
   --danger: var(--ci-removed);
   --danger-fg: #fff;
   --surface-hover: #e9e7e0;
@@ -49,6 +50,7 @@
   /* Акцент и красный в тёмной теме светлые — подпись на них тёмная, иначе
      кнопка «выцветает» и текст не читается. */
   --accent-fg: #191916;
+  --accent-soft: #2b2f44;
   --danger: var(--ci-removed);
   --danger-fg: #191916;
   --surface-hover: #2c2c25;
@@ -205,12 +207,6 @@
     opacity: 0.4;
     transform: scale(0.7);
   }
-}
-.micbtn:disabled,
-.sendbtn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  background: #c2bfb2;
 }
 .msgloading {
   display: flex;
@@ -515,19 +511,6 @@
   position: relative;
   display: inline-flex;
 }
-.exportbtn {
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: #55534a;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  padding: 5px 9px;
-  border-radius: 8px;
-}
-.exportbtn:hover {
-  border-color: #b9b6a8;
-}
 .exportmenu {
   position: absolute;
   top: calc(100% + 6px);
@@ -773,33 +756,15 @@
   align-items: center;
   gap: 8px;
 }
-.speakbtn {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  padding: 2px 4px;
-  border-radius: 6px;
+/* Мелкие действия под сообщением (копировать, озвучить, править, удалить) —
+   .vc-btn ghost. Приглушены, пока на них не наведёшь: глифы-эмодзи цветом не
+   управляются, поэтому тусклость даёт opacity, а не токен. */
+.mfoot .vc-btn--ghost {
   opacity: 0.55;
 }
-.speakbtn:hover {
+.mfoot .vc-btn--ghost:hover,
+.mfoot .vc-btn--ghost:focus-visible {
   opacity: 1;
-  background: #ece9e0;
-}
-.msgbtn {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  padding: 2px 4px;
-  border-radius: 6px;
-  opacity: 0.5;
-}
-.msgbtn:hover {
-  opacity: 1;
-  background: #ece9e0;
 }
 
 /* ---- Инфо об ответе модели (иконка ⓘ + тултип при наведении + модал) ---- */
@@ -1217,24 +1182,12 @@
 .tin:focus {
   border-color: #9ba9d6;
 }
-.attachbtn {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 1px solid #dddbd1;
-  background: var(--surface);
-  cursor: pointer;
-  font-size: 18px;
-  flex-shrink: 0;
-  transition: transform 0.15s;
-}
-.attachbtn:hover {
-  transform: scale(1.06);
-}
-/* Помощник промптов: круглая кнопка-палочка и всплывающий список вариантов. */
-.wandbtn.active {
-  border-color: #9ba9d6;
-  background: #eef1fb;
+/* Помощник промптов: круглая кнопка-палочка и всплывающий список вариантов.
+   Пока панель раскрыта, кнопка подсвечена акцентом. */
+.composer-wand[aria-expanded='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .prompt-helper {
   position: absolute;
@@ -1327,34 +1280,6 @@
 }
 .attx:hover {
   color: #d5482f;
-}
-.micbtn {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  flex-shrink: 0;
-  transition: transform 0.15s;
-}
-.micbtn:hover {
-  transform: scale(1.06);
-}
-.stopbtn {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 1.5px solid #d5482f;
-  background: #fbeeea;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
 }
 .wavewrap {
   flex: 1;
@@ -2286,22 +2211,21 @@
   white-space: nowrap;
 }
 /* Кнопка «Подробнее / Кратко» — компактная, с акцентным текстом. */
-.actbtn {
-  width: auto;
+.msgact-mode {
   font-size: 11px;
-  font-weight: 600;
   color: var(--accent);
-  opacity: 0.75;
 }
-.actbtn--stream {
-  display: inline-block;
-  margin-top: 8px;
+.mfoot .msgact-mode:hover:not(:disabled) {
+  color: var(--accent);
+}
+.msgact-mode--stream {
+  margin-top: var(--space-100);
 }
 /* Нижний дубль строки статуса в стрим-пузыре. */
 .msgact--bottom {
   margin-top: 8px;
 }
-.msgact--bottom .actbtn--stream {
+.msgact--bottom .msgact-mode--stream {
   margin-top: 0;
 }
 /* Пометка прерванного ответа (сервер перезапустился в середине хода). */
@@ -2330,18 +2254,12 @@
   background: var(--bg);
   border-color: #3a3a3a;
 }
-[data-theme='dark'] .wandbtn.active {
-  background: #2b2f44;
-  border-color: #4a5378;
-}
-[data-theme='dark'] .tin,
-[data-theme='dark'] .attachbtn {
+[data-theme='dark'] .tin {
   border-color: var(--border);
 }
 [data-theme='dark'] .newbtn:hover,
 [data-theme='dark'] .searchinput:focus,
 [data-theme='dark'] .projectselect:focus,
-[data-theme='dark'] .exportbtn:hover,
 [data-theme='dark'] .ctitle-edit,
 [data-theme='dark'] .mtitle-edit {
   border-color: #4a4940;
@@ -2350,7 +2268,6 @@
   border-color: var(--accent);
 }
 [data-theme='dark'] .badge,
-[data-theme='dark'] .exportbtn,
 [data-theme='dark'] .footbtn {
   color: var(--text-dim);
 }
@@ -3426,17 +3343,13 @@
   font-weight: 700;
 }
 .execute-plan {
-  border: 1px solid #8aa994;
-  border-radius: 7px;
-  padding: 4px 9px;
-  background: #e9f8ef;
-  color: #1e6a45;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 800;
-  cursor: pointer;
+  border-color: var(--ci-success);
+  background: var(--ci-success-bg);
+  color: var(--ci-success);
 }
-.execute-plan:hover { background: #d9f1e3; }
+.execute-plan:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
 
 .vbottom {
   display: flex;
@@ -4237,6 +4150,10 @@
   border-radius: 50%;
   padding: 0;
   flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.vc-btn--circle:hover:not(:disabled) {
+  transform: scale(1.06);
 }
 .vc-btn--circle.vc-btn--md {
   width: 48px;
