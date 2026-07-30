@@ -299,4 +299,18 @@ describe('App — мобильное меню', () => {
     await userEvent.click(screen.getByText('Настройки'))
     expect(document.querySelector('.side--open')).toBeNull()
   })
+
+  it('смена маршрута закрывает сайдбар — иначе он висит поверх открытой страницы', async () => {
+    await renderApp()
+    try {
+      await userEvent.click(screen.getByLabelText('Меню разговоров'))
+      expect(document.querySelector('.side--open')).not.toBeNull()
+      // Переход не через пункт меню (так работает «Открыть задачу» из шапки
+      // связанного чата): раньше панель оставалась поверх карточки задачи.
+      window.location.hash = '#/kb'
+      await waitFor(() => expect(document.querySelector('.side--open')).toBeNull())
+    } finally {
+      window.location.hash = ''
+    }
+  })
 })
