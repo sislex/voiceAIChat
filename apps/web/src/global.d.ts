@@ -16,6 +16,7 @@ import type {
   RendererSttBridge,
   RendererTtsBridge
 } from '@shared/ipc'
+import type { RendererCiBridge } from '@voicechat/ui'
 
 declare global {
   interface Window {
@@ -32,6 +33,7 @@ declare global {
     fs?: RendererFsBridge
     files?: RendererFilesBridge
     pty?: RendererPtyBridge
+    ci?: RendererCiBridge
   }
 }
 
