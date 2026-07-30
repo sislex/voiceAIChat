@@ -626,7 +626,7 @@ export interface StoreActions {
   linkProjectMachine(id: string, agentId: string): Promise<void>
   unlinkProjectMachine(id: string, agentId: string): Promise<void>
   setProjectMachinePath(id: string, agentId: string, path: string): Promise<void>
-  setProjectFeatureReposRoot(id: string, agentId: string, featureReposRoot: string): Promise<void>
+  setProjectReposRoot(id: string, agentId: string, reposRoot: string): Promise<void>
   setProjectDefaultMachine(id: string, agentId: string): Promise<void>
   fetchProjectDetail(id: string): Promise<ProjectDetail | null>
   /** Открыть доску проекта (грузит снапшот, подписывается на живые обновления). */
@@ -2548,9 +2548,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ error: perr(err) })
     }
   }
-  async function setProjectFeatureReposRoot(id: string, agentId: string, featureReposRoot: string): Promise<void> {
+  async function setProjectReposRoot(id: string, agentId: string, reposRoot: string): Promise<void> {
     try {
-      setState({ projectDetail: await api['projects:setFeatureReposRoot']({ id, agentId, featureReposRoot }) })
+      setState({ projectDetail: await api['projects:setReposRoot']({ id, agentId, reposRoot }) })
     } catch (err) {
       setState({ error: perr(err) })
     }
@@ -3056,7 +3056,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       linkProjectMachine,
       unlinkProjectMachine,
       setProjectMachinePath,
-      setProjectFeatureReposRoot,
+      setProjectReposRoot,
       setProjectDefaultMachine,
       fetchProjectDetail,
       setConversationProject,

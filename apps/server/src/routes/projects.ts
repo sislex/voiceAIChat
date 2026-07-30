@@ -150,14 +150,14 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
   )
 
   // Папка проекта на конкретной машине.
-  app.patch<{ Params: { id: string; agentId: string }; Body: { path?: string; featureReposRoot?: string } }>(
+  app.patch<{ Params: { id: string; agentId: string }; Body: { path?: string; reposRoot?: string } }>(
     '/api/projects/:id/machines/:agentId',
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
       if (p.role !== 'owner') return forbidden(reply)
-      return req.body?.featureReposRoot !== undefined
-        ? db.setProjectMachineFeatureReposRoot(uid(req), req.params.id, req.params.agentId, req.body.featureReposRoot) ?? nf(reply)
+      return req.body?.reposRoot !== undefined
+        ? db.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot) ?? nf(reply)
         : db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? '') ?? nf(reply)
     }
   )

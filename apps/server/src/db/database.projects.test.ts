@@ -237,7 +237,7 @@ describe('projects: папка машины, дефолт, привязка ча
 })
 
 
-describe('work items + feature runs', () => {
+describe('work items', () => {
   it('строит иерархию Epic → Story → Task и запрещает неверного родителя', () => {
     const p = db.createProject('alice', { name: 'P' })
     const backlog = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'backlog')!
@@ -250,77 +250,12 @@ describe('work items + feature runs', () => {
     expect(() => db.updateTask('alice', p.id, epic.id, { parentId: task.id })).toThrow()
   })
 
-  it('хранит историю Feature Run и синхронизирует системные колонки', () => {
+  it('deleteTask убирает задачу с доски', () => {
     const p = db.createProject('alice', { name: 'P' })
-    const agent = db.createAgent('alice', 'M')
-    db.linkMachine('alice', p.id, agent.id)
-    db.setProjectMachineFeatureReposRoot('alice', p.id, agent.id, '/repos')
-    db.setProjectDefaultMachine('alice', p.id, agent.id)
     const ready = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'ready')!
-    const task = db.createTask('alice', p.id, { columnId: ready.id, title: 'Feature task' })!
-    let feature = db.createFeatureFromTask('alice', p.id, task.id, { autoMerge: true })!
-    expect(feature.attempt).toBe(1)
-    expect(db.getBoard('alice', p.id)!.tasks.find((t) => t.id === task.id)!.columnId).not.toBe(ready.id)
-    feature = db.transitionFeature('alice', feature.id, 'planning')!
-    feature = db.transitionFeature('alice', feature.id, 'awaiting_plan_approval')!
-    feature = db.transitionFeature('alice', feature.id, 'development')!
-    feature = db.transitionFeature('alice', feature.id, 'testing')!
-    expect(db.getBoard('alice', p.id)!.columns.find((c) => c.id === db.getBoard('alice', p.id)!.tasks.find((t) => t.id === task.id)!.columnId)!.semanticType).toBe('testing')
-    feature = db.transitionFeature('alice', feature.id, 'cancelled')!
-    expect(db.getBoard('alice', p.id)!.columns.find((c) => c.id === db.getBoard('alice', p.id)!.tasks.find((t) => t.id === task.id)!.columnId)!.semanticType).toBe('ready')
-    const retry = db.createFeatureFromTask('alice', p.id, task.id, {})!
-    expect(retry.attempt).toBe(2)
-    expect(retry.previousFeatureId).toBe(feature.id)
-  })
-
-  it('deleteTask удаляет задачу вместе с её Feature Run и освобождает рабочую копию', () => {
-    const p = db.createProject('alice', { name: 'P' })
-    const agent = db.createAgent('alice', 'M')
-    db.linkMachine('alice', p.id, agent.id)
-    db.setProjectMachineFeatureReposRoot('alice', p.id, agent.id, '/repos')
-    db.setProjectDefaultMachine('alice', p.id, agent.id)
-    const ready = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'ready')!
-    const task = db.createTask('alice', p.id, { columnId: ready.id, title: 'Feature task' })!
-    const feature = db.createFeatureFromTask('alice', p.id, task.id, {})!
-    const slot = db.reserveRepositorySlot('alice', feature.id)!
-    // Задача с фичей раньше не удалялась: FK features.source_task_id RESTRICT.
+    const task = db.createTask('alice', p.id, { columnId: ready.id, title: 'T' })!
     expect(db.deleteTask('alice', p.id, task.id)).toBe(true)
     expect(db.getBoard('alice', p.id)!.tasks.find((t) => t.id === task.id)).toBeUndefined()
-    expect(db.listFeatures('alice', p.id)!.find((f) => f.id === feature.id)).toBeUndefined()
-    // Рабочая копия освобождена и снова доступна к резервированию.
-    const t2 = db.createTask('alice', p.id, { columnId: ready.id, title: 'Next' })!
-    const f2 = db.createFeatureFromTask('alice', p.id, t2.id, {})!
-    const reused = db.reserveRepositorySlot('alice', f2.id)!
-    expect(reused.id).toBe(slot.id)
-  })
-
-  it('чат с незавершённой Feature всё равно удаляется (Feature Run убран)', () => {
-    const p = db.createProject('alice', { name: 'P' })
-    const ready = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'ready')!
-    const task = db.createTask('alice', p.id, { columnId: ready.id, title: 'Feature task' })!
-    const feature = db.createFeatureFromTask('alice', p.id, task.id, {})!
-    expect(feature.status).not.toBe('completed')
-    db.deleteConversation('alice', feature.conversationId!)
-    expect(db.getConversation('alice', feature.conversationId!)).toBeNull()
-    // Сама Feature жива, ссылка на чат обнулена (ON DELETE SET NULL).
-    expect(db.getFeature('alice', feature.id)!.conversationId).toBeNull()
-  })
-
-  it('атомарно резервирует разные repository slots для параллельных фич', () => {
-    const p = db.createProject('alice', { name: 'P' })
-    const agent = db.createAgent('alice', 'M')
-    db.linkMachine('alice', p.id, agent.id)
-    db.setProjectMachineFeatureReposRoot('alice', p.id, agent.id, '/repos')
-    db.setProjectDefaultMachine('alice', p.id, agent.id)
-    const ready = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'ready')!
-    const t1 = db.createTask('alice', p.id, { columnId: ready.id, title: 'A' })!
-    const t2 = db.createTask('alice', p.id, { columnId: ready.id, title: 'B' })!
-    const f1 = db.createFeatureFromTask('alice', p.id, t1.id, {})!
-    const f2 = db.createFeatureFromTask('alice', p.id, t2.id, {})!
-    const s1 = db.reserveRepositorySlot('alice', f1.id)!
-    const s2 = db.reserveRepositorySlot('alice', f2.id)!
-    expect(s1.id).not.toBe(s2.id)
-    expect(s1.path).not.toBe(s2.path)
   })
 })
 

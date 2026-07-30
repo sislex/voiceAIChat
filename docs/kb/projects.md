@@ -122,18 +122,18 @@ areas:
 (изоляция агентов не меняется).
 
 
-## Epic / Story / Task и Feature Run
+## Epic / Story / Task
 
 Новые проекты получают шесть системных колонок: «Бэклог», «Готово к разработке»,
 «Разработка», «Тестирование», «Ожидает merge», «Готово». Их машинный смысл хранит
 `semantic_type`, поэтому пользовательские подписи не участвуют в автоматизации.
 Задачи образуют иерархию Epic → Story → Task. В быстрой форме доски для Story
-обязательно выбирается родительский Epic; без него UI не отправляет запрос. Feature
-Run запускается для Task; запуск из Story без Task создаёт её автоматически. Полный workflow, Git-workspace,
-merge и deploy описаны в [features/feature-workflow.md](features/feature-workflow.md).
+обязательно выбирается родительский Epic; без него UI не отправляет запрос.
+Выполнение задачи — CI-раннер, см. [features/ci-runner.md](features/ci-runner.md).
 
-Для Feature-пула используется отдельное `project_machines.feature_repos_root`;
-`project_machines.path` по-прежнему задаёт директорию обычного проектного чата.
+Для пула рабочих копий CI используется отдельное `project_machines.repos_root`
+(бывший `feature_repos_root`); `project_machines.path` по-прежнему задаёт
+директорию обычного проектного чата.
 
 ## Навыки по умолчанию, навыки карточки и связанный чат
 

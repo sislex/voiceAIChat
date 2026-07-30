@@ -38,7 +38,6 @@ import type {
   WorkItemDefaultSkills
 } from './projects'
 
-import type { FeatureRun, FeatureStatus, AgentTask, FeatureDeployment } from './features'
 import type { KbContextBundle, KbDocument, KbDocumentSummary, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
 
 /** Статус локальной модели Whisper. */
@@ -229,8 +228,8 @@ export interface IpcInvokeMap {
   'projects:linkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   'projects:unlinkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Задать папку проекта на конкретной машине (только владелец). */
+  'projects:setReposRoot': { arg: { id: string; agentId: string; reposRoot: string }; result: ProjectDetail }
   'projects:setMachinePath': { arg: { id: string; agentId: string; path: string }; result: ProjectDetail }
-  'projects:setFeatureReposRoot': { arg: { id: string; agentId: string; featureReposRoot: string }; result: ProjectDetail }
   /** Назначить машину проекта по умолчанию (только владелец). */
   'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Снапшот доски (колонки + задачи). */
@@ -287,17 +286,6 @@ export interface IpcInvokeMap {
   'tasks:delete': { arg: { projectId: string; taskId: string }; result: void }
   /** Открыть (или создать) связанный с задачей чат текущего пользователя. */
   'tasks:openChat': { arg: { projectId: string; taskId: string }; result: Conversation }
-
-  'features:list': { arg: { projectId: string }; result: FeatureRun[] }
-  'features:createFromTask': { arg: { projectId: string; taskId: string; autoMerge?: boolean; autoDeployProduction?: boolean }; result: FeatureRun }
-  'features:createFromStory': { arg: { projectId: string; storyId: string; autoMerge?: boolean; autoDeployProduction?: boolean }; result: FeatureRun }
-  'features:get': { arg: { id: string }; result: FeatureRun | null }
-  'features:setAutomation': { arg: { id: string; autoMerge?: boolean; autoDeployProduction?: boolean }; result: FeatureRun }
-  'features:transition': { arg: { id: string; status: FeatureStatus; expectedVersion?: number }; result: FeatureRun }
-  'features:deploy': { arg: { id: string }; result: FeatureRun }
-  'features:deployments': { arg: { id: string }; result: FeatureDeployment[] }
-  'agentTasks:list': { arg: { featureId: string }; result: AgentTask[] }
-  'agentTasks:create': { arg: { featureId: string; title: string; description?: string; kind?: AgentTask['kind']; dependsOn?: string[] }; result: AgentTask }
 }
 
 export type IpcChannel = keyof IpcInvokeMap
@@ -679,7 +667,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:linkMachine',
   'projects:unlinkMachine',
   'projects:setMachinePath',
-  'projects:setFeatureReposRoot',
+  'projects:setReposRoot',
   'projects:setDefaultMachine',
   'board:get',
   'columns:create',
@@ -691,18 +679,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:update',
   'tasks:move',
   'tasks:delete',
-  'tasks:openChat',
-
-  'features:list',
-  'features:createFromTask',
-  'features:createFromStory',
-  'features:get',
-  'features:setAutomation',
-  'features:transition',
-  'features:deploy',
-  'features:deployments',
-  'agentTasks:list',
-  'agentTasks:create'
+  'tasks:openChat'
 ]
 
 /**

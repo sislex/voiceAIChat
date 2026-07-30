@@ -200,8 +200,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectMachine(id, agentId), { method: 'DELETE' }),
     'projects:setMachinePath': ({ id, agentId, path }) =>
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ path }) }),
-    'projects:setFeatureReposRoot': ({ id, agentId, featureReposRoot }) =>
-      req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ featureReposRoot }) }),
+    'projects:setReposRoot': ({ id, agentId, reposRoot }) =>
+      req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ reposRoot }) }),
     'projects:setDefaultMachine': ({ id, agentId }) =>
       req(REST.projectDefaultMachine(id), { method: 'POST', body: JSON.stringify({ agentId }) }),
     'board:get': ({ id }) => req(REST.projectBoard(id)),
@@ -229,20 +229,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectTaskChat(projectId, taskId), { method: 'POST' }),
     'tasks:delete': async ({ projectId, taskId }) => {
       await req(REST.projectTask(projectId, taskId), { method: 'DELETE' })
-
-    },
-    'features:list': ({ projectId }) => req(REST.projectFeatures(projectId)),
-    'features:createFromTask': ({ projectId, taskId, ...body }) => req(REST.taskFeature(projectId, taskId), { method: 'POST', body: JSON.stringify(body) }),
-    'features:createFromStory': ({ projectId, storyId, ...body }) => req(REST.storyFeature(projectId, storyId), { method: 'POST', body: JSON.stringify(body) }),
-    'features:get': async ({ id }) => {
-      try { return await req(REST.feature(id)) } catch { return null }
-    },
-    'features:setAutomation': ({ id, ...body }) => req(REST.featureAutomation(id), { method: 'PATCH', body: JSON.stringify(body) }),
-    'features:transition': ({ id, status, expectedVersion }) => req(REST.featureTransition(id), { method: 'POST', body: JSON.stringify({ status, expectedVersion }) }),
-    'features:deploy': ({ id }) => req(REST.featureDeploy(id), { method: 'POST' }),
-    'features:deployments': ({ id }) => req(REST.featureDeployments(id)),
-    'agentTasks:list': ({ featureId }) => req(REST.featureAgentTasks(featureId)),
-    'agentTasks:create': ({ featureId, ...body }) => req(REST.featureAgentTasks(featureId), { method: 'POST', body: JSON.stringify(body) })
+    }
   }
 }
 

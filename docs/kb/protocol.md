@@ -133,7 +133,7 @@ WS дозванивается только при наличии токена с
 **Проекты и канбан** (REST `projects:*`/`columns:*`/`tasks:*`, WS `board.subscribe`/`board.update`, мост `window.board`) — отдельная подсистема, см. [projects.md](projects.md).
 
 
-**Feature Run** (REST `features:*`, Agent Tasks и deployments) описан в [features/feature-workflow.md](features/feature-workflow.md). Живые краткие состояния приходят в существующем `board.update`.
+**CI-раннер** (REST `ci:*`, лента рана и консоль) описан в [features/ci-runner.md](features/ci-runner.md). Живые краткие состояния приходят в существующем `board.update`. Feature Run удалён полностью — каналов `features:*`/`agentTasks:*` больше нет.
 ## AI-помощник формулировки
 
 `POST /api/prompt/suggest` принимает `{ prompt, modifiers }`, где `modifiers` — упорядоченный массив `ModifierPrompt`; UI передаёт только активные элементы. Ответ — `{ variants: Suggestion[] }`. Маршрут требует Bearer-токен, не создаёт разговор и не сохраняет ход. Движок и модель берутся из per-user настроек `aiAssistProvider`/`aiAssistModel`; вызов CLI идёт с `executionDisabled: true` и без session id. Web-мост предоставляет тот же контракт как `window.api['prompt:suggest']`.
