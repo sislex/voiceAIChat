@@ -341,7 +341,6 @@ export function ChatColumn({
           {onExport && messages.length > 0 && (
             <span className="exportwrap">
               <IconButton size="sm" variant="secondary"
-                
                 aria-label="Экспорт разговора"
                 title="Экспорт разговора"
                 onClick={() => setExportOpen((v) => !v)}
@@ -548,7 +547,6 @@ export function ChatColumn({
                     {isAi && m.meta && <MessageMeta meta={m.meta} />}
                     {isAi && m.meta?.activity && m.meta.activity.length > 0 && (
                       <Button variant="ghost" size="sm" className="msgact-mode"
-                        
                         aria-label="Переключить вид действий"
                         title={`Вид: ${TIMELINE_MODE_LABEL[modeOf(m.id)]}`}
                         onClick={() => cycleMode(m.id)}
@@ -558,7 +556,6 @@ export function ChatColumn({
                     )}
                     {isAi && (
                       <IconButton size="sm"
-                        
                         aria-label="Копировать ответ"
                         title="Копировать ответ"
                         onClick={() => copyMessage(m)}
@@ -573,7 +570,6 @@ export function ChatColumn({
                     )}
                     {isAi && canSpeak && onSpeakMessage && (
                       <IconButton size="sm"
-                        
                         aria-label={
                           speakingMessageId === m.id ? 'Остановить озвучку' : 'Озвучить ответ'
                         }
@@ -585,7 +581,6 @@ export function ChatColumn({
                     )}
                     {!isAi && canEdit && onEditMessage && (
                       <IconButton size="sm"
-                        
                         aria-label="Изменить сообщение"
                         title="Изменить и переспросить"
                         onClick={() => startEdit(m)}
@@ -595,7 +590,6 @@ export function ChatColumn({
                     )}
                     {onDeleteMessage && (
                       <IconButton size="sm"
-                        
                         aria-label="Удалить сообщение"
                         title="Удалить из истории"
                         onClick={() => onDeleteMessage(m.id)}
@@ -659,7 +653,6 @@ export function ChatColumn({
               )}
               {liveActivity.length > 0 && (
                 <Button variant="ghost" size="sm" className="msgact-mode"
-                  
                   aria-label="Переключить вид действий"
                   title={`Вид: ${TIMELINE_MODE_LABEL[liveMode]}`}
                   onClick={cycleLiveMode}
@@ -721,7 +714,6 @@ export function ChatColumn({
                   )}
                   {liveActivity.length > 0 && (
                     <Button variant="ghost" size="sm" className="msgact-mode msgact-mode--stream"
-                      
                       aria-label="Переключить вид действий"
                       title={`Вид: ${TIMELINE_MODE_LABEL[liveMode]}`}
                       onClick={cycleLiveMode}

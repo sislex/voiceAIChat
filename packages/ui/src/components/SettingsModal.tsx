@@ -402,7 +402,6 @@ export function SettingsModal({
                             Whisper {m.model} · {formatBytes(m.sizeBytes)}
                           </span>
                           <Button variant="danger" size="sm"
-                            
                             aria-label={`Удалить модель ${m.model}`}
                             disabled={sttBlocked}
                             onClick={() => onDeleteModel(m.model)}
@@ -510,7 +509,6 @@ export function SettingsModal({
                             <span className="vrowr">
                               <span className="vinstalled">✓ установлен</span>
                               <Button variant="danger" size="sm"
-                                
                                 aria-label={`Удалить голос ${v.label}`}
                                 onClick={() => onDeleteVoice(v.id)}
                               >
@@ -521,7 +519,6 @@ export function SettingsModal({
                             <span className="vprog">{percent}%</span>
                           ) : (
                             <Button variant="primary" size="sm"
-                              
                               aria-label={`Скачать голос ${v.label}`}
                               onClick={() => onDownloadVoice(v.id)}
                             >

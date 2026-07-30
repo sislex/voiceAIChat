@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentInfo, FsEntry } from '@shared/agentProtocol'
 import type { MachineOps, UtilityVariant } from './machine'
+import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
 import { ToolFrame } from './ToolFrame'
 
 export interface FileExplorerProps {
@@ -127,9 +129,9 @@ export function FileExplorer({
             ))}
           </select>
         )}
-        <button className="fsbtn" title="Вверх" disabled={!agentId} onClick={() => void load(parentOf(cwd))}>
+        <IconButton size="sm" title="Вверх" aria-label="На уровень выше" disabled={!agentId} onClick={() => void load(parentOf(cwd))}>
           ⬆
-        </button>
+        </IconButton>
         <form
           className="fspath-form"
           onSubmit={(e) => {
@@ -148,18 +150,18 @@ export function FileExplorer({
           />
         </form>
         {onOpenTerminal && agentId && cwd && (
-          <button className="fsbtn" title="Открыть терминал в этой папке" onClick={() => onOpenTerminal(agentId, cwd)}>
+          <Button size="sm" title="Открыть терминал в этой папке" onClick={() => onOpenTerminal(agentId, cwd)}>
             &gt;_ Терминал
-          </button>
+          </Button>
         )}
         {writable && (
           <>
-            <button className="fsbtn" disabled={!agentId} onClick={doMkdir}>
+            <Button size="sm" disabled={!agentId} onClick={doMkdir}>
               ＋ Папка
-            </button>
-            <button className="fsbtn" disabled={!agentId} onClick={() => fileInput.current?.click()}>
+            </Button>
+            <Button size="sm" disabled={!agentId} onClick={() => fileInput.current?.click()}>
               ⬆ Загрузить
-            </button>
+            </Button>
             <input
               ref={fileInput}
               type="file"
@@ -202,39 +204,39 @@ export function FileExplorer({
               <span className="fssize">{entry.kind === 'file' ? fmtSize(entry.size) : ''}</span>
               <span className="fsrow-actions">
                 {entry.kind === 'file' && (
-                  <button
-                    className="msgbtn"
+                  <IconButton
+                    size="sm"
                     title="Скачать"
+                    aria-label={`Скачать ${entry.name}`}
                     onClick={() => agentId && void ops.download(agentId, abs, entry.name)}
                   >
                     ⬇
-                  </button>
+                  </IconButton>
                 )}
                 {writable && (
-                  <button className="msgbtn" title="Переименовать" onClick={() => doRename(entry)}>
+                  <IconButton size="sm" title="Переименовать" aria-label={`Переименовать ${entry.name}`} onClick={() => doRename(entry)}>
                     ✎
-                  </button>
+                  </IconButton>
                 )}
                 {writable &&
                   (confirmDel === abs ? (
                     <>
-                      <button
-                        className="delyes"
+                      <Button variant="danger" size="sm"
                         onClick={() => {
                           setConfirmDel(null)
                           if (agentId) void run(ops.remove(agentId, abs))
                         }}
                       >
                         Удалить
-                      </button>
-                      <button className="delno" onClick={() => setConfirmDel(null)}>
+                      </Button>
+                      <Button size="sm" onClick={() => setConfirmDel(null)}>
                         Отмена
-                      </button>
+                      </Button>
                     </>
                   ) : (
-                    <button className="msgbtn" title="Удалить" onClick={() => setConfirmDel(abs)}>
+                    <IconButton size="sm" title="Удалить" aria-label={`Удалить ${entry.name}`} onClick={() => setConfirmDel(abs)}>
                       🗑
-                    </button>
+                    </IconButton>
                   ))}
               </span>
             </div>

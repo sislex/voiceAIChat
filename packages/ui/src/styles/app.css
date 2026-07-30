@@ -1097,21 +1097,6 @@
   color: #2f4a86;
   font-weight: 600;
 }
-.vdl {
-  border: none;
-  border-radius: 8px;
-  padding: 4px 12px;
-  background: #3d64c8;
-  color: #fff;
-  font-weight: 600;
-  cursor: pointer;
-  flex: none;
-}
-.vdel {
-  background: #fbeeea;
-  color: #c0392b;
-  border: 1px solid #e6c3ba;
-}
 .vrowr {
   display: inline-flex;
   align-items: center;
@@ -1958,23 +1943,6 @@
 .fspath:focus {
   outline: none;
   border-color: var(--accent);
-}
-.fsbtn {
-  flex: none;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-  border-radius: 7px;
-  padding: 4px 10px;
-  font-size: 12px;
-  cursor: pointer;
-}
-.fsbtn:hover:not(:disabled) {
-  background: var(--panel);
-}
-.fsbtn:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 .fserror {
   margin: 8px 16px 0;
@@ -3217,7 +3185,7 @@
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px;
 }
-.agcmd-os .vdl {
+.agcmd-os .vc-btn {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -3276,27 +3244,6 @@
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 4px;
-}
-.mst-btn {
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--surface);
-  color: inherit;
-  cursor: pointer;
-  font-size: 11px;
-}
-.mst-btn:hover:not(:disabled) {
-  background: var(--border-soft);
-}
-.mst-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-.mst-btn.primary {
-  border-color: #5068d8;
-  background: #5068d8;
-  color: #fff;
 }
 .mst-add {
   display: flex;

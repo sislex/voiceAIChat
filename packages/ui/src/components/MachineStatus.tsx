@@ -9,6 +9,7 @@ import { AGENT_VERSION, compareVersions } from '@shared/version'
 import { agentOsFromPlatform, installCommand, UPDATE_HINT } from '@shared/agentInstall'
 import { copyText } from '../lib/clipboard'
 import { AgentCommands } from './AgentCommands'
+import { Button } from './ui/Button'
 import { ToolFrame } from './ToolFrame'
 
 export interface MachineStatusProps {
@@ -171,35 +172,32 @@ function AgentActions({
       </span>
       <span className="mst-agent-btns">
         {outdated && onCopyCommand && (
-          <button
-            className="mst-btn"
+          <Button size="sm"
             title={`Скопировать команду обновления. ${UPDATE_HINT}`}
             aria-label={`Скопировать команду обновления для ${agent.name}`}
             onClick={onCopyCommand}
           >
             {copied ? '✓ скопировано' : '⧉ команда'}
-          </button>
+          </Button>
         )}
         {outdated && onUpdate && (
-          <button
-            className="mst-btn primary"
+          <Button variant="primary" size="sm"
             title="Обновить агента на машине: сервер выполнит на ней ту же команду"
             aria-label={`Обновить агента на ${agent.name}`}
             disabled={busy}
             onClick={onUpdate}
           >
             {busy ? 'обновляю…' : '⬆ обновить'}
-          </button>
+          </Button>
         )}
         {onRegenerate && (
-          <button
-            className="mst-btn"
+          <Button size="sm"
             title="Перевыпустить токен: старый перестанет работать, агента нужно переустановить новой командой"
             aria-label={`Перевыпустить токен для ${agent.name}`}
             onClick={onRegenerate}
           >
             ↻ токен
-          </button>
+          </Button>
         )}
       </span>
     </td>
@@ -377,15 +375,14 @@ export function MachineStatus({
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && void add()}
             />
-            <button
-              className="mst-btn primary"
+            <Button variant="primary" size="sm"
               title="Добавить машину и получить команду установки"
               aria-label="Добавить машину"
               disabled={!name.trim()}
               onClick={() => void add()}
             >
               ＋ Добавить машину
-            </button>
+            </Button>
           </div>
         )}
 
