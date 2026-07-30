@@ -16,6 +16,8 @@ import { TaskCard, epicOf } from './TaskCard'
 import { TaskModal, type TaskUpdateFields } from './TaskModal'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, epicColor, issueKey } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
+import { Button } from '../ui/Button'
+import { IconButton } from '../ui/IconButton'
 import { useConfirm } from '../ui/useConfirm'
 
 export type Swimlane = 'none' | 'epic' | 'assignee'
@@ -307,15 +309,16 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           </span>
         )}
         <span className="jcard-menuwrap">
-          <button
-            className="jcard-menubtn"
+          <IconButton
+            className="jcard-reveal"
+            size="sm"
             aria-label={`Меню колонки «${col.name}»`}
             title="Меню колонки"
             aria-expanded={colMenu === col.id}
             onClick={() => setColMenu((v) => (v === col.id ? null : col.id))}
           >
             ⋯
-          </button>
+          </IconButton>
           {colMenu === col.id && (
             <div className="jcard-menu">
               <button
@@ -513,8 +516,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           }
         }}
       />
-      <button
-        className="login-submit"
+      <Button
+        variant="primary"
         onClick={() => {
           if (newColumn.trim()) {
             props.onCreateColumn(newColumn.trim())
@@ -524,7 +527,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         disabled={!newColumn.trim()}
       >
         Добавить
-      </button>
+      </Button>
     </div>
   )
 

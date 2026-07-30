@@ -11,7 +11,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { Board, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { TASK_PRIORITIES } from '@shared/projects'
 import type { ModifierPrompt } from '@shared/types'
+import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
+import { IconButton } from '../ui/IconButton'
 import { useConfirm } from '../ui/useConfirm'
 import { WandIcon } from '../icons'
 import { PromptBuilder, type GenerateParams, type Suggestion } from '../prompt-builder/PromptBuilder'
@@ -221,15 +223,14 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
 
   const headActions = mobile ? (
     <span className="jmodal-menuwrap" ref={menuRef}>
-      <button
-        className="jmodal-menubtn"
+      <IconButton
         aria-label="Действия с задачей"
         title="Действия"
         aria-expanded={menuOpen}
         onClick={() => setMenuOpen((v) => !v)}
       >
         ⋯
-      </button>
+      </IconButton>
       {menuOpen && (
         <div className="jcard-menu jmodal-menu">
           {props.onOpenChat && (
@@ -249,30 +250,35 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   ) : (
     <>
       {props.onOpenChat && (
-        <button
-          className="renbtn jmodal-chat-btn"
+        <Button
+          variant="ghost"
+          size="sm"
+          className="jmodal-chat-action"
+          iconLeft={<span aria-hidden="true">💬</span>}
           title="Открыть связанный чат"
           onClick={() => props.onOpenChat?.(task.id)}
         >
-          💬 {task.chatId ? 'Открыть чат' : 'Создать чат'}
-        </button>
+          {task.chatId ? 'Открыть чат' : 'Создать чат'}
+        </Button>
       )}
-      <button
-        className="renbtn"
+      <Button
+        variant="ghost"
+        size="sm"
+        iconLeft={<span aria-hidden="true">⚑</span>}
         title={task.flagged ? 'Снять флаг' : 'Добавить флаг'}
         onClick={toggleFlag}
       >
-        {task.flagged ? '⚑ Снять флаг' : '⚑ Флаг'}
-      </button>
+        {task.flagged ? 'Снять флаг' : 'Флаг'}
+      </Button>
 
-      <button
-        className="delbtn"
+      <IconButton
+        size="sm"
         aria-label="Удалить задачу"
         title="Удалить задачу"
         onClick={() => void confirmDelete()}
       >
         🗑
-      </button>
+      </IconButton>
     </>
   )
 
@@ -521,16 +527,17 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               )}
               <div className="jmodal-ci-actions">
                 {props.ciSummary && props.onOpenCiRun && (
-                  <button
-                    className={`ci-btn${props.ciSummary.awaitingInput ? ' jcard-ci-open--attention' : ''}`}
+                  <Button
+                    size="sm"
+                    className={props.ciSummary.awaitingInput ? 'jcard-ci-attention' : undefined}
                     onClick={() => props.onOpenCiRun?.(props.ciSummary!.id)}
                   >
                     {props.ciSummary.awaitingInput ? 'Ответить модели' : 'Лента рана'}
-                  </button>
+                  </Button>
                 )}
                 {/* Активный ран нельзя запустить второй раз — только смотреть ленту. */}
                 {props.onStartCi && !ciActive && (
-                  <button className="btn-primary" onClick={() => props.onStartCi?.(task.id)}>Выполнить</button>
+                  <Button variant="primary" size="sm" onClick={() => props.onStartCi?.(task.id)}>Выполнить</Button>
                 )}
               </div>
             </div>

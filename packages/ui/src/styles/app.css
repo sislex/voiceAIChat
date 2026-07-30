@@ -3756,10 +3756,9 @@
 .jcard-top { display: flex; align-items: flex-start; gap: 4px; }
 .jcard-title { flex: 1; font-size: 14px; line-height: 1.35; word-break: break-word; }
 .jcard-menuwrap { position: relative; flex: 0 0 auto; }
-.jcard-menubtn { border: none; background: none; cursor: pointer; border-radius: 4px; padding: 0 6px; font-size: 14px; line-height: 20px; color: inherit; opacity: 0; }
-.jcard:hover .jcard-menubtn, .jcard-menubtn[aria-expanded='true'], .jcol-head .jcard-menubtn { opacity: 0.75; }
-.jcard-menubtn:hover { background: rgba(9, 30, 66, 0.13); opacity: 1; }
-[data-theme='dark'] .jcard-menubtn:hover { background: rgba(255, 255, 255, 0.12); }
+/* ⋯-меню карточки и колонки: проявляется по ховеру карточки, вид — .vc-btn ghost. */
+.jcard-reveal { opacity: 0; }
+.jcard:hover .jcard-reveal, .jcard-reveal[aria-expanded='true'], .jcol-head .jcard-reveal { opacity: 1; }
 .jcard-menu { position: absolute; top: 100%; right: 0; z-index: 50; min-width: 170px; background: var(--card-bg, #fff); border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 6px; box-shadow: 0 8px 16px rgba(9, 30, 66, 0.25); padding: 4px; display: flex; flex-direction: column; }
 [data-theme='dark'] .jcard-menu { background: #1c2128; }
 .jcard-menu > button { border: none; background: none; color: inherit; text-align: left; font-size: 13px; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
@@ -3806,12 +3805,12 @@
 .jmodal-skills .jcard-skill { font-weight: 500; }
 
 /* Кнопка перехода в связанный чат на карточке */
-.jcard-chat { display: inline-flex; align-items: center; gap: var(--space-050); border: none;
-  background: transparent; color: var(--accent); cursor: pointer; padding: 0 var(--space-050);
-  font: inherit; font-size: 11px; font-weight: 600; line-height: 18px; border-radius: var(--space-050); }
-.jcard-chat:hover, .jcard-chat:focus-visible { background: var(--border-soft); }
-.jcard-chat--linked { color: var(--accent); }
-.jmodal-chat-btn { color: var(--accent); font-weight: 600; }
+/* Кнопка чата на карточке — .vc-btn ghost, здесь только плотность строки подвала
+   и акцентный цвет (в подвале карточки 13px были бы великоваты). */
+.jcard-chat { color: var(--accent); padding: 0 var(--space-050); font-size: 11px; line-height: 18px; }
+.jcard-chat:hover:not(:disabled) { color: var(--accent); }
+.jmodal-chat-action { color: var(--accent); }
+.jmodal-chat-action:hover:not(:disabled) { color: var(--accent); }
 
 /* Композер и зоны вставки */
 
@@ -3871,8 +3870,6 @@
 .jmodal-quick { display: flex; flex-direction: column; gap: 10px; }
 /* ⋯-меню действий в шапке карточки (мобильная замена трём кнопкам). */
 .jmodal-menuwrap { position: relative; display: inline-flex; }
-.jmodal-menubtn { border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 20px; line-height: 1; padding: 6px 10px; border-radius: 6px; }
-.jmodal-menubtn:hover, .jmodal-menubtn[aria-expanded='true'] { background: rgba(128, 128, 128, 0.16); color: inherit; }
 .jmodal-menu { min-width: 210px; }
 .jmodal-menu > button { min-height: 44px; font-size: 15px; }
 .jmodal-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; opacity: 0.95; }
@@ -4014,9 +4011,6 @@
 .jcard-ci-fill--success { background: var(--ci-success); }
 .jcard-ci-fill--removed { background: var(--ci-removed); }
 .jcard-ci-phase { font-size: 11px; color: var(--text-dim); }
-.jcard-ci-run { background: var(--accent); border: 1px solid var(--accent); color: #fff; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
-.jcard-ci-run:hover { filter: brightness(1.05); }
-.jcard-ci-open { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
 
 /* Состояние CI-рана на карточке колонки: ран идёт — медленное голубое «дыхание»,
    модель разбирается с ошибкой — медленное красное мигание, ждёт ответа
@@ -4065,7 +4059,8 @@
 .jmodal-ci { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--border-soft); border-radius: 8px; padding: 10px; }
 .jmodal-ci-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .jmodal-ci-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.jcard-ci-open--attention { border-color: var(--ci-progress); color: var(--ci-progress); font-weight: 600; }
+/* Ран ждёт ответа модели: та же кнопка, но зовёт на себя внимание. */
+.jcard-ci-attention { border-color: var(--ci-progress); color: var(--ci-progress); }
 
 /* Шапка чата, привязанного к задаче канбана */
 .taskchat { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--surface); }
