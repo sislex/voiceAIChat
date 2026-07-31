@@ -95,6 +95,27 @@ export function statusLine(state: VoiceState, aiLabel = 'Claude'): string {
   }
 }
 
+/**
+ * Короткое объявление голосового цикла для скринридера (`aria-live` в VoiceBar).
+ * Не то же, что `statusLine`: там подсказка по клавишам для зрячего, здесь —
+ * факт «микрофон включён / распознаю / жду ответ». В простое молчим: возврат в
+ * покой сам по себе не событие, а зачитывать подсказку заново незачем.
+ */
+export function voiceAnnouncement(state: VoiceState, aiLabel = 'Claude'): string {
+  switch (state) {
+    case 'idle':
+      return ''
+    case 'listening':
+      return 'Идёт запись, говорите'
+    case 'transcribing':
+      return 'Запись остановлена, распознаю речь'
+    case 'thinking':
+      return `Запрос отправлен движку ${aiLabel}, ждём ответ`
+    case 'speaking':
+      return 'Воспроизведение ответа'
+  }
+}
+
 /** Компактная строка меты хода: «7.2с · 2 хода · $0.013 · 1.2k→0.4k ток.». */
 export function formatTurnMeta(meta: TurnMeta): string {
   const parts: string[] = []

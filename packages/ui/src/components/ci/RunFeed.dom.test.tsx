@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { expectLabelledIconButtons, expectNoViolations } from '../../test/a11y'
 import { screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import { RunFeed, type RunFeedCache } from './RunFeed'
@@ -221,5 +222,18 @@ describe('RunFeed — своя команда в реестре', () => {
       </>
     )
     expect(listCommands().filter((c) => c.id === 'ci.retry-run')).toHaveLength(1)
+  })
+})
+
+describe('RunFeed — доступность', () => {
+  it('без нарушений axe: шаги, лог и ожидание ответа', async () => {
+    const cache: RunFeedCache = {
+      detail: { run: mkRun(), steps: [mkStep()], fixAttempts: [], interactions: [mkInteraction()] },
+      log: [mkLog()],
+      conclusion: null
+    }
+    render(<RunFeed {...baseProps(cache)} onAnswerInteraction={vi.fn()} />)
+    await expectNoViolations()
+    expectLabelledIconButtons()
   })
 })

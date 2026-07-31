@@ -20,7 +20,7 @@ import type { ModifierPrompt } from '@shared/types'
 import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
 import { TaskCard, epicOf } from './TaskCard'
 import { TaskModal, type TaskUpdateFields } from './TaskModal'
-import { Avatar, PRIORITY_LABEL, TYPE_LABEL, epicColor, issueKey } from './kanbanMeta'
+import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, epicColor, issueKey } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
@@ -1030,6 +1030,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                   }`}
                   data-testid="kanban-column"
                   data-column-id={col.id}
+                  /* Имя делает колонку регионом: скринридер объявляет «Колонка
+                     «В работе», 3 задачи» и умеет прыгать по ним. Без имени
+                     section для доступности — обычный div. */
+                  aria-label={columnRegionLabel(col, tasksOf(col.id).length)}
                 >
                   {columnHead(col)}
                   {columnBody(col)}
@@ -1049,6 +1053,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                     }`}
                     data-testid="kanban-column"
                     data-column-id={col.id}
+                    aria-label={columnRegionLabel(col, tasksOf(col.id).length)}
                   >
                     {columnHead(col)}
                   </section>

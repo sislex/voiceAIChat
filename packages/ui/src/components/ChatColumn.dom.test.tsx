@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ChatColumn } from './ChatColumn'
 import type { Message } from '@shared/types'
@@ -540,5 +541,48 @@ describe('ChatColumn — переход из поиска по сообщени�
     renderCol()
     expect(scrollIntoView).not.toHaveBeenCalled()
     expect(document.querySelector('.msg--found')).toBeNull()
+  })
+})
+
+describe('ChatColumn — доступность', () => {
+  it('без нарушений axe: лента с ответом модели', async () => {
+    renderCol({ canSpeak: true, onSpeakMessage: vi.fn(), onDeleteMessage: vi.fn(), onEditMessage: vi.fn(), turnMeta: null })
+    await expectNoViolations()
+    expectLabelledIconButtons()
+  })
+
+  it('без нарушений axe: запись, стриминг ответа и баннер ошибки', async () => {
+    renderCol({ state: 'listening', liveSegments: [{ speakerId: 1, text: 'слышно' }], error: 'Сбой сети', onDismissError: vi.fn() })
+    await expectNoViolations()
+    cleanup()
+    renderCol({ state: 'thinking', streamingReply: 'Начал отвечать', liveActivity: [] })
+    await expectNoViolations()
+    expectLabelledIconButtons()
+  })
+})
+
+describe('ChatColumn — объявления для скринридера', () => {
+  it('стриминг ответа: «отвечает…» на старте, «Ответ получен» по завершении', () => {
+    const col = (props: Partial<Parameters<typeof ChatColumn>[0]>): JSX.Element => (
+      <ChatColumn title="Тест" state="idle" messages={messages} liveSegments={[]} diarization={false} voiceBar={null} {...props} />
+    )
+    const { rerender } = render(col({ state: 'thinking', streamingReply: 'Начал отве' }))
+    const live = screen.getByTestId('reply-announce')
+    expect(live).toHaveAttribute('aria-live', 'polite')
+    expect(live).toHaveTextContent('Claude отвечает…')
+    rerender(col({ state: 'idle', streamingReply: '' }))
+    expect(screen.getByTestId('reply-announce')).toHaveTextContent('Ответ получен')
+  })
+
+  it('в покое живая область пуста — читалке нечего объявлять', () => {
+    renderCol()
+    expect(screen.getByTestId('reply-announce')).toBeEmptyDOMElement()
+  })
+
+  it('распознавание речи — role=log: дочитывается по мере появления сегментов', () => {
+    renderCol({ state: 'listening', liveSegments: [{ speakerId: 1, text: 'слышно' }] })
+    const block = screen.getByTestId('live-block')
+    expect(block).toHaveAttribute('role', 'log')
+    expect(block).toHaveAttribute('aria-live', 'polite')
   })
 })

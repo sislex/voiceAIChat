@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import axe from 'axe-core'
+import { expectLabelledIconButtons, expectNoViolations } from '../../test/a11y'
 import { PromptBuilder, type PromptBuilderProps, type Suggestion } from './PromptBuilder'
 import type { ModifierPrompt } from '@shared/types'
 
@@ -85,11 +85,14 @@ describe('PromptBuilder', () => {
   })
 
   it('не имеет базовых axe-нарушений в builder и settings', async () => {
-    // Окно уходит порталом в document.body — проверяем его, а не контейнер рендера.
+    // Окно уходит порталом в document.body — проверяем его, а не контейнер
+    // рендера. Конфиг axe общий на пакет (src/test/a11y.ts), своего здесь нет.
     const { user } = setup()
-    expect((await axe.run(document.body)).violations).toEqual([])
+    await expectNoViolations()
+    expectLabelledIconButtons()
     await user.click(screen.getByLabelText('Настройки'))
-    expect((await axe.run(document.body)).violations).toEqual([])
+    await expectNoViolations()
+    expectLabelledIconButtons()
   })
   it('Esc при сборке запрашивает подтверждение', async () => {
     const onClose = vi.fn(); const { user } = setup({ onClose }); await generateReady(user)

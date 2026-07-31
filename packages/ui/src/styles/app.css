@@ -7,13 +7,20 @@
   --panel: #f2f1ec;
   --surface: #fff;
   --text: #1c1b18;
-  --text-dim: #8a877c;
+  /* Приглушённый текст обязан брать AA (4.5:1) на всех подложках, где он
+     встречается: --bg, --panel, --surface, --surface-hover и --surface-selected.
+     Самая тёмная из них — выбранная строка списка бесед, она и задаёт предел.
+     Прежнее #8a877c давало 2.7–3.6:1 — мета в сайдбаре читалась на грани.
+     Цифры считает styles/contrast.test.ts и показывает витрина Foundations. */
+  --text-dim: #656358;
   --border: #e3e1d9;
   --border-soft: #eeede7;
   --accent: #3d64c8;
-  --ci-neutral: #6b7280;
+  /* Лозенги статуса — текст 11px на своей подложке: тоже 4.5:1, поэтому серый и
+     оранжевый темнее «естественного» (было 4.05:1 и 3.71:1). */
+  --ci-neutral: #5f6673;
   --ci-neutral-bg: #ecebe6;
-  --ci-progress: #b06a00;
+  --ci-progress: #985a00;
   --ci-progress-bg: #fbeecb;
   --ci-success: #216e4e;
   --ci-success-bg: #d8efe2;
@@ -25,6 +32,9 @@
   --danger: var(--ci-removed);
   --danger-fg: #fff;
   --surface-hover: #e9e7e0;
+  /* Выбранная строка списка (беседа в сайдбаре): темнее hover, поэтому вынесена
+     в токен — на ней проверяется контраст приглушённого текста. */
+  --surface-selected: #e2e0d7;
   --space-050: 4px;
   --space-100: 8px;
   --space-150: 12px;
@@ -57,6 +67,7 @@
   --danger: var(--ci-removed);
   --danger-fg: #191916;
   --surface-hover: #2c2c25;
+  --surface-selected: #2e2d25;
   --skeleton-base: #2e2e26;
   --skeleton-shine: #3b3a31;
   color-scheme: dark;
@@ -113,14 +124,26 @@
   font-size: 13px;
 }
 .convo:hover {
-  background: #e9e7e0;
+  background: var(--surface-hover);
 }
 .convo.on {
-  background: #e2e0d7;
+  background: var(--surface-selected);
 }
+/* Название беседы — кнопка (с клавиатуры выбирается только так), поэтому
+   сбрасываем всё кнопочное: вид остаётся строкой списка. */
 .ctitle {
   font-weight: 700;
   margin: 0 0 3px 0;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 .cmeta {
   font-size: 11px;
@@ -1117,6 +1140,12 @@
   max-height: 340px;
   overflow-y: auto;
 }
+/* Список вариантов: role=listbox живёт на нём, а не на всей панели. */
+.prompt-helper-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 .prompt-helper-head {
   display: flex;
   align-items: center;
@@ -1245,6 +1274,10 @@
 }
 .speak .fw6 {
   font-weight: 600;
+}
+/* Приглушённая подпись статуса: токен, а не копия его значения инлайном. */
+.speak .speak-dim {
+  color: var(--text-dim);
 }
 .speak .fw7 {
   font-weight: 700;
@@ -2106,10 +2139,10 @@
 
 /* ---- Тёмная тема: точечные оверрайды поверхностей, не покрытых токенами ---- */
 [data-theme='dark'] .convo:hover {
-  background: #262620;
+  background: var(--surface);
 }
 [data-theme='dark'] .convo.on {
-  background: #2e2d25;
+  background: var(--surface-selected);
 }
 [data-theme='dark'] .prompt-helper {
   background: var(--surface);

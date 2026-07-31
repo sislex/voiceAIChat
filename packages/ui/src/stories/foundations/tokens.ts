@@ -5,6 +5,52 @@
 // попадает ровно то, что видит браузер (включая `var()`-ссылки вроде
 // `--danger: var(--ci-removed)`).
 
+/** Что за пара: обычный текст (1.4.3), граница/заливка элемента (1.4.11) или декор. */
+export type ContrastKind = 'text' | 'ui' | 'decor'
+
+/** Порог AA по виду пары. Декоративное не оценивается — показывается справочно. */
+export const AA_THRESHOLD: Record<ContrastKind, number> = { text: 4.5, ui: 3, decor: 0 }
+
+export interface ContrastPair {
+  fg: string
+  bg: string
+  usage: string
+  kind?: ContrastKind
+}
+
+/**
+ * Пары «цвет на цвете», которые реально встречаются в app.css: подпись на
+ * кнопке, мета в сайдбаре, лозенг статуса на своей подложке.
+ *
+ * Список один и тот же для витрины Foundations (считает контраст в браузере) и
+ * для `styles/contrast.test.ts` (считает по тексту app.css). Иначе цифра в
+ * витрине и зелёный гейт разошлись бы: витрина показывает, тест не пускает.
+ */
+export const CONTRAST_PAIRS: ContrastPair[] = [
+  { fg: '--text', bg: '--bg', usage: 'основной текст на полотне' },
+  { fg: '--text', bg: '--surface', usage: 'текст в карточках, модалках, списках' },
+  { fg: '--text', bg: '--panel', usage: 'текст в сайдбаре и шапках' },
+  { fg: '--text-dim', bg: '--bg', usage: 'подписи и мета на полотне (.fsub)' },
+  { fg: '--text-dim', bg: '--surface', usage: 'мета внутри карточки' },
+  { fg: '--text-dim', bg: '--panel', usage: 'мета в сайдбаре (.cmeta)' },
+  { fg: '--text-dim', bg: '--surface-hover', usage: 'подпись под курсором' },
+  { fg: '--text-dim', bg: '--surface-selected', usage: 'мета выбранной беседы (.convo.on .cmeta)' },
+  { fg: '--accent', bg: '--bg', usage: 'ссылки и активные подписи' },
+  { fg: '--accent', bg: '--surface', usage: 'акцентная подпись в карточке' },
+  { fg: '--accent', bg: '--accent-soft', usage: 'акцент на своей подложке (чипы, вкладки)' },
+  { fg: '--accent-fg', bg: '--accent', usage: 'подпись на кнопке primary' },
+  { fg: '--danger-fg', bg: '--danger', usage: 'подпись на кнопке danger' },
+  { fg: '--danger', bg: '--surface', usage: 'тихий danger: крестик «удалить»' },
+  { fg: '--ci-neutral', bg: '--ci-neutral-bg', usage: 'лозенг «в очереди» / «пропущен», 11px' },
+  { fg: '--ci-progress', bg: '--ci-progress-bg', usage: 'лозенг «выполняется» / «ждёт ответа»' },
+  { fg: '--ci-success', bg: '--ci-success-bg', usage: 'лозенг «успех»' },
+  { fg: '--ci-removed', bg: '--ci-removed-bg', usage: 'лозенг «ошибка» / «отменён»' },
+  { fg: '--ci-success', bg: '--bg', usage: 'зелёная рамка выполненной карточки', kind: 'ui' },
+  { fg: '--border', bg: '--bg', usage: 'рамка панели на полотне', kind: 'ui' },
+  { fg: '--border', bg: '--surface', usage: 'рамка поля ввода в карточке', kind: 'ui' },
+  { fg: '--border-soft', bg: '--surface', usage: 'разделитель строк в таблицах — декоративный', kind: 'decor' }
+]
+
 export type ThemeName = 'light' | 'dark'
 
 /** Токен: имя, значения в обеих темах и признак «тёмная тема переопределяет». */

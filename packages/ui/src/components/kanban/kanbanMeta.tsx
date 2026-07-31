@@ -1,13 +1,32 @@
 // Атрибутика Jira-карточек: иконки типов и приоритетов, ключи задач (PRJ-42),
 // цвета аватаров/эпиков, форматирование сроков. Чистые функции — без стора.
 
-import type { TaskPriority, WorkItemType } from '@shared/projects'
+import type { KanbanColumn, TaskPriority, WorkItemType } from '@shared/projects'
 
 export const TYPE_LABEL: Record<WorkItemType, string> = { epic: 'Эпик', story: 'История', task: 'Задача' }
 export const PRIORITY_LABEL: Record<TaskPriority, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий', urgent: 'Срочный' }
 
 // Ключи задач живут в shared: их считает и сервер (контекст связанного чата).
 export { issueKey, projectKey } from '@shared/projects'
+
+/** «1 задача» / «3 задачи» / «7 задач». */
+export function pluralTasks(n: number): string {
+  const m10 = n % 10
+  const m100 = n % 100
+  if (m10 === 1 && m100 !== 11) return 'задача'
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return 'задачи'
+  return 'задач'
+}
+
+/**
+ * Имя колонки как региона для скринридера: «Колонка «В работе», 3 задачи».
+ * Считаем видимые под фильтром задачи — ровно то, что человек услышит, пройдя
+ * колонку до конца. Скрытую колонку помечаем: иначе на слух она не отличается.
+ */
+export function columnRegionLabel(col: Pick<KanbanColumn, 'name' | 'hidden'>, visible: number): string {
+  const count = visible === 0 ? 'задач нет' : `${visible} ${pluralTasks(visible)}`
+  return `Колонка «${col.name}», ${count}${col.hidden ? ', скрыта' : ''}`
+}
 
 function hash(s: string): number {
   let h = 0

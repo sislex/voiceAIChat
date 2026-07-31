@@ -272,6 +272,16 @@ export function ChatColumn({
   // Картинки в ещё не завершённом ответе: блок вырезаем сразу, чтобы вместо
   // сырого JSON пользователь видел саму картинку, как только файл готов.
   const liveImages = parseImages(streamingReply)
+
+  // Стриминг для скринридера. Сам ответ живой областью не делаем: он растёт по
+  // токенам, и читалка перебивала бы сама себя на каждом слове. Объявляем два
+  // события — «пошёл ответ» и «ответ получен»; текст доступен обычным чтением
+  // ленты, когда пользователь до него дойдёт.
+  const [replyAnnounce, setReplyAnnounce] = useState('')
+  useEffect(() => {
+    if (hasStream) setReplyAnnounce(`${aiLabel} отвечает…`)
+    else setReplyAnnounce((prev) => (prev === '' ? '' : 'Ответ получен'))
+  }, [hasStream, aiLabel])
   // Индикатор «думает» показываем, пока не пошли токены ответа.
   const isThinking = (state === 'thinking' || state === 'transcribing') && !hasStream
 
@@ -404,6 +414,10 @@ export function ChatColumn({
           )}
         </div>
       )}
+
+      <p className="vc-sr-only" role="status" aria-live="polite" data-testid="reply-announce">
+        {replyAnnounce}
+      </p>
 
       <div className="scroll" ref={scrollRef} data-testid="scroll">
         <div className="col-c">
@@ -639,7 +653,9 @@ export function ChatColumn({
           )}
 
           {isListening && (
-            <div className="live" data-testid="live-block">
+            /* Распознанный текст появляется по частям — это журнал, и читалка
+               должна дочитывать добавленное, а не молчать до конца записи. */
+            <div className="live" data-testid="live-block" role="log" aria-live="polite" aria-label="Распознавание речи">
               <p className="livehdr">
                 <span className="reddot" />
                 РАСПОЗНАВАНИЕ · ЛОКАЛЬНО (WHISPER)
