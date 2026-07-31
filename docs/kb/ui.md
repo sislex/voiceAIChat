@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-07-31
-checked: 401fe20
+checked: f91f91c
 areas:
   - packages/ui/src
   - apps/web/src
@@ -117,7 +117,7 @@ Partial STT обновляет живые сегменты; final формиру
 
 `MachineStatus`, `AgentCard`, `AgentCommands` обслуживают регистрацию, токен, policy, install/update и диагностику. `MachineUtility` выбирает `MachineConsole` или `FileExplorer`; `MachineTerminal` использует xterm и PTY bridge.
 
-`CcObserver` и `CodexObserver` отображают внешние CLI-сессии и могут возобновить их как разговор. `UsersAdmin` доступен admin. `ProjectsOverlay`, `ProjectBoard`, `TaskCard` реализуют членство, машины и канбан.
+`CcObserver` и `CodexObserver` отображают внешние CLI-сессии и могут возобновить их как разговор. `UsersAdmin` доступен admin. `ProjectsOverlay`, `ProjectBoard`, `TaskCard` реализуют членство, машины и канбан. Перетаскивание на доске — общий движок pointer-жеста `lib/dnd.ts` (мышь, палец, стилус) плюс перенос с клавиатуры и объявления в `aria-live`; подробности — в [projects.md](projects.md), раздел «Перетаскивание карточек и колонок».
 
 `KnowledgeBase` показывает статус, темы, поиск и документы серверной read-only KB. `QuestionsForm` рендерит одиночный/множественный выбор. `MessageImage` читает файл сервера или машины согласно источнику. `Markdown` поддерживает GFM и подсветку.
 

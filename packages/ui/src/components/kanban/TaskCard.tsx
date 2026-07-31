@@ -1,8 +1,15 @@
 // Карточка задачи в стиле Jira: заголовок, чип эпика, метки, флаг, прогресс
 // подзадач, снизу — иконка типа + ключ, срок, стори-поинты, приоритет, аватар.
-// Клик — открывает модалку задачи; меню «⋯» — быстрые действия.
+// Клик (тап) — открывает модалку задачи; меню «⋯» — быстрые действия.
+//
+// Перенос карточка не реализует: геометрия доски известна только ей, поэтому
+// карточка лишь сообщает о захвате (onGrab) и о клавишах (onCardKeys), а порог
+// жеста, копию под пальцем и цель считает KanbanBoard. Захватить можно с ручки
+// «⠿» (единственное место с touch-action: none — палец там не скроллит) или
+// удержанием самой карточки; с клавиатуры карточка фокусируется (tabIndex).
 
 import { useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Task } from '@shared/projects'
 import { ciCardPulse, isActiveCiStatus, type CiRunSummary } from '@shared/ci'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
@@ -32,9 +39,17 @@ export interface TaskCardProps {
   /** Открыть ленту рана. */
   onOpenCiRun?: (runId: string) => void
 
-  onDragStart: (taskId: string) => void
-  onDragEnd: () => void
+  /** Захват указателем: доска решает, перенос это или клик/скролл.
+      `immediate` — захват с ручки, удержание пальца не нужно. */
+  onGrab?: (e: ReactPointerEvent<HTMLElement>, card: HTMLElement, immediate: boolean) => void
+  /** Клавиши на карточке — клавиатурный перенос разбирает доска. */
+  onCardKeys?: (e: KeyboardEvent<HTMLElement>, card: HTMLElement) => void
+  /** Фокус ушёл с карточки — доска отменяет незавершённый клавиатурный перенос. */
+  onCardBlur?: () => void
+  /** Карточку несут указателем: на месте вставки доска рисует плейсхолдер. */
   dragging: boolean
+  /** Карточка «взята» с клавиатуры: остаётся на месте и подсвечена. */
+  grabbed?: boolean
 }
 
 /** Эпик-предок задачи (родитель истории или родитель родителя задачи). */
@@ -52,6 +67,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const confirm = useConfirm()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const cardRef = useRef<HTMLDivElement | null>(null)
 
   // Меню закрывается кликом мимо него.
   useEffect(() => {
@@ -75,18 +91,33 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
 
   return (
     <div
-      className={`jcard${task.flagged ? ' jcard--flagged' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${props.dragging ? ' dragging' : ''}`}
-      draggable
+      ref={cardRef}
+      className={`jcard${task.flagged ? ' jcard--flagged' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
       data-testid="task-card"
+      data-task-id={task.id}
+      tabIndex={0}
       onClick={() => props.onOpen(task.id)}
-      onDragStart={(e) => {
-        e.dataTransfer.setData('application/x-task', task.id)
-        e.dataTransfer.effectAllowed = 'move'
-        props.onDragStart(task.id)
+      onPointerDown={(e) => {
+        // С кнопок, полей и меню внутри карточки перенос не начинаем.
+        if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return
+        if (cardRef.current) props.onGrab?.(e, cardRef.current, false)
       }}
-      onDragEnd={props.onDragEnd}
+      onKeyDown={(e) => {
+        if (cardRef.current) props.onCardKeys?.(e, cardRef.current)
+      }}
+      onBlur={() => props.onCardBlur?.()}
     >
       <div className="jcard-top">
+        <span
+          className="jcard-grip"
+          aria-hidden="true"
+          onPointerDown={(e) => {
+            e.stopPropagation()
+            if (cardRef.current) props.onGrab?.(e, cardRef.current, true)
+          }}
+        >
+          ⠿
+        </span>
         <span className="jcard-title">{task.title}</span>
         <span className="jcard-menuwrap" ref={menuRef}>
           <IconButton
@@ -191,6 +222,9 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
           </div>
         </div>
       )}
+
+      {/* Клавиатурный перенос иначе не найти: подсказка видна только скринридеру. */}
+      <span className="vc-sr-only">Пробел — взять задачу для переноса</span>
 
       <div className="jcard-foot">
         <span className="jcard-foot-left">

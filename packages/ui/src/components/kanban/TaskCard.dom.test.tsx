@@ -17,7 +17,7 @@ function props(over: Partial<TaskCardProps> = {}): TaskCardProps {
   return {
     task: mkTask(), projectName: 'Proj', allTasks: [], doneColumnIds: new Set(),
     onOpen: vi.fn(), onUpdate: vi.fn(), onDelete: vi.fn(), onMoveTop: vi.fn(), onMoveBottom: vi.fn(),
-    onDragStart: vi.fn(), onDragEnd: vi.fn(), dragging: false, ...over
+    dragging: false, ...over
   }
 }
 
