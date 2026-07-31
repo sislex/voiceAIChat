@@ -21,7 +21,7 @@ import { applyNativeInputValue, useAiAssist } from '../prompt-builder/useAiAssis
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanbanMeta'
 import { CiTaskSettings } from '../ci/CiTaskSettings'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
-import { isActiveCiStatus, type CiRunSummary } from '@shared/ci'
+import { canStartCiRun, type CiRunSummary } from '@shared/ci'
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
 import { useAutoGrow } from '../../lib/autoGrow'
 
@@ -144,8 +144,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     if (task.type === 'task' && !task.chatId && ensureChat) ensureChat(task.id)
   }, [task.id, task.type, task.chatId, ensureChat])
 
-  // Пока ран задачи идёт, запуск недоступен (см. isActiveCiStatus).
-  const ciActive = props.ciSummary != null && isActiveCiStatus(props.ciSummary.status)
+  // Пока ран задачи идёт, запуск недоступен; завершённый ран не мешает (см. canStartCiRun).
+  const canStartCi = canStartCiRun(props.ciSummary)
 
   const column = board.columns.find((c) => c.id === task.columnId)
   const parent = task.parentId ? board.tasks.find((t) => t.id === task.parentId) : null
@@ -535,8 +535,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                     {props.ciSummary.awaitingInput ? 'Ответить модели' : 'Лента рана'}
                   </Button>
                 )}
-                {/* Активный ран нельзя запустить второй раз — только смотреть ленту. */}
-                {props.onStartCi && !ciActive && (
+                {/* Активный ран нельзя запустить второй раз — только смотреть ленту;
+                    после завершения «Выполнить» снова доступна. */}
+                {props.onStartCi && canStartCi && (
                   <Button variant="primary" size="sm" onClick={() => props.onStartCi?.(task.id)}>Выполнить</Button>
                 )}
               </div>
