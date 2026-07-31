@@ -3352,9 +3352,13 @@
   background: var(--border);
 }
 
+/* Список селекторов остался без блока объявлений, когда из файла ушёл
+   .footico-btn (переезд кнопок на Button): правило становилось невалидным и
+   утягивало за собой следующий @media — стили свёрнутого сайдбара просто не
+   применялись. Фон берём токеном, а не прошитым #262620. */
 [data-theme='dark'] .cstatus-select:hover,
 [data-theme='dark'] .cstatus-select:focus,
-[data-theme='dark'] .side-collapse:hover,
+[data-theme='dark'] .side-collapse:hover { background: var(--surface-hover); }
 
 /* Свёрнутый сайдбар — только десктоп; на мобильном действует выдвижной drawer. */
 @media (min-width: 769px) {

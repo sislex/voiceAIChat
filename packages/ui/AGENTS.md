@@ -98,8 +98,16 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
 
 Storybook: сториз примитивов — `src/components/ui/{Button,Dialog,Toast,ConfirmDialog}.stories.tsx`
 (у `Button` — матрица «вариант × размер × состояние» сразу в двух темах),
-канбана — `src/components/kanban/*.stories.tsx`; провайдеры примитивов подключены
-глобальным декоратором в `.storybook/preview.tsx`;
+канбана — `src/components/kanban/*.stories.tsx`, витрина основы дизайна —
+`src/stories/foundations/` (`Colors`, `Spacing & Radius`, `Typography`, `Icons`,
+`CI Status` + docs-страница «Как добавлять компонент»). Провайдеры примитивов и
+переключатель темы подключены глобальным декоратором в `.storybook/preview.tsx`:
+`data-theme` ставится на контейнер и на `<html>`, фон `body` тянется к `--bg`.
+**Витрина Foundations читает токены из CSS, а не хранит их копию в TS**: имена
+собираются обходом правил `:root` / `[data-theme='dark']`, значения — через
+`getComputedStyle`, контраст считается на месте по WCAG (`foundations/tokens.ts`,
+математика покрыта `tokens.test.ts`). Добавил токен — он появится в витрине сам;
+захардкодишь палитру в сториз — она разъедется со стилями.
 `npm run -w @voicechat/ui storybook` (dev, порт 6006) и `build-storybook`
 (смоук-сборка). В общий гейт не входят, но `*.stories.tsx` проверяются tsc.
 
