@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event'
 import { Sidebar, type MessageSearchView } from './Sidebar'
 import type { Conversation, MessageSearchHit, SessionUser } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
+import type { TaskChatBadge } from '@shared/projects'
+import type { CiRunSummary } from '@shared/ci'
 
 function conv(id: string, title: string): Conversation {
   return { id, title, updatedAt: 1, messageCount: 2, execTarget: null, lastExecTarget: id === 'c1' ? 'm1' : 'none', status: id === 'c1' ? 'developing' : 'planned', permissionMode: id === 'c1' ? 'plan' : 'default' } as Conversation
@@ -373,5 +375,61 @@ describe('Sidebar — доступность', () => {
     title.focus()
     await userEvent.keyboard('{Enter}')
     expect(props.onPick).toHaveBeenCalledWith('c2')
+  })
+})
+
+describe('Sidebar — чаты, связанные с задачами', () => {
+  const badge = (over: Partial<TaskChatBadge> = {}): TaskChatBadge => ({
+    conversationId: 'c1',
+    projectId: 'p1',
+    taskId: 't1',
+    key: 'VC-42',
+    type: 'task',
+    run: null,
+    ...over
+  })
+  const summary = (over: Partial<CiRunSummary> = {}): CiRunSummary => ({
+    id: 'run-1',
+    taskId: 't1',
+    status: 'running',
+    slotProgress: { done: 1, total: 4, phase: 'Модель работает' },
+    durationMs: null,
+    modelActive: true,
+    awaitingInput: false,
+    ...over
+  })
+  const row = (id: string): HTMLElement =>
+    document.querySelector(`.convo-items [role="listitem"]:nth-child(${id === 'c1' ? 1 : 2})`) as HTMLElement
+
+  it('в строке чата задачи показывает тип, ключ и состояние последнего рана', () => {
+    setup({ taskBadges: { c1: badge() }, ciSummaries: { t1: summary({ status: 'awaiting_input', awaitingInput: true }) } })
+    expect(screen.getByText('VC-42')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Задача' })).toBeInTheDocument()
+    expect(screen.getByText('ждёт ответа')).toBeInTheDocument()
+  })
+
+  it('чат задачи отличается от обычного всегда, даже без рана', () => {
+    setup({ taskBadges: { c1: badge() } })
+    expect(row('c1').className).toContain('convo--task')
+    expect(row('c1').className).not.toContain('convo--ci-')
+    // Обычный чат не помечен ничем.
+    expect(row('c2').className).not.toContain('convo--task')
+    expect(screen.queryByText('VC-42')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['ран идёт — голубая рамка', summary({ status: 'running' }), 'convo--ci-running'],
+    ['модель чинит ошибку — красная', summary({ status: 'running', slotProgress: { done: 2, total: 4, phase: 'Модель исправляет ошибку', fixing: true } }), 'convo--ci-fixing'],
+    ['ждёт ответа — жёлтая', summary({ status: 'awaiting_input', awaitingInput: true }), 'convo--ci-awaiting'],
+    ['упал — красная', summary({ status: 'failed' }), 'convo--ci-failed'],
+    ['успех — зелёная', summary({ status: 'success' }), 'convo--ci-done']
+  ])('подсвечивает строку как карточку на доске: %s', (_name, run, expected) => {
+    setup({ taskBadges: { c1: badge() }, ciSummaries: { t1: run } })
+    expect(row('c1').className).toContain(expected)
+  })
+
+  it('отменённый и пропущенный ран подсветки не дают', () => {
+    setup({ taskBadges: { c1: badge() }, ciSummaries: { t1: summary({ status: 'cancelled' }) } })
+    expect(row('c1').className).not.toContain('convo--ci-')
   })
 })

@@ -63,6 +63,7 @@ import {
   type CiInteractionStatus,
   type CiPlanDecision,
   type QuestionSpec,
+  type TaskChatBadge,
   type TaskChatContext,
   type TaskChatCrumb,
   issueKey,
@@ -1747,6 +1748,32 @@ export class VoiceChatDb {
     }
   }
 
+  /**
+   * Метки всех чатов пользователя, привязанных к задачам: ключ, тип и последний
+   * ран задачи. Список бесед подсвечивается тем же состоянием, что карточка на
+   * доске, но доску при этом не открывают — поэтому сводки нужны сразу, одним
+   * запросом на весь список, а не по чату.
+   */
+  taskChatBadges(userId: string): TaskChatBadge[] {
+    const rows = this.db
+      .prepare(
+        `SELECT c.id AS conversation_id, t.id AS task_id, t.project_id, t.seq, t.type, p.name AS project_name
+         FROM conversations c
+         JOIN tasks t ON t.id = c.task_id
+         JOIN projects p ON p.id = t.project_id
+         WHERE c.user_id = ? AND c.task_id IS NOT NULL`
+      )
+      .all(userId) as Array<{ conversation_id: string; task_id: string; project_id: string; seq: number; type: string; project_name: string }>
+    return rows.map((r) => ({
+      conversationId: r.conversation_id,
+      projectId: r.project_id,
+      taskId: r.task_id,
+      key: issueKey(r.project_name, { seq: r.seq }),
+      type: normWorkItemType(r.type),
+      run: this.latestCiRunSummary(r.task_id)
+    }))
+  }
+
   /** Имя машины по id (для читаемой подписи в шапке чата). */
   private agentName(agentId: string): string | null {
     const r = this.db.prepare(`SELECT name FROM agents WHERE id = ?`).get(agentId) as { name: string } | undefined
@@ -2581,11 +2608,21 @@ export class VoiceChatDb {
     for (const r of rows) {
       if (seen.has(r.task_id)) continue
       seen.add(r.task_id)
-      const run = mapCiRun(r)
-      const modelActive = run.status === 'running' && this.db.prepare(`SELECT 1 FROM ci_run_steps WHERE run_id = ? AND kind = 'model_work' AND status = 'running' LIMIT 1`).get(r.id) !== undefined
-      out.push({ id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive, awaitingInput: run.status === 'awaiting_input' })
+      out.push(this.ciRunSummary(r))
     }
     return out
+  }
+
+  /** Сводка последнего рана одной задачи; null — ранов не было. */
+  latestCiRunSummary(taskId: string): CiRunSummary | null {
+    const row = this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`).get(taskId) as CiRunRow | undefined
+    return row ? this.ciRunSummary(row) : null
+  }
+
+  private ciRunSummary(row: CiRunRow): CiRunSummary {
+    const run = mapCiRun(row)
+    const modelActive = run.status === 'running' && this.db.prepare(`SELECT 1 FROM ci_run_steps WHERE run_id = ? AND kind = 'model_work' AND status = 'running' LIMIT 1`).get(row.id) !== undefined
+    return { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive, awaitingInput: run.status === 'awaiting_input' }
   }
 
   // ---- Использование базы знаний (телеметрия обращений модели) -----------
