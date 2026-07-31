@@ -119,23 +119,6 @@ function saveSidebarProject(id: string | null): void {
   }
 }
 
-/** Ключ localStorage для последнего открытого проекта-доски (для авто-редиректа). */
-const LAST_PROJECT_KEY = 'vc.lastProject'
-function loadLastProject(): string | null {
-  try {
-    return localStorage.getItem(LAST_PROJECT_KEY)
-  } catch {
-    return null
-  }
-}
-function saveLastProject(id: string): void {
-  try {
-    localStorage.setItem(LAST_PROJECT_KEY, id)
-  } catch {
-    // localStorage недоступен — молча игнорируем.
-  }
-}
-
 /**
  * Уведомление для тоста. Стор их только копит: показывает App (useToast), потому
  * что рисовать умеет React, а стор фреймворк-независим.
@@ -349,8 +332,8 @@ export interface AppState {
   projects: ProjectSummary[]
   /** Проект, выбранный в селекте сайдбара (null — «Без проекта»). Фильтрует список/поиск чатов. */
   sidebarProjectId: string | null
-  /** Последний открытый проект-доска (для авто-редиректа с #/projects). */
-  lastProjectId: string | null
+  /** Список проектов прочитан с сервера — иначе «проекта нет» не отличить от «ещё не грузили». */
+  projectsLoaded: boolean
   /** Проект, выбранный в панели деталей (null — не выбран). */
   projectDetail: ProjectDetail | null
   /** id проекта с открытой доской (null — доска закрыта). */
@@ -716,7 +699,7 @@ export interface StoreActions {
   /** Закрыть режим «Проекты». */
   closeProjects(): void
   /** Перечитать список проектов. */
-  refreshProjects(): Promise<void>
+  refreshProjects(): Promise<ProjectSummary[]>
   /** Выбрать проект в панель деталей (грузит состав). */
   selectProject(id: string): Promise<void>
   /** Создать проект. */
@@ -933,7 +916,7 @@ function initialState(): AppState {
     projectsOpen: false,
     projects: [],
     sidebarProjectId: loadSidebarProject(),
-    lastProjectId: loadLastProject(),
+    projectsLoaded: false,
     projectDetail: null,
     activeProjectId: null,
     projectSettingsOpen: false,
@@ -1521,7 +1504,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     // Сайдбар сразу фильтруем по восстановленному из localStorage проекту.
     const pid = state.sidebarProjectId
     const visible = conversations.filter((c) => (c.projectId ?? null) === pid)
-    setState({ settings, projects, conversations: visible, conversationsStatus: 'ready', conversationsError: null })
+    setState({ settings, projects, projectsLoaded: true, conversations: visible, conversationsStatus: 'ready', conversationsError: null })
     await refreshMics()
     await refreshModelStatus()
     await refreshWhisperModels()
@@ -2841,8 +2824,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   // --- Проекты + канбан ----------------------------------------------------
 
-  async function refreshProjects(): Promise<void> {
-    setState({ projects: await api['projects:list']() })
+  /** Возвращает свежий список: вход в раздел ведёт на первый проект, и его нужно знать сразу. */
+  async function refreshProjects(): Promise<ProjectSummary[]> {
+    const projects = await api['projects:list']()
+    setState({ projects, projectsLoaded: true })
+    return projects
   }
   async function openProjects(): Promise<void> {
     setState({ projectsOpen: true })
@@ -2854,7 +2840,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   function closeProjects(): void {
     closeBoard()
-    setState({ projectsOpen: false, projects: [], projectDetail: null })
+    setState({ projectsOpen: false, projects: [], projectsLoaded: false, projectDetail: null })
   }
   async function selectProject(id: string): Promise<void> {
     try {
@@ -3010,8 +2996,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ board: await api['board:get']({ id }) })
   }
   async function openBoard(id: string): Promise<void> {
-    saveLastProject(id)
-    setState({ activeProjectId: id, boardLoading: true, boardError: null, board: null, projectSettingsOpen: false, lastProjectId: id })
+    setState({ activeProjectId: id, boardLoading: true, boardError: null, board: null, projectSettingsOpen: false })
     try {
       const [board, detail] = await Promise.all([api['board:get']({ id }), api['projects:get']({ id })])
       const ciSummaries = { ...state.ciSummaries }

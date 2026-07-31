@@ -12,9 +12,9 @@ import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen } from './components/LoginScreen'
 import { EnginesObserver, type ObserverEngine } from './components/EnginesObserver'
 import { UsersAdmin } from './components/UsersAdmin'
-import { ProjectsOverlay } from './components/ProjectsOverlay'
 import { ProjectSettings } from './components/ProjectSettings'
 import { ProjectBoard } from './components/ProjectBoard'
+import { ProjectPage, ProjectsEmptyPage, ProjectNotFoundPage } from './components/ProjectPage'
 import { MachineStatus } from './components/MachineStatus'
 import { MachineUtility } from './components/MachineUtility'
 import { CiCommands } from './components/ci/CiCommands'
@@ -23,6 +23,7 @@ import { ToolFrame } from './components/ToolFrame'
 import type { MachineOps } from './components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
 import { UiProviders } from './components/ui/UiProviders'
+import { Skeleton } from './components/ui/Skeleton'
 import { useToast } from './components/ui/Toast'
 import { useConfirm } from './components/ui/useConfirm'
 import { KnowledgeBase } from './components/KnowledgeBase'
@@ -171,6 +172,15 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     state.projectDetail?.id === state.activeProjectId
       ? state.projectDetail.name
       : state.projects.find((p) => p.id === state.activeProjectId)?.name ?? null
+  // Куда ведёт вход в раздел «Проекты» и удаление текущего проекта.
+  const firstProjectId = state.projects[0]?.id ?? null
+  const routeProjectName =
+    (state.projectDetail?.id === routeProjectId ? state.projectDetail.name : null) ??
+    state.projects.find((p) => p.id === routeProjectId)?.name ??
+    'Проект'
+  // Список загружен, а проекта из адреса в нём нет: удалён или нет доступа.
+  const projectMissing =
+    routeProjectId !== null && state.projectsLoaded && !state.projects.some((p) => p.id === routeProjectId)
   useCommandSource(() =>
     buildAppCommands({
       voiceEnabled: VOICE_INPUT_ENABLED,
@@ -179,7 +189,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       theme: state.settings.theme,
       web: state.authRequired,
       paletteOpen,
-      boardProjectId: state.lastProjectId ?? state.projects[0]?.id ?? null,
+      boardProjectId: state.activeProjectId ?? state.projects[0]?.id ?? null,
       chats: state.conversations,
       projects: state.projects,
       tasks: state.board?.tasks ?? [],
@@ -254,18 +264,15 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     else if (state.activeProjectId) actions.closeBoard()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects, routeProjectId])
-  // Авто-редирект при запуске: открыли #/projects (список) — уводим на последний
-  // использованный проект, если он ещё доступен. Срабатывает один раз за сессию
-  // (ref-гард), поэтому закрытие доски к списку потом не перекидывает обратно.
-  const redirectedToLastProject = useRef(false)
+  // Страницы-списка проектов нет: #/projects без id — это всегда переход на
+  // первый проект списка. Правило то же, что у клика «Проекты» в сайдбаре,
+  // поэтому персист последнего проекта не нужен. Нет проектов — редиректа нет,
+  // и в области контента остаётся пустое состояние (создать — в сайдбаре).
   useEffect(() => {
-    if (!authed || redirectedToLastProject.current) return
-    if (!inProjects || routeProjectId || state.projects.length === 0) return
-    redirectedToLastProject.current = true
-    const last = state.lastProjectId
-    if (last && state.projects.some((p) => p.id === last)) navigate(`/projects/${last}`)
+    if (!authed || !inProjects || routeProjectId || !firstProjectId) return
+    navigate(`/projects/${firstProjectId}`, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inProjects, routeProjectId, state.projects, state.lastProjectId])
+  }, [authed, inProjects, routeProjectId, firstProjectId])
   useEffect(() => {
     if (!authed) return
     if (routeSettings) { if (!state.projectSettingsOpen) actions.openProjectSettings() }
@@ -453,7 +460,16 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         mode={sidebarMode}
         onModeChange={state.authRequired ? (m) => {
           setSidebarMode(m)
-          if (m === 'projects') void actions.refreshProjects()
+          // «Проекты» — не просто другой список в сайдбаре: раздел открывается
+          // страницей первого проекта. Список сначала перечитываем — выходя из
+          // раздела, стор его чистит (closeProjects).
+          if (m === 'projects') {
+            void actions.refreshProjects().catch(() => state.projects).then((list) => {
+              if (inProjects) return
+              const first = list[0]?.id
+              navigate(first ? `/projects/${first}` : '/projects')
+            })
+          }
         } : undefined}
         activeProjectId={routeProjectId}
         onPickProject={(id) => {
@@ -578,66 +594,78 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       />
       )}
 
-      {inProjects && !routeProjectId && (
-        <ProjectsOverlay
-          projects={state.projects}
-          onOpenProject={(id) => navigate(`/projects/${id}`)}
-          onCreate={(input) => void actions.createProject(input)}
-          onClose={() => navigate(`/`)}
-        />
-      )}
+      {/* Проектов нет вообще: редиректу некуда вести — показываем, что делать. */}
+      {inProjects && !routeProjectId && firstProjectId === null && <ProjectsEmptyPage />}
 
-      {inProjects && routeProjectId && !routeSettings && (
-        <ProjectBoard
-          initialOpenTaskId={routeTaskId}
-          projectName={
-            state.projectDetail?.name ??
-            state.projects.find((p) => p.id === routeProjectId)?.name ??
-            `Проект`
+      {inProjects && routeProjectId && projectMissing && <ProjectNotFoundPage />}
+
+      {/* Одна страница проекта на все три маршрута: шапка с именем и вкладками
+          общая, меняется только содержимое. */}
+      {inProjects && routeProjectId && !projectMissing && (
+        <ProjectPage
+          projectName={routeProjectName}
+          section={routeSettings ? 'settings' : 'board'}
+          onSectionChange={(section) =>
+            navigate(section === 'settings' ? `/projects/${routeProjectId}/settings` : `/projects/${routeProjectId}`)
           }
-          board={state.board}
-          loading={state.boardLoading || state.activeProjectId !== routeProjectId}
-          error={state.boardError}
-          onRetry={() => void actions.openBoard(routeProjectId)}
-          members={state.projectDetail?.members ?? []}
-          currentUser={state.currentUser?.name ?? null}
-          onCreateColumn={(name) => void actions.createColumn(name)}
-          onUpdateColumn={(id, fields) => void actions.updateColumn(id, fields)}
-          onSetColumnHidden={(id, hidden) => void actions.setColumnHidden(id, hidden)}
-          onReorderColumns={(order) => void actions.reorderColumns(order)}
-          onDeleteColumn={(id) => void actions.deleteColumn(id)}
-          onCreateTask={(columnId, input) => void actions.createTask(columnId, input)}
-          onUpdateTask={(taskId, fields) => void actions.updateTask(taskId, fields)}
-          onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
-          onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
-          onOpenChat={(taskId) => void actions.openTaskChat(taskId).then((id) => navigate(id ? `/chat/${id}` : '/'))}
-          onEnsureChat={(taskId) => void actions.ensureTaskChat(taskId)}
-          ciSummaries={state.ciSummaries}
-          onStartCi={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId).then((run) => { if (run) actions.openCiRun(run.id) }) }}
-          onOpenCiRun={(runId) => actions.openCiRun(runId)}
-          aiAssistPrompts={state.settings.aiAssistPrompts}
-          onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
-          generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
-          onOpenSettings={() => navigate(`/projects/${routeProjectId}/settings`)}
-          onClose={() => navigate(`/projects`)}
-        />
-      )}
-
-      {inProjects && routeProjectId && routeSettings && state.projectDetail?.id === routeProjectId && (
-        <ProjectSettings
-          detail={state.projectDetail}
-          agents={state.agents}
-          onUpdate={(id, fields) => void actions.updateProject(id, fields)}
-          onDelete={(id) => { void actions.deleteProject(id); navigate(`/projects`) }}
-          onAddMember={(id, username) => void actions.addProjectMember(id, username)}
-          onRemoveMember={(id, username) => void actions.removeProjectMember(id, username)}
-          onLinkMachine={(id, agentId) => void actions.linkProjectMachine(id, agentId)}
-          onUnlinkMachine={(id, agentId) => void actions.unlinkProjectMachine(id, agentId)}
-          onSetMachinePath={(id, agentId, path) => void actions.setProjectMachinePath(id, agentId, path)}
-          onSetReposRoot={(id, agentId, root) => void actions.setProjectReposRoot(id, agentId, root)}
-          onSetDefaultMachine={(id, agentId) => void actions.setProjectDefaultMachine(id, agentId)}
-          onClose={() => navigate(`/projects/${routeProjectId}`)}
-        />
+        >
+          {routeSettings ? (
+            state.projectDetail?.id === routeProjectId ? (
+              <ProjectSettings
+                detail={state.projectDetail}
+                agents={state.agents}
+                onUpdate={(id, fields) => void actions.updateProject(id, fields)}
+                onDelete={(id) => {
+                  // Удалили проект — уводим на другой доступный, а если их не
+                  // осталось, в пустое состояние (#/projects без id).
+                  const next = state.projects.find((p) => p.id !== id)?.id ?? null
+                  void actions.deleteProject(id).then(() => {
+                    navigate(next ? `/projects/${next}` : '/projects', { replace: true })
+                  })
+                }}
+                onAddMember={(id, username) => void actions.addProjectMember(id, username)}
+                onRemoveMember={(id, username) => void actions.removeProjectMember(id, username)}
+                onLinkMachine={(id, agentId) => void actions.linkProjectMachine(id, agentId)}
+                onUnlinkMachine={(id, agentId) => void actions.unlinkProjectMachine(id, agentId)}
+                onSetMachinePath={(id, agentId, path) => void actions.setProjectMachinePath(id, agentId, path)}
+                onSetReposRoot={(id, agentId, root) => void actions.setProjectReposRoot(id, agentId, root)}
+                onSetDefaultMachine={(id, agentId) => void actions.setProjectDefaultMachine(id, agentId)}
+              />
+            ) : (
+              <div className="proj-page-state" aria-busy="true">
+                <Skeleton variant="list" count={4} item="block" height={64} gap={12} />
+              </div>
+            )
+          ) : (
+            <ProjectBoard
+              initialOpenTaskId={routeTaskId}
+              projectName={routeProjectName}
+              board={state.board}
+              loading={state.boardLoading || state.activeProjectId !== routeProjectId}
+              error={state.boardError}
+              onRetry={() => void actions.openBoard(routeProjectId)}
+              members={state.projectDetail?.members ?? []}
+              currentUser={state.currentUser?.name ?? null}
+              onCreateColumn={(name) => void actions.createColumn(name)}
+              onUpdateColumn={(id, fields) => void actions.updateColumn(id, fields)}
+              onSetColumnHidden={(id, hidden) => void actions.setColumnHidden(id, hidden)}
+              onReorderColumns={(order) => void actions.reorderColumns(order)}
+              onDeleteColumn={(id) => void actions.deleteColumn(id)}
+              onCreateTask={(columnId, input) => void actions.createTask(columnId, input)}
+              onUpdateTask={(taskId, fields) => void actions.updateTask(taskId, fields)}
+              onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
+              onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
+              onOpenChat={(taskId) => void actions.openTaskChat(taskId).then((id) => navigate(id ? `/chat/${id}` : '/'))}
+              onEnsureChat={(taskId) => void actions.ensureTaskChat(taskId)}
+              ciSummaries={state.ciSummaries}
+              onStartCi={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId).then((run) => { if (run) actions.openCiRun(run.id) }) }}
+              onOpenCiRun={(runId) => actions.openCiRun(runId)}
+              aiAssistPrompts={state.settings.aiAssistPrompts}
+              onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
+              generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
+            />
+          )}
+        </ProjectPage>
       )}
 
       {utilitySeg === 'kb' && (

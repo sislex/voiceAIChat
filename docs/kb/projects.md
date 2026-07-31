@@ -2,15 +2,16 @@
 title: Проекты и канбан-доска
 updated: 2026-07-31
 
-checked: f91f91c
+checked: 46a3f94
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/routes/projects.ts
   - apps/server/src/projects
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
-  - packages/ui/src/components/ProjectsOverlay.tsx
+  - packages/ui/src/components/ProjectPage.tsx
   - packages/ui/src/components/ProjectBoard.tsx
+  - packages/ui/src/components/ProjectSettings.tsx
   - packages/ui/src/components/kanban
   - packages/ui/src/lib/dnd.ts
   - packages/ui/src/store/voiceStore.ts
@@ -74,16 +75,31 @@ areas:
 ## Фронтенд
 
 Всё в `packages/ui` (как и остальной UI). Состояние/экшены — в `voiceStore.ts`
-(`projectsOpen`, `projects`, `projectDetail`, `activeProjectId`, `board`;
-оптимистичные `moveTask`/`reorderColumns`, мерж `applyBoardUpdate` из WS). Экраны —
-оверлеи через флаги стора (эталон — `UsersAdmin`): `ProjectsOverlay` (список +
-детали), доска в стиле Jira — изолированный компонент `components/kanban/`:
+(`projectsOpen`, `projects`, `projectsLoaded`, `projectDetail`, `activeProjectId`,
+`board`; оптимистичные `moveTask`/`reorderColumns`, мерж `applyBoardUpdate` из WS).
+
+**Одна страница проекта на весь раздел.** `ProjectPage` держит `ToolFrame
+variant="page"`: в заголовке имя проекта, в слоте `actions` — вкладки «Канбан» и
+«Настройки» (`role="tablist"`, `aria-selected`, вид общий с переключателем списка
+в сайдбаре — `.sideswitch`). Активная вкладка выводится из маршрута, клик и
+стрелки навигируют, а не переключают локальное состояние; содержимое — либо
+`ProjectBoard`, либо `ProjectSettings`, и своей рамки они не рисуют.
+`onClose` в `ToolFrame` не передаётся, поэтому **крестика в шапке нет**: из
+раздела уходят навигацией, а Esc над открытой карточкой достаётся самой карточке
+через общий стек окон (`TaskModal` → `PopupFrame`). Страницы-списка проектов нет
+вовсе: выбор проекта и «+ Проект» живут в `Sidebar`, а `#/projects` без id
+немедленно уводит на первый проект списка (`navigate(..., { replace: true })`).
+Крайние случаи — там же, в `ProjectPage`: нет проектов вообще
+(`ProjectsEmptyPage`, подсказка создать в сайдбаре) и проекта из адреса нет в
+списке доступных (`ProjectNotFoundPage` вместо пустой доски).
+
+Доска в стиле Jira — изолированный компонент `components/kanban/`:
 `KanbanBoard` (самодостаточный, только пропсы: панель фильтров с чекбоксом
 «скрытые», свимлейны, WIP-лимиты, композер «+ Создать», состояние `error`,
 нормализация битых данных в `normalize.ts`), `TaskCard`, `TaskModal`,
-атрибутика в `kanbanMeta.tsx`; страничная обёртка — `ProjectBoard`
-(ToolFrame + настройки + Esc). Сториз — `*.stories.tsx` рядом
-(`npm run -w @voicechat/ui storybook`). Кнопка «Проекты» — в `Sidebar`.
+атрибутика в `kanbanMeta.tsx`; `ProjectBoard` от неё оставляет себе только
+открытую карточку задачи (`initialOpenTaskId` из адреса). Сториз —
+`*.stories.tsx` рядом (`npm run -w @voicechat/ui storybook`).
 
 ### Перетаскивание карточек и колонок
 
@@ -137,8 +153,10 @@ areas:
 У проекта на каждой машине — своя рабочая папка: `project_machines.path`
 (`setProjectMachinePath`). Одна машина — по умолчанию: `projects.default_agent_id`
 (`setProjectDefaultMachine`; снятие машины сбрасывает дефолт). `ProjectDetail` несёт
-`machines: {agentId, path}[]` и `defaultAgentId`. Всё это правит владелец в
-`ProjectsOverlay`.
+`machines: {agentId, path}[]` и `defaultAgentId`. Всё это правит владелец во
+вкладке «Настройки» страницы проекта (`ProjectSettings`) — там же и удаление
+проекта: после него уводим на другой доступный проект, а если их не осталось —
+в пустое состояние.
 
 Чат привязывается к проекту полем `conversations.project_id`
 (`setConversationProject`, REST `POST /api/conversations/:id/project`, канал

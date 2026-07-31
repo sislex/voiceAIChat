@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-07-31
-checked: c769754
+checked: 46a3f94
 areas:
   - packages/ui/src
   - apps/web/src
@@ -43,8 +43,14 @@ web/desktop host → installRemoteBridges → HTTP + WebSocket → server
 
 Навигация — собственный `lib/useHashRoute.ts` без зависимостей: hash выбран потому,
 что desktop грузит рендерер по `file://`, где path-роутинг не работает. Маршруты:
-`#/chat/:id` (открытый разговор), `#/projects[/:id[/settings|/task/:taskId]]` и
+`#/chat/:id` (открытый разговор), `#/projects/:id[/settings|/task/:taskId]` и
 страницы-утилиты `#/claude-code`, `#/codex`, `#/machines`, `#/kb`, `#/users`, `#/ci`.
+Все три адреса проекта — одна и та же страница с общей шапкой (`ProjectPage`),
+меняется только содержимое; `#/projects` без id страницей-списком больше не
+является — с него сразу уводим на первый проект (`replace`), а если проектов нет,
+показываем пустое состояние с подсказкой создать проект в сайдбаре. Правило
+«первый в списке» единое и для клика «Проекты» в переключателе сайдбара, поэтому
+персиста последнего проекта (`vc.lastProject`) нет.
 `navigate(to, { replace: true })` меняет адрес через `history.replaceState` без новой
 записи в истории — так пишутся адреса, на которые приложение перекидывает само
 (иначе «Назад» упирается в редирект); подписчиков `useSyncExternalStore` при этом
@@ -117,7 +123,7 @@ Partial STT обновляет живые сегменты; final формиру
 
 `MachineStatus`, `AgentCard`, `AgentCommands` обслуживают регистрацию, токен, policy, install/update и диагностику. `MachineUtility` выбирает `MachineConsole` или `FileExplorer`; `MachineTerminal` использует xterm и PTY bridge.
 
-`CcObserver` и `CodexObserver` отображают внешние CLI-сессии и могут возобновить их как разговор. `UsersAdmin` доступен admin. `ProjectsOverlay`, `ProjectBoard`, `TaskCard` реализуют членство, машины и канбан. Перетаскивание на доске — общий движок pointer-жеста `lib/dnd.ts` (мышь, палец, стилус) плюс перенос с клавиатуры и объявления в `aria-live`; подробности — в [projects.md](projects.md), раздел «Перетаскивание карточек и колонок».
+`CcObserver` и `CodexObserver` отображают внешние CLI-сессии и могут возобновить их как разговор. `UsersAdmin` доступен admin. `ProjectPage` (общая шапка с вкладками «Канбан»/«Настройки»), `ProjectBoard`, `ProjectSettings`, `TaskCard` реализуют членство, машины и канбан. Перетаскивание на доске — общий движок pointer-жеста `lib/dnd.ts` (мышь, палец, стилус) плюс перенос с клавиатуры и объявления в `aria-live`; подробности — в [projects.md](projects.md), раздел «Перетаскивание карточек и колонок».
 
 `KnowledgeBase` показывает статус, темы, поиск и документы серверной read-only KB. `QuestionsForm` рендерит одиночный/множественный выбор. `MessageImage` читает файл сервера или машины согласно источнику. `Markdown` поддерживает GFM и подсветку.
 
