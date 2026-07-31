@@ -15,6 +15,17 @@ export const REMOTE_BASH_MCP_PATH = '/mcp/remote-bash'
 const DEFAULT_TIMEOUT_MS = 120_000
 const MAX_TIMEOUT_MS = 300_000
 
+/**
+ * Экранирует `cwd` для одинарных кавычек bash и, на win32-машине, нормализует
+ * слэши: путь вида `C:\Users\x` бэкслешами ломается внутри одинарных кавычек
+ * git-bash (MSYS-транслятор путей ждёт `/`), поэтому меняем их на прямые —
+ * `C:/Users/x` bash с Windows понимает как обычный Windows-путь.
+ */
+export function quoteCwd(cwd: string, platform?: string): string {
+  const normalized = platform === 'win32' ? cwd.replace(/\\/g, '/') : cwd
+  return normalized.replace(/'/g, `'"'"'`)
+}
+
 export function registerRemoteBashMcp(
   app: FastifyInstance,
   registry: AgentRegistry,
@@ -75,7 +86,7 @@ export function registerRemoteBashMcp(
             const timeoutMs = Math.min(timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
             const cwd = req.query.cwd
             const shellCommand = cwd
-              ? `cd -- '${cwd.replace(/'/g, `'\"'\"'`)}' && ${command}`
+              ? `cd -- '${quoteCwd(cwd, registry.platformOf(agentId))}' && ${command}`
               : command
             const res = await registry.exec(agentId, shellCommand, timeoutMs, abort.signal)
             const tail = `[exit code: ${res.exitCode ?? '?'}${res.timedOut ? ', таймаут' : ''}]`

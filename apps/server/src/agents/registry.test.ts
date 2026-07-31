@@ -288,4 +288,12 @@ describe('AgentRegistry — телеметрия', () => {
     reg.unregister('a1')
     expect(reg.telemetryOf('a1')).toBeUndefined()
   })
+
+  it('platformOf берёт platform из последней телеметрии; без неё — undefined', () => {
+    const reg = makeRegistry()
+    reg.register('a1', 'Мак', fakeSocket())
+    expect(reg.platformOf('a1')).toBeUndefined()
+    reg.handleMessage('a1', { t: 'agent.telemetry', telemetry: { ...sample, os: { ...sample.os, platform: 'win32' } } })
+    expect(reg.platformOf('a1')).toBe('win32')
+  })
 })

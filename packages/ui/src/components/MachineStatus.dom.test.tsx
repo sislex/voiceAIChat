@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MachineStatus } from './MachineStatus'
-import { makeAgent as agent, makeTelemetry as telemetry } from '../test/fixtures'
+import { makeAgent as agent, makeTelemetry as telemetry, makeWindowsDegradedAgent } from '../test/fixtures'
 import { AGENT_VERSION } from '@shared/version'
 
 describe('MachineStatus', () => {
@@ -47,6 +47,26 @@ describe('MachineStatus', () => {
   it('нет машин → подсказка', () => {
     render(<MachineStatus agents={[]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByText(/Нет добавленных машин/)).toBeInTheDocument()
+  })
+
+  it('shell из телеметрии показан в строке машины', () => {
+    render(<MachineStatus agents={[agent()]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
+    const row = screen.getByTestId('machine-row-a1')
+    expect(within(row).getByText('bash')).toBeInTheDocument()
+  })
+
+  it('bash.exe не найден на Windows → предупреждающий значок в строке', () => {
+    const a = makeWindowsDegradedAgent()
+    render(<MachineStatus agents={[a]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
+    const row = screen.getByTestId(`machine-row-${a.id}`)
+    expect(within(row).getByText(/нет bash/)).toBeInTheDocument()
+    expect(within(row).getByText('cmd.exe')).toBeInTheDocument()
+  })
+
+  it('bash найден (не деградировано) → значка предупреждения нет', () => {
+    render(<MachineStatus agents={[agent()]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
+    const row = screen.getByTestId('machine-row-a1')
+    expect(within(row).queryByText(/нет bash/)).toBeNull()
   })
 })
 

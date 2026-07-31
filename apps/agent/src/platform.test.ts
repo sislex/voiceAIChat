@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { isTermux, isWindows, which, resolveShell, defaultRootDir } from './platform'
+import { describe, it, expect, afterEach } from 'vitest'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { isTermux, isWindows, which, resolveShell, resolveShellInfo, defaultRootDir } from './platform'
 
 describe('isTermux', () => {
   it('true по TERMUX_VERSION', () => {
@@ -31,20 +34,67 @@ describe('isWindows', () => {
   })
 })
 
-describe('resolveShell', () => {
-  it('на Windows берёт ComSpec, без него — cmd.exe', () => {
+describe('resolveShell/resolveShellInfo', () => {
+  const dirs: string[] = []
+  /** Временный каталог, который подчистится после теста. */
+  const tmp = (): string => {
+    const d = mkdtempSync(join(tmpdir(), 'vc-platform-'))
+    dirs.push(d)
+    return d
+  }
+
+  afterEach(() => {
+    while (dirs.length) rmSync(dirs.pop() as string, { recursive: true, force: true })
+  })
+
+  it('POSIX: override через VC_PTY_SHELL, если путь существует', () => {
+    expect(resolveShell({ VC_PTY_SHELL: '/bin/sh' } as NodeJS.ProcessEnv)).toBe('/bin/sh')
+  })
+
+  it('POSIX: игнорирует несуществующий override и находит реальный shell', () => {
+    const sh = resolveShell({ VC_PTY_SHELL: '/no/such/shell', PATH: process.env.PATH } as NodeJS.ProcessEnv)
+    expect(sh.length).toBeGreaterThan(0)
+    expect(sh).not.toBe('/no/such/shell')
+  })
+
+  it('Windows: находит bash.exe по PATH раньше cmd.exe', () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'bash.exe'), '')
+    const info = resolveShellInfo({ PATH: dir, ComSpec: 'C:\\Windows\\system32\\cmd.exe' } as NodeJS.ProcessEnv, 'win32')
+    expect(info).toEqual({ shell: join(dir, 'bash.exe'), degraded: false })
+  })
+
+  it('Windows: без bash в PATH ищет его по известным путям Git for Windows', () => {
+    const dir = tmp()
+    const bashPath = join(dir, 'Git', 'bin', 'bash.exe')
+    mkdirSync(join(dir, 'Git', 'bin'), { recursive: true })
+    writeFileSync(bashPath, '')
+    const info = resolveShellInfo({ ProgramFiles: dir } as NodeJS.ProcessEnv, 'win32')
+    expect(info).toEqual({ shell: bashPath, degraded: false })
+  })
+
+  it('Windows: bash нигде не найден → cmd.exe (ComSpec) с признаком деградации', () => {
     expect(resolveShell({ ComSpec: 'C:\\Windows\\system32\\cmd.exe' } as NodeJS.ProcessEnv, 'win32')).toBe(
       'C:\\Windows\\system32\\cmd.exe'
     )
     expect(resolveShell({} as NodeJS.ProcessEnv, 'win32')).toBe('cmd.exe')
+    expect(resolveShellInfo({} as NodeJS.ProcessEnv, 'win32')).toEqual({ shell: 'cmd.exe', degraded: true })
   })
-  it('override через VC_PTY_SHELL, если путь существует', () => {
-    expect(resolveShell({ VC_PTY_SHELL: '/bin/sh' } as NodeJS.ProcessEnv)).toBe('/bin/sh')
+
+  it('Windows: Unix-подобный SHELL/VC_PTY_SHELL игнорируется, а не используется как есть', () => {
+    const info = resolveShellInfo({ SHELL: '/bin/bash' } as NodeJS.ProcessEnv, 'win32')
+    expect(info.shell).toBe('cmd.exe')
+    expect(info.degraded).toBe(true)
+    expect(info.ignoredOverride).toBe('/bin/bash')
   })
-  it('игнорирует несуществующий override и находит реальный shell', () => {
-    const sh = resolveShell({ VC_PTY_SHELL: '/no/such/shell', PATH: process.env.PATH } as NodeJS.ProcessEnv)
-    expect(sh.length).toBeGreaterThan(0)
-    expect(sh).not.toBe('/no/such/shell')
+
+  it('Windows: Unix-подобный override игнорируется, даже если bash находится другим путём', () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'bash.exe'), '')
+    const info = resolveShellInfo({ PATH: dir, VC_PTY_SHELL: '/bin/bash' } as NodeJS.ProcessEnv, 'win32')
+    expect(info.shell).toBe(join(dir, 'bash.exe'))
+    expect(info.degraded).toBe(false)
+    expect(info.ignoredOverride).toBe('/bin/bash')
   })
 })
 

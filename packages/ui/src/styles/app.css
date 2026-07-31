@@ -2816,6 +2816,14 @@
 .mst-dim {
   color: var(--text-dim);
 }
+.mst-shell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 11px;
+  white-space: nowrap;
+}
 .mst-status {
   display: inline-flex;
   align-items: center;

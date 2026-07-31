@@ -16,6 +16,7 @@ import { runCommand, cancelCommand } from './exec.js'
 import { startPty, writePty, resizePty, killPty } from './pty.js'
 import { fsDelete, fsList, fsMkdir, fsRead, fsRename, fsWrite } from './fileOps.js'
 import { createTelemetryCollector } from './telemetry.js'
+import { resolveShellInfo } from './platform.js'
 import { ensureImageDir, localAddresses, startImageHost, type ImageHost } from './imageHost.js'
 
 const BACKOFF_START_MS = 1_000
@@ -82,7 +83,22 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
   // Раздача картинок поднимается один раз на процесс и переживает реконнекты;
   // при каждой регистрации сообщаем серверу порт и текущие адреса машины.
   let imageHost: ImageHost | null = null
-  const collectTelemetry = createTelemetryCollector(config.rootDir)
+  // Разрешаем shell один раз на процесс — и логируем деградацию/игнор override
+  // сразу, не дожидаясь первого подключения (пользователю важно увидеть это
+  // в логе агента, даже если WS ещё не поднялся).
+  const shellInfo = resolveShellInfo()
+  if (shellInfo.ignoredOverride) {
+    handlers.onLog?.(
+      `переменная SHELL/VC_PTY_SHELL="${shellInfo.ignoredOverride}" — Unix-путь, на Windows не применяется; использую ${shellInfo.shell}`
+    )
+  }
+  if (shellInfo.degraded) {
+    handlers.onLog?.(
+      `bash.exe не найден (PATH и стандартные пути Git for Windows) — команды и терминал идут через ${shellInfo.shell}, ` +
+        'функциональность ограничена. Поставьте Git for Windows для полноценной работы.'
+    )
+  }
+  const collectTelemetry = createTelemetryCollector(config.rootDir, shellInfo)
 
   /** Описание раздачи для agent.register (адреса пересчитываем каждый раз: IP меняется). */
   const imageHostInfo = (): { port: number; hosts: string[] } | undefined => {

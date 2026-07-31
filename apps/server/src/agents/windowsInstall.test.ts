@@ -38,4 +38,27 @@ describe('buildWindowsInstallScript', () => {
     expect(s).toContain('curl.exe -fsSLk')
     expect(s).toContain('VC_AGENT_INSECURE_TLS=1')
   })
+
+  it('ищет bash.exe (PATH → пути Git for Windows) и передаёт его агенту через VC_PTY_SHELL', () => {
+    const s = buildWindowsInstallScript('http://h')
+    expect(s).toContain('function FindBash')
+    expect(s).toContain('Get-Command bash.exe')
+    expect(s).toContain("$env:ProgramFiles, $env:ProgramW6432")
+    expect(s).toContain('VC_PTY_SHELL')
+  })
+
+  it('bash не найден — ставит портативный MinGit в каталог агента', () => {
+    const s = buildWindowsInstallScript('http://h')
+    expect(s).toContain('git-for-windows/git/releases/latest')
+    expect(s).toContain('MinGit-')
+    expect(s).toContain("Join-Path $AgentDir 'git'")
+  })
+
+  it('шаги пронумерованы [N/8] без пропусков', () => {
+    const s = buildWindowsInstallScript('http://h')
+    for (let n = 1; n <= 8; n++) {
+      expect(s).toContain(`[${n}/8]`)
+    }
+    expect(s).not.toContain('/7]')
+  })
 })
