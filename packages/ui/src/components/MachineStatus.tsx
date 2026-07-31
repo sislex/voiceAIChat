@@ -77,6 +77,13 @@ function osLabel(os: AgentTelemetry['os']): string {
   return `${name} · ${os.arch}`
 }
 
+/** Имя файла shell без пути (для компактного показа в таблице). */
+function shellBaseName(shellPath: string): string {
+  const norm = shellPath.replace(/\\/g, '/')
+  const parts = norm.split('/')
+  return parts[parts.length - 1] || shellPath
+}
+
 function ratioPct(used: number, total: number): number {
   return total > 0 ? Math.round((used / total) * 100) : 0
 }
@@ -108,7 +115,22 @@ function TelemetryCells({ t }: { t?: AgentTelemetry }): JSX.Element {
   const ramPct = ratioPct(t.mem.usedBytes, t.mem.totalBytes)
   return (
     <>
-      <td>{osLabel(t.os)}</td>
+      <td>
+        {osLabel(t.os)}
+        {t.os.shell && (
+          <div className="mst-shell" title={`Shell для команд и терминала: ${t.os.shell}`}>
+            <span className="mst-dim ac-mono">{shellBaseName(t.os.shell)}</span>
+            {t.os.shellDegraded && (
+              <span
+                className="mst-badge"
+                title="bash.exe не найден — команды и терминал идут через cmd.exe, функциональность ограничена. Поставьте Git for Windows."
+              >
+                ⚠ нет bash
+              </span>
+            )}
+          </div>
+        )}
+      </td>
       <td>
         <Meter value={t.cpu.loadPct} label={`${t.cpu.loadPct}% · ${t.cpu.count} ядр.`} />
       </td>

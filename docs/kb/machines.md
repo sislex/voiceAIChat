@@ -1,6 +1,6 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-07-27
+updated: 2026-07-31
 checked: 308ff71
 areas:
   - apps/agent/src
@@ -38,7 +38,9 @@ esbuild'ом на сервере — `agents/agentScript.ts`, адрес и то
 `apps/agent/ANDROID.md`. Windows — PowerShell-установщик
 `/api/agents/install-windows.ps1` (`agents/windowsInstall.ts`): проверяет Node 22+
 (иначе кладёт последнюю портативную в `%LOCALAPPDATA%\voicechat-agent\node`),
-скачивает `.cjs`, сохраняет строку подключения, настраивает автозапуск
+**проверяет bash.exe** (PATH → стандартные пути Git for Windows; не нашёл —
+качает портативный MinGit в каталог агента и пишет путь в `VC_PTY_SHELL` внутри
+`run.cmd`), скачивает `.cjs`, сохраняет строку подключения, настраивает автозапуск
 (HKCU `Run` → `wscript` → скрытый `run.cmd`) и запускает агента; подробности в
 `apps/agent/WINDOWS.md`. Скрипт отдаётся с BOM — иначе PowerShell 5.1 читает
 его в ANSI и портит русские строки; готовая команда копируется из настроек
@@ -238,14 +240,40 @@ Android). CPU считается по дельте `os.cpus()` между выз
 Windows/Android недостоверен. Телеметрия и версия есть в `AgentInfo` **только
 когда машина онлайн**. UI — `MachineStatus.tsx`, `AgentCard.tsx`.
 
+С 0.9.2 `telemetry.os` несёт `shell`/`shellDegraded` — фактически выбранный
+`resolveShellInfo()` shell и признак деградации (Windows без bash.exe упал в
+cmd.exe). `MachineStatus.tsx` показывает имя shell-файла в столбце «ОС» и значок
+«⚠ нет bash», когда `shellDegraded`. Поля опциональны: старый агент их не шлёт,
+столбец просто не показывает вторую строку.
+
 ## Windows — грабли
 
-Shell резолвится в `platform.ts`: для `exec` — `cmd.exe` (`%ComSpec%`), потому что
-`spawn(команда, {shell})` в Node правильно квотит аргументы только под cmd; для
-PTY-консоли `pickShell()` предпочитает `powershell.exe`. `which()` подставляет
-расширения `.exe/.cmd/.bat` — голое имя на Windows не находится. `@lydell/node-pty`
-в бандл не входит, поэтому консоль обычно работает в упрощённом pipe-режиме
-(cmd/powershell запускаются без `-i` — они интерактивны по умолчанию).
+С 0.9.2 shell на Windows резолвится в `platform.ts:resolveShellInfo()` в
+следующем порядке: `bash.exe` из PATH → `bash.exe` по стандартным путям Git for
+Windows (`%ProgramFiles%\Git\bin`, `%ProgramW6432%\Git\bin`,
+`%LOCALAPPDATA%\Programs\Git\bin`) → `cmd.exe` (`%ComSpec%`) как **деградация**
+(`degraded: true` в результате). И `exec`, и PTY-консоль используют один и тот же
+bash — раньше `exec` и PTY расходились (cmd.exe vs powershell.exe), и генерируемые
+продуктом bash-команды (MCP `bash`, шаги CI) на Windows попросту не выполнялись.
+`SHELL`/`VC_PTY_SHELL` override на Windows игнорируется, если это Unix-путь
+(`/bin/...`) — такой путь пришёл из унаследованного окружения и для `spawn` не
+годится; игнор логируется агентом (`onLog`). `which()` подставляет расширения
+`.exe/.cmd/.bat` — голое имя на Windows не находится.
+
+Установщик (`agents/windowsInstall.ts`) обеспечивает bash сам: находит
+существующий Git for Windows или ставит портативный MinGit
+(GitHub-релиз `git-for-windows/git`) в каталог агента и передаёт путь через
+`VC_PTY_SHELL` в `run.cmd`. Деградация в cmd.exe видна на карточке машины
+(`MachineStatus.tsx`, значок «⚠ нет bash») — см. «Телеметрия» выше.
+
+`@lydell/node-pty` в бандл не входит, поэтому консоль обычно работает в
+упрощённом pipe-режиме (запускается без `-i` — bash интерактивен по умолчанию).
+
+MCP `bash` (`mcp/remoteBashMcp.ts`) заворачивает команду в `cd -- '<cwd>' && …`
+для bash на любой ОС; на win32-машине (платформа берётся из
+`registry.platformOf`, т.е. из последней телеметрии) `cwd` нормализуется —
+бэкслеши `C:\Users\x` меняются на прямые слэши `C:/Users/x`, иначе они
+двусмысленны внутри одинарных кавычек git-bash.
 
 ## Termux (Android) — грабли
 

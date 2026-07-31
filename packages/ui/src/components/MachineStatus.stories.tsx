@@ -11,7 +11,8 @@ import {
   makeFleet,
   makeOfflineAgent,
   makeOutdatedAgent,
-  makeTelemetry
+  makeTelemetry,
+  makeWindowsDegradedAgent
 } from '../test/fixtures'
 
 const meta: Meta<typeof MachineStatus> = {
@@ -52,6 +53,12 @@ export const OutdatedAgentVersion: Story = { args: { agents: [makeOutdatedAgent(
 
 /** Android на исходе: 12% без зарядки, 91% CPU и 2 ГБ в рабочем разделе. */
 export const AndroidLowBattery: Story = { args: { agents: [makeAndroidAgent()] } }
+
+/**
+ * Windows без bash.exe: агент деградировал в cmd.exe — в строке видно и shell,
+ * и предупреждающий значок «⚠ нет bash» рядом с ОС.
+ */
+export const WindowsBashMissing: Story = { args: { agents: [makeWindowsDegradedAgent()] } }
 
 /** Забитый диск и загруженный CPU: полоски уходят в «горячий» цвет. */
 export const HotMachine: Story = {

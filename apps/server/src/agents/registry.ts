@@ -136,6 +136,16 @@ export class AgentRegistry {
     return this.telemetry.get(agentId)
   }
 
+  /**
+   * Платформа машины (`os.platform()` из последней телеметрии): 'win32' | 'linux' | …
+   * undefined — телеметрия ещё не пришла (старый агент или первые секунды после
+   * реконнекта). Нужно для MCP `bash`, чтобы правильно завернуть `cwd` под shell
+   * машины (см. `mcp/remoteBashMcp.ts`).
+   */
+  platformOf(agentId: string): string | undefined {
+    return this.telemetry.get(agentId)?.os.platform
+  }
+
   /** Сохраняет свежую телеметрию агента и уведомляет подписчиков (пуш веб-клиенту). */
   private setTelemetry(agentId: string, t: AgentTelemetry): void {
     if (!this.online.has(agentId)) return

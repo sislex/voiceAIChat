@@ -23,7 +23,7 @@ const GB = 1024 ** 3
 export function makeTelemetry(over: Partial<AgentTelemetry> = {}): AgentTelemetry {
   return {
     ts: 1000,
-    os: { platform: 'linux', release: '6.8', arch: 'x64', isAndroid: false },
+    os: { platform: 'linux', release: '6.8', arch: 'x64', isAndroid: false, shell: '/bin/bash', shellDegraded: false },
     cpu: { count: 8, loadPct: 42 },
     mem: { totalBytes: 16 * GB, usedBytes: 8 * GB },
     disk: {
@@ -85,6 +85,22 @@ export function makeOfflineAgent(over: Partial<AgentInfo> = {}): AgentInfo {
  */
 export function makeOutdatedAgent(over: Partial<AgentInfo> = {}): AgentInfo {
   return makeAgent({ id: 'a-old', name: 'Сборочный сервер', version: '0.0.1', ...over })
+}
+
+/**
+ * Windows-машина, где bash.exe не нашёлся: агент упал в cmd.exe — предупреждение
+ * в таблице машин («⚠ нет bash»).
+ */
+export function makeWindowsDegradedAgent(over: Partial<AgentInfo> = {}): AgentInfo {
+  return makeAgent({
+    id: 'a-win-degraded',
+    name: 'Офисный ПК',
+    version: AGENT_VERSION,
+    telemetry: makeTelemetry({
+      os: { platform: 'win32', release: '10.0.19045', arch: 'x64', isAndroid: false, shell: 'cmd.exe', shellDegraded: true }
+    }),
+    ...over
+  })
 }
 
 /** Android-машина: батарея, arm64 и мало места в рабочем разделе. */

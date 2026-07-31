@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
-import { registerRemoteBashMcp } from './remoteBashMcp'
+import { registerRemoteBashMcp, quoteCwd } from './remoteBashMcp'
 import type { AgentRegistry, ExecResult } from '../agents/registry'
 
 const SECRET = 'test-secret'
@@ -43,10 +43,68 @@ async function rpc(
   return { statusCode: res.statusCode, json: () => res.json() }
 }
 
+describe('quoteCwd', () => {
+  it('POSIX: экранирует одинарные кавычки, слэши не трогает', () => {
+    expect(quoteCwd('/repos/p 1')).toBe('/repos/p 1')
+    expect(quoteCwd("/repos/o'brien")).toBe(`/repos/o'"'"'brien`)
+  })
+  it('win32: бэкслеши нормализуются в прямые слэши', () => {
+    expect(quoteCwd('C:\\Users\\dev\\project', 'win32')).toBe('C:/Users/dev/project')
+  })
+  it('не-win32 платформа: бэкслеши остаются как есть', () => {
+    expect(quoteCwd('C:\\Users\\dev', 'linux')).toBe('C:\\Users\\dev')
+  })
+})
+
 describe('remoteBashMcp', () => {
   let app: FastifyInstance
   afterEach(async () => {
     await app.close()
+  })
+
+  const INIT_BODY = {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } }
+  }
+
+  /** Реестр-шпион: запоминает команду, посланную в exec, и отдаёт заданную платформу. */
+  function spyRegistry(platform: string | undefined): { registry: AgentRegistry; lastCommand: () => string } {
+    let lastCommand = ''
+    const registry = {
+      exec: async (_agentId: string, command: string) => {
+        lastCommand = command
+        return { exitCode: 0, output: '', timedOut: false }
+      },
+      cancelAll: () => {},
+      platformOf: () => platform
+    } as unknown as AgentRegistry
+    return { registry, lastCommand: () => lastCommand }
+  }
+
+  it('cwd на POSIX-машине оборачивается в cd -- без изменения пути', async () => {
+    const { registry, lastCommand } = spyRegistry(undefined)
+    app = await makeApp(registry)
+    await rpc(app, INIT_BODY)
+    await rpc(
+      app,
+      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'bash', arguments: { command: 'ls' } } },
+      `?k=${SECRET}&agent=a1&cwd=${encodeURIComponent('/repos/p 1')}`
+    )
+    expect(lastCommand()).toBe(`cd -- '/repos/p 1' && ls`)
+  })
+
+  it('cwd на win32-машине нормализует бэкслеши перед cd -- (иначе ломается в git-bash)', async () => {
+    const { registry, lastCommand } = spyRegistry('win32')
+    app = await makeApp(registry)
+    await rpc(app, INIT_BODY)
+    await rpc(
+      app,
+      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'bash', arguments: { command: 'ls' } } },
+      `?k=${SECRET}&agent=a1&cwd=${encodeURIComponent('C:\\Users\\dev\\project')}`
+    )
+    expect(lastCommand()).toBe(`cd -- 'C:/Users/dev/project' && ls`)
   })
 
   it('неверный секрет k → 403', async () => {
