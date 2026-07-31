@@ -15,6 +15,10 @@ import { ACCENT } from '../lib/view'
 import { splitSnippet } from '../lib/snippet'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
+import { Skeleton, RefreshIndicator } from './ui/Skeleton'
+import { EmptyState } from './ui/EmptyState'
+import { ErrorState } from './ui/ErrorState'
+import { loadView, type LoadStatus } from '../lib/loadState'
 import { GearIcon } from './icons'
 
 /** Человекочитаемая мета разговора: «Сегодня · 6 сообщений». */
@@ -102,14 +106,7 @@ function MessageResults({ search, now, onPick, onRetry, onLoadMore }: MessageRes
   if (status === 'error') {
     return (
       <div className="convolist msgfound-list">
-        <div className="msgfound-error" role="alert">
-          <p>Поиск не удался: {error}</p>
-          {onRetry && (
-            <button className="msgfound-retry" onClick={onRetry}>
-              Повторить
-            </button>
-          )}
-        </div>
+        <ErrorState message="Поиск не удался" detail={error} {...(onRetry ? { onRetry } : {})} />
       </div>
     )
   }
@@ -117,11 +114,7 @@ function MessageResults({ search, now, onPick, onRetry, onLoadMore }: MessageRes
     return (
       <div className="convolist msgfound-list" aria-busy="true">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="msgfound msgfound--skeleton" data-testid="msgfound-skeleton" aria-hidden>
-            <span className="skelline skelline--title" />
-            <span className="skelline" />
-            <span className="skelline skelline--short" />
-          </div>
+          <Skeleton key={i} variant="card" testId="msgfound-skeleton" height={92} lines={3} />
         ))}
       </div>
     )
@@ -139,7 +132,12 @@ function MessageResults({ search, now, onPick, onRetry, onLoadMore }: MessageRes
   if (hits.length === 0) {
     return (
       <div className="convolist msgfound-list">
-        <p className="convo-empty">Ничего не найдено</p>
+        <EmptyState
+          compact
+          icon="🔍"
+          title="Ничего не найдено"
+          description="Уберите последнее слово или поищите по названиям беседы."
+        />
       </div>
     )
   }
@@ -175,6 +173,12 @@ export type SearchScope = 'chats' | 'messages'
 
 export interface SidebarProps {
   conversations: Conversation[]
+  /** Состояние загрузки списка: скелетон на первой загрузке, ошибка — с «Повторить». */
+  conversationsStatus?: LoadStatus
+  /** Техническая деталь ошибки загрузки списка (под «Подробнее»). */
+  conversationsError?: string | null
+  /** Повторить загрузку списка бесед. */
+  onRetryConversations?: () => void
   activeId: string | null
   /** id разговоров, где сейчас идёт ход модели (индикатор «идёт работа»). */
   workingIds?: string[]
@@ -241,6 +245,9 @@ export interface SidebarProps {
 
 export function Sidebar({
   conversations,
+  conversationsStatus = 'ready',
+  conversationsError = null,
+  onRetryConversations,
   activeId,
   workingIds = [],
   now,
@@ -293,6 +300,9 @@ export function Sidebar({
   const workingSet = new Set(workingIds)
   // Поиск по сообщениям заменяет список бесед: у панели свои состояния и карточки.
   const inMessages = searchScope === 'messages'
+  // Состояния списка бесед по общему правилу: скелетон — только пока данных нет,
+  // при повторной загрузке список остаётся на месте (см. lib/loadState.ts).
+  const chats = loadView(conversationsStatus, conversations.length > 0)
 
   // Меню аккаунта закрывается по клику вне и по Esc.
   useEffect(() => {
@@ -420,8 +430,49 @@ export function Sidebar({
         />
       ) : (
       <div className="convolist">
-        {conversations.length === 0 && searchQuery.trim() !== '' && (
-          <p className="convo-empty">Ничего не найдено</p>
+        {chats.state === 'skeleton' && (
+          <div className="convolist-skel" aria-busy="true">
+            {/* Высота косточки — высота .convo с названием, метой и статусом. */}
+            <Skeleton variant="list" count={5} height={76} lines={3} testId="convo-skeleton" />
+          </div>
+        )}
+        {chats.state === 'error' && (
+          <ErrorState
+            message="Не удалось загрузить беседы"
+            detail={conversationsError}
+            {...(onRetryConversations ? { onRetry: onRetryConversations } : {})}
+          />
+        )}
+        {chats.state === 'empty' &&
+          (searchQuery.trim() !== '' ? (
+            <EmptyState
+              compact
+              icon="🔍"
+              title="Ничего не найдено"
+              description="Измените запрос или выберите другой проект в списке над поиском."
+            />
+          ) : (
+            <EmptyState
+              icon="💬"
+              title="Пока нет бесед — начните первую"
+              description="Разговор появится в этом списке и сохранит историю вопросов и ответов."
+              actionLabel="Новый разговор"
+              onAction={onNew}
+            />
+          ))}
+        {chats.staleError && (
+          <ErrorState
+            compact
+            className="convolist-stale"
+            message="Список мог устареть: обновить не удалось"
+            detail={conversationsError}
+            {...(onRetryConversations ? { onRetry: onRetryConversations } : {})}
+          />
+        )}
+        {chats.refreshing && (
+          <p className="convolist-refresh">
+            <RefreshIndicator label="Обновляем список…" />
+          </p>
         )}
         {conversations.map((c) => (
           <div
@@ -567,7 +618,14 @@ export function Sidebar({
                 + Проект
               </button>
             ))}
-          {projects.length === 0 && <p className="convo-empty">Проектов пока нет</p>}
+          {projects.length === 0 && (
+            <EmptyState
+              compact
+              icon="🗂"
+              title="Проектов пока нет"
+              description="Создайте первый — доска, задачи и CI появятся внутри него."
+            />
+          )}
           {projects.map((p) => (
             <button
               key={p.id}

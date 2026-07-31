@@ -63,3 +63,25 @@ describe('CiCommands', () => {
     expect(screen.queryByRole('button', { name: 'Сохранить настройки' })).toBeNull()
   })
 })
+
+describe('CiCommands — состояния загрузки, пустоты и ошибки', () => {
+  it('первая загрузка справочника — скелетон рядов', () => {
+    render(<CiCommands {...props({ status: 'loading' })} />)
+    expect(screen.getAllByTestId('ci-command-skeleton')).toHaveLength(4)
+  })
+
+  it('пустой справочник предлагает создать команду', () => {
+    render(<CiCommands {...props({ status: 'ready' })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Создать команду' }))
+    expect(screen.getByTestId('ci-command-form')).toHaveTextContent('Новая команда')
+  })
+
+  it('ошибка загрузки видна и повторяется кнопкой', () => {
+    const onRetry = vi.fn()
+    render(<CiCommands {...props({ status: 'error', error: 'нет доступа', onRetry })} />)
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Не удалось загрузить команды')
+    fireEvent.click(within(alert).getByRole('button', { name: 'Повторить' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+})

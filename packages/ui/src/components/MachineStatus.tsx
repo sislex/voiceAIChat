@@ -11,11 +11,21 @@ import { copyText } from '../lib/clipboard'
 import { AgentCommands } from './AgentCommands'
 import { Button } from './ui/Button'
 import { ToolFrame } from './ToolFrame'
+import { Skeleton, RefreshIndicator } from './ui/Skeleton'
+import { EmptyState } from './ui/EmptyState'
+import { ErrorState } from './ui/ErrorState'
+import { loadView, type LoadStatus } from '../lib/loadState'
 
 export interface MachineStatusProps {
   /** Размещение: модалка из меню (по умолчанию) или страница контентной колонки. */
   variant?: 'modal' | 'page'
   agents: AgentInfo[]
+  /** Состояние загрузки реестра машин: скелетон на первой загрузке, ошибка — с «Повторить». */
+  status?: LoadStatus
+  /** Техническая деталь ошибки загрузки (под «Подробнее»). */
+  error?: string | null
+  /** Повторить загрузку списка машин. */
+  onRetry?: () => void
   /** Быстрое изменение разрешений (сервер сразу применит онлайн-агенту). */
   onSetPolicy: (id: string, policy: AgentPolicy) => void
   /** Добавить машину; вернёт токен один раз. Нет — блок добавления скрыт. */
@@ -210,6 +220,9 @@ function AgentActions({
 
 export function MachineStatus({
   agents,
+  status = 'ready',
+  error = null,
+  onRetry,
   onSetPolicy,
   onCreateAgent,
   onRegenerateToken,
@@ -225,6 +238,7 @@ export function MachineStatus({
   const [busyId, setBusyId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  const view = loadView(status, agents.length > 0)
 
   const add = async (): Promise<void> => {
     const n = name.trim()
@@ -284,9 +298,33 @@ export function MachineStatus({
   return (
     <ToolFrame title="Машины" variant={variant} onClose={onClose} testId="machines-overlay">
       <div className="mst-body">
-        {agents.length === 0 ? (
-          <p className="mst-empty">Нет добавленных машин — добавьте первую ниже.</p>
-        ) : (
+        {view.state === 'skeleton' && (
+          /* Высота косточки — высота строки таблицы машин с полосками CPU/памяти. */
+          <Skeleton variant="list" item="block" count={3} height={46} gap={6} testId="machine-skeleton" />
+        )}
+        {view.state === 'error' && (
+          <ErrorState
+            message="Не удалось загрузить список машин"
+            detail={error}
+            {...(onRetry ? { onRetry } : {})}
+          />
+        )}
+        {view.staleError && (
+          <ErrorState
+            compact
+            message="Список мог устареть: обновить не удалось"
+            detail={error}
+            {...(onRetry ? { onRetry } : {})}
+          />
+        )}
+        {view.refreshing && <RefreshIndicator label="Обновляем список…" />}
+        {view.state === 'empty' ? (
+          <EmptyState
+            icon="💻"
+            title="Нет добавленных машин — добавьте первую ниже"
+            description="Машина даёт модели терминал, файлы и запуск CI: имя, кнопка «Добавить» и команда установки агента."
+          />
+        ) : view.state !== 'data' ? null : (
           <table className="mst" data-testid="machines-table">
             <thead>
               <tr>

@@ -154,3 +154,39 @@ describe('RunFeed', () => {
     expect(p.onRetry).toHaveBeenCalledWith('run-1')
   })
 })
+
+describe('RunFeed — состояния загрузки, пустоты и ошибки', () => {
+  it('пока ленты нет — скелетон шагов, а не пустой список', () => {
+    render(<RunFeed {...baseProps(undefined)} />)
+    const skeleton = screen.getByTestId('ci-runfeed-skeleton')
+    expect(skeleton).toHaveAttribute('aria-busy', 'true')
+    expect(within(skeleton).getAllByTestId('skeleton')).toHaveLength(4)
+  })
+
+  it('ран без шагов объясняет, что лента обновится сама', () => {
+    const cache: RunFeedCache = { detail: { run: mkRun({ status: 'queued' }), steps: [], fixAttempts: [], interactions: [] }, log: [], conclusion: null }
+    render(<RunFeed {...baseProps(cache)} />)
+    expect(screen.getByTestId('empty-state')).toHaveTextContent('Шагов пока нет')
+  })
+
+  it('ошибка загрузки видна и повторяется кнопкой', () => {
+    const cache: RunFeedCache = { detail: null, log: [], conclusion: null, error: 'ETIMEDOUT' }
+    const p = baseProps(cache)
+    render(<RunFeed {...p} />)
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Не удалось загрузить ленту рана')
+    expect(alert).toHaveTextContent('ETIMEDOUT')
+    // onLoad уже был вызван при монтировании — считаем повторный вызов.
+    const before = (p.onLoad as ReturnType<typeof vi.fn>).mock.calls.length
+    fireEvent.click(within(alert).getByRole('button', { name: 'Повторить' }))
+    expect((p.onLoad as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before + 1)
+  })
+
+  it('повторная подгрузка уже показанной ленты её не подменяет', () => {
+    const cache: RunFeedCache = { detail: { run: mkRun(), steps: [mkStep()], fixAttempts: [], interactions: [] }, log: [], conclusion: null, loading: true }
+    render(<RunFeed {...baseProps(cache)} />)
+    expect(screen.queryByTestId('ci-runfeed-skeleton')).not.toBeInTheDocument()
+    expect(screen.getByText('npm ci')).toBeInTheDocument()
+    expect(screen.getByText('Обновляем ленту…')).toBeInTheDocument()
+  })
+})

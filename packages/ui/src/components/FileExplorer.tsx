@@ -3,6 +3,10 @@ import type { AgentInfo, FsEntry } from '@shared/agentProtocol'
 import type { MachineOps, UtilityVariant } from './machine'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
+import { Skeleton, RefreshIndicator } from './ui/Skeleton'
+import { EmptyState } from './ui/EmptyState'
+import { ErrorState } from './ui/ErrorState'
+import { loadView, type LoadStatus } from '../lib/loadState'
 import { ToolFrame } from './ToolFrame'
 
 export interface FileExplorerProps {
@@ -53,15 +57,19 @@ export function FileExplorer({
   const [root, setRoot] = useState('')
   const [entries, setEntries] = useState<FsEntry[]>([])
   const [error, setError] = useState<string | null>(null)
+  // Состояние чтения каталога: скелетон только пока строк нет (см. lib/loadState.ts).
+  const [status, setStatus] = useState<LoadStatus>('loading')
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [selectedName, setSelectedName] = useState(() => initialFilePath ? nameOf(initialFilePath) : '')
   const selectedRow = useRef<HTMLDivElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const writable = agents.find((a) => a.id === agentId)?.policy.allowWrite ?? false
+  const view = loadView(status, entries.length > 0)
 
   const load = async (path: string): Promise<void> => {
     if (!agentId) return
+    setStatus('loading')
     try {
       const res = await ops.list(agentId, path)
       setRoot(res.root)
@@ -69,8 +77,10 @@ export function FileExplorer({
       setAddress(res.cwd)
       setEntries(res.entries ?? [])
       setError(null)
+      setStatus('ready')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+      setStatus('error')
     }
   }
 
@@ -92,6 +102,7 @@ export function FileExplorer({
       await load(cwd) // всегда перечитываем текущий каталог
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+      setStatus('error')
     }
   }
 
@@ -176,14 +187,48 @@ export function FileExplorer({
           </>
         )}
       </div>
-      {error && (
-        <p className="fserror" role="alert">
-          {error}
-        </p>
+      {view.staleError && (
+        <ErrorState
+          compact
+          className="fserror"
+          message="Последнее действие не удалось"
+          detail={error}
+          onRetry={() => void load(cwd)}
+        />
       )}
       <div className="fslist" data-testid="fs-list">
-        {agents.length === 0 && <p className="cc-empty">Нет машин. Добавьте машину в настройках.</p>}
-        {agentId && entries.length === 0 && !error && <p className="cc-empty">Пусто</p>}
+        {agents.length === 0 && (
+          <EmptyState
+            icon="💻"
+            title="Нет машин — добавьте первую"
+            description="Машина подключается в настройках: там выдаётся команда установки агента."
+          />
+        )}
+        {agentId && view.state === 'skeleton' && (
+          <div className="fsskel" aria-busy="true">
+            {/* Высота косточки — высота .fsrow, иначе список подпрыгивает. */}
+            <Skeleton variant="list" item="block" count={8} height={30} gap={4} testId="fs-skeleton" />
+          </div>
+        )}
+        {agentId && view.state === 'error' && (
+          <ErrorState
+            message="Не удалось прочитать папку"
+            detail={error}
+            onRetry={() => void load(address.trim() || cwd)}
+          />
+        )}
+        {agentId && view.state === 'empty' && (
+          <EmptyState
+            icon="📁"
+            title="Папка пуста"
+            description={writable ? 'Создайте папку или загрузите файл кнопками выше.' : 'Ни файлов, ни папок — поднимитесь на уровень выше кнопкой ⬆.'}
+          />
+        )}
+        {view.refreshing && (
+          <p className="fsrefresh">
+            <RefreshIndicator label="Читаем папку…" />
+          </p>
+        )}
         {entries.map((entry) => {
           const abs = joinPath(cwd, entry.name)
           return (

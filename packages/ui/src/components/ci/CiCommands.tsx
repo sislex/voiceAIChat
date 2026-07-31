@@ -17,6 +17,10 @@ import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { useConfirm } from '../ui/useConfirm'
 import { useToast } from '../ui/Toast'
+import { Skeleton, RefreshIndicator } from '../ui/Skeleton'
+import { EmptyState } from '../ui/EmptyState'
+import { ErrorState } from '../ui/ErrorState'
+import { loadView, type LoadStatus } from '../../lib/loadState'
 
 export interface CiCommandUsage {
   projects: Array<{ id: string; name: string }>
@@ -25,6 +29,12 @@ export interface CiCommandUsage {
 
 export interface CiCommandsProps {
   commands: CiCommand[]
+  /** Состояние загрузки справочника: скелетон на первой загрузке, ошибка — с «Повторить». */
+  status?: LoadStatus
+  /** Техническая деталь ошибки загрузки (под «Подробнее»). */
+  error?: string | null
+  /** Повторить загрузку страницы «Команды». */
+  onRetry?: () => void
   settings: CiGlobalSettings | null
   suggestions: CiCommandSuggestion[]
   workspaces: CiWorkspaceReportItem[]
@@ -110,6 +120,9 @@ function draftToInput(d: Draft): CiCommandInput {
 
 export function CiCommands(props: CiCommandsProps): JSX.Element {
   const { commands } = props
+  // Список загружается один раз при открытии страницы; повторная загрузка
+  // (кнопка «Повторить») уже показанный справочник не подменяет.
+  const view = loadView(props.status ?? 'ready', commands.length > 0)
   const confirm = useConfirm()
   const toast = useToast()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -182,7 +195,15 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
 
   const editForm = (
     <div className="ci-form" data-testid="ci-command-form">
-      <h3 className="ci-form-title">{creating ? 'Новая команда' : selected ? 'Правка команды' : 'Выберите команду'}</h3>
+      {(creating || selected) && <h3 className="ci-form-title">{creating ? 'Новая команда' : 'Правка команды'}</h3>}
+      {!creating && !selected && (
+        <EmptyState
+          compact
+          icon="⌨"
+          title="Команда не выбрана"
+          description="Выберите команду в списке слева, чтобы поправить скрипт, или создайте новую."
+        />
+      )}
       {(creating || selected) && (
         <>
           <label className="ci-field">
@@ -248,8 +269,17 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
           <div className="ci-list-pane">
             <div className="ci-list-head">
               <span>{commands.length} команд</span>
+              {view.refreshing && <RefreshIndicator label="Обновляем список…" />}
               <Button variant="primary" onClick={startCreate}>+ Команда</Button>
             </div>
+            {view.staleError && (
+              <ErrorState
+                compact
+                message="Список мог устареть: обновить не удалось"
+                detail={props.error}
+                {...(props.onRetry ? { onRetry: props.onRetry } : {})}
+              />
+            )}
             <table className="ci-table" data-testid="ci-command-table">
               <thead>
                 <tr><th>Название</th><th>Область</th><th>Обновлена</th><th>Автор</th><th /></tr>
@@ -267,8 +297,36 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
                     <td><IconButton size="sm" aria-label={`Удалить команду «${c.name}»`} title="Удалить" onClick={(e) => { e.stopPropagation(); void remove(c) }}>🗑</IconButton></td>
                   </tr>
                 ))}
-                {commands.length === 0 && (
-                  <tr><td colSpan={5} className="ci-empty">Команд пока нет.</td></tr>
+                {view.state === 'skeleton' &&
+                  [0, 1, 2, 3].map((i) => (
+                    /* Косточка занимает высоту ряда таблицы: название + описание. */
+                    <tr key={i}>
+                      <td colSpan={5}><Skeleton variant="line" height={20} width="70%" testId="ci-command-skeleton" /></td>
+                    </tr>
+                  ))}
+                {view.state === 'error' && (
+                  <tr>
+                    <td colSpan={5}>
+                      <ErrorState
+                        message="Не удалось загрузить команды"
+                        detail={props.error}
+                        {...(props.onRetry ? { onRetry: props.onRetry } : {})}
+                      />
+                    </td>
+                  </tr>
+                )}
+                {view.state === 'empty' && (
+                  <tr>
+                    <td colSpan={5}>
+                      <EmptyState
+                        icon="⌨"
+                        title="Команд пока нет — создайте первую"
+                        description="Команда — это шаг воркфлоу: сборка, тесты, деплой. Её можно дать проекту и модели."
+                        actionLabel="Создать команду"
+                        onAction={startCreate}
+                      />
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -309,7 +367,12 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
         <section className="ci-section" data-testid="ci-workspaces">
           <h3 className="ci-section-title">Занятое место</h3>
           {props.workspaces.length === 0 ? (
-            <p className="ci-empty">Активных рабочих директорий нет.</p>
+            <EmptyState
+              compact
+              icon="📦"
+              title="Активных рабочих директорий нет"
+              description="Появятся, когда ран займёт рабочую копию репозитория на машине."
+            />
           ) : (
             <table className="ci-table">
               <thead><tr><th>Задача</th><th>Путь</th><th>Размер</th><th>Состояние</th></tr></thead>

@@ -37,6 +37,7 @@ import type {
   CiLogLine
 } from '@shared/ci'
 import type { RendererCiBridge } from '../remote/ciBridge'
+import type { LoadStatus } from '../lib/loadState'
 import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
 import { detectOpenUtility, toolBlock, type ToolSpec } from '@shared/tools'
 import type { ActiveTurn, ServerFileInfo, SystemCapabilities } from '@shared/protocol'
@@ -183,6 +184,10 @@ export interface AppState {
   authError: string | null
   voice: VoiceState
   conversations: Conversation[]
+  /** Состояние загрузки списка бесед (сайдбар: скелетон / ошибка с «Повторить»). */
+  conversationsStatus: LoadStatus
+  /** Текст ошибки загрузки списка бесед (деталь под «Подробнее»). */
+  conversationsError: string | null
   /** Текущий поисковый запрос по разговорам (пусто — показываем все). */
   searchQuery: string
   /** Что ищем этим запросом: беседы по названию или сообщения по тексту. */
@@ -256,6 +261,10 @@ export interface AppState {
   loginStatus: LoginStatusMap | null
   /** Машины-агенты для удалённого выполнения команд (настройки). */
   agents: AgentInfo[]
+  /** Состояние загрузки реестра машин (меню «Машины»). */
+  agentsStatus: LoadStatus
+  /** Текст ошибки загрузки реестра машин. */
+  agentsError: string | null
   /** Открыт ли Проводник Claude Code. */
   ccOpen: boolean
   /** Проекты Claude Code (~/.claude/projects). */
@@ -290,6 +299,10 @@ export interface AppState {
   machinesOpen: boolean
   /** Список пользователей для админки. */
   adminUsers: AdminUserInfo[]
+  /** Состояние загрузки списка пользователей (админка). */
+  adminUsersStatus: LoadStatus
+  /** Текст ошибки загрузки списка пользователей. */
+  adminUsersError: string | null
   /** Выбранный пользователь в админке (null — не выбран). */
   adminSelected: string | null
   /** Отчёт по токенам выбранного пользователя (null — не загружен). */
@@ -338,10 +351,16 @@ export interface AppState {
   board: Board | null
   /** Идёт ли загрузка доски. */
   boardLoading: boolean
+  /** Текст ошибки загрузки доски (экран ошибки вместо доски / баннер над ней). */
+  boardError: string | null
   /** Открыта ли страница «Команды» (CI-раннер). */
   ciOpen: boolean
   /** Справочник CI-команд (страница «Команды»). */
   ciCommands: CiCommand[]
+  /** Состояние загрузки страницы «Команды». */
+  ciStatus: LoadStatus
+  /** Текст ошибки загрузки страницы «Команды». */
+  ciError: string | null
   /** Глобальные настройки CI (null — не загружены). */
   ciSettings: CiGlobalSettings | null
   /** Предложения модели по правке команд. */
@@ -369,6 +388,10 @@ export interface CiRunCache {
   detail: CiRunDetail | null
   log: CiLogLine[]
   conclusion: CiRunConclusion | null
+  /** Ошибка последней REST-подгрузки ленты (лента показывает её с «Повторить»). */
+  error?: string | null
+  /** Идёт REST-подгрузка ленты. */
+  loading?: boolean
 }
 
 export interface StoreDeps {
@@ -471,6 +494,10 @@ export interface StoreActions {
   setSearchScope(scope: SearchScope): Promise<void>
   /** Повторить упавший поиск по сообщениям (кнопка «Повторить»). */
   retryMessageSearch(): Promise<void>
+  /** Повторить упавшую загрузку списка бесед (кнопка «Повторить» в сайдбаре). */
+  retryConversations(): Promise<void>
+  /** Перечитать реестр машин (кнопка «Повторить» в меню «Машины»). */
+  refreshAgents(): Promise<void>
   /** Догрузить следующую страницу результатов поиска по сообщениям. */
   loadMoreMessageSearch(): Promise<void>
   /** Прокрутить ленту к сообщению и подсветить его (переход из поиска). */
@@ -804,6 +831,8 @@ function initialState(): AppState {
     authError: null,
     voice: 'idle',
     conversations: [],
+    conversationsStatus: 'loading',
+    conversationsError: null,
     searchQuery: '',
     searchScope: 'chats',
     messageSearch: { ...EMPTY_MESSAGE_SEARCH },
@@ -836,6 +865,8 @@ function initialState(): AppState {
     mcpServers: [],
     loginStatus: null,
     agents: [],
+    agentsStatus: 'loading',
+    agentsError: null,
     ccOpen: false,
     ccProjects: [],
     ccSessions: [],
@@ -853,6 +884,8 @@ function initialState(): AppState {
     usersOpen: false,
     machinesOpen: false,
     adminUsers: [],
+    adminUsersStatus: 'loading',
+    adminUsersError: null,
     adminSelected: null,
     adminUsage: null,
     adminConversations: [],
@@ -875,8 +908,11 @@ function initialState(): AppState {
     projectSettingsOpen: false,
     board: null,
     boardLoading: false,
+    boardError: null,
     ciOpen: false,
     ciCommands: [],
+    ciStatus: 'loading',
+    ciError: null,
     ciSettings: null,
     ciSuggestions: [],
     ciWorkspaces: [],
@@ -1011,13 +1047,33 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   async function refreshConversations(): Promise<void> {
     const q = state.searchQuery.trim()
-    const all = q
-      ? await api['conversations:search']({ query: q })
-      : await api['conversations:list']()
-    // Список/поиск сужаем до выбранного в сайдбаре проекта (null — чаты без проекта).
-    const pid = state.sidebarProjectId
-    const conversations = all.filter((c) => (c.projectId ?? null) === pid)
-    setState({ conversations })
+    // Статус ведём отдельно от данных: сайдбар покажет скелетон только пока
+    // списка нет, а при повторном чтении оставит его на месте (lib/loadState.ts).
+    setState({ conversationsStatus: 'loading', conversationsError: null })
+    try {
+      const all = q
+        ? await api['conversations:search']({ query: q })
+        : await api['conversations:list']()
+      // Список/поиск сужаем до выбранного в сайдбаре проекта (null — чаты без проекта).
+      const pid = state.sidebarProjectId
+      const conversations = all.filter((c) => (c.projectId ?? null) === pid)
+      setState({ conversations, conversationsStatus: 'ready', conversationsError: null })
+    } catch (err) {
+      setState({
+        conversationsStatus: 'error',
+        conversationsError: err instanceof Error ? err.message : String(err)
+      })
+      throw err
+    }
+  }
+
+  /** Повторить загрузку списка бесед (кнопка «Повторить» в сайдбаре). */
+  async function retryConversations(): Promise<void> {
+    try {
+      await refreshConversations()
+    } catch {
+      /* состояние уже помечено ошибкой — экран сайдбара её показывает */
+    }
   }
 
   async function setSearchQuery(query: string): Promise<void> {
@@ -1409,16 +1465,27 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   /** Тяжёлая загрузка данных пользователя (после успешной аутентификации). */
   async function bootstrap(): Promise<void> {
-    setState({ loadingMessages: true }) // обновление страницы: лоадер до готовности ленты
-    const [settings, conversations, projects] = await Promise.all([
-      api['settings:get'](),
-      api['conversations:list'](),
-      api['projects:list']()
-    ])
+    setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null }) // обновление страницы: лоадер до готовности ленты
+    let settings, conversations, projects
+    try {
+      ;[settings, conversations, projects] = await Promise.all([
+        api['settings:get'](),
+        api['conversations:list'](),
+        api['projects:list']()
+      ])
+    } catch (err) {
+      // Иначе сайдбар остался бы со скелетоном навсегда: показываем ошибку с «Повторить».
+      setState({
+        loadingMessages: false,
+        conversationsStatus: 'error',
+        conversationsError: err instanceof Error ? err.message : String(err)
+      })
+      throw err
+    }
     // Сайдбар сразу фильтруем по восстановленному из localStorage проекту.
     const pid = state.sidebarProjectId
     const visible = conversations.filter((c) => (c.projectId ?? null) === pid)
-    setState({ settings, projects, conversations: visible })
+    setState({ settings, projects, conversations: visible, conversationsStatus: 'ready', conversationsError: null })
     await refreshMics()
     await refreshModelStatus()
     await refreshWhisperModels()
@@ -1498,10 +1565,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Грузит машины-агенты с онлайн-статусом (ошибки не критичны). */
   async function refreshAgents(): Promise<void> {
     if (!api['agents:list']) return
+    setState({ agentsStatus: 'loading', agentsError: null })
     try {
-      setState({ agents: await api['agents:list']() })
+      setState({ agents: await api['agents:list'](), agentsStatus: 'ready', agentsError: null })
     } catch (err) {
+      // Раньше промах уходил только в console.warn, и меню «Машины» выглядело
+      // как «машин нет». Теперь состояние видно на экране.
       console.warn('[agents] не удалось получить список машин', err)
+      setState({ agentsStatus: 'error', agentsError: err instanceof Error ? err.message : String(err) })
     }
   }
 
@@ -1864,7 +1935,16 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   async function refreshAdminUsers(): Promise<void> {
     if (!api['admin:users']) return
-    setState({ adminUsers: await api['admin:users']() })
+    setState({ adminUsersStatus: 'loading', adminUsersError: null })
+    try {
+      setState({ adminUsers: await api['admin:users'](), adminUsersStatus: 'ready', adminUsersError: null })
+    } catch (err) {
+      setState({
+        adminUsersStatus: 'error',
+        adminUsersError: err instanceof Error ? err.message : String(err)
+      })
+      throw err
+    }
   }
 
   async function openUsers(): Promise<void> {
@@ -2895,21 +2975,23 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   async function openBoard(id: string): Promise<void> {
     saveLastProject(id)
-    setState({ activeProjectId: id, boardLoading: true, board: null, projectSettingsOpen: false, lastProjectId: id })
+    setState({ activeProjectId: id, boardLoading: true, boardError: null, board: null, projectSettingsOpen: false, lastProjectId: id })
     try {
       const [board, detail] = await Promise.all([api['board:get']({ id }), api['projects:get']({ id })])
       const ciSummaries = { ...state.ciSummaries }
       for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
-      setState({ board, projectDetail: detail, ciSummaries, boardLoading: false })
+      setState({ board, projectDetail: detail, ciSummaries, boardLoading: false, boardError: null })
       boardBridge?.subscribe(id)
     } catch (err) {
-      setState({ boardLoading: false })
+      // Ошибку видно и на странице (экран ошибки с «Повторить»), и тостом: тост
+      // живёт секунды, а пустая доска без объяснения — вечно.
+      setState({ boardLoading: false, boardError: err instanceof Error ? err.message : String(err) })
       fail(err, () => void openBoard(id))
     }
   }
   function closeBoard(): void {
     if (state.activeProjectId) boardBridge?.unsubscribe()
-    setState({ activeProjectId: null, projectSettingsOpen: false, board: null, boardLoading: false })
+    setState({ activeProjectId: null, projectSettingsOpen: false, board: null, boardLoading: false, boardError: null })
   }
   function openProjectSettings(): void {
     setState({ projectSettingsOpen: true })
@@ -2939,7 +3021,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   async function openCi(): Promise<void> {
-    setState({ ciOpen: true })
+    setState({ ciOpen: true, ciStatus: 'loading', ciError: null })
     if (!ciBridge) return
     try {
       const [commands, settings, suggestions, workspaces] = await Promise.all([
@@ -2948,8 +3030,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         ciBridge.listSuggestions(),
         ciBridge.listWorkspaces()
       ])
-      setState({ ciCommands: commands, ciSettings: settings, ciSuggestions: suggestions, ciWorkspaces: workspaces })
+      setState({ ciCommands: commands, ciSettings: settings, ciSuggestions: suggestions, ciWorkspaces: workspaces, ciStatus: 'ready', ciError: null })
     } catch (err) {
+      setState({ ciStatus: 'error', ciError: err instanceof Error ? err.message : String(err) })
       fail(err, () => void openCi())
     }
   }
@@ -3046,10 +3129,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   async function loadCiRun(runId: string): Promise<void> {
     if (!ciBridge) return
+    patchCiRun(runId, (c) => ({ ...c, loading: true, error: null }))
     try {
       const [detail, log] = await Promise.all([ciBridge.getRun(runId), ciBridge.getRunLog(runId)])
-      patchCiRun(runId, (c) => ({ ...c, detail, log }))
+      patchCiRun(runId, (c) => ({ ...c, detail, log, loading: false, error: null }))
     } catch (err) {
+      // Лента без шагов и без объяснения читалась как «ран пустой» — теперь в ней
+      // экран ошибки с «Повторить».
+      patchCiRun(runId, (c) => ({ ...c, loading: false, error: err instanceof Error ? err.message : String(err) }))
       fail(err, () => void loadCiRun(runId))
     }
   }
@@ -3314,6 +3401,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setSearchQuery,
       setSearchScope,
       retryMessageSearch,
+      retryConversations,
+      refreshAgents,
       loadMoreMessageSearch,
       focusMessage,
       clearMessageHighlight,

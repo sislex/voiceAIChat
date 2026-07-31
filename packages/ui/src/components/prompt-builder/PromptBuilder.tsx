@@ -3,6 +3,9 @@ import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { Dialog } from '../ui/Dialog'
 import { useConfirm } from '../ui/useConfirm'
+import { Skeleton } from '../ui/Skeleton'
+import { EmptyState } from '../ui/EmptyState'
+import { ErrorState } from '../ui/ErrorState'
 import { useToast } from '../ui/Toast'
 import { copyText } from '../../lib/clipboard'
 import { WandIcon } from '../icons'
@@ -17,10 +20,10 @@ export interface Labels {
   title: string; settingsTitle: string; close: string; settings: string; back: string
   promptLabel: string; promptPlaceholder: string; preview: string; collapse: string; expand: string
   copy: string; clearAll: string; clearConfirm: string; cancelConfirm: string; loading: string
-  empty: string; error: string; retry: string; remove: string; replace: string; add: string
+  empty: string; emptyHint: string; error: string; retry: string; remove: string; replace: string; add: string
   blocks: string; moveUp: string; moveDown: string; refine: string; apply: string
   addPrompt: string; edit: string; view: string; save: string; cancel: string; delete: string
-  deleteConfirm: string; titleLabel: string; textLabel: string; enabled: string; noPrompts: string
+  deleteConfirm: string; titleLabel: string; textLabel: string; enabled: string; noPrompts: string; noPromptsHint: string
   duplicateTitle: string; requiredText: string; tooLong: string; maxBlocks: string; generate: string
   confirm: string; copied: string
 }
@@ -29,10 +32,12 @@ const RU: Labels = {
   title: 'AI-помощник формулировки', settingsTitle: 'Настройки подсказок', close: 'Закрыть', settings: 'Настройки', back: 'Назад',
   promptLabel: 'Что нужно сформулировать', promptPlaceholder: 'Опишите, какой текст вам нужен…', preview: 'Собранный текст', collapse: 'Свернуть', expand: 'Развернуть',
   copy: 'Копировать', clearAll: 'Очистить всё', clearConfirm: 'Удалить все собранные абзацы?', cancelConfirm: 'Отменить сборку?', loading: 'Генерирую варианты…',
-  empty: 'Вариантов нет', error: 'Не удалось получить варианты', retry: 'Повторить', remove: 'Удалить', replace: 'Заменить', add: 'Добавить',
+  empty: 'Вариантов нет', emptyHint: 'Уточните запрос или отключите часть подсказок — и попросите варианты снова.',
+  error: 'Не удалось получить варианты', retry: 'Повторить', remove: 'Удалить', replace: 'Заменить', add: 'Добавить',
   blocks: 'Абзацы результата', moveUp: 'Вверх', moveDown: 'Вниз', refine: 'На доработку', apply: 'Применить', addPrompt: 'Добавить промпт',
   edit: 'Изменить', view: 'Просмотр', save: 'Сохранить', cancel: 'Отмена', delete: 'Удалить', deleteConfirm: 'Удалить этот промпт?', titleLabel: 'Название',
-  textLabel: 'Текст промпта', enabled: 'Активен', noPrompts: 'Дополнительных подсказок пока нет.', duplicateTitle: 'Название должно быть уникальным', requiredText: 'Введите текст промпта',
+  textLabel: 'Текст промпта', enabled: 'Активен', noPrompts: 'Дополнительных подсказок пока нет',
+  noPromptsHint: 'Добавьте свою — она будет применяться к каждой генерации вариантов.', duplicateTitle: 'Название должно быть уникальным', requiredText: 'Введите текст промпта',
   tooLong: 'Текст слишком длинный', maxBlocks: 'Достигнут лимит абзацев', generate: 'Предложить варианты',
   confirm: 'Подтвердить', copied: 'Скопировано'
 }
@@ -150,13 +155,16 @@ export function PromptBuilder({ open, initialValue: _initialValue = '', prompts,
         <section className="pb-column pb-generation">
           <label className="pb-label">{l.promptLabel}<span className="pb-prompt-wrap"><textarea ref={promptRef} rows={4} value={prompt} placeholder={l.promptPlaceholder} onChange={(e) => setPrompt(e.target.value)} /><IconButton className="pb-generate" variant="primary" loading={status === 'loading'} disabled={!prompt.trim()} onClick={generateSuggestions} aria-label={l.generate} title={l.generate}><WandIcon /></IconButton></span></label>
           {blocks.length > 0 && <div className="pb-preview"><div className="pb-row"><strong>{l.preview}</strong><div><Button size="sm" onClick={() => setCollapsed(!collapsed)}>{collapsed ? l.expand : l.collapse}</Button><Button size="sm" onClick={() => void copyText(assembled).then((ok) => { if (ok) toast.success(l.copied) })}>{l.copy}</Button><Button size="sm" onClick={() => void confirm({ title: l.clearConfirm, variant: 'danger', confirmLabel: l.clearAll, cancelLabel: l.cancel }).then((ok) => { if (ok) setBlocks([]) })}>{l.clearAll}</Button></div></div>{!collapsed && <div data-testid="prompt-preview">{assembled}</div>}</div>}
-          <div className="pb-status" aria-live="polite">{status === 'loading' ? l.loading : status === 'empty' ? l.empty : status === 'error' ? <>{l.error} <Button size="sm" onClick={generateSuggestions}>{l.retry}</Button></> : null}</div>
-          {status === 'loading' && <div className="pb-skeletons" aria-hidden="true"><i/><i/><i/></div>}
+          <div className="pb-status" aria-live="polite">{status === 'loading' ? l.loading : null}</div>
+          {/* Высота косточки — высота карточки варианта (.pb-item), иначе список прыгает при подстановке. */}
+          {status === 'loading' && <Skeleton variant="list" item="block" count={3} height={54} />}
+          {status === 'empty' && <EmptyState compact icon="✨" title={l.empty} description={l.emptyHint} />}
+          {status === 'error' && <ErrorState compact message={l.error} onRetry={generateSuggestions} retryLabel={l.retry} />}
           <div className="pb-list">{suggestions.map((s) => <article className="pb-item" key={s.id}><p>{s.text}</p><div><Button size="sm" aria-label={`${l.remove}: ${s.text}`} onClick={() => setSuggestions((all) => all.filter((x) => x.id !== s.id))}>{l.remove}</Button><Button size="sm" onClick={() => setPrompt(s.text)}>{l.replace}</Button><Button size="sm" disabled={blocks.length >= maxBlocks} title={blocks.length >= maxBlocks ? l.maxBlocks : undefined} onClick={() => setBlocks((all) => [...all, { id: id(), text: s.text }])}>{l.add}</Button></div></article>)}</div>
         </section>
         <section className="pb-column pb-blocks"><h3>{l.blocks}</h3><div className="pb-list">{blocks.map((b, index) => <article className="pb-item" key={b.id}><p>{b.text}</p><div><Button size="sm" aria-label={`${l.remove}: ${b.text}`} onClick={() => setBlocks((all) => all.filter((x) => x.id !== b.id))}>{l.remove}</Button><Button size="sm" disabled={index === 0} onClick={() => setBlocks((all) => move(all, index, -1))}>{l.moveUp}</Button><Button size="sm" disabled={index === blocks.length - 1} onClick={() => setBlocks((all) => move(all, index, 1))}>{l.moveDown}</Button><Button size="sm" onClick={() => { setBlocks((all) => all.filter((x) => x.id !== b.id)); setPrompt(b.text); promptRef.current?.focus() }}>{l.refine}</Button></div></article>)}</div><Button variant="primary" className="pb-apply" disabled={!blocks.length} onClick={() => { onApply(assembled); onClose() }}>{l.apply}</Button></section>
       </div> : <section className="pb-settings">
-        {localPrompts.length === 0 && <div className="pb-empty">{l.noPrompts}</div>}
+        {localPrompts.length === 0 && !editor && <EmptyState icon="⚙" title={l.noPrompts} description={l.noPromptsHint} />}
         <div className="pb-list">{localPrompts.map((item, index) => <article className="pb-item pb-modifier" key={item.id}>
           <label className="pb-switch"><input type="checkbox" checked={item.enabled} aria-label={`${l.enabled}: ${item.title}`} onChange={(e) => changePrompts(localPrompts.map((p) => p.id === item.id ? { ...p, enabled: e.target.checked } : p))}/><span/></label>
           <div><strong>{item.title}</strong><p className={expanded === item.id ? '' : 'pb-ellipsis'}>{item.text}</p></div>

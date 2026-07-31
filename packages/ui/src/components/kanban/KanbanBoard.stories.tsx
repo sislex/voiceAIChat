@@ -19,12 +19,12 @@ const meta: Meta<typeof KanbanBoard> = {
 export default meta
 type Story = StoryObj<typeof KanbanBoard>
 
-/** Полностью пустая доска: ни колонок, ни задач — только бокс «+ колонка». */
+/** Пусто: ни колонок, ни задач — подсказка про колонки и бокс «+ колонка». */
 export const EmptyBoard: Story = {
   args: { board: makeBoard([], []) }
 }
 
-/** Одна колонка без задач. */
+/** Одна колонка без задач: подсказка, чем её наполнить. */
 export const SingleColumn: Story = {
   args: { board: makeBoard([makeColumn({ id: 'solo', name: 'Бэклог', semanticType: 'backlog' })], []) }
 }
@@ -84,21 +84,30 @@ export const LongTitles: Story = {
   }
 }
 
-/** Загрузка. */
+/** Загрузка (первая): скелетон колонок и карточек, геометрия — как у доски. */
 export const Loading: Story = {
   args: { board: null, loading: true }
 }
 
-/** Ошибка без доски. */
+/** Ошибка без доски: сообщение, деталь под «Подробнее», «Повторить». */
 export const ErrorState: Story = {
-  args: { board: null, error: 'Не удалось загрузить доску: сервер недоступен' }
+  args: { board: null, error: 'Не удалось загрузить доску: сервер недоступен', onRetry: () => {} }
 }
 
-/** Ошибка поверх загруженной доски. */
+/** Повторная загрузка: доска остаётся на месте, сверху — индикатор обновления. */
+export const Refreshing: Story = {
+  args: {
+    board: makeBoard(makeDefaultColumns(), [makeTask({ columnId: 'col-development' })]),
+    loading: true
+  }
+}
+
+/** Ошибка поверх загруженной доски: данные остаются, ошибка — баннером. */
 export const ErrorWithBoard: Story = {
   args: {
     board: makeBoard([makeColumn({ id: 'e1', name: 'Бэклог' })], [makeTask({ columnId: 'e1' })]),
-    error: 'Не удалось сохранить изменение: повторите попытку'
+    error: 'Не удалось сохранить изменение: повторите попытку',
+    onRetry: () => {}
   }
 }
 

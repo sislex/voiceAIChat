@@ -19,6 +19,10 @@ import { normalizeBoard } from './normalize'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { useConfirm } from '../ui/useConfirm'
+import { Skeleton, RefreshIndicator } from '../ui/Skeleton'
+import { EmptyState } from '../ui/EmptyState'
+import { ErrorState } from '../ui/ErrorState'
+import { loadView, type LoadStatus } from '../../lib/loadState'
 
 export type Swimlane = 'none' | 'epic' | 'assignee'
 
@@ -26,8 +30,10 @@ export interface KanbanBoardProps {
   projectName: string
   board: Board | null
   loading: boolean
-  /** Текст ошибки загрузки/операции: баннер вместо доски (board=null) или над ней. */
+  /** Текст ошибки загрузки/операции: экран ошибки вместо доски (board=null) или баннер над ней. */
   error?: string | null
+  /** Повторить загрузку доски (кнопка «Повторить» на экране ошибки). */
+  onRetry?: () => void
   members: ProjectMember[]
   /** Логин текущего пользователя — для быстрого фильтра «Только мои». */
   currentUser?: string | null
@@ -455,6 +461,17 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             {dropZone(col.id, t.id, tasks[i + 1]?.id ?? null, `${lane?.id ?? ''}-${col.id}-${t.id}`)}
           </div>
         ))}
+        {/* Пустая колонка объясняет, чем её наполнить. В свимлейнах подсказку не
+            повторяем в каждой ячейке — там пустых пересечений много по природе. */}
+        {tasks.length === 0 && !lane && (
+          <EmptyState
+            compact
+            className="jcol-empty"
+            icon="＋"
+            title={filtersActive ? 'Нет задач под фильтром' : 'Здесь пока пусто'}
+            description={filtersActive ? 'Сбросьте фильтры, чтобы увидеть остальные задачи.' : 'Перетащите карточку сюда или создайте задачу кнопкой ниже.'}
+          />
+        )}
       </div>
     )
   }
@@ -501,6 +518,31 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   const openTask = openTaskId ? allTasks.find((t) => t.id === openTaskId) : undefined
 
+  // Скелетон повторяет геометрию доски: колонки 272px, шапка, карточки 70px
+  // (высота минимальной .jcard — измерена в сториз UI/Skeleton).
+  // Иначе при подстановке данных вся доска прыгает.
+  const boardSkeleton = (
+    <div className="jboard-wrap" data-testid="kanban-skeleton" aria-busy="true">
+      <div className="jboard-filters">
+        <Skeleton variant="line" width={200} height={30} />
+        <Skeleton variant="line" width={120} height={30} />
+        <Skeleton variant="line" width={90} height={30} />
+      </div>
+      <div className="kanban-board jboard">
+        {[0, 1, 2].map((i) => (
+          <section className="jcol" key={i}>
+            <header className="jcol-head">
+              <Skeleton variant="line" width="55%" />
+            </header>
+            <div className="jcol-body jcol-body--skel">
+              <Skeleton variant="list" count={3 - (i % 2)} height={70} lines={2} itemClassName="jcard-skel" />
+            </div>
+          </section>
+        ))}
+      </div>
+    </div>
+  )
+
   const addColumnBox = (
     <div className="jcol jcol--add">
       <input
@@ -531,14 +573,33 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     </div>
   )
 
+  // Единое правило: скелетон только пока доски нет; загруженная доска при
+  // повторном чтении остаётся на экране, а ошибка ложится баннером над ней.
+  const status: LoadStatus = loading ? 'loading' : props.error ? 'error' : board ? 'ready' : 'idle'
+  const view = loadView(status, board != null)
+
   return (
     <>
-      {loading && <p className="kanban-empty">Загрузка доски…</p>}
-      {!loading && props.error && (
-        <p className="kanban-error" role="alert">{props.error}</p>
+      {view.state === 'skeleton' && boardSkeleton}
+      {view.state === 'error' && (
+        <ErrorState
+          className="kanban-state"
+          message="Не удалось загрузить доску"
+          detail={props.error}
+          {...(props.onRetry ? { onRetry: props.onRetry } : {})}
+        />
       )}
-      {!loading && board && (
+      {view.state === 'data' && board && (
         <div className="jboard-wrap">
+          {view.staleError && (
+            <ErrorState
+              compact
+              className="jboard-error"
+              message="Последнее действие не сохранилось"
+              detail={props.error}
+              {...(props.onRetry ? { onRetry: props.onRetry } : {})}
+            />
+          )}
           <div className="jboard-filters" data-testid="board-filters">
             <input
               className="login-input jsearch"
@@ -638,7 +699,19 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 Сбросить
               </button>
             )}
+            {view.refreshing && <RefreshIndicator label="Обновляем доску…" />}
           </div>
+
+          {/* Именно «колонок нет вообще»: при снятом чекбоксе «скрытые» видимых
+              колонок тоже нет, но подсказка про создание там была бы неправдой. */}
+          {board.columns.length === 0 && (
+            <EmptyState
+              className="kanban-state"
+              icon="🗂"
+              title="Колонок пока нет — создайте первую"
+              description="Колонка на доске — это статус задачи: «Бэклог», «В работе», «Готово»."
+            />
+          )}
 
           {swimlane === 'none' ? (
             <div className="kanban-board jboard" data-testid="kanban-board">

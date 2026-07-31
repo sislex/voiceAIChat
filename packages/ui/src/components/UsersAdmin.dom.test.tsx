@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { UsersAdmin, type UsersAdminProps } from './UsersAdmin'
 import type { AdminUserInfo } from '@shared/admin'
@@ -70,5 +70,21 @@ describe('UsersAdmin', () => {
       }
     })
     expect(screen.getByTestId('usage-total').textContent).toContain('3 отв.')
+  })
+})
+
+describe('UsersAdmin — состояния загрузки и ошибки', () => {
+  it('первая загрузка — скелетон списка', () => {
+    renderAdmin({ users: [], status: 'loading' })
+    expect(screen.getAllByTestId('user-skeleton')).toHaveLength(4)
+  })
+
+  it('ошибка загрузки видна и повторяется кнопкой', () => {
+    const onRetry = vi.fn()
+    renderAdmin({ users: [], status: 'error', error: '401', onRetry })
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Не удалось загрузить пользователей')
+    fireEvent.click(within(alert).getByRole('button', { name: 'Повторить' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
   })
 })

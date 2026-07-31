@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ChatColumn } from './ChatColumn'
 import type { Message } from '@shared/types'
@@ -375,15 +375,29 @@ describe('ChatColumn — высота поля редактирования', ()
 })
 
 describe('ChatColumn — загрузка сообщений', () => {
-  it('loadingMessages=true → показывает лоадер', () => {
+  it('первая загрузка → скелетон реплик вместо ленты', () => {
     renderCol({ loadingMessages: true, messages: [] })
-    expect(screen.getByTestId('messages-loading')).toBeInTheDocument()
-    expect(screen.getByText('Загрузка сообщений…')).toBeInTheDocument()
+    const skeleton = screen.getByTestId('messages-loading')
+    expect(skeleton).toHaveAttribute('aria-busy', 'true')
+    expect(within(skeleton).getAllByTestId('skeleton')).toHaveLength(3)
+    expect(screen.queryByTestId('messages-empty')).not.toBeInTheDocument()
+  })
+
+  it('повторная загрузка уже показанной истории её не подменяет скелетоном', () => {
+    renderCol({ loadingMessages: true })
+    expect(screen.queryByTestId('messages-loading')).not.toBeInTheDocument()
+    expect(screen.getByText('Обновляем историю…')).toBeInTheDocument()
+    expect(screen.getByText('Вопрос')).toBeInTheDocument()
   })
 
   it('loadingMessages=false → лоадера нет', () => {
     renderCol({ loadingMessages: false })
     expect(screen.queryByTestId('messages-loading')).not.toBeInTheDocument()
+  })
+
+  it('пустая история объясняет следующий шаг', () => {
+    renderCol({ loadingMessages: false, messages: [] })
+    expect(screen.getByTestId('messages-empty')).toHaveTextContent('Пока нет сообщений — задайте первый вопрос')
   })
 })
 
