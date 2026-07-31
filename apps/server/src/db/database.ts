@@ -200,6 +200,11 @@ const RANK_STEP = 1024
 /** Порог схлопывания дробного ранга — ниже него колонка ренормализуется. */
 const RANK_EPS = 1e-6
 
+/** Заголовок автозадачи учёта «влито в прод-ветку, но прод не пересобран». */
+export const PROD_REBUILD_TASK_TITLE = 'Пересборка прода'
+/** Первая строка описания автозадачи — дальше идёт список вмерженных задач. */
+export const PROD_REBUILD_TASK_INTRO = 'Влито в прод-ветку, но прод-контейнер в ране не пересобирался. Пересобрать прод для задач:'
+
 interface ProjectRow {
   id: string
   name: string
@@ -2291,6 +2296,47 @@ export class VoiceChatDb {
   getCiTask(userId: string, projectId: string, taskId: string): Task | null {
     if (!this.isProjectMember(userId, projectId)) return null
     return this.getTask(projectId, taskId)
+  }
+
+  /**
+   * Учёт «влито в прод-ветку, но прод не пересобран»: в проекте держим ОДНУ
+   * открытую карточку «Пересборка прода», описание которой — список вмерженных
+   * задач (строка на задачу). Идемпотентно: повторный ран той же задачи строку
+   * не дублирует, а уехавшая в done карточка не мешает завести новую. Всё в
+   * транзакции — иначе параллельные раны проекта наплодят дубли карточки.
+   * `null`, если в проекте нет колонки `ready` (создавать карточку некуда).
+   */
+  ensureProdRebuildTask(userId: string, projectId: string, line: string): { task: Task; created: boolean; appended: boolean } | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const entry = line.trim()
+    if (!entry) return null
+    return this.db.transaction(() => {
+      const open = this.db
+        .prepare(
+          `SELECT t.id FROM tasks t JOIN kanban_columns c ON c.id = t.column_id
+           WHERE t.project_id = ? AND t.title = ? AND COALESCE(c.semantic_type, '') != 'done'
+           ORDER BY t.created_at ASC, t.id ASC LIMIT 1`
+        )
+        .get(projectId, PROD_REBUILD_TASK_TITLE) as { id: string } | undefined
+      if (!open) {
+        const columnId = this.getColumnIdBySemantic(projectId, 'ready')
+        if (!columnId) return null
+        const task = this.createTask(userId, projectId, {
+          columnId,
+          title: PROD_REBUILD_TASK_TITLE,
+          description: `${PROD_REBUILD_TASK_INTRO}\n\n${entry}`,
+          type: 'task',
+          assignee: null
+        })
+        return task ? { task, created: true, appended: true } : null
+      }
+      const current = this.getTask(projectId, open.id)
+      if (!current) return null
+      if (current.description.split('\n').some((l) => l.trim() === entry)) return { task: current, created: false, appended: false }
+      const description = `${current.description.replace(/\s+$/, '')}\n${entry}`
+      const updated = this.updateTask(userId, projectId, open.id, { description })
+      return updated ? { task: updated, created: false, appended: true } : null
+    })()
   }
 
   // --- Глобальные настройки CI ---
