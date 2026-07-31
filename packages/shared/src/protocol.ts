@@ -238,7 +238,9 @@ export const REST = {
   ciConsoleMode: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/console/mode`,
   ciRunInteraction: (runId: string, interactionId: string) =>
     `/api/ci/runs/${encodeURIComponent(runId)}/interactions/${encodeURIComponent(interactionId)}`,
-  conversationTaskContext: (id: string) => `/api/conversations/${encodeURIComponent(id)}/task-context`
+  conversationTaskContext: (id: string) => `/api/conversations/${encodeURIComponent(id)}/task-context`,
+  /** Метки всех чатов пользователя, привязанных к задачам (подсветка списка бесед). */
+  conversationTaskChats: '/api/conversations/task-chats'
 } as const
 
 // --- WebSocket -----------------------------------------------------------

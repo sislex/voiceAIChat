@@ -136,6 +136,11 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     }
   )
 
+  // Метки чатов задач для списка бесед: ключ, тип и последний ран. Статический
+  // путь объявлен до `/api/conversations/:id`, но Fastify и так предпочитает его
+  // параметрическому — «task-chats» не будет прочитан как id беседы.
+  app.get(REST.conversationTaskChats, async (req) => db.taskChatBadges(uid(req)))
+
   // Контекст задачи для шапки связанного чата (проект/эпик/стори/этап/машина/ран).
   app.get<{ Params: { id: string } }>('/api/conversations/:id/task-context', async (req, reply) => {
     if (!db.getConversation(uid(req), req.params.id)) return reply.code(404).send({ error: 'not found' })

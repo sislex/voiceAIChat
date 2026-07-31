@@ -411,6 +411,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         conversationsError={state.conversationsError}
         onRetryConversations={() => void actions.retryConversations()}
         activeId={state.activeId}
+        taskBadges={state.taskChatBadges}
+        ciSummaries={state.ciSummaries}
         workingIds={[
           ...Object.keys(state.activeTurns),
           ...((state.voice === 'thinking' || state.voice === 'speaking') && state.activeId
@@ -527,6 +529,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           state.taskChatContext ? (
             <TaskChatHeader
               context={state.taskChatContext}
+              summary={state.ciSummaries[state.taskChatContext.task.id] ?? null}
               onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)}
               renderRunFeed={(runId) => (
                 <RunFeed
