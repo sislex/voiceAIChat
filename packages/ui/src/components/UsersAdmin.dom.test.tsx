@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { UsersAdmin, type UsersAdminProps } from './UsersAdmin'
@@ -86,5 +87,13 @@ describe('UsersAdmin — состояния загрузки и ошибки', (
     expect(alert).toHaveTextContent('Не удалось загрузить пользователей')
     fireEvent.click(within(alert).getByRole('button', { name: 'Повторить' }))
     expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('UsersAdmin — доступность', () => {
+  it('без нарушений axe: список, форма создания, карточка пользователя', async () => {
+    renderAdmin({ selected: 'bob' })
+    await expectNoViolations()
+    expectLabelledIconButtons()
   })
 })

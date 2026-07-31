@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
+import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { Sidebar, type MessageSearchView } from './Sidebar'
 import type { Conversation, MessageSearchHit, SessionUser } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
@@ -344,5 +346,29 @@ describe('Sidebar — кнопка командной палитры', () => {
   it('без обработчика кнопки нет: в desktop-сборке палитру открывать нечем', () => {
     setup()
     expect(screen.queryByRole('button', { name: 'Командная палитра' })).toBeNull()
+  })
+})
+
+describe('Sidebar — доступность', () => {
+  it('без нарушений axe: список бесед, поиск, статусы', async () => {
+    setup({ workingIds: ['c2'], user: { name: 'admin', role: 'admin' } as SessionUser })
+    await expectNoViolations()
+    expectLabelledIconButtons()
+  })
+
+  it('список бесед — role=list, активная помечена aria-current', () => {
+    setup()
+    const list = screen.getByRole('list', { name: 'Беседы' })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Чат 1' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: 'Чат 2' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('беседа открывается с клавиатуры: Tab до названия и Enter', async () => {
+    const props = setup()
+    const title = screen.getByRole('button', { name: 'Чат 2' })
+    title.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(props.onPick).toHaveBeenCalledWith('c2')
   })
 })

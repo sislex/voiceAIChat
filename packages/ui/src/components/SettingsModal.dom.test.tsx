@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
 import { screen, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
@@ -78,5 +79,40 @@ describe('SettingsModal — глобальная блокировка голос
 
     expect(screen.getByLabelText('Режим hands-free')).toBeDisabled()
     expect(screen.getByLabelText('Перебивание голосом')).toBeDisabled()
+  })
+})
+
+describe('SettingsModal — доступность', () => {
+  // Разделы перечислены руками, а не собраны из DOM: если раздел переименуют или
+  // потеряют, тест должен упасть, а не тихо проверить меньше экранов.
+  const SECTIONS = ['Агент', 'AI-помощник', 'Скачать', 'Распознавание', 'Озвучка', 'Голосовой диалог', 'Интерфейс']
+
+  it('без нарушений axe в каждом разделе меню', async () => {
+    renderModal('admin')
+    await expectNoViolations()
+    expectLabelledIconButtons()
+    for (const section of SECTIONS) {
+      await userEvent.click(screen.getByRole('button', { name: section }))
+      await expectNoViolations()
+      expectLabelledIconButtons()
+    }
+  })
+
+  it('фокус при открытии уходит внутрь окна, а Tab из него не выпадает', async () => {
+    // Под окном настроек лежит вся страница; без ловушки Tab уводил бы фокус
+    // туда, и вернуться в окно с клавиатуры было бы нельзя.
+    const outside = document.createElement('button')
+    outside.textContent = 'снаружи'
+    document.body.appendChild(outside)
+    renderModal('admin')
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    for (let i = 0; i < 12; i++) {
+      await userEvent.tab()
+      expect(dialog.contains(document.activeElement)).toBe(true)
+    }
+    await userEvent.tab({ shift: true })
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    outside.remove()
   })
 })

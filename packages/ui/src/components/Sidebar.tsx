@@ -492,122 +492,142 @@ export function Sidebar({
             <RefreshIndicator label="Обновляем список…" />
           </p>
         )}
-        {conversations.map((c) => (
-          <div
-            key={c.id}
-            className={c.id === activeId ? 'convo on' : 'convo'}
-            onClick={() => renamingId !== c.id && onPick(c.id)}
-          >
-            <div className="crow">
-              <div className="cinfo">
-                {renamingId === c.id ? (
-                  <input
-                    className="ctitle-edit"
-                    value={renameDraft}
-                    autoFocus
-                    aria-label="Новое название разговора"
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => setRenameDraft(e.target.value)}
-                    onBlur={commitRename}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        commitRename()
-                      } else if (e.key === 'Escape') {
-                        cancelRename()
-                      }
-                    }}
-                  />
-                ) : (
-                  <p
-                    className="ctitle"
-                    onDoubleClick={(e) => {
-                      e.stopPropagation()
-                      startRename(c)
-                    }}
-                  >
-                    {c.title}
-                  </p>
-                )}
-                <p className="cmeta">{formatMeta(c, now)}</p>
-                {c.messageCount > 0 && (
-                  <p className="chat-last-machine" title="Машина последнего сообщения">
-                    Последнее: {c.lastExecTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === c.lastExecTarget)?.name ?? 'Сервер'}
-                  </p>
-                )}
-                {workingSet.has(c.id) ? (
-                  <p className="cstatus on">
-                    <span className="cstatus-dot" aria-hidden />
-                    {activeStatusLabel(c.permissionMode)}
-                  </p>
-                ) : (
-                  <select
-                    className="cstatus-select"
-                    aria-label={`Статус разговора «${c.title}»`}
-                    value={c.status ?? DEFAULT_CONVERSATION_STATUS}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                      e.stopPropagation()
-                      onStatusChange?.(c.id, e.target.value as ConversationStatus)
-                    }}
-                  >
-                    {CONVERSATION_STATUSES.map((status) => (
-                      <option key={status.id} value={status.id}>{status.label}</option>
-                    ))}
-                  </select>
+        {/* Список — именно список: скринридер объявляет «список, N элементов» и
+            ходит по нему по элементам. role=list висит на обёртке только с
+            беседами: скелетон, пустота и баннер ошибки — не элементы списка, и
+            внутри list им быть нельзя. */}
+        <div className="convo-items" role="list" aria-label="Беседы">
+          {conversations.map((c) => (
+            <div
+              key={c.id}
+              role="listitem"
+              className={c.id === activeId ? 'convo on' : 'convo'}
+              onClick={() => renamingId !== c.id && onPick(c.id)}
+            >
+              <div className="crow">
+                <div className="cinfo">
+                  {renamingId === c.id ? (
+                    <input
+                      className="ctitle-edit"
+                      value={renameDraft}
+                      autoFocus
+                      aria-label="Новое название разговора"
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onBlur={commitRename}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          commitRename()
+                        } else if (e.key === 'Escape') {
+                          cancelRename()
+                        }
+                      }}
+                    />
+                  ) : (
+                    /* Название — настоящая кнопка: строку целиком открывает и
+                       клик мышью по любому её месту, но с клавиатуры выбрать
+                       беседу иначе было нельзя (div с onClick не фокусируется и
+                       не реагирует на Enter). aria-current помечает открытую;
+                       aria-selected здесь не годится — он допустим только внутри
+                       listbox/grid, а в строке живут свои кнопки и селект статуса,
+                       то есть option'ом она быть не может. */
+                    <button
+                      type="button"
+                      className="ctitle"
+                      aria-current={c.id === activeId ? 'true' : undefined}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onPick(c.id)
+                      }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation()
+                        startRename(c)
+                      }}
+                    >
+                      {c.title}
+                    </button>
+                  )}
+                  <p className="cmeta">{formatMeta(c, now)}</p>
+                  {c.messageCount > 0 && (
+                    <p className="chat-last-machine" title="Машина последнего сообщения">
+                      Последнее: {c.lastExecTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === c.lastExecTarget)?.name ?? 'Сервер'}
+                    </p>
+                  )}
+                  {workingSet.has(c.id) ? (
+                    <p className="cstatus on">
+                      <span className="cstatus-dot" aria-hidden />
+                      {activeStatusLabel(c.permissionMode)}
+                    </p>
+                  ) : (
+                    <select
+                      className="cstatus-select"
+                      aria-label={`Статус разговора «${c.title}»`}
+                      value={c.status ?? DEFAULT_CONVERSATION_STATUS}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => {
+                        e.stopPropagation()
+                        onStatusChange?.(c.id, e.target.value as ConversationStatus)
+                      }}
+                    >
+                      {CONVERSATION_STATUSES.map((status) => (
+                        <option key={status.id} value={status.id}>{status.label}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                {confirmingId !== c.id && renamingId !== c.id && (
+                  <span className="crow-actions">
+                    <IconButton
+                      size="sm"
+                    
+                      aria-label={`Переименовать разговор «${c.title}»`}
+                      title="Переименовать"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        startRename(c)
+                      }}
+                    >
+                      ✎
+                    </IconButton>
+                    <IconButton
+                      size="sm"
+                      className="vc-btn--danger-quiet"
+                    
+                      aria-label={`Удалить разговор «${c.title}»`}
+                      title="Удалить разговор"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setConfirmingId(c.id)
+                      }}
+                    >
+                      ✕
+                    </IconButton>
+                  </span>
                 )}
               </div>
-              {confirmingId !== c.id && renamingId !== c.id && (
-                <span className="crow-actions">
-                  <IconButton
+              {confirmingId === c.id && (
+                <div className="delconfirm" onClick={(e) => e.stopPropagation()}>
+                  <span>Удалить?</span>
+                  <Button
+                    variant="danger"
                     size="sm"
-                    
-                    aria-label={`Переименовать разговор «${c.title}»`}
-                    title="Переименовать"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      startRename(c)
+                  
+                    onClick={() => {
+                      setConfirmingId(null)
+                      onDelete(c.id)
                     }}
                   >
-                    ✎
-                  </IconButton>
-                  <IconButton
-                    size="sm"
-                    className="vc-btn--danger-quiet"
-                    
-                    aria-label={`Удалить разговор «${c.title}»`}
-                    title="Удалить разговор"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setConfirmingId(c.id)
-                    }}
-                  >
-                    ✕
-                  </IconButton>
-                </span>
+                    Удалить
+                  </Button>
+                  <Button size="sm" onClick={() => setConfirmingId(null)}>
+                    Отмена
+                  </Button>
+                </div>
               )}
             </div>
-            {confirmingId === c.id && (
-              <div className="delconfirm" onClick={(e) => e.stopPropagation()}>
-                <span>Удалить?</span>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  
-                  onClick={() => {
-                    setConfirmingId(null)
-                    onDelete(c.id)
-                  }}
-                >
-                  Удалить
-                </Button>
-                <Button size="sm" onClick={() => setConfirmingId(null)}>
-                  Отмена
-                </Button>
-              </div>
-            )}
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
       )}
       </>)}

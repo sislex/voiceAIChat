@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
@@ -312,5 +313,30 @@ describe('App — мобильное меню', () => {
     } finally {
       window.location.hash = ''
     }
+  })
+})
+
+describe('App — доступность', () => {
+  it('без нарушений axe: сайдбар, чат и композер', async () => {
+    await renderApp()
+    // Единственное место, где включено правило region: у целого приложения весь
+    // контент обязан лежать в ориентирах (сайдбар — complementary, чат — main),
+    // иначе скринридеру не по чему прыгать. В тестах отдельных экранов правило
+    // отключено — там рендерится фрагмент, у которого ориентиров нет по природе.
+    await expectNoViolations(document.body, { rules: { region: { enabled: true } } })
+    expectLabelledIconButtons()
+  })
+
+  it('ориентиры на месте: сайдбар и чат объявлены как области', async () => {
+    await renderApp()
+    expect(screen.getByRole('complementary')).toBeInTheDocument()
+    expect(screen.getByRole('main')).toBeInTheDocument()
+  })
+
+  it('без нарушений axe: открытые настройки', async () => {
+    await renderApp()
+    await openSettings()
+    await expectNoViolations()
+    expectLabelledIconButtons()
   })
 })

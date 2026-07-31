@@ -46,6 +46,21 @@ if (typeof Element !== 'undefined' && typeof Element.prototype.setPointerCapture
   }
 }
 
+// jsdom не реализует ResizeObserver (его ждёт xterm в терминале машины) и
+// Element.scrollTo (консоль рана прокручивает себя к последней строке). Оба
+// нужны только прогону сториз: экраны в dom-тестах до них не доходят, а без
+// заглушек сториз падает на рендере, и проверить её доступность нельзя.
+if (typeof globalThis.ResizeObserver !== 'function') {
+  globalThis.ResizeObserver = class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  } as unknown as typeof ResizeObserver
+}
+if (typeof Element !== 'undefined' && typeof Element.prototype.scrollTo !== 'function') {
+  Element.prototype.scrollTo = function scrollTo(): void {}
+}
+
 afterEach(() => {
   // cleanup нужен только в DOM-окружении.
   if (typeof document !== 'undefined') cleanup()

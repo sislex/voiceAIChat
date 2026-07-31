@@ -2,7 +2,7 @@ import { useEffect, useRef, type ClipboardEvent, type DragEvent, type KeyboardEv
 import type { ModifierPrompt, PermissionMode, VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import { useAutoGrow } from '../lib/autoGrow'
-import { chipClass, speakerName, statusLine } from '../lib/view'
+import { chipClass, speakerName, statusLine, voiceAnnouncement } from '../lib/view'
 import { WaveBars, Dots } from './animations'
 import { IconButton } from './ui/IconButton'
 import { MicIcon, SendIcon, StopIcon, WandIcon } from './icons'
@@ -158,7 +158,7 @@ export function VoiceBar({
     <div className="voicebar">
       <div className="vinner">
         {helper.open && (
-          <div className="prompt-helper" data-testid="prompt-helper" role="listbox" aria-label="Варианты формулировки запроса">
+          <div className="prompt-helper" data-testid="prompt-helper" role="group" aria-label="Варианты формулировки запроса">
             <div className="prompt-helper-head">
               <span>Варианты формулировки</span>
               <button
@@ -180,16 +180,21 @@ export function VoiceBar({
             ) : helper.variants.length === 0 ? (
               <div className="prompt-helper-msg">Вариантов нет</div>
             ) : (
-              helper.variants.map((variant, i) => (
-                <button
-                  key={i}
-                  className="prompt-variant"
-                  role="option"
-                  onClick={() => onApplyPromptSuggestion?.(variant)}
-                >
-                  {variant}
-                </button>
-              ))
+              /* role=listbox — только на обёртке вариантов: внутри listbox
+                 допустимы одни option, а шапка панели с крестиком — нет. */
+              <div className="prompt-helper-list" role="listbox" aria-label="Варианты формулировки">
+                {helper.variants.map((variant, i) => (
+                  <button
+                    key={i}
+                    className="prompt-variant"
+                    role="option"
+                    aria-selected={false}
+                    onClick={() => onApplyPromptSuggestion?.(variant)}
+                  >
+                    {variant}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         )}
@@ -342,7 +347,7 @@ export function VoiceBar({
             <>
               <div className="speak">
                 <Dots />
-                <span className="fs13 fw6" style={{ color: '#8A877C' }}>
+                <span className="fs13 fw6 speak-dim">
                   Запрос отправлен движку {aiLabel}…
                 </span>
               </div>
@@ -383,6 +388,13 @@ export function VoiceBar({
           )}
           <p className="vstatus">
             {voiceInputEnabled ? statusLine(state, aiLabel) : (state === 'idle' ? '' : statusLine(state, aiLabel))}
+          </p>
+          {/* Статус записи — скринридеру. Видимую .vstatus живой областью не
+              делаем: в простое там длинная подсказка про пробел и Esc, и
+              читалка зачитывала бы её после каждого ответа. Здесь — короткая
+              фраза о том, что происходит с микрофоном и запросом. */}
+          <p className="vc-sr-only" role="status" aria-live="polite" data-testid="voice-announce">
+            {voiceAnnouncement(state, aiLabel)}
           </p>
         </div>
       </div>

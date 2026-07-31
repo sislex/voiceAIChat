@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { expectLabelledIconButtons, expectNoViolations } from '../../test/a11y'
 import { act, fireEvent, screen, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
@@ -454,3 +455,16 @@ function KanbanBoardHarness(props: Partial<KanbanBoardProps> = {}): JSX.Element 
     />
   )
 }
+
+describe('KanbanBoard — доступность', () => {
+  it('без нарушений axe: доска, фильтры, колонки', async () => {
+    renderBoard()
+    await expectNoViolations()
+    expectLabelledIconButtons()
+  })
+
+  it('без нарушений axe: пустая доска и ошибка загрузки', async () => {
+    renderBoard({ board: { columns: [], tasks: [] } })
+    await expectNoViolations()
+  })
+})

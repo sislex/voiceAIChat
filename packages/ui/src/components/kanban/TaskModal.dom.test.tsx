@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { expectLabelledIconButtons, expectNoViolations } from '../../test/a11y'
 import { screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
@@ -238,5 +239,15 @@ describe('TaskModal — мобильная раскладка (как в Jira)',
     expect(screen.getByLabelText('Удалить задачу')).toBeInTheDocument()
     expect(screen.queryByLabelText('Действия с задачей')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Подробности/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('TaskModal — доступность', () => {
+  beforeEach(() => { window.ci = createFakeCi() })
+
+  it('без нарушений axe: карточка задачи целиком', async () => {
+    render(<TaskModal {...props({ task: mkTask({ description: 'Описание', acceptanceCriteria: '- [ ] пункт', labels: ['ui'] }) })} />)
+    await expectNoViolations()
+    expectLabelledIconButtons()
   })
 })

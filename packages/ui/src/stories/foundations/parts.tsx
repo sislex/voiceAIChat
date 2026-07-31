@@ -98,10 +98,12 @@ export function Mono({ children }: { children: ReactNode }): JSX.Element {
  * требовать от них 3:1 значило бы кричать «волки» на каждой линейке таблицы.
  * Крупный текст тоже проходит на 3:1, но в интерфейсе почти всё мелкое, поэтому
  * по умолчанию требуем полный AA.
+ *
+ * Само определение живёт в `tokens.ts` рядом со списком пар: на него смотрит и
+ * витрина, и `styles/contrast.test.ts` — второй копии порога быть не должно.
  */
-export type ContrastKind = 'text' | 'ui' | 'decor'
-
-export const AA_THRESHOLD: Record<ContrastKind, number> = { text: 4.5, ui: 3, decor: 0 }
+export { AA_THRESHOLD, type ContrastKind } from './tokens'
+import { AA_THRESHOLD, type ContrastKind } from './tokens'
 
 export function passesAa(ratio: number, kind: ContrastKind = 'text'): boolean {
   return ratio >= AA_THRESHOLD[kind]

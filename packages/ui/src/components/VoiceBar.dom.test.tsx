@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
 import { screen } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
@@ -239,5 +240,38 @@ describe('VoiceBar — помощник промптов', () => {
       <VoiceBar {...makeProps('idle', { draft: 'x', promptHelper: { open: true, loading: false, variants: [], error: 'Сбой' }, onSuggestPrompts: vi.fn() })} />
     )
     expect(screen.getByText('Сбой')).toBeInTheDocument()
+  })
+})
+
+describe('VoiceBar — доступность', () => {
+  it.each(['idle', 'listening', 'thinking', 'speaking'] as const)('без нарушений axe: %s', async (state) => {
+    setup(state, { draft: 'привет', onChangePermissionMode: vi.fn() })
+    await expectNoViolations()
+    expectLabelledIconButtons()
+  })
+
+  it('без нарушений axe: панель вариантов формулировки', async () => {
+    setup('idle', { draft: 'привет', onSuggestPrompts: vi.fn(), promptHelper: { open: true, loading: false, variants: ['Первый', 'Второй'], error: null } })
+    await expectNoViolations()
+  })
+})
+
+describe('VoiceBar — объявления для скринридера', () => {
+  it('запись и ход модели объявляются, простой — молчит', () => {
+    setup('listening')
+    const live = screen.getByTestId('voice-announce')
+    expect(live).toHaveAttribute('role', 'status')
+    expect(live).toHaveAttribute('aria-live', 'polite')
+    expect(live).toHaveTextContent('Идёт запись, говорите')
+  })
+
+  it('в простое живая область пуста: подсказку про пробел читалка не повторяет', () => {
+    setup('idle')
+    expect(screen.getByTestId('voice-announce')).toBeEmptyDOMElement()
+  })
+
+  it('во время хода модели объявляет, кому ушёл запрос', () => {
+    setup('thinking', { aiLabel: 'Codex' })
+    expect(screen.getByTestId('voice-announce')).toHaveTextContent('Запрос отправлен движку Codex, ждём ответ')
   })
 })

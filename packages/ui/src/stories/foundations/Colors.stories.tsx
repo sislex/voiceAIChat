@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import { AA_THRESHOLD, Dash, Mono, Page, Section, Swatch, TABLE, TD, TH, Verdict, ratioOf, type ContrastKind } from './parts'
-import { readTokens, resolveColor, type Rgb, type ThemeName, type Token } from './tokens'
+import { CONTRAST_PAIRS, readTokens, resolveColor, type Rgb, type ThemeName, type Token } from './tokens'
 
 const meta: Meta = {
   title: 'Foundations/Colors',
@@ -40,34 +40,9 @@ function value(tokens: Token[], name: string, theme: ThemeName): string {
   return theme === 'light' ? token.light : token.dark
 }
 
-/**
- * Пары, которые реально встречаются в app.css: подпись на кнопке, мета в
- * сайдбаре, лозенг статуса на своей подложке. `kind: 'ui'` — не текст, а рамка
- * или заливка: для них WCAG требует 3:1, а не 4.5:1.
- */
-const PAIRS: Array<{ fg: string; bg: string; usage: string; kind?: ContrastKind }> = [
-  { fg: '--text', bg: '--bg', usage: 'основной текст на полотне' },
-  { fg: '--text', bg: '--surface', usage: 'текст в карточках, модалках, списках' },
-  { fg: '--text', bg: '--panel', usage: 'текст в сайдбаре и шапках' },
-  { fg: '--text-dim', bg: '--bg', usage: 'подписи и мета на полотне (.fsub)' },
-  { fg: '--text-dim', bg: '--surface', usage: 'мета внутри карточки' },
-  { fg: '--text-dim', bg: '--panel', usage: 'мета в сайдбаре (.cmeta)' },
-  { fg: '--text-dim', bg: '--surface-hover', usage: 'подпись под курсором' },
-  { fg: '--accent', bg: '--bg', usage: 'ссылки и активные подписи' },
-  { fg: '--accent', bg: '--surface', usage: 'акцентная подпись в карточке' },
-  { fg: '--accent', bg: '--accent-soft', usage: 'акцент на своей подложке (чипы, вкладки)' },
-  { fg: '--accent-fg', bg: '--accent', usage: 'подпись на кнопке primary' },
-  { fg: '--danger-fg', bg: '--danger', usage: 'подпись на кнопке danger' },
-  { fg: '--danger', bg: '--surface', usage: 'тихий danger: крестик «удалить»' },
-  { fg: '--ci-neutral', bg: '--ci-neutral-bg', usage: 'лозенг «в очереди» / «пропущен», 11px' },
-  { fg: '--ci-progress', bg: '--ci-progress-bg', usage: 'лозенг «выполняется» / «ждёт ответа»' },
-  { fg: '--ci-success', bg: '--ci-success-bg', usage: 'лозенг «успех»' },
-  { fg: '--ci-removed', bg: '--ci-removed-bg', usage: 'лозенг «ошибка» / «отменён»' },
-  { fg: '--ci-success', bg: '--bg', usage: 'зелёная рамка выполненной карточки', kind: 'ui' },
-  { fg: '--border', bg: '--bg', usage: 'рамка панели на полотне', kind: 'ui' },
-  { fg: '--border', bg: '--surface', usage: 'рамка поля ввода в карточке', kind: 'ui' },
-  { fg: '--border-soft', bg: '--surface', usage: 'разделитель строк в таблицах — декоративный', kind: 'decor' }
-]
+/** Пары — из tokens.ts: тот же список гейтит styles/contrast.test.ts. */
+const PAIRS = CONTRAST_PAIRS
+
 
 const THEMES: ThemeName[] = ['light', 'dark']
 

@@ -51,7 +51,22 @@ export function Markdown({ children }: MarkdownProps): JSX.Element {
               {c}
             </a>
           ),
-          pre: (props) => <CodeBlock {...props} />
+          pre: (props) => <CodeBlock {...props} />,
+          // Чек-лист из GFM (`- [x] пункт`) — это <input type=checkbox disabled>
+          // без подписи: у скринридера получалась «флажок, отмечен» без имени, и
+          // axe справедливо ругался (правило label, critical). Подпись — само
+          // состояние: менять его нельзя, он показывает, что пункт сделан.
+          input: ({ type, checked, ...rest }) =>
+            type === 'checkbox' ? (
+              <input
+                type="checkbox"
+                checked={checked}
+                {...rest}
+                aria-label={checked ? 'Пункт выполнен' : 'Пункт не выполнен'}
+              />
+            ) : (
+              <input type={type} {...rest} />
+            )
         }}
       >
         {children}
