@@ -223,6 +223,23 @@ export interface TaskChatContext {
   } | null
 }
 
+/**
+ * Метка чата, привязанного к задаче, для списка бесед: ключ задачи, её тип и
+ * последний CI-ран. Ран отдаётся той же сводкой, что подсвечивает карточку на
+ * доске — список чатов и канбан показывают одно состояние одними цветами.
+ * Дальше сводку обновляют живые кадры `ci.*` (они приходят на все соединения
+ * пользователя, а не только подписчикам доски).
+ */
+export interface TaskChatBadge {
+  conversationId: string
+  projectId: string
+  taskId: string
+  /** Ключ вида `PRJ-42`. */
+  key: string
+  type: WorkItemType
+  run: CiRunSummary | null
+}
+
 /** Снапшот доски проекта. */
 export interface Board {
   columns: KanbanColumn[]

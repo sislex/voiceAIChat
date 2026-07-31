@@ -8,6 +8,7 @@ import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { Board, KanbanColumn, ProjectDetail, ProjectMember, ProjectSummary, Task, WorkItemDefaultSkills } from '@shared/projects'
+import { issueKey } from '@shared/projects'
 
 
 export interface FakeApi extends RendererApi {
@@ -185,6 +186,17 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       }
     },
     'conversations:taskContext': async () => null,
+    // Метки чатов задач: ключ считаем той же shared-функцией, что сервер, а ран
+    // фейк не хранит — состояние подсветки тесты досылают кадрами `ci.*`.
+    'conversations:taskChats': async () =>
+      conversations
+        .filter((c) => c.taskId)
+        .flatMap((c) => {
+          const task = tasks.find((t) => t.id === c.taskId)
+          const project = projects.find((p) => p.id === task?.projectId)
+          if (!task || !project) return []
+          return [{ conversationId: c.id, projectId: project.id, taskId: task.id, key: issueKey(project.name, task), type: task.type, run: null }]
+        }),
     'conversations:setProject': async ({ id, projectId }) => {
       const conv = conversations.find((c) => c.id === id)!
       conv.projectId = projectId

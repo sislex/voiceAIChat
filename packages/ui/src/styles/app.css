@@ -150,6 +150,20 @@
   color: var(--text-dim);
   margin: 0;
 }
+/* Чат задачи в списке: тип, ключ и состояние последнего рана — та же
+   атрибутика, что на карточке доски, только в одну строку. */
+.ctask {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin: 0 0 3px 0;
+  font-size: 11px;
+}
+.ctask-key {
+  color: var(--text-dim);
+  font-weight: 600;
+}
 .cstatus {
   display: flex;
   align-items: center;
@@ -3850,8 +3864,32 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   50% { box-shadow: 0 0 0 3px rgba(255, 171, 0, 1), 0 0 12px rgba(255, 171, 0, 0.55); }
 }
 
+/* Те же состояния в списке чатов и в шапке открытого чата задачи: чат живёт
+   рядом с карточкой и обязан читаться так же — те же кейфреймы и цвета. Отличие
+   одно: мигает только активный ран (идёт / чинит / ждёт ответа), у терминального
+   рамка статичная. Красное мигание по давно упавшему рану в списке чатов —
+   постоянный шум на экране, за которым сидят и без всякого CI.
+   Сама принадлежность к задаче видна всегда — accent-полоской слева. */
+.convo--task { border-left: 3px solid var(--accent); padding-left: 9px; }
+.convo--ci-running { animation: jcard-ci-blue 2.6s ease-in-out infinite; }
+.convo--ci-fixing { animation: jcard-ci-red 2.2s ease-in-out infinite; }
+.convo--ci-awaiting { animation: jcard-ci-yellow 0.9s ease-in-out infinite; }
+.convo--ci-failed { box-shadow: 0 0 0 2px var(--ci-removed); }
+.convo--ci-done { box-shadow: 0 0 0 2px var(--ci-success); }
+
+.taskchat--ci-running { animation: jcard-ci-blue 2.6s ease-in-out infinite; }
+.taskchat--ci-fixing { animation: jcard-ci-red 2.2s ease-in-out infinite; }
+.taskchat--ci-awaiting { animation: jcard-ci-yellow 0.9s ease-in-out infinite; }
+.taskchat--ci-failed { box-shadow: 0 0 0 2px var(--ci-removed); }
+.taskchat--ci-done { box-shadow: 0 0 0 2px var(--ci-success); }
+
 /* Без анимации подсветка остаётся, но статичной рамкой. */
 @media (prefers-reduced-motion: reduce) {
+  .convo--ci-running, .convo--ci-fixing, .convo--ci-awaiting,
+  .taskchat--ci-running, .taskchat--ci-fixing, .taskchat--ci-awaiting { animation: none; }
+  .convo--ci-running, .taskchat--ci-running { box-shadow: 0 0 0 2px #4c9aff; }
+  .convo--ci-fixing, .taskchat--ci-fixing { box-shadow: 0 0 0 2px var(--ci-removed); }
+  .convo--ci-awaiting, .taskchat--ci-awaiting { box-shadow: 0 0 0 2px #ffab00; }
   .jcard--ci-running, .jcard--ci-fixing, .jcard--ci-awaiting, .jcard--ci-failed { animation: none; }
   .jcard--ci-running { box-shadow: 0 0 0 2px #4c9aff, 0 1px 2px rgba(9, 30, 66, 0.25); }
   .jcard--ci-fixing, .jcard--ci-failed { box-shadow: 0 0 0 2px var(--ci-removed), 0 1px 2px rgba(9, 30, 66, 0.25); }

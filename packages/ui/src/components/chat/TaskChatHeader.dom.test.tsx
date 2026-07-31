@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import type { TaskChatContext } from '@shared/projects'
+import type { CiRunSummary } from '@shared/ci'
 import { TaskChatHeader } from './TaskChatHeader'
 
 function ctx(over: Partial<TaskChatContext> = {}): TaskChatContext {
@@ -72,5 +73,39 @@ describe('TaskChatHeader', () => {
     render(<TaskChatHeader context={ctx({ run: null })} onOpenTask={vi.fn()} renderRunFeed={() => <div />} />)
     expect(screen.queryByTestId('task-chat-elapsed')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Лента рана' })).not.toBeInTheDocument()
+  })
+})
+
+describe('TaskChatHeader — подсветка состояния рана', () => {
+  const summary = (over: Partial<CiRunSummary> = {}): CiRunSummary => ({
+    id: 'run-1',
+    taskId: 't1',
+    status: 'running',
+    slotProgress: { done: 1, total: 4, phase: 'Модель работает' },
+    durationMs: null,
+    modelActive: true,
+    awaitingInput: false,
+    ...over
+  })
+  const header = (): HTMLElement => screen.getByTestId('task-chat-header')
+
+  it('живая сводка подсвечивает шапку как карточку на доске', () => {
+    const { unmount } = render(
+      <TaskChatHeader context={ctx()} summary={summary({ slotProgress: { done: 2, total: 4, phase: 'Модель исправляет ошибку', fixing: true } })} onOpenTask={vi.fn()} />
+    )
+    expect(header().className).toContain('taskchat--ci-fixing')
+    unmount()
+
+    render(<TaskChatHeader context={ctx()} summary={summary({ status: 'awaiting_input', awaitingInput: true })} onOpenTask={vi.fn()} />)
+    expect(header().className).toContain('taskchat--ci-awaiting')
+  })
+
+  it('без сводки берёт состояние из контекста, а без рана не подсвечивает', () => {
+    const { unmount } = render(<TaskChatHeader context={ctx()} onOpenTask={vi.fn()} />)
+    expect(header().className).toContain('taskchat--ci-running')
+    unmount()
+
+    render(<TaskChatHeader context={ctx({ run: null })} onOpenTask={vi.fn()} />)
+    expect(header().className).not.toContain('taskchat--ci-')
   })
 })

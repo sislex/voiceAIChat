@@ -104,6 +104,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:setProject': ({ id, projectId }) =>
       req(REST.conversationProject(id), { method: 'POST', body: JSON.stringify({ projectId }) }),
     'conversations:taskContext': ({ id }) => req(REST.conversationTaskContext(id)),
+    'conversations:taskChats': () => req(REST.conversationTaskChats),
     'conversations:setStatus': ({ id, status }) =>
       req(REST.conversationStatus(id), { method: 'POST', body: JSON.stringify({ status }) }),
     'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode }) =>
