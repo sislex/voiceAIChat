@@ -290,3 +290,41 @@ describe('Sidebar — режим поиска «Сообщения»', () => {
     expect(screen.getByRole('button', { name: 'Загружаем…' })).toBeDisabled()
   })
 })
+
+describe('Sidebar — состояния списка бесед', () => {
+  it('первая загрузка показывает скелетоны вместо пустого списка', () => {
+    setup({ conversations: [], conversationsStatus: 'loading' })
+    expect(screen.getAllByTestId('convo-skeleton')).toHaveLength(5)
+    expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument()
+  })
+
+  it('повторная загрузка уже показанного списка его не подменяет', () => {
+    setup({ conversationsStatus: 'loading' })
+    expect(screen.queryByTestId('convo-skeleton')).not.toBeInTheDocument()
+    expect(screen.getByText('Чат 1')).toBeInTheDocument()
+    expect(screen.getByText('Обновляем список…')).toBeInTheDocument()
+  })
+
+  it('пустой список объясняет следующий шаг и предлагает действие', () => {
+    const onNew = vi.fn()
+    setup({ conversations: [], conversationsStatus: 'ready', onNew })
+    expect(screen.getByTestId('empty-state')).toHaveTextContent('Пока нет бесед — начните первую')
+    fireEvent.click(screen.getByRole('button', { name: 'Новый разговор' }))
+    expect(onNew).toHaveBeenCalledTimes(1)
+  })
+
+  it('ошибка загрузки видна и повторяется кнопкой', () => {
+    const onRetryConversations = vi.fn()
+    setup({
+      conversations: [],
+      conversationsStatus: 'error',
+      conversationsError: 'сервер недоступен',
+      onRetryConversations
+    })
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Не удалось загрузить беседы')
+    expect(alert).toHaveTextContent('сервер недоступен')
+    fireEvent.click(within(alert).getByRole('button', { name: 'Повторить' }))
+    expect(onRetryConversations).toHaveBeenCalledTimes(1)
+  })
+})

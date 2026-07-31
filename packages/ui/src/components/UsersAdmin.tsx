@@ -3,11 +3,21 @@ import type { AdminUserInfo, UsageReport, UsageUnit } from '@shared/admin'
 import type { Conversation, Message } from '@shared/types'
 import { Button } from './ui/Button'
 import { ToolFrame } from './ToolFrame'
+import { Skeleton, RefreshIndicator } from './ui/Skeleton'
+import { EmptyState } from './ui/EmptyState'
+import { ErrorState } from './ui/ErrorState'
+import { loadView, type LoadStatus } from '../lib/loadState'
 
 export interface UsersAdminProps {
   /** Размещение: модалка из меню (по умолчанию) или страница контентной колонки. */
   variant?: 'modal' | 'page'
   users: AdminUserInfo[]
+  /** Состояние загрузки списка: скелетон на первой загрузке, ошибка — с «Повторить». */
+  status?: LoadStatus
+  /** Техническая деталь ошибки загрузки (под «Подробнее»). */
+  error?: string | null
+  /** Повторить загрузку списка пользователей. */
+  onRetry?: () => void
   selected: string | null
   usage: UsageReport | null
   conversations: Conversation[]
@@ -40,6 +50,9 @@ function usd(n: number): string {
 
 export function UsersAdmin({
   users,
+  status = 'ready',
+  error = null,
+  onRetry,
   selected,
   usage,
   conversations,
@@ -61,6 +74,7 @@ export function UsersAdmin({
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
 
   const cur = users.find((u) => u.name === selected) ?? null
+  const view = loadView(status, users.length > 0)
   const canManage = (name: string): boolean => name !== 'admin' && name !== currentUserName
 
   const submitCreate = (): void => {
@@ -77,6 +91,34 @@ export function UsersAdmin({
       <div className="ccobs-body">
         {/* Левая колонка: список + форма создания */}
         <nav className="cc-col cc-projects" aria-label="Список пользователей">
+          {view.state === 'skeleton' && (
+            /* Высота косточки — высота .cc-item: логин плюс подпись со счётчиками. */
+            <Skeleton variant="list" count={4} height={52} lines={2} className="uadmin-skel" testId="user-skeleton" />
+          )}
+          {view.state === 'error' && (
+            <ErrorState
+              message="Не удалось загрузить пользователей"
+              detail={error}
+              {...(onRetry ? { onRetry } : {})}
+            />
+          )}
+          {view.state === 'empty' && (
+            <EmptyState
+              compact
+              icon="👤"
+              title="Пользователей пока нет"
+              description="Создайте первую учётку формой ниже — она сразу сможет войти."
+            />
+          )}
+          {view.staleError && (
+            <ErrorState
+              compact
+              message="Список мог устареть: обновить не удалось"
+              detail={error}
+              {...(onRetry ? { onRetry } : {})}
+            />
+          )}
+          {view.refreshing && <RefreshIndicator label="Обновляем список…" />}
           {users.map((u) => (
             <button
               key={u.name}
@@ -126,7 +168,13 @@ export function UsersAdmin({
 
         {/* Правая колонка: детали выбранного пользователя */}
         <div className="cc-col uadmin-detail" data-testid="user-detail">
-          {!cur && <p className="cc-empty">Выберите пользователя</p>}
+          {!cur && (
+            <EmptyState
+              icon="👤"
+              title="Пользователь не выбран"
+              description="Выберите учётку слева — покажем её машины, расход токенов и историю разговоров."
+            />
+          )}
           {cur && (
             <>
               <div className="uadmin-head">
@@ -163,7 +211,14 @@ export function UsersAdmin({
 
               <section className="uadmin-sec">
                 <h3 className="uadmin-h">Машины ({cur.agents.length})</h3>
-                {cur.agents.length === 0 && <p className="cc-empty">Нет машин</p>}
+                {cur.agents.length === 0 && (
+                  <EmptyState
+                    compact
+                    icon="💻"
+                    title="Машин нет"
+                    description="Появятся, когда пользователь установит агента командой из меню «Машины»."
+                  />
+                )}
                 {cur.agents.map((a) => (
                   <p key={a.id} className="uagent">
                     <span className={`exectarget-dot ${a.online ? 'remote' : 'server'}`} aria-hidden />
@@ -185,6 +240,14 @@ export function UsersAdmin({
                     </button>
                   ))}
                 </div>
+                {!usage && (
+                  <EmptyState
+                    compact
+                    icon="📊"
+                    title="Период не выбран"
+                    description="Выберите разбивку выше — покажем токены, стоимость и число ответов."
+                  />
+                )}
                 {usage && (
                   <>
                     <p className="uadmin-total" data-testid="usage-total">
@@ -237,6 +300,14 @@ export function UsersAdmin({
 
               <section className="uadmin-sec">
                 <h3 className="uadmin-h">История ({conversations.length})</h3>
+                {conversations.length === 0 && (
+                  <EmptyState
+                    compact
+                    icon="💬"
+                    title="Разговоров пока нет"
+                    description="Появятся, как только пользователь начнёт первый чат."
+                  />
+                )}
                 {conversations.map((c) => (
                   <button
                     key={c.id}

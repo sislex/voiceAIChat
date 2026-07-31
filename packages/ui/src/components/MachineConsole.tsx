@@ -3,6 +3,9 @@ import type { AgentExecResult, AgentInfo } from '@shared/agentProtocol'
 import type { UtilityVariant } from './machine'
 import { IconButton } from './ui/IconButton'
 import { ToolFrame } from './ToolFrame'
+import { RefreshIndicator } from './ui/Skeleton'
+import { EmptyState } from './ui/EmptyState'
+import { ErrorState } from './ui/ErrorState'
 
 export interface MachineConsoleProps {
   agents: AgentInfo[]
@@ -35,11 +38,9 @@ export function MachineConsole({
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [running, setRunning] = useState(false)
 
-  const submit = async (e: FormEvent): Promise<void> => {
-    e.preventDefault()
-    const command = cmd.trim()
+  /** Выполнить команду и дописать результат в историю (та же дорога у «Повторить»). */
+  const runCommand = async (command: string): Promise<void> => {
     if (!command || !agentId || running) return
-    setCmd('')
     setRunning(true)
     try {
       const res = await exec(agentId, command)
@@ -55,6 +56,14 @@ export function MachineConsole({
     } finally {
       setRunning(false)
     }
+  }
+
+  const submit = async (e: FormEvent): Promise<void> => {
+    e.preventDefault()
+    const command = cmd.trim()
+    if (!command || !agentId || running) return
+    setCmd('')
+    await runCommand(command)
   }
 
   return (
@@ -80,21 +89,46 @@ export function MachineConsole({
             ))}
           </select>
         )}
-        {agents.length === 0 && <span className="fspath">Нет машин. Добавьте машину в настройках.</span>}
       </div>
 
       <div className="consout" data-testid="console-output">
+        {agents.length === 0 && (
+          <EmptyState
+            icon="💻"
+            title="Нет машин — добавьте первую"
+            description="Машина подключается в настройках: там выдаётся команда установки агента."
+          />
+        )}
+        {agents.length > 0 && history.length === 0 && !running && (
+          <EmptyState
+            icon="▶"
+            title="Команд ещё не было"
+            description="Наберите команду в поле ниже — вывод и код возврата появятся здесь."
+          />
+        )}
         {history.map((h, i) => (
           <div className="conshist" key={i}>
             <p className="conscmd">$ {h.command}</p>
             {h.output && <pre className="conspre">{h.output}</pre>}
-            {h.error && <p className="conserr">{h.error}</p>}
+            {h.error && (
+              <ErrorState
+                compact
+                className="conserr"
+                message="Команда не выполнилась"
+                detail={h.error}
+                onRetry={() => void runCommand(h.command)}
+              />
+            )}
             {!h.error && h.exitCode !== 0 && h.exitCode !== null && (
               <p className="conserr">exit {h.exitCode}</p>
             )}
           </div>
         ))}
-        {running && <p className="cc-empty">Выполняю…</p>}
+        {running && (
+          <p className="consrun">
+            <RefreshIndicator label="Выполняю…" />
+          </p>
+        )}
       </div>
 
       <form className="consbar" onSubmit={submit}>

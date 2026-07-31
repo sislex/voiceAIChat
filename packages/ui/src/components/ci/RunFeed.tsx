@@ -13,11 +13,19 @@ import { CiConsole } from './CiConsole'
 import { QuestionsForm } from '../QuestionsForm'
 import { Button } from '../ui/Button'
 import { useConfirm } from '../ui/useConfirm'
+import { Skeleton, RefreshIndicator } from '../ui/Skeleton'
+import { EmptyState } from '../ui/EmptyState'
+import { ErrorState } from '../ui/ErrorState'
+import { loadView, type LoadStatus } from '../../lib/loadState'
 
 export interface RunFeedCache {
   detail: CiRunDetail | null
   log: CiLogLine[]
   conclusion: CiRunConclusion | null
+  /** Ошибка последней загрузки ленты: экран ошибки с «Повторить» вместо пустоты. */
+  error?: string | null
+  /** Идёт REST-подгрузка ленты: до первых шагов — скелетон, дальше — индикатор. */
+  loading?: boolean
 }
 
 export interface RunFeedProps {
@@ -75,6 +83,11 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   const detail = cache?.detail ?? null
   const run = detail?.run ?? null
   const log = cache?.log ?? []
+  const loadError = cache?.error ?? null
+  // Лента приходит и пушем, и REST-подгрузкой: скелетон — только пока шагов нет,
+  // дальше обновления не подменяют содержимое (см. lib/loadState.ts).
+  const status: LoadStatus = cache?.loading ? 'loading' : loadError ? 'error' : detail ? 'ready' : 'loading'
+  const view = loadView(status, detail != null)
 
   useEffect(() => {
     if (!run) return
@@ -233,6 +246,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
         </span>
         {run && <span className="ci-step-dur">{run.slotProgress.phase} · {run.slotProgress.done}/{run.slotProgress.total}</span>}
         {run && run.durationMs != null && <span className="ci-step-dur">{fmtDuration(run.durationMs)}</span>}
+        {view.refreshing && <RefreshIndicator label="Обновляем ленту…" />}
         <div className="ci-runfeed-actions">
           <label className="ci-mode-indicator"><input type="checkbox" checked={autoscroll} onChange={(e) => setAutoscroll(e.target.checked)} /> автоскролл</label>
           {running && <Button onClick={() => props.onCancel(runId)}>Отменить</Button>}
@@ -249,10 +263,43 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
         </div>
       )}
 
-      <ul className="ci-steps">
-        {topSteps.roots.length === 0 && <li className="ci-empty">Шагов пока нет.</li>}
-        {topSteps.roots.map((s) => renderStep(s, false))}
-      </ul>
+      {view.state === 'skeleton' && (
+        <div className="ci-steps ci-steps--skel" data-testid="ci-runfeed-skeleton" aria-busy="true">
+          {/* Высота косточки — высота свёрнутого шага (.ci-step-head). */}
+          <Skeleton variant="list" item="block" count={4} height={34} gap={6} />
+        </div>
+      )}
+      {view.state === 'error' && (
+        <ErrorState
+          message="Не удалось загрузить ленту рана"
+          detail={loadError}
+          onRetry={() => props.onLoad(runId)}
+        />
+      )}
+      {view.staleError && (
+        <ErrorState
+          compact
+          className="ci-runfeed-error"
+          message="Лента могла устареть: обновить не удалось"
+          detail={loadError}
+          onRetry={() => props.onLoad(runId)}
+        />
+      )}
+      {view.state === 'data' && (
+        <ul className="ci-steps">
+          {topSteps.roots.length === 0 && (
+            <li>
+              <EmptyState
+                compact
+                icon="⏱"
+                title="Шагов пока нет"
+                description="Первый шаг появится, когда воркфлоу начнётся, — лента обновляется сама."
+              />
+            </li>
+          )}
+          {topSteps.roots.map((s) => renderStep(s, false))}
+        </ul>
+      )}
     </div>
     {consoleOpen && <CiConsole runId={runId} onClose={() => setConsoleOpen(false)} />}
     </>

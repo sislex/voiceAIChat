@@ -23,6 +23,8 @@ import {
 import { Dots } from './animations'
 import { QuestionsForm } from './QuestionsForm'
 import { Button } from './ui/Button'
+import { Skeleton, RefreshIndicator } from './ui/Skeleton'
+import { EmptyState } from './ui/EmptyState'
 import { IconButton } from './ui/IconButton'
 import { MessageMeta } from './MessageMeta'
 import {
@@ -405,11 +407,29 @@ export function ChatColumn({
 
       <div className="scroll" ref={scrollRef} data-testid="scroll">
         <div className="col-c">
-          {loadingMessages && (
-            <div className="msgloading" data-testid="messages-loading">
-              <Dots />
-              <span>Загрузка сообщений…</span>
+          {/* Первая загрузка ленты — скелетон реплик той же геометрии, что у
+              сообщений (свои слева, ответы модели шире справа). Повторная
+              загрузка уже показанной истории её не подменяет: иначе лента
+              мигает на каждом обновлении. */}
+          {loadingMessages && messages.length === 0 && (
+            <div className="msgskel" data-testid="messages-loading" aria-busy="true">
+              <Skeleton variant="card" className="msgskel-item msgskel-item--me" height={62} lines={2} />
+              <Skeleton variant="card" className="msgskel-item msgskel-item--ai" height={96} lines={3} />
+              <Skeleton variant="card" className="msgskel-item msgskel-item--me" height={62} lines={2} />
             </div>
+          )}
+          {loadingMessages && messages.length > 0 && (
+            <div className="msgrefresh">
+              <RefreshIndicator label="Обновляем историю…" />
+            </div>
+          )}
+          {!loadingMessages && messages.length === 0 && liveSegments.length === 0 && !streamingReply && (
+            <EmptyState
+              testId="messages-empty"
+              icon="💬"
+              title="Пока нет сообщений — задайте первый вопрос"
+              description="Наберите текст в поле ниже или нажмите микрофон: и вопрос, и ответ модели появятся здесь."
+            />
           )}
           {messages.map((m) => {
             const isAi = m.role === 'ai'

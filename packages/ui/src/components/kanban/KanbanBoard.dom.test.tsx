@@ -126,3 +126,38 @@ describe('KanbanBoard (изолированный)', () => {
     expect(await screen.findByTestId('task-modal')).toBeInTheDocument()
   })
 })
+
+describe('KanbanBoard — состояния загрузки, пустоты и ошибки', () => {
+  it('первая загрузка — скелетон колонок и карточек, самой доски ещё нет', () => {
+    renderBoard({ board: null, loading: true })
+    const skeleton = screen.getByTestId('kanban-skeleton')
+    expect(skeleton).toHaveAttribute('aria-busy', 'true')
+    expect(within(skeleton).getAllByTestId('skeleton').length).toBeGreaterThan(3)
+    expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument()
+  })
+
+  it('повторная загрузка уже показанной доски её не подменяет скелетоном', () => {
+    renderBoard({ loading: true })
+    expect(screen.queryByTestId('kanban-skeleton')).not.toBeInTheDocument()
+    expect(screen.getByTestId('kanban-board')).toBeInTheDocument()
+    expect(screen.getByText('Обновляем доску…')).toBeInTheDocument()
+  })
+
+  it('ошибка без доски предлагает «Повторить»', async () => {
+    const onRetry = vi.fn()
+    renderBoard({ board: null, error: 'ECONNREFUSED', onRetry })
+    await userEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: 'Повторить' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+
+  it('доска без колонок объясняет, что такое колонка', () => {
+    renderBoard({ board: { columns: [], tasks: [] } })
+    expect(screen.getByText('Колонок пока нет — создайте первую')).toBeInTheDocument()
+  })
+
+  it('пустая колонка подсказывает, чем её наполнить', () => {
+    renderBoard({ board: { columns: [board.columns[0]!], tasks: [] } })
+    const column = screen.getByTestId('kanban-column')
+    expect(within(column).getByTestId('empty-state')).toHaveTextContent('Здесь пока пусто')
+  })
+})

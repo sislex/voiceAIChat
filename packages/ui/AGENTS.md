@@ -23,7 +23,8 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   `FileExplorer`, `CcObserver`/`CodexObserver`, `UsersAdmin`, `QuestionsForm`,
   `MessageActivity`, `MessageImage`, `AgentCommands`, `Markdown`.
 - `components/ui/` — примитивы без предметной логики: `Button`/`IconButton`
-  (единая кнопка), `Dialog` (модальное окно),
+  (единая кнопка), `Skeleton`/`EmptyState`/`ErrorState` (состояния экрана),
+  `Dialog` (модальное окно),
   `useDialogStack` (стек открытых окон), `Toast`/`ToastProvider` (уведомления),
   `ConfirmDialog` + `useConfirm` (подтверждение как `await`) и `UiProviders`
   (обёртка из провайдеров тостов и подтверждений — стоит в корне `App`).
@@ -59,6 +60,32 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   крестик «удалить», который краснеет только под курсором), а не новый класс
   кнопки. Плотность и цвет под конкретный экран задавай контекстом
   (`.mfoot .vc-btn--ghost`, `.util-head-btns .vc-btn--icon`), не копией правил.
+- **Загрузка, пустота и ошибка — только `Skeleton` / `EmptyState` / `ErrorState`**
+  (`components/ui/`). Своих `.msgloading`, `.pb-skeletons`, «Загрузка доски…» и
+  серых «нет данных» больше не заводим: раньше каждый экран показывал ожидание
+  по-своему, а ошибка чтения в большинстве мест не показывалась вовсе — список
+  оставался пустым, и «пусто» было не отличить от «сломалось».
+  - Порядок состояний один: `loading → (data | empty | error)`, и решает его
+    `loadView(status, hasData)` из `lib/loadState.ts`. **Скелетон — только на
+    первой загрузке** (данных ещё нет); при повторной данные остаются на экране,
+    а факт обновления показывает `RefreshIndicator` — подмена уже показанного
+    списка скелетоном читается как мигание. Ошибка при показанных данных
+    (`staleError`) — баннер `ErrorState compact` над содержимым, а не вместо него.
+  - **Скелетон повторяет геометрию контента**: высота карточки задачи, ряда
+    таблицы, строки лога — иначе при подстановке данных прыгает вся раскладка.
+    Поэтому у вариантов есть `width`/`height`, и экран задаёт свои размеры.
+    Анимация блика — на токенах `--skeleton-base`/`--skeleton-shine` и гаснет
+    при `@media (prefers-reduced-motion: reduce)`.
+  - **Текст пустоты объясняет следующий шаг**, а не констатирует пустоту: не
+    «Нет бесед», а «Пока нет бесед — начните первую»; действие (кнопка) —
+    необязательное, но именно оно и есть следующий шаг.
+  - У `ErrorState` короткое сообщение, техническая деталь под «Подробнее» и
+    «Повторить» (`onRetry`). Повтор дают чтению и идемпотентной правке — то же
+    правило, что у `fail(err, retry)` в сторе. Тост ошибки остаётся: он для
+    момента, `ErrorState` — для экрана, который иначе выглядит пустым.
+  - Состояние загрузки живёт в сторе рядом с данными (`conversationsStatus`,
+    `adminUsersStatus`, `ciStatus`, `agentsStatus`, `boardError`, `loading`/`error`
+    в `ciRuns[id]`), а экран получает его пропсом — компонент сам не грузит.
 - **Кнопка без видимой подписи — `IconButton`**, и у неё обязаны быть `aria-label`
   и `title` (в типах оба поля обязательные — сборка падает без них): первый —
   для скринридера, второй — тултип мышью. Одного `aria-label` мало, браузер его
@@ -96,9 +123,11 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   кнопке окна ждите `waitFor`/`findBy`.
   Логика стора — `store/voiceStore.test.ts` без DOM.
 
-Storybook: сториз примитивов — `src/components/ui/{Button,Dialog,Toast,ConfirmDialog}.stories.tsx`
+Storybook: сториз примитивов — `src/components/ui/{Button,Dialog,Toast,ConfirmDialog,Skeleton,EmptyState,ErrorState}.stories.tsx`
 (у `Button` — матрица «вариант × размер × состояние» сразу в двух темах),
-канбана — `src/components/kanban/*.stories.tsx`, витрина основы дизайна —
+канбана — `src/components/kanban/*.stories.tsx` (у `KanbanBoard` есть загрузка,
+пустая доска и ошибка), ленты CI-рана — `src/components/ci/RunFeed.stories.tsx`
+(те же три состояния), витрина основы дизайна —
 `src/stories/foundations/` (`Colors`, `Spacing & Radius`, `Typography`, `Icons`,
 `CI Status` + docs-страница «Как добавлять компонент»). Провайдеры примитивов и
 переключатель темы подключены глобальным декоратором в `.storybook/preview.tsx`:

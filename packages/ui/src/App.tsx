@@ -319,6 +319,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         open={sidebarOpen}
         onToggleCollapse={() => setCollapsedPersist(true)}
         conversations={state.conversations}
+        conversationsStatus={state.conversationsStatus}
+        conversationsError={state.conversationsError}
+        onRetryConversations={() => void actions.retryConversations()}
         activeId={state.activeId}
         workingIds={[
           ...Object.keys(state.activeTurns),
@@ -504,6 +507,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           }
           board={state.board}
           loading={state.boardLoading || state.activeProjectId !== routeProjectId}
+          error={state.boardError}
+          onRetry={() => void actions.openBoard(routeProjectId)}
           members={state.projectDetail?.members ?? []}
           currentUser={state.currentUser?.name ?? null}
           onCreateColumn={(name) => void actions.createColumn(name)}
@@ -593,6 +598,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         <MachineStatus
           variant="page"
           agents={state.agents}
+          status={state.agentsStatus}
+          error={state.agentsError}
+          onRetry={() => void actions.refreshAgents()}
           onSetPolicy={(id, policy) => void actions.setAgentPolicy(id, policy)}
           onCreateAgent={actions.createAgent}
           onRegenerateToken={actions.regenerateAgentToken}
@@ -608,6 +616,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         <UsersAdmin
           variant="page"
           users={state.adminUsers}
+          status={state.adminUsersStatus}
+          error={state.adminUsersError}
+          onRetry={() => void actions.openUsers()}
           selected={state.adminSelected}
           usage={state.adminUsage}
           conversations={state.adminConversations}
@@ -627,6 +638,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       {utilitySeg === 'ci' && state.ciOpen && (
         <CiCommands
           commands={state.ciCommands}
+          status={state.ciStatus}
+          error={state.ciError}
+          onRetry={() => void actions.openCi()}
           settings={state.ciSettings}
           suggestions={state.ciSuggestions}
           workspaces={state.ciWorkspaces}
