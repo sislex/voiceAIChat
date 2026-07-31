@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { screen, fireEvent, within } from '@testing-library/react'
+import { screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { ProjectBoard, type ProjectBoardProps } from './ProjectBoard'
@@ -38,7 +38,6 @@ function renderBoard(props: Partial<ProjectBoardProps> = {}): ProjectBoardProps 
     onUpdateTask: vi.fn(),
     onMoveTask: vi.fn(),
     onDeleteTask: vi.fn(),
-    onClose: vi.fn(),
     ...props
   }
   render(<ProjectBoard {...full} />)
@@ -84,9 +83,9 @@ describe('ProjectBoard', () => {
   })
 
   // Жест указателем разобран в KanbanBoard.dom.test (там задана раскладка);
-  // здесь важно другое: перенос доходит до колбэка страницы, а его Esc не
-  // закрывает саму страницу — Esc обёртки висит на том же window.
-  it('перенос задачи с клавиатуры зовёт onMoveTask, а Esc отменяет его, не закрывая страницу', () => {
+  // здесь важно другое: перенос доходит до колбэка раздела, а его Esc отменяет
+  // только перенос — доска остаётся на месте.
+  it('перенос задачи с клавиатуры зовёт onMoveTask, а Esc отменяет его, не убирая доску', () => {
     const p = renderBoard()
     const card = screen.getAllByTestId('task-card')[1]! // берём B (t2)
     card.focus()
@@ -95,8 +94,7 @@ describe('ProjectBoard', () => {
     fireEvent.keyDown(card, { key: 'ArrowUp' })
     fireEvent.keyDown(card, { key: 'Escape' })
     expect(p.onMoveTask).not.toHaveBeenCalled()
-    expect(p.onClose).not.toHaveBeenCalled()
-    expect(screen.getByTestId('project-board')).toBeInTheDocument()
+    expect(screen.getByTestId('kanban-board')).toBeInTheDocument()
 
     fireEvent.keyDown(card, { key: ' ' })
     fireEvent.keyDown(card, { key: 'ArrowUp' })
@@ -132,6 +130,17 @@ describe('ProjectBoard', () => {
     const modal = await screen.findByTestId('task-modal')
     await userEvent.selectOptions(within(modal).getByLabelText('Статус'), 'c2')
     expect(p.onMoveTask).toHaveBeenCalledWith('t1', 'c2', null, null)
+  })
+
+  // Приход из чата: карточка открыта сразу, и Esc закрывает именно её — рамки
+  // страницы у раздела больше нет, поэтому закрывать ей нечего.
+  it('initialOpenTaskId открывает карточку, Esc закрывает её и оставляет доску', async () => {
+    renderBoard({ initialOpenTaskId: 't1' })
+    const modal = await screen.findByTestId('task-modal')
+    expect(within(modal).getByLabelText('Заголовок задачи')).toHaveValue('A')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByTestId('task-modal')).not.toBeInTheDocument())
+    expect(screen.getByTestId('kanban-board')).toBeInTheDocument()
   })
 
   it('WIP-лимит: превышение подсвечивает счётчик «N/лимит»', () => {

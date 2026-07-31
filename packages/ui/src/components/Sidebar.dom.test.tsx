@@ -122,6 +122,9 @@ describe('Sidebar — инструменты в меню по клику на п
   })
 })
 
+// Выбор проекта и создание нового живут только здесь: страницы-списка проектов
+// нет, а «Проекты» в переключателе открывают страницу первого проекта (адрес
+// считает App, сайдбар лишь сообщает о переключении режима).
 describe('Sidebar — режим «Проекты»', () => {
   const projects = [
     { id: 'p1', name: 'Альфа', role: 'owner' },
@@ -134,7 +137,7 @@ describe('Sidebar — режим «Проекты»', () => {
     expect(screen.getByText('Чат 1')).toBeInTheDocument()
   })
 
-  it('переключатель показывает проекты с ролями, клик по проекту зовёт onPickProject', async () => {
+  it('переключатель показывает проекты с ролями, клик по проекту открывает его страницу', async () => {
     const onPickProject = vi.fn()
     const onModeChange = vi.fn()
     setup({ projects, mode: 'projects', onModeChange, onPickProject, activeProjectId: 'p2' })
