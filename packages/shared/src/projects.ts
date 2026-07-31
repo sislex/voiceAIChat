@@ -85,6 +85,13 @@ export interface ProjectSummary {
   ciReuseStrategy?: CiReuseStrategy
   /** CI-раннер: ссылка на секрет авторизации выполнения (или ''). */
   ciExecAuthRef?: string
+  /**
+   * Через сколько дней после попадания в колонку «Готово» задача пропадает с
+   * доски (как в Jira). `null` — не скрывать никогда, `0` — скрывать сразу.
+   * Задача при этом не удаляется: её видно по прямой ссылке и с включённым
+   * «Показать завершённые».
+   */
+  doneRetentionDays?: number | null
 }
 
 /** Машина проекта: агент + рабочая папка проекта на этой машине. */
@@ -147,6 +154,11 @@ export interface Task {
   dueDate: number | null
   /** Помечена флагом «внимание» (Jira flag). */
   flagged: boolean
+  /**
+   * Момент попадания в колонку с семантикой `done` (unix ms) или null, если
+   * задача не завершена. Отсчёт срока, после которого карточка уходит с доски.
+   */
+  doneAt?: number | null
   /** Порядковый номер задачи в проекте — основа ключа «PRJ-42». */
   seq: number
   /** Дробный ранг для порядка внутри колонки. */
@@ -158,6 +170,28 @@ export interface Task {
    * не создан). Заполняется только в снапшоте доски; в ответах create/update — null.
    */
   chatId?: string | null
+}
+
+/** Сколько дней завершённая задача ещё висит на доске по умолчанию (как в Jira). */
+export const DEFAULT_DONE_RETENTION_DAYS = 14
+
+/** День в миллисекундах — шаг порога «сколько держать завершённые на доске». */
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Пора ли убрать завершённую задачу с доски. `doneAt` — момент попадания в
+ * колонку done, `retentionDays` — настройка проекта: null/мусор — не скрывать
+ * никогда, 0 — скрывать сразу. Скрытие не удаляет задачу: она приходит с
+ * `includeCompleted` и открывается по прямой ссылке.
+ */
+export function isCompletedHidden(
+  doneAt: number | null | undefined,
+  retentionDays: number | null | undefined,
+  now: number
+): boolean {
+  if (doneAt == null || retentionDays == null) return false
+  if (!Number.isFinite(retentionDays) || retentionDays < 0) return false
+  return now - doneAt >= retentionDays * DAY_MS
 }
 
 /** Новое доменное имя; Task остаётся alias для совместимости. */

@@ -101,7 +101,9 @@ CREATE TABLE IF NOT EXISTS projects (
   default_skills_epic  TEXT NOT NULL DEFAULT '[]',
   default_skills_story TEXT NOT NULL DEFAULT '[]',
   default_skills_task  TEXT NOT NULL DEFAULT '[]',
-  task_seq INTEGER NOT NULL DEFAULT 0
+  task_seq INTEGER NOT NULL DEFAULT 0,
+  -- Через сколько дней завершённая задача уходит с доски (NULL — не скрывать).
+  done_retention_days INTEGER DEFAULT 14
 );
 
 
@@ -159,6 +161,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   story_points REAL,
   due_date    INTEGER,
   flagged     INTEGER NOT NULL DEFAULT 0,
+  -- Момент попадания в колонку с семантикой done (NULL — задача не завершена).
+  done_at     INTEGER,
   seq         INTEGER,
   position    REAL NOT NULL,
   created_at  INTEGER NOT NULL,

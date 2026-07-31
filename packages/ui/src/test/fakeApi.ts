@@ -8,7 +8,7 @@ import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { Board, KanbanColumn, ProjectDetail, ProjectMember, ProjectSummary, Task, WorkItemDefaultSkills } from '@shared/projects'
-import { issueKey } from '@shared/projects'
+import { issueKey, isCompletedHidden, DEFAULT_DONE_RETENTION_DAYS } from '@shared/projects'
 
 
 export interface FakeApi extends RendererApi {
@@ -54,6 +54,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     commitPolicy: ProjectSummary['commitPolicy']
     mergeTransport: ProjectSummary['mergeTransport']
     agentPlanApprovalMode: ProjectSummary['agentPlanApprovalMode']
+    doneRetentionDays: number | null
   }
   const projects: FProject[] = []
   const columns: KanbanColumn[] = []
@@ -73,7 +74,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     role: p.members.find((m) => m.username === ME)?.role ?? 'owner',
     commitPolicy: p.commitPolicy,
     mergeTransport: p.mergeTransport,
-    agentPlanApprovalMode: p.agentPlanApprovalMode
+    agentPlanApprovalMode: p.agentPlanApprovalMode,
+    doneRetentionDays: p.doneRetentionDays
   })
   const detail = (p: FProject): ProjectDetail => ({
     ...summary(p),
@@ -81,10 +83,17 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     machines: p.machines.map((m) => ({ ...m })),
     defaultAgentId: p.defaultAgentId
   })
-  const boardOf = (pid: string): Board => ({
-    columns: columns.filter((c) => c.projectId === pid).sort((a, b) => a.position - b.position).map((c) => ({ ...c })),
-    tasks: tasks.filter((t) => t.projectId === pid).sort((a, b) => a.position - b.position).map((t) => ({ ...t }))
-  })
+  const boardOf = (pid: string, includeCompleted?: boolean): Board => {
+    // Как на сервере: давно завершённые задачи в снапшот не попадают.
+    const retention = includeCompleted ? null : projects.find((p) => p.id === pid)?.doneRetentionDays ?? null
+    return {
+      columns: columns.filter((c) => c.projectId === pid).sort((a, b) => a.position - b.position).map((c) => ({ ...c })),
+      tasks: tasks
+        .filter((t) => t.projectId === pid && !isCompletedHidden(t.doneAt, retention, Date.now()))
+        .sort((a, b) => a.position - b.position)
+        .map((t) => ({ ...t }))
+    }
+  }
 
   function makeConversation(title: string): Conversation {
     const ts = tick()
@@ -384,7 +393,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         defaultAgentId: null,
         commitPolicy: b.commitPolicy ?? 'agent_commits',
         mergeTransport: b.mergeTransport ?? 'local',
-        agentPlanApprovalMode: b.agentPlanApprovalMode ?? 'manual'
+        agentPlanApprovalMode: b.agentPlanApprovalMode ?? 'manual',
+        doneRetentionDays: DEFAULT_DONE_RETENTION_DAYS
       }
       projects.push(p)
       ;[
@@ -411,6 +421,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
       if (f.mergeTransport !== undefined) p.mergeTransport = f.mergeTransport
       if (f.agentPlanApprovalMode !== undefined) p.agentPlanApprovalMode = f.agentPlanApprovalMode
+      if (f.doneRetentionDays !== undefined) p.doneRetentionDays = f.doneRetentionDays
       p.updatedAt = tick()
       return detail(p)
     },
@@ -456,7 +467,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (p.machines.some((m) => m.agentId === agentId)) p.defaultAgentId = agentId
       return detail(p)
     },
-    'board:get': async ({ id }) => boardOf(id),
+    'board:get': async ({ id, includeCompleted }) => boardOf(id, includeCompleted),
     'columns:create': async ({ projectId, name }) => {
       const ts = tick()
       const max = Math.max(0, ...columns.filter((c) => c.projectId === projectId).map((c) => c.position))
@@ -537,6 +548,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'tasks:move': async ({ taskId, columnId, afterId, beforeId }) => {
       const t = tasks.find((x) => x.id === taskId)!
       t.columnId = columnId
+      // Как на сервере: попадание в «Готово» запускает отсчёт скрытия.
+      const done = columns.find((c) => c.id === columnId)?.semanticType === 'done'
+      t.doneAt = done ? t.doneAt ?? Date.now() : null
       const after = afterId ? tasks.find((x) => x.id === afterId) : null
       const before = beforeId ? tasks.find((x) => x.id === beforeId) : null
       t.position =

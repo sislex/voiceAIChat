@@ -279,3 +279,43 @@ describe('projects REST: навыки по умолчанию, навыки за
     expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${task.id}/chat` })).statusCode).toBe(404)
   })
 })
+
+describe('projects REST: скрытие завершённых задач', () => {
+  const boardOf = async (id: string, includeCompleted = false): Promise<Board> =>
+    (await inj(adminTok, {
+      method: 'GET',
+      url: `/api/projects/${id}/board${includeCompleted ? '?includeCompleted=1' : ''}`
+    })).json() as Board
+
+  it('задача из «Готово» за порогом не приходит по умолчанию и приходит с includeCompleted=1', async () => {
+    const p = await createProject('Done')
+    expect(p.doneRetentionDays).toBe(14) // дефолт как в Jira
+    const board = await boardOf(p.id)
+    const dev = board.columns.find((c) => c.semanticType === 'development')!
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    const task = (await inj(adminTok, {
+      method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: dev.id, title: 'T' }
+    })).json() as Task
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${task.id}/move`, payload: { columnId: done.id } })
+    // Свежезавершённая ещё на доске.
+    expect((await boardOf(p.id)).tasks.map((t) => t.id)).toContain(task.id)
+
+    // Порог 0 = «скрывать сразу» — как если бы прошло 14 дней.
+    const patched = await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { doneRetentionDays: 0 } })
+    expect((patched.json() as ProjectSummary).doneRetentionDays).toBe(0)
+    expect((await boardOf(p.id)).tasks.map((t) => t.id)).not.toContain(task.id)
+    expect((await boardOf(p.id, true)).tasks.map((t) => t.id)).toContain(task.id)
+
+    // Пустой порог — не скрывать никогда.
+    await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { doneRetentionDays: null } })
+    expect((await boardOf(p.id)).tasks.map((t) => t.id)).toContain(task.id)
+  })
+
+  it('мусор в пороге читается как «не скрывать», настройка — только владельцу', async () => {
+    const p = await createProject('Retention')
+    const bad = await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { doneRetentionDays: -5 } })
+    expect((bad.json() as ProjectSummary).doneRetentionDays).toBeNull()
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'bob' } })
+    expect((await inj(bobTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { doneRetentionDays: 3 } })).statusCode).toBe(403)
+  })
+})

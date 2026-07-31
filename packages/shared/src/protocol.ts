@@ -199,7 +199,9 @@ export const REST = {
   projectMachine: (id: string, agentId: string) =>
     `/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}`,
   projectDefaultMachine: (id: string) => `/api/projects/${encodeURIComponent(id)}/default-machine`,
-  projectBoard: (id: string) => `/api/projects/${encodeURIComponent(id)}/board`,
+  /** Снапшот доски; includeCompleted=1 добавляет давно завершённые задачи. */
+  projectBoard: (id: string, includeCompleted?: boolean) =>
+    `/api/projects/${encodeURIComponent(id)}/board${includeCompleted ? '?includeCompleted=1' : ''}`,
   projectColumns: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns`,
   projectColumnsReorder: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns/reorder`,
   projectColumn: (id: string, columnId: string) =>
@@ -304,7 +306,7 @@ export type ClientMessage =
   | { t: 'pty.input'; ptyId: string; data: string }
   | { t: 'pty.resize'; ptyId: string; cols: number; rows: number }
   | { t: 'pty.kill'; ptyId: string }
-  | { t: 'board.subscribe'; projectId: string }
+  | { t: 'board.subscribe'; projectId: string; includeCompleted?: boolean }
   | { t: 'board.unsubscribe' }
   | { t: 'ci.subscribe'; runId: string }
   | { t: 'ci.unsubscribe'; runId: string }

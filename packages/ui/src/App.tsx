@@ -264,6 +264,16 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     else if (state.activeProjectId) actions.closeBoard()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects, routeProjectId])
+  // Прямая ссылка на завершённую задачу: сервер прячет с доски давно готовые
+  // карточки, и открывать было бы нечего. Если задачи из URL в снапшоте нет —
+  // один раз включаем «Показать завершённые» и доска приходит целиком.
+  useEffect(() => {
+    if (!authed || !inProjects || !routeTaskId) return
+    if (state.boardIncludeCompleted || state.boardLoading || !state.board) return
+    if (state.board.tasks.some((t) => t.id === routeTaskId)) return
+    void actions.setBoardIncludeCompleted(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, inProjects, routeTaskId, state.board, state.boardLoading, state.boardIncludeCompleted])
   // Страницы-списка проектов нет: #/projects без id — это всегда переход на
   // первый проект списка. Правило то же, что у клика «Проекты» в сайдбаре,
   // поэтому персист последнего проекта не нужен. Нет проектов — редиректа нет,
@@ -647,6 +657,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               loading={state.boardLoading || state.activeProjectId !== routeProjectId}
               error={state.boardError}
               onRetry={() => void actions.openBoard(routeProjectId)}
+              showCompleted={state.boardIncludeCompleted}
+              onShowCompletedChange={(show) => void actions.setBoardIncludeCompleted(show)}
               members={state.projectDetail?.members ?? []}
               currentUser={state.currentUser?.name ?? null}
               onCreateColumn={(name) => void actions.createColumn(name)}

@@ -113,7 +113,7 @@ function makeAgentsBridge(ws: WsClient): RendererAgentsBridge {
 
 function makeBoardBridge(ws: WsClient): RendererBoardBridge {
   return {
-    subscribe: (projectId) => ws.send({ t: 'board.subscribe', projectId }),
+    subscribe: (projectId, includeCompleted) => ws.send({ t: 'board.subscribe', projectId, includeCompleted }),
     unsubscribe: () => ws.send({ t: 'board.unsubscribe' }),
     onUpdate: (cb) => ws.on('board.update', (m) => cb({ projectId: m.projectId, board: m.board }))
   }

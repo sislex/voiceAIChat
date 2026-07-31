@@ -346,6 +346,8 @@ export interface AppState {
   boardLoading: boolean
   /** Текст ошибки загрузки доски (экран ошибки вместо доски / баннер над ней). */
   boardError: string | null
+  /** Показывать ли на доске давно завершённые задачи (переключатель в шапке). */
+  boardIncludeCompleted: boolean
   /** Открыта ли страница «Команды» (CI-раннер). */
   ciOpen: boolean
   /** Справочник CI-команд (страница «Команды»). */
@@ -743,6 +745,7 @@ export interface StoreActions {
     ciBranchTemplate?: string
     ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
     ciExecAuthRef?: string
+    doneRetentionDays?: number | null
     }
   ): Promise<void>
   /** Удалить проект (только владелец). */
@@ -766,6 +769,8 @@ export interface StoreActions {
   closeProjectSettings(): void
   /** Применить живой снапшот доски (из WS board.update). */
   applyBoardUpdate(projectId: string, board: Board): void
+  /** Переключатель «Показать завершённые»: перезапрашивает доску и подписку. */
+  setBoardIncludeCompleted(include: boolean): Promise<void>
   /** Колонки активной доски. */
   createColumn(name: string): Promise<void>
   updateColumn(columnId: string, fields: { name?: string; wipLimit?: number | null }): Promise<void>
@@ -929,6 +934,7 @@ function initialState(): AppState {
     board: null,
     boardLoading: false,
     boardError: null,
+    boardIncludeCompleted: false,
     ciOpen: false,
     ciCommands: [],
     ciStatus: 'loading',
@@ -2923,6 +2929,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     ciBranchTemplate?: string
     ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
     ciExecAuthRef?: string
+    doneRetentionDays?: number | null
     }
   ): Promise<void> {
     try {
@@ -3024,16 +3031,37 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function refreshBoard(): Promise<void> {
     const id = state.activeProjectId
     if (!id) return
-    setState({ board: await api['board:get']({ id }) })
+    setState({ board: await api['board:get']({ id, includeCompleted: state.boardIncludeCompleted }) })
+  }
+  /**
+   * «Показать завершённые»: доска фильтруется на сервере, поэтому переключатель
+   * — это новый запрос снапшота и переподписка (живые board.update должны
+   * приходить в том же составе).
+   */
+  async function setBoardIncludeCompleted(include: boolean): Promise<void> {
+    if (state.boardIncludeCompleted === include) return
+    setState({ boardIncludeCompleted: include })
+    const id = state.activeProjectId
+    if (!id) return
+    boardBridge?.subscribe(id, include)
+    try {
+      setState({ board: await api['board:get']({ id, includeCompleted: include }) })
+    } catch (err) {
+      fail(err, () => void setBoardIncludeCompleted(include))
+    }
   }
   async function openBoard(id: string): Promise<void> {
     setState({ activeProjectId: id, boardLoading: true, boardError: null, board: null, projectSettingsOpen: false })
     try {
-      const [board, detail] = await Promise.all([api['board:get']({ id }), api['projects:get']({ id })])
+      const includeCompleted = state.boardIncludeCompleted
+      const [board, detail] = await Promise.all([
+        api['board:get']({ id, includeCompleted }),
+        api['projects:get']({ id })
+      ])
       const ciSummaries = { ...state.ciSummaries }
       for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
       setState({ board, projectDetail: detail, ciSummaries, boardLoading: false, boardError: null })
-      boardBridge?.subscribe(id)
+      boardBridge?.subscribe(id, includeCompleted)
     } catch (err) {
       // Ошибку видно и на странице (экран ошибки с «Повторить»), и тостом: тост
       // живёт секунды, а пустая доска без объяснения — вечно.
@@ -3657,6 +3685,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       openProjectSettings,
       closeProjectSettings,
       applyBoardUpdate,
+      setBoardIncludeCompleted,
       openCi,
       closeCi,
       reloadCiCommands,

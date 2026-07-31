@@ -103,6 +103,51 @@ describe('App — страница проекта по URL', () => {
   })
 })
 
+describe('App — завершённые задачи скрыты с доски', () => {
+  /** Проект с задачей в «Готово» и порогом 0 («скрывать сразу»). */
+  async function withCompleted(): Promise<{ api: FakeApi; projectId: string; taskId: string }> {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const p = await api['projects:create']({ name: 'Мой проект' })
+    const board = await api['board:get']({ id: p.id })
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    const task = await api['tasks:create']({ projectId: p.id, columnId: board.columns[0]!.id, title: 'Завершённая' })
+    await api['tasks:move']({ projectId: p.id, taskId: task.id, columnId: done.id })
+    await api['projects:update']({ id: p.id, doneRetentionDays: 0 })
+    render(<App api={api} delays={SLOW} />)
+    return { api, projectId: p.id, taskId: task.id }
+  }
+
+  it('«Показать завершённые» запрашивает доску целиком и возвращает карточку', async () => {
+    const { projectId } = await withCompleted()
+    window.location.hash = `#/projects/${projectId}`
+    await screen.findByTestId('kanban-board')
+    expect(screen.queryByText('Завершённая')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('checkbox', { name: /Показать завершённые/ }))
+    expect(await screen.findByText('Завершённая')).toBeInTheDocument()
+  })
+
+  it('прямая ссылка на скрытую задачу открывает её карточку', async () => {
+    const { projectId, taskId } = await withCompleted()
+    window.location.hash = `#/projects/${projectId}/task/${taskId}`
+    const modal = await screen.findByTestId('task-modal')
+    expect(within(modal).getByLabelText('Заголовок задачи')).toHaveValue('Завершённая')
+    // Доска подтянула завершённые целиком — переключатель это показывает.
+    expect(screen.getByRole('checkbox', { name: /Показать завершённые/ })).toBeChecked()
+  })
+
+  it('порог скрытия правится в настройках проекта', async () => {
+    const { api, projectId } = await withCompleted()
+    window.location.hash = `#/projects/${projectId}/settings`
+    const input = await screen.findByLabelText('Скрывать завершённые через, дней')
+    await userEvent.clear(input)
+    await userEvent.type(input, '30')
+    await userEvent.tab()
+    await waitFor(async () => expect((await api['projects:get']({ id: projectId }))!.doneRetentionDays).toBe(30))
+  })
+})
+
 describe('App — вход в раздел «Проекты»', () => {
   it('#/projects без id не показывает список: уводит на первый проект', async () => {
     const api = createFakeApi([])

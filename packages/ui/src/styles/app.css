@@ -3335,6 +3335,7 @@
 
 /* Доска */
 .kanban-showhidden { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; opacity: 0.8; }
+.kanban-showcompleted { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; opacity: 0.8; white-space: nowrap; }
 .kanban-board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 12px; }
 .kanban-col { flex: 0 0 260px; display: flex; flex-direction: column; gap: 6px;
   background: rgba(128,128,128,0.08); border-radius: 8px; padding: 8px; max-height: 78vh; }

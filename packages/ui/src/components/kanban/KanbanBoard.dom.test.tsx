@@ -61,6 +61,16 @@ describe('KanbanBoard (изолированный)', () => {
     expect(screen.getByText('Скрытая')).toBeInTheDocument()
   })
 
+  it('«Показать завершённые» сообщает наружу — состав доски решает сервер', async () => {
+    const onShowCompletedChange = vi.fn()
+    renderBoard({ showCompleted: false, onShowCompletedChange })
+    const filters = screen.getByTestId('board-filters')
+    const toggle = within(filters).getByRole('checkbox', { name: /Показать завершённые/ })
+    expect(toggle).not.toBeChecked()
+    await userEvent.click(toggle)
+    expect(onShowCompletedChange).toHaveBeenCalledWith(true)
+  })
+
   it('битые данные рендерятся без падения, seq 0 даёт ключ «P1-?»', () => {
     const broken = {
       columns: [{ id: 'c1', projectId: 'p1', name: '', semanticType: 'x', position: 'a', hidden: 0, wipLimit: -5, createdAt: 1 }],

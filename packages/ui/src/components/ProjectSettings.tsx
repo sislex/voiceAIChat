@@ -14,7 +14,7 @@ import { IconButton } from './ui/IconButton'
 export interface ProjectSettingsProps {
   detail: ProjectDetail
   agents: AgentInfo[]
-  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string }) => void
+  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; doneRetentionDays?: number | null }) => void
 
   onDelete: (id: string) => void
   onAddMember: (id: string, username: string) => void
@@ -144,6 +144,23 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
   const [gitUrl, setGitUrl] = useState(detail.gitUrl ?? '')
   const [newMember, setNewMember] = useState('')
   const [confirmDel, setConfirmDel] = useState(false)
+  // Порог скрытия завершённых: черновик строкой — пустое поле это «не скрывать»
+  // (null), а не 0. Синхронизируем с ответом сервера.
+  const retentionOf = (v: number | null | undefined): string => (v == null ? '' : String(v))
+  const [doneRetention, setDoneRetention] = useState(retentionOf(detail.doneRetentionDays))
+  useEffect(() => {
+    setDoneRetention(retentionOf(detail.doneRetentionDays))
+  }, [detail.doneRetentionDays])
+  const commitRetention = (): void => {
+    const raw = doneRetention.trim()
+    const parsed = raw === '' ? null : Number(raw)
+    if (parsed != null && (!Number.isFinite(parsed) || parsed < 0)) {
+      setDoneRetention(retentionOf(detail.doneRetentionDays))
+      return
+    }
+    const next = parsed == null ? null : Math.floor(parsed)
+    if (next !== (detail.doneRetentionDays ?? null)) props.onUpdate(detail.id, { doneRetentionDays: next })
+  }
 
   const saveMeta = (): void => {
     props.onUpdate(detail.id, { name: name.trim() || detail.name, description, gitUrl: gitUrl.trim() || null })
@@ -173,6 +190,33 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         <TagEditor label="Эпики" tags={detail.defaultSkills.epic} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { defaultSkills: { epic: next } })} />
         <TagEditor label="Стори" tags={detail.defaultSkills.story} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { defaultSkills: { story: next } })} />
         <TagEditor label="Таски" tags={detail.defaultSkills.task} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { defaultSkills: { task: next } })} />
+      </div>
+
+      <div className="proj-section">
+        <p className="proj-field-label">Доска</p>
+        <p className="proj-hint">
+          Завершённая задача пропадает с доски через указанное число дней после попадания в «Готово» — как в Jira. Из
+          системы она не удаляется: открывается по прямой ссылке и переключателем «Показать завершённые» в шапке доски.
+          Пусто — не скрывать никогда, 0 — скрывать сразу.
+        </p>
+        <label>
+          Скрывать завершённые через, дней
+          <input
+            className="login-input"
+            type="number"
+            min={0}
+            step={1}
+            disabled={!isOwner}
+            aria-label="Скрывать завершённые через, дней"
+            placeholder="не скрывать"
+            value={doneRetention}
+            onChange={(e) => setDoneRetention(e.target.value)}
+            onBlur={commitRetention}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRetention()
+            }}
+          />
+        </label>
       </div>
 
       <div className="proj-section feature-policy">

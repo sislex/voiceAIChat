@@ -419,7 +419,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       },
       // Живая канбан-доска: чтение снапшота (с проверкой членства) + подписка на изменения.
       board: {
-        getBoard: (projectId) => db.getBoard(user.name, projectId),
+        getBoard: (projectId, includeCompleted) => db.getBoard(user.name, projectId, { includeCompleted }),
         subscribe: (cb) => boardHub.onChange(cb)
       },
       ci: ciRunManager,
