@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-07-27
-checked: 49465ae
+updated: 2026-07-31
+checked: c769754
 areas:
   - package.json
   - scripts
@@ -36,7 +36,7 @@ Server запускает исходники через tsx. Web dev proxy со�
 | shared contract | `npm run -w @voicechat/shared typecheck` | `npm run -w @voicechat/shared test` | consumers при изменении публичного типа |
 | server | `npm run -w @voicechat/server typecheck` | `npm run -w @voicechat/server test` | HTTP/WS integration |
 | agent | `npm run -w @voicechat/agent typecheck` | `npm run -w @voicechat/agent test` | bundle test при протоколе/deps |
-| UI | `npm run -w @voicechat/ui typecheck` | `npm run -w @voicechat/ui test` | web build для CSS/bootstrap |
+| UI | `npm run -w @voicechat/ui typecheck` | `npm run -w @voicechat/ui test` | web build для CSS/bootstrap; `npm run build:storybook` при правке сториз/фикстур |
 | web | `npm run -w @voicechat/web typecheck` | package test при наличии | `npm run -w @voicechat/web build` |
 | desktop | `npm run typecheck:desktop` | `npm run test:desktop` | electron-vite build; native rebuild |
 | agent tray | `npm run typecheck:agent-tray` | `npm run test:agent-tray` | electron-vite build/dist |

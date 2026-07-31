@@ -1,13 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MessageActivity } from './MessageActivity'
-import type { ClaudeLogEntry } from '@shared/types'
+import { ACTIVITY_LEGACY, makeActivity } from '../test/fixtures'
 
-const activity: ClaudeLogEntry[] = [
-  { kind: 'system', summary: 'model=opus · mode=default', raw: '{"type":"system"}' },
-  { kind: 'tool_use', summary: 'Bash: ls -la', detail: 'ls -la', raw: '{"type":"assistant"}' },
-  { kind: 'result', summary: 'Готово', raw: '{"type":"result"}' }
-]
+// Активность — общая фикстура (её же показывают сториз): три записи без смещений.
+const activity = ACTIVITY_LEGACY
 
 describe('MessageActivity', () => {
   it('простой вид: счётчик действий, без секций', () => {
@@ -41,7 +38,7 @@ describe('MessageActivity', () => {
   it('живой ход: показывает фразу статуса', () => {
     render(
       <MessageActivity
-        activity={[{ kind: 'tool_use', summary: 'Bash: ls', raw: '{}' }]}
+        activity={[makeActivity({ summary: 'Bash: ls' })]}
         detailed={false}
         live
         voice="thinking"

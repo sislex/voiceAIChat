@@ -2,35 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MessageMeta } from './MessageMeta'
-import type { TurnMeta } from '@shared/types'
+import { makeTurnMeta } from '../test/fixtures'
 import '../styles/app.css'
 
-const META: TurnMeta = {
-  durationMs: 3400,
-  numTurns: 2,
-  costUsd: 0.0131,
-  inputTokens: 1500,
-  outputTokens: 320,
-  cacheReadTokens: 900,
-  model: 'sonnet',
-  request: {
-    provider: 'claude',
-    model: 'sonnet',
-    prompt: 'Как дела?',
-    promptChars: 9,
-    permissionMode: 'acceptEdits',
-    cwd: '/repo',
-    resumed: true,
-    tools: ['Bash', 'Read', 'Edit'],
-    slashCommands: ['review'],
-    mcpServers: ['remote'],
-    messages: [
-      { role: 'u1', text: 'Первый вопрос' },
-      { role: 'ai', text: 'Первый ответ' },
-      { role: 'u1', text: 'Как дела?' }
-    ]
-  }
-}
+// Мета хода — общая фикстура: те же значения показывают сториз Chat/MessageMeta.
+const META = makeTurnMeta()
 
 describe('MessageMeta', () => {
   it('тултип с краткой сводкой появляется по наведению', async () => {
