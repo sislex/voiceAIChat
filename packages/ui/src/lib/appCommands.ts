@@ -57,6 +57,8 @@ export interface AppCommandDeps {
   openBoard: (projectId: string) => void
   openMachineConsole: (agentId: string | null) => void
   openKnowledgeBase: () => void
+  /** Открыть панель «Использование БЗ» активного чата. */
+  openKbUsage: () => void
   logout: () => void
   openPalette: () => void
   openCheatSheet: () => void
@@ -145,6 +147,13 @@ function baseCommands(deps: AppCommandDeps): Command[] {
       section: 'action',
       keywords: ['kb', 'документация', 'knowledge'],
       run: deps.openKnowledgeBase
+    },
+    {
+      id: 'app.kb-usage',
+      title: 'Использование базы знаний',
+      section: 'action',
+      keywords: ['kb', 'бз', 'телеметрия', 'разделы', 'токены'],
+      run: deps.openKbUsage
     },
     {
       id: 'app.logout',

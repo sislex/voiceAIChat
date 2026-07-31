@@ -17,6 +17,7 @@ import type { CxItem } from './codexSessions'
 import type { AgentInfo } from './agentProtocol'
 import type { Board } from './projects'
 import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary, CiInteraction } from './ci'
+import type { KbUsageQuery } from './kb'
 
 // --- Общие ---------------------------------------------------------------
 
@@ -117,6 +118,9 @@ export const REST = {
   kbSearch: '/api/kb/search',
   kbContext: '/api/kb/context',
   kbDocument: (id: string) => `/api/kb/documents/${encodeURIComponent(id)}`,
+  /** Телеметрия обращений модели к БЗ: по одному чату и агрегат по проекту. */
+  conversationKbUsage: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage`,
+  projectKbUsage: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb-usage`,
   sessionLogin: '/api/session/login',
   sessionMe: '/api/session/me',
   sessionLogout: '/api/session/logout',
@@ -351,6 +355,14 @@ export type ServerMessage =
    * чём — поэтому это не `claude.done`.
    */
   | { t: 'chat.message'; conversationId: string; message: Message }
+  /**
+   * Обращение к базе знаний (авто-инъекция сервером или вызов mcp__kb__*
+   * моделью). Рассылается по userId, как `claude.usage`, — подписки нет.
+   * `query.status: 'pending'` приходит в начале обращения, терминальный статус —
+   * вторым кадром с тем же `query.id`; гонку «REST-снапшот vs инкремент» клиент
+   * закрывает монотонным `query.seq`.
+   */
+  | { t: 'kb.usage'; conversationId: string; projectId: string | null; query: KbUsageQuery }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']
@@ -412,5 +424,6 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'ci.done',
   'ci.summary',
   'ci.interaction',
-  'chat.message'
+  'chat.message',
+  'kb.usage'
 ]

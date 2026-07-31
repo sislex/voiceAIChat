@@ -48,3 +48,13 @@ describe('ходы, переживающие reconnect', () => {
     expect(CLIENT_MESSAGE_TYPES).toContain('claude.cancel')
   })
 })
+
+describe('телеметрия использования базы знаний', () => {
+  it('содержит кадр kb.usage и REST-пути отчётов', () => {
+    expect(SERVER_MESSAGE_TYPES).toContain('kb.usage')
+    // Подписки нет: кадр рассылается по userId, как claude.usage.
+    expect(CLIENT_MESSAGE_TYPES).not.toContain('kb.usage')
+    expect(REST.conversationKbUsage('c1')).toBe('/api/conversations/c1/kb-usage')
+    expect(REST.projectKbUsage('p 1')).toBe('/api/projects/p%201/kb-usage')
+  })
+})

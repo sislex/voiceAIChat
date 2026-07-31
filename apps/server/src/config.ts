@@ -44,6 +44,8 @@ export interface ServerConfig {
   kbRoot: string
   /** CLI для выборочного semantic reranking; disabled оставляет чистый BM25. */
   kbRerankProvider: 'disabled' | 'claude' | 'codex'
+  /** MCP-инструменты БЗ для модели (mcp__kb__*); VC_KB_TOOL=off выключает срез целиком. */
+  kbToolEnabled: boolean
   /** Пароль пользователя admin при сиде новой БД (пусто — без пароля). */
   adminPassword: string
   /** Порог памяти для распознавания речи (STT), байты; undefined — дефолт по модели. */
@@ -142,6 +144,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     claudeGatewayModelMap: parseModelMap(env.VC_CLAUDE_MODEL_MAP),
     kbRoot: env.VC_KB_ROOT ?? join(REPO_ROOT, 'docs/kb'),
     kbRerankProvider: env.VC_KB_RERANK_PROVIDER === 'disabled' || env.VC_KB_RERANK_PROVIDER === 'claude' ? env.VC_KB_RERANK_PROVIDER : 'codex',
+    kbToolEnabled: env.VC_KB_TOOL !== 'off',
     adminPassword: env.VC_ADMIN_PASSWORD ?? '',
     minMemSttBytes: parseBytes(env.VC_MIN_MEM_STT),
     minMemTtsBytes: parseBytes(env.VC_MIN_MEM_TTS),

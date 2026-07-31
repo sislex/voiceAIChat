@@ -89,6 +89,23 @@ describe('CodexCli', () => {
     expect(input).toContain('сделай что-то')
   })
 
+  it('kbMcpUrl: сервер kb подключается и в режиме «План» (БЗ read-only)', async () => {
+    const { child, stdin } = fakeChild()
+    let input = ''
+    stdin.on('data', (chunk) => (input += chunk.toString()))
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new CodexCli({ spawn }).send(
+      { prompt: 'x', sessionId: null, model: '', permissionMode: 'plan', kbMcpUrl: 'http://127.0.0.1:8787/mcp/kb?k=s&turn=t1', kbMode: 'auto' },
+      makeHandlers()
+    )
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    expect(args.some((a) => a.startsWith('mcp_servers.kb.url=') && a.includes('turn=t1'))).toBe(true)
+    expect(args[args.indexOf('--sandbox') + 1]).toBe('read-only')
+    // Хинт уходит в промпт (stdin), а не флагом: у codex нет append-system-prompt.
+    await tick()
+    expect(input).toContain('mcp__kb__search')
+  })
+
   it('remote + plan → без MCP и bypass, только read-only sandbox', async () => {
     const { child, stdin } = fakeChild()
     let input = ''

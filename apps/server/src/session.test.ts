@@ -7,6 +7,7 @@ import { loadConfig } from './config.js'
 import { VoiceChatDb } from './db/database.js'
 import { signToken } from './users/accounts.js'
 import type { LlmClient } from './claude/types.js'
+import { createKbUsageTracker } from './kb/usage.js'
 
 const SECRET = 'test-secret'
 const U = 'admin'
@@ -468,5 +469,37 @@ describe('WS: ходы переживают обрыв соединения (Tur
     ws.close()
     await sapp.close()
     sdb.close()
+  })
+})
+
+describe('WS: кадры использования базы знаний', () => {
+  it('kb.usage доходит только своему пользователю', async () => {
+    // Свой сервер с инжектированным трекером: обращения к БЗ в этом тесте
+    // создаём напрямую, а проверяем именно маршрутизацию кадров по владельцу.
+    await app.close()
+    const tracker = createKbUsageTracker({ db })
+    app = await buildServer({ config: loadConfig({ PORT: '0' }), db, claude: mockClaude, sessionSecret: SECRET, kbUsage: tracker })
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const p2 = (app.server.address() as AddressInfo).port
+    db.createUser('bob', '', 'user')
+    const conv = db.createConversation(U, 'Чат')
+
+    const mine = await connect(p2)
+    const other = await connect(p2, signToken({ name: 'bob', role: 'user' }, SECRET))
+    const mineFrames: Array<{ t: string; query?: { status: string; chars: number } }> = []
+    const otherFrames: Array<{ t: string }> = []
+    mine.on('message', (d) => mineFrames.push(JSON.parse(d.toString())))
+    other.on('message', (d) => otherFrames.push(JSON.parse(d.toString())))
+
+    tracker.begin({ userId: U, conversationId: conv.id, source: 'tool_search' }, 'ws').complete({ deliveredChars: 42 })
+    await new Promise((r) => setTimeout(r, 200))
+    mine.close()
+    other.close()
+
+    const usage = mineFrames.filter((f) => f.t === 'kb.usage')
+    expect(usage).toHaveLength(2) // pending + delivered
+    expect(usage[0].query?.status).toBe('pending')
+    expect(usage[1].query).toMatchObject({ status: 'delivered', chars: 42 })
+    expect(otherFrames.some((f) => f.t === 'kb.usage')).toBe(false)
   })
 })

@@ -56,6 +56,8 @@ import { FileKnowledgeBaseService } from './kb/service.js'
 import { registerKbRoutes } from './kb/routes.js'
 import type { KnowledgeBaseService } from './kb/types.js'
 import { LlmKbReranker } from './kb/reranker.js'
+import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
+import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
 
 const VERSION = '0.1.0'
 
@@ -65,6 +67,8 @@ export interface BuildOptions {
   db?: VoiceChatDb
   /** Read-only база знаний (для тестов — мок). */
   kbService?: KnowledgeBaseService
+  /** Телеметрия обращений к БЗ (для тестов — мок/выключено). */
+  kbUsage?: KbUsageTracker
   /** LLM-клиент (для тестов — мок). По умолчанию ClaudeCli. */
   claude?: LlmClient
   /** Codex-клиент (для тестов — мок). По умолчанию CodexCli. */
@@ -155,7 +159,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ? undefined
     : new LlmKbReranker(opts.config.kbRerankProvider === 'claude' ? claude : codex)
   const kb = opts.kbService ?? new FileKnowledgeBaseService(opts.config.kbRoot, reranker)
-  registerKbRoutes(app, kb)
+  // Телеметрия обращений к БЗ: одна на процесс (как реестр ходов) — её события
+  // рассылаются всем соединениям пользователя, а строки живут в БД.
+  const kbUsage = opts.kbUsage ?? createKbUsageTracker({ db })
+  registerKbRoutes(app, kb, { db, toolEnabled: opts.config.kbToolEnabled })
 
   // Помощник формулировки — одноразовый вызов выбранного пользователем CLI.
   // Историю разговора не трогает, shell выключен.
@@ -195,13 +202,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const mcpSecret = randomBytes(16).toString('hex')
   registerRemoteBashMcp(app, agentRegistry, mcpSecret)
   registerCiCommandsMcp(app, mcpSecret)
+  // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
+  // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).
+  registerKbMcp(app, { kb, secret: mcpSecret, usage: kbUsage })
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
   registerAdminRoutes(app, db, agentRegistry)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.update по WS.
   const boardHub = new BoardHub()
-  registerProjectRoutes(app, db, boardHub)
+  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled })
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
   // её выбор берём у канонического пользователя (admin), а не per-user.
   const machineWhisperModel = (): WhisperModel => db.getSettings('admin').whisperModel
@@ -286,6 +296,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     claude,
     codex,
     kb,
+    kbUsage,
+    kbToolEnabled: opts.config.kbToolEnabled,
+    kbTool: kbToolBroker,
     resolveUpload: (id) => uploads.pathById(id),
     agents: {
       isOnline: (id) => agentRegistry.isOnline(id),
@@ -305,7 +318,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       ]
     },
     // claude спавнится на этом же хосте — loopback работает при любом HOST.
-    mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`
+    mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`,
+    kbMcpBaseUrl: `http://127.0.0.1:${opts.config.port}${KB_MCP_PATH}?k=${mcpSecret}`
   })
 
   // CI-раннер (Авто-подготовка окружения для таска): процесс-глобальный менеджер
@@ -408,7 +422,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         getBoard: (projectId) => db.getBoard(user.name, projectId),
         subscribe: (cb) => boardHub.onChange(cb)
       },
-      ci: ciRunManager
+      ci: ciRunManager,
+      kbUsage
     })
 
   await app.register(async (scoped) => {

@@ -25,6 +25,7 @@ function deps(patch: Partial<AppCommandDeps> = {}): AppCommandDeps {
     openBoard: vi.fn(),
     openMachineConsole: vi.fn(),
     openKnowledgeBase: vi.fn(),
+    openKbUsage: vi.fn(),
     logout: vi.fn(),
     openPalette: vi.fn(),
     openCheatSheet: vi.fn(),

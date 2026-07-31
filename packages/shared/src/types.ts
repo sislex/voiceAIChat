@@ -333,7 +333,22 @@ export interface TurnRequestInfo {
   /** Разделы KB, автоматически добавленные перед ходом. */
   kbContext?: {
     confidence: 'high' | 'medium' | 'low'
-    sections: Array<{ documentId: string; title: string; heading: string; sourcePath: string; anchor: string }>
+    /**
+     * Числа опциональны: сообщения, сохранённые до появления телеметрии БЗ,
+     * остаются валидными (и панель собирает по ним отчёт-фолбэк).
+     */
+    sections: Array<{
+      documentId: string
+      title: string
+      heading: string
+      sourcePath: string
+      anchor: string
+      /** Символы этого раздела в отданном модели тексте. */
+      chars?: number
+      /** Оценка токенов раздела (ceil(chars/4), см. estimateKbTokens). */
+      estimatedTokens?: number
+      freshness?: 'current' | 'stale' | 'unknown'
+    }>
   }
   /** Доступные инструменты (из system/init CLI). */
   tools?: string[]

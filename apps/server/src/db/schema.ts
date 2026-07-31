@@ -372,6 +372,58 @@ CREATE TABLE IF NOT EXISTS ci_settings (
   interaction_wait_ms    INTEGER NOT NULL DEFAULT 1800000
 );
 
+-- Использование базы знаний моделью: одно обращение = одна строка. Пишется
+-- только то, что видела модель (авто-инъекция контекста перед ходом и вызовы
+-- mcp__kb__*); ручной поиск человека по странице «База знаний» сюда не идёт.
+-- seq монотонен внутри разговора и служит курсором для инкрементальных
+-- WS-кадров, project_id — СНИМОК на момент обращения (чат может сменить проект).
+CREATE TABLE IF NOT EXISTS kb_usage_queries (
+  id              TEXT PRIMARY KEY,
+  seq             INTEGER NOT NULL,
+  user_id         TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  project_id      TEXT,
+  turn_id         TEXT,
+  message_id      TEXT,
+  source          TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'delivered',
+  query           TEXT NOT NULL DEFAULT '',
+  confidence      TEXT,
+  injected        INTEGER NOT NULL DEFAULT 0,
+  sections_count  INTEGER NOT NULL DEFAULT 0,
+  chars           INTEGER NOT NULL DEFAULT 0,
+  est_tokens      INTEGER NOT NULL DEFAULT 0,
+  bundle_tokens   INTEGER,
+  prompt_chars    INTEGER,
+  turn_input_tokens INTEGER,
+  duration_ms     INTEGER,
+  error           TEXT,
+  created_at      INTEGER NOT NULL,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_usage_seq ON kb_usage_queries(conversation_id, seq);
+CREATE INDEX IF NOT EXISTS idx_kb_usage_project ON kb_usage_queries(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_kb_usage_turn ON kb_usage_queries(turn_id);
+
+CREATE TABLE IF NOT EXISTS kb_usage_sections (
+  id          TEXT PRIMARY KEY,
+  query_id    TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  title       TEXT NOT NULL DEFAULT '',
+  heading     TEXT NOT NULL DEFAULT '',
+  anchor      TEXT NOT NULL DEFAULT '',
+  source_path TEXT NOT NULL DEFAULT '',
+  chars       INTEGER NOT NULL DEFAULT 0,
+  est_tokens  INTEGER NOT NULL DEFAULT 0,
+  score       REAL,
+  match_types TEXT NOT NULL DEFAULT '[]',
+  freshness   TEXT NOT NULL DEFAULT 'unknown',
+  position    INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY (query_id) REFERENCES kb_usage_queries(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_kb_usage_sections_query ON kb_usage_sections(query_id);
+CREATE INDEX IF NOT EXISTS idx_kb_usage_sections_doc ON kb_usage_sections(document_id, anchor);
+
 `
 
 /**

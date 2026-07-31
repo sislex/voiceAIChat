@@ -89,6 +89,7 @@ export function useVoiceStore(deps: UseVoiceStoreDeps): UseVoiceStore {
     const files = deps.files ?? (typeof window !== 'undefined' ? window.files : undefined)
     const board = deps.board ?? (typeof window !== 'undefined' ? window.board : undefined)
     const ci = deps.ci ?? (typeof window !== 'undefined' ? window.ci : undefined)
+    const kb = deps.kb ?? (typeof window !== 'undefined' ? window.kb : undefined)
     storeRef.current = createVoiceStore({
       ...deps,
       session,
@@ -96,6 +97,7 @@ export function useVoiceStore(deps: UseVoiceStoreDeps): UseVoiceStore {
       files,
       board,
       ci,
+      kb,
       audio,
       listMics,
       voiceInputEnabled: deps.voiceInputEnabled ?? VOICE_INPUT_ENABLED,
@@ -178,6 +180,11 @@ export function useVoiceStore(deps: UseVoiceStoreDeps): UseVoiceStore {
       unsubs.push(ci.onSummary((m) => store.actions.applyCiSummary(m.projectId, m.summary)))
       unsubs.push(ci.onInteraction((m) => store.actions.applyCiInteraction(m.runId, m.interaction)))
       unsubs.push(ci.onChatMessage((m) => store.actions.applyChatMessage(m.conversationId, m.message)))
+    }
+    if (typeof window !== 'undefined' && window.kb) {
+      unsubs.push(
+        window.kb.onUsage((m) => store.actions.applyKbUsageQuery(m.conversationId, m.projectId, m.query))
+      )
     }
     if (typeof window !== 'undefined' && window.tts) {
       unsubs.push(

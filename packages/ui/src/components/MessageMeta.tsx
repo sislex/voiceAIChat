@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Dialog } from './ui/Dialog'
 import { IconButton } from './ui/IconButton'
 import type { MessageRole, TurnMeta } from '@shared/types'
+import { estimateKbTokens } from '@shared/kb'
 
 /** Человекочитаемая роль сообщения контекста. */
 function roleLabel(role: MessageRole): string {
@@ -57,13 +58,15 @@ function Chips({ label, items }: { label: string; items?: string[] }): JSX.Eleme
 
 export interface MessageMetaProps {
   meta: TurnMeta
+  /** Открыть раздел базы знаний (чипсы «База знаний» ведут в #/kb/:documentId). */
+  onOpenKbDocument?: (documentId: string, anchor: string) => void
 }
 
 /**
  * Иконка ℹ у ответа модели: при наведении — краткая сводка (токены/размер/время/
  * модель), кнопка «Подробнее» открывает по клику панель со всем, что ушло модели.
  */
-export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
+export function MessageMeta({ meta, onOpenKbDocument }: MessageMetaProps): JSX.Element {
   const [hover, setHover] = useState(false)
   const [open, setOpen] = useState(false)
   const req = meta.request
@@ -80,6 +83,11 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
     closeTimer.current = setTimeout(() => setHover(false), 180)
   }
   useEffect(() => () => closeTimer.current && clearTimeout(closeTimer.current), [])
+
+  // Символы БЗ этого хода — сумма по секциям (у старых ходов их нет: тогда
+  // показываем только число разделов, а не выдуманный объём).
+  const kbSections = req?.kbContext?.sections ?? []
+  const kbChars = kbSections.reduce((sum, section) => sum + (section.chars ?? 0), 0)
 
   const inOut =
     typeof meta.inputTokens === 'number' && typeof meta.outputTokens === 'number'
@@ -149,7 +157,32 @@ export function MessageMeta({ meta }: MessageMetaProps): JSX.Element {
                     <Row label="Продолжение сессии" value={req.resumed ? 'да (--resume)' : 'нет (новый контекст)'} />
                     <Row label="Размер запроса" value={`${req.promptChars.toLocaleString('ru')} симв.`} />
                     <Chips label="Вложения" items={req.attachments} />
-                    <Chips label="База знаний" items={req.kbContext?.sections.map((section) => `${section.title} / ${section.heading}`)} />
+                    {kbSections.length > 0 && (
+                      <div className="metablock">
+                        <p className="metahdr">
+                          База знаний <span className="metacount">{kbSections.length}</span>
+                        </p>
+                        <div className="metachips">
+                          {kbSections.map((section) => {
+                            const label = `${section.title} / ${section.heading}`
+                            return onOpenKbDocument ? (
+                              <button
+                                className="metachip metachip--link"
+                                key={`${section.documentId}#${section.anchor}`}
+                                title={`Открыть «${label}» в базе знаний`}
+                                onClick={() => onOpenKbDocument(section.documentId, section.anchor)}
+                              >
+                                {label}
+                              </button>
+                            ) : (
+                              <span className="metachip" key={`${section.documentId}#${section.anchor}`}>{label}</span>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    <Row label="Символы из БЗ" value={kbChars ? kbChars.toLocaleString('ru') : undefined} />
+                    <Row label="≈ токенов из БЗ" value={kbChars ? `${estimateKbTokens(kbChars).toLocaleString('ru')} (оценка chars / 4)` : undefined} />
                   </section>
 
                   {req.messages && req.messages.length > 0 && (

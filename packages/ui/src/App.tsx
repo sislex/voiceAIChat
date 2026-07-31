@@ -26,6 +26,8 @@ import { UiProviders } from './components/ui/UiProviders'
 import { useToast } from './components/ui/Toast'
 import { useConfirm } from './components/ui/useConfirm'
 import { KnowledgeBase } from './components/KnowledgeBase'
+import { KbUsagePanel } from './components/kb/KbUsagePanel'
+import { hasPendingKbUsage } from './lib/kbUsage'
 import { CommandPalette } from './components/CommandPalette'
 import { HotkeysCheatSheet } from './components/HotkeysCheatSheet'
 import { useVoiceStore } from './store/useVoiceStore'
@@ -74,7 +76,13 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   // «Открыть задачу» из шапки связанного чата: #/projects/:id/task/:taskId.
   const routeTaskId = inProjects && segments[2] === 'task' ? (segments[3] ?? null) : null
   // Утилиты-страницы: один сегмент из белого списка (#/machines, #/kb, …).
-  const utilitySeg = segments.length === 1 && UTILITY_PAGES.includes(segments[0]) ? segments[0] : null
+  // У базы знаний есть второй сегмент — открытый документ (#/kb/:documentId):
+  // так на раздел можно дать ссылку из панели «Использование БЗ» и из «Подробнее».
+  const utilitySeg =
+    segments.length >= 1 && UTILITY_PAGES.includes(segments[0]) && (segments.length === 1 || (segments[0] === 'kb' && segments.length === 2))
+      ? segments[0]
+      : null
+  const routeKbDocumentId = segments[0] === 'kb' ? (segments[1] ?? null) : null
   const onUtilityPage = utilitySeg !== null
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
@@ -190,6 +198,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       openMachineConsole: (agentId) =>
         agentId ? actions.openUtility('console', agentId) : actions.openUtilityForActiveChat('console'),
       openKnowledgeBase: () => navigate('/kb'),
+      openKbUsage: actions.openKbUsage,
       logout: () => void actions.logout(),
       openPalette: () => setPaletteOpen(true),
       openCheatSheet: () => setCheatSheetOpen(true),
@@ -303,6 +312,14 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const activeConversation = state.conversations.find((c) => c.id === state.activeId)
   const activeTitle = activeConversation?.title ?? 'Новый разговор'
   const activeExecTarget = activeConversation?.execTarget ?? null
+  const activeKbUsage = state.activeId ? state.kbUsage[state.activeId] : undefined
+  // Счётчик обращений на кнопке «Использование БЗ» должен быть честным ДО
+  // открытия панели, поэтому снапшот читаем при открытии чата и после каждого
+  // нового сообщения (новый ход = возможные новые обращения).
+  useEffect(() => {
+    if (authed && state.activeId) void actions.loadKbUsage(state.activeId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, state.activeId, state.messages.length])
   const forcedPlan = state.currentUser?.role === 'user' && (!activeExecTarget || activeExecTarget === 'none')
   const activePermissionMode: PermissionMode = forcedPlan
     ? 'plan'
@@ -516,6 +533,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         readServerFile={actions.readServerFile}
         onOpenImageInExplorer={(agentId, path) => actions.openUtility('explorer', agentId, path)}
         onOpenTerminal={(agentId, cwd) => actions.openUtility('console', agentId, cwd)}
+        onOpenKbDocument={(documentId) => navigate(`/kb/${encodeURIComponent(documentId)}`)}
         error={state.error}
         onDismissError={actions.dismissError}
         modelMissing={!state.modelPresent}
@@ -524,6 +542,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         downloadPercent={state.downloadPercent}
         onDownloadModel={actions.downloadModel}
         onExport={actions.exportConversation}
+        onOpenKbUsage={state.activeId ? actions.openKbUsage : undefined}
+        kbUsageCount={activeKbUsage?.report?.totals.queries ?? 0}
+        kbUsageActive={hasPendingKbUsage(activeKbUsage?.report ?? null)}
+        kbContextMode={activeConversation?.kbContextMode ?? 'auto'}
         turnMeta={state.lastTurnMeta}
         agents={state.agents}
         execTarget={activeExecTarget}
@@ -618,7 +640,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         />
       )}
 
-      {utilitySeg === 'kb' && <KnowledgeBase api={api} variant="page" onClose={() => navigate('/')} />}
+      {utilitySeg === 'kb' && (
+        <KnowledgeBase api={api} variant="page" documentId={routeKbDocumentId} onClose={() => navigate('/')} />
+      )}
 
       {/* Объединённый наблюдатель агентов: один компонент с переключателем
           движка Claude/Codex. Движок и открытость выводятся из маршрута
@@ -770,6 +794,24 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           variant="modal"
           onOpenTerminal={(agentId, cwd) => actions.openUtility('console', agentId, cwd)}
           onClose={actions.closeUtility}
+        />
+      )}
+
+      {state.kbUsageOpen && state.activeId && (
+        <KbUsagePanel
+          conversationId={state.activeId}
+          projectId={activeConversation?.projectId ?? null}
+          cache={activeKbUsage}
+          projectCache={activeConversation?.projectId ? state.kbUsageByProject[activeConversation.projectId] : undefined}
+          kbStatus={state.kbStatus}
+          mode={activeConversation?.kbContextMode ?? 'auto'}
+          onLoad={(id) => { void actions.loadKbUsage(id); void actions.refreshKbStatus() }}
+          onLoadProject={(id) => void actions.loadProjectKbUsage(id)}
+          onClose={actions.closeKbUsage}
+          onOpenDocument={(documentId) => { actions.closeKbUsage(); navigate(`/kb/${encodeURIComponent(documentId)}`) }}
+          onOpenKnowledgeBase={() => { actions.closeKbUsage(); navigate('/kb') }}
+          onOpenConversationSettings={() => { actions.closeKbUsage(); setConversationSettingsOpen(true) }}
+          titleOf={(id) => state.conversations.find((c) => c.id === id)?.title}
         />
       )}
 

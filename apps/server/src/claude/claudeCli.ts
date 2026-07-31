@@ -8,6 +8,7 @@ import { createUsageAccumulator, parseStreamJsonLine, parseStreamJsonActivity } 
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from './types'
 import { cliProfileEnv } from '../users/cliProfiles.js'
 import { killCliChild } from './childKill.js'
+import { kbToolHint } from '../kb/kbMcp.js'
 
 export type SpawnFn = (
   command: string,
@@ -59,11 +60,16 @@ export class ClaudeCli implements LlmClient {
     ]
     if (req.permissionMode) args.push('--permission-mode', req.permissionMode)
     if (req.sessionId) args.push('--resume', req.sessionId)
+    // MCP-серверы, allow-list и добавки к системному промпту собираются ВЫШЕ ветки
+    // remote: база знаний подключается и в ходе без машины, а `--mcp-config` и
+    // `--append-system-prompt` CLI принимает по одному разу — значит и склеивать
+    // их надо в одном месте.
+    const mcpServers: Record<string, { type: 'http'; url: string }> = {}
+    const allowed: string[] = []
+    const systemHints: string[] = []
     if (req.executionDisabled) {
-      args.push(
-        '--disallowedTools',
-        'Bash',
-        '--append-system-prompt',
+      args.push('--disallowedTools', 'Bash')
+      systemHints.push(
         'Для этого сообщения машина не выбрана. Не выполняй shell-команды и не пытайся запускать их каким-либо инструментом.'
       )
     }
@@ -71,10 +77,8 @@ export class ClaudeCli implements LlmClient {
       // Проброс Bash на машину пользователя: встроенный Bash выключаем, вместо него —
       // MCP-инструмент bash (сервер `remote`), который выполняет команду на агенте.
       // Опционально — сервер `ci`: именованные команды CI-справочника как инструмент.
-      const mcpServers: Record<string, { type: 'http'; url: string }> = {
-        remote: { type: 'http', url: req.remote.mcpUrl }
-      }
-      const allowed = ['mcp__remote__bash']
+      mcpServers.remote = { type: 'http', url: req.remote.mcpUrl }
+      allowed.push('mcp__remote__bash')
       let ciHint = ''
       if (req.remote.ciMcpUrl) {
         mcpServers.ci = { type: 'http', url: req.remote.ciMcpUrl }
@@ -83,14 +87,8 @@ export class ClaudeCli implements LlmClient {
           `\n\nДоступны именованные команды CI-справочника: инструмент mcp__ci__run_command ` +
           `(аргумент name), список — mcp__ci__list_commands.`
       }
-      args.push(
-        '--mcp-config',
-        JSON.stringify({ mcpServers }),
-        '--disallowedTools',
-        'Bash',
-        '--allowedTools',
-        allowed.join(','),
-        '--append-system-prompt',
+      args.push('--disallowedTools', 'Bash')
+      systemHints.push(
         `Встроенный инструмент Bash отключён. Все shell-команды выполняй инструментом ` +
           `mcp__remote__bash — они выполняются на машине пользователя «${req.remote.agentName}», ` +
           `а не на сервере. У инструмента есть аргумент timeout_ms (по умолчанию 120000, ` +
@@ -104,6 +102,23 @@ export class ClaudeCli implements LlmClient {
           ciHint
       )
     }
+    if (req.kbMcpUrl) {
+      mcpServers.kb = { type: 'http', url: req.kbMcpUrl }
+      // РИСК: в headless (`-p`) `--allowedTools` работает как allow-list
+      // автоодобрения. В ходе БЕЗ remote его сейчас не передают вовсе, и добавить
+      // список ради одной БЗ нельзя: это выключило бы автоодобрение встроенных
+      // Read/Grep. Поэтому там отдаём только `--mcp-config` и хинт. Деградация
+      // безопасна: если вызов не одобрен, авто-инъекция в режиме auto продолжает
+      // работать, а панель честно покажет 0 запросов модели.
+      // Escape hatch на случай, если поведение CLI изменится: VC_KB_TOOL_ALLOWLIST=1.
+      if (req.remote || process.env.VC_KB_TOOL_ALLOWLIST === '1') {
+        allowed.push('mcp__kb__search', 'mcp__kb__document', 'mcp__kb__topics')
+      }
+      systemHints.push(kbToolHint(req.kbMode ?? 'auto'))
+    }
+    if (Object.keys(mcpServers).length) args.push('--mcp-config', JSON.stringify({ mcpServers }))
+    if (allowed.length) args.push('--allowedTools', allowed.join(','))
+    if (systemHints.length) args.push('--append-system-prompt', systemHints.join('\n\n'))
 
     let finished = false
     let sawResult = false

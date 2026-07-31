@@ -34,6 +34,7 @@ packages:
   - ui
 related:
   - kb-workflow
+  - kb-usage
   - llm
   - protocol
 ---
@@ -52,7 +53,7 @@ related:
 
 ## Контекст агента
 
-`GET /api/kb/context` и `npm run kb:context -- "задача"` возвращают максимум пять небольших разделов в пределах token budget. `TurnManager` автоматически добавляет bundle только для разговора с `kbContextMode=auto` и только при высокой уверенности. Режимы `manual` и `off` не добавляют фонового контекста.
+`GET /api/kb/context` и `npm run kb:context -- "задача"` возвращают максимум пять небольших разделов в пределах token budget. `TurnManager` автоматически добавляет bundle только для разговора с `kbContextMode=auto` и только при высокой уверенности. `manual` фонового контекста не добавляет, но выдаёт модели инструменты `mcp__kb__*` (`off` — ничего); каждое обращение попадает в телеметрию панели «Использование БЗ» — см. `features/kb-usage.md`.
 
 ## API и UI
 

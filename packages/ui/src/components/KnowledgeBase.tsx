@@ -14,7 +14,7 @@ const KINDS: Array<{ id: KbDocumentKind | ''; label: string }> = [
   { id: 'convention', label: 'Подходы' }, { id: 'runbook', label: 'Диагностика' }
 ]
 
-export function KnowledgeBase({ api, onClose, variant = 'modal' }: { api: RendererApi; onClose: () => void; variant?: 'modal' | 'page' }): JSX.Element {
+export function KnowledgeBase({ api, onClose, variant = 'modal', documentId = null }: { api: RendererApi; onClose: () => void; variant?: 'modal' | 'page'; /** Документ из адреса (#/kb/:documentId) — открыть его сразу. */ documentId?: string | null }): JSX.Element {
   const [status, setStatus] = useState<KbStatus | null>(null)
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState<KbDocumentKind | ''>('')
@@ -43,6 +43,13 @@ export function KnowledgeBase({ api, onClose, variant = 'modal' }: { api: Render
     }, query ? 220 : 0)
     return () => { active = false; window.clearTimeout(timer) }
   }, [api, query, kind, attempt])
+
+  // Документ из адреса: панель «Использование БЗ» и чипсы «Подробнее» ведут
+  // прямо на раздел, поэтому открытие идёт от маршрута, а не только от клика.
+  useEffect(() => {
+    if (documentId && documentId !== document?.id) void open(documentId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentId])
 
   const selectedId = document?.id
   const statusText = useMemo(() => !status ? 'Проверка индекса…' : status.available ? `${status.documents} документов · ${status.chunks} разделов · ${status.searchMode === 'hybrid' ? 'BM25 + LLM' : 'BM25'}` : 'База знаний недоступна', [status])
