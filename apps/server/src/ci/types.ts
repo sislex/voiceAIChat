@@ -41,6 +41,11 @@ export interface CiRunPrimitives {
   agentId: string | null
   workspacePath: string
   env: Record<string, string>
+  /**
+   * Отмена рана. Хук ОБЯЗАН его слушать: без этого `cancel` не останавливает ход
+   * CLI, ран висит в `running`, а очередь проекта (`projectChains`) стоит.
+   */
+  signal: AbortSignal
   /** Создать шаг ленты (напр. вложенный вызов команды моделью). */
   addStep(args: {
     slot: CiSlot | null
@@ -93,8 +98,9 @@ export interface CiFixContext extends CiModelContext {
 }
 
 /**
- * Хук «работа модели»: разработка + возможные вызовы команд. `cancelled` — план
- * отклонён пользователем: слот «после» и резюме не запускаются.
+ * Хук «работа модели»: разработка + возможные вызовы команд. `cancelled` — работа
+ * прервана (план отклонён пользователем или ран отменён): слот «после» и резюме
+ * не запускаются.
  */
 export type CiModelWorkHook = (ctx: CiModelContext) => Promise<{ ok: boolean; cancelled?: boolean }>
 /** Хук «резюме модели». */
