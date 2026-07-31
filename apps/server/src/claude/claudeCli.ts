@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline'
 import { createUsageAccumulator, parseStreamJsonLine, parseStreamJsonActivity } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from './types'
 import { cliProfileEnv } from '../users/cliProfiles.js'
+import { killCliChild } from './childKill.js'
 
 export type SpawnFn = (
   command: string,
@@ -194,11 +195,8 @@ export class ClaudeCli implements LlmClient {
     return {
       cancel: () => {
         finished = true
-        try {
-          child.kill('SIGTERM')
-        } catch {
-          /* уже завершён */
-        }
+        // SIGTERM, через 5с — SIGKILL: зависший CLI не должен переживать отмену.
+        killCliChild(child)
       }
     }
   }

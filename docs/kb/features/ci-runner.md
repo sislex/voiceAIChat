@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-07-30
-checked: a87feea
+updated: 2026-07-31
+checked: ee1a66a
 areas:
   - packages/shared/src/ci.ts
   - apps/server/src/ci
@@ -12,6 +12,7 @@ areas:
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - apps/server/src/agents/registry.ts
+  - apps/agent/src/exec.ts
   - packages/ui/src/components/ci
   - packages/ui/src/remote/ciBridge.ts
   - packages/ui/src/store/voiceStore.ts
@@ -23,6 +24,9 @@ symbols:
   - createCiModelHooks
   - registerCiCommandsMcp
   - CiRunManager
+  - classifyCiInfraFailure
+  - killProcessTree
+  - killCliChild
 protocols:
   - ci-rest-v1
 aliases:
@@ -78,6 +82,64 @@ cleanup **не выполняется**: ран становится `failed`, �
 `AgentRegistry.execStream` — потоковый форвард `exec.chunk` (агент не пересобирается);
 cwd/env собираются с shell-escape (пользовательский ввод — только через env, не
 конкатенацией). Секреты маскируются в логе.
+
+## Отмена рана
+
+`POST /api/ci/runs/:runId/cancel` → `CiRunManager.cancel`: строка в ленте
+(«Отмена рана: останавливаю шаг…»), аудит `run.cancel_requested`, `abort()` у
+`AbortController` рана и снятие возможной паузы. Дальше сигнал доходит до всех
+уровней исполнения, и это главное отличие от прежнего поведения:
+
+- **Команды шага** — `signal` уже был у `executor.run` → `AgentRegistry.execStream`
+  шлёт агенту `exec.cancel`.
+- **Работа модели** — `runTurn` (`ci/modelHooks.ts`) слушает `ctx.signal`
+  (`CiRunPrimitives.signal`), вызывает `LlmHandle.cancel()` и **сам** закрывает
+  промис хода: `cancel()` в клиенте глушит `onDone/onError`, поэтому раньше
+  `execute` навсегда висел на этом `await`, ран оставался `running`, а очередь
+  проекта (`projectChains`) стояла до перезапуска сервера. `modelWork` возвращает
+  `{ ok: false, cancelled: true }`, `attemptFix` выходит из fix-loop.
+- **Процесс CLI** — `killCliChild` (`claude/childKill.ts`, общий для claude и
+  codex): SIGTERM, через 5 с SIGKILL. Заодно обрывается MCP-запрос remote-bash,
+  и его команда на машине отменяется по `close` ответа.
+- **Дерево процессов на машине** — `exec.cancel` у агента снимает **группу**
+  процессов (`killProcessTree`, `apps/agent/src/exec.ts`: команда запускается
+  `detached`, сигнал уходит на `-pid`; Windows — `taskkill /T`). Раньше SIGTERM
+  получал только shell, а `npm ci`/тесты продолжали работать сиротами. Правка
+  живёт в бандле агента — на машинах она появляется после переустановки/рестарта
+  компаньона.
+
+Ран закрывается как `cancelled` (не `failed`) на любой стадии: в очереди (шагов
+не появляется вовсе), в слоте команд, в фазе модели; карточка возвращается в
+`prev_column_id`. Сторож `guardCancel`: если `execute` не завершился за
+`cancelGraceMs` (15 с, в тестах короче) после `abort`, `hardCancel` закрывает
+незавершённые шаги и ран (`run.cancel_forced`), отпускает серверный слот и
+**звено `projectChains`** — очередь проекта едет дальше даже с подвисшим
+исполнителем. Подвисший `execute`, догребший до конца позже, ран уже не
+перепишет: `finalize` не меняет статус `cancelled` ни на что другое.
+
+## Изоляция кэша npm
+
+Все раны идут на одной машине под одним пользователем, поэтому общий `~/.npm`
+ломался, когда два `npm ci` работали одновременно: `EEXIST` при `rename` в
+`_cacache/content-v2`, затем `ENOENT` на `stat` — шаг падал с кодом **254**, и
+ретраи не помогали, пока кэш не чистили руками. Раннер даёт каждой задаче свой
+кэш: в env шага уходят `NPM_CACHE_DIR` и `npm_config_cache` =
+`$REPO_ROOT/.npm-cache/$TASK_KEY`. Каталог создаётся системным шагом «Подготовка
+рабочей директории», там же `touch` (отметка «использован») и удаление кэшей, к
+которым не ходили две недели. Кэш лежит **рядом** с рабочими копиями, а не внутри
+рабочей директории: её сносит `is_cleanup` в конце рана, и каждый повтор качал бы
+пакеты заново.
+
+## Инфраструктурные ошибки шага
+
+`classifyCiInfraFailure` (`ci/infraErrors.ts`) смотрит хвост вывода упавшего шага
+и отличает сбой машины от ошибки задачи: повреждённый кэш npm (`EEXIST`/`ENOENT`/
+`EINTEGRITY` в `_cacache`) и `ENOSPC`. Такой шаг **не идёт в fix-loop** — в
+рабочей копии он не лечится, а модель уводит диагностику в проект (реальный
+случай: три хода opus на `TAR_ENTRY_ERROR` от битого кэша). Вместо этого в лог
+шага пишется диагноз с подсказкой («почистить кэш», «кэш изолирован не был»),
+в аудит — `run.infra_error` с `kind`, фаза рана называет причину, и ран падает
+сразу.
 
 ## Стандартный пайплайн проекта
 
@@ -236,7 +298,12 @@ AI-сообщением в связанный чат задачи** (`postSummar
 
 ## Проверка
 
-`apps/server/src/ci/*.test.ts` (включая `interactions.test.ts`: пауза на вопрос,
+`apps/server/src/ci/*.test.ts` (включая `cancel.test.ts`: отмена в фазе модели с
+разблокировкой очереди проекта, сторожевой таймаут на глухом к `signal`
+исполнителе, отмена рана из очереди и в слоте команд, изолированный
+`npm_config_cache`, инфраструктурная ошибка мимо fix-loop; `infraErrors.test.ts` —
+классификатор; `claude/childKill.test.ts` — SIGTERM→SIGKILL; `apps/agent/src/execKill.test.ts` —
+снятие дерева процессов; `interactions.test.ts`: пауза на вопрос,
 409 на повторный ответ, бюджет уточнений, гейт плана approved/rework/отмена,
 разовый оверрайд режима; в `runManager.test.ts` — резюме в чате: сообщение с меткой
 `ciRunSummary`, кадр `chat.message` по WS и резюме при упавшем слоте «после») и `db/database.ci.test.ts` (35+ тестов): пустые слоты,

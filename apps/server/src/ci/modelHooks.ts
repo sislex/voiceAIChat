@@ -3,7 +3,7 @@
 // упавшего шага). Реализованы поверх инъектируемого LlmClient (в тестах — мок).
 
 import { randomUUID } from 'node:crypto'
-import type { LlmClient, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
+import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import { appendQuestionsHint, clarifyBudget, parseQuestions } from '@voicechat/shared'
 import type { CiRunMode } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
@@ -33,15 +33,38 @@ const MAX_MODEL_TURNS = 40
  * запоминает id сессии CLI — по нему следующий ход продолжает тот же диалог
  * (`claude --resume` / `codex resume`), что и делает возможными уточняющие
  * вопросы и одобрение плана внутри одного шага ленты.
+ *
+ * `signal` обязателен: `LlmHandle.cancel()` глушит колбэки клиента (`finished`),
+ * поэтому промис хода закрываем здесь сами — иначе отмена рана оставляла
+ * процесс CLI живым, а `execute` навсегда висел на этом await.
  */
 function runTurn(
   claude: LlmClient,
   req: LlmRequest,
-  onLog: (stream: 'stdout' | 'system', chunk: string) => void
-): Promise<{ ok: boolean; text: string; sessionId: string | null }> {
+  onLog: (stream: 'stdout' | 'system', chunk: string) => void,
+  signal: AbortSignal
+): Promise<{ ok: boolean; text: string; sessionId: string | null; cancelled?: boolean }> {
+  if (signal.aborted) return Promise.resolve({ ok: false, text: '', sessionId: null, cancelled: true })
   return new Promise((resolve) => {
     let text = ''
     let sessionId: string | null = null
+    let settled = false
+    const finish = (r: { ok: boolean; cancelled?: boolean }): void => {
+      if (settled) return
+      settled = true
+      signal.removeEventListener('abort', onAbort)
+      resolve({ ...r, text, sessionId })
+    }
+    const onAbort = (): void => {
+      // Убиваем процесс CLI и закрываем ход сами: клиент после cancel() молчит.
+      try {
+        handle?.cancel()
+      } catch {
+        /* процесс уже мёртв */
+      }
+      onLog('system', 'Ран отменён — работа модели остановлена.\n')
+      finish({ ok: false, cancelled: true })
+    }
     const handlers: LlmStreamHandlers = {
       onDelta: (t) => {
         text += t
@@ -50,14 +73,17 @@ function runTurn(
       onSession: (sid) => {
         sessionId = sid
       },
-      onDone: () => resolve({ ok: true, text, sessionId }),
+      onDone: () => finish({ ok: true }),
       onError: (m) => {
         onLog('system', `Ошибка модели: ${m}\n`)
-        resolve({ ok: false, text, sessionId })
+        finish({ ok: false })
       },
       onActivity: (e) => onLog('system', `[${e.kind}] ${e.summary}\n`)
     }
-    claude.send(req, handlers)
+    const handle: LlmHandle | undefined = claude.send(req, handlers)
+    // Отмена могла прийти пока клиент стартовал — тогда гасим ход сразу.
+    if (signal.aborted) onAbort()
+    else signal.addEventListener('abort', onAbort, { once: true })
   })
 }
 
@@ -144,6 +170,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       // Страховка от бесконечного цикла: паузы ограничены бюджетом вопросов и
       // числом доработок плана, но верхний предел ходов задаём явно.
       for (let turnNo = 0; turnNo < MAX_MODEL_TURNS; turnNo++) {
+        if (ctx.signal.aborted) return { ok: false, cancelled: true }
         // Фаза плана НЕ идёт в CLI-режиме `plan`: он блокирует MCP-инструменты целиком
         // («Cannot call mcp__remote__bash while in plan mode»), а рабочая копия доступна
         // модели только через remote MCP — в плане она оказывалась слепой. Вместо этого
@@ -167,7 +194,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
               }
             : {})
         }
-        const r = await runTurn(clientFor(ctx), req, log)
+        const r = await runTurn(clientFor(ctx), req, log, ctx.signal)
+        // Отмена рана: не «ошибка модели» — ран закрывается как cancelled.
+        if (r.cancelled || ctx.signal.aborted) return { ok: false, cancelled: true }
         if (!r.ok) return { ok: false }
         if (r.sessionId) sessionId = r.sessionId
 
@@ -176,6 +205,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         if (parsed) {
           budget -= parsed.questions.length
           const answer = await ctx.askUser(ctx.parentStepId, parsed.questions)
+          if (ctx.signal.aborted) return { ok: false, cancelled: true }
           if (answer === null) {
             log('system', 'Продолжаю без уточнений.\n')
             prompt = 'Ответа не будет — действуй по своему усмотрению и продолжай.'
@@ -227,7 +257,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       permissionMode: 'plan',
       executionDisabled: true
     }
-    const r = await runTurn(clientFor(ctx), req, () => {})
+    const r = await runTurn(clientFor(ctx), req, () => {}, ctx.signal)
     return r.text.trim() || 'Резюме недоступно.'
   }
 
@@ -235,6 +265,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     const settings = deps.db.getCiSettings()
     const startAll = now()
     for (let attempt = 1; attempt <= settings.maxFixAttempts; attempt++) {
+      if (ctx.signal.aborted) return { fixed: false }
       if (settings.fixTimeLimitMs > 0 && now() - startAll > settings.fixTimeLimitMs) break
       const started = now()
       const req: LlmRequest = {
@@ -257,7 +288,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         // См. modelWork: рабочая директория удалённой машины задаётся в MCP URL.
         ...remoteOf(deps, ctx)
       }
-      const turn = await runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk))
+      const turn = await runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctx.signal)
+      if (turn.cancelled || ctx.signal.aborted) return { fixed: false }
       const diagnosis = turn.text.split('\n').find((l) => l.trim())?.slice(0, 200) ?? ''
       const rr = await ctx.rerunFailedStep()
       const fixed = rr.exitCode === 0

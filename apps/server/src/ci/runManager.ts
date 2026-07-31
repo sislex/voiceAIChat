@@ -12,7 +12,16 @@ import { isTerminalCiStatus } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiRunPrimitives } from './types.js'
 import { isReadOnlyCommand } from './console.js'
+import { classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
 import type { CiConsoleExecResult } from '@voicechat/shared'
+
+/**
+ * Сколько ждём завершения `execute` после отмены, прежде чем закрыть ран
+ * принудительно и отпустить звено очереди проекта. Без этого сторожа зависший
+ * шаг модели держал `projectChains` вечно, и следующие раны висели в `queued`
+ * до перезапуска сервера.
+ */
+const CANCEL_GRACE_MS = 15_000
 
 export interface CiRunManagerDeps {
   db: VoiceChatDb
@@ -33,6 +42,8 @@ export interface CiRunManagerDeps {
    */
   postSummaryToChat?: (args: { userId: string; conversationId: string; text: string; runId: string }) => Message | null
   now?: () => number
+  /** Сторожевой таймаут отмены (мс); по умолчанию `CANCEL_GRACE_MS`. */
+  cancelGraceMs?: number
   modelWork?: CiModelWorkHook
   modelSummary?: CiModelSummaryHook
   attemptFix?: CiFixHook
@@ -72,6 +83,7 @@ function slugify(s: string): string {
 
 export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   const now = deps.now ?? (() => Date.now())
+  const cancelGraceMs = deps.cancelGraceMs ?? CANCEL_GRACE_MS
   const listeners = new Set<(m: ServerMessage, ownerUserId: string) => void>()
   const active = new Map<string, ActiveRun>()
   const projectChains = new Map<string, Promise<void>>()
@@ -148,18 +160,85 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
 
     const ctl = new AbortController()
     active.set(run.id, { userId, projectId, abort: ctl })
+    enqueue(run.id, userId, projectId, ctl)
+    return { run }
+  }
 
+  /**
+   * Поставить ран в очередь проекта. Звено цепочки обязано разрешиться в любом
+   * случае — даже если после отмены `execute` завис на процессе модели: иначе
+   * следующие раны проекта висят в `queued` до перезапуска сервера.
+   */
+  function enqueue(runId: string, userId: string, projectId: string, ctl: AbortController, resume?: ResumePoint): void {
+    let released = false
     const prev = projectChains.get(projectId) ?? Promise.resolve()
     const chain = prev
       .then(() => acquireSlot())
-      .then(() => execute(run.id, userId, ctl))
+      .then(() => guardCancel(runId, userId, ctl, execute(runId, userId, ctl, resume)))
       .catch(() => {})
       .finally(() => {
+        // Зависший execute может позже дойти до своего releaseSlot — считаем слот
+        // отпущенным один раз, чтобы лимит сервера не «уехал» в минус.
+        if (released) return
+        released = true
         releaseSlot()
-        active.delete(run.id)
+        active.delete(runId)
       })
     projectChains.set(projectId, chain)
-    return { run }
+  }
+
+  /**
+   * Дождаться `execute`, но после отмены — не дольше `cancelGraceMs`. По истечении
+   * грейса ран закрывается как `cancelled`, слот и звено очереди отпускаются, а
+   * подвисший `execute` уже ничего не перезапишет (см. `finalize`).
+   */
+  function guardCancel(runId: string, userId: string, ctl: AbortController, execution: Promise<void>): Promise<void> {
+    const settled = execution.catch(() => {})
+    return new Promise<void>((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | null = null
+      const stop = (): void => {
+        if (timer) clearTimeout(timer)
+        ctl.signal.removeEventListener('abort', arm)
+        resolve()
+      }
+      const arm = (): void => {
+        if (timer) return
+        timer = setTimeout(() => {
+          hardCancel(runId, userId)
+          stop()
+        }, cancelGraceMs)
+        timer.unref?.()
+      }
+      void settled.then(stop)
+      if (ctl.signal.aborted) arm()
+      else ctl.signal.addEventListener('abort', arm)
+    })
+  }
+
+  /**
+   * Принудительное закрытие рана, который не отреагировал на отмену за грейс:
+   * незавершённые шаги → `cancelled`, задача возвращается в исходную колонку.
+   */
+  function hardCancel(runId: string, userId: string): void {
+    const row = deps.db.getCiRunRaw(runId)
+    if (!row || isTerminalCiStatus(row.status)) return
+    const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
+    const live = steps.filter((st) => st.status === 'running' || st.status === 'queued')
+    const lastLive = live[live.length - 1]
+    if (lastLive) {
+      const line = deps.db.appendCiLog(runId, lastLive.id, 'system', `Исполнитель не завершился за ${Math.round(cancelGraceMs / 1000)} с после отмены — ран закрыт принудительно.\n`)
+      broadcast({ t: 'ci.log', runId, line }, userId)
+    }
+    for (const st of live) {
+      const upd = deps.db.updateCiRunStep(st.id, { status: 'cancelled', finishedAt: now() })
+      if (upd) emitStep(upd, userId)
+    }
+    const sp = row.slotProgress
+    const withPhase = deps.db.updateCiRun(runId, { slotProgress: { ...sp, phase: 'Ран отменён', fixing: false } })
+    if (withPhase) emitRun(withPhase, userId)
+    deps.db.addCiEvent({ projectId: row.projectId, runId, type: 'run.cancel_forced', actorType: 'system', payload: { graceMs: cancelGraceMs } })
+    rollbackTask(runId, userId, row.prevColumnId)
+    finalize(runId, userId, 'cancelled')
   }
 
   async function discardChangesAndRetry(userId: string, runId: string): Promise<{ run: CiRun } | { error: string }> {
@@ -192,6 +271,15 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   function cancel(userId: string, runId: string): boolean {
     const a = active.get(runId)
     if (!a || a.userId !== userId) return false
+    // Отметка в ленте: отмена в фазе модели не мгновенна (сначала гасится процесс
+    // CLI на машине), и без строки лога UI выглядит как «кнопка не сработала».
+    const liveSteps = (deps.db.getCiRun(userId, runId)?.steps ?? []).filter((st) => st.status === 'running')
+    const last = liveSteps[liveSteps.length - 1]
+    if (last) {
+      const line = deps.db.appendCiLog(runId, last.id, 'system', 'Отмена рана: останавливаю шаг…\n')
+      broadcast({ t: 'ci.log', runId, line }, userId)
+    }
+    deps.db.addCiEvent({ projectId: a.projectId, runId, type: 'run.cancel_requested', actorType: 'user', actorId: userId, payload: {} })
     a.abort.abort()
     // Ран мог стоять на паузе: без этого промис ожидания никогда не разрешится.
     resolvePending(runId, null)
@@ -280,16 +368,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const queued = deps.db.updateCiRun(run.id, { status: 'queued' })!
     emitRun(queued, userId)
 
-    const prev = projectChains.get(run.projectId) ?? Promise.resolve()
-    const chain = prev
-      .then(() => acquireSlot())
-      .then(() => execute(run.id, userId, ctl, resume))
-      .catch(() => {})
-      .finally(() => {
-        releaseSlot()
-        active.delete(run.id)
-      })
-    projectChains.set(run.projectId, chain)
+    enqueue(run.id, userId, run.projectId, ctl, resume)
     return { run: queued }
   }
 
@@ -311,7 +390,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     initiatedBy: 'user' | 'system' | 'model',
     parentStepId: string | null,
     signal: AbortSignal
-  ): Promise<{ status: CiStatus; exitCode: number | null; output: string }> {
+  ): Promise<{ status: CiStatus; exitCode: number | null; output: string; stepId: string }> {
     const step = deps.db.addCiRunStep({
       runId,
       slot,
@@ -359,7 +438,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       const run = deps.db.getCiRunRaw(runId)
       if (run?.workspaceId) deps.db.releaseCiWorkspace(run.workspaceId, step.id)
     }
-    return { status, exitCode, output: collected.join('') }
+    return { status, exitCode, output: collected.join(''), stepId: step.id }
   }
 
   /**
@@ -440,6 +519,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       agentId,
       workspacePath,
       env,
+      signal,
       addStep: (a) => {
         const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
         const position = steps.length
@@ -584,6 +664,13 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
   async function execute(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint): Promise<void> {
     const runRow = deps.db.getCiRunRaw(runId)
     if (!runRow) return
+    // Ран отменили, пока он стоял в очереди проекта: не начинаем вовсе, иначе
+    // подготовка упадёт на отменённой команде и статус будет failed вместо cancelled.
+    if (ctl.signal.aborted) {
+      rollbackTask(runId, userId, runRow.prevColumnId)
+      finalize(runId, userId, 'cancelled')
+      return
+    }
     const project = deps.db.getProject(userId, runRow.projectId)
     const task = deps.db.getCiTask(userId, runRow.projectId, runRow.taskId)
     if (!project || !task) {
@@ -598,16 +685,27 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     const slug = slugify(task.title)
     const branch = (project.ciBranchTemplate || 'feature/{task_number}-{slug}').replace('{task_number}', taskNumber).replace('{slug}', slug)
     const workspacePath = `${repoRoot}/${projectSlug}/${taskNumber}`
+    const taskKey = `${projectSlug}-${taskNumber}`
+    // Изолированный кэш npm на задачу. Общий `~/.npm` ломался, когда два `npm ci`
+    // на машине шли одновременно: EEXIST/ENOENT в `_cacache`, шаг падал с 254 и
+    // ретраи не помогали, пока кэш не чистили руками. Кэш лежит РЯДОМ с рабочими
+    // копиями, а не внутри рабочей директории: cleanup сносит её в конце рана и
+    // каждый повтор качал бы пакеты заново.
+    const npmCacheRoot = `${repoRoot || workspacePath}/.npm-cache`
+    const npmCacheDir = `${npmCacheRoot}/${taskKey}`
     const env: Record<string, string> = {
       TASK_NUMBER: taskNumber,
-      TASK_KEY: `${projectSlug}-${taskNumber}`,
+      TASK_KEY: taskKey,
       SLUG: slug,
       BRANCH: branch,
       BASE_BRANCH: project.ciBaseBranch || 'main',
       REPO_URL: project.gitUrl ?? '',
       REPO_ROOT: repoRoot,
       WORKSPACE: workspacePath,
-      PROJECT: projectSlug
+      PROJECT: projectSlug,
+      // Путь для скриптов шагов; `npm_config_cache` npm подхватывает сам.
+      NPM_CACHE_DIR: npmCacheDir,
+      npm_config_cache: npmCacheDir
     }
     const signal = ctl.signal
 
@@ -617,7 +715,12 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
 
     // Рабочая директория: подготовка по стратегии повтора + запись workspace.
     const strategy = project.ciReuseStrategy || 'fail'
-    const prep = strategy === 'clean' ? `rm -rf ${shq(workspacePath)}; mkdir -p ${shq(workspacePath)}` : strategy === 'fail' ? `if [ -d ${shq(workspacePath)} ] && [ -n "$(ls -A ${shq(workspacePath)} 2>/dev/null)" ]; then echo "Рабочая директория уже существует (стратегия fail)" >&2; exit 65; fi; mkdir -p ${shq(workspacePath)}` : `mkdir -p ${shq(workspacePath)}`
+    // Кэши старых задач копятся на диске — чистим те, к которым две недели не
+    // ходили. `touch` отмечает «использован сейчас»: без него давно живущая
+    // задача теряла бы кэш на своём же ране (mtime каталога не растёт сам).
+    const cachePrep = `mkdir -p ${shq(npmCacheDir)}; touch ${shq(npmCacheDir)} 2>/dev/null || true; find ${shq(npmCacheRoot)} -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} + 2>/dev/null || true`
+    const workspacePrep = strategy === 'clean' ? `rm -rf ${shq(workspacePath)}; mkdir -p ${shq(workspacePath)}` : strategy === 'fail' ? `if [ -d ${shq(workspacePath)} ] && [ -n "$(ls -A ${shq(workspacePath)} 2>/dev/null)" ]; then echo "Рабочая директория уже существует (стратегия fail)" >&2; exit 65; fi; mkdir -p ${shq(workspacePath)}` : `mkdir -p ${shq(workspacePath)}`
+    const prep = `${cachePrep}\n${workspacePrep}`
     if (!resume) {
       // Новый ран: создаём запись рабочей директории. При повторе — переиспользуем.
       const ws = deps.db.createCiWorkspace({ projectId: runRow.projectId, taskId: runRow.taskId, agentId: agentId ?? null, path: workspacePath })
@@ -634,6 +737,14 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     // Системные шаги, вставленные между командами слота, сдвигают позиции в ленте.
     let extraSteps = 0
 
+    /** Закрыть ран отменой: фаза в прогрессе, откат карточки, финальный статус. */
+    const finishCancelled = (): false => {
+      progress(runId, done, total, 'Ран отменён', userId)
+      rollbackTask(runId, userId, runRow.prevColumnId)
+      finalize(runId, userId, 'cancelled')
+      return false
+    }
+
     // Системный шаг подготовки директории (пропускаем при повторе — директория есть).
     if (!resume && repoRoot && agentId) {
       const prepStep = deps.db.addCiRunStep({ runId, slot: 'before_model', position: 0, kind: 'command', initiatedBy: 'system', title: 'Подготовка рабочей директории', status: 'running' })
@@ -648,11 +759,19 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
         const upd = deps.db.updateCiRunStep(prepStep.id, { status: st, exitCode: r.exitCode, finishedAt: now(), durationMs: now() - ps })!
         emitStep(upd, userId)
         if (st !== 'success') {
+          if (signal.aborted) {
+            finishCancelled()
+            return
+          }
           rollbackAndFail(runId, userId, runRow.prevColumnId, 'script_error')
           return
         }
       } catch {
-        deps.db.updateCiRunStep(prepStep.id, { status: 'failed', finishedAt: now() })
+        deps.db.updateCiRunStep(prepStep.id, { status: signal.aborted ? 'cancelled' : 'failed', finishedAt: now() })
+        if (signal.aborted) {
+          finishCancelled()
+          return
+        }
         rollbackAndFail(runId, userId, runRow.prevColumnId, 'no_access')
         return
       }
@@ -661,10 +780,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     // Хелпер обработки одного слота команд.
     const runSlot = async (slot: CiSlot, commandIds: string[], phaseLabel: string, startIndex = 0): Promise<boolean> => {
       for (let i = startIndex; i < commandIds.length; i++) {
-        if (signal.aborted) {
-          finalize(runId, userId, 'cancelled')
-          return false
-        }
+        if (signal.aborted) return finishCancelled()
         progress(runId, done, total, `${phaseLabel} (${i + 1}/${commandIds.length})`, userId)
         const command = deps.db.getCiCommand(userId, commandIds[i])
         if (!command) {
@@ -686,7 +802,26 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
           }
         }
         const res = await runCommandStep(runId, userId, agentId, workspacePath, env, slot, posBase + done + 1 + extraSteps, command, 'user', null, signal)
+        // Шаг мог упасть именно из-за отмены (исполнитель отклонил команду) —
+        // тогда это `cancelled`, а не `failed`, и никакого fix-loop.
+        if (signal.aborted) return finishCancelled()
         if (res.status !== 'success' && !command.allowFailure) {
+          // Инфраструктурный сбой машины (повреждённый кэш npm, кончилось место)
+          // в fix-loop не отдаём: модель ищет причину в проекте и жжёт ходы зря.
+          const infra = classifyCiInfraFailure({ exitCode: res.exitCode, output: res.output })
+          if (infra) {
+            const line = deps.db.appendCiLog(runId, res.stepId, 'system', formatCiInfraFailure(infra))
+            broadcast({ t: 'ci.log', runId, line }, userId)
+            deps.db.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.infra_error', actorType: 'system', payload: { kind: infra.kind, stepId: res.stepId, exitCode: res.exitCode } })
+            progress(runId, done, total, `Инфраструктурная ошибка машины — ${infra.kind === 'npm_cache' ? 'повреждён кэш npm' : 'нет места на диске'}`, userId)
+            const infraStatus: CiStatus = res.status === 'timeout' ? 'timeout' : 'failed'
+            if (slot === 'before_model') {
+              rollbackAndFail(runId, userId, runRow.prevColumnId, 'infra_error', infraStatus)
+              return false
+            }
+            deps.db.updateCiRun(runId, { status: infraStatus })
+            return false
+          }
           // fix-loop (если подключён) на упавший шаг.
           const fixed = await tryFix(runId, userId, agentId, workspacePath, env, project, task, signal)
           if (!fixed) {
@@ -709,7 +844,10 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     // 1) Слот «до».
     const beforeOk = await runSlot('before_model', slots.beforeModel, 'Подготовка', resume?.kind === 'command' && resume.slot === 'before_model' ? resume.index : resume ? slots.beforeModel.length : 0)
     if (!beforeOk) return
-    if (signal.aborted) return finalize(runId, userId, 'cancelled')
+    if (signal.aborted) {
+      finishCancelled()
+      return
+    }
 
     // 2) Работа модели (при повторе из слота «после» — уже сделана, пропускаем).
     const prim = makePrimitives(runId, userId, agentId, workspacePath, env, signal)
@@ -733,9 +871,14 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
         const line = deps.db.appendCiLog(runId, mwStep.id, 'system', 'Работа модели пропущена (хук не подключён)\n')
         broadcast({ t: 'ci.log', runId, line }, userId)
       }
-      const stepStatus: CiStatus = modelOk ? 'success' : modelCancelled ? 'cancelled' : 'failed'
+      const stepStatus: CiStatus = modelOk ? 'success' : modelCancelled || signal.aborted ? 'cancelled' : 'failed'
       const upd = deps.db.updateCiRunStep(mwStep.id, { status: stepStatus, finishedAt: now(), durationMs: now() - mwStart })!
       emitStep(upd, userId)
+      // Отмена пользователем: слот «после» и резюме не запускаем, карточку возвращаем.
+      if (signal.aborted) {
+        finishCancelled()
+        return
+      }
       if (modelCancelled) {
         progress(runId, done, total, 'План не одобрен — ран остановлен', userId)
         rollbackTask(runId, userId, runRow.prevColumnId)
@@ -752,7 +895,10 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
 
     // 3) Слот «после» запускается только после успешной работы модели.
     let afterFailed = false
-    if (signal.aborted) return finalize(runId, userId, 'cancelled')
+    if (signal.aborted) {
+      finishCancelled()
+      return
+    }
     const afterOk = await runSlot('after_model', slots.afterModel, 'Финальные команды', resume?.kind === 'command' && resume.slot === 'after_model' ? resume.index : 0)
     if (!afterOk && !signal.aborted) afterFailed = true
 
@@ -778,7 +924,10 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       done++
     }
 
-    if (signal.aborted) return finalize(runId, userId, 'cancelled')
+    if (signal.aborted) {
+      finishCancelled()
+      return
+    }
     if (afterFailed) {
       rollbackTask(runId, userId, runRow.prevColumnId)
       finalize(runId, userId, 'failed')
@@ -863,6 +1012,9 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
 
   function finalize(runId: string, userId: string, status: CiStatus): void {
     const run0 = deps.db.getCiRunRaw(runId)
+    // Ран, закрытый отменой (в т.ч. сторожевым таймаутом), финальный: подвисший
+    // execute, догребший до конца позже, не имеет права переписать его в failed.
+    if (run0 && run0.status === 'cancelled' && status !== 'cancelled') return
     const finished = now()
     const durationMs = run0?.startedAt ? finished - run0.startedAt : null
     const run = deps.db.updateCiRun(runId, { status, finishedAt: finished, durationMs: durationMs ?? undefined })
