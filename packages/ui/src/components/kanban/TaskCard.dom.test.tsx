@@ -1,8 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { screen, fireEvent } from '@testing-library/react'
+import { useEffect, useState } from 'react'
+import { act, screen, fireEvent, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { render } from '../../test/uiRender'
 import type { Task } from '@shared/projects'
-import type { CiRunSummary } from '@shared/ci'
+import type { CiRun, CiRunSummary } from '@shared/ci'
+import { createFakeCi } from '../../test/fakeApi'
 import { TaskCard, type TaskCardProps } from './TaskCard'
 
 function mkTask(over: Partial<Task> = {}): Task {
@@ -77,11 +80,75 @@ describe('TaskCard CI-панель', () => {
     }
   })
 
-  it('после завершения рана кнопка запуска возвращается', () => {
-    const onStartCi = vi.fn()
-    render(<TaskCard {...props({ ciSummary: mkSummary({ status: 'success' }), onOpenCiRun: vi.fn(), onStartCi })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Выполнить' }))
-    expect(onStartCi).toHaveBeenCalledWith('t1')
+  it('у завершённого рана кнопка запуска есть при любом исходе', () => {
+    // Успех, падение, отмена, таймаут — ран закончен, повторный запуск разрешён.
+    for (const status of ['success', 'failed', 'cancelled', 'timeout'] as const) {
+      const onStartCi = vi.fn()
+      const { unmount } = render(<TaskCard {...props({ ciSummary: mkSummary({ status }), onOpenCiRun: vi.fn(), onStartCi })} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Выполнить' }))
+      expect(onStartCi).toHaveBeenCalledWith('t1')
+      unmount()
+    }
+  })
+})
+
+/**
+ * Карточка, подключённая к фейковому `window.ci` так же, как её подключает стор:
+ * «Выполнить» зовёт `startRun`, сводка обновляется ответом api и кадром `ci.done`.
+ * Проверяем не только видимость кнопки, но и что клик действительно заводит
+ * новый ран, а не переоткрывает прошлый.
+ */
+function toSummary(run: CiRun): CiRunSummary {
+  return {
+    id: run.id,
+    taskId: run.taskId,
+    status: run.status,
+    slotProgress: run.slotProgress,
+    durationMs: run.durationMs,
+    modelActive: false,
+    awaitingInput: run.status === 'awaiting_input'
+  }
+}
+
+function CardWithFakeCi({ initial }: { initial?: CiRunSummary }): JSX.Element {
+  const [summary, setSummary] = useState<CiRunSummary | undefined>(initial)
+  useEffect(() => window.ci?.onDone(({ run }) => setSummary(toSummary(run))), [])
+  return (
+    <TaskCard
+      {...props({
+        ciSummary: summary,
+        onOpenCiRun: vi.fn(),
+        onStartCi: (taskId) => {
+          void window.ci?.startRun('p1', taskId).then((run) => setSummary(toSummary(run)))
+        }
+      })}
+    />
+  )
+}
+
+describe('TaskCard CI-панель с фейковым api', () => {
+  it('на выполненной задаче «Выполнить» стартует новый ран, кнопка уходит на время рана и возвращается после', async () => {
+    const ci = createFakeCi()
+    window.ci = ci
+    const startRun = vi.spyOn(ci, 'startRun')
+    render(<CardWithFakeCi initial={mkSummary({ id: 'run-old', status: 'success', durationMs: 12_000 })} />)
+    expect(screen.getByText('успех')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Выполнить' }))
+
+    expect(startRun).toHaveBeenCalledWith('p1', 't1')
+    const started = (await startRun.mock.results[0]!.value) as CiRun
+    expect(started.id).not.toBe('run-old')
+    // Ран в очереди — активен, значит запускать нечего: остаётся только лента.
+    await waitFor(() => expect(screen.getByText('в очереди')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Выполнить' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Лента рана' })).toBeInTheDocument()
+
+    // Кадр `ci.done` приходит из сервера — в тесте досылаем его руками.
+    act(() => ci._emitDone({ ...started, status: 'success', finishedAt: (started.startedAt ?? 0) + 1000, durationMs: 1000 }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Выполнить' })).toBeInTheDocument())
+    expect(screen.getByText('успех')).toBeInTheDocument()
   })
 })
 

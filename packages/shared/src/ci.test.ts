@@ -1,6 +1,7 @@
 // Чистая логика домена CI: бюджет уточняющих вопросов и полнота списков.
 import { describe, it, expect } from 'vitest'
 import {
+  canStartCiRun,
   ciCardPulse,
   clarifyBudget,
   CI_CLARIFY_LEVELS,
@@ -61,6 +62,29 @@ describe('isActiveCiStatus', () => {
   it('терминальные статусы неактивны — запуск снова доступен', () => {
     for (const s of CI_STATUSES.filter(isTerminalCiStatus)) expect(isActiveCiStatus(s)).toBe(false)
     expect(isActiveCiStatus('skipped')).toBe(false)
+  })
+})
+
+describe('canStartCiRun', () => {
+  it('без рана запуск доступен', () => {
+    expect(canStartCiRun(null)).toBe(true)
+    expect(canStartCiRun(undefined)).toBe(true)
+  })
+
+  it('завершённый ран запуску не мешает — «Выполнить» стартует новый', () => {
+    for (const s of ['success', 'failed', 'cancelled', 'timeout', 'skipped'] as const) {
+      expect(canStartCiRun({ status: s })).toBe(true)
+    }
+  })
+
+  it('пока ран активен, запуск закрыт', () => {
+    for (const s of ['queued', 'running', 'awaiting_input'] as const) {
+      expect(canStartCiRun({ status: s })).toBe(false)
+    }
+  })
+
+  it('покрыты все статусы: запуск закрыт ровно на активных', () => {
+    for (const s of CI_STATUSES) expect(canStartCiRun({ status: s })).toBe(!isActiveCiStatus(s))
   })
 })
 

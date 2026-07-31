@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Task } from '@shared/projects'
-import { ciCardPulse, isActiveCiStatus, type CiRunSummary } from '@shared/ci'
+import { canStartCiRun, ciCardPulse, type CiRunSummary } from '@shared/ci'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
 import { Button } from '../ui/Button'
@@ -79,9 +79,9 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
     return () => document.removeEventListener('mousedown', onDown)
   }, [menuOpen])
 
-  // Состояние последнего рана: подсветка карточки и блокировка повторного запуска.
+  // Состояние последнего рана: подсветка карточки и доступность запуска.
   const pulse = ciCardPulse(ciSummary)
-  const ciActive = ciSummary != null && isActiveCiStatus(ciSummary.status)
+  const canStart = canStartCiRun(ciSummary)
 
   const epic = epicOf(task, props.allTasks)
   const children = props.allTasks.filter((t) => t.parentId === task.id)
@@ -215,8 +215,10 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 {ciSummary.awaitingInput ? 'Ответить модели' : 'Лента рана'}
               </Button>
             )}
-            {/* Пока ран идёт, запускать нечего — остаётся только лента. */}
-            {!ciActive && props.onStartCi && (
+            {/* Пока ран идёт, запускать нечего — остаётся только лента. После
+                завершения (успех, падение, отмена) кнопка возвращается: с карточки
+                всегда можно запустить задачу заново. */}
+            {canStart && props.onStartCi && (
               <Button variant="primary" size="sm" onClick={() => props.onStartCi?.(task.id)}>Выполнить</Button>
             )}
           </div>
