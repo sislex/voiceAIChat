@@ -4,12 +4,19 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { ConversationSettings } from './ConversationSettings'
 import type { ProjectDetail, ProjectSummary } from '@shared/projects'
+import { makeAgent, makeConversation } from '../test/fixtures'
 
-const agent: AgentInfo = {
-  id: 'm1', name: 'Рабочая машина', online: true, createdAt: 1, lastSeen: 1, version: '1', telemetry: undefined,
+// Машина и беседа — общие фикстуры: раньше беседа собиралась частичным литералом,
+// и новое обязательное поле контракта в этом тесте не проявлялось.
+const agent: AgentInfo = makeAgent({
+  id: 'm1',
+  name: 'Рабочая машина',
+  createdAt: 1,
+  version: '1',
+  telemetry: undefined,
   policy: { allowedDirs: [], allowNetwork: true, allowWrite: true, denyPatterns: [], allowPatterns: [], skills: [{ name: 'build', command: 'npm run build' }] }
-}
-const conversation = { id: 'c1', title: 'Старое имя', createdAt: 1, updatedAt: 1, messageCount: 0, claudeSessionId: null, execTarget: 'm1', workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, lastExecTarget: null }
+})
+const conversation = makeConversation({ id: 'c1', title: 'Старое имя', messageCount: 0, execTarget: 'm1' })
 const settings = { llmProvider: 'claude', model: 'opus', codexModel: '', permissionMode: 'bypassPermissions' } as const
 
 describe('ConversationSettings', () => {

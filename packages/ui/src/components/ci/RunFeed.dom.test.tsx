@@ -1,44 +1,24 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
-import type { CiRun, CiRunStep, CiLogLine, CiInteraction } from '@shared/ci'
 import { RunFeed, type RunFeedCache } from './RunFeed'
 import { listCommands, resetCommands } from '../../lib/commands'
+import {
+  NOW,
+  makeInteraction as mkInteraction,
+  makeLogLine as mkLog,
+  makeRun as mkRun,
+  makeStep as mkStep
+} from '../../test/fixtures'
 
-function mkRun(over: Partial<CiRun> = {}): CiRun {
-  return {
-    id: 'run-1', projectId: 'p1', taskId: 't1', agentId: null, status: 'running', workspaceId: null,
-    triggeredBy: 'admin', prevColumnId: null, llmProvider: 'claude', llmModel: 'sonnet',
-    mode: 'development', clarifyLevel: 'few', clarifyMax: 3, conversationId: null,
-    slotProgress: { done: 1, total: 3, phase: 'до модели' },
-    startedAt: 1000, finishedAt: null, durationMs: null, createdAt: 1000, ...over
-  }
-}
-function mkStep(over: Partial<CiRunStep> = {}): CiRunStep {
-  return {
-    id: 's1', runId: 'run-1', slot: 'before_model', position: 1, kind: 'command', parentStepId: null,
-    initiatedBy: 'system', commandId: 'cmd-1', commandSnapshot: 'npm ci', title: 'npm ci', workdir: null,
-    status: 'running', exitCode: null, attempt: 1, fixedByModel: false, startedAt: 1000, finishedAt: null, durationMs: null, ...over
-  }
-}
-function mkLog(over: Partial<CiLogLine> = {}): CiLogLine {
-  return { runId: 'run-1', stepId: 's1', seq: 1, stream: 'stdout', chunk: 'installing deps…', at: 1000, ...over }
-}
-
-function mkInteraction(over: Partial<CiInteraction> = {}): CiInteraction {
-  return {
-    id: 'it-1', runId: 'run-1', stepId: 'model-1', seq: 1, kind: 'clarify',
-    questions: [{ q: 'Какую БД взять?', options: ['SQLite', 'Postgres'] }],
-    planText: null, answerText: null, decision: null, status: 'pending',
-    conversationId: 'c1', messageId: 'm1', createdAt: 1000, answeredAt: null, answeredBy: null, ...over
-  }
-}
+// Ран, шаги, лог и пауза — общие фикстуры: те же сценарии показывают сториз
+// CI/RunFeed, поэтому расхождение с протоколом ловится один раз в одном месте.
 
 function baseProps(cache: RunFeedCache | undefined) {
   return {
     runId: 'run-1', cache,
     onSubscribe: vi.fn(), onUnsubscribe: vi.fn(), onLoad: vi.fn(), onRetry: vi.fn(), onCancel: vi.fn(),
-    now: () => 5000
+    now: () => NOW
   }
 }
 

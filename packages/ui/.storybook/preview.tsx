@@ -36,7 +36,7 @@ const preview: Preview = {
     // Своего переключателя фонов не нужно: фон задаёт тема через --bg.
     backgrounds: { disable: true },
     options: {
-      storySort: { order: ['Foundations', 'UI', 'Kanban', 'Prompt Builder', '*'] }
+      storySort: { order: ['Foundations', 'UI', 'Chat', 'CI', 'Machines', 'Kanban', 'AI Assist', 'Prompt Builder', '*'] }
     }
   },
   globalTypes: {

@@ -4,11 +4,11 @@ import userEvent from '@testing-library/user-event'
 import { ChatColumn } from './ChatColumn'
 import type { Message } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
+import { makeAiMessage, makeChatPair, makeMachineOps, makeUserMessage } from '../test/fixtures'
 
-const messages: Message[] = [
-  { id: 'u1', conversationId: 'c', role: 'u1', text: 'Вопрос', time: '10:00', createdAt: 1 },
-  { id: 'a1', conversationId: 'c', role: 'ai', text: 'Ответ **жирный**', time: '10:01', createdAt: 2 }
-]
+// Лента — общая фикстура (её же показывают сториз Chat/ChatColumn): вопрос
+// пользователя и ответ модели с markdown-разметкой.
+const messages: Message[] = makeChatPair()
 
 function renderCol(props: Partial<Parameters<typeof ChatColumn>[0]> = {}): void {
   render(
@@ -168,21 +168,16 @@ describe('ChatColumn — кнопка меню (мобильный сайдба�
 
 describe('ChatColumn — простой/подробный вид ответа', () => {
   const withActivity: Message[] = [
-    { id: 'u1', conversationId: 'c', role: 'u1', text: 'Вопрос', time: '10:00', createdAt: 1 },
-    {
+    makeUserMessage({ id: 'u1' }),
+    makeAiMessage({
       id: 'a1',
-      conversationId: 'c',
-      role: 'ai',
-      text: 'Ответ',
-      time: '10:01',
-      createdAt: 2,
       meta: {
         activity: [
           { kind: 'tool_use', summary: 'Bash: ls', detail: 'ls', raw: '{"t":"assistant"}' },
           { kind: 'result', summary: 'Готово', raw: '{"t":"result"}' }
         ]
       }
-    }
+    })
   ]
 
   it('по умолчанию — минимальный вид: без счётчика и секций, только текст', () => {
@@ -217,26 +212,9 @@ describe('ChatColumn — простой/подробный вид ответа',
 
 describe('ChatColumn — встроенная утилита (tool-блок)', () => {
   const toolMsg: Message[] = [
-    {
-      id: 'a1',
-      conversationId: 'c',
-      role: 'ai',
-      text: '🖥 Консоль\n\n```tool\n{"kind":"console"}\n```',
-      time: '10:01',
-      createdAt: 2
-    }
+    makeAiMessage({ id: 'a1', text: '🖥 Консоль\n\n```tool\n{"kind":"console"}\n```' })
   ]
-  const ops = {
-    list: vi.fn(),
-    read: vi.fn(),
-    write: vi.fn(),
-    remove: vi.fn(),
-    rename: vi.fn(),
-    mkdir: vi.fn(),
-    download: vi.fn(),
-    upload: vi.fn(),
-    exec: vi.fn()
-  }
+  const ops = makeMachineOps()
 
   it('рендерит консоль внутри ai-сообщения при наличии machineOps', () => {
     renderCol({ messages: toolMsg, machineOps: ops, agents: [] })
@@ -245,15 +223,12 @@ describe('ChatColumn — встроенная утилита (tool-блок)', (
 
   it('встроенный проводник открывает терминал на своей машине и в текущей папке', async () => {
     const open = vi.fn()
-    const explorerOps = {
-      ...ops,
+    const explorerOps = makeMachineOps({
       list: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r/work', entries: [] })
-    }
-    const explorerMsg: Message[] = [{
-      id: 'a2', conversationId: 'c', role: 'ai',
-      text: 'Проводник\n\n```tool\n{"kind":"explorer","agentId":"m1"}\n```',
-      time: '10:02', createdAt: 3
-    }]
+    })
+    const explorerMsg: Message[] = [
+      makeAiMessage({ id: 'a2', text: 'Проводник\n\n```tool\n{"kind":"explorer","agentId":"m1"}\n```' })
+    ]
     const agent = { id: 'm1', name: 'MacBook', online: true, policy: { allowWrite: true } } as AgentInfo
     renderCol({ messages: explorerMsg, machineOps: explorerOps, agents: [agent], onOpenTerminal: open })
     await userEvent.click(await screen.findByTitle('Открыть терминал в этой папке'))
@@ -267,20 +242,8 @@ describe('ChatColumn — встроенная утилита (tool-блок)', (
 })
 
 describe('ChatColumn — картинка от модели в сообщении', () => {
-  const imgMsg = (text: string): Message[] => [
-    { id: 'a1', conversationId: 'c', role: 'ai', text, time: '10:01', createdAt: 2, execTarget: 'm1' }
-  ]
-  const ops = {
-    list: vi.fn(),
-    read: vi.fn().mockResolvedValue({ root: '/', cwd: '', dataBase64: 'AAA' }),
-    write: vi.fn(),
-    remove: vi.fn(),
-    rename: vi.fn(),
-    mkdir: vi.fn(),
-    download: vi.fn(),
-    upload: vi.fn(),
-    exec: vi.fn()
-  }
+  const imgMsg = (text: string): Message[] => [makeAiMessage({ id: 'a1', text, execTarget: 'm1' })]
+  const ops = makeMachineOps({ read: vi.fn().mockResolvedValue({ root: '/', cwd: '', dataBase64: 'AAA' }) })
 
   it('рендерит картинку из блока и читает файл с машины сообщения', async () => {
     renderCol({ messages: imgMsg('Готово\n\n```image\n{"path":"/tmp/out.png"}\n```'), machineOps: ops })
@@ -405,8 +368,8 @@ describe('ChatColumn — загрузка сообщений', () => {
 describe('ChatColumn — снимок машины сообщения', () => {
   it('показывает машину вопроса и ответа без селекторов', () => {
     const machineMessages: Message[] = [
-      { id: 'u', conversationId: 'c', role: 'u1', text: 'Вопрос', time: '10:00', createdAt: 1, execTarget: 'm1' },
-      { id: 'a', conversationId: 'c', role: 'ai', text: 'Ответ', time: '10:01', createdAt: 2, execTarget: 'none' }
+      makeUserMessage({ id: 'u', execTarget: 'm1' }),
+      makeAiMessage({ id: 'a', execTarget: 'none' })
     ]
     const agent = { id: 'm1', name: 'MacBook', online: true } as AgentInfo
     renderCol({ messages: machineMessages, agents: [agent] })
@@ -448,17 +411,7 @@ describe('ChatColumn — статус стрима внизу пузыря и п
 
   it('сообщение с meta.interrupted показывает пометку о прерванном ответе', () => {
     renderCol({
-      messages: [
-        {
-          id: 'a2',
-          conversationId: 'c',
-          role: 'ai',
-          text: 'Часть ответа',
-          time: '10:02',
-          createdAt: 3,
-          meta: { interrupted: true }
-        }
-      ]
+      messages: [makeAiMessage({ id: 'a2', text: 'Часть ответа', meta: { interrupted: true } })]
     })
     expect(screen.getByTestId('msg-interrupted').textContent).toContain('прерван')
   })
@@ -468,9 +421,7 @@ describe('ChatColumn — время сообщения в поясе зрите�
   it('рендерит время из createdAt, а не запечённую серверную строку', () => {
     const ts = new Date(2026, 6, 26, 14, 30).getTime() // локальные 14:30
     renderCol({
-      messages: [
-        { id: 'a3', conversationId: 'c', role: 'ai', text: 'Ответ', time: '23:59', createdAt: ts }
-      ]
+      messages: [makeAiMessage({ id: 'a3', time: '23:59', createdAt: ts })]
     })
     expect(screen.getByText('14:30')).toBeInTheDocument()
     expect(screen.queryByText('23:59')).toBeNull()
@@ -480,11 +431,12 @@ describe('ChatColumn — время сообщения в поясе зрите�
 
 describe('ChatColumn — режим работы', () => {
   const planMessages: Message[] = [
-    { id: 'u-plan', conversationId: 'c', role: 'u1', text: 'Составь план', time: '10:00', createdAt: 1 },
-    {
-      id: 'a-plan', conversationId: 'c', role: 'ai', text: 'План готов', time: '10:01', createdAt: 2,
+    makeUserMessage({ id: 'u-plan', text: 'Составь план' }),
+    makeAiMessage({
+      id: 'a-plan',
+      text: 'План готов',
       meta: { request: { provider: 'claude', model: 'sonnet', prompt: 'Составь план', promptChars: 11, permissionMode: 'plan', resumed: false } }
-    }
+    })
   ]
 
   it('показывает фактический режим в шапке и открывает настройки по клику', async () => {
@@ -517,13 +469,13 @@ describe('ChatColumn — режим работы', () => {
 describe('ChatColumn — вопрос CI-рана, продублированный в чат', () => {
   const QBLOCK = '```questions\n[{"q":"Какую БД взять?","options":["SQLite","Postgres"]}]\n```'
   const ciMessages: Message[] = [
-    { id: 'u1', conversationId: 'c', role: 'u1', text: 'старт', time: '10:00', createdAt: 1 },
-    {
-      id: 'a1', conversationId: 'c', role: 'ai', time: '10:01', createdAt: 2,
+    makeUserMessage({ id: 'u1', text: 'старт' }),
+    makeAiMessage({
+      id: 'a1',
       text: `Уточняющие вопросы по задаче:\n\n${QBLOCK}`,
       meta: { ciInteraction: { runId: 'run-1', interactionId: 'it-1' } }
-    },
-    { id: 'u2', conversationId: 'c', role: 'u1', text: 'что-то ещё', time: '10:02', createdAt: 3 }
+    }),
+    makeUserMessage({ id: 'u2', text: 'что-то ещё' })
   ]
 
   it('ответ уходит в ран, а не запускает новый ход чата', async () => {
