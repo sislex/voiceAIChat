@@ -10,6 +10,7 @@ import type {
 import { formatQuestionsBlock, issueKey } from '@voicechat/shared'
 import { isTerminalCiStatus } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
+import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiRunPrimitives } from './types.js'
 import { isReadOnlyCommand } from './console.js'
 import { classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
@@ -932,7 +933,10 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       rollbackTask(runId, userId, runRow.prevColumnId)
       finalize(runId, userId, 'failed')
     } else {
-      if (modelOk) parkAwaitingMerge(runId, userId)
+      if (modelOk) {
+        parkAwaitingMerge(runId, userId)
+        queueProdRebuild(runId, userId)
+      }
       finalize(runId, userId, modelOk ? 'success' : 'failed')
     }
   }
@@ -1011,6 +1015,46 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       const line = deps.db.appendCiLog(runId, last.id, 'system', 'Ветка задачи в прод-ветку не влита — карточка ждёт мержа\n')
       broadcast({ t: 'ci.log', runId, line }, userId)
     }
+  }
+
+  /**
+   * Обратный к `parkAwaitingMerge` случай: ветка влита в прод-ветку, но прод в
+   * этом ране не пересобирался (шага пересборки в слоте «после» нет, он упал или
+   * был пропущен) — изменения лежат в прод-ветке и до прода не доехали. Заводим
+   * (или дополняем) автозадачу учёта «Пересборка прода»: саму пересборку не
+   * запускаем — это решение человека, наше дело не потерять её из виду.
+   */
+  function queueProdRebuild(runId: string, userId: string): void {
+    const row = deps.db.getCiRunRaw(runId)
+    if (!row) return
+    const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
+    if (!steps.some((st) => isMergeToBaseStep(st) && st.status === 'success')) return
+    if (steps.some((st) => isProdRebuildStep(st) && st.status === 'success')) return
+    const project = deps.db.getProject(userId, row.projectId)
+    const task = deps.db.getCiTask(userId, row.projectId, row.taskId)
+    if (!project || !task) return
+    // Ран самой автозадачи в её же список не пишем.
+    if (task.title === PROD_REBUILD_TASK_TITLE) return
+    let res: ReturnType<VoiceChatDb['ensureProdRebuildTask']>
+    try {
+      res = deps.db.ensureProdRebuildTask(userId, row.projectId, `- ${issueKey(project.name, task)}: ${task.title}`)
+    } catch {
+      return /* карточку могли удалить/перенести между запросом и записью */
+    }
+    if (!res) return
+    deps.db.addCiEvent({
+      projectId: row.projectId,
+      runId,
+      type: 'run.prod_rebuild_pending',
+      actorType: 'system',
+      payload: { taskId: res.task.id, created: res.created, appended: res.appended }
+    })
+    const last = steps[steps.length - 1]
+    if (last && res.appended) {
+      const line = deps.db.appendCiLog(runId, last.id, 'system', `Прод в этом ране не пересобирался — задача добавлена в «${PROD_REBUILD_TASK_TITLE}»\n`)
+      broadcast({ t: 'ci.log', runId, line }, userId)
+    }
+    deps.boardChanged(row.projectId)
   }
 
   function rollbackTask(runId: string, userId: string, prevColumnId: string | null): void {
@@ -1109,6 +1153,19 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
 export function isMergeToBaseStep(step: CiRunStep): boolean {
   if (step.kind !== 'command' && step.kind !== 'model_command') return false
   return /вли(т|ва)|\bmerge\b/i.test(step.title) || /git\s+(?:-C\s+\S+\s+)?merge\b/.test(step.commandSnapshot ?? '')
+}
+
+/**
+ * Шаг «Обновить прод-контейнер». Как и с мержем, набор команд — данные проекта,
+ * поэтому узнаём шаг по назначению: название говорит про прод и про
+ * обновление/пересборку, либо скрипт пересобирает контейнер (`docker compose up
+ * --build`, `npm run docker`).
+ */
+export function isProdRebuildStep(step: CiRunStep): boolean {
+  if (step.kind !== 'command' && step.kind !== 'model_command') return false
+  if (/прод|\bprod\b/i.test(step.title) && /пересбор|пересобра|обнов|деплой|deploy|rebuild|update/i.test(step.title)) return true
+  const script = step.commandSnapshot ?? ''
+  return /docker[- ]compose[^\n]*\bup\b[^\n]*--build|npm\s+run\s+docker\b/.test(script)
 }
 
 /** shell-quote для системных префиксов раннера. */

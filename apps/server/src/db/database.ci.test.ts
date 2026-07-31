@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { VoiceChatDb } from './database.js'
+import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from './database.js'
 
 let db: VoiceChatDb
 
@@ -292,5 +292,55 @@ describe('ci: метки чатов задач для списка бесед', 
 
     // Метки — свои: bob чужой чат задачи не видит.
     expect(db.taskChatBadges('bob')).toEqual([])
+  })
+})
+
+describe('ci: автозадача «Пересборка прода»', () => {
+  it('заводит одну открытую карточку в ready и копит строки без дублей', () => {
+    const { p } = project()
+    const ready = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'ready')!
+
+    const first = db.ensureProdRebuildTask('alice', p.id, '- P1-1: T1')!
+    expect(first.created).toBe(true)
+    expect(first.task.title).toBe(PROD_REBUILD_TASK_TITLE)
+    expect(first.task.columnId).toBe(ready.id)
+    expect(first.task.type).toBe('task')
+    expect(first.task.assignee).toBe(null)
+
+    // Вторая задача — та же карточка, новая строка.
+    const second = db.ensureProdRebuildTask('alice', p.id, '- P1-2: T2')!
+    expect(second.created).toBe(false)
+    expect(second.appended).toBe(true)
+    expect(second.task.id).toBe(first.task.id)
+
+    // Та же строка второй раз — ничего не меняется.
+    const again = db.ensureProdRebuildTask('alice', p.id, '- P1-2: T2')!
+    expect(again.appended).toBe(false)
+    expect(again.task.description.split('\n').filter((l) => l.startsWith('- '))).toEqual(['- P1-1: T1', '- P1-2: T2'])
+    expect(db.getBoard('alice', p.id)!.tasks.filter((t) => t.title === PROD_REBUILD_TASK_TITLE).length).toBe(1)
+  })
+
+  it('карточка в done не переиспользуется — заводится новая', () => {
+    const { p } = project()
+    const done = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'done')!
+    const first = db.ensureProdRebuildTask('alice', p.id, '- P1-1: T1')!
+    db.moveTask('alice', p.id, first.task.id, { columnId: done.id })
+
+    const next = db.ensureProdRebuildTask('alice', p.id, '- P1-2: T2')!
+    expect(next.created).toBe(true)
+    expect(next.task.id).not.toBe(first.task.id)
+    expect(next.task.description).not.toContain('T1')
+    // Закрытую карточку не трогаем.
+    expect(db.getBoard('alice', p.id)!.tasks.find((t) => t.id === first.task.id)!.description).not.toContain('T2')
+  })
+
+  it('нет колонки ready — карточку не заводим; чужой проект недоступен', () => {
+    const { p } = project()
+    const spy = vi.spyOn(db, 'getColumnIdBySemantic').mockReturnValue(null)
+    expect(db.ensureProdRebuildTask('alice', p.id, '- P1-1: T1')).toBe(null)
+    spy.mockRestore()
+    // Не участник проекта карточку не заводит.
+    expect(db.ensureProdRebuildTask('bob', p.id, '- P1-1: T1')).toBe(null)
+    expect(db.getBoard('alice', p.id)!.tasks.some((t) => t.title === PROD_REBUILD_TASK_TITLE)).toBe(false)
   })
 })

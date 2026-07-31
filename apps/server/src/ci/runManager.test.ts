@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
-import { VoiceChatDb } from '../db/database.js'
+import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from '../db/database.js'
+import { issueKey } from '@voicechat/shared'
 import { signToken } from '../users/accounts.js'
 import type { CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
@@ -476,5 +477,85 @@ describe('ci run manager', () => {
     expect(scripts.filter((x) => x === 'echo ok').length).toBe(1)
     // FLAKY выполнялся дважды (упал, затем прошёл на повторе).
     expect(scripts.filter((x) => x === 'FLAKY build').length).toBe(2)
+  })
+  // --- Автозадача «Пересборка прода» (мерж в прод-ветку без пересборки прода) ---
+
+  /** Команда мержа ветки задачи в прод-ветку (шаг раннер узнаёт по названию/скрипту). */
+  const mergeCommand = (projectId: string) =>
+    db.createCiCommand('admin', { scope: 'project', projectId, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
+  const openRebuildTasks = (projectId: string) => {
+    const board = db.getBoard('admin', projectId)!
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    return board.tasks.filter((t) => t.title === PROD_REBUILD_TASK_TITLE && t.columnId !== done.id)
+  }
+
+  it('мерж без пересборки прода: два рана — одна открытая задача «Пересборка прода» с двумя строками', async () => {
+    const { project, task, readyColId } = setup()
+    const merge = mergeCommand(project.id)
+    db.setCiSlotCommands('project', project.id, 'after_model', [merge.id])
+    const second = db.createTask('admin', project.id, { columnId: readyColId, title: 'T2' })!
+
+    const firstRun = await run(project.id, task.id)
+    expect((await waitRun(firstRun)).run.status).toBe('success')
+    expect((await waitRun(await run(project.id, second.id))).run.status).toBe('success')
+
+    const rebuild = openRebuildTasks(project.id)
+    expect(rebuild.length).toBe(1)
+    const card = rebuild[0]
+    // Заводим в колонке ready, тип task, без исполнителя.
+    expect(card.columnId).toBe(readyColId)
+    expect(card.type).toBe('task')
+    expect(card.assignee).toBe(null)
+    const lines = card.description.split('\n').filter((l) => l.startsWith('- '))
+    expect(lines).toEqual([`- ${issueKey(project.name, task)}: T1`, `- ${issueKey(project.name, second)}: T2`])
+    // Причина видна в ленте рана.
+    const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${firstRun}/log` })).json() as Array<{ chunk: string }>
+    expect(log.some((l) => l.chunk.includes(PROD_REBUILD_TASK_TITLE))).toBe(true)
+  })
+
+  it('повторный ран той же задачи не дублирует строку в «Пересборке прода»', async () => {
+    const { project, task } = setup()
+    const merge = mergeCommand(project.id)
+    db.setCiSlotCommands('task', task.id, 'after_model', [merge.id])
+    expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
+    expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
+    const rebuild = openRebuildTasks(project.id)
+    expect(rebuild.length).toBe(1)
+    expect(rebuild[0].description.split('\n').filter((l) => l.startsWith('- '))).toEqual([`- ${issueKey(project.name, task)}: T1`])
+  })
+
+  it('успешный шаг пересборки прода в ране — автозадача не заводится', async () => {
+    const { project, task } = setup()
+    const merge = mergeCommand(project.id)
+    const rebuild = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Обновить прод-контейнер', script: 'docker compose up --build -d' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [merge.id, rebuild.id])
+    expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
+    expect(openRebuildTasks(project.id).length).toBe(0)
+  })
+
+  it('ран без мержа в прод-ветку автозадачу не заводит', async () => {
+    const { project, task } = setup()
+    expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
+    expect(openRebuildTasks(project.id).length).toBe(0)
+  })
+
+  it('«Пересборка прода» уехала в done — следующий мерж заводит новую карточку', async () => {
+    const { project, task, readyColId } = setup()
+    const merge = mergeCommand(project.id)
+    db.setCiSlotCommands('project', project.id, 'after_model', [merge.id])
+    expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
+    const first = openRebuildTasks(project.id)[0]
+    const doneCol = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'done')!
+    db.moveTask('admin', project.id, first.id, { columnId: doneCol.id })
+
+    const second = db.createTask('admin', project.id, { columnId: readyColId, title: 'T2' })!
+    expect((await waitRun(await run(project.id, second.id))).run.status).toBe('success')
+    const open = openRebuildTasks(project.id)
+    expect(open.length).toBe(1)
+    expect(open[0].id).not.toBe(first.id)
+    expect(open[0].description.split('\n').filter((l) => l.startsWith('- '))).toEqual([`- ${issueKey(project.name, second)}: T2`])
+    // Закрытая карточка не дополняется.
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === first.id)!.description).toContain('T1')
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === first.id)!.description).not.toContain('T2')
   })
 })
