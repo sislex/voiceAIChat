@@ -328,3 +328,21 @@ describe('Sidebar — состояния списка бесед', () => {
     expect(onRetryConversations).toHaveBeenCalledTimes(1)
   })
 })
+
+
+describe('Sidebar — кнопка командной палитры', () => {
+  it('рядом с поиском есть «⌘K»/«Ctrl+K», и она открывает палитру', () => {
+    const onOpenCommandPalette = vi.fn()
+    setup({ onOpenCommandPalette })
+    const button = screen.getByRole('button', { name: 'Командная палитра' })
+    // Подпись — комбинация платформы: пользователь видит, что нажать.
+    expect(button.textContent).toMatch(/⌘K|Ctrl\+K/)
+    fireEvent.click(button)
+    expect(onOpenCommandPalette).toHaveBeenCalledTimes(1)
+  })
+
+  it('без обработчика кнопки нет: в desktop-сборке палитру открывать нечем', () => {
+    setup()
+    expect(screen.queryByRole('button', { name: 'Командная палитра' })).toBeNull()
+  })
+})

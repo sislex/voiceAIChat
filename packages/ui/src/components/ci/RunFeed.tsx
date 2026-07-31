@@ -17,6 +17,7 @@ import { Skeleton, RefreshIndicator } from '../ui/Skeleton'
 import { EmptyState } from '../ui/EmptyState'
 import { ErrorState } from '../ui/ErrorState'
 import { loadView, type LoadStatus } from '../../lib/loadState'
+import { useCommandSource } from '../../lib/useCommands'
 
 export interface RunFeedCache {
   detail: CiRunDetail | null
@@ -111,6 +112,24 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   }, [detail])
 
   const running = run ? !isTerminalCiStatus(run.status) : false
+
+  // Команда экрана в общем реестре: пока лента рана на экране, «Повторить
+  // последний ран» доступен из палитры. Незавершённый ран повторять нечего —
+  // тогда команда выключена (в шпаргалке её нет: у неё нет комбинации).
+  useCommandSource(() => {
+    if (!run) return []
+    return [
+      {
+        id: 'ci.retry-run',
+        title: 'Повторить последний ран',
+        section: 'action',
+        hint: `Задача ${run.taskId}`,
+        keywords: ['ci', 'retry', 'перезапустить'],
+        enabled: () => isTerminalCiStatus(run.status),
+        run: () => props.onRetry(run.id)
+      }
+    ]
+  })
   const logByStep = useMemo(() => {
     const m = new Map<string, CiLogLine[]>()
     for (const l of log) {

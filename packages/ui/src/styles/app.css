@@ -4532,3 +4532,183 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   background: rgba(255, 255, 255, 0.06);
   color: #d7d5ca;
 }
+
+/* ==== Командная палитра (⌘K) и шпаргалка горячих клавиш ==================== */
+
+/* Кнопка «⌘K» рядом с поиском в сайдбаре: точка входа мышью, иначе про палитру
+   узнают только те, кто наугад нажал сочетание. Ряд — чтобы поле осталось
+   растяжимым, а подпись комбинации не сжималась. */
+.sidesearch-row {
+  display: flex;
+  /* stretch, а не center: высоту ряда задаёт поле поиска, и кнопка ровно под него —
+     иначе она получается вдвое ниже поля (у .vc-btn нет своей min-height). */
+  align-items: stretch;
+  gap: var(--space-050);
+}
+.sidesearch-row .searchinput {
+  flex: 1;
+  min-width: 0;
+}
+/* Подпись длиннее иконки — квадратную геометрию .vc-btn--icon расширяем. */
+.cmdk-open.vc-btn--icon {
+  width: auto;
+  min-width: 34px;
+  padding: 0 var(--space-100);
+  border-radius: 8px; /* как у .searchinput рядом */
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* Высота окна фиксирована: выдача меняется на каждую букву, и без неё палитра
+   прыгала бы по вертикали при каждом нажатии (окно центрировано по оверлею).
+   На телефоне Dialog и так во весь экран — там своя высота не нужна. */
+.cmdk:not(.vc-dialog--phone) {
+  height: min(560px, 80vh);
+}
+.cmdk .mdhead {
+  border-bottom: none;
+}
+.cmdk-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  padding: 0 var(--space-150) var(--space-100) var(--space-150);
+}
+.cmdk-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 15px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  color: var(--text);
+}
+.cmdk-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.cmdk-list {
+  margin-top: var(--space-100);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.cmdk-sec {
+  margin: var(--space-100) 0 var(--space-050) 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.cmdk-group:first-child .cmdk-sec {
+  margin-top: 0;
+}
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-100);
+  padding: 7px var(--space-100);
+  border-radius: var(--radius-medium);
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text);
+}
+.cmdk-item--active {
+  background: var(--surface-hover);
+}
+.cmdk-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Совпавшие буквы: фон акцента, а не жёлтый маркер браузера — тот не знает
+   про тему и в тёмной выглядит как дефект. */
+.cmdk-hit {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 3px;
+  padding: 0 1px;
+  font-weight: 600;
+}
+.cmdk-hint {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-dim);
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmdk-key,
+.cmdk-foot kbd,
+.hkeys kbd {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.cmdk-more {
+  margin: var(--space-050) 0 0 var(--space-100);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.cmdk-foot {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* Шпаргалка: две колонки «действие — комбинация», сгруппированные по разделам
+   реестра команд. */
+.hkeys-group + .hkeys-group {
+  margin-top: var(--space-150);
+}
+.hkeys-sec {
+  margin: 0 0 var(--space-050) 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.hkeys-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hkeys-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-100);
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 14px;
+}
+.hkeys-row:last-child {
+  border-bottom: none;
+}
+.hkeys-combo {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-050);
+}
+.hkeys-note {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.hkeys-tail {
+  margin: var(--space-150) 0 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}

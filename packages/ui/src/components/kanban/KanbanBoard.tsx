@@ -29,6 +29,7 @@ import { Skeleton, RefreshIndicator } from '../ui/Skeleton'
 import { EmptyState } from '../ui/EmptyState'
 import { ErrorState } from '../ui/ErrorState'
 import { loadView, type LoadStatus } from '../../lib/loadState'
+import { useCommandSource } from '../../lib/useCommands'
 import {
   autoScroll,
   nearestByCenterY,
@@ -486,6 +487,24 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setNewTitle('')
     setTimeout(() => composerRef.current?.focus(), 0)
   }
+
+  // Своя команда экрана в общем реестре (lib/commands.ts): пока доска открыта,
+  // «Создать задачу» есть в палитре, а как только ушла — исчезает. Держать этот
+  // пункт в App нельзя: он знал бы про колонки доски.
+  useCommandSource(() => {
+    const target = columns[0]
+    if (!target) return []
+    return [
+      {
+        id: 'kanban.create-task',
+        title: 'Создать задачу',
+        section: 'action',
+        hint: `Проект «${props.projectName}» · ${target.name}`,
+        keywords: ['новая задача', 'добавить', 'new task'],
+        run: () => openComposer(target.id)
+      }
+    ]
+  })
 
   const cardOf = (t: Task): JSX.Element => (
     <TaskCard

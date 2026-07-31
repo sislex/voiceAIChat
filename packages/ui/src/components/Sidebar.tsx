@@ -20,6 +20,7 @@ import { EmptyState } from './ui/EmptyState'
 import { ErrorState } from './ui/ErrorState'
 import { loadView, type LoadStatus } from '../lib/loadState'
 import { GearIcon } from './icons'
+import { formatCombo } from '../lib/hotkeys'
 
 /** Человекочитаемая мета разговора: «Сегодня · 6 сообщений». */
 function formatMeta(c: Conversation, now: number): string {
@@ -237,6 +238,8 @@ export interface SidebarProps {
   onPickProject?: (id: string) => void
   /** Создать проект из инлайн-формы списка (имя уже обрезано и не пустое). */
   onCreateProject?: (name: string) => void
+  /** Открыть командную палитру (кнопка «⌘K» рядом с поиском); не задан — кнопки нет. */
+  onOpenCommandPalette?: () => void
   /** Мобильный режим: сайдбар выдвинут поверх контента. */
   open?: boolean
   /** Свернуть сайдбар на десктопе (шеврон в шапке); undefined — кнопку не показываем. */
@@ -283,6 +286,7 @@ export function Sidebar({
   activeProjectId = null,
   onPickProject,
   onCreateProject,
+  onOpenCommandPalette,
   open = false,
   onToggleCollapse
 }: SidebarProps): JSX.Element {
@@ -411,14 +415,28 @@ export function Sidebar({
             </button>
           </div>
         )}
-        <input
-          className="searchinput"
-          type="search"
-          value={searchQuery}
-          placeholder={inMessages ? 'Поиск по сообщениям…' : 'Поиск по разговорам…'}
-          aria-label={inMessages ? 'Поиск по сообщениям' : 'Поиск по разговорам'}
-          onChange={(e) => onSearch(e.target.value)}
-        />
+        <div className="sidesearch-row">
+          <input
+            className="searchinput"
+            type="search"
+            value={searchQuery}
+            placeholder={inMessages ? 'Поиск по сообщениям…' : 'Поиск по разговорам…'}
+            aria-label={inMessages ? 'Поиск по сообщениям' : 'Поиск по разговорам'}
+            onChange={(e) => onSearch(e.target.value)}
+          />
+          {/* Точка входа мышью: без неё про палитру узнают только те, кто угадал
+              сочетание. Подпись — та же, что в шпаргалке (⌘ на macOS, Ctrl на остальных). */}
+          {onOpenCommandPalette && (
+            <IconButton
+              className="cmdk-open"
+              aria-label="Командная палитра"
+              title={`Командная палитра (${formatCombo('mod+k')})`}
+              onClick={onOpenCommandPalette}
+            >
+              {formatCombo('mod+k')}
+            </IconButton>
+          )}
+        </div>
       </div>
       {inMessages ? (
         <MessageResults
