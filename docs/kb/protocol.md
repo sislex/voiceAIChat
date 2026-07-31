@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-07-30
-checked: a2c30d6
+updated: 2026-07-31
+checked: 543e656
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -154,7 +154,7 @@ WS дозванивается только при наличии токена с
 **Проекты и канбан** (REST `projects:*`/`columns:*`/`tasks:*`, WS `board.subscribe`/`board.update`, мост `window.board`) — отдельная подсистема, см. [projects.md](projects.md).
 
 
-**CI-раннер** (REST `ci:*`, лента рана и консоль) описан в [features/ci-runner.md](features/ci-runner.md). Живые краткие состояния приходят в существующем `board.update`. Пауза рана в ожидании пользователя — WS `ci.interaction` + REST `ciRunInteraction`; сообщение, которое сервер сам дописал в чат (резюме рана), приходит WS-кадром `chat.message` (`{conversationId, message}`, мост `window.ci.onChatMessage`) — открытый чат дописывает его, не перезагружая историю; контекст задачи для шапки связанного чата — `conversations:taskContext` (`GET /api/conversations/:id/task-context`). Feature Run удалён полностью — каналов `features:*`/`agentTasks:*` больше нет.
+**CI-раннер** (REST `ci:*`, лента рана и консоль) описан в [features/ci-runner.md](features/ci-runner.md). Живые краткие состояния приходят в существующем `board.update`. Пауза рана в ожидании пользователя — WS `ci.interaction` + REST `ciRunInteraction`; сообщение, которое сервер сам дописал в чат (резюме рана), приходит WS-кадром `chat.message` (`{conversationId, message}`, мост `window.ci.onChatMessage`) — открытый чат дописывает его, не перезагружая историю; контекст задачи для шапки связанного чата — `conversations:taskContext` (`GET /api/conversations/:id/task-context`), а метки всех чатов задач для списка бесед (ключ, тип, сводка последнего рана) — `conversations:taskChats` (`GET /api/conversations/task-chats`, статический путь объявлен рядом с параметрическим `/api/conversations/:id`). Feature Run удалён полностью — каналов `features:*`/`agentTasks:*` больше нет.
 ## AI-помощник формулировки
 
 `POST /api/prompt/suggest` принимает `{ prompt, modifiers }`, где `modifiers` — упорядоченный массив `ModifierPrompt`; UI передаёт только активные элементы. Ответ — `{ variants: Suggestion[] }`. Маршрут требует Bearer-токен, не создаёт разговор и не сохраняет ход. Движок и модель берутся из per-user настроек `aiAssistProvider`/`aiAssistModel`; вызов CLI идёт с `executionDisabled: true` и без session id. Web-мост предоставляет тот же контракт как `window.api['prompt:suggest']`.

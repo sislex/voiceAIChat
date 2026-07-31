@@ -234,6 +234,26 @@ describe('voiceStore — резюме CI-рана в связанном чате
   })
 })
 
+describe('voiceStore — метки чатов задач в списке бесед', () => {
+  it('метка появляется вместе с чатом задачи, у обычного чата её нет', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    await store.actions.openBoard(store.getState().projectDetail!.id)
+    const todo = store.getState().board!.columns[0]
+    await store.actions.createTask(todo.id, { title: 'Скролл' })
+    const task = store.getState().board!.tasks.find((t) => t.title === 'Скролл')!
+    await store.actions.setSidebarProject(store.getState().projectDetail!.id)
+    await store.actions.openTaskChat(task.id)
+    const chatId = store.getState().activeId!
+    // Метки грузятся вдогонку списку бесед — ждём микрозадачу запроса.
+    await Promise.resolve()
+    await Promise.resolve()
+    const badges = store.getState().taskChatBadges
+    expect(badges[chatId]).toMatchObject({ taskId: task.id, key: 'P1-1', type: 'task' })
+    expect(Object.keys(badges)).toEqual([chatId])
+  })
+})
+
 describe('voiceStore — канал уведомлений', () => {
   it('упавший вызов моста кладёт ошибку с безопасным повтором', async () => {
     const { store, api } = makeStore()

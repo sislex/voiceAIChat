@@ -10,7 +10,11 @@ import {
   type SessionUser
 } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
-import type { ProjectSummary } from '@shared/projects'
+import type { ProjectSummary, TaskChatBadge } from '@shared/projects'
+import type { CiRunSummary } from '@shared/ci'
+import { ciCardPulse } from '@shared/ci'
+import { TypeIcon } from './kanban/kanbanMeta'
+import { ciStatusLabel, ciTone } from './ci/ciFormat'
 import { ACCENT } from '../lib/view'
 import { splitSnippet } from '../lib/snippet'
 import { Button } from './ui/Button'
@@ -183,6 +187,16 @@ export interface SidebarProps {
   activeId: string | null
   /** id разговоров, где сейчас идёт ход модели (индикатор «идёт работа»). */
   workingIds?: string[]
+  /**
+   * Метки чатов задач по id беседы: ключ и тип задачи. Есть метка — строка
+   * отличается от обычного чата всегда, а не только во время рана.
+   */
+  taskBadges?: Record<string, TaskChatBadge>
+  /**
+   * Сводки последних CI-ранов по `taskId` — тот же источник, что подсвечивает
+   * карточку на доске, поэтому список чатов мигает теми же цветами.
+   */
+  ciSummaries?: Record<string, CiRunSummary>
   now: number
   onNew: () => void
   onPick: (id: string) => void
@@ -253,6 +267,8 @@ export function Sidebar({
   onRetryConversations,
   activeId,
   workingIds = [],
+  taskBadges = {},
+  ciSummaries = {},
   now,
   onNew,
   onPick,
@@ -497,11 +513,21 @@ export function Sidebar({
             беседами: скелетон, пустота и баннер ошибки — не элементы списка, и
             внутри list им быть нельзя. */}
         <div className="convo-items" role="list" aria-label="Беседы">
-          {conversations.map((c) => (
+          {conversations.map((c) => {
+            // Чат задачи виден в списке как задача: ключ, тип и состояние
+            // последнего рана. Подсветку считает та же shared-функция, что и
+            // для карточки на доске (`jcard--ci-*`), поэтому цвета совпадают;
+            // мигает только активный ран, у терминального рамка статичная.
+            const badge = taskBadges[c.id]
+            const run = badge ? ciSummaries[badge.taskId] : undefined
+            const pulse = ciCardPulse(run)
+            return (
             <div
               key={c.id}
               role="listitem"
-              className={c.id === activeId ? 'convo on' : 'convo'}
+              className={['convo', c.id === activeId && 'on', badge && 'convo--task', pulse && `convo--ci-${pulse}`]
+                .filter(Boolean)
+                .join(' ')}
               onClick={() => renamingId !== c.id && onPick(c.id)}
             >
               <div className="crow">
@@ -547,6 +573,17 @@ export function Sidebar({
                     >
                       {c.title}
                     </button>
+                  )}
+                  {badge && (
+                    <p className="ctask">
+                      <TypeIcon type={badge.type} />
+                      <span className="ctask-key">{badge.key}</span>
+                      {run && (
+                        <span className={`ci-lozenge ci-lozenge--${ciTone(run.status)}`} title="Последний ран задачи">
+                          {ciStatusLabel(run.status)}
+                        </span>
+                      )}
+                    </p>
                   )}
                   <p className="cmeta">{formatMeta(c, now)}</p>
                   {c.messageCount > 0 && (
@@ -626,7 +663,8 @@ export function Sidebar({
                 </div>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       </div>
       )}

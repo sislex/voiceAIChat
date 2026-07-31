@@ -17,7 +17,7 @@ import type {
   SttUpdate,
   UploadInfo
 } from '@shared/ipc'
-import type { Board, ProjectDetail, ProjectSummary, TaskChatContext, TaskPriority, WorkItemType, WorkItemDefaultSkills } from '@shared/projects'
+import type { Board, ProjectDetail, ProjectSummary, TaskChatBadge, TaskChatContext, TaskPriority, WorkItemType, WorkItemDefaultSkills } from '@shared/projects'
 
 import type {
   CiCommand,
@@ -368,6 +368,12 @@ export interface AppState {
   ciActiveRunId: string | null
   /** Контекст задачи активного чата для шапки; null — чат не привязан к задаче. */
   taskChatContext: TaskChatContext | null
+  /**
+   * Метки чатов задач по id беседы: ключ задачи и её тип для строки списка.
+   * Живут отдельно от `board` — список чатов подсвечивается и без открытой
+   * доски, состояние рана берётся из `ciSummaries` по `taskId`.
+   */
+  taskChatBadges: Record<string, TaskChatBadge>
   /**
    * Id закрытых пауз рана. Нужен чату: вопрос продублирован туда сообщением,
    * и после ответа (из чата или из ленты) форму надо погасить — сам текст
@@ -934,6 +940,7 @@ function initialState(): AppState {
     ciSummaries: {},
     ciActiveRunId: null,
     taskChatContext: null,
+    taskChatBadges: {},
     answeredCiInteractions: [],
     kbUsageOpen: false,
     kbUsage: {},
@@ -1077,6 +1084,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       const pid = state.sidebarProjectId
       const conversations = all.filter((c) => (c.projectId ?? null) === pid)
       setState({ conversations, conversationsStatus: 'ready', conversationsError: null })
+      void loadTaskChatBadges()
     } catch (err) {
       setState({
         conversationsStatus: 'error',
@@ -1505,6 +1513,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     const pid = state.sidebarProjectId
     const visible = conversations.filter((c) => (c.projectId ?? null) === pid)
     setState({ settings, projects, projectsLoaded: true, conversations: visible, conversationsStatus: 'ready', conversationsError: null })
+    void loadTaskChatBadges()
     await refreshMics()
     await refreshModelStatus()
     await refreshWhisperModels()
@@ -2266,6 +2275,28 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     // чтобы не задерживать показ сообщений.
     void loadTaskChatContext(id)
     return true
+  }
+
+  /**
+   * Метки чатов задач для списка бесед. Ран из ответа кладём в `ciSummaries`
+   * только когда он другой (или про задачу ещё ничего не знаем): состояние
+   * известного рана ведут живые кадры `ci.*`, и медленный ответ на этот запрос
+   * не должен откатывать их назад.
+   */
+  async function loadTaskChatBadges(): Promise<void> {
+    try {
+      const badges = await api['conversations:taskChats']()
+      const byConversation: Record<string, TaskChatBadge> = {}
+      const ciSummaries = { ...state.ciSummaries }
+      for (const badge of badges) {
+        byConversation[badge.conversationId] = badge
+        const known = ciSummaries[badge.taskId]
+        if (badge.run && (!known || known.id !== badge.run.id)) ciSummaries[badge.taskId] = badge.run
+      }
+      setState({ taskChatBadges: byConversation, ciSummaries })
+    } catch {
+      /* подсветка — украшение: список чатов работает и без неё */
+    }
   }
 
   /** Контекст задачи активного чата (null — чат не привязан к задаче). */
