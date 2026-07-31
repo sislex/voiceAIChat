@@ -14,12 +14,12 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-07-27 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-07-30 | ⚠ 1 коммит(ов) в areas после сверки: 6b56a49 feat(search): полнотекстовый поиск по сообщениям (SQLite FTS5) + панель в сайдбаре |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-07-30 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-07-30 | ⚠ 5 коммит(ов) в areas после сверки: c03c531 feat(ui): единые состояния загрузки, пустоты и ошибки — Skeleton/EmptyState/ErrorState … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-07-30 | ⚠ 5 коммит(ов) в areas после сверки: 401fe20 feat(ui): единые состояния загрузки, пустоты и ошибки — Skeleton/EmptyState/ErrorState … |
 | [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-07-27 | ⚠ код изменён 2026-07-31, сверка 2026-07-27 (по датам: правки того же дня не видны — поставь checked) |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-07-27 | ⚠ 2 коммит(ов) в areas после сверки: 4ca77de docs(kb): коммит в прод-каталоге пушится сразу — иначе прод не fast-forward … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-07-29 | ⚠ 7 коммит(ов) в areas после сверки: 343ef28 fix(llm): подсказать модели timeout_ms у remote-bash … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-27 | ⚠ 7 коммит(ов) в areas после сверки: c03c531 feat(ui): единые состояния загрузки, пустоты и ошибки — Skeleton/EmptyState/ErrorState … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-07-30 | ⚠ 8 коммит(ов) в areas после сверки: c03c531 feat(ui): единые состояния загрузки, пустоты и ошибки — Skeleton/EmptyState/ErrorState … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-27 | ⚠ 7 коммит(ов) в areas после сверки: 401fe20 feat(ui): единые состояния загрузки, пустоты и ошибки — Skeleton/EmptyState/ErrorState … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-07-30 | ⚠ 8 коммит(ов) в areas после сверки: 401fe20 feat(ui): единые состояния загрузки, пустоты и ошибки — Skeleton/EmptyState/ErrorState … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-07-30 | ⚠ 1 коммит(ов) в areas после сверки: 6b56a49 feat(search): полнотекстовый поиск по сообщениям (SQLite FTS5) + панель в сайдбаре |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-07-27 | ⚠ 34 коммит(ов) в areas после сверки: 6b56a49 feat(search): полнотекстовый поиск по сообщениям (SQLite FTS5) + панель в сайдбаре … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-07-27 | ⚠ 16 коммит(ов) в areas после сверки: 6b56a49 feat(search): полнотекстовый поиск по сообщениям (SQLite FTS5) + панель в сайдбаре … |
