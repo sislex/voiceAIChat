@@ -90,6 +90,38 @@ describe('WS: живое обновление доски', () => {
     ws.close()
   })
 
+  it('подписка с includeCompleted держит завершённые и в живых обновлениях', async () => {
+    const p = await createProject()
+    const auth = { authorization: `Bearer ${adminTok}` }
+    const board = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: auth })).json() as Board
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    const task = (await app.inject({
+      method: 'POST', url: `/api/projects/${p.id}/tasks`, headers: auth, payload: { columnId: done.id, title: 'Завершённая' }
+    })).json() as { id: string }
+    // Порог 0 — «скрывать сразу»: задача уходит с доски, но не из системы.
+    await app.inject({ method: 'PATCH', url: `/api/projects/${p.id}`, headers: auth, payload: { doneRetentionDays: 0 } })
+
+    const ws = await connect(adminTok)
+    const snap = waitBoard(ws, () => true)
+    ws.send(JSON.stringify({ t: 'board.subscribe', projectId: p.id, includeCompleted: true }))
+    expect((await snap)!.tasks.map((t) => t.id)).toContain(task.id)
+
+    // Живой board.update приходит в том же составе — карточка не исчезает.
+    const next = waitBoard(ws, (b) => b.tasks.some((t) => t.title === 'Новая'))
+    await app.inject({
+      method: 'POST', url: `/api/projects/${p.id}/tasks`, headers: auth, payload: { columnId: board.columns[0].id, title: 'Новая' }
+    })
+    expect((await next)!.tasks.map((t) => t.id)).toContain(task.id)
+
+    // Без флага той же доски — завершённой нет.
+    const plain = await connect(adminTok)
+    const plainSnap = waitBoard(plain, () => true)
+    plain.send(JSON.stringify({ t: 'board.subscribe', projectId: p.id }))
+    expect((await plainSnap)!.tasks.map((t) => t.id)).not.toContain(task.id)
+    ws.close()
+    plain.close()
+  })
+
   it('не-участник не получает snapshot по подписке', async () => {
     const p = await createProject()
     const ws = await connect(bobTok)

@@ -238,6 +238,7 @@ export interface IpcInvokeMap {
       ciBranchTemplate?: string
       ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
       ciExecAuthRef?: string
+      doneRetentionDays?: number | null
     }
     result: ProjectDetail
   }
@@ -254,8 +255,8 @@ export interface IpcInvokeMap {
   'projects:setMachinePath': { arg: { id: string; agentId: string; path: string }; result: ProjectDetail }
   /** Назначить машину проекта по умолчанию (только владелец). */
   'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
-  /** Снапшот доски (колонки + задачи). */
-  'board:get': { arg: { id: string }; result: Board }
+  /** Снапшот доски (колонки + задачи); includeCompleted — вместе со скрытыми завершёнными. */
+  'board:get': { arg: { id: string; includeCompleted?: boolean }; result: Board }
   'columns:create': { arg: { projectId: string; name: string }; result: KanbanColumn }
   'columns:rename': { arg: { projectId: string; columnId: string; name?: string; wipLimit?: number | null }; result: void }
   'columns:setHidden': { arg: { projectId: string; columnId: string; hidden: boolean }; result: void }
@@ -508,7 +509,7 @@ export interface RendererAgentsBridge {
  */
 export interface RendererBoardBridge {
   /** Подписаться на доску проекта (сервер сразу шлёт снапшот). */
-  subscribe(projectId: string): void
+  subscribe(projectId: string, includeCompleted?: boolean): void
   /** Отписаться от текущей доски. */
   unsubscribe(): void
   /** Подписка на снапшоты доски. */

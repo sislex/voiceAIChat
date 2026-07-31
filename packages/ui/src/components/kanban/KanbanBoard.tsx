@@ -87,6 +87,13 @@ export interface KanbanBoardProps {
   onOpenTaskChange?: (taskId: string | null) => void
   /** Стартовое значение селекта «Свимлейны». */
   defaultSwimlane?: Swimlane
+  /**
+   * Приходят ли с сервера давно завершённые задачи. Фильтрация серверная, так
+   * что переключатель — это запрос доски заново (onShowCompletedChange); без
+   * колбэка чекбокс живёт своим состоянием и ни на что не влияет (Storybook).
+   */
+  showCompleted?: boolean
+  onShowCompletedChange?: (show: boolean) => void
   onCreateColumn: (name: string) => void
   onUpdateColumn: (columnId: string, fields: { name?: string; wipLimit?: number | null }) => void
   onSetColumnHidden: (columnId: string, hidden: boolean) => void
@@ -130,6 +137,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const { loading, members } = props
   const confirm = useConfirm()
   const [showHidden, setShowHidden] = useState(false)
+  const [internalShowCompleted, setInternalShowCompleted] = useState(false)
+  const showCompleted = props.showCompleted ?? internalShowCompleted
+  const setShowCompleted = props.onShowCompletedChange ?? setInternalShowCompleted
   const [search, setSearch] = useState('')
   const [assignees, setAssignees] = useState<ReadonlySet<string>>(new Set())
   const [types, setTypes] = useState<ReadonlySet<WorkItemType>>(new Set())
@@ -1000,6 +1010,16 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             </label>
             <label className="kanban-showhidden">
               <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> скрытые
+            </label>
+            {/* Завершённые прячет сервер (порог — в настройках проекта), поэтому
+                галка не фильтрует загруженное, а просит доску целиком. */}
+            <label className="kanban-showcompleted">
+              <input
+                type="checkbox"
+                checked={showCompleted}
+                onChange={(e) => setShowCompleted(e.target.checked)}
+              />{' '}
+              Показать завершённые
             </label>
             {filtersActive && (
               <button className="jquick jquick--clear" onClick={resetFilters}>

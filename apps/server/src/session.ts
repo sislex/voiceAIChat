@@ -46,7 +46,7 @@ export interface SessionDeps {
   }
   /** Живая канбан-доска проекта: снапшот (с проверкой членства) + подписка на изменения. */
   board?: {
-    getBoard(projectId: string): Board | null
+    getBoard(projectId: string, includeCompleted?: boolean): Board | null
     subscribe(cb: (projectId: string) => void): () => void
   }
   /** Релей живого PTY-терминала по машине (отдельно от однострочного exec). */
@@ -72,6 +72,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubAgents: (() => void) | null = null
   let unsubBoard: (() => void) | null = null
   let boardProjectId: string | null = null
+  /** Просит ли подписчик отдавать и давно завершённые задачи («Показать завершённые»). */
+  let boardIncludeCompleted = false
   let unsubTurns: (() => void) | null = null
   let unsubCi: (() => void) | null = null
   let unsubKbUsage: (() => void) | null = null
@@ -119,7 +121,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
       if (deps.board) {
         unsubBoard = deps.board.subscribe((projectId) => {
           if (projectId !== boardProjectId) return
-          const board = deps.board!.getBoard(projectId)
+          const board = deps.board!.getBoard(projectId, boardIncludeCompleted)
           if (board) ctx.send({ t: 'board.update', projectId, board })
         })
       }
@@ -245,14 +247,16 @@ export function createSession(deps: SessionDeps): WsHandlers {
 
         case 'board.subscribe': {
           // Подписка на доску: молча игнорируем, если не участник / нет доступа.
-          const board = deps.board?.getBoard(msg.projectId) ?? null
+          const board = deps.board?.getBoard(msg.projectId, msg.includeCompleted) ?? null
           if (!board) break
           boardProjectId = msg.projectId
+          boardIncludeCompleted = msg.includeCompleted === true
           ctx.send({ t: 'board.update', projectId: msg.projectId, board })
           break
         }
         case 'board.unsubscribe':
           boardProjectId = null
+          boardIncludeCompleted = false
           break
         case 'ci.subscribe': {
           // Снапшот рана для восстановления ленты + лога (реплей с начала).
@@ -283,6 +287,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubBoard?.()
       unsubBoard = null
       boardProjectId = null
+      boardIncludeCompleted = false
       unsubTurns?.()
       unsubTurns = null
       unsubCi?.()

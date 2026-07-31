@@ -67,6 +67,8 @@ import {
   type TaskChatContext,
   type TaskChatCrumb,
   issueKey,
+  isCompletedHidden,
+  DEFAULT_DONE_RETENTION_DAYS,
   type CiGlobalSettings,
   DEFAULT_CI_GLOBAL_SETTINGS,
   type CiRun,
@@ -228,6 +230,7 @@ interface ProjectRow {
   ci_branch_template: string
   ci_reuse_strategy: string
   ci_exec_auth_ref: string
+  done_retention_days: number | null
 }
 
 interface ProjectMemberRow {
@@ -264,6 +267,7 @@ interface TaskRow {
   story_points: number | null
   due_date: number | null
   flagged: number
+  done_at: number | null
   seq: number | null
   position: number
   created_at: number
@@ -340,6 +344,7 @@ function mapTask(r: TaskRow): Task {
 
     dueDate: r.due_date ?? null,
     flagged: r.flagged !== 0,
+    doneAt: r.done_at ?? null,
     seq: r.seq ?? 0,
     position: r.position,
     createdAt: r.created_at,
@@ -520,6 +525,16 @@ export class VoiceChatDb {
     if (taskCols.length && !taskCols.some((c) => c.name === 'story_points')) this.db.exec(`ALTER TABLE tasks ADD COLUMN story_points REAL`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'due_date')) this.db.exec(`ALTER TABLE tasks ADD COLUMN due_date INTEGER`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'flagged')) this.db.exec(`ALTER TABLE tasks ADD COLUMN flagged INTEGER NOT NULL DEFAULT 0`)
+    // Момент завершения задачи: отсчёт срока, после которого карточка уходит с
+    // доски. Уже лежащим в done проставляем время последней правки — иначе они
+    // остались бы на доске навсегда.
+    if (taskCols.length && !taskCols.some((c) => c.name === 'done_at')) {
+      this.db.exec(`ALTER TABLE tasks ADD COLUMN done_at INTEGER`)
+      this.db.exec(`
+        UPDATE tasks SET done_at = updated_at
+        WHERE column_id IN (SELECT id FROM kanban_columns WHERE semantic_type = 'done')
+      `)
+    }
     if (taskCols.length && !taskCols.some((c) => c.name === 'seq')) {
       this.db.exec(`ALTER TABLE tasks ADD COLUMN seq INTEGER`)
       // Номер по порядку создания в проекте — как ключи PRJ-1, PRJ-2 в Jira.
@@ -582,6 +597,9 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_branch_template')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_branch_template TEXT NOT NULL DEFAULT 'feature/{task_number}-{slug}'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_reuse_strategy')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_reuse_strategy TEXT NOT NULL DEFAULT 'fail'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_exec_auth_ref')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_exec_auth_ref TEXT NOT NULL DEFAULT ''`)
+    // Порог «сколько держать завершённые на доске»: существующим проектам —
+    // дефолт 14 дней (DEFAULT в ALTER заполняет старые строки).
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'done_retention_days')) this.db.exec(`ALTER TABLE projects ADD COLUMN done_retention_days INTEGER DEFAULT ${DEFAULT_DONE_RETENTION_DAYS}`)
     const ciRunCols = this.db.prepare(`PRAGMA table_info(ci_runs)`).all() as Array<{ name: string }>
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_provider')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_provider TEXT NOT NULL DEFAULT 'claude'`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_model')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_model TEXT NOT NULL DEFAULT 'sonnet'`)
@@ -1339,6 +1357,22 @@ export class VoiceChatDb {
     this.db.prepare(`UPDATE projects SET updated_at = ? WHERE id = ?`).run(ts, projectId)
   }
 
+  /** Колонка «Готово»: попадание в неё запускает отсчёт скрытия карточки. */
+  private isDoneColumn(columnId: string): boolean {
+    const r = this.db.prepare(`SELECT semantic_type FROM kanban_columns WHERE id = ?`).get(columnId) as
+      | { semantic_type: string }
+      | undefined
+    return r?.semantic_type === 'done'
+  }
+
+  /** Порог проекта «сколько дней держать завершённые на доске» (null — не скрывать). */
+  private doneRetentionDays(projectId: string): number | null {
+    const r = this.db.prepare(`SELECT done_retention_days AS d FROM projects WHERE id = ?`).get(projectId) as
+      | { d: number | null }
+      | undefined
+    return r?.d ?? null
+  }
+
   private columnInProject(projectId: string, columnId: string): boolean {
     return (
       this.db
@@ -1373,7 +1407,8 @@ export class VoiceChatDb {
       ciBaseBranch: r.ci_base_branch,
       ciBranchTemplate: r.ci_branch_template,
       ciReuseStrategy: r.ci_reuse_strategy === 'reuse' || r.ci_reuse_strategy === 'clean' ? r.ci_reuse_strategy : 'fail',
-      ciExecAuthRef: r.ci_exec_auth_ref
+      ciExecAuthRef: r.ci_exec_auth_ref,
+      doneRetentionDays: r.done_retention_days
     }
   }
 
@@ -1491,6 +1526,7 @@ export class VoiceChatDb {
       ciBranchTemplate?: string
       ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
       ciExecAuthRef?: string
+      doneRetentionDays?: number | null
     }
   ): ProjectDetail | null {
 
@@ -1535,6 +1571,7 @@ export class VoiceChatDb {
     if (fields.ciBranchTemplate !== undefined) { set.push('ci_branch_template = ?'); vals.push(fields.ciBranchTemplate) }
     if (fields.ciReuseStrategy !== undefined) { set.push('ci_reuse_strategy = ?'); vals.push(fields.ciReuseStrategy) }
     if (fields.ciExecAuthRef !== undefined) { set.push('ci_exec_auth_ref = ?'); vals.push(fields.ciExecAuthRef) }
+    if (fields.doneRetentionDays !== undefined) { set.push('done_retention_days = ?'); vals.push(fields.doneRetentionDays) }
     if (fields.defaultSkills?.epic !== undefined) { set.push('default_skills_epic = ?'); vals.push(JSON.stringify(fields.defaultSkills.epic)) }
     if (fields.defaultSkills?.story !== undefined) { set.push('default_skills_story = ?'); vals.push(JSON.stringify(fields.defaultSkills.story)) }
     if (fields.defaultSkills?.task !== undefined) { set.push('default_skills_task = ?'); vals.push(JSON.stringify(fields.defaultSkills.task)) }
@@ -1689,7 +1726,12 @@ export class VoiceChatDb {
   // ---- Board (колонки + задачи) -----------------------------------------
 
 
-  getBoard(userId: string, projectId: string): Board | null {
+  /**
+   * Снапшот доски. По умолчанию задачи, завершённые дольше порога проекта
+   * (`doneRetentionDays`), с доски убраны — как в Jira. Из БД они не удаляются:
+   * приходят с `includeCompleted` и открываются по прямой ссылке.
+   */
+  getBoard(userId: string, projectId: string, opts?: { includeCompleted?: boolean }): Board | null {
     if (!this.isProjectMember(userId, projectId)) return null
     const columns = (
       this.db
@@ -1705,8 +1747,13 @@ export class VoiceChatDb {
         )
         .all(userId, projectId) as TaskRow[]
     ).map(mapTask)
+    // Фильтруем на сервере: иначе payload доски рос бы бесконечно вместе с
+    // колонкой «Готово». includeCompleted → порог null, скрывать нечего.
+    const retention = opts?.includeCompleted ? null : this.doneRetentionDays(projectId)
+    const now = this.now()
+    const visible = tasks.filter((t) => !isCompletedHidden(t.doneAt, retention, now))
 
-    return { columns, tasks, ciRuns: this.latestCiRunSummaries(projectId) }
+    return { columns, tasks: visible, ciRuns: this.latestCiRunSummaries(projectId) }
   }
 
   /**
@@ -1922,13 +1969,15 @@ export class VoiceChatDb {
         .get(projectId, args.columnId) as { m: number | null }
     ).m
     const position = (max ?? 0) + RANK_STEP
+    // Карточку могут создать сразу в «Готово» — тогда отсчёт начинается сейчас.
+    const doneAt = this.isDoneColumn(args.columnId) ? ts : null
     const seq = (
       this.db.prepare(`UPDATE projects SET task_seq = task_seq + 1 WHERE id = ? RETURNING task_seq`).get(projectId) as { task_seq: number }
     ).task_seq
     this.db
       .prepare(
-        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, labels, skills, story_points, due_date, flagged, seq, position, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`
+        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -1946,6 +1995,7 @@ export class VoiceChatDb {
         args.storyPoints ?? null,
 
         args.dueDate ?? null,
+        doneAt,
         seq,
         position,
         ts,
@@ -2090,9 +2140,17 @@ export class VoiceChatDb {
         ).m
         pos = (max ?? 0) + RANK_STEP
       }
+      // Момент попадания в «Готово» — точка отсчёта, после которой карточка
+      // уходит с доски. Переезд между done-колонками отсчёт не сбрасывает,
+      // возврат в работу — сбрасывает (задача снова живая).
+      const done = this.isDoneColumn(args.columnId) ? 1 : 0
       this.db
-        .prepare(`UPDATE tasks SET column_id = ?, position = ?, updated_at = ? WHERE id = ? AND project_id = ?`)
-        .run(args.columnId, pos, ts, taskId, projectId)
+        .prepare(
+          `UPDATE tasks SET column_id = ?, position = ?, updated_at = ?,
+                  done_at = CASE WHEN ? = 1 THEN COALESCE(done_at, ?) ELSE NULL END
+           WHERE id = ? AND project_id = ?`
+        )
+        .run(args.columnId, pos, ts, done, ts, taskId, projectId)
     })()
     this.touchProject(projectId, ts)
     return this.getTask(projectId, taskId)

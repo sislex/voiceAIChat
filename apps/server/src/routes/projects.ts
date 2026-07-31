@@ -24,6 +24,16 @@ const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 
 const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
 const badReq = (reply: FastifyReply, message: string): FastifyReply => reply.code(400).send({ error: message })
 
+/** Флаг из query-строки: `?includeCompleted=1` (или `=true`). */
+function queryFlag(v: string | undefined): boolean {
+  return v === '1' || v === 'true'
+}
+
+/** Порог скрытия завершённых: пусто/мусор → null («не скрывать»), иначе целые дни ≥ 0. */
+function normRetentionDays(v: number | null | undefined): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : null
+}
+
 /** Достаёт понятный текст ошибки БД (валидация assignee/участника/машины). */
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -82,13 +92,16 @@ export function registerProjectRoutes(
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
       productionDeployCommand?: string
+      doneRetentionDays?: number | null
     }
   }>('/api/projects/:id', async (req, reply) => {
 
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
     if (p.role !== 'owner') return forbidden(reply)
-    return db.updateProject(uid(req), req.params.id, req.body ?? {}) ?? nf(reply)
+    const body = { ...(req.body ?? {}) }
+    if (body.doneRetentionDays !== undefined) body.doneRetentionDays = normRetentionDays(body.doneRetentionDays)
+    return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)
   })
 
   app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
@@ -189,10 +202,15 @@ export function registerProjectRoutes(
 
   // --- Доска -----------------------------------------------------------
 
-  app.get<{ Params: { id: string } }>('/api/projects/:id/board', async (req, reply): Promise<Board | FastifyReply> => {
-    const board = db.getBoard(uid(req), req.params.id)
-    return board ?? nf(reply)
-  })
+  // includeCompleted=1 — вместе с давно завершёнными задачами (по умолчанию их
+  // на доске нет, см. настройку проекта «сколько держать завершённые»).
+  app.get<{ Params: { id: string }; Querystring: { includeCompleted?: string } }>(
+    '/api/projects/:id/board',
+    async (req, reply): Promise<Board | FastifyReply> => {
+      const board = db.getBoard(uid(req), req.params.id, { includeCompleted: queryFlag(req.query.includeCompleted) })
+      return board ?? nf(reply)
+    }
+  )
 
   // --- Использование базы знаний по всем чатам проекта ------------------
 

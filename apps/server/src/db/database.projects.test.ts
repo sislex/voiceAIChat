@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import Database from 'better-sqlite3'
 import { VoiceChatDb } from './database.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -349,5 +350,109 @@ describe('projects: навыки по умолчанию и связанный �
     expect(chatB.id).not.toBe(chatA.id) // у каждого свой связанный чат
     expect(db.getBoard('bob', p.id)!.tasks.find((x) => x.id === t.id)!.chatId).toBe(chatB.id)
     expect(db.getBoard('alice', p.id)!.tasks.find((x) => x.id === t.id)!.chatId).toBe(chatA.id)
+  })
+})
+
+describe('доска: завершённые задачи уходят с доски по порогу проекта', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  /** БД с управляемыми часами: порог считается в днях, шаг по 10 мс не годится. */
+  function withClock(): { db: VoiceChatDb; set: (t: number) => void } {
+    let id = 0
+    let clock = 1_700_000_000_000
+    const fresh = new VoiceChatDb(':memory:', { newId: () => `c-${++id}`, now: () => clock })
+    fresh.createUser('alice', '', 'user')
+    return { db: fresh, set: (t) => { clock = t } }
+  }
+
+  it('moveTask ставит doneAt в «Готово» и сбрасывает при возврате в работу', () => {
+    const { db: d, set } = withClock()
+    const p = d.createProject('alice', { name: 'P' })
+    const cols = d.getBoard('alice', p.id)!.columns
+    const done = cols.find((c) => c.semanticType === 'done')!
+    const dev = cols.find((c) => c.semanticType === 'development')!
+    const task = d.createTask('alice', p.id, { columnId: dev.id, title: 'T' })!
+    expect(task.doneAt).toBeNull()
+    set(1_700_000_100_000)
+    expect(d.moveTask('alice', p.id, task.id, { columnId: done.id })!.doneAt).toBe(1_700_000_100_000)
+    // Повторный переезд внутри «Готово» отсчёт не сбрасывает.
+    set(1_700_000_200_000)
+    expect(d.moveTask('alice', p.id, task.id, { columnId: done.id })!.doneAt).toBe(1_700_000_100_000)
+    expect(d.moveTask('alice', p.id, task.id, { columnId: dev.id })!.doneAt).toBeNull()
+    d.close()
+  })
+
+  it('createTask сразу в «Готово» начинает отсчёт', () => {
+    const { db: d } = withClock()
+    const p = d.createProject('alice', { name: 'P' })
+    const done = d.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'done')!
+    expect(d.createTask('alice', p.id, { columnId: done.id, title: 'T' })!.doneAt).toBe(1_700_000_000_000)
+    d.close()
+  })
+
+  it('старше порога — нет на доске, includeCompleted возвращает', () => {
+    const { db: d, set } = withClock()
+    const p = d.createProject('alice', { name: 'P' })
+    const cols = d.getBoard('alice', p.id)!.columns
+    const done = cols.find((c) => c.semanticType === 'done')!
+    const dev = cols.find((c) => c.semanticType === 'development')!
+    const old = d.createTask('alice', p.id, { columnId: dev.id, title: 'Старая' })!
+    const fresh = d.createTask('alice', p.id, { columnId: dev.id, title: 'Свежая' })!
+    d.moveTask('alice', p.id, old.id, { columnId: done.id })
+    set(1_700_000_000_000 + 13 * DAY)
+    d.moveTask('alice', p.id, fresh.id, { columnId: done.id })
+    // Дефолт проекта — 14 дней: старая уже за порогом, свежая (1 день) нет.
+    set(1_700_000_000_000 + 14 * DAY)
+    const ids = d.getBoard('alice', p.id)!.tasks.map((t) => t.id)
+    expect(ids).not.toContain(old.id)
+    expect(ids).toContain(fresh.id)
+    const all = d.getBoard('alice', p.id, { includeCompleted: true })!.tasks.map((t) => t.id)
+    expect(all).toContain(old.id)
+    expect(all).toContain(fresh.id)
+    // Возврат в работу возвращает карточку на доску.
+    d.moveTask('alice', p.id, old.id, { columnId: dev.id })
+    expect(d.getBoard('alice', p.id)!.tasks.map((t) => t.id)).toContain(old.id)
+    d.close()
+  })
+
+  it('порог 0 скрывает сразу, пустой порог не скрывает никогда', () => {
+    const { db: d, set } = withClock()
+    const p = d.createProject('alice', { name: 'P' })
+    const done = d.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'done')!
+    const t = d.createTask('alice', p.id, { columnId: done.id, title: 'T' })!
+    expect(d.updateProject('alice', p.id, { doneRetentionDays: 0 })!.doneRetentionDays).toBe(0)
+    expect(d.getBoard('alice', p.id)!.tasks.map((x) => x.id)).not.toContain(t.id)
+    expect(d.updateProject('alice', p.id, { doneRetentionDays: null })!.doneRetentionDays).toBeNull()
+    set(1_700_000_000_000 + 999 * DAY)
+    expect(d.getBoard('alice', p.id)!.tasks.map((x) => x.id)).toContain(t.id)
+    d.close()
+  })
+
+  it('по умолчанию проект держит завершённые 14 дней', () => {
+    const { db: d } = withClock()
+    expect(d.createProject('alice', { name: 'P' }).doneRetentionDays).toBe(14)
+    d.close()
+  })
+
+  it('миграция: у лежащих в «Готово» задач появляется doneAt', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-doneat-'))
+    const file = join(dir, 'db.sqlite')
+    const first = new VoiceChatDb(file, { now: () => 1_700_000_000_000 })
+    first.createUser('alice', '', 'user')
+    const p = first.createProject('alice', { name: 'P' })
+    const done = first.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'done')!
+    const t = first.createTask('alice', p.id, { columnId: done.id, title: 'T' })!
+    // Имитируем БД до миграции: колонки done_at ещё нет.
+    first.close()
+    const raw = new Database(file)
+    raw.exec(`ALTER TABLE tasks DROP COLUMN done_at`)
+    raw.close()
+
+    const migrated = new VoiceChatDb(file, { now: () => 1_700_000_000_000 + 100 * 24 * 60 * 60 * 1000 })
+    // doneAt взят из updated_at, порог 14 дней уже вышел — карточки на доске нет.
+    expect(migrated.getBoard('alice', p.id)!.tasks.map((x) => x.id)).not.toContain(t.id)
+    expect(migrated.getBoard('alice', p.id, { includeCompleted: true })!.tasks.find((x) => x.id === t.id)!.doneAt)
+      .toBe(1_700_000_000_000)
+    migrated.close()
+    rmSync(dir, { recursive: true, force: true })
   })
 })
