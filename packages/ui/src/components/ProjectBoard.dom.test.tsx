@@ -83,15 +83,24 @@ describe('ProjectBoard', () => {
     expect(p.onCreateColumn).toHaveBeenCalledWith('Review')
   })
 
-  it('drag-drop задачи в верхнюю зону колонки зовёт onMoveTask с соседями', () => {
+  // Жест указателем разобран в KanbanBoard.dom.test (там задана раскладка);
+  // здесь важно другое: перенос доходит до колбэка страницы, а его Esc не
+  // закрывает саму страницу — Esc обёртки висит на том же window.
+  it('перенос задачи с клавиатуры зовёт onMoveTask, а Esc отменяет его, не закрывая страницу', () => {
     const p = renderBoard()
-    const dt = { setData: () => {}, getData: () => 't2', effectAllowed: '' }
-    const cards = screen.getAllByTestId('task-card')
-    fireEvent.dragStart(cards[1], { dataTransfer: dt }) // тащим B (t2)
-    const zones = document.body.querySelectorAll('.kanban-dropzone')
-    // zones[0] — верх колонки c1: after=null, before=t1
-    fireEvent.dragOver(zones[0], { dataTransfer: dt })
-    fireEvent.drop(zones[0], { dataTransfer: dt })
+    const card = screen.getAllByTestId('task-card')[1]! // берём B (t2)
+    card.focus()
+
+    fireEvent.keyDown(card, { key: ' ' })
+    fireEvent.keyDown(card, { key: 'ArrowUp' })
+    fireEvent.keyDown(card, { key: 'Escape' })
+    expect(p.onMoveTask).not.toHaveBeenCalled()
+    expect(p.onClose).not.toHaveBeenCalled()
+    expect(screen.getByTestId('project-board')).toBeInTheDocument()
+
+    fireEvent.keyDown(card, { key: ' ' })
+    fireEvent.keyDown(card, { key: 'ArrowUp' })
+    fireEvent.keyDown(card, { key: 'Enter' })
     expect(p.onMoveTask).toHaveBeenCalledWith('t2', 'c1', null, 't1')
   })
 

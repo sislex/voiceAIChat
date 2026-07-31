@@ -1,10 +1,11 @@
-import { describe, it, expect, vi } from 'vitest'
-import { screen, within, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { act, fireEvent, screen, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { KanbanBoard, type KanbanBoardProps } from './KanbanBoard'
 import type { Board, Task } from '@shared/projects'
 import type { GenerateParams } from '../prompt-builder/PromptBuilder'
+import { DRAG_HOLD_MS } from '../../lib/dnd'
 
 const task = (over: Partial<Task>): Task => ({
   id: 't', projectId: 'p1', columnId: 'c1', type: 'task', parentId: null, title: 'T', description: '',
@@ -159,5 +160,243 @@ describe('KanbanBoard — состояния загрузки, пустоты и
     renderBoard({ board: { columns: [board.columns[0]!], tasks: [] } })
     const column = screen.getByTestId('kanban-column')
     expect(within(column).getByTestId('empty-state')).toHaveTextContent('Здесь пока пусто')
+  })
+})
+
+// ---- Перенос задач: указатель (мышь/палец) и клавиатура ---------------------
+// HTML5 DnD заменён pointer-жестом, поэтому сценарии — pointerdown → pointermove
+// → pointerup, а не dragStart/drop.
+
+const dndBoard: Board = {
+  columns: [
+    { id: 'c1', projectId: 'p1', name: 'To Do', semanticType: 'backlog', position: 1024, hidden: false, wipLimit: null, createdAt: 1 },
+    { id: 'c2', projectId: 'p1', name: 'In Progress', semanticType: 'development', position: 2048, hidden: false, wipLimit: null, createdAt: 1 }
+  ],
+  tasks: [
+    task({ id: 't1', title: 'A', columnId: 'c1', position: 1024, seq: 1 }),
+    task({ id: 't2', title: 'B', columnId: 'c1', position: 2048, seq: 2 }),
+    task({ id: 't3', title: 'C', columnId: 'c2', position: 1024, seq: 3 })
+  ]
+}
+
+/**
+ * jsdom не считает раскладку — все getBoundingClientRect нулевые, и хит-тест
+ * доски проверять было бы нечем. Раскладываем сами: колонка i — полоса по X с
+ * шагом 300, внутри тела колонки зоны (10px) и карточки (60px) идут сверху вниз.
+ *
+ * Колонка c1: зона 100–110, A 110–170, зона 170–180, B 180–240, зона 240–250.
+ * Колонка c2 (x от 300): зона 100–110, C 110–170, зона 170–180.
+ */
+function layout(): void {
+  const put = (el: Element, left: number, top: number, width: number, height: number): void => {
+    el.getBoundingClientRect = () =>
+      ({ x: left, y: top, left, top, width, height, right: left + width, bottom: top + height, toJSON: () => ({}) }) as DOMRect
+  }
+  put(screen.getByTestId('kanban-board'), 0, 0, 900, 600)
+  document.querySelectorAll('[data-column-id]').forEach((col, i) => put(col, i * 300, 0, 272, 600))
+  document.querySelectorAll<HTMLElement>('[data-drop-body]').forEach((body, i) => {
+    const left = i * 300
+    put(body, left, 100, 272, 400)
+    let y = 100
+    for (const item of Array.from(body.querySelectorAll<HTMLElement>('[data-dropzone], [data-testid="task-card"]'))) {
+      const height = item.hasAttribute('data-dropzone') ? 10 : 60
+      put(item, left, y, 272, height)
+      y += height
+    }
+  })
+}
+
+const down = (el: Element, x: number, y: number, init: PointerEventInit = {}): void => {
+  fireEvent.pointerDown(el, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', ...init })
+}
+const move = (x: number, y: number, init: PointerEventInit = {}): void => {
+  fireEvent.pointerMove(window, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', ...init })
+}
+const up = (x: number, y: number, init: PointerEventInit = {}): void => {
+  fireEvent.pointerUp(window, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', ...init })
+}
+
+describe('KanbanBoard — перенос указателем', () => {
+  // После переноса движок гасит один клик (иначе карточка открывалась бы
+  // модалкой). Съедаем его здесь, чтобы он не достался следующему тесту.
+  afterEach(() => fireEvent.click(document.body))
+
+  it('мышь: карточка переносится в другую колонку — move с соседями этой колонки', () => {
+    const props = renderBoard({ board: dndBoard })
+    layout()
+    const card = screen.getAllByTestId('task-card')[0]!
+    down(card, 40, 130)
+    // Порог: до него это клик, после — перенос с плейсхолдером и копией под курсором.
+    expect(screen.queryByTestId('drop-placeholder')).not.toBeInTheDocument()
+    move(60, 140)
+    expect(screen.getByTestId('drop-placeholder')).toBeInTheDocument()
+    expect(document.querySelector('.vc-drag-ghost')).not.toBeNull()
+    // Копия — картинка, а не второй экземпляр карточки.
+    expect(screen.getAllByTestId('task-card')).toHaveLength(3)
+
+    move(360, 175)
+    up(360, 175)
+    expect(props.onMoveTask).toHaveBeenCalledWith('t1', 'c2', 't3', null)
+    expect(document.querySelector('.vc-draglayer')).toBeNull()
+    expect(screen.queryByTestId('drop-placeholder')).not.toBeInTheDocument()
+  })
+
+  it('мышь: перенос внутрь своей колонки считает afterId/beforeId по зоне', () => {
+    const props = renderBoard({ board: dndBoard })
+    layout()
+    const card = screen.getAllByTestId('task-card')[1]!
+    down(card, 40, 200)
+    move(40, 130)
+    move(40, 104)
+    up(40, 104)
+    expect(props.onMoveTask).toHaveBeenCalledWith('t2', 'c1', null, 't1')
+  })
+
+  it('брошенная на своё же место карточка сервер не тревожит', () => {
+    const props = renderBoard({ board: dndBoard })
+    layout()
+    const card = screen.getAllByTestId('task-card')[0]!
+    down(card, 40, 130)
+    move(40, 145)
+    up(40, 145)
+    expect(props.onMoveTask).not.toHaveBeenCalled()
+  })
+
+  it('палец: перенос начинается удержанием, короткий скролл его не запускает', () => {
+    vi.useFakeTimers()
+    try {
+      const props = renderBoard({ board: dndBoard })
+      layout()
+      const card = screen.getAllByTestId('task-card')[1]!
+
+      // Палец поехал раньше удержания — это скролл колонки, а не перенос.
+      down(card, 40, 200, { pointerType: 'touch' })
+      move(40, 160, { pointerType: 'touch' })
+      act(() => vi.advanceTimersByTime(DRAG_HOLD_MS * 2))
+      expect(screen.queryByTestId('drop-placeholder')).not.toBeInTheDocument()
+      up(40, 160, { pointerType: 'touch' })
+      expect(props.onMoveTask).not.toHaveBeenCalled()
+
+      // Удержал на месте — карточка поднялась и переносится.
+      down(card, 40, 200, { pointerType: 'touch' })
+      act(() => vi.advanceTimersByTime(DRAG_HOLD_MS))
+      expect(screen.getByTestId('drop-placeholder')).toBeInTheDocument()
+      move(360, 175, { pointerType: 'touch' })
+      up(360, 175, { pointerType: 'touch' })
+      expect(props.onMoveTask).toHaveBeenCalledWith('t2', 'c2', 't3', null)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('палец с ручки захвата: перенос сразу, без удержания', () => {
+    const props = renderBoard({ board: dndBoard })
+    layout()
+    const grip = screen.getAllByTestId('task-card')[0]!.querySelector('.jcard-grip')!
+    down(grip, 20, 130, { pointerType: 'touch' })
+    expect(screen.getByTestId('drop-placeholder')).toBeInTheDocument()
+    move(360, 105, { pointerType: 'touch' })
+    up(360, 105, { pointerType: 'touch' })
+    expect(props.onMoveTask).toHaveBeenCalledWith('t1', 'c2', null, 't3')
+  })
+
+  it('Esc и pointercancel возвращают карточку на место, не обращаясь к серверу', () => {
+    const props = renderBoard({ board: dndBoard })
+    layout()
+    const cards = screen.getAllByTestId('task-card')
+
+    down(cards[0]!, 40, 130)
+    move(360, 175)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(props.onMoveTask).not.toHaveBeenCalled()
+    expect(document.querySelector('.vc-draglayer')).toBeNull()
+    expect(screen.queryByTestId('drop-placeholder')).not.toBeInTheDocument()
+    // Отпускание уже отменённого жеста ничего не двигает.
+    up(360, 175)
+    expect(props.onMoveTask).not.toHaveBeenCalled()
+
+    down(cards[0]!, 40, 130)
+    move(360, 175)
+    fireEvent.pointerCancel(window, { clientX: 360, clientY: 175, pointerId: 1 })
+    expect(props.onMoveTask).not.toHaveBeenCalled()
+    expect(document.querySelector('.vc-draglayer')).toBeNull()
+  })
+
+  it('мышь: колонка перетаскивается за шапку — onReorderColumns с новым порядком', () => {
+    const props = renderBoard({ board: dndBoard })
+    layout()
+    const heads = document.querySelectorAll<HTMLElement>('.jcol-head')
+    down(heads[1]!, 320, 20)
+    move(300, 20)
+    move(40, 20)
+    up(40, 20)
+    expect(props.onReorderColumns).toHaveBeenCalledWith(['c2', 'c1'])
+  })
+})
+
+describe('KanbanBoard — перенос с клавиатуры', () => {
+  const live = (): HTMLElement => screen.getByTestId('kanban-live')
+
+  it('Space берёт задачу, стрелки выбирают место, Enter кладёт', () => {
+    const props = renderBoard({ board: dndBoard })
+    const card = screen.getAllByTestId('task-card')[0]!
+    card.focus()
+
+    fireEvent.keyDown(card, { key: ' ' })
+    expect(live()).toHaveTextContent('Задача «A» взята')
+    expect(live()).toHaveTextContent('Колонка «To Do», позиция 1 из 2')
+    expect(screen.getByTestId('drop-placeholder')).toBeInTheDocument()
+
+    fireEvent.keyDown(card, { key: 'ArrowDown' })
+    expect(live()).toHaveTextContent('Задача «A», колонка «To Do», позиция 2 из 2.')
+
+    fireEvent.keyDown(card, { key: 'ArrowRight' })
+    expect(live()).toHaveTextContent('Задача «A», колонка «In Progress», позиция 2 из 2.')
+
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(props.onMoveTask).toHaveBeenCalledWith('t1', 'c2', 't3', null)
+    expect(live()).toHaveTextContent('перенесена: колонка «In Progress», позиция 2')
+    expect(screen.queryByTestId('drop-placeholder')).not.toBeInTheDocument()
+  })
+
+  it('стрелка вверх меняет порядок внутри колонки', () => {
+    const props = renderBoard({ board: dndBoard })
+    const card = screen.getAllByTestId('task-card')[1]!
+    card.focus()
+    fireEvent.keyDown(card, { key: ' ' })
+    expect(live()).toHaveTextContent('позиция 2 из 2')
+    fireEvent.keyDown(card, { key: 'ArrowUp' })
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(props.onMoveTask).toHaveBeenCalledWith('t2', 'c1', null, 't1')
+  })
+
+  it('Esc отменяет перенос, а Enter на исходном месте не идёт на сервер', () => {
+    const props = renderBoard({ board: dndBoard })
+    const card = screen.getAllByTestId('task-card')[0]!
+    card.focus()
+
+    fireEvent.keyDown(card, { key: ' ' })
+    fireEvent.keyDown(card, { key: 'ArrowRight' })
+    fireEvent.keyDown(card, { key: 'Escape' })
+    expect(live()).toHaveTextContent('Перенос задачи «A» отменён.')
+    expect(props.onMoveTask).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('drop-placeholder')).not.toBeInTheDocument()
+
+    fireEvent.keyDown(card, { key: ' ' })
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(live()).toHaveTextContent('осталась на месте')
+    expect(props.onMoveTask).not.toHaveBeenCalled()
+  })
+
+  it('за границы доски перенос не уезжает: крайняя колонка остаётся крайней', () => {
+    const props = renderBoard({ board: dndBoard })
+    const card = screen.getAllByTestId('task-card')[0]!
+    card.focus()
+    fireEvent.keyDown(card, { key: ' ' })
+    fireEvent.keyDown(card, { key: 'ArrowLeft' })
+    expect(live()).toHaveTextContent('Колонка «To Do»')
+    fireEvent.keyDown(card, { key: 'ArrowUp' })
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(props.onMoveTask).not.toHaveBeenCalled()
   })
 })

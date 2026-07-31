@@ -18,9 +18,7 @@ const meta: Meta<typeof TaskCard> = {
     onUpdate: () => {},
     onDelete: () => {},
     onMoveTop: () => {},
-    onMoveBottom: () => {},
-    onDragStart: () => {},
-    onDragEnd: () => {}
+    onMoveBottom: () => {}
   },
   decorators: [
     (Story) => (

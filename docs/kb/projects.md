@@ -1,8 +1,8 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-07-30
+updated: 2026-07-31
 
-checked: f2b04f0
+checked: f91f91c
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/routes/projects.ts
@@ -11,7 +11,8 @@ areas:
   - apps/server/src/db/database.ts
   - packages/ui/src/components/ProjectsOverlay.tsx
   - packages/ui/src/components/ProjectBoard.tsx
-  - packages/ui/src/components/TaskCard.tsx
+  - packages/ui/src/components/kanban
+  - packages/ui/src/lib/dnd.ts
   - packages/ui/src/store/voiceStore.ts
   - packages/ui/src/components/ConversationSettings.tsx
   - apps/server/src/turns.ts
@@ -82,10 +83,45 @@ areas:
 нормализация битых данных в `normalize.ts`), `TaskCard`, `TaskModal`,
 атрибутика в `kanbanMeta.tsx`; страничная обёртка — `ProjectBoard`
 (ToolFrame + настройки + Esc). Сториз — `*.stories.tsx` рядом
-(`npm run -w @voicechat/ui storybook`). Перетаскивание — нативный HTML5 DnD:
-карточки (MIME `application/x-task`) и колонки (`application/x-column`) с раздельными
-типами; вставка задачи — через drop-зоны между карточками. Кнопка «Проекты» — в
-`Sidebar`.
+(`npm run -w @voicechat/ui storybook`). Кнопка «Проекты» — в `Sidebar`.
+
+### Перетаскивание карточек и колонок
+
+Механизм один на мышь, палец и стилус — pointer-события (`packages/ui/src/lib/dnd.ts`),
+без внешних dnd-библиотек. Нативный HTML5 DnD (`application/x-task` /
+`application/x-column`) убран целиком: мобильные браузеры не генерируют
+`dragstart`/`drop`, поэтому на телефоне и планшете доска была нередактируемой.
+
+- **Распознавание жеста.** Мышь — смещение 6px (`DRAG_THRESHOLD_PX`), иначе клик по
+  карточке превращался бы в перенос. Палец — удержание 200мс (`DRAG_HOLD_MS`) почти
+  без движения; уехал раньше — жест отдаётся браузеру, это скролл колонки/доски.
+  Ручка «⠿» на карточке и в шапке колонки — единственное место с
+  `touch-action: none`, с неё палец начинает перенос сразу.
+- **Пока несём** — приподнятая копия элемента в слое `.vc-draglayer` под
+  указателем (клон без `data-testid`/`id`, чтобы не двоиться в тестах и хит-тесте),
+  а на месте вставки — плейсхолдер `.jcard-placeholder` высотой с карточку;
+  исходная карточка скрыта (`.jcard.dragging { display: none }`).
+- **Цель считает доска, а не движок.** Ячейка (колонка × дорожка свимлейна) — по
+  `[data-drop-body]`, внутри неё ближайшая по вертикали зона `[data-dropzone]`
+  даёт `afterId`/`beforeId` (контракт `move` не изменился) и `data-slot` для
+  плейсхолдера. Указатель у кромки — доска доскролливается сама (`autoScroll`).
+- **Отмена** — Esc и `pointercancel` (входящий звонок, системный жест): карточка
+  возвращается, запроса на сервер нет. Брошенная на своё же место — тоже без
+  запроса. Esc движок гасит через `stopImmediatePropagation` и подписывается из
+  `useLayoutEffect`: `useDialogStack` слушает тот же `window` в фазе перехвата, и
+  иначе страница-обёртка закрывалась бы вместо отмены переноса.
+- **Клавиатура.** Карточка фокусируется (`tabIndex`), Space/Enter — «взять»,
+  стрелки ←→ между колонками и ↑↓ по позициям, Enter — положить, Esc — отмена.
+  Взятая карточка остаётся на месте (иначе слетел бы фокус) и подсвечивается
+  `.jcard--grabbed`. Каждый шаг проговаривается в `aria-live`
+  («Задача X, колонка Y, позиция 2 из 5») — область `[data-testid=kanban-live]`.
+- **Тач в Chrome:** после долгого тапа мало отменить `pointermove` — он для тача
+  не `cancelable`; гасить надо `touchmove` (`passive: false`), иначе браузер уводит
+  жест в скролл и присылает `pointercancel` вместо переноса.
+- Тесты: `lib/dnd.test.ts` (жест, геометрия, авто-скролл), pointer- и
+  keyboard-сценарии в `KanbanBoard.dom.test.tsx` (jsdom не считает раскладку —
+  прямоугольники в тесте задаются руками), сториз `GrabbedCard`,
+  `MobileViewport`, `Interactive` (живой перенос — им же проверяют жест руками).
 
 ## Что помнить
 
