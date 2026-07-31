@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -44,6 +44,7 @@ const fakeClaude: LlmClient = {
 const fakeCodex: LlmClient = {
   send: (req, handlers) => {
     modelRequests.push(req)
+    onModelSend?.()
     codexModel = req.model
     queueMicrotask(() => { handlers.onDelta('готово codex'); handlers.onDone('готово codex') })
     return { cancel: () => {} }
@@ -116,10 +117,14 @@ describe('ci run manager', () => {
   it('при запуске переносит карточку в колонку development и использует наследуемую модель', async () => {
     const { project, task } = setup()
     db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    // Колонку снимаем в момент запроса к модели: к концу успешного рана карточка
+    // уходит в «Ожидает мержа», и проверка после `waitRun` ловила бы уже её.
+    let columnAtModel: string | null = null
+    onModelSend = () => { columnAtModel = db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId }
     const runId = await run(project.id, task.id)
-    const development = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
-    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(development.id)
     const detail = await waitRun(runId)
+    const development = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
+    expect(columnAtModel).toBe(development.id)
     expect(detail.run.status).toBe('success')
     expect(codexModel).toBe('gpt-5.4')
   })
@@ -341,6 +346,55 @@ describe('ci run manager', () => {
     const t = db.getBoard('admin', project.id)!.tasks.find((x) => x.id === task.id)!
     expect(t.columnId).toBe(devCol.id)
   })
+  it('успешный ран без шага мержа переводит карточку в «Ожидает мержа»', async () => {
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('success')
+    const board = db.getBoard('admin', project.id)!
+    const awaitingMerge = board.columns.find((c) => c.semanticType === 'awaiting_merge')!
+    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(awaitingMerge.id)
+    // Причина переноса видна в ленте рана.
+    const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json() as Array<{ chunk: string }>
+    expect(log.some((l) => l.chunk.includes('не влита'))).toBe(true)
+  })
+
+  it('успешный шаг мержа оставляет карточку в колонке разработки', async () => {
+    const { project, task } = setup()
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('success')
+    const board = db.getBoard('admin', project.id)!
+    const development = board.columns.find((c) => c.semanticType === 'development')!
+    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(development.id)
+  })
+
+  it('упавший шаг мержа: карточка возвращается в исходную колонку, а не ждёт мержа', async () => {
+    const { project, task, readyColId } = setup()
+    db.updateCiSettings({ maxFixAttempts: 1 })
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'FAIL git merge --no-edit' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('failed')
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
+  })
+
+  it('нет колонки awaiting_merge в проекте — ран success и карточка не двигается', async () => {
+    const { project, task } = setup()
+    const real = db.getColumnIdBySemantic.bind(db)
+    const spy = vi.spyOn(db, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'awaiting_merge' ? null : real(pid, semantic)))
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('success')
+    const board = db.getBoard('admin', project.id)!
+    const development = board.columns.find((c) => c.semanticType === 'development')!
+    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(development.id)
+    spy.mockRestore()
+  })
+
   it('консоль: read-only пропускает ls и отклоняет rm', async () => {
     const { project, task } = setup()
     const runId = await run(project.id, task.id)

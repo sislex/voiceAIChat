@@ -932,6 +932,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       rollbackTask(runId, userId, runRow.prevColumnId)
       finalize(runId, userId, 'failed')
     } else {
+      if (modelOk) parkAwaitingMerge(runId, userId)
       finalize(runId, userId, modelOk ? 'success' : 'failed')
     }
   }
@@ -978,6 +979,38 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     }
     setFixing(runId, userId, false, fixed ? 'Ошибка исправлена — продолжаю' : 'Не удалось исправить ошибку')
     return fixed
+  }
+
+  /**
+   * Работа модели прошла, но ветка в прод-ветку не влита (шага мержа в слоте
+   * «после» нет, он упал или был пропущен) — карточке нечего делать в «Готово»:
+   * работа есть, а в прод-ветке её нет. Переносим в системную колонку
+   * `awaiting_merge`, чтобы незакрытый мерж было видно на доске. Колонку ищем по
+   * semantic type; нет её в проекте — оставляем карточку как есть.
+   *
+   * Пуш ветки отдельно не проверяем: неудачный «Отправить ветку задачи в origin»
+   * закрывает ран как `failed`, и до этого места мы не доходим.
+   */
+  function parkAwaitingMerge(runId: string, userId: string): void {
+    const row = deps.db.getCiRunRaw(runId)
+    if (!row) return
+    const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
+    if (steps.some((st) => isMergeToBaseStep(st) && st.status === 'success')) return
+    const columnId = deps.db.getColumnIdBySemantic(row.projectId, 'awaiting_merge')
+    if (!columnId) return
+    const task = deps.db.getCiTask(userId, row.projectId, row.taskId)
+    if (!task || task.columnId === columnId) return
+    try {
+      deps.db.moveTask(userId, row.projectId, row.taskId, { columnId })
+    } catch {
+      return /* колонка могла исчезнуть между запросом и переносом */
+    }
+    deps.db.addCiEvent({ projectId: row.projectId, runId, type: 'run.awaiting_merge', actorType: 'system', payload: { columnId } })
+    const last = steps[steps.length - 1]
+    if (last) {
+      const line = deps.db.appendCiLog(runId, last.id, 'system', 'Ветка задачи в прод-ветку не влита — карточка ждёт мержа\n')
+      broadcast({ t: 'ci.log', runId, line }, userId)
+    }
   }
 
   function rollbackTask(runId: string, userId: string, prevColumnId: string | null): void {
@@ -1065,6 +1098,17 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
   }
 
   return { start, retryFromFailed, discardChangesAndRetry, cancel, subscribe, snapshot, activeRunIds, consoleExec, answerInteraction }
+}
+
+/**
+ * Шаг «Влить ветку задачи в прод-ветку». Набор команд пайплайна — это данные
+ * проекта, поэтому шаг узнаём по назначению: название команды («влить»/«merge»)
+ * или её скрипт (`git merge`). Ориентироваться на подпись колонки нельзя — она
+ * произвольная, а semantic type колонки про мерж ничего не знает.
+ */
+export function isMergeToBaseStep(step: CiRunStep): boolean {
+  if (step.kind !== 'command' && step.kind !== 'model_command') return false
+  return /вли(т|ва)|\bmerge\b/i.test(step.title) || /git\s+(?:-C\s+\S+\s+)?merge\b/.test(step.commandSnapshot ?? '')
 }
 
 /** shell-quote для системных префиксов раннера. */
