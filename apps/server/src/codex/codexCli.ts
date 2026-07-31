@@ -9,6 +9,7 @@ import { parseCodexLine, parseCodexActivity } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import { cliProfileEnv } from '../users/cliProfiles.js'
 import { killCliChild } from '../claude/childKill.js'
+import { kbToolHint } from '../kb/kbMcp.js'
 
 export type SpawnFn = (
   command: string,
@@ -68,6 +69,13 @@ export class CodexCli implements LlmClient {
     if (req.executionDisabled) {
       prompt =
         `Для этого сообщения машина не выбрана. Не выполняй shell-команды и не запускай команды никаким способом.\n\n${prompt}`
+    }
+
+    // База знаний подключается ДО ветвления plan/remote: она read-only, глушить
+    // её в режиме «План» незачем — наоборот, там она главный источник контекста.
+    if (req.kbMcpUrl) {
+      args.push('-c', `mcp_servers.kb.url="${req.kbMcpUrl}"`)
+      prompt = `${kbToolHint(req.kbMode ?? 'auto')}\n\n${prompt}`
     }
 
     if (req.remote && req.permissionMode !== 'plan') {

@@ -17,6 +17,8 @@ import {
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import type { BoardHub } from '../projects/boardHub.js'
+import type { KnowledgeBaseService } from '../kb/types.js'
+import { kbUsageFlags } from '../kb/routes.js'
 
 const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 'not found' })
 const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
@@ -27,7 +29,13 @@ function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boardHub: BoardHub): void {
+export function registerProjectRoutes(
+  app: FastifyInstance,
+  db: VoiceChatDb,
+  boardHub: BoardHub,
+  /** Телеметрия БЗ по проекту: без неё маршрут агрегата не регистрируется. */
+  kbUsage?: { kb: KnowledgeBaseService; toolEnabled: boolean }
+): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const member = (req: FastifyRequest, id: string): ProjectDetail | null => db.getProject(uid(req), id)
 
@@ -185,6 +193,16 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
     const board = db.getBoard(uid(req), req.params.id)
     return board ?? nf(reply)
   })
+
+  // --- Использование базы знаний по всем чатам проекта ------------------
+
+  if (kbUsage) {
+    app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/api/projects/:id/kb-usage', async (req, reply) => {
+      // Гейт как у доски: не участник → 404, а не пустой агрегат.
+      const report = db.kbUsageProjectReport(uid(req), req.params.id, Number(req.query.limit) || undefined)
+      return report ? { ...report, ...kbUsageFlags(kbUsage.kb, kbUsage.toolEnabled) } : nf(reply)
+    })
+  }
 
   // --- Колонки (любой участник) ----------------------------------------
 

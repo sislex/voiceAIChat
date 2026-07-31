@@ -16,7 +16,7 @@ import type {
   RendererSttBridge,
   RendererTtsBridge
 } from '@shared/ipc'
-import type { RendererCiBridge } from '@voicechat/ui'
+import type { RendererCiBridge, RendererKbBridge } from '@voicechat/ui'
 
 declare global {
   interface Window {
@@ -34,6 +34,8 @@ declare global {
     files?: RendererFilesBridge
     pty?: RendererPtyBridge
     ci?: RendererCiBridge
+    /** Телеметрия использования базы знаний (web). */
+    kb?: RendererKbBridge
   }
 }
 

@@ -470,6 +470,34 @@
   position: relative;
   display: inline-flex;
 }
+/* Кнопка «Использование БЗ» в тулбаре чата: обёртка нужна надстрочному
+   счётчику обращений (он абсолютный, как бейдж уведомлений). */
+.kbusewrap {
+  position: relative;
+  display: inline-flex;
+}
+.kbusebadge {
+  position: absolute;
+  top: -5px;
+  right: -6px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+.kbusebadge--live {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  background: var(--surface2);
+  color: var(--accent);
+}
 .exportmenu {
   position: absolute;
   top: calc(100% + 6px);
@@ -4745,3 +4773,67 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   line-height: 1.5;
   color: var(--text-dim);
 }
+
+/* --- Панель «Использование БЗ» ------------------------------------------
+   Плитки чисел, таблица разделов и лента обращений. Только токены темы: панель
+   живёт и в светлой, и в тёмной, а тон статусов берётся из общих --ci-*. */
+.kbutool { width: min(96vw, 1100px); height: min(92vh, 860px); }
+.kbu-body { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px; overflow: auto; }
+.kbu-tabs { display: inline-flex; gap: 6px; }
+.kbu-tab {
+  padding: 6px 12px; border: 1px solid var(--border); border-radius: 99px;
+  background: var(--panel); color: var(--text-dim); font: inherit; font-size: 13px; cursor: pointer;
+}
+.kbu-tab.on { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 700; }
+.kbu-summary { display: flex; flex-direction: column; gap: 10px; }
+.kbu-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
+.kbu-mode, .kbu-warn, .kbu-index {
+  padding: 3px 9px; border-radius: 99px; border: 1px solid var(--border); background: var(--panel); color: var(--text-dim);
+}
+.kbu-mode--auto { background: var(--ci-success-bg); color: var(--ci-success); border-color: transparent; }
+.kbu-mode--manual { background: var(--ci-progress-bg); color: var(--ci-progress); border-color: transparent; }
+.kbu-mode--off { background: var(--ci-neutral-bg); color: var(--ci-neutral); border-color: transparent; }
+.kbu-warn { background: var(--ci-progress-bg); color: var(--ci-progress); border-color: transparent; }
+.kbu-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.kbu-tile {
+  display: flex; flex-direction: column; gap: 2px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--panel);
+}
+.kbu-tile__val { font-size: 20px; font-weight: 700; }
+.kbu-tile__lbl { font-size: 12px; color: var(--text-dim); }
+.kbu-tile__hint { font-size: 11px; color: var(--text-dim); }
+.kbu-note { margin: 0; font-size: 12px; color: var(--text-dim); }
+.kbu-refresh { margin: 0; font-size: 12px; color: var(--text-dim); }
+.kbu-banner {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface-warning);
+}
+.kbu-banner p { margin: 0; font-size: 13px; }
+.kbu-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.kbu-table th, .kbu-table td { padding: 7px 8px; text-align: left; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+.kbu-table thead th { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.kbu-table tbody th { display: flex; flex-direction: column; gap: 3px; font-weight: 400; }
+.kbu-table td { white-space: nowrap; }
+.kbu-sort { border: none; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.kbu-sort.on { color: var(--text); font-weight: 700; text-decoration: underline; }
+.kbu-doc { border: none; background: none; padding: 0; font: inherit; font-weight: 700; color: var(--accent); text-align: left; cursor: pointer; }
+.kbu-path { font-size: 11px; color: var(--text-dim); }
+.kbu-fresh { align-self: flex-start; font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--ci-neutral-bg); color: var(--ci-neutral); }
+.kbu-fresh--current { background: var(--ci-success-bg); color: var(--ci-success); }
+.kbu-fresh--stale { background: var(--ci-progress-bg); color: var(--ci-progress); }
+.kbu-feed { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.kbu-ev {
+  display: grid; grid-template-columns: 48px 130px minmax(0, 1fr) 130px auto; gap: 8px; align-items: baseline;
+  padding: 6px 8px; border-radius: 8px; background: var(--panel); font-size: 12px;
+}
+.kbu-ev--pending { background: var(--ci-progress-bg); }
+.kbu-ev--error { background: var(--ci-removed-bg); }
+.kbu-ev__time, .kbu-ev__src, .kbu-ev__nums, .kbu-ev__chat { color: var(--text-dim); }
+.kbu-ev__q { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+@media (max-width: 760px) {
+  .kbutool { width: 100vw; height: 100vh; }
+  .kbu-ev { grid-template-columns: 1fr; }
+  .kbu-table td { white-space: normal; }
+}
+/* Чипс «База знаний» в «Подробнее» — ссылка на раздел (#/kb/:documentId). */
+.metachip--link { border: none; font: inherit; color: var(--accent); cursor: pointer; text-align: left; }

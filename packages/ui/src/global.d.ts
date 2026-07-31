@@ -17,6 +17,7 @@ import type {
   RendererTtsBridge
 } from '@shared/ipc'
 import type { RendererCiBridge } from './remote/ciBridge'
+import type { RendererKbBridge } from './remote/kbBridge'
 
 declare global {
   interface Window {
@@ -41,6 +42,8 @@ declare global {
     pty?: RendererPtyBridge
     /** CI-раннер (web); в desktop отсутствует. */
     ci?: RendererCiBridge
+    /** Телеметрия использования базы знаний (web); в desktop отсутствует. */
+    kb?: RendererKbBridge
   }
 }
 

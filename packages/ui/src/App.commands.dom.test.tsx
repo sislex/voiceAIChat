@@ -87,6 +87,16 @@ describe('App — командная палитра', () => {
     await waitFor(() => expect(window.location.hash).toBe('#/kb'))
   })
 
+  it('команда «Использование базы знаний» открывает панель телеметрии', async () => {
+    await renderApp()
+    pressPalette()
+    await screen.findByTestId('command-palette')
+    const input = screen.getByRole('combobox', { name: /Поиск команды/ })
+    fireEvent.change(input, { target: { value: 'Использование базы знаний' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(await screen.findByTestId('kb-usage-overlay')).toBeInTheDocument()
+  })
+
   it('«?» открывает шпаргалку, и в ней есть push-to-talk', async () => {
     await renderApp()
     fireEvent.keyDown(window, { key: '?' })

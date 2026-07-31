@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MessageMeta } from './MessageMeta'
@@ -61,5 +61,47 @@ describe('MessageMeta', () => {
     await user.click(screen.getByLabelText('Сведения об ответе'))
     await user.click(screen.getByLabelText('Закрыть'))
     expect(screen.queryByTestId('meta-overlay')).not.toBeInTheDocument()
+  })
+})
+
+describe('MessageMeta — разделы базы знаний', () => {
+  const withKb = {
+    ...META,
+    request: {
+      ...META.request!,
+      kbContext: {
+        confidence: 'high' as const,
+        sections: [
+          { documentId: 'protocol', title: 'Протокол', heading: 'WebSocket', sourcePath: 'docs/kb/protocol.md', anchor: 'websocket', chars: 620, estimatedTokens: 155, freshness: 'current' as const }
+        ]
+      }
+    }
+  }
+
+  it('показывает символы и оценку токенов из БЗ с оговоркой про формулу', async () => {
+    const user = userEvent.setup()
+    render(<MessageMeta meta={withKb} />)
+    await user.click(screen.getByLabelText('Сведения об ответе'))
+    const body = screen.getByTestId('meta-overlay')
+    expect(body).toHaveTextContent('Символы из БЗ')
+    expect(body).toHaveTextContent('620')
+    expect(body).toHaveTextContent('155 (оценка chars / 4)')
+  })
+
+  it('чипс раздела — ссылка на документ базы знаний', async () => {
+    const user = userEvent.setup()
+    const onOpenKbDocument = vi.fn()
+    render(<MessageMeta meta={withKb} onOpenKbDocument={onOpenKbDocument} />)
+    await user.click(screen.getByLabelText('Сведения об ответе'))
+    await user.click(screen.getByTitle('Открыть «Протокол / WebSocket» в базе знаний'))
+    expect(onOpenKbDocument).toHaveBeenCalledWith('protocol', 'websocket')
+  })
+
+  it('без обработчика чипсы остаются статическим текстом', async () => {
+    const user = userEvent.setup()
+    render(<MessageMeta meta={withKb} />)
+    await user.click(screen.getByLabelText('Сведения об ответе'))
+    expect(screen.queryByTitle('Открыть «Протокол / WebSocket» в базе знаний')).not.toBeInTheDocument()
+    expect(screen.getByTestId('meta-overlay')).toHaveTextContent('Протокол / WebSocket')
   })
 })

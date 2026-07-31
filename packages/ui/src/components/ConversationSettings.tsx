@@ -266,14 +266,21 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         </section>
 
         <section className="convsettings-card">
-          <div className="convsettings-sectionhead"><div><h2>База знаний проекта</h2><p>Как добавлять сведения об устройстве voiceAIChat в задачи агента.</p></div></div>
+          <div className="convsettings-sectionhead"><div><h2>База знаний проекта</h2><p>Как модель получает сведения об устройстве voiceAIChat. Политика проекта — искать в базе знаний до чтения кода.</p></div></div>
           <label className="convsettings-field"><span>Контекст KB</span>
             <select aria-label="Контекст базы знаний" value={kbContextMode} onChange={(e) => setKbContextMode(e.target.value as KbContextMode)}>
-              <option value="auto">Автоматически при высокой уверенности</option>
-              <option value="manual">Только по запросу</option>
+              <option value="auto">Авто-контекст + инструменты модели</option>
+              <option value="manual">По запросу модели (только инструменты)</option>
               <option value="off">Не использовать</option>
             </select>
           </label>
+          <p className="convsettings-muted" data-testid="conv-kb-hint">
+            {kbContextMode === 'auto'
+              ? 'Сервер подмешивает подходящие разделы в промпт при высокой уверенности, и модель может дозапросить любые другие инструментами mcp__kb__*.'
+              : kbContextMode === 'manual'
+                ? 'Авто-контекста нет: модель сама решает, что читать, инструментами mcp__kb__* — и получает указание искать в базе знаний до чтения кода.'
+                : 'Ни авто-контекста, ни инструментов: модель разбирается только по коду.'}
+          </p>
         </section>
 
         <section className="convsettings-card">

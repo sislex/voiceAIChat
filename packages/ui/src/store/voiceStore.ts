@@ -37,6 +37,16 @@ import type {
   CiLogLine
 } from '@shared/ci'
 import type { RendererCiBridge } from '../remote/ciBridge'
+import type { RendererKbBridge } from '../remote/kbBridge'
+import type { KbStatus, KbUsageQuery } from '@shared/kb'
+import {
+  applyKbUsageFrame,
+  buildKbUsageFromMessages,
+  emptyKbUsageCache,
+  kbUsageSnapshot,
+  mergeKbUsage,
+  type KbUsageCache
+} from '../lib/kbUsage'
 import type { LoadStatus } from '../lib/loadState'
 import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
 import { detectOpenUtility, toolBlock, type ToolSpec } from '@shared/tools'
@@ -381,6 +391,14 @@ export interface AppState {
    * сообщения при этом не меняется.
    */
   answeredCiInteractions: string[]
+  /** Открыта ли панель «Использование БЗ» активного чата. */
+  kbUsageOpen: boolean
+  /** Телеметрия БЗ по чатам (снапшот + инкременты kb.usage). */
+  kbUsage: Record<string, KbUsageCache>
+  /** Телеметрия БЗ по проектам (вкладка «По проекту»). */
+  kbUsageByProject: Record<string, KbUsageCache>
+  /** Статус индекса БЗ: панель отличает «обращений не было» от «БЗ недоступна». */
+  kbStatus: KbStatus | null
 }
 
 /** Кэш одного рана: снимок ленты + накопленный лог + заключение. */
@@ -406,6 +424,8 @@ export interface StoreDeps {
   board?: RendererBoardBridge
   /** Мост CI-раннера (web). */
   ci?: RendererCiBridge
+  /** Мост телеметрии БЗ (web); без него панель живёт на фолбэке из истории. */
+  kb?: RendererKbBridge
   /** Источник времени (для формата HH:MM). По умолчанию Date.now. */
   now?: () => number
   /** Переопределение задержек пайплайна (для тестов). */
@@ -813,6 +833,17 @@ export interface StoreActions {
   applyCiInteraction(runId: string, interaction: CiInteraction): void
   /** Сообщение, дописанное сервером в чат (резюме CI-рана). */
   applyChatMessage(conversationId: string, message: Message): void
+  /** Панель «Использование БЗ»: открыть/закрыть. */
+  openKbUsage(): void
+  closeKbUsage(): void
+  /** Снапшот телеметрии БЗ чата (+ фолбэк по истории, если моста нет). */
+  loadKbUsage(conversationId: string): Promise<void>
+  /** Снапшот телеметрии БЗ проекта (вкладка «По проекту»). */
+  loadProjectKbUsage(projectId: string): Promise<void>
+  /** Живой кадр kb.usage: upsert по id с отсечкой по seq. */
+  applyKbUsageQuery(conversationId: string, projectId: string | null, query: KbUsageQuery): void
+  /** Статус индекса БЗ (для пустых состояний панели). */
+  refreshKbStatus(): Promise<void>
   answerCiInteraction(runId: string, interactionId: string, answer: CiInteractionAnswer): Promise<void>
   /** Отмена всех активных таймеров пайплайна (напр. при размонтировании). */
   dispose(): void
@@ -920,7 +951,11 @@ function initialState(): AppState {
     ciSummaries: {},
     ciActiveRunId: null,
     taskChatContext: null,
-    answeredCiInteractions: []
+    answeredCiInteractions: [],
+    kbUsageOpen: false,
+    kbUsage: {},
+    kbUsageByProject: {},
+    kbStatus: null
   }
 }
 
@@ -946,6 +981,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   const { api } = deps
   const boardBridge = deps.board
   const ciBridge = deps.ci
+  const kbBridge = deps.kb
   const now = deps.now ?? Date.now
   const delays: PipelineDelays = { ...DEFAULT_DELAYS, ...deps.delays }
   const audio = deps.audio ?? null
@@ -3008,6 +3044,89 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   // --- CI-раннер ---------------------------------------------------------
 
+  // ---- Использование базы знаний -----------------------------------------
+
+  function patchKbUsage(conversationId: string, fn: (cache: KbUsageCache) => KbUsageCache): void {
+    const prev = state.kbUsage[conversationId] ?? emptyKbUsageCache()
+    setState({ kbUsage: { ...state.kbUsage, [conversationId]: fn(prev) } })
+  }
+  function patchKbProjectUsage(projectId: string, fn: (cache: KbUsageCache) => KbUsageCache): void {
+    const prev = state.kbUsageByProject[projectId] ?? emptyKbUsageCache()
+    setState({ kbUsageByProject: { ...state.kbUsageByProject, [projectId]: fn(prev) } })
+  }
+  function openKbUsage(): void {
+    setState({ kbUsageOpen: true })
+  }
+  function closeKbUsage(): void {
+    setState({ kbUsageOpen: false })
+  }
+  /** Фолбэк для старых чатов и для desktop без моста: отчёт из истории ходов. */
+  function kbUsageFallback(conversationId: string): ReturnType<typeof buildKbUsageFromMessages> {
+    const conv = state.conversations.find((c) => c.id === conversationId)
+    return buildKbUsageFromMessages(conversationId === state.activeId ? state.messages : [], {
+      conversationId,
+      projectId: conv?.projectId ?? null,
+      kbContextMode: conv?.kbContextMode ?? 'auto',
+      available: state.kbStatus ? state.kbStatus.available : true
+    })
+  }
+  async function loadKbUsage(conversationId: string): Promise<void> {
+    const fallback = kbUsageFallback(conversationId)
+    if (!kbBridge) {
+      // Моста нет (desktop) — панель всё равно показывает, что видела модель.
+      patchKbUsage(conversationId, () => kbUsageSnapshot(fallback))
+      return
+    }
+    patchKbUsage(conversationId, (c) => ({ ...c, loading: true, error: null }))
+    try {
+      const report = await kbBridge.getConversationUsage(conversationId)
+      patchKbUsage(conversationId, () => kbUsageSnapshot(mergeKbUsage(report, fallback)))
+    } catch (err) {
+      patchKbUsage(conversationId, (c) => ({ ...c, loading: false, error: err instanceof Error ? err.message : String(err) }))
+    }
+  }
+  async function loadProjectKbUsage(projectId: string): Promise<void> {
+    if (!kbBridge) return
+    patchKbProjectUsage(projectId, (c) => ({ ...c, loading: true, error: null }))
+    try {
+      const report = await kbBridge.getProjectUsage(projectId)
+      // Проектный отчёт кладём в тот же кэш: у него те же итоги, разделы и лента.
+      patchKbProjectUsage(projectId, () => ({
+        ...kbUsageSnapshot({
+          conversationId: '',
+          projectId,
+          kbContextMode: 'auto',
+          toolEnabled: report.toolEnabled,
+          available: report.available,
+          lastSeq: 0,
+          totals: report.totals,
+          sections: report.sections,
+          recent: report.recent
+        }),
+        conversations: report.conversations
+      }))
+    } catch (err) {
+      patchKbProjectUsage(projectId, (c) => ({ ...c, loading: false, error: err instanceof Error ? err.message : String(err) }))
+    }
+  }
+  function applyKbUsageQuery(conversationId: string, projectId: string | null, query: KbUsageQuery): void {
+    // Кадры приходят по пользователю, а не по подписке: незагруженные чаты
+    // пропускаем — их отчёт соберётся при открытии панели.
+    if (state.kbUsage[conversationId]?.report) {
+      patchKbUsage(conversationId, (c) => applyKbUsageFrame(c, query))
+    }
+    if (projectId && state.kbUsageByProject[projectId]?.report) {
+      patchKbProjectUsage(projectId, (c) => applyKbUsageFrame(c, query))
+    }
+  }
+  async function refreshKbStatus(): Promise<void> {
+    try {
+      setState({ kbStatus: await deps.api['kb:status']() })
+    } catch {
+      // Статус индекса — украшение пустого состояния, ошибку не показываем тостом.
+    }
+  }
+
   function patchCiRun(runId: string, fn: (cache: CiRunCache) => CiRunCache): void {
     const prev = state.ciRuns[runId] ?? { detail: null, log: [], conclusion: null }
     setState({ ciRuns: { ...state.ciRuns, [runId]: fn(prev) } })
@@ -3552,6 +3671,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applyCiInteraction,
       applyChatMessage,
       answerCiInteraction,
+      openKbUsage,
+      closeKbUsage,
+      loadKbUsage,
+      loadProjectKbUsage,
+      applyKbUsageQuery,
+      refreshKbStatus,
       ensureTaskChat,
       loadTaskChatContext,
       createColumn,

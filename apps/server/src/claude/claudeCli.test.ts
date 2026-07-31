@@ -114,7 +114,8 @@ describe('ClaudeCli', () => {
     expect(mcpConfig.mcpServers.remote.type).toBe('http')
     expect(mcpConfig.mcpServers.remote.url).toContain('agent=a1')
     expect(args[args.indexOf('--disallowedTools') + 1]).toBe('Bash')
-    expect(args[args.indexOf('--allowedTools') + 1]).toBe('mcp__remote__bash')
+    // toContain, а не toBe: в allow-list могут добавляться инструменты БЗ/CI.
+    expect(args[args.indexOf('--allowedTools') + 1]).toContain('mcp__remote__bash')
     expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('Мак')
     // Долгие команды (тесты/сборка) не должны срезаться дефолтным таймаутом моста.
     expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('timeout_ms')
@@ -128,6 +129,46 @@ describe('ClaudeCli', () => {
     const args2 = (spawn2 as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
     expect(args2).not.toContain('--mcp-config')
     expect(args2).not.toContain('--disallowedTools')
+  })
+
+  it('kbMcpUrl: сервер kb в --mcp-config и хинт «БЗ в первую очередь» без машины', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send(
+      { prompt: 'x', sessionId: null, model: 'opus', kbMcpUrl: 'http://127.0.0.1:8787/mcp/kb?k=s&turn=t1', kbMode: 'manual' },
+      makeHandlers()
+    )
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const config = JSON.parse(args[args.indexOf('--mcp-config') + 1]) as { mcpServers: Record<string, { url: string }> }
+    expect(config.mcpServers.kb.url).toContain('turn=t1')
+    expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('mcp__kb__search')
+    expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('единственный путь')
+    // Без remote allow-list не передаём: он выключил бы автоодобрение Read/Grep.
+    expect(args).not.toContain('--allowedTools')
+    expect(args).not.toContain('--disallowedTools')
+  })
+
+  it('kbMcpUrl + remote: инструменты БЗ попадают в allow-list одним хинтом', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send(
+      {
+        prompt: 'x', sessionId: null, model: 'opus', kbMcpUrl: 'http://127.0.0.1:8787/mcp/kb?k=s&turn=t1',
+        remote: { mcpUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=s&agent=a1', agentName: 'Мак' }
+      },
+      makeHandlers()
+    )
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const config = JSON.parse(args[args.indexOf('--mcp-config') + 1]) as { mcpServers: Record<string, unknown> }
+    expect(Object.keys(config.mcpServers).sort()).toEqual(['kb', 'remote'])
+    const allowed = args[args.indexOf('--allowedTools') + 1]
+    expect(allowed).toContain('mcp__remote__bash')
+    expect(allowed).toContain('mcp__kb__document')
+    // CLI принимает --append-system-prompt один раз: оба хинта склеены.
+    expect(args.filter((a) => a === '--append-system-prompt')).toHaveLength(1)
+    const hint = args[args.indexOf('--append-system-prompt') + 1]
+    expect(hint).toContain('mcp__remote__bash')
+    expect(hint).toContain('mcp__kb__search')
   })
 
   it('передаёт cwd в spawn, когда задан; иначе третий аргумент undefined', () => {

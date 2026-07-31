@@ -3,6 +3,8 @@
 // ('' = same-origin), agentWsUrl — ws-адрес /agent для строки подключения.
 
 import { REST } from '@shared/protocol'
+import type { RendererKbRest } from './kbBridge'
+import type { KbProjectUsageReport, KbUsageReport } from '@shared/kb'
 import type {
   RendererCiRest,
   CiCommandUsage,
@@ -262,6 +264,20 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
  * REST-часть моста window.ci. WS-часть добавляется в remote/index.ts.
  * Повторяет схему createHttpApi (Bearer-токен, JSON-тело только при наличии).
  */
+/** REST телеметрии БЗ: снапшоты по чату и по проекту (инкременты идут по WS). */
+export function createKbUsageRest(httpBase: string): RendererKbRest {
+  async function req<T>(path: string): Promise<T> {
+    const token = getToken()
+    const res = await fetch(httpBase + path, { headers: token ? { authorization: `Bearer ${token}` } : {} })
+    if (!res.ok) throw new Error(`GET ${path} → ${res.status}`)
+    return (await res.json()) as T
+  }
+  return {
+    getConversationUsage: (conversationId) => req<KbUsageReport>(REST.conversationKbUsage(conversationId)),
+    getProjectUsage: (projectId) => req<KbProjectUsageReport>(REST.projectKbUsage(projectId))
+  }
+}
+
 export function createCiRest(httpBase: string): RendererCiRest {
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
     const headers: Record<string, string> = {}

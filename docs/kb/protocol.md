@@ -43,7 +43,9 @@ URL руками. Параметризованные пути — функции
 идемпотентный импорт legacy-данных desktop (`POST /api/migrations/desktop`), вложения (`/api/uploads`),
 настройки, возможности системы, STT-модели, TTS-голоса и каталог, MCP-серверы,
 статус входа CLI, машины (+ политика, токен, файловые операции, exec),
-наблюдатели сессий Claude (`/api/cc/*`) и Codex (`/api/cx/*`), админка
+наблюдатели сессий Claude (`/api/cc/*`) и Codex (`/api/cx/*`), база знаний
+(`/api/kb/*` + телеметрия обращений `/api/conversations/:id/kb-usage`,
+`/api/projects/:id/kb-usage`), админка
 пользователей, помощник промптов (`POST /api/prompt/suggest` — одноразовый LLM-вызов,
 переформулировки черновика; канал `prompt:suggest`). Полный список — константа `REST`.
 
@@ -73,7 +75,16 @@ URL руками. Параметризованные пути — функции
 
 Сервер→клиент: `stt.partial/final/error`, `claude.token/done/error/log/active`,
 `tts.audio/error`, прогресс скачивания голоса и модели, `cc.tail`, `cx.tail`,
-`agents` (живой список машин), `pty.output/exit/error`.
+`agents` (живой список машин), `pty.output/exit/error`, `kb.usage`.
+
+`kb.usage` — обращение к базе знаний (авто-инъекция контекста сервером или вызов
+`mcp__kb__*` моделью). **Подписки нет**: кадр рассылается по `userId`, как
+`claude.usage`, а лишние чаты отсекает стор. Первый кадр обращения приходит со
+статусом `pending` («запрашивает…»), терминальный — вторым, с тем же `query.id`;
+гонку «REST-снапшот против инкремента» закрывает монотонный `query.seq` внутри
+разговора (клиент игнорирует `seq ≤ lastSeq`, upsert по id). Снапшоты —
+`GET /api/conversations/:id/kb-usage` и `GET /api/projects/:id/kb-usage`
+(изоляция: чужой чат/проект → 404). Детали — `features/kb-usage.md`.
 
 `claude.send` несёт `verbose?: boolean` — режим консоли, при котором сервер шлёт
 поток `claude.log` с активностью агента. `claude.done` несёт готовое `message`,

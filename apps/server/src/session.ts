@@ -18,6 +18,7 @@ import { watchTranscript } from './cc/ccSessions.js'
 import { watchCxTranscript } from './codex/codexSessions.js'
 
 import type { CiRunManager } from './ci/runManager.js'
+import type { KbUsageTracker } from './kb/usage.js'
 
 export interface SessionDeps {
   db: VoiceChatDb
@@ -52,6 +53,8 @@ export interface SessionDeps {
   pty?: PtyRelay
   /** Процесс-глобальный менеджер CI-ранов (события переживают reconnect). */
   ci?: CiRunManager
+  /** Телеметрия обращений к базе знаний (кадры kb.usage своему пользователю). */
+  kbUsage?: KbUsageTracker
 }
 
 /** Минимальный релей PTY для сессии (реализует AgentRegistry). */
@@ -71,6 +74,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let boardProjectId: string | null = null
   let unsubTurns: (() => void) | null = null
   let unsubCi: (() => void) | null = null
+  let unsubKbUsage: (() => void) | null = null
   let ccTailStop: (() => void) | null = null
   let cxTailStop: (() => void) | null = null
   const ptyIds = new Set<string>()
@@ -95,6 +99,12 @@ export function createSession(deps: SessionDeps): WsHandlers {
       // События CI-ранов — только своему пользователю (лог/шаги/статус).
       if (deps.ci) {
         unsubCi = deps.ci.subscribe((m, ownerUserId) => {
+          if (ownerUserId === deps.user.name) ctx.send(m)
+        })
+      }
+      // Обращения к базе знаний — только своему пользователю (панель «Использование БЗ»).
+      if (deps.kbUsage) {
+        unsubKbUsage = deps.kbUsage.subscribe((m, ownerUserId) => {
           if (ownerUserId === deps.user.name) ctx.send(m)
         })
       }
@@ -277,6 +287,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubTurns = null
       unsubCi?.()
       unsubCi = null
+      unsubKbUsage?.()
+      unsubKbUsage = null
       ccTailStop?.()
       ccTailStop = null
       cxTailStop?.()

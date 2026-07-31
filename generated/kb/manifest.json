@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "project": "voiceAIChat",
-  "createdAt": "2026-07-27T14:11:11.944Z",
-  "contentHash": "22a05bee0ac898dffe02727ffef326fe56b1a6b9270bb10e7a00ab2ae36a2664",
-  "documents": 11,
-  "chunks": 75
+  "createdAt": "2026-07-31T17:29:19.759Z",
+  "contentHash": "dfd3276e319b1ce75d0a957b78d61a5d6ddc6118277561b6fb05df2dc0dfc0f8",
+  "documents": 18,
+  "chunks": 161
 }

@@ -126,4 +126,18 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'p1', execTarget: 'm1', workdir: '/srv/p' })))
   })
 
+  it('подписи режимов БЗ соответствуют семантике «инструменты модели», а не «вручную»', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    const select = screen.getByRole('combobox', { name: 'Контекст базы знаний' })
+    expect(within(select).getByRole('option', { name: 'Авто-контекст + инструменты модели' })).toBeInTheDocument()
+    expect(within(select).getByRole('option', { name: 'По запросу модели (только инструменты)' })).toBeInTheDocument()
+    // Пояснение под селектом объясняет режим, а не повторяет его название.
+    expect(screen.getByTestId('conv-kb-hint')).toHaveTextContent('подмешивает подходящие разделы')
+    fireEvent.change(select, { target: { value: 'manual' } })
+    expect(screen.getByTestId('conv-kb-hint')).toHaveTextContent('до чтения кода')
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ kbContextMode: 'manual' })))
+  })
+
 })

@@ -18,4 +18,11 @@ describe('KnowledgeBase', () => {
     await waitFor(() => expect(screen.getByText('Ответ сохраняет сервер.')).toBeTruthy())
     expect(screen.getByText('apps/server/src/turns.ts')).toBeTruthy()
   })
+  it('documentId из адреса (#/kb/:id) открывает документ без поиска', async () => {
+    const api = createFakeApi()
+    const doc: KbDocument = { id:'protocol',title:'Протокол',kind:'protocol',tags:[],packages:[],freshness:'current',sourcePath:'docs/kb/protocol.md',updated:'2026-07-27',body:'# Протокол\n\nКадры JSON.',symbols:[],protocols:[],areas:[],related:[],headings:[] }
+    api['kb:document'] = async ({ id }) => (id === 'protocol' ? doc : null)
+    render(<KnowledgeBase api={api} documentId="protocol" onClose={() => {}} />)
+    await waitFor(() => expect(screen.getByText('Кадры JSON.')).toBeTruthy())
+  })
 })

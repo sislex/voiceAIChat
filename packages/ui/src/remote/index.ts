@@ -21,8 +21,9 @@ import { REST, type DesktopMigrationBundle, type ServerFileInfo } from '@shared/
 import type { FsResult } from '@shared/agentProtocol'
 import type { SessionUser } from '@shared/types'
 import { WsClient } from './wsClient'
-import { createHttpApi, createCiRest } from './httpApi'
+import { createHttpApi, createCiRest, createKbUsageRest } from './httpApi'
 import type { RendererCiBridge } from './ciBridge'
+import type { RendererKbBridge } from './kbBridge'
 import { getToken, setToken } from './session'
 import { base64ToArrayBuffer } from './decode'
 
@@ -133,6 +134,17 @@ function makeCiBridge(httpBase: string, ws: WsClient): RendererCiBridge {
     onSummary: (cb) => ws.on('ci.summary', (m) => cb({ projectId: m.projectId, summary: m.summary })),
     onInteraction: (cb) => ws.on('ci.interaction', (m) => cb({ runId: m.runId, interaction: m.interaction })),
     onChatMessage: (cb) => ws.on('chat.message', (m) => cb({ conversationId: m.conversationId, message: m.message }))
+  }
+}
+
+/**
+ * Мост телеметрии БЗ: REST-снапшоты + инкременты kb.usage. Подписки на чат нет —
+ * сервер рассылает кадры по пользователю, стор сам раскладывает их по чатам.
+ */
+function makeKbBridge(httpBase: string, ws: WsClient): RendererKbBridge {
+  return {
+    ...createKbUsageRest(httpBase),
+    onUsage: (cb) => ws.on('kb.usage', (m) => cb({ conversationId: m.conversationId, projectId: m.projectId, query: m.query }))
   }
 }
 
@@ -309,6 +321,7 @@ export function installRemoteBridges(serverHttp: string): void {
   window.agents = makeAgentsBridge(ws)
   window.board = makeBoardBridge(ws)
   window.ci = makeCiBridge(httpBase, ws)
+  window.kb = makeKbBridge(httpBase, ws)
   window.session = makeSessionBridge(httpBase, ws)
   window.fs = makeFsBridge(httpBase)
   window.files = makeFilesBridge(httpBase)

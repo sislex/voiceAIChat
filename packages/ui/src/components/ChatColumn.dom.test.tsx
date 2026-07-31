@@ -586,3 +586,43 @@ describe('ChatColumn — объявления для скринридера', ()
     expect(block).toHaveAttribute('aria-live', 'polite')
   })
 })
+
+describe('ChatColumn — кнопка «Использование БЗ»', () => {
+  it('без onOpenKbUsage кнопки нет', () => {
+    renderCol()
+    expect(screen.queryByTestId('kb-usage-open')).not.toBeInTheDocument()
+  })
+
+  it('кнопка открывает панель, число обращений — в aria-label', async () => {
+    const onOpen = vi.fn()
+    renderCol({ onOpenKbUsage: onOpen, kbUsageCount: 3 })
+    const btn = screen.getByTestId('kb-usage-open')
+    expect(btn).toHaveAccessibleName('Использование базы знаний: 3 обращения')
+    expect(screen.getByTestId('kb-usage-count')).toHaveTextContent('3')
+    await userEvent.click(btn)
+    expect(onOpen).toHaveBeenCalled()
+  })
+
+  it('счётчик переполнения показывает 99+, но точное число остаётся в подписи', () => {
+    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 128 })
+    expect(screen.getByTestId('kb-usage-count')).toHaveTextContent('99+')
+    expect(screen.getByTestId('kb-usage-open')).toHaveAccessibleName('Использование базы знаний: 128 обращений')
+  })
+
+  it('активное обращение показывает индикатор вместо счётчика', () => {
+    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 2, kbUsageActive: true })
+    expect(screen.getByTestId('kb-usage-live')).toBeInTheDocument()
+    expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
+    expect(screen.getByTestId('kb-usage-open')).toHaveAccessibleName(/идёт обращение/)
+  })
+
+  it('при выключенной БЗ кнопка доступна и объясняет пустоту', async () => {
+    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 0, kbContextMode: 'off' })
+    const btn = screen.getByTestId('kb-usage-open')
+    expect(btn).toBeEnabled()
+    expect(btn).toHaveAccessibleName(/база знаний выключена для этого чата/)
+    expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
+    await expectNoViolations()
+    expectLabelledIconButtons()
+  })
+})

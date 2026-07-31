@@ -59,6 +59,20 @@ describe('App — утилиты как страницы по URL', () => {
     expect(page.closest('.ovl')).toBeNull()
   })
 
+  it('#/kb/:documentId открывает конкретный раздел базы знаний', async () => {
+    window.location.hash = '#/kb/protocol'
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    api['kb:document'] = async ({ id }) =>
+      id === 'protocol'
+        ? { id: 'protocol', title: 'Протокол', kind: 'protocol', tags: [], packages: [], freshness: 'current', sourcePath: 'docs/kb/protocol.md', updated: '2026-07-27', body: '# Протокол\n\nКадры JSON.', symbols: [], protocols: [], areas: [], related: [], headings: [] }
+        : null
+    render(<App api={api} delays={SLOW} />)
+    // Страница БЗ открыта, и документ из адреса уже подгружен — ссылка работает.
+    expect(await screen.findByTestId('kb-overlay')).toBeInTheDocument()
+    expect(await screen.findByText('Кадры JSON.')).toBeInTheDocument()
+  })
+
   it('в локальном режиме #/machines и #/users редиректят на главную', async () => {
     window.location.hash = '#/machines'
     await renderApp()

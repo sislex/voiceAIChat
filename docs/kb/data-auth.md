@@ -28,10 +28,18 @@ journal_mode = WAL`, `foreign_keys = ON`.
 | `settings` | key-value, значения — JSON-строки |
 | `agents` | машины: `token_hash`, `last_seen`, `policy` (JSON), `user_id` |
 | `users` | `name` (PK и он же id владельца), `password_hash`, `role`, `blocked` |
+| `kb_usage_queries` | обращение к базе знаний: `seq` (монотонный курсор внутри разговора — по нему клиент отсекает устаревшие кадры `kb.usage`), `source` (`auto`/`tool_*`), `status`, `chars`/`est_tokens`, `prompt_chars`, `project_id` — СНИМОК проекта на момент обращения; каскад по разговору |
+| `kb_usage_sections` | разделы одного обращения (`document_id`+`anchor`, символы и оценка токенов), каскад по обращению |
 
 Файл БД — `<dataDir>/voicechat.db` (в Docker `/data`). Тесты работают на
 `:memory:` через `BuildOptions.db`. Вложения — `apps/server/src/uploads.ts`
 (`POST /api/uploads` → id, путь резолвится в промпт для модели).
+
+Итоги обращений к БЗ считаются ОТДЕЛЬНЫМ запросом по `kb_usage_queries`, без
+JOIN с `kb_usage_sections`: иначе суммы размножаются по числу разделов. `prompt_chars`
+суммируется по одному значению на `turn_id` — промпт хода общий для всех его
+обращений. Изоляция: отчёт по чату начинается с `getConversation(userId, id)`,
+проектный — с `isProjectMember` (иначе 404). Подробности — `features/kb-usage.md`.
 
 **У desktop своя копия схемы** (`apps/desktop/src/main/db/schema.ts`) — меняя одну,
 проверь вторую (см. `architecture.md`, раздел про осознанную дубликацию).
