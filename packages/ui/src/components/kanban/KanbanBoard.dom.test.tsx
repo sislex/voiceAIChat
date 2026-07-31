@@ -6,6 +6,7 @@ import { KanbanBoard, type KanbanBoardProps } from './KanbanBoard'
 import type { Board, Task } from '@shared/projects'
 import type { GenerateParams } from '../prompt-builder/PromptBuilder'
 import { DRAG_HOLD_MS } from '../../lib/dnd'
+import { listCommands, resetCommands } from '../../lib/commands'
 
 const task = (over: Partial<Task>): Task => ({
   id: 't', projectId: 'p1', columnId: 'c1', type: 'task', parentId: null, title: 'T', description: '',
@@ -400,3 +401,56 @@ describe('KanbanBoard — перенос с клавиатуры', () => {
     expect(props.onMoveTask).not.toHaveBeenCalled()
   })
 })
+
+
+describe('KanbanBoard — своя команда в реестре', () => {
+  afterEach(() => resetCommands())
+
+  it('регистрирует «Создать задачу», пока доска на экране', () => {
+    const { unmount } = render(<KanbanBoardHarness />)
+    const command = listCommands().find((c) => c.id === 'kanban.create-task')
+    expect(command).toBeDefined()
+    expect(command!.title).toBe('Создать задачу')
+    // Подпись ведёт к колонке, в которую попадёт задача.
+    expect(command!.hint).toContain('To Do')
+    unmount()
+    // Экран ушёл — команде в палитре делать нечего.
+    expect(listCommands().find((c) => c.id === 'kanban.create-task')).toBeUndefined()
+  })
+
+  it('команда открывает композер первой видимой колонки', async () => {
+    render(<KanbanBoardHarness />)
+    const command = listCommands().find((c) => c.id === 'kanban.create-task')!
+    act(() => command.run())
+    expect(await screen.findByLabelText('Новая задача в «To Do»')).toBeInTheDocument()
+  })
+
+  it('пустая доска команду не даёт: колонки, куда создавать, нет', () => {
+    render(<KanbanBoardHarness board={{ columns: [], tasks: [] }} />)
+    expect(listCommands().find((c) => c.id === 'kanban.create-task')).toBeUndefined()
+  })
+})
+
+/** Доска с обязательными пропсами — для проверок реестра команд. */
+function KanbanBoardHarness(props: Partial<KanbanBoardProps> = {}): JSX.Element {
+  return (
+    <KanbanBoard
+      projectName="P1"
+      board={board}
+      loading={false}
+      members={[]}
+      currentUser={null}
+      onCreateColumn={vi.fn()}
+      onUpdateColumn={vi.fn()}
+      onSetColumnHidden={vi.fn()}
+      onReorderColumns={vi.fn()}
+      onDeleteColumn={vi.fn()}
+      onCreateTask={vi.fn()}
+      onUpdateTask={vi.fn()}
+      onMoveTask={vi.fn()}
+      onDeleteTask={vi.fn()}
+      onOpenChat={vi.fn()}
+      {...props}
+    />
+  )
+}

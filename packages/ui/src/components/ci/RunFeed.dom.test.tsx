@@ -1,8 +1,9 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import type { CiRun, CiRunStep, CiLogLine, CiInteraction } from '@shared/ci'
 import { RunFeed, type RunFeedCache } from './RunFeed'
+import { listCommands, resetCommands } from '../../lib/commands'
 
 function mkRun(over: Partial<CiRun> = {}): CiRun {
   return {
@@ -188,5 +189,57 @@ describe('RunFeed — состояния загрузки, пустоты и о�
     expect(screen.queryByTestId('ci-runfeed-skeleton')).not.toBeInTheDocument()
     expect(screen.getByText('npm ci')).toBeInTheDocument()
     expect(screen.getByText('Обновляем ленту…')).toBeInTheDocument()
+  })
+})
+
+
+describe('RunFeed — своя команда в реестре', () => {
+  afterEach(() => resetCommands())
+
+  const finished: RunFeedCache = {
+    detail: { run: mkRun({ status: 'success', finishedAt: 4000 }), steps: [mkStep({ status: 'success' })], fixAttempts: [], interactions: [] },
+    log: [],
+    conclusion: null
+  }
+
+  it('регистрирует «Повторить последний ран», пока лента на экране', () => {
+    const { unmount } = render(<RunFeed {...baseProps(finished)} />)
+    const command = listCommands().find((c) => c.id === 'ci.retry-run')
+    expect(command).toBeDefined()
+    expect(command!.title).toBe('Повторить последний ран')
+    unmount()
+    expect(listCommands().find((c) => c.id === 'ci.retry-run')).toBeUndefined()
+  })
+
+  it('команда повторяет именно этот ран', () => {
+    const p = baseProps(finished)
+    render(<RunFeed {...p} />)
+    listCommands().find((c) => c.id === 'ci.retry-run')!.run()
+    expect(p.onRetry).toHaveBeenCalledWith('run-1')
+  })
+
+  it('незавершённый ран повторять нечего — команда выключена', () => {
+    const running: RunFeedCache = {
+      detail: { run: mkRun({ status: 'running' }), steps: [mkStep()], fixAttempts: [], interactions: [] },
+      log: [],
+      conclusion: null
+    }
+    render(<RunFeed {...baseProps(running)} />)
+    expect(listCommands().find((c) => c.id === 'ci.retry-run')!.enabled?.()).toBe(false)
+  })
+
+  it('лента без загруженного рана команду не даёт', () => {
+    render(<RunFeed {...baseProps(undefined)} />)
+    expect(listCommands().find((c) => c.id === 'ci.retry-run')).toBeUndefined()
+  })
+
+  it('две ленты одного рана дают одну команду, а не две', () => {
+    render(
+      <>
+        <RunFeed {...baseProps(finished)} />
+        <RunFeed {...baseProps(finished)} />
+      </>
+    )
+    expect(listCommands().filter((c) => c.id === 'ci.retry-run')).toHaveLength(1)
   })
 })

@@ -16,12 +16,14 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   `httpApi`, `session` (токен в localStorage), `decode`.
 - `audio/` — захват микрофона (`browserAudio`, `pcmWorkletSource`, `microphones`)
   и конвертация в Int16 PCM.
-- `lib/` — плеер TTS, нарезка фраз, VAD, хоткеи, звуковые подсказки, `view.ts`
-  (живые сегменты транскрипта).
+- `lib/` — плеер TTS, нарезка фраз, VAD, хоткеи (`hotkeys.ts` + `useHotkeys.ts`),
+  реестр команд (`commands.ts`/`useCommands.ts`/`appCommands.ts`), нечёткий поиск
+  (`fuzzy.ts`), звуковые подсказки, `view.ts` (живые сегменты транскрипта).
 - `components/` — экраны и виджеты. Крупные: `ChatColumn`, `Sidebar`, `VoiceBar`,
   `SettingsModal`, `MachineConsole`/`MachineTerminal`/`MachineStatus`/`AgentCard`,
   `FileExplorer`, `CcObserver`/`CodexObserver`, `UsersAdmin`, `QuestionsForm`,
-  `MessageActivity`, `MessageImage`, `AgentCommands`, `Markdown`.
+  `MessageActivity`, `MessageImage`, `AgentCommands`, `Markdown`,
+  `CommandPalette`/`HotkeysCheatSheet`.
 - `components/ui/` — примитивы без предметной логики: `Button`/`IconButton`
   (единая кнопка), `Skeleton`/`EmptyState`/`ErrorState` (состояния экрана),
   `Dialog` (модальное окно),
@@ -105,6 +107,21 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
 - Успех показываем там, где результата не видно: «Скопировано», «Настройки
   сохранены», «Команда удалена».
 - Данные и настройки — через стор, а не прямым `fetch` из компонента.
+- **Горячая клавиша — биндинг в карте, а не свой `keydown` на `window`.**
+  Клавиши живут в `lib/useHotkeys.ts` (карта `HotkeyBinding[]`), разбор и подпись
+  комбинации — в `lib/hotkeys.ts`. Правила, которые легко нарушить: клавиша без
+  модификатора в поле ввода **не** перехватывается (`isTyping()`), иначе в
+  композере не набрать пробел; у пробела и Esc стоит `ignoreModifiers` и защита от
+  автоповтора (`event.repeat` **и** «клавиша уже зажата»), а `keyup` завершает
+  только начатое нажатием — push-to-talk критичен, и его поведение прибито
+  тестами; общий флаг `enabled` гасит только пробел/Esc, у остальных биндингов
+  свой `enabled()`. Во время записи голоса `⌘K` и `?` не срабатывают.
+- **Новое действие экрана — команда в реестре** (`lib/commands.ts`), а не только
+  кнопка. Экран регистрирует её сам через `useCommandSource` (источник — функция:
+  она вызывается при сборке списка и видит свежие пропсы), и она сразу появляется
+  и в палитре `⌘K`, и — если объявила `hotkey` — в шпаргалке по `?`. Второго
+  списка клавиш «для документации» не заводим: он разъедется с биндингами.
+  Базовый набор и пункты по данным — `lib/appCommands.ts`, не в `App.tsx`.
 - **Перетаскивание — только `lib/dnd.ts`** (pointer-события: мышь, палец, стилус),
   внешних dnd-библиотек в пакете нет. HTML5 Drag & Drop не годится: мобильные
   браузеры не присылают `dragstart`/`drop`, и канбан на телефоне не работал вовсе.
@@ -136,7 +153,9 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   кнопке окна ждите `waitFor`/`findBy`.
   Логика стора — `store/voiceStore.test.ts` без DOM.
 
-Storybook: сториз примитивов — `src/components/ui/{Button,Dialog,Toast,ConfirmDialog,Skeleton,EmptyState,ErrorState}.stories.tsx`
+Storybook: сториз примитивов — `src/components/ui/{Button,Dialog,Toast,ConfirmDialog,Skeleton,EmptyState,ErrorState}.stories.tsx`,
+палитры и шпаргалки — `src/components/{CommandPalette,HotkeysCheatSheet}.stories.tsx`
+(у палитры есть `HugeList` на 600 бесед — тот случай, ради которого выдача ограничена),
 (у `Button` — матрица «вариант × размер × состояние» сразу в двух темах),
 канбана — `src/components/kanban/*.stories.tsx` (у `KanbanBoard` есть загрузка,
 пустая доска, ошибка, «карточка захвачена», мобильный вьюпорт и живая

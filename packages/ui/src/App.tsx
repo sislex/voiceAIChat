@@ -26,10 +26,14 @@ import { UiProviders } from './components/ui/UiProviders'
 import { useToast } from './components/ui/Toast'
 import { useConfirm } from './components/ui/useConfirm'
 import { KnowledgeBase } from './components/KnowledgeBase'
+import { CommandPalette } from './components/CommandPalette'
+import { HotkeysCheatSheet } from './components/HotkeysCheatSheet'
 import { useVoiceStore } from './store/useVoiceStore'
 import { useVoiceCues } from './lib/useVoiceCues'
 import { useHashRoute } from './lib/useHashRoute'
-import { useHotkeys } from './lib/useHotkeys'
+import { useHotkeys, type HotkeyBinding } from './lib/useHotkeys'
+import { useCommandSource } from './lib/useCommands'
+import { buildAppCommands, buildHotkeyBindings } from './lib/appCommands'
 import './styles/app.css'
 
 // Шаг 5: состояние живёт в сторе (store/voiceStore.ts) на базе машины состояний.
@@ -122,18 +126,78 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     document.documentElement.dataset.theme = state.settings.theme
   }, [state.settings.theme])
 
-  // Горячие клавиши: пробел (hold) — запись, Esc — стоп/отмена по состоянию.
-  // Выключены при открытом модале настроек (там свои поля/фокус).
+  // Командная палитра (⌘K) и шпаргалка (?) — окна поверх всего остального.
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [cheatSheetOpen, setCheatSheetOpen] = useState(false)
+
+  const stopOrCancel = (): void => {
+    const v = state.voice
+    if (v === 'thinking' || v === 'speaking') actions.cancelRequest()
+    else if (v === 'listening') actions.stopVoice()
+  }
+
+  // Горячие клавиши: пробел (hold) — запись, Esc — стоп/отмена по состоянию,
+  // плюс биндинги палитры и шпаргалки. `enabled` гасит только голосовые клавиши
+  // (модал настроек — свои поля и фокус); у остальных биндингов свой `enabled`.
+  const hotkeyBindings: HotkeyBinding[] = buildHotkeyBindings({
+    onboarded: state.settings.onboarded,
+    voice: state.voice,
+    togglePalette: () => setPaletteOpen((v) => !v),
+    openCheatSheet: () => setCheatSheetOpen(true)
+  })
+
   useHotkeys({
     enabled: !state.settingsOpen && state.settings.onboarded,
     onPushStart: actions.startVoice,
     onPushEnd: actions.stopVoice,
-    onEscape: () => {
-      const v = state.voice
-      if (v === 'thinking' || v === 'speaking') actions.cancelRequest()
-      else if (v === 'listening') actions.stopVoice()
-    }
+    onEscape: stopOrCancel,
+    bindings: hotkeyBindings
   })
+
+  // Команды уровня приложения в общем реестре (lib/commands.ts): базовый набор
+  // плюс пункты по данным — беседы, проекты, задачи открытой доски, машины.
+  // Экранные команды регистрируют сами экраны (канбан, лента CI-рана).
+  // Источник — функция: она вызывается в момент сборки списка, поэтому видит
+  // свежее состояние стора, а не то, что было на момент регистрации.
+  const boardProjectName =
+    state.projectDetail?.id === state.activeProjectId
+      ? state.projectDetail.name
+      : state.projects.find((p) => p.id === state.activeProjectId)?.name ?? null
+  useCommandSource(() =>
+    buildAppCommands({
+      voiceEnabled: VOICE_INPUT_ENABLED,
+      voice: state.voice,
+      autoSpeak: state.settings.autoSpeak,
+      theme: state.settings.theme,
+      web: state.authRequired,
+      paletteOpen,
+      boardProjectId: state.lastProjectId ?? state.projects[0]?.id ?? null,
+      chats: state.conversations,
+      projects: state.projects,
+      tasks: state.board?.tasks ?? [],
+      taskProject:
+        state.activeProjectId && boardProjectName
+          ? { id: state.activeProjectId, name: boardProjectName }
+          : null,
+      machines: state.authRequired ? state.agents : [],
+      newChat: () => void actions.newConversation().then((id) => navigate(`/chat/${id}`)),
+      toggleMic: () => (state.voice === 'listening' ? actions.stopVoice() : actions.startVoice()),
+      stopOrCancel,
+      toggleAutoSpeak: () => void actions.updateSettings({ autoSpeak: !state.settings.autoSpeak }),
+      toggleTheme: () => void actions.updateSettings({ theme: state.settings.theme === 'dark' ? 'light' : 'dark' }),
+      openSettings: actions.openSettings,
+      openBoard: (projectId) => navigate(`/projects/${projectId}`),
+      openMachineConsole: (agentId) =>
+        agentId ? actions.openUtility('console', agentId) : actions.openUtilityForActiveChat('console'),
+      openKnowledgeBase: () => navigate('/kb'),
+      logout: () => void actions.logout(),
+      openPalette: () => setPaletteOpen(true),
+      openCheatSheet: () => setCheatSheetOpen(true),
+      openChat: (id) => navigate(`/chat/${id}`),
+      openProject: (id) => navigate(`/projects/${id}`),
+      openTask: (projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)
+    })
+  )
 
   // Маршрут ↔ активный чат. Одна точка синхронизации, чтобы стороны не тянули
   // адрес друг у друга: syncedChatId — последний согласованный id. Изменился
@@ -384,6 +448,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           void actions.createProject({ name }).then((detail) => {
             if (detail) navigate(`/projects/${detail.id}`)
           })
+        }}
+        onOpenCommandPalette={() => {
+          setSidebarOpen(false)
+          setPaletteOpen(true)
         }}
       />
       {sidebarOpen && (
@@ -735,6 +803,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onDone={actions.completeOnboarding}
         />
       )}
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <HotkeysCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
 
       {state.settingsOpen && (
         <SettingsModal
