@@ -82,6 +82,16 @@ describe('SettingsModal — глобальная блокировка голос
   })
 })
 
+describe('SettingsModal — выбор исполнителя', () => {
+  it('показывает доступные записи и сохраняет id вместе с kind', async () => {
+    const onChange = vi.fn()
+    renderModal('user', { engines: [{ id: 'work', name: 'Рабочий', kind: 'codex', isDefault: true }], onChange })
+    await userEvent.selectOptions(screen.getByLabelText('Исполнитель LLM'), 'work')
+    expect(onChange).toHaveBeenCalledWith({ llmEngineId: 'work', llmProvider: 'codex' })
+  })
+})
+
+
 describe('SettingsModal — доступность', () => {
   // Разделы перечислены руками, а не собраны из DOM: если раздел переименуют или
   // потеряют, тест должен упасть, а не тихо проверить меньше экранов.

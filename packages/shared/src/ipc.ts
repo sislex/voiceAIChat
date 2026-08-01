@@ -27,6 +27,7 @@ import type {
   AdminLlmEngine,
   AdminLlmEngineHealth,
   AdminLlmEngineInput,
+  LlmEngineOption,
   AdminUserInfo,
   UsageReport,
   UsageUnit
@@ -152,6 +153,8 @@ export interface IpcInvokeMap {
       execTarget: string | null
       workdir?: string | null
       skillNames?: string[]
+      /** Исполнитель разговора; null — из общих настроек. undefined — не менять. */
+      llmEngineId?: string | null
       /** Движок разговора; null — из общих настроек. undefined — не менять. */
       llmProvider?: LlmProvider | null
       /** Модель разговора (действует вместе с llmProvider). undefined — не менять. */
@@ -168,6 +171,7 @@ export interface IpcInvokeMap {
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }
   'uploads:add': { arg: { name: string; dataBase64: string }; result: UploadInfo }
   'settings:get': { arg: void; result: Settings }
+  'llm:engines': { arg: void; result: LlmEngineOption[] }
   'settings:save': { arg: Settings; result: void }
   /** Возможности системы по ресурсам контейнера (блокировка STT/TTS при нехватке памяти). */
   'system:capabilities': { arg: void; result: SystemCapabilities }
