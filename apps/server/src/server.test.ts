@@ -7,6 +7,10 @@ import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
 import { buildServer } from './server.js'
 import { loadConfig } from './config.js'
+import { buildPublicMcpUrl } from './mcp/publicBase.js'
+import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
+import { KB_MCP_PATH } from './kb/kbMcp.js'
+import { CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 
 let app: FastifyInstance
 let port: number
@@ -33,6 +37,15 @@ describe('server: HTTP', () => {
     const res = await app.inject({ method: 'GET', url: '/api/health' })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ ok: true })
+  })
+})
+
+describe('server: VC_MCP_PUBLIC_BASE', () => {
+  it('строит remote/kb/ci URL от публичной базы и сохраняет ?k=секрет', () => {
+    const config = loadConfig({ PORT: '8787', VC_MCP_PUBLIC_BASE: 'http://voicechat:8787/' })
+    expect(buildPublicMcpUrl(config, REMOTE_BASH_MCP_PATH, 'secret')).toBe('http://voicechat:8787/mcp/remote-bash?k=secret')
+    expect(buildPublicMcpUrl(config, KB_MCP_PATH, 'secret')).toBe('http://voicechat:8787/mcp/kb?k=secret')
+    expect(buildPublicMcpUrl(config, CI_COMMANDS_MCP_PATH, 'secret')).toBe('http://voicechat:8787/mcp/ci-commands?k=secret')
   })
 })
 
