@@ -389,6 +389,26 @@ describe('доска: завершённые задачи уходят с дос
     d.close()
   })
 
+  it('порог 0 — карточка держится до конца дня завершения', () => {
+    const { db: d, set } = withClock()
+    const p = d.createProject('alice', { name: 'P' })
+    d.updateProject('alice', p.id, { doneRetentionDays: 0 })
+    const cols = d.getBoard('alice', p.id)!.columns
+    const done = cols.find((c) => c.semanticType === 'done')!
+    const dev = cols.find((c) => c.semanticType === 'development')!
+    const task = d.createTask('alice', p.id, { columnId: dev.id, title: 'T' })!
+    d.moveTask('alice', p.id, task.id, { columnId: done.id })
+    // Автоперенос CI-рана не имеет права смахнуть карточку с доски в ту же секунду.
+    expect(d.getBoard('alice', p.id)!.tasks.map((t) => t.id)).toContain(task.id)
+    const endOfDay = new Date(1_700_000_000_000).setHours(24, 0, 0, 0)
+    set(endOfDay - 1)
+    expect(d.getBoard('alice', p.id)!.tasks.map((t) => t.id)).toContain(task.id)
+    set(endOfDay)
+    expect(d.getBoard('alice', p.id)!.tasks.map((t) => t.id)).not.toContain(task.id)
+    expect(d.getBoard('alice', p.id, { includeCompleted: true })!.tasks.map((t) => t.id)).toContain(task.id)
+    d.close()
+  })
+
   it('старше порога — нет на доске, includeCompleted возвращает', () => {
     const { db: d, set } = withClock()
     const p = d.createProject('alice', { name: 'P' })

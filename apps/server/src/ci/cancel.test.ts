@@ -131,6 +131,57 @@ describe('отмена рана в фазе модели', () => {
     expect(await waitStatus(second)).toBe('success')
   })
 
+  it('повторный «Выполнить» сразу после отмены проходит: задача не считается занятой', async () => {
+    const { projectId, taskIds } = setup()
+    let firstStarted: () => void = () => {}
+    const started = new Promise<void>((res) => { firstStarted = res })
+    let hangs = true
+    // Исполнитель глух к отмене: запись о ране живёт в `active` до сторожевого
+    // таймаута — раньше всё это окно «Выполнить» отвечал «уже выполняется ран».
+    const modelWork: CiModelWorkHook = async () => {
+      if (!hangs) return { ok: true }
+      hangs = false
+      firstStarted()
+      await new Promise<void>(() => {})
+      return { ok: true }
+    }
+    const ci = manager({ modelWork })
+    const first = startRun(ci, projectId, taskIds[0])
+    await started
+
+    expect(ci.cancel('admin', first)).toBe(true)
+    // Ровно то, что делает пользователь: нажимает «Выполнить» сразу после отмены.
+    const second = ci.start('admin', projectId, taskIds[0])
+    expect('error' in second).toBe(false)
+    const secondId = (second as { run: { id: string } }).run.id
+
+    expect(await waitStatus(first)).toBe('cancelled')
+    expect(await waitStatus(secondId, 5000)).toBe('success')
+    // Конечное состояние — как у обычного успешного рана без мержа.
+    const awaitingMerge = db.getBoard('admin', projectId)!.columns.find((c) => c.semanticType === 'awaiting_merge')!
+    expect(db.getBoard('admin', projectId)!.tasks.find((t) => t.id === taskIds[0])!.columnId).toBe(awaitingMerge.id)
+    expect(db.latestCiRunSummary(taskIds[0])!.id).toBe(secondId)
+  })
+
+  it('отменённый ран из очереди закрывается сразу, не дожидаясь слота сервера', async () => {
+    const { projectId, taskIds, prevColumnId } = setup()
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    let release: () => void = () => {}
+    const hold = new Promise<void>((res) => { release = res })
+    const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
+    const first = startRun(ci, projectId, taskIds[0])
+    const second = startRun(ci, projectId, taskIds[1])
+    for (let i = 0; i < 100 && db.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 10))
+
+    ci.cancel('admin', second)
+    // Статус честный сразу, а не «в очереди» до освобождения слота.
+    expect(db.getCiRunRaw(second)!.status).toBe('cancelled')
+    expect(db.getBoard('admin', projectId)!.tasks.find((t) => t.id === taskIds[1])!.columnId).toBe(prevColumnId)
+    release()
+    expect(await waitStatus(first)).toBe('success')
+    expect(db.getCiRun('admin', second)!.steps).toEqual([])
+  })
+
   it('отмена рана из очереди закрывает его как cancelled, не начиная работу', async () => {
     const { projectId, taskIds, prevColumnId } = setup()
     db.updateCiSettings({ maxConcurrentRuns: 1 })
