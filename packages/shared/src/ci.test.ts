@@ -8,6 +8,7 @@ import {
   CI_CLARIFY_MAX_LIMIT,
   CI_RUN_MODES,
   CI_STATUSES,
+  DEFAULT_CI_CLAUDE_MODEL,
   DEFAULT_CI_LLM_CONFIG,
   isActiveCiStatus,
   isTerminalCiStatus
@@ -31,6 +32,12 @@ describe('clarifyBudget', () => {
   it('дефолт конфигурации — разработка с тремя вопросами', () => {
     expect(DEFAULT_CI_LLM_CONFIG.mode).toBe('development')
     expect(clarifyBudget(DEFAULT_CI_LLM_CONFIG)).toBe(3)
+  })
+
+  it('дефолтный движок CI — claude opus', () => {
+    expect(DEFAULT_CI_LLM_CONFIG.provider).toBe('claude')
+    expect(DEFAULT_CI_LLM_CONFIG.model).toBe('opus')
+    expect(DEFAULT_CI_CLAUDE_MODEL).toBe('opus')
   })
 })
 

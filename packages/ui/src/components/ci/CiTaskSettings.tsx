@@ -1,7 +1,7 @@
 // CI-настройки задачи: команды и наследуемый движок/модель.
 import { useEffect, useState, type JSX } from 'react'
 import type { CiCommand, CiClarifyLevel, CiLlmConfig, CiRunMode, CiSlotConfig } from '@shared/ci'
-import { CI_CLARIFY_MAX_LIMIT, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
+import { CI_CLARIFY_MAX_LIMIT, DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
 import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import { Button } from '../ui/Button'
@@ -39,7 +39,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   }
   const models = llm.provider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS
   const changeProvider = (provider: 'claude' | 'codex'): void => {
-    setLlm({ ...llm, provider, model: provider === 'codex' ? CODEX_MODELS[0].id : 'sonnet' }); setLlmSaved(false)
+    setLlm({ ...llm, provider, model: provider === 'codex' ? CODEX_MODELS[0].id : DEFAULT_CI_CLAUDE_MODEL }); setLlmSaved(false)
   }
   const saveLlm = (): void => {
     void window.ci?.putTaskCiLlm(props.projectId, props.taskId, llm).then(() => { setLlmSaved(true); setLlmOverridden(true) })

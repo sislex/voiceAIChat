@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CiRunDetail, CiRunStep, CiLogLine, CiRunConclusion, CiInteraction, CiInteractionAnswer } from '@shared/ci'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
-import { isTerminalCiStatus } from '@shared/ci'
+import { DEFAULT_CI_CLAUDE_MODEL, isTerminalCiStatus } from '@shared/ci'
 import type { CiMetrics } from '../../remote/ciBridge'
 import { ciStatusIcon, ciStatusLabel, ciTone, fmtDuration } from './ciFormat'
 import { CiConsole } from './CiConsole'
@@ -71,7 +71,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [autoscroll, setAutoscroll] = useState(true)
   const [modelProvider, setModelProvider] = useState<'claude' | 'codex'>('claude')
-  const [modelName, setModelName] = useState('sonnet')
+  const [modelName, setModelName] = useState<string>(DEFAULT_CI_CLAUDE_MODEL)
   const loadedMetricsFor = useRef<string | null>(null)
 
   useEffect(() => {
@@ -208,7 +208,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
                   <select className="sel" value={modelProvider} onChange={(e) => {
                     const provider = e.target.value === 'codex' ? 'codex' : 'claude'
                     setModelProvider(provider)
-                    setModelName(provider === 'codex' ? '' : 'sonnet')
+                    setModelName(provider === 'codex' ? '' : DEFAULT_CI_CLAUDE_MODEL)
                   }}>
                     <option value="claude">Claude</option>
                     <option value="codex">Codex</option>

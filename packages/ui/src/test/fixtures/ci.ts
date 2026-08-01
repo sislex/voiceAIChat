@@ -37,7 +37,7 @@ export function makeRun(over: Partial<CiRun> = {}): CiRun {
     triggeredBy: 'admin',
     prevColumnId: null,
     llmProvider: 'claude',
-    llmModel: 'sonnet',
+    llmModel: 'opus',
     mode: 'development',
     clarifyLevel: 'few',
     clarifyMax: 3,

@@ -80,7 +80,7 @@ describe('ci: слот-конфиг и наследование', () => {
 describe('ci: движок и модель', () => {
   it('задача наследует настройку проекта и может переопределить её', () => {
     const { p, task } = project()
-    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'claude', model: 'sonnet', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     db.setCiLlmConfig('project', p.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     db.setCiLlmConfig('task', task.id, { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
