@@ -335,3 +335,47 @@ describe('App — упавший вызов моста показывается 
     await waitFor(() => expect(within(page).getByTestId('kanban-board')).toBeInTheDocument())
   })
 })
+
+// Виджет задачи (`TaskChatHeader`) — свойство открытого чата: он рисуется только
+// когда контекст относится к активному чату (`conversationId`). Раньше контекст
+// чистила лишь загрузка чата, и в новом разговоре оставался виджет прошлого.
+describe('App — виджет задачи только в своём чате', () => {
+  /** Проект с задачей и её чатом; чат открыт по адресу. */
+  async function withTaskChat(patch?: (api: FakeApi) => void): Promise<{ api: FakeApi; chatId: string }> {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const p = await api['projects:create']({ name: 'Мой проект' })
+    const board = await api['board:get']({ id: p.id })
+    const task = await api['tasks:create']({ projectId: p.id, columnId: board.columns[0]!.id, title: 'Скролл' })
+    const chat = await api['tasks:openChat']({ projectId: p.id, taskId: task.id })
+    patch?.(api)
+    window.location.hash = `#/chat/${chat.id}`
+    render(<App api={api} delays={SLOW} />)
+    return { api, chatId: chat.id }
+  }
+
+  it('«+ Новый» убирает виджет задачи, лента остаётся', async () => {
+    await withTaskChat()
+    expect(await screen.findByTestId('task-chat-header')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '+ Новый' }))
+    await waitFor(() => expect(screen.queryByTestId('task-chat-header')).not.toBeInTheDocument())
+    expect(screen.getByTestId('scroll')).toBeInTheDocument()
+  })
+
+  it('контекст другого чата не рисуется, даже если доехал до стора', async () => {
+    let answered = false
+    await withTaskChat((api) => {
+      const real = api['conversations:taskContext']
+      api['conversations:taskContext'] = async (arg) => {
+        const ctx = await real(arg)
+        answered = true
+        // Ответ на запрос по уже закрытому чату: контекст принадлежит не ему.
+        return ctx && { ...ctx, conversationId: 'чужой-чат' }
+      }
+    })
+    await waitFor(() => expect(answered).toBe(true))
+    expect(await screen.findByTestId('scroll')).toBeInTheDocument()
+    expect(screen.queryByTestId('task-chat-header')).not.toBeInTheDocument()
+  })
+})

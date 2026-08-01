@@ -63,6 +63,8 @@ describe('GET /api/conversations/:id/task-context', () => {
     const res = await inj({ method: 'GET', url: `/api/conversations/${chat.id}/task-context` })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({
+      // Контекст помечен своим чатом: клиент рисует виджет только в нём.
+      conversationId: chat.id,
       projectId: project.id,
       projectName: 'Voice Chat',
       epic: { id: epic.id, title: 'Канбан', key: 'VC-1' },

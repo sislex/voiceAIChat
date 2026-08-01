@@ -224,7 +224,31 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         conv.updatedAt = tick()
       }
     },
-    'conversations:taskContext': async () => null,
+    // Контекст задачи для виджета чата: как на сервере — только у чата,
+    // привязанного к задаче, и всегда со своим `conversationId`.
+    'conversations:taskContext': async ({ id }) => {
+      const conv = conversations.find((c) => c.id === id)
+      const task = conv?.taskId ? tasks.find((t) => t.id === conv.taskId) : undefined
+      const project = projects.find((p) => p.id === task?.projectId)
+      if (!conv || !task || !project) return null
+      const crumb = (t: Task) => ({ id: t.id, title: t.title, key: issueKey(project.name, t) })
+      const parent = task.parentId ? tasks.find((t) => t.id === task.parentId) : undefined
+      const column = columns.find((k) => k.id === task.columnId)
+      return {
+        conversationId: conv.id,
+        projectId: project.id,
+        projectName: project.name,
+        epic: parent?.type === 'epic' ? crumb(parent) : null,
+        story: parent?.type === 'story' ? crumb(parent) : null,
+        task: { ...crumb(task), type: task.type },
+        columnName: column?.name ?? '',
+        columnSemantic: column?.semanticType ?? null,
+        agentId: conv.execTarget ?? null,
+        agentName: agents.find((a) => a.id === conv.execTarget)?.name ?? null,
+        workdir: conv.workdir,
+        run: null
+      }
+    },
     // Метки чатов задач: ключ считаем той же shared-функцией, что сервер, а ран
     // фейк не хранит — состояние подсветки тесты досылают кадрами `ci.*`.
     'conversations:taskChats': async () =>

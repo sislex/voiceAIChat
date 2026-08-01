@@ -288,7 +288,9 @@ CI-настройки живут в самих `projects` (`ci_base_branch`, `ci
 задачи + статус рана), как и композер внизу — детали в
 [ui.md](ui.md), раздел «Свёрнутые панели чата». Источник — `GET /api/conversations/:id/task-context`
 (`db.getTaskChatContext`, канал `conversations:taskContext`), в сторе —
-`taskChatContext`. Ключи задач (`issueKey`/`projectKey`) переехали из
+`taskChatContext`; контекст помечен своим `conversationId`, и шапка видна только
+в том чате, которому принадлежит (почему так — в [ui.md](ui.md), «Компоненты и
+поверхности»). Ключи задач (`issueKey`/`projectKey`) переехали из
 `kanbanMeta.tsx` в `packages/shared/src/projects.ts`, потому что их считает и сервер.
 
 В модалке задачи, помимо `CiTaskSettings`, есть панель CI-рана (статус, фаза,

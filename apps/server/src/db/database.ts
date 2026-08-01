@@ -1854,6 +1854,7 @@ export class VoiceChatDb {
     const run = runRow ? mapCiRun(runRow) : null
 
     return {
+      conversationId: conv.id,
       projectId: project.id,
       projectName: project.name,
       epic: epic ? crumb(epic) : null,

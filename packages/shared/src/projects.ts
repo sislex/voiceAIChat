@@ -254,6 +254,12 @@ export interface TaskChatCrumb {
  * `null`, если чат не привязан к задаче.
  */
 export interface TaskChatContext {
+  /**
+   * Чат, которому принадлежит контекст. Виджет задачи рисуется только когда id
+   * совпадает с открытым чатом: контекст — свойство чата, а не залипающее
+   * состояние стора, и медленный ответ на закрытый чат ничего не показывает.
+   */
+  conversationId: string
   projectId: string
   projectName: string
   epic: TaskChatCrumb | null
