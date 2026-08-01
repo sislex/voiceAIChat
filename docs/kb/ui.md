@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-01
-checked: 06bb73e
+checked: 5639098
 areas:
   - packages/ui/src
   - apps/web/src
@@ -331,6 +331,14 @@ if (!(await confirm({ title: 'Удалить «Задача A»?', variant: 'dan
 ## Тестирование UI
 
 Логика store тестируется прямыми действиями с подставленными мостами и детерминированными таймерами. DOM-тесты используют `src/test/fakeApi.ts`; проверяют цепочку «действие пользователя → вызов bridge → новое состояние экрана». Аудио/VAD/TTS тестируются как отдельные чистые модули.
+
+Фейковый мост держит те же инварианты, что сервер, иначе баг в тесте не
+воспроизводится: `conversations:taskContext` в `fakeApi.ts` больше не заглушка
+`null`, а честная сборка контекста по `conv.taskId` (ключ — общей shared-функцией
+`issueKey`, `run: null`), и с `conversationId` запрошенного чата. Из-за этого
+DOM-тест умеет открыть чат задачи по адресу и проверить, что виджет исчезает
+после «+ Новый» (`App.projects.dom.test.tsx`), а подмена `conversationId` на чужой
+чат воспроизводит гонку с опоздавшим ответом.
 
 Гейт: `npm run -w @voicechat/ui typecheck && npm run -w @voicechat/ui test`. При CSS, host-init или сборке дополнительно `npm run -w @voicechat/web build`.
 
