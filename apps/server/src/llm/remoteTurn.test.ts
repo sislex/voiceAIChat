@@ -102,6 +102,9 @@ async function turnEvents(client: LlmClient): Promise<ServerMessage[]> {
   const db = new VoiceChatDb(':memory:')
   db.createUser(U, '', 'admin')
   const conv = db.createConversation(U, 'Чат')
+  // В реальном потоке клиент сохраняет реплику пользователя до claude.send,
+  // и TurnManager для нового разговора собирает prompt именно из истории БД.
+  db.addMessage(U, conv.id, 'u1', 'привет', '10:00')
   const turns = createTurnManager({ db, claude: client })
   const events: ServerMessage[] = []
   await new Promise<void>((resolve) => {
