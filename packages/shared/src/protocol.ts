@@ -193,6 +193,9 @@ export const REST = {
   adminUserConversations: (name: string) =>
     `/api/admin/users/${encodeURIComponent(name)}/conversations`,
   adminUserMessages: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/messages`,
+  adminLlmEngines: '/api/admin/llm-engines',
+  adminLlmEngine: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}`,
+  adminLlmEngineHealth: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}/health`,
   // --- Проекты + канбан ---
   projects: '/api/projects',
   project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,
