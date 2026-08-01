@@ -231,6 +231,9 @@ describe('voiceStore — резюме CI-рана в связанном чате
     // Резюме другого чата в открытый не попадает — оно придёт с историей.
     store.actions.applyChatMessage('other', { ...summary, id: 'sum-2', conversationId: 'other' })
     expect(store.getState().messages.map((m) => m.id)).not.toContain('sum-2')
+    // Сообщение в чужой чат ставит отложенное обновление сайдбара (оно проверено
+    // в `voiceStore.sidebar.test.ts`) — гасим таймер, чтобы не тёк в соседний кейс.
+    store.actions.dispose()
   })
 })
 

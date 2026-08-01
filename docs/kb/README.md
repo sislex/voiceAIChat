@@ -41,8 +41,9 @@
 
 ## Журнал сессий
 
-Всего записей: 43. Последние:
+Всего записей: 44. Последние:
 
+- [2026-08-01-2470-com-список-чатов-обновляется-по-событиям.md](log/2026-08-01-2470-com-список-чатов-обновляется-по-событиям.md) — Список чатов обновляется по событиям, а не только по действиям
 - [2026-08-01-2470-com-пересборка-прода-chat-44.md](log/2026-08-01-2470-com-пересборка-прода-chat-44.md) — пересборка-прода-chat-44
 - [2026-08-01-2470-com-task-chat-widget-scoped-to-chat.md](log/2026-08-01-2470-com-task-chat-widget-scoped-to-chat.md) — Виджет задачи виден только в своём чате
 - [2026-08-01-2470-com-otchyot-po-zadache-rashod-modeli.md](log/2026-08-01-2470-com-otchyot-po-zadache-rashod-modeli.md) — Отчёт по завершённой задаче — расход модели, запросы и шаги CI
@@ -52,7 +53,6 @@
 - [2026-08-01-2470-com-kb-auto-update.md](log/2026-08-01-2470-com-kb-auto-update.md) — kb-auto-update
 - [2026-08-01-2470-com-ci-gate-workflow-only.md](log/2026-08-01-2470-com-ci-gate-workflow-only.md) — ci-gate-workflow-only
 - [2026-07-31-2470-com-task-chat-highlight.md](log/2026-07-31-2470-com-task-chat-highlight.md) — task-chat-highlight
-- [2026-07-31-2470-com-storybook-foundations.md](log/2026-07-31-2470-com-storybook-foundations.md) — storybook-foundations
 
 ## Исторические планы
 
