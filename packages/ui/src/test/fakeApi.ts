@@ -102,6 +102,15 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
   for (const title of seedConversations) conversations.push(makeConversation(title))
 
+  /**
+   * Как на сервере: чат задачи, лежащей в колонке с семантикой `done`, из
+   * списка/поиска бесед убран, пока не попросили `includeCompleted`.
+   */
+  const doneTaskChat = (c: Conversation): boolean => {
+    const task = c.taskId ? tasks.find((t) => t.id === c.taskId) : undefined
+    return !!task && columns.find((k) => k.id === task.columnId)?.semanticType === 'done'
+  }
+
   function withCounts(c: Conversation): Conversation {
     const own = messages.filter((m) => m.conversationId === c.id)
     return {
@@ -119,8 +128,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'prompt:suggest': async ({ prompt }) => ({ variants: [{ id: 'suggestion-1', text: `${prompt} — уточнённый вариант` }] }),
     'kb:document': async () => null,
     'kb:context': async ({ query }) => ({ query, confidence: 'low', autoInjectAllowed: false, sections: [], relatedFiles: [], relatedDocuments: [], staleWarnings: [], estimatedTokens: 0 }),
-    'conversations:list': async () =>
-      [...conversations].sort((a, b) => b.updatedAt - a.updatedAt).map(withCounts),
+    'conversations:list': async ({ includeCompleted } = {}) =>
+      [...conversations]
+        .filter((c) => includeCompleted || !doneTaskChat(c))
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .map(withCounts),
     'conversations:create': async ({ title } = {}) => {
       const conv = makeConversation(title ?? 'Новый разговор')
       conversations.push(conv)
@@ -136,10 +148,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
           .sort((a, b) => a.createdAt - b.createdAt)
       }
     },
-    'conversations:search': async ({ query }) => {
+    'conversations:search': async ({ query, includeCompleted }) => {
       const q = query.trim().toLowerCase()
-      if (!q) return [...conversations].sort((a, b) => b.updatedAt - a.updatedAt).map(withCounts)
-      return [...conversations]
+      const visible = [...conversations].filter((c) => includeCompleted || !doneTaskChat(c))
+      if (!q) return visible.sort((a, b) => b.updatedAt - a.updatedAt).map(withCounts)
+      return visible
         .filter(
           (c) =>
             c.title.toLowerCase().includes(q) ||

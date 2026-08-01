@@ -94,6 +94,13 @@ export interface KanbanBoardProps {
    */
   showCompleted?: boolean
   onShowCompletedChange?: (show: boolean) => void
+  /**
+   * Показывать ли в списке бесед чаты завершённых задач. К самой доске
+   * отношения не имеет, но живёт рядом с «Показать завершённые»: это одна пара
+   * настроек «что делать с завершённым». Без колбэка галки нет.
+   */
+  showDoneTaskChats?: boolean
+  onShowDoneTaskChatsChange?: (show: boolean) => void
   onCreateColumn: (name: string) => void
   onUpdateColumn: (columnId: string, fields: { name?: string; wipLimit?: number | null }) => void
   onSetColumnHidden: (columnId: string, hidden: boolean) => void
@@ -1021,6 +1028,19 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               />{' '}
               Показать завершённые
             </label>
+            {/* Чаты завершённых задач уходят из сайдбара сразу по done (порог
+                дней тут не действует) — вернуть их в список можно отсюда и
+                иконкой-фильтром над списком бесед. */}
+            {props.onShowDoneTaskChatsChange && (
+              <label className="kanban-showcompleted">
+                <input
+                  type="checkbox"
+                  checked={props.showDoneTaskChats ?? false}
+                  onChange={(e) => props.onShowDoneTaskChatsChange?.(e.target.checked)}
+                />{' '}
+                Показывать чаты завершённых задач
+              </label>
+            )}
             {filtersActive && (
               <button className="jquick jquick--clear" onClick={resetFilters}>
                 Сбросить

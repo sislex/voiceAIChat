@@ -70,7 +70,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'kb:context': ({ query, budget }) => req(`${REST.kbContext}?q=${encodeURIComponent(query)}${budget ? `&budget=${budget}` : ''}`),
     'prompt:suggest': ({ prompt, modifiers }) => req(REST.promptSuggest, { method: 'POST', body: JSON.stringify({ prompt, modifiers }) }),
-    'conversations:list': () => req(REST.conversations),
+    'conversations:list': ({ includeCompleted }) =>
+      req(`${REST.conversations}${includeCompleted ? '?includeCompleted=1' : ''}`),
     'conversations:create': ({ title }) =>
       req(REST.conversations, { method: 'POST', body: JSON.stringify({ title }) }),
     'conversations:get': async ({ id }) => {
@@ -82,8 +83,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       if (!res.ok) throw new Error(`GET ${REST.conversation(id)} → ${res.status}`)
       return res.json()
     },
-    'conversations:search': ({ query }) =>
-      req(`${REST.conversationsSearch}?q=${encodeURIComponent(query)}`),
+    'conversations:search': ({ query, includeCompleted }) =>
+      req(`${REST.conversationsSearch}?q=${encodeURIComponent(query)}${includeCompleted ? '&includeCompleted=1' : ''}`),
     'messages:search': ({ query, projectId, conversationId, limit, cursor }) => {
       searchAbort?.abort()
       const ctl = new AbortController()

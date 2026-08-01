@@ -179,6 +179,28 @@ describe('REST: conversations/messages/settings', () => {
     expect(found.map((c: { title: string }) => c.title)).toEqual(['Лиссабон'])
   })
 
+  it('чат задачи в «Готово» уходит из списка, но открывается по ссылке и из карточки', async () => {
+    const project = db.createProject(U, { name: 'P' })
+    const board = db.getBoard(U, project.id)!
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    const task = db.createTask(U, project.id, { columnId: board.columns[0]!.id, title: 'Скролл' })!
+    const chat = db.openOrCreateTaskChat(U, project.id, task.id)!
+    const ids = async (url: string): Promise<string[]> =>
+      (await inj({ method: 'GET', url })).json().map((c: { id: string }) => c.id)
+
+    expect(await ids('/api/conversations')).toContain(chat.id)
+    db.moveTask(U, project.id, task.id, { columnId: done.id })
+    expect(await ids('/api/conversations')).not.toContain(chat.id)
+    expect(await ids('/api/conversations?includeCompleted=1')).toContain(chat.id)
+    expect(await ids(`/api/conversations/search?q=${encodeURIComponent('Скролл')}`)).not.toContain(chat.id)
+    expect(await ids(`/api/conversations/search?q=${encodeURIComponent('Скролл')}&includeCompleted=1`)).toContain(chat.id)
+
+    // Прямая ссылка и кнопка «Открыть чат» на карточке работают как раньше.
+    expect((await inj({ method: 'GET', url: `/api/conversations/${chat.id}` })).json().conversation.id).toBe(chat.id)
+    const fromCard = await inj({ method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/chat` })
+    expect(fromCard.json().id).toBe(chat.id)
+  })
+
   it('cc: projects/sessions/transcript из ~/.claude/projects (VC_CC_DIR)', async () => {
     const ccDir = mkdtempSync(join(tmpdir(), 'cc-rest-'))
     const proj = join(ccDir, '-Users-x-demo')

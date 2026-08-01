@@ -456,6 +456,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         }}
         onRetryMessageSearch={() => void actions.retryMessageSearch()}
         onLoadMoreMessages={() => void actions.loadMoreMessageSearch()}
+        showDoneTaskChats={state.showDoneTaskChats}
+        onShowDoneTaskChatsChange={(show) => void actions.setShowDoneTaskChats(show)}
         projects={state.projects}
         selectedProjectId={state.sidebarProjectId}
         onSelectProject={(id) => void actions.setSidebarProject(id)}
@@ -659,6 +661,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               onRetry={() => void actions.openBoard(routeProjectId)}
               showCompleted={state.boardIncludeCompleted}
               onShowCompletedChange={(show) => void actions.setBoardIncludeCompleted(show)}
+              showDoneTaskChats={state.showDoneTaskChats}
+              onShowDoneTaskChatsChange={(show) => void actions.setShowDoneTaskChats(show)}
               members={state.projectDetail?.members ?? []}
               currentUser={state.currentUser?.name ?? null}
               onCreateColumn={(name) => void actions.createColumn(name)}

@@ -38,7 +38,7 @@ describe('voiceStore — интеграция стора с api-моком и м
 
   it('init с id из адреса открывает именно этот разговор, а не самый свежий', async () => {
     const { store, api } = makeStore(['Первый', 'Второй'])
-    const list = await api['conversations:list']()
+    const list = await api['conversations:list']({})
     const oldest = list[list.length - 1].id
 
     await store.actions.init(oldest)
@@ -1639,5 +1639,53 @@ describe('voiceStore — помощник промптов', () => {
     expect(helper.loading).toBe(false)
     expect(helper.error).toBe('Движок недоступен')
     expect(helper.variants).toEqual([])
+  })
+})
+
+describe('voiceStore — чаты завершённых задач', () => {
+  /** Проект с задачей в «Готово» и её чатом; сайдбар сужен этим проектом. */
+  async function withDoneTaskChat(): Promise<{ store: VoiceStore; api: FakeApi; chatId: string; taskId: string; projectId: string }> {
+    const { store, api } = makeStore(['Обычный'])
+    const p = await api['projects:create']({ name: 'P' })
+    const board = await api['board:get']({ id: p.id })
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    const task = await api['tasks:create']({ projectId: p.id, columnId: board.columns[0]!.id, title: 'Скролл' })
+    const chat = await api['tasks:openChat']({ projectId: p.id, taskId: task.id })
+    await api['tasks:move']({ projectId: p.id, taskId: task.id, columnId: done.id })
+    await store.actions.init()
+    await store.actions.setSidebarProject(p.id)
+    return { store, api, chatId: chat.id, taskId: task.id, projectId: p.id }
+  }
+
+  it('список без чата завершённой задачи; переключатель возвращает его и запоминается', async () => {
+    const { store, chatId } = await withDoneTaskChat()
+    expect(store.getState().conversations.map((c) => c.id)).not.toContain(chatId)
+
+    await store.actions.setShowDoneTaskChats(true)
+    expect(store.getState().conversations.map((c) => c.id)).toContain(chatId)
+    expect(localStorage.getItem('vc.sidebar.doneTaskChats')).toBe('1')
+
+    await store.actions.setShowDoneTaskChats(false)
+    expect(store.getState().conversations.map((c) => c.id)).not.toContain(chatId)
+    expect(localStorage.getItem('vc.sidebar.doneTaskChats')).toBeNull()
+  })
+
+  it('открытый скрытый чат остаётся в списке — иначе пропали бы его машина и папка', async () => {
+    const { store, chatId } = await withDoneTaskChat()
+    expect(await store.actions.selectConversation(chatId)).toBe(true)
+    expect(store.getState().conversations.map((c) => c.id)).toContain(chatId)
+    // Перечитывание списка активную строку не роняет.
+    await store.actions.retryConversations()
+    expect(store.getState().conversations.map((c) => c.id)).toContain(chatId)
+  })
+
+  it('возврат задачи из «Готово» возвращает чат в список', async () => {
+    const { store, api, chatId, taskId, projectId } = await withDoneTaskChat()
+    const board = await api['board:get']({ id: projectId, includeCompleted: true })
+    const dev = board.columns.find((c) => c.semanticType !== 'done')!
+    await api['tasks:move']({ projectId, taskId, columnId: dev.id })
+
+    await store.actions.retryConversations()
+    expect(store.getState().conversations.map((c) => c.id)).toContain(chatId)
   })
 })

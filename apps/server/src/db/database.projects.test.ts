@@ -456,3 +456,54 @@ describe('доска: завершённые задачи уходят с дос
     rmSync(dir, { recursive: true, force: true })
   })
 })
+
+describe('projects: чаты завершённых задач в списке бесед', () => {
+  /** Проект с задачей в работе, её чатом и колонкой «Готово». */
+  function withTaskChat(): { pid: string; taskId: string; chatId: string; dev: string; done: string } {
+    const p = db.createProject('alice', { name: 'P' })
+    const board = db.getBoard('alice', p.id)!
+    const dev = board.columns[0]!
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    const task = db.createTask('alice', p.id, { columnId: dev.id, title: 'Скролл' })!
+    const chat = db.openOrCreateTaskChat('alice', p.id, task.id)!
+    return { pid: p.id, taskId: task.id, chatId: chat.id, dev: dev.id, done: done.id }
+  }
+
+  it('задача в «Готово» убирает свой чат из списка, возврат в работу — возвращает', () => {
+    const { pid, taskId, chatId, dev, done } = withTaskChat()
+    expect(db.listConversations('alice').map((c) => c.id)).toContain(chatId)
+
+    db.moveTask('alice', pid, taskId, { columnId: done })
+    expect(db.listConversations('alice').map((c) => c.id)).not.toContain(chatId)
+    // Скрытие — только про список: сам чат открывается по id как раньше.
+    expect(db.getConversation('alice', chatId)!.id).toBe(chatId)
+    expect(db.listConversations('alice', { includeCompleted: true }).map((c) => c.id)).toContain(chatId)
+
+    db.moveTask('alice', pid, taskId, { columnId: dev })
+    expect(db.listConversations('alice').map((c) => c.id)).toContain(chatId)
+  })
+
+  it('скрытие не зависит от порога дней: done — и чата в списке нет', () => {
+    const { pid, taskId, chatId, done } = withTaskChat()
+    // Порог «не скрывать никогда» держит карточку на доске, но не чат в списке.
+    db.updateProject('alice', pid, { doneRetentionDays: null })
+    db.moveTask('alice', pid, taskId, { columnId: done })
+    expect(db.getBoard('alice', pid)!.tasks.map((t) => t.id)).toContain(taskId)
+    expect(db.listConversations('alice').map((c) => c.id)).not.toContain(chatId)
+  })
+
+  it('поиск по беседам скрывает те же чаты', () => {
+    const { pid, taskId, chatId, done } = withTaskChat()
+    expect(db.searchConversations('alice', 'Скролл').map((c) => c.id)).toContain(chatId)
+    db.moveTask('alice', pid, taskId, { columnId: done })
+    expect(db.searchConversations('alice', 'Скролл').map((c) => c.id)).not.toContain(chatId)
+    expect(db.searchConversations('alice', 'Скролл', { includeCompleted: true }).map((c) => c.id)).toContain(chatId)
+  })
+
+  it('обычные чаты (без задачи) в списке остаются', () => {
+    const { pid, taskId, done } = withTaskChat()
+    const plain = db.createConversation('alice', 'Просто чат')
+    db.moveTask('alice', pid, taskId, { columnId: done })
+    expect(db.listConversations('alice').map((c) => c.id)).toContain(plain.id)
+  })
+})
