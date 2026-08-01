@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-07-30
-checked: a2c30d6
+updated: 2026-08-01
+checked: 06bb73e
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -28,7 +28,7 @@ journal_mode = WAL`, `foreign_keys = ON`.
 | `settings` | key-value, значения — JSON-строки |
 | `agents` | машины: `token_hash`, `last_seen`, `policy` (JSON), `user_id` |
 | `users` | `name` (PK и он же id владельца), `password_hash`, `role`, `blocked` |
-| `kb_usage_queries` | обращение к базе знаний: `seq` (монотонный курсор внутри разговора — по нему клиент отсекает устаревшие кадры `kb.usage`), `source` (`auto`/`tool_*`), `status`, `chars`/`est_tokens`, `prompt_chars`, `project_id` — СНИМОК проекта на момент обращения; каскад по разговору |
+| `kb_usage_queries` | обращение к базе знаний: `seq` (монотонный курсор внутри разговора — по нему клиент отсекает устаревшие кадры `kb.usage`), `source` (`auto`/`tool_*`), `status`, `chars`/`est_tokens`, `prompt_chars`, `project_id` — СНИМОК проекта на момент обращения, `ci_run_id`/`ci_step_id` — ран и шаг CI-раннера, если обращение случилось в его ходе (NULL — обычный чат); каскад по разговору |
 | `kb_usage_sections` | разделы одного обращения (`document_id`+`anchor`, символы и оценка токенов), каскад по обращению |
 | `kb_documents` | статьи базы знаний, которые ведут пользователь и модель: `scope` (`usage`/`user`/`project`), `owner_id` для персональных, `project_id` для проектных (каскад по проекту); файловые темы `docs/kb/*.md` сюда не попадают |
 
@@ -45,7 +45,22 @@ journal_mode = WAL`, `foreign_keys = ON`.
 JOIN с `kb_usage_sections`: иначе суммы размножаются по числу разделов. `prompt_chars`
 суммируется по одному значению на `turn_id` — промпт хода общий для всех его
 обращений. Изоляция: отчёт по чату начинается с `getConversation(userId, id)`,
-проектный — с `isProjectMember` (иначе 404). Подробности — `features/kb-usage.md`.
+проектный, по рану и по задаче — с `isProjectMember` (иначе 404).
+Подробности — `features/kb-usage.md`.
+
+Срез отчёта — это только `WHERE`: итоги (`kbUsageTotals`), разделы
+(`kbUsageSections`) и лента (`kbUsageQueries`) — приватные хелперы с общим
+условием по алиасу `q`, а чат/проект/ран/задача подставляют своё
+(`q.ci_run_id = ?`, для задачи — подзапрос по `ci_runs`). Четыре копии одного
+`GROUP BY` разъехались бы в мелочах вроде порядка сортировки, и одни и те же
+обращения показывали бы разные числа в чате и в карточке задачи.
+
+`ci_run_id`, `ci_step_id` и индекс `idx_kb_usage_ci_run` добавляет только
+`migrate()`, а не `SCHEMA_SQL`: на базе, которая старше этих колонок,
+`CREATE TABLE IF NOT EXISTS` их не создаст, и `CREATE INDEX` в общей DDL-строке
+уронил бы старт. Тот же приём — у CI-полей `projects` (`ci_kb_context_mode`,
+`auto`|`manual`|`off`, дефолт `auto`) и у `ci_runs.kb_context_mode` — снимка
+этой настройки на момент старта рана.
 
 **У desktop своя копия схемы** (`apps/desktop/src/main/db/schema.ts`) — меняя одну,
 проверь вторую (см. `architecture.md`, раздел про осознанную дубликацию).
