@@ -14,9 +14,12 @@ let db: VoiceChatDb
 let port: number
 let adminTok: string
 let bobTok: string
+/** Часы БД: тестам про скрытие завершённых нужно перевести их за полночь. */
+let clock = Date.now()
 
 beforeEach(async () => {
-  db = new VoiceChatDb(':memory:')
+  clock = Date.now()
+  db = new VoiceChatDb(':memory:', { now: () => clock })
   db.createUser('bob', '', 'user')
   app = await buildServer({ config: loadConfig({ PORT: '0' }), db, sessionSecret: SECRET })
   await app.listen({ port: 0, host: '127.0.0.1' })
@@ -98,8 +101,10 @@ describe('WS: живое обновление доски', () => {
     const task = (await app.inject({
       method: 'POST', url: `/api/projects/${p.id}/tasks`, headers: auth, payload: { columnId: done.id, title: 'Завершённая' }
     })).json() as { id: string }
-    // Порог 0 — «скрывать сразу»: задача уходит с доски, но не из системы.
+    // Порог 0 — «убрать в конце дня»: за полночью задача уходит с доски, но не
+    // из системы (мгновенно она не исчезает — в «Готово» карточку переносит и CI-ран).
     await app.inject({ method: 'PATCH', url: `/api/projects/${p.id}`, headers: auth, payload: { doneRetentionDays: 0 } })
+    clock = new Date(clock).setHours(24, 0, 0, 0)
 
     const ws = await connect(adminTok)
     const snap = waitBoard(ws, () => true)
