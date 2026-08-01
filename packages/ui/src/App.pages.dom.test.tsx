@@ -31,7 +31,7 @@ describe('App — утилиты как страницы по URL', () => {
     const page = await screen.findByTestId('cc-overlay')
     expect(page.closest('.toolpage')).not.toBeNull()
     expect(page.closest('.ovl')).toBeNull()
-    expect(screen.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('scroll')).not.toBeInTheDocument()
   })
 
   it('пункт «Агенты» в сайдбаре ведёт на #/claude-code, «Закрыть» возвращает чат', async () => {
@@ -42,7 +42,7 @@ describe('App — утилиты как страницы по URL', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Закрыть' }))
     await waitFor(() => expect(window.location.hash).toBe('#/'))
     expect(page).not.toBeInTheDocument()
-    expect(await screen.findByLabelText('Поле ввода сообщения')).toBeInTheDocument()
+    expect(await screen.findByTestId('scroll')).toBeInTheDocument()
   })
 
   it('#/codex рендерит проводник Codex страницей', async () => {
@@ -79,7 +79,7 @@ describe('App — утилиты как страницы по URL', () => {
     window.location.hash = '#/machines'
     await renderApp()
     await waitFor(() => expect(window.location.hash).toBe('#/'))
-    expect(await screen.findByLabelText('Поле ввода сообщения')).toBeInTheDocument()
+    expect(await screen.findByTestId('scroll')).toBeInTheDocument()
     window.location.hash = '#/users'
     await waitFor(() => expect(window.location.hash).toBe('#/'))
   })

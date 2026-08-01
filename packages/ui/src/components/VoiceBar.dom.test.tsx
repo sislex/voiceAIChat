@@ -6,18 +6,17 @@ import userEvent from '@testing-library/user-event'
 import { VoiceBar } from './VoiceBar'
 import '../styles/app.css'
 
-// Свёрнутость композера живёт в localStorage: не почистишь — тест, который её
-// свернул, оставит следующий без поля ввода.
-beforeEach(() => localStorage.clear())
-
 function setup(state: Parameters<typeof VoiceBar>[0]['state'], overrides = {}) {
   const props = makeProps(state, overrides)
   render(<VoiceBar {...props} />)
   return props
 }
 
+// В приложении панель открывается свёрнутой; тестам композера нужен обратный
+// дефолт — сворачивание проверяет свой describe ниже.
 function makeProps(state: Parameters<typeof VoiceBar>[0]['state'], overrides = {}) {
   return {
+    defaultCollapsed: false,
     state,
     draft: '',
     diarization: true,
@@ -248,12 +247,17 @@ describe('VoiceBar — помощник промптов', () => {
 })
 
 describe('VoiceBar — сворачивание композера', () => {
-  it('сворачивается в строку и разворачивается обратно', async () => {
-    setup('idle')
-    await userEvent.click(screen.getByLabelText('Свернуть поле ввода'))
+  it('панель открывается свёрнутой: поля ввода и микрофона нет, есть строка-заглушка', () => {
+    render(<VoiceBar {...makeProps('idle', { defaultCollapsed: undefined })} />)
     expect(screen.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Говорить')).not.toBeInTheDocument()
     expect(screen.getByTestId('composer-expand')).toHaveTextContent('Показать поле ввода')
+  })
+
+  it('разворачивается и сворачивается обратно', async () => {
+    setup('idle')
+    await userEvent.click(screen.getByLabelText('Свернуть поле ввода'))
+    expect(screen.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByTestId('composer-expand'))
     expect(screen.getByLabelText('Поле ввода сообщения')).toBeInTheDocument()
@@ -265,7 +269,7 @@ describe('VoiceBar — сворачивание композера', () => {
     expect(screen.getByTestId('composer-expand')).toHaveTextContent('проверь шаг npm test')
     unmount()
 
-    render(<VoiceBar {...makeProps('idle', { attachments: [{ id: 'a1', name: 'лог.txt' }] })} />)
+    render(<VoiceBar {...makeProps('idle', { defaultCollapsed: true, attachments: [{ id: 'a1', name: 'лог.txt' }] })} />)
     expect(screen.getByTestId('composer-expand')).toHaveTextContent('Вложений: 1')
   })
 
@@ -284,12 +288,13 @@ describe('VoiceBar — сворачивание композера', () => {
     expect(listening.onStopVoice).toHaveBeenCalledOnce()
   })
 
-  it('свёрнутость переживает перемонтирование', async () => {
-    const { unmount } = render(<VoiceBar {...makeProps('idle')} />)
-    await userEvent.click(screen.getByLabelText('Свернуть поле ввода'))
+  it('развёрнутое состояние не запоминается: следующее монтирование снова свёрнуто', async () => {
+    const { unmount } = render(<VoiceBar {...makeProps('idle', { defaultCollapsed: undefined })} />)
+    await userEvent.click(screen.getByTestId('composer-expand'))
+    expect(screen.getByLabelText('Поле ввода сообщения')).toBeInTheDocument()
     unmount()
 
-    render(<VoiceBar {...makeProps('idle')} />)
+    render(<VoiceBar {...makeProps('idle', { defaultCollapsed: undefined })} />)
     expect(screen.getByTestId('composer-expand')).toBeInTheDocument()
     expect(screen.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
   })

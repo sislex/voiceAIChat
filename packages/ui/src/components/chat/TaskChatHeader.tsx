@@ -4,8 +4,8 @@
 // RunFeed, что и в модалке, поэтому вопрос модели виден и здесь.
 //
 // Шапка сама сворачивается в одну строку (ключ задачи + статус рана): на
-// телефоне вместе с композером она съедала ленту сообщений. Свёрнутость общая
-// для всех чатов и переживает перезагрузку — см. `lib/collapse.ts`.
+// телефоне вместе с композером она съедала ленту сообщений. Открывается
+// свёрнутой и состояние нигде не хранит — как и композер внизу.
 
 import { useEffect, useState, type JSX } from 'react'
 import type { TaskChatContext } from '@shared/projects'
@@ -13,7 +13,6 @@ import type { CiRunSummary } from '@shared/ci'
 import { ciCardPulse, isTerminalCiStatus } from '@shared/ci'
 import { RUN_MODE_LABEL, ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { IconButton } from '../ui/IconButton'
-import { TASK_HEADER_COLLAPSE_KEY, useCollapsed } from '../../lib/collapse'
 
 export interface TaskChatHeaderProps {
   context: TaskChatContext
@@ -27,6 +26,12 @@ export interface TaskChatHeaderProps {
   onOpenTask: (projectId: string, taskId: string) => void
   /** Лента рана рендерится наружу — чтобы не тащить сюда весь мост CI. */
   renderRunFeed?: (runId: string) => JSX.Element
+  /**
+   * С какого состояния открыть шапку. В приложении дефолт и есть поведение
+   * («свёрнута»), проп нужен витрине и тестам — иначе развёрнутый вид виден
+   * только после клика.
+   */
+  defaultCollapsed?: boolean
   now?: () => number
 }
 
@@ -46,7 +51,8 @@ export function TaskChatHeader(props: TaskChatHeaderProps): JSX.Element {
   const ctx = props.context
   const now = props.now ?? Date.now
   const [open, setOpen] = useState(false)
-  const [collapsed, toggleCollapsed] = useCollapsed(TASK_HEADER_COLLAPSE_KEY)
+  const [collapsed, setCollapsed] = useState(props.defaultCollapsed ?? true)
+  const toggleCollapsed = (): void => setCollapsed((prev) => !prev)
   const run = ctx.run
   const finished = run ? isTerminalCiStatus(run.status) : true
   const live = useRunElapsed(run?.startedAt ?? null, finished, now)
