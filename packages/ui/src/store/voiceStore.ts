@@ -36,6 +36,7 @@ import type {
   CiRunMode,
   CiLogLine
 } from '@shared/ci'
+import { isTerminalCiStatus } from '@shared/ci'
 import type { RendererCiBridge } from '../remote/ciBridge'
 import type { RendererKbBridge } from '../remote/kbBridge'
 import type { KbStatus, KbUsageQuery } from '@shared/kb'
@@ -120,6 +121,23 @@ function saveSidebarProject(id: string | null): void {
 }
 
 /**
+ * Id задач, стоящих в колонках с семантикой `done`. Ровно этот набор решает,
+ * какие чаты задач сервер прячет из списка бесед, — по его изменению видно
+ * переезд карточки в «Готово» и обратно.
+ */
+function doneTaskIds(board: Board): Set<string> {
+  const doneColumns = new Set(board.columns.filter((c) => c.semanticType === 'done').map((c) => c.id))
+  return new Set(board.tasks.filter((t) => doneColumns.has(t.columnId)).map((t) => t.id))
+}
+
+/** Совпадают ли наборы «завершённых» задач двух снапшотов доски. */
+function sameDoneTasks(a: Board, b: Board): boolean {
+  const before = doneTaskIds(a)
+  const after = doneTaskIds(b)
+  return before.size === after.size && [...before].every((id) => after.has(id))
+}
+
+/**
  * Добавляет беседу в список, если её там нет, сохраняя порядок «свежее выше».
  * Нужно для активного чата завершённой задачи: из общего списка он скрыт.
  */
@@ -187,6 +205,15 @@ export interface MessageSearchState {
 
 /** Пауза перед запросом: пользователь печатает быстрее, чем ходит сервер. */
 const MESSAGE_SEARCH_DEBOUNCE_MS = 250
+
+/**
+ * Окно склейки фоновых перезапросов списка бесед. Видимость строки в сайдбаре
+ * считает сервер, а меняют её события, а не действия пользователя: завершение
+ * рана, резюме в фоновом чате, переезд карточки. На одно такое событие прилетает
+ * сразу несколько кадров (`ci.done` + `ci.summary` + `board.update`), поэтому
+ * список перечитываем не чаще раза в окно.
+ */
+export const CONVERSATIONS_REFRESH_DEBOUNCE_MS = 300
 /** Размер страницы результатов. */
 const MESSAGE_SEARCH_PAGE = 20
 
@@ -1153,7 +1180,16 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
-  async function refreshConversations(): Promise<void> {
+  /**
+   * Перечитать список бесед. `keepActiveListed` — обновление по событию, а не по
+   * действию пользователя: активный чат, который сервер только что скрыл (задача
+   * уехала в «Готово»), закрепляем, чтобы строка не исчезла из-под открытого
+   * чата. В действиях пользователя так делать нельзя: удаление активного чата
+   * тоже убирает его из ответа, а закреплять удалённое незачем.
+   */
+  async function refreshConversations(
+    { keepActiveListed = false }: { keepActiveListed?: boolean } = {}
+  ): Promise<void> {
     const q = state.searchQuery.trim()
     // Статус ведём отдельно от данных: сайдбар покажет скелетон только пока
     // списка нет, а при повторном чтении оставит его на месте (lib/loadState.ts).
@@ -1163,6 +1199,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       const all = q
         ? await api['conversations:search']({ query: q, includeCompleted })
         : await api['conversations:list']({ includeCompleted })
+      if (keepActiveListed) pinActiveIfHidden(all, q)
       // Список/поиск сужаем до выбранного в сайдбаре проекта (null — чаты без проекта).
       const pid = state.sidebarProjectId
       const conversations = keepPinned(all.filter((c) => (c.projectId ?? null) === pid), pid, q)
@@ -1178,6 +1215,21 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /**
+   * Активный чат пропал из ответа сервера, хотя поиска нет — значит его скрыли
+   * как чат завершённой задачи. Закрепляем строку (дальше её вернёт `keepPinned`):
+   * вместе с ней из шапки пропали бы машина и рабочая папка разговора.
+   */
+  function pinActiveIfHidden(all: Conversation[], query: string): void {
+    const active = state.activeId
+    if (!active || query || all.some((c) => c.id === active)) return
+    const conv =
+      state.pinnedConversation?.id === active
+        ? state.pinnedConversation
+        : state.conversations.find((c) => c.id === active) ?? null
+    if (conv) setState({ pinnedConversation: conv })
+  }
+
+  /**
    * Возвращает в список закреплённый чат — открытый, но скрытый как чат
    * завершённой задачи (`pinnedConversation`). Только его: пропажа строки из-за
    * поиска или смены проекта — это нормальная фильтрация, а не потеря доступа.
@@ -1187,6 +1239,28 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!pinned || pinned.id !== state.activeId) return list
     if (query || (pinned.projectId ?? null) !== pid) return list
     return withConversation(list, pinned)
+  }
+
+  let conversationsRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+  /**
+   * Перечитать список бесед из-за события, а не действия пользователя. Раньше
+   * список обновляли только действия (отправка, выбор, поиск), и открытая
+   * страница не узнавала, что чат уехавшей в «Готово» задачи сервер уже скрыл:
+   * строка висела до перезагрузки.
+   *
+   * Кто виден — по-прежнему решает сервер: клиент только перезапрашивает.
+   * Запросы склеиваются в окно (`CONVERSATIONS_REFRESH_DEBOUNCE_MS`), поэтому
+   * пачка терминальных кадров одного рана стоит одного `conversations:list`.
+   */
+  function scheduleConversationsRefresh(): void {
+    if (conversationsRefreshTimer) return // окно уже открыто — этот повод склеится с прошлым
+    conversationsRefreshTimer = setTimeout(() => {
+      conversationsRefreshTimer = null
+      void refreshConversations({ keepActiveListed: true }).catch(() => {
+        /* ошибка уже в conversationsError; список на экране остаётся прежним */
+      })
+    }, CONVERSATIONS_REFRESH_DEBOUNCE_MS)
   }
 
   /** Повторить загрузку списка бесед (кнопка «Повторить» в сайдбаре). */
@@ -2965,6 +3039,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   function dispose(): void {
     cancelTimers()
+    if (conversationsRefreshTimer) {
+      clearTimeout(conversationsRefreshTimer)
+      conversationsRefreshTimer = null
+    }
     if (loginStatusPoll) {
       clearInterval(loginStatusPoll)
       loginStatusPoll = null
@@ -3195,7 +3273,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (projectId !== state.activeProjectId) return
     const ciSummaries = { ...state.ciSummaries }
     for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
+    const prev = state.board
     setState({ board, ciSummaries })
+    // Карточку перенесли в «Готово» (или вернули в работу) — сервер спрятал или
+    // вернул чат задачи в список бесед. Сверяем только набор done-задач: на
+    // обычный переезд между рабочими колонками список не дёргаем.
+    if (prev && !sameDoneTasks(prev, board)) scheduleConversationsRefresh()
   }
 
   // --- CI-раннер ---------------------------------------------------------
@@ -3452,9 +3535,17 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   function applyCiDone(runId: string, run: CiRun, conclusion?: CiRunConclusion): void {
     patchCiRun(runId, (c) => ({ ...c, conclusion: conclusion ?? c.conclusion, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [], interactions: [] } }))
     setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false, awaitingInput: false } } })
+    // Финализация рана увозит карточку по колонкам (успех с мержем — в «Готово»),
+    // а с ней меняется и видимость чата задачи в сайдбаре.
+    scheduleConversationsRefresh()
   }
   function applyCiSummary(_projectId: string, summary: CiRunSummary): void {
     setState({ ciSummaries: { ...state.ciSummaries, [summary.taskId]: summary } })
+    // Сводка приходит на все соединения пользователя, а не только подписчикам
+    // ленты: для страницы без открытой ленты рана это единственный сигнал, что
+    // ран кончился. Дёргаем только на терминальном статусе — очередь и работа
+    // видимости чатов не меняют.
+    if (isTerminalCiStatus(summary.status)) scheduleConversationsRefresh()
   }
   /** Пауза рана: вопрос модели или гейт плана (создание и ответ приходят одним типом). */
   function applyCiInteraction(runId: string, interaction: CiInteraction): void {
@@ -3471,11 +3562,16 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     })
   }
   /**
-   * Сервер сам дописал сообщение в чат (резюме законченного рана). Показываем
-   * только в открытом чате: в остальных оно уже сохранено и придёт с историей.
+   * Сервер сам дописал сообщение в чат (резюме законченного рана). В открытый
+   * чат кладём реплику сразу; в остальных она уже сохранена и придёт с историей,
+   * но сайдбар о ней не знает — перечитываем список, чтобы строка поднялась по
+   * `updatedAt`, а свежесозданный чат задачи в нём появился.
    */
   function applyChatMessage(conversationId: string, message: Message): void {
-    if (conversationId !== state.activeId) return
+    if (conversationId !== state.activeId) {
+      scheduleConversationsRefresh()
+      return
+    }
     appendPersisted(message)
   }
   /** Ответить на паузу рана из ленты. Ошибка 409 (ответили из чата) — не фатальна. */
@@ -3616,7 +3712,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await refreshBoard()
       // Переезд в «Готово» и обратно прячет/возвращает чат задачи в сайдбаре.
       // Не в общем try: упавший список — не повод откатывать удавшийся перенос.
-      void refreshConversations().catch(() => {})
+      void refreshConversations({ keepActiveListed: true }).catch(() => {})
     } catch (err) {
       setState({ board: prev })
       fail(err, () => void moveTask(taskId, columnId, afterId, beforeId))
