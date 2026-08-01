@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-08-01
-checked: 8478a33
+checked: 9306637
 areas:
   - packages/shared/src
 ---
@@ -15,7 +15,6 @@ areas:
 `parseLlmRunFrame`, `LlmRunnerHealth`, пути `LLM_RUNNER`. Он здесь именно потому,
 что берегов два: промпт собирает сервер, argv по нему — `apps/llm-runner`. Рядом
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
-
 
 ## Карта модулей
 

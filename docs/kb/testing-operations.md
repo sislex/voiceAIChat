@@ -1,11 +1,12 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-07-31
-checked: c769754
+updated: 2026-08-01
+checked: 9306637
 areas:
   - package.json
   - scripts
   - apps/server/vitest.config.ts
+  - apps/llm-runner/vitest.config.ts
   - apps/agent/vitest.config.ts
   - packages/shared/vitest.config.ts
   - packages/ui/vitest.config.ts
@@ -19,7 +20,7 @@ areas:
 
 ## Установка зависимостей
 
-Корневой `npm install` обслуживает `packages/shared`, `packages/ui`, `apps/server`, `apps/web`, `apps/agent`. `apps/desktop` и `apps/agent-tray` устанавливаются отдельно из-за Electron/native ABI и собственных lockfiles.
+Корневой `npm install` обслуживает `packages/shared`, `packages/ui`, `apps/llm-runner`, `apps/server`, `apps/web`, `apps/agent`. `apps/desktop` и `apps/agent-tray` устанавливаются отдельно из-за Electron/native ABI и собственных lockfiles.
 
 Не переносить Electron-пакеты в workspaces без отдельного решения миграции: корневой hoisting способен подменить native module сборкой под другой runtime.
 
@@ -35,6 +36,7 @@ Server запускает исходники через tsx. Web dev proxy со�
 |---|---|---|---|
 | shared contract | `npm run -w @voicechat/shared typecheck` | `npm run -w @voicechat/shared test` | consumers при изменении публичного типа |
 | server | `npm run -w @voicechat/server typecheck` | `npm run -w @voicechat/server test` | HTTP/WS integration |
+| llm runner | `npm run -w @voicechat/llm-runner typecheck` | `npm run -w @voicechat/llm-runner test` | стрим `/v1/run` — реальный `listen()` + `fetch` |
 | agent | `npm run -w @voicechat/agent typecheck` | `npm run -w @voicechat/agent test` | bundle test при протоколе/deps |
 | UI | `npm run -w @voicechat/ui typecheck` | `npm run -w @voicechat/ui test` | web build для CSS/bootstrap; `npm run build:storybook` при правке сториз/фикстур |
 | web | `npm run -w @voicechat/web typecheck` | package test при наличии | `npm run -w @voicechat/web build` |
@@ -48,6 +50,8 @@ Server запускает исходники через tsx. Web dev proxy со�
 Shared — чистые unit и contract tests без моков. Здесь проверяются union/runtime lists, parsers, policy, state machine, prompt и преобразования.
 
 Server HTTP тестируется `app.inject()` с `:memory:` SQLite. WebSocket поднимает ephemeral listener и реальный ws-клиент, но engines/CLI заменяются fake. Spawn, fetch, filesystem и resource probes инъектируются. Тест никогда не использует настоящий HOME или найденные repo-модели; `VITEST` отключает autodiscovery.
+
+Исполнитель LLM (`apps/llm-runner`) тестируется как сервер — `app.inject()` и фейковый `spawn`, — но поток `/v1/run` проверяется только через реальный `listen()` и построчное чтение `fetch`: `inject()` отдаёт тело целиком и не показал бы, что строки не буферизуются. Bearer в тестах обязательно ASCII: значение заголовка — ByteString, и `fetch` с кириллическим токеном падает до запроса.
 
 UI store тестируется без React; DOM components — jsdom + Testing Library + fake bridges. Проверяются пользовательские действия и наблюдаемый результат, не внутренние state setters. Таймеры voice/TTS управляются fake clock.
 
