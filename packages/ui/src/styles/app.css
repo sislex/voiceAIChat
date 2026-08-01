@@ -336,12 +336,25 @@
   padding: 12px;
   border-top: 1px solid var(--border);
 }
-/* Ряд меню в подвале сайдбара: та же .vc-btn ghost, но во всю ширину и слева. */
-.sidefoot-row {
+/* Ряд меню в подвале сайдбара: та же .vc-btn ghost, но во всю ширину и слева.
+   Селектор с .vc-btn — чтобы перебить саму .vc-btn (justify-content: center и
+   text-align: center), которая в файле ниже: при равной специфичности выигрывало
+   последнее правило, и пункты меню аккаунта разъезжались по центру. */
+.vc-btn.sidefoot-row {
   justify-content: flex-start;
   gap: var(--space-100);
   padding: 9px var(--space-100);
   text-align: left;
+}
+/* Иконка пункта — слот постоянной ширины. Эмодзи (🤖, ⌨️) и svg-шестерёнка
+   рисуются разной ширины, и без слота подписи начинались с разного отступа —
+   колонка текста выглядела рваной даже при flex-start. */
+.vc-btn.sidefoot-row > .footico,
+.vc-btn.sidefoot-row > svg {
+  flex: 0 0 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ---- Основная колонка ---- */
