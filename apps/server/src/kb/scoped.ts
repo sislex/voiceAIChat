@@ -12,7 +12,7 @@
 
 import type { KbContextBundle, KbDocument, KbDocumentSummary, KbSearchRequest, KbSearchResult, KbStatus } from '@voicechat/shared'
 import type { KbStoredDocument, VoiceChatDb } from '../db/database.js'
-import { buildContext, indexBody, searchDocuments, summaryOf, type IndexedDocument } from './engine.js'
+import { buildContext, documentChunkText, indexBody, searchDocuments, summaryOf, type IndexedDocument } from './engine.js'
 import { PUBLIC_KB_VIEW, type KbSemanticReranker, type KbView, type KnowledgeBaseService } from './types.js'
 
 /** Строка БД → документ индекса. sourcePath синтетический: файла у статьи нет. */
@@ -117,10 +117,15 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
 
   async context(query: string, budget = 3500, view: KbView = PUBLIC_KB_VIEW): Promise<KbContextBundle> {
     void budget
-    const documents = [
-      ...(this.usageIncluded(view) ? this.base.indexed() : []),
-      ...this.visibleStored(view).map((item) => item.indexed)
-    ]
-    return buildContext(query, await this.search({ query, limit: 8 }, view), documents)
+    const stored = this.visibleStored(view)
+    const texts = new Map(stored.flatMap((item) => item.indexed.chunks.map((chunk) => [chunk.id, chunk.text] as const)))
+    return buildContext(query, await this.search({ query, limit: 8 }, view), (result) => {
+      const storedText = texts.get(result.chunkId)
+      if (storedText !== undefined) return storedText
+      const document = this.base.document(result.documentId)
+      // Старые/внешние реализации KnowledgeBaseService могли не отдавать документ:
+      // не роняем ход, но реальные File/Scoped-сервисы всегда проходят ветку выше.
+      return document ? documentChunkText(document, result.chunkId) : result.excerpt
+    })
   }
 }

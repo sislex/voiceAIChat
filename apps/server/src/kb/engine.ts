@@ -76,6 +76,14 @@ export function summaryOf(d: KbDocument): KbDocumentSummary {
   return { id: d.id, title: d.title, kind: d.kind, tags: d.tags, packages: d.packages, freshness: d.freshness, sourcePath: d.sourcePath, scope: d.scope, projectId: d.projectId ?? null, ...(d.editable ? { editable: true } : {}) }
 }
 
+/** Найти полный текст chunk через публичный KbDocument, не требуя доступа к индексу сервиса. */
+export function documentChunkText(document: KbDocument, chunkId: string): string | undefined {
+  return indexBody({
+    id: document.id, title: document.title, kind: document.kind, scope: document.scope,
+    projectId: document.projectId, sourcePath: document.sourcePath
+  }, document.body).chunks.find((chunk) => chunk.id === chunkId)?.text
+}
+
 /**
  * Бусты точных совпадений метаданных документа. Совпадение ВСЕЙ строки запроса —
  * сильнейший сигнал (12/10/9/9). Но фразовый запрос («карточка задачи TaskModal…»)
@@ -121,10 +129,13 @@ export async function searchDocuments(documents: IndexedDocument[], request: KbS
 }
 
 /** Бандл контекста из готовой выдачи: полный текст разделов и оценка уверенности. */
-export function buildContext(query: string, results: KbSearchResult[], documents: IndexedDocument[]): KbContextBundle {
-  const texts = new Map(documents.flatMap((item) => item.chunks.map((chunk) => [chunk.id, chunk.text] as const)))
+export function buildContext(
+  query: string,
+  results: KbSearchResult[],
+  textOf: (result: KbSearchResult) => string | undefined
+): KbContextBundle {
   const sections: KbContextSection[] = results.slice(0, 5).flatMap((result) => {
-    const text = texts.get(result.chunkId)
+    const text = textOf(result)
     return text === undefined ? [] : [{ ...result, text }]
   })
   const top=sections[0];const exact=top?.matchTypes.some(type=>['symbol','alias','path','protocol'].includes(type))??false;const gap=top&&sections[1]?top.score-sections[1].score:top?.score??0;const confidence:'high'|'medium'|'low'=!top?'low':exact||(top.score>=5&&gap>=1.5)?'high':top.score>=1?'medium':'low';return{query,confidence,autoInjectAllowed:confidence==='high',sections,relatedFiles:[...new Set(sections.flatMap(r=>r.relatedFiles))],relatedDocuments:[...new Set(sections.map(r=>r.documentId))],staleWarnings:sections.filter(r=>r.freshness==='stale').map(r=>`${r.title} требует сверки`),estimatedTokens:0}
