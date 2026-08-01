@@ -30,6 +30,7 @@ import { registerRemoteBashMcp, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp
 import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
 import { RemoteLlmClient } from './llm/remoteClient.js'
+import { RunnerFsClient } from './llm/runnerFsClient.js'
 import { PromptSuggester } from './prompt/suggester.js'
 // Локальные spawn-реализации CLI живут в отдельном воркспейсе исполнителя
 // (apps/llm-runner), а buildServer здесь выбирает между ними и HTTP-клиентом
@@ -63,6 +64,7 @@ import type { KnowledgeBaseService } from './kb/types.js'
 import { LlmKbReranker } from './kb/reranker.js'
 import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
+import { readUserFile } from './serverFiles.js'
 
 const VERSION = '0.1.0'
 
@@ -159,7 +161,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({ ok: true, version: VERSION }))
 
-  await registerRest(app, db, opts.config.dataDir)
+  const runnerFs =
+    opts.config.llmRunnerClaudeUrl || opts.config.llmRunnerCodexUrl
+      ? new RunnerFsClient({
+          claudeBaseUrl: opts.config.llmRunnerClaudeUrl,
+          codexBaseUrl: opts.config.llmRunnerCodexUrl,
+          ...(opts.config.llmRunnerToken ? { token: opts.config.llmRunnerToken } : {})
+        })
+      : null
+
+  await registerRest(app, db, opts.config.dataDir, { runnerFs: runnerFs ?? undefined })
 
   const profileHome = (userId: string): string =>
     ensureCliProfile(opts.config.dataDir, userId).home
@@ -362,14 +373,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       fsMkdir: (id, path) => agentRegistry.fsMkdir(id, path),
       fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data)
     },
-    // Откуда можно забирать файл картинки: профиль CLI, загрузки, рабочий каталог.
-    serverFileRoots: (userId) => {
+    readServerFile: async (userId, path) => {
+      if (runnerFs) return runnerFs.readFile(userId, path)
       const settings = db.getSettings(userId)
-      return [
+      const roots = [
         ensureCliProfile(opts.config.dataDir, userId).home,
         join(opts.config.dataDir, 'uploads'),
         ...(settings.workdir ? [settings.workdir] : [])
       ]
+      const res = readUserFile(path, roots)
+      return res.ok ? res.file : null
     },
     // claude спавнится на этом же хосте — loopback работает при любом HOST.
     mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`,
@@ -475,6 +488,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         },
         subscribe: (cb) => agentRegistry.onChange(cb)
       },
+      ...(runnerFs
+        ? {
+            observerTail: {
+              watchCc: (userId, slug, id, onItems) => runnerFs.watchCc(userId, slug, id, onItems),
+              watchCx: (userId, id, onItems) => runnerFs.watchCx(userId, id, onItems)
+            }
+          }
+        : {}),
       pty: {
         start: (agentId, ptyId, cols, rows, cwd, emit) =>
           agentRegistry.ptyStart(agentId, ptyId, cols, rows, cwd, emit),
