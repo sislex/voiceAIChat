@@ -119,13 +119,18 @@ async function turnEvents(client: LlmClient): Promise<ServerMessage[]> {
 }
 
 /**
- * У двух прогонов свои БД: id разговора и сохранённого сообщения не совпадают —
- * сравниваем всё остальное (тексты, счётчики, метаданные хода).
+ * У двух прогонов свои БД и свои стенные часы: id разговора, id сохранённого
+ * сообщения и метки времени записей активности совпасть не могут. Сравниваем всё
+ * остальное — тексты, счётчики, метаданные хода.
  */
 function normalize(events: ServerMessage[]): unknown[] {
   return events.map((m) => {
     const copy: Record<string, unknown> = { ...m, conversationId: '<conv>' }
     delete copy.message
+    const meta = copy.meta as { activity?: Array<Record<string, unknown>> } | undefined
+    if (meta?.activity) {
+      copy.meta = { ...meta, activity: meta.activity.map((entry) => ({ ...entry, ts: 0 })) }
+    }
     return copy
   })
 }
