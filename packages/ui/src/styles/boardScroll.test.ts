@@ -18,51 +18,8 @@
 //  * `flex: none` у шапок и композера — сжимается только список карточек.
 
 // @vitest-environment node
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-
-const css = readFileSync(fileURLToPath(new URL('./app.css', import.meta.url)), 'utf8')
-
-/**
- * Правила верхнего уровня: селектор → объявления. Внутренности @media
- * пропускаем — они переопределяют базовые правила под конкретный экран, а
- * проверяем мы базовую цепочку.
- */
-function topLevelRules(): Array<{ selector: string; body: string }> {
-  const out: Array<{ selector: string; body: string }> = []
-  let i = 0
-  while (i < css.length) {
-    const open = css.indexOf('{', i)
-    if (open < 0) break
-    const selector = css.slice(i, open).replace(/\/\*[\s\S]*?\*\//g, '').trim()
-    // Конец блока с учётом вложенности (@media внутри себя содержит правила).
-    let depth = 1
-    let j = open + 1
-    while (j < css.length && depth > 0) {
-      if (css[j] === '{') depth++
-      else if (css[j] === '}') depth--
-      j++
-    }
-    const body = css.slice(open + 1, j - 1)
-    if (!selector.startsWith('@')) out.push({ selector, body })
-    i = j
-  }
-  return out
-}
-
-const RULES = topLevelRules()
-
-/** Значение свойства в правиле с точно таким селектором (последнее по каскаду). */
-function decl(selector: string, prop: string): string | null {
-  let value: string | null = null
-  for (const rule of RULES) {
-    if (rule.selector !== selector) continue
-    const re = new RegExp(`(?:^|[;{\\s])${prop}\\s*:\\s*([^;}]+)`, 'g')
-    for (const m of rule.body.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(re)) value = m[1].trim()
-  }
-  return value
-}
+import { decl } from './cssRules'
 
 describe('app.css — скролл длинной колонки доски', () => {
   it('корень приложения обрезает содержимое и служит блок-контейнером', () => {

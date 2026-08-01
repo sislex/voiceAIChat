@@ -1,8 +1,13 @@
+// Композер чата: поле ввода, вложения, микрофон, режим и статус голосового
+// цикла. Панель сворачивается в одну строку — на телефоне вместе с виджетом
+// задачи она не оставляла ленте сообщений места (см. `lib/collapse.ts`).
+
 import { useEffect, useRef, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import type { ModifierPrompt, PermissionMode, VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import { useAutoGrow } from '../lib/autoGrow'
-import { chipClass, speakerName, statusLine, voiceAnnouncement } from '../lib/view'
+import { chipClass, composerPeek, speakerName, statusLine, voiceAnnouncement } from '../lib/view'
+import { COMPOSER_COLLAPSE_KEY, useCollapsed } from '../lib/collapse'
 import { WaveBars, Dots } from './animations'
 import { IconButton } from './ui/IconButton'
 import { MicIcon, SendIcon, StopIcon, WandIcon } from './icons'
@@ -89,6 +94,8 @@ export function VoiceBar({
   // можно печатать следующий вопрос черновиком. Отправка заблокирована до idle.
   const composerMode = isIdle || isSpeaking || replyStarted
 
+  const [collapsed, toggleCollapsed] = useCollapsed(COMPOSER_COLLAPSE_KEY)
+
   const fileRef = useRef<HTMLInputElement>(null)
   // Композер начинается с двух строк и растёт с текстом до четырёх, дальше — скролл.
   const draftRef = useAutoGrow(draft, DRAFT_MIN_ROWS, DRAFT_MAX_ROWS)
@@ -154,9 +161,71 @@ export function VoiceBar({
     e.target.value = '' // позволяет выбрать тот же файл повторно
   }
 
+  // Свёрнутая панель: строка-заглушка с тем, что в композере осталось, и — если
+  // ход не в простое — красная кнопка остановки. Прятать её за разворот нельзя:
+  // ход модели и запись должны обрываться одним нажатием откуда угодно.
+  const collapsedStop = isListening
+    ? { onClick: onStopVoice, label: 'Остановить запись' }
+    : isSpeaking
+      ? { onClick: onStopSpeak, label: 'Остановить озвучку' }
+      : !isIdle
+        ? { onClick: onCancelRequest, label: 'Остановить запрос' }
+        : null
+
+  if (collapsed) {
+    return (
+      <div className="voicebar voicebar--collapsed">
+        <div className="vinner">
+          <div className="vcollapsed">
+            <button
+              className="vcollapsed-peek"
+              data-testid="composer-expand"
+              aria-expanded={false}
+              title="Развернуть поле ввода"
+              onClick={toggleCollapsed}
+            >
+              <span className="vcollapsed-chevron" aria-hidden>⌃</span>
+              <span className="vcollapsed-text">{composerPeek(draft, attachments.length, state, aiLabel)}</span>
+            </button>
+            {collapsedStop && (
+              <IconButton
+                className="vc-btn--circle"
+                size="sm"
+                variant="danger"
+                onClick={collapsedStop.onClick}
+                title={collapsedStop.label}
+                aria-label={collapsedStop.label}
+              >
+                <StopIcon />
+              </IconButton>
+            )}
+          </div>
+          {/* Живая область остаётся и свёрнутой: читалка не должна замолкать
+              только оттого, что панель убрали в строку. */}
+          <p className="vc-sr-only" role="status" aria-live="polite" data-testid="voice-announce">
+            {voiceAnnouncement(state, aiLabel)}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="voicebar">
       <div className="vinner">
+        <div className="vhandle">
+          <IconButton
+            className="vhandle-btn"
+            size="sm"
+            aria-expanded
+            aria-label="Свернуть поле ввода"
+            title="Свернуть поле ввода"
+            data-testid="composer-collapse"
+            onClick={toggleCollapsed}
+          >
+            ⌄
+          </IconButton>
+        </div>
         {helper.open && (
           <div className="prompt-helper" data-testid="prompt-helper" role="group" aria-label="Варианты формулировки запроса">
             <div className="prompt-helper-head">

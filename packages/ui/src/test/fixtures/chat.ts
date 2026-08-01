@@ -9,6 +9,7 @@
 // ответ, картинка), теперь описывается объектом.
 
 import type { ClaudeLogEntry, Message, TurnMeta, TurnUsage } from '@shared/types'
+import type { TaskChatContext } from '@shared/projects'
 import type { UploadInfo } from '@shared/ipc'
 import { imageBlock } from '@shared/images'
 import { toolBlock } from '@shared/tools'
@@ -198,6 +199,24 @@ export function makeLiveSegments(): LiveSegment[] {
 }
 
 /** Прикреплённый к следующему сообщению файл. */
+/** Контекст чата задачи для шапки `TaskChatHeader` (по умолчанию — ран идёт). */
+export function makeTaskChatContext(over: Partial<TaskChatContext> = {}): TaskChatContext {
+  return {
+    projectId: 'p1',
+    projectName: 'Voice Chat',
+    epic: { id: 'e1', title: 'Канбан', key: 'VC-1' },
+    story: { id: 's1', title: 'Карточка чата', key: 'VC-2' },
+    task: { id: 't1', title: 'Свернуть панели чата', key: 'VC-3', type: 'task' },
+    columnName: 'Разработка',
+    columnSemantic: 'development',
+    agentId: 'a1',
+    agentName: 'Прод-машина',
+    workdir: '/root/VoiceAIChatRepos/chatai-3',
+    run: { id: 'run-1', status: 'running', mode: 'plan', startedAt: 1_000, durationMs: null },
+    ...over
+  }
+}
+
 export function makeUpload(over: Partial<UploadInfo> = {}): UploadInfo {
   seq += 1
   return { id: `up-${seq}`, name: `скриншот-${seq}.png`, ...over }
