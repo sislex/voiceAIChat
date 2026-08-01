@@ -15,8 +15,13 @@ describe('isCompletedHidden — когда завершённая задача �
     expect(isCompletedHidden(T0, undefined, T0 + 999 * DAY)).toBe(false)
   })
 
-  it('порог 0 — скрывать сразу', () => {
-    expect(isCompletedHidden(T0, 0, T0)).toBe(true)
+  it('порог 0 — убрать в конце дня, а не в ту же секунду', () => {
+    // Карточку в «Готово» переносит и CI-раннер после успешного мержа: исчезнуть
+    // мгновенно она не имеет права — иначе работа пропадает с доски без следа.
+    const endOfDay = new Date(T0).setHours(24, 0, 0, 0)
+    expect(isCompletedHidden(T0, 0, T0)).toBe(false)
+    expect(isCompletedHidden(T0, 0, endOfDay - 1)).toBe(false)
+    expect(isCompletedHidden(T0, 0, endOfDay)).toBe(true)
   })
 
   it('дефолтные 14 дней: на 13-й день видна, на 14-й уже нет', () => {

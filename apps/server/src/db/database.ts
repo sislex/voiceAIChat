@@ -1850,7 +1850,7 @@ export class VoiceChatDb {
       | undefined
     const agentId = conv.execTarget && conv.execTarget !== 'none' ? conv.execTarget : project.defaultAgentId
     const machine = agentId ? project.machines.find((m) => m.agentId === agentId) : undefined
-    const runRow = this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`).get(task.id) as CiRunRow | undefined
+    const runRow = this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(task.id) as CiRunRow | undefined
     const run = runRow ? mapCiRun(runRow) : null
 
     return {
@@ -2819,9 +2819,14 @@ export class VoiceChatDb {
     return { projectId, avgMs: Math.round(rows.reduce((a, r) => a + r.duration_ms, 0) / rows.length), samples: rows.length }
   }
 
-  /** Сводки последних ранов по задачам проекта — для доски/карточки. */
+  /**
+   * Сводки последних ранов по задачам проекта (для доски/карточки) — по одной
+   * на задачу. Тай-брейк по `rowid` обязателен: два рана одной задачи могут лечь
+   * в одну миллисекунду (повтор сразу после отмены), и без него доска показывала
+   * бы статус прошлого рана.
+   */
   latestCiRunSummaries(projectId: string): CiRunSummary[] {
-    const rows = this.db.prepare(`SELECT * FROM ci_runs WHERE project_id = ? ORDER BY created_at DESC`).all(projectId) as CiRunRow[]
+    const rows = this.db.prepare(`SELECT * FROM ci_runs WHERE project_id = ? ORDER BY created_at DESC, rowid DESC`).all(projectId) as CiRunRow[]
     const seen = new Set<string>()
     const out: CiRunSummary[] = []
     for (const r of rows) {
@@ -2834,7 +2839,7 @@ export class VoiceChatDb {
 
   /** Сводка последнего рана одной задачи; null — ранов не было. */
   latestCiRunSummary(taskId: string): CiRunSummary | null {
-    const row = this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`).get(taskId) as CiRunRow | undefined
+    const row = this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(taskId) as CiRunRow | undefined
     return row ? this.ciRunSummary(row) : null
   }
 

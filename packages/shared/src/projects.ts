@@ -94,7 +94,7 @@ export interface ProjectSummary {
   ciKbContextMode?: KbContextMode
   /**
    * Через сколько дней после попадания в колонку «Готово» задача пропадает с
-   * доски (как в Jira). `null` — не скрывать никогда, `0` — скрывать сразу.
+   * доски (как в Jira). `null` — не скрывать никогда, `0` — убрать в конце дня.
    * Задача при этом не удаляется: её видно по прямой ссылке и с включённым
    * «Показать завершённые».
    */
@@ -188,7 +188,10 @@ const DAY_MS = 24 * 60 * 60 * 1000
 /**
  * Пора ли убрать завершённую задачу с доски. `doneAt` — момент попадания в
  * колонку done, `retentionDays` — настройка проекта: null/мусор — не скрывать
- * никогда, 0 — скрывать сразу. Скрытие не удаляет задачу: она приходит с
+ * никогда, 0 — убрать в конце дня завершения. Ровно 0 мс не берём специально:
+ * в «Готово» карточку переносит не только человек, но и CI-раннер после
+ * успешного мержа, а карточка, исчезнувшая с доски в ту же секунду, читается как
+ * «работа пропала без следа». Скрытие не удаляет задачу: она приходит с
  * `includeCompleted` и открывается по прямой ссылке.
  */
 export function isCompletedHidden(
@@ -198,7 +201,15 @@ export function isCompletedHidden(
 ): boolean {
   if (doneAt == null || retentionDays == null) return false
   if (!Number.isFinite(retentionDays) || retentionDays < 0) return false
+  if (retentionDays === 0) return now >= endOfDay(doneAt)
   return now - doneAt >= retentionDays * DAY_MS
+}
+
+/** Полночь следующего дня после `ts` (по времени машины, где считается доска). */
+function endOfDay(ts: number): number {
+  const d = new Date(ts)
+  d.setHours(24, 0, 0, 0)
+  return d.getTime()
 }
 
 /** Новое доменное имя; Task остаётся alias для совместимости. */

@@ -288,10 +288,33 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       })
   }
 
-  /** Есть ли незавершённый ран у задачи (в очереди, в работе или на паузе). */
+  /**
+   * Держит ли задачу ещё живой ран (в очереди, в работе или на паузе).
+   * Закрывающийся ран задачу НЕ держит: после отмены его запись живёт в `active`,
+   * пока исполнитель не отпустит слот (до `cancelGraceMs`), и всё это окно
+   * «Выполнить» отвечало «Для этой задачи уже выполняется ран» — со стороны это
+   * выглядело как залипший статус «отменён». Признаки закрытия — поднятый abort
+   * и терминальный статус в БД.
+   */
   function hasActiveRunForTask(taskId: string): boolean {
-    for (const a of active.values()) if (a.taskId === taskId) return true
+    for (const [id, a] of active) {
+      if (a.taskId !== taskId) continue
+      if (isClosingRun(id, a)) continue
+      return true
+    }
     return false
+  }
+
+  /**
+   * Ран уже закрывается: задачу он не держит, а папку и ветку отпустит сам — не
+   * позже сторожевого таймаута отмены. Признаки — поднятый abort (отмена дошла до
+   * исполнителя не мгновенно) и терминальный статус в БД (запись живёт в `active`
+   * до конца хвоста `enqueue`).
+   */
+  function isClosingRun(runId: string, a: ActiveRun): boolean {
+    if (a.abort.signal.aborted) return true
+    const status = deps.db.getCiRunRaw(runId)?.status
+    return status != null && isTerminalCiStatus(status)
   }
 
   /**
@@ -390,6 +413,14 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     a.abort.abort()
     // Ран мог стоять на паузе: без этого промис ожидания никогда не разрешится.
     resolvePending(runId, null)
+    // Ран, который ещё не начинал работу, закрываем прямо здесь: иначе он висит
+    // `queued` до освобождения слота сервера, и карточка после «Отменить»
+    // показывает «в очереди». Догнавший позже `execute` статус не перепишет.
+    const row = deps.db.getCiRunRaw(runId)
+    if (row && row.status === 'queued') {
+      rollbackTask(runId, userId, row.prevColumnId)
+      finalize(runId, userId, 'cancelled')
+    }
     return true
   }
 
@@ -468,6 +499,19 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       const index = Math.max(0, slotIds.indexOf(failed.commandId as string))
       resume = { kind: 'command', slot, index }
       eventPayload = { slot, index }
+    }
+
+    // Повтор — продолжение той же работы, поэтому карточка возвращается в
+    // разработку так же, как при новом ране: иначе задача остаётся в колонке,
+    // куда её вернул откат после падения, и на доске ран не виден.
+    const developmentColumnId = deps.db.getColumnIdBySemantic(run.projectId, 'development')
+    const retryTask = deps.db.getCiTask(userId, run.projectId, run.taskId)
+    if (developmentColumnId && retryTask && retryTask.columnId !== developmentColumnId) {
+      try {
+        deps.db.moveTask(userId, run.projectId, run.taskId, { columnId: developmentColumnId })
+      } catch {
+        /* колонка могла исчезнуть — не критично */
+      }
     }
 
     const ctl = new AbortController()
@@ -797,8 +841,11 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     // Ран отменили, пока он стоял в очереди проекта: не начинаем вовсе, иначе
     // подготовка упадёт на отменённой команде и статус будет failed вместо cancelled.
     if (ctl.signal.aborted) {
-      rollbackTask(runId, userId, runRow.prevColumnId)
-      finalize(runId, userId, 'cancelled')
+      // `cancel` мог закрыть ран прямо из очереди — тогда закрывать нечего.
+      if (!isTerminalCiStatus(runRow.status)) {
+        rollbackTask(runId, userId, runRow.prevColumnId)
+        finalize(runId, userId, 'cancelled')
+      }
       return
     }
     const project = deps.db.getProject(userId, runRow.projectId)
@@ -843,7 +890,30 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     // Сломать его может только конфигурация (совпавший номер задачи, шаблон
     // ветки без `{task_number}`), и тогда два рана перемешали бы работу в одной
     // копии — поэтому проверяем до первой команды.
-    const clash = [...active.entries()].find(([id, a]) => id !== runId && (a.workspacePath === workspacePath || a.branch === branch))
+    const findClash = (): [string, ActiveRun] | undefined =>
+      [...active.entries()].find(([id, a]) => id !== runId && (a.workspacePath === workspacePath || a.branch === branch))
+    let clash = findClash()
+    // Папку и ветку может ещё держать ОТМЕНЁННЫЙ ран, чей исполнитель не успел
+    // остановиться. Он их отпустит сам (не позже сторожевого таймаута отмены) —
+    // ждём его, вместо того чтобы валить конфликтом изоляции ран, запущенный
+    // сразу после «Отменить».
+    if (clash && isClosingRun(clash[0], clash[1])) {
+      const waitRow = deps.db.getCiRunRaw(runId)
+      if (waitRow) {
+        const waiting = deps.db.updateCiRun(runId, { slotProgress: { ...waitRow.slotProgress, phase: 'Жду освобождения рабочей директории' } })
+        if (waiting) emitRun(waiting, userId)
+      }
+      const attempts = Math.ceil((cancelGraceMs + 1_000) / 50)
+      for (let i = 0; i < attempts && clash && isClosingRun(clash[0], clash[1]) && !signal.aborted; i++) {
+        await new Promise((r) => setTimeout(r, 50))
+        clash = findClash()
+      }
+      if (signal.aborted) {
+        rollbackTask(runId, userId, runRow.prevColumnId)
+        finalize(runId, userId, 'cancelled')
+        return
+      }
+    }
     if (clash) {
       failIsolation(runId, userId, runRow, workspacePath, branch, clash[0])
       return
@@ -864,7 +934,28 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     // ходили. `touch` отмечает «использован сейчас»: без него давно живущая
     // задача теряла бы кэш на своём же ране (mtime каталога не растёт сам).
     const cachePrep = `mkdir -p ${shq(npmCacheDir)}; touch ${shq(npmCacheDir)} 2>/dev/null || true; find ${shq(npmCacheRoot)} -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} + 2>/dev/null || true`
-    const workspacePrep = strategy === 'clean' ? `rm -rf ${shq(workspacePath)}; mkdir -p ${shq(workspacePath)}` : strategy === 'fail' ? `if [ -d ${shq(workspacePath)} ] && [ -n "$(ls -A ${shq(workspacePath)} 2>/dev/null)" ]; then echo "Рабочая директория уже существует (стратегия fail)" >&2; exit 65; fi; mkdir -p ${shq(workspacePath)}` : `mkdir -p ${shq(workspacePath)}`
+    // Рабочая копия, оставшаяся от упавшего или отменённого рана ЭТОЙ задачи:
+    // новый полный ран всё равно начинает с чистой базовой ветки, поэтому
+    // приводим копию в порядок сами. Без этого шаг клонирования падал с exit 66
+    // («в репозитории есть локальные изменения»), и повторный запуск после
+    // падения требовал ручного «Откатить изменения и повторить». Незакоммиченное
+    // не пропадает: сначала `git stash`, и его всегда можно достать из копии.
+    const repoPath = `${workspacePath}/${slug}`
+    const reclaim = [
+      `  echo "Рабочая копия прошлого рана найдена — привожу её в чистое состояние"`,
+      `  git -C ${shq(repoPath)} stash push --include-untracked --message ${shq(`ci-run ${runId}`)} >/dev/null 2>&1 || true`,
+      `  git -C ${shq(repoPath)} reset --hard >/dev/null 2>&1 || true`,
+      `  git -C ${shq(repoPath)} clean -fd >/dev/null 2>&1 || true`
+    ].join('\n')
+    const guardExisting = strategy === 'fail'
+      ? `if [ -d ${shq(workspacePath)} ] && [ -n "$(ls -A ${shq(workspacePath)} 2>/dev/null)" ]; then echo "Рабочая директория уже существует (стратегия fail)" >&2; exit 65; fi; mkdir -p ${shq(workspacePath)}`
+      : `mkdir -p ${shq(workspacePath)}`
+    // Стратегия `clean` сносит папку целиком — чистить там нечего; `fail`
+    // защищает от ЧУЖОГО содержимого, но своя копия задачи под запрет не
+    // попадает, иначе повтор после падения был бы невозможен в принципе.
+    const workspacePrep = strategy === 'clean'
+      ? `rm -rf ${shq(workspacePath)}; mkdir -p ${shq(workspacePath)}`
+      : `if [ -d ${shq(`${repoPath}/.git`)} ]; then\n${reclaim}\nelse\n${guardExisting}\nfi`
     const prep = `${cachePrep}\n${workspacePrep}`
     if (!resume) {
       // Новый ран: создаём запись рабочей директории. При повторе — переиспользуем.
@@ -1124,7 +1215,9 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       finalize(runId, userId, 'failed')
     } else {
       if (modelOk) {
-        parkAwaitingMerge(runId, userId)
+        // Строго после резюме: перенос в «Готово» убирает чат задачи из списка
+        // бесед, и записанное позже резюме уехало бы в скрытый чат.
+        settleTaskColumn(runId, userId)
         queueProdRebuild(runId, userId)
       }
       finalize(runId, userId, modelOk ? 'success' : 'failed')
@@ -1187,21 +1280,29 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
   }
 
   /**
-   * Работа модели прошла, но ветка в прод-ветку не влита (шага мержа в слоте
-   * «после» нет, он упал или был пропущен) — карточке нечего делать в «Готово»:
-   * работа есть, а в прод-ветке её нет. Переносим в системную колонку
-   * `awaiting_merge`, чтобы незакрытый мерж было видно на доске. Колонку ищем по
-   * semantic type; нет её в проекте — оставляем карточку как есть.
+   * Куда уезжает карточка после УСПЕШНОГО рана — ровно один перенос (двойной
+   * `moveTask` дёргал бы доску лишним `board.update`):
+   *
+   * - шаг «Влить ветку задачи в прод-ветку» прошёл → колонка `done` («Готово»):
+   *   работа модели в прод-ветке, задача закрыта. Терминальный статус прошлого
+   *   рана при этом не переживает успешный — карточка всегда доезжает до done;
+   * - мержа не было (шага нет, упал, пропущен) → `awaiting_merge` («Ожидает
+   *   мержа»): работа есть, ветка запушена, а в прод-ветке её нет — и это должно
+   *   быть видно на доске, а не прятаться в «Готово».
+   *
+   * Колонку ищем по semantic type (подпись колонки — данные проекта); нужной нет
+   * в проекте — карточку не двигаем. Упавший и отменённый ран сюда не заходят:
+   * там карточка возвращается в `prev_column_id` (`rollbackTask`).
    *
    * Пуш ветки отдельно не проверяем: неудачный «Отправить ветку задачи в origin»
    * закрывает ран как `failed`, и до этого места мы не доходим.
    */
-  function parkAwaitingMerge(runId: string, userId: string): void {
+  function settleTaskColumn(runId: string, userId: string): void {
     const row = deps.db.getCiRunRaw(runId)
     if (!row) return
     const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
-    if (steps.some((st) => isMergeToBaseStep(st) && st.status === 'success')) return
-    const columnId = deps.db.getColumnIdBySemantic(row.projectId, 'awaiting_merge')
+    const merged = steps.some((st) => isMergeToBaseStep(st) && st.status === 'success')
+    const columnId = deps.db.getColumnIdBySemantic(row.projectId, merged ? 'done' : 'awaiting_merge')
     if (!columnId) return
     const task = deps.db.getCiTask(userId, row.projectId, row.taskId)
     if (!task || task.columnId === columnId) return
@@ -1210,16 +1311,22 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     } catch {
       return /* колонка могла исчезнуть между запросом и переносом */
     }
-    deps.db.addCiEvent({ projectId: row.projectId, runId, type: 'run.awaiting_merge', actorType: 'system', payload: { columnId } })
+    deps.db.addCiEvent({ projectId: row.projectId, runId, type: merged ? 'run.task_done' : 'run.awaiting_merge', actorType: 'system', payload: { columnId } })
     const last = steps[steps.length - 1]
     if (last) {
-      const line = deps.db.appendCiLog(runId, last.id, 'system', 'Ветка задачи в прод-ветку не влита — карточка ждёт мержа\n')
+      const line = deps.db.appendCiLog(
+        runId, last.id, 'system',
+        merged
+          ? 'Ветка задачи влита в прод-ветку — карточка переехала в «Готово»\n'
+          : 'Ветка задачи в прод-ветку не влита — карточка ждёт мержа\n'
+      )
       broadcast({ t: 'ci.log', runId, line }, userId)
     }
   }
 
   /**
-   * Обратный к `parkAwaitingMerge` случай: ветка влита в прод-ветку, но прод в
+   * Обратный к «Ожидает мержа» случай (`settleTaskColumn`): ветка влита в
+   * прод-ветку, но прод в
    * этом ране не пересобирался (шага пересборки в слоте «после» нет, он упал или
    * был пропущен) — изменения лежат в прод-ветке и до прода не доехали. Заводим
    * (или дополняем) автозадачу учёта «Пересборка прода»: саму пересборку не
