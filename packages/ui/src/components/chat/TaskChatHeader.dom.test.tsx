@@ -1,25 +1,16 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import type { TaskChatContext } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import { TaskChatHeader } from './TaskChatHeader'
+import { makeTaskChatContext } from '../../test/fixtures'
 
-function ctx(over: Partial<TaskChatContext> = {}): TaskChatContext {
-  return {
-    projectId: 'p1',
-    projectName: 'Voice Chat',
-    epic: { id: 'e1', title: 'Канбан', key: 'VC-1' },
-    story: { id: 's1', title: 'Карточка', key: 'VC-2' },
-    task: { id: 't1', title: 'Скролл', key: 'VC-3', type: 'task' },
-    columnName: 'Разработка',
-    columnSemantic: 'development',
-    agentId: 'a1',
-    agentName: 'Прод-машина',
-    workdir: '/repos/vc/3',
-    run: { id: 'run-1', status: 'running', mode: 'plan', startedAt: 1000, durationMs: null },
-    ...over
-  }
-}
+const ctx = (over: Partial<TaskChatContext> = {}): TaskChatContext =>
+  makeTaskChatContext({ story: { id: 's1', title: 'Карточка', key: 'VC-2' }, task: { id: 't1', title: 'Скролл', key: 'VC-3', type: 'task' }, workdir: '/repos/vc/3', ...over })
+
+// Свёрнутость шапки живёт в localStorage и общая для всех чатов — иначе тест,
+// который её свернул, ломал бы следующий.
+beforeEach(() => localStorage.clear())
 
 describe('TaskChatHeader', () => {
   it('показывает иерархию, этап, машину, папку и режим рана', () => {
@@ -107,5 +98,44 @@ describe('TaskChatHeader — подсветка состояния рана', ()
 
     render(<TaskChatHeader context={ctx({ run: null })} onOpenTask={vi.fn()} />)
     expect(header().className).not.toContain('taskchat--ci-')
+  })
+})
+
+describe('TaskChatHeader — сворачивание', () => {
+  it('свёрнутая шапка оставляет задачу и статус рана, но прячет крошки, мету и ленту', () => {
+    render(
+      <TaskChatHeader context={ctx()} onOpenTask={vi.fn()} renderRunFeed={(id) => <div data-testid="feed">лента {id}</div>} />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Лента рана' }))
+    expect(screen.getByTestId('feed')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть виджет задачи' }))
+    expect(screen.getByText('VC-3 Скролл')).toBeInTheDocument()
+    expect(screen.getByText('выполняется')).toBeInTheDocument()
+    expect(screen.queryByText('Voice Chat')).not.toBeInTheDocument()
+    expect(screen.queryByText('Разработка')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('feed')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Открыть задачу' })).toBeInTheDocument()
+  })
+
+  it('разворот возвращает всё, включая открытую ленту', () => {
+    render(
+      <TaskChatHeader context={ctx()} onOpenTask={vi.fn()} renderRunFeed={(id) => <div data-testid="feed">лента {id}</div>} />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Лента рана' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть виджет задачи' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть виджет задачи' }))
+    expect(screen.getByText('Voice Chat')).toBeInTheDocument()
+    expect(screen.getByTestId('feed')).toBeInTheDocument()
+  })
+
+  it('свёрнутость переживает перемонтирование (новый чат — та же шапка)', () => {
+    const { unmount } = render(<TaskChatHeader context={ctx()} onOpenTask={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть виджет задачи' }))
+    unmount()
+
+    render(<TaskChatHeader context={ctx()} onOpenTask={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Развернуть виджет задачи' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Voice Chat')).not.toBeInTheDocument()
   })
 })

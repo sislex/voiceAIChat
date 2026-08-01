@@ -28,7 +28,9 @@ const meta: Meta<typeof VoiceBar> = {
     onAddFiles: fn(),
     onRemoveAttachment: fn()
   },
-  // Панель живёт внизу колонки чата — на всю её ширину.
+  // Панель живёт внизу колонки чата — на всю её ширину. Свёрнутость композера
+  // сториз объявляет параметром `composerCollapsed`, а выставляет её витрина
+  // (декоратор в `.storybook/preview.tsx`) — состояние общее и лежит в localStorage.
   decorators: [(Story) => <div style={{ maxWidth: 860 }}><Story /></div>]
 }
 export default meta
@@ -78,6 +80,21 @@ export const WithAttachments: Story = {
     draft: 'Вот скриншот и лог рана',
     attachments: [makeUpload({ name: 'скриншот-падения.png' }), makeUpload({ name: 'ci-run-1934.log' })]
   }
+}
+
+/**
+ * Свёрнутый композер: поле убрано в строку, в ней — черновик (иначе вложения или
+ * состояние хода). На телефоне так освобождается высота под ленту сообщений.
+ */
+export const Collapsed: Story = {
+  args: { draft: 'Проверь, почему шаг npm test падает только в CI' },
+  parameters: { composerCollapsed: true }
+}
+
+/** Свёрнут во время хода: кнопка остановки остаётся в строке, а не прячется. */
+export const CollapsedWhileThinking: Story = {
+  args: { state: 'thinking' },
+  parameters: { composerCollapsed: true }
 }
 
 /** Переключатель режима: план / разработка (в простое активен, в ходе заблокирован). */

@@ -1160,6 +1160,57 @@
   align-items: center;
   gap: 12px;
 }
+/* Ручка «свернуть» — узкая полоска над композером, как у выдвижной панели. */
+.vhandle {
+  display: flex;
+  justify-content: center;
+  margin: -8px 0 -6px;
+}
+.vhandle-btn {
+  color: var(--text-dim);
+}
+/* Свёрнутый композер: строка с тем, что в нём осталось (черновик, вложения,
+   состояние хода), и кнопка остановки, если ход идёт. */
+.voicebar--collapsed {
+  padding-top: 8px;
+  padding-bottom: 10px;
+}
+.vcollapsed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.vcollapsed-peek {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+.vcollapsed-peek:hover {
+  background: var(--surface-hover);
+}
+.vcollapsed-chevron {
+  flex: none;
+  font-size: 15px;
+  line-height: 1;
+}
+.vcollapsed-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tin {
   flex: 1;
   border: 1px solid #dddbd1;
@@ -2574,8 +2625,21 @@
   .msg {
     max-width: 92%;
   }
+  /* Отступы ленты — её минимальная высота: колонка сжимает ленту первой, и на
+     коротком экране 26px сверху и снизу отнимались у последних сообщений. */
+  .scroll {
+    padding: 14px 0;
+  }
+  /* Экран ниже, чем на десктопе: шапке задачи достаётся меньше. */
+  .taskchat {
+    max-height: 40%;
+  }
   .voicebar {
     padding: 10px 12px 14px 12px;
+  }
+  .voicebar--collapsed {
+    padding-top: 8px;
+    padding-bottom: 10px;
   }
 }
 
@@ -3952,20 +4016,33 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Ран ждёт ответа модели: та же кнопка, но зовёт на себя внимание. */
 .jcard-ci-attention { border-color: var(--ci-progress); color: var(--ci-progress); }
 
-/* Шапка чата, привязанного к задаче канбана */
-.taskchat { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--surface); }
-.taskchat-top { display: flex; align-items: center; gap: 8px; }
+/* Шапка чата, привязанного к задаче канбана.
+   Потолок высоты обязателен: шапка — обычный элемент колонки .main, у которой
+   ровно высота экрана. Без него раскрытая лента рана растягивала шапку, лента
+   сообщений садилась на свой минимум, а композер уезжал за нижний край — на
+   телефоне у .app стоит overflow: hidden, и достать его было нечем. Проценты
+   считаются от .main (высота у неё определённая), поэтому в сториз и тестах,
+   где шапка стоит одна, потолок просто не применяется. */
+.taskchat { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--surface); max-height: 45%; min-height: 0; }
+.taskchat-top { display: flex; align-items: center; gap: 8px; flex: none; }
 .taskchat-crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
 .taskchat-crumb { color: var(--text-dim); }
 .taskchat-sep { color: var(--text-dim); opacity: 0.6; }
 .taskchat-task { font-size: 13px; }
 .taskchat-open, .taskchat-feed-toggle { border: 1px solid var(--border-soft); background: none; color: inherit; border-radius: 6px; padding: 3px 8px; font-size: 12px; cursor: pointer; }
 .taskchat-open:hover, .taskchat-feed-toggle:hover { background: rgba(128, 128, 128, 0.12); }
-.taskchat-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.taskchat-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none; }
 .taskchat-dim { font-size: 11px; color: var(--text-dim); }
 .taskchat-dir { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .taskchat-feed-toggle { margin-left: auto; }
-.taskchat-feed { max-height: 45vh; overflow: auto; padding: 8px 0 2px; }
+/* Лента забирает остаток шапки и скроллится внутри себя — своей max-height в
+   vh у неё быть не может: vh на мобильном браузере считается от «большого»
+   экрана (без адресной строки), а колонка живёт в 100dvh, и лента вылезала. */
+.taskchat-feed { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 0 2px; }
+/* Свёрнутая шапка — одна строка: ключ задачи, статус рана и «Открыть задачу». */
+.taskchat-collapse { flex: none; }
+.taskchat--collapsed .taskchat-crumbs { flex-wrap: nowrap; overflow: hidden; }
+.taskchat--collapsed .taskchat-task { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Лента рана (RunFeed) */
 .ci-runfeed { display: flex; flex-direction: column; gap: 8px; }

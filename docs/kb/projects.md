@@ -280,7 +280,9 @@ CI-настройки живут в самих `projects` (`ci_base_branch`, `ci
 над лентой сообщений: крошки Проект/Эпик/Стори/Задача, лозенг этапа, режим и
 статус рана, живой таймер работы, машина и папка, «Открыть задачу»
 (`#/projects/:id/task/:taskId` → `ProjectBoard initialOpenTaskId`) и разворот в
-ленту рана (`RunFeed`) по клику. Источник — `GET /api/conversations/:id/task-context`
+ленту рана (`RunFeed`) по клику. Сама шапка сворачивается в одну строку (ключ
+задачи + статус рана), как и композер внизу — детали в
+[ui.md](ui.md), раздел «Свёрнутые панели чата». Источник — `GET /api/conversations/:id/task-context`
 (`db.getTaskChatContext`, канал `conversations:taskContext`), в сторе —
 `taskChatContext`. Ключи задач (`issueKey`/`projectKey`) переехали из
 `kanbanMeta.tsx` в `packages/shared/src/projects.ts`, потому что их считает и сервер.
