@@ -4,6 +4,7 @@ updated: 2026-08-01
 checked: dc73c33
 areas:
   - apps/server/src/server.ts
+  - apps/llm-runner/src/server.ts
   - apps/server/src/session.ts
   - apps/server/src/turns.ts
   - packages/ui/src/index.ts
@@ -28,8 +29,8 @@ apps/server (Fastify)
    ├── SQLite           better-sqlite3, WAL
    ├── whisper-cli      распознавание (spawn)
    ├── piper / say      озвучка (spawn)
-   └── LLM client       Claude/Codex: локальный spawn ИЛИ HTTP → /v1/run
-      │
+   └── LLM client       Claude/Codex: локальный spawn (код — apps/llm-runner)
+      │                  ИЛИ HTTP → /v1/run
       ├──────────────► контейнер-исполнитель LLM (claude/codex CLI, NDJSON)
       │
       ▲  WebSocket, авторизация токеном машины
@@ -57,6 +58,13 @@ apps/agent на машине пользователя: exec, файловые о
 клиент получает снапшот незакрытых ходов (`claude.active` с накопленным
 частичным текстом). Per-connection состояние (микрофон, озвучка, подписки на
 tail/PTY) — в `apps/server/src/session.ts`.
+
+**Спавн CLI выделен в отдельный воркспейс.** Код запуска `claude`/`codex`
+(`claudeCli.ts`, `codexCli.ts`, `childKill.ts`, профили CLI) живёт в
+`apps/llm-runner` — исполнителе с собственным HTTP (`/v1/run`). Сервер может
+либо импортировать эти классы напрямую (`@voicechat/llm-runner/cli`) и спавнить
+CLI локально, либо переключиться на `RemoteLlmClient` и ходить в удалённый
+исполнитель по HTTP; детали — [features/llm-runners.md](features/llm-runners.md).
 
 **Сборка сервера — `buildServer()` отдельно от `listen()`** (`server.ts` vs
 `index.ts`), и все внешние зависимости инъектируются через `BuildOptions`

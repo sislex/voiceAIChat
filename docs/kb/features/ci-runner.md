@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-01
-checked: 36359d6
+checked: 9306637
 areas:
   - packages/shared/src/ci.ts
   - apps/server/src/ci
@@ -205,7 +205,7 @@ cwd/env собираются с shell-escape (пользовательский �
   `execute` навсегда висел на этом `await`, ран оставался `running`, а очередь
   проекта (`projectChains`) стояла до перезапуска сервера. `modelWork` возвращает
   `{ ok: false, cancelled: true }`, `attemptFix` выходит из fix-loop.
-- **Процесс CLI** — `killCliChild` (`claude/childKill.ts`, общий для claude и
+- **Процесс CLI** — `killCliChild` (`apps/llm-runner/src/cli/childKill.ts`, общий для claude и
   codex): SIGTERM, через 5 с SIGKILL. Заодно обрывается MCP-запрос remote-bash,
   и его команда на машине отменяется по `close` ответа.
 - **Дерево процессов на машине** — `exec.cancel` у агента снимает **группу**
@@ -623,7 +623,7 @@ UI — `components/ci/CiReport.tsx` в карточке задачи (`TaskModal
 команда мимо списка инструментов модели (а `npm ci` в нём), зелёный со второй
 попытки → слот «после» доходит до прод-контейнера, три попытки впустую →
 `failed` с диагнозами, инфра-сбой мимо цикла, `--resume` в fix-loop и длинный
-хвост лога; `claude/childKill.test.ts` — SIGTERM→SIGKILL; `apps/agent/src/execKill.test.ts` —
+хвост лога; `apps/llm-runner/src/cli/childKill.test.ts` — SIGTERM→SIGKILL; `apps/agent/src/execKill.test.ts` —
 снятие дерева процессов; `interactions.test.ts`: пауза на вопрос,
 409 на повторный ответ, бюджет уточнений, гейт плана approved/rework/отмена,
 разовый оверрайд режима; в `runManager.test.ts` — резюме в чате: сообщение с меткой

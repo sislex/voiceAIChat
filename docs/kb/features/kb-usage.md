@@ -3,7 +3,7 @@ id: kb-usage
 title: Использование базы знаний (телеметрия и панель)
 kind: feature
 updated: 2026-08-01
-checked: 8ded752
+checked: f715b54
 areas:
   - apps/server/src/kb/usage.ts
   - apps/server/src/kb/kbMcp.ts
@@ -123,4 +123,4 @@ Claude получает `--mcp-config` с сервером `kb` и общий `-
 
 ## Тесты
 
-Сервер: `db/database.kbUsage.test.ts` (монотонность `seq`, агрегаты, отсутствие дублирования сумм, каскад, изоляция), `kb/usage.test.ts` (pending с тем же id, трекер не выбрасывает при сломанной БД), `kb/kbMcp.test.ts` (403, `tools/list`, `deliveredChars === text.length`, кап, просроченный токен, `sectionOf`), `kb/usageRoutes.test.ts` (200/404, `lastSeq`), секции KB в `turns.test.ts`, форма аргументов в `claude/claudeCli.test.ts` и `codex/codexCli.test.ts`, маршрутизация кадра в `session.test.ts`. UI: `lib/kbUsage.test.ts`, `components/kb/KbUsagePanel.dom.test.tsx`, `store/voiceStore.kb.test.ts`, дополнения в `ChatColumn.dom.test.tsx`, `MessageMeta.dom.test.tsx`, `ConversationSettings.dom.test.tsx`, `App.commands.dom.test.tsx`, `App.pages.dom.test.tsx`, сториз `KbUsagePanel.stories.tsx`. База знаний в ране: `ci/modelHooks.test.ts` (форма запроса по режимам, авто-контекст из полей задачи, снятие токена при отмене работы модели и fix-loop), `ci/runManager.test.ts` (обращения с `ci_run_id`, строка БЗ в резюме, ран не падает на сломанной базе, 200/404 у отчётов), `db/database.kbUsage.test.ts` (колонки и агрегаты по ране и задаче), UI — `ProjectSettings.dom.test.tsx`, дополнения в `RunFeed.dom.test.tsx`, `TaskModal.dom.test.tsx` и `KbUsagePanel.dom.test.tsx`.
+Сервер: `db/database.kbUsage.test.ts` (монотонность `seq`, агрегаты, отсутствие дублирования сумм, каскад, изоляция), `kb/usage.test.ts` (pending с тем же id, трекер не выбрасывает при сломанной БД), `kb/kbMcp.test.ts` (403, `tools/list`, `deliveredChars === text.length`, кап, просроченный токен, `sectionOf`), `kb/usageRoutes.test.ts` (200/404, `lastSeq`), секции KB в `turns.test.ts`, форма аргументов в `apps/llm-runner/src/cli/claudeCli.test.ts` и `codexCli.test.ts`, маршрутизация кадра в `session.test.ts`. UI: `lib/kbUsage.test.ts`, `components/kb/KbUsagePanel.dom.test.tsx`, `store/voiceStore.kb.test.ts`, дополнения в `ChatColumn.dom.test.tsx`, `MessageMeta.dom.test.tsx`, `ConversationSettings.dom.test.tsx`, `App.commands.dom.test.tsx`, `App.pages.dom.test.tsx`, сториз `KbUsagePanel.stories.tsx`. База знаний в ране: `ci/modelHooks.test.ts` (форма запроса по режимам, авто-контекст из полей задачи, снятие токена при отмене работы модели и fix-loop), `ci/runManager.test.ts` (обращения с `ci_run_id`, строка БЗ в резюме, ран не падает на сломанной базе, 200/404 у отчётов), `db/database.kbUsage.test.ts` (колонки и агрегаты по ране и задаче), UI — `ProjectSettings.dom.test.tsx`, дополнения в `RunFeed.dom.test.tsx`, `TaskModal.dom.test.tsx` и `KbUsagePanel.dom.test.tsx`.
