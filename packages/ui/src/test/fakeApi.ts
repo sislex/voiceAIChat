@@ -665,9 +665,11 @@ import type {
   CiInteraction,
   CiLlmConfig,
   CiRunStep,
+  CiRunReport,
+  CiTaskReport,
   CiLogLine
 } from '@shared/ci'
-import { DEFAULT_CI_GLOBAL_SETTINGS, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
+import { DEFAULT_CI_GLOBAL_SETTINGS, DEFAULT_CI_LLM_CONFIG, EMPTY_CI_USAGE_TOTALS, ciTaskTotals } from '@shared/ci'
 
 export interface FakeCi extends RendererCiBridge {
   /** Тест-хелперы: прямой прогон realtime-событий. */
@@ -750,6 +752,23 @@ export function createFakeCi(): FakeCi {
     createdAt: now()
   })
 
+  /** Отчёт по рану из фейковой ленты: шаги и длительности есть, расход пуст. */
+  const runReport = (rid: string): CiRunReport => {
+    const d = runs.get(rid)
+    const run = d?.run ?? mkRun('p', 't')
+    return {
+      runId: run.id, projectId: run.projectId, taskId: run.taskId, status: run.status, mode: run.mode,
+      provider: run.llmProvider, model: run.llmModel, startedAt: run.startedAt, finishedAt: run.finishedAt,
+      durationMs: run.durationMs, createdAt: run.createdAt, fixAttempts: d?.fixAttempts.length ?? 0,
+      totals: { ...EMPTY_CI_USAGE_TOTALS },
+      steps: (d?.steps ?? []).map((s) => ({
+        id: s.id, parentStepId: s.parentStepId, title: s.title, slot: s.slot, kind: s.kind,
+        initiatedBy: s.initiatedBy, status: s.status, attempt: s.attempt, fixedByModel: s.fixedByModel,
+        exitCode: s.exitCode, durationMs: s.durationMs, usage: null
+      }))
+    }
+  }
+
   const bridge: FakeCi = {
     listCommands: async () => commands.map((c) => ({ ...c })),
     getCommand: async (cid) => ({ ...commands.find((c) => c.id === cid)! }),
@@ -793,6 +812,13 @@ export function createFakeCi(): FakeCi {
       sections: [],
       recent: []
     }),
+    // Расхода у фейка тоже нет — ходов модели он не делает; шаги и время берём
+    // из его же ленты, чтобы отчёт было на чём открыть.
+    getRunReport: async (rid) => runReport(rid),
+    getTaskReport: async (projectId, taskId) => {
+      const list = [...runs.values()].filter((d) => d.run.taskId === taskId).map((d) => runReport(d.run.id))
+      return { projectId, taskId, runs: list, ...ciTaskTotals(list) } as CiTaskReport
+    },
     cancelRun: async () => ({ ok: true }),
     retryRun: async (rid) => { const d = runs.get(rid)!; return await bridge.startRun(d.run.projectId, d.run.taskId) },
     retryRunFromStep: async (runId: string) => ({ id: runId } as unknown as CiRun),

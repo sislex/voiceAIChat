@@ -22,7 +22,9 @@ import type {
   CiRunConclusion,
   CiLogLine,
   CiCommandMetric,
-  CiModelWorkMetric
+  CiModelWorkMetric,
+  CiRunReport,
+  CiTaskReport
 } from '@shared/ci'
 import type { Message } from '@shared/types'
 import type { KbRunUsageReport, KbTaskUsageReport } from '@shared/kb'
@@ -82,6 +84,10 @@ export interface RendererCiRest {
   getRunKbUsage(runId: string): Promise<KbRunUsageReport>
   /** Агрегат по всем ранам задачи (блок в модалке задачи). */
   getTaskKbUsage(projectId: string, taskId: string): Promise<KbTaskUsageReport>
+  /** Отчёт по расходу модели и шагам одного рана. */
+  getRunReport(runId: string): Promise<CiRunReport>
+  /** Отчёт по всем ранам задачи с итогом (раздел «Отчёт» карточки). */
+  getTaskReport(projectId: string, taskId: string): Promise<CiTaskReport>
   cancelRun(runId: string): Promise<{ ok: boolean }>
   retryRun(runId: string): Promise<CiRun>
   retryRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun>

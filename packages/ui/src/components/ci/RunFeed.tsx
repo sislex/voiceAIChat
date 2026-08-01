@@ -19,7 +19,7 @@ import { ErrorState } from '../ui/ErrorState'
 import { loadView, type LoadStatus } from '../../lib/loadState'
 import { useCommandSource } from '../../lib/useCommands'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
-import { useKbUsageReport } from '../../lib/useKbUsageReport'
+import { useRemoteReport } from '../../lib/useRemoteReport'
 
 export interface RunFeedCache {
   detail: CiRunDetail | null
@@ -116,7 +116,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   const running = run ? !isTerminalCiStatus(run.status) : false
   // Отчёт по БЗ читаем один раз на ран и ещё раз, когда ран завершился: пока он
   // идёт, обращения копятся, и промежуточные цифры быстро устаревают.
-  const kbUsage = useKbUsageReport(
+  const kbUsage = useRemoteReport(
     () => window.ci?.getRunKbUsage(runId),
     [runId, running]
   )

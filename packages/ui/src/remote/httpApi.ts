@@ -22,6 +22,8 @@ import type {
   CiInteraction,
   CiRun,
   CiRunDetail,
+  CiRunReport,
+  CiTaskReport,
   CiLogLine,
   CiConsoleExecResult
 } from '@shared/ci'
@@ -329,6 +331,8 @@ export function createCiRest(httpBase: string): RendererCiRest {
     getRunLog: (runId) => req<CiLogLine[]>(REST.ciRunLog(runId)),
     getRunKbUsage: (runId) => req<KbRunUsageReport>(REST.ciRunKbUsage(runId)),
     getTaskKbUsage: (projectId, taskId) => req<KbTaskUsageReport>(REST.taskKbUsage(projectId, taskId)),
+    getRunReport: (runId) => req<CiRunReport>(REST.ciRunReport(runId)),
+    getTaskReport: (projectId, taskId) => req<CiTaskReport>(REST.taskCiReport(projectId, taskId)),
     cancelRun: (runId) => req<{ ok: boolean }>(REST.ciRunCancel(runId), { method: 'POST' }),
     retryRun: (runId) => req<CiRun>(REST.ciRunRetry(runId), { method: 'POST' }),
     retryRunFromStep: (runId, selection) => req<CiRun>(REST.ciRunRetryFromStep(runId), { method: 'POST', body: JSON.stringify(selection ?? {}) }),

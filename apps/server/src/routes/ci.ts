@@ -164,6 +164,15 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     }
   )
 
+  // Отчёт по расходу модели: один ран (лента) и все раны задачи (карточка).
+  // Гейт тот же, что у kb-usage: чужому 404, а не пустой отчёт.
+  app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId/report', async (req, reply) =>
+    db.ciRunReport(uid(req), req.params.runId) ?? nf(reply)
+  )
+  app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/report', async (req, reply) =>
+    db.ciTaskReport(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
+  )
+
   app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/cancel', async (req, reply) => ({ ok: ci.cancel(uid(req), req.params.runId) }))
   app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/retry', async (req, reply) => {
     const detail = db.getCiRun(uid(req), req.params.runId)

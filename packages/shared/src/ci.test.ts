@@ -12,7 +12,14 @@ import {
   DEFAULT_CI_LLM_CONFIG,
   isActiveCiStatus,
   isTerminalCiStatus,
-  isVerificationCommand
+  isVerificationCommand,
+  ciTaskTotals,
+  ciUsageTotals,
+  sumCiUsageTotals,
+  EMPTY_CI_USAGE_TOTALS,
+  type CiRunReport,
+  type CiRunUsage,
+  type CiUsageTotals
 } from './ci'
 
 describe('clarifyBudget', () => {
@@ -145,5 +152,89 @@ describe('isVerificationCommand', () => {
     expect(isVerificationCommand({ name: 'Сборка', script: 'npm run build' })).toBe(false)
     expect(isVerificationCommand({ name: 'Клонировать репозиторий', script: 'git clone --branch "$BASE_BRANCH" "$GIT_URL"' })).toBe(false)
     expect(isVerificationCommand({ name: 'Обновить прод-контейнер', script: 'docker compose up --build -d' })).toBe(false)
+  })
+})
+
+// Агрегаторы расхода модели: числа отчёта по рану и по задаче считаются здесь,
+// а сервер и UI только показывают их. Поэтому тесты — на числах, без моков.
+describe('ciUsageTotals', () => {
+  const row = (over: Partial<CiRunUsage> = {}): CiRunUsage => ({
+    id: 'u1', runId: 'r1', stepId: 's1', kind: 'model_work', provider: 'claude', model: 'sonnet',
+    inputTokens: 100, outputTokens: 200, cacheReadTokens: 300, cacheCreationTokens: 400,
+    costUsd: null, durationMs: 1000, numTurns: 1, at: 1, ...over
+  })
+
+  it('пустой список — нули и отсутствующая стоимость', () => {
+    expect(ciUsageTotals([])).toEqual(EMPTY_CI_USAGE_TOTALS)
+  })
+
+  it('складывает токены, запросы и время работы модели', () => {
+    const t = ciUsageTotals([row(), row({ id: 'u2', durationMs: 500, costUsd: 0.5 })])
+    expect(t.requests).toBe(2)
+    expect(t.inputTokens).toBe(200)
+    expect(t.outputTokens).toBe(400)
+    expect(t.cacheReadTokens).toBe(600)
+    expect(t.cacheCreationTokens).toBe(800)
+    expect(t.tokens).toBe(2000)
+    expect(t.modelActiveMs).toBe(1500)
+  })
+
+  it('стоимость от CLI берётся как есть — итог точный', () => {
+    const t = ciUsageTotals([row({ costUsd: 0.25 }), row({ id: 'u2', costUsd: 0.75 })])
+    expect(t.costUsd).toBeCloseTo(1, 10)
+    expect(t.costEstimated).toBe(false)
+  })
+
+  it('без стоимости от CLI считает оценку по прайсу и помечает итог', () => {
+    const t = ciUsageTotals([row({ model: 'sonnet' })])
+    // sonnet: 100·3 + 200·15 + 300·0.3 + 400·3.75 за 1M токенов.
+    expect(t.costUsd).toBeCloseTo((100 * 3 + 200 * 15 + 300 * 0.3 + 400 * 3.75) / 1e6, 12)
+    expect(t.costEstimated).toBe(true)
+  })
+
+  it('неизвестная модель: слагаемого нет, но итог помечен приблизительным', () => {
+    const t = ciUsageTotals([row({ model: 'своя-модель' }), row({ id: 'u2', costUsd: 2 })])
+    expect(t.costUsd).toBe(2)
+    expect(t.costEstimated).toBe(true)
+  })
+
+  it('нет ни одной посчитанной стоимости — null, а не ноль', () => {
+    expect(ciUsageTotals([row({ model: '' })]).costUsd).toBeNull()
+  })
+
+  it('ход без длительности не ломает время работы модели', () => {
+    expect(ciUsageTotals([row({ durationMs: null })]).modelActiveMs).toBe(0)
+  })
+})
+
+describe('sumCiUsageTotals и ciTaskTotals', () => {
+  const totals = (over: Partial<CiUsageTotals> = {}): CiUsageTotals => ({
+    ...EMPTY_CI_USAGE_TOTALS, requests: 1, inputTokens: 10, outputTokens: 20, tokens: 30,
+    costUsd: 1, modelActiveMs: 100, ...over
+  })
+
+  it('складывает итоги и наследует пометку оценки', () => {
+    const s = sumCiUsageTotals([totals(), totals({ costEstimated: true, costUsd: 0.5 })])
+    expect(s.requests).toBe(2)
+    expect(s.tokens).toBe(60)
+    expect(s.costUsd).toBeCloseTo(1.5, 10)
+    expect(s.costEstimated).toBe(true)
+    expect(s.modelActiveMs).toBe(200)
+  })
+
+  it('сумма пустого списка — нули без стоимости', () => {
+    expect(sumCiUsageTotals([])).toEqual(EMPTY_CI_USAGE_TOTALS)
+  })
+
+  it('итог по задаче складывает раны, включая ран без расхода', () => {
+    const run = (over: Partial<CiRunReport> = {}): CiRunReport => ({
+      runId: 'r1', projectId: 'p1', taskId: 't1', status: 'success', mode: 'development',
+      provider: 'claude', model: 'opus', startedAt: 1, finishedAt: 2, durationMs: 5000, createdAt: 1,
+      fixAttempts: 0, totals: totals(), steps: [], ...over
+    })
+    const r = ciTaskTotals([run(), run({ runId: 'r2', durationMs: null, totals: { ...EMPTY_CI_USAGE_TOTALS } })])
+    expect(r.durationMs).toBe(5000)
+    expect(r.totals.requests).toBe(1)
+    expect(r.totals.costUsd).toBe(1)
   })
 })

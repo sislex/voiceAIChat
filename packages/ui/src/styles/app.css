@@ -5044,6 +5044,28 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .kbu-brief__list { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
 .kbu-brief__list li { display: flex; align-items: baseline; gap: 6px; }
 .kbu-brief__list .kbu-doc { text-decoration: none; }
+/* Раздел «Отчёт» карточки задачи: плитки итогов + таблица шагов рана. */
+.ci-report { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.ci-report__head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ci-report__note, .ci-report__empty { margin: 0; font-size: 12px; color: var(--text-dim); }
+.ci-report__runs { display: flex; flex-wrap: wrap; gap: 4px; }
+.ci-report__run { border: 1px solid var(--border); border-radius: 99px; padding: 2px 9px; font: inherit; font-size: 12px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.ci-report__run.is-active { border-color: var(--accent); color: var(--text); }
+.ci-report__tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
+.ci-report-tile { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
+.ci-report-tile__label { font-size: 11px; color: var(--text-dim); }
+.ci-report-tile__value { font-size: 15px; color: var(--text); }
+.ci-report-tile__note { font-size: 11px; color: var(--text-dim); }
+.ci-report-steps { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ci-report__caption { display: flex; align-items: baseline; gap: 8px; padding-bottom: 4px; font-size: 12px; color: var(--text-dim); text-align: left; }
+.ci-report__link { border: none; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+.ci-report-steps th, .ci-report-steps td { padding: 3px 6px 3px 0; text-align: left; font-weight: 400; vertical-align: top; }
+.ci-report-steps thead th { color: var(--text-dim); font-size: 11px; border-bottom: 1px solid var(--border); }
+.ci-report-steps tbody th { color: var(--text); }
+.ci-report-step { display: inline-flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+.ci-report-steps tbody td { color: var(--text-dim); white-space: nowrap; }
+.ci-report-row--nested > th { padding-left: 14px; }
+
 /* Метка обращения из CI-рана в ленте панели: путь в ленту этого рана. */
 .kbu-ev__run { margin-left: 6px; border: none; background: var(--ci-progress-bg); color: var(--ci-progress); border-radius: 99px; padding: 0 7px; font: inherit; font-size: 11px; cursor: pointer; }
 

@@ -14,10 +14,14 @@ import type {
   CiRun,
   CiRunConclusion,
   CiRunDetail,
+  CiRunReport,
+  CiRunReportStep,
   CiRunStep,
+  CiTaskReport,
+  CiUsageTotals,
   CiWorkspaceReportItem
 } from '@shared/ci'
-import { DEFAULT_CI_GLOBAL_SETTINGS, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
+import { DEFAULT_CI_GLOBAL_SETTINGS, DEFAULT_CI_LLM_CONFIG, ciTaskTotals } from '@shared/ci'
 import type { CiMetrics } from '../../remote/ciBridge'
 import type { RunFeedCache } from '../../components/ci/RunFeed'
 
@@ -503,4 +507,79 @@ export function planGateRunCache(): RunFeedCache {
     log: [],
     conclusion: null
   }
+}
+
+// --- Отчёт по расходу модели ---------------------------------------------
+
+/** Итоги расхода: по умолчанию — точная стоимость от CLI. */
+export function makeUsageTotals(over: Partial<CiUsageTotals> = {}): CiUsageTotals {
+  return {
+    requests: 4,
+    inputTokens: 12_000,
+    outputTokens: 3400,
+    cacheReadTokens: 180_000,
+    cacheCreationTokens: 24_000,
+    tokens: 219_400,
+    costUsd: 1.84,
+    costEstimated: false,
+    modelActiveMs: 640_000,
+    ...over
+  }
+}
+
+/** Шаг отчёта: та же строка, что в ленте, плюс расход ходов модели. */
+export function makeReportStep(over: Partial<CiRunReportStep> = {}): CiRunReportStep {
+  return {
+    id: 's1',
+    parentStepId: null,
+    title: 'npm ci',
+    slot: 'before_model',
+    kind: 'command',
+    initiatedBy: 'system',
+    status: 'success',
+    attempt: 1,
+    fixedByModel: false,
+    exitCode: 0,
+    durationMs: 42_000,
+    usage: null,
+    ...over
+  }
+}
+
+/** Отчёт по успешному рану: команды слотов, работа модели и резюме. */
+export function makeRunReport(over: Partial<CiRunReport> = {}): CiRunReport {
+  return {
+    runId: 'run-1',
+    projectId: 'p1',
+    taskId: 't1',
+    status: 'success',
+    mode: 'development',
+    provider: 'claude',
+    model: 'opus',
+    startedAt: RUN_T0,
+    finishedAt: RUN_T0 + 720_000,
+    durationMs: 720_000,
+    createdAt: RUN_T0,
+    fixAttempts: 1,
+    totals: makeUsageTotals(),
+    steps: [
+      makeReportStep(),
+      makeReportStep({ id: 's2', title: 'npm run typecheck', durationMs: 96_000, status: 'failed', exitCode: 1, attempt: 2, fixedByModel: true, usage: makeUsageTotals({ requests: 1, tokens: 42_000, costUsd: 0.31, modelActiveMs: 61_000 }) }),
+      makeReportStep({
+        id: 'model-1', title: 'Работа модели', slot: null, kind: 'model_work', durationMs: 540_000,
+        usage: makeUsageTotals({ requests: 2, tokens: 160_000, costUsd: 1.4, modelActiveMs: 520_000 })
+      }),
+      makeReportStep({ id: 'model-cmd-1', parentStepId: 'model-1', title: 'Установить зависимости', kind: 'model_command', initiatedBy: 'model', durationMs: 18_000 }),
+      makeReportStep({
+        id: 'sum-1', title: 'Резюме модели', slot: null, kind: 'model_summary', durationMs: 24_000,
+        usage: makeUsageTotals({ requests: 1, tokens: 17_400, costUsd: 0.13, modelActiveMs: 59_000 })
+      })
+    ],
+    ...over
+  }
+}
+
+/** Отчёт по задаче: один ран или несколько (повтор после падения). */
+export function makeTaskReport(runs: CiRunReport[] = [makeRunReport()]): CiTaskReport {
+  return { projectId: 'p1', taskId: 't1', runs, ...ciTaskTotals(runs) }
 }

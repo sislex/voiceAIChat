@@ -5,7 +5,7 @@
 import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import { appendQuestionsHint, clarifyBudget, DEFAULT_CI_CLAUDE_MODEL, isVerificationCommand, parseQuestions } from '@voicechat/shared'
-import type { CiRunMode, KbContextMode } from '@voicechat/shared'
+import type { CiRunMode, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import { kbToolBroker, kbRunDirective, type KbToolEntry } from '../kb/kbMcp.js'
 import { buildKbAutoContext } from '../kb/autoContext.js'
@@ -64,6 +64,17 @@ const KB_QUERY_CHARS = 1200
  */
 const MAX_MODEL_TURNS = 40
 
+interface TurnResult {
+  ok: boolean
+  text: string
+  sessionId: string | null
+  cancelled?: boolean
+  /** Итог хода из result-события CLI: стоимость, токены, длительность, модель. */
+  meta?: TurnMeta
+  /** Последние накопленные счётчики токенов (приходят и у прерванного хода). */
+  usage?: TurnUsage
+}
+
 /**
  * Один ход модели как Promise: собирает текст, стримит активность в лог шага и
  * запоминает id сессии CLI — по нему следующий ход продолжает тот же диалог
@@ -80,17 +91,19 @@ function runTurn(
   onLog: (stream: 'stdout' | 'system', chunk: string) => void,
   signal: AbortSignal,
   abortNote = 'Ран отменён — работа модели остановлена.\n'
-): Promise<{ ok: boolean; text: string; sessionId: string | null; cancelled?: boolean }> {
+): Promise<TurnResult> {
   if (signal.aborted) return Promise.resolve({ ok: false, text: '', sessionId: null, cancelled: true })
   return new Promise((resolve) => {
     let text = ''
     let sessionId: string | null = null
+    let meta: TurnMeta | undefined
+    let usage: TurnUsage | undefined
     let settled = false
     const finish = (r: { ok: boolean; cancelled?: boolean }): void => {
       if (settled) return
       settled = true
       signal.removeEventListener('abort', onAbort)
-      resolve({ ...r, text, sessionId })
+      resolve({ ...r, text, sessionId, meta, usage })
     }
     const onAbort = (): void => {
       // Убиваем процесс CLI и закрываем ход сами: клиент после cancel() молчит.
@@ -110,12 +123,20 @@ function runTurn(
       onSession: (sid) => {
         sessionId = sid
       },
-      onDone: () => finish({ ok: true }),
+      onDone: (_full, m) => {
+        meta = m
+        finish({ ok: true })
+      },
       onError: (m) => {
         onLog('system', `Ошибка модели: ${m}\n`)
         finish({ ok: false })
       },
-      onActivity: (e) => onLog('system', `[${e.kind}] ${e.summary}\n`)
+      onActivity: (e) => onLog('system', `[${e.kind}] ${e.summary}\n`),
+      // Счётчики кумулятивны: держим последние — у прерванного хода это всё,
+      // что о его расходе вообще известно.
+      onUsage: (u) => {
+        usage = u
+      }
     }
     const handle: LlmHandle | undefined = claude.send(req, handlers)
     // Отмена могла прийти пока клиент стартовал — тогда гасим ход сразу.
@@ -183,6 +204,42 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   const clientFor = (ctx: CiModelContext): LlmClient => ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
   const modelFor = (ctx: CiModelContext): string => ctx.run.llmProvider === 'codex' ? ctx.run.llmModel : (ctx.run.llmModel || DEFAULT_CI_CLAUDE_MODEL)
   const kbBroker = deps.kbTool ?? kbToolBroker
+
+  /**
+   * Расход одного хода CLI — строка `ci_run_usage` с привязкой к рану и шагу.
+   * Один ход = один «запрос к модели», поэтому пишем на каждом выходе `runTurn`:
+   * работа модели, резюме, попытка fix-loop и актуализация базы знаний идут
+   * через него же. Стоимость сохраняем только ту, что сообщил CLI; когда её нет,
+   * отчёт оценит сам по прайсу и пометит «≈».
+   *
+   * Не бросает никогда: расход — метрика, и ронять ей ран нельзя (как и
+   * телеметрии БЗ). Ход, о котором CLI не сказал ничего (мгновенная отмена,
+   * клиент без usage), строкой не становится — иначе отчёт считал бы запросы,
+   * которых не было видно.
+   */
+  function recordUsage(ctx: CiModelContext, kind: CiUsageKind, stepId: string | null, turn: TurnResult): void {
+    const u: TurnUsage = turn.meta ?? turn.usage ?? {}
+    const tokens = (u.inputTokens ?? 0) + (u.outputTokens ?? 0) + (u.cacheReadTokens ?? 0) + (u.cacheCreationTokens ?? 0)
+    if (!turn.meta && tokens === 0) return
+    try {
+      deps.db.addCiRunUsage({
+        runId: ctx.run.id,
+        stepId,
+        kind,
+        provider: ctx.run.llmProvider,
+        model: turn.meta?.model || modelFor(ctx),
+        inputTokens: u.inputTokens ?? 0,
+        outputTokens: u.outputTokens ?? 0,
+        cacheReadTokens: u.cacheReadTokens ?? 0,
+        cacheCreationTokens: u.cacheCreationTokens ?? 0,
+        costUsd: turn.meta?.costUsd ?? null,
+        durationMs: turn.meta?.durationMs ?? null,
+        numTurns: turn.meta?.numTurns ?? null
+      })
+    } catch {
+      /* метрика расхода не имеет права уронить ран */
+    }
+  }
 
   /**
    * Режим БЗ рана — снимок настройки ПРОЕКТА на старте (`ci_runs.kb_context_mode`),
@@ -366,6 +423,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
               : {})
           }
           const r = await runTurn(clientFor(ctx), req, log, ctx.signal)
+          recordUsage(ctx, 'model_work', ctx.parentStepId, r)
           // Отмена рана: не «ошибка модели» — ран закрывается как cancelled.
           if (r.cancelled || ctx.signal.aborted) return { ok: false, cancelled: true }
           if (!r.ok) return { ok: false }
@@ -438,6 +496,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         ...kbFields
       }
       const r = await runTurn(clientFor(ctx), req, () => {}, ctx.signal)
+      recordUsage(ctx, 'summary', ctx.parentStepId, r)
       return r.text.trim() || 'Резюме недоступно.'
     })
   }
@@ -484,6 +543,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         }
         return runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctx.signal)
       })
+      // Расход правки пишем на упавший шаг: fix-loop живёт внутри него.
+      recordUsage(ctx, 'fix', ctx.parentStepId, turn)
       // Между попытками id обновляем: следующая правка идёт тем же диалогом.
       if (turn.sessionId) {
         sessionId = turn.sessionId
@@ -582,7 +643,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       timedOut = true
       ctl.abort()
     }, deps.kbTimeoutMs ?? KB_UPDATE_TIMEOUT_MS)
-    let turn: { ok: boolean; text: string }
+    let turn: TurnResult
     try {
       turn = await runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctl.signal, 'Шаг актуализации базы знаний остановлен.\n')
     } catch (err) {
@@ -591,6 +652,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       clearTimeout(timer)
       ctx.signal.removeEventListener('abort', onAbort)
     }
+    recordUsage(ctx, 'kb_update', ctx.parentStepId, turn)
     if (timedOut) return { ok: false, message: 'Шаг не уложился в отведённое время — база знаний не обновлена' }
     if (ctx.signal.aborted) return cancelled
     if (!turn.ok) return { ok: false, message: 'Модель не ответила — база знаний не обновлена' }
