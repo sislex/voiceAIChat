@@ -197,6 +197,15 @@ interface MessageRow {
   exec_target: string | null
 }
 
+/**
+ * Условие «беседа не является чатом завершённой задачи»: чат либо не привязан к
+ * задаче, либо её колонка не имеет семантики `done`. Проверяем колонку, а не
+ * `tasks.done_at`, чтобы возврат задачи в работу возвращал чат в список сразу.
+ */
+const NOT_DONE_TASK_CHAT = `(c.task_id IS NULL OR NOT EXISTS (
+    SELECT 1 FROM tasks t JOIN kanban_columns k ON k.id = t.column_id
+    WHERE t.id = c.task_id AND k.semantic_type = 'done'))`
+
 /** Шаг дробного ранга для порядка колонок/задач. */
 const RANK_STEP = 1024
 /** Порог схлопывания дробного ранга — ниже него колонка ренормализуется. */
@@ -668,7 +677,14 @@ export class VoiceChatDb {
     return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
   }
 
-  listConversations(userId: string): Conversation[] {
+  /**
+   * Список бесед пользователя. Чаты задач, лежащих в колонке с семантикой
+   * `done`, из него убраны: завершённая задача забивала бы сайдбар навсегда.
+   * Скрытие мгновенное (порог `doneRetentionDays` тут ни при чём) и обратимое —
+   * задачу вернули в работу, чат снова в списке. Доступ к скрытому чату
+   * остаётся: `getConversation` его отдаёт, карточка задачи открывает.
+   */
+  listConversations(userId: string, opts?: { includeCompleted?: boolean }): Conversation[] {
     const rows = this.db
       .prepare(
         `SELECT c.*,
@@ -677,9 +693,10 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
+           AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
          ORDER BY c.updated_at DESC`
       )
-      .all(userId) as Array<ConversationRow & { message_count: number }>
+      .all(userId, opts?.includeCompleted ? 1 : 0) as Array<ConversationRow & { message_count: number }>
     return rows.map((r) => this.mapConversation(r, r.message_count))
   }
 
@@ -707,10 +724,15 @@ export class VoiceChatDb {
     return row !== undefined
   }
 
-  /** Поиск по названию разговора и тексту его сообщений (регистронезависимо). */
-  searchConversations(userId: string, query: string): Conversation[] {
+  /**
+   * Поиск по названию разговора и тексту его сообщений (регистронезависимо).
+   * Состав тот же, что у `listConversations`: чаты завершённых задач приходят
+   * только с `includeCompleted` — иначе выключенный фильтр возвращал бы их
+   * через строку поиска.
+   */
+  searchConversations(userId: string, query: string, opts?: { includeCompleted?: boolean }): Conversation[] {
     const q = query.trim()
-    if (!q) return this.listConversations(userId)
+    if (!q) return this.listConversations(userId, opts)
     const like = `%${q.toLowerCase().replace(/[%_\\]/g, (ch) => `\\${ch}`)}%`
     const rows = this.db
       .prepare(
@@ -720,12 +742,13 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
+           AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
            AND (ulower(c.title) LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM messages m
                        WHERE m.conversation_id = c.id AND ulower(m.text) LIKE ? ESCAPE '\\'))
          ORDER BY c.updated_at DESC`
       )
-      .all(userId, like, like) as Array<ConversationRow & { message_count: number }>
+      .all(userId, opts?.includeCompleted ? 1 : 0, like, like) as Array<ConversationRow & { message_count: number }>
     return rows.map((r) => this.mapConversation(r, r.message_count))
   }
 

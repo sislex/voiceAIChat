@@ -120,6 +120,40 @@ function saveSidebarProject(id: string | null): void {
 }
 
 /**
+ * Добавляет беседу в список, если её там нет, сохраняя порядок «свежее выше».
+ * Нужно для активного чата завершённой задачи: из общего списка он скрыт.
+ */
+function withConversation(list: Conversation[], conv: Conversation): Conversation[] {
+  if (list.some((c) => c.id === conv.id)) return list
+  const at = list.findIndex((c) => c.updatedAt < conv.updatedAt)
+  const out = [...list]
+  out.splice(at < 0 ? out.length : at, 0, conv)
+  return out
+}
+
+/**
+ * Ключ localStorage для фильтра «Показывать чаты завершённых задач». Настройка
+ * взгляда, а не данных, поэтому живёт рядом с выбранным проектом сайдбара, а не
+ * на сервере.
+ */
+const DONE_TASK_CHATS_KEY = 'vc.sidebar.doneTaskChats'
+function loadShowDoneTaskChats(): boolean {
+  try {
+    return localStorage.getItem(DONE_TASK_CHATS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+function saveShowDoneTaskChats(show: boolean): void {
+  try {
+    if (show) localStorage.setItem(DONE_TASK_CHATS_KEY, '1')
+    else localStorage.removeItem(DONE_TASK_CHATS_KEY)
+  } catch {
+    // localStorage недоступен (приватный режим/SSR) — молча игнорируем.
+  }
+}
+
+/**
  * Уведомление для тоста. Стор их только копит: показывает App (useToast), потому
  * что рисовать умеет React, а стор фреймворк-независим.
  */
@@ -332,6 +366,17 @@ export interface AppState {
   projects: ProjectSummary[]
   /** Проект, выбранный в селекте сайдбара (null — «Без проекта»). Фильтрует список/поиск чатов. */
   sidebarProjectId: string | null
+  /**
+   * Показывать ли в списке бесед чаты задач из колонки «Готово». Фильтрует
+   * сервер, поэтому переключатель — это перезапрос списка.
+   */
+  showDoneTaskChats: boolean
+  /**
+   * Открытый чат, которого нет в отфильтрованном списке (чат завершённой
+   * задачи — пришли по ссылке или из карточки). Держим его строку в сайдбаре,
+   * пока он активен: из списка берут машину и рабочую папку разговора.
+   */
+  pinnedConversation: Conversation | null
   /** Список проектов прочитан с сервера — иначе «проекта нет» не отличить от «ещё не грузили». */
   projectsLoaded: boolean
   /** Проект, выбранный в панели деталей (null — не выбран). */
@@ -517,6 +562,8 @@ export interface StoreActions {
   clearMessageHighlight(): void
   /** Выбрать проект в сайдбаре (null — «Без проекта»); фильтрует список/поиск чатов. */
   setSidebarProject(projectId: string | null): Promise<void>
+  /** Показывать ли в списке бесед чаты задач, завершённых на доске. */
+  setShowDoneTaskChats(show: boolean): Promise<void>
   /** Экспортировать активный разговор в Markdown/JSON (скачивание файла). */
   exportConversation(format: 'md' | 'json'): void
   /** Завершить (или пропустить) приветственный мастер. */
@@ -927,6 +974,8 @@ function initialState(): AppState {
     projectsOpen: false,
     projects: [],
     sidebarProjectId: loadSidebarProject(),
+    showDoneTaskChats: loadShowDoneTaskChats(),
+    pinnedConversation: null,
     projectsLoaded: false,
     projectDetail: null,
     activeProjectId: null,
@@ -1083,12 +1132,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     // списка нет, а при повторном чтении оставит его на месте (lib/loadState.ts).
     setState({ conversationsStatus: 'loading', conversationsError: null })
     try {
+      const includeCompleted = state.showDoneTaskChats
       const all = q
-        ? await api['conversations:search']({ query: q })
-        : await api['conversations:list']()
+        ? await api['conversations:search']({ query: q, includeCompleted })
+        : await api['conversations:list']({ includeCompleted })
       // Список/поиск сужаем до выбранного в сайдбаре проекта (null — чаты без проекта).
       const pid = state.sidebarProjectId
-      const conversations = all.filter((c) => (c.projectId ?? null) === pid)
+      const conversations = keepPinned(all.filter((c) => (c.projectId ?? null) === pid), pid, q)
       setState({ conversations, conversationsStatus: 'ready', conversationsError: null })
       void loadTaskChatBadges()
     } catch (err) {
@@ -1098,6 +1148,18 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       })
       throw err
     }
+  }
+
+  /**
+   * Возвращает в список закреплённый чат — открытый, но скрытый как чат
+   * завершённой задачи (`pinnedConversation`). Только его: пропажа строки из-за
+   * поиска или смены проекта — это нормальная фильтрация, а не потеря доступа.
+   */
+  function keepPinned(list: Conversation[], pid: string | null, query: string): Conversation[] {
+    const pinned = state.pinnedConversation
+    if (!pinned || pinned.id !== state.activeId) return list
+    if (query || (pinned.projectId ?? null) !== pid) return list
+    return withConversation(list, pinned)
   }
 
   /** Повторить загрузку списка бесед (кнопка «Повторить» в сайдбаре). */
@@ -1247,6 +1309,21 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     // Поиск по сообщениям тоже сужен проектом — перезапрашиваем.
     if (state.searchScope === 'messages') scheduleMessageSearch()
     await refreshConversations()
+  }
+
+  /**
+   * «Показывать чаты завершённых задач»: список фильтрует сервер, поэтому
+   * переключатель — это перезапрос списка (или поиска, если он активен).
+   */
+  async function setShowDoneTaskChats(show: boolean): Promise<void> {
+    if (state.showDoneTaskChats === show) return
+    saveShowDoneTaskChats(show)
+    setState({ showDoneTaskChats: show })
+    try {
+      await refreshConversations()
+    } catch {
+      /* состояние уже помечено ошибкой — сайдбар покажет «Повторить» */
+    }
   }
 
   /** Скачивание файла по умолчанию — через временный `<a download>`. */
@@ -1503,7 +1580,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       ;[settings, conversations, projects] = await Promise.all([
         api['settings:get'](),
-        api['conversations:list'](),
+        api['conversations:list']({ includeCompleted: state.showDoneTaskChats }),
         api['projects:list']()
       ])
     } catch (err) {
@@ -2277,6 +2354,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     // Чата нет в списке сайдбара (пришли по ссылке на чат другого проекта) —
     // переключаем фильтр, иначе активный чат не виден.
     if (!known) await setSidebarProject(opened.projectId ?? null)
+    // Чат завершённой задачи из списка скрыт совсем: открыли его по ссылке или
+    // из карточки — закрепляем строку, пока он активен (см. `keepPinned`).
+    const listed = state.conversations.some((c) => c.id === opened.id)
+    setState({
+      pinnedConversation: listed ? null : opened,
+      conversations: listed ? state.conversations : withConversation(state.conversations, opened)
+    })
     // Шапка чата задачи: иерархия, этап, машина/папка, ран. Грузим отдельно,
     // чтобы не задерживать показ сообщений.
     void loadTaskChatContext(id)
@@ -2342,6 +2426,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function deleteConversation(id: string): Promise<void> {
     try {
       await api['conversations:delete']({ id })
+      // Иначе закреплённая строка удалённого чата вернулась бы в список.
+      if (state.pinnedConversation?.id === id) setState({ pinnedConversation: null })
       const wasActive = state.activeId === id
       await refreshConversations()
       if (wasActive) {
@@ -3502,6 +3588,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       await api['tasks:move']({ projectId: id, taskId, columnId, afterId: afterId ?? null, beforeId: beforeId ?? null })
       await refreshBoard()
+      // Переезд в «Готово» и обратно прячет/возвращает чат задачи в сайдбаре.
+      // Не в общем try: упавший список — не повод откатывать удавшийся перенос.
+      void refreshConversations().catch(() => {})
     } catch (err) {
       setState({ board: prev })
       fail(err, () => void moveTask(taskId, columnId, afterId, beforeId))
@@ -3570,6 +3659,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       focusMessage,
       clearMessageHighlight,
       setSidebarProject,
+      setShowDoneTaskChats,
       exportConversation,
       completeOnboarding,
       openSettings,

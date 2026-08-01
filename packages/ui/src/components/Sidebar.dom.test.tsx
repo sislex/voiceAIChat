@@ -31,6 +31,31 @@ function setup(overrides: Record<string, unknown> = {}) {
   return props
 }
 
+describe('Sidebar — фильтр «чаты завершённых задач»', () => {
+  it('иконка-фильтр над списком переключает флаг и показывает нажатое состояние', async () => {
+    const onShowDoneTaskChatsChange = vi.fn()
+    setup({ onShowDoneTaskChatsChange })
+    const filter = screen.getByRole('button', { name: 'Показывать чаты завершённых задач' })
+    expect(filter).toHaveAttribute('aria-pressed', 'false')
+    await userEvent.click(filter)
+    expect(onShowDoneTaskChatsChange).toHaveBeenCalledWith(true)
+  })
+
+  it('включённый фильтр гасится тем же кликом', async () => {
+    const onShowDoneTaskChatsChange = vi.fn()
+    setup({ showDoneTaskChats: true, onShowDoneTaskChatsChange })
+    const filter = screen.getByRole('button', { name: 'Показывать чаты завершённых задач' })
+    expect(filter).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(filter)
+    expect(onShowDoneTaskChatsChange).toHaveBeenCalledWith(false)
+  })
+
+  it('без колбэка кнопки нет — desktop живёт без фильтра', () => {
+    setup()
+    expect(screen.queryByRole('button', { name: 'Показывать чаты завершённых задач' })).not.toBeInTheDocument()
+  })
+})
+
 describe('Sidebar — статус работы чата', () => {
   it('в простое показывает persistent-статусы в выпадающих списках', () => {
     setup({ workingIds: [] })

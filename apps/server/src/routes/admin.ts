@@ -20,7 +20,9 @@ export function registerAdminRoutes(
   const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number): AdminUserInfo => {
     const online = registry.onlineIds()
     const agents = db.listAgents(name).map((a) => ({ ...a, online: online.has(a.id) }))
-    return { name, role, blocked, createdAt, agents, conversationCount: db.listConversations(name).length }
+    // Админу — все беседы пользователя: скрытие чатов завершённых задач это
+    // фильтр сайдбара их владельца, а не свойство данных.
+    return { name, role, blocked, createdAt, agents, conversationCount: db.listConversations(name, { includeCompleted: true }).length }
   }
 
   app.get(REST.adminUsers, guard, async (): Promise<AdminUserInfo[]> =>
@@ -80,7 +82,7 @@ export function registerAdminRoutes(
   app.get<{ Params: { name: string } }>(
     '/api/admin/users/:name/conversations',
     guard,
-    async (req) => db.listConversations(req.params.name)
+    async (req) => db.listConversations(req.params.name, { includeCompleted: true })
   )
 
   app.get<{ Params: { name: string }; Querystring: { conversationId?: string } }>(

@@ -23,7 +23,7 @@ import { Skeleton, RefreshIndicator } from './ui/Skeleton'
 import { EmptyState } from './ui/EmptyState'
 import { ErrorState } from './ui/ErrorState'
 import { loadView, type LoadStatus } from '../lib/loadState'
-import { GearIcon } from './icons'
+import { FilterIcon, GearIcon } from './icons'
 import { formatCombo } from '../lib/hotkeys'
 
 /** Человекочитаемая мета разговора: «Сегодня · 6 сообщений». */
@@ -219,6 +219,12 @@ export interface SidebarProps {
   onRetryMessageSearch?: () => void
   /** Догрузить следующую страницу результатов. */
   onLoadMoreMessages?: () => void
+  /**
+   * Показывать ли чаты задач, завершённых на доске. Фильтрует сервер, поэтому
+   * переключатель — запрос списка заново; без колбэка иконки-фильтра нет.
+   */
+  showDoneTaskChats?: boolean
+  onShowDoneTaskChatsChange?: (show: boolean) => void
   /** Проекты пользователя для селекта над поиском. */
   projects?: ProjectSummary[]
   /** Выбранный в сайдбаре проект (null — «Без проекта»). */
@@ -284,6 +290,8 @@ export function Sidebar({
   onPickMessage,
   onRetryMessageSearch,
   onLoadMoreMessages,
+  showDoneTaskChats = false,
+  onShowDoneTaskChatsChange,
   projects = [],
   selectedProjectId = null,
   onSelectProject,
@@ -440,6 +448,20 @@ export function Sidebar({
             aria-label={inMessages ? 'Поиск по сообщениям' : 'Поиск по разговорам'}
             onChange={(e) => onSearch(e.target.value)}
           />
+          {/* Фильтр списка: чаты завершённых задач по умолчанию скрыты, и без
+              видимой кнопки о них бы просто забыли. Нажатое состояние — тот же
+              флаг, что и галка в шапке доски. */}
+          {onShowDoneTaskChatsChange && (
+            <IconButton
+              className={showDoneTaskChats ? 'convo-filter on' : 'convo-filter'}
+              aria-label="Показывать чаты завершённых задач"
+              aria-pressed={showDoneTaskChats}
+              title="Показывать чаты завершённых задач"
+              onClick={() => onShowDoneTaskChatsChange(!showDoneTaskChats)}
+            >
+              <FilterIcon />
+            </IconButton>
+          )}
           {/* Точка входа мышью: без неё про палитру узнают только те, кто угадал
               сочетание. Подпись — та же, что в шпаргалке (⌘ на macOS, Ctrl на остальных). */}
           {onOpenCommandPalette && (

@@ -95,11 +95,19 @@ export interface IpcInvokeMap {
     arg: { prompt: string; modifiers: ModifierPrompt[] }
     result: { variants: Array<{ id: string; text: string }> }
   }
-  'conversations:list': { arg: void; result: Conversation[] }
+  /**
+   * Список бесед. `includeCompleted` — вместе с чатами задач, лежащих в колонке
+   * «Готово»: по умолчанию сервер их не отдаёт (переключатель «Показывать чаты
+   * завершённых задач»).
+   */
+  'conversations:list': { arg: { includeCompleted?: boolean }; result: Conversation[] }
   'conversations:create': { arg: { title?: string }; result: Conversation }
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
-  /** Поиск разговоров по названию и содержимому сообщений (регистронезависимо). */
-  'conversations:search': { arg: { query: string }; result: Conversation[] }
+  /**
+   * Поиск разговоров по названию и содержимому сообщений (регистронезависимо).
+   * Состав тот же, что у `conversations:list`, включая `includeCompleted`.
+   */
+  'conversations:search': { arg: { query: string; includeCompleted?: boolean }; result: Conversation[] }
   /**
    * Полнотекстовый поиск по сообщениям (FTS5 на сервере). Пустой `query` —
    * пустой результат. `projectId`: undefined — по всем беседам, null — только

@@ -30,6 +30,11 @@ import {
   readCxUsage
 } from '../codex/codexSessions.js'
 
+/** Флаг из query-строки: `?includeCompleted=1` (или `=true`). */
+function queryFlag(v: string | undefined): boolean {
+  return v === '1' || v === 'true'
+}
+
 export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDir: string): Promise<void> {
   const profile = (req: Parameters<typeof uid>[0]) => ensureCliProfile(dataDir, uid(req))
   const ccDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CC_DIR ?? profile(req).ccProjects
@@ -49,7 +54,11 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     return res.file
   })
 
-  app.get(REST.conversations, async (req) => db.listConversations(uid(req)))
+  // includeCompleted=1 — вместе с чатами задач, лежащих в колонке «Готово»
+  // (по умолчанию их в списке нет, см. `listConversations`).
+  app.get<{ Querystring: { includeCompleted?: string } }>(REST.conversations, async (req) =>
+    db.listConversations(uid(req), { includeCompleted: queryFlag(req.query.includeCompleted) })
+  )
    app.post<{ Body: DesktopMigrationBundle }>(REST.desktopMigration, async (req, reply) => {
     if (!req.body || !Array.isArray(req.body.conversations)) return reply.code(400).send({ error: 'invalid migration bundle' })
     return db.importDesktopData(uid(req), req.body)
@@ -59,8 +68,8 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     db.createConversation(uid(req), req.body?.title)
   )
 
-  app.get<{ Querystring: { q?: string } }>(REST.conversationsSearch, async (req) =>
-    db.searchConversations(uid(req), req.query.q ?? '')
+  app.get<{ Querystring: { q?: string; includeCompleted?: string } }>(REST.conversationsSearch, async (req) =>
+    db.searchConversations(uid(req), req.query.q ?? '', { includeCompleted: queryFlag(req.query.includeCompleted) })
   )
 
   /**

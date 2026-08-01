@@ -14,6 +14,20 @@ export function GearIcon(): JSX.Element {
   )
 }
 
+/** Воронка — фильтр списка (в сайдбаре над списком бесед). */
+export function FilterIcon(): JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M2 3.5h12l-4.6 5.3v4.2l-2.8 1.4V8.8L2 3.5z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 export function MicIcon(): JSX.Element {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">

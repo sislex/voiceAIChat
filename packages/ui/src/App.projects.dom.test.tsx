@@ -148,6 +148,73 @@ describe('App — завершённые задачи скрыты с доски
   })
 })
 
+describe('App — чаты завершённых задач в сайдбаре', () => {
+  /** Проект с задачей в «Готово» и её чатом; сайдбар уже сужен этим проектом. */
+  async function withDoneTaskChat(): Promise<{ api: FakeApi; projectId: string; taskId: string; chatId: string }> {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const p = await api['projects:create']({ name: 'Мой проект' })
+    const board = await api['board:get']({ id: p.id })
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    const task = await api['tasks:create']({ projectId: p.id, columnId: board.columns[0]!.id, title: 'Скролл' })
+    const chat = await api['tasks:openChat']({ projectId: p.id, taskId: task.id })
+    await api['tasks:move']({ projectId: p.id, taskId: task.id, columnId: done.id })
+    render(<App api={api} delays={SLOW} />)
+    return { api, projectId: p.id, taskId: task.id, chatId: chat.id }
+  }
+
+  /** Список бесед сайдбара, суженный проектом (селект над поиском). */
+  async function chatList(): Promise<HTMLElement> {
+    await userEvent.selectOptions(await screen.findByLabelText('Проект'), 'Мой проект')
+    return await screen.findByRole('list', { name: 'Беседы' })
+  }
+
+  it('чат задачи из «Готово» скрыт, иконка-фильтр его возвращает', async () => {
+    await withDoneTaskChat()
+    const list = await chatList()
+    await waitFor(() => expect(within(list).queryByText('Задача Скролл')).not.toBeInTheDocument())
+
+    const filter = screen.getByRole('button', { name: 'Показывать чаты завершённых задач' })
+    await userEvent.click(filter)
+    expect(await within(list).findByText('Задача Скролл')).toBeInTheDocument()
+    expect(filter).toHaveAttribute('aria-pressed', 'true')
+
+    await userEvent.click(filter)
+    await waitFor(() => expect(within(list).queryByText('Задача Скролл')).not.toBeInTheDocument())
+  })
+
+  it('прямая ссылка открывает скрытый чат и показывает его строку', async () => {
+    const { chatId } = await withDoneTaskChat()
+    window.location.hash = `#/chat/${chatId}`
+    const list = await screen.findByRole('list', { name: 'Беседы' })
+    const row = await within(list).findByRole('button', { name: 'Задача Скролл' })
+    expect(row).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('«Открыть чат» на карточке завершённой задачи ведёт в её чат', async () => {
+    const { projectId, taskId, chatId } = await withDoneTaskChat()
+    window.location.hash = `#/projects/${projectId}/task/${taskId}`
+    const modal = await screen.findByTestId('task-modal')
+    await userEvent.click(within(modal).getAllByRole('button', { name: /Открыть чат/ })[0]!)
+    await waitFor(() => expect(window.location.hash).toBe(`#/chat/${chatId}`))
+  })
+
+  it('возврат задачи из «Готово» возвращает чат в список', async () => {
+    const { api, projectId, taskId } = await withDoneTaskChat()
+    const list = await chatList()
+    await waitFor(() => expect(within(list).queryByText('Задача Скролл')).not.toBeInTheDocument())
+
+    const board = await api['board:get']({ id: projectId, includeCompleted: true })
+    const dev = board.columns.find((c) => c.semanticType !== 'done')!
+    await api['tasks:move']({ projectId, taskId, columnId: dev.id })
+    // Перечитываем список тем же путём, что и UI, — переключением фильтра туда-обратно.
+    const filter = screen.getByRole('button', { name: 'Показывать чаты завершённых задач' })
+    await userEvent.click(filter)
+    await userEvent.click(filter)
+    expect(await within(list).findByText('Задача Скролл')).toBeInTheDocument()
+  })
+})
+
 describe('App — вход в раздел «Проекты»', () => {
   it('#/projects без id не показывает список: уводит на первый проект', async () => {
     const api = createFakeApi([])

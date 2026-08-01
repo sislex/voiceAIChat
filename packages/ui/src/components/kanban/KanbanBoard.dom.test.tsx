@@ -71,6 +71,21 @@ describe('KanbanBoard (изолированный)', () => {
     expect(onShowCompletedChange).toHaveBeenCalledWith(true)
   })
 
+  it('«Показывать чаты завершённых задач» сообщает наружу — список бесед фильтрует сервер', async () => {
+    const onShowDoneTaskChatsChange = vi.fn()
+    renderBoard({ showDoneTaskChats: false, onShowDoneTaskChatsChange })
+    const filters = screen.getByTestId('board-filters')
+    await userEvent.click(within(filters).getByRole('checkbox', { name: /Показывать чаты завершённых задач/ }))
+    expect(onShowDoneTaskChatsChange).toHaveBeenCalledWith(true)
+  })
+
+  it('без колбэка галки «Показывать чаты завершённых задач» нет (Storybook/desktop)', () => {
+    renderBoard()
+    expect(
+      within(screen.getByTestId('board-filters')).queryByRole('checkbox', { name: /Показывать чаты завершённых задач/ })
+    ).not.toBeInTheDocument()
+  })
+
   it('битые данные рендерятся без падения, seq 0 даёт ключ «P1-?»', () => {
     const broken = {
       columns: [{ id: 'c1', projectId: 'p1', name: '', semanticType: 'x', position: 'a', hidden: 0, wipLimit: -5, createdAt: 1 }],

@@ -4670,6 +4670,18 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   flex: 1;
   min-width: 0;
 }
+/* Иконка-фильтр списка бесед: соседка ⌘K, поэтому геометрия та же. Нажатое
+   состояние подсвечиваем акцентом — иначе «фильтр включён» видно только по
+   пропавшим строкам. */
+.convo-filter.vc-btn--icon {
+  border-radius: 8px;
+  color: var(--text-dim);
+}
+.convo-filter.vc-btn--icon.on {
+  color: var(--accent);
+  border-color: currentColor;
+}
+
 /* Подпись длиннее иконки — квадратную геометрию .vc-btn--icon расширяем. */
 .cmdk-open.vc-btn--icon {
   width: auto;

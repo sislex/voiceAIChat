@@ -127,7 +127,7 @@ describe('createHttpApi', () => {
   it('httpBase учитывается в URL', async () => {
     mockFetch(() => ({ _text: JSON.stringify([{ id: 'c1' }]) }))
     const api = createHttpApi('http://srv:8787', 'ws://srv:8787/agent')
-    await api['conversations:list']()
+    await api['conversations:list']({})
     expect(calls[0].url).toBe('http://srv:8787/api/conversations')
   })
 
