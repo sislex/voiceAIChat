@@ -142,6 +142,7 @@ export const REST = {
   /** Чтение файла с диска сервера (только «своя» область) — картинки от CLI. */
   serverFile: '/api/files/read',
   settings: '/api/settings',
+  llmEngines: '/api/llm-engines',
   /** Помощник промптов: переформулировки черновика запроса (одноразовый LLM-вызов). */
   promptSuggest: '/api/prompt/suggest',
   systemCapabilities: '/api/system/capabilities',
@@ -193,6 +194,9 @@ export const REST = {
   adminUserConversations: (name: string) =>
     `/api/admin/users/${encodeURIComponent(name)}/conversations`,
   adminUserMessages: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/messages`,
+  adminLlmEngines: '/api/admin/llm-engines',
+  adminLlmEngine: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}`,
+  adminLlmEngineHealth: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}/health`,
   // --- Проекты + канбан ---
   projects: '/api/projects',
   project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,

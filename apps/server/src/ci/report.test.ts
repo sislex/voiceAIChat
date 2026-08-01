@@ -131,6 +131,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
     expect(report.totals.tokens).toBe(13_000)
     expect(report.totals.costUsd).toBeCloseTo(0.5, 10)
     expect(report.totals.costEstimated).toBe(false)
+    expect(report.kbHit).toBeNull()
     expect(report.totals.modelActiveMs).toBe(8000)
     // Шаги: команда слота, работа модели и резюме — со статусом и длительностью.
     expect(report.steps.map((s) => s.title)).toContain('Тесты')
@@ -141,6 +142,30 @@ describe('GET /api/ci/runs/:runId/report', () => {
     const commandStep = report.steps.find((s) => s.title === 'Тесты')!
     expect(commandStep.usage).toBeNull()
     expect(commandStep.durationMs).not.toBeNull()
+  })
+
+  it('показывает сохранённое попадание разделов БЗ в открытые файлы', async () => {
+    const { project, task } = setup()
+    const conv = db.createConversation('admin', 'CI')
+    db.setConversationProject('admin', conv.id, project.id)
+    const run = db.createCiRun({
+      projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin',
+      prevColumnId: null, conversationId: conv.id, slotProgress: { done: 0, total: 0, phase: '' }
+    })
+    const step = db.addCiRunStep({ runId: run.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели' })
+    db.addKbUsage({
+      userId: 'admin', conversationId: conv.id, projectId: project.id, ciRunId: run.id, ciStepId: step.id,
+      source: 'auto', query: 'ci', chars: 100,
+      sections: [{
+        documentId: 'ci', anchor: 'report', sourcePath: 'docs/kb/features/ci-runner.md',
+        relatedFiles: ['apps/server/src/routes/ci.ts'], chars: 100
+      }]
+    })
+    db.appendCiLog(run.id, step.id, 'system', '[tool_use] Read: /repo/apps/server/src/routes/ci.ts')
+    expect(db.calculateAndSaveCiKbHit(run.id)).toEqual({ sectionsDelivered: 1, sectionsHit: 1, hitRatio: 1 })
+
+    const report = (await inj(admin, `/api/ci/runs/${run.id}/report`)).json() as CiRunReport
+    expect(report.kbHit).toEqual({ sectionsDelivered: 1, sectionsHit: 1, hitRatio: 1 })
   })
 
   it('без стоимости от CLI считает оценку по прайсу и помечает её', async () => {
@@ -167,6 +192,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
     expect(report.totals.requests).toBe(0)
     expect(report.totals.costUsd).toBeNull()
     expect(report.totals.costEstimated).toBe(false)
+    expect(report.kbHit).toBeNull()
   })
 
   it('чужому пользователю — 404, а не пустой отчёт', async () => {

@@ -3,7 +3,7 @@ id: llm-runners
 title: Исполнители LLM: контейнеры с claude/codex CLI
 kind: feature
 updated: 2026-08-01
-checked: 9306637
+checked: 975d6da
 areas:
   - apps/llm-runner/src
   - packages/shared/src/llm.ts
@@ -36,19 +36,45 @@ Claude Code нельзя одновременно держать рабочую 
 реестром исполнителей и выбором в UI — `docs/plans/llm-runners.md`; здесь описано
 то, что уже есть в коде.
 
-## Что сделано (срез 1) и что ещё нет
+## Что сделано и что ещё нет
 
-Воркспейс `apps/llm-runner` поднимает Fastify с `/v1/run`, `/v1/run/:id` и
-`/v1/health`. Туда же **физически переехали** `claudeCli.ts`, `codexCli.ts`,
-`childKill.ts`, `mcp.ts` (`claude mcp list`) и `cliProfiles.ts` — сервер их больше
-не содержит.
+Воркспейс `apps/llm-runner` поднимает Fastify не только для хода модели, но и для
+профильных файловых API. Помимо `/v1/run`, `/v1/run/:id` и `/v1/health` у него
+есть `GET /v1/auth/status`, `GET /v1/files/read`, `GET /v1/fs/cc/*`,
+`GET /v1/fs/cx/*`, `GET /v1/fs/cc/watch` и `GET /v1/fs/cx/watch`. Туда же
+**физически переехали** `claudeCli.ts`, `codexCli.ts`, `childKill.ts`, `mcp.ts`
+(`claude mcp list`), `cliProfiles.ts`, наблюдатели CC/Codex и чтение статуса
+логина — сервер их больше не содержит как источник истины.
 
-Сервер при этом **ещё вызывает CLI сам**: `server.ts` и `routes/rest.ts`
-импортируют классы из `@voicechat/llm-runner/cli`, то есть зависимость
-`@voicechat/server` → `@voicechat/llm-runner` пока прямая, а не HTTP. Это
-временно: `RemoteLlmClient` (срез 2) заменит вызовы на `POST /v1/run`, и импорт
-уйдёт. Пока ходы работают как раньше — исполнитель поднимается, но в бою не
-участвует, компоуз-сервиса у него нет.
+Для самих ходов сервер уже ходит в исполнитель по HTTP через `RemoteLlmClient`, а
+для профильных файлов и проводника — через `RunnerFsClient`. Прямой импорт
+`@voicechat/server` → `@voicechat/llm-runner` остаётся только для локального
+fallback CLI-классов, когда URL исполнителя не настроен.
+
+Срез реестра исполнителей уже реализован: SQLite-таблица `llm_engines` хранит
+`name/kind/base_url/token/enabled/allowed_roles/is_default`, а админка web UI
+умеет список, создание, правку, удаление и health-check. Валидация на сервере
+принимает только абсолютные `http/https` URL, непустой набор ролей и `kind`
+`claude|codex`; health-check проксируется из `apps/server/src/routes/admin.ts` в
+`GET /v1/health` исполнителя с Bearer-токеном и таймаутом 5 секунд.
+
+Запись реестра всё ещё одна на один `kind`, но один и тот же runner можно
+завести двумя строками (`claude` и `codex`) с общим `base_url`/`token`;
+доступность считается именно для пары (строка, kind) по `bins[kind]` и статусу
+логина этого CLI. Default-запись уникальна только внутри `kind`.
+
+Реестр участвует в реальных ходах. Настройки пользователя хранят
+`settings.llmEngineId`, разговор — nullable-переопределение
+`conversations.llm_engine_id`, а CI-ран фиксирует снимок `ci_runs.llm_engine_id`.
+Резолвер проверяет `kind`, `enabled` и `allowed_roles`; недоступный выбор заменяет
+на default (или первый доступный) того же kind. В чате пометка о подмене
+добавляется прямо в сохранённый ответ, в CI — событием
+`run.llm_engine_substituted`. Серверный `GET /api/llm-engines` отдаёт роли только
+доступные записи без URL и токена; PUT настроек и PATCH разговора повторно
+проверяют выбор, поэтому UI-фильтр нельзя обойти прямым запросом. Селекторы есть
+в общих настройках, настройках разговора и повторе model-work CI-рана.
+Compose по умолчанию направляет Claude и Codex в `runner-work`, а
+`runner-personal` доступен для регистрации личной подписки через реестр.
 
 ## Контракт живёт в shared
 
@@ -77,6 +103,17 @@ Codex парсит сервер (`packages/shared/src/streamJson.ts`, `codexStre
 `claudeArgs(req)` и `codexInvocation(req)` вынесены из CLI-классов и вызываются
 двумя путями (класс с разбором и сырой ран), чтобы сборка argv и добавки к
 системному промпту не разъехались в двух копиях.
+
+`LlmRequest.cwd` и `LlmRequest.attachments` теперь трактуются исполнителем, а не
+сервером. `cwd` приходит как желаемый каталог: `RunManager` проверяет его уже на
+хосте исполнителя и при несуществующем пути просто не передаёт `cwd` в `spawn`,
+вместо того чтобы уронить запуск `ENOENT`/`EACCES`. Вложения сервер шлёт байтами
+(`serverPath`, `runnerName`, `dataBase64`), а `prepareRun()` раскладывает их во
+временный каталог `voicechat-llm-run-*`, подменяет в prompt все вхождения
+`serverPath` на локальные пути этого каталога и удаляет каталог при нормальном
+завершении, отмене, обрыве клиента и даже если `spawn` бросил исключение. Так
+удалённый CLI видит реальные файлы своей машины, хотя prompt собирался по путям
+ФС сервера.
 
 ## Ран не переживает своего клиента
 
@@ -107,6 +144,19 @@ Codex парсит сервер (`packages/shared/src/streamJson.ts`, `codexStre
 shell на машине.
 
 Профили CLI (`cli-users/<base64url(логин)>` внутри `VC_DATA_DIR`) живут внутри
-исполнителя; сервер передаёт `userId`, о путях не знает. `GET /v1/health` отдаёт
-бинари, версии, статус входа обоих CLI и число живых ранов; `ok` — «есть хотя бы
-один рабочий бинарь», потому что личный исполнитель несёт только `claude`.
+исполнителя; сервер передаёт только `userId`, о внутренних путях профиля не
+знает. `GET /v1/auth/status` читает `~/.claude/.credentials.json` и
+`~/.codex/auth.json` уже из профиля конкретного пользователя на стороне
+исполнителя, а `GET /v1/files/read` разрешает чтение только внутри allowlist-root
+этого профиля и режет traversal/symlink escape, директории и файлы больше 32 MiB.
+
+Проводник CC/Codex тоже читается только здесь. `ccSessions.ts` и
+`codexSessions.ts` отдают прежние формы `projects / sessions / transcript / usage`,
+но live-tail больше идёт по SSE. `watch*FromOffset()` принимает смещение из
+`Last-Event-ID`, дочитывает только аппенднутый хвост jsonl и позволяет серверу
+переподключаться без потери tail.
+
+`GET /v1/health` по-прежнему отдаёт бинари, версии, статус входа обоих CLI и
+число живых ранов; `ok` — «есть хотя бы один рабочий бинарь», потому что
+`runner-personal` штатно может не нести Codex вовсе. В compose это достигается
+сборкой `llm-runner-runtime` с `INSTALL_CODEX_CLI=0` и `VC_CODEX_BIN=/bin/false`.

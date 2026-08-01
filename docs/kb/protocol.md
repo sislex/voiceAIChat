@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-01
-checked: 9306637
+checked: 12c087a
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -51,7 +51,8 @@ URL руками. Параметризованные пути — функции
 `/api/projects/:id/kb-usage`, `/api/ci/runs/:runId/kb-usage`,
 `/api/projects/:id/tasks/:taskId/kb-usage`), отчёт по расходу модели в CI-ране
 (`/api/ci/runs/:runId/report`, `/api/projects/:id/tasks/:taskId/report`), админка
-пользователей, помощник промптов (`POST /api/prompt/suggest` — одноразовый LLM-вызов,
+пользователей и реестр LLM-исполнителей (`/api/admin/llm-engines`,
+`/api/admin/llm-engines/:id`, `/api/admin/llm-engines/:id/health`), помощник промптов (`POST /api/prompt/suggest` — одноразовый LLM-вызов,
 переформулировки черновика; канал `prompt:suggest`). Полный список — константа `REST`.
 
 Владелец данных — логин пользователя (`uid(req)` = `req.user.name`); запросы к
@@ -120,7 +121,7 @@ SIGTERM) `flushInterrupted` сохраняет частичный текст а�
 
 Настройки выполнения принадлежат разговору: `Conversation.execTarget` (id машины,
 `null` — сервер, `'none'` — команды запрещены), `workdir` и `skillNames`, плюс
-переопределение движка/модели `llmProvider`/`llmModel` (`null` — из общих
+переопределение исполнителя/движка/модели `llmEngineId`/`llmProvider`/`llmModel` (`null` — из общих
 настроек; модель codex `''` — дефолт из конфига codex) и режима прав
 `permissionMode` (`plan`/`acceptEdits`/`bypassPermissions`, `null` — из общих
 настроек; страница настроек разговора показывает фактический режим с учётом
@@ -163,6 +164,12 @@ WS дозванивается только при наличии токена с
 Форма каждого моста описана типами `Renderer*Bridge` в `@shared/ipc` — desktop
 реализует те же интерфейсы через IPC. Если добавил метод в мост, но не в тип —
 второй бэкенд молча отстанет; поэтому начинай с типа.
+
+Админский реестр LLM-исполнителей ходит тем же `window.api`: каналы
+`admin:llmEngines`, `admin:createLlmEngine`, `admin:updateLlmEngine`,
+`admin:deleteLlmEngine`, `admin:checkLlmEngineHealth` объявлены в
+`packages/shared/src/ipc.ts`, web-мост проксирует их в `REST.adminLlmEngines*`.
+Health-check — обычный REST-запрос, а не отдельный WS-канал.
 
 ## Сервер↔машина (`/agent`)
 

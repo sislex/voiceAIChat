@@ -17,37 +17,49 @@ areas:
 
 ## Образ
 
-Многостадийный `Dockerfile`. Особенности, которые легко сломать:
+Многостадийный `Dockerfile` теперь собирает **два runtime-target**: `server-runtime`
+(сервер + web) и `llm-runner-runtime` (внутренний HTTP-исполнитель CLI).
+Особенности, которые легко сломать:
 
-- **Сервер не компилируется в JS** — запускается `tsx` прямо из исходников и
-  резолвит `@voicechat/shared` из `.ts` через workspace-симлинки. Поэтому в
-  runtime-слой копируются исходники + `node_modules` + `tsx`, а не `dist/`. Не
-  добавляй шаг «собрать сервер» — его нет намеренно.
+- **Ни сервер, ни runner не компилируются в JS** — оба запускаются `tsx` прямо
+  из исходников и резолвят `@voicechat/*` через workspace-симлинки. Поэтому в
+  runtime-слой копируются исходники + `node_modules` + `tsx`, а не `dist/`.
 - **better-sqlite3 нативный** → в build-стадии нужен toolchain (python3/make/g++),
   база — glibc (`bookworm`), не musl.
 - **whisper-cli** собирается отдельной стадией из whisper.cpp v1.7.5 статически
-  (`BUILD_SHARED_LIBS=OFF`); в runtime нужен `libgomp1`.
+  (`BUILD_SHARED_LIBS=OFF`); он попадает только в серверный target, где нужен STT.
 - **web собирается без `VITE_SERVER_URL`** → same-origin, тот же порт, что и API
   (`VC_WEB_DIR=/app/apps/web/dist` раздаётся сервером).
-- Процесс работает под пользователем `node`, не root: claude CLI запрещает
+- Процессы работают под пользователем `node`, не root: claude CLI запрещает
   `--dangerously-skip-permissions` под root/sudo. `gosu` в entrypoint делает
   `chown` томов под root и сбрасывает привилегии.
-- `ca-certificates` — codex это Rust-бинарь с rustls, без системного хранилища
-  падает на `invalid peer certificate: UnknownIssuer`. `bubblewrap` — его песочница.
+- **`claude`/`codex` больше нет в образе сервера.** Они ставятся только в
+  `llm-runner-runtime`; `runner-personal` можно собрать без Codex через
+  `INSTALL_CODEX_CLI=0`.
+- `ca-certificates` нужны и серверу (upstream HTTPS), и runner'ам; `bubblewrap`
+  ставится только в runner-target для песочницы Codex.
 
 ## Аутентификация CLI живёт в контейнере
 
-Тома `vc-claude` (`/home/node/.claude`) и `vc-codex` (`/home/node/.codex`) —
-**именованные**, не bind-mount с хоста. Логин делается один раз внутри контейнера
-и обязательно под `node`:
+Логин CLI теперь живёт не в контейнере сервера, а в контейнерах исполнителя:
+`runner-work` и `runner-personal`. Персональные профили пользователей лежат внутри
+`VC_DATA_DIR/cli-users/<base64url(user)>`; сервер видит только HTTP API
+исполнителя и bearer-токен к нему. Общий `HOME` исполнителя нужен лишь как seed
+для auth/config.
 
-```bash
-docker compose exec -u node voicechat claude auth login   # или claude setup-token
-docker compose exec -u node voicechat codex login
-```
+`runner-work` переиспользует прежние volume `vc-claude` / `vc-codex`, поэтому рабочая
+авторизация переезжает без повторного логина. Его профили пользователей теперь
+живут в отдельном volume `vc-runner-work-data`; при первом старте entrypoint
+копирует туда старое дерево `vc-data:/data/cli-users`, чтобы не потерять
+историю сессий, usage и generated images. `runner-personal` хранит свои volume
+авторизации и профилей отдельно и требует одноразового `claude auth login` внутри
+контейнера.
 
-Каталоги создаются в образе с владельцем `node` — иначе Docker создал бы новые
-тома root-овыми и логин был бы недоступен серверному процессу.
+Практическое следствие: при проблемах с проводником CC/Codex, `imageRelocate` или
+`/api/auth/status` смотреть нужно не файловую систему контейнера сервера, а
+профиль пользователя внутри соответствующего исполнителя. Именно исполнитель
+читает `/v1/auth/status`, `/v1/files/read`, `/v1/fs/cc/*` и `/v1/fs/cx/*`; bind-mount
+общих `.claude` / `.codex` в серверный контейнер для этих функций больше не нужен.
 
 ## HTTPS по IP
 
@@ -84,7 +96,8 @@ docker compose exec -u node voicechat codex login
 `ssh root@45.135.182.251`, каталог `/root/voiceAIChat`. Обновление:
 
 ```bash
-git pull && docker compose up -d --build
+git pull --ff-only origin main
+docker compose up -d --build voicechat runner-work runner-personal caddy
 ```
 
 Секреты (`VC_ADMIN_PASSWORD`, upstream-ключи) задаются в shell/`.env` на сервере и
@@ -131,11 +144,11 @@ setsid nohup sh -c 'sleep 1600; cd /root/voiceAIChat && docker compose up -d' \
 
 `docker compose build` собирает образ, не пересоздавая контейнер, — значит успех
 сборки виден в ленте рана, а не в логе, который читать уже некому. Отложенному
-сеансу остаётся `up -d` **без** `--build`: он поднимает готовый `voicechat:latest`
-(compose пересоздаёт контейнер, потому что образ сменился) и не зависит от того,
-что к тому моменту случилось с общим прод-каталогом. Цена — в образ попадает
-дерево на момент `build`, а собственный коммит рана доедет до прода следующим
-деплоем; для правок документации это и нужно.
+сеансу остаётся `up -d` **без** `--build`: он поднимает готовые образы сервера и
+обоих исполнителей (`voicechat`, `runner-work`, `runner-personal`, плюс `caddy`) и
+не зависит от того, что к тому моменту случилось с общим прод-каталогом. Цена —
+в образы попадает дерево на момент `build`, а собственный коммит рана доедет до
+прода следующим деплоем; для правок документации это и нужно.
 
 ## Прод мог обновиться и без рана: сначала проверь, потом пересобирай
 
