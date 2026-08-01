@@ -1,15 +1,15 @@
-// LLM-клиент через Codex CLI: spawn('codex', ['exec', '--json', ...]) + построчный
-// разбор JSONL. Аналог ClaudeCli; spawn инжектируется для тестов. Паритет по
+// LLM-клиент через Codex CLI: spawn('codex', ['exec', '--json', ...]); разбор JSONL —
+// в общем приёмнике (llm/sinks.ts). Аналог ClaudeCli; spawn инжектируется для тестов. Паритет по
 // пробросу команд на агентов достигается MCP-конфигом (streamable HTTP). В режиме
 // плана MCP не подключается, а локальный процесс жёстко ограничен read-only sandbox.
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { parseCodexLine, parseCodexActivity } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import { cliProfileEnv } from '../users/cliProfiles.js'
 import { killCliChild } from '../claude/childKill.js'
 import { kbToolHint } from '../kb/kbMcp.js'
+import { createCodexSink } from '../llm/sinks.js'
 
 export type SpawnFn = (
   command: string,
@@ -31,14 +31,6 @@ function describeSpawnError(err: unknown): string {
     return 'Codex CLI не найден. Установите Codex и выполните `codex login`.'
   }
   return `Не удалось запустить Codex CLI: ${err instanceof Error ? err.message : String(err)}`
-}
-
-function describeExit(code: number | null, stderr: string): string {
-  const s = stderr.trim()
-  if (/log ?in|not logged|authenticat|unauthor|credential/i.test(s)) {
-    return 'Похоже, вход в Codex не выполнен. Выполните `codex login` в терминале.'
-  }
-  return `Codex CLI завершился с кодом ${code}${s ? `: ${s}` : ''}`
 }
 
 /** permissionMode → sandbox-флаги codex (для НЕ-remote выполнения). */
@@ -113,21 +105,9 @@ export class CodexCli implements LlmClient {
     if (req.sessionId) args.push('resume', req.sessionId)
     args.push('-')
 
-    let finished = false
-    let stderr = ''
-    let acc = '' // накопленный текст ответа (agent_message)
-    let lastMeta: import('@voicechat/shared').TurnMeta | undefined
-
-    const fail = (message: string): void => {
-      if (finished) return
-      finished = true
-      handlers.onError(message)
-    }
-    const done = (text: string): void => {
-      if (finished) return
-      finished = true
-      handlers.onDone(text, lastMeta)
-    }
+    // Разбор JSONL, usage и тексты ошибок — общий приёмник (llm/sinks.ts): он же
+    // обслуживает RemoteLlmClient, поэтому события хода не зависят от транспорта.
+    const sink = createCodexSink(handlers)
 
     let child: ChildProcess
     try {
@@ -138,7 +118,7 @@ export class CodexCli implements LlmClient {
           : undefined
       child = spawnFn(this.opts.binPath ?? 'codex', args, spawnOptions)
     } catch (err) {
-      fail(describeSpawnError(err))
+      sink.fail(describeSpawnError(err))
       return { cancel: () => {} }
     }
 
@@ -149,62 +129,21 @@ export class CodexCli implements LlmClient {
       /* stdin недоступен */
     }
 
-    child.on('error', (err) => fail(describeSpawnError(err)))
+    child.on('error', (err) => sink.fail(describeSpawnError(err)))
     child.stderr?.on('data', (d: Buffer) => {
-      stderr += d.toString()
+      sink.stderrChunk(d.toString())
     })
 
     if (child.stdout) {
       const rl = createInterface({ input: child.stdout })
-      rl.on('line', (line) => {
-        if (handlers.onActivity) {
-          const entry = parseCodexActivity(line)
-          if (entry) handlers.onActivity(entry)
-        }
-        const ev = parseCodexLine(line)
-        if (!ev) return
-        switch (ev.kind) {
-          case 'session':
-            handlers.onSession(ev.sessionId)
-            break
-          case 'delta':
-            acc += ev.text
-            if (!finished) handlers.onDelta(ev.text)
-            break
-          case 'message':
-            // Полное сообщение агента: показываем как дельту и копим для финала.
-            acc += ev.text
-            if (!finished) handlers.onDelta(ev.text)
-            break
-          case 'result':
-            lastMeta = ev.meta
-            // `codex exec --json` сообщает точный usage в turn.completed. Он не
-            // даёт промежуточных token-событий, но итог всё равно проводим через
-            // общий live-канал до done, чтобы UI и TurnManager получили счётчики.
-            if (!ev.isError && handlers.onUsage && Object.keys(ev.meta).length > 0) {
-              handlers.onUsage(ev.meta)
-            }
-            if (ev.isError) fail('Codex вернул ошибку')
-            else done(acc)
-            break
-          case 'error':
-            fail(ev.message)
-            break
-          default:
-            break
-        }
-      })
+      rl.on('line', (line) => sink.line(line))
     }
 
-    child.on('close', (code) => {
-      if (finished) return
-      if (code === 0) done(acc)
-      else fail(describeExit(code, stderr))
-    })
+    child.on('close', (code) => sink.exit(code))
 
     return {
       cancel: () => {
-        finished = true
+        sink.detach()
         // SIGTERM, через 5с — SIGKILL: зависший CLI не должен переживать отмену.
         killCliChild(child)
       }

@@ -30,6 +30,7 @@ import { registerRemoteBashMcp, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp
 import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
 import { ClaudeCli } from './claude/claudeCli.js'
+import { RemoteLlmClient } from './llm/remoteClient.js'
 import { PromptSuggester } from './prompt/suggester.js'
 import { CodexCli } from './codex/codexCli.js'
 import type { LlmClient } from './claude/types.js'
@@ -72,9 +73,12 @@ export interface BuildOptions {
   kbService?: KnowledgeBaseService
   /** Телеметрия обращений к БЗ (для тестов — мок/выключено). */
   kbUsage?: KbUsageTracker
-  /** LLM-клиент (для тестов — мок). По умолчанию ClaudeCli. */
+  /**
+   * LLM-клиент (для тестов — мок). По умолчанию RemoteLlmClient, если задан адрес
+   * исполнителя (config.llmRunnerClaudeUrl), иначе локальный ClaudeCli.
+   */
   claude?: LlmClient
-  /** Codex-клиент (для тестов — мок). По умолчанию CodexCli. */
+  /** Codex-клиент (для тестов — мок). По умолчанию — как claude, но kind='codex'. */
   codex?: LlmClient
   /** STT-движок (для тестов — мок). По умолчанию WhisperEngine из config. */
   sttEngine?: SttEngine
@@ -158,8 +162,28 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   const profileHome = (userId: string): string =>
     ensureCliProfile(opts.config.dataDir, userId).home
-  const claude = opts.claude ?? new ClaudeCli({ profileHome })
-  const codex = opts.codex ?? new CodexCli({ profileHome })
+  // Движок либо запускается рядом (spawn CLI), либо живёт в контейнере-исполнителе
+  // и вызывается по HTTP. Выбор — по наличию адреса в env; реестра исполнителей
+  // пока нет (docs/plans/llm-runners.md, срез 2).
+  const runner = (kind: 'claude' | 'codex', baseUrl: string): LlmClient =>
+    new RemoteLlmClient({
+      kind,
+      baseUrl,
+      ...(opts.config.llmRunnerToken ? { token: opts.config.llmRunnerToken } : {}),
+      ...(opts.config.llmRunnerConnectTimeoutMs
+        ? { connectTimeoutMs: opts.config.llmRunnerConnectTimeoutMs }
+        : {})
+    })
+  const claude =
+    opts.claude ??
+    (opts.config.llmRunnerClaudeUrl
+      ? runner('claude', opts.config.llmRunnerClaudeUrl)
+      : new ClaudeCli({ profileHome }))
+  const codex =
+    opts.codex ??
+    (opts.config.llmRunnerCodexUrl
+      ? runner('codex', opts.config.llmRunnerCodexUrl)
+      : new CodexCli({ profileHome }))
   const reranker = opts.config.kbRerankProvider === 'disabled'
     ? undefined
     : new LlmKbReranker(opts.config.kbRerankProvider === 'claude' ? claude : codex)

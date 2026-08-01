@@ -75,7 +75,7 @@ STT session аккумулирует PCM, конвертирует в WAV и в�
 
 ## LLM и MCP
 
-`ClaudeCli` и `CodexCli` реализуют общий `LlmClient`: spawn, поток событий, cancel. Бинарь и env инъектируются в тестах. MCP-конфигурация Claude может включать `remoteBashMcp`, который адресует команду выбранной машине через registry.
+`ClaudeCli` и `CodexCli` реализуют общий `LlmClient`: spawn, поток событий, cancel. Бинарь и env инъектируются в тестах. Третья реализация того же интерфейса — `llm/remoteClient.ts` (`RemoteLlmClient`): ход уходит по HTTP в контейнер-исполнитель (`POST /v1/run`, NDJSON, отмена — `DELETE /v1/run/:id`), а разбор потока живёт в общем приёмнике `llm/sinks.ts`. Выбор реализации — по `VC_LLM_RUNNER_URL` в `config.ts`; подробности — `docs/kb/llm.md`. MCP-конфигурация Claude может включать `remoteBashMcp`, который адресует команду выбранной машине через registry.
 
 `/mcp/remote-bash` реализован SDK MCP и предоставляет bash в рамках выбранного agent id. Он не обходит policy/version/online checks registry. Входящий `/v1/messages` — отдельный Anthropic-compatible gateway для Claude Code: backend либо upstream HTTP, либо локальный Codex; LAN-only проверка защищает незапароленный endpoint.
 

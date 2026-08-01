@@ -54,6 +54,18 @@ export interface ServerConfig {
   minMemTtsBytes?: number
   /** GitHub token для server-side PR merge. */
   githubToken?: string
+  /**
+   * База URL контейнера-исполнителя claude (`POST /v1/run`). Задана — сервер не
+   * делает spawn, а ходит по HTTP (`llm/remoteClient.ts`). Реестра исполнителей
+   * пока нет: адрес один и берётся из env.
+   */
+  llmRunnerClaudeUrl?: string
+  /** То же для codex; по умолчанию — тот же исполнитель, что и для claude. */
+  llmRunnerCodexUrl?: string
+  /** Bearer-токен исполнителей (пусто — закрытая сеть без авторизации). */
+  llmRunnerToken?: string
+  /** Таймаут ожидания заголовков /v1/run, мс (сам ход не ограничен). */
+  llmRunnerConnectTimeoutMs?: number
 }
 
 const DEFAULT_DATA_DIR = join(homedir(), '.voicechat-server')
@@ -119,6 +131,13 @@ function parseBytes(raw: string | undefined): number | undefined {
   return Math.round(n * mult)
 }
 
+/** Целое положительное число из env; undefined — не задано или мусор. */
+function parsePositiveInt(raw: string | undefined): number | undefined {
+  if (!raw) return undefined
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : undefined
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const dataDir = env.VC_DATA_DIR ?? DEFAULT_DATA_DIR
   const modelsDir = pick(env.VC_MODELS_DIR, REPO.modelsDir, join(dataDir, 'models'))
@@ -148,6 +167,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     adminPassword: env.VC_ADMIN_PASSWORD ?? '',
     minMemSttBytes: parseBytes(env.VC_MIN_MEM_STT),
     minMemTtsBytes: parseBytes(env.VC_MIN_MEM_TTS),
-    githubToken: env.VC_GITHUB_TOKEN
+    githubToken: env.VC_GITHUB_TOKEN,
+    llmRunnerClaudeUrl: env.VC_LLM_RUNNER_CLAUDE_URL ?? env.VC_LLM_RUNNER_URL,
+    llmRunnerCodexUrl: env.VC_LLM_RUNNER_CODEX_URL ?? env.VC_LLM_RUNNER_URL,
+    llmRunnerToken: env.VC_LLM_RUNNER_TOKEN,
+    llmRunnerConnectTimeoutMs: parsePositiveInt(env.VC_LLM_RUNNER_TIMEOUT_MS)
   }
 }
