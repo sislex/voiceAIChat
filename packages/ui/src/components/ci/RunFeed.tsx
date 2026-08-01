@@ -18,6 +18,8 @@ import { EmptyState } from '../ui/EmptyState'
 import { ErrorState } from '../ui/ErrorState'
 import { loadView, type LoadStatus } from '../../lib/loadState'
 import { useCommandSource } from '../../lib/useCommands'
+import { KbUsageBrief } from '../kb/KbUsageBrief'
+import { useKbUsageReport } from '../../lib/useKbUsageReport'
 
 export interface RunFeedCache {
   detail: CiRunDetail | null
@@ -112,6 +114,12 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   }, [detail])
 
   const running = run ? !isTerminalCiStatus(run.status) : false
+  // Отчёт по БЗ читаем один раз на ран и ещё раз, когда ран завершился: пока он
+  // идёт, обращения копятся, и промежуточные цифры быстро устаревают.
+  const kbUsage = useKbUsageReport(
+    () => window.ci?.getRunKbUsage(runId),
+    [runId, running]
+  )
 
   // Команда экрана в общем реестре: пока лента рана на экране, «Повторить
   // последний ран» доступен из палитры. Незавершённый ран повторять нечего —
@@ -275,6 +283,19 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
           <Button onClick={() => setConsoleOpen(true)}>Консоль</Button>
         </div>
       </div>
+
+      {kbUsage.report && (
+        <KbUsageBrief
+          title="Использование базы знаний"
+          note="в этом ране"
+          mode={kbUsage.report.kbContextMode}
+          totals={kbUsage.report.totals}
+          sections={kbUsage.report.sections}
+          loading={kbUsage.loading}
+          error={kbUsage.error}
+          testId="ci-run-kb-usage"
+        />
+      )}
 
       {cache?.conclusion && (
         <div className="ci-lozenge ci-lozenge--removed" data-testid="ci-conclusion" style={{ display: 'block', padding: '8px', textTransform: 'none' }}>

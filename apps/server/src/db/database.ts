@@ -49,6 +49,9 @@ import {
   type KbUsageSectionRef,
   type KbUsageSource,
   type KbUsageStatus,
+  type KbContextMode,
+  type KbRunUsageReport,
+  type KbTaskUsageReport,
   type KbUsageTotals,
   type CiCommand,
   type CiCommandInput,
@@ -244,6 +247,7 @@ interface ProjectRow {
   ci_branch_template: string
   ci_reuse_strategy: string
   ci_exec_auth_ref: string
+  ci_kb_context_mode: string
   done_retention_days: number | null
 }
 
@@ -614,6 +618,8 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_branch_template')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_branch_template TEXT NOT NULL DEFAULT 'feature/{task_number}-{slug}'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_reuse_strategy')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_reuse_strategy TEXT NOT NULL DEFAULT 'fail'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_exec_auth_ref')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_exec_auth_ref TEXT NOT NULL DEFAULT ''`)
+    // Режим базы знаний в ходах модели CI-рана: настройка проекта, не чата.
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_kb_context_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_kb_context_mode TEXT NOT NULL DEFAULT 'auto'`)
     // Порог «сколько держать завершённые на доске»: существующим проектам —
     // дефолт 14 дней (DEFAULT в ALTER заполняет старые строки).
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'done_retention_days')) this.db.exec(`ALTER TABLE projects ADD COLUMN done_retention_days INTEGER DEFAULT ${DEFAULT_DONE_RETENTION_DAYS}`)
@@ -625,6 +631,8 @@ export class VoiceChatDb {
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'clarify_level')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN clarify_level TEXT NOT NULL DEFAULT 'few'`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'clarify_max')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN clarify_max INTEGER NOT NULL DEFAULT 3`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'conversation_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN conversation_id TEXT`)
+    // Режим базы знаний рана — снимок настройки проекта на момент старта.
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'kb_context_mode')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN kb_context_mode TEXT NOT NULL DEFAULT 'auto'`)
     const ciLlmCols = this.db.prepare(`PRAGMA table_info(ci_llm_configs)`).all() as Array<{ name: string }>
     if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'mode')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN mode TEXT NOT NULL DEFAULT 'development'`)
     if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'clarify_level')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN clarify_level TEXT NOT NULL DEFAULT 'few'`)
@@ -633,6 +641,13 @@ export class VoiceChatDb {
     if (ciCmdCols.length && !ciCmdCols.some((c) => c.name === 'builtin')) this.db.exec(`ALTER TABLE ci_commands ADD COLUMN builtin TEXT`)
     const ciSettingsCols = this.db.prepare(`PRAGMA table_info(ci_settings)`).all() as Array<{ name: string }>
     if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === 'interaction_wait_ms')) this.db.exec(`ALTER TABLE ci_settings ADD COLUMN interaction_wait_ms INTEGER NOT NULL DEFAULT 1800000`)
+
+    // Привязка обращения к БЗ к рану и шагу CI: отчёты по ране/задаче строятся
+    // по ним, а старые строки просто остаются с NULL (это обращения из чата).
+    const kbUsageCols = this.db.prepare(`PRAGMA table_info(kb_usage_queries)`).all() as Array<{ name: string }>
+    if (kbUsageCols.length && !kbUsageCols.some((c) => c.name === 'ci_run_id')) this.db.exec(`ALTER TABLE kb_usage_queries ADD COLUMN ci_run_id TEXT`)
+    if (kbUsageCols.length && !kbUsageCols.some((c) => c.name === 'ci_step_id')) this.db.exec(`ALTER TABLE kb_usage_queries ADD COLUMN ci_step_id TEXT`)
+    if (kbUsageCols.length) this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_usage_ci_run ON kb_usage_queries(ci_run_id, created_at DESC)`)
 
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
@@ -1441,6 +1456,7 @@ export class VoiceChatDb {
       ciBranchTemplate: r.ci_branch_template,
       ciReuseStrategy: r.ci_reuse_strategy === 'reuse' || r.ci_reuse_strategy === 'clean' ? r.ci_reuse_strategy : 'fail',
       ciExecAuthRef: r.ci_exec_auth_ref,
+      ciKbContextMode: normKbContextMode(r.ci_kb_context_mode),
       doneRetentionDays: r.done_retention_days
     }
   }
@@ -1567,6 +1583,7 @@ export class VoiceChatDb {
       ciBranchTemplate?: string
       ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
       ciExecAuthRef?: string
+      ciKbContextMode?: KbContextMode
       doneRetentionDays?: number | null
     }
   ): ProjectDetail | null {
@@ -1612,6 +1629,7 @@ export class VoiceChatDb {
     if (fields.ciBranchTemplate !== undefined) { set.push('ci_branch_template = ?'); vals.push(fields.ciBranchTemplate) }
     if (fields.ciReuseStrategy !== undefined) { set.push('ci_reuse_strategy = ?'); vals.push(fields.ciReuseStrategy) }
     if (fields.ciExecAuthRef !== undefined) { set.push('ci_exec_auth_ref = ?'); vals.push(fields.ciExecAuthRef) }
+    if (fields.ciKbContextMode !== undefined) { set.push('ci_kb_context_mode = ?'); vals.push(normKbContextMode(fields.ciKbContextMode)) }
     if (fields.doneRetentionDays !== undefined) { set.push('done_retention_days = ?'); vals.push(fields.doneRetentionDays) }
     if (fields.defaultSkills?.epic !== undefined) { set.push('default_skills_epic = ?'); vals.push(JSON.stringify(fields.defaultSkills.epic)) }
     if (fields.defaultSkills?.story !== undefined) { set.push('default_skills_story = ?'); vals.push(JSON.stringify(fields.defaultSkills.story)) }
@@ -2507,10 +2525,10 @@ export class VoiceChatDb {
 
   // --- Раны и шаги ---
 
-  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; triggeredBy: string; prevColumnId: string | null; slotProgress: CiSlotProgress; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null }): CiRun {
+  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; triggeredBy: string; prevColumnId: string | null; slotProgress: CiSlotProgress; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
     const id = this.newId()
     const ts = this.now()
-    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, status, triggered_by, prev_column_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, slot_progress_json, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.triggeredBy, args.prevColumnId, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, JSON.stringify(args.slotProgress), ts)
+    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, status, triggered_by, prev_column_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.triggeredBy, args.prevColumnId, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts)
     return mapCiRun(this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(id) as CiRunRow)
   }
 
@@ -2830,6 +2848,9 @@ export class VoiceChatDb {
     projectId?: string | null
     turnId?: string | null
     messageId?: string | null
+    /** Ран и шаг CI-раннера, если обращение случилось в ходе рана. */
+    ciRunId?: string | null
+    ciStepId?: string | null
     source: KbUsageSource
     status?: Exclude<KbUsageStatus, 'pending'>
     query: string
@@ -2871,10 +2892,10 @@ export class VoiceChatDb {
       freshness: item.freshness ?? 'unknown'
     }))
     const insertQuery = this.db.prepare(
-      `INSERT INTO kb_usage_queries (id, seq, user_id, conversation_id, project_id, turn_id, message_id, source, status,
-         query, confidence, injected, sections_count, chars, est_tokens, bundle_tokens, prompt_chars, turn_input_tokens,
-         duration_ms, error, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO kb_usage_queries (id, seq, user_id, conversation_id, project_id, turn_id, message_id, ci_run_id,
+         ci_step_id, source, status, query, confidence, injected, sections_count, chars, est_tokens, bundle_tokens,
+         prompt_chars, turn_input_tokens, duration_ms, error, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     const insertSection = this.db.prepare(
       `INSERT INTO kb_usage_sections (id, query_id, document_id, title, heading, anchor, source_path, chars, est_tokens,
@@ -2891,6 +2912,7 @@ export class VoiceChatDb {
       seq = row.m + 1
       insertQuery.run(
         id, seq, args.userId, args.conversationId, args.projectId ?? null, args.turnId ?? null, args.messageId ?? null,
+        args.ciRunId ?? null, args.ciStepId ?? null,
         args.source, status, args.query, args.confidence ?? null, args.injected ? 1 : 0, sections.length, args.chars,
         estTokens, args.bundleTokens ?? null, args.promptChars ?? null, args.turnInputTokens ?? null,
         args.durationMs ?? null, args.error ?? null, createdAt
@@ -2910,6 +2932,8 @@ export class VoiceChatDb {
       projectId: args.projectId ?? null,
       turnId: args.turnId ?? null,
       messageId: args.messageId ?? null,
+      ciRunId: args.ciRunId ?? null,
+      ciStepId: args.ciStepId ?? null,
       source: args.source,
       status,
       query: args.query,
@@ -2958,20 +2982,9 @@ export class VoiceChatDb {
   kbUsageReport(userId: string, conversationId: string, limit = 40): KbChatUsage | null {
     const conv = this.getConversation(userId, conversationId)
     if (!conv) return null
-    const totals = this.kbUsageTotals('conversation_id', conversationId)
-    const sections = (this.db
-      .prepare(
-        `SELECT s.document_id, s.anchor, MAX(s.title) AS title, MAX(s.heading) AS heading,
-                MAX(s.source_path) AS source_path, MAX(s.freshness) AS freshness, COUNT(*) AS times,
-                SUM(CASE WHEN q.source = 'auto' THEN 1 ELSE 0 END) AS auto_times, SUM(s.chars) AS chars,
-                SUM(s.est_tokens) AS est_tokens, MAX(q.created_at) AS last_at
-           FROM kb_usage_sections s JOIN kb_usage_queries q ON q.id = s.query_id
-          WHERE q.conversation_id = ?
-          GROUP BY s.document_id, s.anchor
-          ORDER BY times DESC, chars DESC`
-      )
-      .all(conversationId) as KbSectionAggRow[]).map(mapKbSectionAggregate)
-    const recent = this.kbUsageQueries(`conversation_id = ?`, [conversationId], limit)
+    const totals = this.kbUsageTotals('q.conversation_id = ?', [conversationId])
+    const sections = this.kbUsageSections('q.conversation_id = ?', [conversationId])
+    const recent = this.kbUsageQueries('q.conversation_id = ?', [conversationId], limit)
     return {
       conversationId,
       projectId: conv.projectId ?? null,
@@ -2986,20 +2999,8 @@ export class VoiceChatDb {
   /** Агрегат по всем чатам проекта: только участнику проекта — иначе null. */
   kbUsageProjectReport(userId: string, projectId: string, limit = 40): KbProjectUsage | null {
     if (!this.isProjectMember(userId, projectId)) return null
-    const totals = this.kbUsageTotals('project_id', projectId)
-    const sections = (this.db
-      .prepare(
-        `SELECT s.document_id, s.anchor, MAX(s.title) AS title, MAX(s.heading) AS heading,
-                MAX(s.source_path) AS source_path, MAX(s.freshness) AS freshness, COUNT(*) AS times,
-                SUM(CASE WHEN q.source = 'auto' THEN 1 ELSE 0 END) AS auto_times, SUM(s.chars) AS chars,
-                SUM(s.est_tokens) AS est_tokens, MAX(q.created_at) AS last_at,
-                COUNT(DISTINCT q.conversation_id) AS conversations
-           FROM kb_usage_sections s JOIN kb_usage_queries q ON q.id = s.query_id
-          WHERE q.project_id = ?
-          GROUP BY s.document_id, s.anchor
-          ORDER BY times DESC, chars DESC`
-      )
-      .all(projectId) as KbSectionAggRow[]).map(mapKbSectionAggregate)
+    const totals = this.kbUsageTotals('q.project_id = ?', [projectId])
+    const sections = this.kbUsageSections('q.project_id = ?', [projectId], { withConversations: true })
     const conversations = (this.db
       .prepare(
         `SELECT q.conversation_id, COALESCE(c.title, '') AS title, COUNT(*) AS queries, SUM(q.chars) AS chars,
@@ -3011,26 +3012,68 @@ export class VoiceChatDb {
       )
       .all(projectId) as Array<{ conversation_id: string; title: string; queries: number; chars: number; est_tokens: number; last_at: number }>)
       .map((r) => ({ conversationId: r.conversation_id, title: r.title, queries: r.queries, chars: r.chars, estimatedTokens: r.est_tokens, lastAt: r.last_at }))
-    return { projectId, totals, sections, recent: this.kbUsageQueries(`project_id = ?`, [projectId], limit), conversations }
+    return { projectId, totals, sections, recent: this.kbUsageQueries('q.project_id = ?', [projectId], limit), conversations }
+  }
+
+  /**
+   * Обращения к БЗ внутри одного CI-рана. Гейт — членство в проекте рана (как у
+   * ленты), поэтому чужой пользователь получает null → 404 у роута.
+   */
+  kbUsageRunReport(userId: string, runId: string, limit = 40): KbRunUsageReport | null {
+    const run = this.getCiRunRaw(runId)
+    if (!run || !this.isProjectMember(userId, run.projectId)) return null
+    return {
+      runId,
+      projectId: run.projectId,
+      taskId: run.taskId,
+      kbContextMode: run.kbContextMode,
+      conversationId: run.conversationId,
+      totals: this.kbUsageTotals('q.ci_run_id = ?', [runId]),
+      sections: this.kbUsageSections('q.ci_run_id = ?', [runId]),
+      recent: this.kbUsageQueries('q.ci_run_id = ?', [runId], limit)
+    }
+  }
+
+  /**
+   * Агрегат по ВСЕМ ранам задачи (блок в модалке задачи). Срез задаётся
+   * подзапросом по `ci_runs`, а не сохранённым task_id в самой телеметрии:
+   * привязка «обращение → ран» одна, и дублировать её нечем.
+   */
+  kbUsageTaskReport(userId: string, projectId: string, taskId: string, limit = 40): KbTaskUsageReport | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.db.prepare(`SELECT 1 FROM tasks WHERE id = ? AND project_id = ?`).get(taskId, projectId)) return null
+    const where = 'q.ci_run_id IN (SELECT id FROM ci_runs WHERE task_id = ? AND project_id = ?)'
+    const params = [taskId, projectId]
+    const runs = (this.db
+      .prepare(`SELECT COUNT(DISTINCT q.ci_run_id) AS n FROM kb_usage_queries q WHERE ${where}`)
+      .get(...params) as { n: number }).n
+    return {
+      projectId,
+      taskId,
+      runs,
+      totals: this.kbUsageTotals(where, params),
+      sections: this.kbUsageSections(where, params),
+      recent: this.kbUsageQueries(where, params, limit)
+    }
   }
 
   /**
    * Итоги по обращениям — ОТДЕЛЬНЫМ запросом, без JOIN с разделами: иначе суммы
    * размножились бы по числу разделов каждого обращения.
    */
-  private kbUsageTotals(column: 'conversation_id' | 'project_id', value: string): KbUsageTotals {
+  private kbUsageTotals(where: string, params: unknown[]): KbUsageTotals {
     const row = this.db
       .prepare(
         `SELECT COUNT(*) AS queries,
-                SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered,
-                SUM(CASE WHEN status = 'empty' THEN 1 ELSE 0 END) AS empty,
-                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
-                SUM(CASE WHEN source <> 'auto' THEN 1 ELSE 0 END) AS tool_queries,
-                SUM(sections_count) AS sections, SUM(chars) AS chars, SUM(est_tokens) AS est_tokens,
-                MAX(created_at) AS last_at
-           FROM kb_usage_queries WHERE ${column} = ?`
+                SUM(CASE WHEN q.status = 'delivered' THEN 1 ELSE 0 END) AS delivered,
+                SUM(CASE WHEN q.status = 'empty' THEN 1 ELSE 0 END) AS empty,
+                SUM(CASE WHEN q.status = 'error' THEN 1 ELSE 0 END) AS errors,
+                SUM(CASE WHEN q.source <> 'auto' THEN 1 ELSE 0 END) AS tool_queries,
+                SUM(q.sections_count) AS sections, SUM(q.chars) AS chars, SUM(q.est_tokens) AS est_tokens,
+                MAX(q.created_at) AS last_at
+           FROM kb_usage_queries q WHERE ${where}`
       )
-      .get(value) as {
+      .get(...params) as {
         queries: number; delivered: number | null; empty: number | null; errors: number | null
         tool_queries: number | null; sections: number | null; chars: number | null; est_tokens: number | null
         last_at: number | null
@@ -3038,18 +3081,18 @@ export class VoiceChatDb {
     const documents = (this.db
       .prepare(
         `SELECT COUNT(DISTINCT s.document_id) AS n FROM kb_usage_sections s
-           JOIN kb_usage_queries q ON q.id = s.query_id WHERE q.${column} = ?`
+           JOIN kb_usage_queries q ON q.id = s.query_id WHERE ${where}`
       )
-      .get(value) as { n: number }).n
+      .get(...params) as { n: number }).n
     // Промпт одного хода общий для всех его обращений — берём его по одному разу
     // на turn_id, иначе доля «сколько из промпта от БЗ» была бы заниженной.
     const promptChars = (this.db
       .prepare(
         `SELECT COALESCE(SUM(prompt_chars), 0) AS n FROM (
-           SELECT COALESCE(turn_id, id) AS turn, MAX(prompt_chars) AS prompt_chars
-             FROM kb_usage_queries WHERE ${column} = ? AND prompt_chars IS NOT NULL GROUP BY turn)`
+           SELECT COALESCE(q.turn_id, q.id) AS turn, MAX(q.prompt_chars) AS prompt_chars
+             FROM kb_usage_queries q WHERE ${where} AND q.prompt_chars IS NOT NULL GROUP BY turn)`
       )
-      .get(value) as { n: number }).n
+      .get(...params) as { n: number }).n
     return {
       queries: row.queries,
       delivered: row.delivered ?? 0,
@@ -3065,10 +3108,31 @@ export class VoiceChatDb {
     }
   }
 
+  /**
+   * Разделы в разрезе произвольного среза обращений (`where` — по алиасу `q`).
+   * Один запрос на чат, проект, ран и задачу: иначе четыре копии одного GROUP BY
+   * неизбежно разъедутся в мелочах вроде порядка сортировки.
+   */
+  private kbUsageSections(where: string, params: unknown[], opts: { withConversations?: boolean } = {}): KbUsageSectionAggregate[] {
+    const conversations = opts.withConversations ? ', COUNT(DISTINCT q.conversation_id) AS conversations' : ''
+    return (this.db
+      .prepare(
+        `SELECT s.document_id, s.anchor, MAX(s.title) AS title, MAX(s.heading) AS heading,
+                MAX(s.source_path) AS source_path, MAX(s.freshness) AS freshness, COUNT(*) AS times,
+                SUM(CASE WHEN q.source = 'auto' THEN 1 ELSE 0 END) AS auto_times, SUM(s.chars) AS chars,
+                SUM(s.est_tokens) AS est_tokens, MAX(q.created_at) AS last_at${conversations}
+           FROM kb_usage_sections s JOIN kb_usage_queries q ON q.id = s.query_id
+          WHERE ${where}
+          GROUP BY s.document_id, s.anchor
+          ORDER BY times DESC, chars DESC`
+      )
+      .all(...params) as KbSectionAggRow[]).map(mapKbSectionAggregate)
+  }
+
   /** Последние обращения (новые сверху) вместе с их разделами. */
   private kbUsageQueries(where: string, params: unknown[], limit: number): KbUsageQuery[] {
     const rows = this.db
-      .prepare(`SELECT * FROM kb_usage_queries WHERE ${where} ORDER BY created_at DESC, seq DESC LIMIT ?`)
+      .prepare(`SELECT q.* FROM kb_usage_queries q WHERE ${where} ORDER BY q.created_at DESC, q.seq DESC LIMIT ?`)
       .all(...params, Math.max(1, Math.min(limit, 200))) as KbUsageQueryRow[]
     if (!rows.length) return []
     const placeholders = rows.map(() => '?').join(',')
@@ -3205,7 +3269,8 @@ export type KbProjectUsage = Omit<KbProjectUsageReport, 'toolEnabled' | 'availab
 
 interface KbUsageQueryRow {
   id: string; seq: number; user_id: string; conversation_id: string; project_id: string | null
-  turn_id: string | null; message_id: string | null; source: string; status: string; query: string
+  turn_id: string | null; message_id: string | null; ci_run_id: string | null; ci_step_id: string | null
+  source: string; status: string; query: string
   confidence: string | null; injected: number; sections_count: number; chars: number; est_tokens: number
   bundle_tokens: number | null; prompt_chars: number | null; turn_input_tokens: number | null
   duration_ms: number | null; error: string | null; created_at: number
@@ -3248,7 +3313,8 @@ function mapKbUsageSection(r: KbUsageSectionRow): KbUsageSectionRef {
 function mapKbUsageQuery(r: KbUsageQueryRow, sections: KbUsageSectionRef[]): KbUsageQuery {
   return {
     id: r.id, seq: r.seq, conversationId: r.conversation_id, projectId: r.project_id, turnId: r.turn_id,
-    messageId: r.message_id, source: kbSource(r.source), status: kbStatus(r.status), query: r.query,
+    messageId: r.message_id, ciRunId: r.ci_run_id, ciStepId: r.ci_step_id,
+    source: kbSource(r.source), status: kbStatus(r.status), query: r.query,
     confidence: r.confidence === 'high' || r.confidence === 'medium' || r.confidence === 'low' ? r.confidence : null,
     injected: r.injected === 1, sectionsCount: r.sections_count, chars: r.chars, estimatedTokens: r.est_tokens,
     bundleTokens: r.bundle_tokens, promptChars: r.prompt_chars, turnInputTokens: r.turn_input_tokens,
@@ -3320,6 +3386,10 @@ function mapCiCommand(r: CiCommandRow): CiCommand {
 function normCiStatus(s: string): CiStatus {
   return s === 'running' || s === 'awaiting_input' || s === 'success' || s === 'failed' || s === 'cancelled' || s === 'timeout' || s === 'skipped' ? s : 'queued'
 }
+/** Режим БЗ из строки БД: неизвестное значение — безопасный дефолт `auto`. */
+function normKbContextMode(value: string | KbContextMode | null | undefined): KbContextMode {
+  return value === 'manual' || value === 'off' ? value : 'auto'
+}
 function normRunMode(m: string | null | undefined): CiRunMode {
   return m === 'plan' ? 'plan' : 'development'
 }
@@ -3373,7 +3443,7 @@ interface CiRunRow {
   workspace_id: string | null; triggered_by: string; prev_column_id: string | null
   llm_provider: string; llm_model: string
   mode: string | null; clarify_level: string | null; clarify_max: number | null
-  conversation_id: string | null
+  conversation_id: string | null; kb_context_mode: string | null
   slot_progress_json: string; started_at: number | null; finished_at: number | null
   duration_ms: number | null; created_at: number
 }
@@ -3383,7 +3453,8 @@ function mapCiRun(r: CiRunRow): CiRun {
     status: normCiStatus(r.status), workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
     prevColumnId: r.prev_column_id, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || DEFAULT_CI_CLAUDE_MODEL),
     mode: normRunMode(r.mode), clarifyLevel: normClarifyLevel(r.clarify_level), clarifyMax: clampClarifyMax(r.clarify_max),
-    conversationId: r.conversation_id, slotProgress: parseSlotProgress(r.slot_progress_json),
+    conversationId: r.conversation_id, kbContextMode: normKbContextMode(r.kb_context_mode),
+    slotProgress: parseSlotProgress(r.slot_progress_json),
     startedAt: r.started_at, finishedAt: r.finished_at, durationMs: r.duration_ms, createdAt: r.created_at
   }
 }

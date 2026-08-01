@@ -36,6 +36,8 @@ export function makeKbQuery(over: Partial<KbUsageQuery> = {}): KbUsageQuery {
     projectId: 'p1',
     turnId: 'turn-1',
     messageId: 'm1',
+    ciRunId: null,
+    ciStepId: null,
     source: 'auto',
     status: 'delivered',
     query: 'как устроены ходы модели',

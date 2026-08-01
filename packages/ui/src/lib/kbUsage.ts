@@ -130,6 +130,9 @@ export function buildKbUsageFromMessages(messages: Message[], opts: KbUsageFallb
       projectId: opts.projectId ?? null,
       turnId: null,
       messageId: message.id,
+      // Фолбэк собирается из истории чата — ранов CI в ней нет по определению.
+      ciRunId: null,
+      ciStepId: null,
       source: 'auto',
       status: 'delivered',
       query: '',

@@ -11,9 +11,11 @@ export interface KbUsageFeedProps {
   queries: KbUsageQuery[]
   /** Показывать чат каждого обращения (вкладка «По проекту»). */
   titleOf?: (conversationId: string) => string | undefined
+  /** Открыть ленту рана: обращения из CI помечены источником и ведут в неё. */
+  onOpenRun?: (runId: string) => void
 }
 
-export function KbUsageFeed({ queries, titleOf }: KbUsageFeedProps): JSX.Element {
+export function KbUsageFeed({ queries, titleOf, onOpenRun }: KbUsageFeedProps): JSX.Element {
   if (!queries.length) {
     return (
       <EmptyState
@@ -30,7 +32,20 @@ export function KbUsageFeed({ queries, titleOf }: KbUsageFeedProps): JSX.Element
       {queries.map((query) => (
         <li key={query.id} className={`kbu-ev kbu-ev--${query.status}`}>
           <span className="kbu-ev__time">{timeOf(query.createdAt)}</span>
-          <span className="kbu-ev__src">{SOURCE_LABEL[query.source]}</span>
+          <span className="kbu-ev__src">
+            {SOURCE_LABEL[query.source]}
+            {/* Обращение из CI-рана: в чат оно попало не от собеседника, а от
+                модели раннера — источник виден, и из него есть путь в ленту. */}
+            {query.ciRunId && (
+              onOpenRun ? (
+                <button className="kbu-ev__run" onClick={() => onOpenRun(query.ciRunId as string)} title="Открыть ленту рана">
+                  CI-ран
+                </button>
+              ) : (
+                <span className="kbu-ev__run">CI-ран</span>
+              )
+            )}
+          </span>
           <span className="kbu-ev__q">{queryLabel(query)}</span>
           <span className="kbu-ev__st">
             {query.status === 'pending' ? (

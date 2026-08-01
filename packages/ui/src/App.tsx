@@ -859,6 +859,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onOpenKnowledgeBase={() => { actions.closeKbUsage(); navigate('/kb') }}
           onOpenConversationSettings={() => { actions.closeKbUsage(); setConversationSettingsOpen(true) }}
           titleOf={(id) => state.conversations.find((c) => c.id === id)?.title}
+          onOpenRun={(runId) => { actions.closeKbUsage(); actions.openCiRun(runId) }}
         />
       )}
 

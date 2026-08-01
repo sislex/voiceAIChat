@@ -364,7 +364,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     agentNameOf: (agentId) => agentRegistry.nameOf(agentId),
     // Шагу «Актуализировать базу знаний» нужен диф рабочей копии: его собирает
     // сервер тем же исполнителем, что и команды слотов.
-    executor: ciExecutor
+    executor: ciExecutor,
+    // База знаний в ходах рана: авто-контекст по теме задачи и mcp__kb__*.
+    // Режим берётся из настройки проекта и фиксируется в ране.
+    kb,
+    kbUsage,
+    kbToolEnabled: opts.config.kbToolEnabled,
+    kbTool: kbToolBroker,
+    kbMcpBaseUrl: `http://127.0.0.1:${opts.config.port}${KB_MCP_PATH}?k=${mcpSecret}`
   })
   // Вопросы модели дублируются в связанный чат задачи обычными сообщениями:
   // UI разбирает блок ```questions тем же парсером, что и вопросы в чате.

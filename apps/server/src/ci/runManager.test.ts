@@ -586,3 +586,97 @@ describe('ci run manager', () => {
     expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === first.id)!.description).not.toContain('T2')
   })
 })
+
+// База знаний в ране: обращения привязаны к рану (их видно в ленте и в модалке
+// задачи), итог попадает в резюме, а сбой базы знаний ран не роняет.
+describe('ci run manager: база знаний', () => {
+  const hit = {
+    documentId: 'ci-runner', chunkId: 'ci-runner#model', title: 'CI-раннер', heading: 'Работа модели',
+    excerpt: 'Хуки модели живут в modelHooks.', score: 12, matchTypes: ['symbol' as const],
+    explanation: 'символ', freshness: 'current' as const, sourcePath: 'docs/kb/features/ci-runner.md',
+    anchor: 'model', symbols: [], relatedFiles: []
+  }
+  const kbStub = (search: () => Promise<typeof hit[]>) => ({
+    status: () => ({ available: true, mode: 'source' as const, searchMode: 'lexical' as const, version: 'x', createdAt: 'now', documents: 1, chunks: 1, staleDocuments: 0 }),
+    topics: () => [],
+    document: () => null,
+    search,
+    context: async () => ({ query: '', confidence: 'low' as const, autoInjectAllowed: false, sections: [], relatedFiles: [], relatedDocuments: [], staleWarnings: [], estimatedTokens: 0 })
+  })
+
+  /** Пересобрать сервер с подменённой базой знаний (остальное — как в beforeEach). */
+  async function rebuild(kbService: ReturnType<typeof kbStub>): Promise<void> {
+    await app.close()
+    app = await buildServer({
+      config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-ci-kb-${Date.now()}`) }),
+      db, sessionSecret: SECRET, ciExecutor, claude: fakeClaude, codex: fakeCodex, kbService
+    })
+  }
+
+  it('обращения рана записаны с ci_run_id и видны в отчётах по ране и задаче', async () => {
+    await rebuild(kbStub(async () => [hit]))
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id)
+    expect((await waitRun(runId)).run.status).toBe('success')
+
+    const report = db.kbUsageRunReport('admin', runId)!
+    expect(report.totals.queries).toBeGreaterThan(0)
+    expect(report.recent.every((q) => q.ciRunId === runId)).toBe(true)
+    expect(report.sections[0]).toMatchObject({ documentId: 'ci-runner', anchor: 'model' })
+    // Тот же ран виден и в агрегате по задаче (блок в модалке).
+    expect(db.kbUsageTaskReport('admin', project.id, task.id)!.runs).toBe(1)
+    // И в промпте модели: блок контекста ушёл вместе с задачей.
+    expect(modelRequests[0].prompt).toContain('### CI-раннер / Работа модели')
+    expect(modelRequests[0].kbMcpUrl).toContain('/mcp/kb?k=')
+  })
+
+  it('резюме в чате содержит строку с итогами по базе знаний', async () => {
+    await rebuild(kbStub(async () => [hit]))
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id)
+    await waitRun(runId)
+    const chatId = db.getCiRunRaw(runId)!.conversationId!
+    const summary = db.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary)!
+    expect(summary.text).toMatch(/БЗ: \d+ обращений, \d+ разделов, ≈\d+ токенов/)
+  })
+
+  it('режим «off» у проекта: ни контекста, ни инструментов, телеметрия пустая', async () => {
+    await rebuild(kbStub(async () => [hit]))
+    const { project, task } = setup()
+    db.updateProject('admin', project.id, { ciKbContextMode: 'off' })
+    const runId = await run(project.id, task.id)
+    expect((await waitRun(runId)).run.status).toBe('success')
+    expect(db.getCiRunRaw(runId)!.kbContextMode).toBe('off')
+    expect(modelRequests[0].kbMcpUrl).toBeUndefined()
+    expect(modelRequests[0].prompt).not.toContain('### CI-раннер')
+    expect(db.kbUsageRunReport('admin', runId)!.totals.queries).toBe(0)
+    const chatId = db.getCiRunRaw(runId)!.conversationId!
+    expect(db.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary)!.text).not.toContain('БЗ:')
+  })
+
+  it('сломанная база знаний не меняет статус рана', async () => {
+    await rebuild(kbStub(async () => { throw new Error('индекс недоступен') }))
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id)
+    expect((await waitRun(runId)).run.status).toBe('success')
+    expect(db.kbUsageRunReport('admin', runId)!.totals.errors).toBeGreaterThan(0)
+  })
+
+  it('отчёты по ране и задаче: свой — 200, чужой — 404', async () => {
+    await rebuild(kbStub(async () => [hit]))
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id)
+    await waitRun(runId)
+    db.createUser('bob', '', 'user')
+    const bob = signToken({ name: 'bob', role: 'user' }, SECRET)
+
+    const mine = await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/kb-usage` })
+    expect(mine.statusCode).toBe(200)
+    expect(mine.json()).toMatchObject({ runId, taskId: task.id, kbContextMode: 'auto' })
+    const mineTask = await inj(admin, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/kb-usage` })
+    expect(mineTask.statusCode).toBe(200)
+
+    expect((await inj(bob, { method: 'GET', url: `/api/ci/runs/${runId}/kb-usage` })).statusCode).toBe(404)
+    expect((await inj(bob, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/kb-usage` })).statusCode).toBe(404)
+  })
+})

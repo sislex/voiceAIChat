@@ -150,6 +150,20 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     if (!db.getCiRun(uid(req), req.params.runId)) return nf(reply)
     return db.getCiRunLog(uid(req), req.params.runId)
   })
+  // Использование базы знаний моделью: по одному рану (лента) и по всем ранам
+  // задачи (модалка). Гейт — членство в проекте: чужому 404, а не пустой отчёт.
+  app.get<{ Params: { runId: string }; Querystring: { limit?: string } }>('/api/ci/runs/:runId/kb-usage', async (req, reply) => {
+    const report = db.kbUsageRunReport(uid(req), req.params.runId, Number(req.query.limit) || undefined)
+    return report ?? nf(reply)
+  })
+  app.get<{ Params: { id: string; taskId: string }; Querystring: { limit?: string } }>(
+    '/api/projects/:id/tasks/:taskId/kb-usage',
+    async (req, reply) => {
+      const report = db.kbUsageTaskReport(uid(req), req.params.id, req.params.taskId, Number(req.query.limit) || undefined)
+      return report ?? nf(reply)
+    }
+  )
+
   app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/cancel', async (req, reply) => ({ ok: ci.cancel(uid(req), req.params.runId) }))
   app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/retry', async (req, reply) => {
     const detail = db.getCiRun(uid(req), req.params.runId)

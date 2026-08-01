@@ -1,4 +1,5 @@
 import type { CiRunSummary, CiReuseStrategy, CiStatus, CiRunMode } from './ci'
+import type { KbContextMode } from './types'
 
 // Типы домена «Проекты» + канбан-доска. Разделяются server/web/desktop.
 
@@ -85,6 +86,12 @@ export interface ProjectSummary {
   ciReuseStrategy?: CiReuseStrategy
   /** CI-раннер: ссылка на секрет авторизации выполнения (или ''). */
   ciExecAuthRef?: string
+  /**
+   * CI-раннер: режим базы знаний в ходах модели рана. Настройка ПРОЕКТА, а не
+   * чата: ран берёт её у проекта и фиксирует в `CiRun.kbContextMode` на старте,
+   * поэтому смена режима действует со следующего рана.
+   */
+  ciKbContextMode?: KbContextMode
   /**
    * Через сколько дней после попадания в колонку «Готово» задача пропадает с
    * доски (как в Jira). `null` — не скрывать никогда, `0` — скрывать сразу.

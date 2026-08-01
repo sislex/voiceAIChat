@@ -9,7 +9,7 @@ import type {
   ServerMessage, CiRun, CiRunStep, CiStatus, CiSlot, CiSlotProgress, CiCommand,
   CiRunMode, CiInteraction, CiInteractionAnswer, CiPlanDecision, QuestionSpec, Message, Task
 } from '@voicechat/shared'
-import { formatQuestionsBlock, issueKey } from '@voicechat/shared'
+import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey } from '@voicechat/shared'
 import { isTerminalCiStatus } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
@@ -239,6 +239,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       clarifyLevel: llm.clarifyLevel,
       clarifyMax: llm.clarifyMax,
       conversationId,
+      // Режим БЗ — снимок настройки проекта: смена настройки действует со
+      // следующего рана, а этот до конца работает в зафиксированном режиме.
+      kbContextMode: project.ciKbContextMode ?? 'auto',
       slotProgress: { done: 0, total, phase: 'В очереди' }
     })
     const developmentColumnId = deps.db.getColumnIdBySemantic(projectId, 'development')
@@ -1275,6 +1278,22 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
   }
 
   /**
+   * Строка итогов по базе знаний для резюме рана. Обращений не было (режим
+   * `off`, нечего искать, БЗ недоступна) — строки тоже нет: пустое «БЗ: 0» в
+   * чате читается как поломка. Отчёт не имеет права уронить резюме, поэтому
+   * любая ошибка выборки — просто пустая строка.
+   */
+  function kbSummaryLine(runId: string, userId: string): string {
+    try {
+      const report = deps.db.kbUsageRunReport(userId, runId)
+      if (!report || !report.totals.queries) return ''
+      return `\n\n${formatKbUsageSummaryLine(report.totals)}`
+    } catch {
+      return ''
+    }
+  }
+
+  /**
    * Резюме рана уходит отдельным сообщением в связанный чат задачи: работу
    * обсуждают в чате, а лента рана — служебная и живёт до следующего запуска.
    * Промах (чат удалён, резюме не сложилось) ран не роняет.
@@ -1284,7 +1303,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     const conversationId = deps.db.getCiRunRaw(runId)?.conversationId
     if (!conversationId) return
     const head = `Резюме по задаче ${issueKey(projectName, task)} · ${task.title}`
-    const message = deps.postSummaryToChat({ userId, conversationId, text: `${head}\n\n${summaryText}`, runId })
+    const message = deps.postSummaryToChat({ userId, conversationId, text: `${head}\n\n${summaryText}${kbSummaryLine(runId, userId)}`, runId })
     // Открытый чат показывает резюме сразу; закрытый увидит его при открытии.
     if (message) broadcast({ t: 'chat.message', conversationId, message }, userId)
   }

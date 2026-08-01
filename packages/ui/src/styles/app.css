@@ -4931,5 +4931,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .kbu-ev { grid-template-columns: 1fr; }
   .kbu-table td { white-space: normal; }
 }
+/* Врез «Использование БЗ» в ленте рана и модалке задачи (KbUsageBrief). */
+.kbu-brief { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.kbu-brief__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.kbu-brief__note, .kbu-brief__empty, .kbu-brief__more, .kbu-brief__times { font-size: 12px; color: var(--text-dim); }
+.kbu-brief__nums { margin: 0; font-size: 12px; color: var(--text); }
+.kbu-brief__empty, .kbu-brief__more { margin: 0; }
+.kbu-brief__list { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
+.kbu-brief__list li { display: flex; align-items: baseline; gap: 6px; }
+.kbu-brief__list .kbu-doc { text-decoration: none; }
+/* Метка обращения из CI-рана в ленте панели: путь в ленту этого рана. */
+.kbu-ev__run { margin-left: 6px; border: none; background: var(--ci-progress-bg); color: var(--ci-progress); border-radius: 99px; padding: 0 7px; font: inherit; font-size: 11px; cursor: pointer; }
+
 /* Чипс «База знаний» в «Подробнее» — ссылка на раздел (#/kb/:documentId). */
 .metachip--link { border: none; font: inherit; color: var(--accent); cursor: pointer; text-align: left; }

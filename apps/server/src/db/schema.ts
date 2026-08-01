@@ -252,6 +252,8 @@ CREATE TABLE IF NOT EXISTS ci_runs (
   clarify_level  TEXT NOT NULL DEFAULT 'few',
   clarify_max    INTEGER NOT NULL DEFAULT 3,
   conversation_id TEXT,
+  -- Снимок режима БЗ проекта на старте рана (auto|manual|off).
+  kb_context_mode TEXT NOT NULL DEFAULT 'auto',
   slot_progress_json TEXT NOT NULL DEFAULT '{}',
   started_at     INTEGER,
   finished_at    INTEGER,
@@ -391,6 +393,9 @@ CREATE TABLE IF NOT EXISTS kb_usage_queries (
   project_id      TEXT,
   turn_id         TEXT,
   message_id      TEXT,
+  -- Ран CI-раннера и шаг его ленты, если обращение случилось в ходе рана.
+  ci_run_id       TEXT,
+  ci_step_id      TEXT,
   source          TEXT NOT NULL,
   status          TEXT NOT NULL DEFAULT 'delivered',
   query           TEXT NOT NULL DEFAULT '',
@@ -410,6 +415,8 @@ CREATE TABLE IF NOT EXISTS kb_usage_queries (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_usage_seq ON kb_usage_queries(conversation_id, seq);
 CREATE INDEX IF NOT EXISTS idx_kb_usage_project ON kb_usage_queries(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_kb_usage_turn ON kb_usage_queries(turn_id);
+-- Индекс по ci_run_id создаёт migrate(): на БД, которая старше этих колонок,
+-- CREATE TABLE IF NOT EXISTS их не добавит, и индекс здесь упал бы на старте.
 
 CREATE TABLE IF NOT EXISTS kb_usage_sections (
   id          TEXT PRIMARY KEY,

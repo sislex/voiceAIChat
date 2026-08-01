@@ -42,6 +42,8 @@ export interface KbUsagePanelProps {
   onOpenConversationSettings?: () => void
   /** Названия чатов для ленты проектной вкладки. */
   titleOf?: (conversationId: string) => string | undefined
+  /** Открыть ленту CI-рана (обращения рана помечены в ленте панели). */
+  onOpenRun?: (runId: string) => void
 }
 
 function statusOf(cache: KbUsageCache | undefined): LoadStatus {
@@ -140,6 +142,7 @@ export function KbUsagePanel(props: KbUsagePanelProps): JSX.Element {
         />
         <KbUsageFeed
           queries={report.recent}
+          {...(props.onOpenRun ? { onOpenRun: props.onOpenRun } : {})}
           {...(tab === 'project' ? { titleOf: (id: string) => props.titleOf?.(id) ?? projectCache?.conversations?.find((item) => item.conversationId === id)?.title } : {})}
         />
       </>

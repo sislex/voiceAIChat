@@ -20,6 +20,8 @@ import { PromptBuilder, type GenerateParams, type Suggestion } from '../prompt-b
 import { applyNativeInputValue, useAiAssist } from '../prompt-builder/useAiAssist'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanbanMeta'
 import { CiTaskSettings } from '../ci/CiTaskSettings'
+import { KbUsageBrief } from '../kb/KbUsageBrief'
+import { useKbUsageReport } from '../../lib/useKbUsageReport'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { canStartCiRun, type CiRunSummary } from '@shared/ci'
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
@@ -146,6 +148,13 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
 
   // Пока ран задачи идёт, запуск недоступен; завершённый ран не мешает (см. canStartCiRun).
   const canStartCi = canStartCiRun(props.ciSummary)
+  // Использование БЗ — агрегат по ВСЕМ ранам задачи. Перечитываем, когда
+  // меняется статус последнего рана: только что закончившийся ран добавил свои
+  // обращения, и цифры в карточке обязаны это показать.
+  const kbUsage = useKbUsageReport(
+    () => (task.type === 'task' ? window.ci?.getTaskKbUsage(task.projectId, task.id) : undefined),
+    [task.id, task.projectId, task.type, props.ciSummary?.status]
+  )
 
   const column = board.columns.find((c) => c.id === task.columnId)
   const parent = task.parentId ? board.tasks.find((t) => t.id === task.parentId) : null
@@ -542,6 +551,17 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                 )}
               </div>
             </div>
+          )}
+          {task.type === 'task' && kbUsage.report && (
+            <KbUsageBrief
+              title="Использование БЗ"
+              note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'}
+              totals={kbUsage.report.totals}
+              sections={kbUsage.report.sections}
+              loading={kbUsage.loading}
+              error={kbUsage.error}
+              testId="task-modal-kb-usage"
+            />
           )}
           <CiTaskSettings projectId={task.projectId} taskId={task.id} />
         </aside>

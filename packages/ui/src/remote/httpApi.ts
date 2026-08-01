@@ -4,7 +4,7 @@
 
 import { REST } from '@shared/protocol'
 import type { RendererKbRest } from './kbBridge'
-import type { KbProjectUsageReport, KbUsageReport } from '@shared/kb'
+import type { KbProjectUsageReport, KbRunUsageReport, KbTaskUsageReport, KbUsageReport } from '@shared/kb'
 import type {
   RendererCiRest,
   CiCommandUsage,
@@ -327,6 +327,8 @@ export function createCiRest(httpBase: string): RendererCiRest {
     startRun: (projectId, taskId, mode) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST', body: JSON.stringify(mode ? { mode } : {}) }),
     getRun: (runId) => req<CiRunDetail>(REST.ciRun(runId)),
     getRunLog: (runId) => req<CiLogLine[]>(REST.ciRunLog(runId)),
+    getRunKbUsage: (runId) => req<KbRunUsageReport>(REST.ciRunKbUsage(runId)),
+    getTaskKbUsage: (projectId, taskId) => req<KbTaskUsageReport>(REST.taskKbUsage(projectId, taskId)),
     cancelRun: (runId) => req<{ ok: boolean }>(REST.ciRunCancel(runId), { method: 'POST' }),
     retryRun: (runId) => req<CiRun>(REST.ciRunRetry(runId), { method: 'POST' }),
     retryRunFromStep: (runId, selection) => req<CiRun>(REST.ciRunRetryFromStep(runId), { method: 'POST', body: JSON.stringify(selection ?? {}) }),

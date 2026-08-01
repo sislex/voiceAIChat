@@ -14,7 +14,6 @@ import {
   buildPrompt,
   clampModelForRole,
   claudeModelAlias,
-  estimateKbTokens,
   normalizeClaudeModel,
   type ActiveTurn,
   type AgentPolicy,
@@ -32,6 +31,7 @@ import { relocateImagesToMachine } from './imageRelocate.js'
 import type { LlmClient, LlmHandle } from './claude/types.js'
 import type { KnowledgeBaseService } from './kb/types.js'
 import { kbViewOf } from './kb/access.js'
+import { buildKbAutoContext } from './kb/autoContext.js'
 import type { KbUsageTracker } from './kb/usage.js'
 
 export interface TurnManagerDeps {
@@ -269,30 +269,23 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         try {
           // Вид пользователя: общий раздел + его персональные знания + знания
           // проекта чата. Права считает kbViewOf (kb/access.ts), а не ход.
-          const bundle = await deps.kb.context(kbQuery, 3500, {
+          // Сборку блоков делает kb/autoContext.ts — та же, что у CI-рана.
+          const auto = await buildKbAutoContext(deps.kb, kbQuery, {
             ...kbViewOf(deps.db, userId),
             ...(conv?.projectId ? { projectId: conv.projectId } : {})
           })
-          if (bundle.autoInjectAllowed && bundle.sections.length) {
-            // Блоки собираем по одному: их длины — точные символы каждого раздела,
-            // пришедшие модели (в панели это единственное честное число).
-            const blocks = bundle.sections.map((section) => `### ${section.title} / ${section.heading}\nИсточник: ${section.sourcePath}${section.anchor ? `#${section.anchor}` : ''}\n${section.excerpt}`)
-            kbContext = { confidence: bundle.confidence, sections: bundle.sections.map(({ documentId, title, heading, sourcePath, anchor, freshness }, index) => ({ documentId, title, heading, sourcePath, anchor, freshness, chars: blocks[index].length, estimatedTokens: estimateKbTokens(blocks[index].length) })) }
-            const before = basePrompt.length
-            basePrompt = `${basePrompt}\n\n## Контекст базы знаний voiceAIChat\nИспользуй как навигацию и сверяй с кодом при изменении поведения.\n\n${blocks.join('\n\n')}`
+          if (auto.text) {
+            kbContext = { confidence: auto.bundle.confidence, sections: auto.contextSections }
+            basePrompt = `${basePrompt}${auto.text}`
             usage?.complete({
-              deliveredChars: basePrompt.length - before,
+              deliveredChars: auto.text.length,
               injected: true,
-              bundleTokens: bundle.estimatedTokens,
-              confidence: bundle.confidence,
-              sections: bundle.sections.map((section, index) => ({
-                documentId: section.documentId, title: section.title, heading: section.heading, anchor: section.anchor,
-                sourcePath: section.sourcePath, chars: blocks[index].length, score: section.score,
-                matchTypes: section.matchTypes, freshness: section.freshness
-              }))
+              bundleTokens: auto.bundle.estimatedTokens,
+              confidence: auto.bundle.confidence,
+              sections: auto.sections
             })
           } else {
-            usage?.empty(bundle.sections.length ? 'low-confidence' : 'no-match')
+            usage?.empty(auto.emptyReason ?? 'no-match')
           }
         } catch (err) {
           // KB не должна блокировать основной ход: exact/BM25/reranker могут быть временно недоступны.

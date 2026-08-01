@@ -229,6 +229,16 @@ variant="page"`: в заголовке имя проекта, в слоте `act
 (бывший `feature_repos_root`); `project_machines.path` по-прежнему задаёт
 директорию обычного проектного чата.
 
+CI-настройки живут в самих `projects` (`ci_base_branch`, `ci_branch_template`,
+`ci_reuse_strategy`, `ci_exec_auth_ref`, `ci_kb_context_mode`) и добавляются
+идемпотентными ALTER'ами в `migrate()`. `ci_kb_context_mode` (`auto` | `manual` |
+`off`, дефолт `auto`) — режим базы знаний в ходах МОДЕЛИ рана: селектор
+«CI: база знаний в ране» в `ProjectSettings` с пояснением, что на чаты проекта
+настройка не влияет (у чата свой режим) и что значение применяется к следующему
+рану — ран фиксирует снимок в `ci_runs.kb_context_mode`. Подробности —
+[features/ci-runner.md](features/ci-runner.md) и
+[features/kb-usage.md](features/kb-usage.md).
+
 ## Навыки по умолчанию, навыки карточки и связанный чат
 
 В настройках проекта (`ProjectSettings`) владелец задаёт **навыки по умолчанию**
