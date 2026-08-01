@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
 import { toFtsMatchQuery } from './fts.js'
+import { calculateKbHit, filesReadFromCiLog } from '../ci/kbHit.js'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_AGENT_POLICY,
@@ -26,6 +27,9 @@ import {
   type UsageTotals,
   type UsageUnit,
   type UserRole,
+  type AdminLlmEngine,
+  type AdminLlmEngineInput,
+  type LlmEngineKind,
   type Board,
   type KanbanColumn,
   type ProjectDetail,
@@ -128,6 +132,7 @@ interface ConversationRow {
   exec_target: string | null
   workdir: string | null
   skill_names: string | null
+  llm_engine_id: string | null
   llm_provider: string | null
   llm_model: string | null
   permission_mode: string | null
@@ -162,6 +167,18 @@ interface UserDbRow {
   password_hash: string
   role: string
   blocked: number
+  created_at: number
+}
+
+interface LlmEngineRow {
+  id: string
+  name: string
+  kind: string
+  base_url: string
+  token: string
+  enabled: number
+  allowed_roles: string
+  is_default: number
   created_at: number
 }
 
@@ -324,6 +341,14 @@ function parseStringArray(raw: string | null): string[] {
   } catch {
     return []
   }
+}
+
+function parseAllowedRoles(raw: string | null): UserRole[] {
+  return parseStringArray(raw).filter((role): role is UserRole => role === 'admin' || role === 'user')
+}
+
+function normEngineKind(raw: string): LlmEngineKind {
+  return raw === 'codex' ? 'codex' : 'claude'
 }
 
 /** Валидный приоритет (неизвестное → medium). */
@@ -504,6 +529,9 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'skill_names')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN skill_names TEXT NOT NULL DEFAULT '[]'`)
     }
+    if (!convCols.some((c) => c.name === 'llm_engine_id')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN llm_engine_id TEXT`)
+    }
     if (!convCols.some((c) => c.name === 'llm_provider')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN llm_provider TEXT`)
     }
@@ -632,6 +660,7 @@ export class VoiceChatDb {
     // дефолт 14 дней (DEFAULT в ALTER заполняет старые строки).
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'done_retention_days')) this.db.exec(`ALTER TABLE projects ADD COLUMN done_retention_days INTEGER DEFAULT ${DEFAULT_DONE_RETENTION_DAYS}`)
     const ciRunCols = this.db.prepare(`PRAGMA table_info(ci_runs)`).all() as Array<{ name: string }>
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_engine_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_engine_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_provider')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_provider TEXT NOT NULL DEFAULT 'claude'`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_model')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_model TEXT NOT NULL DEFAULT '${DEFAULT_CI_CLAUDE_MODEL}'`)
     // Режим запуска (план/разработка), глубина уточнений и связанный чат рана.
@@ -665,6 +694,19 @@ export class VoiceChatDb {
     if (kbUsageCols.length && !kbUsageCols.some((c) => c.name === 'ci_run_id')) this.db.exec(`ALTER TABLE kb_usage_queries ADD COLUMN ci_run_id TEXT`)
     if (kbUsageCols.length && !kbUsageCols.some((c) => c.name === 'ci_step_id')) this.db.exec(`ALTER TABLE kb_usage_queries ADD COLUMN ci_step_id TEXT`)
     if (kbUsageCols.length) this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_usage_ci_run ON kb_usage_queries(ci_run_id, created_at DESC)`)
+    const kbSectionCols = this.db.prepare(`PRAGMA table_info(kb_usage_sections)`).all() as Array<{ name: string }>
+    if (kbSectionCols.length && !kbSectionCols.some((c) => c.name === 'related_files')) this.db.exec(`ALTER TABLE kb_usage_sections ADD COLUMN related_files TEXT NOT NULL DEFAULT '[]'`)
+
+    const llmEngineCols = this.db.prepare(`PRAGMA table_info(llm_engines)`).all() as Array<{ name: string }>
+    if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'token')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN token TEXT NOT NULL DEFAULT ''`)
+    if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'enabled')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`)
+    if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'allowed_roles')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN allowed_roles TEXT NOT NULL DEFAULT '[\"admin\",\"user\"]'`)
+    if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'is_default')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`)
+    if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'created_at')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0`)
+    if (llmEngineCols.length) {
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_llm_engines_kind_enabled ON llm_engines(kind, enabled, created_at)`)
+      this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_engines_default_kind ON llm_engines(kind) WHERE is_default = 1`)
+    }
 
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
@@ -716,7 +758,7 @@ export class VoiceChatDb {
          VALUES (?, ?, ?, ?, NULL, ?, NULL)`
       )
       .run(id, title, ts, ts, userId)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
   }
 
   /**
@@ -808,7 +850,8 @@ export class VoiceChatDb {
     skillNames?: string[],
     llmProvider?: LlmProvider | null,
     llmModel?: string | null,
-    permissionMode?: PermissionMode | null
+    permissionMode?: PermissionMode | null,
+    llmEngineId?: string | null
   ): Conversation | null {
     const fields = ['exec_target = ?']
     const values: unknown[] = [execTarget]
@@ -819,6 +862,10 @@ export class VoiceChatDb {
     if (skillNames !== undefined) {
       fields.push('skill_names = ?')
       values.push(JSON.stringify(skillNames))
+    }
+    if (llmEngineId !== undefined) {
+      fields.push('llm_engine_id = ?')
+      values.push(llmEngineId)
     }
     if (llmProvider !== undefined) {
       fields.push('llm_provider = ?')
@@ -1318,6 +1365,108 @@ export class VoiceChatDb {
     })()
   }
 
+
+  // ---- LLM engines (реестр исполнителей) ---------------------------------
+
+  private mapLlmEngine(r: LlmEngineRow): AdminLlmEngine {
+    return {
+      id: r.id,
+      name: r.name,
+      kind: normEngineKind(r.kind),
+      baseUrl: r.base_url,
+      token: r.token,
+      enabled: r.enabled !== 0,
+      allowedRoles: parseAllowedRoles(r.allowed_roles),
+      isDefault: r.is_default !== 0,
+      createdAt: r.created_at
+    }
+  }
+
+  listLlmEngines(): AdminLlmEngine[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM llm_engines ORDER BY kind ASC, is_default DESC, created_at ASC`)
+      .all() as LlmEngineRow[]
+    return rows.map((row) => this.mapLlmEngine(row))
+  }
+
+  getLlmEngine(id: string): AdminLlmEngine | null {
+    const row = this.db.prepare(`SELECT * FROM llm_engines WHERE id = ?`).get(id) as LlmEngineRow | undefined
+    return row ? this.mapLlmEngine(row) : null
+  }
+
+
+  /** Исполнители, доступные роли; секреты наружу не возвращаются. */
+  listLlmEnginesForRole(role: UserRole) {
+    return this.listLlmEngines()
+      .filter((engine) => engine.enabled && engine.allowedRoles.includes(role))
+      .map(({ id, name, kind, isDefault }) => ({ id, name, kind, isDefault }))
+  }
+
+  resolveLlmEngine(engineId: string | null | undefined, kind: LlmEngineKind, role: UserRole) {
+    const allowed = (engine: AdminLlmEngine | null): engine is AdminLlmEngine =>
+      Boolean(engine && engine.kind === kind && engine.enabled && engine.allowedRoles.includes(role))
+    const requested = engineId ? this.getLlmEngine(engineId) : null
+    if (allowed(requested)) return { engine: requested, substituted: false }
+    const fallback = this.listLlmEngines().find((engine) => engine.kind === kind && engine.isDefault && allowed(engine))
+      ?? this.listLlmEngines().find((engine) => engine.kind === kind && allowed(engine))
+      ?? null
+    return { engine: fallback, substituted: Boolean(engineId && engineId !== fallback?.id) }
+  }
+
+  createLlmEngine(input: AdminLlmEngineInput): AdminLlmEngine {
+    const id = this.newId()
+    const ts = this.now()
+    this.db.transaction(() => {
+      if (input.isDefault) this.db.prepare(`UPDATE llm_engines SET is_default = 0 WHERE kind = ?`).run(input.kind)
+      this.db
+        .prepare(
+          `INSERT INTO llm_engines (id, name, kind, base_url, token, enabled, allowed_roles, is_default, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          id,
+          input.name,
+          input.kind,
+          input.baseUrl,
+          input.token,
+          input.enabled ? 1 : 0,
+          JSON.stringify(input.allowedRoles),
+          input.isDefault ? 1 : 0,
+          ts
+        )
+    })()
+    return this.getLlmEngine(id) as AdminLlmEngine
+  }
+
+  updateLlmEngine(id: string, patch: AdminLlmEngineInput): AdminLlmEngine | null {
+    const exists = this.getLlmEngine(id)
+    if (!exists) return null
+    this.db.transaction(() => {
+      if (patch.isDefault) this.db.prepare(`UPDATE llm_engines SET is_default = 0 WHERE kind = ? AND id != ?`).run(patch.kind, id)
+      this.db
+        .prepare(
+          `UPDATE llm_engines
+           SET name = ?, kind = ?, base_url = ?, token = ?, enabled = ?, allowed_roles = ?, is_default = ?
+           WHERE id = ?`
+        )
+        .run(
+          patch.name,
+          patch.kind,
+          patch.baseUrl,
+          patch.token,
+          patch.enabled ? 1 : 0,
+          JSON.stringify(patch.allowedRoles),
+          patch.isDefault ? 1 : 0,
+          id
+        )
+    })()
+    return this.getLlmEngine(id)
+  }
+
+  deleteLlmEngine(id: string): void {
+    this.db.prepare(`DELETE FROM llm_engines WHERE id = ?`).run(id)
+  }
+
   // ---- Отчёт по токенам (агрегация meta ai-сообщений пользователя) --------
 
   /**
@@ -1384,6 +1533,7 @@ export class VoiceChatDb {
           return []
         }
       })(),
+      llmEngineId: row.llm_engine_id ?? null,
       llmProvider: row.llm_provider === 'claude' || row.llm_provider === 'codex' ? row.llm_provider : null,
       llmModel: row.llm_model,
       // Мусор в колонке (например, откат версии) читаем как «из общих настроек».
@@ -2546,10 +2696,10 @@ export class VoiceChatDb {
 
   // --- Раны и шаги ---
 
-  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; triggeredBy: string; prevColumnId: string | null; slotProgress: CiSlotProgress; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
+  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; triggeredBy: string; prevColumnId: string | null; slotProgress: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
     const id = this.newId()
     const ts = this.now()
-    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, status, triggered_by, prev_column_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.triggeredBy, args.prevColumnId, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts)
+    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, status, triggered_by, prev_column_id, llm_engine_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.triggeredBy, args.prevColumnId, args.llmEngineId ?? null, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts)
     return mapCiRun(this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(id) as CiRunRow)
   }
 
@@ -2572,7 +2722,7 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC`).all(taskId) as CiRunRow[]).map(mapCiRun)
   }
 
-  updateCiRun(runId: string, patch: { status?: CiStatus; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null }): CiRun | null {
+  updateCiRun(runId: string, patch: { status?: CiStatus; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null }): CiRun | null {
     const set: string[] = []
     const vals: unknown[] = []
     if (patch.status !== undefined) { set.push('status = ?'); vals.push(patch.status) }
@@ -2581,6 +2731,7 @@ export class VoiceChatDb {
     if (patch.finishedAt !== undefined) { set.push('finished_at = ?'); vals.push(patch.finishedAt) }
     if (patch.durationMs !== undefined) { set.push('duration_ms = ?'); vals.push(patch.durationMs) }
     if (patch.slotProgress !== undefined) { set.push('slot_progress_json = ?'); vals.push(JSON.stringify(patch.slotProgress)) }
+    if (patch.llmEngineId !== undefined) { set.push('llm_engine_id = ?'); vals.push(patch.llmEngineId) }
     if (patch.llmProvider !== undefined) { set.push('llm_provider = ?'); vals.push(patch.llmProvider) }
     if (patch.llmModel !== undefined) { set.push('llm_model = ?'); vals.push(patch.llmModel) }
     if (patch.mode !== undefined) { set.push('mode = ?'); vals.push(normRunMode(patch.mode)) }
@@ -2754,6 +2905,32 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM ci_run_usage WHERE run_id = ? ORDER BY at ASC, rowid ASC`).all(runId) as CiRunUsageRow[]).map(mapCiRunUsage)
   }
 
+  /** Финальный агрегат: список файлов остаётся в логе, в БД сохраняются только числа. */
+  calculateAndSaveCiKbHit(runId: string): ReturnType<typeof calculateKbHit> {
+    const sections = (this.db.prepare(
+      `SELECT s.document_id, s.anchor, s.related_files FROM kb_usage_sections s
+       JOIN kb_usage_queries q ON q.id = s.query_id
+       WHERE q.ci_run_id = ? AND q.status = 'delivered' ORDER BY q.created_at, s.position`
+    ).all(runId) as Array<{ document_id: string; anchor: string; related_files: string }>).map((row) => ({
+      documentId: row.document_id, anchor: row.anchor, relatedFiles: parseStringArray(row.related_files)
+    }))
+    const chunks = (this.db.prepare(`SELECT chunk FROM ci_run_logs WHERE run_id = ? ORDER BY seq`).all(runId) as Array<{ chunk: string }>).map((row) => row.chunk)
+    if (!chunks.length) return null
+    const metric = calculateKbHit(sections, filesReadFromCiLog(chunks))
+    if (!metric) return null
+    this.db.prepare(`INSERT INTO ci_run_kb_metrics (run_id, sections_delivered, sections_hit, hit_ratio, calculated_at)
+      VALUES (?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET sections_delivered = excluded.sections_delivered,
+      sections_hit = excluded.sections_hit, hit_ratio = excluded.hit_ratio, calculated_at = excluded.calculated_at`)
+      .run(runId, metric.sectionsDelivered, metric.sectionsHit, metric.hitRatio, this.now())
+    return metric
+  }
+
+  private ciKbHit(runId: string): { sectionsDelivered: number; sectionsHit: number; hitRatio: number } | null {
+    const row = this.db.prepare(`SELECT sections_delivered, sections_hit, hit_ratio FROM ci_run_kb_metrics WHERE run_id = ?`).get(runId) as
+      { sections_delivered: number; sections_hit: number; hit_ratio: number } | undefined
+    return row ? { sectionsDelivered: row.sections_delivered, sectionsHit: row.sections_hit, hitRatio: row.hit_ratio } : null
+  }
+
   /**
    * Отчёт по рану: сводка, агрегаты расхода и все шаги с длительностями. Гейт —
    * членство в проекте рана (как у ленты), поэтому чужой получает null → 404.
@@ -2805,7 +2982,7 @@ export class VoiceChatDb {
       runId: run.id, projectId: run.projectId, taskId: run.taskId, status: run.status, mode: run.mode,
       provider: run.llmProvider, model: run.llmModel, startedAt: run.startedAt, finishedAt: run.finishedAt,
       durationMs: run.durationMs, createdAt: run.createdAt, fixAttempts,
-      totals: ciUsageTotals(usage), steps
+      totals: ciUsageTotals(usage), steps, kbHit: this.ciKbHit(run.id)
     }
   }
 
@@ -2993,6 +3170,7 @@ export class VoiceChatDb {
       heading?: string
       anchor?: string
       sourcePath?: string
+      relatedFiles?: string[]
       chars: number
       score?: number | null
       matchTypes?: KbMatchType[]
@@ -3009,6 +3187,7 @@ export class VoiceChatDb {
       heading: item.heading ?? '',
       anchor: item.anchor ?? '',
       sourcePath: item.sourcePath ?? '',
+      relatedFiles: item.relatedFiles ?? [],
       chars: item.chars,
       estimatedTokens: estimateKbTokens(item.chars),
       score: item.score ?? null,
@@ -3022,9 +3201,9 @@ export class VoiceChatDb {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     const insertSection = this.db.prepare(
-      `INSERT INTO kb_usage_sections (id, query_id, document_id, title, heading, anchor, source_path, chars, est_tokens,
+      `INSERT INTO kb_usage_sections (id, query_id, document_id, title, heading, anchor, source_path, related_files, chars, est_tokens,
          score, match_types, freshness, position)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     // Одна транзакция: MAX(seq)+1 считается внутри неё, иначе параллельные
     // обращения одного разговора получили бы один и тот же курсор.
@@ -3043,7 +3222,7 @@ export class VoiceChatDb {
       )
       sections.forEach((section, position) => {
         insertSection.run(
-          this.newId(), id, section.documentId, section.title, section.heading, section.anchor, section.sourcePath,
+          this.newId(), id, section.documentId, section.title, section.heading, section.anchor, section.sourcePath, JSON.stringify(section.relatedFiles),
           section.chars, section.estimatedTokens, section.score, JSON.stringify(section.matchTypes), section.freshness,
           position
         )
@@ -3401,7 +3580,7 @@ interface KbUsageQueryRow {
 }
 interface KbUsageSectionRow {
   id: string; query_id: string; document_id: string; title: string; heading: string; anchor: string
-  source_path: string; chars: number; est_tokens: number; score: number | null; match_types: string
+  source_path: string; related_files: string; chars: number; est_tokens: number; score: number | null; match_types: string
   freshness: string; position: number
 }
 interface KbSectionAggRow {
@@ -3429,7 +3608,7 @@ function kbMatchTypes(json: string): KbMatchType[] {
 }
 function mapKbUsageSection(r: KbUsageSectionRow): KbUsageSectionRef {
   return {
-    documentId: r.document_id, title: r.title, heading: r.heading, anchor: r.anchor, sourcePath: r.source_path,
+    documentId: r.document_id, title: r.title, heading: r.heading, anchor: r.anchor, sourcePath: r.source_path, relatedFiles: parseStringArray(r.related_files),
     chars: r.chars, estimatedTokens: r.est_tokens, score: r.score, matchTypes: kbMatchTypes(r.match_types),
     freshness: kbFreshness(r.freshness)
   }
@@ -3566,7 +3745,7 @@ function parseSlotProgress(j: string): CiSlotProgress {
 interface CiRunRow {
   id: string; project_id: string; task_id: string; agent_id: string | null; status: string
   workspace_id: string | null; triggered_by: string; prev_column_id: string | null
-  llm_provider: string; llm_model: string
+  llm_engine_id: string | null; llm_provider: string; llm_model: string
   mode: string | null; clarify_level: string | null; clarify_max: number | null
   conversation_id: string | null; kb_context_mode: string | null
   slot_progress_json: string; started_at: number | null; finished_at: number | null
@@ -3576,7 +3755,7 @@ function mapCiRun(r: CiRunRow): CiRun {
   return {
     id: r.id, projectId: r.project_id, taskId: r.task_id, agentId: r.agent_id,
     status: normCiStatus(r.status), workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
-    prevColumnId: r.prev_column_id, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || DEFAULT_CI_CLAUDE_MODEL),
+    prevColumnId: r.prev_column_id, llmEngineId: r.llm_engine_id ?? null, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || DEFAULT_CI_CLAUDE_MODEL),
     mode: normRunMode(r.mode), clarifyLevel: normClarifyLevel(r.clarify_level), clarifyMax: clampClarifyMax(r.clarify_max),
     conversationId: r.conversation_id, kbContextMode: normKbContextMode(r.kb_context_mode),
     slotProgress: parseSlotProgress(r.slot_progress_json),

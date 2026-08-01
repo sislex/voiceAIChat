@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-01
-checked: 57591f0
+checked: 12c087a
 areas:
   - packages/ui/src
   - apps/web/src
@@ -33,7 +33,7 @@ web/desktop host → installRemoteBridges → HTTP + WebSocket → server
 - уведомления: очередь `notices` для тостов (ошибки мостов, успех операций);
 - машины: агенты, окно управления, utility console/explorer;
 - наблюдатели: Claude Code и Codex projects/sessions/transcripts;
-- администрирование: пользователи, usage, разговоры и сообщения выбранного пользователя;
+- администрирование: пользователи, usage, разговоры и сообщения выбранного пользователя, плюс отдельный список LLM-исполнителей и кэш их health-check по `engineId`;
 - проекты: список, sidebar filter, detail, board и loading;
 - поверхности UI: settings/users/machines/projects/board/utility open flags.
 
@@ -191,7 +191,7 @@ accent-полоска (`.convo--task`), а рамка подсвечиваетс
 
 `MachineStatus`, `AgentCard`, `AgentCommands` обслуживают регистрацию, токен, policy, install/update и диагностику. `MachineUtility` выбирает `MachineConsole` или `FileExplorer`; `MachineTerminal` использует xterm и PTY bridge.
 
-`CcObserver` и `CodexObserver` отображают внешние CLI-сессии и могут возобновить их как разговор. `UsersAdmin` доступен admin. `ProjectPage` (общая шапка с вкладками «Канбан»/«Настройки»), `ProjectBoard`, `ProjectSettings`, `TaskCard` реализуют членство, машины и канбан. Перетаскивание на доске — общий движок pointer-жеста `lib/dnd.ts` (мышь, палец, стилус) плюс перенос с клавиатуры и объявления в `aria-live`; подробности — в [projects.md](projects.md), раздел «Перетаскивание карточек и колонок».
+`CcObserver` и `CodexObserver` отображают внешние CLI-сессии и могут возобновить их как разговор. `UsersAdmin` доступен admin и теперь совмещает две независимые секции: управление пользователями и реестр LLM-исполнителей. `openUsers()` в сторе грузит оба среза параллельно (`refreshAdminUsers()` + `refreshAdminLlmEngines()`), но статус/ошибка у них раздельные: падение реестра не стирает список пользователей и наоборот. Для исполнителей стор держит ещё и `adminLlmEngineHealth` — последний снимок проверки по `engineId`; удаление записи сразу вычищает её health-кэш. `ProjectPage` (общая шапка с вкладками «Канбан»/«Настройки»), `ProjectBoard`, `ProjectSettings`, `TaskCard` реализуют членство, машины и канбан. Перетаскивание на доске — общий движок pointer-жеста `lib/dnd.ts` (мышь, палец, стилус) плюс перенос с клавиатуры и объявления в `aria-live`; подробности — в [projects.md](projects.md), раздел «Перетаскивание карточек и колонок».
 
 `KnowledgeBase` показывает статус, темы, поиск и документы серверной read-only KB. `QuestionsForm` рендерит одиночный/множественный выбор. `MessageImage` читает файл сервера или машины согласно источнику. `Markdown` поддерживает GFM и подсветку; им же отрисовано описание задачи в карточке канбана (см. [projects.md](projects.md)) — компонент не привязан к ленте чата, кегли под место вызова задаются CSS обёртки.
 

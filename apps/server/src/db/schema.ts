@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   exec_target       TEXT,
   workdir           TEXT,
   skill_names       TEXT NOT NULL DEFAULT '[]',
+  llm_engine_id     TEXT,
   llm_provider      TEXT,
   llm_model         TEXT,
   kb_context_mode   TEXT NOT NULL DEFAULT 'auto',
@@ -81,6 +82,25 @@ CREATE TABLE IF NOT EXISTS users (
   blocked       INTEGER NOT NULL DEFAULT 0,
   created_at    INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS llm_engines (
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  kind          TEXT NOT NULL,
+  base_url      TEXT NOT NULL,
+  token         TEXT NOT NULL DEFAULT '',
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  allowed_roles TEXT NOT NULL DEFAULT '["admin","user"]',
+  is_default    INTEGER NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_llm_engines_kind_enabled
+  ON llm_engines(kind, enabled, created_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_engines_default_kind
+  ON llm_engines(kind)
+  WHERE is_default = 1;
 
 CREATE TABLE IF NOT EXISTS projects (
   id           TEXT PRIMARY KEY,
@@ -248,6 +268,7 @@ CREATE TABLE IF NOT EXISTS ci_runs (
   workspace_id   TEXT,
   triggered_by   TEXT NOT NULL,
   prev_column_id TEXT,
+  llm_engine_id  TEXT,
   llm_provider   TEXT NOT NULL DEFAULT 'claude',
   llm_model      TEXT NOT NULL DEFAULT 'opus',
   mode           TEXT NOT NULL DEFAULT 'development',
@@ -365,6 +386,15 @@ CREATE TABLE IF NOT EXISTS ci_run_usage (
 );
 CREATE INDEX IF NOT EXISTS idx_ci_run_usage_run ON ci_run_usage(run_id, at);
 
+CREATE TABLE IF NOT EXISTS ci_run_kb_metrics (
+  run_id             TEXT PRIMARY KEY,
+  sections_delivered INTEGER NOT NULL,
+  sections_hit       INTEGER NOT NULL,
+  hit_ratio          REAL NOT NULL,
+  calculated_at      INTEGER NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS ci_command_suggestions (
   id             TEXT PRIMARY KEY,
   command_id     TEXT NOT NULL,
@@ -453,6 +483,7 @@ CREATE TABLE IF NOT EXISTS kb_usage_sections (
   heading     TEXT NOT NULL DEFAULT '',
   anchor      TEXT NOT NULL DEFAULT '',
   source_path TEXT NOT NULL DEFAULT '',
+  related_files TEXT NOT NULL DEFAULT '[]',
   chars       INTEGER NOT NULL DEFAULT 0,
   est_tokens  INTEGER NOT NULL DEFAULT 0,
   score       REAL,

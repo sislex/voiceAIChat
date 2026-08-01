@@ -1,35 +1,26 @@
-# Многостадийный образ voiceAIChat: Fastify-сервер (apps/server) + web-билд
-# (apps/web) на одном порту, плюс claude/codex CLI.
+# Многостадийные образы voiceAIChat:
+#  • server-runtime — Fastify-сервер (apps/server) + web-билд (apps/web)
+#  • llm-runner-runtime — внутренний исполнитель claude/codex CLI (apps/llm-runner)
 #
-# Особенности этого репозитория:
-#  • сервер НЕ компилируется в JS — запускается через tsx прямо из исходников
-#    и резолвит @voicechat/shared из .ts (workspace-симлинки). Поэтому в runtime
-#    нужны исходники + node_modules + tsx, а не dist/.
-#  • better-sqlite3 — нативный модуль → в стадии сборки нужен toolchain
-#    (python3/make/g++). glibc (bookworm), не musl.
+# Особенности репозитория:
+#  • server и llm-runner НЕ компилируются в JS — запускаются через tsx прямо из
+#    исходников и резолвят @voicechat/* через workspace-симлинки.
+#  • better-sqlite3 — нативный модуль → в build-стадии нужен toolchain.
 #  • web собирается БЕЗ VITE_SERVER_URL → тот же origin/порт, что и API.
 
 # ---- Стадия сборки -------------------------------------------------------
 FROM node:22-bookworm AS build
 WORKDIR /app
 
-# Toolchain для сборки better-sqlite3 (node-gyp).
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-# Устанавливаем зависимости (все воркспейсы, нативная сборка better-sqlite3,
-# симлинки @voicechat/*). Копируем весь репозиторий — .dockerignore отсекает
-# лишнее (node_modules, dist, desktop, .git).
 COPY . .
 RUN npm ci
-
-# Сборка web (same-origin: VITE_SERVER_URL НЕ задаём) → apps/web/dist.
 RUN npm run -w @voicechat/web build
 
 # ---- Сборка whisper.cpp: whisper-cli для серверного распознавания речи ----
-# Статическая линковка (BUILD_SHARED_LIBS=OFF) → в runtime нужен только бинарь
-# (+ libgomp1: OpenMP). Без него STT в контейнере не работает вовсе.
 FROM debian:bookworm-slim AS whisper
 RUN apt-get update \
   && apt-get install -y --no-install-recommends git cmake make g++ ca-certificates \
@@ -39,53 +30,52 @@ RUN cmake -S /whisper -B /whisper/build -DCMAKE_BUILD_TYPE=Release \
       -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF \
   && cmake --build /whisper/build -j"$(nproc)" --target whisper-cli
 
-# ---- Runtime -------------------------------------------------------------
-FROM node:22-bookworm-slim AS runtime
+# ---- Общая runtime-база --------------------------------------------------
+FROM node:22-bookworm-slim AS runtime-base
 WORKDIR /app
 
-# Работаем под непривилегированным пользователем `node` (есть в базовом образе):
-# claude CLI запрещает `--dangerously-skip-permissions` (режим «Полный доступ»)
-# под root/sudo. HOME=/home/node → здесь тома ~/.claude и ~/.codex с авторизацией.
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
-    PORT=8787 \
     HOME=/home/node \
-    VC_DATA_DIR=/data \
-    VC_WEB_DIR=/app/apps/web/dist \
-    VC_WHISPER_CLI=/usr/local/bin/whisper-cli
+    VC_DATA_DIR=/data
 
-# ca-certificates: codex — Rust-бинарь (rustls) и проверяет TLS по системному
-#   хранилищу; в slim-образе его нет → без этого запросы к chatgpt.com падают с
-#   `invalid peer certificate: UnknownIssuer`.
-# bubblewrap: песочница codex на Linux (иначе codex ругается и берёт bundled).
-# gosu: старт под root (chown тома) → сброс до node в entrypoint.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates bubblewrap gosu libgomp1 \
+  && apt-get install -y --no-install-recommends ca-certificates gosu libgomp1 \
   && rm -rf /var/lib/apt/lists/*
 
-# claude/codex CLI: сервер вызывает их как бинарники `claude`/`codex` из PATH.
-# Аутентификация — внутри контейнера (тома ~/.claude и ~/.codex, см. compose):
-# логин выполняется через `docker compose exec` (см. DOCKER.md).
-RUN npm i -g @anthropic-ai/claude-code @openai/codex
-
-# Переносим готовое дерево из стадии сборки: исходники + node_modules (с нативным
-# better-sqlite3 под glibc) + собранный web.
 COPY --from=build /app /app
 COPY --from=whisper /whisper/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Каталоги данных и авторизации во владении node (SQLite + вложения + токены CLI).
-# Создаём каталоги auth в образе → новые именованные тома инициализируются с
-# владельцем node (иначе Docker создаст их root-овыми, и node не сможет логиниться).
-RUN mkdir -p /data /home/node/.claude /home/node/.codex \
-  && chown -R node:node /data /home/node/.claude /home/node/.codex
+# ---- Runtime сервера -----------------------------------------------------
+FROM runtime-base AS server-runtime
+ENV PORT=8787 \
+    VC_WEB_DIR=/app/apps/web/dist \
+    VC_WHISPER_CLI=/usr/local/bin/whisper-cli
+
+RUN mkdir -p /data \
+  && chown -R node:node /data
 VOLUME ["/data"]
 EXPOSE 8787
-
-# Entrypoint стартует под root (chown тома), затем сбрасывает привилегии до node.
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-# Старт сервера без npm-обёртки: npm не пробрасывает SIGTERM до node, и при
-# остановке контейнера сервер умирал по SIGKILL, не успев сохранить частичные
-# ответы активных ходов (flushInterrupted). exec делает node процессом-лидером.
 CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/index.ts"]
+
+# ---- Runtime исполнителя LLM --------------------------------------------
+FROM runtime-base AS llm-runner-runtime
+ARG INSTALL_CLAUDE_CLI=1
+ARG INSTALL_CODEX_CLI=1
+ENV PORT=8790
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends bubblewrap \
+  && rm -rf /var/lib/apt/lists/*
+RUN if [ "$INSTALL_CLAUDE_CLI" = "1" ]; then npm i -g @anthropic-ai/claude-code; fi \
+  && if [ "$INSTALL_CODEX_CLI" = "1" ]; then npm i -g @openai/codex; fi
+
+RUN mkdir -p /data /home/node/.claude /home/node/.codex /mnt/server-data \
+  && chown -R node:node /data /home/node/.claude /home/node/.codex /mnt/server-data
+VOLUME ["/data"]
+EXPOSE 8790
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["sh", "-c", "cd apps/llm-runner && exec node --import tsx src/index.ts"]

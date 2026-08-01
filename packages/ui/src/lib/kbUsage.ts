@@ -113,6 +113,7 @@ export function buildKbUsageFromMessages(messages: Message[], opts: KbUsageFallb
       heading: section.heading,
       anchor: section.anchor,
       sourcePath: section.sourcePath,
+      relatedFiles: [],
       chars: section.chars ?? 0,
       estimatedTokens: section.estimatedTokens ?? estimateKbTokens(section.chars ?? 0),
       score: null,

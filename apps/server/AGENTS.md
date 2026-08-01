@@ -1,18 +1,18 @@
 # @voicechat/server — бэкенд (Fastify)
 
-REST + WS, SQLite, Whisper, Piper/say, claude/codex CLI, реестр машин, MCP-мост,
-входящий Anthropic-gateway, раздача собранного web.
+REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполнителей, реестр
+машин, MCP-мост, входящий Anthropic-gateway, раздача собранного web.
 
 ## Особенности, которые надо помнить
 
 - **Не компилируется в JS.** Запуск — `tsx src/index.ts` прямо из исходников,
   ESM. Поэтому **все относительные импорты пишутся с `.js`** (`./config.js`),
   хотя файлы `.ts`.
-- **CLI claude/codex живут не здесь.** `claudeCli.ts`, `codexCli.ts`,
-  `childKill.ts`, `claude mcp list` и профили CLI (`cliProfiles.ts`) переехали в
-  `apps/llm-runner`; сервер пока импортирует их из `@voicechat/llm-runner/cli`
-  (срез 2 плана `docs/plans/llm-runners.md` заменит вызовы на HTTP). Контракт
-  `LlmRequest`/`LlmClient` теперь в `@voicechat/shared`, `claude/types.ts` — реэкспорт.
+- **CLI claude/codex живут не здесь.** В Docker это контейнеры `runner-work` и
+  `runner-personal`; код `claudeCli.ts`, `codexCli.ts`, `childKill.ts`,
+  `claude mcp list` и профили CLI (`cliProfiles.ts`) живёт в `apps/llm-runner`.
+  Сервер использует `RemoteLlmClient`/`RunnerFsClient`, а прямой импорт
+  `@voicechat/llm-runner/cli` остался только как fallback вне runner URL.
 - **`buildServer()` отделён от `listen()`** (`server.ts` / `index.ts`), а внешние
   зависимости инъектируются через `BuildOptions`: `db`, `claude`, `codex`,
   `sttEngine`, `ttsEngine`, `createWsHandlers`, `sessionSecret`. Новый внешний
@@ -31,7 +31,8 @@ REST + WS, SQLite, Whisper, Piper/say, claude/codex CLI, реестр машин
 `routes/` (`rest.ts`, `agents.ts`, `admin.ts`), `users/`,
 `db/` (схема + `fts.ts` — экранирование запроса для FTS5-поиска по сообщениям),
 `stt/` (whisper, модели, скачивание, wav), `tts/` (piper, say, каталог, голоса),
-`claude/`, `codex/`, `cc/` (наблюдатель сессий Claude Code),
+`claude/`, `codex/`, `llm/` (`RemoteLlmClient`, `RunnerFsClient`, общий приёмник потока),
+`cc/` (наблюдатель сессий Claude Code),
 `agents/` (реестр машин, WS-агента, сборка `.cjs`, установка на Android),
 `mcp/remoteBashMcp.ts`, `anthropic/gateway.ts`, `system/` (ресурсы и возможности),
 `auth/loginStatus.ts`, `diarization/` (заглушка).

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseImages } from '@voicechat/shared'
@@ -19,7 +19,9 @@ afterEach(() => rmSync(home, { recursive: true, force: true }))
 
 function deps(overrides: Partial<Parameters<typeof relocateImagesToMachine>[2]> = {}) {
   return {
-    roots: [home],
+    readFile: vi.fn(async (path: string) =>
+      path === pic ? { name: 'call_x.png', dataBase64: readFileSync(pic).toString('base64') } : null
+    ),
     fsList: vi.fn().mockResolvedValue({ root: '/home/user' }),
     fsMkdir: vi.fn().mockResolvedValue(undefined),
     fsWrite: vi.fn().mockResolvedValue(undefined),
@@ -82,7 +84,7 @@ describe('relocateImagesToMachine', () => {
   })
 
   it('файл вне своей области не трогаем', async () => {
-    const d = deps({ roots: [join(home, 'нет-такого')] })
+    const d = deps({ readFile: vi.fn().mockResolvedValue(null) })
     const text = `\`\`\`image\n{"path":"${pic}"}\n\`\`\``
     expect(await relocateImagesToMachine(text, 'm1', d)).toBe(text)
     expect(d.fsList).not.toHaveBeenCalled()

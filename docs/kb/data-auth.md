@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-08-01
-checked: 06bb73e
+checked: 12c087a
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -28,6 +28,7 @@ journal_mode = WAL`, `foreign_keys = ON`.
 | `settings` | key-value, значения — JSON-строки |
 | `agents` | машины: `token_hash`, `last_seen`, `policy` (JSON), `user_id` |
 | `users` | `name` (PK и он же id владельца), `password_hash`, `role`, `blocked` |
+| `llm_engines` | реестр HTTP-исполнителей LLM для админки: `name`, `kind` (`claude`/`codex`), `base_url`, открытый `token`, `enabled`, `allowed_roles` (JSON-массив ролей), `is_default`, `created_at` |
 | `kb_usage_queries` | обращение к базе знаний: `seq` (монотонный курсор внутри разговора — по нему клиент отсекает устаревшие кадры `kb.usage`), `source` (`auto`/`tool_*`), `status`, `chars`/`est_tokens`, `prompt_chars`, `project_id` — СНИМОК проекта на момент обращения, `ci_run_id`/`ci_step_id` — ран и шаг CI-раннера, если обращение случилось в его ходе (NULL — обычный чат); каскад по разговору |
 | `kb_usage_sections` | разделы одного обращения (`document_id`+`anchor`, символы и оценка токенов), каскад по обращению |
 | `kb_documents` | статьи базы знаний, которые ведут пользователь и модель: `scope` (`usage`/`user`/`project`), `owner_id` для персональных, `project_id` для проектных (каскад по проекту); файловые темы `docs/kb/*.md` сюда не попадают |
@@ -35,6 +36,19 @@ journal_mode = WAL`, `foreign_keys = ON`.
 Файл БД — `<dataDir>/voicechat.db` (в Docker `/data`). Тесты работают на
 `:memory:` через `BuildOptions.db`. Вложения — `apps/server/src/uploads.ts`
 (`POST /api/uploads` → id, путь резолвится в промпт для модели).
+
+`llm_engines` живёт в той же схеме без отдельного migration-фреймворка:
+`schema.ts` создаёт таблицу и индексы на новых базах, а `VoiceChatDb.migrate()`
+добавляет недостающие колонки и индексы на уже существующих. Это важно для
+старых инсталляций: тест на legacy-БД фиксирует, что появление `llm_engines` не
+ломает чтение старых `conversations` и не требует ручного шага миграции.
+
+У реестра два инварианта на уровне SQLite: индекс
+`idx_llm_engines_kind_enabled` обслуживает список по `kind/enabled/created_at`, а
+частичный unique-индекс `idx_llm_engines_default_kind` не даёт держать две
+default-записи одного `kind`. Сам токен хранится в БД открытым текстом;
+ограничение доступа обеспечивается не схемой, а тем, что CRUD и health-check
+висят только на `requireAdmin` в `apps/server/src/routes/admin.ts`.
 
 Видимость статей `kb_documents` считает не БД, а слой БЗ (`apps/server/src/kb/scoped.ts`
 поверх «вида» из `kb/access.ts`): персональная статья — только владельцу, проектная —
@@ -108,7 +122,7 @@ FTS5 не должна валить старт (тогда `searchMessages` пр
 
 `UserRole = 'admin' | 'user'` (`packages/shared/src/types.ts`). Роль ограничивает
 доступные модели: `isModelAllowed` / `modelsForRole` / `clampModelForRole` —
-зажим применяется на сервере в `turns.ts`, а не только в UI.
+зажим применяется на сервере в `turns.ts`, а не только в UI. Роль также ограничивает исполнителей LLM по `llm_engines.allowed_roles`: безопасный список `/api/llm-engines`, сохранение настроек/разговора и резолв самого хода проверяют это независимо.
 
 Первый запуск на пустой БД создаёт `admin`; пароль берётся из
 `VC_ADMIN_PASSWORD` (пусто — без пароля). Если БД уже существует, переменная

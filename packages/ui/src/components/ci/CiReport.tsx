@@ -53,6 +53,11 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
   const run: CiRunReport | null = runs.find((r) => r.runId === selected) ?? null
   const totals: CiUsageTotals | null = run ? run.totals : (report?.totals ?? null)
   const durationMs = run ? run.durationMs : (report?.durationMs ?? null)
+  const kbHit = run?.kbHit ?? (!run
+    ? runs.reduce<{ sectionsDelivered: number; sectionsHit: number } | null>((sum, item) => item.kbHit
+      ? { sectionsDelivered: (sum?.sectionsDelivered ?? 0) + item.kbHit.sectionsDelivered, sectionsHit: (sum?.sectionsHit ?? 0) + item.kbHit.sectionsHit }
+      : sum, null)
+    : null)
 
   // Вложенные вызовы команд моделью — под своим шагом, как в ленте рана.
   const tree = useMemo(() => {
@@ -146,6 +151,9 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
         <Tile label="Работа модели" value={fmtDuration(totals?.modelActiveMs ?? null)} testId={`${testId}-model-time`} />
       </div>
 
+      {kbHit && <p className="ci-report__note" data-testid={`${testId}-kb-hit`}>
+        БЗ: выдано {kbHit.sectionsDelivered} разделов, задето {kbHit.sectionsHit} файлов из них
+      </p>}
       {run ? (
         <>
           <table className="ci-report-steps" data-testid={`${testId}-steps`}>

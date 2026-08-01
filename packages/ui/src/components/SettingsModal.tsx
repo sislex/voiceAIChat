@@ -16,6 +16,7 @@ import { CODEX_MODELS, modelsForRole, normalizeClaudeModel, PERMISSION_MODES } f
 import type { PermissionMode, LlmProvider, UserRole } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
+import type { LlmEngineOption } from '@shared/admin'
 
 export interface MicOption {
   deviceId: string
@@ -43,6 +44,7 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
 
 export interface SettingsModalProps {
   settings: Settings
+  engines?: LlmEngineOption[]
   mics: MicOption[]
   /** Реальные голоса TTS активного движка. */
   voices: TtsVoiceInfo[]
@@ -81,6 +83,7 @@ export interface SettingsModalProps {
 
 export function SettingsModal({
   settings,
+  engines = [],
   mics,
   voices,
   voiceCatalog,
@@ -126,6 +129,18 @@ export function SettingsModal({
           <div className="settpane" data-testid="settings-pane">
             {section === 'agent' && (
               <>
+                <div className="frow">
+                  <div><p className="flab">Исполнитель</p><p className="fsub">Подписка и контейнер для выбранного CLI</p></div>
+                  <select className="sel" aria-label="Исполнитель LLM" value={settings.llmEngineId ?? ''} onChange={(e) => {
+                    const id = e.target.value || null
+                    const engine = engines.find((item) => item.id === id)
+                    onChange({ llmEngineId: id, ...(engine ? { llmProvider: engine.kind } : {}) })
+                  }}>
+                    <option value="">По умолчанию для роли</option>
+                    {engines.map((engine) => <option key={engine.id} value={engine.id}>{engine.name} · {engine.kind}{engine.isDefault ? ' (default)' : ''}</option>)}
+                  </select>
+                </div>
+
                 <div className="frow">
                   <div>
                     <p className="flab">Движок</p>
