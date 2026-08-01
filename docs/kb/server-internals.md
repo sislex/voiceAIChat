@@ -28,8 +28,8 @@ Backend — Fastify 5 на TypeScript ESM. Он не выпускает JS-ар�
 | conversations/messages | CRUD, поиск, настройка проекта/status, редактирование сообщений, desktop migration. |
 | settings/system | Пользовательские настройки, capabilities CPU/RAM. |
 | STT/TTS | Статус, каталог, скачивание/удаление моделей и голосов. |
-| uploads/files | Вложения и ограниченное чтение файлов, созданных CLI. |
-| LLM tooling | MCP list, login status, Claude Code/Codex sessions и resume. |
+| uploads/files | Вложения и ограниченное чтение файлов, созданных CLI; при вынесенном исполнителе чтение картинок идёт через его `/v1/files/read`. |
+| LLM tooling | MCP list, login status, Claude Code/Codex sessions и resume; `/api/auth/status`, `/api/cc/*`, `/api/cx/*` проксируются в файловые/auth API исполнителя. |
 | agents | CRUD машин, token/policy/update/install bundles, exec и файловые операции. |
 | admin | Пользователи, блокировка, usage и просмотр данных. |
 | projects | Проекты, участники, машины, default machine, канбан columns/tasks. |

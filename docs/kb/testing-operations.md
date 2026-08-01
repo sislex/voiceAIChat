@@ -64,7 +64,7 @@ Electron main/preload код тестируется без запуска реа
 1. `/api/health` — процесс и HTTP доступны.
 2. `/api/session/me` — bearer token и пользователь.
 3. `/api/system/capabilities` — сервер видит CPU/RAM и разрешает STT/TTS.
-4. `/api/auth/status` — CLI profile авторизован.
+4. `/api/auth/status` — исполнитель видит авторизованный CLI profile нужного пользователя, а не только контейнер сервера.
 5. `/api/agents` — machine зарегистрирована, online, версия и telemetry.
 6. Browser devtools network — REST status и `/ws` reconnect.
 7. Server stdout — Fastify/CLI ошибки; UI console panel — нормализованные LLM events.
