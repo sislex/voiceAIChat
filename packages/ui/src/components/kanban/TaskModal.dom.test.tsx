@@ -423,6 +423,17 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     expect(within(steps).getAllByText('9м 00с').length).toBeGreaterThan(0)
   })
 
+
+  it('показывает попадание БЗ рядом с расходом завершённого рана', async () => {
+    withReport(makeTaskReport([makeRunReport({
+      kbHit: { sectionsDelivered: 5, sectionsHit: 3, hitRatio: 0.6 }
+    })]))
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    const hit = await screen.findByTestId('task-modal-report-kb-hit')
+    expect(text(hit)).toContain('БЗ: выдано 5 разделов, задето 3 файлов из них')
+  })
+
   it('стоимость без данных CLI помечена «≈»', async () => {
     withReport(makeTaskReport([makeRunReport({ totals: makeUsageTotals({ costUsd: 2.07, costEstimated: true }) })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)

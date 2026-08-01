@@ -1,7 +1,7 @@
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
 
 import { join } from 'node:path'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import {
   REST,
   CONVERSATION_STATUSES,
@@ -21,6 +21,7 @@ import { uid } from '../users/auth.js'
 import { readUserFile } from '../serverFiles.js'
 import { ensureCliProfile, listMcpServers } from '@voicechat/llm-runner/cli'
 import { getLoginStatus } from '../auth/loginStatus.js'
+import type { RunnerFsClient } from '../llm/runnerFsClient.js'
 import { listProjects, listSessions, readTranscript, readUsage } from '../cc/ccSessions.js'
 import {
   listCxProjects,
@@ -34,15 +35,31 @@ function queryFlag(v: string | undefined): boolean {
   return v === '1' || v === 'true'
 }
 
-export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDir: string): Promise<void> {
+export async function registerRest(
+  app: FastifyInstance,
+  db: VoiceChatDb,
+  dataDir: string,
+  opts: { runnerFs?: RunnerFsClient } = {}
+): Promise<void> {
   const profile = (req: Parameters<typeof uid>[0]) => ensureCliProfile(dataDir, uid(req))
   const ccDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CC_DIR ?? profile(req).ccProjects
   const cxDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CODEX_DIR ?? profile(req).codexSessions
+  const runnerFs = opts.runnerFs
+  const proxyError = (reply: FastifyReply, err: unknown) =>
+    reply.code(502).send({ error: 'runner_unavailable', message: err instanceof Error ? err.message : String(err) })
   // Файл с диска сервера (картинки, созданные самим CLI). Своя область — профиль
   // CLI пользователя, его загрузки и заданный им рабочий каталог; всё остальное
   // неотличимо от «нет такого файла». Проверка пути — `serverFiles.ts`.
   app.get<{ Querystring: { path?: string } }>(REST.serverFile, async (req, reply) => {
     const userId = uid(req)
+    if (runnerFs) {
+      try {
+        const remote = await runnerFs.readFile(userId, req.query.path ?? '')
+        if (remote) return remote
+      } catch (err) {
+        return proxyError(reply, err) as never
+      }
+    }
     const workdir = db.getSettings(userId).workdir
     const roots = [profile(req).home, join(dataDir, 'uploads'), ...(workdir ? [workdir] : [])]
     const res = readUserFile(req.query.path ?? '', roots)
@@ -102,6 +119,7 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
       execTarget?: string | null
       workdir?: string | null
       skillNames?: string[]
+      llmEngineId?: string | null
       llmProvider?: string | null
       llmModel?: string | null
       permissionMode?: string | null
@@ -113,6 +131,10 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
       if (typeof req.body.title === 'string') db.renameConversation(uid(req), req.params.id, req.body.title)
       if (req.body.kbContextMode === 'auto' || req.body.kbContextMode === 'manual' || req.body.kbContextMode === 'off') db.setConversationKbContextMode(uid(req), req.params.id, req.body.kbContextMode)
       if (req.body.execTarget !== undefined) {
+        const role = db.getUser(uid(req))?.role ?? 'user'
+        if (req.body.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === req.body.llmEngineId)) {
+          return reply.code(403).send({ error: 'llm engine is not available for role' })
+        }
         // Неизвестное значение движка приравниваем к «из общих настроек».
         const llmProvider =
           req.body.llmProvider === undefined
@@ -135,7 +157,8 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
           req.body.skillNames,
           llmProvider,
           req.body.llmModel,
-          permissionMode
+          permissionMode,
+          req.body.llmEngineId
         )
       }
       const conversation = db.getConversation(uid(req), req.params.id)
@@ -207,21 +230,49 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
 
   app.get(REST.mcpServers, async () => listMcpServers())
 
-  app.get(REST.authStatus, async (req) => getLoginStatus({ home: profile(req).home }))
+  app.get(REST.authStatus, async (req, reply) => {
+    if (!runnerFs) return getLoginStatus({ home: profile(req).home })
+    try {
+      return await runnerFs.authStatus(uid(req))
+    } catch (err) {
+      return proxyError(reply, err)
+    }
+  })
 
-  app.get(REST.ccProjects, async (req) => listProjects(ccDir(req)))
+  app.get(REST.ccProjects, async (req, reply) => {
+    if (!runnerFs) return listProjects(ccDir(req))
+    try {
+      return await runnerFs.listCcProjects(uid(req))
+    } catch (err) {
+      return proxyError(reply, err)
+    }
+  })
   app.get<{ Params: { slug: string } }>(
     '/api/cc/projects/:slug/sessions',
-    async (req) => listSessions(req.params.slug, ccDir(req))
+    async (req, reply) => {
+      if (!runnerFs) return listSessions(req.params.slug, ccDir(req))
+      try {
+        return await runnerFs.listCcSessions(uid(req), req.params.slug)
+      } catch (err) {
+        return proxyError(reply, err)
+      }
+    }
   )
   app.get<{ Params: { slug: string; id: string }; Querystring: { limit?: string } }>(
     '/api/cc/projects/:slug/sessions/:id',
-    async (req) => {
-      const dir = ccDir(req)
-      const items = readTranscript(req.params.slug, req.params.id, {
-        limit: req.query.limit ? Number(req.query.limit) : undefined
-      }, dir)
-      return { items, usage: readUsage(req.params.slug, req.params.id, dir) }
+    async (req, reply) => {
+      if (!runnerFs) {
+        const dir = ccDir(req)
+        const items = readTranscript(req.params.slug, req.params.id, {
+          limit: req.query.limit ? Number(req.query.limit) : undefined
+        }, dir)
+        return { items, usage: readUsage(req.params.slug, req.params.id, dir) }
+      }
+      try {
+        return await runnerFs.readCcTranscript(uid(req), req.params.slug, req.params.id, req.query.limit ? Number(req.query.limit) : undefined)
+      } catch (err) {
+        return proxyError(reply, err)
+      }
     }
   )
 
@@ -229,7 +280,14 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     const u = uid(req)
     const { slug, id } = req.body ?? {}
     if (!slug || !id) return reply.code(400).send({ error: 'slug и id обязательны' })
-    const items = readTranscript(slug, id, {}, ccDir(req))
+    let items
+    try {
+      items = runnerFs
+        ? (await runnerFs.readCcTranscript(u, slug, id)).items
+        : readTranscript(slug, id, {}, ccDir(req))
+    } catch (err) {
+      return proxyError(reply, err)
+    }
     const conv = db.createConversation(u, ccResumeTitle(items))
     const now = Date.now()
     for (const m of ccResumeMessages(items)) {
@@ -241,24 +299,50 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
   })
 
   // --- Проводник Codex ---------------------------------------------------
-  app.get(REST.cxProjects, async (req) => listCxProjects(cxDir(req)))
-  app.get<{ Querystring: { cwd?: string } }>(REST.cxSessions, async (req) =>
-    listCxSessions(req.query.cwd ?? '', cxDir(req))
-  )
-  app.get<{ Querystring: { id?: string; limit?: string } }>(REST.cxTranscript, async (req) => {
-    const dir = cxDir(req)
-    const id = req.query.id ?? ''
-    const items = readCxTranscript(id, {
-      limit: req.query.limit ? Number(req.query.limit) : undefined
-    }, dir)
-    return { items, usage: readCxUsage(id, dir) }
+  app.get(REST.cxProjects, async (req, reply) => {
+    if (!runnerFs) return listCxProjects(cxDir(req))
+    try {
+      return await runnerFs.listCxProjects(uid(req))
+    } catch (err) {
+      return proxyError(reply, err)
+    }
+  })
+  app.get<{ Querystring: { cwd?: string } }>(REST.cxSessions, async (req, reply) => {
+    if (!runnerFs) return listCxSessions(req.query.cwd ?? '', cxDir(req))
+    try {
+      return await runnerFs.listCxSessions(uid(req), req.query.cwd ?? '')
+    } catch (err) {
+      return proxyError(reply, err)
+    }
+  })
+  app.get<{ Querystring: { id?: string; limit?: string } }>(REST.cxTranscript, async (req, reply) => {
+    if (!runnerFs) {
+      const dir = cxDir(req)
+      const id = req.query.id ?? ''
+      const items = readCxTranscript(id, {
+        limit: req.query.limit ? Number(req.query.limit) : undefined
+      }, dir)
+      return { items, usage: readCxUsage(id, dir) }
+    }
+    try {
+      return await runnerFs.readCxTranscript(uid(req), req.query.id ?? '', req.query.limit ? Number(req.query.limit) : undefined)
+    } catch (err) {
+      return proxyError(reply, err)
+    }
   })
 
   app.post<{ Body: { id: string } }>(REST.cxResume, async (req, reply) => {
     const u = uid(req)
     const { id } = req.body ?? {}
     if (!id) return reply.code(400).send({ error: 'id обязателен' })
-    const items = readCxTranscript(id, {}, cxDir(req))
+    let items
+    try {
+      items = runnerFs
+        ? (await runnerFs.readCxTranscript(u, id)).items
+        : readCxTranscript(id, {}, cxDir(req))
+    } catch (err) {
+      return proxyError(reply, err)
+    }
     const conv = db.createConversation(u, cxResumeTitle(items))
     const now = Date.now()
     for (const m of cxResumeMessages(items)) {
@@ -270,9 +354,15 @@ export async function registerRest(app: FastifyInstance, db: VoiceChatDb, dataDi
     return { conversation: db.getConversation(u, conv.id), messages: db.listMessages(u, conv.id) }
   })
 
+  app.get(REST.llmEngines, async (req) => db.listLlmEnginesForRole(db.getUser(uid(req))?.role ?? 'user'))
+
   app.get(REST.settings, async (req) => db.getSettings(uid(req)))
 
-  app.put<{ Body: Settings }>(REST.settings, async (req) => {
+  app.put<{ Body: Settings }>(REST.settings, async (req, reply) => {
+    const role = db.getUser(uid(req))?.role ?? 'user'
+    if (req.body.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === req.body.llmEngineId)) {
+      return reply.code(403).send({ error: 'llm engine is not available for role' })
+    }
     db.saveSettings(uid(req), req.body)
     return db.getSettings(uid(req))
   })

@@ -4,9 +4,13 @@ import { VoiceChatDb } from './db/database.js'
 import { DEFAULT_AGENT_POLICY, imageBlock } from '@voicechat/shared'
 import type { LlmClient, LlmRequest } from './claude/types.js'
 import { createKbUsageTracker } from './kb/usage.js'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { loadConfig } from './config.js'
+import { buildPublicMcpUrl } from './mcp/publicBase.js'
+import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
+import { KB_MCP_PATH } from './kb/kbMcp.js'
 
 const U = 'admin'
 
@@ -58,6 +62,19 @@ async function runTurn(client: LlmClient, db: VoiceChatDb, conversationId: strin
 }
 
 describe('turns: рабочий каталог разговора принадлежит машине, а не серверу', () => {
+  it('серверный settings.workdir уходит исполнителю как желаемый cwd без локальной проверки', async () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    db.saveSettings(U, { ...db.getSettings(U), workdir: '/definitely/missing/workdir' })
+
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+
+    expect(rec.last()?.cwd).toBe('/definitely/missing/workdir')
+    db.close()
+  })
+
   // Регрессия: `conversations.workdir` выбирается через проводник МАШИНЫ — это
   // путь на её хосте. Подставленный спавну claude в контейнере, он роняет chdir
   // ещё до запуска CLI («spawn claude EACCES» на /root, ENOENT на чужом пути),
@@ -88,6 +105,94 @@ describe('turns: рабочий каталог разговора принадл
     await runTurn(rec.client, db, conv.id)
 
     expect(rec.last()?.remote?.mcpUrl).toContain(`cwd=${encodeURIComponent('/root/dir-on-machine')}`)
+    db.close()
+  })
+})
+
+describe('turns: VC_MCP_PUBLIC_BASE', () => {
+  it('remote mcpUrl и kbMcpUrl строятся от публичной базы, секрет сохраняется', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    const agent = db.createAgent(U, 'Ноутбук')
+    db.setConversationExecTarget(U, conv.id, agent.id, '/root/dir-on-machine')
+    db.setConversationKbContextMode(U, conv.id, 'manual')
+    const kb = {
+      status: () => ({
+        available: true,
+        mode: 'source' as const,
+        searchMode: 'lexical' as const,
+        version: 'x',
+        createdAt: 'now',
+        documents: 1,
+        chunks: 1,
+        staleDocuments: 0
+      }),
+      topics: () => [],
+      document: () => null,
+      search: async () => [],
+      context: async () => ({
+        query: 'q',
+        confidence: 'high' as const,
+        autoInjectAllowed: true,
+        sections: [],
+        relatedFiles: [],
+        relatedDocuments: [],
+        staleWarnings: [],
+        estimatedTokens: 0
+      })
+    }
+
+    const config = loadConfig({ PORT: '8787', VC_MCP_PUBLIC_BASE: 'http://voicechat:8787' })
+    const rec = recorder()
+    const turns = createTurnManager({
+      db,
+      claude: rec.client,
+      kb,
+      kbToolEnabled: true,
+      agents: onlineAgents,
+      mcpBaseUrl: buildPublicMcpUrl(config, REMOTE_BASH_MCP_PATH, 'secret'),
+      kbMcpBaseUrl: buildPublicMcpUrl(config, KB_MCP_PATH, 'secret')
+    })
+
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((m) => {
+        if (m.t === 'claude.done' || m.t === 'claude.error') {
+          off()
+          resolve()
+        }
+      })
+      turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'привет' }] })
+    })
+
+    expect(rec.last()?.remote?.mcpUrl).toContain('http://voicechat:8787/mcp/remote-bash?k=secret')
+    expect(rec.last()?.kbMcpUrl).toContain('http://voicechat:8787/mcp/kb?k=secret&turn=')
+    db.close()
+  })
+})
+
+describe('turns: вложения для удалённого исполнителя', () => {
+  it('передаёт вложение байтами вместе с исходным serverPath', async () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    const dir = mkdtempSync(join(tmpdir(), 'vc-attachment-'))
+    const file = join(dir, 'report.txt')
+    writeFileSync(file, 'attachment-body')
+
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, resolveUpload: () => file })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'прочитай' }], attachments: ['a1'] })
+
+    expect(rec.last()?.prompt).toContain(file)
+    expect(rec.last()?.attachments).toEqual([
+      {
+        serverPath: file,
+        runnerName: 'report.txt',
+        dataBase64: Buffer.from('attachment-body').toString('base64')
+      }
+    ])
+
+    rmSync(dir, { recursive: true, force: true })
     db.close()
   })
 })
@@ -236,7 +341,7 @@ describe('turns: остановка сервера (flushInterrupted)', () => {
         fsMkdir: async () => ({}),
         fsWrite: async () => ({})
       },
-      serverFileRoots: () => [dir],
+      readServerFile: async (userId, path) => path.startsWith(dir) ? { name: 'pic.png', dataBase64: readFileSync(path).toString('base64') } : null,
       mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret'
     })
 

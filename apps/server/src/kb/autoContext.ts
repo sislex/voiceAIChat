@@ -71,6 +71,7 @@ export async function buildKbAutoContext(
       heading: section.heading,
       anchor: section.anchor,
       sourcePath: section.sourcePath,
+      relatedFiles: section.relatedFiles,
       chars: blocks[index].length,
       score: section.score,
       matchTypes: section.matchTypes,

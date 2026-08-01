@@ -16,6 +16,7 @@ export function makeKbSection(over: Partial<KbUsageSectionRef> = {}): KbUsageSec
     heading: 'WebSocket',
     anchor: 'websocket',
     sourcePath: 'docs/kb/protocol.md',
+    relatedFiles: over.relatedFiles ?? [],
     chars,
     estimatedTokens: estimateKbTokens(chars),
     score: 12.5,

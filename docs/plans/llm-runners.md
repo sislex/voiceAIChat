@@ -110,7 +110,9 @@ allowed_roles, is_default, created_at`. Админка — CRUD плюс про�
 1. **Каркас исполнителя** — воркспейс `apps/llm-runner`, перенос CLI-классов и
    профилей, `POST /v1/run` + cancel + health + Bearer + таймаут-сирота.
 2. **`RemoteLlmClient`** на сервере, инъекция через `BuildOptions`, один
-   исполнитель из env; сквозной тест «ход → фейковый исполнитель».
+   исполнитель из env; сквозной тест «ход → фейковый исполнитель». — СДЕЛАНО
+   (`apps/server/src/llm/{remoteClient,sinks,protocol}.ts`, env
+   `VC_LLM_RUNNER_*`, см. `docs/kb/llm.md`).
 3. **MCP-адресация** — `VC_MCP_PUBLIC_BASE` вместо `127.0.0.1` в
    `server.ts:233,350,362,374`, проверка доступности из сети исполнителя.
 4. **Вложения и cwd** — передача файлов, подмена путей, резолв cwd у исполнителя.
