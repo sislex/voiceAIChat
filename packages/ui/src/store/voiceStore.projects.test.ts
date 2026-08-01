@@ -302,3 +302,59 @@ describe('voiceStore — канал уведомлений', () => {
     expect(store.getState().notices).toEqual([{ id: expect.any(String), kind: 'success', text: 'Настройки сохранены' }])
   })
 })
+
+// Виджет задачи в чате — свойство открытого чата, а не состояние стора: любая
+// смена активного чата обязана его убрать, не дожидаясь ответа сервера.
+describe('voiceStore — контекст задачи не залипает при смене чата', () => {
+  /** Проект с задачей и открытым связанным чатом (контекст уже загружен). */
+  async function openedTaskChat(): Promise<{ store: VoiceStore; api: FakeApi; chatId: string }> {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const projectId = store.getState().projectDetail!.id
+    await store.actions.openBoard(projectId)
+    await store.actions.createTask(store.getState().board!.columns[0]!.id, { title: 'Задача A' })
+    const task = store.getState().board!.tasks.find((t) => t.title === 'Задача A')!
+    const chatId = (await store.actions.openTaskChat(task.id))!
+    await vi.waitFor(() => expect(store.getState().taskChatContext?.task.id).toBe(task.id))
+    // Контекст знает свой чат — по нему рендер и сверяется.
+    expect(store.getState().taskChatContext!.conversationId).toBe(chatId)
+    return { store, api, chatId }
+  }
+
+  it('newConversation обнуляет контекст задачи', async () => {
+    const { store } = await openedTaskChat()
+    await store.actions.newConversation()
+    expect(store.getState().taskChatContext).toBeNull()
+  })
+
+  it('resumeCcSession обнуляет контекст задачи', async () => {
+    const { store } = await openedTaskChat()
+    await store.actions.resumeCcSession('proj', 'sid-1')
+    expect(store.getState().taskChatContext).toBeNull()
+  })
+
+  it('resumeCxSession обнуляет контекст задачи', async () => {
+    const { store } = await openedTaskChat()
+    await store.actions.resumeCxSession('sid-42')
+    expect(store.getState().taskChatContext).toBeNull()
+  })
+
+  it('опоздавший ответ для уже закрытого чата не попадает в стор', async () => {
+    const { store, api, chatId } = await openedTaskChat()
+    const real = api['conversations:taskContext']
+    let release = (): void => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    api['conversations:taskContext'] = async (arg) => {
+      await gate
+      return await real(arg)
+    }
+    const pending = store.actions.loadTaskChatContext(chatId)
+    // Пока запрос в пути, пользователь ушёл в новый чат.
+    await store.actions.newConversation()
+    release()
+    await pending
+    expect(store.getState().taskChatContext).toBeNull()
+  })
+})

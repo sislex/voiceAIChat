@@ -1050,6 +1050,33 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     listeners.forEach((l) => l())
   }
 
+  /**
+   * Состояние, принадлежащее конкретному чату: при любой смене `activeId` его
+   * надо обнулить одним патчем. Иначе оно залипает в следующем чате — так виджет
+   * задачи оставался в новом разговоре, потому что контекст чистила только
+   * `loadTaskChatContext`, а её звал лишь `selectConversation`.
+   */
+  function chatScopedReset(): Pick<AppState, 'messages' | 'taskChatContext'> {
+    return { messages: [], taskChatContext: null }
+  }
+
+  /**
+   * То же плюс живое состояние хода: нужно там, где чат открывают заново
+   * (выбор чата, «Новый разговор»), а не досылают в него готовую историю.
+   */
+  function chatSwitchReset(): Partial<AppState> {
+    return {
+      ...chatScopedReset(),
+      liveSegments: [],
+      consoleLog: [],
+      liveActivity: [],
+      voice: 'idle',
+      streamingReply: '',
+      lastTurnMeta: null,
+      liveUsage: null
+    }
+  }
+
   function subscribe(listener: () => void): () => void {
     listeners.add(listener)
     return () => listeners.delete(listener)
@@ -1368,7 +1395,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     const conv = state.sidebarProjectId
       ? await api['conversations:setProject']({ id: created.id, projectId: state.sidebarProjectId })
       : created
-    setState({ activeId: conv.id, messages: [] })
+    setState({ activeId: conv.id, ...chatScopedReset() })
     await refreshConversations()
     return conv.id
   }
@@ -1921,6 +1948,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       deps.ccTailStop?.()
       setState({
         activeId: conversation.id,
+        ...chatScopedReset(),
         messages,
         ccOpen: false,
         ccProjectSlug: null,
@@ -2018,6 +2046,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       deps.cxTailStop?.()
       setState({
         activeId: conversation.id,
+        ...chatScopedReset(),
         messages,
         cxOpen: false,
         cxProjectCwd: null,
@@ -2313,17 +2342,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       : created
     setState({
       activeId: conversation.id,
-      messages: [],
-      liveSegments: [],
+      ...chatSwitchReset(),
       draft: '',
       promptHelper: { open: false, loading: false, variants: [], error: null },
-      attachments: [],
-      consoleLog: [],
-      liveActivity: [],
-      voice: 'idle',
-      streamingReply: '',
-      lastTurnMeta: null,
-      liveUsage: null
+      attachments: []
     })
     await refreshConversations()
     return conversation.id
@@ -2333,7 +2355,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     cancelTimers()
     stopCapture()
     resetTts() // ход прежнего разговора не отменяем — он доиграет на сервере
-    setState({ liveSegments: [], consoleLog: [], liveActivity: [], voice: 'idle', streamingReply: '', lastTurnMeta: null, liveUsage: null, messages: [], loadingMessages: true })
+    setState({ ...chatSwitchReset(), loadingMessages: true })
     let opened: Conversation | null = null
     let known = true
     try {
@@ -2389,7 +2411,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
-  /** Контекст задачи активного чата (null — чат не привязан к задаче). */
+  /**
+   * Контекст задачи активного чата (null — чат не привязан к задаче). Ответ на
+   * уже закрытый чат отбрасываем; вторая страховка — `conversationId` внутри
+   * самого контекста, по нему сверяется и рендер виджета.
+   */
   async function loadTaskChatContext(id: string): Promise<void> {
     setState({ taskChatContext: null })
     try {

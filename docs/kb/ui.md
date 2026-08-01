@@ -129,6 +129,20 @@ accent-полоска (`.convo--task`), а рамка подсвечиваетс
 (`chat/TaskChatHeader`) подсвечивается так же и берёт живую сводку пропсом
 `summary`, откатываясь на статус из `TaskChatContext`, если сводки ещё нет.
 
+**Виджет задачи — свойство открытого чата, а не состояние стора.** Чат
+открывается по адресу, и залипший виджет прошлой задачи в новом разговоре —
+типовой баг этого места. Поэтому в `TaskChatContext` есть `conversationId`
+(сервер кладёт туда id запрошенного чата), а `App` рисует шапку только при
+`state.taskChatContext.conversationId === state.activeId`: опоздавший ответ на
+уже закрытый чат нарисовать нечем. Вторая половина инварианта — в сторе: любая
+смена `activeId` (`selectConversation`, `newConversation`, автосоздание чата в
+`ensureConversation`, `resumeCcSession`/`resumeCxSession`) чистит per-chat
+состояние одним хелпером — `chatScopedReset()` (лента + контекст задачи) или
+`chatSwitchReset()` (плюс живое состояние хода: `liveSegments`, `consoleLog`,
+`liveActivity`, `voice`, `streamingReply`, `lastTurnMeta`, `liveUsage`). Новая
+точка перехода добавляется через них, а не копипастой полей — иначе следующий
+раз про виджет опять забудут.
+
 `SettingsModal` управляет STT/TTS, моделями/голосами, аудиоустройством и поведением. Недоступные по памяти capabilities не просто скрываются: сервер всё равно является последним gate.
 
 `MachineStatus`, `AgentCard`, `AgentCommands` обслуживают регистрацию, токен, policy, install/update и диагностику. `MachineUtility` выбирает `MachineConsole` или `FileExplorer`; `MachineTerminal` использует xterm и PTY bridge.

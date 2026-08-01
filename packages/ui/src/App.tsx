@@ -538,7 +538,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         onAnswerCiInteraction={(runId, interactionId, text) => void actions.answerCiInteraction(runId, interactionId, { text })}
         answeredCiInteractions={state.answeredCiInteractions}
         taskHeader={
-          state.taskChatContext ? (
+          // Виджет задачи — свойство открытого чата: показываем только контекст
+          // этого чата. Так залипание невозможно по построению, кто бы и где ни
+          // сменил `activeId` (новый чат, resume CC/Codex, переход по адресу).
+          state.taskChatContext && state.taskChatContext.conversationId === state.activeId ? (
             <TaskChatHeader
               context={state.taskChatContext}
               summary={state.ciSummaries[state.taskChatContext.task.id] ?? null}

@@ -202,6 +202,7 @@ export function makeLiveSegments(): LiveSegment[] {
 /** Контекст чата задачи для шапки `TaskChatHeader` (по умолчанию — ран идёт). */
 export function makeTaskChatContext(over: Partial<TaskChatContext> = {}): TaskChatContext {
   return {
+    conversationId: 'c1',
     projectId: 'p1',
     projectName: 'Voice Chat',
     epic: { id: 'e1', title: 'Канбан', key: 'VC-1' },
