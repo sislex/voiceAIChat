@@ -131,7 +131,7 @@ function runTurn(
         onLog('system', `Ошибка модели: ${m}\n`)
         finish({ ok: false })
       },
-      onActivity: (e) => onLog('system', `[${e.kind}] ${e.summary}\n`),
+      onActivity: (e) => onLog('system', `[${e.kind}] ${e.summary}${e.detail ? ` · ${e.detail}` : ''}\n`),
       // Счётчики кумулятивны: держим последние — у прерванного хода это всё,
       // что о его расходе вообще известно.
       onUsage: (u) => {
