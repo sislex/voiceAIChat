@@ -814,13 +814,14 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           machineOps={machineOps}
           role={state.currentUser?.role ?? 'admin'}
           settings={state.settings}
+          engines={state.llmEngines}
           defaultAgentId={state.settings.defaultAgentId}
           projects={state.projects}
           fetchProjectDetail={actions.fetchProjectDetail}
-          onSave={async ({ title, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
+          onSave={async ({ title, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
             await actions.renameConversation(activeConversation.id, title)
             await actions.setConversationProject(activeConversation.id, projectId)
-            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode)
+            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, llmEngineId)
           }}
           onAddSkill={async (agentId, skill) => {
             const agent = state.agents.find((item) => item.id === agentId)
@@ -912,6 +913,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       {state.settingsOpen && (
         <SettingsModal
           settings={state.settings}
+          engines={state.llmEngines}
           mics={state.mics}
           voices={state.ttsVoices}
           voiceCatalog={state.voiceCatalog}

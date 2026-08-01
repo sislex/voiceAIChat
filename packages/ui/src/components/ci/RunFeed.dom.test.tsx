@@ -82,6 +82,16 @@ describe('RunFeed', () => {
     expect(onRetryFromStep).toHaveBeenCalledWith('run-1', { provider: 'codex', model: '' })
   })
 
+  it('повтор model_work передаёт снимок выбранного исполнителя', () => {
+    const model = mkStep({ id: 'model-1', kind: 'model_work', slot: null, commandId: null, title: 'Работа модели', status: 'failed' })
+    const cache: RunFeedCache = { detail: { run: mkRun({ status: 'failed' }), steps: [model], fixAttempts: [], interactions: [] }, log: [], conclusion: null }
+    const onRetryFromStep = vi.fn()
+    render(<RunFeed {...baseProps(cache)} engines={[{ id: 'personal', name: 'Личный', kind: 'claude', isDefault: false }]} onRetryFromStep={onRetryFromStep} />)
+    fireEvent.change(screen.getByLabelText('Исполнитель CI-рана'), { target: { value: 'personal' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить работу модели' }))
+    expect(onRetryFromStep).toHaveBeenCalledWith('run-1', { provider: 'claude', model: 'opus', llmEngineId: 'personal' })
+  })
+
   it('pending-вопрос модели показывает форму и отдаёт ответ наружу', () => {
     const model = mkStep({ id: 'model-1', kind: 'model_work', slot: null, commandId: null, title: 'Работа модели', status: 'running' })
     const cache: RunFeedCache = {

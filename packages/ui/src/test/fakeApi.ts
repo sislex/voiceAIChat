@@ -302,12 +302,13 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       conv.status = status
       return withCounts(conv)
     },
-    'conversations:setExecTarget': async ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode }) => {
+    'conversations:setExecTarget': async ({ id, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode }) => {
       const conv = conversations.find((c) => c.id === id)
       if (!conv) throw new Error('not found')
       conv.execTarget = execTarget
       if (workdir !== undefined) conv.workdir = workdir
       if (skillNames !== undefined) conv.skillNames = skillNames
+      if (llmEngineId !== undefined) conv.llmEngineId = llmEngineId
       if (llmProvider !== undefined) conv.llmProvider = llmProvider
       if (llmModel !== undefined) conv.llmModel = llmModel
       if (permissionMode !== undefined) conv.permissionMode = permissionMode
@@ -341,6 +342,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (idx >= 0) messages.splice(idx, 1)
     },
     'uploads:add': async ({ name }) => ({ id: nextId(), name }),
+    'llm:engines': async () => llmEngines.filter((e) => e.enabled).map(({ id, name, kind, isDefault }) => ({ id, name, kind, isDefault })),
     'settings:get': async () => ({ ...settings }),
     'settings:save': async (next) => {
       settings = { ...next }

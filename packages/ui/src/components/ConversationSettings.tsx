@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { clampModelForRole, CODEX_MODELS, modelsForRole, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
+import type { LlmEngineOption } from '@shared/admin'
 import type { ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
 import type { MachineOps } from './machine'
 import { PopupFrame } from './PopupFrame'
@@ -17,7 +18,8 @@ export interface ConversationSettingsProps {
   /** Роль пользователя — прячет модели Claude, недоступные роли user. */
   role: UserRole
   /** Общие настройки — дефолты движка/модели, когда разговор их не переопределяет. */
-  settings: Pick<Settings, 'llmProvider' | 'model' | 'codexModel' | 'permissionMode'>
+  settings: Pick<Settings, 'llmProvider' | 'model' | 'codexModel' | 'permissionMode'> & { llmEngineId?: string | null }
+  engines?: LlmEngineOption[]
   /** Машина по умолчанию — предвыбирается в новых разговорах и помечается в списке. */
   defaultAgentId?: string | null
   /** Проекты пользователя — для привязки чата к проекту. */
@@ -29,6 +31,7 @@ export interface ConversationSettingsProps {
     execTarget: string | null
     workdir: string | null
     skillNames: string[]
+    llmEngineId?: string | null
     llmProvider: LlmProvider | null
     llmModel: string | null
     permissionMode: PermissionMode | null
@@ -52,7 +55,7 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, settings, defaultAgentId, projects, fetchProjectDetail, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, settings, engines = [], defaultAgentId, projects, fetchProjectDetail, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
@@ -62,6 +65,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
   )
   const [workdir, setWorkdir] = useState<string | null>(conversation.workdir)
   const [skillNames, setSkillNames] = useState<string[]>(conversation.skillNames)
+  const [llmEngineId, setLlmEngineId] = useState<string | null>(conversation.llmEngineId ?? settings.llmEngineId ?? null)
   const initialProvider: LlmProvider = conversation.llmProvider ?? settings.llmProvider
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(initialProvider)
   const [llmModel, setLlmModel] = useState<string>(
@@ -187,6 +191,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         execTarget,
         workdir: execTarget ? workdir : null,
         skillNames: execTarget ? skillNames : [],
+        ...(llmEngineId !== null || conversation.llmEngineId !== undefined || settings.llmEngineId !== undefined ? { llmEngineId: llmEngineId === (settings.llmEngineId ?? null) ? null : llmEngineId } : {}),
         llmProvider: inheritsGlobal ? null : llmProvider,
         llmModel: inheritsGlobal ? null : llmModel,
         permissionMode: permissionMode || null,
@@ -238,6 +243,17 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
 
         <section className="convsettings-card">
           <div className="convsettings-sectionhead"><div><h2>Движок и модель</h2><p>Действуют только в этом разговоре; по умолчанию — из общих настроек.</p></div></div>
+          <label className="convsettings-field"><span>Исполнитель</span>
+            <select aria-label="Исполнитель разговора" value={llmEngineId ?? ''} onChange={(e) => {
+              const id = e.target.value || null
+              setLlmEngineId(id)
+              const engine = engines.find((item) => item.id === id)
+              if (engine) setLlmProvider(engine.kind)
+            }}>
+              <option value="">Из общих настроек</option>
+              {engines.map((engine) => <option key={engine.id} value={engine.id}>{engine.name} · {engine.kind}</option>)}
+            </select>
+          </label>
           <label className="convsettings-field"><span>Движок</span>
             <select
               aria-label="Движок разговора"

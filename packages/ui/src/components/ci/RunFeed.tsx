@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CiRunDetail, CiRunStep, CiLogLine, CiRunConclusion, CiInteraction, CiInteractionAnswer } from '@shared/ci'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import { DEFAULT_CI_CLAUDE_MODEL, isTerminalCiStatus } from '@shared/ci'
+import type { LlmEngineOption } from '@shared/admin'
 import type { CiMetrics } from '../../remote/ciBridge'
 import { ciStatusIcon, ciStatusLabel, ciTone, fmtDuration } from './ciFormat'
 import { CiConsole } from './CiConsole'
@@ -35,11 +36,12 @@ export interface RunFeedProps {
   runId: string
   cache: RunFeedCache | undefined
   metrics?: CiMetrics | null
+  engines?: LlmEngineOption[]
   onSubscribe: (runId: string) => void
   onUnsubscribe: (runId: string) => void
   onLoad: (runId: string) => void
   onRetry: (runId: string) => void
-  onRetryFromStep?: (runId: string, selection?: { provider: 'claude' | 'codex'; model: string }) => void
+  onRetryFromStep?: (runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }) => void
   onDiscardAndRetry?: (runId: string) => void
   onCancel: (runId: string) => void
   onLoadMetrics?: (projectId: string) => void
@@ -72,6 +74,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   const now = props.now ?? Date.now
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [autoscroll, setAutoscroll] = useState(true)
+  const [llmEngineId, setLlmEngineId] = useState<string | null>(null)
   const [modelProvider, setModelProvider] = useState<'claude' | 'codex'>('claude')
   const [modelName, setModelName] = useState<string>(DEFAULT_CI_CLAUDE_MODEL)
   const loadedMetricsFor = useRef<string | null>(null)
@@ -94,9 +97,10 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
 
   useEffect(() => {
     if (!run) return
+    setLlmEngineId(run.llmEngineId ?? null)
     setModelProvider(run.llmProvider)
     setModelName(run.llmModel)
-  }, [run?.id, run?.llmProvider, run?.llmModel])
+  }, [run?.id, run?.llmEngineId, run?.llmProvider, run?.llmModel])
 
   // Метрики (текущее vs типичное) — по projectId рана, один раз.
   useEffect(() => {
@@ -212,6 +216,18 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
               <div className="ci-model-retry" data-testid="ci-model-retry">
                 <strong>Модель завершилась с ошибкой. Финальные команды не запускались.</strong>
                 <label>
+                  Исполнитель
+                  <select className="sel" aria-label="Исполнитель CI-рана" value={llmEngineId ?? ''} onChange={(e) => {
+                    const id = e.target.value || null
+                    setLlmEngineId(id)
+                    const engine = props.engines?.find((item) => item.id === id)
+                    if (engine) { setModelProvider(engine.kind); setModelName(engine.kind === 'codex' ? '' : DEFAULT_CI_CLAUDE_MODEL) }
+                  }}>
+                    <option value="">По умолчанию для роли</option>
+                    {(props.engines ?? []).map((engine) => <option key={engine.id} value={engine.id}>{engine.name} · {engine.kind}</option>)}
+                  </select>
+                </label>
+                <label>
                   Провайдер
                   <select className="sel" value={modelProvider} onChange={(e) => {
                     const provider = e.target.value === 'codex' ? 'codex' : 'claude'
@@ -228,7 +244,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
                     {(modelProvider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                   </select>
                 </label>
-                <Button disabled={!props.onRetryFromStep || (modelProvider === 'claude' && !modelName)} onClick={() => props.onRetryFromStep?.(runId, { provider: modelProvider, model: modelName })}>
+                <Button disabled={!props.onRetryFromStep || (modelProvider === 'claude' && !modelName)} onClick={() => props.onRetryFromStep?.(runId, { provider: modelProvider, model: modelName, ...(llmEngineId ? { llmEngineId } : {}) })}>
                   Повторить работу модели
                 </Button>
               </div>

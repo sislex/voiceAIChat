@@ -41,6 +41,8 @@ export interface TurnManagerDeps {
   claude: LlmClient
   /** Альтернативный движок Codex (используется при settings.llmProvider='codex'). */
   codex?: LlmClient
+  /** Клиент конкретного исполнителя из реестра. */
+  engineClient?: (engine: { id: string; kind: 'claude' | 'codex'; baseUrl: string; token: string }) => LlmClient
   /** Поиск компактного контекста проекта перед ходом. */
   kb?: KnowledgeBaseService
   /** Телеметрия обращений к БЗ (авто-инъекция и вызовы модели); undefined — не считаем. */
@@ -236,8 +238,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // пользователя (у роли user нет opus/fable — сервер не даст обойти фильтр).
     const wantProvider = conv?.llmProvider ?? settings.llmProvider
     const provider = wantProvider === 'codex' && deps.codex ? 'codex' : 'claude'
-    const client = provider === 'codex' ? deps.codex! : deps.claude
     const role = account.role
+    const wantedEngineId = conv?.llmEngineId ?? settings.llmEngineId
+    const resolvedEngine = deps.db.resolveLlmEngine(wantedEngineId, provider, role)
+    const client = resolvedEngine.engine && deps.engineClient
+      ? deps.engineClient(resolvedEngine.engine)
+      : provider === 'codex' ? deps.codex! : deps.claude
+    const engineNotice = resolvedEngine.substituted
+      ? `⚠️ Исполнитель «${wantedEngineId}» недоступен; ход выполнен через «${resolvedEngine.engine?.name ?? `default ${provider}`}».`
+      : ''
     const convModel = conv?.llmProvider === provider ? conv.llmModel : null
     const model =
       provider === 'codex'
@@ -497,7 +506,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             ...(activity.length ? { activity } : {})
           }
           // Ответ сохраняет сервер: клиент мог обновить страницу или уйти.
-          const rawText = text.trim() ? text : turn.partial
+          const answerText = text.trim() ? text : turn.partial
+          const rawText = engineNotice ? `${engineNotice}\n\n${answerText}` : answerText
 
           // Картинки, созданные CLI, лежат на сервере — перекладываем их на
           // машину разговора, откуда браузер возьмёт их напрямую. Шаг сетевой,

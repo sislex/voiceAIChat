@@ -378,6 +378,7 @@ describe('VoiceChatDb — настройки', () => {
       bargeIn: true,
       handsFree: true,
       execTarget: 'agent-1',
+      llmEngineId: null,
       llmProvider: 'claude',
       codexModel: '',
       defaultAgentId: null,
@@ -550,6 +551,19 @@ describe('VoiceChatDb — режим базы знаний разговора', 
     expect(conversation.kbContextMode).toBe('auto')
     expect(db.setConversationKbContextMode('kb-user', conversation.id, 'manual')?.kbContextMode).toBe('manual')
     expect(db.setConversationKbContextMode('kb-user', conversation.id, 'off')?.kbContextMode).toBe('off')
+    db.close()
+  })
+})
+
+
+describe('VoiceChatDb — резолв исполнителя LLM', () => {
+  it('выбирает запрошенный доступный и заменяет закрытый на default роли', () => {
+    const db = makeDb()
+    const def = db.createLlmEngine({ name: 'Рабочий', kind: 'claude', baseUrl: 'http://work', token: '', enabled: true, allowedRoles: ['admin', 'user'], isDefault: true })
+    const personal = db.createLlmEngine({ name: 'Личный', kind: 'claude', baseUrl: 'http://personal', token: '', enabled: true, allowedRoles: ['admin'], isDefault: false })
+    expect(db.resolveLlmEngine(personal.id, 'claude', 'admin')).toMatchObject({ engine: { id: personal.id }, substituted: false })
+    expect(db.resolveLlmEngine(personal.id, 'claude', 'user')).toMatchObject({ engine: { id: def.id }, substituted: true })
+    expect(db.listLlmEnginesForRole('user').map((engine) => engine.id)).toEqual([def.id])
     db.close()
   })
 })

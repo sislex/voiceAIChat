@@ -59,6 +59,7 @@ import type {
   AdminLlmEngine,
   AdminLlmEngineHealth,
   AdminLlmEngineInput,
+  LlmEngineOption,
   AdminUserInfo,
   UsageReport,
   UsageUnit
@@ -266,6 +267,7 @@ export interface AppState {
   loadingMessages: boolean
   liveSegments: LiveSegment[]
   settings: Settings
+  llmEngines: LlmEngineOption[]
   settingsOpen: boolean
   draft: string
   /** Помощник промптов: список переформулировок черновика и состояние панели. */
@@ -582,7 +584,7 @@ export interface StoreActions {
   /** Переименовать разговор (БД + список). Пустое имя игнорируется. */
   renameConversation(id: string, title: string): Promise<void>
   /** Изменить машину только одного разговора. */
-  setConversationExecTarget(id: string, execTarget: string | null, workdir?: string | null, skillNames?: string[], llmProvider?: LlmProvider | null, llmModel?: string | null, permissionMode?: PermissionMode | null, kbContextMode?: KbContextMode): Promise<void>
+  setConversationExecTarget(id: string, execTarget: string | null, workdir?: string | null, skillNames?: string[], llmProvider?: LlmProvider | null, llmModel?: string | null, permissionMode?: PermissionMode | null, kbContextMode?: KbContextMode, llmEngineId?: string | null): Promise<void>
   setConversationProject(id: string, projectId: string | null): Promise<void>
   /** Сменить статус жизненного цикла чата (дропдаун в сайдбаре). */
   setConversationStatus(id: string, status: ConversationStatus): Promise<void>
@@ -909,7 +911,7 @@ export interface StoreActions {
   startCiRun(projectId: string, taskId: string, mode?: CiRunMode): Promise<CiRun | null>
   cancelCiRun(runId: string): Promise<void>
   retryCiRun(runId: string): Promise<CiRun | null>
-  retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun | null>
+  retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<CiRun | null>
   discardCiWorkspaceAndRetry(runId: string): Promise<CiRun | null>
   loadCiRun(runId: string): Promise<void>
   openCiRun(runId: string): void
@@ -966,6 +968,7 @@ function initialState(): AppState {
     loadingMessages: false,
     liveSegments: [],
     settings: { ...DEFAULT_SETTINGS },
+    llmEngines: [],
     settingsOpen: false,
     draft: '',
     promptHelper: { open: false, loading: false, variants: [], error: null },
@@ -1706,12 +1709,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Тяжёлая загрузка данных пользователя (после успешной аутентификации). */
   async function bootstrap(): Promise<void> {
     setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null }) // обновление страницы: лоадер до готовности ленты
-    let settings, conversations, projects
+    let settings, conversations, projects, llmEngines
     try {
       ;[settings, conversations, projects] = await Promise.all([
         api['settings:get'](),
         api['conversations:list']({ includeCompleted: state.showDoneTaskChats }),
-        api['projects:list']()
+        api['projects:list'](),
+        api['llm:engines']()
       ])
     } catch (err) {
       // Иначе сайдбар остался бы со скелетоном навсегда: показываем ошибку с «Повторить».
@@ -1725,7 +1729,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     // Сайдбар сразу фильтруем по восстановленному из localStorage проекту.
     const pid = state.sidebarProjectId
     const visible = conversations.filter((c) => (c.projectId ?? null) === pid)
-    setState({ settings, projects, projectsLoaded: true, conversations: visible, conversationsStatus: 'ready', conversationsError: null })
+    setState({ settings, llmEngines, projects, projectsLoaded: true, conversations: visible, conversationsStatus: 'ready', conversationsError: null })
     void loadTaskChatBadges()
     await refreshMics()
     await refreshModelStatus()
@@ -2602,9 +2606,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     llmProvider?: LlmProvider | null,
     llmModel?: string | null,
     permissionMode?: PermissionMode | null,
-    kbContextMode?: KbContextMode
+    kbContextMode?: KbContextMode,
+    llmEngineId?: string | null
   ): Promise<void> {
-    const conversation = await api['conversations:setExecTarget']({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode })
+    const conversation = await api['conversations:setExecTarget']({ id, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode })
     setState({
       conversations: state.conversations.map((c) => (c.id === id ? conversation : c))
     })
@@ -3563,7 +3568,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!ciBridge) return null
     try { return await ciBridge.retryRun(runId) } catch (err) { fail(err); return null }
   }
-  async function retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun | null> {
+  async function retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<CiRun | null> {
     // Повтор с упавшего шага — тот же ран; после запуска перечитываем деталь/лог.
     if (!ciBridge) return null
     try { const r = await ciBridge.retryRunFromStep(runId, selection); await loadCiRun(runId); return r } catch (err) { fail(err); return null }
