@@ -9,21 +9,21 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-07-27 | ⚠ 31 коммит(ов) в areas после сверки: 9c3ab50 feat(llm-runner): каркас исполнителя LLM — apps/llm-runner и POST /v1/run … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: 9c3ab50 feat(llm-runner): каркас исполнителя LLM — apps/llm-runner и POST /v1/run |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 5 коммит(ов) в areas после сверки: c27fe65 feat(kb): панель «Использование БЗ» + телеметрия обращений модели … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-01 | ⚠ 7 коммит(ов) в areas после сверки: 9c3ab50 feat(llm-runner): каркас исполнителя LLM — apps/llm-runner и POST /v1/run … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-01 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-01 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-01 | ⚠ 3 коммит(ов) в areas после сверки: 229f0c6 fix(kb): inject full top context sections … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: 229f0c6 fix(kb): inject full top context sections |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: 229f0c6 fix(kb): inject full top context sections |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-01 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-01 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: 87c0e6f chatai-56: работа CI-рана |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 9c3ab50 feat(llm-runner): каркас исполнителя LLM — apps/llm-runner и POST /v1/run … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-01 | ✓ |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-31 | ⚠ 11 коммит(ов) в areas после сверки: 925d7f0 chatai-46: работа CI-рана … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-01 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-01 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-01 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-07-27 | ⚠ 60 коммит(ов) в areas после сверки: 2b2978c fix(kb): preserve knowledge service injection contract … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 2b2978c fix(kb): preserve knowledge service injection contract … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: 229f0c6 fix(kb): inject full top context sections |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-01 | ✓ |
@@ -43,18 +43,18 @@
 
 ## Журнал сессий
 
-Всего записей: 49. Последние:
+Всего записей: 56. Последние:
 
 - [2026-08-01-2470-com-список-чатов-обновляется-по-событиям.md](log/2026-08-01-2470-com-список-чатов-обновляется-по-событиям.md) — Список чатов обновляется по событиям, а не только по действиям
 - [2026-08-01-2470-com-пересборка-прода-chat-52.md](log/2026-08-01-2470-com-пересборка-прода-chat-52.md) — пересборка-прода-chat-52
 - [2026-08-01-2470-com-пересборка-прода-chat-44.md](log/2026-08-01-2470-com-пересборка-прода-chat-44.md) — пересборка-прода-chat-44
+- [2026-08-01-2470-com-vc-mcp-public-base.md](log/2026-08-01-2470-com-vc-mcp-public-base.md) — vc-mcp-public-base
 - [2026-08-01-2470-com-task-chat-widget-scoped-to-chat.md](log/2026-08-01-2470-com-task-chat-widget-scoped-to-chat.md) — Виджет задачи виден только в своём чате
+- [2026-08-01-2470-com-runner-fs-api-proxy.md](log/2026-08-01-2470-com-runner-fs-api-proxy.md) — Файловые API исполнителя для проводника CC/Codex и статуса логина
+- [2026-08-01-2470-com-remote-runner-attachments-cwd.md](log/2026-08-01-2470-com-remote-runner-attachments-cwd.md) — Вложения и cwd теперь разрешаются на стороне исполнителя
+- [2026-08-01-2470-com-remote-mcp-file-tools.md](log/2026-08-01-2470-com-remote-mcp-file-tools.md) — Remote-MCP: оконное чтение, поиск и точечная правка
+- [2026-08-01-2470-com-remote-llm-client-na-servere.md](log/2026-08-01-2470-com-remote-llm-client-na-servere.md) — RemoteLlmClient на сервере
 - [2026-08-01-2470-com-otchyot-po-zadache-rashod-modeli.md](log/2026-08-01-2470-com-otchyot-po-zadache-rashod-modeli.md) — Отчёт по завершённой задаче — расход модели, запросы и шаги CI
-- [2026-08-01-2470-com-opisanie-zadachi-markdown.md](log/2026-08-01-2470-com-opisanie-zadachi-markdown.md) — Описание задачи — маркдаун в просмотре, правка по кнопке
-- [2026-08-01-2470-com-llm-runner-skeleton.md](log/2026-08-01-2470-com-llm-runner-skeleton.md) — Каркас исполнителя LLM — apps/llm-runner и POST /v1/run
-- [2026-08-01-2470-com-llm-runner-kb-sverka.md](log/2026-08-01-2470-com-llm-runner-kb-sverka.md) — Сверка KB после выноса CLI в apps/llm-runner
-- [2026-08-01-2470-com-kb-точные-бусты-и-компактный-запрос.md](log/2026-08-01-2470-com-kb-точные-бусты-и-компактный-запрос.md) — kb-точные-бусты-и-компактный-запрос
-- [2026-08-01-2470-com-kb-v-rane-modeli.md](log/2026-08-01-2470-com-kb-v-rane-modeli.md) — База знаний в работе модели CI-рана
 
 ## Исторические планы
 

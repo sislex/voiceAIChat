@@ -10,9 +10,12 @@
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { Readable } from 'node:stream'
-import type { LlmRunBody, LlmRunFrame, LlmRunKind } from '@voicechat/shared'
+import type { LlmAttachment, LlmRunBody, LlmRunFrame, LlmRunKind } from '@voicechat/shared'
 import { killCliChild } from '../cli/childKill.js'
 import { claudeArgs, type SpawnFn } from '../cli/claudeCli.js'
 import { cliProfileEnv } from '../cli/cliProfiles.js'
@@ -60,6 +63,45 @@ interface ActiveRun {
   kill(): void
 }
 
+interface PreparedRun {
+  body: LlmRunBody
+  cleanup(): void
+}
+
+function safeRunnerName(att: LlmAttachment, index: number): string {
+  const base = basename((att.runnerName || '').trim() || att.serverPath.trim())
+  const name = !base || base === '.' || base === '..' ? `attachment-${index + 1}` : base
+  return `${index + 1}-${name}`
+}
+
+function replacePromptPaths(prompt: string, pairs: Array<{ serverPath: string; runnerPath: string }>): string {
+  return [...pairs]
+    .sort((a, b) => b.serverPath.length - a.serverPath.length)
+    .reduce((acc, pair) => acc.split(pair.serverPath).join(pair.runnerPath), prompt)
+}
+
+function prepareRun(body: LlmRunBody): PreparedRun {
+  const attachments = body.attachments?.filter((att) => att.serverPath && att.dataBase64) ?? []
+  if (!attachments.length) return { body, cleanup: () => {} }
+
+  const dir = mkdtempSync(join(tmpdir(), 'voicechat-llm-run-'))
+  const pairs: Array<{ serverPath: string; runnerPath: string }> = []
+  for (const [index, att] of attachments.entries()) {
+    const runnerPath = join(dir, safeRunnerName(att, index))
+    writeFileSync(runnerPath, Buffer.from(att.dataBase64, 'base64'))
+    pairs.push({ serverPath: att.serverPath, runnerPath })
+  }
+
+  return {
+    body: { ...body, prompt: replacePromptPaths(body.prompt, pairs) },
+    cleanup: () => rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+function usableCwd(cwd: string | undefined): string | undefined {
+  return cwd && existsSync(cwd) ? cwd : undefined
+}
+
 /** Реестр живых ранов: запуск, отмена по id, счётчик для health. */
 export class RunManager {
   private readonly runs = new Map<string, ActiveRun>()
@@ -87,10 +129,22 @@ export class RunManager {
   start(body: LlmRunBody, sink: RunSink): string {
     const id = body.runId || randomUUID()
     const kind: LlmRunKind = body.kind === 'codex' ? 'codex' : 'claude'
+    const prepared = prepareRun(body)
+    let cleaned = false
+    const cleanup = (): void => {
+      if (cleaned) return
+      cleaned = true
+      prepared.cleanup()
+    }
+    const cwd = usableCwd(prepared.body.cwd)
+    const runBody: LlmRunBody = {
+      ...prepared.body,
+      ...(cwd ? { cwd } : { cwd: undefined })
+    }
     const invocation =
       kind === 'codex'
-        ? codexInvocation(body)
-        : { args: claudeArgs(body), prompt: null as string | null }
+        ? codexInvocation(runBody)
+        : { args: claudeArgs(runBody), prompt: null as string | null }
     const bin = kind === 'codex' ? this.opts.codexBin ?? 'codex' : this.opts.claudeBin ?? 'claude'
     const orphanMs = this.opts.orphanMs ?? DEFAULT_ORPHAN_MS
 
@@ -99,14 +153,15 @@ export class RunManager {
 
     let child: ChildProcess
     try {
-      const home = body.userId ? this.opts.profileHome?.(body.userId) : undefined
+      const home = runBody.userId ? this.opts.profileHome?.(runBody.userId) : undefined
       const spawnFn = this.opts.spawn ?? (nodeSpawn as unknown as SpawnFn)
       const options =
-        body.cwd || home
-          ? { ...(body.cwd ? { cwd: body.cwd } : {}), ...(home ? { env: cliProfileEnv(home) } : {}) }
+        runBody.cwd || home
+          ? { ...(runBody.cwd ? { cwd: runBody.cwd } : {}), ...(home ? { env: cliProfileEnv(home) } : {}) }
           : undefined
       child = spawnFn(bin, invocation.args, options)
     } catch (err) {
+      cleanup()
       // Текст ошибки в человеческий вид переводит сервер: у него есть контекст хода.
       frame({ t: 'err', s: err instanceof Error ? err.message : String(err) })
       frame({ t: 'exit', code: null })
@@ -127,6 +182,7 @@ export class RunManager {
       closed = true
       disarm()
       this.runs.delete(id)
+      cleanup()
       sink.end()
     }
     const abandon = (reason: string): void => {
@@ -134,6 +190,7 @@ export class RunManager {
       closed = true
       disarm()
       this.runs.delete(id)
+      cleanup()
       this.log(`ран ${id} (${kind}): ${reason} — гасим CLI`)
       killCliChild(child)
       sink.end()
@@ -149,7 +206,6 @@ export class RunManager {
     sink.onClose(() => abandon('клиент отключился'))
 
     const send = (f: LlmRunFrame): void => {
-      // Буфер не ушёл клиенту — включаем часы сироты; ушёл — выключаем.
       if (frame(f)) disarm()
       else arm()
     }
@@ -159,8 +215,6 @@ export class RunManager {
       finish(null)
     })
 
-    // Промпт codex всегда идёт через stdin: полный контекст со схемами tools
-    // легко превышает ARG_MAX (spawn E2BIG).
     if (invocation.prompt !== null) {
       try {
         child.stdin?.end(invocation.prompt)
@@ -180,8 +234,6 @@ export class RunManager {
       if (!stream) return
       openStreams += 1
       const rl = createInterface({ input: stream })
-      // Построчно и сразу: буферизовать вывод нельзя — сервер стримит эти строки
-      // дальше в браузер как дельты ответа.
       rl.on('line', (s) => send({ t, s }))
       rl.on('close', streamClosed)
     }
@@ -191,7 +243,6 @@ export class RunManager {
     child.on('close', (code) => {
       exited = true
       exitCode = code
-      // Процесса больше нет — отменять нечего, даже если хвост stdout ещё течёт.
       this.runs.delete(id)
       if (openStreams === 0) {
         finish(code)

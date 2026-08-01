@@ -561,6 +561,7 @@ export function makeRunReport(over: Partial<CiRunReport> = {}): CiRunReport {
     durationMs: 720_000,
     createdAt: RUN_T0,
     fixAttempts: 1,
+    kbHit: null,
     totals: makeUsageTotals(),
     steps: [
       makeReportStep(),

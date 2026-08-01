@@ -1,29 +1,39 @@
-# voiceAIChat в контейнере: сервер + web на одном порту, claude/codex CLI внутри.
+# voiceAIChat в Docker: сервер + web на одном порту, а claude/codex CLI живут
+# во внутренних контейнерах-исполнителях runner-work и runner-personal.
 #
 # Запуск:
 #   docker compose up --build
 #   → открыть http://localhost:8787
 #
-# Аутентификация claude/codex живёт ВНУТРИ контейнера (тома vc-claude/vc-codex),
-# а не берётся с хоста. Логин выполняется один раз внутри контейнера:
-#   docker compose exec -u node voicechat claude auth login   # или: claude setup-token
-#   docker compose exec -u node voicechat codex login
-# Токены сохраняются в томах и переживают пересоздание контейнера.
+# `runner-work` получает прежние тома `vc-claude` / `vc-codex`, поэтому после
+# деплоя рабочая авторизация продолжает жить без повторного логина. Его
+# пользовательские профили (`/data/cli-users`) при первом старте копируются из
+# старого серверного тома `vc-data` в отдельный volume исполнителя.
+#
+# `runner-personal` хранит отдельные auth/profile volume и требует одноразового
+# логина внутри контейнера:
+#   docker compose exec -u node runner-personal claude auth login
+#   # или headless: claude setup-token
 
 services:
   voicechat:
-    build: .
-    image: voicechat
-    # Лимит памяти контейнера → его читает автоопределение ресурсов (cgroup).
-    # При 1 GiB блокируется распознавание на large-v3-turbo (нужно ~2 ГБ) и medium
-    # (~1.2 ГБ); проходит small (~0.6 ГБ) и озвучка TTS (~0.4 ГБ). Для small+medium — 1536m.
+    build:
+      context: .
+      target: server-runtime
+    image: voicechat-server
     mem_limit: 1g
     ports:
       - "8787:8787"
+    depends_on:
+      - runner-work
+      - runner-personal
     environment:
       HOST: 0.0.0.0
       PORT: "8787"
       VC_DATA_DIR: /data
+      VC_LLM_RUNNER_CLAUDE_URL: http://runner-work:8790
+      VC_LLM_RUNNER_CODEX_URL: http://runner-work:8790
+      VC_LLM_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
       # Пароль admin при первом создании БД (пустой том). Задаётся в shell/.env;
       # если БД уже создана, пароль меняется в UI (Настройки → Пользователи).
       VC_ADMIN_PASSWORD: ${VC_ADMIN_PASSWORD:-}
@@ -35,12 +45,48 @@ services:
       VC_CLAUDE_UPSTREAM_AUTH: ${VC_CLAUDE_UPSTREAM_AUTH:-x-api-key}
       VC_CLAUDE_MODEL_MAP: ${VC_CLAUDE_MODEL_MAP:-{}}
     volumes:
-      # Персист БД (voicechat.db) и вложений.
       - vc-data:/data
-      # Авторизация + история CLI внутри контейнера (rw: обновление токенов).
-      # Именованные тома, а не bind-mount с хоста → логин делается в контейнере.
+    restart: unless-stopped
+
+  runner-work:
+    build:
+      context: .
+      target: llm-runner-runtime
+      args:
+        INSTALL_CLAUDE_CLI: "1"
+        INSTALL_CODEX_CLI: "1"
+    image: voicechat-llm-runner-work
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8790"
+      VC_DATA_DIR: /data
+      VC_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
+      VC_RUNNER_MIGRATE_CLI_USERS_FROM: /mnt/server-data
+    volumes:
+      - vc-runner-work-data:/data
       - vc-claude:/home/node/.claude
       - vc-codex:/home/node/.codex
+      - vc-data:/mnt/server-data:ro
+    restart: unless-stopped
+
+  runner-personal:
+    build:
+      context: .
+      target: llm-runner-runtime
+      args:
+        INSTALL_CLAUDE_CLI: "1"
+        INSTALL_CODEX_CLI: "0"
+    image: voicechat-llm-runner-personal
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8790"
+      VC_DATA_DIR: /data
+      VC_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
+      VC_CODEX_BIN: /bin/false
+    volumes:
+      - vc-runner-personal-data:/data
+      - vc-runner-personal-claude:/home/node/.claude
+      - vc-runner-personal-codex:/home/node/.codex
     restart: unless-stopped
 
   # HTTPS для доступа по IP: без secure-контекста браузер не даёт микрофон.
@@ -61,4 +107,8 @@ volumes:
   vc-data:
   vc-claude:
   vc-codex:
+  vc-runner-work-data:
+  vc-runner-personal-data:
+  vc-runner-personal-claude:
+  vc-runner-personal-codex:
   vc-caddy:

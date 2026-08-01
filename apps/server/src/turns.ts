@@ -4,8 +4,9 @@
 // всем подключённым клиентам; при (пере)подключении клиент получает снапшот
 // активных ходов с накопленным частичным текстом (claude.active).
 
-import { existsSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import { basename } from 'node:path'
 import {
   appendImageHint,
   appendQuestionsHint,
@@ -24,7 +25,8 @@ import {
   type SttSegmentWire,
   type TurnMeta,
   type TurnRequestInfo,
-  type TurnUsage
+  type TurnUsage,
+  type LlmAttachment
 } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
 import { relocateImagesToMachine } from './imageRelocate.js'
@@ -39,6 +41,8 @@ export interface TurnManagerDeps {
   claude: LlmClient
   /** Альтернативный движок Codex (используется при settings.llmProvider='codex'). */
   codex?: LlmClient
+  /** Клиент конкретного исполнителя из реестра. */
+  engineClient?: (engine: { id: string; kind: 'claude' | 'codex'; baseUrl: string; token: string }) => LlmClient
   /** Поиск компактного контекста проекта перед ходом. */
   kb?: KnowledgeBaseService
   /** Телеметрия обращений к БЗ (авто-инъекция и вызовы модели); undefined — не считаем. */
@@ -55,7 +59,7 @@ export interface TurnManagerDeps {
     register(token: string, entry: { userId: string; conversationId: string; projectId: string | null; turnId: string }): void
     unregister(token: string): void
   }
-  /** Резолв id вложения → абсолютный путь на сервере (для промпта Claude). */
+  /** Резолв id вложения → абсолютный путь на сервере (для промпта и runner). */
   resolveUpload?: (id: string) => string | undefined
   /** Онлайн-статус и политика машин-агентов (для проброса Bash на клиента). */
   agents?: {
@@ -67,8 +71,8 @@ export interface TurnManagerDeps {
     fsMkdir?(id: string, path: string): Promise<unknown>
     fsWrite?(id: string, path: string, dataBase64: string): Promise<unknown>
   }
-  /** Корни «своей» области сервера — откуда можно забирать файл картинки. */
-  serverFileRoots?: (userId: string) => string[]
+  /** Чтение файла картинки с диска сервера или из профиля исполнителя. */
+  readServerFile?: (userId: string, path: string) => Promise<{ name: string; dataBase64: string } | null>
   /** База URL MCP-эндпоинта remote-bash (с секретом k); undefined — проброс выключен. */
   mcpBaseUrl?: string
   /** Источник времени (для детерминированных тестов). */
@@ -76,6 +80,19 @@ export interface TurnManagerDeps {
 }
 
 /** Запрос нового хода (соответствует клиентскому claude.send). */
+function loadAttachment(path: string | undefined): LlmAttachment | null {
+  if (!path) return null
+  try {
+    return {
+      serverPath: path,
+      runnerName: basename(path),
+      dataBase64: readFileSync(path).toString('base64')
+    }
+  } catch {
+    return null
+  }
+}
+
 export interface StartTurnRequest {
   /** Владелец разговора (логин пользователя) — для изоляции данных. */
   userId: string
@@ -221,8 +238,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // пользователя (у роли user нет opus/fable — сервер не даст обойти фильтр).
     const wantProvider = conv?.llmProvider ?? settings.llmProvider
     const provider = wantProvider === 'codex' && deps.codex ? 'codex' : 'claude'
-    const client = provider === 'codex' ? deps.codex! : deps.claude
     const role = account.role
+    const wantedEngineId = conv?.llmEngineId ?? settings.llmEngineId
+    const resolvedEngine = deps.db.resolveLlmEngine(wantedEngineId, provider, role)
+    const client = resolvedEngine.engine && deps.engineClient
+      ? deps.engineClient(resolvedEngine.engine)
+      : provider === 'codex' ? deps.codex! : deps.claude
+    const engineNotice = resolvedEngine.substituted
+      ? `⚠️ Исполнитель «${wantedEngineId}» недоступен; ход выполнен через «${resolvedEngine.engine?.name ?? `default ${provider}`}».`
+      : ''
     const convModel = conv?.llmProvider === provider ? conv.llmModel : null
     const model =
       provider === 'codex'
@@ -238,12 +262,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Рабочий каталог разговора (`conv.workdir`) выбирается через проводник
     // МАШИНЫ — это путь на её хосте, и в контейнере сервера его нет. Он уходит
     // только в MCP-мост (`&cwd=`), где `remote.bash` делает `cd` на агенте.
-    // Локальный `cwd` для процесса claude берём исключительно из серверных
-    // настроек и только если каталог реально существует здесь.
-    const localCwd = settings.workdir && existsSync(settings.workdir) ? settings.workdir : undefined
-    const attachmentPaths = (req.attachments ?? [])
-      .map((id) => deps.resolveUpload?.(id))
-      .filter((p): p is string => typeof p === 'string')
+    // Локальный `cwd` для CLI теперь не валидируем на сервере: исполнитель сам
+    // решает, существует ли каталог и можно ли в него перейти.
+    const desiredCwd = settings.workdir ?? undefined
+    const attachments = (req.attachments ?? [])
+      .map((id) => loadAttachment(deps.resolveUpload?.(id)))
+      .filter((att): att is LlmAttachment => Boolean(att))
+    const attachmentPaths = attachments.map((att) => att.serverPath)
     // Есть сессия → продолжаем одним ходом (--resume). Нет (новый разговор или
     // сессия сброшена после удаления/правки) → пересобираем промпт из текущей
     // истории БД, чтобы контекст модели совпадал с видимым (без удалённых реплик).
@@ -373,9 +398,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         policySummary: policy ? policySummary(policy, conv?.skillNames ?? []) : undefined
       }
     }
-    // Никогда не подставляем сюда каталог машины: chdir в несуществующий (или
-    // чужой, вроде /root) путь роняет спавн с ENOENT/EACCES ещё до запуска CLI.
-    const cwd = localCwd
+    // `cwd` здесь только желаемый: локальный spawn или удалённый runner уже сами
+    // решают, можно ли в него перейти, и при невозможности просто пропускают chdir.
+    const cwd = desiredCwd
     // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
     // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
     // выполнения). На своей машине действия регулирует политика машины.
@@ -426,6 +451,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     turn.handle = client.send(
       {
         userId, prompt, sessionId, model, permissionMode, cwd, remote, executionDisabled,
+        ...(attachments.length ? { attachments } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {})
       },
       {
@@ -480,7 +506,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             ...(activity.length ? { activity } : {})
           }
           // Ответ сохраняет сервер: клиент мог обновить страницу или уйти.
-          const rawText = text.trim() ? text : turn.partial
+          const answerText = text.trim() ? text : turn.partial
+          const rawText = engineNotice ? `${engineNotice}\n\n${answerText}` : answerText
 
           // Картинки, созданные CLI, лежат на сервере — перекладываем их на
           // машину разговора, откуда браузер возьмёт их напрямую. Шаг сетевой,
@@ -544,12 +571,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
           const prepared = (async (): Promise<string> => {
             const a = deps.agents
-            if (!target || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.serverFileRoots) {
+            if (!target || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.readServerFile) {
               return rawText
             }
             try {
               return await relocateImagesToMachine(rawText, target, {
-                roots: deps.serverFileRoots(userId),
+                readFile: (path) => deps.readServerFile!(userId, path),
                 fsList: (id, path) => a.fsList!(id, path),
                 fsMkdir: (id, path) => a.fsMkdir!(id, path),
                 fsWrite: (id, path, data) => a.fsWrite!(id, path, data)

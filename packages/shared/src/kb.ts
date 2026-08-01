@@ -146,6 +146,8 @@ export interface KbUsageSectionRef {
   heading: string
   anchor: string
   sourcePath: string
+  /** Снимок areas документа на момент выдачи модели. */
+  relatedFiles: string[]
   /** Символы именно этого раздела в отданном тексте. */
   chars: number
   estimatedTokens: number

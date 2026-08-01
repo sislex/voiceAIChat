@@ -23,6 +23,7 @@ export interface CiModelHooksDeps {
   db: VoiceChatDb
   claude: LlmClient
   codex: LlmClient
+  engineClient?: (engine: { id: string; kind: 'claude' | 'codex'; baseUrl: string; token: string }) => LlmClient
   /** База URL MCP remote-bash (с ?k=секрет); агент/cwd дописываются на ход. */
   mcpBaseUrl: string
   /** База URL MCP команд CI (с ?k=секрет); &run=<token> дописывается на ход. */
@@ -147,7 +148,7 @@ function runTurn(
         onLog('system', `Ошибка модели: ${m}\n`)
         finish({ ok: false })
       },
-      onActivity: (e) => onLog('system', `[${e.kind}] ${e.summary}\n`),
+      onActivity: (e) => onLog('system', `[${e.kind}] ${e.summary}${e.detail ? ` · ${e.detail}` : ''}\n`),
       // Счётчики кумулятивны: держим последние — у прерванного хода это всё,
       // что о его расходе вообще известно.
       onUsage: (u) => {
@@ -174,6 +175,10 @@ function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmReque
  * дольше, а расхождение между прогонами модель чинит вслепую. Упавший шаг
  * вернётся к ней в fix-loop — уже с логом.
  */
+const REMOTE_FILE_TOOLS_DIRECTIVE =
+  'Файлы читай инструментом read, ищи grep и правь edit; bash используй для команд ' +
+  '(git, npm, тесты), а не для чтения файлов и не для правок через heredoc.'
+
 const NO_SELF_VERIFICATION = [
   'Тесты, typecheck, линтер и сборку сам не запускай — за проверку отвечает шаг воркфлоу после твоей работы.',
   'Если он упадёт, тебя позовут чинить в этом же диалоге и покажут лог. Результат работы отдавай коммитом в ветку задачи.'
@@ -197,6 +202,7 @@ function taskPrompt(ctx: CiModelContext, mode: CiRunMode): string {
     `Рабочая директория: ${ctx.workspacePath}`,
     `Ветка: ${ctx.env.BRANCH ?? ''}`,
     '',
+    REMOTE_FILE_TOOLS_DIRECTIVE,
     ...tail
   ]
     .filter(Boolean)
@@ -217,7 +223,11 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   kbUpdate: CiKbUpdateHook
 } {
   const now = deps.now ?? (() => Date.now())
-  const clientFor = (ctx: CiModelContext): LlmClient => ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
+  const clientFor = (ctx: CiModelContext): LlmClient => {
+    const role = deps.db.getUser(ctx.run.triggeredBy)?.role ?? 'user'
+    const resolved = deps.db.resolveLlmEngine(ctx.run.llmEngineId, ctx.run.llmProvider, role)
+    return resolved.engine && deps.engineClient ? deps.engineClient(resolved.engine) : ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
+  }
   const modelFor = (ctx: CiModelContext): string => ctx.run.llmProvider === 'codex' ? ctx.run.llmModel : (ctx.run.llmModel || DEFAULT_CI_CLAUDE_MODEL)
   const kbBroker = deps.kbTool ?? kbToolBroker
 

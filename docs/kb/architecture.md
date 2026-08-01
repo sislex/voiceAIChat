@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-07-27
-checked: 49465ae
+updated: 2026-08-01
+checked: dc73c33
 areas:
   - apps/server/src/server.ts
   - apps/llm-runner/src/server.ts
@@ -29,9 +29,12 @@ apps/server (Fastify)
    ├── SQLite           better-sqlite3, WAL
    ├── whisper-cli      распознавание (spawn)
    ├── piper / say      озвучка (spawn)
-   └── claude / codex   LLM (spawn CLI, stream-json; код — apps/llm-runner)
-      ▲
-      │  WebSocket, авторизация токеном машины
+   └── LLM client       Claude/Codex: локальный spawn (код — apps/llm-runner)
+      │                  ИЛИ HTTP → /v1/run
+      ├──────────────► контейнер-исполнитель LLM (claude/codex CLI, NDJSON)
+      │
+      ▲  WebSocket, авторизация токеном машины
+      │
 apps/agent на машине пользователя: exec, файловые операции, PTY, телеметрия
 ```
 
@@ -43,8 +46,11 @@ apps/agent на машине пользователя: exec, файловые о
 (Electron IPC). `apps/web` — это ~3 файла: конфиг адреса сервера, установка мостов,
 монтирование `<App/>`.
 
-**Сервер — полноценный бэкенд, клиенты тонкие.** Распознавание, озвучка, LLM,
-хранение — на сервере. Браузер отдаёт только PCM с микрофона и играет WAV.
+**Сервер — полноценный бэкенд, клиенты тонкие.** Распознавание, озвучка,
+хранение и orchestration хода — на сервере. Сам CLI модели теперь может жить
+либо рядом с ним (`ClaudeCli`/`CodexCli` через `spawn`), либо за HTTP как
+удалённый исполнитель (`RemoteLlmClient` → `POST /v1/run`). Браузер отдаёт
+только PCM с микрофона и играет WAV.
 
 **Ход модели живёт в разговоре, а не в соединении.** `apps/server/src/turns.ts` —
 процесс-глобальный `TurnManager`: обновление страницы или обрыв сети не отменяют
@@ -55,16 +61,21 @@ tail/PTY) — в `apps/server/src/session.ts`.
 
 **Спавн CLI выделен в отдельный воркспейс.** Код запуска `claude`/`codex`
 (`claudeCli.ts`, `codexCli.ts`, `childKill.ts`, профили CLI) живёт в
-`apps/llm-runner` — исполнителе с собственным HTTP (`/v1/run`). Сервер пока
-импортирует эти классы напрямую (`@voicechat/llm-runner/cli`) и спавнит CLI в
-своём процессе: переход на HTTP — следующий срез, см.
-[features/llm-runners.md](features/llm-runners.md).
+`apps/llm-runner` — исполнителе с собственным HTTP (`/v1/run`). Сервер может
+либо импортировать эти классы напрямую (`@voicechat/llm-runner/cli`) и спавнить
+CLI локально, либо переключиться на `RemoteLlmClient` и ходить в удалённый
+исполнитель по HTTP; детали — [features/llm-runners.md](features/llm-runners.md).
 
 **Сборка сервера — `buildServer()` отдельно от `listen()`** (`server.ts` vs
 `index.ts`), и все внешние зависимости инъектируются через `BuildOptions`
 (`db`, `claude`, `codex`, `sttEngine`, `ttsEngine`, `createWsHandlers`,
 `sessionSecret`). Отсюда тесты через `fastify.inject()` и ws-клиент с моками
 вместо реальных Whisper/CLI.
+
+`buildServer()` выбирает транспорт LLM по конфигу: есть `VC_LLM_RUNNER_URL`
+(или адреса по провайдерам) — собирается `RemoteLlmClient`; нет — остаётся
+локальный `spawn`. При этом `turns.ts`, prompt-suggester, KB-reranker и CI-раннер
+работают с одним интерфейсом `LlmClient` и не знают, где реально запущен CLI.
 
 ## Один backend, два клиентских хоста
 

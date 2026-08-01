@@ -55,7 +55,15 @@ import type { ActiveTurn, ServerFileInfo, SystemCapabilities } from '@shared/pro
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
-import type { AdminUserInfo, UsageReport, UsageUnit } from '@shared/admin'
+import type {
+  AdminLlmEngine,
+  AdminLlmEngineHealth,
+  AdminLlmEngineInput,
+  LlmEngineOption,
+  AdminUserInfo,
+  UsageReport,
+  UsageUnit
+} from '@shared/admin'
 import type { CcProject, CcSession, CcItem } from '@shared/cc'
 import type { SessionUsage } from '@shared/types'
 import type { CxProject, CxSession, CxItem } from '@shared/codexSessions'
@@ -259,6 +267,7 @@ export interface AppState {
   loadingMessages: boolean
   liveSegments: LiveSegment[]
   settings: Settings
+  llmEngines: LlmEngineOption[]
   settingsOpen: boolean
   draft: string
   /** Помощник промптов: список переформулировок черновика и состояние панели. */
@@ -367,6 +376,14 @@ export interface AppState {
   adminMessages: Message[]
   /** id разговора, открытого в админ-истории (null — не открыт). */
   adminConversationId: string | null
+  /** Реестр LLM-исполнителей. */
+  adminLlmEngines: AdminLlmEngine[]
+  /** Состояние загрузки реестра LLM-исполнителей. */
+  adminLlmEnginesStatus: LoadStatus
+  /** Ошибка загрузки реестра LLM-исполнителей. */
+  adminLlmEnginesError: string | null
+  /** Последний health-снимок по id исполнителя. */
+  adminLlmEngineHealth: Record<string, AdminLlmEngineHealth | undefined>
   /** Открытая из меню машинная утилита (консоль/проводник) + машина; null — закрыта. */
   utility: { kind: 'console' | 'explorer'; agentId: string | null; path?: string; dir?: boolean } | null
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
@@ -567,7 +584,7 @@ export interface StoreActions {
   /** Переименовать разговор (БД + список). Пустое имя игнорируется. */
   renameConversation(id: string, title: string): Promise<void>
   /** Изменить машину только одного разговора. */
-  setConversationExecTarget(id: string, execTarget: string | null, workdir?: string | null, skillNames?: string[], llmProvider?: LlmProvider | null, llmModel?: string | null, permissionMode?: PermissionMode | null, kbContextMode?: KbContextMode): Promise<void>
+  setConversationExecTarget(id: string, execTarget: string | null, workdir?: string | null, skillNames?: string[], llmProvider?: LlmProvider | null, llmModel?: string | null, permissionMode?: PermissionMode | null, kbContextMode?: KbContextMode, llmEngineId?: string | null): Promise<void>
   setConversationProject(id: string, projectId: string | null): Promise<void>
   /** Сменить статус жизненного цикла чата (дропдаун в сайдбаре). */
   setConversationStatus(id: string, status: ConversationStatus): Promise<void>
@@ -753,6 +770,16 @@ export interface StoreActions {
   loadAdminUsage(unit: UsageUnit, from?: number, to?: number): Promise<void>
   /** Открыть разговор пользователя в админ-просмотре истории. */
   openAdminConversation(conversationId: string): Promise<void>
+  /** Перечитать реестр LLM-исполнителей. */
+  refreshAdminLlmEngines(): Promise<void>
+  /** Создать запись исполнителя. */
+  createAdminLlmEngine(input: AdminLlmEngineInput): Promise<void>
+  /** Обновить запись исполнителя. */
+  updateAdminLlmEngine(id: string, patch: AdminLlmEngineInput): Promise<void>
+  /** Удалить запись исполнителя. */
+  deleteAdminLlmEngine(id: string): Promise<void>
+  /** Проверить живость исполнителя. */
+  checkAdminLlmEngineHealth(id: string): Promise<void>
   // --- Машинные утилиты (консоль/проводник) ---
   /** Открыть утилиту из меню (машина по умолчанию — первая онлайн-своя). */
   openUtility(kind: 'console' | 'explorer', agentId?: string | null, path?: string): void
@@ -884,7 +911,7 @@ export interface StoreActions {
   startCiRun(projectId: string, taskId: string, mode?: CiRunMode): Promise<CiRun | null>
   cancelCiRun(runId: string): Promise<void>
   retryCiRun(runId: string): Promise<CiRun | null>
-  retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun | null>
+  retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<CiRun | null>
   discardCiWorkspaceAndRetry(runId: string): Promise<CiRun | null>
   loadCiRun(runId: string): Promise<void>
   openCiRun(runId: string): void
@@ -941,6 +968,7 @@ function initialState(): AppState {
     loadingMessages: false,
     liveSegments: [],
     settings: { ...DEFAULT_SETTINGS },
+    llmEngines: [],
     settingsOpen: false,
     draft: '',
     promptHelper: { open: false, loading: false, variants: [], error: null },
@@ -990,6 +1018,10 @@ function initialState(): AppState {
     adminConversations: [],
     adminMessages: [],
     adminConversationId: null,
+    adminLlmEngines: [],
+    adminLlmEnginesStatus: 'loading',
+    adminLlmEnginesError: null,
+    adminLlmEngineHealth: {},
     utility: null,
     speakingMessageId: null,
     ttsAvailable: false,
@@ -1677,12 +1709,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Тяжёлая загрузка данных пользователя (после успешной аутентификации). */
   async function bootstrap(): Promise<void> {
     setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null }) // обновление страницы: лоадер до готовности ленты
-    let settings, conversations, projects
+    let settings, conversations, projects, llmEngines
     try {
       ;[settings, conversations, projects] = await Promise.all([
         api['settings:get'](),
         api['conversations:list']({ includeCompleted: state.showDoneTaskChats }),
-        api['projects:list']()
+        api['projects:list'](),
+        api['llm:engines']()
       ])
     } catch (err) {
       // Иначе сайдбар остался бы со скелетоном навсегда: показываем ошибку с «Повторить».
@@ -1696,7 +1729,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     // Сайдбар сразу фильтруем по восстановленному из localStorage проекту.
     const pid = state.sidebarProjectId
     const visible = conversations.filter((c) => (c.projectId ?? null) === pid)
-    setState({ settings, projects, projectsLoaded: true, conversations: visible, conversationsStatus: 'ready', conversationsError: null })
+    setState({ settings, llmEngines, projects, projectsLoaded: true, conversations: visible, conversationsStatus: 'ready', conversationsError: null })
     void loadTaskChatBadges()
     await refreshMics()
     await refreshModelStatus()
@@ -2161,10 +2194,28 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
+  async function refreshAdminLlmEngines(): Promise<void> {
+    if (!api['admin:llmEngines']) return
+    setState({ adminLlmEnginesStatus: 'loading', adminLlmEnginesError: null })
+    try {
+      setState({
+        adminLlmEngines: await api['admin:llmEngines'](),
+        adminLlmEnginesStatus: 'ready',
+        adminLlmEnginesError: null
+      })
+    } catch (err) {
+      setState({
+        adminLlmEnginesStatus: 'error',
+        adminLlmEnginesError: err instanceof Error ? err.message : String(err)
+      })
+      throw err
+    }
+  }
+
   async function openUsers(): Promise<void> {
     setState({ usersOpen: true })
     try {
-      await refreshAdminUsers()
+      await Promise.all([refreshAdminUsers(), refreshAdminLlmEngines()])
     } catch (err) {
       fail(err, () => void openUsers())
     }
@@ -2177,7 +2228,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       adminUsage: null,
       adminConversations: [],
       adminMessages: [],
-      adminConversationId: null
+      adminConversationId: null,
+      adminLlmEngineHealth: {}
     })
   }
 
@@ -2246,6 +2298,45 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ adminMessages: await api['admin:messages']({ name, conversationId }) })
     } catch (err) {
       fail(err, () => void openAdminConversation(conversationId))
+    }
+  }
+
+  async function createAdminLlmEngine(input: AdminLlmEngineInput): Promise<void> {
+    try {
+      await api['admin:createLlmEngine'](input)
+      await refreshAdminLlmEngines()
+    } catch (err) {
+      fail(err)
+    }
+  }
+
+  async function updateAdminLlmEngine(id: string, patch: AdminLlmEngineInput): Promise<void> {
+    try {
+      await api['admin:updateLlmEngine']({ id, patch })
+      await refreshAdminLlmEngines()
+    } catch (err) {
+      fail(err)
+    }
+  }
+
+  async function deleteAdminLlmEngine(id: string): Promise<void> {
+    try {
+      await api['admin:deleteLlmEngine']({ id })
+      const nextHealth = { ...state.adminLlmEngineHealth }
+      delete nextHealth[id]
+      setState({ adminLlmEngineHealth: nextHealth })
+      await refreshAdminLlmEngines()
+    } catch (err) {
+      fail(err)
+    }
+  }
+
+  async function checkAdminLlmEngineHealth(id: string): Promise<void> {
+    try {
+      const health = await api['admin:checkLlmEngineHealth']({ id })
+      setState({ adminLlmEngineHealth: { ...state.adminLlmEngineHealth, [id]: health } })
+    } catch (err) {
+      fail(err, () => void checkAdminLlmEngineHealth(id))
     }
   }
 
@@ -2515,9 +2606,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     llmProvider?: LlmProvider | null,
     llmModel?: string | null,
     permissionMode?: PermissionMode | null,
-    kbContextMode?: KbContextMode
+    kbContextMode?: KbContextMode,
+    llmEngineId?: string | null
   ): Promise<void> {
-    const conversation = await api['conversations:setExecTarget']({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode })
+    const conversation = await api['conversations:setExecTarget']({ id, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode })
     setState({
       conversations: state.conversations.map((c) => (c.id === id ? conversation : c))
     })
@@ -3476,7 +3568,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!ciBridge) return null
     try { return await ciBridge.retryRun(runId) } catch (err) { fail(err); return null }
   }
-  async function retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun | null> {
+  async function retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<CiRun | null> {
     // Повтор с упавшего шага — тот же ран; после запуска перечитываем деталь/лог.
     if (!ciBridge) return null
     try { const r = await ciBridge.retryRunFromStep(runId, selection); await loadCiRun(runId); return r } catch (err) { fail(err); return null }
@@ -3859,6 +3951,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       selectAdminUser,
       loadAdminUsage,
       openAdminConversation,
+      refreshAdminLlmEngines,
+      createAdminLlmEngine,
+      updateAdminLlmEngine,
+      deleteAdminLlmEngine,
+      checkAdminLlmEngineHealth,
       openUtility,
       openUtilityForActiveChat,
       closeUtility,

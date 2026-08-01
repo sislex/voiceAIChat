@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-08-01
-checked: 9306637
+checked: e2002e5
 areas:
   - package.json
   - scripts
@@ -51,7 +51,7 @@ Shared — чистые unit и contract tests без моков. Здесь п�
 
 Server HTTP тестируется `app.inject()` с `:memory:` SQLite. WebSocket поднимает ephemeral listener и реальный ws-клиент, но engines/CLI заменяются fake. Spawn, fetch, filesystem и resource probes инъектируются. Тест никогда не использует настоящий HOME или найденные repo-модели; `VITEST` отключает autodiscovery.
 
-Исполнитель LLM (`apps/llm-runner`) тестируется как сервер — `app.inject()` и фейковый `spawn`, — но поток `/v1/run` проверяется только через реальный `listen()` и построчное чтение `fetch`: `inject()` отдаёт тело целиком и не показал бы, что строки не буферизуются. Bearer в тестах обязательно ASCII: значение заголовка — ByteString, и `fetch` с кириллическим токеном падает до запроса.
+Исполнитель LLM (`apps/llm-runner`) тестируется как сервер — `app.inject()` и фейковый `spawn`, — но поток `/v1/run` проверяется только через реальный `listen()` и построчное чтение `fetch`: `inject()` отдаёт тело целиком и не показал бы, что строки не буферизуются. Тем же `inject()` покрываются профильные файловые API `/v1/auth/status`, `/v1/files/read`, `/v1/fs/cc/*` и `/v1/fs/cx/*`: тесты заводят временный `dataDir`, создают профили `cli-users/<base64url(user)>` и проверяют, что формы ответов совпадают с прежними серверными роутами. Bearer в тестах обязательно ASCII: значение заголовка — ByteString, и `fetch` с кириллическим токеном падает до запроса.
 
 UI store тестируется без React; DOM components — jsdom + Testing Library + fake bridges. Проверяются пользовательские действия и наблюдаемый результат, не внутренние state setters. Таймеры voice/TTS управляются fake clock.
 
@@ -64,7 +64,7 @@ Electron main/preload код тестируется без запуска реа
 1. `/api/health` — процесс и HTTP доступны.
 2. `/api/session/me` — bearer token и пользователь.
 3. `/api/system/capabilities` — сервер видит CPU/RAM и разрешает STT/TTS.
-4. `/api/auth/status` — CLI profile авторизован.
+4. `/api/auth/status` — исполнитель видит авторизованный CLI profile нужного пользователя, а не только контейнер сервера; если Claude и Codex разведены по разным executor URL, проверять надо оба.
 5. `/api/agents` — machine зарегистрирована, online, версия и telemetry.
 6. Browser devtools network — REST status и `/ws` reconnect.
 7. Server stdout — Fastify/CLI ошибки; UI console panel — нормализованные LLM events.
