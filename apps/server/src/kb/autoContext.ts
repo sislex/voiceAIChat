@@ -56,16 +56,32 @@ export async function buildKbAutoContext(
       emptyReason: bundle.sections.length ? 'low-confidence' : 'no-match'
     }
   }
-  // Блоки собираем по одному: их длины — точные символы каждого раздела,
-  // пришедшие модели (в панели это единственное честное число).
-  const blocks = bundle.sections.map(
-    (section) =>
-      `### ${section.title} / ${section.heading}\nИсточник: ${section.sourcePath}${section.anchor ? `#${section.anchor}` : ''}\n${section.excerpt}`
-  )
+  // Первые два результата несут тело раздела целиком. Остальные — дешёвая
+  // навигация к kb:document. Бюджет применяется к готовому тексту, включая
+  // заголовок и разделители: только это число соответствует реальному промпту.
+  const prefix = `\n\n${KB_CONTEXT_HEADING}\nИспользуй как навигацию и сверяй с кодом при изменении поведения.\n\n`
+  const selected: typeof bundle.sections = []
+  const blocks: string[] = []
+  let chars = prefix.length
+  for (const section of bundle.sections) {
+    const ref = `${section.documentId}${section.anchor ? `#${section.anchor}` : ''}`
+    const block = selected.length < 2
+      ? `### ${section.title} / ${section.heading}\nИсточник: ${section.sourcePath}${section.anchor ? `#${section.anchor}` : ''}\n${section.text}`
+      : `${section.title} / ${section.heading} · \`${ref}\``
+    const added = (blocks.length ? 2 : 0) + block.length
+    if (chars + added > budget) break
+    selected.push(section)
+    blocks.push(block)
+    chars += added
+  }
+  if (!blocks.length) {
+    return { bundle, text: '', sections: [], contextSections: [], emptyReason: 'no-match' }
+  }
+  bundle.estimatedTokens = estimateKbTokens(chars)
   return {
     bundle,
-    text: `\n\n${KB_CONTEXT_HEADING}\nИспользуй как навигацию и сверяй с кодом при изменении поведения.\n\n${blocks.join('\n\n')}`,
-    sections: bundle.sections.map((section, index) => ({
+    text: `${prefix}${blocks.join('\n\n')}`,
+    sections: selected.map((section, index) => ({
       documentId: section.documentId,
       title: section.title,
       heading: section.heading,
@@ -76,7 +92,7 @@ export async function buildKbAutoContext(
       matchTypes: section.matchTypes,
       freshness: section.freshness
     })),
-    contextSections: bundle.sections.map(({ documentId, title, heading, sourcePath, anchor, freshness }, index) => ({
+    contextSections: selected.map(({ documentId, title, heading, sourcePath, anchor, freshness }, index) => ({
       documentId,
       title,
       heading,

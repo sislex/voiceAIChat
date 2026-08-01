@@ -116,6 +116,11 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
   }
 
   async context(query: string, budget = 3500, view: KbView = PUBLIC_KB_VIEW): Promise<KbContextBundle> {
-    return buildContext(query, await this.search({ query, limit: 8 }, view), budget)
+    void budget
+    const documents = [
+      ...(this.usageIncluded(view) ? this.base.indexed() : []),
+      ...this.visibleStored(view).map((item) => item.indexed)
+    ]
+    return buildContext(query, await this.search({ query, limit: 8 }, view), documents)
   }
 }
