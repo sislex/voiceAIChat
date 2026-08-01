@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-01
-checked: dc73c33
+checked: 6171b3c
 areas:
   - apps/server/src
 ---
@@ -91,7 +91,7 @@ Piper engine ищет `.onnx` и `.json`; catalog знает разрешённ�
 
 ## Конфигурация
 
-Приоритет путей: env → найденный артефакт монорепо (кроме Vitest) → каталог данных/default executable. Основные переменные: `PORT`, `HOST`, `VC_DATA_DIR`, `VC_MODELS_DIR`, `VC_WHISPER_CLI`, `VC_PIPER_BIN`, `VC_PIPER_ARGS`, `VC_PIPER_VOICES_DIR`, `VC_WEB_DIR`, `VC_AGENT_APP`, `VC_DESKTOP_APP`, `VC_KB_ROOT`, `VC_KB_RERANK_PROVIDER`, `VC_ADMIN_PASSWORD`, `VC_MIN_MEM_STT`, `VC_MIN_MEM_TTS`, `VC_CLAUDE_GATEWAY_BACKEND`, `VC_CLAUDE_UPSTREAM_URL`, `VC_CLAUDE_UPSTREAM_API_KEY`, `VC_CLAUDE_UPSTREAM_AUTH`, `VC_CLAUDE_MODEL_MAP`, `VC_LLM_RUNNER_URL`, `VC_LLM_RUNNER_CLAUDE_URL`, `VC_LLM_RUNNER_CODEX_URL`, `VC_LLM_RUNNER_TOKEN`, `VC_LLM_RUNNER_TIMEOUT_MS`.
+Приоритет путей: env → найденный артефакт монорепо (кроме Vitest) → каталог данных/default executable. Основные переменные: `PORT`, `HOST`, `VC_DATA_DIR`, `VC_MODELS_DIR`, `VC_WHISPER_CLI`, `VC_PIPER_BIN`, `VC_PIPER_ARGS`, `VC_PIPER_VOICES_DIR`, `VC_WEB_DIR`, `VC_AGENT_APP`, `VC_DESKTOP_APP`, `VC_KB_ROOT`, `VC_KB_RERANK_PROVIDER`, `VC_MCP_PUBLIC_BASE`, `VC_ADMIN_PASSWORD`, `VC_MIN_MEM_STT`, `VC_MIN_MEM_TTS`, `VC_CLAUDE_GATEWAY_BACKEND`, `VC_CLAUDE_UPSTREAM_URL`, `VC_CLAUDE_UPSTREAM_API_KEY`, `VC_CLAUDE_UPSTREAM_AUTH`, `VC_CLAUDE_MODEL_MAP`, `VC_LLM_RUNNER_URL`, `VC_LLM_RUNNER_CLAUDE_URL`, `VC_LLM_RUNNER_CODEX_URL`, `VC_LLM_RUNNER_TOKEN`, `VC_LLM_RUNNER_TIMEOUT_MS`.
 
 Под Vitest autodiscovery отключён, чтобы тест удаления модели/голоса не затронул реальные repo assets.
 
