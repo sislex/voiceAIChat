@@ -214,6 +214,15 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'admin:conversations': ({ name }) => req(REST.adminUserConversations(name)),
     'admin:messages': ({ name, conversationId }) =>
       req(`${REST.adminUserMessages(name)}?conversationId=${encodeURIComponent(conversationId)}`),
+    'admin:llmEngines': () => req(REST.adminLlmEngines),
+    'admin:createLlmEngine': (body) =>
+      req(REST.adminLlmEngines, { method: 'POST', body: JSON.stringify(body) }),
+    'admin:updateLlmEngine': ({ id, patch }) =>
+      req(REST.adminLlmEngine(id), { method: 'PATCH', body: JSON.stringify(patch) }),
+    'admin:deleteLlmEngine': async ({ id }) => {
+      await req(REST.adminLlmEngine(id), { method: 'DELETE' })
+    },
+    'admin:checkLlmEngineHealth': ({ id }) => req(REST.adminLlmEngineHealth(id)),
     // --- Проекты + канбан ---
     'projects:list': () => req(REST.projects),
     'projects:create': (b) => req(REST.projects, { method: 'POST', body: JSON.stringify(b) }),

@@ -773,6 +773,15 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onDelete={(name) => void actions.deleteUserAccount(name)}
           onLoadUsage={(unit) => void actions.loadAdminUsage(unit)}
           onOpenConversation={(id) => void actions.openAdminConversation(id)}
+          engines={state.adminLlmEngines}
+          enginesStatus={state.adminLlmEnginesStatus}
+          enginesError={state.adminLlmEnginesError}
+          engineHealth={state.adminLlmEngineHealth}
+          onRetryEngines={() => void actions.refreshAdminLlmEngines()}
+          onCreateEngine={(input) => void actions.createAdminLlmEngine(input)}
+          onUpdateEngine={(id, patch) => void actions.updateAdminLlmEngine(id, patch)}
+          onDeleteEngine={(id) => void actions.deleteAdminLlmEngine(id)}
+          onCheckEngineHealth={(id) => void actions.checkAdminLlmEngineHealth(id)}
           onClose={() => navigate('/')}
         />
       )}

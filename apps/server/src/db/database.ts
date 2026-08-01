@@ -27,6 +27,9 @@ import {
   type UsageTotals,
   type UsageUnit,
   type UserRole,
+  type AdminLlmEngine,
+  type AdminLlmEngineInput,
+  type LlmEngineKind,
   type Board,
   type KanbanColumn,
   type ProjectDetail,
@@ -163,6 +166,18 @@ interface UserDbRow {
   password_hash: string
   role: string
   blocked: number
+  created_at: number
+}
+
+interface LlmEngineRow {
+  id: string
+  name: string
+  kind: string
+  base_url: string
+  token: string
+  enabled: number
+  allowed_roles: string
+  is_default: number
   created_at: number
 }
 
@@ -325,6 +340,14 @@ function parseStringArray(raw: string | null): string[] {
   } catch {
     return []
   }
+}
+
+function parseAllowedRoles(raw: string | null): UserRole[] {
+  return parseStringArray(raw).filter((role): role is UserRole => role === 'admin' || role === 'user')
+}
+
+function normEngineKind(raw: string): LlmEngineKind {
+  return raw === 'codex' ? 'codex' : 'claude'
 }
 
 /** Валидный приоритет (неизвестное → medium). */
@@ -668,6 +691,17 @@ export class VoiceChatDb {
     if (kbUsageCols.length) this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_usage_ci_run ON kb_usage_queries(ci_run_id, created_at DESC)`)
     const kbSectionCols = this.db.prepare(`PRAGMA table_info(kb_usage_sections)`).all() as Array<{ name: string }>
     if (kbSectionCols.length && !kbSectionCols.some((c) => c.name === 'related_files')) this.db.exec(`ALTER TABLE kb_usage_sections ADD COLUMN related_files TEXT NOT NULL DEFAULT '[]'`)
+
+    const llmEngineCols = this.db.prepare(`PRAGMA table_info(llm_engines)`).all() as Array<{ name: string }>
+    if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'token')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN token TEXT NOT NULL DEFAULT ''`)
+    if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'enabled')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`)
+    if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'allowed_roles')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN allowed_roles TEXT NOT NULL DEFAULT '[\"admin\",\"user\"]'`)
+    if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'is_default')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`)
+    if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'created_at')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0`)
+    if (llmEngineCols.length) {
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_llm_engines_kind_enabled ON llm_engines(kind, enabled, created_at)`)
+      this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_engines_default_kind ON llm_engines(kind) WHERE is_default = 1`)
+    }
 
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
@@ -1319,6 +1353,89 @@ export class VoiceChatDb {
         .run()
       this.db.prepare(`DELETE FROM users WHERE name = ?`).run(userId)
     })()
+  }
+
+
+  // ---- LLM engines (реестр исполнителей) ---------------------------------
+
+  private mapLlmEngine(r: LlmEngineRow): AdminLlmEngine {
+    return {
+      id: r.id,
+      name: r.name,
+      kind: normEngineKind(r.kind),
+      baseUrl: r.base_url,
+      token: r.token,
+      enabled: r.enabled !== 0,
+      allowedRoles: parseAllowedRoles(r.allowed_roles),
+      isDefault: r.is_default !== 0,
+      createdAt: r.created_at
+    }
+  }
+
+  listLlmEngines(): AdminLlmEngine[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM llm_engines ORDER BY kind ASC, is_default DESC, created_at ASC`)
+      .all() as LlmEngineRow[]
+    return rows.map((row) => this.mapLlmEngine(row))
+  }
+
+  getLlmEngine(id: string): AdminLlmEngine | null {
+    const row = this.db.prepare(`SELECT * FROM llm_engines WHERE id = ?`).get(id) as LlmEngineRow | undefined
+    return row ? this.mapLlmEngine(row) : null
+  }
+
+  createLlmEngine(input: AdminLlmEngineInput): AdminLlmEngine {
+    const id = this.newId()
+    const ts = this.now()
+    this.db.transaction(() => {
+      if (input.isDefault) this.db.prepare(`UPDATE llm_engines SET is_default = 0 WHERE kind = ?`).run(input.kind)
+      this.db
+        .prepare(
+          `INSERT INTO llm_engines (id, name, kind, base_url, token, enabled, allowed_roles, is_default, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          id,
+          input.name,
+          input.kind,
+          input.baseUrl,
+          input.token,
+          input.enabled ? 1 : 0,
+          JSON.stringify(input.allowedRoles),
+          input.isDefault ? 1 : 0,
+          ts
+        )
+    })()
+    return this.getLlmEngine(id) as AdminLlmEngine
+  }
+
+  updateLlmEngine(id: string, patch: AdminLlmEngineInput): AdminLlmEngine | null {
+    const exists = this.getLlmEngine(id)
+    if (!exists) return null
+    this.db.transaction(() => {
+      if (patch.isDefault) this.db.prepare(`UPDATE llm_engines SET is_default = 0 WHERE kind = ? AND id != ?`).run(patch.kind, id)
+      this.db
+        .prepare(
+          `UPDATE llm_engines
+           SET name = ?, kind = ?, base_url = ?, token = ?, enabled = ?, allowed_roles = ?, is_default = ?
+           WHERE id = ?`
+        )
+        .run(
+          patch.name,
+          patch.kind,
+          patch.baseUrl,
+          patch.token,
+          patch.enabled ? 1 : 0,
+          JSON.stringify(patch.allowedRoles),
+          patch.isDefault ? 1 : 0,
+          id
+        )
+    })()
+    return this.getLlmEngine(id)
+  }
+
+  deleteLlmEngine(id: string): void {
+    this.db.prepare(`DELETE FROM llm_engines WHERE id = ?`).run(id)
   }
 
   // ---- Отчёт по токенам (агрегация meta ai-сообщений пользователя) --------

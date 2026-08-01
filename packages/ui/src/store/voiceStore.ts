@@ -55,7 +55,14 @@ import type { ActiveTurn, ServerFileInfo, SystemCapabilities } from '@shared/pro
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
-import type { AdminUserInfo, UsageReport, UsageUnit } from '@shared/admin'
+import type {
+  AdminLlmEngine,
+  AdminLlmEngineHealth,
+  AdminLlmEngineInput,
+  AdminUserInfo,
+  UsageReport,
+  UsageUnit
+} from '@shared/admin'
 import type { CcProject, CcSession, CcItem } from '@shared/cc'
 import type { SessionUsage } from '@shared/types'
 import type { CxProject, CxSession, CxItem } from '@shared/codexSessions'
@@ -367,6 +374,14 @@ export interface AppState {
   adminMessages: Message[]
   /** id разговора, открытого в админ-истории (null — не открыт). */
   adminConversationId: string | null
+  /** Реестр LLM-исполнителей. */
+  adminLlmEngines: AdminLlmEngine[]
+  /** Состояние загрузки реестра LLM-исполнителей. */
+  adminLlmEnginesStatus: LoadStatus
+  /** Ошибка загрузки реестра LLM-исполнителей. */
+  adminLlmEnginesError: string | null
+  /** Последний health-снимок по id исполнителя. */
+  adminLlmEngineHealth: Record<string, AdminLlmEngineHealth | undefined>
   /** Открытая из меню машинная утилита (консоль/проводник) + машина; null — закрыта. */
   utility: { kind: 'console' | 'explorer'; agentId: string | null; path?: string; dir?: boolean } | null
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
@@ -753,6 +768,16 @@ export interface StoreActions {
   loadAdminUsage(unit: UsageUnit, from?: number, to?: number): Promise<void>
   /** Открыть разговор пользователя в админ-просмотре истории. */
   openAdminConversation(conversationId: string): Promise<void>
+  /** Перечитать реестр LLM-исполнителей. */
+  refreshAdminLlmEngines(): Promise<void>
+  /** Создать запись исполнителя. */
+  createAdminLlmEngine(input: AdminLlmEngineInput): Promise<void>
+  /** Обновить запись исполнителя. */
+  updateAdminLlmEngine(id: string, patch: AdminLlmEngineInput): Promise<void>
+  /** Удалить запись исполнителя. */
+  deleteAdminLlmEngine(id: string): Promise<void>
+  /** Проверить живость исполнителя. */
+  checkAdminLlmEngineHealth(id: string): Promise<void>
   // --- Машинные утилиты (консоль/проводник) ---
   /** Открыть утилиту из меню (машина по умолчанию — первая онлайн-своя). */
   openUtility(kind: 'console' | 'explorer', agentId?: string | null, path?: string): void
@@ -990,6 +1015,10 @@ function initialState(): AppState {
     adminConversations: [],
     adminMessages: [],
     adminConversationId: null,
+    adminLlmEngines: [],
+    adminLlmEnginesStatus: 'loading',
+    adminLlmEnginesError: null,
+    adminLlmEngineHealth: {},
     utility: null,
     speakingMessageId: null,
     ttsAvailable: false,
@@ -2161,10 +2190,28 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
+  async function refreshAdminLlmEngines(): Promise<void> {
+    if (!api['admin:llmEngines']) return
+    setState({ adminLlmEnginesStatus: 'loading', adminLlmEnginesError: null })
+    try {
+      setState({
+        adminLlmEngines: await api['admin:llmEngines'](),
+        adminLlmEnginesStatus: 'ready',
+        adminLlmEnginesError: null
+      })
+    } catch (err) {
+      setState({
+        adminLlmEnginesStatus: 'error',
+        adminLlmEnginesError: err instanceof Error ? err.message : String(err)
+      })
+      throw err
+    }
+  }
+
   async function openUsers(): Promise<void> {
     setState({ usersOpen: true })
     try {
-      await refreshAdminUsers()
+      await Promise.all([refreshAdminUsers(), refreshAdminLlmEngines()])
     } catch (err) {
       fail(err, () => void openUsers())
     }
@@ -2177,7 +2224,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       adminUsage: null,
       adminConversations: [],
       adminMessages: [],
-      adminConversationId: null
+      adminConversationId: null,
+      adminLlmEngineHealth: {}
     })
   }
 
@@ -2246,6 +2294,45 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ adminMessages: await api['admin:messages']({ name, conversationId }) })
     } catch (err) {
       fail(err, () => void openAdminConversation(conversationId))
+    }
+  }
+
+  async function createAdminLlmEngine(input: AdminLlmEngineInput): Promise<void> {
+    try {
+      await api['admin:createLlmEngine'](input)
+      await refreshAdminLlmEngines()
+    } catch (err) {
+      fail(err)
+    }
+  }
+
+  async function updateAdminLlmEngine(id: string, patch: AdminLlmEngineInput): Promise<void> {
+    try {
+      await api['admin:updateLlmEngine']({ id, patch })
+      await refreshAdminLlmEngines()
+    } catch (err) {
+      fail(err)
+    }
+  }
+
+  async function deleteAdminLlmEngine(id: string): Promise<void> {
+    try {
+      await api['admin:deleteLlmEngine']({ id })
+      const nextHealth = { ...state.adminLlmEngineHealth }
+      delete nextHealth[id]
+      setState({ adminLlmEngineHealth: nextHealth })
+      await refreshAdminLlmEngines()
+    } catch (err) {
+      fail(err)
+    }
+  }
+
+  async function checkAdminLlmEngineHealth(id: string): Promise<void> {
+    try {
+      const health = await api['admin:checkLlmEngineHealth']({ id })
+      setState({ adminLlmEngineHealth: { ...state.adminLlmEngineHealth, [id]: health } })
+    } catch (err) {
+      fail(err, () => void checkAdminLlmEngineHealth(id))
     }
   }
 
@@ -3859,6 +3946,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       selectAdminUser,
       loadAdminUsage,
       openAdminConversation,
+      refreshAdminLlmEngines,
+      createAdminLlmEngine,
+      updateAdminLlmEngine,
+      deleteAdminLlmEngine,
+      checkAdminLlmEngineHealth,
       openUtility,
       openUtilityForActiveChat,
       closeUtility,

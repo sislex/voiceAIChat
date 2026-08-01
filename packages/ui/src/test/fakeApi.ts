@@ -3,7 +3,7 @@
 
 import type { RendererApi } from '@shared/ipc'
 import type { Conversation, Message, Settings } from '@shared/types'
-import type { AdminUserInfo } from '@shared/admin'
+import type { AdminLlmEngine, AdminLlmEngineHealth, AdminUserInfo } from '@shared/admin'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
@@ -40,6 +40,29 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const adminUsers: AdminUserInfo[] = [
     { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 0, agents: [] }
   ]
+  const llmEngines: AdminLlmEngine[] = [
+    {
+      id: 'eng-claude',
+      name: 'runner-work claude',
+      kind: 'claude',
+      baseUrl: 'http://runner-work:8080',
+      token: 'secret',
+      enabled: true,
+      allowedRoles: ['admin', 'user'],
+      isDefault: true,
+      createdAt: 2
+    }
+  ]
+  const llmHealth: Record<string, AdminLlmEngineHealth> = {
+    'eng-claude': {
+      engineId: 'eng-claude',
+      kind: 'claude',
+      checkedAt: 3,
+      available: true,
+      detail: 'claude: доступен',
+      status: null
+    }
+  }
   let settings: Settings = { ...DEFAULT_SETTINGS }
 
   // --- Проекты + канбан (in-memory) ---
@@ -422,6 +445,27 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     }),
     'admin:conversations': async () => [],
     'admin:messages': async () => [],
+    'admin:llmEngines': async () => llmEngines.map((e) => ({ ...e, allowedRoles: [...e.allowedRoles] })),
+    'admin:createLlmEngine': async (input) => {
+      const created: AdminLlmEngine = { ...input, id: nextId(), createdAt: tick(), allowedRoles: [...input.allowedRoles] }
+      if (created.isDefault) for (const item of llmEngines) if (item.kind === created.kind) item.isDefault = false
+      llmEngines.push(created)
+      llmHealth[created.id] = { engineId: created.id, kind: created.kind, checkedAt: tick(), available: created.enabled, detail: created.enabled ? `${created.kind}: доступен` : 'выключен', status: null }
+      return { ...created, allowedRoles: [...created.allowedRoles] }
+    },
+    'admin:updateLlmEngine': async ({ id, patch }) => {
+      const found = llmEngines.find((e) => e.id === id)
+      if (!found) throw new Error('not found')
+      if (patch.isDefault) for (const item of llmEngines) if (item.kind === patch.kind) item.isDefault = false
+      Object.assign(found, { ...patch, allowedRoles: [...patch.allowedRoles] })
+      return { ...found, allowedRoles: [...found.allowedRoles] }
+    },
+    'admin:deleteLlmEngine': async ({ id }) => {
+      const idx = llmEngines.findIndex((e) => e.id === id)
+      if (idx >= 0) llmEngines.splice(idx, 1)
+      delete llmHealth[id]
+    },
+    'admin:checkLlmEngineHealth': async ({ id }) => ({ ...(llmHealth[id] ?? { engineId: id, kind: 'claude', checkedAt: tick(), available: false, detail: 'offline', status: null }) }),
     'projects:list': async () => projects.map(summary),
     'projects:create': async (b) => {
       const ts = tick()

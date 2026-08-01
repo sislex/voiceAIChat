@@ -145,6 +145,96 @@ describe('REST: админ-роуты (только admin)', () => {
   })
 })
 
+
+describe('REST: реестр LLM-исполнителей (только admin)', () => {
+  const realFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+
+  it('user → 403 на /api/admin/llm-engines', async () => {
+    db.createUser('user', '', 'user')
+    const userTok = signToken({ name: 'user', role: 'user' }, SECRET)
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/admin/llm-engines',
+      headers: { authorization: `Bearer ${userTok}` }
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('admin: create → update → health → delete', async () => {
+    const created = await inj({
+      method: 'POST',
+      url: '/api/admin/llm-engines',
+      payload: {
+        name: 'Runner Claude',
+        kind: 'claude',
+        baseUrl: 'http://runner.test:8080',
+        token: 'secret',
+        enabled: true,
+        allowedRoles: ['admin', 'user'],
+        isDefault: true
+      }
+    })
+    expect(created.statusCode).toBe(200)
+    const engine = created.json()
+    expect(engine).toMatchObject({ name: 'Runner Claude', kind: 'claude', token: 'secret', isDefault: true })
+
+    const list = await inj({ method: 'GET', url: '/api/admin/llm-engines' })
+    expect(list.json()).toHaveLength(1)
+
+    const updated = await inj({
+      method: 'PATCH',
+      url: `/api/admin/llm-engines/${engine.id}`,
+      payload: {
+        name: 'Runner Claude 2',
+        kind: 'claude',
+        baseUrl: 'http://runner.test:8081',
+        token: 'secret-2',
+        enabled: false,
+        allowedRoles: ['admin'],
+        isDefault: false
+      }
+    })
+    expect(updated.json()).toMatchObject({ name: 'Runner Claude 2', enabled: false, allowedRoles: ['admin'] })
+
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      ok: true,
+      bins: {
+        claude: { present: true, version: '1.0.0' },
+        codex: { present: false, version: null }
+      },
+      login: {
+        claude: { provider: 'claude', loggedIn: true, detail: 'team' },
+        codex: { provider: 'codex', loggedIn: false, detail: 'login required' }
+      },
+      runs: 0
+    }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch
+    const health = await inj({ method: 'GET', url: `/api/admin/llm-engines/${engine.id}/health` })
+    expect(health.json()).toMatchObject({ available: true, kind: 'claude' })
+
+    globalThis.fetch = (async () => { throw new Error('connect ECONNREFUSED') }) as typeof fetch
+    const offline = await inj({ method: 'GET', url: `/api/admin/llm-engines/${engine.id}/health` })
+    expect(offline.statusCode).toBe(200)
+    expect(offline.json()).toMatchObject({ available: false })
+
+    const del = await inj({ method: 'DELETE', url: `/api/admin/llm-engines/${engine.id}` })
+    expect(del.statusCode).toBe(200)
+    expect((await inj({ method: 'GET', url: '/api/admin/llm-engines' })).json()).toEqual([])
+  })
+
+  it('валидация create/update полей работает', async () => {
+    const bad = await inj({
+      method: 'POST',
+      url: '/api/admin/llm-engines',
+      payload: { name: '', kind: 'bad', baseUrl: 'oops', token: '', enabled: true, allowedRoles: [], isDefault: false }
+    })
+    expect(bad.statusCode).toBe(400)
+  })
+})
+
 describe('REST: conversations/messages/settings', () => {
   it('импорт desktop требует токен и идемпотентен', async () => {
     const payload = { conversations: [{ conversation: { id: 'legacy-c', title: 'Legacy', createdAt: 10, updatedAt: 20, claudeSessionId: null, execTarget: null }, messages: [{ id: 'legacy-m', conversationId: 'legacy-c', role: 'u1', text: 'hello', time: '10:00', createdAt: 15 }] }] }
