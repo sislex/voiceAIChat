@@ -19,6 +19,8 @@ let scripts: string[] = []
 let failClaude = false
 let failPush = false
 let onModelSend: (() => void) | null = null
+/** Задержать ответ модели: нужно тестам, которым важен ран «в работе». */
+let modelGate: Promise<void> | null = null
 let codexModel = ''
 let modelRequests: LlmRequest[] = []
 
@@ -27,6 +29,7 @@ const fakeClaude: LlmClient = {
     modelRequests.push(req)
     onModelSend?.()
     void (async () => {
+      if (modelGate) await modelGate
       if (failClaude) { handlers.onError('лимит исчерпан'); return }
       // Эмуляция MCP-вызова: если модели доступна команда 'model-tool', вызываем её
       // через брокер по токену из ciMcpUrl (как реальный /mcp/ci-commands эндпоинт).
@@ -74,6 +77,7 @@ beforeEach(async () => {
   failClaude = false
   failPush = false
   onModelSend = null
+  modelGate = null
   codexModel = ''
   modelRequests = []
   counts.clear()
@@ -323,13 +327,25 @@ describe('ci run manager', () => {
     expect(db.getCiRunRaw(runId)!.slotProgress.fixing).toBe(false)
   })
 
-  it('конкурентные раны одного проекта сериализуются очередью', async () => {
+  it('второй запуск той же задачи отклоняется 409, пока первый не закончился', async () => {
     const { project, task } = setup()
+    // Держим первый ран на работе модели: пока он активен, задача занята.
+    let release: () => void = () => {}
+    modelGate = new Promise<void>((res) => { release = res })
     const r1 = await run(project.id, task.id)
+    for (let i = 0; i < 200 && !modelRequests.length; i++) await new Promise((res) => setTimeout(res, 5))
+
+    const second = await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/ci/run` })
+    expect(second.statusCode).toBe(409)
+    expect(second.json().error).toContain('уже выполняется')
+    // Ран у задачи ровно один — второй даже не создался.
+    expect(db.latestCiRunSummaries(project.id).filter((x) => x.taskId === task.id)).toHaveLength(1)
+
+    release()
+    expect((await waitRun(r1)).run.status).toBe('success')
+    // Задача освободилась — запускать снова можно.
     const r2 = await run(project.id, task.id)
-    const [d1, d2] = await Promise.all([waitRun(r1), waitRun(r2)])
-    expect(d1.run.status).toBe('success')
-    expect(d2.run.status).toBe('success')
+    expect((await waitRun(r2)).run.status).toBe('success')
   })
   it('fix-loop: модель чинит упавший шаг → ран success, зафиксирована попытка', async () => {
     const { project, task } = setup()

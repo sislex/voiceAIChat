@@ -5,6 +5,7 @@ import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { KanbanBoard, type KanbanBoardProps } from './KanbanBoard'
 import type { Board, Task } from '@shared/projects'
+import type { CiRunSummary } from '@shared/ci'
 import type { GenerateParams } from '../prompt-builder/PromptBuilder'
 import { DRAG_HOLD_MS } from '../../lib/dnd'
 import { listCommands, resetCommands } from '../../lib/commands'
@@ -152,6 +153,31 @@ describe('KanbanBoard (изолированный)', () => {
     renderBoard()
     await userEvent.click(screen.getByText('A'))
     expect(await screen.findByTestId('task-modal')).toBeInTheDocument()
+  })
+
+  // Раны разных задач идут параллельно, поэтому доска не считает активный ран
+  // единственным: подсветка берётся из сводки по taskId, у каждой карточки своя.
+  it('несколько ранов одновременно: каждая карточка подсвечена своим статусом', () => {
+    const ciSummary = (taskId: string, over: Partial<CiRunSummary>): CiRunSummary => ({
+      id: `run-${taskId}`, taskId, status: 'running',
+      slotProgress: { done: 1, total: 4, phase: 'Модель работает' },
+      durationMs: null, modelActive: false, awaitingInput: false, ...over
+    })
+    renderBoard({
+      board: { ...board, tasks: [task({ id: 't1', title: 'A' }), task({ id: 't2', title: 'B' }), task({ id: 't3', title: 'C' })] },
+      ciSummaries: {
+        t1: ciSummary('t1', { status: 'running' }),
+        t2: ciSummary('t2', { status: 'awaiting_input', awaitingInput: true }),
+        t3: ciSummary('t3', { status: 'failed' })
+      },
+      onStartCi: vi.fn(),
+      onOpenCiRun: vi.fn()
+    })
+    const cards = screen.getAllByTestId('task-card')
+    expect(cards).toHaveLength(3)
+    expect(cards[0]!.className).toContain('jcard--ci-running')
+    expect(cards[1]!.className).toContain('jcard--ci-awaiting')
+    expect(cards[2]!.className).toContain('jcard--ci-failed')
   })
 })
 
