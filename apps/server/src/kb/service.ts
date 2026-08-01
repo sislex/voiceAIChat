@@ -31,6 +31,7 @@ export class FileKnowledgeBaseService implements KnowledgeBaseService {
   async search(request: KbSearchRequest): Promise<KbSearchResult[]> { return searchDocuments(this.documents, request, this.reranker) }
   async context(query: string, budget = 3500): Promise<KbContextBundle> {
     void budget
-    return buildContext(query, await this.search({ query, limit: 8 }), this.documents)
+    const texts = new Map(this.documents.flatMap((item) => item.chunks.map((chunk) => [chunk.id, chunk.text] as const)))
+    return buildContext(query, await this.search({ query, limit: 8 }), (result) => texts.get(result.chunkId))
   }
 }
