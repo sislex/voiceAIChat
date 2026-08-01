@@ -434,12 +434,15 @@ describe('доска: завершённые задачи уходят с дос
     d.close()
   })
 
-  it('порог 0 скрывает сразу, пустой порог не скрывает никогда', () => {
+  it('порог 0 скрывает за полночью, пустой порог не скрывает никогда', () => {
     const { db: d, set } = withClock()
     const p = d.createProject('alice', { name: 'P' })
     const done = d.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'done')!
     const t = d.createTask('alice', p.id, { columnId: done.id, title: 'T' })!
     expect(d.updateProject('alice', p.id, { doneRetentionDays: 0 })!.doneRetentionDays).toBe(0)
+    // День завершения карточка досиживает: перенос в «Готово» делает и CI-ран.
+    expect(d.getBoard('alice', p.id)!.tasks.map((x) => x.id)).toContain(t.id)
+    set(new Date(1_700_000_000_000).setHours(24, 0, 0, 0))
     expect(d.getBoard('alice', p.id)!.tasks.map((x) => x.id)).not.toContain(t.id)
     expect(d.updateProject('alice', p.id, { doneRetentionDays: null })!.doneRetentionDays).toBeNull()
     set(1_700_000_000_000 + 999 * DAY)
