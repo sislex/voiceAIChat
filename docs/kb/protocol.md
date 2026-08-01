@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-01
-checked: 5639098
+checked: 1f4b261
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -46,7 +46,8 @@ URL руками. Параметризованные пути — функции
 наблюдатели сессий Claude (`/api/cc/*`) и Codex (`/api/cx/*`), база знаний
 (`/api/kb/*` + телеметрия обращений `/api/conversations/:id/kb-usage`,
 `/api/projects/:id/kb-usage`, `/api/ci/runs/:runId/kb-usage`,
-`/api/projects/:id/tasks/:taskId/kb-usage`), админка
+`/api/projects/:id/tasks/:taskId/kb-usage`), отчёт по расходу модели в CI-ране
+(`/api/ci/runs/:runId/report`, `/api/projects/:id/tasks/:taskId/report`), админка
 пользователей, помощник промптов (`POST /api/prompt/suggest` — одноразовый LLM-вызов,
 переформулировки черновика; канал `prompt:suggest`). Полный список — константа `REST`.
 
@@ -95,6 +96,14 @@ URL руками. Параметризованные пути — функции
 `KbTaskUsageReport`); у обоих гейт — членство в проекте, чужому 404. Ран без
 связанного чата кадров не шлёт и в телеметрию не пишет — база знаний при этом
 работает.
+
+Расход модели в ране (стоимость, токены, число запросов, время работы модели и
+шаги CI с длительностями) кадрами не ходит вовсе: он копится в БД по ходам CLI, а
+читается снапшотами `GET /api/ci/runs/:runId/report` (`CiRunReport`) и
+`GET /api/projects/:id/tasks/:taskId/report` (`CiTaskReport` — все раны задачи с
+итогом). Гейт тот же, что у `kb-usage`: членство в проекте, чужому 404, а не
+пустой отчёт. Мост — `window.ci.getRunReport` / `getTaskReport`. Детали —
+`features/ci-runner.md`.
 
 `claude.send` несёт `verbose?: boolean` — режим консоли, при котором сервер шлёт
 поток `claude.log` с активностью агента. `claude.done` несёт готовое `message`,
