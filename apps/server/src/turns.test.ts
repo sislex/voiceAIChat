@@ -7,6 +7,10 @@ import { createKbUsageTracker } from './kb/usage.js'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { loadConfig } from './config.js'
+import { buildPublicMcpUrl } from './mcp/publicBase.js'
+import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
+import { KB_MCP_PATH } from './kb/kbMcp.js'
 
 const U = 'admin'
 
@@ -88,6 +92,41 @@ describe('turns: рабочий каталог разговора принадл
     await runTurn(rec.client, db, conv.id)
 
     expect(rec.last()?.remote?.mcpUrl).toContain(`cwd=${encodeURIComponent('/root/dir-on-machine')}`)
+    db.close()
+  })
+})
+
+describe('turns: VC_MCP_PUBLIC_BASE', () => {
+  it('remote mcpUrl и kbMcpUrl строятся от публичной базы, секрет сохраняется', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    const agent = db.createAgent(U, 'Ноутбук')
+    db.setConversationExecTarget(U, conv.id, agent.id, '/root/dir-on-machine')
+    db.setSettings(U, { kbContextMode: 'manual' })
+
+    const config = loadConfig({ PORT: '8787', VC_MCP_PUBLIC_BASE: 'http://voicechat:8787' })
+    const rec = recorder()
+    const turns = createTurnManager({
+      db,
+      claude: rec.client,
+      kbToolEnabled: true,
+      agents: onlineAgents,
+      mcpBaseUrl: buildPublicMcpUrl(config, REMOTE_BASH_MCP_PATH, 'secret'),
+      kbMcpBaseUrl: buildPublicMcpUrl(config, KB_MCP_PATH, 'secret')
+    })
+
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((m) => {
+        if (m.t === 'claude.done' || m.t === 'claude.error') {
+          off()
+          resolve()
+        }
+      })
+      turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'привет' }] })
+    })
+
+    expect(rec.last()?.remote?.mcpUrl).toContain('http://voicechat:8787/mcp/remote-bash?k=secret')
+    expect(rec.last()?.kbMcpUrl).toContain('http://voicechat:8787/mcp/kb?k=secret&turn=')
     db.close()
   })
 })

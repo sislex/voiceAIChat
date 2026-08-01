@@ -27,6 +27,7 @@ import type { SessionUser } from '@voicechat/shared'
 import { AgentRegistry } from './agents/registry.js'
 import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
+import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
 import { RemoteLlmClient } from './llm/remoteClient.js'
@@ -244,6 +245,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     usage: kbUsage,
     viewOf: (entry) => ({ ...kbViewOf(db, entry.userId), ...(entry.projectId ? { projectId: entry.projectId } : {}) })
   })
+  const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
+  const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
+  const ciCommandsMcpBaseUrl = buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)
 
   // «Исследовать проект»: модель на машине проекта сверяет статьи раздела
   // «Разработка проекта» с кодом. Живёт рядом с MCP-мостом — ей нужен тот же
@@ -255,7 +259,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       db,
       claude,
       codex,
-      mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`,
+      mcpBaseUrl: remoteBashMcpBaseUrl,
       agentNameOf: (agentId) => agentRegistry.nameOf(agentId)
     })
   )
@@ -371,9 +375,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         ...(settings.workdir ? [settings.workdir] : [])
       ]
     },
-    // claude спавнится на этом же хосте — loopback работает при любом HOST.
-    mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`,
-    kbMcpBaseUrl: `http://127.0.0.1:${opts.config.port}${KB_MCP_PATH}?k=${mcpSecret}`
+    // MCP для исполнителя должен смотреть либо на loopback dev-сервера, либо на публичную базу из VC_MCP_PUBLIC_BASE.
+    mcpBaseUrl: remoteBashMcpBaseUrl,
+    kbMcpBaseUrl
   })
 
   // CI-раннер (Авто-подготовка окружения для таска): процесс-глобальный менеджер
@@ -384,8 +388,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     db,
     claude,
     codex,
-    mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`,
-    ciMcpBaseUrl: `http://127.0.0.1:${opts.config.port}${CI_COMMANDS_MCP_PATH}?k=${mcpSecret}`,
+    mcpBaseUrl: remoteBashMcpBaseUrl,
+    ciMcpBaseUrl: ciCommandsMcpBaseUrl,
     agentNameOf: (agentId) => agentRegistry.nameOf(agentId),
     // Шагу «Актуализировать базу знаний» нужен диф рабочей копии: его собирает
     // сервер тем же исполнителем, что и команды слотов.
@@ -396,7 +400,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     kbUsage,
     kbToolEnabled: opts.config.kbToolEnabled,
     kbTool: kbToolBroker,
-    kbMcpBaseUrl: `http://127.0.0.1:${opts.config.port}${KB_MCP_PATH}?k=${mcpSecret}`
+    kbMcpBaseUrl
   })
   // Вопросы модели дублируются в связанный чат задачи обычными сообщениями:
   // UI разбирает блок ```questions тем же парсером, что и вопросы в чате.

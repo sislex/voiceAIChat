@@ -74,7 +74,10 @@ docker compose exec -u node voicechat codex login
 (`VC_CLAUDE_GATEWAY_BACKEND`, `VC_CLAUDE_UPSTREAM_URL`,
 `VC_CLAUDE_UPSTREAM_API_KEY`, `VC_CLAUDE_UPSTREAM_AUTH`, `VC_CLAUDE_MODEL_MAP`); GitHub PR merge (`VC_GITHUB_TOKEN`).
 `VC_CLAUDE_MODEL_MAP` — JSON-объект; невалидный JSON валит старт с понятной
-ошибкой (это осознанно, а не баг).
+ошибкой (это осознанно, а не баг). `VC_MCP_PUBLIC_BASE` задаёт базу MCP-URL,
+которые сервер отдаёт контейнеру-исполнителю (`/mcp/remote-bash`, `/mcp/kb`,
+`/mcp/ci-commands`); без неё в dev/тестах остаётся текущее loopback-поведение
+`http://127.0.0.1:<PORT>`.
 
 ## Прод
 
