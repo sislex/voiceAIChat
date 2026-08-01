@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { ClaudeCli, type SpawnFn } from './claudeCli'
-import type { LlmStreamHandlers } from './types'
+import type { LlmStreamHandlers } from '@voicechat/shared'
 
 /** Фейковый дочерний процесс: EventEmitter + потоки stdout/stderr. */
 function fakeChild(): {

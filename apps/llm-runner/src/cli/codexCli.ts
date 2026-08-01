@@ -5,11 +5,10 @@
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { parseCodexLine, parseCodexActivity } from '@voicechat/shared'
-import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
-import { cliProfileEnv } from '../users/cliProfiles.js'
-import { killCliChild } from '../claude/childKill.js'
-import { kbToolHint } from '../kb/kbMcp.js'
+import { kbToolHint, parseCodexActivity, parseCodexLine } from '@voicechat/shared'
+import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '@voicechat/shared'
+import { cliProfileEnv } from './cliProfiles.js'
+import { killCliChild } from './childKill.js'
 
 export type SpawnFn = (
   command: string,
@@ -54,64 +53,75 @@ function sandboxArgs(permissionMode?: string): string[] {
   }
 }
 
+/**
+ * argv и текст промпта для `codex exec`: sandbox-флаги, MCP-серверы и добавки к
+ * промпту (у codex нет `--append-system-prompt`, поэтому инструкции идут в сам
+ * текст). Зовут двое: класс `CodexCli` и сырой ран исполнителя (`run/rawRun.ts`).
+ * Промпт всегда уходит через stdin — см. комментарий про ARG_MAX ниже.
+ */
+export function codexInvocation(req: LlmRequest): { args: string[]; prompt: string } {
+  // Проброс команд на агента: MCP-инструмент вместо локального shell.
+  let prompt = req.prompt
+  const args = ['exec', '--json', '--skip-git-repo-check']
+  if (req.model) args.push('-m', req.model)
+  if (req.cwd) args.push('-C', req.cwd)
+
+  if (req.executionDisabled) {
+    prompt =
+      `Для этого сообщения машина не выбрана. Не выполняй shell-команды и не запускай команды никаким способом.\n\n${prompt}`
+  }
+
+  // База знаний подключается ДО ветвления plan/remote: она read-only, глушить
+  // её в режиме «План» незачем — наоборот, там она главный источник контекста.
+  if (req.kbMcpUrl) {
+    args.push('-c', `mcp_servers.kb.url="${req.kbMcpUrl}"`)
+    prompt = `${kbToolHint(req.kbMode ?? 'auto')}\n\n${prompt}`
+  }
+
+  if (req.remote && req.permissionMode !== 'plan') {
+    // В режиме разработки пробрасываем команды на агента через MCP. Для remote
+    // нужен bypass: иначе codex exec отменяет вызовы инструментов как user cancelled.
+    args.push(
+      '-c',
+      `mcp_servers.remote.url="${req.remote.mcpUrl}"`,
+      '--dangerously-bypass-approvals-and-sandbox'
+    )
+    prompt =
+      `Локальный shell недоступен. Все команды выполняй ТОЛЬКО инструментом MCP-сервера ` +
+      `«remote» (bash) — они выполняются на машине пользователя «${req.remote.agentName}». ` +
+      `У инструмента есть аргумент timeout_ms (по умолчанию 120000, максимум 300000) — для ` +
+      `долгих команд (тесты, сборка, установка зависимостей) передавай его явно.` +
+      (req.readOnlyRemote
+        ? `\nРежим «План»: только исследование — читай файлы и историю (ls, cat, grep, ` +
+          `git log/diff/status). Ничего не меняй: мост отклонит изменяющие команды.`
+        : '') +
+      (req.remote.policySummary ? `\n${req.remote.policySummary}` : '') +
+      `\n\n${prompt}`
+  } else {
+    // План — жёстко read-only. Особенно важно не подключать remote MCP: его bash
+    // выполняется вне локального sandbox и раньше позволял Codex менять файлы.
+    args.push(...sandboxArgs(req.permissionMode))
+    if (req.remote && req.permissionMode === 'plan') {
+      prompt =
+        `Режим «План»: только исследуй и составляй план. Не изменяй файлы и не выполняй ` +
+        `команды на машине пользователя. Удалённые инструменты намеренно недоступны.\n\n${prompt}`
+    }
+  }
+
+  // Prompt всегда читается из stdin (`-`), а не передаётся argv: полный контекст
+  // Claude Code со схемами tools легко превышает системный ARG_MAX (spawn E2BIG).
+  if (req.sessionId) args.push('resume', req.sessionId)
+  args.push('-')
+  return { args, prompt }
+}
+
 export class CodexCli implements LlmClient {
   constructor(private readonly opts: CodexCliOptions = {}) {}
 
   send(req: LlmRequest, handlers: LlmStreamHandlers): LlmHandle {
     const spawnFn = this.opts.spawn ?? (nodeSpawn as unknown as SpawnFn)
 
-    // Проброс команд на агента: MCP-инструмент вместо локального shell.
-    let prompt = req.prompt
-    const args = ['exec', '--json', '--skip-git-repo-check']
-    if (req.model) args.push('-m', req.model)
-    if (req.cwd) args.push('-C', req.cwd)
-
-    if (req.executionDisabled) {
-      prompt =
-        `Для этого сообщения машина не выбрана. Не выполняй shell-команды и не запускай команды никаким способом.\n\n${prompt}`
-    }
-
-    // База знаний подключается ДО ветвления plan/remote: она read-only, глушить
-    // её в режиме «План» незачем — наоборот, там она главный источник контекста.
-    if (req.kbMcpUrl) {
-      args.push('-c', `mcp_servers.kb.url="${req.kbMcpUrl}"`)
-      prompt = `${kbToolHint(req.kbMode ?? 'auto')}\n\n${prompt}`
-    }
-
-    if (req.remote && req.permissionMode !== 'plan') {
-      // В режиме разработки пробрасываем команды на агента через MCP. Для remote
-      // нужен bypass: иначе codex exec отменяет вызовы инструментов как user cancelled.
-      args.push(
-        '-c',
-        `mcp_servers.remote.url="${req.remote.mcpUrl}"`,
-        '--dangerously-bypass-approvals-and-sandbox'
-      )
-      prompt =
-        `Локальный shell недоступен. Все команды выполняй ТОЛЬКО инструментом MCP-сервера ` +
-        `«remote» (bash) — они выполняются на машине пользователя «${req.remote.agentName}». ` +
-        `У инструмента есть аргумент timeout_ms (по умолчанию 120000, максимум 300000) — для ` +
-        `долгих команд (тесты, сборка, установка зависимостей) передавай его явно.` +
-        (req.readOnlyRemote
-          ? `\nРежим «План»: только исследование — читай файлы и историю (ls, cat, grep, ` +
-            `git log/diff/status). Ничего не меняй: мост отклонит изменяющие команды.`
-          : '') +
-        (req.remote.policySummary ? `\n${req.remote.policySummary}` : '') +
-        `\n\n${prompt}`
-    } else {
-      // План — жёстко read-only. Особенно важно не подключать remote MCP: его bash
-      // выполняется вне локального sandbox и раньше позволял Codex менять файлы.
-      args.push(...sandboxArgs(req.permissionMode))
-      if (req.remote && req.permissionMode === 'plan') {
-        prompt =
-          `Режим «План»: только исследуй и составляй план. Не изменяй файлы и не выполняй ` +
-          `команды на машине пользователя. Удалённые инструменты намеренно недоступны.\n\n${prompt}`
-      }
-    }
-
-    // Prompt всегда читается из stdin (`-`), а не передаётся argv: полный контекст
-    // Claude Code со схемами tools легко превышает системный ARG_MAX (spawn E2BIG).
-    if (req.sessionId) args.push('resume', req.sessionId)
-    args.push('-')
+    const { args, prompt } = codexInvocation(req)
 
     let finished = false
     let stderr = ''

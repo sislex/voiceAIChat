@@ -1,16 +1,17 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-01
-checked: 06bb73e
+checked: 8478a33
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
+  - apps/llm-runner/src
   - apps/server/src/turns.ts
   - apps/server/src/prompt
   - apps/server/src/anthropic
   - apps/server/src/cc
   - apps/server/src/mcp/remoteBashMcp.ts
-  - apps/server/src/users/cliProfiles.ts
+  - apps/llm-runner/src/cli/cliProfiles.ts
   - packages/shared/src/streamJson.ts
   - packages/shared/src/codexStream.ts
   - packages/shared/src/prompt.ts
@@ -23,7 +24,7 @@ areas:
 
 ## Модель вызывается как CLI, а не по API
 
-`ClaudeCli` (`apps/server/src/claude/claudeCli.ts`) делает
+`ClaudeCli` (`apps/llm-runner/src/cli/claudeCli.ts`) делает
 `spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose',
 '--include-partial-messages', '--model', …])`, при необходимости
 `--permission-mode` и `--resume <sessionId>`. `spawn` инжектируется — все тесты
@@ -39,6 +40,14 @@ areas:
 человеческие сообщения (`ENOENT` → «установите Claude Code», stderr про
 авторизацию → «выполните `claude login`»), не выбрасывай их наружу как есть.
 
+**Сами CLI-классы живут не на сервере.** `claudeCli.ts`, `codexCli.ts`,
+`childKill.ts`, `mcp.ts` и `cliProfiles.ts` переехали в воркспейс исполнителя
+(`apps/llm-runner`), а контракт `LlmRequest`/`LlmClient` — в
+`packages/shared/src/llm.ts` (`apps/server/src/claude/types.ts` остался
+реэкспортом). Сервер пока зовёт классы напрямую через
+`@voicechat/llm-runner/cli`, но сам `spawn` уже не содержит — см.
+[features/llm-runners.md](features/llm-runners.md).
+
 **Одноразовые вызовы без разговора.** Не всё идёт через `TurnManager`: KB-reranker
 (`kb/reranker.ts`) и помощник промптов (`prompt/suggester.ts`) дергают тот же
 `LlmClient.send` напрямую с `sessionId: null`, `permissionMode: 'plan'`,
@@ -50,7 +59,7 @@ areas:
 Статус входа обоих CLI сервер отдаёт на `/api/auth/status`
 (`apps/server/src/auth/loginStatus.ts`), UI опрашивает его раз в 30 с.
 
-**У каждого пользователя свой HOME для CLI** (`apps/server/src/users/cliProfiles.ts`):
+**У каждого пользователя свой HOME для CLI** (`apps/llm-runner/src/cli/cliProfiles.ts`):
 `<dataDir>/cli-users/<base64url(логин)>/` с `.claude` и `.codex` внутри. Из общего
 HOME контейнера копируются только файлы авторизации и конфигурации — история,
 `projects/` и `sessions/` не копируются, чтобы пользователи не видели чужие
