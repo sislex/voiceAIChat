@@ -2,6 +2,7 @@
 // Jira). Мобильный вариант смотрится в отдельном вьюпорте — карточка перестраивается
 // по matchMedia, поэтому важна именно ширина фрейма, а не размер контейнера.
 import type { Meta, StoryObj } from '@storybook/react'
+import { userEvent, within } from '@storybook/test'
 import { TaskModal } from './TaskModal'
 import { makeBoard, makeCiSummary, makeDefaultColumns, makeMembers, makeTask } from './fixtures'
 
@@ -22,6 +23,25 @@ const task = makeTask({
   dueDate: 1_700_600_000_000,
   priority: 'high',
   seq: 42
+})
+// Описание, ради которого и нужен маркдаун: заголовок, список, инлайн-код и блок.
+const markdownTask = makeTask({
+  ...task,
+  description: [
+    '## Зачем',
+    '',
+    'Оплата картой падает на 3-DS: пользователь возвращается в чек-аут без результата.',
+    '',
+    '## Что сделать',
+    '',
+    '- показать экран 3-DS в модалке',
+    '- вернуть результат в `checkout` и показать его пользователю',
+    '- при отказе банка показать причину',
+    '',
+    '```ts',
+    "const result = await pay({ card, threeDs: 'required' })",
+    '```'
+  ].join('\n')
 })
 const child = makeTask({ id: 'child-1', parentId: task.id, columnId: columns[5].id, title: 'Форма ввода карты' })
 
@@ -58,6 +78,24 @@ const PHONE = {
 
 /** Десктоп: основная колонка и правая панель деталей. */
 export const Desktop: Story = {}
+
+/**
+ * Описание в просмотре: маркдаун отрисован (заголовки, списки, `code`, блок кода),
+ * а не показан сырым текстом в поле — так карточку читают, а не расшифровывают.
+ */
+export const DescriptionMarkdown: Story = { args: { task: markdownTask } }
+
+/**
+ * Описание в правке: та же карточка после кнопки «Изменить» — поле ровно на 10
+ * строк, палочка AI-помощника и пара «Сохранить»/«Отмена».
+ */
+export const DescriptionEditing: Story = {
+  args: { task: markdownTask, generateAiAssist: async () => [{ id: 's1', text: 'Черновик описания' }] },
+  // Карточка уходит порталом в document.body — canvasElement тут пуст.
+  play: async () => {
+    await userEvent.click(await within(document.body).findByTestId('task-desc-edit'))
+  }
+}
 
 /** Телефон: во весь экран, статус и исполнитель сверху, «Подробности» свёрнуты. */
 export const Phone: Story = { parameters: PHONE }

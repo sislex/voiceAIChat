@@ -2,6 +2,10 @@
 // справа панель деталей (статус, исполнитель, метки, родитель, приоритет,
 // стори-поинты, срок, флаг). Поля сохраняются по blur/change — как в Jira.
 //
+// Описание — маркдаун: по умолчанию оно отрисовано (заголовки, списки, код), а
+// правится по кнопке «Изменить» полем на 10 строк. Остальные поля правятся на
+// месте, как и раньше.
+//
 // На телефоне раскладка — как в мобильной Jira: карточка на весь экран, статус и
 // исполнитель сразу под заголовком, остальные поля — в свёрнутой секции
 // «Подробности», а действия шапки (чат, флаг, удаление) — в ⋯-меню. Разметка
@@ -14,6 +18,7 @@ import type { ModifierPrompt } from '@shared/types'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { IconButton } from '../ui/IconButton'
+import { Markdown } from '../Markdown'
 import { useConfirm } from '../ui/useConfirm'
 import { WandIcon } from '../icons'
 import { PromptBuilder, type GenerateParams, type Suggestion } from '../prompt-builder/PromptBuilder'
@@ -93,7 +98,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [criteria, setCriteria] = useState(task.acceptanceCriteria)
   const [labelDraft, setLabelDraft] = useState('')
   const [skillDraft, setSkillDraft] = useState('')
+  // Описание: просмотр (маркдаун) ↔ правка (textarea на 10 строк по кнопке).
+  const [descEditing, setDescEditing] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
+  const descWrapRef = useRef<HTMLDivElement>(null)
   // Заголовок растёт под текст: на узком экране он занимает три-четыре строки, а
   // rows={1} со скроллом внутри поля прятал бы его конец.
   const titleGrow = useAutoGrow(title, 1, 6)
@@ -116,6 +124,15 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   }, [menuOpen])
   useEffect(() => { if (!mobile) setMenuOpen(false) }, [mobile])
 
+  // Правка открылась — курсор в конец текста: описание обычно дописывают.
+  useEffect(() => {
+    if (!descEditing) return
+    const el = descriptionRef.current
+    if (!el) return
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+  }, [descEditing])
+
   const aiAssist = useAiAssist({
     value: description,
     onChange: (value) => {
@@ -134,6 +151,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     setTitle(task.title)
     setDescription(task.description)
     setCriteria(task.acceptanceCriteria)
+    setDescEditing(false)
     setLabelDraft('')
     setSkillDraft('')
   }, [task.id, task.title, task.description, task.acceptanceCriteria])
@@ -168,6 +186,32 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     const t = title.trim()
     if (t && t !== task.title) props.onUpdate(task.id, { title: t })
     else setTitle(task.title)
+  }
+
+  const startDescEdit = (): void => setDescEditing(true)
+
+  const commitDescription = (): void => {
+    if (description !== task.description) props.onUpdate(task.id, { description })
+    setDescEditing(false)
+  }
+
+  const cancelDescEdit = (): void => {
+    setDescription(task.description)
+    setDescEditing(false)
+  }
+
+  // Запрос на закрытие карточки (Esc, крестик, клик по фону). Esc своим
+  // обработчиком в поле не поймать — стек окон гасит событие на window в фазе
+  // перехвата, поэтому открытая правка описания отвечает на него здесь: Esc
+  // возвращает её в просмотр, а карточку закроет уже следующий. Крестика и
+  // клика по фону это не касается — они сперва уводят фокус из поля, и правка
+  // успевает закрыться сохранением (onBlur описания) до этой проверки.
+  const requestClose = (): void => {
+    if (descEditing) {
+      cancelDescEdit()
+      return
+    }
+    props.onClose()
   }
 
   const addLabel = (): void => {
@@ -294,11 +338,13 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   return (
     <>
     {/* Esc и клик по фону — забота Dialog. Пока сверху открыт AI-помощник, карточка
-        их не получает: окна лежат в общем стеке (useDialogStack). */}
+        их не получает: окна лежат в общем стеке (useDialogStack). Своего слушателя
+        Esc у карточки нет — запрос на закрытие приходит в requestClose. */}
     <Dialog
       title={`${TYPE_LABEL[task.type]} · ${key}`}
       size="lg"
       onClose={props.onClose}
+      onEscape={requestClose}
       testId="task-modal"
       className="jmodal-frame"
       actions={headActions}
@@ -331,26 +377,61 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               {assigneeField}
             </div>
           )}
-          <h3 className="jmodal-h">Описание</h3>
-          <div className="ai-assist-wrap jmodal-desc-wrap">
-            <textarea
-              ref={descriptionRef}
-              data-ai-assist={aiAssistEnabled ? '' : undefined}
-              className="login-input jmodal-desc"
-              aria-label="Описание задачи"
-              placeholder="Добавьте описание…"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              onBlur={() => {
-                if (description !== task.description) props.onUpdate(task.id, { description })
-              }}
-            />
-            {aiAssistEnabled && (
-              <button className="ai-assist-trigger jmodal-ai-trigger" {...aiAssist.triggerProps}>
-                <WandIcon />
-              </button>
+          <div className="jmodal-desc-head">
+            <h3 className="jmodal-h">Описание</h3>
+            {!descEditing && (
+              <IconButton
+                size="sm"
+                className="jmodal-desc-edit"
+                aria-label="Изменить описание"
+                title="Изменить описание"
+                data-testid="task-desc-edit"
+                onClick={startDescEdit}
+              >
+                ✏️
+              </IconButton>
             )}
           </div>
+          {descEditing ? (
+            // Ровно 10 строк, без useAutoGrow: описание длинное, и поле, растущее
+            // под текст, увозило бы критерии приёмки и подзадачи за экран.
+            <div className="ai-assist-wrap jmodal-desc-wrap" ref={descWrapRef}>
+              <textarea
+                ref={descriptionRef}
+                data-ai-assist={aiAssistEnabled ? '' : undefined}
+                className="login-input jmodal-desc"
+                aria-label="Описание задачи"
+                placeholder="Добавьте описание…"
+                rows={10}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                onBlur={(e) => {
+                  // Уход на «Сохранить», «Отмена» или палочку AI — не уход из
+                  // правки: иначе blur записал бы черновик раньше их клика (а по
+                  // «Отмене» — вопреки ему).
+                  if (e.relatedTarget && descWrapRef.current?.contains(e.relatedTarget)) return
+                  commitDescription()
+                }}
+              />
+              {aiAssistEnabled && (
+                <button className="ai-assist-trigger jmodal-ai-trigger" {...aiAssist.triggerProps}>
+                  <WandIcon />
+                </button>
+              )}
+              <div className="jmodal-desc-actions">
+                <Button size="sm" variant="primary" onClick={commitDescription}>Сохранить</Button>
+                <Button size="sm" onClick={cancelDescEdit}>Отмена</Button>
+              </div>
+            </div>
+          ) : description.trim() ? (
+            <div className="jmodal-desc-view" data-testid="task-desc-view">
+              <Markdown>{description}</Markdown>
+            </div>
+          ) : (
+            <button className="jmodal-desc-empty" data-testid="task-desc-empty" onClick={startDescEdit}>
+              Добавьте описание…
+            </button>
+          )}
           <h3 className="jmodal-h">Критерии приёмки</h3>
           <textarea
             className="login-input jmodal-desc"
