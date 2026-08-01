@@ -23,7 +23,15 @@ import type {
   WhisperModelInfo
 } from './types'
 import type { ServerFileInfo, SystemCapabilities } from './protocol'
-import type { AdminUserInfo, UsageReport, UsageUnit } from './admin'
+import type {
+  AdminLlmEngine,
+  AdminLlmEngineHealth,
+  AdminLlmEngineInput,
+  LlmEngineOption,
+  AdminUserInfo,
+  UsageReport,
+  UsageUnit
+} from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
@@ -145,6 +153,8 @@ export interface IpcInvokeMap {
       execTarget: string | null
       workdir?: string | null
       skillNames?: string[]
+      /** Исполнитель разговора; null — из общих настроек. undefined — не менять. */
+      llmEngineId?: string | null
       /** Движок разговора; null — из общих настроек. undefined — не менять. */
       llmProvider?: LlmProvider | null
       /** Модель разговора (действует вместе с llmProvider). undefined — не менять. */
@@ -161,6 +171,7 @@ export interface IpcInvokeMap {
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }
   'uploads:add': { arg: { name: string; dataBase64: string }; result: UploadInfo }
   'settings:get': { arg: void; result: Settings }
+  'llm:engines': { arg: void; result: LlmEngineOption[] }
   'settings:save': { arg: Settings; result: void }
   /** Возможности системы по ресурсам контейнера (блокировка STT/TTS при нехватке памяти). */
   'system:capabilities': { arg: void; result: SystemCapabilities }
@@ -226,6 +237,11 @@ export interface IpcInvokeMap {
   'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number }; result: UsageReport }
   'admin:conversations': { arg: { name: string }; result: Conversation[] }
   'admin:messages': { arg: { name: string; conversationId: string }; result: Message[] }
+  'admin:llmEngines': { arg: void; result: AdminLlmEngine[] }
+  'admin:createLlmEngine': { arg: AdminLlmEngineInput; result: AdminLlmEngine }
+  'admin:updateLlmEngine': { arg: { id: string; patch: AdminLlmEngineInput }; result: AdminLlmEngine }
+  'admin:deleteLlmEngine': { arg: { id: string }; result: void }
+  'admin:checkLlmEngineHealth': { arg: { id: string }; result: AdminLlmEngineHealth }
   // --- Проекты + канбан ---
   /** Проекты, где текущий пользователь — участник. */
   'projects:list': { arg: void; result: ProjectSummary[] }
@@ -702,6 +718,11 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:usage',
   'admin:conversations',
   'admin:messages',
+  'admin:llmEngines',
+  'admin:createLlmEngine',
+  'admin:updateLlmEngine',
+  'admin:deleteLlmEngine',
+  'admin:checkLlmEngineHealth',
   'projects:list',
   'projects:create',
   'projects:get',

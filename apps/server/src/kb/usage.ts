@@ -40,6 +40,7 @@ export interface KbUsageSectionInput {
   heading?: string
   anchor?: string
   sourcePath?: string
+  relatedFiles?: string[]
   chars: number
   score?: number | null
   matchTypes?: KbUsageSectionRef['matchTypes']

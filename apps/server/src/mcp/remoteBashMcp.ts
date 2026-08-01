@@ -1,4 +1,4 @@
-// MCP-эндпоинт для спавнутого claude: инструмент bash, выполняющий команду
+// MCP-эндпоинт для спавнутого claude: команды и файловые инструменты remote
 // на выбранной машине-агенте. Stateless: на каждый POST — свежие сервер и
 // транспорт (без SSE и session-id). Доступ только по секрету процесса `k` —
 // эндпоинт выполняет команды и не должен быть открыт даже на LAN.
@@ -14,6 +14,12 @@ export const REMOTE_BASH_MCP_PATH = '/mcp/remote-bash'
 
 const DEFAULT_TIMEOUT_MS = 120_000
 const MAX_TIMEOUT_MS = 300_000
+const DEFAULT_READ_LIMIT = 400
+const MAX_READ_LIMIT = 2_000
+const MAX_READ_RESPONSE_CHARS = 100_000
+const DEFAULT_GREP_MATCHES = 100
+const MAX_GREP_MATCHES = 1_000
+const MAX_GREP_LINE_CHARS = 2_000
 
 /**
  * Экранирует `cwd` для одинарных кавычек bash и, на win32-машине, нормализует
@@ -24,6 +30,58 @@ const MAX_TIMEOUT_MS = 300_000
 export function quoteCwd(cwd: string, platform?: string): string {
   const normalized = platform === 'win32' ? cwd.replace(/\\/g, '/') : cwd
   return normalized.replace(/'/g, `'"'"'`)
+}
+
+function quoteShell(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`
+}
+
+export function remotePath(cwd: string | undefined, relativePath: string): string {
+  if (!cwd) throw new Error('Рабочая директория cwd не задана')
+  if (!relativePath || relativePath.includes('\0')) throw new Error('Путь не задан')
+  if (/^(?:[A-Za-z]:[\\/]|[\\/])/.test(relativePath)) {
+    throw new Error('Путь должен быть относительным к рабочей директории')
+  }
+  const parts = relativePath.split(/[\\/]+/)
+  if (parts.includes('..')) throw new Error('Путь за пределами рабочей директории запрещён')
+  const clean = parts.filter((part) => part && part !== '.').join('/')
+  const base = cwd.replace(/[\\/]+$/, '')
+  return clean ? `${base}/${clean}` : base
+}
+
+function fileText(dataBase64: string | undefined): string {
+  if (dataBase64 === undefined) throw new Error('Агент не вернул содержимое файла')
+  return Buffer.from(dataBase64, 'base64').toString('utf8')
+}
+
+export function readWindow(text: string, offset: number, limit: number): string {
+  const lines = text === '' ? [] : text.split('\n')
+  if (lines.length && lines[lines.length - 1] === '') lines.pop()
+  const total = lines.length
+  const startIndex = Math.min(offset - 1, total)
+  const wantedEnd = Math.min(startIndex + limit, total)
+  const shown: string[] = []
+  let chars = 0
+  for (let i = startIndex; i < wantedEnd; i++) {
+    let line = `${i + 1}\t${lines[i]}`
+    const room = MAX_READ_RESPONSE_CHARS - chars - 100
+    if (room <= 0) break
+    if (line.length > room) line = `${line.slice(0, Math.max(0, room - 1))}…`
+    shown.push(line)
+    chars += line.length + 1
+    if (chars >= MAX_READ_RESPONSE_CHARS) break
+  }
+  const first = shown.length ? startIndex + 1 : 0
+  const last = shown.length ? startIndex + shown.length : 0
+  const tail = `Показаны строки ${first}–${last} из ${total}.`
+  return shown.length ? `${shown.join('\n')}\n\n${tail}` : tail
+}
+
+function toolError(err: unknown): { content: Array<{ type: 'text'; text: string }>; isError: true } {
+  return {
+    content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+    isError: true
+  }
 }
 
 export function registerRemoteBashMcp(
@@ -70,7 +128,7 @@ export function registerRemoteBashMcp(
           {
             description:
               'Выполняет shell-команду на машине пользователя (не на сервере). ' +
-              'Возвращает stdout+stderr и код выхода.',
+              'Для команд (git, npm, тесты), не для чтения и правки файлов. Возвращает stdout+stderr и код выхода.',
             inputSchema: {
               command: z.string().describe('Команда для /bin/bash'),
               timeout_ms: z
@@ -90,7 +148,7 @@ export function registerRemoteBashMcp(
                         type: 'text' as const,
                         text:
                           `Отклонено: режим «План» — ${verdict.reason}. Исследуй только чтением ` +
-                          `(ls, cat, grep, git log/diff/status); правки начнутся после одобрения плана.`
+                          `(ls, git log/diff/status); файлы читай read, ищи grep; правки начнутся после одобрения плана.`
                       }
                     ],
                     isError: true
@@ -115,6 +173,100 @@ export function registerRemoteBashMcp(
                 ],
                 isError: true
               }
+            }
+          }
+        )
+
+        server.registerTool(
+          'read',
+          {
+            description: 'Читает окно строк текстового файла внутри рабочей директории рана.',
+            inputSchema: {
+              path: z.string().describe('Путь относительно cwd рана'),
+              offset: z.number().int().min(1).optional().describe('Первая строка (с 1)'),
+              limit: z.number().int().min(1).max(MAX_READ_LIMIT).optional()
+                .describe(`Число строк (по умолчанию ${DEFAULT_READ_LIMIT})`)
+            }
+          },
+          async ({ path, offset, limit }) => {
+            try {
+              const result = await registry.fsRead(agentId, remotePath(req.query.cwd, path))
+              return {
+                content: [{
+                  type: 'text' as const,
+                  text: readWindow(fileText(result.dataBase64), offset ?? 1, limit ?? DEFAULT_READ_LIMIT)
+                }]
+              }
+            } catch (err) {
+              return toolError(err)
+            }
+          }
+        )
+
+        server.registerTool(
+          'grep',
+          {
+            description: 'Ищет текст системным grep внутри рабочей директории рана.',
+            inputSchema: {
+              pattern: z.string().min(1).describe('Шаблон grep'),
+              path: z.string().optional().describe('Файл или каталог относительно cwd (по умолчанию cwd)'),
+              glob: z.string().optional().describe('Необязательная маска файлов для --include'),
+              maxMatches: z.number().int().min(1).max(MAX_GREP_MATCHES).optional()
+                .describe(`Максимум совпадений (по умолчанию ${DEFAULT_GREP_MATCHES})`)
+            }
+          },
+          async ({ pattern, path, glob, maxMatches }) => {
+            try {
+              const target = remotePath(req.query.cwd, path ?? '.')
+              const include = glob ? ` --include=${quoteShell(glob)}` : ''
+              const command = `grep -rn --binary-files=without-match${include} -- ${quoteShell(pattern)} ${quoteShell(target)}`
+              const res = await registry.exec(agentId, command, DEFAULT_TIMEOUT_MS, abort.signal)
+              if (res.exitCode !== 0 && res.exitCode !== 1) {
+                throw new Error(res.output.trim() || `grep завершился с кодом ${res.exitCode ?? '?'}`)
+              }
+              const cap = maxMatches ?? DEFAULT_GREP_MATCHES
+              const all = res.output ? res.output.split('\n').filter(Boolean) : []
+              const matches = all.slice(0, cap).map((line) =>
+                line.length > MAX_GREP_LINE_CHARS ? `${line.slice(0, MAX_GREP_LINE_CHARS - 1)}…` : line
+              )
+              const suffix = all.length > matches.length
+                ? `\n\nПоказаны первые ${matches.length} из ${all.length} совпадений.`
+                : `\n\nНайдено совпадений: ${matches.length}.`
+              return { content: [{ type: 'text' as const, text: `${matches.join('\n')}${suffix}`.trim() }] }
+            } catch (err) {
+              return toolError(err)
+            }
+          }
+        )
+
+        server.registerTool(
+          'edit',
+          {
+            description: 'Точно заменяет строку в текстовом файле внутри рабочей директории рана.',
+            inputSchema: {
+              path: z.string().describe('Путь относительно cwd рана'),
+              oldString: z.string().min(1).describe('Точный старый текст'),
+              newString: z.string().describe('Новый текст'),
+              replaceAll: z.boolean().optional().describe('Заменить все совпадения (по умолчанию false)')
+            }
+          },
+          async ({ path, oldString, newString, replaceAll }) => {
+            try {
+              if (readOnly) throw new Error('Отклонено: режим «План» — правки файлов запрещены')
+              const absolutePath = remotePath(req.query.cwd, path)
+              const current = fileText((await registry.fsRead(agentId, absolutePath)).dataBase64)
+              const count = current.split(oldString).length - 1
+              if (count === 0) throw new Error('Текст oldString не найден')
+              if (count > 1 && !replaceAll) {
+                throw new Error(`Найдено ${count} вхождений oldString; уточните фрагмент или включите replaceAll`)
+              }
+              const updated = replaceAll
+                ? current.split(oldString).join(newString)
+                : current.replace(oldString, newString)
+              await registry.fsWrite(agentId, absolutePath, Buffer.from(updated, 'utf8').toString('base64'))
+              return { content: [{ type: 'text' as const, text: `Файл ${path} обновлён (${replaceAll ? count : 1} замен).` }] }
+            } catch (err) {
+              return toolError(err)
             }
           }
         )

@@ -298,6 +298,8 @@ export interface CiRun {
   triggeredBy: string
   /** Колонка задачи до рана — для отката при Исходе B. */
   prevColumnId: string | null
+  /** Снимок выбранного исполнителя; null — legacy/default для провайдера. */
+  llmEngineId?: string | null
   /** Провайдер и модель шага разработки; можно сменить при повторе упавшего model_work. */
   llmProvider: CiLlmProvider
   llmModel: string
@@ -706,6 +708,13 @@ export interface CiRunReportStep {
   usage: CiUsageTotals | null
 }
 
+/** Насколько выданные разделы БЗ совпали с файлами, открытыми моделью. */
+export interface CiKbHitMetric {
+  sectionsDelivered: number
+  sectionsHit: number
+  hitRatio: number
+}
+
 /** Отчёт по одному завершённому (или остановленному) рану. */
 export interface CiRunReport {
   runId: string
@@ -724,6 +733,8 @@ export interface CiRunReport {
   fixAttempts: number
   totals: CiUsageTotals
   steps: CiRunReportStep[]
+  /** null — БЗ ничего не выдала либо метрика для старого/незавершённого рана не считалась. */
+  kbHit: CiKbHitMetric | null
 }
 
 /** Отчёт по задаче: все её раны (повторы, отмены) и итог по ним. */

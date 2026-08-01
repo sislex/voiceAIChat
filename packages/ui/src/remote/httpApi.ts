@@ -121,13 +121,14 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:taskChats': () => req(REST.conversationTaskChats),
     'conversations:setStatus': ({ id, status }) =>
       req(REST.conversationStatus(id), { method: 'POST', body: JSON.stringify({ status }) }),
-    'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode }) =>
+    'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode }) =>
       req(REST.conversation(id), {
         method: 'PATCH',
         body: JSON.stringify({
           execTarget,
           ...(workdir !== undefined ? { workdir } : {}),
           ...(skillNames !== undefined ? { skillNames } : {}),
+          ...(llmEngineId !== undefined ? { llmEngineId } : {}),
           ...(llmProvider !== undefined ? { llmProvider } : {}),
           ...(llmModel !== undefined ? { llmModel } : {}),
           ...(permissionMode !== undefined ? { permissionMode } : {}),
@@ -148,6 +149,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'uploads:add': ({ name, dataBase64 }) =>
       req(REST.uploads, { method: 'POST', body: JSON.stringify({ name, dataBase64 }) }),
     'settings:get': () => req(REST.settings),
+    'llm:engines': () => req(REST.llmEngines),
     'settings:save': async (settings) => {
       await req(REST.settings, { method: 'PUT', body: JSON.stringify(settings) })
     },
@@ -214,6 +216,15 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'admin:conversations': ({ name }) => req(REST.adminUserConversations(name)),
     'admin:messages': ({ name, conversationId }) =>
       req(`${REST.adminUserMessages(name)}?conversationId=${encodeURIComponent(conversationId)}`),
+    'admin:llmEngines': () => req(REST.adminLlmEngines),
+    'admin:createLlmEngine': (body) =>
+      req(REST.adminLlmEngines, { method: 'POST', body: JSON.stringify(body) }),
+    'admin:updateLlmEngine': ({ id, patch }) =>
+      req(REST.adminLlmEngine(id), { method: 'PATCH', body: JSON.stringify(patch) }),
+    'admin:deleteLlmEngine': async ({ id }) => {
+      await req(REST.adminLlmEngine(id), { method: 'DELETE' })
+    },
+    'admin:checkLlmEngineHealth': ({ id }) => req(REST.adminLlmEngineHealth(id)),
     // --- Проекты + канбан ---
     'projects:list': () => req(REST.projects),
     'projects:create': (b) => req(REST.projects, { method: 'POST', body: JSON.stringify(b) }),

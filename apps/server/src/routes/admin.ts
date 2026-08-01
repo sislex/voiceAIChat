@@ -1,13 +1,113 @@
 // Админ-роуты (только для роли admin): управление пользователями, отчёты по
-// токенам, просмотр истории. Все под guard requireAdmin.
+// токенам, просмотр истории и реестр LLM-исполнителей. Все под guard requireAdmin.
 
 import type { FastifyInstance } from 'fastify'
-import { REST, type AdminUserInfo, type UsageUnit, type UserRole } from '@voicechat/shared'
+import {
+  LLM_RUNNER,
+  REST,
+  type AdminLlmEngineHealth,
+  type AdminLlmEngineInput,
+  type AdminUserInfo,
+  type LlmEngineKind,
+  type LlmRunnerHealth,
+  type UsageUnit,
+  type UserRole
+} from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { requireAdmin, uid } from '../users/auth.js'
 
 const UNITS: UsageUnit[] = ['hour', 'day', 'week']
+const ENGINE_KINDS: LlmEngineKind[] = ['claude', 'codex']
+const ROLES: UserRole[] = ['admin', 'user']
+const HEALTH_TIMEOUT_MS = 5_000
+
+function isAbsoluteHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function validateEngineInput(body: Partial<AdminLlmEngineInput> | undefined): { ok: true; value: AdminLlmEngineInput } | { ok: false; error: string } {
+  const name = body?.name?.trim() ?? ''
+  const baseUrl = body?.baseUrl?.trim() ?? ''
+  const token = body?.token ?? ''
+  if (!name) return { ok: false, error: 'name required' }
+  if (!ENGINE_KINDS.includes(body?.kind as LlmEngineKind)) return { ok: false, error: 'bad kind' }
+  if (!baseUrl || !isAbsoluteHttpUrl(baseUrl)) return { ok: false, error: 'bad baseUrl' }
+  if (!Array.isArray(body?.allowedRoles) || body.allowedRoles.length === 0) return { ok: false, error: 'allowedRoles required' }
+  const allowedRoles = body.allowedRoles.filter((role): role is UserRole => ROLES.includes(role as UserRole))
+  if (allowedRoles.length !== body.allowedRoles.length) return { ok: false, error: 'bad allowedRoles' }
+  if (typeof body?.enabled !== 'boolean') return { ok: false, error: 'enabled required' }
+  if (typeof body?.isDefault !== 'boolean') return { ok: false, error: 'isDefault required' }
+  return {
+    ok: true,
+    value: {
+      name,
+      kind: body.kind as LlmEngineKind,
+      baseUrl,
+      token,
+      enabled: body.enabled,
+      allowedRoles,
+      isDefault: body.isDefault
+    }
+  }
+}
+
+function healthUrl(baseUrl: string): string {
+  return new URL(LLM_RUNNER.health, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString()
+}
+
+function healthDetail(kind: LlmEngineKind, status: LlmRunnerHealth): { available: boolean; detail: string } {
+  const bin = status.bins[kind]
+  const login = status.login[kind]
+  if (!bin?.present) return { available: false, detail: `${kind}: бинарь не найден` }
+  if (!login?.loggedIn) return { available: false, detail: login?.detail ?? `${kind}: вход не выполнен` }
+  return { available: true, detail: `${kind}: доступен` }
+}
+
+async function probeEngineHealth(engine: { id: string; kind: LlmEngineKind; baseUrl: string; token: string }): Promise<AdminLlmEngineHealth> {
+  const checkedAt = Date.now()
+  const url = healthUrl(engine.baseUrl)
+  try {
+    const res = await fetch(url, {
+      headers: engine.token ? { authorization: `Bearer ${engine.token}` } : undefined,
+      signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS)
+    })
+    if (!res.ok) {
+      return {
+        engineId: engine.id,
+        kind: engine.kind,
+        checkedAt,
+        available: false,
+        detail: `health вернул ${res.status}`,
+        status: null
+      }
+    }
+    const status = (await res.json()) as LlmRunnerHealth
+    const pair = healthDetail(engine.kind, status)
+    return {
+      engineId: engine.id,
+      kind: engine.kind,
+      checkedAt,
+      available: pair.available,
+      detail: pair.detail,
+      status
+    }
+  } catch (err) {
+    return {
+      engineId: engine.id,
+      kind: engine.kind,
+      checkedAt,
+      available: false,
+      detail: err instanceof Error ? err.message : String(err),
+      status: null
+    }
+  }
+}
 
 export function registerAdminRoutes(
   app: FastifyInstance,
@@ -44,7 +144,7 @@ export function registerAdminRoutes(
   )
 
   app.post<{ Params: { name: string }; Body: { blocked?: boolean } }>(
-    '/api/admin/users/:name/block',
+    REST.adminUserBlock(':name').replace('%3Aname', ':name'),
     guard,
     async (req, reply) => {
       const target = req.params.name
@@ -55,7 +155,7 @@ export function registerAdminRoutes(
     }
   )
 
-  app.delete<{ Params: { name: string } }>('/api/admin/users/:name', guard, async (req, reply) => {
+  app.delete<{ Params: { name: string } }>(REST.adminUser(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
     const target = req.params.name
     if (target === 'admin') return reply.code(400).send({ error: 'нельзя удалить admin' })
     if (target === uid(req)) return reply.code(400).send({ error: 'нельзя удалить себя' })
@@ -67,7 +167,7 @@ export function registerAdminRoutes(
   })
 
   app.get<{ Params: { name: string }; Querystring: { unit?: string; from?: string; to?: string } }>(
-    '/api/admin/users/:name/usage',
+    REST.adminUserUsage(':name').replace('%3Aname', ':name'),
     guard,
     async (req) => {
       const unit = (UNITS as string[]).includes(req.query.unit ?? '')
@@ -80,14 +180,53 @@ export function registerAdminRoutes(
   )
 
   app.get<{ Params: { name: string } }>(
-    '/api/admin/users/:name/conversations',
+    REST.adminUserConversations(':name').replace('%3Aname', ':name'),
     guard,
     async (req) => db.listConversations(req.params.name, { includeCompleted: true })
   )
 
   app.get<{ Params: { name: string }; Querystring: { conversationId?: string } }>(
-    '/api/admin/users/:name/messages',
+    REST.adminUserMessages(':name').replace('%3Aname', ':name'),
     guard,
     async (req) => db.listMessages(req.params.name, req.query.conversationId ?? '')
+  )
+
+  app.get(REST.adminLlmEngines, guard, async () => db.listLlmEngines())
+
+  app.post<{ Body: Partial<AdminLlmEngineInput> }>(REST.adminLlmEngines, guard, async (req, reply) => {
+    const parsed = validateEngineInput(req.body)
+    if (!parsed.ok) return reply.code(400).send({ error: parsed.error })
+    return db.createLlmEngine(parsed.value)
+  })
+
+  app.patch<{ Params: { id: string }; Body: Partial<AdminLlmEngineInput> }>(
+    REST.adminLlmEngine(':id').replace('%3Aid', ':id'),
+    guard,
+    async (req, reply) => {
+      if (!db.getLlmEngine(req.params.id)) return reply.code(404).send({ error: 'not found' })
+      const parsed = validateEngineInput(req.body)
+      if (!parsed.ok) return reply.code(400).send({ error: parsed.error })
+      return db.updateLlmEngine(req.params.id, parsed.value)
+    }
+  )
+
+  app.delete<{ Params: { id: string } }>(
+    REST.adminLlmEngine(':id').replace('%3Aid', ':id'),
+    guard,
+    async (req, reply) => {
+      if (!db.getLlmEngine(req.params.id)) return reply.code(404).send({ error: 'not found' })
+      db.deleteLlmEngine(req.params.id)
+      return { ok: true }
+    }
+  )
+
+  app.get<{ Params: { id: string } }>(
+    REST.adminLlmEngineHealth(':id').replace('%3Aid', ':id'),
+    guard,
+    async (req, reply) => {
+      const engine = db.getLlmEngine(req.params.id)
+      if (!engine) return reply.code(404).send({ error: 'not found' })
+      return probeEngineHealth(engine)
+    }
   )
 }

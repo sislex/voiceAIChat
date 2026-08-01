@@ -773,6 +773,15 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onDelete={(name) => void actions.deleteUserAccount(name)}
           onLoadUsage={(unit) => void actions.loadAdminUsage(unit)}
           onOpenConversation={(id) => void actions.openAdminConversation(id)}
+          engines={state.adminLlmEngines}
+          enginesStatus={state.adminLlmEnginesStatus}
+          enginesError={state.adminLlmEnginesError}
+          engineHealth={state.adminLlmEngineHealth}
+          onRetryEngines={() => void actions.refreshAdminLlmEngines()}
+          onCreateEngine={(input) => void actions.createAdminLlmEngine(input)}
+          onUpdateEngine={(id, patch) => void actions.updateAdminLlmEngine(id, patch)}
+          onDeleteEngine={(id) => void actions.deleteAdminLlmEngine(id)}
+          onCheckEngineHealth={(id) => void actions.checkAdminLlmEngineHealth(id)}
           onClose={() => navigate('/')}
         />
       )}
@@ -805,13 +814,14 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           machineOps={machineOps}
           role={state.currentUser?.role ?? 'admin'}
           settings={state.settings}
+          engines={state.llmEngines}
           defaultAgentId={state.settings.defaultAgentId}
           projects={state.projects}
           fetchProjectDetail={actions.fetchProjectDetail}
-          onSave={async ({ title, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
+          onSave={async ({ title, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
             await actions.renameConversation(activeConversation.id, title)
             await actions.setConversationProject(activeConversation.id, projectId)
-            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode)
+            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, llmEngineId)
           }}
           onAddSkill={async (agentId, skill) => {
             const agent = state.agents.find((item) => item.id === agentId)
@@ -903,6 +913,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       {state.settingsOpen && (
         <SettingsModal
           settings={state.settings}
+          engines={state.llmEngines}
           mics={state.mics}
           voices={state.ttsVoices}
           voiceCatalog={state.voiceCatalog}

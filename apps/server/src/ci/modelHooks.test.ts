@@ -12,6 +12,11 @@ import type { CiFixContext, CiModelContext } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import { createKbUsageTracker } from '../kb/usage.js'
+import { loadConfig } from '../config.js'
+import { buildPublicMcpUrl } from '../mcp/publicBase.js'
+import { REMOTE_BASH_MCP_PATH } from '../mcp/remoteBashMcp.js'
+import { KB_MCP_PATH } from '../kb/kbMcp.js'
+import { CI_COMMANDS_MCP_PATH } from './ciCommandsMcp.js'
 
 const U = 'alice'
 const KB_MCP = 'http://127.0.0.1:8787/mcp/kb?k=secret'
@@ -118,6 +123,56 @@ function hooksWith(claude: LlmClient, over: Record<string, unknown> = {}) {
   })
 }
 
+describe('работа модели: VC_MCP_PUBLIC_BASE', () => {
+  it('remote mcpUrl, kbMcpUrl и ciMcpUrl строятся от публичной базы, секрет сохраняется', async () => {
+    const project = db.createProject(U, { name: 'P' })
+    const board = db.getBoard(U, project.id)!
+    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    const conv = db.createConversation(U, 'Чат задачи')
+    const run = db.createCiRun({
+      projectId: project.id, taskId: task.id, agentId: 'agent-1', triggeredBy: U, prevColumnId: null,
+      conversationId: conv.id, kbContextMode: 'manual', slotProgress: { done: 0, total: 1, phase: 'В очереди' }
+    })
+    const ctx = {
+      runId: run.id,
+      agentId: 'agent-1',
+      workspacePath: '/repos/p/1',
+      env: { BRANCH: 'feature/1-x' },
+      signal: new AbortController().signal,
+      parentStepId: 'step-1',
+      log: () => {},
+      run,
+      task,
+      project: db.getProject(U, project.id)!,
+      askUser: async () => null,
+      askPlanApproval: async () => null,
+      runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
+    } as unknown as CiModelContext
+
+    const config = loadConfig({ PORT: '8787', VC_MCP_PUBLIC_BASE: 'http://voicechat:8787/' })
+    const rec = recorder()
+    const hooks = createCiModelHooks({
+      db,
+      claude: rec.client,
+      codex: rec.client,
+      mcpBaseUrl: buildPublicMcpUrl(config, REMOTE_BASH_MCP_PATH, 'secret'),
+      ciMcpBaseUrl: buildPublicMcpUrl(config, CI_COMMANDS_MCP_PATH, 'secret'),
+      agentNameOf: () => 'M',
+      kb: stubKb(),
+      kbMcpBaseUrl: buildPublicMcpUrl(config, KB_MCP_PATH, 'secret'),
+      kbToolEnabled: true,
+      kbTool: broker(),
+      kbUsage: createKbUsageTracker({ db })
+    })
+
+    const r = await hooks.modelWork(ctx)
+    expect(r.ok).toBe(true)
+    expect(rec.last()!.remote?.mcpUrl).toContain('http://voicechat:8787/mcp/remote-bash?k=secret')
+    expect(rec.last()!.kbMcpUrl).toContain('http://voicechat:8787/mcp/kb?k=secret&turn=')
+    expect(rec.last()!.remote?.ciMcpUrl).toContain('http://voicechat:8787/mcp/ci-commands?k=secret&run=')
+  })
+})
+
 describe('работа модели: база знаний по режимам рана', () => {
   it('auto: инструменты подключены, контекст подмешан, хинт требует идти в БЗ раньше кода', async () => {
     const rec = recorder()
@@ -128,6 +183,8 @@ describe('работа модели: база знаний по режимам �
     expect(req.kbMcpUrl).toContain('/mcp/kb?k=secret&turn=')
     expect(req.kbMode).toBe('auto')
     expect(req.prompt).toContain('Начни работу с базы знаний проекта, а не с кода')
+    expect(req.prompt).toContain('Файлы читай инструментом read, ищи grep и правь edit')
+    expect(req.prompt).toContain('bash используй для команд')
     // Сам блок контекста: заголовок раздела БЗ в промпте (директива лишь ссылается на него).
     expect(req.prompt).toContain('### CI-раннер / Работа модели')
   })

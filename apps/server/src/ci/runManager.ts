@@ -68,7 +68,7 @@ interface ActiveRun {
 
 export interface CiRunManager {
   start(userId: string, projectId: string, taskId: string, mode?: CiRunMode): { run: CiRun } | { error: string }
-  retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string }): { run: CiRun } | { error: string }
+  retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): { run: CiRun } | { error: string }
   discardChangesAndRetry(userId: string, runId: string): Promise<{ run: CiRun } | { error: string }>
   cancel(userId: string, runId: string): boolean
   subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
@@ -224,6 +224,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const agentId = project.defaultAgentId
     const slots = deps.db.resolveTaskSlots(projectId, taskId)
     const llm = deps.db.resolveTaskLlmConfig(projectId, taskId)
+    const settings = deps.db.getSettings(userId)
+    const role = deps.db.getUser(userId)?.role ?? 'user'
+    const engineResolution = deps.db.resolveLlmEngine(settings.llmEngineId, llm.provider, role)
     const total = slots.beforeModel.length + slots.afterModel.length + 2
     // Связанный чат нужен, чтобы дублировать туда вопросы модели. Идемпотентно:
     // если пользователь уже открывал карточку, вернётся существующий чат.
@@ -239,6 +242,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       agentId,
       triggeredBy: userId,
       prevColumnId: task.columnId,
+      llmEngineId: engineResolution.engine?.id ?? null,
       llmProvider: llm.provider,
       llmModel: llm.model,
       mode: modeOverride ?? llm.mode,
@@ -254,6 +258,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (developmentColumnId && developmentColumnId !== task.columnId) {
       deps.db.moveTask(userId, projectId, taskId, { columnId: developmentColumnId })
     }
+    if (engineResolution.substituted) deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.llm_engine_substituted', actorType: 'system', payload: { requestedEngineId: settings.llmEngineId, resolvedEngineId: engineResolution.engine?.id ?? null, message: `Исполнитель ${settings.llmEngineId} недоступен; выбран ${engineResolution.engine?.name ?? 'default'}` } })
     deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.started', actorType: 'user', actorId: userId, payload: { taskId } })
     emitRun(run, userId)
 
@@ -463,7 +468,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
 
   /** Повтор с упавшего шага: тот же ран, переиспользуем рабочую директорию,
    *  перезапускаем стоп-шаг и всё после него; успешные ранее шаги сохраняются. */
-  function retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string }): { run: CiRun } | { error: string } {
+  function retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): { run: CiRun } | { error: string } {
     const detail = deps.db.getCiRun(userId, runId)
     if (!detail) return { error: 'Ран недоступен' }
     const run = detail.run
@@ -488,7 +493,10 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       const selectedModel = model ? model.model.trim() : run.llmModel
       if (provider !== 'claude' && provider !== 'codex') return { error: 'Неизвестный провайдер модели' }
       if (provider === 'claude' && !selectedModel) return { error: 'Модель Claude не выбрана' }
-      deps.db.updateCiRun(run.id, { llmProvider: provider, llmModel: selectedModel })
+      const role = deps.db.getUser(userId)?.role ?? 'user'
+      const resolvedEngine = deps.db.resolveLlmEngine(model?.llmEngineId ?? run.llmEngineId, provider, role)
+      if (model?.llmEngineId && !resolvedEngine.engine) return { error: 'Исполнитель недоступен для роли' }
+      deps.db.updateCiRun(run.id, { llmEngineId: resolvedEngine.engine?.id ?? null, llmProvider: provider, llmModel: selectedModel })
       resume = { kind: 'model' }
       eventPayload = { step: 'model_work', provider, model: selectedModel }
     } else {
@@ -1443,6 +1451,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     if (run0 && run0.status === 'cancelled' && status !== 'cancelled') return
     const finished = now()
     const durationMs = run0?.startedAt ? finished - run0.startedAt : null
+    try { deps.db.calculateAndSaveCiKbHit(runId) } catch { /* метрика не роняет финализацию */ }
     const run = deps.db.updateCiRun(runId, { status, finishedAt: finished, durationMs: durationMs ?? undefined })
     if (run) {
       deps.db.addCiEvent({ projectId: run.projectId, runId, type: 'run.finished', actorType: 'system', payload: { status } })
