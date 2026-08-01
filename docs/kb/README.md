@@ -41,10 +41,11 @@
 
 ## Журнал сессий
 
-Всего записей: 41. Последние:
+Всего записей: 42. Последние:
 
 - [2026-08-01-2470-com-пересборка-прода-chat-44.md](log/2026-08-01-2470-com-пересборка-прода-chat-44.md) — пересборка-прода-chat-44
 - [2026-08-01-2470-com-task-chat-widget-scoped-to-chat.md](log/2026-08-01-2470-com-task-chat-widget-scoped-to-chat.md) — Виджет задачи виден только в своём чате
+- [2026-08-01-2470-com-opisanie-zadachi-markdown.md](log/2026-08-01-2470-com-opisanie-zadachi-markdown.md) — Описание задачи — маркдаун в просмотре, правка по кнопке
 - [2026-08-01-2470-com-kb-v-rane-modeli.md](log/2026-08-01-2470-com-kb-v-rane-modeli.md) — База знаний в работе модели CI-рана
 - [2026-08-01-2470-com-kb-scopes.md](log/2026-08-01-2470-com-kb-scopes.md) — kb-scopes
 - [2026-08-01-2470-com-kb-auto-update.md](log/2026-08-01-2470-com-kb-auto-update.md) — kb-auto-update
@@ -52,7 +53,6 @@
 - [2026-07-31-2470-com-task-chat-highlight.md](log/2026-07-31-2470-com-task-chat-highlight.md) — task-chat-highlight
 - [2026-07-31-2470-com-storybook-foundations.md](log/2026-07-31-2470-com-storybook-foundations.md) — storybook-foundations
 - [2026-07-31-2470-com-storybook-chat-ci.md](log/2026-07-31-2470-com-storybook-chat-ci.md) — storybook-chat-ci
-- [2026-07-31-2470-com-prod-rebuild-followup-task.md](log/2026-07-31-2470-com-prod-rebuild-followup-task.md) — prod-rebuild-followup-task
 
 ## Исторические планы
 
