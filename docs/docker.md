@@ -1,59 +1,78 @@
 # Запуск voiceAIChat в Docker
 
-Один контейнер: Fastify-сервер (`apps/server`) + собранный web (`apps/web`) на
-одном порту, плюс `claude` и `codex` CLI внутри образа.
+Compose поднимает четыре контейнера: `voicechat` (Fastify + web), `caddy` и два
+внутренних исполнителя LLM — `runner-work` и `runner-personal`. Порты наружу есть
+только у `voicechat`/`caddy`; оба runner'а живут во внутренней docker-сети.
 
 ## Быстрый старт
 
 ```bash
-npm run docker          # = docker compose up --build
+npm run docker          # = docker compose up --build -d
 # открыть http://localhost:8787
 npm run docker:down     # остановить
 ```
 
-## Аутентификация claude / codex
+По умолчанию сервер отправляет и Claude, и Codex ходы в `runner-work` через
+внутренний HTTP API (`http://runner-work:8790`). `runner-personal` поднимается
+сразу, но нужен для отдельной личной авторизации и дальнейшей регистрации в UI.
 
-Авторизация живёт **внутри контейнера** — в томах `vc-claude` (`/home/node/.claude`)
-и `vc-codex` (`/home/node/.codex`), а не берётся с хоста. Логин выполняется один
-раз внутри контейнера (обязательно под пользователем `node`, иначе токены будут
-недоступны серверному процессу):
+## Аутентификация runner-work / runner-personal
+
+### `runner-work`
+
+`runner-work` переиспользует существующие volume `vc-claude` и `vc-codex`, поэтому
+при деплое со старой схемы рабочая авторизация переезжает без повторного логина.
+При первом старте compose старые пользовательские профили из `vc-data:/data/cli-users`
+копируются в отдельный volume `vc-runner-work-data`.
+
+Для свежей установки логин делается один раз внутри контейнера и обязательно под
+пользователем `node`:
 
 ```bash
-# Claude — интерактивный вход (или `claude setup-token` для headless-сервера,
-# где нельзя открыть браузер: печатает URL, вставляете код обратно):
-docker compose exec -u node voicechat claude auth login
+docker compose exec -u node runner-work claude auth login
+# или headless:
+docker compose exec -u node runner-work claude setup-token
 
-# Codex — вход через ChatGPT (или `codex login --with-api-key` из stdin):
-docker compose exec -u node voicechat codex login
+docker compose exec -u node runner-work codex login
 ```
 
-Токены сохраняются в томах и переживают перезапуск/пересоздание контейнера.
-Статус входа виден в приложении: **Настройки → Агент → «Вход в CLI»**.
+### `runner-personal`
 
-> На headless-сервере (без браузера и с редиректом OAuth на localhost внутри
-> контейнера) удобнее token-flow: `claude setup-token` и
-> `codex login --with-api-key` / `--with-access-token`.
+`runner-personal` хранит собственные volume авторизации и профилей и по умолчанию
+несёт только Claude CLI. Логин тоже одноразовый:
 
-## Данные
+```bash
+docker compose exec -u node runner-personal claude auth login
+# или headless:
+docker compose exec -u node runner-personal claude setup-token
+```
 
-БД (`voicechat.db`) и вложения хранятся в volume `vc-data` (`/data` внутри
-контейнера) — переживают пересоздание контейнера. Авторизация CLI — в томах
-`vc-claude` / `vc-codex` (тоже переживают пересоздание).
+Статус входа виден в приложении: **Настройки → Агент → «Вход в CLI»**. Если
+`runner-personal` нужно использовать для реальных ходов, его URL и токен
+добавляются в реестр исполнителей через админку.
+
+## Данные и volume
+
+- `vc-data` — БД (`voicechat.db`) и вложения сервера.
+- `vc-runner-work-data` — профили `runner-work` (`/data/cli-users/...`).
+- `vc-runner-personal-data` — профили `runner-personal`.
+- `vc-claude`, `vc-codex` — прежняя рабочая авторизация `runner-work`.
+- `vc-runner-personal-claude`, `vc-runner-personal-codex` — личная авторизация `runner-personal`.
+- `vc-caddy` — локальный CA и сертификаты HTTPS.
 
 ## Переменные окружения
 
-| Переменная | Значение в образе | Назначение |
-|---|---|---|
-| `HOST` | `0.0.0.0` | слушать все интерфейсы (обязательно для контейнера) |
-| `PORT` | `8787` | порт HTTP/WS |
-| `VC_DATA_DIR` | `/data` | БД + вложения (volume) |
-| `VC_WEB_DIR` | `/app/apps/web/dist` | каталог web-билда для раздачи статики |
-| `HOME` | `/home/node` | здесь тома `.claude` / `.codex` с авторизацией (контейнер под пользователем `node`, не root — иначе claude блокирует режим «Полный доступ») |
+| Переменная | Где используется | Значение по умолчанию | Назначение |
+|---|---|---|---|
+| `VC_LLM_RUNNER_TOKEN` | `voicechat`, `runner-*` | `voicechat-runner-local-token` | Bearer-токен внутреннего API исполнителей; для прода задай случайное значение в `.env` |
+| `VC_DATA_DIR` | `voicechat`, `runner-*` | `/data` | данные сервера или профили исполнителя |
+| `HOST` | все сервисы | `0.0.0.0` | слушать все интерфейсы контейнера |
+| `PORT` | `voicechat` / `runner-*` | `8787` / `8790` | HTTP-порт сервера или исполнителя |
+| `VC_ADMIN_PASSWORD` | `voicechat` | пусто | пароль admin при первом создании БД |
+| `VC_CLAUDE_GATEWAY_*` | `voicechat` | см. compose | входящий Anthropic-compatible gateway |
 
-Опционально (голосовой ввод/озвучка — по умолчанию выключены, сервер работает
-и без них): `VC_WHISPER_CLI`, `VC_MODELS_DIR`, `VC_PIPER_BIN`,
-`VC_PIPER_VOICES_DIR` — если добавить в образ бинарники whisper-cli/piper.
-
+В проде `VC_LLM_RUNNER_TOKEN`, `VC_ADMIN_PASSWORD` и upstream-ключи держи в
+shell/`.env` рядом с `docker-compose.yml`, не в репозитории.
 
 ## Подключение внешнего Claude Code к серверу
 
@@ -76,7 +95,7 @@ VC_CLAUDE_MODEL_MAP={"claude-opus-4-6":"provider-opus","claude-sonnet-4-6":"prov
 `both`. `VC_CLAUDE_MODEL_MAP` необязателен: без него имя модели передаётся без
 изменений.
 
-Перезапустите контейнер:
+Перезапустите контейнеры:
 
 ```bash
 docker compose up -d --build
@@ -86,8 +105,6 @@ docker compose up -d --build
 
 ```bash
 export ANTHROPIC_BASE_URL=https://voicechat.example.com
-# Claude Code ожидает наличие учётных данных; сервер закрытой сети это значение
-# намеренно не проверяет и не передаёт upstream.
 export ANTHROPIC_AUTH_TOKEN=unused-local-network-token
 claude --model sonnet
 ```
@@ -105,22 +122,29 @@ curl http://localhost:8787/v1/messages \
 интернет без VPN, firewall или авторизации на reverse proxy: любой доступ к ним
 расходует ключ upstream.
 
-## Сборка образа вручную
+## Сборка образов вручную
 
 ```bash
-docker build -t voicechat .
-docker run --rm -p 8787:8787 \
-  -v voicechat-data:/data \
-  -v voicechat-claude:/home/node/.claude \
-  -v voicechat-codex:/home/node/.codex \
-  voicechat
-# затем один раз залогиниться внутри контейнера (см. «Аутентификация»).
+docker build --target server-runtime -t voicechat-server .
+docker build --target llm-runner-runtime -t voicechat-llm-runner .
+```
+
+Для `runner-personal` без Codex CLI используйте build-arg:
+
+```bash
+docker build \
+  --target llm-runner-runtime \
+  --build-arg INSTALL_CLAUDE_CLI=1 \
+  --build-arg INSTALL_CODEX_CLI=0 \
+  -t voicechat-llm-runner-personal .
 ```
 
 ## Заметки по реализации
 
-- Сервер не компилируется в JS — запускается через `tsx` из исходников
-  (см. `Dockerfile`), поэтому образ содержит исходники + `node_modules`.
-- `better-sqlite3` собирается из исходников в стадии build (toolchain
-  `python3/make/g++`), runtime — на той же glibc-базе (bookworm).
-- Web собирается без `VITE_SERVER_URL` → тот же origin, что и API (один порт).
+- Серверный образ больше не содержит `claude`/`codex`; они ставятся только в
+  target `llm-runner-runtime`.
+- `docker-entrypoint.sh` умеет один раз перенести старые `vc-data:/data/cli-users`
+  в отдельный data-volume `runner-work`, не трогая серверную БД и вложения.
+- `better-sqlite3` собирается из исходников в build-стадии, runtime остаётся на
+  glibc-базе (`bookworm`).
+- Web собирается без `VITE_SERVER_URL` → тот же origin, что и API.

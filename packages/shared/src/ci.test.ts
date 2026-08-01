@@ -230,7 +230,7 @@ describe('sumCiUsageTotals и ciTaskTotals', () => {
     const run = (over: Partial<CiRunReport> = {}): CiRunReport => ({
       runId: 'r1', projectId: 'p1', taskId: 't1', status: 'success', mode: 'development',
       provider: 'claude', model: 'opus', startedAt: 1, finishedAt: 2, durationMs: 5000, createdAt: 1,
-      fixAttempts: 0, totals: totals(), steps: [], ...over
+      fixAttempts: 0, kbHit: null, totals: totals(), steps: [], ...over
     })
     const r = ciTaskTotals([run(), run({ runId: 'r2', durationMs: null, totals: { ...EMPTY_CI_USAGE_TOTALS } })])
     expect(r.durationMs).toBe(5000)

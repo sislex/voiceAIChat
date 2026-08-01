@@ -71,6 +71,8 @@ export interface Conversation {
   workdir: string | null
   /** Имена навыков выбранной машины, включённых для этого разговора. */
   skillNames: string[]
+  /** Исполнитель только этого разговора; null — из общих настроек пользователя. */
+  llmEngineId?: string | null
   /** Движок только этого разговора; null — из общих настроек пользователя. */
   llmProvider: LlmProvider | null
   /**
@@ -471,6 +473,8 @@ export interface Settings {
   handsFree: boolean
   /** id машины-агента, где выполнять shell-команды; null — на сервере. */
   execTarget: string | null
+  /** Выбранный исполнитель LLM; null — default для роли и провайдера. */
+  llmEngineId: string | null
   /** LLM-движок: Claude Code CLI или Codex CLI. */
   llmProvider: LlmProvider
   /** Модель Codex (`codex exec -m`); '' — модель по умолчанию из конфига codex. */
@@ -522,6 +526,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bargeIn: false,
   handsFree: false,
   execTarget: null,
+  llmEngineId: null,
   llmProvider: 'claude',
   codexModel: '',
   defaultAgentId: null,

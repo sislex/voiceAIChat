@@ -8,6 +8,16 @@
 import type { ClaudeInitInfo, ClaudeLogEntry, TurnMeta, TurnUsage } from './types'
 import type { LoginStatusMap } from './auth'
 
+/** Одно вложение, которое сервер передаёт исполнителю байтами вместе с запросом. */
+export interface LlmAttachment {
+  /** Абсолютный путь, который уже зашит в prompt на стороне сервера. */
+  serverPath: string
+  /** Имя файла в каталоге рана исполнителя (без директорий). */
+  runnerName: string
+  /** Содержимое файла в base64. */
+  dataBase64: string
+}
+
 export interface LlmRequest {
   /** Владелец CLI-профиля: история одного пользователя не смешивается с другими. */
   userId?: string
@@ -19,8 +29,13 @@ export interface LlmRequest {
   model: string
   /** Режим прав агента (`--permission-mode`); undefined — не передавать флаг. */
   permissionMode?: string
-  /** Рабочий каталог процесса CLI; undefined — каталог по умолчанию. */
+  /** Желаемый рабочий каталог процесса CLI; исполнитель сам решает, применим ли он. */
   cwd?: string
+  /**
+   * Вложения для удалённого исполнителя: он кладёт их в temp-каталог рана и
+   * подменяет пути `serverPath` → локальный путь из этого каталога прямо в prompt.
+   */
+  attachments?: LlmAttachment[]
   /** Удалённое выполнение Bash через MCP-мост; undefined — Bash на сервере. */
   /** true — shell-команды запрещены полностью, даже на сервере. */
   executionDisabled?: boolean

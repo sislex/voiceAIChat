@@ -90,7 +90,7 @@ export interface RendererCiRest {
   getTaskReport(projectId: string, taskId: string): Promise<CiTaskReport>
   cancelRun(runId: string): Promise<{ ok: boolean }>
   retryRun(runId: string): Promise<CiRun>
-  retryRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun>
+  retryRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<CiRun>
   discardChangesAndRetry(runId: string): Promise<CiRun>
   getMetrics(projectId: string): Promise<CiMetrics>
   consoleExec(runId: string, command: string, editMode: boolean): Promise<CiConsoleExecResult>
