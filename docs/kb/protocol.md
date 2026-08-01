@@ -1,11 +1,12 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-01
-checked: 1f4b261
+checked: 9306637
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
   - packages/shared/src/agentProtocol.ts
+  - packages/shared/src/llm.ts
   - apps/server/src/ws.ts
   - apps/server/src/routes
   - packages/ui/src/remote
@@ -17,6 +18,8 @@ areas:
 `packages/shared/src/protocol.ts` (REST-пути + WS-сообщения),
 `packages/shared/src/ipc.ts` (формы мостов `window.*`),
 `packages/shared/src/agentProtocol.ts` (сервер↔машина).
+Протокол сервер↔исполнитель LLM живёт отдельно — `packages/shared/src/llm.ts`,
+описание в [features/llm-runners.md](features/llm-runners.md).
 
 ## Правило добавления чего угодно в контракт
 

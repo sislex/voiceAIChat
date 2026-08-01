@@ -11,12 +11,13 @@
 |---|---|---|---|
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 5 коммит(ов) в areas после сверки: c27fe65 feat(kb): панель «Использование БЗ» + телеметрия обращений модели … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-07-27 | ⚠ 1 коммит(ов) в areas после сверки: 74a2a3f feat(ui): сториз чата, CI-панели и машин на общих фикстурах |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-01 | ⚠ 6 коммит(ов) в areas после сверки: 1f4b261 Отчёт по завершённой задаче: расход модели, запросы и шаги CI … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: 9f43920 CHAT-60: RemoteLlmClient — ход модели через исполнителя по HTTP |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 9f43920 CHAT-60: RemoteLlmClient — ход модели через исполнителя по HTTP … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-01 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 9f43920 CHAT-60: RemoteLlmClient — ход модели через исполнителя по HTTP … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: 9f43920 CHAT-60: RemoteLlmClient — ход модели через исполнителя по HTTP |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-01 | ⚠ 3 коммит(ов) в areas после сверки: 816165c chatai-60: работа CI-рана … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: c37b32a CI: шаг «Актуализировать базу знаний» после работы модели |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-01 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-31 | ⚠ 11 коммит(ов) в areas после сверки: 925d7f0 chatai-46: работа CI-рана … |
@@ -25,7 +26,7 @@
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-01 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-01 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-07-31 | ⚠ 1 коммит(ов) в areas после сверки: 74a2a3f feat(ui): сториз чата, CI-панели и машин на общих фикстурах |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-01 | ✓ |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-01 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ✓ |
 
@@ -34,6 +35,7 @@
 - [apps/agent](../../apps/agent/AGENTS.md)
 - [apps/agent-tray](../../apps/agent-tray/AGENTS.md)
 - [apps/desktop](../../apps/desktop/AGENTS.md)
+- [apps/llm-runner](../../apps/llm-runner/AGENTS.md)
 - [apps/server](../../apps/server/AGENTS.md)
 - [apps/web](../../apps/web/AGENTS.md)
 - [packages/shared](../../packages/shared/AGENTS.md)
@@ -41,7 +43,7 @@
 
 ## Журнал сессий
 
-Всего записей: 47. Последние:
+Всего записей: 49. Последние:
 
 - [2026-08-01-2470-com-список-чатов-обновляется-по-событиям.md](log/2026-08-01-2470-com-список-чатов-обновляется-по-событиям.md) — Список чатов обновляется по событиям, а не только по действиям
 - [2026-08-01-2470-com-пересборка-прода-chat-52.md](log/2026-08-01-2470-com-пересборка-прода-chat-52.md) — пересборка-прода-chat-52
@@ -50,9 +52,9 @@
 - [2026-08-01-2470-com-remote-llm-client-na-servere.md](log/2026-08-01-2470-com-remote-llm-client-na-servere.md) — RemoteLlmClient на сервере
 - [2026-08-01-2470-com-otchyot-po-zadache-rashod-modeli.md](log/2026-08-01-2470-com-otchyot-po-zadache-rashod-modeli.md) — Отчёт по завершённой задаче — расход модели, запросы и шаги CI
 - [2026-08-01-2470-com-opisanie-zadachi-markdown.md](log/2026-08-01-2470-com-opisanie-zadachi-markdown.md) — Описание задачи — маркдаун в просмотре, правка по кнопке
+- [2026-08-01-2470-com-llm-runner-skeleton.md](log/2026-08-01-2470-com-llm-runner-skeleton.md) — Каркас исполнителя LLM — apps/llm-runner и POST /v1/run
+- [2026-08-01-2470-com-llm-runner-kb-sverka.md](log/2026-08-01-2470-com-llm-runner-kb-sverka.md) — Сверка KB после выноса CLI в apps/llm-runner
 - [2026-08-01-2470-com-kb-точные-бусты-и-компактный-запрос.md](log/2026-08-01-2470-com-kb-точные-бусты-и-компактный-запрос.md) — kb-точные-бусты-и-компактный-запрос
-- [2026-08-01-2470-com-kb-v-rane-modeli.md](log/2026-08-01-2470-com-kb-v-rane-modeli.md) — База знаний в работе модели CI-рана
-- [2026-08-01-2470-com-kb-scopes.md](log/2026-08-01-2470-com-kb-scopes.md) — kb-scopes
 
 ## Исторические планы
 

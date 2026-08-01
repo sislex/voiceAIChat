@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { CodexCli, type SpawnFn } from './codexCli'
-import type { LlmStreamHandlers } from '../claude/types'
+import type { LlmStreamHandlers } from '@voicechat/shared'
 
 function fakeChild(): {
   child: EventEmitter & { stdin: PassThrough; stdout: PassThrough; stderr: PassThrough; kill: () => void }

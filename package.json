@@ -6,6 +6,7 @@
   "//": "desktop и agent-tray НЕ в workspaces намеренно: у них свой node_modules с Electron — корневой npm install их не трогает.",
   "workspaces": [
     "packages/*",
+    "apps/llm-runner",
     "apps/server",
     "apps/web",
     "apps/agent"

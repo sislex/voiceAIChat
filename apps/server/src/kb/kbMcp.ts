@@ -11,13 +11,17 @@ import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import type { KbDocument } from '@voicechat/shared'
+import { kbToolHint, type KbDocument } from '@voicechat/shared'
 import type { KbView, KnowledgeBaseService } from './types.js'
 import { PUBLIC_KB_VIEW } from './types.js'
 import type { KbUsageTracker } from './usage.js'
 import { KB_CONTEXT_HEADING } from './autoContext.js'
 
 export const KB_MCP_PATH = '/mcp/kb'
+
+// Системный хинт CLI теперь общий с исполнителем (packages/shared) — реэкспорт
+// оставлен, чтобы прежние импорты `kbToolHint` из этого модуля продолжали работать.
+export { kbToolHint }
 
 /** Кап на длину одного раздела: без него один вызов вливает в контекст всю БЗ. */
 export const KB_DOCUMENT_CHAR_CAP = 8000
@@ -59,27 +63,6 @@ class KbToolBroker {
 }
 
 export const kbToolBroker = new KbToolBroker()
-
-/**
- * Политика «БЗ в первую очередь» для системного промпта. Формулировка — приоритет,
- * а не справка: сначала поиск по базе знаний, затем раздел целиком, и только потом
- * чтение кода. Источник истины при расхождении — код (см. docs/kb/kb-workflow.md).
- *
- * Два варианта одного текста: в `auto` блок контекста уже вставлен в промпт, в
- * `manual` инструмент — единственный путь модели к базе знаний.
- */
-export function kbToolHint(mode: 'auto' | 'manual'): string {
-  const common =
-    `База знаний проекта — в первую очередь. Прежде чем читать код, найди тему: ` +
-    `mcp__kb__search по задаче, затем mcp__kb__document на найденный раздел ` +
-    `(mcp__kb__topics — оглавление). Так дешевле, чем исследовать файлы заново. ` +
-    `При расхождении базы знаний и кода источник истины — код: правь и то, и другое.`
-  return mode === 'manual'
-    ? `${common}\n\nАвтоматический контекст базы знаний для этого разговора выключен ` +
-        `(режим «по запросу модели»): инструменты mcp__kb__* — единственный путь к ней.`
-    : `${common}\n\nБлок «Контекст базы знаний voiceAIChat» ниже добавлен автоматически ` +
-        `по теме запроса — он не полный, за подробностями иди инструментами.`
-}
 
 /**
  * Требование «сначала база знаний, потом код» для работы модели в CI-ране. В

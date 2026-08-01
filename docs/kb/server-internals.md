@@ -53,7 +53,7 @@ STT session аккумулирует PCM, конвертирует в WAV и в�
 
 По завершении сервер сохраняет AI message и метаданные в SQLite, обновляет conversation и отправляет `done`. По cancel/error снимает handle и очищает map. Проверка identity текущего turn не позволяет позднему callback старого процесса удалить новый ход того же разговора.
 
-Пользовательские CLI-профили изолированы в `dataDir/users/<id>/...`; `cliProfiles.ts` создаёт HOME/config и environment. Это не контейнерный root profile. Login status читается отдельно для каждого профиля.
+Пользовательские CLI-профили изолированы в `dataDir/cli-users/<base64url(логин)>/...`; `cliProfiles.ts` (переехал в `apps/llm-runner/src/cli/`) создаёт HOME/config и environment. Это не контейнерный root profile. Login status читается отдельно для каждого профиля.
 
 ## SQLite и репозитории данных
 
@@ -75,7 +75,7 @@ STT session аккумулирует PCM, конвертирует в WAV и в�
 
 ## LLM и MCP
 
-`ClaudeCli` и `CodexCli` реализуют общий `LlmClient`: spawn, поток событий, cancel. Бинарь и env инъектируются в тестах. Третья реализация того же интерфейса — `llm/remoteClient.ts` (`RemoteLlmClient`): ход уходит по HTTP в контейнер-исполнитель (`POST /v1/run`, NDJSON, отмена — `DELETE /v1/run/:id`), а разбор потока живёт в общем приёмнике `llm/sinks.ts`. Выбор реализации — по `VC_LLM_RUNNER_URL` в `config.ts`; подробности — `docs/kb/llm.md`. MCP-конфигурация Claude может включать `remoteBashMcp`, который адресует команду выбранной машине через registry.
+`ClaudeCli` и `CodexCli` реализуют общий `LlmClient` (`@voicechat/shared`, `llm.ts`): spawn, поток событий, cancel. Сами классы лежат в `apps/llm-runner/src/cli/`; сервер либо импортирует их из `@voicechat/llm-runner/cli` и спавнит локально, либо использует третью реализацию того же интерфейса — `llm/remoteClient.ts` (`RemoteLlmClient`), который шлёт ход по HTTP в контейнер-исполнитель (`POST /v1/run`, NDJSON, отмена — `DELETE /v1/run/:id`). Разбор потока для удалённого транспорта живёт в `llm/sinks.ts`, выбор реализации идёт по `VC_LLM_RUNNER_URL` в `config.ts`; подробности — `docs/kb/llm.md`. MCP-конфигурация Claude может включать `remoteBashMcp`, который адресует команду выбранной машине через registry.
 
 `/mcp/remote-bash` реализован SDK MCP и предоставляет bash в рамках выбранного agent id. Он не обходит policy/version/online checks registry. Входящий `/v1/messages` — отдельный Anthropic-compatible gateway для Claude Code: backend либо upstream HTTP, либо локальный Codex; LAN-only проверка защищает незапароленный endpoint.
 
