@@ -680,6 +680,7 @@ export function createFakeCi(): FakeCi {
     allowFailure: input.allowFailure ?? false,
     isCleanup: input.isCleanup ?? false,
     availableToModel: input.availableToModel ?? false,
+    isTest: input.isTest ?? false,
     version: 1,
     createdBy: 'admin',
     createdAt: now(),

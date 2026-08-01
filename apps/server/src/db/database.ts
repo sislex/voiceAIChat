@@ -91,7 +91,8 @@ import {
   type CiRunSummary,
   type CiCommandMetric,
   type CiModelWorkMetric,
-  type CiEventActor
+  type CiEventActor,
+  isVerificationCommand
 } from '@voicechat/shared'
 import { hashPassword, verifyPassword } from '../users/passwords.js'
 
@@ -631,6 +632,15 @@ export class VoiceChatDb {
     if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'clarify_max')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN clarify_max INTEGER NOT NULL DEFAULT 3`)
     const ciCmdCols = this.db.prepare(`PRAGMA table_info(ci_commands)`).all() as Array<{ name: string }>
     if (ciCmdCols.length && !ciCmdCols.some((c) => c.name === 'builtin')) this.db.exec(`ALTER TABLE ci_commands ADD COLUMN builtin TEXT`)
+    if (ciCmdCols.length && !ciCmdCols.some((c) => c.name === 'is_test')) {
+      this.db.exec(`ALTER TABLE ci_commands ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0`)
+      // Бэкфилл: гейт в уже заведённых справочниках помечаем сами — иначе после
+      // обновления модель по-прежнему видит «Запустить тестирование» инструментом
+      // и прогоняет тесты до шага воркфлоу.
+      const rows = this.db.prepare(`SELECT id, name, script FROM ci_commands`).all() as Array<{ id: string; name: string; script: string }>
+      const mark = this.db.prepare(`UPDATE ci_commands SET is_test = 1, available_to_model = 0 WHERE id = ?`)
+      for (const r of rows) if (isVerificationCommand(r)) mark.run(r.id)
+    }
     const ciSettingsCols = this.db.prepare(`PRAGMA table_info(ci_settings)`).all() as Array<{ name: string }>
     if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === 'interaction_wait_ms')) this.db.exec(`ALTER TABLE ci_settings ADD COLUMN interaction_wait_ms INTEGER NOT NULL DEFAULT 1800000`)
 
@@ -2247,13 +2257,15 @@ export class VoiceChatDb {
     const ts = this.now()
     this.db
       .prepare(
-        `INSERT INTO ci_commands (id, scope, project_id, name, script, description, workdir, timeout_sec, env_json, allow_failure, is_cleanup, available_to_model, version, created_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+        `INSERT INTO ci_commands (id, scope, project_id, name, script, description, workdir, timeout_sec, env_json, allow_failure, is_cleanup, available_to_model, is_test, version, created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
       )
       .run(
         id, scope, projectId, name, input.script ?? '', input.description ?? '', input.workdir ?? '',
         input.timeoutSec ?? null, JSON.stringify(input.env ?? {}),
         input.allowFailure ? 1 : 0, input.isCleanup ? 1 : 0, input.availableToModel === false ? 0 : 1,
+        // Гейт узнаём по тексту команды: заводящий её человек мог про флаг не знать.
+        input.isTest ?? isVerificationCommand({ name, script: input.script ?? '' }) ? 1 : 0,
         userId, ts, ts
       )
     return mapCiCommand(this.db.prepare(`SELECT * FROM ci_commands WHERE id = ?`).get(id) as CiCommandRow)
@@ -2278,6 +2290,7 @@ export class VoiceChatDb {
     if (input.allowFailure !== undefined) { set.push('allow_failure = ?'); vals.push(input.allowFailure ? 1 : 0) }
     if (input.isCleanup !== undefined) { set.push('is_cleanup = ?'); vals.push(input.isCleanup ? 1 : 0) }
     if (input.availableToModel !== undefined) { set.push('available_to_model = ?'); vals.push(input.availableToModel ? 1 : 0) }
+    if (input.isTest !== undefined) { set.push('is_test = ?'); vals.push(input.isTest ? 1 : 0) }
     // Правка текста скрипта поднимает версию (снапшоты завершённых ранов неизменны).
     if (input.script !== undefined && input.script !== cur.script) set.push('version = version + 1')
     set.push('updated_at = ?'); vals.push(this.now())
@@ -3269,7 +3282,7 @@ function mapKbSectionAggregate(r: KbSectionAggRow): KbUsageSectionAggregate {
 interface CiCommandRow {
   id: string; scope: string; project_id: string | null; name: string; script: string
   description: string; workdir: string; timeout_sec: number | null; env_json: string
-  allow_failure: number; is_cleanup: number; available_to_model: number; builtin: string | null; version: number
+  allow_failure: number; is_cleanup: number; available_to_model: number; is_test: number; builtin: string | null; version: number
   created_by: string; created_at: number; updated_at: number; deleted_at: number | null
 }
 /**
@@ -3308,6 +3321,7 @@ function mapCiCommand(r: CiCommandRow): CiCommand {
     allowFailure: !!r.allow_failure,
     isCleanup: !!r.is_cleanup,
     availableToModel: !!r.available_to_model,
+    isTest: !!r.is_test,
     builtin: r.builtin === 'kb_update' ? 'kb_update' : null,
     version: r.version,
     createdBy: r.created_by,
