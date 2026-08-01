@@ -153,6 +153,26 @@ describe('kbMcp — инструменты базы знаний', () => {
     expect(db.kbUsageReport(U, convId)!.totals.queries).toBe(0)
   })
 
+  it('после ответа не остаётся отложенных исключений (тело читает транспорт, не Fastify)', async () => {
+    // Если тело запроса вычитает Fastify, hono/node-server внутри MCP-SDK через
+    // 500 мс «дренирует» соединение и дёргает socket.destroySoon() — на сокете
+    // от app.inject такого метода нет, и таймер валит весь прогон необработанным
+    // исключением уже после того, как все тесты позеленели (см. тот же тест в
+    // remoteBashMcp.test.ts — там эта грабля была вычищена раньше).
+    await makeApp()
+    expect((await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).statusCode).toBe(200)
+
+    const caught: Error[] = []
+    const onUncaught = (err: Error): void => { caught.push(err) }
+    process.on('uncaughtException', onUncaught)
+    try {
+      await new Promise((r) => setTimeout(r, 800))
+    } finally {
+      process.off('uncaughtException', onUncaught)
+    }
+    expect(caught.map((e) => e.message)).toEqual([])
+  })
+
   it('падение поиска в БЗ → isError и обращение со статусом error', async () => {
     await makeApp(stubKb({ search: async () => { throw new Error('индекс сломан') } }))
     const { isError } = await call('search', { query: 'x' })
