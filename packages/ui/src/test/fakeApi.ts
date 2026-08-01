@@ -12,6 +12,12 @@ import { issueKey, isCompletedHidden, DEFAULT_DONE_RETENTION_DAYS } from '@share
 
 
 export interface FakeApi extends RendererApi {
+  /**
+   * Часы фейкового бэкенда: «состарить» завершённую задачу, не дожидаясь суток.
+   * Порог `0` теперь означает «убрать в конце дня», а не «в ту же секунду»
+   * (`isCompletedHidden`), поэтому иначе скрытие с доски не проверить.
+   */
+  _advanceDays: (days: number) => void
   /** Прямой доступ к состоянию для ассертов в тестах. */
   _state: {
     conversations: Conversation[]
@@ -23,6 +29,8 @@ export interface FakeApi extends RendererApi {
 export function createFakeApi(seedConversations: string[] = []): FakeApi {
   let idCounter = 0
   let clock = 1_700_000_000_000
+  /** «Сейчас» фейкового бэкенда — двигается только `_advanceDays`. */
+  let nowMs = Date.now()
   const nextId = (): string => `id-${++idCounter}`
   const tick = (): number => (clock += 1000)
 
@@ -89,7 +97,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     return {
       columns: columns.filter((c) => c.projectId === pid).sort((a, b) => a.position - b.position).map((c) => ({ ...c })),
       tasks: tasks
-        .filter((t) => t.projectId === pid && !isCompletedHidden(t.doneAt, retention, Date.now()))
+        .filter((t) => t.projectId === pid && !isCompletedHidden(t.doneAt, retention, nowMs))
         .sort((a, b) => a.position - b.position)
         .map((t) => ({ ...t }))
     }
@@ -572,7 +580,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       t.columnId = columnId
       // Как на сервере: попадание в «Готово» запускает отсчёт скрытия.
       const done = columns.find((c) => c.id === columnId)?.semanticType === 'done'
-      t.doneAt = done ? t.doneAt ?? Date.now() : null
+      t.doneAt = done ? t.doneAt ?? nowMs : null
       const after = afterId ? tasks.find((x) => x.id === afterId) : null
       const before = beforeId ? tasks.find((x) => x.id === beforeId) : null
       t.position =
@@ -602,6 +610,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       task.chatId = conv.id
       return withCounts(conv)
     },
+
+    _advanceDays: (days) => { nowMs += days * 24 * 60 * 60 * 1000 },
 
     _state: {
       get conversations() {

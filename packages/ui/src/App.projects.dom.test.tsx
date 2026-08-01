@@ -104,7 +104,7 @@ describe('App — страница проекта по URL', () => {
 })
 
 describe('App — завершённые задачи скрыты с доски', () => {
-  /** Проект с задачей в «Готово» и порогом 0 («скрывать сразу»). */
+  /** Проект с задачей в «Готово» и порогом 0 («убрать в конце дня»). */
   async function withCompleted(): Promise<{ api: FakeApi; projectId: string; taskId: string }> {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
@@ -114,6 +114,8 @@ describe('App — завершённые задачи скрыты с доски
     const task = await api['tasks:create']({ projectId: p.id, columnId: board.columns[0]!.id, title: 'Завершённая' })
     await api['tasks:move']({ projectId: p.id, taskId: task.id, columnId: done.id })
     await api['projects:update']({ id: p.id, doneRetentionDays: 0 })
+    // День завершения прошёл: при пороге 0 карточка держится на доске до его конца.
+    api._advanceDays(1)
     render(<App api={api} delays={SLOW} />)
     return { api, projectId: p.id, taskId: task.id }
   }
