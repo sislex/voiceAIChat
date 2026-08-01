@@ -176,3 +176,35 @@ describe('TaskCard подсветка по состоянию рана', () => {
     expect(screen.getByTestId('task-card').className).not.toContain('jcard--ci-')
   })
 })
+
+describe('TaskCard: следов прошлого рана не остаётся', () => {
+  it('после успешного повтора нет ни лозенга «ошибка», ни красной пульсации, ни фазы упавшего рана', () => {
+    const failed = mkSummary({ id: 'run-1', status: 'failed', slotProgress: { done: 2, total: 4, phase: 'Финальные команды (1/2)' }, modelActive: false })
+    const { rerender } = render(<TaskCard {...props({ ciSummary: failed, onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+    expect(screen.getByText('ошибка')).toBeInTheDocument()
+    expect(screen.getByTestId('task-card').className).toContain('jcard--ci-failed')
+
+    // Новый ран той же задачи завершился успехом — карточка обязана это показать.
+    const success = mkSummary({ id: 'run-2', status: 'success', slotProgress: { done: 4, total: 4, phase: 'Готово' }, durationMs: 1000, modelActive: false })
+    rerender(<TaskCard {...props({ ciSummary: success, onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+
+    expect(screen.queryByText('ошибка')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Финальные команды/)).not.toBeInTheDocument()
+    expect(screen.getByText('успех')).toBeInTheDocument()
+    const card = screen.getByTestId('task-card')
+    expect(card.className).not.toContain('jcard--ci-failed')
+    expect(card.className).toContain('jcard--ci-done')
+  })
+
+  it('после отмены и нового рана карточка показывает идущий ран, а не «отменён»', () => {
+    const cancelled = mkSummary({ id: 'run-1', status: 'cancelled', slotProgress: { done: 1, total: 4, phase: 'Ран отменён' } })
+    const { rerender } = render(<TaskCard {...props({ ciSummary: cancelled, onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+    expect(screen.getByText('отменён')).toBeInTheDocument()
+
+    rerender(<TaskCard {...props({ ciSummary: mkSummary({ id: 'run-2', status: 'running', slotProgress: { done: 0, total: 4, phase: 'Подготовка (1/2)' } }), onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+    expect(screen.queryByText('отменён')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Ран отменён/)).not.toBeInTheDocument()
+    expect(screen.getByText('выполняется')).toBeInTheDocument()
+    expect(screen.getByTestId('task-card').className).toContain('jcard--ci-running')
+  })
+})

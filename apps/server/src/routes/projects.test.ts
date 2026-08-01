@@ -300,10 +300,12 @@ describe('projects REST: скрытие завершённых задач', () =
     // Свежезавершённая ещё на доске.
     expect((await boardOf(p.id)).tasks.map((t) => t.id)).toContain(task.id)
 
-    // Порог 0 = «скрывать сразу» — как если бы прошло 14 дней.
+    // Порог 0 = «убрать в конце дня»: сегодня карточка ещё на доске. В «Готово»
+    // её переносит и CI-ран после успешного мержа, а исчезнувшая в ту же секунду
+    // карточка читается как потерянная работа (порог по дням — в db-тестах).
     const patched = await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { doneRetentionDays: 0 } })
     expect((patched.json() as ProjectSummary).doneRetentionDays).toBe(0)
-    expect((await boardOf(p.id)).tasks.map((t) => t.id)).not.toContain(task.id)
+    expect((await boardOf(p.id)).tasks.map((t) => t.id)).toContain(task.id)
     expect((await boardOf(p.id, true)).tasks.map((t) => t.id)).toContain(task.id)
 
     // Пустой порог — не скрывать никогда.
