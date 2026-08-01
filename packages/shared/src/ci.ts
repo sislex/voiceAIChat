@@ -706,6 +706,13 @@ export interface CiRunReportStep {
   usage: CiUsageTotals | null
 }
 
+/** Насколько выданные разделы БЗ совпали с файлами, открытыми моделью. */
+export interface CiKbHitMetric {
+  sectionsDelivered: number
+  sectionsHit: number
+  hitRatio: number
+}
+
 /** Отчёт по одному завершённому (или остановленному) рану. */
 export interface CiRunReport {
   runId: string
@@ -724,6 +731,8 @@ export interface CiRunReport {
   fixAttempts: number
   totals: CiUsageTotals
   steps: CiRunReportStep[]
+  /** null — БЗ ничего не выдала либо метрика для старого/незавершённого рана не считалась. */
+  kbHit: CiKbHitMetric | null
 }
 
 /** Отчёт по задаче: все её раны (повторы, отмены) и итог по ним. */

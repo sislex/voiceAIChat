@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
 import { toFtsMatchQuery } from './fts.js'
+import { calculateKbHit, filesReadFromCiLog } from '../ci/kbHit.js'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_AGENT_POLICY,
@@ -665,6 +666,8 @@ export class VoiceChatDb {
     if (kbUsageCols.length && !kbUsageCols.some((c) => c.name === 'ci_run_id')) this.db.exec(`ALTER TABLE kb_usage_queries ADD COLUMN ci_run_id TEXT`)
     if (kbUsageCols.length && !kbUsageCols.some((c) => c.name === 'ci_step_id')) this.db.exec(`ALTER TABLE kb_usage_queries ADD COLUMN ci_step_id TEXT`)
     if (kbUsageCols.length) this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_usage_ci_run ON kb_usage_queries(ci_run_id, created_at DESC)`)
+    const kbSectionCols = this.db.prepare(`PRAGMA table_info(kb_usage_sections)`).all() as Array<{ name: string }>
+    if (kbSectionCols.length && !kbSectionCols.some((c) => c.name === 'related_files')) this.db.exec(`ALTER TABLE kb_usage_sections ADD COLUMN related_files TEXT NOT NULL DEFAULT '[]'`)
 
     const msgCols = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
     if (!msgCols.some((c) => c.name === 'engine')) {
@@ -2754,6 +2757,32 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM ci_run_usage WHERE run_id = ? ORDER BY at ASC, rowid ASC`).all(runId) as CiRunUsageRow[]).map(mapCiRunUsage)
   }
 
+  /** Финальный агрегат: список файлов остаётся в логе, в БД сохраняются только числа. */
+  calculateAndSaveCiKbHit(runId: string): ReturnType<typeof calculateKbHit> {
+    const sections = (this.db.prepare(
+      `SELECT s.document_id, s.anchor, s.related_files FROM kb_usage_sections s
+       JOIN kb_usage_queries q ON q.id = s.query_id
+       WHERE q.ci_run_id = ? AND q.status = 'delivered' ORDER BY q.created_at, s.position`
+    ).all(runId) as Array<{ document_id: string; anchor: string; related_files: string }>).map((row) => ({
+      documentId: row.document_id, anchor: row.anchor, relatedFiles: parseStringArray(row.related_files)
+    }))
+    const chunks = (this.db.prepare(`SELECT chunk FROM ci_run_logs WHERE run_id = ? ORDER BY seq`).all(runId) as Array<{ chunk: string }>).map((row) => row.chunk)
+    if (!chunks.length) return null
+    const metric = calculateKbHit(sections, filesReadFromCiLog(chunks))
+    if (!metric) return null
+    this.db.prepare(`INSERT INTO ci_run_kb_metrics (run_id, sections_delivered, sections_hit, hit_ratio, calculated_at)
+      VALUES (?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET sections_delivered = excluded.sections_delivered,
+      sections_hit = excluded.sections_hit, hit_ratio = excluded.hit_ratio, calculated_at = excluded.calculated_at`)
+      .run(runId, metric.sectionsDelivered, metric.sectionsHit, metric.hitRatio, this.now())
+    return metric
+  }
+
+  private ciKbHit(runId: string): { sectionsDelivered: number; sectionsHit: number; hitRatio: number } | null {
+    const row = this.db.prepare(`SELECT sections_delivered, sections_hit, hit_ratio FROM ci_run_kb_metrics WHERE run_id = ?`).get(runId) as
+      { sections_delivered: number; sections_hit: number; hit_ratio: number } | undefined
+    return row ? { sectionsDelivered: row.sections_delivered, sectionsHit: row.sections_hit, hitRatio: row.hit_ratio } : null
+  }
+
   /**
    * Отчёт по рану: сводка, агрегаты расхода и все шаги с длительностями. Гейт —
    * членство в проекте рана (как у ленты), поэтому чужой получает null → 404.
@@ -2805,7 +2834,7 @@ export class VoiceChatDb {
       runId: run.id, projectId: run.projectId, taskId: run.taskId, status: run.status, mode: run.mode,
       provider: run.llmProvider, model: run.llmModel, startedAt: run.startedAt, finishedAt: run.finishedAt,
       durationMs: run.durationMs, createdAt: run.createdAt, fixAttempts,
-      totals: ciUsageTotals(usage), steps
+      totals: ciUsageTotals(usage), steps, kbHit: this.ciKbHit(run.id)
     }
   }
 
@@ -2993,6 +3022,7 @@ export class VoiceChatDb {
       heading?: string
       anchor?: string
       sourcePath?: string
+      relatedFiles?: string[]
       chars: number
       score?: number | null
       matchTypes?: KbMatchType[]
@@ -3009,6 +3039,7 @@ export class VoiceChatDb {
       heading: item.heading ?? '',
       anchor: item.anchor ?? '',
       sourcePath: item.sourcePath ?? '',
+      relatedFiles: item.relatedFiles ?? [],
       chars: item.chars,
       estimatedTokens: estimateKbTokens(item.chars),
       score: item.score ?? null,
@@ -3022,9 +3053,9 @@ export class VoiceChatDb {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     const insertSection = this.db.prepare(
-      `INSERT INTO kb_usage_sections (id, query_id, document_id, title, heading, anchor, source_path, chars, est_tokens,
+      `INSERT INTO kb_usage_sections (id, query_id, document_id, title, heading, anchor, source_path, related_files, chars, est_tokens,
          score, match_types, freshness, position)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     // Одна транзакция: MAX(seq)+1 считается внутри неё, иначе параллельные
     // обращения одного разговора получили бы один и тот же курсор.
@@ -3043,7 +3074,7 @@ export class VoiceChatDb {
       )
       sections.forEach((section, position) => {
         insertSection.run(
-          this.newId(), id, section.documentId, section.title, section.heading, section.anchor, section.sourcePath,
+          this.newId(), id, section.documentId, section.title, section.heading, section.anchor, section.sourcePath, JSON.stringify(section.relatedFiles),
           section.chars, section.estimatedTokens, section.score, JSON.stringify(section.matchTypes), section.freshness,
           position
         )
@@ -3401,7 +3432,7 @@ interface KbUsageQueryRow {
 }
 interface KbUsageSectionRow {
   id: string; query_id: string; document_id: string; title: string; heading: string; anchor: string
-  source_path: string; chars: number; est_tokens: number; score: number | null; match_types: string
+  source_path: string; related_files: string; chars: number; est_tokens: number; score: number | null; match_types: string
   freshness: string; position: number
 }
 interface KbSectionAggRow {
@@ -3429,7 +3460,7 @@ function kbMatchTypes(json: string): KbMatchType[] {
 }
 function mapKbUsageSection(r: KbUsageSectionRow): KbUsageSectionRef {
   return {
-    documentId: r.document_id, title: r.title, heading: r.heading, anchor: r.anchor, sourcePath: r.source_path,
+    documentId: r.document_id, title: r.title, heading: r.heading, anchor: r.anchor, sourcePath: r.source_path, relatedFiles: parseStringArray(r.related_files),
     chars: r.chars, estimatedTokens: r.est_tokens, score: r.score, matchTypes: kbMatchTypes(r.match_types),
     freshness: kbFreshness(r.freshness)
   }
