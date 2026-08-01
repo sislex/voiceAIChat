@@ -31,6 +31,7 @@ import type { VoiceChatDb } from './db/database.js'
 import { relocateImagesToMachine } from './imageRelocate.js'
 import type { LlmClient, LlmHandle } from './claude/types.js'
 import type { KnowledgeBaseService } from './kb/types.js'
+import { kbViewOf } from './kb/access.js'
 import type { KbUsageTracker } from './kb/usage.js'
 
 export interface TurnManagerDeps {
@@ -266,7 +267,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           kbQuery
         )
         try {
-          const bundle = await deps.kb.context(kbQuery, 3500)
+          // Вид пользователя: общий раздел + его персональные знания + знания
+          // проекта чата. Права считает kbViewOf (kb/access.ts), а не ход.
+          const bundle = await deps.kb.context(kbQuery, 3500, {
+            ...kbViewOf(deps.db, userId),
+            ...(conv?.projectId ? { projectId: conv.projectId } : {})
+          })
           if (bundle.autoInjectAllowed && bundle.sections.length) {
             // Блоки собираем по одному: их длины — точные символы каждого раздела,
             // пришедшие модели (в панели это единственное честное число).

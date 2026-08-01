@@ -3384,6 +3384,17 @@
 .kbresult-title { font-weight:700; }.kbresult-heading,.kbresult-why { color:var(--accent); font-size:12px; }.kbresult-text { color:var(--muted); font-size:13px; line-height:1.35; }
 .kbdoc { overflow:auto; padding:20px 26px 50px; }.kbdoc header { border-bottom:1px solid var(--line); margin-bottom:18px; }.kbdoc header h3 { margin:0 0 5px; }.kbdoc header p { color:var(--muted); }
 .kbfiles { display:flex; flex-direction:column; gap:6px; margin-top:24px; padding:14px; border:1px solid var(--line); border-radius:10px; }.kbfiles code { overflow-wrap:anywhere; }.kberror { margin-bottom:16px; }
+/* Разделы БЗ: «Использование» / «Настройки пользователя» / «Разработка проекта». */
+.kbscopes { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); }
+.kbscopes button { border:1px solid var(--line); background:transparent; color:var(--muted); padding:6px 12px; border-radius:999px; cursor:pointer; font-family:inherit; }
+.kbscopes button.active { background:var(--surface2); color:var(--text); font-weight:600; }
+.kbscopes select { padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font-family:inherit; }
+.kbresearch { margin:0; padding:8px 16px; color:var(--muted); font-size:13px; border-bottom:1px solid var(--line); }
+.kbdoc-actions { display:flex; gap:8px; padding:0 0 10px; }
+.kbeditor { display:flex; flex-direction:column; gap:10px; }
+.kbeditor input, .kbeditor textarea { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--text); font-family:inherit; }
+.kbeditor textarea { resize:vertical; min-height:220px; font-family:var(--mono, monospace); font-size:13px; }
+.kbeditor-actions { display:flex; gap:8px; }
 .kbskel { padding:4px; }
 .kbrefresh { margin:0; padding:6px 8px; }
 @media (max-width: 760px) { .kbtool { width:100vw; height:100vh; }.kbbar { align-items:stretch; flex-direction:column; }.kbstatus { white-space:normal; }.kblayout { grid-template-columns:1fr; overflow:auto; }.kbfilters { display:flex; gap:4px; border-right:0; border-bottom:1px solid var(--line); overflow:auto; }.kbfilters button { width:auto; white-space:nowrap; }.kbresults { border-right:0; border-bottom:1px solid var(--line); max-height:38vh; }.kbdoc { min-height:45vh; padding:18px; } }

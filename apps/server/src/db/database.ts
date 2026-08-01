@@ -38,6 +38,8 @@ import {
   type KanbanColumnSemanticType,
 
   estimateKbTokens,
+  type KbDocumentKind,
+  type KbScope,
   type KbFreshness,
   type KbMatchType,
   type KbProjectUsageReport,
@@ -1480,6 +1482,14 @@ export class VoiceChatDb {
       ].forEach(([name, semantic], i) =>
         this.db.prepare(`INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`).run(this.newId(), id, name, semantic, (i + 1) * RANK_STEP, ts)
       )
+      // Скелет раздела «Разработка проекта»: обзорная статья-заготовка. Без неё
+      // раздел пустой, и «Исследовать проект» нечего сверять с кодом.
+      this.db
+        .prepare(
+          `INSERT INTO kb_documents (id, scope, owner_id, project_id, title, kind, tags, areas, body, checked_on, created_by, created_at, updated_at)
+           VALUES (?, 'project', NULL, ?, ?, 'subsystem', '[\"обзор\"]', '[]', ?, NULL, ?, ?, ?)`
+        )
+        .run(this.newId(), id, `Разработка: ${args.name}`, projectKbSkeleton(args.name, args.description ?? ''), userId, ts, ts)
     })()
     return this.getProject(userId, id) as ProjectDetail
   }
@@ -3022,6 +3032,114 @@ export class VoiceChatDb {
     }
     return rows.map((row) => mapKbUsageQuery(row, byQuery.get(row.id) ?? []))
   }
+
+  // ---- Статьи базы знаний (разделы «Настройки пользователя» и «Разработка») ----
+  //
+  // Раздел «Использование» лежит в файлах репозитория (docs/kb) и одинаков для
+  // всех; здесь — то, что пишут пользователь и модель. Проверку доступа делает
+  // слой БЗ (kb/access.ts): методы ниже принадлежностью только помечают строки,
+  // фильтровать по ней обязан вызывающий.
+
+  /** Статьи по фильтру принадлежности. Без фильтра — все (для сборки индекса). */
+  kbDocuments(filter: { scope?: KbScope; projectId?: string | null; ownerId?: string | null } = {}): KbStoredDocument[] {
+    const where: string[] = []
+    const params: unknown[] = []
+    if (filter.scope) {
+      where.push('scope = ?')
+      params.push(filter.scope)
+    }
+    if (filter.projectId !== undefined && filter.projectId !== null) {
+      where.push('project_id = ?')
+      params.push(filter.projectId)
+    }
+    if (filter.ownerId !== undefined && filter.ownerId !== null) {
+      where.push('owner_id = ?')
+      params.push(filter.ownerId)
+    }
+    const rows = this.db
+      .prepare(`SELECT * FROM kb_documents${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY updated_at DESC`)
+      .all(...params) as KbDocumentRow[]
+    return rows.map(mapKbDocument)
+  }
+
+  kbDocumentById(id: string): KbStoredDocument | null {
+    const row = this.db.prepare(`SELECT * FROM kb_documents WHERE id = ?`).get(id) as KbDocumentRow | undefined
+    return row ? mapKbDocument(row) : null
+  }
+
+  /**
+   * Версия набора статей: количество + максимум updated_at. Индекс БЗ держится в
+   * памяти и пересобирается только при смене версии — иначе каждый поиск платил
+   * бы за перечитывание всех статей.
+   */
+  kbDocumentsVersion(): string {
+    const row = this.db.prepare(`SELECT COUNT(*) AS n, IFNULL(MAX(updated_at), 0) AS ts FROM kb_documents`).get() as {
+      n: number
+      ts: number
+    }
+    return `${row.n}:${row.ts}`
+  }
+
+  /** Создать статью или переписать существующую (id задаёт вызывающий). */
+  saveKbDocument(args: {
+    id?: string | null
+    scope: KbScope
+    ownerId?: string | null
+    projectId?: string | null
+    title: string
+    body: string
+    kind?: KbDocumentKind
+    tags?: string[]
+    areas?: string[]
+    checkedOn?: string | null
+    createdBy?: string
+  }): KbStoredDocument {
+    const ts = this.now()
+    const existing = args.id ? this.kbDocumentById(args.id) : null
+    const id = existing?.id ?? args.id ?? this.newId()
+    if (existing) {
+      this.db
+        .prepare(
+          `UPDATE kb_documents SET title = ?, body = ?, kind = ?, tags = ?, areas = ?, checked_on = ?, updated_at = ? WHERE id = ?`
+        )
+        .run(
+          args.title,
+          args.body,
+          args.kind ?? existing.kind,
+          JSON.stringify(args.tags ?? existing.tags),
+          JSON.stringify(args.areas ?? existing.areas),
+          args.checkedOn ?? existing.checkedOn,
+          ts,
+          id
+        )
+    } else {
+      this.db
+        .prepare(
+          `INSERT INTO kb_documents (id, scope, owner_id, project_id, title, kind, tags, areas, body, checked_on, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          id,
+          args.scope,
+          args.ownerId ?? null,
+          args.projectId ?? null,
+          args.title,
+          args.kind ?? 'subsystem',
+          JSON.stringify(args.tags ?? []),
+          JSON.stringify(args.areas ?? []),
+          args.body,
+          args.checkedOn ?? null,
+          args.createdBy ?? args.ownerId ?? '',
+          ts,
+          ts
+        )
+    }
+    return this.kbDocumentById(id) as KbStoredDocument
+  }
+
+  deleteKbDocument(id: string): boolean {
+    return this.db.prepare(`DELETE FROM kb_documents WHERE id = ?`).run(id).changes > 0
+  }
 }
 
 // ============== Использование базы знаний: строки БД и мапперы ==============
@@ -3276,4 +3394,77 @@ function mapCiSuggestion(r: CiSuggestionRow): CiCommandSuggestion {
     status: r.status === 'accepted' || r.status === 'rejected' ? r.status : 'new',
     occurrences: r.occurrences, createdAt: r.created_at, resolvedBy: r.resolved_by, resolvedAt: r.resolved_at
   }
+}
+
+
+// ============== Статьи базы знаний: строка БД и маппер ==============
+
+interface KbDocumentRow {
+  id: string; scope: string; owner_id: string | null; project_id: string | null; title: string; kind: string
+  tags: string; areas: string; body: string; checked_on: string | null; created_by: string
+  created_at: number; updated_at: number
+}
+
+/** Статья БЗ из БД (файловые темы приходят из docs/kb и сюда не попадают). */
+export interface KbStoredDocument {
+  id: string
+  scope: KbScope
+  ownerId: string | null
+  projectId: string | null
+  title: string
+  kind: KbDocumentKind
+  tags: string[]
+  areas: string[]
+  body: string
+  checkedOn: string | null
+  createdBy: string
+  createdAt: number
+  updatedAt: number
+}
+
+function mapKbDocument(r: KbDocumentRow): KbStoredDocument {
+  return {
+    id: r.id,
+    scope: r.scope === 'usage' || r.scope === 'project' ? r.scope : 'user',
+    ownerId: r.owner_id,
+    projectId: r.project_id,
+    title: r.title,
+    kind: (r.kind || 'subsystem') as KbDocumentKind,
+    tags: parseStringArray(r.tags),
+    areas: parseStringArray(r.areas),
+    body: r.body,
+    checkedOn: r.checked_on,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }
+}
+
+
+/**
+ * Заготовка обзорной статьи раздела «Разработка проекта». Пишется при создании
+ * проекта, чтобы разделу было куда расти: дальше её переписывает операция
+ * «Исследовать проект» (kb/research.ts) или человек руками.
+ */
+export function projectKbSkeleton(name: string, description: string): string {
+  return [
+    `# Разработка: ${name}`,
+    '',
+    description.trim() || 'Описание проекта пока не заполнено.',
+    '',
+    '## Что это',
+    '',
+    'Заготовка обзорной статьи. Здесь держим то, что верно в коде сейчас: из чего',
+    'состоит проект, где что лежит, как его собирать и проверять.',
+    '',
+    '## Устройство',
+    '',
+    'Пока не описано. Запустите «Исследовать проект» — модель просканирует',
+    'репозиторий на машине проекта и заполнит раздел по коду.',
+    '',
+    '## Как запускать и проверять',
+    '',
+    'Пока не описано.',
+    ''
+  ].join('\n')
 }

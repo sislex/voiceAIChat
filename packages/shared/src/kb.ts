@@ -1,6 +1,29 @@
 /** Контракт read-only базы знаний проекта voiceAIChat. */
 import type { KbContextMode } from './types'
 
+/**
+ * Раздел базы знаний. Разделы отличаются не темой, а видимостью:
+ *  - `usage`   — как пользоваться ChatAI; общая для всех пользователей;
+ *  - `user`    — персональные знания о настройках/предпочтениях; видит владелец;
+ *  - `project` — знания по разработке конкретного проекта; видят участники проекта.
+ * Контроль доступа делает сервер (см. apps/server/src/kb/access.ts): раздел в
+ * запросе — это фильтр, а не разрешение.
+ */
+export type KbScope = 'usage' | 'user' | 'project'
+
+export const KB_SCOPES: readonly KbScope[] = ['usage', 'user', 'project'] as const
+
+/** Подписи разделов для UI (одни на все экраны — иначе вкладки разъедутся). */
+export const KB_SCOPE_LABELS: Record<KbScope, string> = {
+  usage: 'Использование',
+  user: 'Настройки пользователя',
+  project: 'Разработка проекта'
+}
+
+export function isKbScope(value: unknown): value is KbScope {
+  return value === 'usage' || value === 'user' || value === 'project'
+}
+
 export type KbDocumentKind = 'feature' | 'subsystem' | 'protocol' | 'decision' | 'convention' | 'runbook' | 'package'
 export type KbFreshness = 'current' | 'stale' | 'unknown'
 export type KbMatchType = 'symbol' | 'alias' | 'path' | 'protocol' | 'lexical' | 'semantic'
@@ -19,6 +42,12 @@ export interface KbStatus {
 export interface KbDocumentSummary {
   id: string; title: string; kind: KbDocumentKind; tags: string[]; packages: string[]
   freshness: KbFreshness; sourcePath: string
+  /** Раздел базы знаний (видимость документа). */
+  scope: KbScope
+  /** Проект статьи — только для `scope: 'project'`. */
+  projectId?: string | null
+  /** Документ хранится в БД (создан пользователем/моделью), а не в файлах репозитория. */
+  editable?: boolean
 }
 export interface KbDocument extends KbDocumentSummary {
   updated?: string; body: string; symbols: string[]; protocols: string[]; areas: string[]; related: string[]
@@ -28,8 +57,52 @@ export interface KbSearchResult {
   documentId: string; chunkId: string; title: string; heading: string; excerpt: string; score: number
   matchTypes: KbMatchType[]; explanation: string; freshness: KbFreshness; sourcePath: string; anchor: string
   symbols: string[]; relatedFiles: string[]
+  /** Раздел документа-источника (UI показывает его меткой в выдаче). */
+  scope?: KbScope
+  projectId?: string | null
 }
-export interface KbSearchRequest { query: string; kinds?: KbDocumentKind[]; tags?: string[]; limit?: number }
+export interface KbSearchRequest {
+  query: string; kinds?: KbDocumentKind[]; tags?: string[]; limit?: number
+  /** Ограничить раздел; пусто — все доступные пользователю разделы. */
+  scope?: KbScope
+  /** Ограничить проект (только вместе со `scope: 'project'`). */
+  projectId?: string | null
+}
+
+/** Черновик статьи для записи (создание/правка): id пустой — создать новую. */
+export interface KbDocumentDraft {
+  id?: string
+  scope: KbScope
+  projectId?: string | null
+  title: string
+  body: string
+  kind?: KbDocumentKind
+  tags?: string[]
+  /** Пути в репозитории, за которыми следит статья (как `areas` во фронтматтере). */
+  areas?: string[]
+}
+
+// --- «Исследовать проект» ------------------------------------------------
+//
+// Модель на машине проекта сканирует репозиторий, сверяет статьи раздела
+// «Разработка проекта» с кодом и переписывает их. Операция длинная, поэтому
+// REST отдаёт снапшот состояния, а UI опрашивает его.
+
+export type KbResearchState = 'running' | 'done' | 'error'
+
+export interface KbResearchRun {
+  projectId: string
+  state: KbResearchState
+  /** Кто запустил (логин). */
+  startedBy: string
+  startedAt: number
+  finishedAt: number | null
+  /** Что модель сделала со статьями (для отчёта в UI). */
+  documents: Array<{ id: string; title: string; action: 'created' | 'updated' }>
+  /** Короткое резюме от модели (что изменилось). */
+  note: string
+  error: string | null
+}
 export interface KbContextBundle {
   query: string; confidence: 'high' | 'medium' | 'low'; autoInjectAllowed: boolean
   sections: KbSearchResult[]; relatedFiles: string[]; relatedDocuments: string[]

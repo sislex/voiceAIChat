@@ -118,6 +118,10 @@ export const REST = {
   kbSearch: '/api/kb/search',
   kbContext: '/api/kb/context',
   kbDocument: (id: string) => `/api/kb/documents/${encodeURIComponent(id)}`,
+  /** Запись статьи БЗ (создание/правка); раздел и проект — в теле запроса. */
+  kbDocuments: '/api/kb/documents',
+  /** «Исследовать проект»: POST — запустить, GET — состояние последнего прогона. */
+  projectKbResearch: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb/research`,
   /** Телеметрия обращений модели к БЗ: по одному чату и агрегат по проекту. */
   conversationKbUsage: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage`,
   projectKbUsage: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb-usage`,

@@ -20,6 +20,7 @@ const doc: KbDocument = {
   id: 'protocol',
   title: 'Протокол',
   kind: 'protocol',
+  scope: 'usage',
   tags: [],
   packages: [],
   freshness: 'current',
@@ -47,7 +48,7 @@ const hit: KbSearchResult = {
 function stubKb(over: Partial<KnowledgeBaseService> = {}): KnowledgeBaseService {
   return {
     status: () => ({ available: true, mode: 'source', searchMode: 'lexical', version: 'v', createdAt: 'now', documents: 1, chunks: 3, staleDocuments: 0 }),
-    topics: () => [{ id: 'protocol', title: 'Протокол', kind: 'protocol', tags: [], packages: [], freshness: 'current', sourcePath: 'docs/kb/protocol.md' }],
+    topics: () => [{ id: 'protocol', title: 'Протокол', kind: 'protocol', scope: 'usage', tags: [], packages: [], freshness: 'current', sourcePath: 'docs/kb/protocol.md' }],
     document: (id) => (id === 'protocol' ? doc : null),
     search: async () => [hit],
     context: async () => ({ query: '', confidence: 'low', autoInjectAllowed: false, sections: [], relatedFiles: [], relatedDocuments: [], staleWarnings: [], estimatedTokens: 0 }),

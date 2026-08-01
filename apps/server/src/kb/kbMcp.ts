@@ -12,7 +12,8 @@ import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { KbDocument } from '@voicechat/shared'
-import type { KnowledgeBaseService } from './types.js'
+import type { KbView, KnowledgeBaseService } from './types.js'
+import { PUBLIC_KB_VIEW } from './types.js'
 import type { KbUsageTracker } from './usage.js'
 
 export const KB_MCP_PATH = '/mcp/kb'
@@ -123,6 +124,11 @@ export interface RegisterKbMcpOptions {
   kb: KnowledgeBaseService
   secret: string
   usage?: KbUsageTracker
+  /**
+   * Вид пользователя хода: без него модель видит только общий раздел
+   * «Использование» (безопасный дефолт — инструмент не должен обходить доступ).
+   */
+  viewOf?: (entry: KbToolEntry) => KbView
 }
 
 export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions): void {
@@ -130,6 +136,9 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
   app.post<{ Querystring: { k?: string; turn?: string } }>(KB_MCP_PATH, async (req, reply) => {
     if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
     const entry = kbToolBroker.get(req.query.turn ?? '')
+
+    // Вид считаем один раз на запрос: он же гейт доступа к знаниям проекта.
+    const view: KbView = entry && opts.viewOf ? opts.viewOf(entry) : PUBLIC_KB_VIEW
 
     const server = new McpServer({ name: 'kb', version: '1.0.0' })
     /** Ход уже завершён (или токен чужой) — читать БЗ не от чьего имени. */
@@ -151,7 +160,7 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         if (!entry) return noContext
         const handle = open('tool_search', query)
         try {
-          const found = await kb.search({ query, limit: limit && limit > 0 ? Math.min(limit, 20) : 8 })
+          const found = await kb.search({ query, limit: limit && limit > 0 ? Math.min(limit, 20) : 8 }, view)
           if (!found.length) {
             handle?.empty('no-match')
             return { content: [{ type: 'text', text: 'В базе знаний ничего не нашлось. Дальше — по коду.' }] }
@@ -199,7 +208,7 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         const label = `${documentId}${anchor ? `#${anchor}` : ''}`
         const handle = open('tool_document', label)
         try {
-          const doc = kb.document(documentId)
+          const doc = kb.document(documentId, view)
           const slice = doc ? sectionOf(doc, anchor) : null
           if (!doc || !slice) {
             handle?.empty('no-match')
@@ -235,7 +244,7 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         if (!entry) return noContext
         const handle = open('tool_topics', 'оглавление')
         try {
-          const topics = kb.topics()
+          const topics = kb.topics(view)
           if (!topics.length) {
             handle?.empty('no-match')
             return { content: [{ type: 'text', text: 'База знаний пуста.' }] }

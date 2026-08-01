@@ -41,7 +41,7 @@ import type {
   WorkItemDefaultSkills
 } from './projects'
 
-import type { KbContextBundle, KbDocument, KbDocumentSummary, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
+import type { KbContextBundle, KbDocument, KbDocumentDraft, KbDocumentSummary, KbResearchRun, KbScope, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
 
 /** Статус локальной модели Whisper. */
 export interface SttStatus {
@@ -83,10 +83,17 @@ export interface UploadInfo {
 export interface IpcInvokeMap {
   'app:ping': { arg: void; result: string }
   'kb:status': { arg: void; result: KbStatus }
-  'kb:topics': { arg: void; result: KbDocumentSummary[] }
+  /** Оглавление доступных разделов; фильтр по разделу/проекту — необязательный. */
+  'kb:topics': { arg: { scope?: KbScope; projectId?: string | null } | void; result: KbDocumentSummary[] }
   'kb:search': { arg: KbSearchRequest; result: KbSearchResult[] }
   'kb:document': { arg: { id: string }; result: KbDocument | null }
   'kb:context': { arg: { query: string; budget?: number }; result: KbContextBundle }
+  /** Создать/переписать статью раздела «Настройки пользователя» или «Разработка проекта». */
+  'kb:saveDocument': { arg: KbDocumentDraft; result: KbDocument }
+  'kb:deleteDocument': { arg: { id: string }; result: void }
+  /** «Исследовать проект»: запустить сверку статей с кодом и получить состояние. */
+  'kb:research': { arg: { projectId: string }; result: KbResearchRun }
+  'kb:researchStatus': { arg: { projectId: string }; result: KbResearchRun | null }
   /**
    * Помощник промптов: по черновику запроса вернуть несколько переформулировок.
    * Одноразовый LLM-вызов, историю разговора не трогает.
@@ -641,6 +648,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'kb:search',
   'kb:document',
   'kb:context',
+  'kb:saveDocument',
+  'kb:deleteDocument',
+  'kb:research',
+  'kb:researchStatus',
   'prompt:suggest',
   'conversations:list',
   'conversations:create',

@@ -67,7 +67,7 @@ describe('App — утилиты как страницы по URL', () => {
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
     api['kb:document'] = async ({ id }) =>
       id === 'protocol'
-        ? { id: 'protocol', title: 'Протокол', kind: 'protocol', tags: [], packages: [], freshness: 'current', sourcePath: 'docs/kb/protocol.md', updated: '2026-07-27', body: '# Протокол\n\nКадры JSON.', symbols: [], protocols: [], areas: [], related: [], headings: [] }
+        ? { id: 'protocol', title: 'Протокол', kind: 'protocol', scope: 'usage', tags: [], packages: [], freshness: 'current', sourcePath: 'docs/kb/protocol.md', updated: '2026-07-27', body: '# Протокол\n\nКадры JSON.', symbols: [], protocols: [], areas: [], related: [], headings: [] }
         : null
     render(<App api={api} delays={SLOW} />)
     // Страница БЗ открыта, и документ из адреса уже подгружен — ссылка работает.

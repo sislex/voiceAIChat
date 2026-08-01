@@ -30,10 +30,16 @@ journal_mode = WAL`, `foreign_keys = ON`.
 | `users` | `name` (PK и он же id владельца), `password_hash`, `role`, `blocked` |
 | `kb_usage_queries` | обращение к базе знаний: `seq` (монотонный курсор внутри разговора — по нему клиент отсекает устаревшие кадры `kb.usage`), `source` (`auto`/`tool_*`), `status`, `chars`/`est_tokens`, `prompt_chars`, `project_id` — СНИМОК проекта на момент обращения; каскад по разговору |
 | `kb_usage_sections` | разделы одного обращения (`document_id`+`anchor`, символы и оценка токенов), каскад по обращению |
+| `kb_documents` | статьи базы знаний, которые ведут пользователь и модель: `scope` (`usage`/`user`/`project`), `owner_id` для персональных, `project_id` для проектных (каскад по проекту); файловые темы `docs/kb/*.md` сюда не попадают |
 
 Файл БД — `<dataDir>/voicechat.db` (в Docker `/data`). Тесты работают на
 `:memory:` через `BuildOptions.db`. Вложения — `apps/server/src/uploads.ts`
 (`POST /api/uploads` → id, путь резолвится в промпт для модели).
+
+Видимость статей `kb_documents` считает не БД, а слой БЗ (`apps/server/src/kb/scoped.ts`
+поверх «вида» из `kb/access.ts`): персональная статья — только владельцу, проектная —
+участникам проекта (`db.getProject(uid, projectId)`), «Использование» — всем. В таблице
+хранится только принадлежность; см. `features/project-knowledge-base.md`.
 
 Итоги обращений к БЗ считаются ОТДЕЛЬНЫМ запросом по `kb_usage_queries`, без
 JOIN с `kb_usage_sections`: иначе суммы размножаются по числу разделов. `prompt_chars`
