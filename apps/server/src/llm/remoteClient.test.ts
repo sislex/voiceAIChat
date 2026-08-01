@@ -223,6 +223,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
           model: 'opus',
           permissionMode: 'bypassPermissions',
           cwd: '/root/work',
+          attachments: [{ serverPath: '/data/uploads/a.txt', runnerName: 'a.txt', dataBase64: 'YQ==' }],
           kbMcpUrl: 'http://127.0.0.1:8787/mcp/kb?k=x',
           remote: { mcpUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=y', agentName: 'Ноутбук' }
         },
@@ -240,6 +241,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
         model: 'opus',
         permissionMode: 'bypassPermissions',
         cwd: '/root/work',
+        attachments: [{ serverPath: '/data/uploads/a.txt', runnerName: 'a.txt', dataBase64: 'YQ==' }],
         kbMcpUrl: 'http://127.0.0.1:8787/mcp/kb?k=x',
         remote: { agentName: 'Ноутбук' }
       })

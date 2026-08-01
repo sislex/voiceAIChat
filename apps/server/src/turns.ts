@@ -4,8 +4,9 @@
 // всем подключённым клиентам; при (пере)подключении клиент получает снапшот
 // активных ходов с накопленным частичным текстом (claude.active).
 
-import { existsSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import { basename } from 'node:path'
 import {
   appendImageHint,
   appendQuestionsHint,
@@ -24,7 +25,8 @@ import {
   type SttSegmentWire,
   type TurnMeta,
   type TurnRequestInfo,
-  type TurnUsage
+  type TurnUsage,
+  type LlmAttachment
 } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
 import { relocateImagesToMachine } from './imageRelocate.js'
@@ -55,7 +57,7 @@ export interface TurnManagerDeps {
     register(token: string, entry: { userId: string; conversationId: string; projectId: string | null; turnId: string }): void
     unregister(token: string): void
   }
-  /** Резолв id вложения → абсолютный путь на сервере (для промпта Claude). */
+  /** Резолв id вложения → абсолютный путь на сервере (для промпта и runner). */
   resolveUpload?: (id: string) => string | undefined
   /** Онлайн-статус и политика машин-агентов (для проброса Bash на клиента). */
   agents?: {
@@ -76,6 +78,19 @@ export interface TurnManagerDeps {
 }
 
 /** Запрос нового хода (соответствует клиентскому claude.send). */
+function loadAttachment(path: string | undefined): LlmAttachment | null {
+  if (!path) return null
+  try {
+    return {
+      serverPath: path,
+      runnerName: basename(path),
+      dataBase64: readFileSync(path).toString('base64')
+    }
+  } catch {
+    return null
+  }
+}
+
 export interface StartTurnRequest {
   /** Владелец разговора (логин пользователя) — для изоляции данных. */
   userId: string
@@ -238,12 +253,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Рабочий каталог разговора (`conv.workdir`) выбирается через проводник
     // МАШИНЫ — это путь на её хосте, и в контейнере сервера его нет. Он уходит
     // только в MCP-мост (`&cwd=`), где `remote.bash` делает `cd` на агенте.
-    // Локальный `cwd` для процесса claude берём исключительно из серверных
-    // настроек и только если каталог реально существует здесь.
-    const localCwd = settings.workdir && existsSync(settings.workdir) ? settings.workdir : undefined
-    const attachmentPaths = (req.attachments ?? [])
-      .map((id) => deps.resolveUpload?.(id))
-      .filter((p): p is string => typeof p === 'string')
+    // Локальный `cwd` для CLI теперь не валидируем на сервере: исполнитель сам
+    // решает, существует ли каталог и можно ли в него перейти.
+    const desiredCwd = settings.workdir ?? undefined
+    const attachments = (req.attachments ?? [])
+      .map((id) => loadAttachment(deps.resolveUpload?.(id)))
+      .filter((att): att is LlmAttachment => Boolean(att))
+    const attachmentPaths = attachments.map((att) => att.serverPath)
     // Есть сессия → продолжаем одним ходом (--resume). Нет (новый разговор или
     // сессия сброшена после удаления/правки) → пересобираем промпт из текущей
     // истории БД, чтобы контекст модели совпадал с видимым (без удалённых реплик).
@@ -373,9 +389,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         policySummary: policy ? policySummary(policy, conv?.skillNames ?? []) : undefined
       }
     }
-    // Никогда не подставляем сюда каталог машины: chdir в несуществующий (или
-    // чужой, вроде /root) путь роняет спавн с ENOENT/EACCES ещё до запуска CLI.
-    const cwd = localCwd
+    // `cwd` здесь только желаемый: локальный spawn или удалённый runner уже сами
+    // решают, можно ли в него перейти, и при невозможности просто пропускают chdir.
+    const cwd = desiredCwd
     // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
     // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
     // выполнения). На своей машине действия регулирует политика машины.
@@ -426,6 +442,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     turn.handle = client.send(
       {
         userId, prompt, sessionId, model, permissionMode, cwd, remote, executionDisabled,
+        ...(attachments.length ? { attachments } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {})
       },
       {

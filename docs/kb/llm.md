@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-01
-checked: dc73c33
+checked: 55be9d3
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -79,6 +79,14 @@ NDJSON-конверты `{t:'out'|'err', s}` / `{t:'exit', code}`. Строки 
 stdout CLI, поэтому разбор stream-json/JSONL, usage и `session_id` остаются на
 сервере: `turns.ts`, CI-раннер и парсеры `packages/shared` не отличают удалённый
 ход от локального.
+
+`LlmRequest.attachments` решает проблему серверных абсолютных путей в prompt: сервер
+по-прежнему собирает prompt с путями из своей ФС, но вместе с запросом передаёт
+байты вложений и исходный `serverPath`. Исполнитель создаёт временный каталог рана,
+кладёт туда файлы, переписывает prompt по карте `serverPath → runnerPath` и удаляет
+каталог после завершения или отмены рана. Аналогично `cwd` стал «желаемым»: сервер
+его больше не проверяет через `existsSync`, а исполнитель сам решает, можно ли
+сделать `chdir`; несуществующий путь просто игнорируется.
 
 Общее место разбора — `llm/sinks.ts`: приёмник строк (`createClaudeSink` /
 `createCodexSink`) отделён от способа их получить, им пользуются и локальные

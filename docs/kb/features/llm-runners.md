@@ -3,7 +3,7 @@ id: llm-runners
 title: Исполнители LLM: контейнеры с claude/codex CLI
 kind: feature
 updated: 2026-08-01
-checked: 9306637
+checked: 55be9d3
 areas:
   - apps/llm-runner/src
   - packages/shared/src/llm.ts
@@ -77,6 +77,17 @@ Codex парсит сервер (`packages/shared/src/streamJson.ts`, `codexStre
 `claudeArgs(req)` и `codexInvocation(req)` вынесены из CLI-классов и вызываются
 двумя путями (класс с разбором и сырой ран), чтобы сборка argv и добавки к
 системному промпту не разъехались в двух копиях.
+
+`LlmRequest.cwd` и `LlmRequest.attachments` теперь трактуются исполнителем, а не
+сервером. `cwd` приходит как желаемый каталог: `RunManager` проверяет его уже на
+хосте исполнителя и при несуществующем пути просто не передаёт `cwd` в `spawn`,
+вместо того чтобы уронить запуск `ENOENT`/`EACCES`. Вложения сервер шлёт байтами
+(`serverPath`, `runnerName`, `dataBase64`), а `prepareRun()` раскладывает их во
+временный каталог `voicechat-llm-run-*`, подменяет в prompt все вхождения
+`serverPath` на локальные пути этого каталога и удаляет каталог при нормальном
+завершении, отмене, обрыве клиента и даже если `spawn` бросил исключение. Так
+удалённый CLI видит реальные файлы своей машины, хотя prompt собирался по путям
+ФС сервера.
 
 ## Ран не переживает своего клиента
 
