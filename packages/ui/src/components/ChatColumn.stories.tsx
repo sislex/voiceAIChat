@@ -36,6 +36,7 @@ const noop = (): void => {}
 function bar(state: VoiceState = 'idle'): JSX.Element {
   return (
     <VoiceBar
+      defaultCollapsed={false}
       state={state}
       draft=""
       diarization
