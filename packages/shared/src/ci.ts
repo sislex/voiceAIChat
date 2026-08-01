@@ -47,6 +47,12 @@ export interface CiCommand {
   isCleanup: boolean
   /** Доступна ли команда как инструмент модели. */
   availableToModel: boolean
+  /**
+   * Команда-проверка (тесты/typecheck/линт). Такие шаги гоняет только воркфлоу:
+   * модели они как инструмент не публикуются — иначе гейт прогоняется дважды
+   * (ход модели + шаг слота), а расхождения модель чинит вслепую.
+   */
+  isTest: boolean
   /** Встроенный серверный шаг (script не исполняется); null/undefined — обычная команда. */
   builtin?: CiBuiltinStep | null
   /** Версия текста команды (растёт при принятии предложения/правке скрипта). */
@@ -71,6 +77,21 @@ export interface CiCommandInput {
   allowFailure?: boolean
   isCleanup?: boolean
   availableToModel?: boolean
+  isTest?: boolean
+}
+
+/**
+ * Проверочные команды по тексту: тесты, typecheck, линт. Признак `isTest` в
+ * справочнике мог не проставить тот, кто заводил команду, поэтому раннер узнаёт
+ * гейт ещё и по самой команде. `npm ci` и сборка сюда не попадают: установка
+ * зависимостей модели по-прежнему доступна.
+ */
+const VERIFICATION_RE =
+  /\b(vitest|jest)\b|\b(npm|pnpm|yarn)\s+(run\s+)?(-w\s+\S+\s+|--workspace[=\s]\S+\s+)?(test|typecheck|lint)([:\w-]*)\b/i
+
+/** Команда — прогон гейта (по флагу справочника или по тексту команды)? */
+export function isVerificationCommand(cmd: { isTest?: boolean; name?: string | null; script?: string | null }): boolean {
+  return cmd.isTest === true || VERIFICATION_RE.test(cmd.name ?? '') || VERIFICATION_RE.test(cmd.script ?? '')
 }
 
 /** Привязка команды к слоту (дефолт проекта или переопределение задачи). */

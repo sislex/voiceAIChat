@@ -9,7 +9,7 @@ import type {
   ServerMessage, CiRun, CiRunStep, CiStatus, CiSlot, CiSlotProgress, CiCommand,
   CiRunMode, CiInteraction, CiInteractionAnswer, CiPlanDecision, QuestionSpec, Message, Task
 } from '@voicechat/shared'
-import { formatQuestionsBlock, issueKey } from '@voicechat/shared'
+import { formatQuestionsBlock, issueKey, isVerificationCommand } from '@voicechat/shared'
 import { isTerminalCiStatus } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
@@ -97,6 +97,12 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   const active = new Map<string, ActiveRun>()
   /** Ожидающие ответа паузы: runId → как разбудить `execute`. */
   const pendingInteractions = new Map<string, { interactionId: string; resolve: (v: CiInteraction | null) => void }>()
+  /**
+   * runId → id CLI-сессии модели. Живёт в памяти менеджера, а не в хуке: работа
+   * модели и fix-loop — разные вызовы, а диалог у них должен быть один
+   * (`--resume`), иначе модель чинит упавший шаг, не помня, что она написала.
+   */
+  const modelSessions = new Map<string, string | null>()
 
   // Серверный лимит одновременных ранов (значение читаем при каждом захвате).
   // Очередь FIFO: `waiters` в порядке постановки. Раны разных задач идут
@@ -275,6 +281,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
         lockReleases.get(runId)?.()
         runSlots.delete(runId)
         active.delete(runId)
+        modelSessions.delete(runId)
       })
   }
 
@@ -656,6 +663,9 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
         const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
         const r = await runCommandStep(runId, userId, agentId, workspacePath, env, null, steps.length, command, 'model', parentStepId, signal)
         return { exitCode: r.exitCode, timedOut: r.status === 'timeout', output: r.output }
+      },
+      setModelSessionId: (sessionId) => {
+        modelSessions.set(runId, sessionId)
       },
       recordFix: (a) => {
         const attempt = deps.db.addCiFixAttempt(a)
@@ -1133,7 +1143,16 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     const failedStep = detail?.steps.slice().reverse().find((s) => s.status === 'failed' || s.status === 'timeout')
     if (!failedStep) return false
     const prim = makePrimitives(runId, userId, agentId, workspacePath, env, signal)
-    const logTail = deps.db.getCiRunLog(userId, runId).filter((l) => l.stepId === failedStep.id).slice(-40).map((l) => l.chunk).join('')
+    // Шаг гейта (тесты/typecheck/линт) отличаем от обычного: vitest печатает
+    // много, и по сорока строкам хвоста упавших тестов не видно.
+    const failedCommand = failedStep.commandId ? deps.db.getCiCommand(userId, failedStep.commandId) : null
+    const isTestStep = isVerificationCommand(failedCommand ?? { name: failedStep.title, script: failedStep.commandSnapshot })
+    const logTail = deps.db
+      .getCiRunLog(userId, runId)
+      .filter((l) => l.stepId === failedStep.id)
+      .slice(isTestStep ? -400 : -40)
+      .map((l) => l.chunk)
+      .join('')
     const ctx: CiFixContext = {
       ...prim,
       run: deps.db.getCiRunRaw(runId)!,
@@ -1142,6 +1161,8 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       parentStepId: failedStep.id,
       failedStep,
       logTail,
+      modelSessionId: modelSessions.get(runId) ?? null,
+      isTestStep,
       rerunFailedStep: async () => {
         const command = failedStep.commandId ? deps.db.getCiCommand(userId, failedStep.commandId) : null
         if (!command) return { exitCode: null, timedOut: false }
