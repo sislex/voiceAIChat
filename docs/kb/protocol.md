@@ -121,7 +121,7 @@ SIGTERM) `flushInterrupted` сохраняет частичный текст а�
 
 Настройки выполнения принадлежат разговору: `Conversation.execTarget` (id машины,
 `null` — сервер, `'none'` — команды запрещены), `workdir` и `skillNames`, плюс
-переопределение движка/модели `llmProvider`/`llmModel` (`null` — из общих
+переопределение исполнителя/движка/модели `llmEngineId`/`llmProvider`/`llmModel` (`null` — из общих
 настроек; модель codex `''` — дефолт из конфига codex) и режима прав
 `permissionMode` (`plan`/`acceptEdits`/`bypassPermissions`, `null` — из общих
 настроек; страница настроек разговора показывает фактический режим с учётом

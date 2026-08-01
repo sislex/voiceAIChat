@@ -132,6 +132,7 @@ interface ConversationRow {
   exec_target: string | null
   workdir: string | null
   skill_names: string | null
+  llm_engine_id: string | null
   llm_provider: string | null
   llm_model: string | null
   permission_mode: string | null
@@ -528,6 +529,9 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'skill_names')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN skill_names TEXT NOT NULL DEFAULT '[]'`)
     }
+    if (!convCols.some((c) => c.name === 'llm_engine_id')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN llm_engine_id TEXT`)
+    }
     if (!convCols.some((c) => c.name === 'llm_provider')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN llm_provider TEXT`)
     }
@@ -656,6 +660,7 @@ export class VoiceChatDb {
     // дефолт 14 дней (DEFAULT в ALTER заполняет старые строки).
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'done_retention_days')) this.db.exec(`ALTER TABLE projects ADD COLUMN done_retention_days INTEGER DEFAULT ${DEFAULT_DONE_RETENTION_DAYS}`)
     const ciRunCols = this.db.prepare(`PRAGMA table_info(ci_runs)`).all() as Array<{ name: string }>
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_engine_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_engine_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_provider')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_provider TEXT NOT NULL DEFAULT 'claude'`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_model')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_model TEXT NOT NULL DEFAULT '${DEFAULT_CI_CLAUDE_MODEL}'`)
     // Режим запуска (план/разработка), глубина уточнений и связанный чат рана.
@@ -753,7 +758,7 @@ export class VoiceChatDb {
          VALUES (?, ?, ?, ?, NULL, ?, NULL)`
       )
       .run(id, title, ts, ts, userId)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
   }
 
   /**
@@ -845,7 +850,8 @@ export class VoiceChatDb {
     skillNames?: string[],
     llmProvider?: LlmProvider | null,
     llmModel?: string | null,
-    permissionMode?: PermissionMode | null
+    permissionMode?: PermissionMode | null,
+    llmEngineId?: string | null
   ): Conversation | null {
     const fields = ['exec_target = ?']
     const values: unknown[] = [execTarget]
@@ -856,6 +862,10 @@ export class VoiceChatDb {
     if (skillNames !== undefined) {
       fields.push('skill_names = ?')
       values.push(JSON.stringify(skillNames))
+    }
+    if (llmEngineId !== undefined) {
+      fields.push('llm_engine_id = ?')
+      values.push(llmEngineId)
     }
     if (llmProvider !== undefined) {
       fields.push('llm_provider = ?')
@@ -1384,6 +1394,25 @@ export class VoiceChatDb {
     return row ? this.mapLlmEngine(row) : null
   }
 
+
+  /** Исполнители, доступные роли; секреты наружу не возвращаются. */
+  listLlmEnginesForRole(role: UserRole) {
+    return this.listLlmEngines()
+      .filter((engine) => engine.enabled && engine.allowedRoles.includes(role))
+      .map(({ id, name, kind, isDefault }) => ({ id, name, kind, isDefault }))
+  }
+
+  resolveLlmEngine(engineId: string | null | undefined, kind: LlmEngineKind, role: UserRole) {
+    const allowed = (engine: AdminLlmEngine | null): engine is AdminLlmEngine =>
+      Boolean(engine && engine.kind === kind && engine.enabled && engine.allowedRoles.includes(role))
+    const requested = engineId ? this.getLlmEngine(engineId) : null
+    if (allowed(requested)) return { engine: requested, substituted: false }
+    const fallback = this.listLlmEngines().find((engine) => engine.kind === kind && engine.isDefault && allowed(engine))
+      ?? this.listLlmEngines().find((engine) => engine.kind === kind && allowed(engine))
+      ?? null
+    return { engine: fallback, substituted: Boolean(engineId && engineId !== fallback?.id) }
+  }
+
   createLlmEngine(input: AdminLlmEngineInput): AdminLlmEngine {
     const id = this.newId()
     const ts = this.now()
@@ -1504,6 +1533,7 @@ export class VoiceChatDb {
           return []
         }
       })(),
+      llmEngineId: row.llm_engine_id ?? null,
       llmProvider: row.llm_provider === 'claude' || row.llm_provider === 'codex' ? row.llm_provider : null,
       llmModel: row.llm_model,
       // Мусор в колонке (например, откат версии) читаем как «из общих настроек».
@@ -2666,10 +2696,10 @@ export class VoiceChatDb {
 
   // --- Раны и шаги ---
 
-  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; triggeredBy: string; prevColumnId: string | null; slotProgress: CiSlotProgress; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
+  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; triggeredBy: string; prevColumnId: string | null; slotProgress: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
     const id = this.newId()
     const ts = this.now()
-    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, status, triggered_by, prev_column_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.triggeredBy, args.prevColumnId, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts)
+    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, status, triggered_by, prev_column_id, llm_engine_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.triggeredBy, args.prevColumnId, args.llmEngineId ?? null, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts)
     return mapCiRun(this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(id) as CiRunRow)
   }
 
@@ -2692,7 +2722,7 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC`).all(taskId) as CiRunRow[]).map(mapCiRun)
   }
 
-  updateCiRun(runId: string, patch: { status?: CiStatus; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null }): CiRun | null {
+  updateCiRun(runId: string, patch: { status?: CiStatus; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null }): CiRun | null {
     const set: string[] = []
     const vals: unknown[] = []
     if (patch.status !== undefined) { set.push('status = ?'); vals.push(patch.status) }
@@ -2701,6 +2731,7 @@ export class VoiceChatDb {
     if (patch.finishedAt !== undefined) { set.push('finished_at = ?'); vals.push(patch.finishedAt) }
     if (patch.durationMs !== undefined) { set.push('duration_ms = ?'); vals.push(patch.durationMs) }
     if (patch.slotProgress !== undefined) { set.push('slot_progress_json = ?'); vals.push(JSON.stringify(patch.slotProgress)) }
+    if (patch.llmEngineId !== undefined) { set.push('llm_engine_id = ?'); vals.push(patch.llmEngineId) }
     if (patch.llmProvider !== undefined) { set.push('llm_provider = ?'); vals.push(patch.llmProvider) }
     if (patch.llmModel !== undefined) { set.push('llm_model = ?'); vals.push(patch.llmModel) }
     if (patch.mode !== undefined) { set.push('mode = ?'); vals.push(normRunMode(patch.mode)) }
@@ -3714,7 +3745,7 @@ function parseSlotProgress(j: string): CiSlotProgress {
 interface CiRunRow {
   id: string; project_id: string; task_id: string; agent_id: string | null; status: string
   workspace_id: string | null; triggered_by: string; prev_column_id: string | null
-  llm_provider: string; llm_model: string
+  llm_engine_id: string | null; llm_provider: string; llm_model: string
   mode: string | null; clarify_level: string | null; clarify_max: number | null
   conversation_id: string | null; kb_context_mode: string | null
   slot_progress_json: string; started_at: number | null; finished_at: number | null
@@ -3724,7 +3755,7 @@ function mapCiRun(r: CiRunRow): CiRun {
   return {
     id: r.id, projectId: r.project_id, taskId: r.task_id, agentId: r.agent_id,
     status: normCiStatus(r.status), workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
-    prevColumnId: r.prev_column_id, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || DEFAULT_CI_CLAUDE_MODEL),
+    prevColumnId: r.prev_column_id, llmEngineId: r.llm_engine_id ?? null, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || DEFAULT_CI_CLAUDE_MODEL),
     mode: normRunMode(r.mode), clarifyLevel: normClarifyLevel(r.clarify_level), clarifyMax: clampClarifyMax(r.clarify_max),
     conversationId: r.conversation_id, kbContextMode: normKbContextMode(r.kb_context_mode),
     slotProgress: parseSlotProgress(r.slot_progress_json),

@@ -181,8 +181,8 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     if ('error' in res) return reply.code(409).send({ error: res.error })
     return reply.code(202).send(res.run)
   })
-  app.post<{ Params: { runId: string }; Body: { provider?: 'claude' | 'codex'; model?: string } }>('/api/ci/runs/:runId/retry-from-step', async (req, reply) => {
-    const selection = req.body?.provider && req.body.model !== undefined ? { provider: req.body.provider, model: req.body.model } : undefined
+  app.post<{ Params: { runId: string }; Body: { provider?: 'claude' | 'codex'; model?: string; llmEngineId?: string | null } }>('/api/ci/runs/:runId/retry-from-step', async (req, reply) => {
+    const selection = req.body?.provider && req.body.model !== undefined ? { provider: req.body.provider, model: req.body.model, llmEngineId: req.body.llmEngineId ?? null } : undefined
     const res = ci.retryFromFailed(uid(req), req.params.runId, selection)
     if ('error' in res) return reply.code(409).send({ error: res.error })
     return reply.code(202).send(res.run)

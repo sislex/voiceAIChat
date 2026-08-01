@@ -121,13 +121,14 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:taskChats': () => req(REST.conversationTaskChats),
     'conversations:setStatus': ({ id, status }) =>
       req(REST.conversationStatus(id), { method: 'POST', body: JSON.stringify({ status }) }),
-    'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode }) =>
+    'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode }) =>
       req(REST.conversation(id), {
         method: 'PATCH',
         body: JSON.stringify({
           execTarget,
           ...(workdir !== undefined ? { workdir } : {}),
           ...(skillNames !== undefined ? { skillNames } : {}),
+          ...(llmEngineId !== undefined ? { llmEngineId } : {}),
           ...(llmProvider !== undefined ? { llmProvider } : {}),
           ...(llmModel !== undefined ? { llmModel } : {}),
           ...(permissionMode !== undefined ? { permissionMode } : {}),
@@ -148,6 +149,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'uploads:add': ({ name, dataBase64 }) =>
       req(REST.uploads, { method: 'POST', body: JSON.stringify({ name, dataBase64 }) }),
     'settings:get': () => req(REST.settings),
+    'llm:engines': () => req(REST.llmEngines),
     'settings:save': async (settings) => {
       await req(REST.settings, { method: 'PUT', body: JSON.stringify(settings) })
     },

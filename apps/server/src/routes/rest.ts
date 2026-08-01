@@ -119,6 +119,7 @@ export async function registerRest(
       execTarget?: string | null
       workdir?: string | null
       skillNames?: string[]
+      llmEngineId?: string | null
       llmProvider?: string | null
       llmModel?: string | null
       permissionMode?: string | null
@@ -130,6 +131,10 @@ export async function registerRest(
       if (typeof req.body.title === 'string') db.renameConversation(uid(req), req.params.id, req.body.title)
       if (req.body.kbContextMode === 'auto' || req.body.kbContextMode === 'manual' || req.body.kbContextMode === 'off') db.setConversationKbContextMode(uid(req), req.params.id, req.body.kbContextMode)
       if (req.body.execTarget !== undefined) {
+        const role = db.getUser(uid(req))?.role ?? 'user'
+        if (req.body.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === req.body.llmEngineId)) {
+          return reply.code(403).send({ error: 'llm engine is not available for role' })
+        }
         // Неизвестное значение движка приравниваем к «из общих настроек».
         const llmProvider =
           req.body.llmProvider === undefined
@@ -152,7 +157,8 @@ export async function registerRest(
           req.body.skillNames,
           llmProvider,
           req.body.llmModel,
-          permissionMode
+          permissionMode,
+          req.body.llmEngineId
         )
       }
       const conversation = db.getConversation(uid(req), req.params.id)
@@ -348,9 +354,15 @@ export async function registerRest(
     return { conversation: db.getConversation(u, conv.id), messages: db.listMessages(u, conv.id) }
   })
 
+  app.get(REST.llmEngines, async (req) => db.listLlmEnginesForRole(db.getUser(uid(req))?.role ?? 'user'))
+
   app.get(REST.settings, async (req) => db.getSettings(uid(req)))
 
-  app.put<{ Body: Settings }>(REST.settings, async (req) => {
+  app.put<{ Body: Settings }>(REST.settings, async (req, reply) => {
+    const role = db.getUser(uid(req))?.role ?? 'user'
+    if (req.body.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === req.body.llmEngineId)) {
+      return reply.code(403).send({ error: 'llm engine is not available for role' })
+    }
     db.saveSettings(uid(req), req.body)
     return db.getSettings(uid(req))
   })
