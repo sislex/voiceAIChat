@@ -428,6 +428,30 @@ CREATE TABLE IF NOT EXISTS kb_usage_sections (
 CREATE INDEX IF NOT EXISTS idx_kb_usage_sections_query ON kb_usage_sections(query_id);
 CREATE INDEX IF NOT EXISTS idx_kb_usage_sections_doc ON kb_usage_sections(document_id, anchor);
 
+-- Статьи базы знаний, которые ведут пользователь и модель. Файлы docs/kb/*.md
+-- остаются разделом «Использование» (одинаков для всех), а здесь живут
+-- персональные знания (scope='user', владелец в owner_id) и знания по
+-- разработке проекта (scope='project', проект в project_id). Доступ считает
+-- сервер по членству в проекте — в таблице только принадлежность.
+CREATE TABLE IF NOT EXISTS kb_documents (
+  id          TEXT PRIMARY KEY,
+  scope       TEXT NOT NULL,
+  owner_id    TEXT,
+  project_id  TEXT,
+  title       TEXT NOT NULL,
+  kind        TEXT NOT NULL DEFAULT 'subsystem',
+  tags        TEXT NOT NULL DEFAULT '[]',
+  areas       TEXT NOT NULL DEFAULT '[]',
+  body        TEXT NOT NULL DEFAULT '',
+  -- Дата сверки с кодом (как во фронтматтере файловых тем) — строкой, для человека.
+  checked_on  TEXT,
+  created_by  TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_kb_documents_scope ON kb_documents(scope, project_id, owner_id);
+
 `
 
 /**

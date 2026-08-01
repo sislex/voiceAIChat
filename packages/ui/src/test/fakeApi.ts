@@ -127,6 +127,15 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'kb:search': async () => [],
     'prompt:suggest': async ({ prompt }) => ({ variants: [{ id: 'suggestion-1', text: `${prompt} — уточнённый вариант` }] }),
     'kb:document': async () => null,
+    'kb:saveDocument': async (draft) => ({
+      id: draft.id ?? 'kb-doc-1', title: draft.title, kind: draft.kind ?? 'subsystem', scope: draft.scope,
+      projectId: draft.projectId ?? null, editable: true, tags: draft.tags ?? [], packages: [], freshness: 'unknown',
+      sourcePath: 'мои знания/kb-doc-1', body: draft.body, symbols: [], protocols: [], areas: draft.areas ?? [],
+      related: [], headings: []
+    }),
+    'kb:deleteDocument': async () => {},
+    'kb:research': async ({ projectId }) => ({ projectId, state: 'running', startedBy: 'admin', startedAt: 0, finishedAt: null, documents: [], note: '', error: null }),
+    'kb:researchStatus': async () => null,
     'kb:context': async ({ query }) => ({ query, confidence: 'low', autoInjectAllowed: false, sections: [], relatedFiles: [], relatedDocuments: [], staleWarnings: [], estimatedTokens: 0 }),
     'conversations:list': async ({ includeCompleted } = {}) =>
       [...conversations]

@@ -57,14 +57,25 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       return h.version
     },
     'kb:status': () => req(REST.kbStatus),
-    'kb:topics': () => req(REST.kbTopics),
-    'kb:search': ({ query, kinds, tags, limit }) => {
+    'kb:topics': (arg) => {
+      const q = new URLSearchParams()
+      if (arg?.scope) q.set('scope', arg.scope)
+      if (arg?.projectId) q.set('projectId', arg.projectId)
+      return req(`${REST.kbTopics}${q.size ? `?${q.toString()}` : ''}`)
+    },
+    'kb:search': ({ query, kinds, tags, limit, scope, projectId }) => {
       const q = new URLSearchParams({ q: query })
       if (kinds?.length) q.set('kind', kinds.join(','))
       if (tags?.length) q.set('tags', tags.join(','))
       if (limit) q.set('limit', String(limit))
+      if (scope) q.set('scope', scope)
+      if (projectId) q.set('projectId', projectId)
       return req(`${REST.kbSearch}?${q.toString()}`)
     },
+    'kb:saveDocument': (draft) => req(REST.kbDocuments, { method: 'POST', body: JSON.stringify(draft) }),
+    'kb:deleteDocument': ({ id }) => req(REST.kbDocument(id), { method: 'DELETE' }),
+    'kb:research': ({ projectId }) => req(REST.projectKbResearch(projectId), { method: 'POST' }),
+    'kb:researchStatus': ({ projectId }) => req(REST.projectKbResearch(projectId)),
     'kb:document': async ({ id }) => {
       try { return await req(REST.kbDocument(id)) } catch { return null }
     },

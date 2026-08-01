@@ -53,7 +53,10 @@ import { computeCapabilities } from './system/capabilities.js'
 import type { SystemCapabilities } from '@voicechat/shared'
 import { ensureCliProfile } from './users/cliProfiles.js'
 import { FileKnowledgeBaseService } from './kb/service.js'
-import { registerKbRoutes } from './kb/routes.js'
+import { registerKbRoutes, registerKbResearchRoutes } from './kb/routes.js'
+import { ScopedKnowledgeBase } from './kb/scoped.js'
+import { kbViewOf } from './kb/access.js'
+import { KbResearchManager } from './kb/research.js'
 import type { KnowledgeBaseService } from './kb/types.js'
 import { LlmKbReranker } from './kb/reranker.js'
 import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
@@ -158,7 +161,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const reranker = opts.config.kbRerankProvider === 'disabled'
     ? undefined
     : new LlmKbReranker(opts.config.kbRerankProvider === 'claude' ? claude : codex)
-  const kb = opts.kbService ?? new FileKnowledgeBaseService(opts.config.kbRoot, reranker)
+  // Файловые темы docs/kb — раздел «Использование» (общий для всех); поверх них
+  // ScopedKnowledgeBase добавляет статьи из БД (персональные и проектные) и
+  // решает, что кому видно.
+  const fileKb = opts.kbService ?? new FileKnowledgeBaseService(opts.config.kbRoot, reranker)
+  const kb = new ScopedKnowledgeBase(fileKb, db, reranker)
   // Телеметрия обращений к БЗ: одна на процесс (как реестр ходов) — её события
   // рассылаются всем соединениям пользователя, а строки живут в БД.
   const kbUsage = opts.kbUsage ?? createKbUsageTracker({ db })
@@ -204,7 +211,27 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerCiCommandsMcp(app, mcpSecret)
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
   // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).
-  registerKbMcp(app, { kb, secret: mcpSecret, usage: kbUsage })
+  registerKbMcp(app, {
+    kb,
+    secret: mcpSecret,
+    usage: kbUsage,
+    viewOf: (entry) => ({ ...kbViewOf(db, entry.userId), ...(entry.projectId ? { projectId: entry.projectId } : {}) })
+  })
+
+  // «Исследовать проект»: модель на машине проекта сверяет статьи раздела
+  // «Разработка проекта» с кодом. Живёт рядом с MCP-мостом — ей нужен тот же
+  // remote-bash, что и ходам модели.
+  registerKbResearchRoutes(
+    app,
+    db,
+    new KbResearchManager({
+      db,
+      claude,
+      codex,
+      mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`,
+      agentNameOf: (agentId) => agentRegistry.nameOf(agentId)
+    })
+  )
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
   registerAdminRoutes(app, db, agentRegistry)
