@@ -102,7 +102,7 @@ describe('turns: VC_MCP_PUBLIC_BASE', () => {
     const conv = db.createConversation(U, 'Чат')
     const agent = db.createAgent(U, 'Ноутбук')
     db.setConversationExecTarget(U, conv.id, agent.id, '/root/dir-on-machine')
-    db.setSettings(U, { kbContextMode: 'manual' })
+    db.setConversationKbContextMode(U, conv.id, 'manual')
 
     const config = loadConfig({ PORT: '8787', VC_MCP_PUBLIC_BASE: 'http://voicechat:8787' })
     const rec = recorder()
