@@ -1,14 +1,15 @@
 // Реальный LLM-клиент через Claude Code CLI (Шаг 8).
-// spawn('claude', ['-p', prompt, '--output-format', 'stream-json', ...]) + построчный
-// разбор stream-json. spawn инжектируется для юнит-тестов.
+// spawn('claude', ['-p', prompt, '--output-format', 'stream-json', ...]); строки
+// stdout уходят в общий приёмник (llm/sinks.ts), который их и разбирает — тот же
+// приёмник обслуживает исполнителя по HTTP. spawn инжектируется для юнит-тестов.
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { createUsageAccumulator, parseStreamJsonLine, parseStreamJsonActivity } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from './types'
 import { cliProfileEnv } from '../users/cliProfiles.js'
 import { killCliChild } from './childKill.js'
 import { kbToolHint } from '../kb/kbMcp.js'
+import { createClaudeSink } from '../llm/sinks.js'
 
 export type SpawnFn = (
   command: string,
@@ -31,14 +32,6 @@ function describeSpawnError(err: unknown): string {
     return 'Claude CLI не найден. Установите Claude Code и выполните `claude login`.'
   }
   return `Не удалось запустить Claude CLI: ${err instanceof Error ? err.message : String(err)}`
-}
-
-function describeExit(code: number | null, stderr: string): string {
-  const s = stderr.trim()
-  if (/log ?in|not logged|authenticat|unauthor|credential/i.test(s)) {
-    return 'Похоже, вход в Claude не выполнен. Выполните `claude login` в терминале.'
-  }
-  return `Claude CLI завершился с кодом ${code}${s ? `: ${s}` : ''}`
 }
 
 export class ClaudeCli implements LlmClient {
@@ -120,23 +113,9 @@ export class ClaudeCli implements LlmClient {
     if (allowed.length) args.push('--allowedTools', allowed.join(','))
     if (systemHints.length) args.push('--append-system-prompt', systemHints.join('\n\n'))
 
-    let finished = false
-    let sawResult = false
-    let stderr = ''
-    // Живые счётчики токенов: суммируем usage-события, дубли не рассылаем.
-    const usageAcc = createUsageAccumulator()
-    let lastUsageJson = ''
-
-    const fail = (message: string): void => {
-      if (finished) return
-      finished = true
-      handlers.onError(message)
-    }
-    const done = (text: string, meta?: import('@voicechat/shared').TurnMeta): void => {
-      if (finished) return
-      finished = true
-      handlers.onDone(text, meta)
-    }
+    // Разбор потока и тексты ошибок — в общем приёмнике (llm/sinks.ts): его же
+    // использует RemoteLlmClient, поэтому события хода одинаковы для spawn и HTTP.
+    const sink = createClaudeSink(handlers)
 
     let child: ChildProcess
     try {
@@ -147,69 +126,25 @@ export class ClaudeCli implements LlmClient {
           : undefined
       child = spawnFn(this.opts.binPath ?? 'claude', args, spawnOptions)
     } catch (err) {
-      fail(describeSpawnError(err))
+      sink.fail(describeSpawnError(err))
       return { cancel: () => {} }
     }
 
-    child.on('error', (err) => fail(describeSpawnError(err)))
+    child.on('error', (err) => sink.fail(describeSpawnError(err)))
     child.stderr?.on('data', (d: Buffer) => {
-      stderr += d.toString()
+      sink.stderrChunk(d.toString())
     })
 
     if (child.stdout) {
       const rl = createInterface({ input: child.stdout })
-      rl.on('line', (line) => {
-        // Параллельно: активность для режима консоли (только если запрошена).
-        if (handlers.onActivity) {
-          const entry = parseStreamJsonActivity(line)
-          if (entry) handlers.onActivity(entry)
-        }
-        const ev = parseStreamJsonLine(line)
-        if (!ev) return
-        switch (ev.kind) {
-          case 'session':
-            handlers.onSession(ev.sessionId)
-            if (ev.init) handlers.onInit?.(ev.init)
-            break
-          case 'delta':
-            if (!finished) handlers.onDelta(ev.text)
-            break
-          case 'usage': {
-            if (finished || !handlers.onUsage) break
-            const total = usageAcc.add(ev)
-            const json = JSON.stringify(total)
-            if (json !== lastUsageJson) {
-              lastUsageJson = json
-              handlers.onUsage(total)
-            }
-            break
-          }
-          case 'result':
-            sawResult = true
-            if (ev.sessionId) handlers.onSession(ev.sessionId)
-            if (ev.isError) fail(ev.text || 'Claude вернул ошибку')
-            else done(ev.text, ev.meta)
-            break
-          default:
-            break
-        }
-      })
+      rl.on('line', (line) => sink.line(line))
     }
 
-    child.on('close', (code) => {
-      if (finished) return
-      if (code === 0) {
-        // Чистое завершение без result-строки — отдаём пустой ответ.
-        done('')
-      } else {
-        fail(describeExit(code, stderr))
-      }
-      void sawResult
-    })
+    child.on('close', (code) => sink.exit(code))
 
     return {
       cancel: () => {
-        finished = true
+        sink.detach()
         // SIGTERM, через 5с — SIGKILL: зависший CLI не должен переживать отмену.
         killCliChild(child)
       }

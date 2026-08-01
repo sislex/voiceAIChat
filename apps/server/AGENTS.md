@@ -26,7 +26,8 @@ REST + WS, SQLite, Whisper, Piper/say, claude/codex CLI, реестр машин
 `routes/` (`rest.ts`, `agents.ts`, `admin.ts`), `users/`,
 `db/` (схема + `fts.ts` — экранирование запроса для FTS5-поиска по сообщениям),
 `stt/` (whisper, модели, скачивание, wav), `tts/` (piper, say, каталог, голоса),
-`claude/`, `codex/`, `cc/` (наблюдатель сессий Claude Code),
+`claude/`, `codex/`, `llm/` (`LlmClient` поверх HTTP + общий приёмник потока),
+`cc/` (наблюдатель сессий Claude Code),
 `agents/` (реестр машин, WS-агента, сборка `.cjs`, установка на Android),
 `mcp/remoteBashMcp.ts`, `anthropic/gateway.ts`, `system/` (ресурсы и возможности),
 `auth/loginStatus.ts`, `diarization/` (заглушка).
