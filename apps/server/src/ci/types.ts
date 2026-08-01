@@ -105,5 +105,11 @@ export interface CiFixContext extends CiModelContext {
 export type CiModelWorkHook = (ctx: CiModelContext) => Promise<{ ok: boolean; cancelled?: boolean }>
 /** Хук «резюме модели». */
 export type CiModelSummaryHook = (ctx: CiModelContext) => Promise<string>
+/**
+ * Хук «Актуализировать базу знаний»: модель сверяет базу с изменениями рабочей
+ * копии. Ран из-за него НЕ падает — `ok: false` означает предупреждение в ленте
+ * (работа модели уже сделана, терять её из-за базы знаний нельзя).
+ */
+export type CiKbUpdateHook = (ctx: CiModelContext) => Promise<{ ok: boolean; message: string }>
 /** Хук fix-loop: попытаться довести упавший шаг до успеха. */
 export type CiFixHook = (ctx: CiFixContext) => Promise<{ fixed: boolean }>

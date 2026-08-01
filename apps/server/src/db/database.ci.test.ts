@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from './database.js'
+import { CI_KB_UPDATE_COMMAND_ID } from '@voicechat/shared'
 
 let db: VoiceChatDb
 
@@ -50,8 +51,10 @@ describe('ci: справочник команд', () => {
     expect(() => db.createCiCommand('alice', { scope: 'project', projectId: p.id, name: 'clone', script: 'y' })).toThrow()
     // Страница справочника без projectId показывает команды всех доступных проектов.
     expect(db.listCiCommands('alice').map((x) => x.name)).toContain('clone')
-    // bob не участник — проектную команду не видит ни с фильтром, ни в общем списке.
-    expect(db.listCiCommands('bob', p.id)).toEqual([])
+    // bob не участник — проектную команду не видит ни с фильтром, ни в общем
+    // списке (глобальные команды справочника, включая встроенный шаг базы
+    // знаний, видны всем — это не проектные данные).
+    expect(db.listCiCommands('bob', p.id).every((c) => c.scope === 'global')).toBe(true)
     expect(db.listCiCommands('bob').map((x) => x.name)).not.toContain('clone')
   })
 
@@ -342,5 +345,46 @@ describe('ci: автозадача «Пересборка прода»', () => {
     // Не участник проекта карточку не заводит.
     expect(db.ensureProdRebuildTask('bob', p.id, '- P1-1: T1')).toBe(null)
     expect(db.getBoard('alice', p.id)!.tasks.some((t) => t.title === PROD_REBUILD_TASK_TITLE)).toBe(false)
+  })
+})
+
+describe('встроенный шаг «Актуализировать базу знаний»', () => {
+  it('заводится в справочнике как серверный шаг, недоступный модели', () => {
+    const cmd = db.getCiCommand('alice', CI_KB_UPDATE_COMMAND_ID)!
+    expect(cmd.builtin).toBe('kb_update')
+    expect(cmd.scope).toBe('global')
+    expect(cmd.availableToModel).toBe(false)
+    // Виден всем как глобальная команда справочника.
+    expect(db.listCiCommands('bob').some((c) => c.id === CI_KB_UPDATE_COMMAND_ID)).toBe(true)
+  })
+
+  it('при первом появлении встаёт в слот «после модели» проектов — перед шагом коммита', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-kb-seed-'))
+    const file = join(dir, 'db.sqlite')
+    let n = 0
+    const first = new VoiceChatDb(file, { newId: () => `s-${++n}`, now: () => 1000 })
+    first.createUser('alice', '', 'user')
+    const p = first.createProject('alice', { name: 'P' })
+    const test = first.createCiCommand('alice', { scope: 'global', name: 'Запустить тестирование (npm test)', script: 'npm test' })
+    const commit = first.createCiCommand('alice', { scope: 'global', name: 'Закоммитить работу в ветку задачи', script: 'git add -A' })
+    const merge = first.createCiCommand('alice', { scope: 'global', name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit' })
+    first.setCiSlotCommands('project', p.id, 'after_model', [test.id, commit.id, merge.id])
+    first.close()
+
+    // Состояние «база от прошлой версии»: строки встроенного шага ещё нет.
+    const raw = new Database(file)
+    raw.exec(`DELETE FROM ci_slot_commands WHERE command_id = '${CI_KB_UPDATE_COMMAND_ID}'`)
+    raw.exec(`DELETE FROM ci_commands WHERE id = '${CI_KB_UPDATE_COMMAND_ID}'`)
+    raw.close()
+
+    const second = new VoiceChatDb(file, { newId: () => `s2-${++n}`, now: () => 2000 })
+    expect(second.getCiSlotConfig('project', p.id).afterModel).toEqual([test.id, CI_KB_UPDATE_COMMAND_ID, commit.id, merge.id])
+    // Повторное открытие ничего не дублирует и убранный руками шаг не возвращает.
+    second.setCiSlotCommands('project', p.id, 'after_model', [test.id, commit.id])
+    second.close()
+    const third = new VoiceChatDb(file, { newId: () => `s3-${++n}`, now: () => 3000 })
+    expect(third.getCiSlotConfig('project', p.id).afterModel).toEqual([test.id, commit.id])
+    third.close()
+    rmSync(dir, { recursive: true, force: true })
   })
 })

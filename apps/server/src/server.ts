@@ -19,7 +19,7 @@ import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
 import { createCiModelHooks } from './ci/modelHooks.js'
 import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
-import type { CommandExecutor } from './ci/types.js'
+import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
 import { BoardHub } from './projects/boardHub.js'
 import { registerAuth, resolveUser, uid } from './users/auth.js'
 import { loadOrCreateSecret } from './users/accounts.js'
@@ -86,6 +86,8 @@ export interface BuildOptions {
   sessionSecret?: string
   /** Исполнитель CI-команд (в тестах — мок). По умолчанию поверх AgentRegistry. */
   ciExecutor?: CommandExecutor
+  /** Хук шага «Актуализировать базу знаний» (в тестах — мок). По умолчанию — из createCiModelHooks. */
+  ciKbUpdate?: CiKbUpdateHook
 }
 
 function makeTtsEngine(config: ServerConfig): TtsEngine {
@@ -359,7 +361,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     codex,
     mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`,
     ciMcpBaseUrl: `http://127.0.0.1:${opts.config.port}${CI_COMMANDS_MCP_PATH}?k=${mcpSecret}`,
-    agentNameOf: (agentId) => agentRegistry.nameOf(agentId)
+    agentNameOf: (agentId) => agentRegistry.nameOf(agentId),
+    // Шагу «Актуализировать базу знаний» нужен диф рабочей копии: его собирает
+    // сервер тем же исполнителем, что и команды слотов.
+    executor: ciExecutor
   })
   // Вопросы модели дублируются в связанный чат задачи обычными сообщениями:
   // UI разбирает блок ```questions тем же парсером, что и вопросы в чате.
@@ -396,7 +401,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     modelWork: ciModelHooks.modelWork,
     modelSummary: ciModelHooks.modelSummary,
-    attemptFix: ciModelHooks.attemptFix
+    attemptFix: ciModelHooks.attemptFix,
+    kbUpdate: opts.ciKbUpdate ?? ciModelHooks.kbUpdate
   })
   registerCiRoutes(app, db, ciRunManager)
 

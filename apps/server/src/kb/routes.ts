@@ -133,11 +133,13 @@ export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService,
  * Гейт — членство в проекте (тот же db.getProject, что и у остальных знаний).
  */
 export function registerKbResearchRoutes(app: FastifyInstance, db: VoiceChatDb, research: KbResearchManager): void {
-  app.post<{ Params: { id: string } }>('/api/projects/:id/kb/research', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { sinceSha?: string } }>('/api/projects/:id/kb/research', async (req, reply) => {
     const project = db.getProject(uid(req), req.params.id)
     if (!project) return reply.code(403).send({ error: 'нет доступа к знаниям этого проекта' })
     try {
-      return research.start(uid(req), project)
+      // `sinceSha` — режим «по изменениям с коммита <sha>»: ручной фолбэк шага
+      // CI-рана «Актуализировать базу знаний» (общий промпт, kb/codeUpdate.ts).
+      return research.start(uid(req), project, { sinceSha: req.body?.sinceSha })
     } catch (err) {
       return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) })
     }

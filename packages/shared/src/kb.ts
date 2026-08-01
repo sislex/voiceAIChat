@@ -101,6 +101,8 @@ export interface KbResearchRun {
   documents: Array<{ id: string; title: string; action: 'created' | 'updated' }>
   /** Короткое резюме от модели (что изменилось). */
   note: string
+  /** Режим «по изменениям с коммита»: sha, от которого сверяли (null — полный скан). */
+  sinceSha?: string | null
   error: string | null
 }
 export interface KbContextBundle {

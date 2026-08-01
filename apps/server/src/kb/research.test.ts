@@ -152,3 +152,35 @@ describe('KbResearchManager', () => {
     expect(started).toBe(1)
   })
 })
+
+describe('режим «по изменениям с коммита»', () => {
+  it('переиспользует промпт шага CI-рана: сравнение с sha, файлы не правим', async () => {
+    const db = memoryDb()
+    const projectId = projectWithMachine(db)
+    const { manager, last } = makeManager(db, '{"note":"мелочь","nothingToUpdate":true,"documents":[]}')
+    const run = manager.start('admin', db.getProject('admin', projectId)!, { sinceSha: 'abc1234' })
+    expect(run.sinceSha).toBe('abc1234')
+    await vi.waitFor(() => expect(manager.get(projectId)?.state).toBe('done'))
+    const prompt = last()!.prompt
+    expect(prompt).toContain('git diff --stat abc1234')
+    expect(prompt).toContain('Файлы репозитория не меняй')
+    // Заготовка обзорной статьи проекта попадает в список задетых.
+    expect(prompt).toContain(db.kbDocuments({ scope: 'project', projectId })[0].id)
+  })
+
+  it('мусор вместо sha отбивается до запуска модели', () => {
+    const db = memoryDb()
+    const projectId = projectWithMachine(db)
+    const { manager } = makeManager(db, '{}')
+    expect(() => manager.start('admin', db.getProject('admin', projectId)!, { sinceSha: 'abc; rm -rf /' })).toThrow()
+  })
+
+  it('полный скан остаётся режимом по умолчанию', async () => {
+    const db = memoryDb()
+    const projectId = projectWithMachine(db)
+    const { manager, last } = makeManager(db, '{"documents":[]}')
+    expect(manager.start('admin', db.getProject('admin', projectId)!).sinceSha).toBeNull()
+    await vi.waitFor(() => expect(manager.get(projectId)?.state).toBe('done'))
+    expect(last()!.prompt).toContain('просканировать репозиторий')
+  })
+})
