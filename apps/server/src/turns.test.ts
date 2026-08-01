@@ -103,12 +103,38 @@ describe('turns: VC_MCP_PUBLIC_BASE', () => {
     const agent = db.createAgent(U, 'Ноутбук')
     db.setConversationExecTarget(U, conv.id, agent.id, '/root/dir-on-machine')
     db.setConversationKbContextMode(U, conv.id, 'manual')
+    const kb = {
+      status: () => ({
+        available: true,
+        mode: 'source' as const,
+        searchMode: 'lexical' as const,
+        version: 'x',
+        createdAt: 'now',
+        documents: 1,
+        chunks: 1,
+        staleDocuments: 0
+      }),
+      topics: () => [],
+      document: () => null,
+      search: async () => [],
+      context: async () => ({
+        query: 'q',
+        confidence: 'high' as const,
+        autoInjectAllowed: true,
+        sections: [],
+        relatedFiles: [],
+        relatedDocuments: [],
+        staleWarnings: [],
+        estimatedTokens: 0
+      })
+    }
 
     const config = loadConfig({ PORT: '8787', VC_MCP_PUBLIC_BASE: 'http://voicechat:8787' })
     const rec = recorder()
     const turns = createTurnManager({
       db,
       claude: rec.client,
+      kb,
       kbToolEnabled: true,
       agents: onlineAgents,
       mcpBaseUrl: buildPublicMcpUrl(config, REMOTE_BASH_MCP_PATH, 'secret'),
