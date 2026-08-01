@@ -7,7 +7,7 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
-import type { KbContextBundle, KbDocument, KbDocumentKind, KbDocumentSummary, KbFreshness, KbMatchType, KbScope, KbSearchRequest, KbSearchResult } from '@voicechat/shared'
+import type { KbContextBundle, KbContextSection, KbDocument, KbDocumentKind, KbDocumentSummary, KbFreshness, KbMatchType, KbScope, KbSearchRequest, KbSearchResult } from '@voicechat/shared'
 import type { KbSemanticReranker } from './types.js'
 
 export interface Chunk { id: string; documentId: string; heading: string; anchor: string; text: string; tokens: string[] }
@@ -120,7 +120,12 @@ export async function searchDocuments(documents: IndexedDocument[], request: KbS
   try { const ids=await reranker.rerank(query,candidates.slice(0,15).map(r=>({chunkId:r.chunkId,title:r.title,heading:r.heading,excerpt:r.excerpt})),limit); const rank=new Map(ids.map((id,i)=>[id,i])); return candidates.sort((a,b)=>(rank.get(a.chunkId)??999)-(rank.get(b.chunkId)??999)||b.score-a.score).slice(0,limit).map(result=>rank.has(result.chunkId)?{...result,matchTypes:[...result.matchTypes,'semantic'],explanation:`${result.explanation}; подтверждено LLM-reranking`}:result) } catch { return candidates.slice(0,limit) }
 }
 
-/** Бандл контекста из готовой выдачи: бюджет символов и оценка уверенности. */
-export function buildContext(query: string, results: KbSearchResult[], budget = 3500): KbContextBundle {
-  const sections:KbSearchResult[]=[];let estimatedTokens=0;for(const result of results){const cost=Math.ceil(result.excerpt.length/4);if(sections.length>=5||estimatedTokens+cost>Math.max(200,budget))break;sections.push(result);estimatedTokens+=cost}const top=sections[0];const exact=top?.matchTypes.some(type=>['symbol','alias','path','protocol'].includes(type))??false;const gap=top&&sections[1]?top.score-sections[1].score:top?.score??0;const confidence:'high'|'medium'|'low'=!top?'low':exact||(top.score>=5&&gap>=1.5)?'high':top.score>=1?'medium':'low';return{query,confidence,autoInjectAllowed:confidence==='high',sections,relatedFiles:[...new Set(sections.flatMap(r=>r.relatedFiles))],relatedDocuments:[...new Set(sections.map(r=>r.documentId))],staleWarnings:sections.filter(r=>r.freshness==='stale').map(r=>`${r.title} требует сверки`),estimatedTokens}
+/** Бандл контекста из готовой выдачи: полный текст разделов и оценка уверенности. */
+export function buildContext(query: string, results: KbSearchResult[], documents: IndexedDocument[]): KbContextBundle {
+  const texts = new Map(documents.flatMap((item) => item.chunks.map((chunk) => [chunk.id, chunk.text] as const)))
+  const sections: KbContextSection[] = results.slice(0, 5).flatMap((result) => {
+    const text = texts.get(result.chunkId)
+    return text === undefined ? [] : [{ ...result, text }]
+  })
+  const top=sections[0];const exact=top?.matchTypes.some(type=>['symbol','alias','path','protocol'].includes(type))??false;const gap=top&&sections[1]?top.score-sections[1].score:top?.score??0;const confidence:'high'|'medium'|'low'=!top?'low':exact||(top.score>=5&&gap>=1.5)?'high':top.score>=1?'medium':'low';return{query,confidence,autoInjectAllowed:confidence==='high',sections,relatedFiles:[...new Set(sections.flatMap(r=>r.relatedFiles))],relatedDocuments:[...new Set(sections.map(r=>r.documentId))],staleWarnings:sections.filter(r=>r.freshness==='stale').map(r=>`${r.title} требует сверки`),estimatedTokens:0}
 }

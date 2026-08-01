@@ -40,7 +40,7 @@ const bundle = {
   query: 'тема', confidence: 'high' as const, autoInjectAllowed: true,
   sections: [{
     documentId: 'ci-runner', chunkId: 'ci-runner#model', title: 'CI-раннер', heading: 'Работа модели',
-    excerpt: 'Хуки модели живут в modelHooks.', score: 12, matchTypes: ['symbol' as const],
+    excerpt: 'Хуки модели живут в modelHooks.', text: 'Хуки модели живут в modelHooks.', score: 12, matchTypes: ['symbol' as const],
     explanation: 'символ', freshness: 'current' as const, sourcePath: 'docs/kb/features/ci-runner.md', anchor: 'model',
     symbols: [], relatedFiles: []
   }],

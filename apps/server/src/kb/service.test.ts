@@ -74,7 +74,14 @@ updated: 2026-07-27
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 describe('FileKnowledgeBaseService', () => {
   it('точный символ получает приоритет и разрешает auto context', async () => { const kb = new FileKnowledgeBaseService(fixture()); const found = await kb.search({ query: 'createTurnManager' }); expect(found[0]).toMatchObject({ documentId: 'model-turns', matchTypes: ['symbol'] }); const context = await kb.context('createTurnManager'); expect(context).toMatchObject({ confidence: 'high', autoInjectAllowed: true }) })
-  it('BM25 ищет русское описание и ограничивает context budget', async () => { const kb = new FileKnowledgeBaseService(fixture()); const found = await kb.search({ query: 'обрыв websocket сохраняет ответ' }); expect(found[0].documentId).toBe('model-turns'); expect(found[0].matchTypes).toEqual(['lexical']); expect((await kb.context('обрыв websocket', 200)).estimatedTokens).toBeLessThanOrEqual(200) })
+  it('поиск оставляет excerpt, а context добавляет полный текст раздела', async () => {
+    const kb = new FileKnowledgeBaseService(fixture())
+    const found = await kb.search({ query: 'обрыв websocket сохраняет ответ' })
+    expect(found[0]).toMatchObject({ documentId: 'model-turns', matchTypes: ['lexical'] })
+    expect(found[0]).not.toHaveProperty('text')
+    const context = await kb.context('createTurnManager')
+    expect(context.sections[0].text).toBe('TurnManager хранит ход после обрыва WebSocket и сохраняет ответ в SQLite.')
+  })
   it('токены фразового запроса: путь внутри area и имя символа ставят раздел первым', async () => {
     const kb = new FileKnowledgeBaseService(fixture())
     const found = await kb.search({ query: 'карточка задачи: модалка описания `packages/ui/src/components/kanban/TaskModal.tsx` и TaskModal' })

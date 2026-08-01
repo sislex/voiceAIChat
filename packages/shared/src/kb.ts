@@ -61,6 +61,13 @@ export interface KbSearchResult {
   scope?: KbScope
   projectId?: string | null
 }
+/**
+ * Раздел context-бандла. Полный текст нужен авто-инъекции, но намеренно
+ * отсутствует в KbSearchResult и ответе kb:search.
+ */
+export interface KbContextSection extends KbSearchResult {
+  text: string
+}
 export interface KbSearchRequest {
   query: string; kinds?: KbDocumentKind[]; tags?: string[]; limit?: number
   /** Ограничить раздел; пусто — все доступные пользователю разделы. */
@@ -107,7 +114,7 @@ export interface KbResearchRun {
 }
 export interface KbContextBundle {
   query: string; confidence: 'high' | 'medium' | 'low'; autoInjectAllowed: boolean
-  sections: KbSearchResult[]; relatedFiles: string[]; relatedDocuments: string[]
+  sections: KbContextSection[]; relatedFiles: string[]; relatedDocuments: string[]
   staleWarnings: string[]; estimatedTokens: number
 }
 

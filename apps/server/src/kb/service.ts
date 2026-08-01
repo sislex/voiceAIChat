@@ -30,6 +30,7 @@ export class FileKnowledgeBaseService implements KnowledgeBaseService {
   document(id: string): KbDocument | null { return this.byId.get(id)?.document ?? null }
   async search(request: KbSearchRequest): Promise<KbSearchResult[]> { return searchDocuments(this.documents, request, this.reranker) }
   async context(query: string, budget = 3500): Promise<KbContextBundle> {
-    return buildContext(query, await this.search({ query, limit: 8 }), budget)
+    void budget
+    return buildContext(query, await this.search({ query, limit: 8 }), this.documents)
   }
 }
