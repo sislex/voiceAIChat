@@ -95,6 +95,13 @@ import {
   type CiCommandMetric,
   type CiModelWorkMetric,
   type CiEventActor,
+  type CiRunUsage,
+  type CiUsageKind,
+  type CiRunReport,
+  type CiRunReportStep,
+  type CiTaskReport,
+  ciTaskTotals,
+  ciUsageTotals,
   isVerificationCommand
 } from '@voicechat/shared'
 import { hashPassword, verifyPassword } from '../users/passwords.js'
@@ -2704,6 +2711,104 @@ export class VoiceChatDb {
     return mapCiFix(this.db.prepare(`SELECT * FROM ci_fix_attempts WHERE id = ?`).get(id) as CiFixRow)
   }
 
+  // --- Расход модели по ходам рана ---
+
+  /**
+   * Записать расход одного хода CLI. Стоимость сохраняем только ту, что сообщил
+   * сам CLI: оценку по прайсу отчёт считает на лету, иначе смена цен переписала
+   * бы историю задним числом.
+   */
+  addCiRunUsage(args: {
+    runId: string
+    stepId: string | null
+    kind: CiUsageKind
+    provider: 'claude' | 'codex'
+    model: string
+    inputTokens?: number
+    outputTokens?: number
+    cacheReadTokens?: number
+    cacheCreationTokens?: number
+    costUsd?: number | null
+    durationMs?: number | null
+    numTurns?: number | null
+  }): CiRunUsage {
+    const id = this.newId()
+    const at = this.now()
+    this.db
+      .prepare(
+        `INSERT INTO ci_run_usage (id, run_id, step_id, kind, provider, model, input_tokens, output_tokens,
+                                   cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, num_turns, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        id, args.runId, args.stepId, args.kind, args.provider, args.model,
+        Math.max(0, Math.round(args.inputTokens ?? 0)), Math.max(0, Math.round(args.outputTokens ?? 0)),
+        Math.max(0, Math.round(args.cacheReadTokens ?? 0)), Math.max(0, Math.round(args.cacheCreationTokens ?? 0)),
+        args.costUsd ?? null, args.durationMs ?? null, args.numTurns ?? null, at
+      )
+    return mapCiRunUsage(this.db.prepare(`SELECT * FROM ci_run_usage WHERE id = ?`).get(id) as CiRunUsageRow)
+  }
+
+  /** Строки расхода рана (в порядке ходов). Гейта нет: зовётся из отчётов. */
+  listCiRunUsage(runId: string): CiRunUsage[] {
+    return (this.db.prepare(`SELECT * FROM ci_run_usage WHERE run_id = ? ORDER BY at ASC, rowid ASC`).all(runId) as CiRunUsageRow[]).map(mapCiRunUsage)
+  }
+
+  /**
+   * Отчёт по рану: сводка, агрегаты расхода и все шаги с длительностями. Гейт —
+   * членство в проекте рана (как у ленты), поэтому чужой получает null → 404.
+   * У старых ранов строк расхода нет: шаги и время на месте, расход — нули.
+   */
+  ciRunReport(userId: string, runId: string): CiRunReport | null {
+    const run = this.getCiRunRaw(runId)
+    if (!run || !this.isProjectMember(userId, run.projectId)) return null
+    return this.buildCiRunReport(run)
+  }
+
+  /**
+   * Отчёт по задаче: все её раны (повторы и отмены — тоже расход) и итог по ним.
+   * Порядок — от свежего рана к старому, как в списке ранов задачи.
+   */
+  ciTaskReport(userId: string, projectId: string, taskId: string): CiTaskReport | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.db.prepare(`SELECT 1 FROM tasks WHERE id = ? AND project_id = ?`).get(taskId, projectId)) return null
+    const runs = (this.db
+      .prepare(`SELECT * FROM ci_runs WHERE task_id = ? AND project_id = ? ORDER BY created_at DESC, rowid DESC`)
+      .all(taskId, projectId) as CiRunRow[])
+      .map((r) => this.buildCiRunReport(mapCiRun(r)))
+    return { projectId, taskId, runs, ...ciTaskTotals(runs) }
+  }
+
+  private buildCiRunReport(run: CiRun): CiRunReport {
+    const usage = this.listCiRunUsage(run.id)
+    const byStep = new Map<string, CiRunUsage[]>()
+    for (const u of usage) {
+      if (!u.stepId) continue
+      const list = byStep.get(u.stepId) ?? []
+      list.push(u)
+      byStep.set(u.stepId, list)
+    }
+    const steps: CiRunReportStep[] = (this.db
+      .prepare(`SELECT * FROM ci_run_steps WHERE run_id = ? ORDER BY position ASC, id ASC`)
+      .all(run.id) as CiRunStepRow[])
+      .map(mapCiRunStep)
+      .map((s) => ({
+        id: s.id, parentStepId: s.parentStepId, title: s.title, slot: s.slot, kind: s.kind,
+        initiatedBy: s.initiatedBy, status: s.status, attempt: s.attempt, fixedByModel: s.fixedByModel,
+        exitCode: s.exitCode, durationMs: s.durationMs,
+        usage: byStep.has(s.id) ? ciUsageTotals(byStep.get(s.id)!) : null
+      }))
+    const fixAttempts = (this.db
+      .prepare(`SELECT COUNT(*) AS n FROM ci_fix_attempts f JOIN ci_run_steps s ON s.id = f.run_step_id WHERE s.run_id = ?`)
+      .get(run.id) as { n: number }).n
+    return {
+      runId: run.id, projectId: run.projectId, taskId: run.taskId, status: run.status, mode: run.mode,
+      provider: run.llmProvider, model: run.llmModel, startedAt: run.startedAt, finishedAt: run.finishedAt,
+      durationMs: run.durationMs, createdAt: run.createdAt, fixAttempts,
+      totals: ciUsageTotals(usage), steps
+    }
+  }
+
   // --- Рабочие директории ---
 
   createCiWorkspace(args: { projectId: string; taskId: string; agentId: string | null; path: string }): CiWorkspace {
@@ -3500,6 +3605,24 @@ function mapCiRunStep(r: CiRunStepRow): CiRunStep {
     title: r.title, workdir: r.workdir, status: normCiStatus(r.status), exitCode: r.exit_code,
     attempt: r.attempt, fixedByModel: !!r.fixed_by_model, startedAt: r.started_at,
     finishedAt: r.finished_at, durationMs: r.duration_ms
+  }
+}
+
+interface CiRunUsageRow {
+  id: string; run_id: string; step_id: string | null; kind: string; provider: string; model: string
+  input_tokens: number; output_tokens: number; cache_read_tokens: number; cache_creation_tokens: number
+  cost_usd: number | null; duration_ms: number | null; num_turns: number | null; at: number
+}
+function normUsageKind(k: string): CiUsageKind {
+  return k === 'summary' || k === 'fix' || k === 'kb_update' ? k : 'model_work'
+}
+function mapCiRunUsage(r: CiRunUsageRow): CiRunUsage {
+  return {
+    id: r.id, runId: r.run_id, stepId: r.step_id, kind: normUsageKind(r.kind),
+    provider: r.provider === 'codex' ? 'codex' : 'claude', model: r.model,
+    inputTokens: r.input_tokens, outputTokens: r.output_tokens,
+    cacheReadTokens: r.cache_read_tokens, cacheCreationTokens: r.cache_creation_tokens,
+    costUsd: r.cost_usd, durationMs: r.duration_ms, numTurns: r.num_turns, at: r.at
   }
 }
 

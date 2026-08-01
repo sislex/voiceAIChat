@@ -4,9 +4,11 @@ import { screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import type { Board, Task } from '@shared/projects'
-import type { CiRunSummary } from '@shared/ci'
+import type { CiRunSummary, CiTaskReport } from '@shared/ci'
+import { EMPTY_CI_USAGE_TOTALS } from '@shared/ci'
 import { TaskModal, type TaskModalProps } from './TaskModal'
 import { createFakeCi } from '../../test/fakeApi'
+import { makeReportStep, makeRunReport, makeTaskReport, makeUsageTotals } from '../../test/fixtures'
 import type { KbTaskUsageReport } from '@shared/kb'
 import { MOBILE_QUERY } from '../../lib/mediaQuery'
 
@@ -390,5 +392,78 @@ describe('TaskModal — использование базы знаний по р
     // Отчёта нет вовсе — блок не рисуется, карточка живёт своей жизнью.
     await waitFor(() => expect(screen.queryByTestId('task-modal-kb-usage')).not.toBeInTheDocument())
     expect(screen.getByDisplayValue('Задача A')).toBeInTheDocument()
+  })
+})
+
+// Раздел «Отчёт»: во что обошёлся ран задачи. Показывается только у завершённого
+// рана — пока ран идёт, цифры устаревают на глазах, и смотреть надо ленту.
+describe('TaskModal — отчёт по завершённой задаче', () => {
+  const withReport = (report: CiTaskReport): void => {
+    window.ci = { ...createFakeCi(), getTaskReport: async () => report } as typeof window.ci
+  }
+  // Числа форматируются `toLocaleString('ru')` — разряды разделяет неразрывный
+  // пробел, и сравнивать с обычным можно только после нормализации.
+  const text = (el: HTMLElement): string => el.textContent!.replace(/\u00a0/g, ' ')
+
+  beforeEach(() => withReport(makeTaskReport()))
+
+  it('у завершённой задачи показывает плитки итогов и таблицу шагов', async () => {
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false, durationMs: 720_000 }) })} />)
+
+    const block = await screen.findByTestId('task-modal-report')
+    expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('$1.84')
+    expect(text(within(block).getByTestId('task-modal-report-tokens'))).toContain('219 400')
+    expect(text(within(block).getByTestId('task-modal-report-requests'))).toContain('4')
+    expect(text(within(block).getByTestId('task-modal-report-model-time'))).toContain('10м 40с')
+    // Шаги — со статусом и временем, вложенный вызов команды моделью тоже.
+    const steps = within(block).getByTestId('task-modal-report-steps')
+    expect(within(steps).getByRole('rowheader', { name: /npm ci/ })).toBeInTheDocument()
+    expect(within(steps).getByRole('rowheader', { name: /Установить зависимости/ })).toBeInTheDocument()
+    expect(within(steps).getByRole('rowheader', { name: /Работа модели/ })).toBeInTheDocument()
+    expect(within(steps).getAllByText('9м 00с').length).toBeGreaterThan(0)
+  })
+
+  it('стоимость без данных CLI помечена «≈»', async () => {
+    withReport(makeTaskReport([makeRunReport({ totals: makeUsageTotals({ costUsd: 2.07, costEstimated: true }) })]))
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    const cost = await screen.findByTestId('task-modal-report-cost')
+    expect(text(cost)).toContain('≈ $2.07')
+    expect(text(cost)).toContain('оценка по прайсу')
+  })
+
+  it('при нескольких ранах переключатель показывает итог по задаче', async () => {
+    withReport(makeTaskReport([
+      makeRunReport({ runId: 'run-2', durationMs: 100_000, totals: makeUsageTotals({ requests: 1, tokens: 1000, costUsd: 0.5 }) }),
+      makeRunReport({ runId: 'run-1', status: 'failed' })
+    ]))
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    const block = await screen.findByTestId('task-modal-report')
+    // По умолчанию — свежий ран со своими шагами.
+    expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('$0.50')
+    await userEvent.click(within(block).getByRole('button', { name: 'Итог по задаче' }))
+    expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('$2.34')
+    expect(within(block).getByTestId('task-modal-report-runs')).toBeInTheDocument()
+  })
+
+  it('у старого рана без расхода отчёт открывается: шаги есть, деньги прочерком', async () => {
+    withReport(makeTaskReport([makeRunReport({ totals: { ...EMPTY_CI_USAGE_TOTALS }, steps: [makeReportStep()] })]))
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    const block = await screen.findByTestId('task-modal-report')
+    expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('—')
+    expect(within(block).getByRole('rowheader', { name: /npm ci/ })).toBeInTheDocument()
+  })
+
+  it('у задачи с активным раном отчёта нет — там лента', async () => {
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'running' }) })} />)
+    await screen.findByTestId('task-modal-ci')
+    expect(screen.queryByTestId('task-modal-report')).not.toBeInTheDocument()
+  })
+
+  it('без рана вовсе отчёта тоже нет', async () => {
+    render(<TaskModal {...props()} />)
+    await waitFor(() => expect(screen.queryByTestId('task-modal-report')).not.toBeInTheDocument())
   })
 })

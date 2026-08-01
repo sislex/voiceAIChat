@@ -26,9 +26,10 @@ import { applyNativeInputValue, useAiAssist } from '../prompt-builder/useAiAssis
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanbanMeta'
 import { CiTaskSettings } from '../ci/CiTaskSettings'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
-import { useKbUsageReport } from '../../lib/useKbUsageReport'
+import { CiReport } from '../ci/CiReport'
+import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
-import { canStartCiRun, type CiRunSummary } from '@shared/ci'
+import { canStartCiRun, isActiveCiStatus, type CiRunSummary, type CiTaskReport } from '@shared/ci'
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
 import { useAutoGrow } from '../../lib/autoGrow'
 
@@ -169,9 +170,17 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   // Использование БЗ — агрегат по ВСЕМ ранам задачи. Перечитываем, когда
   // меняется статус последнего рана: только что закончившийся ран добавил свои
   // обращения, и цифры в карточке обязаны это показать.
-  const kbUsage = useKbUsageReport(
+  const kbUsage = useRemoteReport(
     () => (task.type === 'task' ? window.ci?.getTaskKbUsage(task.projectId, task.id) : undefined),
     [task.id, task.projectId, task.type, props.ciSummary?.status]
+  )
+  // Отчёт по расходу — только когда ран задачи завершён: пока он идёт, цифры
+  // меняются на глазах, и смотреть надо ленту, а не итог. Перечитываем по тому
+  // же ключу, что и БЗ: закончившийся ран добавил свои ходы.
+  const ciFinished = props.ciSummary != null && !isActiveCiStatus(props.ciSummary.status)
+  const ciReport = useRemoteReport<CiTaskReport>(
+    () => (task.type === 'task' && ciFinished ? window.ci?.getTaskReport(task.projectId, task.id) : undefined),
+    [task.id, task.projectId, task.type, ciFinished, props.ciSummary?.status]
   )
 
   const column = board.columns.find((c) => c.id === task.columnId)
@@ -632,6 +641,15 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                 )}
               </div>
             </div>
+          )}
+          {task.type === 'task' && ciFinished && (
+            <CiReport
+              report={ciReport.report}
+              loading={ciReport.loading}
+              error={ciReport.error}
+              onOpenRun={props.onOpenCiRun}
+              testId="task-modal-report"
+            />
           )}
           {task.type === 'task' && kbUsage.report && (
             <KbUsageBrief

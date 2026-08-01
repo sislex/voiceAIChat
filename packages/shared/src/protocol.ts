@@ -240,6 +240,10 @@ export const REST = {
   ciRunKbUsage: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/kb-usage`,
   taskKbUsage: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/kb-usage`,
+  /** Отчёт по расходу модели: один ран и все раны задачи (раздел «Отчёт» карточки). */
+  ciRunReport: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/report`,
+  taskCiReport: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/report`,
   ciRunCancel: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/cancel`,
   ciRunRetry: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/retry`,
   ciRunRetryFromStep: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/retry-from-step`,

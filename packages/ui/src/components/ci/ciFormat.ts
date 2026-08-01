@@ -82,3 +82,21 @@ export function fmtDuration(ms: number | null | undefined): string {
   const sec = total % 60
   return m > 0 ? `${m}м ${String(sec).padStart(2, '0')}с` : `${sec}с`
 }
+
+/**
+ * Деньги отчёта. `estimated` — стоимости от CLI не было и она посчитана по
+ * прайсу: такую всегда показываем с «≈», иначе оценка читается как факт.
+ * Копеечные суммы не округляем в ноль — «< $0.01» честнее, чем «$0.00».
+ */
+export function fmtUsd(value: number | null | undefined, estimated = false): string {
+  if (value == null) return '—'
+  const prefix = estimated ? '≈ ' : ''
+  if (value > 0 && value < 0.01) return `${prefix}< $0.01`
+  return `${prefix}$${value.toFixed(2)}`
+}
+
+/** Токены и прочие счётчики отчёта: разряды через пробел («13 000»). */
+export function fmtTokens(value: number | null | undefined): string {
+  if (value == null) return '—'
+  return value.toLocaleString('ru')
+}

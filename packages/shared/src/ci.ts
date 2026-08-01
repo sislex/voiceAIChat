@@ -4,6 +4,7 @@
 
 import type { QuestionSpec } from './questions'
 import type { KbContextMode } from './types'
+import { estimateCostUsd } from './pricing'
 
 // --- Справочник команд ---------------------------------------------------
 
@@ -571,4 +572,175 @@ export interface CiRunConclusion {
   failureClass: CiFailureClass
   /** Что нужно от человека. */
   summary: string
+}
+
+// --- Расход модели и отчёт по задаче -------------------------------------
+
+/**
+ * За какой ход CLI записан расход. Один ход = один «запрос к модели»: работа
+ * модели (включая продолжения одной сессии), резюме рана, попытка fix-loop и
+ * шаг актуализации базы знаний идут через один и тот же `runTurn`.
+ */
+export type CiUsageKind = 'model_work' | 'summary' | 'fix' | 'kb_update'
+
+export const CI_USAGE_KINDS: CiUsageKind[] = ['model_work', 'summary', 'fix', 'kb_update']
+
+/** Расход одного хода модели внутри рана (строка `ci_run_usage`). */
+export interface CiRunUsage {
+  id: string
+  runId: string
+  /** Шаг ленты, внутри которого шёл ход; null — шаг уже удалён. */
+  stepId: string | null
+  kind: CiUsageKind
+  provider: CiLlmProvider
+  /** Модель хода: то, что вернул CLI, иначе выбранная для рана. */
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  /**
+   * Стоимость, которую сообщил CLI (`total_cost_usd`). `null` — не сообщил:
+   * тогда отчёт считает оценку по прайсу и помечает её «≈». В БД оценку не
+   * храним, иначе смена цен переписывала бы историю задним числом.
+   */
+  costUsd: number | null
+  /** Сколько ход занял по данным CLI; null — не сообщил. */
+  durationMs: number | null
+  /** Число внутренних ходов агента (`num_turns`). */
+  numTurns: number | null
+  at: number
+}
+
+/** Итог по строкам расхода: сколько запросов, токенов, денег и времени модели. */
+export interface CiUsageTotals {
+  /** Число запросов к модели (ходов CLI). */
+  requests: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  /** Сумма всех видов токенов — для компактного «N токенов». */
+  tokens: number
+  /** Стоимость в USD; null — считать не из чего (ни CLI, ни прайса). */
+  costUsd: number | null
+  /** Хотя бы одно слагаемое — оценка (или его вовсе не посчитать): в UI «≈». */
+  costEstimated: boolean
+  /** Суммарное время работы модели, мс (сумма длительностей ходов). */
+  modelActiveMs: number
+}
+
+export const EMPTY_CI_USAGE_TOTALS: CiUsageTotals = {
+  requests: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheCreationTokens: 0,
+  tokens: 0,
+  costUsd: null,
+  costEstimated: false,
+  modelActiveMs: 0
+}
+
+/**
+ * Итог по ходам. Стоимость берётся от CLI, а если её нет — оценивается по
+ * прайсу (`estimateCostUsd`), и тогда весь итог помечается `costEstimated`.
+ * Неизвестная модель (прайса нет) тоже делает итог приблизительным: сумма
+ * заведомо занижена, и показывать её точным числом нельзя.
+ */
+export function ciUsageTotals(rows: CiRunUsage[]): CiUsageTotals {
+  const t: CiUsageTotals = { ...EMPTY_CI_USAGE_TOTALS }
+  let cost: number | null = null
+  for (const r of rows) {
+    t.requests++
+    t.inputTokens += r.inputTokens
+    t.outputTokens += r.outputTokens
+    t.cacheReadTokens += r.cacheReadTokens
+    t.cacheCreationTokens += r.cacheCreationTokens
+    t.modelActiveMs += r.durationMs ?? 0
+    const own = r.costUsd ?? estimateCostUsd(r.model, r)
+    if (own == null) t.costEstimated = true
+    else {
+      cost = (cost ?? 0) + own
+      if (r.costUsd == null) t.costEstimated = true
+    }
+  }
+  t.tokens = t.inputTokens + t.outputTokens + t.cacheReadTokens + t.cacheCreationTokens
+  t.costUsd = cost
+  return t
+}
+
+/** Сложить готовые итоги (шаги рана, раны задачи). */
+export function sumCiUsageTotals(list: CiUsageTotals[]): CiUsageTotals {
+  const t: CiUsageTotals = { ...EMPTY_CI_USAGE_TOTALS }
+  let cost: number | null = null
+  for (const s of list) {
+    t.requests += s.requests
+    t.inputTokens += s.inputTokens
+    t.outputTokens += s.outputTokens
+    t.cacheReadTokens += s.cacheReadTokens
+    t.cacheCreationTokens += s.cacheCreationTokens
+    t.tokens += s.tokens
+    t.modelActiveMs += s.modelActiveMs
+    if (s.costEstimated) t.costEstimated = true
+    if (s.costUsd != null) cost = (cost ?? 0) + s.costUsd
+  }
+  t.costUsd = cost
+  return t
+}
+
+/** Шаг рана в отчёте: то же, что в ленте, плюс расход ходов модели. */
+export interface CiRunReportStep {
+  id: string
+  parentStepId: string | null
+  title: string
+  slot: CiSlot | null
+  kind: CiStepKind
+  initiatedBy: CiInitiatedBy
+  status: CiStatus
+  attempt: number
+  fixedByModel: boolean
+  exitCode: number | null
+  durationMs: number | null
+  /** Расход ходов модели этого шага; null — ходов в нём не было. */
+  usage: CiUsageTotals | null
+}
+
+/** Отчёт по одному завершённому (или остановленному) рану. */
+export interface CiRunReport {
+  runId: string
+  projectId: string
+  taskId: string
+  status: CiStatus
+  mode: CiRunMode
+  provider: CiLlmProvider
+  /** Модель, выбранная для рана (у ходов она может отличаться — см. строки расхода). */
+  model: string
+  startedAt: number | null
+  finishedAt: number | null
+  durationMs: number | null
+  createdAt: number
+  /** Сколько раз модель бралась чинить упавшие шаги. */
+  fixAttempts: number
+  totals: CiUsageTotals
+  steps: CiRunReportStep[]
+}
+
+/** Отчёт по задаче: все её раны (повторы, отмены) и итог по ним. */
+export interface CiTaskReport {
+  projectId: string
+  taskId: string
+  /** Раны от свежего к старому. */
+  runs: CiRunReport[]
+  totals: CiUsageTotals
+  /** Суммарное время ранов задачи, мс. */
+  durationMs: number
+}
+
+/** Итог по задаче — сумма по всем её ранам (чистая функция, без БД). */
+export function ciTaskTotals(runs: CiRunReport[]): { totals: CiUsageTotals; durationMs: number } {
+  return {
+    totals: sumCiUsageTotals(runs.map((r) => r.totals)),
+    durationMs: runs.reduce((acc, r) => acc + (r.durationMs ?? 0), 0)
+  }
 }

@@ -340,6 +340,31 @@ CREATE TABLE IF NOT EXISTS ci_fix_attempts (
 );
 CREATE INDEX IF NOT EXISTS idx_ci_fix_attempts_step ON ci_fix_attempts(run_step_id, attempt_no);
 
+-- Расход модели по ходам рана: строка на каждый ход CLI (он же «запрос к
+-- модели»). Стоимость хранится только та, что сообщил CLI; когда её нет,
+-- отчёт считает оценку по прайсу — иначе смена цен переписывала бы историю.
+CREATE TABLE IF NOT EXISTS ci_run_usage (
+  id                    TEXT PRIMARY KEY,
+  run_id                TEXT NOT NULL,
+  -- Ссылки на ci_run_steps намеренно нет: расход пишется по факту хода, а шаг
+  -- может быть синтетическим (повтор, вложенный вызов) — метрика не имеет права
+  -- уронить ран нарушением внешнего ключа.
+  step_id               TEXT,
+  kind                  TEXT NOT NULL DEFAULT 'model_work',
+  provider              TEXT NOT NULL DEFAULT 'claude',
+  model                 TEXT NOT NULL DEFAULT '',
+  input_tokens          INTEGER NOT NULL DEFAULT 0,
+  output_tokens         INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+  cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd              REAL,
+  duration_ms           INTEGER,
+  num_turns             INTEGER,
+  at                    INTEGER NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_run_usage_run ON ci_run_usage(run_id, at);
+
 CREATE TABLE IF NOT EXISTS ci_command_suggestions (
   id             TEXT PRIMARY KEY,
   command_id     TEXT NOT NULL,
