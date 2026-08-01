@@ -62,6 +62,8 @@ describe('TaskModal — вложенное окно AI-помощника', () =
     const onClose = vi.fn()
     render(<TaskModal {...props({ onClose, generateAiAssist: async () => [] })} />)
 
+    // Палочка живёт в правке описания — сначала открываем её.
+    await userEvent.click(screen.getByTestId('task-desc-empty'))
     await userEvent.click(screen.getByRole('button', { name: 'Открыть AI-помощник' }))
     expect(screen.getByRole('dialog', { name: 'AI-помощник формулировки' })).toBeInTheDocument()
 
@@ -70,7 +72,12 @@ describe('TaskModal — вложенное окно AI-помощника', () =
     expect(screen.getByTestId('task-modal')).toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
 
-    // Второй Esc достаётся уже карточке.
+    // Второй Esc достаётся правке описания: она тоже слой стека окон.
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByLabelText('Описание задачи')).not.toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+
+    // И только третий — самой карточке.
     await userEvent.keyboard('{Escape}')
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -145,7 +152,7 @@ describe('TaskModal — мобильная раскладка (как в Jira)',
     expect(quick).toContainElement(screen.getByLabelText('Статус'))
     expect(quick).toContainElement(screen.getByLabelText('Исполнитель'))
     // Порядок: статус выше описания (в Jira он первым делом под заголовком).
-    const desc = screen.getByLabelText('Описание задачи')
+    const desc = screen.getByRole('heading', { name: 'Описание' })
     expect(quick.compareDocumentPosition(desc) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     expect(screen.queryByTestId('task-modal-details')).not.toBeInTheDocument()
@@ -240,6 +247,102 @@ describe('TaskModal — мобильная раскладка (как в Jira)',
     expect(screen.getByLabelText('Удалить задачу')).toBeInTheDocument()
     expect(screen.queryByLabelText('Действия с задачей')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Подробности/ })).not.toBeInTheDocument()
+  })
+})
+
+// Описание пишется маркдауном, поэтому по умолчанию оно отрисовано, а поле на 10
+// строк появляется только по кнопке «Изменить».
+describe('TaskModal — описание: маркдаун в просмотре, поле в правке', () => {
+  beforeEach(() => { window.ci = createFakeCi() })
+
+  const MD = '## Зачем\n\n- первый пункт\n- второй пункт'
+
+  it('при открытии описание — разметка, а не сырой текст в поле', () => {
+    render(<TaskModal {...props({ task: mkTask({ description: MD }) })} />)
+
+    const view = screen.getByTestId('task-desc-view')
+    expect(within(view).getByRole('heading', { name: 'Зачем' })).toBeInTheDocument()
+    expect(within(view).getAllByRole('listitem')).toHaveLength(2)
+    expect(screen.queryByLabelText('Описание задачи')).not.toBeInTheDocument()
+  })
+
+  it('«Изменить» открывает поле на 10 строк с текстом-исходником', async () => {
+    render(<TaskModal {...props({ task: mkTask({ description: MD }) })} />)
+
+    await userEvent.click(screen.getByTestId('task-desc-edit'))
+    const field = screen.getByLabelText('Описание задачи')
+    expect(field).toHaveAttribute('rows', '10')
+    expect(field).toHaveValue(MD)
+    expect(screen.queryByTestId('task-desc-view')).not.toBeInTheDocument()
+  })
+
+  it('пустое описание — подсказка, клик по ней ведёт в правку', async () => {
+    render(<TaskModal {...props()} />)
+
+    await userEvent.click(screen.getByTestId('task-desc-empty'))
+    expect(screen.getByLabelText('Описание задачи')).toBeInTheDocument()
+  })
+
+  it('правка и «Сохранить» зовут onUpdate один раз и возвращают просмотр', async () => {
+    const onUpdate = vi.fn()
+    render(<TaskModal {...props({ task: mkTask({ description: MD }), onUpdate })} />)
+
+    await userEvent.click(screen.getByTestId('task-desc-edit'))
+    await userEvent.type(screen.getByLabelText('Описание задачи'), '\n- третий пункт')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+    expect(onUpdate).toHaveBeenCalledWith('t1', { description: `${MD}\n- третий пункт` })
+    expect(screen.getByTestId('task-desc-view')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Описание задачи')).not.toBeInTheDocument()
+  })
+
+  it('«Отмена» возвращает просмотр и ничего не пишет', async () => {
+    const onUpdate = vi.fn()
+    render(<TaskModal {...props({ task: mkTask({ description: MD }), onUpdate })} />)
+
+    await userEvent.click(screen.getByTestId('task-desc-edit'))
+    await userEvent.type(screen.getByLabelText('Описание задачи'), ' лишнее')
+    await userEvent.click(screen.getByRole('button', { name: 'Отмена' }))
+
+    expect(onUpdate).not.toHaveBeenCalled()
+    expect(within(screen.getByTestId('task-desc-view')).getByRole('heading', { name: 'Зачем' })).toBeInTheDocument()
+  })
+
+  it('Esc отменяет правку, а карточку не закрывает', async () => {
+    const onUpdate = vi.fn()
+    const onClose = vi.fn()
+    render(<TaskModal {...props({ task: mkTask({ description: MD }), onUpdate, onClose })} />)
+
+    await userEvent.click(screen.getByTestId('task-desc-edit'))
+    await userEvent.type(screen.getByLabelText('Описание задачи'), ' лишнее')
+    await userEvent.keyboard('{Escape}')
+
+    expect(onUpdate).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByTestId('task-desc-view')).toBeInTheDocument()
+  })
+
+  it('палочка AI-помощника есть только в правке', async () => {
+    render(<TaskModal {...props({ generateAiAssist: async () => [] })} />)
+
+    expect(screen.queryByRole('button', { name: 'Открыть AI-помощник' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByTestId('task-desc-empty'))
+    expect(screen.getByRole('button', { name: 'Открыть AI-помощник' })).toBeInTheDocument()
+  })
+
+  it('открытие другой задачи возвращает просмотр', async () => {
+    const child = mkTask({ id: 't2', parentId: 't1', title: 'Подзадача', seq: 2 })
+    const parent = mkTask({ description: MD })
+    const withChild: Board = { ...board, tasks: [parent, child] }
+    const { rerender } = render(<TaskModal {...props({ task: parent, board: withChild })} />)
+
+    await userEvent.click(screen.getByTestId('task-desc-edit'))
+    expect(screen.getByLabelText('Описание задачи')).toBeInTheDocument()
+
+    rerender(<TaskModal {...props({ task: child, board: withChild })} />)
+    expect(screen.queryByLabelText('Описание задачи')).not.toBeInTheDocument()
+    expect(screen.getByTestId('task-desc-empty')).toBeInTheDocument()
   })
 })
 

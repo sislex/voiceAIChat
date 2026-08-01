@@ -112,6 +112,8 @@ describe('KanbanBoard (изолированный)', () => {
     })
 
     await userEvent.click(screen.getByText('A'))
+    // Описание карточки — маркдаун в просмотре; палочка появляется в правке.
+    await userEvent.click(await screen.findByTestId('task-desc-empty'))
     const description = await screen.findByLabelText('Описание задачи')
     expect(description).toHaveAttribute('data-ai-assist')
     await userEvent.click(screen.getByRole('button', { name: 'Открыть AI-помощник' }))

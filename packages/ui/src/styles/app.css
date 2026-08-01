@@ -3778,6 +3778,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jmodal-desc-wrap { position: relative; display: block; width: 100%; }
 .jmodal-desc-wrap .jmodal-desc { width: 100%; box-sizing: border-box; padding-right: 42px; }
 .jmodal-ai-trigger { position: absolute; top: 7px; right: 7px; }
+/* Палочка AI — у верхней кромки поля. Общее правило .ai-assist-trigger центрует
+   её по вертикали (оно ниже в файле и перебивает .jmodal-ai-trigger), а в поле
+   описания на 10 строк центр — это середина текста. */
+.jmodal-desc-wrap .jmodal-ai-trigger { top: 7px; transform: none; }
 .jmodal-breadcrumb { display: inline-flex; align-items: center; gap: 6px; border: none; background: none; color: #6b778c; font-size: 12px; cursor: pointer; padding: 0; align-self: flex-start; }
 .jmodal-breadcrumb:hover { text-decoration: underline; }
 .jmodal-title { font-size: 20px; font-weight: 600; border: 1px solid transparent; border-radius: 4px; background: none; color: inherit; resize: none; padding: 4px 6px; font-family: inherit; }
@@ -3786,6 +3790,22 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 [data-theme='dark'] .jmodal-title:focus { background: #1c2128; }
 .jmodal-h { font-size: 13px; font-weight: 600; margin: 8px 0 0; opacity: 0.85; }
 .jmodal-desc { min-height: 72px; resize: vertical; font-size: 13px; }
+/* Описание: по умолчанию отрисованный маркдаун, правка — по кнопке «Изменить».
+   Заголовок и кнопка стоят одной строкой, поэтому у .jmodal-h внутри неё margin
+   снят: отступ секции держит сама строка. */
+.jmodal-desc-head { display: flex; align-items: center; gap: 4px; margin: 8px 0 0; }
+.jmodal-desc-head .jmodal-h { margin: 0; }
+.jmodal-desc-view { font-size: 13px; padding: 0 2px; }
+/* Маркдаун живёт в узкой колонке карточки рядом с 13px полями: заголовки ленты
+   чата (17-20px) ломали бы здесь вертикальный ритм, поэтому они мельче. */
+.jmodal-desc-view .md h1, .jmodal-desc-view .md h2 { font-size: 15px; }
+.jmodal-desc-view .md h3, .jmodal-desc-view .md h4 { font-size: 14px; }
+.jmodal-desc-view .md h1, .jmodal-desc-view .md h2,
+.jmodal-desc-view .md h3, .jmodal-desc-view .md h4 { margin: 10px 0 6px; }
+.jmodal-desc-view .md p, .jmodal-desc-view .md ul, .jmodal-desc-view .md ol { margin-bottom: 8px; }
+.jmodal-desc-empty { align-self: flex-start; border: none; border-radius: 4px; background: none; color: #6b778c; font: inherit; font-size: 13px; text-align: left; padding: 4px 6px; cursor: pointer; }
+.jmodal-desc-empty:hover { background: rgba(128, 128, 128, 0.08); }
+.jmodal-desc-actions { display: flex; gap: 8px; margin-top: 6px; }
 .jmodal-children { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .jmodal-child { display: flex; align-items: center; gap: 8px; width: 100%; border: none; background: rgba(128, 128, 128, 0.07); color: inherit; border-radius: 4px; padding: 6px 8px; cursor: pointer; font-size: 13px; text-align: left; }
 .jmodal-child:hover { background: rgba(128, 128, 128, 0.15); }
@@ -3849,6 +3869,13 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .jmodal-status { font-weight: 600; }
   .jmodal-assignee .sel { flex: 1; min-width: 0; }
   .jmodal-desc { font-size: 16px; min-height: 128px; }
+  /* Отрисованное описание на телефоне читается кеглем полей (16px), а его
+     заголовки — на ступень крупнее: иначе секция теряется среди «Подробностей». */
+  .jmodal-desc-view { font-size: 16px; }
+  .jmodal-desc-view .md h1, .jmodal-desc-view .md h2 { font-size: 17px; }
+  .jmodal-desc-view .md h3, .jmodal-desc-view .md h4 { font-size: 16px; }
+  .jmodal-desc-empty { font-size: 16px; min-height: 44px; }
+  .jmodal-desc-actions button { flex: 1 1 auto; min-height: 44px; }
   .jlabel-input { width: 100%; min-height: 40px; font-size: 16px; }
   .jmodal-labels { gap: 6px; }
   .jlabel-x { min-width: 30px; min-height: 30px; font-size: 15px; }
