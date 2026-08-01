@@ -654,6 +654,11 @@ export function createFakeCi(): FakeCi {
   const commands: CiCommand[] = []
   let settings: CiGlobalSettings = { ...DEFAULT_CI_GLOBAL_SETTINGS }
   const runs = new Map<string, CiRunDetail>()
+  /** Пустые итоги БЗ: фейк ходов модели не делает, значит и обращений нет. */
+  const EMPTY_KB_TOTALS = {
+    queries: 0, delivered: 0, empty: 0, errors: 0, toolQueries: 0, sections: 0, documents: 0,
+    chars: 0, estimatedTokens: 0, promptChars: 0, lastAt: null
+  }
   const logs = new Map<string, CiLogLine[]>()
   let projectLlm: CiLlmConfig = { ...DEFAULT_CI_LLM_CONFIG }
   let taskLlm: CiLlmConfig | null = null
@@ -699,6 +704,7 @@ export function createFakeCi(): FakeCi {
     llmProvider: 'claude',
     llmModel: 'opus',
     mode: 'development',
+    kbContextMode: 'auto',
     clarifyLevel: 'few',
     clarifyMax: 3,
     conversationId: null,
@@ -733,6 +739,25 @@ export function createFakeCi(): FakeCi {
     startRun: async (projectId, taskId, mode) => { const run = { ...mkRun(projectId, taskId), mode: mode ?? projectLlm.mode }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
     getRun: async (rid) => runs.get(rid) ?? { run: mkRun('p', 't'), steps: [], fixAttempts: [], interactions: [] },
     getRunLog: async (rid) => logs.get(rid) ?? [],
+    // Телеметрия БЗ в фейке пустая: её наполняют только реальные ходы модели.
+    getRunKbUsage: async (rid) => ({
+      runId: rid,
+      projectId: runs.get(rid)?.run.projectId ?? 'p1',
+      taskId: runs.get(rid)?.run.taskId ?? 't1',
+      kbContextMode: 'auto' as const,
+      conversationId: null,
+      totals: EMPTY_KB_TOTALS,
+      sections: [],
+      recent: []
+    }),
+    getTaskKbUsage: async (projectId, taskId) => ({
+      projectId,
+      taskId,
+      runs: 0,
+      totals: EMPTY_KB_TOTALS,
+      sections: [],
+      recent: []
+    }),
     cancelRun: async () => ({ ok: true }),
     retryRun: async (rid) => { const d = runs.get(rid)!; return await bridge.startRun(d.run.projectId, d.run.taskId) },
     retryRunFromStep: async (runId: string) => ({ id: runId } as unknown as CiRun),

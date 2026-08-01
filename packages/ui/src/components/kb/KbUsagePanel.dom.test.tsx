@@ -152,3 +152,29 @@ describe('KbUsagePanel — доступность и закрытие', () => {
     expectLabelledIconButtons()
   })
 })
+
+// Обращения из CI-рана попадают в ту же панель, что и обращения чата: чат один,
+// а вот источник разный — и из него должен быть путь в ленту рана.
+describe('KbUsagePanel — обращения из CI-рана', () => {
+  const ciQuery = makeKbQuery({ id: 'kbu-ci', source: 'tool_search', query: 'работа модели', ciRunId: 'run-7', ciStepId: 'step-1' })
+
+  it('обращение рана помечено источником «CI-ран» и ведёт в его ленту', async () => {
+    const onOpenRun = vi.fn()
+    renderPanel({ cache: makeKbUsageCache({ recent: [ciQuery] }), onOpenRun })
+    const feed = screen.getByTestId('kb-usage-feed')
+    await userEvent.click(within(feed).getByRole('button', { name: 'CI-ран' }))
+    expect(onOpenRun).toHaveBeenCalledWith('run-7')
+  })
+
+  it('без перехода в ленту метка остаётся, но кнопкой не притворяется', () => {
+    renderPanel({ cache: makeKbUsageCache({ recent: [ciQuery] }) })
+    const feed = screen.getByTestId('kb-usage-feed')
+    expect(within(feed).getByText('CI-ран')).toBeInTheDocument()
+    expect(within(feed).queryByRole('button', { name: 'CI-ран' })).not.toBeInTheDocument()
+  })
+
+  it('обращения чата метки CI не получают', () => {
+    renderPanel({ cache: makeKbUsageCache({ recent: [makeKbQuery()] }), onOpenRun: vi.fn() })
+    expect(within(screen.getByTestId('kb-usage-feed')).queryByText('CI-ран')).not.toBeInTheDocument()
+  })
+})

@@ -11,7 +11,9 @@ import {
   type ProjectSummary,
   type Task,
   type TaskPriority,
-  type WorkItemDefaultSkills
+  type WorkItemDefaultSkills,
+  type CiReuseStrategy,
+  type KbContextMode
 } from '@voicechat/shared'
 
 import type { VoiceChatDb } from '../db/database.js'
@@ -92,6 +94,12 @@ export function registerProjectRoutes(
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
       productionDeployCommand?: string
+      ciBaseBranch?: string
+      ciBranchTemplate?: string
+      ciReuseStrategy?: CiReuseStrategy
+      ciExecAuthRef?: string
+      /** Режим базы знаний в ходах модели CI-рана (auto|manual|off). */
+      ciKbContextMode?: KbContextMode
       doneRetentionDays?: number | null
     }
   }>('/api/projects/:id', async (req, reply) => {

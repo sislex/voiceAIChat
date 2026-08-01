@@ -5,8 +5,13 @@
 import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import { appendQuestionsHint, clarifyBudget, DEFAULT_CI_CLAUDE_MODEL, parseQuestions } from '@voicechat/shared'
-import type { CiRunMode } from '@voicechat/shared'
+import type { CiRunMode, KbContextMode } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
+import { kbToolBroker, kbRunDirective, type KbToolEntry } from '../kb/kbMcp.js'
+import { buildKbAutoContext } from '../kb/autoContext.js'
+import { kbViewOf } from '../kb/access.js'
+import type { KnowledgeBaseService } from '../kb/types.js'
+import type { KbUsageTracker } from '../kb/usage.js'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook } from './types.js'
 import {
@@ -32,7 +37,26 @@ export interface CiModelHooksDeps {
   now?: () => number
   /** Таймаут шага актуализации базы знаний (мс); по умолчанию `KB_UPDATE_TIMEOUT_MS`. */
   kbTimeoutMs?: number
+  /**
+   * База знаний для ходов рана: авто-контекст по теме задачи и инструменты
+   * mcp__kb__*. Не передана — ран работает как раньше (мимо базы знаний).
+   */
+  kb?: KnowledgeBaseService
+  /** Телеметрия обращений; без неё БЗ работает, но статистика не пишется. */
+  kbUsage?: KbUsageTracker
+  /** База URL MCP базы знаний (с ?k=секрет); `&turn=<token>` дописывается на ход. */
+  kbMcpBaseUrl?: string
+  /** Инструмент БЗ включён администратором (config.kbToolEnabled). */
+  kbToolEnabled?: boolean
+  /** Брокер токенов ходов БЗ (в тестах — двойник, следящий за утечкой). */
+  kbTool?: { register(token: string, entry: KbToolEntry): void; unregister(token: string): void }
 }
+
+/**
+ * Кап на длину запроса к БЗ по задаче: описание и критерии приёмки бывают на
+ * несколько экранов, а поиску нужна тема, а не весь текст.
+ */
+const KB_QUERY_CHARS = 1200
 
 /**
  * Верхний предел ходов CLI внутри одного шага модели: бюджет вопросов и
@@ -146,6 +170,114 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   const now = deps.now ?? (() => Date.now())
   const clientFor = (ctx: CiModelContext): LlmClient => ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
   const modelFor = (ctx: CiModelContext): string => ctx.run.llmProvider === 'codex' ? ctx.run.llmModel : (ctx.run.llmModel || DEFAULT_CI_CLAUDE_MODEL)
+  const kbBroker = deps.kbTool ?? kbToolBroker
+
+  /**
+   * Режим БЗ рана — снимок настройки ПРОЕКТА на старте (`ci_runs.kb_context_mode`),
+   * а не режим связанного чата: в ране модель исследует проект по задаче, и от
+   * настроек конкретного чата это зависеть не должно.
+   */
+  const kbModeOf = (ctx: CiModelContext): KbContextMode => ctx.run.kbContextMode ?? 'auto'
+
+  /**
+   * Доступны ли инструменты БЗ. Проверка НЕ зависит от машины и от режима шага:
+   * база read-only, поэтому она есть и в фазе плана, и в ходе без агента (там
+   * она вообще единственный источник контекста). `VC_KB_TOOL=off` глушит их и
+   * здесь — как в чате.
+   */
+  function kbToolAvailable(mode: KbContextMode): boolean {
+    if (!deps.kb || !deps.kbMcpBaseUrl || mode === 'off' || deps.kbToolEnabled === false) return false
+    try {
+      return deps.kb.status().available
+    } catch {
+      return false // сломанный индекс = инструмента нет, ран продолжается
+    }
+  }
+
+  /**
+   * Ход с инструментами БЗ. Токен живёт ровно на время `body` и снимается во
+   * ВСЕХ выходах — успех, ошибка, отмена рана, убийство CLI: иначе после каждой
+   * отмены в брокере оставался бы живой токен, которым можно читать базу.
+   */
+  async function withKbTools<T>(
+    ctx: CiModelContext,
+    stepId: string,
+    body: (kbFields: Partial<LlmRequest>, turnId: string) => Promise<T>
+  ): Promise<T> {
+    const mode = kbModeOf(ctx)
+    const turnId = randomUUID()
+    if (!kbToolAvailable(mode)) return body({}, turnId)
+    const token = randomUUID()
+    kbBroker.register(token, {
+      userId: ctx.run.triggeredBy,
+      // Чата у рана может не быть — тогда БЗ работает, телеметрия молчит.
+      conversationId: ctx.run.conversationId,
+      projectId: ctx.project.id,
+      turnId,
+      ciRunId: ctx.run.id,
+      ciStepId: stepId
+    })
+    try {
+      return await body(
+        {
+          kbMcpUrl: `${deps.kbMcpBaseUrl}&turn=${encodeURIComponent(token)}`,
+          kbMode: mode === 'manual' ? 'manual' : 'auto'
+        },
+        turnId
+      )
+    } finally {
+      kbBroker.unregister(token)
+    }
+  }
+
+  /**
+   * Авто-контекст БЗ по теме задачи (режим `auto`): заголовок + описание +
+   * критерии приёмки идут тем же поиском и с тем же порогом уверенности, что и
+   * ход чата (kb/autoContext.ts). Никогда не бросает: сломанная БЗ — это пустой
+   * контекст и обращение со статусом `error`, но не упавший ран.
+   */
+  async function kbTaskContext(ctx: CiModelContext, turnId: string, stepId: string): Promise<string> {
+    if (!deps.kb || kbModeOf(ctx) !== 'auto') return ''
+    const query = [ctx.task.title, ctx.task.description, ctx.task.acceptanceCriteria]
+      .filter(Boolean)
+      .join('\n')
+      .trim()
+      .slice(0, KB_QUERY_CHARS)
+    if (!query) return ''
+    const usage = deps.kbUsage?.begin(
+      {
+        userId: ctx.run.triggeredBy,
+        conversationId: ctx.run.conversationId,
+        projectId: ctx.project.id,
+        turnId,
+        ciRunId: ctx.run.id,
+        ciStepId: stepId,
+        source: 'auto'
+      },
+      query
+    )
+    try {
+      const auto = await buildKbAutoContext(deps.kb, query, {
+        ...kbViewOf(deps.db, ctx.run.triggeredBy),
+        projectId: ctx.project.id
+      })
+      if (!auto.text) {
+        usage?.empty(auto.emptyReason ?? 'no-match')
+        return ''
+      }
+      usage?.complete({
+        deliveredChars: auto.text.length,
+        injected: true,
+        bundleTokens: auto.bundle.estimatedTokens,
+        confidence: auto.bundle.confidence,
+        sections: auto.sections
+      })
+      return auto.text
+    } catch (err) {
+      usage?.fail(err instanceof Error ? err.message : String(err))
+      return ''
+    }
+  }
 
   const modelWork: CiModelWorkHook = async (ctx: CiModelContext) => {
     // Публикуем модели команды справочника как инструмент на время шага (лимит
@@ -177,84 +309,95 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     let phase: CiRunMode = ctx.run.mode === 'plan' ? 'plan' : 'development'
     let budget = clarifyBudget(ctx.run)
     let sessionId: string | null = null
-    let prompt = taskPrompt(ctx, phase)
-    if (budget > 0) prompt = `${prompt}\n\n${clarifyHint(budget)}`
 
     try {
-      // Страховка от бесконечного цикла: паузы ограничены бюджетом вопросов и
-      // числом доработок плана, но верхний предел ходов задаём явно.
-      for (let turnNo = 0; turnNo < MAX_MODEL_TURNS; turnNo++) {
-        if (ctx.signal.aborted) return { ok: false, cancelled: true }
-        // Фаза плана НЕ идёт в CLI-режиме `plan`: он блокирует MCP-инструменты целиком
-        // («Cannot call mcp__remote__bash while in plan mode»), а рабочая копия доступна
-        // модели только через remote MCP — в плане она оказывалась слепой. Вместо этого
-        // `default` с белым списком инструментов (правки файлов CLI отклонит сам) плюс
-        // remote-bash в режиме только чтения (`ro=1`) и без команд CI-справочника.
-        const req: LlmRequest = {
-          userId: ctx.run.triggeredBy,
-          prompt,
-          sessionId,
-          model: modelFor(ctx),
-          permissionMode: phase === 'plan' ? 'default' : 'acceptEdits',
-          // CLI работает внутри server-контейнера; workspace существует на удалённой машине
-          // и доступен модели только через remote MCP. Хостовый путь нельзя передавать в spawn cwd.
-          ...base,
-          ...(phase === 'plan'
-            ? {
-                readOnlyRemote: true,
-                ...(base.remote
-                  ? { remote: { mcpUrl: `${base.remote.mcpUrl}&ro=1`, agentName: base.remote.agentName } }
-                  : {})
-              }
-            : {})
-        }
-        const r = await runTurn(clientFor(ctx), req, log, ctx.signal)
-        // Отмена рана: не «ошибка модели» — ран закрывается как cancelled.
-        if (r.cancelled || ctx.signal.aborted) return { ok: false, cancelled: true }
-        if (!r.ok) return { ok: false }
-        if (r.sessionId) sessionId = r.sessionId
+      return await withKbTools(ctx, ctx.parentStepId, async (kbFields, kbTurnId) => {
+        // «Сначала база знаний, потом код»: требование идёт в задании, а блок
+        // контекста по теме задачи сервер подмешивает сам (режим `auto`).
+        const kbMode = kbModeOf(ctx)
+        let prompt = taskPrompt(ctx, phase)
+        if (kbFields.kbMcpUrl) prompt = `${prompt}\n\n${kbRunDirective(kbMode === 'manual' ? 'manual' : 'auto')}`
+        prompt = `${prompt}${await kbTaskContext(ctx, kbTurnId, ctx.parentStepId)}`
+        if (budget > 0) prompt = `${prompt}\n\n${clarifyHint(budget)}`
 
-        // 1) Уточняющие вопросы — пока есть бюджет.
-        const parsed = budget > 0 ? parseQuestions(r.text) : null
-        if (parsed) {
-          budget -= parsed.questions.length
-          const answer = await ctx.askUser(ctx.parentStepId, parsed.questions)
+        // Страховка от бесконечного цикла: паузы ограничены бюджетом вопросов и
+        // числом доработок плана, но верхний предел ходов задаём явно.
+        for (let turnNo = 0; turnNo < MAX_MODEL_TURNS; turnNo++) {
           if (ctx.signal.aborted) return { ok: false, cancelled: true }
-          if (answer === null) {
-            log('system', 'Продолжаю без уточнений.\n')
-            prompt = 'Ответа не будет — действуй по своему усмотрению и продолжай.'
-          } else {
-            prompt = answer.trim() || 'Ответа не будет — действуй по своему усмотрению и продолжай.'
+          // Фаза плана НЕ идёт в CLI-режиме `plan`: он блокирует MCP-инструменты целиком
+          // («Cannot call mcp__remote__bash while in plan mode»), а рабочая копия доступна
+          // модели только через remote MCP — в плане она оказывалась слепой. Вместо этого
+          // `default` с белым списком инструментов (правки файлов CLI отклонит сам) плюс
+          // remote-bash в режиме только чтения (`ro=1`) и без команд CI-справочника.
+          const req: LlmRequest = {
+            userId: ctx.run.triggeredBy,
+            prompt,
+            sessionId,
+            model: modelFor(ctx),
+            permissionMode: phase === 'plan' ? 'default' : 'acceptEdits',
+            // Инструменты БЗ — ВНЕ ветки `remote`: база read-only и от машины не
+            // зависит (в фазе плана и в ходе без машины она тем более нужна).
+            ...kbFields,
+            // CLI работает внутри server-контейнера; workspace существует на удалённой машине
+            // и доступен модели только через remote MCP. Хостовый путь нельзя передавать в spawn cwd.
+            ...base,
+            ...(phase === 'plan'
+              ? {
+                  readOnlyRemote: true,
+                  ...(base.remote
+                    ? { remote: { mcpUrl: `${base.remote.mcpUrl}&ro=1`, agentName: base.remote.agentName } }
+                    : {})
+                }
+              : {})
           }
-          if (budget > 0) prompt = `${prompt}\n\n${clarifyHint(budget)}`
-          continue
-        }
+          const r = await runTurn(clientFor(ctx), req, log, ctx.signal)
+          // Отмена рана: не «ошибка модели» — ран закрывается как cancelled.
+          if (r.cancelled || ctx.signal.aborted) return { ok: false, cancelled: true }
+          if (!r.ok) return { ok: false }
+          if (r.sessionId) sessionId = r.sessionId
 
-        // 2) Гейт плана: одобрение переводит тот же диалог в разработку.
-        if (phase === 'plan') {
-          const decision = await ctx.askPlanApproval(ctx.parentStepId, r.text)
-          if (!decision) {
-            log('system', 'Решение по плану не получено — ран остановлен.\n')
-            return { ok: false, cancelled: true }
-          }
-          if (decision.decision === 'rework') {
-            log('system', 'План отправлен на доработку.\n')
-            prompt = decision.comment.trim()
-              ? `Пользователь просит доработать план: ${decision.comment.trim()}\nПредложи исправленный план, файлы не меняй.`
-              : 'Пользователь просит доработать план. Предложи исправленный вариант, файлы не меняй.'
+          // 1) Уточняющие вопросы — пока есть бюджет.
+          const parsed = budget > 0 ? parseQuestions(r.text) : null
+          if (parsed) {
+            budget -= parsed.questions.length
+            const answer = await ctx.askUser(ctx.parentStepId, parsed.questions)
+            if (ctx.signal.aborted) return { ok: false, cancelled: true }
+            if (answer === null) {
+              log('system', 'Продолжаю без уточнений.\n')
+              prompt = 'Ответа не будет — действуй по своему усмотрению и продолжай.'
+            } else {
+              prompt = answer.trim() || 'Ответа не будет — действуй по своему усмотрению и продолжай.'
+            }
+            if (budget > 0) prompt = `${prompt}\n\n${clarifyHint(budget)}`
             continue
           }
-          log('system', 'План одобрен — перехожу к разработке.\n')
-          phase = 'development'
-          prompt = 'План одобрен. Реализуй его в рабочей директории. Команды выполняй через доступный инструмент bash.'
-          continue
-        }
 
-        // 3) Разработка закончена.
-        return { ok: true }
-      }
-      log('system', `Достигнут предел ходов модели (${MAX_MODEL_TURNS}).\n`)
-      return { ok: false }
+          // 2) Гейт плана: одобрение переводит тот же диалог в разработку.
+          if (phase === 'plan') {
+            const decision = await ctx.askPlanApproval(ctx.parentStepId, r.text)
+            if (!decision) {
+              log('system', 'Решение по плану не получено — ран остановлен.\n')
+              return { ok: false, cancelled: true }
+            }
+            if (decision.decision === 'rework') {
+              log('system', 'План отправлен на доработку.\n')
+              prompt = decision.comment.trim()
+                ? `Пользователь просит доработать план: ${decision.comment.trim()}\nПредложи исправленный план, файлы не меняй.`
+                : 'Пользователь просит доработать план. Предложи исправленный вариант, файлы не меняй.'
+              continue
+            }
+            log('system', 'План одобрен — перехожу к разработке.\n')
+            phase = 'development'
+            prompt = 'План одобрен. Реализуй его в рабочей директории. Команды выполняй через доступный инструмент bash.'
+            continue
+          }
+
+          // 3) Разработка закончена.
+          return { ok: true }
+        }
+        log('system', `Достигнут предел ходов модели (${MAX_MODEL_TURNS}).\n`)
+        return { ok: false }
+      })
     } finally {
       ciToolBroker.unregister(token)
     }
@@ -263,16 +406,21 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   const modelSummary: CiModelSummaryHook = async (ctx: CiModelContext) => {
     const detail = deps.db.getCiRun(ctx.run.triggeredBy, ctx.run.id)
     const stepLines = (detail?.steps ?? []).map((s) => `- ${s.title}: ${s.status}${s.exitCode != null ? ` (код ${s.exitCode})` : ''}`).join('\n')
-    const req: LlmRequest = {
-      userId: ctx.run.triggeredBy,
-      prompt: `Кратко резюмируй результат воркфлоу по задаче «${ctx.task.title}». Шаги:\n${stepLines}\nДай сжатое резюме: что сделано и в каком состоянии задача.`,
-      sessionId: null,
-      model: modelFor(ctx),
-      permissionMode: 'plan',
-      executionDisabled: true
-    }
-    const r = await runTurn(clientFor(ctx), req, () => {}, ctx.signal)
-    return r.text.trim() || 'Резюме недоступно.'
+    // Инструменты БЗ есть и здесь: ход без машины и в режиме «план» — база
+    // read-only, а сверить формулировки резюме с ней дешевле, чем угадывать.
+    return await withKbTools(ctx, ctx.parentStepId, async (kbFields) => {
+      const req: LlmRequest = {
+        userId: ctx.run.triggeredBy,
+        prompt: `Кратко резюмируй результат воркфлоу по задаче «${ctx.task.title}». Шаги:\n${stepLines}\nДай сжатое резюме: что сделано и в каком состоянии задача.`,
+        sessionId: null,
+        model: modelFor(ctx),
+        permissionMode: 'plan',
+        executionDisabled: true,
+        ...kbFields
+      }
+      const r = await runTurn(clientFor(ctx), req, () => {}, ctx.signal)
+      return r.text.trim() || 'Резюме недоступно.'
+    })
   }
 
   const attemptFix: CiFixHook = async (ctx: CiFixContext) => {
@@ -282,27 +430,32 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       if (ctx.signal.aborted) return { fixed: false }
       if (settings.fixTimeLimitMs > 0 && now() - startAll > settings.fixTimeLimitMs) break
       const started = now()
-      const req: LlmRequest = {
-        userId: ctx.run.triggeredBy,
-        prompt: [
-          `Упал шаг воркфлоу: «${ctx.failedStep.title}».`,
-          ctx.failedStep.commandSnapshot ? `Команда:\n${ctx.failedStep.commandSnapshot}` : '',
-          `Код выхода: ${ctx.failedStep.exitCode ?? 'неизвестен'}`,
-          `Хвост вывода:\n${ctx.logTail.slice(-2000)}`,
-          `Рабочая директория: ${ctx.workspacePath}`,
-          '',
-          'Кратко (1-2 фразы) поставь диагноз, затем исправь причину в рабочей директории',
-          '(правь файлы/ставь зависимости/меняй конфиг). НЕ ослабляй саму команду ради обхода ошибки.'
-        ]
-          .filter(Boolean)
-          .join('\n'),
-        sessionId: null,
-        model: modelFor(ctx),
-        permissionMode: 'acceptEdits',
-        // См. modelWork: рабочая директория удалённой машины задаётся в MCP URL.
-        ...remoteOf(deps, ctx)
-      }
-      const turn = await runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctx.signal)
+      // Токен БЗ живёт ровно на этот ход — включая отмену рана посреди правки.
+      const turn = await withKbTools(ctx, ctx.parentStepId, async (kbFields) => {
+        const req: LlmRequest = {
+          userId: ctx.run.triggeredBy,
+          prompt: [
+            `Упал шаг воркфлоу: «${ctx.failedStep.title}».`,
+            ctx.failedStep.commandSnapshot ? `Команда:\n${ctx.failedStep.commandSnapshot}` : '',
+            `Код выхода: ${ctx.failedStep.exitCode ?? 'неизвестен'}`,
+            `Хвост вывода:\n${ctx.logTail.slice(-2000)}`,
+            `Рабочая директория: ${ctx.workspacePath}`,
+            '',
+            'Кратко (1-2 фразы) поставь диагноз, затем исправь причину в рабочей директории',
+            '(правь файлы/ставь зависимости/меняй конфиг). НЕ ослабляй саму команду ради обхода ошибки.',
+            kbFields.kbMcpUrl ? 'Если причина связана с устройством проекта — сверься с базой знаний (mcp__kb__*) до правок.' : ''
+          ]
+            .filter(Boolean)
+            .join('\n'),
+          sessionId: null,
+          model: modelFor(ctx),
+          permissionMode: 'acceptEdits',
+          ...kbFields,
+          // См. modelWork: рабочая директория удалённой машины задаётся в MCP URL.
+          ...remoteOf(deps, ctx)
+        }
+        return runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctx.signal)
+      })
       if (turn.cancelled || ctx.signal.aborted) return { fixed: false }
       const diagnosis = turn.text.split('\n').find((l) => l.trim())?.slice(0, 200) ?? ''
       const rr = await ctx.rerunFailedStep()

@@ -4,6 +4,8 @@ import { screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import { RunFeed, type RunFeedCache } from './RunFeed'
 import { listCommands, resetCommands } from '../../lib/commands'
+import { createFakeCi } from '../../test/fakeApi'
+import type { KbRunUsageReport } from '@shared/kb'
 import {
   NOW,
   makeInteraction as mkInteraction,
@@ -235,5 +237,48 @@ describe('RunFeed — доступность', () => {
     render(<RunFeed {...baseProps(cache)} onAnswerInteraction={vi.fn()} />)
     await expectNoViolations()
     expectLabelledIconButtons()
+  })
+})
+
+// Врез «Использование базы знаний» в ленте: цифры текущего рана и ссылки на
+// разделы. Данные тянет сам компонент через мост, поэтому без моста вреза нет.
+describe('RunFeed — использование базы знаний', () => {
+  afterEach(() => { delete (window as { ci?: unknown }).ci })
+
+  const report = (over: Partial<KbRunUsageReport> = {}): KbRunUsageReport => ({
+    runId: 'run-1', projectId: 'p1', taskId: 't1', kbContextMode: 'auto', conversationId: 'c1',
+    totals: { queries: 3, delivered: 3, empty: 0, errors: 0, toolQueries: 2, sections: 4, documents: 2, chars: 1200, estimatedTokens: 300, promptChars: 6000, lastAt: 5 },
+    sections: [{ documentId: 'ci-runner', title: 'CI-раннер', heading: 'Работа модели', anchor: 'model', sourcePath: 'docs/kb/features/ci-runner.md', freshness: 'current', times: 2, autoTimes: 1, chars: 900, estimatedTokens: 225, lastAt: 5 }],
+    recent: [],
+    ...over
+  })
+
+  function mount(over: Partial<KbRunUsageReport> = {}): void {
+    window.ci = { ...createFakeCi(), getRunKbUsage: async () => report(over) } as typeof window.ci
+    const cache: RunFeedCache = { detail: { run: mkRun(), steps: [mkStep()], fixAttempts: [], interactions: [] }, log: [], conclusion: null }
+    render(<RunFeed {...baseProps(cache)} />)
+  }
+
+  it('показывает цифры рана и ссылку на раздел базы знаний', async () => {
+    mount()
+    const block = await screen.findByTestId('ci-run-kb-usage')
+    expect(within(block).getByTestId('ci-run-kb-usage-nums').textContent).toContain('3 обращений')
+    expect(within(block).getByTestId('ci-run-kb-usage-nums').textContent).toContain('2 разделов')
+    expect(within(block).getByTestId('ci-run-kb-usage-nums').textContent).toContain('300')
+    expect(within(block).getByRole('link', { name: /CI-раннер \/ Работа модели/ })).toHaveAttribute('href', '#/kb/ci-runner')
+  })
+
+  it('режим «выключена» объясняет пустоту настройкой, а не поведением модели', async () => {
+    mount({ kbContextMode: 'off', totals: { queries: 0, delivered: 0, empty: 0, errors: 0, toolQueries: 0, sections: 0, documents: 0, chars: 0, estimatedTokens: 0, promptChars: 0, lastAt: null }, sections: [] })
+    const block = await screen.findByTestId('ci-run-kb-usage')
+    expect(within(block).getByText('БЗ выключена')).toBeInTheDocument()
+    expect(within(block).getByText(/модель работала без базы знаний/)).toBeInTheDocument()
+  })
+
+  it('без моста CI вреза нет — лента рана от этого не ломается', () => {
+    const cache: RunFeedCache = { detail: { run: mkRun(), steps: [mkStep()], fixAttempts: [], interactions: [] }, log: [], conclusion: null }
+    render(<RunFeed {...baseProps(cache)} />)
+    expect(screen.queryByTestId('ci-run-kb-usage')).not.toBeInTheDocument()
+    expect(screen.getByTestId('ci-runfeed')).toBeInTheDocument()
   })
 })

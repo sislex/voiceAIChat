@@ -157,6 +157,13 @@ MCP-эндпоинт `/mcp/kb` stateless, ход адресуется токен
 чтобы не сломать автоодобрение Read/Grep (escape hatch `VC_KB_TOOL_ALLOWLIST=1`).
 Codex получает `-c mcp_servers.kb.url=…` до ветвления plan/remote.
 
+Сборка блока контекста (порог `autoInjectAllowed`, формат разделов, точные
+символы каждого) живёт в `kb/autoContext.ts` — ОДНА на ход чата и на ход модели
+в CI-ране. Ран берёт режим не у чата, а у проекта (`ci_kb_context_mode`) и
+фиксирует его в `ci_runs.kb_context_mode` на старте; инструменты подключаются к
+работе модели, fix-loop и резюме, токен снимает `withKbTools` в `ci/modelHooks.ts`
+во всех выходах хода — включая отмену рана. Подробности — `features/ci-runner.md`.
+
 Каждое обращение (и авто-инъекция, и вызов модели) пишется в телеметрию и
 рассылается кадром `kb.usage` — см. `features/kb-usage.md`.
 

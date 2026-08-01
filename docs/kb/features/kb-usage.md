@@ -9,6 +9,8 @@ areas:
   - apps/server/src/kb/kbMcp.ts
   - apps/server/src/kb/routes.ts
   - apps/server/src/turns.ts
+  - apps/server/src/kb/autoContext.ts
+  - apps/server/src/ci/modelHooks.ts
   - apps/server/src/db/schema.ts
   - packages/shared/src/kb.ts
   - packages/ui/src/components/kb
@@ -22,11 +24,17 @@ symbols:
   - addKbUsage
   - kbUsageReport
   - kbUsageProjectReport
+  - kbUsageRunReport
+  - kbUsageTaskReport
+  - buildKbAutoContext
+  - kbRunDirective
   - buildKbUsageFromMessages
   - KbUsagePanel
 protocols:
   - GET /api/conversations/:id/kb-usage
   - GET /api/projects/:id/kb-usage
+  - GET /api/ci/runs/:runId/kb-usage
+  - GET /api/projects/:id/tasks/:taskId/kb-usage
   - kb.usage
 tags:
   - documentation
@@ -44,6 +52,7 @@ packages:
 related:
   - project-knowledge-base
   - kb-workflow
+  - ci-runner
   - llm
   - protocol
   - ui
@@ -60,6 +69,12 @@ related:
 
 `auto` — сервер подмешивает контекст в промпт хода (`turns.ts`, режим разговора `kbContextMode='auto'`). `tool_search` / `tool_document` / `tool_topics` — модель сама вызвала инструмент MCP-сервера `kb`. Без инструментов метрика «сколько раз модель запросила БЗ» невозможна в принципе, поэтому они появились вместе с панелью.
 
+## Два места, где работает модель
+
+Чат (`turns.ts`) и работа модели в CI-ране (`ci/modelHooks.ts`) ходят в базу знаний одинаково — и намеренно одной реализацией. Сборку блока контекста (порог `autoInjectAllowed`, формат разделов, точные символы каждого) делает `kb/autoContext.ts`: вторая копия логики означала бы, что на один и тот же запрос чат и ран показывают в панели разные числа, и объяснить это нечем.
+
+Разница ровно одна — откуда берётся режим. У чата это его собственная настройка (`conversations.kb_context_mode`), у рана — настройка ПРОЕКТА `ci_kb_context_mode`, снятая в `ci_runs.kb_context_mode` на момент старта. Ран исследует проект по задаче, и зависеть от настроек конкретного чата это не должно; фиксация снимка означает, что смена настройки действует со следующего рана, а идущий доживает в своём режиме.
+
 ## Режимы `kbContextMode`
 
 `auto` — авто-инъекция ДА, инструменты ДА, системный хинт «БЗ в первую очередь» плюс уже вставленный блок контекста. `manual` — авто-инъекции НЕТ, инструменты ДА, хинт усиленный (инструменты — единственный путь к базе). `off` — ничего. До этой фичи `manual` был эквивалентен `off`: `turns.ts` проверял только `'auto'`. Комбинация `manual` + `VC_KB_TOOL=off` вырождается в `off`, и панель показывает это чипом «инструмент БЗ отключён администратором».
@@ -69,6 +84,14 @@ related:
 Stateless MCP-эндпоинт `/mcp/kb`: доступ по секрету процесса `?k=`, ход адресуется токеном `?turn=` через in-memory `kbToolBroker`. Токен выдаёт `TurnManager` и снимает во всех выходах хода (готово, ошибка, отмена, `flushInterrupted`) — иначе каждый отменённый ход оставлял бы живой токен. `mcp__kb__document` режет раздел чистой функцией `sectionOf` и обрезает его на 8000 символах: без капа один вызов вливает в контекст всю базу.
 
 Claude получает `--mcp-config` с сервером `kb` и общий `--append-system-prompt` (у CLI он один — хинты remote/БЗ склеиваются). `--allowedTools` в ходе БЕЗ машины намеренно НЕ передаётся: в headless `-p` этот флаг работает как allow-list автоодобрения, и добавление его ради БЗ выключило бы автоодобрение встроенных Read/Grep. Деградация безопасна — авто-инъекция в `auto` продолжает работать, а панель честно покажет 0 запросов модели; escape hatch — `VC_KB_TOOL_ALLOWLIST=1`. Codex получает `-c mcp_servers.kb.url=…` до ветвления plan/remote: база read-only, глушить её в плане незачем.
+
+## База знаний в CI-ране
+
+Запрос авто-контекста собирается из заголовка, описания и критериев приёмки задачи (кап `KB_QUERY_CHARS`, иначе поиск получает не тему, а несколько экранов текста). Кроме блока контекста в задание уходит `kbRunDirective` — требование начать с базы знаний и только потом читать код (в `manual` — усиленная формулировка: инструменты единственный путь к базе). Инструменты подключаются к трём ходам рана: работа модели, fix-loop и резюме, — в том числе в фазе «план» и в ходе без машины: база read-only и от агента не зависит.
+
+Токен хода выдаёт тот же `kbToolBroker` и снимает во ВСЕХ выходах, включая отмену рана и убийство CLI (`withKbTools` в `modelHooks.ts` держит `try/finally` вокруг самого хода, а не вокруг сборки запроса). Живой токен после отмены — это возможность читать базу от имени закончившегося рана.
+
+Телеметрия пишется тем же `createKbUsageTracker` с `conversationId` связанного чата рана, плюс `ci_run_id` и `ci_step_id`. Чата у рана может не быть (`conversation_id = null`) — тогда база знаний работает, а телеметрия молча пропускается: строка обращения ссылается на `conversations`, и ронять ран из-за метрики нельзя. Итог рана уходит в резюме строкой `formatKbUsageSummaryLine` («БЗ: N обращений, M разделов, ≈K токенов»); обращений не было — строки нет, пустое «БЗ: 0» в чате читается как поломка.
 
 ## Честность метрики токенов
 
@@ -90,12 +113,14 @@ Claude получает `--mcp-config` с сервером `kb` и общий `-
 
 Для чатов, живших до фичи (и для desktop без моста `window.kb`), отчёт собирает чистая функция `buildKbUsageFromMessages` из `meta.request.kbContext` сохранённых ходов. Склейка `mergeKbUsage` отбрасывает производное событие, если сервер этот ход уже посчитал (ключ — `messageId`), и вовсе не подмешивает историю, если серверная лента урезана лимитом: иначе двойной счёт.
 
+Вне чата те же числа показывает врез `KbUsageBrief`: в ленте рана — по текущему рану (`getRunKbUsage`), в модалке задачи — агрегат по всем её ранам (`getTaskKbUsage`). Отчёт грузит сам компонент через `useKbUsageReport`, и его сбой ничего не ломает: экран открывали не ради статистики. В ленте панели чата обращение рана помечено «CI-ран» и ведёт в ленту этого рана.
+
 Ссылка на раздел ведёт на `#/kb/:documentId` — `KnowledgeBase` открывает документ из адреса. Те же ссылки — в чипсах «База знаний» панели «Подробнее» ответа, где рядом стоят строки «Символы из БЗ» и «≈ токенов из БЗ».
 
 ## Изоляция
 
-Отчёт по чату начинается с `getConversation(userId, id)` → `null` → 404; проектный — с приватного `isProjectMember` → 404. Кадры `kb.usage` уходят только своему пользователю (фильтр в `session.ts`).
+Отчёт по чату начинается с `getConversation(userId, id)` → `null` → 404; проектный, по рану и по задаче — с приватного `isProjectMember` → 404. Кадры `kb.usage` уходят только своему пользователю (фильтр в `session.ts`), поэтому обращения рана видит его владелец, а не все участники проекта.
 
 ## Тесты
 
-Сервер: `db/database.kbUsage.test.ts` (монотонность `seq`, агрегаты, отсутствие дублирования сумм, каскад, изоляция), `kb/usage.test.ts` (pending с тем же id, трекер не выбрасывает при сломанной БД), `kb/kbMcp.test.ts` (403, `tools/list`, `deliveredChars === text.length`, кап, просроченный токен, `sectionOf`), `kb/usageRoutes.test.ts` (200/404, `lastSeq`), секции KB в `turns.test.ts`, форма аргументов в `claude/claudeCli.test.ts` и `codex/codexCli.test.ts`, маршрутизация кадра в `session.test.ts`. UI: `lib/kbUsage.test.ts`, `components/kb/KbUsagePanel.dom.test.tsx`, `store/voiceStore.kb.test.ts`, дополнения в `ChatColumn.dom.test.tsx`, `MessageMeta.dom.test.tsx`, `ConversationSettings.dom.test.tsx`, `App.commands.dom.test.tsx`, `App.pages.dom.test.tsx`, сториз `KbUsagePanel.stories.tsx`.
+Сервер: `db/database.kbUsage.test.ts` (монотонность `seq`, агрегаты, отсутствие дублирования сумм, каскад, изоляция), `kb/usage.test.ts` (pending с тем же id, трекер не выбрасывает при сломанной БД), `kb/kbMcp.test.ts` (403, `tools/list`, `deliveredChars === text.length`, кап, просроченный токен, `sectionOf`), `kb/usageRoutes.test.ts` (200/404, `lastSeq`), секции KB в `turns.test.ts`, форма аргументов в `claude/claudeCli.test.ts` и `codex/codexCli.test.ts`, маршрутизация кадра в `session.test.ts`. UI: `lib/kbUsage.test.ts`, `components/kb/KbUsagePanel.dom.test.tsx`, `store/voiceStore.kb.test.ts`, дополнения в `ChatColumn.dom.test.tsx`, `MessageMeta.dom.test.tsx`, `ConversationSettings.dom.test.tsx`, `App.commands.dom.test.tsx`, `App.pages.dom.test.tsx`, сториз `KbUsagePanel.stories.tsx`. База знаний в ране: `ci/modelHooks.test.ts` (форма запроса по режимам, авто-контекст из полей задачи, снятие токена при отмене работы модели и fix-loop), `ci/runManager.test.ts` (обращения с `ci_run_id`, строка БЗ в резюме, ран не падает на сломанной базе, 200/404 у отчётов), `db/database.kbUsage.test.ts` (колонки и агрегаты по ране и задаче), UI — `ProjectSettings.dom.test.tsx`, дополнения в `RunFeed.dom.test.tsx`, `TaskModal.dom.test.tsx` и `KbUsagePanel.dom.test.tsx`.

@@ -25,6 +25,7 @@ import type {
   CiModelWorkMetric
 } from '@shared/ci'
 import type { Message } from '@shared/types'
+import type { KbRunUsageReport, KbTaskUsageReport } from '@shared/kb'
 
 /** Ответ GET usage: где команда используется (проекты/задачи). */
 export interface CiCommandUsage {
@@ -77,6 +78,10 @@ export interface RendererCiRest {
   startRun(projectId: string, taskId: string, mode?: CiRunMode): Promise<CiRun>
   getRun(runId: string): Promise<CiRunDetail>
   getRunLog(runId: string): Promise<CiLogLine[]>
+  /** Обращения модели к БЗ внутри рана (блок в ленте рана). */
+  getRunKbUsage(runId: string): Promise<KbRunUsageReport>
+  /** Агрегат по всем ранам задачи (блок в модалке задачи). */
+  getTaskKbUsage(projectId: string, taskId: string): Promise<KbTaskUsageReport>
   cancelRun(runId: string): Promise<{ ok: boolean }>
   retryRun(runId: string): Promise<CiRun>
   retryRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun>

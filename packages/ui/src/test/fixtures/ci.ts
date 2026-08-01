@@ -39,6 +39,7 @@ export function makeRun(over: Partial<CiRun> = {}): CiRun {
     llmProvider: 'claude',
     llmModel: 'opus',
     mode: 'development',
+    kbContextMode: 'auto',
     clarifyLevel: 'few',
     clarifyMax: 3,
     conversationId: null,

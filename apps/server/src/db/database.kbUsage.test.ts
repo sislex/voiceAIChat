@@ -115,3 +115,91 @@ describe('VoiceChatDb — обращения к базе знаний', () => {
     expect(db.kbUsageReport(U, conv.id)!.recent[0].status).toBe('delivered')
   })
 })
+
+// Привязка обращений к CI-рану: отчёт по ране (лента) и по всем ранам задачи
+// (модалка). Гейт у обоих — членство в проекте, поэтому чужому здесь null.
+describe('VoiceChatDb — обращения к БЗ внутри CI-рана', () => {
+  let db: VoiceChatDb
+  beforeEach(() => {
+    db = makeDb()
+    db.createUser('alice', 'x', 'user')
+    db.createUser('bob', 'x', 'user')
+  })
+  afterEach(() => db.close())
+
+  /** Проект с задачей и двумя ранами по ней (у второго — свой чат). */
+  function runs() {
+    const project = db.createProject('alice', { name: 'P' })
+    const board = db.getBoard('alice', project.id)!
+    const task = db.createTask('alice', project.id, { title: 'T', columnId: board.columns[0].id })!
+    const other = db.createTask('alice', project.id, { title: 'T2', columnId: board.columns[0].id })!
+    const conv = db.createConversation('alice', 'Чат задачи')
+    const mk = (taskId: string) => db.createCiRun({
+      projectId: project.id, taskId, agentId: null, triggeredBy: 'alice', prevColumnId: null,
+      conversationId: conv.id, slotProgress: { done: 0, total: 2, phase: 'В очереди' }
+    })
+    return { project, task, other, conv, first: mk(task.id), second: mk(task.id), foreign: mk(other.id) }
+  }
+
+  it('ci_run_id и ci_step_id сохраняются и возвращаются в обращении', () => {
+    const { project, conv, first } = runs()
+    const saved = db.addKbUsage({
+      userId: 'alice', conversationId: conv.id, projectId: project.id, ciRunId: first.id, ciStepId: 'step-7',
+      source: 'tool_search', query: 'ходы', chars: 300, sections: [twoSections()[0]]
+    })
+    expect(saved).toMatchObject({ ciRunId: first.id, ciStepId: 'step-7' })
+    expect(db.kbUsageReport('alice', conv.id)!.recent[0]).toMatchObject({ ciRunId: first.id, ciStepId: 'step-7' })
+  })
+
+  it('режим БЗ рана — снимок настройки проекта на старте', () => {
+    const project = db.createProject('alice', { name: 'P' })
+    db.updateProject('alice', project.id, { ciKbContextMode: 'manual' })
+    expect(db.getProject('alice', project.id)!.ciKbContextMode).toBe('manual')
+    const board = db.getBoard('alice', project.id)!
+    const task = db.createTask('alice', project.id, { title: 'T', columnId: board.columns[0].id })!
+    const run = db.createCiRun({
+      projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null,
+      kbContextMode: 'manual', slotProgress: { done: 0, total: 2, phase: 'В очереди' }
+    })
+    expect(run.kbContextMode).toBe('manual')
+    // Смена настройки не переписывает уже созданный ран.
+    db.updateProject('alice', project.id, { ciKbContextMode: 'off' })
+    expect(db.getCiRunRaw(run.id)!.kbContextMode).toBe('manual')
+  })
+
+  it('отчёт по ране считает только его обращения', () => {
+    const { project, conv, first, second } = runs()
+    db.addKbUsage({ userId: 'alice', conversationId: conv.id, projectId: project.id, ciRunId: first.id, source: 'auto', query: 'q', chars: 300, sections: [twoSections()[0]] })
+    db.addKbUsage({ userId: 'alice', conversationId: conv.id, projectId: project.id, ciRunId: first.id, source: 'tool_document', query: 'q', chars: 200, sections: [twoSections()[1]] })
+    db.addKbUsage({ userId: 'alice', conversationId: conv.id, projectId: project.id, ciRunId: second.id, source: 'tool_search', query: 'q', chars: 100, sections: [twoSections()[0]] })
+    // Обращение самого чата (без рана) в отчёт рана не попадает.
+    db.addKbUsage({ userId: 'alice', conversationId: conv.id, projectId: project.id, source: 'auto', query: 'q', chars: 999 })
+
+    const report = db.kbUsageRunReport('alice', first.id)!
+    expect(report).toMatchObject({ runId: first.id, taskId: first.taskId, kbContextMode: 'auto', conversationId: conv.id })
+    expect(report.totals).toMatchObject({ queries: 2, chars: 500, documents: 2, toolQueries: 1 })
+    expect(report.recent).toHaveLength(2)
+    expect(report.sections.map((s) => s.documentId).sort()).toEqual(['llm', 'protocol'])
+  })
+
+  it('отчёт по задаче суммирует все её раны и не берёт чужую задачу', () => {
+    const { project, task, conv, first, second, foreign } = runs()
+    db.addKbUsage({ userId: 'alice', conversationId: conv.id, projectId: project.id, ciRunId: first.id, source: 'auto', query: 'q', chars: 300, sections: [twoSections()[0]] })
+    db.addKbUsage({ userId: 'alice', conversationId: conv.id, projectId: project.id, ciRunId: second.id, source: 'tool_search', query: 'q', chars: 200, sections: [twoSections()[0]] })
+    db.addKbUsage({ userId: 'alice', conversationId: conv.id, projectId: project.id, ciRunId: foreign.id, source: 'auto', query: 'q', chars: 700, sections: [twoSections()[1]] })
+
+    const report = db.kbUsageTaskReport('alice', project.id, task.id)!
+    expect(report.runs).toBe(2)
+    expect(report.totals).toMatchObject({ queries: 2, chars: 500, documents: 1 })
+    expect(report.sections[0]).toMatchObject({ documentId: 'protocol', times: 2, autoTimes: 1 })
+  })
+
+  it('чужому пользователю отчёты по ране и задаче недоступны (404 у роута)', () => {
+    const { project, task, first } = runs()
+    expect(db.kbUsageRunReport('bob', first.id)).toBeNull()
+    expect(db.kbUsageTaskReport('bob', project.id, task.id)).toBeNull()
+    // Несуществующие ран/задача — тоже null, а не пустой отчёт.
+    expect(db.kbUsageRunReport('alice', 'нет-такого')).toBeNull()
+    expect(db.kbUsageTaskReport('alice', project.id, 'нет-такой')).toBeNull()
+  })
+})

@@ -15,18 +15,29 @@ import type { KbDocument } from '@voicechat/shared'
 import type { KbView, KnowledgeBaseService } from './types.js'
 import { PUBLIC_KB_VIEW } from './types.js'
 import type { KbUsageTracker } from './usage.js'
+import { KB_CONTEXT_HEADING } from './autoContext.js'
 
 export const KB_MCP_PATH = '/mcp/kb'
 
 /** Кап на длину одного раздела: без него один вызов вливает в контекст всю БЗ. */
 export const KB_DOCUMENT_CHAR_CAP = 8000
 
-/** Ход, от имени которого модель читает БЗ (регистрирует turns.ts). */
+/**
+ * Ход, от имени которого модель читает БЗ (регистрирует turns.ts, а для работы
+ * модели в CI-ране — ci/modelHooks.ts).
+ */
 export interface KbToolEntry {
   userId: string
-  conversationId: string
+  /**
+   * Чат хода. `null` — ход CI-рана без связанного чата: инструменты работают
+   * (база read-only), телеметрию писать некуда — она молча пропускается.
+   */
+  conversationId: string | null
   projectId: string | null
   turnId: string
+  /** Ход внутри CI-рана: ран и шаг его ленты — для отчётов по ране и задаче. */
+  ciRunId?: string | null
+  ciStepId?: string | null
 }
 
 /** In-memory брокер: токен хода → контекст. Токен живёт ровно один ход. */
@@ -68,6 +79,22 @@ export function kbToolHint(mode: 'auto' | 'manual'): string {
         `(режим «по запросу модели»): инструменты mcp__kb__* — единственный путь к ней.`
     : `${common}\n\nБлок «Контекст базы знаний voiceAIChat» ниже добавлен автоматически ` +
         `по теме запроса — он не полный, за подробностями иди инструментами.`
+}
+
+/**
+ * Требование «сначала база знаний, потом код» для работы модели в CI-ране. В
+ * отличие от `kbToolHint` (системный хинт CLI, справка об инструментах) это
+ * часть ЗАДАНИЯ: ран начинается с исследования проекта по базе знаний, и только
+ * потом модель идёт в файлы.
+ */
+export function kbRunDirective(mode: 'auto' | 'manual'): string {
+  const common =
+    'Начни работу с базы знаний проекта, а не с кода: найди тему задачи через mcp__kb__search, ' +
+    'прочитай найденные разделы через mcp__kb__document (mcp__kb__topics — оглавление) ' +
+    'и только потом открывай файлы. При расхождении базы знаний и кода источник истины — код.'
+  return mode === 'manual'
+    ? `${common} Авто-контекст базы знаний для этого рана выключен: инструменты mcp__kb__* — единственный путь к ней.`
+    : `${common} Блок «${KB_CONTEXT_HEADING.replace(/^#+\s*/, '')}» ниже добавлен автоматически по теме задачи и не полон — за подробностями иди инструментами.`
 }
 
 /** Устойчивый anchor раздела — та же схема, что в индексе (service.ts). */
@@ -145,7 +172,18 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
     const noContext = { content: [{ type: 'text' as const, text: 'Контекст хода недоступен: обращение к базе знаний не записано.' }], isError: true }
     const open = (source: 'tool_search' | 'tool_document' | 'tool_topics', query: string) =>
       entry && usage
-        ? usage.begin({ userId: entry.userId, conversationId: entry.conversationId, projectId: entry.projectId, turnId: entry.turnId, source }, query)
+        ? usage.begin(
+            {
+              userId: entry.userId,
+              conversationId: entry.conversationId,
+              projectId: entry.projectId,
+              turnId: entry.turnId,
+              ciRunId: entry.ciRunId ?? null,
+              ciStepId: entry.ciStepId ?? null,
+              source
+            },
+            query
+          )
         : undefined
 
     server.registerTool(

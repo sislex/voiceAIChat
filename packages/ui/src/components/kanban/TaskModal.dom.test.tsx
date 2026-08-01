@@ -7,6 +7,7 @@ import type { Board, Task } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import { TaskModal, type TaskModalProps } from './TaskModal'
 import { createFakeCi } from '../../test/fakeApi'
+import type { KbTaskUsageReport } from '@shared/kb'
 import { MOBILE_QUERY } from '../../lib/mediaQuery'
 
 function mkTask(over: Partial<Task> = {}): Task {
@@ -249,5 +250,42 @@ describe('TaskModal — доступность', () => {
     render(<TaskModal {...props({ task: mkTask({ description: 'Описание', acceptanceCriteria: '- [ ] пункт', labels: ['ui'] }) })} />)
     await expectNoViolations()
     expectLabelledIconButtons()
+  })
+})
+
+// Блок «Использование БЗ» в карточке — агрегат по ВСЕМ ранам задачи: цифры и
+// разделы со ссылками в базу знаний.
+describe('TaskModal — использование базы знаний по ранам задачи', () => {
+  const report = (over: Partial<KbTaskUsageReport> = {}): KbTaskUsageReport => ({
+    projectId: 'p1', taskId: 't1', runs: 2,
+    totals: { queries: 5, delivered: 4, empty: 1, errors: 0, toolQueries: 3, sections: 6, documents: 2, chars: 2000, estimatedTokens: 500, promptChars: 9000, lastAt: 9 },
+    sections: [{ documentId: 'ci-runner', title: 'CI-раннер', heading: 'Работа модели', anchor: 'model', sourcePath: 'docs/kb/features/ci-runner.md', freshness: 'current', times: 3, autoTimes: 1, chars: 1500, estimatedTokens: 375, lastAt: 9 }],
+    recent: [],
+    ...over
+  })
+
+  beforeEach(() => {
+    window.ci = { ...createFakeCi(), getTaskKbUsage: async () => report() } as typeof window.ci
+  })
+
+  it('показывает агрегат по всем ранам задачи и ссылку на раздел', async () => {
+    render(<TaskModal {...props()} />)
+    const block = await screen.findByTestId('task-modal-kb-usage')
+    expect(within(block).getByText('по 2 ранам задачи')).toBeInTheDocument()
+    expect(within(block).getByTestId('task-modal-kb-usage-nums').textContent).toContain('5 обращений')
+    expect(within(block).getByRole('link', { name: /CI-раннер/ })).toHaveAttribute('href', '#/kb/ci-runner')
+  })
+
+  it('у эпика блока нет: раны бывают только у задач', () => {
+    render(<TaskModal {...props({ task: mkTask({ type: 'epic' }) })} />)
+    expect(screen.queryByTestId('task-modal-kb-usage')).not.toBeInTheDocument()
+  })
+
+  it('сбой отчёта не ломает карточку — показывается только сообщение', async () => {
+    window.ci = { ...createFakeCi(), getTaskKbUsage: async () => { throw new Error('HTTP 500') } } as typeof window.ci
+    render(<TaskModal {...props()} />)
+    // Отчёта нет вовсе — блок не рисуется, карточка живёт своей жизнью.
+    await waitFor(() => expect(screen.queryByTestId('task-modal-kb-usage')).not.toBeInTheDocument())
+    expect(screen.getByDisplayValue('Задача A')).toBeInTheDocument()
   })
 })

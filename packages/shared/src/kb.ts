@@ -157,6 +157,13 @@ export interface KbUsageQuery {
   projectId: string | null
   turnId: string | null
   messageId: string | null
+  /**
+   * Ран CI-раннера, в ходе которого случилось обращение (null — обычный чат).
+   * Панель чата помечает такие обращения источником «CI-ран» и ведёт в ленту.
+   */
+  ciRunId: string | null
+  /** Шаг ленты рана, к которому обращение относится (для привязки в ленте). */
+  ciStepId: string | null
   source: KbUsageSource
   status: KbUsageStatus
   query: string
@@ -248,4 +255,45 @@ export interface KbProjectUsageReport {
     estimatedTokens: number
     lastAt: number
   }>
+}
+
+
+// --- Отчёты по работе модели в CI-ране -----------------------------------
+//
+// Те же итоги и разделы, что в чате, но срез другой: один ран (лента) и все
+// раны задачи (модалка). Доступ — по членству в проекте рана/задачи, поэтому
+// отчёты собирает сервер, а не UI из чатовой телеметрии.
+
+/** Обращения к БЗ в рамках одного CI-рана. */
+export interface KbRunUsageReport {
+  runId: string
+  projectId: string
+  taskId: string
+  /** Режим БЗ, зафиксированный в ране. */
+  kbContextMode: KbContextMode
+  /** Связанный чат рана (null — телеметрия не писалась). */
+  conversationId: string | null
+  totals: KbUsageTotals
+  sections: KbUsageSectionAggregate[]
+  recent: KbUsageQuery[]
+}
+
+/** Агрегат по всем ранам задачи (модалка задачи). */
+export interface KbTaskUsageReport {
+  projectId: string
+  taskId: string
+  /** Сколько ранов задачи дали хотя бы одно обращение. */
+  runs: number
+  totals: KbUsageTotals
+  sections: KbUsageSectionAggregate[]
+  recent: KbUsageQuery[]
+}
+
+/**
+ * Строка итогов по БЗ для резюме рана и коротких блоков UI. Одна функция на
+ * сервер и UI: иначе «3 обращения» в чате и «3 запроса» в ленте читались бы как
+ * разные метрики.
+ */
+export function formatKbUsageSummaryLine(totals: Pick<KbUsageTotals, 'queries' | 'documents' | 'estimatedTokens'>): string {
+  return `БЗ: ${totals.queries} обращений, ${totals.documents} разделов, ≈${totals.estimatedTokens} токенов`
 }

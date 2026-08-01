@@ -236,6 +236,10 @@ export const REST = {
   ciMetrics: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci/metrics`,
   ciRun: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}`,
   ciRunLog: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/log`,
+  /** Обращения модели к БЗ внутри одного рана и агрегат по всем ранам задачи. */
+  ciRunKbUsage: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/kb-usage`,
+  taskKbUsage: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/kb-usage`,
   ciRunCancel: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/cancel`,
   ciRunRetry: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/retry`,
   ciRunRetryFromStep: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/retry-from-step`,

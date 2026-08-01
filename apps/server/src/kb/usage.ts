@@ -18,9 +18,18 @@ import type { VoiceChatDb } from '../db/database.js'
 /** Чей это ход: владелец, чат, снимок проекта и id хода (для attachTurn). */
 export interface KbUsageContext {
   userId: string
-  conversationId: string
+  /**
+   * Чат, к которому привязано обращение. `null` бывает только у CI-рана без
+   * связанного чата: база знаний работает, а телеметрия молча пропускается —
+   * писать её некуда (строка ссылается на conversations), и ронять ран из-за
+   * этого нельзя.
+   */
+  conversationId: string | null
   projectId?: string | null
   turnId?: string | null
+  /** Ход внутри CI-рана: ран и шаг его ленты (привязка отчётов по ране/задаче). */
+  ciRunId?: string | null
+  ciStepId?: string | null
   source: KbUsageSource
 }
 
@@ -69,6 +78,14 @@ export interface KbUsageTrackerDeps {
   newId?: () => string
 }
 
+/** Обращение без чата: методы есть, следов не оставляет (см. KbUsageContext). */
+const NOOP_HANDLE: KbUsageHandle = {
+  id: '',
+  complete() {},
+  empty() {},
+  fail() {}
+}
+
 /** Причина пустого обращения человеческим текстом (её видно в ленте панели). */
 const EMPTY_REASON: Record<'no-match' | 'low-confidence', string> = {
   'no-match': 'в базе знаний ничего не нашлось',
@@ -107,6 +124,9 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
   }
 
   function begin(ctx: KbUsageContext, query: string): KbUsageHandle {
+    // Ран без связанного чата: телеметрию писать некуда, но БЗ уже отработала.
+    if (!ctx.conversationId) return NOOP_HANDLE
+    const conversationId = ctx.conversationId
     const id = newId()
     const startedAt = now()
     let done = false
@@ -116,10 +136,12 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
       const draft: KbUsageQuery = {
         id,
         seq: 0,
-        conversationId: ctx.conversationId,
+        conversationId,
         projectId,
         turnId: ctx.turnId ?? null,
         messageId: null,
+        ciRunId: ctx.ciRunId ?? null,
+        ciStepId: ctx.ciStepId ?? null,
         source: ctx.source,
         status: 'pending',
         query,
@@ -137,13 +159,13 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
         sections: [],
         ...patch
       }
-      emit({ t: 'kb.usage', conversationId: ctx.conversationId, projectId, query: draft }, ctx.userId)
+      emit({ t: 'kb.usage', conversationId, projectId, query: draft }, ctx.userId)
     }
 
     // Кадр «запрашивает…» уходит сразу: панель должна показать обращение до того,
     // как БЗ ответит (поиск с reranker — это секунды).
     try {
-      frame({ seq: nextSeq(ctx.conversationId) })
+      frame({ seq: nextSeq(conversationId) })
     } catch {
       /* метрика не мешает ходу */
     }
@@ -165,9 +187,11 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
         const saved = deps.db.addKbUsage({
           id,
           userId: ctx.userId,
-          conversationId: ctx.conversationId,
+          conversationId,
           projectId,
           turnId: ctx.turnId ?? null,
+          ciRunId: ctx.ciRunId ?? null,
+          ciStepId: ctx.ciStepId ?? null,
           source: ctx.source,
           status: args.status,
           query,
@@ -179,14 +203,14 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
           error: args.error ?? null,
           sections: args.sections ?? []
         })
-        issued.set(ctx.conversationId, Math.max(issued.get(ctx.conversationId) ?? 0, saved.seq))
-        emit({ t: 'kb.usage', conversationId: ctx.conversationId, projectId, query: saved }, ctx.userId)
+        issued.set(conversationId, Math.max(issued.get(conversationId) ?? 0, saved.seq))
+        emit({ t: 'kb.usage', conversationId, projectId, query: saved }, ctx.userId)
       } catch {
         // БД недоступна: обращение всё равно показываем в панели живым кадром —
         // иначе сбой записи метрик выглядел бы как «модель БЗ не спрашивала».
         try {
           frame({
-            seq: Math.max(issued.get(ctx.conversationId) ?? 0, 1),
+            seq: Math.max(issued.get(conversationId) ?? 0, 1),
             status: args.status,
             chars: args.chars,
             estimatedTokens: estimateKbTokens(args.chars),

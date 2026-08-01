@@ -6,6 +6,7 @@ import { CiProjectDefaults } from './ci/CiProjectDefaults'
 
 import { useEffect, useState } from 'react'
 import type { ProjectDetail, ProjectMachine, ProjectSummary, WorkItemDefaultSkills } from '@shared/projects'
+import type { KbContextMode } from '@shared/types'
 
 import type { AgentInfo } from '@shared/agentProtocol'
 import { Button } from './ui/Button'
@@ -14,7 +15,7 @@ import { IconButton } from './ui/IconButton'
 export interface ProjectSettingsProps {
   detail: ProjectDetail
   agents: AgentInfo[]
-  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; doneRetentionDays?: number | null }) => void
+  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null }) => void
 
   onDelete: (id: string) => void
   onAddMember: (id: string, username: string) => void
@@ -230,6 +231,25 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         <label>CI: базовая ветка<input className="login-input" disabled={!isOwner} value={detail.ciBaseBranch ?? ''} onChange={(e) => props.onUpdate(detail.id, { ciBaseBranch: e.target.value })} placeholder="main" /></label>
         <label>CI: шаблон ветки<input className="login-input" disabled={!isOwner} value={detail.ciBranchTemplate ?? ''} onChange={(e) => props.onUpdate(detail.id, { ciBranchTemplate: e.target.value })} placeholder="feature/{task_number}-{slug}" /></label>
         <label>CI: повтор директории<select className="sel" disabled={!isOwner} value={detail.ciReuseStrategy ?? 'fail'} onChange={(e) => props.onUpdate(detail.id, { ciReuseStrategy: e.target.value as 'reuse' | 'clean' | 'fail' })}><option value="fail">Упасть, если существует</option><option value="reuse">Переиспользовать</option><option value="clean">Очистить и заново</option></select></label>
+        {/* Режим БЗ действует на ходы МОДЕЛИ в ране (исследование задачи, fix-loop,
+            резюме), а не на чаты проекта: у чата свой переключатель в его настройках. */}
+        <label>CI: база знаний в ране<select
+          className="sel"
+          aria-label="CI: база знаний в ране"
+          disabled={!isOwner}
+          value={detail.ciKbContextMode ?? 'auto'}
+          onChange={(e) => props.onUpdate(detail.id, { ciKbContextMode: e.target.value as KbContextMode })}
+        >
+          <option value="auto">Контекст и инструменты (авто)</option>
+          <option value="manual">Только инструменты (по запросу модели)</option>
+          <option value="off">Выключена</option>
+        </select></label>
+        <p className="proj-muted" data-testid="proj-ci-kb-hint">
+          Режим влияет на работу модели в CI-ране: в «авто» сервер подмешивает разделы базы знаний
+          по теме задачи и выдаёт модели инструменты mcp__kb__*, в «по запросу» — только инструменты.
+          На чаты проекта настройка не влияет — у каждого чата свой режим. Значение применяется
+          к следующему рану.
+        </p>
         <div className="ci-defaults-wrap"><div className="convsettings-caption">Команды воркфлоу по умолчанию</div><CiProjectDefaults projectId={detail.id} editable={isOwner} /></div>
       </div>
 

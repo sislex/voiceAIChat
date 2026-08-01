@@ -3,6 +3,7 @@
 // Разделяются server/web (desktop CI не получает). Чистые типы + пара хелперов.
 
 import type { QuestionSpec } from './questions'
+import type { KbContextMode } from './types'
 
 // --- Справочник команд ---------------------------------------------------
 
@@ -284,6 +285,12 @@ export interface CiRun {
   clarifyMax: number
   /** Связанный чат задачи, куда дублируются вопросы модели. */
   conversationId: string | null
+  /**
+   * Снимок режима базы знаний на момент старта (берётся из настройки проекта
+   * `ciKbContextMode`, а НЕ из связанного чата): смена настройки не меняет уже
+   * идущий ран, а ленте и отчётам видно, в каком режиме он работал.
+   */
+  kbContextMode: KbContextMode
   /** Прогресс по слотам: {done,total} для шкалы «1/4». */
   slotProgress: CiSlotProgress
   startedAt: number | null
