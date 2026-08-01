@@ -69,8 +69,8 @@ export interface TurnManagerDeps {
     fsMkdir?(id: string, path: string): Promise<unknown>
     fsWrite?(id: string, path: string, dataBase64: string): Promise<unknown>
   }
-  /** Корни «своей» области сервера — откуда можно забирать файл картинки. */
-  serverFileRoots?: (userId: string) => string[]
+  /** Чтение файла картинки с диска сервера или из профиля исполнителя. */
+  readServerFile?: (userId: string, path: string) => Promise<{ name: string; dataBase64: string } | null>
   /** База URL MCP-эндпоинта remote-bash (с секретом k); undefined — проброс выключен. */
   mcpBaseUrl?: string
   /** Источник времени (для детерминированных тестов). */
@@ -561,12 +561,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
           const prepared = (async (): Promise<string> => {
             const a = deps.agents
-            if (!target || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.serverFileRoots) {
+            if (!target || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.readServerFile) {
               return rawText
             }
             try {
               return await relocateImagesToMachine(rawText, target, {
-                roots: deps.serverFileRoots(userId),
+                readFile: (path) => deps.readServerFile!(userId, path),
                 fsList: (id, path) => a.fsList!(id, path),
                 fsMkdir: (id, path) => a.fsMkdir!(id, path),
                 fsWrite: (id, path, data) => a.fsWrite!(id, path, data)
