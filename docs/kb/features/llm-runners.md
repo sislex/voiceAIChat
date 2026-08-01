@@ -3,7 +3,7 @@ id: llm-runners
 title: Исполнители LLM: контейнеры с claude/codex CLI
 kind: feature
 updated: 2026-08-01
-checked: 55be9d3
+checked: e2002e5
 areas:
   - apps/llm-runner/src
   - packages/shared/src/llm.ts
@@ -36,19 +36,21 @@ Claude Code нельзя одновременно держать рабочую 
 реестром исполнителей и выбором в UI — `docs/plans/llm-runners.md`; здесь описано
 то, что уже есть в коде.
 
-## Что сделано (срез 1) и что ещё нет
+## Что сделано и что ещё нет
 
-Воркспейс `apps/llm-runner` поднимает Fastify с `/v1/run`, `/v1/run/:id` и
-`/v1/health`. Туда же **физически переехали** `claudeCli.ts`, `codexCli.ts`,
-`childKill.ts`, `mcp.ts` (`claude mcp list`) и `cliProfiles.ts` — сервер их больше
-не содержит.
+Воркспейс `apps/llm-runner` поднимает Fastify не только для хода модели, но и для
+профильных файловых API. Помимо `/v1/run`, `/v1/run/:id` и `/v1/health` у него
+есть `GET /v1/auth/status`, `GET /v1/files/read`, `GET /v1/fs/cc/*`,
+`GET /v1/fs/cx/*`, `GET /v1/fs/cc/watch` и `GET /v1/fs/cx/watch`. Туда же
+**физически переехали** `claudeCli.ts`, `codexCli.ts`, `childKill.ts`, `mcp.ts`
+(`claude mcp list`), `cliProfiles.ts`, наблюдатели CC/Codex и чтение статуса
+логина — сервер их больше не содержит как источник истины.
 
-Сервер при этом **ещё вызывает CLI сам**: `server.ts` и `routes/rest.ts`
-импортируют классы из `@voicechat/llm-runner/cli`, то есть зависимость
-`@voicechat/server` → `@voicechat/llm-runner` пока прямая, а не HTTP. Это
-временно: `RemoteLlmClient` (срез 2) заменит вызовы на `POST /v1/run`, и импорт
-уйдёт. Пока ходы работают как раньше — исполнитель поднимается, но в бою не
-участвует, компоуз-сервиса у него нет.
+Для самих ходов сервер уже ходит в исполнитель по HTTP через `RemoteLlmClient`, а
+для профильных файлов и проводника — через `RunnerFsClient`. Прямой импорт
+`@voicechat/server` → `@voicechat/llm-runner` остаётся только для локального
+fallback CLI-классов, когда URL исполнителя не настроен. Полноценного registry
+исполнителей и выбора в UI ещё нет: адреса по-прежнему приходят из env.
 
 ## Контракт живёт в shared
 
@@ -118,6 +120,18 @@ Codex парсит сервер (`packages/shared/src/streamJson.ts`, `codexStre
 shell на машине.
 
 Профили CLI (`cli-users/<base64url(логин)>` внутри `VC_DATA_DIR`) живут внутри
-исполнителя; сервер передаёт `userId`, о путях не знает. `GET /v1/health` отдаёт
-бинари, версии, статус входа обоих CLI и число живых ранов; `ok` — «есть хотя бы
-один рабочий бинарь», потому что личный исполнитель несёт только `claude`.
+исполнителя; сервер передаёт только `userId`, о внутренних путях профиля не
+знает. `GET /v1/auth/status` читает `~/.claude/.credentials.json` и
+`~/.codex/auth.json` уже из профиля конкретного пользователя на стороне
+исполнителя, а `GET /v1/files/read` разрешает чтение только внутри allowlist-root
+этого профиля и режет traversal/symlink escape, директории и файлы больше 32 MiB.
+
+Проводник CC/Codex тоже читается только здесь. `ccSessions.ts` и
+`codexSessions.ts` отдают прежние формы `projects / sessions / transcript / usage`,
+но live-tail больше идёт по SSE. `watch*FromOffset()` принимает смещение из
+`Last-Event-ID`, дочитывает только аппенднутый хвост jsonl и позволяет серверу
+переподключаться без потери tail.
+
+`GET /v1/health` по-прежнему отдаёт бинари, версии, статус входа обоих CLI и
+число живых ранов; `ok` — «есть хотя бы один рабочий бинарь», потому что личный
+исполнитель может не нести оба CLI сразу.
