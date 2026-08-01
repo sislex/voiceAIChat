@@ -3,7 +3,7 @@ id: llm-runners
 title: Исполнители LLM: контейнеры с claude/codex CLI
 kind: feature
 updated: 2026-08-01
-checked: e2002e5
+checked: 12c087a
 areas:
   - apps/llm-runner/src
   - packages/shared/src/llm.ts
@@ -53,10 +53,20 @@ fallback CLI-классов, когда URL исполнителя не наст
 
 Срез реестра исполнителей уже реализован: SQLite-таблица `llm_engines` хранит
 `name/kind/base_url/token/enabled/allowed_roles/is_default`, а админка web UI
-умеет список, создание, правку, удаление и health-check. Запись реестра всё ещё
-одна на один `kind`, но один и тот же runner можно завести двумя строками
-(`claude` и `codex`) с общим `base_url`/`token`; доступность считается именно
-для пары (строка, kind) по `bins[kind]` и статусу логина этого CLI.
+умеет список, создание, правку, удаление и health-check. Валидация на сервере
+принимает только абсолютные `http/https` URL, непустой набор ролей и `kind`
+`claude|codex`; health-check проксируется из `apps/server/src/routes/admin.ts` в
+`GET /v1/health` исполнителя с Bearer-токеном и таймаутом 5 секунд.
+
+Запись реестра всё ещё одна на один `kind`, но один и тот же runner можно
+завести двумя строками (`claude` и `codex`) с общим `base_url`/`token`;
+доступность считается именно для пары (строка, kind) по `bins[kind]` и статусу
+логина этого CLI. Default-запись уникальна только внутри `kind`.
+
+Важно: этот реестр пока **не участвует в выборе исполнителя для реального хода**.
+Маршрутизация `RemoteLlmClient`/fallback CLI остаётся прежней, по конфигу
+сервера; новый код пока даёт админу только хранение, редактирование и проверку
+доступности будущих runner'ов.
 
 ## Контракт живёт в shared
 
