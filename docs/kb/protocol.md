@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-07-31
-checked: 543e656
+updated: 2026-08-01
+checked: 06bb73e
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -45,7 +45,8 @@ URL руками. Параметризованные пути — функции
 статус входа CLI, машины (+ политика, токен, файловые операции, exec),
 наблюдатели сессий Claude (`/api/cc/*`) и Codex (`/api/cx/*`), база знаний
 (`/api/kb/*` + телеметрия обращений `/api/conversations/:id/kb-usage`,
-`/api/projects/:id/kb-usage`), админка
+`/api/projects/:id/kb-usage`, `/api/ci/runs/:runId/kb-usage`,
+`/api/projects/:id/tasks/:taskId/kb-usage`), админка
 пользователей, помощник промптов (`POST /api/prompt/suggest` — одноразовый LLM-вызов,
 переформулировки черновика; канал `prompt:suggest`). Полный список — константа `REST`.
 
@@ -85,6 +86,15 @@ URL руками. Параметризованные пути — функции
 разговора (клиент игнорирует `seq ≤ lastSeq`, upsert по id). Снапшоты —
 `GET /api/conversations/:id/kb-usage` и `GET /api/projects/:id/kb-usage`
 (изоляция: чужой чат/проект → 404). Детали — `features/kb-usage.md`.
+
+Обращение из работы модели в CI-ране приходит тем же кадром и в тот же чат
+(связанный чат задачи, `ci_runs.conversation_id`), но несёт `ciRunId`/`ciStepId`
+— панель помечает его источником «CI-ран» и ведёт в ленту рана. Срезы вне чата
+— `GET /api/ci/runs/:runId/kb-usage` (один ран, `KbRunUsageReport`) и
+`GET /api/projects/:id/tasks/:taskId/kb-usage` (все раны задачи,
+`KbTaskUsageReport`); у обоих гейт — членство в проекте, чужому 404. Ран без
+связанного чата кадров не шлёт и в телеметрию не пишет — база знаний при этом
+работает.
 
 `claude.send` несёт `verbose?: boolean` — режим консоли, при котором сервер шлёт
 поток `claude.log` с активностью агента. `claude.done` несёт готовое `message`,
