@@ -190,6 +190,8 @@ CREATE TABLE IF NOT EXISTS ci_commands (
   allow_failure     INTEGER NOT NULL DEFAULT 0,
   is_cleanup        INTEGER NOT NULL DEFAULT 0,
   available_to_model INTEGER NOT NULL DEFAULT 1,
+  -- Встроенный серверный шаг (см. CiBuiltinStep): script не исполняется, раннер зовёт хук.
+  builtin           TEXT,
   version           INTEGER NOT NULL DEFAULT 1,
   created_by        TEXT NOT NULL,
   created_at        INTEGER NOT NULL,

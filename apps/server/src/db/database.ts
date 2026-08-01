@@ -57,6 +57,8 @@ import {
   type CiSlotConfig,
   type CiLlmConfig,
   DEFAULT_CI_CLAUDE_MODEL,
+  CI_KB_UPDATE_COMMAND_ID,
+  CI_KB_UPDATE_COMMAND_NAME,
   DEFAULT_CI_LLM_CONFIG,
   type CiRunMode,
   type CiClarifyLevel,
@@ -460,6 +462,9 @@ export class VoiceChatDb {
     this.migrate()
     this.newId = deps.newId ?? (() => randomUUID())
     this.now = deps.now ?? (() => Date.now())
+    // Не в `migrate()`: сидирование пишет строки и потому требует уже готовых
+    // `newId`/`now`, а миграция идёт до их присвоения.
+    this.ensureKbUpdateCommand()
     this.setupMessagesFts()
   }
 
@@ -624,6 +629,8 @@ export class VoiceChatDb {
     if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'mode')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN mode TEXT NOT NULL DEFAULT 'development'`)
     if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'clarify_level')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN clarify_level TEXT NOT NULL DEFAULT 'few'`)
     if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'clarify_max')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN clarify_max INTEGER NOT NULL DEFAULT 3`)
+    const ciCmdCols = this.db.prepare(`PRAGMA table_info(ci_commands)`).all() as Array<{ name: string }>
+    if (ciCmdCols.length && !ciCmdCols.some((c) => c.name === 'builtin')) this.db.exec(`ALTER TABLE ci_commands ADD COLUMN builtin TEXT`)
     const ciSettingsCols = this.db.prepare(`PRAGMA table_info(ci_settings)`).all() as Array<{ name: string }>
     if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === 'interaction_wait_ms')) this.db.exec(`ALTER TABLE ci_settings ADD COLUMN interaction_wait_ms INTEGER NOT NULL DEFAULT 1800000`)
 
@@ -2328,6 +2335,49 @@ export class VoiceChatDb {
     })()
   }
 
+  /**
+   * Встроенный шаг «Актуализировать базу знаний» в справочнике команд. Скрипт не
+   * исполняется — раннер видит `builtin` и зовёт серверный хук; строка нужна,
+   * чтобы шаг вёл себя как обычная команда: двигался внутри слота и убирался из
+   * проекта или задачи штатным редактором слотов.
+   *
+   * При первом появлении команды раздаём её в слот «после модели» всех проектов,
+   * где пайплайн уже настроен, — перед шагом коммита, чтобы правки `docs/kb/*`
+   * уехали тем же коммитом, что и код. Повторно (после того как шаг убрали
+   * руками) команда не возвращается: строка справочника уже есть.
+   */
+  private ensureKbUpdateCommand(): void {
+    if (this.db.prepare(`SELECT id FROM ci_commands WHERE id = ?`).get(CI_KB_UPDATE_COMMAND_ID)) return
+    const ts = this.now()
+    this.db
+      .prepare(
+        `INSERT INTO ci_commands (id, scope, project_id, name, script, description, workdir, timeout_sec, env_json, allow_failure, is_cleanup, available_to_model, builtin, version, created_by, created_at, updated_at)
+         VALUES (?, 'global', NULL, ?, ?, ?, '', NULL, '{}', 1, 0, 0, 'kb_update', 1, 'system', ?, ?)`
+      )
+      .run(
+        CI_KB_UPDATE_COMMAND_ID,
+        CI_KB_UPDATE_COMMAND_NAME,
+        '# Серверный шаг: скрипт не выполняется.\n# Модель сверяет базу знаний с изменениями рабочей копии (см. kb/codeUpdate.ts).',
+        'Модель дописывает в базу знаний, что изменилось в этом ране: темы docs/kb/*.md в рабочей копии и статьи раздела проекта. Ошибка шага ран не валит.',
+        ts,
+        ts
+      )
+    const owners = this.db
+      .prepare(`SELECT DISTINCT owner_id FROM ci_slot_commands WHERE owner_type = 'project' AND slot = 'after_model'`)
+      .all() as Array<{ owner_id: string }>
+    for (const { owner_id: projectId } of owners) {
+      const ids = this.readSlot('project', projectId, 'after_model')
+      if (ids.includes(CI_KB_UPDATE_COMMAND_ID)) continue
+      const at = ids.findIndex((id) => {
+        const row = this.db.prepare(`SELECT name, script FROM ci_commands WHERE id = ?`).get(id) as { name: string; script: string } | undefined
+        return !!row && isCommitStepLike(row.name, row.script)
+      })
+      const next = [...ids]
+      next.splice(at < 0 ? next.length : at, 0, CI_KB_UPDATE_COMMAND_ID)
+      this.setCiSlotCommands('project', projectId, 'after_model', next)
+    }
+  }
+
   /** Эффективные слоты задачи: её переопределение либо дефолты проекта. */
   resolveTaskSlots(projectId: string, taskId: string): CiSlotConfig {
     if (this.hasCiSlotConfig('task', taskId)) return this.getCiSlotConfig('task', taskId)
@@ -3219,9 +3269,18 @@ function mapKbSectionAggregate(r: KbSectionAggRow): KbUsageSectionAggregate {
 interface CiCommandRow {
   id: string; scope: string; project_id: string | null; name: string; script: string
   description: string; workdir: string; timeout_sec: number | null; env_json: string
-  allow_failure: number; is_cleanup: number; available_to_model: number; version: number
+  allow_failure: number; is_cleanup: number; available_to_model: number; builtin: string | null; version: number
   created_by: string; created_at: number; updated_at: number; deleted_at: number | null
 }
+/**
+ * Шаг «закоммитить работу в ветку задачи» — по назначению, а не по подписи в
+ * конкретном проекте (справочник команд это данные). Перед ним встаёт
+ * актуализация базы знаний: её правки должны уехать тем же коммитом.
+ */
+function isCommitStepLike(name: string, script: string): boolean {
+  return /коммит|commit/i.test(name) || /git\s+commit/i.test(script)
+}
+
 function parseCiEnv(j: string): Record<string, string> {
   try {
     const o = JSON.parse(j) as unknown
@@ -3249,6 +3308,7 @@ function mapCiCommand(r: CiCommandRow): CiCommand {
     allowFailure: !!r.allow_failure,
     isCleanup: !!r.is_cleanup,
     availableToModel: !!r.available_to_model,
+    builtin: r.builtin === 'kb_update' ? 'kb_update' : null,
     version: r.version,
     createdBy: r.created_by,
     createdAt: r.created_at,

@@ -13,7 +13,7 @@ import { formatQuestionsBlock, issueKey } from '@voicechat/shared'
 import { isTerminalCiStatus } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
-import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiRunPrimitives } from './types.js'
+import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook, CiRunPrimitives } from './types.js'
 import { isReadOnlyCommand } from './console.js'
 import { classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
 import type { CiConsoleExecResult } from '@voicechat/shared'
@@ -50,6 +50,8 @@ export interface CiRunManagerDeps {
   modelWork?: CiModelWorkHook
   modelSummary?: CiModelSummaryHook
   attemptFix?: CiFixHook
+  /** Встроенный шаг «Актуализировать базу знаний» (`CiCommand.builtin === 'kb_update'`). */
+  kbUpdate?: CiKbUpdateHook
 }
 
 type ResumePoint = { kind: 'command'; slot: CiSlot; index: number } | { kind: 'model' }
@@ -907,6 +909,45 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       }
     }
 
+    /**
+     * Встроенный шаг «Актуализировать базу знаний»: `script` не исполняется,
+     * работу делает серверный хук (`kb/codeUpdate.ts`). Ошибка, неразборчивый
+     * ответ и таймаут хука ран НЕ валят — шаг закрывается со статусом `skipped`
+     * и предупреждением в ленте: работа модели к этому моменту уже сделана.
+     */
+    const runKbUpdateStep = async (command: CiCommand, slot: CiSlot, position: number): Promise<void> => {
+      const step = deps.db.addCiRunStep({
+        runId, slot, position, kind: 'command', initiatedBy: 'system',
+        commandId: command.id, title: command.name, status: 'running'
+      })
+      emitStep(step, userId)
+      const started = now()
+      let ok = true
+      let message = 'Актуализация базы знаний пропущена (хук не подключён)'
+      if (deps.kbUpdate) {
+        const ctx: CiModelContext = {
+          ...makePrimitives(runId, userId, agentId, workspacePath, env, signal),
+          run: deps.db.getCiRunRaw(runId)!,
+          task,
+          project,
+          parentStepId: step.id
+        }
+        try {
+          const r = await deps.kbUpdate(ctx)
+          ok = r.ok
+          message = r.message
+        } catch (err) {
+          ok = false
+          message = `Шаг не выполнен: ${err instanceof Error ? err.message : String(err)}`
+        }
+      }
+      const line = deps.db.appendCiLog(runId, step.id, 'system', `${ok ? '' : 'Предупреждение: '}${message}\n`)
+      broadcast({ t: 'ci.log', runId, line }, userId)
+      const status: CiStatus = signal.aborted ? 'cancelled' : ok ? 'success' : 'skipped'
+      const upd = deps.db.updateCiRunStep(step.id, { status, finishedAt: now(), durationMs: now() - started })
+      if (upd) emitStep(upd, userId)
+    }
+
     // Хелпер обработки одного слота команд.
     const runSlot = async (slot: CiSlot, commandIds: string[], phaseLabel: string, startIndex = 0): Promise<boolean> => {
       for (let i = startIndex; i < commandIds.length; i++) {
@@ -914,6 +955,13 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
         progress(runId, done, total, `${phaseLabel} (${i + 1}/${commandIds.length})`, userId)
         const command = deps.db.getCiCommand(userId, commandIds[i])
         if (!command) {
+          done++
+          continue
+        }
+        // Встроенный серверный шаг идёт мимо исполнителя команд машины.
+        if (command.builtin === 'kb_update') {
+          await runKbUpdateStep(command, slot, posBase + done + 1 + extraSteps)
+          if (signal.aborted) return finishCancelled()
           done++
           continue
         }

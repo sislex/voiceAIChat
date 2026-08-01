@@ -9,18 +9,18 @@
 // Прогон длинный, поэтому HTTP его не ждёт: состояние живёт в памяти процесса
 // (как реестр ходов), UI опрашивает GET того же маршрута.
 
-import type { KbDocumentKind, KbResearchRun, ProjectDetail } from '@voicechat/shared'
+import type { KbResearchRun, ProjectDetail } from '@voicechat/shared'
 import { DEFAULT_CI_CLAUDE_MODEL } from '@voicechat/shared'
 import type { LlmClient, LlmHandle } from '../claude/types.js'
 import type { VoiceChatDb } from '../db/database.js'
+import { MAX_DOCUMENTS, parseResearchOutput, type ResearchDocument } from './modelDocs.js'
+import { EMPTY_CHANGES, MAX_AFFECTED_DOCS, kbUpdatePrompt } from './codeUpdate.js'
 
-/** Сколько статей принимаем за один прогон и какой длины (защита от «простыни»). */
-const MAX_DOCUMENTS = 12
-const MAX_BODY_CHARS = 24_000
+export { parseResearchOutput }
+export type { ResearchDocument }
+
 /** Исследование репозитория — операция минут; дальше глушим CLI. */
 const TIMEOUT_MS = 15 * 60 * 1000
-
-const KINDS = new Set<KbDocumentKind>(['feature','subsystem','protocol','decision','convention','runbook','package'])
 
 export interface KbResearchDeps {
   db: VoiceChatDb
@@ -31,54 +31,6 @@ export interface KbResearchDeps {
   agentNameOf: (agentId: string) => string | undefined
   now?: () => number
   timeoutMs?: number
-}
-
-/** Статья, которую вернула модель (после разбора и обрезки). */
-export interface ResearchDocument {
-  id?: string
-  title: string
-  kind?: KbDocumentKind
-  tags?: string[]
-  areas?: string[]
-  body: string
-}
-
-/**
- * Разбор ответа модели: терпим к ```json-обёртке и тексту вокруг (как
- * parseVariants в помощнике промптов). Мусорные записи молча отбрасываем —
- * половина хорошего результата лучше, чем ошибка на всём прогоне.
- */
-export function parseResearchOutput(raw: string): { note: string; documents: ResearchDocument[] } {
-  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(cleaned)
-  } catch {
-    const match = cleaned.match(/\{[\s\S]*\}/)
-    if (!match) throw new Error('Модель вернула неразборчивый ответ')
-    parsed = JSON.parse(match[0])
-  }
-  const root = parsed as { note?: unknown; documents?: unknown }
-  const list = Array.isArray(root.documents) ? root.documents : []
-  const documents: ResearchDocument[] = []
-  for (const item of list) {
-    if (!item || typeof item !== 'object') continue
-    const raw = item as Record<string, unknown>
-    const title = typeof raw.title === 'string' ? raw.title.trim() : ''
-    const body = typeof raw.body === 'string' ? raw.body.trim() : ''
-    if (!title || !body) continue
-    const kind = typeof raw.kind === 'string' && KINDS.has(raw.kind as KbDocumentKind) ? (raw.kind as KbDocumentKind) : 'subsystem'
-    documents.push({
-      ...(typeof raw.id === 'string' && raw.id.trim() ? { id: raw.id.trim() } : {}),
-      title,
-      kind,
-      tags: Array.isArray(raw.tags) ? raw.tags.filter((t): t is string => typeof t === 'string') : [],
-      areas: Array.isArray(raw.areas) ? raw.areas.filter((t): t is string => typeof t === 'string') : [],
-      body: body.length > MAX_BODY_CHARS ? `${body.slice(0, MAX_BODY_CHARS)}\n\n[…текст обрезан сервером]` : body
-    })
-    if (documents.length >= MAX_DOCUMENTS) break
-  }
-  return { note: typeof root.note === 'string' ? root.note.trim() : '', documents }
 }
 
 /** Промпт исследования: что известно сейчас и что должно оказаться в базе. */
@@ -137,11 +89,13 @@ export class KbResearchManager {
    * проекте, пока идёт первый, отдаёт текущий прогон (кнопка в UI не плодит
    * параллельные CLI).
    */
-  start(userId: string, project: ProjectDetail): KbResearchRun {
+  start(userId: string, project: ProjectDetail, opts: { sinceSha?: string } = {}): KbResearchRun {
     const current = this.runs.get(project.id)
     if (current?.state === 'running') return current
     const target = researchTarget(project)
     if (!target) throw new Error('У проекта нет машины с рабочей папкой — привяжите машину в настройках проекта')
+    const sinceSha = (opts.sinceSha ?? '').trim()
+    if (sinceSha && !/^[0-9a-zA-Z._/-]{4,64}$/.test(sinceSha)) throw new Error('Некорректный коммит для сверки')
     const run: KbResearchRun = {
       projectId: project.id,
       state: 'running',
@@ -150,6 +104,7 @@ export class KbResearchManager {
       finishedAt: null,
       documents: [],
       note: '',
+      sinceSha: sinceSha || null,
       error: null
     }
     this.runs.set(project.id, run)
@@ -164,11 +119,25 @@ export class KbResearchManager {
 
   private async execute(userId: string, project: ProjectDetail, target: { agentId: string; workdir: string }, run: KbResearchRun): Promise<void> {
     const { db } = this.deps
-    const existing = db.kbDocuments({ scope: 'project', projectId: project.id }).map((doc) => ({ id: doc.id, title: doc.title, updatedAt: doc.updatedAt }))
+    const existingDocs = db.kbDocuments({ scope: 'project', projectId: project.id })
+    const existing = existingDocs.map((doc) => ({ id: doc.id, title: doc.title, updatedAt: doc.updatedAt }))
     const config = db.getCiLlmConfig('project', project.id)
     const client = config?.provider === 'codex' ? this.deps.codex : this.deps.claude
     const model = config?.provider === 'codex' ? config.model : config?.model || DEFAULT_CI_CLAUDE_MODEL
-    const prompt = researchPrompt(project, target.workdir, existing)
+    // Режим «по изменениям с коммита» переиспользует промпт шага CI-рана
+    // (kb/codeUpdate.ts) — ручной фолбэк не должен расходиться с автоматикой.
+    // Диф здесь заранее не собран: рабочая копия проекта общая, сервер в неё не
+    // ходит, поэтому модель собирает `git diff` сама и файлы не правит.
+    const prompt = run.sinceSha
+      ? kbUpdatePrompt({
+          projectName: project.name,
+          workdir: target.workdir,
+          baseLabel: run.sinceSha,
+          changes: { ...EMPTY_CHANGES },
+          affected: existingDocs.slice(0, MAX_AFFECTED_DOCS).map((doc) => ({ id: doc.id, title: doc.title, areas: doc.areas })),
+          editFileTopics: false
+        })
+      : researchPrompt(project, target.workdir, existing)
     let text = ''
     const answer = await new Promise<{ ok: boolean; text: string; error?: string }>((resolve) => {
       let settled = false

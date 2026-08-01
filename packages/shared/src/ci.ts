@@ -13,6 +13,18 @@ export type CiCommandScope = 'global' | 'project'
 export type CiSlot = 'before_model' | 'after_model'
 export const CI_SLOTS: CiSlot[] = ['before_model', 'after_model']
 
+/**
+ * Шаг, который выполняет не shell на машине, а сам сервер. В справочнике он
+ * выглядит обычной командой (его можно двигать внутри слота и убирать из
+ * проекта или задачи), но `script` не исполняется: раннер видит `builtin` и
+ * зовёт серверный хук.
+ */
+export type CiBuiltinStep = 'kb_update'
+
+/** Встроенный шаг «Актуализировать базу знаний»: id фиксирован — на него ссылаются слоты. */
+export const CI_KB_UPDATE_COMMAND_ID = 'ci-builtin-kb-update'
+export const CI_KB_UPDATE_COMMAND_NAME = 'Актуализировать базу знаний'
+
 /** Именованный переиспользуемый shell-скрипт из справочника. */
 export interface CiCommand {
   id: string
@@ -35,6 +47,8 @@ export interface CiCommand {
   isCleanup: boolean
   /** Доступна ли команда как инструмент модели. */
   availableToModel: boolean
+  /** Встроенный серверный шаг (script не исполняется); null/undefined — обычная команда. */
+  builtin?: CiBuiltinStep | null
   /** Версия текста команды (растёт при принятии предложения/правке скрипта). */
   version: number
   createdBy: string

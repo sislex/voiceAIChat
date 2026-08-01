@@ -8,7 +8,11 @@ import { appendQuestionsHint, clarifyBudget, DEFAULT_CI_CLAUDE_MODEL, parseQuest
 import type { CiRunMode } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import type { VoiceChatDb } from '../db/database.js'
-import type { CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook } from './types.js'
+import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook } from './types.js'
+import {
+  EMPTY_CHANGES, KB_DIFF_SCRIPT, KB_UPDATE_TIMEOUT_MS, affectedProjectDocs, formatKbUpdateSummary,
+  kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput
+} from '../kb/codeUpdate.js'
 
 export interface CiModelHooksDeps {
   db: VoiceChatDb
@@ -19,7 +23,15 @@ export interface CiModelHooksDeps {
   /** База URL MCP команд CI (с ?k=секрет); &run=<token> дописывается на ход. */
   ciMcpBaseUrl: string
   agentNameOf: (agentId: string) => string | undefined
+  /**
+   * Исполнитель команд машины: нужен шагу «Актуализировать базу знаний», чтобы
+   * собрать диф рабочей копии сервером, а не доверять его сбор модели.
+   * Не передан — шаг работает по тому, что модель прочитает сама.
+   */
+  executor?: CommandExecutor
   now?: () => number
+  /** Таймаут шага актуализации базы знаний (мс); по умолчанию `KB_UPDATE_TIMEOUT_MS`. */
+  kbTimeoutMs?: number
 }
 
 /**
@@ -42,7 +54,8 @@ function runTurn(
   claude: LlmClient,
   req: LlmRequest,
   onLog: (stream: 'stdout' | 'system', chunk: string) => void,
-  signal: AbortSignal
+  signal: AbortSignal,
+  abortNote = 'Ран отменён — работа модели остановлена.\n'
 ): Promise<{ ok: boolean; text: string; sessionId: string | null; cancelled?: boolean }> {
   if (signal.aborted) return Promise.resolve({ ok: false, text: '', sessionId: null, cancelled: true })
   return new Promise((resolve) => {
@@ -62,7 +75,7 @@ function runTurn(
       } catch {
         /* процесс уже мёртв */
       }
-      onLog('system', 'Ран отменён — работа модели остановлена.\n')
+      onLog('system', abortNote)
       finish({ ok: false, cancelled: true })
     }
     const handlers: LlmStreamHandlers = {
@@ -128,6 +141,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   modelWork: CiModelWorkHook
   modelSummary: CiModelSummaryHook
   attemptFix: CiFixHook
+  kbUpdate: CiKbUpdateHook
 } {
   const now = deps.now ?? (() => Date.now())
   const clientFor = (ctx: CiModelContext): LlmClient => ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
@@ -306,5 +320,123 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     return { fixed: false }
   }
 
-  return { modelWork, modelSummary, attemptFix }
+  /**
+   * Шаг «Актуализировать базу знаний» (слот «после модели», до коммита в ветку
+   * задачи). Диф собирает сервер, а не модель: список изменённых путей нужен,
+   * чтобы выбрать задетые статьи по `areas`, и чтобы объём был капнут заранее.
+   * Дальше — один ход модели с remote-bash в рабочей копии: файловые темы
+   * `docs/kb/*.md` она правит сама (их закоммитит следующий шаг воркфлоу),
+   * статьи раздела проекта возвращает текстом, и записывает их сервер.
+   *
+   * Хук никогда не бросает: работа модели к этому моменту уже сделана, и терять
+   * ран из-за базы знаний нельзя — любая беда превращается в `ok: false`,
+   * то есть в предупреждение в ленте.
+   */
+  const kbUpdate: CiKbUpdateHook = async (ctx: CiModelContext) => {
+    const log = (chunk: string): void => ctx.log(ctx.parentStepId, 'system', chunk)
+    const cancelled = { ok: true, message: 'Ран отменён — база знаний не обновлялась' }
+    if (ctx.signal.aborted) return cancelled
+
+    let changes = { ...EMPTY_CHANGES }
+    if (ctx.agentId && deps.executor) {
+      const chunks: string[] = []
+      try {
+        await deps.executor.run(
+          { agentId: ctx.agentId, script: KB_DIFF_SCRIPT, workdir: ctx.workspacePath, env: ctx.env, timeoutMs: 120_000 },
+          (d) => chunks.push(d),
+          ctx.signal
+        )
+        changes = parseDiffBundle(chunks.join(''))
+      } catch (err) {
+        log(`Диф собрать не удалось: ${err instanceof Error ? err.message : String(err)}\n`)
+      }
+    }
+    if (ctx.signal.aborted) return cancelled
+    if (changes.unavailable) return { ok: false, message: 'Диф рабочей копии собрать не удалось — база знаний не обновлена' }
+    if (!changes.files.length) return { ok: true, message: 'Нечего обновлять: изменений кода в ветке задачи нет' }
+    log(`Изменённых файлов: ${changes.files.length}.\n`)
+
+    // Рабочая копия лежит в подкаталоге $SLUG рабочей директории рана: команды
+    // базы знаний (`kb.mjs touch`, `kb:index`) запускаются из корня репозитория.
+    const repoDir = ctx.env.SLUG ? `${ctx.workspacePath}/${ctx.env.SLUG}` : ctx.workspacePath
+    const projectDocs = deps.db.kbDocuments({ scope: 'project', projectId: ctx.project.id })
+    const affected = affectedProjectDocs(projectDocs, changes.files)
+    const req: LlmRequest = {
+      userId: ctx.run.triggeredBy,
+      prompt: kbUpdatePrompt({
+        projectName: ctx.project.name,
+        workdir: repoDir,
+        taskTitle: ctx.task.title,
+        taskDescription: ctx.task.description,
+        baseLabel: `базовая ветка ${ctx.env.BASE_BRANCH ?? 'main'}`,
+        changes,
+        affected,
+        editFileTopics: !!ctx.agentId
+      }),
+      sessionId: null,
+      model: modelFor(ctx),
+      permissionMode: 'acceptEdits',
+      ...(ctx.agentId
+        ? {
+            remote: {
+              mcpUrl: `${deps.mcpBaseUrl}&agent=${encodeURIComponent(ctx.agentId)}&cwd=${encodeURIComponent(repoDir)}`,
+              agentName: deps.agentNameOf(ctx.agentId) ?? ctx.agentId
+            }
+          }
+        : { executionDisabled: true })
+    }
+
+    // Таймаут шага: свой контроллер поверх сигнала рана, чтобы отличать «не
+    // уложился» от «ран отменили» — сообщения в ленте у них разные.
+    const ctl = new AbortController()
+    let timedOut = false
+    const onAbort = (): void => ctl.abort()
+    ctx.signal.addEventListener('abort', onAbort, { once: true })
+    const timer = setTimeout(() => {
+      timedOut = true
+      ctl.abort()
+    }, deps.kbTimeoutMs ?? KB_UPDATE_TIMEOUT_MS)
+    let turn: { ok: boolean; text: string }
+    try {
+      turn = await runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctl.signal, 'Шаг актуализации базы знаний остановлен.\n')
+    } catch (err) {
+      return { ok: false, message: `Шаг не выполнен: ${err instanceof Error ? err.message : String(err)}` }
+    } finally {
+      clearTimeout(timer)
+      ctx.signal.removeEventListener('abort', onAbort)
+    }
+    if (timedOut) return { ok: false, message: 'Шаг не уложился в отведённое время — база знаний не обновлена' }
+    if (ctx.signal.aborted) return cancelled
+    if (!turn.ok) return { ok: false, message: 'Модель не ответила — база знаний не обновлена' }
+
+    let out
+    try {
+      out = parseKbUpdateOutput(turn.text)
+    } catch {
+      return { ok: false, message: 'Ответ модели неразборчив — статьи раздела проекта не сохранены' }
+    }
+    // Раздел и владелец статьи — дело сервера: чужой id молча становится новой
+    // статьёй, раздел всегда `project` (видна только участникам проекта).
+    const own = new Set(projectDocs.map((doc) => doc.id))
+    const today = new Date(now()).toISOString().slice(0, 10)
+    const saved = out.documents.map((item) => {
+      const id = item.id && own.has(item.id) ? item.id : null
+      const doc = deps.db.saveKbDocument({
+        id,
+        scope: 'project',
+        projectId: ctx.project.id,
+        title: item.title,
+        body: item.body,
+        kind: item.kind,
+        tags: item.tags,
+        areas: item.areas,
+        checkedOn: today,
+        createdBy: ctx.run.triggeredBy
+      })
+      return { title: doc.title, action: id ? ('updated' as const) : ('created' as const) }
+    })
+    return { ok: true, message: formatKbUpdateSummary(out, saved) }
+  }
+
+  return { modelWork, modelSummary, attemptFix, kbUpdate }
 }
