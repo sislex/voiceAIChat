@@ -254,4 +254,24 @@ describe('remoteBashMcp', () => {
       await server.close()
     }
   })
+
+  it('после ответа не остаётся отложенных исключений (тело читает транспорт, не Fastify)', async () => {
+    // Если тело запроса вычитает Fastify, hono/node-server внутри MCP-SDK через
+    // 500 мс «дренирует» соединение и дёргает socket.destroySoon() — на сокете
+    // от app.inject такого метода нет, и таймер валит процесс необработанным
+    // исключением уже после того, как все тесты позеленели.
+    app = await makeApp(stubRegistry({ exitCode: 0, output: '', timedOut: false }))
+    const res = await rpc(app, INIT_BODY)
+    expect(res.statusCode).toBe(200)
+
+    const caught: Error[] = []
+    const onUncaught = (err: Error): void => { caught.push(err) }
+    process.on('uncaughtException', onUncaught)
+    try {
+      await new Promise((r) => setTimeout(r, 800))
+    } finally {
+      process.off('uncaughtException', onUncaught)
+    }
+    expect(caught.map((e) => e.message)).toEqual([])
+  })
 })

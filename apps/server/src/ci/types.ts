@@ -63,6 +63,12 @@ export interface CiRunPrimitives {
   log(stepId: string, stream: 'stdout' | 'stderr' | 'system', chunk: string): void
   /** Выполнить команду справочника на машине как инструмент модели. */
   runCommandById(commandId: string, parentStepId: string): Promise<{ exitCode: number | null; timedOut: boolean; output: string }>
+  /**
+   * Запомнить id CLI-сессии модели: fix-loop продолжает тот же диалог
+   * (`--resume`), поэтому модель помнит, что она делала в шаге «работа модели»
+   * и что уже пробовала на прошлой попытке.
+   */
+  setModelSessionId(sessionId: string | null): void
   /** Зафиксировать итерацию fix-loop (персист + broadcast ci.fix). */
   recordFix(args: { runStepId: string; attemptNo: number; diagnosis: string; action: string; result: 'fixed' | 'retrying' | 'gave_up'; diff?: string | null; durationMs?: number | null; tokensUsed?: number | null }): void
   /** Предложить правку скрипта команды (Исход A: рекомендация). */
@@ -93,6 +99,13 @@ export interface CiFixContext extends CiModelContext {
   failedStep: CiRunStep
   /** Хвост лога упавшего шага. */
   logTail: string
+  /**
+   * Сессия CLI, в которой модель делала работу (или чинила прошлый шаг); null —
+   * работы в этом процессе не было (напр. повтор рана с шага слота «после»).
+   */
+  modelSessionId: string | null
+  /** Упал шаг-проверка (тесты/typecheck/линт) — хвост лога нужен подлиннее. */
+  isTestStep: boolean
   /** Повторно выполнить упавший шаг; вернёт новый статус. */
   rerunFailedStep(): Promise<{ exitCode: number | null; timedOut: boolean }>
 }

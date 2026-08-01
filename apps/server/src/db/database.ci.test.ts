@@ -58,6 +58,39 @@ describe('ci: справочник команд', () => {
     expect(db.listCiCommands('bob').map((x) => x.name)).not.toContain('clone')
   })
 
+  it('гейт помечается is_test при создании, npm ci — нет', () => {
+    const { p } = project()
+    const gate = db.createCiCommand('alice', { scope: 'project', projectId: p.id, name: 'Запустить тестирование (npm test)', script: 'npm test' })
+    expect(gate.isTest).toBe(true)
+    const install = db.createCiCommand('alice', { scope: 'project', projectId: p.id, name: 'Установить зависимости', script: 'npm ci' })
+    expect(install.isTest).toBe(false)
+    // Флаг можно проставить руками — команде, которую по тексту не узнать.
+    expect(db.updateCiCommand('alice', install.id, { isTest: true })!.isTest).toBe(true)
+  })
+
+  it('база от прошлой версии: миграция помечает гейт и убирает его у модели', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-istest-'))
+    const file = join(dir, 'db.sqlite')
+    let n = 0
+    const first = new VoiceChatDb(file, { newId: () => `t-${++n}`, now: () => 1000 })
+    first.createUser('alice', '', 'user')
+    const gate = first.createCiCommand('alice', { scope: 'global', name: 'Тесты', script: 'npm run -w @voicechat/server test' })
+    const install = first.createCiCommand('alice', { scope: 'global', name: 'Установка', script: 'npm ci' })
+    first.close()
+
+    // Откатываем схему к состоянию до колонки: команда доступна модели, признака нет.
+    const raw = new Database(file)
+    raw.exec(`ALTER TABLE ci_commands DROP COLUMN is_test`)
+    raw.exec(`UPDATE ci_commands SET available_to_model = 1`)
+    raw.close()
+
+    const second = new VoiceChatDb(file, { newId: () => `t2-${++n}`, now: () => 2000 })
+    expect(second.getCiCommand('alice', gate.id)).toMatchObject({ isTest: true, availableToModel: false })
+    expect(second.getCiCommand('alice', install.id)).toMatchObject({ isTest: false, availableToModel: true })
+    second.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('глобальные команды видны всем', () => {
     const g = db.createCiCommand('alice', { scope: 'global', name: 'npm ci', script: 'npm ci' })
     expect(db.listCiCommands('bob').map((x) => x.id)).toContain(g.id)

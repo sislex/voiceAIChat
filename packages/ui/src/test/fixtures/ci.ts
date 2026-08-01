@@ -194,6 +194,7 @@ export function makeCommand(over: Partial<CiCommand> = {}): CiCommand {
     allowFailure: false,
     isCleanup: false,
     availableToModel: false,
+    isTest: false,
     version: 1,
     createdBy: 'admin',
     createdAt: RUN_T0,
@@ -214,7 +215,8 @@ export function makeCommands(): CiCommand[] {
       script: 'npm test',
       description: 'vitest run во всех пакетах',
       timeoutSec: 900,
-      availableToModel: true
+      availableToModel: true,
+      isTest: true
     }),
     makeCommand({
       id: 'cmd-4',
