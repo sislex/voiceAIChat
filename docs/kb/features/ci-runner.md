@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-01
-checked: 9306637
+checked: 6171b3c
 areas:
   - packages/shared/src/ci.ts
   - apps/server/src/ci
@@ -419,7 +419,12 @@ AI-сообщением в связанный чат задачи** (`postSummar
 модели (remote-bash MCP в рабочей папке, многоходовый цикл с паузами, предел
 `MAX_MODEL_TURNS`), резюме, fix-loop (диагноз→правка→повтор
 упавшего шага, лимиты `maxFixAttempts`/`fixTimeLimitMs`, предложения по правке
-скрипта).
+скрипта). URL для `remote-bash`, `ci-commands` и `kb` сервер теперь строит одной
+функцией `buildPublicMcpUrl` (`apps/server/src/mcp/publicBase.ts`): с
+`VC_MCP_PUBLIC_BASE` исполнитель получает публичный адрес Fastify вроде
+`http://voicechat:8787/...`, без env остаётся loopback `http://127.0.0.1:<PORT>`.
+Это убирает захардкоженный `127.0.0.1` из кода, но сохраняет старое поведение в
+dev и Vitest.
 
 **Роли разведены: модель разрабатывает, проверяет воркфлоу.** Промпт разработки
 (и фазы после одобрения плана) содержит запрет `NO_SELF_VERIFICATION`: тесты,
