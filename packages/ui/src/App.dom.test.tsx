@@ -97,6 +97,8 @@ describe('App — интеграция UI со стором и IPC', () => {
 
   it('отправка текста Enter создаёт сообщение и переводит в «Claude думает»', async () => {
     await renderApp()
+    // Композер открывается свёрнутым — до набора текста его надо развернуть.
+    await userEvent.click(screen.getByTestId('composer-expand'))
     const input = screen.getByLabelText('Поле ввода сообщения')
     await userEvent.type(input, 'Привет!{Enter}')
     expect(await screen.findByText('Claude думает', {}, { timeout: 10_000 })).toBeInTheDocument()

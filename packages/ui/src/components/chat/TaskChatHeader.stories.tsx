@@ -14,11 +14,10 @@ const meta: Meta<typeof TaskChatHeader> = {
   args: {
     context: makeTaskChatContext(),
     onOpenTask: fn(),
-    now: () => NOW
+    now: () => NOW,
+    // В приложении шапка открывается свёрнутой; витрине нужен обратный дефолт.
+    defaultCollapsed: false
   },
-  // Свёрнутость объявляется параметром `taskHeaderCollapsed`, а выставляет её
-  // витрина (декоратор в `.storybook/preview.tsx`): состояние общее для всех
-  // чатов и лежит в localStorage.
   decorators: [(Story) => <div style={{ maxWidth: 900 }}><Story /></div>]
 }
 export default meta
@@ -52,8 +51,10 @@ export const WithoutRun: Story = {
   args: { context: makeTaskChatContext({ run: null }) }
 }
 
-/** Свёрнута: одна строка — ключ задачи, статус рана и «Открыть задачу». */
+/**
+ * Свёрнута — то, с чего чат задачи открывается: одна строка с ключом задачи,
+ * статусом рана и «Открыть задачу».
+ */
 export const Collapsed: Story = {
-  args: { renderRunFeed: (runId) => <div className="taskchat-dim">Лента рана {runId}</div> },
-  parameters: { taskHeaderCollapsed: true }
+  args: { defaultCollapsed: true, renderRunFeed: (runId) => <div className="taskchat-dim">Лента рана {runId}</div> }
 }

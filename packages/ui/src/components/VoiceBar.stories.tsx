@@ -26,11 +26,12 @@ const meta: Meta<typeof VoiceBar> = {
     onStopSpeak: fn(),
     onCancelRequest: fn(),
     onAddFiles: fn(),
-    onRemoveAttachment: fn()
+    onRemoveAttachment: fn(),
+    // В приложении панель открывается свёрнутой; витрине нужен обратный дефолт —
+    // иначе все состояния композера показывали бы одну и ту же строку-заглушку.
+    defaultCollapsed: false
   },
-  // Панель живёт внизу колонки чата — на всю её ширину. Свёрнутость композера
-  // сториз объявляет параметром `composerCollapsed`, а выставляет её витрина
-  // (декоратор в `.storybook/preview.tsx`) — состояние общее и лежит в localStorage.
+  // Панель живёт внизу колонки чата — на всю её ширину.
   decorators: [(Story) => <div style={{ maxWidth: 860 }}><Story /></div>]
 }
 export default meta
@@ -83,18 +84,17 @@ export const WithAttachments: Story = {
 }
 
 /**
- * Свёрнутый композер: поле убрано в строку, в ней — черновик (иначе вложения или
- * состояние хода). На телефоне так освобождается высота под ленту сообщений.
+ * Свёрнутый композер — то, с чего чат открывается: поле убрано в строку, в ней
+ * черновик (иначе вложения или состояние хода). Так под ленту сообщений
+ * отдаётся вся высота колонки.
  */
 export const Collapsed: Story = {
-  args: { draft: 'Проверь, почему шаг npm test падает только в CI' },
-  parameters: { composerCollapsed: true }
+  args: { defaultCollapsed: true, draft: 'Проверь, почему шаг npm test падает только в CI' }
 }
 
 /** Свёрнут во время хода: кнопка остановки остаётся в строке, а не прячется. */
 export const CollapsedWhileThinking: Story = {
-  args: { state: 'thinking' },
-  parameters: { composerCollapsed: true }
+  args: { defaultCollapsed: true, state: 'thinking' }
 }
 
 /** Переключатель режима: план / разработка (в простое активен, в ходе заблокирован). */
@@ -147,6 +147,7 @@ function ControlledVoiceBar({ initial = '', state = 'idle' }: { initial?: string
         </ul>
       )}
       <VoiceBar
+        defaultCollapsed={false}
         state={state}
         draft={draft}
         diarization

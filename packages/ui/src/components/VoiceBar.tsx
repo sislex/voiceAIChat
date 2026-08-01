@@ -1,13 +1,14 @@
 // Композер чата: поле ввода, вложения, микрофон, режим и статус голосового
-// цикла. Панель сворачивается в одну строку — на телефоне вместе с виджетом
-// задачи она не оставляла ленте сообщений места (см. `lib/collapse.ts`).
+// цикла. Панель сворачивается в одну строку: вместе с виджетом задачи она
+// занимала половину экрана телефона и не оставляла ленте сообщений места.
+// Открывается свёрнутой и состояние нигде не хранит — каждая загрузка страницы
+// начинается с максимума места под переписку.
 
-import { useEffect, useRef, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import type { ModifierPrompt, PermissionMode, VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import { useAutoGrow } from '../lib/autoGrow'
 import { chipClass, composerPeek, speakerName, statusLine, voiceAnnouncement } from '../lib/view'
-import { COMPOSER_COLLAPSE_KEY, useCollapsed } from '../lib/collapse'
 import { WaveBars, Dots } from './animations'
 import { IconButton } from './ui/IconButton'
 import { MicIcon, SendIcon, StopIcon, WandIcon } from './icons'
@@ -57,6 +58,12 @@ export interface VoiceBarProps {
   onApplyPromptSuggestion?: (text: string) => void
   /** Закрыть панель помощника, ничего не меняя. */
   onClosePromptSuggestions?: () => void
+  /**
+   * С какого состояния открыть панель. В приложении дефолт и есть поведение
+   * («свёрнута»), проп существует ради витрины и тестов: состояния композера
+   * иначе не показать, а в каждой сториз кликать по развороту — шум.
+   */
+  defaultCollapsed?: boolean
 }
 
 export function VoiceBar({
@@ -84,7 +91,8 @@ export function VoiceBar({
   promptHelper,
   onSuggestPrompts,
   onApplyPromptSuggestion,
-  onClosePromptSuggestions
+  onClosePromptSuggestions,
+  defaultCollapsed = true
 }: VoiceBarProps): JSX.Element {
   const isIdle = state === 'idle'
   const isListening = state === 'listening'
@@ -94,7 +102,8 @@ export function VoiceBar({
   // можно печатать следующий вопрос черновиком. Отправка заблокирована до idle.
   const composerMode = isIdle || isSpeaking || replyStarted
 
-  const [collapsed, toggleCollapsed] = useCollapsed(COMPOSER_COLLAPSE_KEY)
+  const [collapsed, setCollapsed] = useState(defaultCollapsed)
+  const toggleCollapsed = (): void => setCollapsed((prev) => !prev)
 
   const fileRef = useRef<HTMLInputElement>(null)
   // Композер начинается с двух строк и растёт с текстом до четырёх, дальше — скролл.
