@@ -8,6 +8,11 @@ REST + WS, SQLite, Whisper, Piper/say, claude/codex CLI, реестр машин
 - **Не компилируется в JS.** Запуск — `tsx src/index.ts` прямо из исходников,
   ESM. Поэтому **все относительные импорты пишутся с `.js`** (`./config.js`),
   хотя файлы `.ts`.
+- **CLI claude/codex живут не здесь.** `claudeCli.ts`, `codexCli.ts`,
+  `childKill.ts`, `claude mcp list` и профили CLI (`cliProfiles.ts`) переехали в
+  `apps/llm-runner`; сервер пока импортирует их из `@voicechat/llm-runner/cli`
+  (срез 2 плана `docs/plans/llm-runners.md` заменит вызовы на HTTP). Контракт
+  `LlmRequest`/`LlmClient` теперь в `@voicechat/shared`, `claude/types.ts` — реэкспорт.
 - **`buildServer()` отделён от `listen()`** (`server.ts` / `index.ts`), а внешние
   зависимости инъектируются через `BuildOptions`: `db`, `claude`, `codex`,
   `sttEngine`, `ttsEngine`, `createWsHandlers`, `sessionSecret`. Новый внешний

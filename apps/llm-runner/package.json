@@ -1,9 +1,14 @@
 {
-  "name": "@voicechat/server",
+  "name": "@voicechat/llm-runner",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
+  "//": "Как и сервер, не компилируется в JS: запуск через tsx из исходников, относительные импорты — с .js",
+  "exports": {
+    ".": "./src/server.ts",
+    "./cli": "./src/cli/index.ts"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
@@ -12,23 +17,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fastify/static": "^10.1.2",
-    "@fastify/websocket": "^11.0.1",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "@voicechat/llm-runner": "*",
     "@voicechat/shared": "*",
-    "better-sqlite3": "^11.10.0",
-    "esbuild": "^0.21.5",
-    "fastify": "^5.1.0",
-    "zod": "^4.4.3"
+    "fastify": "^5.1.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.2",
-    "@types/ws": "^8.5.13",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8",
-    "ws": "^8.18.0"
+    "vitest": "^2.1.8"
   }
 }

@@ -18,9 +18,8 @@ import {
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
-import { ensureCliProfile } from '../users/cliProfiles.js'
 import { readUserFile } from '../serverFiles.js'
-import { listMcpServers } from '../claude/mcp.js'
+import { ensureCliProfile, listMcpServers } from '@voicechat/llm-runner/cli'
 import { getLoginStatus } from '../auth/loginStatus.js'
 import { listProjects, listSessions, readTranscript, readUsage } from '../cc/ccSessions.js'
 import {
