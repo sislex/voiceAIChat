@@ -759,7 +759,7 @@ export function createFakeCi(): FakeCi {
     return {
       runId: run.id, projectId: run.projectId, taskId: run.taskId, status: run.status, mode: run.mode,
       provider: run.llmProvider, model: run.llmModel, startedAt: run.startedAt, finishedAt: run.finishedAt,
-      durationMs: run.durationMs, createdAt: run.createdAt, fixAttempts: d?.fixAttempts.length ?? 0,
+      durationMs: run.durationMs, createdAt: run.createdAt, fixAttempts: d?.fixAttempts.length ?? 0, kbHit: null,
       totals: { ...EMPTY_CI_USAGE_TOTALS },
       steps: (d?.steps ?? []).map((s) => ({
         id: s.id, parentStepId: s.parentStepId, title: s.title, slot: s.slot, kind: s.kind,

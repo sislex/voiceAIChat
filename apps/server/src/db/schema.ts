@@ -365,6 +365,15 @@ CREATE TABLE IF NOT EXISTS ci_run_usage (
 );
 CREATE INDEX IF NOT EXISTS idx_ci_run_usage_run ON ci_run_usage(run_id, at);
 
+CREATE TABLE IF NOT EXISTS ci_run_kb_metrics (
+  run_id             TEXT PRIMARY KEY,
+  sections_delivered INTEGER NOT NULL,
+  sections_hit       INTEGER NOT NULL,
+  hit_ratio          REAL NOT NULL,
+  calculated_at      INTEGER NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS ci_command_suggestions (
   id             TEXT PRIMARY KEY,
   command_id     TEXT NOT NULL,
@@ -453,6 +462,7 @@ CREATE TABLE IF NOT EXISTS kb_usage_sections (
   heading     TEXT NOT NULL DEFAULT '',
   anchor      TEXT NOT NULL DEFAULT '',
   source_path TEXT NOT NULL DEFAULT '',
+  related_files TEXT NOT NULL DEFAULT '[]',
   chars       INTEGER NOT NULL DEFAULT 0,
   est_tokens  INTEGER NOT NULL DEFAULT 0,
   score       REAL,

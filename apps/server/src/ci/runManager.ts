@@ -1443,6 +1443,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     if (run0 && run0.status === 'cancelled' && status !== 'cancelled') return
     const finished = now()
     const durationMs = run0?.startedAt ? finished - run0.startedAt : null
+    try { deps.db.calculateAndSaveCiKbHit(runId) } catch { /* метрика не роняет финализацию */ }
     const run = deps.db.updateCiRun(runId, { status, finishedAt: finished, durationMs: durationMs ?? undefined })
     if (run) {
       deps.db.addCiEvent({ projectId: run.projectId, runId, type: 'run.finished', actorType: 'system', payload: { status } })
