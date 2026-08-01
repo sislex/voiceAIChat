@@ -215,6 +215,7 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
                 heading: item.heading,
                 anchor: item.anchor,
                 sourcePath: item.sourcePath,
+                relatedFiles: item.relatedFiles,
                 chars: blocks[index].length,
                 score: item.score,
                 matchTypes: item.matchTypes,
