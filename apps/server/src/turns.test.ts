@@ -4,7 +4,7 @@ import { VoiceChatDb } from './db/database.js'
 import { DEFAULT_AGENT_POLICY, imageBlock } from '@voicechat/shared'
 import type { LlmClient, LlmRequest } from './claude/types.js'
 import { createKbUsageTracker } from './kb/usage.js'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -276,7 +276,7 @@ describe('turns: остановка сервера (flushInterrupted)', () => {
         fsMkdir: async () => ({}),
         fsWrite: async () => ({})
       },
-      serverFileRoots: () => [dir],
+      readServerFile: async (userId, path) => path.startsWith(dir) ? { name: 'pic.png', dataBase64: readFileSync(path).toString('base64') } : null,
       mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret'
     })
 

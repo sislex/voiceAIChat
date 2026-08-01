@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-01
-checked: dc73c33
+checked: e2002e5
 areas:
   - apps/server/src
 ---
@@ -14,7 +14,7 @@ Backend — Fastify 5 на TypeScript ESM. Он не выпускает JS-ар�
 
 `index.ts` загружает `ServerConfig`, создаёт каталоги/SQLite, CLI-клиенты, STT/TTS engines и вызывает `buildServer()`, затем `listen()`. `server.ts` не слушает порт и подходит для тестов.
 
-`BuildOptions` позволяет внедрить `db`, `claude`, `codex`, `sttEngine`, `ttsEngine`, `createWsHandlers`, `sessionSecret` и конфигурацию. По умолчанию `server.ts` сам решает, чем будут `claude`/`codex`: локальным `spawn`-клиентом или `RemoteLlmClient` поверх HTTP. Новый внешний процесс/ресурс должен получить такую точку инъекции; иначе unit/integration-тест случайно запустит реальный CLI или затронет диск.
+`BuildOptions` позволяет внедрить `db`, `claude`, `codex`, `sttEngine`, `ttsEngine`, `createWsHandlers`, `sessionSecret` и конфигурацию. По умолчанию `server.ts` сам решает, чем будут `claude`/`codex`: локальным `spawn`-клиентом или `RemoteLlmClient` поверх HTTP. Тем же конфигом он поднимает `RunnerFsClient`, если заданы `VC_LLM_RUNNER_CLAUDE_URL` и/или `VC_LLM_RUNNER_CODEX_URL`: это отдельный HTTP-клиент для профильных файловых API исполнителя. Новый внешний процесс/ресурс должен получить такую точку инъекции; иначе unit/integration-тест случайно запустит реальный CLI или затронет диск.
 
 Порядок регистрации: auth/public guard, REST, admin/projects/agents/KB, gateway/MCP, websocket plugin и статические файлы. `/api/*` по умолчанию требует bearer token; исключения перечислены централизованно в `isPublic`. Нельзя делать новый публичный route побочным эффектом порядка plugins.
 
@@ -28,8 +28,8 @@ Backend — Fastify 5 на TypeScript ESM. Он не выпускает JS-ар�
 | conversations/messages | CRUD, поиск, настройка проекта/status, редактирование сообщений, desktop migration. |
 | settings/system | Пользовательские настройки, capabilities CPU/RAM. |
 | STT/TTS | Статус, каталог, скачивание/удаление моделей и голосов. |
-| uploads/files | Вложения и ограниченное чтение файлов, созданных CLI. |
-| LLM tooling | MCP list, login status, Claude Code/Codex sessions и resume. |
+| uploads/files | Вложения и ограниченное чтение файлов, созданных CLI; при вынесенном исполнителе чтение картинок идёт через его `/v1/files/read`. |
+| LLM tooling | MCP list, login status, Claude Code/Codex sessions и resume; `/api/auth/status`, `/api/cc/*`, `/api/cx/*` проксируются в файловые/auth API исполнителя. |
 | agents | CRUD машин, token/policy/update/install bundles, exec и файловые операции. |
 | admin | Пользователи, блокировка, usage и просмотр данных. |
 | projects | Проекты, участники, машины, default machine, канбан columns/tasks. |
@@ -69,17 +69,17 @@ STT session аккумулирует PCM, конвертирует в WAV и в�
 
 `UploadStore` хранит загруженные файлы в области данных сервера и выдаёт непрозрачный id. В prompt передаётся серверный путь, не клиентское имя. Ограничения размера и нормализация пути должны применяться до записи.
 
-`serverFiles.ts` разрешает чтение только внутри allowlisted roots пользовательского CLI-профиля/генерируемых данных, запрещает traversal/symlink escape, директории и файлы больше 32 MiB. Это граница безопасности для `MessageImage`.
+`serverFiles.ts` остаётся локальной границей безопасности для режима без вынесенного исполнителя: он разрешает чтение только внутри allowlisted roots пользовательского CLI-профиля/генерируемых данных, запрещает traversal/symlink escape, директории и файлы больше 32 MiB. Если `buildServer()` собрал `RunnerFsClient`, `routes/rest.ts` и `imageRelocate.ts` сначала идут в `/v1/files/read` исполнителя и только при отсутствии remote-режима читают локальный диск.
 
-Изображения, созданные моделью на машине, `imageRelocate.ts` переносит в `.generated_images` рабочей папки машины и публикует через временный image host агента. Серверные и machine-файлы имеют разные пути получения.
+Изображения, созданные моделью на исполнителе, `imageRelocate.ts` переносит в `.generated_images` рабочей папки машины и публикует через временный image host агента. Для этого `TurnManager` больше передаёт не список локальных roots, а абстракцию `readServerFile(userId, path)`: источником байтов может быть либо диск сервера, либо профиль пользователя на исполнителе.
 
 ## LLM и MCP
 
-`ClaudeCli` и `CodexCli` реализуют общий `LlmClient` (`@voicechat/shared`, `llm.ts`): spawn, поток событий, cancel. Сами классы лежат в `apps/llm-runner/src/cli/`; сервер либо импортирует их из `@voicechat/llm-runner/cli` и спавнит локально, либо использует третью реализацию того же интерфейса — `llm/remoteClient.ts` (`RemoteLlmClient`), который шлёт ход по HTTP в контейнер-исполнитель (`POST /v1/run`, NDJSON, отмена — `DELETE /v1/run/:id`). Разбор потока для удалённого транспорта живёт в `llm/sinks.ts`, выбор реализации идёт по `VC_LLM_RUNNER_URL` в `config.ts`; подробности — `docs/kb/llm.md`. MCP-конфигурация Claude может включать `remoteBashMcp`, который адресует команду выбранной машине через registry.
+`ClaudeCli` и `CodexCli` реализуют общий `LlmClient` (`@voicechat/shared`, `llm.ts`): spawn, поток событий, cancel. Сами классы лежат в `apps/llm-runner/src/cli/`; сервер либо импортирует их из `@voicechat/llm-runner/cli` и спавнит локально, либо использует третью реализацию того же интерфейса — `llm/remoteClient.ts` (`RemoteLlmClient`), который шлёт ход по HTTP в контейнер-исполнитель (`POST /v1/run`, NDJSON, отмена — `DELETE /v1/run/:id`). Для соседних профильных задач у сервера есть отдельный клиент `llm/runnerFsClient.ts`: он проксирует `/api/auth/status`, `/api/cc/*`, `/api/cx/*`, `/api/files/read` и live-tail CC/Codex в `/v1/auth/status`, `/v1/fs/*` и `/v1/files/read`, переподключая SSE с `Last-Event-ID`. Разбор потока для удалённого транспорта живёт в `llm/sinks.ts`, выбор реализаций идёт по `VC_LLM_RUNNER_URL`/`VC_LLM_RUNNER_CLAUDE_URL`/`VC_LLM_RUNNER_CODEX_URL` в `config.ts`; подробности — `docs/kb/llm.md`. MCP-конфигурация Claude может включать `remoteBashMcp`, который адресует команду выбранной машине через registry.
 
 `/mcp/remote-bash` реализован SDK MCP и предоставляет bash в рамках выбранного agent id. Он не обходит policy/version/online checks registry. Входящий `/v1/messages` — отдельный Anthropic-compatible gateway для Claude Code: backend либо upstream HTTP, либо локальный Codex; LAN-only проверка защищает незапароленный endpoint.
 
-Observer-модули читают JSONL-сессии из `~/.claude/projects` и `~/.codex/sessions`, строят список/транскрипт и tail через watcher. Resume создаёт/связывает разговор, а не запускает второй backend storage.
+Observer-модули как код живут и на сервере, и в исполнителе, но источником истины для профилей CLI в remote-режиме является исполнитель: именно он читает JSONL-сессии из `~/.claude/projects` и `~/.codex/sessions`, строит список/транскрипт и tail через watcher/SSE, а сервер только проксирует результат. Resume по-прежнему создаёт/связывает разговор, а не запускает второй backend storage.
 
 ## STT, TTS и ресурсы
 

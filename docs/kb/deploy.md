@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-08-01
-checked: 57cd44e
+checked: e2002e5
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -37,17 +37,17 @@ areas:
 
 ## Аутентификация CLI живёт в контейнере
 
-Тома `vc-claude` (`/home/node/.claude`) и `vc-codex` (`/home/node/.codex`) —
-**именованные**, не bind-mount с хоста. Логин делается один раз внутри контейнера
-и обязательно под `node`:
+Логин CLI теперь живёт не в контейнере сервера, а в контейнере(ах) исполнителя.
+Персональные профили пользователей лежат внутри
+`VC_DATA_DIR/cli-users/<base64url(user)>`; сервер видит только HTTP API
+исполнителя и bearer-токен к нему. Общий `HOME` исполнителя нужен лишь как seed
+для auth/config.
 
-```bash
-docker compose exec -u node voicechat claude auth login   # или claude setup-token
-docker compose exec -u node voicechat codex login
-```
-
-Каталоги создаются в образе с владельцем `node` — иначе Docker создал бы новые
-тома root-овыми и логин был бы недоступен серверному процессу.
+Практическое следствие: при проблемах с проводником CC/Codex, `imageRelocate` или
+`/api/auth/status` смотреть нужно не файловую систему контейнера сервера, а
+профиль пользователя внутри исполнителя. Именно исполнитель теперь читает
+`/v1/auth/status`, `/v1/files/read`, `/v1/fs/cc/*` и `/v1/fs/cx/*`; bind-mount
+общих `.claude` / `.codex` в серверный контейнер для этих функций больше не нужен.
 
 ## HTTPS по IP
 
