@@ -128,6 +128,8 @@ describe('работа модели: база знаний по режимам �
     expect(req.kbMcpUrl).toContain('/mcp/kb?k=secret&turn=')
     expect(req.kbMode).toBe('auto')
     expect(req.prompt).toContain('Начни работу с базы знаний проекта, а не с кода')
+    expect(req.prompt).toContain('Файлы читай инструментом read, ищи grep и правь edit')
+    expect(req.prompt).toContain('bash используй для команд')
     // Сам блок контекста: заголовок раздела БЗ в промпте (директива лишь ссылается на него).
     expect(req.prompt).toContain('### CI-раннер / Работа модели')
   })
