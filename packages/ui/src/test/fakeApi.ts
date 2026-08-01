@@ -697,7 +697,7 @@ export function createFakeCi(): FakeCi {
     triggeredBy: 'admin',
     prevColumnId: null,
     llmProvider: 'claude',
-    llmModel: 'sonnet',
+    llmModel: 'opus',
     mode: 'development',
     clarifyLevel: 'few',
     clarifyMax: 3,

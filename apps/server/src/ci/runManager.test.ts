@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from '../db/database.js'
-import { issueKey } from '@voicechat/shared'
+import { DEFAULT_CI_CLAUDE_MODEL, issueKey } from '@voicechat/shared'
 import { signToken } from '../users/accounts.js'
 import type { CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
@@ -104,7 +104,7 @@ async function run(projectId: string, taskId: string): Promise<string> {
   return res.json().id as string
 }
 
-async function waitRun(runId: string): Promise<{ run: { status: string; taskId: string }; steps: Array<{ kind: string; status: string }> }> {
+async function waitRun(runId: string): Promise<{ run: { status: string; taskId: string; llmProvider: string; llmModel: string }; steps: Array<{ kind: string; status: string }> }> {
   for (let i = 0; i < 100; i++) {
     const r = await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}` })
     const d = r.json()
@@ -128,6 +128,17 @@ describe('ci run manager', () => {
     expect(columnAtModel).toBe(development.id)
     expect(detail.run.status).toBe('success')
     expect(codexModel).toBe('gpt-5.4')
+  })
+
+  it('проект без явной настройки CI гоняет ран на claude opus', async () => {
+    const { project, task } = setup()
+    // Ни у проекта, ни у задачи нет записи в ci_llm_configs — значит DEFAULT_CI_LLM_CONFIG.
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+    expect(detail.run.status).toBe('success')
+    expect(detail.run.llmProvider).toBe('claude')
+    expect(detail.run.llmModel).toBe(DEFAULT_CI_CLAUDE_MODEL)
+    expect(modelRequests.map((r) => r.model)).toEqual([DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_CLAUDE_MODEL])
   })
 
   it('DELETE ci/llm снимает переопределение задачи и возвращает наследование', async () => {

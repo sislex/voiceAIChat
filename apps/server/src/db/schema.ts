@@ -245,7 +245,7 @@ CREATE TABLE IF NOT EXISTS ci_runs (
   triggered_by   TEXT NOT NULL,
   prev_column_id TEXT,
   llm_provider   TEXT NOT NULL DEFAULT 'claude',
-  llm_model      TEXT NOT NULL DEFAULT 'sonnet',
+  llm_model      TEXT NOT NULL DEFAULT 'opus',
   mode           TEXT NOT NULL DEFAULT 'development',
   clarify_level  TEXT NOT NULL DEFAULT 'few',
   clarify_max    INTEGER NOT NULL DEFAULT 3,

@@ -103,9 +103,16 @@ export interface CiLlmConfig {
   clarifyMax: number
 }
 
+/**
+ * Модель Claude по умолчанию для шага разработки CI (алиас `claude --model`).
+ * Единая точка правды: на неё же опираются фолбэки сервера (пустое поле в БД,
+ * старый ран без модели) и селекторы модели в UI.
+ */
+export const DEFAULT_CI_CLAUDE_MODEL = 'opus'
+
 export const DEFAULT_CI_LLM_CONFIG: CiLlmConfig = {
   provider: 'claude',
-  model: 'sonnet',
+  model: DEFAULT_CI_CLAUDE_MODEL,
   mode: 'development',
   clarifyLevel: 'few',
   clarifyMax: 3

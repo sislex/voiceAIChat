@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
-import { appendQuestionsHint, clarifyBudget, parseQuestions } from '@voicechat/shared'
+import { appendQuestionsHint, clarifyBudget, DEFAULT_CI_CLAUDE_MODEL, parseQuestions } from '@voicechat/shared'
 import type { CiRunMode } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import type { VoiceChatDb } from '../db/database.js'
@@ -131,7 +131,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
 } {
   const now = deps.now ?? (() => Date.now())
   const clientFor = (ctx: CiModelContext): LlmClient => ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
-  const modelFor = (ctx: CiModelContext): string => ctx.run.llmProvider === 'codex' ? ctx.run.llmModel : (ctx.run.llmModel || 'sonnet')
+  const modelFor = (ctx: CiModelContext): string => ctx.run.llmProvider === 'codex' ? ctx.run.llmModel : (ctx.run.llmModel || DEFAULT_CI_CLAUDE_MODEL)
 
   const modelWork: CiModelWorkHook = async (ctx: CiModelContext) => {
     // Публикуем модели команды справочника как инструмент на время шага (лимит

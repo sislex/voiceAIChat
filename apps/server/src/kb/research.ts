@@ -10,6 +10,7 @@
 // (как реестр ходов), UI опрашивает GET того же маршрута.
 
 import type { KbDocumentKind, KbResearchRun, ProjectDetail } from '@voicechat/shared'
+import { DEFAULT_CI_CLAUDE_MODEL } from '@voicechat/shared'
 import type { LlmClient, LlmHandle } from '../claude/types.js'
 import type { VoiceChatDb } from '../db/database.js'
 
@@ -166,7 +167,7 @@ export class KbResearchManager {
     const existing = db.kbDocuments({ scope: 'project', projectId: project.id }).map((doc) => ({ id: doc.id, title: doc.title, updatedAt: doc.updatedAt }))
     const config = db.getCiLlmConfig('project', project.id)
     const client = config?.provider === 'codex' ? this.deps.codex : this.deps.claude
-    const model = config?.provider === 'codex' ? config.model : config?.model || 'sonnet'
+    const model = config?.provider === 'codex' ? config.model : config?.model || DEFAULT_CI_CLAUDE_MODEL
     const prompt = researchPrompt(project, target.workdir, existing)
     let text = ''
     const answer = await new Promise<{ ok: boolean; text: string; error?: string }>((resolve) => {
