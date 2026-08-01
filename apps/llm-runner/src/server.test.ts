@@ -8,7 +8,10 @@ import type { RunnerConfig } from './config.js'
 import { RunManager } from './run/rawRun.js'
 import type { SpawnFn } from './cli/claudeCli.js'
 
-const TOKEN = 'секрет-исполнителя'
+// Только ASCII: значение заголовка — ByteString (latin-1), и `fetch` на
+// кириллическом токене падает ещё до запроса. Разбор UTF-8 токенов проверяет
+// `auth.test.ts` на самом `tokenMatches`.
+const TOKEN = 'runner-secret-token'
 
 const config = (over: Partial<RunnerConfig> = {}): RunnerConfig => ({
   host: '127.0.0.1',
@@ -95,7 +98,7 @@ describe('исполнитель: аутентификация', () => {
     const bad = await app.inject({
       method: 'GET',
       url: '/v1/health',
-      headers: { authorization: 'Bearer не-тот' }
+      headers: { authorization: 'Bearer wrong-token' }
     })
     expect(bad.statusCode).toBe(401)
 
