@@ -1,6 +1,8 @@
-// Процесс-глобальный менеджер CI-ранов (по образцу TurnManager): последовательный
-// прогон слот-за-слотом, потоковый лог, очередь на проект + лимит на сервер,
+// Процесс-глобальный менеджер CI-ранов (по образцу TurnManager): прогон
+// слот-за-слотом, потоковый лог, FIFO-очередь на сервер по `maxConcurrentRuns`,
 // отмена, откат задачи при Исходе B, снапшот для восстановления после reconnect.
+// Раны разных задач идут параллельно (у каждой задачи своя рабочая директория и
+// своя ветка), шаги с общими ресурсами сериализует мьютекс `sharedLock`.
 // Работа модели и fix-loop подключаются хуками (реальная реализация — в Срезе 4).
 
 import type {
@@ -18,9 +20,9 @@ import type { CiConsoleExecResult } from '@voicechat/shared'
 
 /**
  * Сколько ждём завершения `execute` после отмены, прежде чем закрыть ран
- * принудительно и отпустить звено очереди проекта. Без этого сторожа зависший
- * шаг модели держал `projectChains` вечно, и следующие раны висели в `queued`
- * до перезапуска сервера.
+ * принудительно и отпустить его слот с мьютексом общих ресурсов. Без этого
+ * сторожа зависший шаг модели держал слот вечно, и следующие раны висели в
+ * `queued` до перезапуска сервера.
  */
 const CANCEL_GRACE_MS = 15_000
 
@@ -55,7 +57,11 @@ type ResumePoint = { kind: 'command'; slot: CiSlot; index: number } | { kind: 'm
 interface ActiveRun {
   userId: string
   projectId: string
+  taskId: string
   abort: AbortController
+  /** Папка и ветка рана; известны с момента, когда `execute` начал работу. */
+  workspacePath?: string
+  branch?: string
 }
 
 export interface CiRunManager {
@@ -87,26 +93,104 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   const cancelGraceMs = deps.cancelGraceMs ?? CANCEL_GRACE_MS
   const listeners = new Set<(m: ServerMessage, ownerUserId: string) => void>()
   const active = new Map<string, ActiveRun>()
-  const projectChains = new Map<string, Promise<void>>()
   /** Ожидающие ответа паузы: runId → как разбудить `execute`. */
   const pendingInteractions = new Map<string, { interactionId: string; resolve: (v: CiInteraction | null) => void }>()
 
   // Серверный лимит одновременных ранов (значение читаем при каждом захвате).
+  // Очередь FIFO: `waiters` в порядке постановки. Раны разных задач идут
+  // параллельно — изоляция держится на том, что рабочая директория и ветка у
+  // каждой задачи свои (см. проверку инварианта в `execute`).
   let running = 0
   const waiters: Array<() => void> = []
-  async function acquireSlot(): Promise<void> {
+  /**
+   * Слот принадлежит рану, а не вызову: на паузе (`waitForUser`) ран слот
+   * отпускает и берёт заново. `abandoned` поднимается, когда ран уже закрыт
+   * (в том числе сторожевым таймаутом отмены) — зомби-`execute` после этого
+   * слот не занимает, иначе лимит сервера утекает по одному слоту за ран.
+   */
+  interface RunSlot { held: boolean; abandoned: boolean }
+  const runSlots = new Map<string, RunSlot>()
+  async function acquireSlot(slot: RunSlot): Promise<void> {
+    if (slot.held || slot.abandoned) return
     const limit = deps.db.getCiSettings().maxConcurrentRuns
     if (running < limit) {
       running++
+      slot.held = true
       return
     }
     await new Promise<void>((res) => waiters.push(res))
+    // Пока стояли в очереди, ран могли закрыть — передаём пробуждение дальше,
+    // не трогая счётчик (его уменьшил тот, кто нас разбудил).
+    if (slot.abandoned) {
+      const next = waiters.shift()
+      if (next) next()
+      return
+    }
     running++
+    slot.held = true
   }
-  function releaseSlot(): void {
+  function releaseSlot(slot: RunSlot): void {
+    if (!slot.held) return
+    slot.held = false
     running--
     const next = waiters.shift()
     if (next) next()
+  }
+
+  /**
+   * Глобальный мьютекс общих ресурсов. Раны изолированы папкой и веткой, но шаги
+   * «Влить ветку задачи в прод-ветку» (пишет в прод-ветку) и «Обновить
+   * прод-контейнер» трогают то, что на машине одно на всех: одновременно — это
+   * отбитый `push` и наполовину пересобранный прод. Признак шага системный
+   * (`isSharedResourceCommand`), а не подпись команды в конкретном проекте.
+   */
+  type LockRelease = () => void
+  interface LockWaiter { runId: string; wake: (release: LockRelease) => void }
+  let lockHolder: string | null = null
+  const lockWaiters: LockWaiter[] = []
+  /** runId → отпустить мьютекс: нужен, чтобы отмена не оставила его занятым. */
+  const lockReleases = new Map<string, LockRelease>()
+
+  function grantLock(runId: string): LockRelease {
+    lockHolder = runId
+    let done = false
+    const release: LockRelease = () => {
+      if (done) return
+      done = true
+      lockReleases.delete(runId)
+      if (lockHolder !== runId) return
+      lockHolder = null
+      const next = lockWaiters.shift()
+      if (next) next.wake(grantLock(next.runId))
+    }
+    lockReleases.set(runId, release)
+    return release
+  }
+
+  /**
+   * Захватить мьютекс общих ресурсов. `null` — ран отменили, пока он ждал в
+   * очереди за мьютексом; `onWait` зовём только если пришлось ждать.
+   */
+  function acquireSharedLock(runId: string, signal: AbortSignal, onWait: () => void): Promise<LockRelease | null> {
+    if (signal.aborted) return Promise.resolve(null)
+    if (lockHolder === null) return Promise.resolve(grantLock(runId))
+    onWait()
+    return new Promise<LockRelease | null>((resolve) => {
+      const onAbort = (): void => {
+        const i = lockWaiters.indexOf(waiter)
+        if (i >= 0) lockWaiters.splice(i, 1)
+        resolve(null)
+      }
+      const waiter: LockWaiter = {
+        runId,
+        wake: (release) => {
+          signal.removeEventListener('abort', onAbort)
+          resolve(release)
+        }
+      }
+      lockWaiters.push(waiter)
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
   }
 
   function broadcast(m: ServerMessage, userId: string): void {
@@ -126,6 +210,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (!project) return { error: 'Проект недоступен' }
     const task = deps.db.getCiTask(userId, projectId, taskId)
     if (!task) return { error: 'Задача не найдена' }
+    // Параллельность — между задачами: два рана одной задачи неизбежно делили бы
+    // рабочую директорию и ветку, а это и есть то, чего мы не допускаем.
+    if (hasActiveRunForTask(taskId)) return { error: 'Для этой задачи уже выполняется ран' }
     const agentId = project.defaultAgentId
     const slots = deps.db.resolveTaskSlots(projectId, taskId)
     const llm = deps.db.resolveTaskLlmConfig(projectId, taskId)
@@ -160,32 +247,39 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     emitRun(run, userId)
 
     const ctl = new AbortController()
-    active.set(run.id, { userId, projectId, abort: ctl })
-    enqueue(run.id, userId, projectId, ctl)
+    active.set(run.id, { userId, projectId, taskId, abort: ctl })
+    enqueue(run.id, userId, ctl)
     return { run }
   }
 
   /**
-   * Поставить ран в очередь проекта. Звено цепочки обязано разрешиться в любом
-   * случае — даже если после отмены `execute` завис на процессе модели: иначе
-   * следующие раны проекта висят в `queued` до перезапуска сервера.
+   * Поставить ран в общую очередь сервера. `acquireSlot` встаёт в неё синхронно,
+   * поэтому порядок вызовов `enqueue` — это и есть FIFO. Хвост обязан отработать
+   * в любом случае — даже если после отмены `execute` завис на процессе модели:
+   * иначе слот и мьютекс держатся до перезапуска сервера.
    */
-  function enqueue(runId: string, userId: string, projectId: string, ctl: AbortController, resume?: ResumePoint): void {
-    let released = false
-    const prev = projectChains.get(projectId) ?? Promise.resolve()
-    const chain = prev
-      .then(() => acquireSlot())
+  function enqueue(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint): void {
+    const slot: RunSlot = { held: false, abandoned: false }
+    runSlots.set(runId, slot)
+    void acquireSlot(slot)
       .then(() => guardCancel(runId, userId, ctl, execute(runId, userId, ctl, resume)))
       .catch(() => {})
       .finally(() => {
-        // Зависший execute может позже дойти до своего releaseSlot — считаем слот
-        // отпущенным один раз, чтобы лимит сервера не «уехал» в минус.
-        if (released) return
-        released = true
-        releaseSlot()
+        // Зависший execute может позже дойти до своей паузы или до своего
+        // release — `abandoned` и идемпотентный release не дают ему занять
+        // слот/мьютекс, которые мы уже отпустили за него.
+        slot.abandoned = true
+        releaseSlot(slot)
+        lockReleases.get(runId)?.()
+        runSlots.delete(runId)
         active.delete(runId)
       })
-    projectChains.set(projectId, chain)
+  }
+
+  /** Есть ли незавершённый ран у задачи (в очереди, в работе или на паузе). */
+  function hasActiveRunForTask(taskId: string): boolean {
+    for (const a of active.values()) if (a.taskId === taskId) return true
+    return false
   }
 
   /**
@@ -247,7 +341,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (!detail || detail.run.status !== 'failed') return { error: 'Действие доступно только для упавшего рана' }
     const dirtyStep = [...detail.steps].reverse().find((step) => step.kind === 'command' && step.status === 'failed' && step.exitCode === 66)
     if (!dirtyStep) return { error: 'Ран не остановлен из-за локальных изменений' }
-    if ([...active.values()].some((a) => a.projectId === detail.run.projectId)) return { error: 'В проекте уже выполняется другой ран' }
+    if (hasActiveRunForTask(detail.run.taskId)) return { error: 'Для этой задачи уже выполняется ран' }
     const project = deps.db.getProject(userId, detail.run.projectId)
     const task = deps.db.getCiTask(userId, detail.run.projectId, detail.run.taskId)
     const workspace = detail.run.workspaceId ? deps.db.getCiWorkspaceById(detail.run.workspaceId) : null
@@ -333,6 +427,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (!isTerminalCiStatus(run.status) || run.status === 'success' || run.status === 'cancelled') {
       return { error: 'Повтор с шага доступен только для упавшего рана' }
     }
+    if (hasActiveRunForTask(run.taskId)) return { error: 'Для этой задачи уже выполняется ран' }
     const failedModel = detail.steps
       .filter((st) => st.kind === 'model_work' && (st.status === 'failed' || st.status === 'timeout'))
       .sort((a2, b2) => b2.position - a2.position)[0]
@@ -364,12 +459,12 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
 
     const ctl = new AbortController()
-    active.set(run.id, { userId, projectId: run.projectId, abort: ctl })
+    active.set(run.id, { userId, projectId: run.projectId, taskId: run.taskId, abort: ctl })
     deps.db.addCiEvent({ projectId: run.projectId, runId: run.id, type: 'run.retry_from_step', actorType: 'user', actorId: userId, payload: eventPayload })
     const queued = deps.db.updateCiRun(run.id, { status: 'queued' })!
     emitRun(queued, userId)
 
-    enqueue(run.id, userId, run.projectId, ctl, resume)
+    enqueue(run.id, userId, ctl, resume)
     return { run: queued }
   }
 
@@ -409,6 +504,21 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     deps.db.updateCiRunStep(step.id, { startedAt: started })
     emitStep({ ...step, status: 'running', startedAt: started }, userId)
 
+    // Шаг с общим на всю машину ресурсом (прод-ветка, прод-контейнер) ждёт, пока
+    // его освободит другой ран: параллельно такие шаги идти не должны.
+    let releaseShared: LockRelease | null = null
+    if (isSharedResourceCommand(command)) {
+      releaseShared = await acquireSharedLock(runId, signal, () => {
+        const line = deps.db.appendCiLog(runId, step.id, 'system', 'Шаг работает с общим ресурсом — жду, пока его освободит другой ран…\n')
+        broadcast({ t: 'ci.log', runId, line }, userId)
+      })
+      if (!releaseShared) {
+        const upd = deps.db.updateCiRunStep(step.id, { status: 'cancelled', finishedAt: now() })
+        if (upd) emitStep(upd, userId)
+        return { status: 'cancelled', exitCode: null, output: '', stepId: step.id }
+      }
+    }
+
     const cwd = command.workdir ? `${workspacePath}/${command.workdir}` : workspacePath
     const settings = deps.db.getCiSettings()
     const timeoutMs = (command.timeoutSec ?? settings.defaultStepTimeoutSec) * 1000
@@ -430,6 +540,8 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       const line = deps.db.appendCiLog(runId, step.id, 'system', msg + '\n')
       broadcast({ t: 'ci.log', runId, line }, userId)
       exitCode = null
+    } finally {
+      releaseShared?.()
     }
     const finished = now()
     const status: CiStatus = timedOut ? 'timeout' : exitCode === 0 ? 'success' : 'failed'
@@ -565,8 +677,9 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
   /**
    * Поставить ран на паузу и дождаться пользователя. Пока ждём, отпускаем
    * серверный слот: одобрение плана может занять часы, а `maxConcurrentRuns`
-   * по умолчанию 2 — иначе одна пауза перекрывает раны других проектов.
-   * Очередь внутри проекта при этом остаётся последовательной, как и раньше.
+   * по умолчанию 2 — иначе одна пауза перекрывает раны других задач. Слот
+   * забираем обратно уже после ответа (и не забираем вовсе, если ран за это
+   * время закрыли).
    */
   async function waitForUser(
     runId: string,
@@ -619,7 +732,8 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     })
 
     const waitMs = deps.db.getCiSettings().interactionWaitMs
-    releaseSlot()
+    const slot = runSlots.get(runId)
+    if (slot) releaseSlot(slot)
     let answered: CiInteraction | null = null
     try {
       answered = await new Promise<CiInteraction | null>((resolve) => {
@@ -645,7 +759,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
         else signal.addEventListener('abort', onAbort, { once: true })
       })
     } finally {
-      await acquireSlot()
+      if (slot) await acquireSlot(slot)
     }
 
     if (answered) {
@@ -709,6 +823,21 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       npm_config_cache: npmCacheDir
     }
     const signal = ctl.signal
+
+    // Инвариант параллельных ранов: своя рабочая директория и своя ветка.
+    // Сломать его может только конфигурация (совпавший номер задачи, шаблон
+    // ветки без `{task_number}`), и тогда два рана перемешали бы работу в одной
+    // копии — поэтому проверяем до первой команды.
+    const clash = [...active.entries()].find(([id, a]) => id !== runId && (a.workspacePath === workspacePath || a.branch === branch))
+    if (clash) {
+      failIsolation(runId, userId, runRow, workspacePath, branch, clash[0])
+      return
+    }
+    const self = active.get(runId)
+    if (self) {
+      self.workspacePath = workspacePath
+      self.branch = branch
+    }
 
     const started = now()
     let run = deps.db.updateCiRun(runId, { status: 'running', startedAt: started })!
@@ -1067,6 +1196,31 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     }
   }
 
+  /**
+   * Другой активный ран уже занял эту папку или эту ветку — не начинаем работу
+   * вовсе: два рана в одной рабочей копии перемешали бы коммиты двух задач.
+   * Причина видна в ленте отдельным шагом, а не только в логе сервера.
+   */
+  function failIsolation(runId: string, userId: string, runRow: CiRun, workspacePath: string, branch: string, otherRunId: string): void {
+    const step = deps.db.addCiRunStep({
+      runId, slot: 'before_model', position: 0, kind: 'command', initiatedBy: 'system',
+      title: 'Проверка изоляции рабочей директории', status: 'running'
+    })
+    emitStep(step, userId)
+    const line = deps.db.appendCiLog(
+      runId, step.id, 'system',
+      `Рабочая директория ${workspacePath} или ветка ${branch} уже заняты раном ${otherRunId}: параллельные раны обязаны работать в разных папках и разных ветках.\n`
+    )
+    broadcast({ t: 'ci.log', runId, line }, userId)
+    const upd = deps.db.updateCiRunStep(step.id, { status: 'failed', finishedAt: now() })
+    if (upd) emitStep(upd, userId)
+    deps.db.addCiEvent({
+      projectId: runRow.projectId, runId, type: 'run.isolation_conflict', actorType: 'system',
+      payload: { workspacePath, branch, otherRunId }
+    })
+    rollbackAndFail(runId, userId, runRow.prevColumnId, 'isolation_conflict')
+  }
+
   function rollbackAndFail(runId: string, userId: string, prevColumnId: string | null, _failureClass: string, status: CiStatus = 'failed'): void {
     rollbackTask(runId, userId, prevColumnId)
     finalize(runId, userId, status)
@@ -1152,7 +1306,11 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
  */
 export function isMergeToBaseStep(step: CiRunStep): boolean {
   if (step.kind !== 'command' && step.kind !== 'model_command') return false
-  return /вли(т|ва)|\bmerge\b/i.test(step.title) || /git\s+(?:-C\s+\S+\s+)?merge\b/.test(step.commandSnapshot ?? '')
+  return isMergeToBase(step.title, step.commandSnapshot ?? '')
+}
+
+function isMergeToBase(title: string, script: string): boolean {
+  return /вли(т|ва)|\bmerge\b/i.test(title) || /git\s+(?:-C\s+\S+\s+)?merge\b/.test(script)
 }
 
 /**
@@ -1163,9 +1321,21 @@ export function isMergeToBaseStep(step: CiRunStep): boolean {
  */
 export function isProdRebuildStep(step: CiRunStep): boolean {
   if (step.kind !== 'command' && step.kind !== 'model_command') return false
-  if (/прод|\bprod\b/i.test(step.title) && /пересбор|пересобра|обнов|деплой|deploy|rebuild|update/i.test(step.title)) return true
-  const script = step.commandSnapshot ?? ''
+  return isProdRebuild(step.title, step.commandSnapshot ?? '')
+}
+
+function isProdRebuild(title: string, script: string): boolean {
+  if (/прод|\bprod\b/i.test(title) && /пересбор|пересобра|обнов|деплой|deploy|rebuild|update/i.test(title)) return true
   return /docker[- ]compose[^\n]*\bup\b[^\n]*--build|npm\s+run\s+docker\b/.test(script)
+}
+
+/**
+ * Команда трогает ресурс, общий для всех ранов машины: прод-ветку (в неё пишет
+ * мерж ветки задачи) или сам прод-контейнер. Такие шаги разных ранов раннер
+ * пропускает по одному — иначе гонка на `git push` и на пересборке прода.
+ */
+export function isSharedResourceCommand(command: { name: string; script: string }): boolean {
+  return isMergeToBase(command.name, command.script) || isProdRebuild(command.name, command.script)
 }
 
 /** shell-quote для системных префиксов раннера. */

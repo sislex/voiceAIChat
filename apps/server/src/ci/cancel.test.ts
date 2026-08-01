@@ -1,5 +1,7 @@
-// Отмена рана в фазе модели, сторожевой таймаут очереди проекта, изолированный
+// Отмена рана в фазе модели, сторожевой таймаут очереди сервера, изолированный
 // кэш npm и отказ гонять инфраструктурные ошибки через fix-loop.
+// Очередь проверяем при `maxConcurrentRuns: 1` — иначе раны разных задач идут
+// параллельно (см. parallel.test.ts) и «следующий в очереди» просто не возникает.
 // Менеджер собираем напрямую (без buildServer): нужен контроль над хуком модели
 // и коротким `cancelGraceMs`.
 
@@ -71,8 +73,9 @@ function startRun(ci: CiRunManager, projectId: string, taskId: string): string {
 }
 
 describe('отмена рана в фазе модели', () => {
-  it('останавливает работу модели и пропускает следующий ран проекта', async () => {
+  it('останавливает работу модели и пропускает следующий ран из очереди', async () => {
     const { projectId, taskIds, prevColumnId } = setup()
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
     let sawAbort = false
     let firstStarted: () => void = () => {}
     const started = new Promise<void>((res) => { firstStarted = res })
@@ -101,13 +104,14 @@ describe('отмена рана в фазе модели', () => {
     expect(steps.some((s) => s.kind === 'model_summary')).toBe(false)
     // Карточка вернулась в колонку, где была до рана.
     expect(db.getBoard('admin', projectId)!.tasks.find((t) => t.id === taskIds[0])!.columnId).toBe(prevColumnId)
-    // Главное: очередь проекта не залипла — следующий ран доехал сам.
+    // Главное: очередь не залипла — следующий ран доехал сам.
     expect(await waitStatus(second)).toBe('success')
     expect(ci.activeRunIds()).toEqual([])
   })
 
-  it('исполнитель проигнорировал отмену → звено очереди освобождается по сторожевому таймауту', async () => {
+  it('исполнитель проигнорировал отмену → слот очереди освобождается по сторожевому таймауту', async () => {
     const { projectId, taskIds } = setup()
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
     // Хук намеренно глухой к ctx.signal — так вёл себя modelWork до этой задачи.
     const modelWork: CiModelWorkHook = async (ctx) => {
       if (ctx.task.id !== taskIds[0]) return { ok: true }
@@ -129,6 +133,7 @@ describe('отмена рана в фазе модели', () => {
 
   it('отмена рана из очереди закрывает его как cancelled, не начиная работу', async () => {
     const { projectId, taskIds, prevColumnId } = setup()
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
     let release: () => void = () => {}
     const hold = new Promise<void>((res) => { release = res })
     const ci = manager({
@@ -140,7 +145,7 @@ describe('отмена рана в фазе модели', () => {
     const first = startRun(ci, projectId, taskIds[0])
     const second = startRun(ci, projectId, taskIds[1])
     for (let i = 0; i < 100 && db.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 10))
-    // Второй ещё стоит в очереди проекта — отменяем именно его.
+    // Второй ещё стоит в очереди сервера — отменяем именно его.
     expect(db.getCiRunRaw(second)!.status).toBe('queued')
     expect(ci.cancel('admin', second)).toBe(true)
     release()
