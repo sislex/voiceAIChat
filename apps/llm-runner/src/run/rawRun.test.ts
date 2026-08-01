@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { PassThrough } from 'node:stream'
 import type { LlmRunBody, LlmRunFrame } from '@voicechat/shared'
 import { parseLlmRunFrame } from '@voicechat/shared'
@@ -89,7 +91,6 @@ describe('RunManager', () => {
     runs.start(request({ runId: 'r1' }), sink)
     stdout.write('{"type":"system"}\n')
     await tick()
-    // Кадр появился до завершения процесса — значит вывод не буферизуется.
     expect(sink.frames).toEqual([{ t: 'out', s: '{"type":"system"}' }])
 
     stderr.write('warning: что-то\n')
@@ -97,7 +98,6 @@ describe('RunManager', () => {
     stderr.end()
     await tick()
     child.emit('close', 0)
-    // Кадр exit ждём: хвост stdout закрывается не синхронно с процессом.
     await vi.waitFor(() => expect(sink.frames.at(-1)?.t).toBe('exit'), { timeout: 3_000 })
 
     expect(sink.frames).toEqual([
@@ -122,6 +122,46 @@ describe('RunManager', () => {
     expect(sink.frames[0]).toEqual({ t: 'out', s: line })
   })
 
+  it('вложения раскладываются во временный каталог, а пути в prompt подменяются', async () => {
+    const { child, stdout, stderr } = fakeChild()
+    const spawn = vi.fn(() => child) as unknown as SpawnFn
+    const serverPath = '/data/uploads/u1/report.txt'
+    new RunManager({ spawn }).start(
+      request({
+        prompt: `Прочитай ${serverPath}`,
+        attachments: [
+          {
+            serverPath,
+            runnerName: 'report.txt',
+            dataBase64: Buffer.from('hello runner').toString('base64')
+          }
+        ]
+      }),
+      fakeSink()
+    )
+
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const prompt = args[args.indexOf('-p') + 1]
+    expect(prompt).not.toContain(serverPath)
+    const match = prompt.match(/\/tmp\/voicechat-llm-run-[^\s]+\/1-report\.txt/)
+    expect(match?.[0]).toBeTruthy()
+    expect(readFileSync(match![0], 'utf8')).toBe('hello runner')
+
+    stdout.end()
+    stderr.end()
+    child.emit('close', 0)
+    await tick()
+    expect(existsSync(dirname(match![0]))).toBe(false)
+  })
+
+  it('несуществующий cwd не уходит в spawn и не роняет запуск', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child) as unknown as SpawnFn
+    new RunManager({ spawn }).start(request({ cwd: '/definitely/missing/workdir' }), fakeSink())
+
+    expect((spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][2]).toBeUndefined()
+  })
+
   it('codex получает промпт через stdin', async () => {
     const { child, stdin } = fakeChild()
     let input = ''
@@ -135,9 +175,43 @@ describe('RunManager', () => {
     expect(input).toContain('сделай')
   })
 
+  it('временный каталог рана удаляется после отмены', async () => {
+    const { child, stdout, stderr } = fakeChild()
+    const spawn = vi.fn(() => child) as unknown as SpawnFn
+    const serverPath = '/data/uploads/u1/image.png'
+    const runs = new RunManager({ spawn })
+    runs.start(
+      request({
+        runId: 'r-cleanup',
+        prompt: `Посмотри ${serverPath}`,
+        attachments: [
+          {
+            serverPath,
+            runnerName: 'image.png',
+            dataBase64: Buffer.from('png').toString('base64')
+          }
+        ]
+      }),
+      fakeSink()
+    )
+
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const prompt = args[args.indexOf('-p') + 1]
+    const match = prompt.match(/\/tmp\/voicechat-llm-run-[^\s]+\/1-image\.png/)
+    expect(match?.[0]).toBeTruthy()
+    expect(existsSync(dirname(match![0]))).toBe(true)
+
+    expect(runs.cancel('r-cleanup')).toBe(true)
+    stdout.end()
+    stderr.end()
+    child.emit('close', null)
+    await tick()
+    expect(existsSync(dirname(match![0]))).toBe(false)
+  })
+
   it('cancel гасит процесс SIGTERM → SIGKILL, повторный вызов безопасен', async () => {
     vi.useFakeTimers()
-    const { child, signals } = fakeChild()
+    const { child, stdout, stderr, signals } = fakeChild()
     const spawn = vi.fn(() => child) as unknown as SpawnFn
     const runs = new RunManager({ spawn })
     const id = runs.start(request({ runId: 'r2' }), fakeSink())
@@ -147,10 +221,10 @@ describe('RunManager', () => {
     vi.advanceTimersByTime(5_000)
     expect(signals).toEqual(['SIGTERM', 'SIGKILL'])
 
-    // Второй раз — тот же ран ещё в реестре: сигнал повторно не навредит.
     expect(runs.cancel(id)).toBe(true)
+    stdout.end()
+    stderr.end()
     child.emit('close', null)
-    // Ран завершился — отмена больше не находит его, но и не падает.
     expect(runs.cancel(id)).toBe(false)
     expect(runs.cancel('нет-такого')).toBe(false)
   })
@@ -190,7 +264,7 @@ describe('RunManager', () => {
     expect(runs.size).toBe(1)
   })
 
-  it('обрыв соединения гасит CLI сразу, не дожидаясь таймаута', async () => {
+  it('обрыв соединения гасит CLI сразу, не дожидаясь таймаута', () => {
     const { child, signals } = fakeChild()
     const spawn = vi.fn(() => child) as unknown as SpawnFn
     const sink = fakeSink()
@@ -202,7 +276,7 @@ describe('RunManager', () => {
     expect(runs.size).toBe(0)
   })
 
-  it('spawn упал (нет бинаря) → кадр err и exit без кода', async () => {
+  it('spawn упал (нет бинаря) → кадр err и exit без кода', () => {
     const spawn = vi.fn(() => {
       throw Object.assign(new Error('spawn claude ENOENT'), { code: 'ENOENT' })
     }) as unknown as SpawnFn
