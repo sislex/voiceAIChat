@@ -3,7 +3,7 @@ id: project-knowledge-base
 title: База знаний проекта
 kind: feature
 updated: 2026-08-01
-checked: 8ded752
+checked: 2b2978c
 areas:
   - docs/kb
   - scripts/kb-search.mjs
