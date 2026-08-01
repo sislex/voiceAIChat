@@ -274,6 +274,7 @@ describe('хук работы модели слушает отмену', () => {
       finishStep: () => {},
       log: () => {},
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' }),
+      setModelSessionId: () => {},
       recordFix: () => {},
       suggest: () => {},
       askUser: async () => null,

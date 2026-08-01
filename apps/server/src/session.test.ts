@@ -396,6 +396,16 @@ describe('WS: ходы переживают обрыв соединения (Tur
     const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча', 'сть'], 'Часть ответа', 80))
     const conv = sdb.createConversation(U, 'Чат')
     const ws1 = await connectTo(sport)
+    // Ждём сами дельты, а не фиксированную паузу: под нагрузкой (полный прогон
+    // сюиты) вторая не успевала за 25 мс и в накопленном тексте была одна «Ча».
+    const streamed = new Promise<void>((resolve) => {
+      let text = ''
+      ws1.on('message', (d) => {
+        const m = JSON.parse(d.toString())
+        if (m.t === 'claude.token') text += m.delta
+        if (text === 'Часть') resolve()
+      })
+    })
     ws1.send(
       JSON.stringify({
         t: 'claude.send',
@@ -403,7 +413,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
         segments: [{ speakerId: 1, text: 'привет' }]
       })
     )
-    await wait(25) // обе дельты уже пришли
+    await streamed
     ws1.close()
 
     // Второй клиент («страница после обновления»); слушатель вешаем ДО open,

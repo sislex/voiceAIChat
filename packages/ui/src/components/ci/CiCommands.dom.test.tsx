@@ -9,7 +9,7 @@ function mkCommand(over: Partial<CiCommand> = {}): CiCommand {
   return {
     id: 'cmd-1', scope: 'global', projectId: null, name: 'build', script: 'npm run build',
     description: 'сборка', workdir: '', timeoutSec: null, env: {}, allowFailure: false,
-    isCleanup: false, availableToModel: false, version: 1, createdBy: 'admin',
+    isCleanup: false, availableToModel: false, isTest: false, version: 1, createdBy: 'admin',
     createdAt: 1, updatedAt: 1, deletedAt: null, ...over
   }
 }
@@ -40,6 +40,24 @@ describe('CiCommands', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     await waitFor(() => expect(p.onCreate).toHaveBeenCalledTimes(1))
     expect((p.onCreate as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({ name: 'lint', script: 'npm run lint' })
+  })
+
+  it('чекбокс «Проверка (тесты)» уходит в isTest', async () => {
+    const p = props()
+    render(<CiCommands {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: '+ Команда' }))
+    fireEvent.change(screen.getByPlaceholderText('build'), { target: { value: 'тесты' } })
+    fireEvent.change(screen.getByPlaceholderText('npm ci && npm run build'), { target: { value: 'npm test' } })
+    fireEvent.click(screen.getByLabelText(/Проверка \(тесты\)/))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(p.onCreate).toHaveBeenCalledTimes(1))
+    expect((p.onCreate as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({ isTest: true })
+  })
+
+  it('форма правки показывает признак проверки из справочника', () => {
+    render(<CiCommands {...props({ commands: [mkCommand({ id: 'cmd-t', name: 'gate', isTest: true })] })} />)
+    fireEvent.click(screen.getByText('gate'))
+    expect(screen.getByLabelText(/Проверка \(тесты\)/)).toBeChecked()
   })
 
   it('показывает команды и удаляет с подтверждением', async () => {

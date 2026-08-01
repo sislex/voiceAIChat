@@ -51,7 +51,7 @@ export interface CiCommandsProps {
   onClose?: () => void
 }
 
-type Draft = Required<Pick<CiCommandInput, 'scope' | 'name' | 'script' | 'description' | 'workdir' | 'allowFailure' | 'isCleanup' | 'availableToModel'>> & {
+type Draft = Required<Pick<CiCommandInput, 'scope' | 'name' | 'script' | 'description' | 'workdir' | 'allowFailure' | 'isCleanup' | 'availableToModel' | 'isTest'>> & {
   projectId: string | null
   timeoutSec: number | null
   envText: string
@@ -68,7 +68,8 @@ const EMPTY: Draft = {
   envText: '',
   allowFailure: false,
   isCleanup: false,
-  availableToModel: false
+  availableToModel: false,
+  isTest: false
 }
 
 function envToText(env: Record<string, string>): string {
@@ -99,7 +100,8 @@ function draftOf(cmd: CiCommand): Draft {
     envText: envToText(cmd.env),
     allowFailure: cmd.allowFailure,
     isCleanup: cmd.isCleanup,
-    availableToModel: cmd.availableToModel
+    availableToModel: cmd.availableToModel,
+    isTest: cmd.isTest
   }
 }
 function draftToInput(d: Draft): CiCommandInput {
@@ -114,7 +116,8 @@ function draftToInput(d: Draft): CiCommandInput {
     env: textToEnv(d.envText),
     allowFailure: d.allowFailure,
     isCleanup: d.isCleanup,
-    availableToModel: d.availableToModel
+    availableToModel: d.availableToModel,
+    isTest: d.isTest
   }
 }
 
@@ -252,6 +255,8 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
             <label><input type="checkbox" checked={draft.allowFailure} onChange={(e) => setDraft({ ...draft, allowFailure: e.target.checked })} /> Продолжать при ошибке</label>
             <label><input type="checkbox" checked={draft.isCleanup} onChange={(e) => setDraft({ ...draft, isCleanup: e.target.checked })} /> Освобождает директорию (cleanup)</label>
             <label><input type="checkbox" checked={draft.availableToModel} onChange={(e) => setDraft({ ...draft, availableToModel: e.target.checked })} /> Доступна модели</label>
+            {/* Гейт гоняет только воркфлоу: такую команду модель не получит инструментом, даже если отмечена «доступна модели». */}
+            <label><input type="checkbox" checked={draft.isTest} onChange={(e) => setDraft({ ...draft, isTest: e.target.checked })} /> Проверка (тесты) — только для воркфлоу</label>
           </div>
           <div className="ci-form-actions">
             <Button variant="primary" disabled={saving || !draft.name.trim()} onClick={() => void save()}>Сохранить</Button>

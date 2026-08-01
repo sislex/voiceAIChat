@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
-import { appendQuestionsHint, clarifyBudget, DEFAULT_CI_CLAUDE_MODEL, parseQuestions } from '@voicechat/shared'
+import { appendQuestionsHint, clarifyBudget, DEFAULT_CI_CLAUDE_MODEL, isVerificationCommand, parseQuestions } from '@voicechat/shared'
 import type { CiRunMode, KbContextMode } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import { kbToolBroker, kbRunDirective, type KbToolEntry } from '../kb/kbMcp.js'
@@ -131,6 +131,17 @@ function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmReque
   return { remote: { mcpUrl, agentName: deps.agentNameOf(ctx.agentId) ?? ctx.agentId } }
 }
 
+/**
+ * Запрет самопроверки в фазе разработки. Гейт гоняет шаг воркфлоу, а не модель:
+ * иначе тесты идут дважды (ход модели + шаг слота «после»), ран длится вдвое
+ * дольше, а расхождение между прогонами модель чинит вслепую. Упавший шаг
+ * вернётся к ней в fix-loop — уже с логом.
+ */
+const NO_SELF_VERIFICATION = [
+  'Тесты, typecheck, линтер и сборку сам не запускай — за проверку отвечает шаг воркфлоу после твоей работы.',
+  'Если он упадёт, тебя позовут чинить в этом же диалоге и покажут лог. Результат работы отдавай коммитом в ветку задачи.'
+].join(' ')
+
 function taskPrompt(ctx: CiModelContext, mode: CiRunMode): string {
   const tail = mode === 'plan'
     ? [
@@ -139,6 +150,7 @@ function taskPrompt(ctx: CiModelContext, mode: CiRunMode): string {
       ]
     : [
         'Реализуй задачу в рабочей директории. Команды выполняй через доступный инструмент bash.',
+        NO_SELF_VERIFICATION,
         `Готовую работу коммить в ветку ${ctx.env.BRANCH ?? ''} — пушить не нужно: раннер сам отправит её в origin перед очисткой рабочей директории.`
       ]
   return [
@@ -283,11 +295,14 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     // Публикуем модели команды справочника как инструмент на время шага (лимит
     // maxModelCommandCalls, is_cleanup исключены — иначе модель снесёт себе рабочую
     // директорию). Каждый вызов = вложенный шаг ленты (runCommandById).
+    // Команды-проверки (тесты/typecheck/линт) не публикуем вовсе: гейт гоняет
+    // воркфлоу, и признак берём из кода (`isVerificationCommand`), а не из того,
+    // как кто-то настроил availableToModel в справочнике. `npm ci` остаётся.
     const token = randomUUID()
     const settings = deps.db.getCiSettings()
     const available = deps.db
       .listCiCommands(ctx.run.triggeredBy, ctx.project.id)
-      .filter((c) => c.availableToModel && !c.isCleanup)
+      .filter((c) => c.availableToModel && !c.isCleanup && !isVerificationCommand(c))
     let calls = 0
     ciToolBroker.register(token, {
       list: () => available.map((c) => ({ name: c.name, description: c.description })),
@@ -354,7 +369,11 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
           // Отмена рана: не «ошибка модели» — ран закрывается как cancelled.
           if (r.cancelled || ctx.signal.aborted) return { ok: false, cancelled: true }
           if (!r.ok) return { ok: false }
-          if (r.sessionId) sessionId = r.sessionId
+          if (r.sessionId) {
+            sessionId = r.sessionId
+            // Тот же диалог продолжит fix-loop: он живёт в другом вызове хука.
+            ctx.setModelSessionId(sessionId)
+          }
 
           // 1) Уточняющие вопросы — пока есть бюджет.
           const parsed = budget > 0 ? parseQuestions(r.text) : null
@@ -388,7 +407,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             }
             log('system', 'План одобрен — перехожу к разработке.\n')
             phase = 'development'
-            prompt = 'План одобрен. Реализуй его в рабочей директории. Команды выполняй через доступный инструмент bash.'
+            prompt = `План одобрен. Реализуй его в рабочей директории. Команды выполняй через доступный инструмент bash.\n${NO_SELF_VERIFICATION}`
             continue
           }
 
@@ -426,6 +445,13 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   const attemptFix: CiFixHook = async (ctx: CiFixContext) => {
     const settings = deps.db.getCiSettings()
     const startAll = now()
+    // Чиним в диалоге работы модели (`--resume`): она помнит и что делала, и что
+    // пробовала на прошлой попытке. Между попытками id обновляем — иначе вторая
+    // попытка снова начнётся с чистого листа.
+    let sessionId = ctx.modelSessionId
+    // Шаг гейта печатает много (vitest выводит каждый упавший тест), а по сводке
+    // причину не найти — таким шагам отдаём хвост подлиннее.
+    const tailLimit = ctx.isTestStep ? 20_000 : 2000
     for (let attempt = 1; attempt <= settings.maxFixAttempts; attempt++) {
       if (ctx.signal.aborted) return { fixed: false }
       if (settings.fixTimeLimitMs > 0 && now() - startAll > settings.fixTimeLimitMs) break
@@ -438,16 +464,18 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             `Упал шаг воркфлоу: «${ctx.failedStep.title}».`,
             ctx.failedStep.commandSnapshot ? `Команда:\n${ctx.failedStep.commandSnapshot}` : '',
             `Код выхода: ${ctx.failedStep.exitCode ?? 'неизвестен'}`,
-            `Хвост вывода:\n${ctx.logTail.slice(-2000)}`,
+            `Хвост вывода:\n${ctx.logTail.slice(-tailLimit)}`,
             `Рабочая директория: ${ctx.workspacePath}`,
+            attempt > 1 ? `Попытка ${attempt} из ${settings.maxFixAttempts}: прошлая правка шаг не починила.` : '',
             '',
             'Кратко (1-2 фразы) поставь диагноз, затем исправь причину в рабочей директории',
-            '(правь файлы/ставь зависимости/меняй конфиг). НЕ ослабляй саму команду ради обхода ошибки.',
+            '(правь файлы/ставь зависимости/меняй конфиг). НЕ ослабляй саму команду ради обхода ошибки',
+            'и не пропускай проверки. Шаг перезапустит воркфлоу — сам его не запускай.',
             kbFields.kbMcpUrl ? 'Если причина связана с устройством проекта — сверься с базой знаний (mcp__kb__*) до правок.' : ''
           ]
             .filter(Boolean)
             .join('\n'),
-          sessionId: null,
+          sessionId,
           model: modelFor(ctx),
           permissionMode: 'acceptEdits',
           ...kbFields,
@@ -456,6 +484,11 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         }
         return runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctx.signal)
       })
+      // Между попытками id обновляем: следующая правка идёт тем же диалогом.
+      if (turn.sessionId) {
+        sessionId = turn.sessionId
+        ctx.setModelSessionId(sessionId)
+      }
       if (turn.cancelled || ctx.signal.aborted) return { fixed: false }
       const diagnosis = turn.text.split('\n').find((l) => l.trim())?.slice(0, 200) ?? ''
       const rr = await ctx.rerunFailedStep()

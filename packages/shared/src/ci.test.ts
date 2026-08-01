@@ -11,7 +11,8 @@ import {
   DEFAULT_CI_CLAUDE_MODEL,
   DEFAULT_CI_LLM_CONFIG,
   isActiveCiStatus,
-  isTerminalCiStatus
+  isTerminalCiStatus,
+  isVerificationCommand
 } from './ci'
 
 describe('clarifyBudget', () => {
@@ -124,5 +125,25 @@ describe('ciCardPulse', () => {
   it('отменённый и пропущенный ран карточку не подсвечивают', () => {
     expect(ciCardPulse({ status: 'cancelled', slotProgress: sp() })).toBeNull()
     expect(ciCardPulse({ status: 'skipped', slotProgress: sp() })).toBeNull()
+  })
+})
+
+describe('isVerificationCommand', () => {
+  it('узнаёт гейт по тексту команды, даже если флаг не проставлен', () => {
+    expect(isVerificationCommand({ name: 'Запустить тестирование (npm test)', script: 'npm test' })).toBe(true)
+    expect(isVerificationCommand({ name: 'Гейт', script: 'npm run -w @voicechat/server typecheck && npm run -w @voicechat/server test' })).toBe(true)
+    expect(isVerificationCommand({ name: 'UI', script: 'npx vitest run' })).toBe(true)
+    expect(isVerificationCommand({ name: 'Линт', script: 'npm run lint' })).toBe(true)
+  })
+
+  it('флаг справочника перевешивает текст', () => {
+    expect(isVerificationCommand({ isTest: true, name: 'Проверка', script: './check.sh' })).toBe(true)
+  })
+
+  it('установка зависимостей и сборка гейтом не считаются — они модели нужны', () => {
+    expect(isVerificationCommand({ name: 'Установить зависимости (npm ci)', script: 'npm ci' })).toBe(false)
+    expect(isVerificationCommand({ name: 'Сборка', script: 'npm run build' })).toBe(false)
+    expect(isVerificationCommand({ name: 'Клонировать репозиторий', script: 'git clone --branch "$BASE_BRANCH" "$GIT_URL"' })).toBe(false)
+    expect(isVerificationCommand({ name: 'Обновить прод-контейнер', script: 'docker compose up --build -d' })).toBe(false)
   })
 })

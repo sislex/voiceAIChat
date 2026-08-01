@@ -9,6 +9,7 @@ areas:
   - apps/server/src/prompt
   - apps/server/src/anthropic
   - apps/server/src/cc
+  - apps/server/src/mcp/remoteBashMcp.ts
   - apps/server/src/users/cliProfiles.ts
   - packages/shared/src/streamJson.ts
   - packages/shared/src/codexStream.ts
@@ -200,6 +201,19 @@ tools, thinking, prompt caching, SSE и beta-заголовки. Backend — л�
 путь `/mcp/remote-bash`) с инструментом `bash`, выполняющим команду на агенте.
 Эндпоинт stateless (свежий сервер и транспорт на каждый POST) и защищён секретом
 процесса в query-параметре `k`. Детали политики — `machines.md`.
+
+Тело запроса читает **сам транспорт MCP**, а не Fastify: маршрут зарегистрирован в
+своей области видимости (`app.register`), где сняты унаследованные парсеры и
+поставлен парсер-пустышка на `*`, а `transport.handleRequest` вызывается без
+третьего аргумента. Так сделано не ради стиля: если тело вычитает Fastify,
+`hono/node-server` внутри MCP-SDK вешает слушатель `end` уже после конца потока,
+считает запрос недосланным и через 500 мс «дренирует» соединение — сокет рвётся
+после каждого вызова, а на ненастоящем сокете `app.inject()` таймер падает с
+`socket.destroySoon is not a function`, то есть необработанным исключением
+процесса уже после того, как тесты позеленели. Снятие парсеров обязательно:
+без `removeAllContentTypeParsers()` Fastify ругается на дубль общего JSON-парсера
+из `server.ts`. Регрессия закреплена в `mcp/remoteBashMcp.test.ts` — тест ждёт
+800 мс после ответа и требует, чтобы `uncaughtException` не пришёл.
 
 Для Codex удалённый MCP подключается только в режимах разработки. В режиме `plan` MCP намеренно не передаётся процессу, а Codex запускается с `--sandbox read-only`: иначе обязательный для remote-вызовов bypass позволял бы менять файлы вопреки режиму разговора.
 
