@@ -14,17 +14,17 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-01 | ⚠ 7 коммит(ов) в areas после сверки: 9c3ab50 feat(llm-runner): каркас исполнителя LLM — apps/llm-runner и POST /v1/run … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-01 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: f715b54 Merge remote-tracking branch 'origin/main' into feature/59-каркас-исполнителя-llm-apps-llm-runner-p … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-01 | ✓ |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-01 | ⚠ 3 коммит(ов) в areas после сверки: 229f0c6 fix(kb): inject full top context sections … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: 229f0c6 fix(kb): inject full top context sections |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-01 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-01 | ⚠ 4 коммит(ов) в areas после сверки: f715b54 Merge remote-tracking branch 'origin/main' into feature/59-каркас-исполнителя-llm-apps-llm-runner-p … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-01 | ✓ |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 9c3ab50 feat(llm-runner): каркас исполнителя LLM — apps/llm-runner и POST /v1/run … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-01 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-31 | ⚠ 11 коммит(ов) в areas после сверки: 925d7f0 chatai-46: работа CI-рана … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-01 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-01 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-07-27 | ⚠ 58 коммит(ов) в areas после сверки: f715b54 Merge remote-tracking branch 'origin/main' into feature/59-каркас-исполнителя-llm-apps-llm-runner-p … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-01 | ✓ |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-07-27 | ⚠ 60 коммит(ов) в areas после сверки: 2b2978c fix(kb): preserve knowledge service injection contract … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: 229f0c6 fix(kb): inject full top context sections |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-01 | ✓ |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-01 | ✓ |
@@ -43,7 +43,7 @@
 
 ## Журнал сессий
 
-Всего записей: 48. Последние:
+Всего записей: 49. Последние:
 
 - [2026-08-01-2470-com-список-чатов-обновляется-по-событиям.md](log/2026-08-01-2470-com-список-чатов-обновляется-по-событиям.md) — Список чатов обновляется по событиям, а не только по действиям
 - [2026-08-01-2470-com-пересборка-прода-chat-52.md](log/2026-08-01-2470-com-пересборка-прода-chat-52.md) — пересборка-прода-chat-52
