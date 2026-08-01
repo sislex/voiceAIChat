@@ -116,6 +116,23 @@ export function voiceAnnouncement(state: VoiceState, aiLabel = 'Claude'): string
   }
 }
 
+/**
+ * Подпись свёрнутого композера: что там осталось, если поле ввода убрано в
+ * строку. Приоритет — у несохранённого: сперва черновик, потом вложения, и лишь
+ * потом состояние голосового цикла (в простое ему сказать нечего).
+ */
+export function composerPeek(
+  draft: string,
+  attachmentCount: number,
+  state: VoiceState,
+  aiLabel = 'Claude'
+): string {
+  const text = draft.trim()
+  if (text) return text
+  if (attachmentCount > 0) return `Вложений: ${attachmentCount}`
+  return voiceAnnouncement(state, aiLabel) || 'Показать поле ввода'
+}
+
 /** Компактная строка меты хода: «7.2с · 2 хода · $0.013 · 1.2k→0.4k ток.». */
 export function formatTurnMeta(meta: TurnMeta): string {
   const parts: string[] = []
