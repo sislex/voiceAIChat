@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-01
-checked: 06bb73e
+checked: dc73c33
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -73,8 +73,10 @@ stdout CLI, поэтому разбор stream-json/JSONL, usage и `session_id`
 
 Общее место разбора — `llm/sinks.ts`: приёмник строк (`createClaudeSink` /
 `createCodexSink`) отделён от способа их получить, им пользуются и локальные
-CLI-классы, и `RemoteLlmClient`. Заводишь новый транспорт — кормишь тот же
-приёмник, а не копируешь `switch` по событиям.
+CLI-классы, и `RemoteLlmClient`. Там же живут `describeClaudeExit` /
+`describeCodexExit`, накопление usage и единичный финал `onDone|onError`.
+Заводишь новый транспорт — кормишь тот же приёмник, а не копируешь `switch` по
+событиям.
 
 `id` рана генерирует СЕРВЕР до запроса: иначе отмену до первого байта ответа
 некуда адресовать. `LlmHandle.cancel()` шлёт `DELETE /v1/run/:id` (исполнитель
@@ -90,7 +92,9 @@ Env (реестра исполнителей пока нет, срез 2 пла�
 `VC_LLM_RUNNER_URL` — общий адрес, `VC_LLM_RUNNER_CLAUDE_URL` /
 `VC_LLM_RUNNER_CODEX_URL` — переопределение по движку, `VC_LLM_RUNNER_TOKEN` —
 Bearer, `VC_LLM_RUNNER_TIMEOUT_MS` — ожидание заголовков `/v1/run` (сам ход не
-ограничен). Не задано — сервер работает как раньше, через `spawn`.
+ограничен). Эти переменные читает `config.ts`, а решение «remote или локальный
+spawn» принимается в `buildServer()`. Не задано — сервер работает как раньше,
+через `spawn`.
 
 ## Разбор потока
 

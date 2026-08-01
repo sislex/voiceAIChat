@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-07-27
-checked: 49465ae
+updated: 2026-08-01
+checked: dc73c33
 areas:
   - apps/server/src/server.ts
   - apps/server/src/session.ts
@@ -28,9 +28,12 @@ apps/server (Fastify)
    ├── SQLite           better-sqlite3, WAL
    ├── whisper-cli      распознавание (spawn)
    ├── piper / say      озвучка (spawn)
-   └── claude / codex   LLM (spawn CLI, stream-json)
-      ▲
-      │  WebSocket, авторизация токеном машины
+   └── LLM client       Claude/Codex: локальный spawn ИЛИ HTTP → /v1/run
+      │
+      ├──────────────► контейнер-исполнитель LLM (claude/codex CLI, NDJSON)
+      │
+      ▲  WebSocket, авторизация токеном машины
+      │
 apps/agent на машине пользователя: exec, файловые операции, PTY, телеметрия
 ```
 
@@ -42,8 +45,11 @@ apps/agent на машине пользователя: exec, файловые о
 (Electron IPC). `apps/web` — это ~3 файла: конфиг адреса сервера, установка мостов,
 монтирование `<App/>`.
 
-**Сервер — полноценный бэкенд, клиенты тонкие.** Распознавание, озвучка, LLM,
-хранение — на сервере. Браузер отдаёт только PCM с микрофона и играет WAV.
+**Сервер — полноценный бэкенд, клиенты тонкие.** Распознавание, озвучка,
+хранение и orchestration хода — на сервере. Сам CLI модели теперь может жить
+либо рядом с ним (`ClaudeCli`/`CodexCli` через `spawn`), либо за HTTP как
+удалённый исполнитель (`RemoteLlmClient` → `POST /v1/run`). Браузер отдаёт
+только PCM с микрофона и играет WAV.
 
 **Ход модели живёт в разговоре, а не в соединении.** `apps/server/src/turns.ts` —
 процесс-глобальный `TurnManager`: обновление страницы или обрыв сети не отменяют
@@ -57,6 +63,11 @@ tail/PTY) — в `apps/server/src/session.ts`.
 (`db`, `claude`, `codex`, `sttEngine`, `ttsEngine`, `createWsHandlers`,
 `sessionSecret`). Отсюда тесты через `fastify.inject()` и ws-клиент с моками
 вместо реальных Whisper/CLI.
+
+`buildServer()` выбирает транспорт LLM по конфигу: есть `VC_LLM_RUNNER_URL`
+(или адреса по провайдерам) — собирается `RemoteLlmClient`; нет — остаётся
+локальный `spawn`. При этом `turns.ts`, prompt-suggester, KB-reranker и CI-раннер
+работают с одним интерфейсом `LlmClient` и не знают, где реально запущен CLI.
 
 ## Один backend, два клиентских хоста
 
