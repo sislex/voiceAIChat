@@ -84,3 +84,12 @@ export interface AdminLlmEngineHealth {
   detail: string
   status: LlmRunnerHealth | null
 }
+
+
+/** Безопасное описание доступного пользователю исполнителя (без URL и токена). */
+export interface LlmEngineOption {
+  id: string
+  name: string
+  kind: LlmEngineKind
+  isDefault: boolean
+}

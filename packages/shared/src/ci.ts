@@ -298,6 +298,8 @@ export interface CiRun {
   triggeredBy: string
   /** Колонка задачи до рана — для отката при Исходе B. */
   prevColumnId: string | null
+  /** Снимок выбранного исполнителя; null — legacy/default для провайдера. */
+  llmEngineId?: string | null
   /** Провайдер и модель шага разработки; можно сменить при повторе упавшего model_work. */
   llmProvider: CiLlmProvider
   llmModel: string
