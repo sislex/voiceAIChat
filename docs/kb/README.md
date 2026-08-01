@@ -17,7 +17,7 @@
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-01 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-01 | ✓ |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-01 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-01 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 7fb8396 chatai-59: работа CI-рана … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 9c3ab50 feat(llm-runner): каркас исполнителя LLM — apps/llm-runner и POST /v1/run … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-01 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-07-31 | ⚠ 11 коммит(ов) в areas после сверки: 925d7f0 chatai-46: работа CI-рана … |
@@ -43,7 +43,7 @@
 
 ## Журнал сессий
 
-Всего записей: 47. Последние:
+Всего записей: 48. Последние:
 
 - [2026-08-01-2470-com-список-чатов-обновляется-по-событиям.md](log/2026-08-01-2470-com-список-чатов-обновляется-по-событиям.md) — Список чатов обновляется по событиям, а не только по действиям
 - [2026-08-01-2470-com-пересборка-прода-chat-52.md](log/2026-08-01-2470-com-пересборка-прода-chat-52.md) — пересборка-прода-chat-52
@@ -53,8 +53,8 @@
 - [2026-08-01-2470-com-opisanie-zadachi-markdown.md](log/2026-08-01-2470-com-opisanie-zadachi-markdown.md) — Описание задачи — маркдаун в просмотре, правка по кнопке
 - [2026-08-01-2470-com-llm-runner-skeleton.md](log/2026-08-01-2470-com-llm-runner-skeleton.md) — Каркас исполнителя LLM — apps/llm-runner и POST /v1/run
 - [2026-08-01-2470-com-llm-runner-kb-sverka.md](log/2026-08-01-2470-com-llm-runner-kb-sverka.md) — Сверка KB после выноса CLI в apps/llm-runner
+- [2026-08-01-2470-com-kb-точные-бусты-и-компактный-запрос.md](log/2026-08-01-2470-com-kb-точные-бусты-и-компактный-запрос.md) — kb-точные-бусты-и-компактный-запрос
 - [2026-08-01-2470-com-kb-v-rane-modeli.md](log/2026-08-01-2470-com-kb-v-rane-modeli.md) — База знаний в работе модели CI-рана
-- [2026-08-01-2470-com-kb-scopes.md](log/2026-08-01-2470-com-kb-scopes.md) — kb-scopes
 
 ## Исторические планы
 

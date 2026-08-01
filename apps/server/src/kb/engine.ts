@@ -77,13 +77,45 @@ export function summaryOf(d: KbDocument): KbDocumentSummary {
 }
 
 /**
+ * Бусты точных совпадений метаданных документа. Совпадение ВСЕЙ строки запроса —
+ * сильнейший сигнал (12/10/9/9). Но фразовый запрос («карточка задачи TaskModal…»)
+ * целиком не равен ни одному symbol/alias, поэтому отдельно учитываются ТОКЕНЫ
+ * запроса: точное равенство токена элементу symbols/aliases/protocols и «обратное
+ * вложение» пути — токен-путь из запроса, начинающийся с area (в запросе
+ * packages/ui/src/components/kanban/TaskModal.tsx, в areas — …/kanban). Токенные
+ * веса ниже (6/5/6/4), а их сумма ограничена потолком TOKEN_BOOST_CAP: набор
+ * совпавших токенов не должен перебивать осмысленный BM25-текст.
+ */
+const TOKEN_BOOST_CAP = 12
+function exactBoost(item: IndexedDocument, query: string, queryTokens: string[]): { score: number; matchTypes: KbMatchType[] } {
+  const d = item.document
+  const symbols = d.symbols.map((v) => v.toLocaleLowerCase('ru'))
+  const aliases = [d.id, d.title, ...item.aliases].map((v) => v.toLocaleLowerCase('ru'))
+  const paths = d.areas.map((v) => v.toLocaleLowerCase('ru'))
+  const protocols = d.protocols.map((v) => v.toLocaleLowerCase('ru'))
+  const inArea = (token: string): boolean => token.includes('/') && paths.some((area) => token === area || token.startsWith(`${area}/`))
+  const hit = { symbol: symbols.includes(query), alias: aliases.includes(query), path: paths.some((v) => v.includes(query)), protocol: protocols.some((v) => v.includes(query)) }
+  let score = (hit.symbol ? 12 : 0) + (hit.alias ? 10 : 0) + (hit.path ? 9 : 0) + (hit.protocol ? 9 : 0)
+  let tokenScore = 0
+  for (const token of queryTokens) {
+    if (token === query) continue // однословный запрос уже учтён совпадением всей строки
+    if (symbols.includes(token)) { tokenScore += 6; hit.symbol = true }
+    if (aliases.includes(token)) { tokenScore += 5; hit.alias = true }
+    if (inArea(token)) { tokenScore += 6; hit.path = true }
+    if (protocols.includes(token)) { tokenScore += 4; hit.protocol = true }
+  }
+  const order = ['symbol', 'alias', 'path', 'protocol'] as const
+  return { score: score + Math.min(tokenScore, TOKEN_BOOST_CAP), matchTypes: order.filter((type) => hit[type]) }
+}
+
+/**
  * BM25-поиск по набору документов. Набор приходит УЖЕ отфильтрованным по доступу:
  * df и средняя длина считаются только по видимым разделам, иначе оценки зависели
  * бы от чужих статей (и косвенно их выдавали).
  */
 export async function searchDocuments(documents: IndexedDocument[], request: KbSearchRequest, reranker?: KbSemanticReranker): Promise<KbSearchResult[]> {
-  const query=request.query.trim(); if(!query) return []; const queryTokens=[...new Set(tokenize(query))]; const all=documents.flatMap(item=>item.chunks.map(chunk=>({item,chunk}))); const df=new Map<string,number>(); for(const term of queryTokens) df.set(term,all.filter(({chunk})=>chunk.tokens.includes(term)).length); const avg=all.reduce((n,{chunk})=>n+chunk.tokens.length,0)/Math.max(1,all.length); const scored: KbSearchResult[]=[]
-  for(const {item,chunk} of all){ const d=item.document; if(request.kinds?.length&&!request.kinds.includes(d.kind))continue; if(request.tags?.length&&!request.tags.some(tag=>d.tags.includes(tag)))continue; const q=query.toLocaleLowerCase('ru'); const symbols=d.symbols.map(v=>v.toLocaleLowerCase('ru')); const aliases=[d.id,d.title,...item.aliases].map(v=>v.toLocaleLowerCase('ru')); const paths=d.areas.map(v=>v.toLocaleLowerCase('ru')); const protocols=d.protocols.map(v=>v.toLocaleLowerCase('ru')); const matchTypes:KbMatchType[]=[]; let score=0; if(symbols.includes(q)){score+=12;matchTypes.push('symbol')} if(aliases.includes(q)){score+=10;matchTypes.push('alias')} if(paths.some(v=>v.includes(q))){score+=9;matchTypes.push('path')} if(protocols.some(v=>v.includes(q))){score+=9;matchTypes.push('protocol')} const counts=new Map<string,number>(); for(const token of chunk.tokens)counts.set(token,(counts.get(token)??0)+1); for(const term of queryTokens){const tf=counts.get(term)??0;if(!tf)continue;const freq=df.get(term)??0;const idf=Math.log(1+(all.length-freq+.5)/(freq+.5));score+=idf*(tf*2.2)/(tf+1.2*(.25+.75*chunk.tokens.length/Math.max(1,avg)))} if(score<=0)continue; if(!matchTypes.length)matchTypes.push('lexical'); const primary=matchTypes[0]; scored.push({documentId:d.id,chunkId:chunk.id,title:d.title,heading:chunk.heading,excerpt:excerpt(chunk.text,queryTokens),score:Number(score.toFixed(4)),matchTypes,explanation:primary==='symbol'?'Точное совпадение символа':primary==='path'?'Совпадение пути':primary==='protocol'?'Совпадение протокола':primary==='alias'?'Совпадение названия или псевдонима':'Полнотекстовое совпадение',freshness:d.freshness,sourcePath:d.sourcePath,anchor:chunk.anchor,symbols:d.symbols,relatedFiles:d.areas,scope:d.scope,projectId:d.projectId??null}) }
+  const query=request.query.trim(); if(!query) return []; const queryTokens=[...new Set(tokenize(query))]; const all=documents.flatMap(item=>item.chunks.map(chunk=>({item,chunk}))); const df=new Map<string,number>(); for(const term of queryTokens) df.set(term,all.filter(({chunk})=>chunk.tokens.includes(term)).length); const avg=all.reduce((n,{chunk})=>n+chunk.tokens.length,0)/Math.max(1,all.length); const q=query.toLocaleLowerCase('ru'); const boosts=new Map<IndexedDocument,{score:number;matchTypes:KbMatchType[]}>(); const scored: KbSearchResult[]=[]
+  for(const {item,chunk} of all){ const d=item.document; if(request.kinds?.length&&!request.kinds.includes(d.kind))continue; if(request.tags?.length&&!request.tags.some(tag=>d.tags.includes(tag)))continue; let boost=boosts.get(item); if(!boost){boost=exactBoost(item,q,queryTokens);boosts.set(item,boost)} const matchTypes:KbMatchType[]=[...boost.matchTypes]; let score=boost.score; const counts=new Map<string,number>(); for(const token of chunk.tokens)counts.set(token,(counts.get(token)??0)+1); for(const term of queryTokens){const tf=counts.get(term)??0;if(!tf)continue;const freq=df.get(term)??0;const idf=Math.log(1+(all.length-freq+.5)/(freq+.5));score+=idf*(tf*2.2)/(tf+1.2*(.25+.75*chunk.tokens.length/Math.max(1,avg)))} if(score<=0)continue; if(!matchTypes.length)matchTypes.push('lexical'); const primary=matchTypes[0]; scored.push({documentId:d.id,chunkId:chunk.id,title:d.title,heading:chunk.heading,excerpt:excerpt(chunk.text,queryTokens),score:Number(score.toFixed(4)),matchTypes,explanation:primary==='symbol'?'Точное совпадение символа':primary==='path'?'Совпадение пути':primary==='protocol'?'Совпадение протокола':primary==='alias'?'Совпадение названия или псевдонима':'Полнотекстовое совпадение',freshness:d.freshness,sourcePath:d.sourcePath,anchor:chunk.anchor,symbols:d.symbols,relatedFiles:d.areas,scope:d.scope,projectId:d.projectId??null}) }
   scored.sort((a,b)=>b.score-a.score||a.chunkId.localeCompare(b.chunkId)); const limit=Math.min(Math.max(request.limit??20,1),50); const candidates=scored.slice(0,Math.max(limit,15)); if(!reranker||candidates.length<2||candidates[0].score>=9)return candidates.slice(0,limit)
   try { const ids=await reranker.rerank(query,candidates.slice(0,15).map(r=>({chunkId:r.chunkId,title:r.title,heading:r.heading,excerpt:r.excerpt})),limit); const rank=new Map(ids.map((id,i)=>[id,i])); return candidates.sort((a,b)=>(rank.get(a.chunkId)??999)-(rank.get(b.chunkId)??999)||b.score-a.score).slice(0,limit).map(result=>rank.has(result.chunkId)?{...result,matchTypes:[...result.matchTypes,'semantic'],explanation:`${result.explanation}; подтверждено LLM-reranking`}:result) } catch { return candidates.slice(0,limit) }
 }

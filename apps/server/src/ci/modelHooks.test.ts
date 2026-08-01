@@ -74,10 +74,10 @@ beforeEach(() => {
 afterEach(() => db.close())
 
 /** Проект + задача + ран заданного режима БЗ; ctx — как его собирает runManager. */
-function setup(kbContextMode: 'auto' | 'manual' | 'off' = 'auto', signal = new AbortController().signal) {
+function setup(kbContextMode: 'auto' | 'manual' | 'off' = 'auto', signal = new AbortController().signal, taskOver: { description?: string; acceptanceCriteria?: string } = {}) {
   const project = db.createProject(U, { name: 'P' })
   const board = db.getBoard(U, project.id)!
-  const task = db.createTask(U, project.id, { title: 'Кнопка «Выполнить»', columnId: board.columns[0].id, description: 'Ран должен ходить в БЗ', acceptanceCriteria: 'Обращения видны' })!
+  const task = db.createTask(U, project.id, { title: 'Кнопка «Выполнить»', columnId: board.columns[0].id, description: 'Ран должен ходить в БЗ', acceptanceCriteria: 'Обращения видны', ...taskOver })!
   const conv = db.createConversation(U, 'Чат задачи')
   const run = db.createCiRun({
     projectId: project.id, taskId: task.id, agentId: null, triggeredBy: U, prevColumnId: null,
@@ -141,6 +141,22 @@ describe('работа модели: база знаний по режимам �
     expect(asked[0]).toContain('Кнопка «Выполнить»')
     expect(asked[0]).toContain('Ран должен ходить в БЗ')
     expect(asked[0]).toContain('Обращения видны')
+  })
+
+  it('auto: описание с бэктиками даёт компактный запрос — заголовок и сигнальные части', async () => {
+    const asked: string[] = []
+    const kb = stubKb({ context: async (query: string) => { asked.push(query); return bundle } })
+    const { ctx } = setup('auto', undefined, {
+      description: 'Правь `packages/ui/src/components/kanban/TaskModal.tsx`: модалка размывает поиск.\n```\nconst noise = 1\n```',
+      acceptanceCriteria: 'Хук `useAiAssist` сохраняет черновик.'
+    })
+    await hooksWith(recorder().client, { kb }).modelWork(ctx)
+    expect(asked).toHaveLength(1)
+    expect(asked[0]).toContain('Кнопка «Выполнить»')
+    expect(asked[0]).toContain('packages/ui/src/components/kanban/TaskModal.tsx')
+    expect(asked[0]).toContain('useAiAssist')
+    expect(asked[0]).not.toContain('модалка размывает поиск')
+    expect(asked[0]).not.toContain('noise')
   })
 
   it('manual: инструменты есть, авто-контекста нет — БЗ не спрашивают вовсе', async () => {
