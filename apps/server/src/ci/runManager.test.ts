@@ -18,7 +18,13 @@ let app: FastifyInstance, db: VoiceChatDb, admin: string
 let scripts: string[] = []
 let failClaude = false
 let failPush = false
+/** Управляемое падение шага TOGGLE: «сломано» → «починили» между ранами. */
+let failStep = false
+/** Локальные правки в рабочей копии: шаг CLONE отвечает на них exit 66, как боевой. */
+let dirtyWorkspace = false
 let onModelSend: (() => void) | null = null
+/** Снять состояние доски ровно в момент шага (после ответа ран может успеть закончиться). */
+let onExec: ((script: string) => void) | null = null
 /** Задержать ответ модели: нужно тестам, которым важен ран «в работе». */
 let modelGate: Promise<void> | null = null
 let codexModel = ''
@@ -59,12 +65,19 @@ const counts = new Map<string, number>()
 const ciExecutor: CommandExecutor = {
   run: async (req, onChunk) => {
     scripts.push(req.script)
+    onExec?.(req.script)
     const n = (counts.get(req.script) ?? 0) + 1
     counts.set(req.script, n)
     onChunk(`run:${req.script.slice(0, 20)}\n`)
     // FLAKY падает на первом прогоне и проходит на повторе (эмуляция «исправлено моделью»).
     const flakyOk = req.script.includes('FLAKY') && n >= 2
     if (req.script === 'DIRTY') return { exitCode: 66, timedOut: false }
+    // Подготовка директории приводит копию прошлого рана в чистое состояние.
+    if (req.script.includes('stash push') && req.script.includes('reset --hard')) dirtyWorkspace = false
+    // Боевой шаг клонирования: существующая копия с правками → exit 66.
+    if (req.script === 'CLONE') return { exitCode: dirtyWorkspace ? 66 : 0, timedOut: false }
+    // Падение шага «оставляет» в копии правки модели — как в реальном ране.
+    if (req.script === 'TOGGLE' && failStep) { dirtyWorkspace = true; return { exitCode: 1, timedOut: false } }
     if (req.script.includes('git push')) return { exitCode: failPush ? 1 : 0, timedOut: false }
     const fail = req.script.includes('FAIL') || (req.script.includes('FLAKY') && !flakyOk)
     return { exitCode: fail ? 1 : 0, timedOut: false }
@@ -76,7 +89,10 @@ beforeEach(async () => {
   scripts = []
   failClaude = false
   failPush = false
+  failStep = false
+  dirtyWorkspace = false
   onModelSend = null
+  onExec = null
   modelGate = null
   codexModel = ''
   modelRequests = []
@@ -387,7 +403,7 @@ describe('ci run manager', () => {
     expect(log.some((l) => l.chunk.includes('не влита'))).toBe(true)
   })
 
-  it('успешный шаг мержа оставляет карточку в колонке разработки', async () => {
+  it('успешный шаг мержа переносит карточку в «Готово»', async () => {
     const { project, task } = setup()
     const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
     db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
@@ -395,8 +411,28 @@ describe('ci run manager', () => {
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')
     const board = db.getBoard('admin', project.id)!
-    const development = board.columns.find((c) => c.semanticType === 'development')!
-    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(development.id)
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(done.id)
+    // Перенос ровно один: карточка не заезжает сначала в «Ожидает мержа».
+    const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json() as Array<{ chunk: string }>
+    expect(log.some((l) => l.chunk.includes('переехала в «Готово»'))).toBe(true)
+    expect(log.some((l) => l.chunk.includes('ждёт мержа'))).toBe(false)
+    // Резюме записано ДО переноса — иначе оно ушло бы в скрытый чат завершённой задачи.
+    const chatId = db.getCiRunRaw(runId)!.conversationId!
+    expect(db.listMessages('admin', chatId).some((m) => m.meta?.ciRunSummary)).toBe(true)
+  })
+
+  it('нет колонки done в проекте — успешный мерж карточку не двигает', async () => {
+    const { project, task } = setup()
+    const devCol = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
+    const real = db.getColumnIdBySemantic.bind(db)
+    const spy = vi.spyOn(db, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'done' ? null : real(pid, semantic)))
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const d = await waitRun(await run(project.id, task.id))
+    expect(d.run.status).toBe('success')
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(devCol.id)
+    spy.mockRestore()
   })
 
   it('упавший шаг мержа: карточка возвращается в исходную колонку, а не ждёт мержа', async () => {
@@ -678,5 +714,92 @@ describe('ci run manager: база знаний', () => {
 
     expect((await inj(bob, { method: 'GET', url: `/api/ci/runs/${runId}/kb-usage` })).statusCode).toBe(404)
     expect((await inj(bob, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/kb-usage` })).statusCode).toBe(404)
+  })
+})
+
+/**
+ * Терминальный статус прошлого рана не имеет права пережить следующий успешный
+ * запуск: карточка после падения/отмены и последующего успеха обязана оказаться
+ * ровно там же, где после обычного успешного рана.
+ */
+describe('карточка после падения, отмены и повтора', () => {
+  /** Пайплайн «сломанный шаг + мерж» в слоте «после» — как боевой. */
+  function pipeline(projectId: string, taskId: string): void {
+    const gate = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Запустить тестирование', script: 'TOGGLE' })
+    const merge = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
+    db.setCiSlotCommands('task', taskId, 'after_model', [gate.id, merge.id])
+  }
+
+  it('ран упал → починили → новый ран доводит карточку до «Готово», лозенг свежий', async () => {
+    const { project, task, readyColId } = setup()
+    db.updateCiSettings({ maxFixAttempts: 1 })
+    pipeline(project.id, task.id)
+    failStep = true
+
+    const first = await run(project.id, task.id)
+    expect((await waitRun(first)).run.status).toBe('failed')
+    // Исход B: карточка вернулась туда, где была, мержа не было.
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
+
+    failStep = false
+    const second = await run(project.id, task.id)
+    expect((await waitRun(second)).run.status).toBe('success')
+    const board = db.getBoard('admin', project.id)!
+    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(board.columns.find((c) => c.semanticType === 'done')!.id)
+    // Сводка на доске — про новый ран, а не про упавший.
+    const summary = db.latestCiRunSummary(task.id)!
+    expect(summary.id).toBe(second)
+    expect(summary.status).toBe('success')
+    expect(db.latestCiRunSummaries(project.id).find((x) => x.taskId === task.id)!.id).toBe(second)
+  })
+
+  it('повторный ран после падения не требует ручной чистки рабочей копии', async () => {
+    const { project, task } = setup()
+    db.updateCiSettings({ maxFixAttempts: 1 })
+    const clone = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Клонировать репозиторий задачи', script: 'CLONE' })
+    db.setCiSlotCommands('task', task.id, 'before_model', [clone.id])
+    const gate = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Запустить тестирование', script: 'TOGGLE' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [gate.id])
+    failStep = true
+
+    const first = await run(project.id, task.id)
+    expect((await waitRun(first)).run.status).toBe('failed')
+    // Упавший шаг оставил в копии правки модели — прежде это ловил только exit 66.
+    expect(dirtyWorkspace).toBe(true)
+
+    failStep = false
+    const second = await run(project.id, task.id)
+    const d = await waitRun(second)
+    expect(d.run.status).toBe('success')
+    // Шаг клонирования прошёл сам: подготовка привела копию в чистое состояние.
+    const cloneStep = db.getCiRun('admin', second)!.steps.find((s) => s.title === 'Клонировать репозиторий задачи')!
+    expect(cloneStep.status).toBe('success')
+    expect(scripts.some((x) => x.includes('stash push') && x.includes('reset --hard'))).toBe(true)
+  })
+
+  it('повтор с упавшего шага: карточка уходит в разработку и после успеха доезжает до «Готово»', async () => {
+    const { project, task, readyColId } = setup()
+    db.updateCiSettings({ maxFixAttempts: 1 })
+    pipeline(project.id, task.id)
+    failStep = true
+
+    const runId = await run(project.id, task.id)
+    expect((await waitRun(runId)).run.status).toBe('failed')
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
+
+    failStep = false
+    const columns = db.getBoard('admin', project.id)!.columns
+    // Колонку снимаем в момент повторяемого шага: к концу рана карточка уже в «Готово».
+    let columnAtStep: string | null = null
+    onExec = (script) => { if (script === 'TOGGLE') columnAtStep = db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId }
+    const retry = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step` })
+    expect(retry.statusCode).toBe(202)
+
+    const done = await waitRun(runId)
+    expect(done.run.status).toBe('success')
+    // Повтор — это работа, а не простой: карточка вернулась в разработку на время рана.
+    expect(columnAtStep).toBe(columns.find((c) => c.semanticType === 'development')!.id)
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(columns.find((c) => c.semanticType === 'done')!.id)
+    expect(db.latestCiRunSummary(task.id)!.status).toBe('success')
   })
 })
