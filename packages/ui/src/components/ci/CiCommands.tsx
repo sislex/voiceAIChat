@@ -431,24 +431,24 @@ function CiSettingsSection({ open, onToggle, settings, editable, onSave }: CiSet
     // значение) — показываем его как есть, иначе список молча подменил бы выбор.
     const listed = !value || [...CLAUDE_MODELS, ...CODEX_MODELS].some((m) => m.id === value)
     return (
-    <label className="ci-field" key={stage}>
-      <span>Модель стадии «{CI_USAGE_KIND_LABELS[stage]}»</span>
-      <select
-        disabled={!editable}
-        value={value}
-        data-testid={`ci-stage-model-${stage}`}
-        onChange={(e) => setForm({ ...form, stageModels: { ...form.stageModels, [stage]: e.target.value } })}
-      >
-        <option value="">Модель рана</option>
-        {!listed && <option value={value}>{value}</option>}
-        <optgroup label="Claude">
-          {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-        </optgroup>
-        <optgroup label="Codex">
-          {CODEX_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-        </optgroup>
-      </select>
-    </label>
+      <label className="ci-field" key={stage}>
+        <span>Модель стадии «{CI_USAGE_KIND_LABELS[stage]}»</span>
+        <select
+          disabled={!editable}
+          value={value}
+          data-testid={`ci-stage-model-${stage}`}
+          onChange={(e) => setForm({ ...form, stageModels: { ...form.stageModels, [stage]: e.target.value } })}
+        >
+          <option value="">Модель рана</option>
+          {!listed && <option value={value}>{value}</option>}
+          <optgroup label="Claude">
+            {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </optgroup>
+          <optgroup label="Codex">
+            {CODEX_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </optgroup>
+        </select>
+      </label>
     )
   }
   return (
