@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from '../db/database.js'
-import { DEFAULT_CI_CLAUDE_MODEL, issueKey } from '@voicechat/shared'
+import { DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_STAGE_MODELS, issueKey } from '@voicechat/shared'
 import { signToken } from '../users/accounts.js'
 import type { CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
@@ -150,7 +150,7 @@ describe('ci run manager', () => {
     expect(codexModel).toBe('gpt-5.4')
   })
 
-  it('проект без явной настройки CI гоняет ран на claude opus', async () => {
+  it('проект без явной настройки CI гоняет разработку на claude opus, резюме — на дешёвой модели', async () => {
     const { project, task } = setup()
     // Ни у проекта, ни у задачи нет записи в ci_llm_configs — значит DEFAULT_CI_LLM_CONFIG.
     const runId = await run(project.id, task.id)
@@ -158,7 +158,9 @@ describe('ci run manager', () => {
     expect(detail.run.status).toBe('success')
     expect(detail.run.llmProvider).toBe('claude')
     expect(detail.run.llmModel).toBe(DEFAULT_CI_CLAUDE_MODEL)
-    expect(modelRequests.map((r) => r.model)).toEqual([DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_CLAUDE_MODEL])
+    // Модель рана — только у разработки: резюме идёт по своей стадии
+    // (DEFAULT_CI_STAGE_MODELS.summary), пересказ шагов не требует модели рана.
+    expect(modelRequests.map((r) => r.model)).toEqual([DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_STAGE_MODELS.summary])
   })
 
   it('DELETE ci/llm снимает переопределение задачи и возвращает наследование', async () => {
