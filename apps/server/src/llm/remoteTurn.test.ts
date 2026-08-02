@@ -161,7 +161,7 @@ describe('ход модели через исполнителя по HTTP', () =
       expect(done.text).toBe('Готово')
       expect(done.meta?.inputTokens).toBe(10)
       // Промпт ушёл исполнителю, а не в spawn.
-      expect(runner.posts[0].request.prompt).toContain('привет')
+      expect(runner.posts[0].prompt).toContain('привет')
     } finally {
       await runner.close()
     }
@@ -191,7 +191,7 @@ describe('ход модели через исполнителя по HTTP', () =
 
       turns.cancel(conv.id)
       while (!runner.deletes.length) await new Promise((r) => setTimeout(r, 5))
-      expect(runner.deletes[0]).toBe(`/v1/run/${runner.posts[0].id}`)
+      expect(runner.deletes[0]).toBe(`/v1/run/${runner.posts[0].runId}`)
       expect(turns.active(U)).toHaveLength(0)
     } finally {
       await runner.close()

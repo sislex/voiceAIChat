@@ -233,8 +233,10 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
 
       const body = runner.posts[0]
       expect(body.kind).toBe('claude')
-      expect(typeof body.id).toBe('string')
-      expect(body.request).toMatchObject({
+      expect(typeof body.runId).toBe('string')
+      // Поля запроса — на верхнем уровне: вложенный конверт исполнитель отвергает
+      // с `400 prompt обязателен` (apps/llm-runner/src/server.ts).
+      expect(body).toMatchObject({
         userId: 'admin',
         prompt: 'задача',
         sessionId: 'sess-7',
@@ -290,7 +292,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
 
       handle.cancel()
       while (!runner.deletes.length) await tick()
-      expect(runner.deletes[0]).toBe(`/v1/run/${runner.posts[0].id}`)
+      expect(runner.deletes[0]).toBe(`/v1/run/${runner.posts[0].runId}`)
 
       // Даже если исполнитель успел досказать ход, событий больше не будет.
       streams[0].write(`${JSON.stringify({ t: 'out', s: CLAUDE_LINES[5] })}\n`)

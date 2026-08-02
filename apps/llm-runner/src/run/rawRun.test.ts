@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname } from 'node:path'
 import { PassThrough } from 'node:stream'
 import type { LlmRunBody, LlmRunFrame } from '@voicechat/shared'
@@ -70,6 +71,16 @@ function fakeSink(opts: { flushed?: boolean } = {}): RunSink & {
 }
 
 const tick = (): Promise<void> => new Promise((r) => setImmediate(r))
+
+/**
+ * Путь вложения внутри каталога рана. Каталог берётся от `tmpdir()`, а не от
+ * жёсткого `/tmp`: на macOS временный каталог — `/var/folders/...`, и зашитый
+ * префикс делал тест зелёным только на Linux.
+ */
+function attachmentRe(name: string): RegExp {
+  const dir = tmpdir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`${dir}[/\\\\]+voicechat-llm-run-[^\\s]+[/\\\\]1-${name.replace('.', '\\.')}`)
+}
 
 const request = (over: Partial<LlmRunBody> = {}): LlmRunBody => ({
   kind: 'claude',
@@ -143,7 +154,7 @@ describe('RunManager', () => {
     const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
     const prompt = args[args.indexOf('-p') + 1]
     expect(prompt).not.toContain(serverPath)
-    const match = prompt.match(/\/tmp\/voicechat-llm-run-[^\s]+\/1-report\.txt/)
+    const match = prompt.match(attachmentRe('report.txt'))
     expect(match?.[0]).toBeTruthy()
     expect(readFileSync(match![0], 'utf8')).toBe('hello runner')
 
@@ -197,7 +208,7 @@ describe('RunManager', () => {
 
     const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
     const prompt = args[args.indexOf('-p') + 1]
-    const match = prompt.match(/\/tmp\/voicechat-llm-run-[^\s]+\/1-image\.png/)
+    const match = prompt.match(attachmentRe('image.png'))
     expect(match?.[0]).toBeTruthy()
     expect(existsSync(dirname(match![0]))).toBe(true)
 
