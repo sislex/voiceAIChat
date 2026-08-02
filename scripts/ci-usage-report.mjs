@@ -135,6 +135,10 @@ const report = runs.map((run) => {
     // claude молча делает сравнение движков бессмысленным.
     checkRequests: 0, checkActualUsd: 0, checkEstimateUsd: 0
   }
+  // Разбивка по стадиям и моделям: после «модели по стадии» стадии рана считают
+  // разные движки, и по одной сумме за ран уже не видно, кто сколько съел (та же
+  // группировка, что у CiRunReport.stages).
+  const stages = new Map()
   for (const u of usage) {
     // Семантика входа: явная колонка, иначе старая строка (у codex — с кэшем).
     const withCache = u.input_semantics
@@ -163,6 +167,16 @@ const report = runs.map((run) => {
       totals.costUsd = (totals.costUsd ?? 0) + own
       if (u.cost_usd == null) totals.costEstimated = true
     }
+    const key = `${u.kind} ${u.model || '(пусто)'}`
+    const stage = stages.get(key) ?? { kind: u.kind, model: u.model || '(пусто)', requests: 0, ms: 0, costUsd: 0, estimated: false }
+    stage.requests++
+    stage.ms += u.duration_ms ?? 0
+    if (own == null) stage.estimated = true
+    else {
+      stage.costUsd += own
+      if (u.cost_usd == null) stage.estimated = true
+    }
+    stages.set(key, stage)
   }
 
   const stored = hasToolTable
@@ -187,7 +201,7 @@ const report = runs.map((run) => {
   return {
     runId: run.id, at: new Date(run.created_at).toISOString(), provider: run.provider,
     model: run.model || '(пусто)', status: run.status, title: run.title ?? '',
-    runDurationMs: run.duration_ms, fixAttempts, totals,
+    runDurationMs: run.duration_ms, fixAttempts, totals, stages: [...stages.values()],
     toolCalls: calls, toolCallsSource: stored.length ? 'metric' : (toolsAny(fromLog.calls) ? 'log' : 'none'),
     bashFileReads: fromLog.bashFileReads, bashHeredocEdits: fromLog.bashHeredocEdits,
     kbSectionsDelivered: kb?.sections_delivered ?? null, kbSectionsHit: kb?.sections_hit ?? null,
@@ -216,6 +230,10 @@ const driftPct = (t) => {
 }
 const drift = (t) => hasDrift(t) ? `  прайс ${driftPct(t)} к факту (по ${t.checkRequests})` : ''
 const mins = (ms) => ms == null ? '—' : `${Math.round(ms / 60000)}м`
+/** Подписи стадий — копия CI_USAGE_KIND_LABELS из packages/shared/src/ci.ts. */
+const STAGE_LABELS = {
+  model_work: 'работа модели', summary: 'резюме', fix: 'правки после падения', kb_update: 'актуализация базы знаний'
+}
 const k = (n) => n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
 
 console.log(`БД: ${DB_PATH}; ранов: ${report.length}\n`)
@@ -230,6 +248,12 @@ for (const r of report) {
     `инструменты ${r.toolCallsSource === 'none' ? '—' : `${mark}${toolsTotal(c)}`}` +
     `${r.toolCallsSource === 'none' ? '' : ` (bash ${c.bash} · read ${c.read} · grep ${c.grep} · edit ${c.edit} · БЗ ${c.kb})`}` +
     `${c.denied ? `  отказов ${c.denied}` : ''}\n` +
+    // Стадии — ради них и затевалась модель по стадии: видно, чем каждая
+    // посчитана и во что обошлась. Доля от рана считается от известной суммы.
+    `${r.stages.map((s) => `   · ${STAGE_LABELS[s.kind] ?? s.kind} на ${s.model}: ` +
+      `${s.estimated ? '≈' : ''}${s.costUsd.toFixed(2)}` +
+      `${r.totals.costUsd ? ` (${Math.round((s.costUsd / r.totals.costUsd) * 100)}%)` : ''}` +
+      `  запросов ${s.requests}  модель ${mins(s.ms || null)}`).join('\n')}${r.stages.length ? '\n' : ''}` +
     `   в bash: чтений файлов ${r.bashFileReads}, правок heredoc ${r.bashHeredocEdits}  ` +
     `БЗ: обращений ${r.kbQueries}, символов ${r.kbChars} (инъекцией ${r.kbInjectedChars})` +
     `${r.kbSectionsDelivered != null ? `, разделов ${r.kbSectionsDelivered} (попало ${r.kbSectionsHit})` : ''}`
