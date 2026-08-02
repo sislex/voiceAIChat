@@ -52,8 +52,12 @@ function responseSink(res: ServerResponse): RunSink {
 function badRequest(body: LlmRunBody | undefined): string | null {
   if (!body || typeof body !== 'object') return 'тело запроса обязательно'
   if (typeof body.prompt !== 'string' || !body.prompt) return 'prompt обязателен'
-  if (typeof body.model !== 'string' || !body.model) return 'model обязательна'
   if (body.kind !== 'claude' && body.kind !== 'codex') return 'kind: claude | codex'
+  // У codex пустая модель — норма: `settings.codexModel` по умолчанию '', тогда
+  // `codexInvocation` не добавляет `-m` и модель берётся из config.toml самого CLI.
+  // Требование непустой строки роняло КАЖДЫЙ ход codex через удалённого исполнителя.
+  if (typeof body.model !== 'string') return 'model обязательна'
+  if (!body.model && body.kind === 'claude') return 'model обязательна'
   return null
 }
 

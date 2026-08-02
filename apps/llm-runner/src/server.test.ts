@@ -172,6 +172,34 @@ describe('POST /v1/run', () => {
     expect(res.statusCode).toBe(400)
     expect(spawn).not.toHaveBeenCalled()
   })
+
+  it('codex без выбранной модели запускается, а не отбивается 400', async () => {
+    const { child, stdout, stderr } = fakeChild()
+    // Аргументы объявлены, чтобы `mock.calls[0][1]` (argv) был виден типам.
+    const spawnMock = vi.fn((_bin: string, _args: string[]) => child)
+    app = await buildRunner({
+      config: config(),
+      runs: new RunManager({ spawn: spawnMock as unknown as SpawnFn }),
+      health: async () => health
+    })
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const port = boundPort(app)
+
+    const res = await fetch(`http://127.0.0.1:${port}/v1/run`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'codex', prompt: 'привет', sessionId: null, model: '', runId: 'r-cx' })
+    })
+    expect(res.status).toBe(200)
+    // spawnFn(bin, args, options) — argv вторым аргументом; без модели нет и `-m`.
+    expect(spawnMock.mock.calls[0][1]).not.toContain('-m')
+
+    stdout.end()
+    stderr.end()
+    await tick()
+    child.emit('close', 0)
+    await res.text()
+  })
 })
 
 describe('DELETE /v1/run/:id', () => {
