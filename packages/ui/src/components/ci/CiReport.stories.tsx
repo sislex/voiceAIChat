@@ -48,6 +48,8 @@ export const NoUsage: Story = {
     report: makeTaskReport([
       makeRunReport({
         totals: { ...EMPTY_CI_USAGE_TOTALS },
+        // Стадии считаются по строкам расхода — у такого рана их нет вовсе.
+        stages: [],
         steps: makeRunReport().steps.map((s) => ({ ...s, usage: null })),
         fixAttempts: 0
       })
