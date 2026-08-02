@@ -37,7 +37,6 @@ import {
   topCiToolResponses,
   trimmedToolOutputOriginalChars,
   trimToolOutput,
-  DEFAULT_CI_GLOBAL_SETTINGS,
   DEFAULT_TOOL_OUTPUT_LIMITS,
   EMPTY_CI_TOOL_CALLS,
   EMPTY_CI_TOOL_CHARS,
@@ -559,7 +558,8 @@ describe('sumCiUsageTotals и ciTaskTotals', () => {
     const run = (over: Partial<CiRunReport> = {}): CiRunReport => ({
       runId: 'r1', projectId: 'p1', taskId: 't1', status: 'success', mode: 'development',
       provider: 'claude', model: 'opus', startedAt: 1, finishedAt: 2, durationMs: 5000, createdAt: 1,
-      fixAttempts: 0, kbHit: null, toolCalls: null, totals: totals(), stages: [], steps: [], ...over
+      fixAttempts: 0, kbHit: null, toolCalls: null, toolChars: null, toolResponses: [],
+      totals: totals(), stages: [], steps: [], ...over
     })
     const r = ciTaskTotals([run(), run({ runId: 'r2', durationMs: null, totals: { ...EMPTY_CI_USAGE_TOTALS } })])
     expect(r.durationMs).toBe(5000)
@@ -573,7 +573,8 @@ describe('sumCiUsageTotals и ciTaskTotals', () => {
     const run = (over: Partial<CiRunReport> = {}): CiRunReport => ({
       runId: 'r1', projectId: 'p1', taskId: 't1', status: 'success', mode: 'development',
       provider: 'codex', model: 'gpt-5.4', startedAt: 1, finishedAt: 2, durationMs: 1000, createdAt: 1,
-      fixAttempts: 0, kbHit: null, toolCalls: null, totals: totals(), stages: [], steps: [], ...over
+      fixAttempts: 0, kbHit: null, toolCalls: null, toolChars: null, toolResponses: [],
+      totals: totals(), stages: [], steps: [], ...over
     })
     const r = ciTaskTotals([
       run({ toolCalls: { ...EMPTY_CI_TOOL_CALLS, read: 10, bash: 4 } }),
