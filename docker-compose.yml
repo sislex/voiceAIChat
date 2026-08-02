@@ -34,6 +34,11 @@ services:
       VC_LLM_RUNNER_CLAUDE_URL: http://runner-work:8790
       VC_LLM_RUNNER_CODEX_URL: http://runner-work:8790
       VC_LLM_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
+      # Адрес, по которому MCP-эндпоинты сервера (remote-bash, kb, ci-commands)
+      # видны ИЗ контейнера исполнителя. Без него сервер отдаёт CLI собственный
+      # loopback, а в контейнере исполнителя на 127.0.0.1:8787 никого нет —
+      # инструменты mcp__remote__*/mcp__kb__* тогда молча пропадают у модели.
+      VC_MCP_PUBLIC_BASE: ${VC_MCP_PUBLIC_BASE:-http://voicechat:8787}
       # Пароль admin при первом создании БД (пустой том). Задаётся в shell/.env;
       # если БД уже создана, пароль меняется в UI (Настройки → Пользователи).
       VC_ADMIN_PASSWORD: ${VC_ADMIN_PASSWORD:-}

@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { WebSocket } from 'ws'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
 import { buildServer } from './server.js'
 import { loadConfig } from './config.js'
-import { buildPublicMcpUrl } from './mcp/publicBase.js'
+import { buildPublicMcpUrl, mcpBaseMisconfigured } from './mcp/publicBase.js'
 import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { KB_MCP_PATH } from './kb/kbMcp.js'
 import { CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
@@ -46,6 +46,32 @@ describe('server: VC_MCP_PUBLIC_BASE', () => {
     expect(buildPublicMcpUrl(config, REMOTE_BASH_MCP_PATH, 'secret')).toBe('http://voicechat:8787/mcp/remote-bash?k=secret')
     expect(buildPublicMcpUrl(config, KB_MCP_PATH, 'secret')).toBe('http://voicechat:8787/mcp/kb?k=secret')
     expect(buildPublicMcpUrl(config, CI_COMMANDS_MCP_PATH, 'secret')).toBe('http://voicechat:8787/mcp/ci-commands?k=secret')
+  })
+
+  it('исполнитель настроен, а база MCP — нет: конфигурация помечается битой', () => {
+    // Ровно этот случай молча отбирал у модели mcp__remote__*/mcp__kb__* в проде:
+    // CLI в контейнере исполнителя ходил на СВОЙ 127.0.0.1:8787, где никого нет.
+    const broken = loadConfig({ PORT: '8787', VC_LLM_RUNNER_URL: 'http://runner-work:8790' })
+    expect(mcpBaseMisconfigured(broken)).toBe(true)
+    expect(buildPublicMcpUrl(broken, KB_MCP_PATH, 'secret')).toBe('http://127.0.0.1:8787/mcp/kb?k=secret')
+
+    const fixed = loadConfig({
+      PORT: '8787',
+      VC_LLM_RUNNER_URL: 'http://runner-work:8790',
+      VC_MCP_PUBLIC_BASE: 'http://voicechat:8787'
+    })
+    expect(mcpBaseMisconfigured(fixed)).toBe(false)
+
+    // Локальный запуск без исполнителя: loopback штатен, ругаться не на что.
+    expect(mcpBaseMisconfigured(loadConfig({ PORT: '8787' }))).toBe(false)
+  })
+})
+
+describe('docker-compose: сервер отдаёт исполнителю адрес, по которому тот его видит', () => {
+  it('у сервиса voicechat задан VC_MCP_PUBLIC_BASE с дефолтом на имя сервиса', () => {
+    const compose = readFileSync(new URL('../../../docker-compose.yml', import.meta.url), 'utf8')
+    // Дефолт живёт в compose, а не в коде: имя сервиса известно только ему.
+    expect(compose).toContain('VC_MCP_PUBLIC_BASE: ${VC_MCP_PUBLIC_BASE:-http://voicechat:8787}')
   })
 })
 
