@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-02
-checked: 4694903
+checked: 65621d2
 areas:
   - packages/ui/src
   - apps/web/src
@@ -155,9 +155,10 @@ Partial STT обновляет живые сегменты; final формиру
 Разговор со своим `permissionMode === null` наследует общие настройки, поэтому
 `Sidebar` получает их пропом `defaultPermissionMode`
 (`state.settings.permissionMode`) — иначе карточка врала бы про действующий
-режим. Сам
-lifecycle-статус (`Conversation.status`) никуда не делся: его по-прежнему
-проставляет стор после успешного хода, просто руками он больше не меняется.
+режим. Сам lifecycle-статус (`Conversation.status`) никуда не делся: его
+по-прежнему проставляет стор после успешного хода (`setConversationStatus`
+осталась в API стора и в мосте), просто точки входа для ручной смены в UI
+больше нет.
 
 Поиск в сайдбаре двухрежимный — переключатель «Беседы | Сообщения» (`.searchscope`).
 «Беседы» фильтруют список по названию и тексту (`conversations:search`, как было).

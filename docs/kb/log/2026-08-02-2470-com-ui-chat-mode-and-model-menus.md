@@ -29,12 +29,18 @@ author: alexeyrozhnov
   бинаре codex-cli 0.145.0, то есть уходят в `-m` как есть.
 - Три подписи режима ложатся ровно на три пункта `PERMISSION_MODES`: план →
   `plan`, разработка → `acceptEdits`, задача → `bypassPermissions`.
+- Путь CI мимо нормализации: `modelFor` в `ci/modelHooks.ts` отдаёт
+  `ci_runs.llm_model` прямо в `--model` (`claudeArgs`), поэтому дефолт CI `opus`
+  работает, хотя пунктом меню быть перестал.
+- Мост `conversations:setStatus` и `POST /api/conversations/:id/status` живы:
+  ушёл только UI-вход, автозавершение хода в сторе их по-прежнему зовёт.
 
 ## Куда занесено
 
 - docs/kb/ui.md
 - docs/kb/llm.md
 - docs/kb/protocol.md
+- docs/kb/features/ci-runner.md (селект модели при повторе с `model_work`)
 
 ## Открытые вопросы / что осталось
 
