@@ -71,11 +71,26 @@ describe('createKbUsageTracker', () => {
     const db = makeDb()
     const conv = db.createConversation(U, 'Чат')
     const tracker = createKbUsageTracker({ db })
-    tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q').empty('low-confidence')
+    tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q').empty('low-confidence', 'medium')
     tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q').fail('kb.context упала')
     const recent = db.kbUsageReport(U, conv.id)!.recent
     expect(recent.map((q) => q.status).sort()).toEqual(['empty', 'error'])
     expect(recent.every((q) => q.chars === 0 && q.error)).toBe(true)
+    // Уверенность у пустой выдачи — такой же факт, как у доставленной: без неё
+    // не отличить «ничего не нашлось» от «нашлось, но не дотянуло до порога».
+    const empty = recent.find((q) => q.status === 'empty')!
+    expect(empty).toMatchObject({ confidence: 'medium', error: 'совпадения слабые — контекст не добавлен' })
+    db.close()
+  })
+
+  it('пустая выдача по бюджету называет свою причину', () => {
+    const db = makeDb()
+    const conv = db.createConversation(U, 'Чат')
+    const tracker = createKbUsageTracker({ db })
+    tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q').empty('budget', 'high')
+    expect(db.kbUsageReport(U, conv.id)!.recent[0]).toMatchObject({
+      status: 'empty', confidence: 'high', error: 'найденное не поместилось в бюджет контекста'
+    })
     db.close()
   })
 

@@ -302,9 +302,19 @@ export interface KbTaskUsageReport {
  * Строка итогов по БЗ для резюме рана и коротких блоков UI. Одна функция на
  * сервер и UI: иначе «3 обращения» в чате и «3 запроса» в ленте читались бы как
  * разные метрики.
+ *
+ * `hit` — попадание разделов (`ci_run_kb_metrics`). Без него «выдано 5 разделов»
+ * не сообщает главного: пригодился ли хоть один. Тип задан структурно, чтобы
+ * kb.ts не тянул за собой контракт CI.
  */
-export function formatKbUsageSummaryLine(totals: Pick<KbUsageTotals, 'queries' | 'documents' | 'estimatedTokens'>): string {
-  return `БЗ: ${totals.queries} обращений, ${totals.documents} разделов, ≈${totals.estimatedTokens} токенов`
+export function formatKbUsageSummaryLine(
+  totals: Pick<KbUsageTotals, 'queries' | 'documents' | 'estimatedTokens'>,
+  hit?: { sectionsDelivered: number; sectionsHit: number; hitRatio: number } | null
+): string {
+  const base = `БЗ: ${totals.queries} обращений, ${totals.documents} разделов, ≈${totals.estimatedTokens} токенов`
+  return hit && hit.sectionsDelivered
+    ? `${base}; пригодились ${hit.sectionsHit} из ${hit.sectionsDelivered} (${Math.round(hit.hitRatio * 100)}%)`
+    : base
 }
 
 /**

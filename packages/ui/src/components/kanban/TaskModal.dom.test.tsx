@@ -479,7 +479,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
     const hit = await screen.findByTestId('task-modal-report-kb-hit')
-    expect(text(hit)).toContain('БЗ: выдано 5 разделов, задето 3 файлов из них')
+    expect(text(hit)).toContain('БЗ: выдано 5 разделов, пригодились 3 (60%')
   })
 
   it('стоимость без данных CLI помечена «≈»', async () => {
