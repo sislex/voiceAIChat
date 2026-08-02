@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-02
-checked: 54dba49
+checked: 4694903
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -36,6 +36,20 @@ areas:
 подмене на доступный default пишет явное предупреждение в ответ. При выборе codex без клиента codex ход
 откатывается на claude, и модель разговора тогда игнорируется). Модель Claude
 хода всегда клампится по роли пользователя.
+
+**Меню моделей повторяет меню самих CLI** (`CLAUDE_MODELS` / `CODEX_MODELS` в
+`packages/shared/src/types.ts` — один список на настройки, разговор и CI). У
+Claude это `default` («Default (recommended)» — модель выбирает сам CLI),
+`opus[1m]` («Opus (1M context)»), `fable`, `sonnet`, `haiku`: id уходит в
+`claude --model` как есть, включая суффикс окна `[1m]`. У Codex —
+`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`,
+`gpt-5.4-mini` (в `codex -m`; первый — `DEFAULT_CODEX_MODEL`). Старые значения
+из БД/настроек не ломают ход: `normalizeClaudeModel` тянет их к пункту меню по
+префиксу алиаса (`opus`, `opus-4.5` → `opus[1m]`; неизвестное → `default`), и
+`turns.ts` нормализует ДО клампа по роли — иначе `user` с legacy-`opus` в
+настройках обошёл бы запрет. Пустая модель codex (прежний пункт «По умолчанию
+(из codex)») по-прежнему допустима — исполнитель тогда не добавляет `-m`, а UI
+показывает её отдельным пунктом, как любую модель не из пресетов.
 
 Отсюда два следствия: (1) аутентификация — это `claude login` / `codex login` на
 хосте или в контейнере runner-а, ключей в конфиге нет; (2) ошибки CLI переводятся в

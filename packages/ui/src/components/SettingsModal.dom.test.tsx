@@ -33,21 +33,50 @@ function renderModal(role: UserRole, overrides: Partial<SettingsModalProps> = {}
   render(<SettingsModal {...props} />)
 }
 
-describe('SettingsModal — фильтр моделей по роли', () => {
-  it('admin видит все модели (opus, fable, sonnet, haiku)', () => {
+describe('SettingsModal — модели Claude', () => {
+  it('admin видит меню CLI целиком и в его порядке', () => {
     renderModal('admin')
     const select = screen.getByLabelText('Модель Claude')
-    const opts = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
-    expect(opts).toEqual(['opus', 'sonnet', 'fable', 'haiku'])
+    const opts = within(select).getAllByRole('option')
+    expect(opts.map((o) => (o as HTMLOptionElement).value)).toEqual(['default', 'opus[1m]', 'fable', 'sonnet', 'haiku'])
+    expect(opts.map((o) => o.textContent)).toEqual([
+      'Default (recommended)', 'Opus (1M context)', 'Fable', 'Sonnet', 'Haiku'
+    ])
   })
 
-  it('user не видит opus и fable — только sonnet/haiku', () => {
+  it('user не видит opus и fable — только default/sonnet/haiku', () => {
     renderModal('user')
     const select = screen.getByLabelText('Модель Claude')
     const opts = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
-    expect(opts).toEqual(['sonnet', 'haiku'])
-    expect(opts).not.toContain('opus')
+    expect(opts).toEqual(['default', 'sonnet', 'haiku'])
+    expect(opts).not.toContain('opus[1m]')
     expect(opts).not.toContain('fable')
+  })
+
+  it('сохраняет выбранный id как есть — он же уйдёт в CLI', async () => {
+    const onChange = vi.fn()
+    renderModal('admin', { onChange })
+    await userEvent.selectOptions(screen.getByLabelText('Модель Claude'), 'opus[1m]')
+    expect(onChange).toHaveBeenCalledWith({ model: 'opus[1m]' })
+  })
+})
+
+describe('SettingsModal — модели Codex', () => {
+  it('показывает актуальный список в порядке меню', async () => {
+    const onChange = vi.fn()
+    renderModal('admin', { settings: { ...DEFAULT_SETTINGS, llmProvider: 'codex' }, onChange })
+    const select = screen.getByLabelText('Модель Codex')
+    const opts = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
+    expect(opts).toEqual(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'])
+    await userEvent.selectOptions(select, 'gpt-5.5')
+    expect(onChange).toHaveBeenCalledWith({ codexModel: 'gpt-5.5' })
+  })
+
+  it('модель из старых настроек не теряется отдельным пунктом', () => {
+    renderModal('admin', { settings: { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: '' } })
+    const select = screen.getByLabelText('Модель Codex') as HTMLSelectElement
+    expect(select.value).toBe('')
+    expect(within(select).getByRole('option', { name: 'По умолчанию (из codex)' })).toBeInTheDocument()
   })
 })
 

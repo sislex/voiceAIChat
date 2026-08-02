@@ -179,57 +179,18 @@
   margin: 3px 0 0 0;
   color: var(--text-dim);
 }
-.cstatus-select {
-  display: block;
-  max-width: 100%;
-  margin-top: 3px;
-  padding: 1px 20px 1px 4px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-.cstatus-select:hover,
-.cstatus-select:focus {
-  outline: none;
-  background: #e9e7e0;
-  color: var(--text);
+/* Работающий чат — синяя мигающая точка и синяя подпись «идет …»; в простое
+   остаётся только серое слово режима, поэтому точка живёт внутри `.on`. */
+.cstatus.on {
+  color: var(--accent);
+  font-weight: 700;
 }
 .cstatus-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #c2bfb2;
   flex: none;
-}
-.cstatus.on {
-  color: #2e8b57;
-  font-weight: 700;
-}
-.cstatus.on .cstatus-select {
-  display: block;
-  max-width: 100%;
-  margin-top: 3px;
-  padding: 1px 20px 1px 4px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-.cstatus-select:hover,
-.cstatus-select:focus {
-  outline: none;
-  background: #e9e7e0;
-  color: var(--text);
-}
-.cstatus-dot {
-  background: #37b26b;
+  background: var(--accent);
   animation: pulse 1.2s ease-in-out infinite;
 }
 @keyframes pulse {
@@ -3533,8 +3494,6 @@
    .footico-btn (переезд кнопок на Button): правило становилось невалидным и
    утягивало за собой следующий @media — стили свёрнутого сайдбара просто не
    применялись. Фон берём токеном, а не прошитым #262620. */
-[data-theme='dark'] .cstatus-select:hover,
-[data-theme='dark'] .cstatus-select:focus,
 [data-theme='dark'] .side-collapse:hover { background: var(--surface-hover); }
 
 /* Свёрнутый сайдбар — только десктоп; на мобильном действует выдвижной drawer. */

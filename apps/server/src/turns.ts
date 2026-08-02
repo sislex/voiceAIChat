@@ -251,9 +251,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const model =
       provider === 'codex'
         ? (convModel ?? settings.codexModel)
-        : claudeModelAlias(
-            clampModelForRole(convModel ? normalizeClaudeModel(convModel) : settings.model, role)
-          )
+        : // Нормализуем ДО клампа: в настройках/БД лежат и старые значения
+          // (`opus`, `sonnet-4.5`), а роль клампится по актуальным пунктам меню.
+          claudeModelAlias(clampModelForRole(normalizeClaudeModel(convModel || settings.model), role))
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
     // смене движка чужой resume-id игнорируем (свежий ход).
     const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)

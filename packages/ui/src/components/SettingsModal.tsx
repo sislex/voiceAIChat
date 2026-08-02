@@ -195,7 +195,7 @@ export function SettingsModal({
                       onChange={(e) => onChange({ model: e.target.value as ClaudeModel })}
                     >
                       {modelsForRole(role).map((m) => (
-                        <option key={m.id} value={m.id}>
+                        <option key={m.id} value={m.id} title={m.hint}>
                           {m.label}
                         </option>
                       ))}
@@ -213,11 +213,14 @@ export function SettingsModal({
                       value={settings.codexModel}
                       onChange={(e) => onChange({ codexModel: e.target.value })}
                     >
-                      {/* Сохранённая модель не из пресетов — показываем отдельным пунктом. */}
-                      {settings.codexModel &&
-                        !CODEX_MODELS.some((m) => m.id === settings.codexModel) && (
-                          <option value={settings.codexModel}>{settings.codexModel}</option>
-                        )}
+                      {/* Сохранённая модель не из пресетов — показываем отдельным
+                          пунктом; пустая строка старых настроек означала модель
+                          из ~/.codex/config.toml, и её тоже нельзя терять. */}
+                      {!CODEX_MODELS.some((m) => m.id === settings.codexModel) && (
+                        <option value={settings.codexModel}>
+                          {settings.codexModel || 'По умолчанию (из codex)'}
+                        </option>
+                      )}
                       {CODEX_MODELS.map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.label}
@@ -291,8 +294,9 @@ export function SettingsModal({
                 <div className="frow">
                   <div><p className="flab">Модель помощника</p><p className="fsub">Быструю модель можно выбрать независимо от основного чата</p></div>
                   {settings.aiAssistProvider === 'claude' ? <select className="sel" aria-label="Модель AI-помощника" value={settings.aiAssistModel || 'haiku'} onChange={(e) => onChange({ aiAssistModel: e.target.value })}>
-                    {modelsForRole(role).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                    {modelsForRole(role).map((m) => <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>)}
                   </select> : <select className="sel" aria-label="Модель AI-помощника" value={settings.aiAssistModel} onChange={(e) => onChange({ aiAssistModel: e.target.value })}>
+                    {!CODEX_MODELS.some((m) => m.id === settings.aiAssistModel) && <option value={settings.aiAssistModel}>{settings.aiAssistModel || 'По умолчанию (из codex)'}</option>}
                     {CODEX_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                   </select>}
                 </div>

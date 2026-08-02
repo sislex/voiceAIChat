@@ -132,35 +132,49 @@ export interface MessageSearchResult {
 /**
  * Алиас модели Claude. В `claude --model` уходит именно алиас — конкретную
  * версию («latest») резолвит сам CLI, поэтому версии тут не фиксируем.
+ * `default` — тот же пункт, что «Default (recommended)» в самом CLI: модель
+ * выбирает Claude Code. `opus[1m]` — суффикс окна 1M, который CLI понимает
+ * наравне с голым алиасом.
  */
-export type ClaudeModel = 'opus' | 'sonnet' | 'fable' | 'haiku'
+export type ClaudeModel = 'default' | 'opus[1m]' | 'fable' | 'sonnet' | 'haiku'
 
 /** Модель Claude для меню настроек. */
 export interface ClaudeModelInfo {
   id: ClaudeModel
-  /** Подпись в меню (текущая актуальная версия для алиаса). */
+  /** Подпись в меню (как в списке моделей самого CLI). */
   label: string
+  /** Что за этим пунктом стоит — подсказка на наведение; у Default её нет. */
+  hint?: string
 }
 
 /**
- * Актуальные модели Claude (порядок = порядок в меню). Подписи отражают версию,
- * которую CLI сейчас резолвит для алиаса; при обновлении CLI меняется только
- * резолв — правим подпись здесь.
+ * Актуальные модели Claude (порядок = порядок в меню `claude`). Подписи
+ * отражают версию, которую CLI сейчас резолвит для алиаса; при обновлении CLI
+ * меняется только резолв — правим подсказку здесь.
  */
 export const CLAUDE_MODELS: ClaudeModelInfo[] = [
-  { id: 'opus', label: 'Claude Opus 4.8' },
-  { id: 'sonnet', label: 'Claude Sonnet 5' },
-  { id: 'fable', label: 'Claude Fable 5' },
-  { id: 'haiku', label: 'Claude Haiku 4.5' }
+  { id: 'default', label: 'Default (recommended)' },
+  { id: 'opus[1m]', label: 'Opus (1M context)', hint: 'Opus 5 with 1M context' },
+  { id: 'fable', label: 'Fable', hint: 'Fable 5' },
+  { id: 'sonnet', label: 'Sonnet', hint: 'Sonnet 5' },
+  { id: 'haiku', label: 'Haiku', hint: 'Haiku 4.5' }
 ]
 
 /**
- * Приводит значение модели из настроек/БД к валидному алиасу. Терпит старые
- * значения (`sonnet-4.5`, `opus-4.5`) — берёт алиас по префиксу; неизвестное → opus.
+ * Приводит значение модели из настроек/БД к валидному пункту меню. Терпит
+ * старые значения (`opus`, `sonnet-4.5`, `claude-haiku-4-5`) — берёт пункт по
+ * префиксу алиаса; неизвестное → `default`. Голый `opus` из прежних настроек
+ * ведёт на единственный оставшийся пункт Opus — с окном 1M.
  */
 export function normalizeClaudeModel(raw: string): ClaudeModel {
-  const hit = CLAUDE_MODELS.find((m) => raw.startsWith(m.id))
-  return hit ? hit.id : 'opus'
+  const exact = CLAUDE_MODELS.find((m) => m.id === raw)
+  if (exact) return exact.id
+  const alias = raw.replace(/^claude-/, '')
+  if (alias.startsWith('opus')) return 'opus[1m]'
+  if (alias.startsWith('fable')) return 'fable'
+  if (alias.startsWith('sonnet')) return 'sonnet'
+  if (alias.startsWith('haiku')) return 'haiku'
+  return 'default'
 }
 
 /** Роль пользователя приложения (многопользовательский режим web-версии). */
@@ -176,8 +190,10 @@ export interface SessionUser {
 /**
  * Модели Claude, недоступные роли `user`. У `admin` доступны все. Ограничение
  * дублируется на сервере (кламп модели хода), клиент лишь прячет их в списке.
+ * `default` доступен всем: это выбор самого CLI, а не явно взятая дорогая
+ * модель, и без него у роли `user` не было бы пункта по умолчанию.
  */
-const RESTRICTED_FOR_USER: ClaudeModel[] = ['opus', 'fable']
+const RESTRICTED_FOR_USER: ClaudeModel[] = ['opus[1m]', 'fable']
 
 /** Доступна ли модель роли (admin — все; user — без opus/fable). */
 export function isModelAllowed(model: ClaudeModel, role: UserRole): boolean {
@@ -216,7 +232,11 @@ export const PERMISSION_MODES: PermissionModeInfo[] = [
 /** Значение статуса чата по умолчанию. */
 export const DEFAULT_CONVERSATION_STATUS: ConversationStatus = 'developing'
 
-/** Пункты выпадающего списка статуса на карточке чата (подписи-существительные). */
+/**
+ * Допустимые значения жизненного цикла с подписями. Ручного селекта на карточке
+ * чата больше нет (там режим чата, см. `chatModeLabel`), но список остаётся
+ * источником валидации статуса на сервере и подписей для будущих поверхностей.
+ */
 export const CONVERSATION_STATUSES: Array<{ id: ConversationStatus; label: string }> = [
   { id: 'planned', label: 'планируется' },
   { id: 'developing', label: 'разрабатывается' },
@@ -225,9 +245,35 @@ export const CONVERSATION_STATUSES: Array<{ id: ConversationStatus; label: strin
   { id: 'done', label: 'закончено' }
 ]
 
-/** Подпись пульсирующего индикатора активного хода по режиму прав. */
-export function activeStatusLabel(mode: PermissionMode | null | undefined): string {
-  return mode === 'plan' ? 'планирую' : 'разрабатываю'
+/**
+ * Режим разговора словом — им подписана карточка чата в сайдбаре. Три подписи
+ * ровно на три пункта «Режима разговора»: планирование, авто-правки и полный
+ * доступ («задача» — агент делает задачу целиком, без ограничений).
+ */
+export const CHAT_MODE_LABELS: Record<PermissionMode, string> = {
+  plan: 'план',
+  acceptEdits: 'разработка',
+  bypassPermissions: 'задача'
+}
+
+/**
+ * Подпись режима чата. `null`/`undefined` у разговора означает «как в общих
+ * настройках», поэтому вызывающий передаёт вторым аргументом действующий
+ * дефолт пользователя; без него берём дефолт настроек (`bypassPermissions`).
+ */
+export function chatModeLabel(
+  mode: PermissionMode | null | undefined,
+  fallback: PermissionMode = 'bypassPermissions'
+): string {
+  return CHAT_MODE_LABELS[mode ?? fallback]
+}
+
+/** Подпись пульсирующего индикатора активного хода: «идет разработка». */
+export function activeStatusLabel(
+  mode: PermissionMode | null | undefined,
+  fallback: PermissionMode = 'bypassPermissions'
+): string {
+  return `идет ${chatModeLabel(mode, fallback)}`
 }
 
 export type WhisperModel = 'large-v3-turbo' | 'medium' | 'small'
@@ -506,20 +552,25 @@ export interface CodexModelInfo {
 }
 
 /**
- * Пресеты моделей Codex. Пустой id — модель по умолчанию из ~/.codex/config.toml.
- * Список фиксированный (у codex нет CLI для перечисления); если в настройках
- * сохранена модель не из списка, UI добавит её отдельным пунктом.
+ * Пресеты моделей Codex (порядок = порядок в меню). Список фиксированный (у
+ * codex нет CLI для перечисления); если в настройках сохранена модель не из
+ * списка — в том числе пустая строка старых настроек, означавшая модель из
+ * ~/.codex/config.toml, — UI добавит её отдельным пунктом.
  */
 export const CODEX_MODELS: CodexModelInfo[] = [
-  { id: '', label: 'По умолчанию (из codex)' },
-  { id: 'gpt-5-codex', label: 'gpt-5-codex' },
-  { id: 'gpt-5', label: 'gpt-5' },
-  { id: 'o3', label: 'o3' },
-  { id: 'o4-mini', label: 'o4-mini' }
+  { id: 'gpt-5.6-sol', label: 'gpt-5.6-sol' },
+  { id: 'gpt-5.6-terra', label: 'gpt-5.6-terra' },
+  { id: 'gpt-5.6-luna', label: 'gpt-5.6-luna' },
+  { id: 'gpt-5.5', label: 'gpt-5.5' },
+  { id: 'gpt-5.4', label: 'gpt-5.4' },
+  { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' }
 ]
 
+/** Модель Codex по умолчанию — первый пункт меню. */
+export const DEFAULT_CODEX_MODEL = CODEX_MODELS[0].id
+
 export const DEFAULT_SETTINGS: Settings = {
-  model: 'opus',
+  model: 'default',
   whisperModel: 'large-v3-turbo',
   diarization: true,
   voice: 'ru_RU-ruslan-medium',
@@ -535,7 +586,7 @@ export const DEFAULT_SETTINGS: Settings = {
   execTarget: null,
   llmEngineId: null,
   llmProvider: 'claude',
-  codexModel: '',
+  codexModel: DEFAULT_CODEX_MODEL,
   defaultAgentId: null,
   aiAssistProvider: 'claude',
   aiAssistModel: 'haiku',

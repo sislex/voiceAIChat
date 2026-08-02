@@ -128,10 +128,11 @@ describe('App — интеграция UI со стором и IPC', () => {
     const select = screen.getByLabelText('Модель Claude')
     const labels = [...select.querySelectorAll('option')].map((o) => o.textContent)
     expect(labels).toEqual([
-      'Claude Opus 4.8',
-      'Claude Sonnet 5',
-      'Claude Fable 5',
-      'Claude Haiku 4.5'
+      'Default (recommended)',
+      'Opus (1M context)',
+      'Fable',
+      'Sonnet',
+      'Haiku'
     ])
   })
 

@@ -17,7 +17,7 @@ const agent: AgentInfo = makeAgent({
   policy: { allowedDirs: [], allowNetwork: true, allowWrite: true, denyPatterns: [], allowPatterns: [], skills: [{ name: 'build', command: 'npm run build' }] }
 })
 const conversation = makeConversation({ id: 'c1', title: 'Старое имя', messageCount: 0, execTarget: 'm1' })
-const settings = { llmProvider: 'claude', model: 'opus', codexModel: '', permissionMode: 'bypassPermissions' } as const
+const settings = { llmProvider: 'claude', model: 'opus[1m]', codexModel: 'gpt-5.6-sol', permissionMode: 'bypassPermissions' } as const
 
 describe('ConversationSettings', () => {
   it('сохраняет название, машину, директорию и выбранные навыки', async () => {
@@ -46,18 +46,27 @@ describe('ConversationSettings', () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Движок разговора' }), { target: { value: 'codex' } })
-    fireEvent.change(screen.getByRole('combobox', { name: 'Модель разговора' }), { target: { value: 'gpt-5-codex' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Модель разговора' }), { target: { value: 'gpt-5.5' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Старое имя', execTarget: 'm1', workdir: null, skillNames: [], llmProvider: 'codex', llmModel: 'gpt-5-codex', permissionMode: null, kbContextMode: 'auto', projectId: null }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Старое имя', execTarget: 'm1', workdir: null, skillNames: [], llmProvider: 'codex', llmModel: 'gpt-5.5', permissionMode: null, kbContextMode: 'auto', projectId: null }))
   })
 
   it('роль user не видит модели opus/fable в выборе модели разговора', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="user" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Движок разговора' }), { target: { value: 'claude' } })
     const options = Array.from(screen.getByRole('combobox', { name: 'Модель разговора' }).querySelectorAll('option')).map((o) => o.value)
-    expect(options).not.toContain('opus')
+    expect(options).not.toContain('opus[1m]')
     expect(options).not.toContain('fable')
-    expect(options).toContain('sonnet')
+    expect(options).toEqual(['default', 'sonnet', 'haiku'])
+  })
+
+  it('модели Claude в разговоре — то же меню, что в настройках', () => {
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    const options = Array.from(screen.getByRole('combobox', { name: 'Модель разговора' }).querySelectorAll('option'))
+    expect(options.map((o) => o.value)).toEqual(['default', 'opus[1m]', 'fable', 'sonnet', 'haiku'])
+    expect(options.map((o) => o.textContent)).toEqual([
+      'Default (recommended)', 'Opus (1M context)', 'Fable', 'Sonnet', 'Haiku'
+    ])
   })
 
   it('в списке движков нет пункта «по умолчанию» — только движки, предвыбран глобальный', () => {

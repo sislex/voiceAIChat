@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-02
-checked: 54dba49
+checked: 4694903
 areas:
   - packages/ui/src
   - apps/web/src
@@ -144,7 +144,20 @@ Partial STT обновляет живые сегменты; final формиру
 
 ## Компоненты и поверхности
 
-`App.tsx` соединяет основной layout и глобальные popup-поверхности. `Sidebar` показывает разговоры, поиск, фильтр проекта и lifecycle status. `ChatColumn` рендерит timeline, streaming response, activity/usage и edit/delete действия. `VoiceBar` содержит композер, вложения, микрофон и cancel.
+`App.tsx` соединяет основной layout и глобальные popup-поверхности. `Sidebar` показывает разговоры, поиск, фильтр проекта и режим работы чата. `ChatColumn` рендерит timeline, streaming response, activity/usage и edit/delete действия. `VoiceBar` содержит композер, вложения, микрофон и cancel.
+
+**Карточка чата подписана режимом, а не lifecycle-статусом.** Ручного селекта
+«планируется/разрабатывается» в строке больше нет: `.cstatus` показывает слово
+режима разговора — «план», «разработка» или «задача» (`chatModeLabel` в
+`@shared/types`, по одному слову на каждый пункт `PERMISSION_MODES`). Пока идёт
+ход (`workingIds`), строка синяя, с мигающей точкой `.cstatus-dot` и префиксом:
+«идет план» (`activeStatusLabel`); в простое — то же слово серым и без точки.
+Разговор со своим `permissionMode === null` наследует общие настройки, поэтому
+`Sidebar` получает их пропом `defaultPermissionMode`
+(`state.settings.permissionMode`) — иначе карточка врала бы про действующий
+режим. Сам
+lifecycle-статус (`Conversation.status`) никуда не делся: его по-прежнему
+проставляет стор после успешного хода, просто руками он больше не меняется.
 
 Поиск в сайдбаре двухрежимный — переключатель «Беседы | Сообщения» (`.searchscope`).
 «Беседы» фильтруют список по названию и тексту (`conversations:search`, как было).
