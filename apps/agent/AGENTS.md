@@ -25,6 +25,11 @@
   а `telemetry.ts` кладёт в `agent.telemetry.os.shell`/`shellDegraded` (видно на
   карточке машины в UI). Unix-подобный `SHELL`/`VC_PTY_SHELL` (`/bin/...`) на
   Windows не используется — это унаследованное окружение, а не путь для `spawn`.
+- **Любой путь из запроса — через `fileOps.ts:toNativePath()`** (её зовёт
+  `absPath`, до `assertAllowed`). На Windows модель ходит в git-bash и присылает
+  MSYS-пути (`/c/Users/x`), которые `resolve()` превращает в несуществующий
+  `C:\c\Users\x` — ENOENT. Новую файловую операцию заводи через `absPath`, а не
+  через `resolve` напрямую; `allowedDirs` сверяются уже с нормализованным путём.
 - Агент раздаётся как **самодостаточный `voicechat-agent.cjs`**, который собирает
   сервер (`apps/server/src/agents/agentScript.ts`, esbuild, CJS). Значит: новые
   зависимости должны бандлиться или быть опциональными. `@lydell/node-pty`
