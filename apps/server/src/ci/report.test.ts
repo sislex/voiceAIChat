@@ -24,6 +24,8 @@ let app: FastifyInstance, db: VoiceChatDb, admin: string
 let turnMeta: TurnMeta | null = null
 /** Инструменты, которые «вызывает» мок за ход (имена — как их называет CLI). */
 let turnTools: string[] = []
+/** Тексты результатов вызовов за ход: по ним считаются отказы. */
+let turnResults: string[] = []
 /**
  * Сколько мок «думает» перед ответом. Нужно там, где проверяется замер
  * длительности хода сервером: мгновенный ход укладывается в одну миллисекунду, и
@@ -36,6 +38,10 @@ const fakeClaude: LlmClient = {
     setTimeout(() => {
       for (const tool of turnTools) {
         handlers.onActivity?.({ kind: 'tool_use', summary: `${tool}: …`, raw: '{}', tool })
+      }
+      // Результат вызова приходит без имени инструмента — как в реальной ленте.
+      for (const text of turnResults) {
+        handlers.onActivity?.({ kind: 'tool_result', summary: `✗ ошибка: ${text}`, detail: text, raw: '{}' })
       }
       if (turnMeta) {
         handlers.onUsage?.({
@@ -62,6 +68,7 @@ const ciExecutor: CommandExecutor = {
 beforeEach(async () => {
   let id = 0
   turnTools = []
+  turnResults = []
   turnDelayMs = 0
   turnMeta = {
     inputTokens: 1000, outputTokens: 200, cacheReadTokens: 5000, cacheCreationTokens: 300,
@@ -199,7 +206,22 @@ describe('GET /api/ci/runs/:runId/report', () => {
 
     const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
     // Два хода (работа модели и резюме) — счётчики складываются по рану.
-    expect(report.toolCalls).toEqual({ bash: 2, read: 4, grep: 2, edit: 2, kb: 2, other: 0 })
+    expect(report.toolCalls).toEqual({ bash: 2, read: 4, grep: 2, edit: 2, kb: 2, other: 0, denied: 0 })
+  })
+
+  it('отказы вызовов считаются отдельно и не путаются с упавшей командой', async () => {
+    turnTools = ['mcp__remote__bash']
+    turnResults = [
+      "Claude requested permissions to use mcp__remote__edit, but you haven't granted it yet.",
+      'Отклонено: это чтение файла, а его делает инструмент read.',
+      '[exit code: 1]' // обычная ошибка команды — не отказ
+    ]
+    const { project, task } = setup()
+    const runId = await runTask(project.id, task.id)
+
+    const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
+    // Два хода: по одному вызову bash и по два отказа в каждом.
+    expect(report.toolCalls).toMatchObject({ bash: 2, denied: 4 })
   })
 
   it('ран через исполнителя: у codex время работы модели считает сервер, стоимость — прайс', async () => {

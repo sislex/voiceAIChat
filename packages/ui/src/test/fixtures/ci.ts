@@ -564,7 +564,7 @@ export function makeRunReport(over: Partial<CiRunReport> = {}): CiRunReport {
     createdAt: RUN_T0,
     fixAttempts: 1,
     kbHit: null,
-    toolCalls: { bash: 12, read: 31, grep: 9, edit: 14, kb: 3, other: 1 },
+    toolCalls: { bash: 12, read: 31, grep: 9, edit: 14, kb: 3, other: 1, denied: 2 },
     totals: makeUsageTotals(),
     steps: [
       makeReportStep(),

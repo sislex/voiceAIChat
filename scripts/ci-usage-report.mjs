@@ -67,8 +67,15 @@ function classify(name) {
   return 'other'
 }
 
-const EMPTY_TOOLS = { bash: 0, read: 0, grep: 0, edit: 0, kb: 0, other: 0 }
-const toolsTotal = (t) => Object.values(t).reduce((a, b) => a + b, 0)
+// `denied` — не вид инструмента, а исход вызова (отказ): сам вызов уже посчитан
+// своим видом, поэтому в «всего» он не входит и печатается отдельной припиской.
+const EMPTY_TOOLS = { bash: 0, read: 0, grep: 0, edit: 0, kb: 0, other: 0, denied: 0 }
+const toolsTotal = (t) => Object.entries(t).reduce((a, [kind, n]) => kind === 'denied' ? a : a + n, 0)
+const toolsAny = (t) => toolsTotal(t) > 0 || t.denied > 0
+/** Отказ, а не обычная ошибка команды (та же логика, что в shared/isCiToolDenial). */
+const isDenial = (text) =>
+  /requested permissions/i.test(text) || /haven'?t granted/i.test(text) ||
+  /Отклонено:/.test(text) || /tool use was (?:denied|rejected)/i.test(text)
 
 /**
  * Восстановление вызовов из ленты рана — для ранов, сделанных до метрики. Заодно
@@ -80,6 +87,8 @@ function toolsFromLog(text) {
   const calls = { ...EMPTY_TOOLS }
   let bashFileReads = 0, bashHeredocEdits = 0
   for (const line of text.split('\n')) {
+    // Отказ виден только в результате вызова: `[tool_result] ✗ ошибка: …`.
+    if (line.startsWith('[tool_result]') && isDenial(line)) calls.denied++
     // Лента пишет `[tool_use] <краткое имя>: <ввод>`, где имя бывает с сервером
     // (`remote:bash`, `kb:document`), без него (`Read`) или запуском команды
     // codex (`$ npm test`) — иначе `remote:bash` читалось бы как сервер `remote`.
@@ -179,7 +188,7 @@ const report = runs.map((run) => {
     runId: run.id, at: new Date(run.created_at).toISOString(), provider: run.provider,
     model: run.model || '(пусто)', status: run.status, title: run.title ?? '',
     runDurationMs: run.duration_ms, fixAttempts, totals,
-    toolCalls: calls, toolCallsSource: stored.length ? 'metric' : (toolsTotal(fromLog.calls) ? 'log' : 'none'),
+    toolCalls: calls, toolCallsSource: stored.length ? 'metric' : (toolsAny(fromLog.calls) ? 'log' : 'none'),
     bashFileReads: fromLog.bashFileReads, bashHeredocEdits: fromLog.bashHeredocEdits,
     kbSectionsDelivered: kb?.sections_delivered ?? null, kbSectionsHit: kb?.sections_hit ?? null,
     kbQueries: kbChars.queries, kbChars: kbChars.chars, kbInjectedChars: kbChars.injectedChars
@@ -219,7 +228,8 @@ for (const r of report) {
     `кэш ${k(r.totals.cacheReadTokens)}/${k(r.totals.cacheCreationTokens)}${r.totals.inputNormalized ? ' (вход приведён)' : ''}\n` +
     `   ран ${mins(r.runDurationMs)}  модель ${mins(r.totals.modelActiveMs || null)}  fix-loop ${r.fixAttempts}  ` +
     `инструменты ${r.toolCallsSource === 'none' ? '—' : `${mark}${toolsTotal(c)}`}` +
-    `${r.toolCallsSource === 'none' ? '' : ` (bash ${c.bash} · read ${c.read} · grep ${c.grep} · edit ${c.edit} · БЗ ${c.kb})`}\n` +
+    `${r.toolCallsSource === 'none' ? '' : ` (bash ${c.bash} · read ${c.read} · grep ${c.grep} · edit ${c.edit} · БЗ ${c.kb})`}` +
+    `${c.denied ? `  отказов ${c.denied}` : ''}\n` +
     `   в bash: чтений файлов ${r.bashFileReads}, правок heredoc ${r.bashHeredocEdits}  ` +
     `БЗ: обращений ${r.kbQueries}, символов ${r.kbChars} (инъекцией ${r.kbInjectedChars})` +
     `${r.kbSectionsDelivered != null ? `, разделов ${r.kbSectionsDelivered} (попало ${r.kbSectionsHit})` : ''}`
@@ -252,7 +262,7 @@ for (const [provider, a] of byProvider) {
     `вход ${k(a.input)}, выход ${k(a.output)}, кэш ${k(a.cacheRead)}, ` +
     `ран ${mins(a.run / a.runs)} в среднем, модель ${mins(a.model / a.runs)}, ` +
     `инструменты bash ${a.tools.bash}/read ${a.tools.read}/grep ${a.tools.grep}/edit ${a.tools.edit}/БЗ ${a.tools.kb}, ` +
-    `чтений файлов через bash ${a.bashReads}`
+    `отказов ${a.tools.denied}, чтений файлов через bash ${a.bashReads}`
   )
   // Сверка прайса по движку: пока строка держится около нуля, оценке (а значит и
   // сравнению движков) можно верить; уехала — таблица цен устарела.

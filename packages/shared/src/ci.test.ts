@@ -20,6 +20,8 @@ import {
   classifyCiToolCall,
   countCiToolCalls,
   ciToolCallsTotal,
+  ciToolCallsAny,
+  isCiToolDenial,
   sumCiToolCalls,
   EMPTY_CI_TOOL_CALLS,
   EMPTY_CI_USAGE_TOTALS,
@@ -282,6 +284,25 @@ describe('счётчики вызовов инструментов', () => {
     const calls = countCiToolCalls(['mcp__remote__read', 'remote:read', 'remote:bash', 'kb:search', 'ToolSearch'])
     expect(calls).toEqual({ ...EMPTY_CI_TOOL_CALLS, read: 2, bash: 1, kb: 1, other: 1 })
     expect(ciToolCallsTotal(calls)).toBe(5)
+  })
+
+  it('отказ не попадает в «всего»: сам вызов уже посчитан своим видом', () => {
+    const calls = { ...EMPTY_CI_TOOL_CALLS, bash: 3, read: 2, denied: 2 }
+    expect(ciToolCallsTotal(calls)).toBe(5)
+    expect(ciToolCallsAny(calls)).toBe(true)
+    // Ход из одних отказов записать надо — иначе их снова никто не увидит.
+    expect(ciToolCallsAny({ ...EMPTY_CI_TOOL_CALLS, denied: 1 })).toBe(true)
+    expect(ciToolCallsAny({ ...EMPTY_CI_TOOL_CALLS })).toBe(false)
+  })
+
+  it('отказ узнаётся по тексту результата, ошибка команды — нет', () => {
+    expect(isCiToolDenial("Claude requested permissions to use mcp__remote__edit, but you haven't granted it yet.")).toBe(true)
+    expect(isCiToolDenial('✗ ошибка: Отклонено: режим «План» — правки файлов запрещены')).toBe(true)
+    expect(isCiToolDenial('Отклонено: это чтение файла, а его делает инструмент read.')).toBe(true)
+    expect(isCiToolDenial('[exit code: 1]')).toBe(false)
+    expect(isCiToolDenial('ENOENT: no such file or directory')).toBe(false)
+    expect(isCiToolDenial('mkdir: Permission denied')).toBe(false)
+    expect(isCiToolDenial('')).toBe(false)
   })
 
   it('сумма ранов без счётчика — null, а не нули: «нет метрики» ≠ «нет вызовов»', () => {

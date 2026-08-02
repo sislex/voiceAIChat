@@ -477,9 +477,10 @@ describe('ci: расход модели и семантика входных т�
     const b = run()
     db.addCiRunToolCalls(a.id, { read: 3, bash: 1 })
     db.addCiRunToolCalls(a.id, { read: 2, edit: 4, kb: 1 })
-    db.addCiRunToolCalls(b.id, { grep: 2 })
-    expect(db.ciRunToolCalls(a.id)).toEqual({ bash: 1, read: 5, grep: 0, edit: 4, kb: 1, other: 0 })
-    expect(db.ciRunToolCalls(b.id)).toEqual({ bash: 0, read: 0, grep: 2, edit: 0, kb: 0, other: 0 })
+    db.addCiRunToolCalls(b.id, { grep: 2, denied: 3 })
+    expect(db.ciRunToolCalls(a.id)).toEqual({ bash: 1, read: 5, grep: 0, edit: 4, kb: 1, other: 0, denied: 0 })
+    // Отказы — такой же вид в таблице ключ-значение, отдельной колонки не нужно.
+    expect(db.ciRunToolCalls(b.id)).toEqual({ bash: 0, read: 0, grep: 2, edit: 0, kb: 0, other: 0, denied: 3 })
     // Нулевые виды не пишутся вовсе: «нет строки» = «счётчика у рана нет».
     expect(db.ciRunToolCalls('нет-такого-рана')).toBeNull()
   })

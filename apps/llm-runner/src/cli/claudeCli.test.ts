@@ -127,6 +127,8 @@ describe('ClaudeCli', () => {
     expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('Мак')
     // Долгие команды (тесты/сборка) не должны срезаться дефолтным таймаутом моста.
     expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('timeout_ms')
+    // Про гейт чтения модель предупреждена: отказ моста не должен быть сюрпризом.
+    expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('мост отклонит')
 
     const { child: c2 } = fakeChild()
     const spawn2 = vi.fn(() => c2 as never) as unknown as SpawnFn
