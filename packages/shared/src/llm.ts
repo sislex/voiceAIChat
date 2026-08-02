@@ -141,6 +141,9 @@ export function parseLlmRunFrame(line: string): LlmRunFrame | null {
   } catch {
     return null
   }
+  // `null`/число/строка — валидный JSON, но не конверт: без этой проверки обращение
+  // к полю уронило бы весь ход на одной мусорной строке потока.
+  if (!parsed || typeof parsed !== 'object') return null
   const frame = parsed as { t?: unknown; s?: unknown; code?: unknown }
   if (frame.t === 'out' || frame.t === 'err') {
     return typeof frame.s === 'string' ? { t: frame.t, s: frame.s } : null

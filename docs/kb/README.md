@@ -19,7 +19,7 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-01 | ✓ |
 | [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 4d760f3 fix(prod): деплой, переживающий таймаут канала, и сторож для контейнера в created … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-01 | ✓ |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-01 | ✓ |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-02 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-01 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-01 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-01 | ✓ |
@@ -43,8 +43,9 @@
 
 ## Журнал сессий
 
-Всего записей: 57. Последние:
+Всего записей: 58. Последние:
 
+- [2026-08-02-alexeys-macbook-air-2-run-body-contract.md](log/2026-08-02-alexeys-macbook-air-2-run-body-contract.md) — run-body-contract
 - [2026-08-01-2470-com-список-чатов-обновляется-по-событиям.md](log/2026-08-01-2470-com-список-чатов-обновляется-по-событиям.md) — Список чатов обновляется по событиям, а не только по действиям
 - [2026-08-01-2470-com-пересборка-прода-chat-52.md](log/2026-08-01-2470-com-пересборка-прода-chat-52.md) — пересборка-прода-chat-52
 - [2026-08-01-2470-com-пересборка-прода-chat-44.md](log/2026-08-01-2470-com-пересборка-прода-chat-44.md) — пересборка-прода-chat-44
@@ -54,7 +55,6 @@
 - [2026-08-01-2470-com-remote-runner-attachments-cwd.md](log/2026-08-01-2470-com-remote-runner-attachments-cwd.md) — Вложения и cwd теперь разрешаются на стороне исполнителя
 - [2026-08-01-2470-com-remote-mcp-file-tools.md](log/2026-08-01-2470-com-remote-mcp-file-tools.md) — Remote-MCP: оконное чтение, поиск и точечная правка
 - [2026-08-01-2470-com-remote-llm-client-na-servere.md](log/2026-08-01-2470-com-remote-llm-client-na-servere.md) — RemoteLlmClient на сервере
-- [2026-08-01-2470-com-otchyot-po-zadache-rashod-modeli.md](log/2026-08-01-2470-com-otchyot-po-zadache-rashod-modeli.md) — Отчёт по завершённой задаче — расход модели, запросы и шаги CI
 
 ## Исторические планы
 

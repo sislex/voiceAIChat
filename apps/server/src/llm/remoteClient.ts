@@ -149,7 +149,10 @@ export class RemoteLlmClient implements LlmClient {
   ): Promise<void> {
     const fetchImpl = this.opts.fetchImpl ?? globalThis.fetch
     const url = runnerRunUrl(this.opts.baseUrl)
-    const body: RunnerRunBody = { id: runId, kind: this.opts.kind, request: req }
+    // Поля запроса уходят ПЛОСКО: исполнитель валидирует `prompt`/`model`/`kind`
+    // на верхнем уровне тела (apps/llm-runner/src/server.ts) и на конверт
+    // `{ id, request }` отвечает `400 prompt обязателен`.
+    const body: RunnerRunBody = { ...req, kind: this.opts.kind, runId }
     const connectTimeoutMs = this.opts.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
     let timedOut = false
     const timer = setTimeout(() => {

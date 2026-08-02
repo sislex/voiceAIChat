@@ -8,27 +8,30 @@
 //   {"t":"err","s":"..."}                          фрагмент stderr
 //   {"t":"exit","code":0}                          процесс завершился (null — сигнал)
 
-import type { LlmRequest } from '../claude/types.js'
+import {
+  LLM_RUNNER,
+  parseLlmRunFrame,
+  type LlmRunBody,
+  type LlmRunFrame,
+  type LlmRunKind
+} from '@voicechat/shared'
 
 /** Какой CLI просят запустить: от этого зависит парсер строк и тексты ошибок. */
-export type RunnerKind = 'claude' | 'codex'
+export type RunnerKind = LlmRunKind
 
-/** Тело POST /v1/run: id хода (его же ждёт DELETE) + сериализованный запрос. */
-export interface RunnerRunBody {
-  /** id рана генерирует СЕРВЕР — иначе отмена до первого байта была бы невозможна. */
-  id: string
-  kind: RunnerKind
-  request: LlmRequest
-}
+/**
+ * Тело POST /v1/run. Форму диктует `packages/shared` и проверяет сам исполнитель:
+ * поля запроса лежат ПЛОСКО (`prompt`, `model`, `sessionId`, …), рядом `kind` и
+ * `runId`. Вложенный конверт `{ id, kind, request }` исполнитель отвергает с
+ * `400 prompt обязателен` — поэтому тип здесь только псевдоним общего.
+ */
+export type RunnerRunBody = LlmRunBody
 
 /** Конверт строки NDJSON из потока /v1/run. */
-export type RunnerStreamEvent =
-  | { t: 'out'; s: string }
-  | { t: 'err'; s: string }
-  | { t: 'exit'; code: number | null }
+export type RunnerStreamEvent = LlmRunFrame
 
-export const RUNNER_RUN_PATH = '/v1/run'
-export const RUNNER_HEALTH_PATH = '/v1/health'
+export const RUNNER_RUN_PATH = LLM_RUNNER.run
+export const RUNNER_HEALTH_PATH = LLM_RUNNER.health
 
 /** База URL исполнителя без хвостового слэша ('' для пустой строки). */
 export function runnerBase(baseUrl: string): string {
@@ -49,23 +52,4 @@ export function runnerCancelUrl(baseUrl: string, id: string): string {
  * Разбирает строку NDJSON исполнителя. Терпимо к мусору: пустые строки, битый
  * JSON и незнакомые конверты дают null — обрыв формата не должен ронять ход.
  */
-export function parseRunnerLine(line: string): RunnerStreamEvent | null {
-  const trimmed = line.trim()
-  if (!trimmed) return null
-  let obj: Record<string, unknown>
-  try {
-    obj = JSON.parse(trimmed) as Record<string, unknown>
-  } catch {
-    return null
-  }
-  if (!obj || typeof obj !== 'object') return null
-  switch (obj.t) {
-    case 'out':
-    case 'err':
-      return typeof obj.s === 'string' ? { t: obj.t, s: obj.s } : null
-    case 'exit':
-      return { t: 'exit', code: typeof obj.code === 'number' ? obj.code : null }
-    default:
-      return null
-  }
-}
+export const parseRunnerLine = parseLlmRunFrame

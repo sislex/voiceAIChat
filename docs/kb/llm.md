@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-08-01
-checked: 6171b3c
+updated: 2026-08-02
+checked: 4d760f3
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -85,8 +85,8 @@ Claude восстанавливается из действующего обще
 Движок не обязан жить рядом с сервером. Если задан адрес контейнера-исполнителя,
 `buildServer` вместо `ClaudeCli`/`CodexCli` собирает `RemoteLlmClient`
 (`apps/server/src/llm/remoteClient.ts`): он открывает `POST /v1/run` (тело —
-`{id, kind, request}`, где `request` — сериализованный `LlmRequest`) и читает
-NDJSON-конверты `{t:'out'|'err', s}` / `{t:'exit', code}`. Строки `out` — сырой
+`LlmRunBody` из `packages/shared`: поля `LlmRequest` ПЛОСКО плюс `kind` и `runId`)
+и читает NDJSON-конверты `{t:'out'|'err', s}` / `{t:'exit', code}`. Строки `out` — сырой
 stdout CLI, поэтому разбор stream-json/JSONL, usage и `session_id` остаются на
 сервере: `turns.ts`, CI-раннер и парсеры `packages/shared` не отличают удалённый
 ход от локального.
@@ -106,9 +106,25 @@ CLI-классы, и `RemoteLlmClient`. Там же живут `describeClaudeEx
 Заводишь новый транспорт — кормишь тот же приёмник, а не копируешь `switch` по
 событиям.
 
-`id` рана генерирует СЕРВЕР до запроса: иначе отмену до первого байта ответа
+`runId` рана генерирует СЕРВЕР до запроса: иначе отмену до первого байта ответа
 некуда адресовать. `LlmHandle.cancel()` шлёт `DELETE /v1/run/:id` (исполнитель
 убивает свой CLI) и рвёт поток.
+
+### Форму тела `/v1/run` держит только `packages/shared`
+
+`apps/server/src/llm/protocol.ts` — тонкий адаптер: `RunnerRunBody` = `LlmRunBody`,
+`parseRunnerLine` = `parseLlmRunFrame`, пути из `LLM_RUNNER`. Своих определений там
+быть не должно. Пока они были (клиент слал конверт `{id, kind, request}`, а
+`badRequest` исполнителя валидировал `prompt`/`model`/`kind` на верхнем уровне),
+ходы не запускались вообще: `400 {"error":"bad_request","message":"prompt обязателен"}`
+на каждое сообщение обоим движкам. Ни typecheck, ни тесты этого не видели — фейковый
+исполнитель в тесте повторял форму за клиентом.
+
+Отсюда правило: контракт «сервер ↔ исполнитель» проверяется против НАСТОЯЩЕГО
+`buildRunner` (`apps/server/src/llm/runnerContract.test.ts` поднимает его с
+подменённым `RunManager` — spawn CLI не нужен, а валидация тела, Bearer и адресация
+`DELETE /v1/run/:id` настоящие). Фейковый HTTP-сервер годится только для проверок
+поведения потока (мусор в NDJSON, обрывы, таймауты).
 
 Ошибки транспорта переводятся в человеческий текст — аналог `describeSpawnError`,
 а не сетевой стектрейс: `ECONNREFUSED` → «исполнитель недоступен… проверьте, что
