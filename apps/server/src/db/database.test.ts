@@ -164,9 +164,9 @@ describe('VoiceChatDb — изоляция по пользователю', () =>
   })
 
   it('настройки раздельны у пользователей', () => {
-    db.saveSettings('admin', { ...DEFAULT_SETTINGS, model: 'opus' })
+    db.saveSettings('admin', { ...DEFAULT_SETTINGS, model: 'opus[1m]' })
     db.saveSettings('user', { ...DEFAULT_SETTINGS, model: 'sonnet' })
-    expect(db.getSettings('admin').model).toBe('opus')
+    expect(db.getSettings('admin').model).toBe('opus[1m]')
     expect(db.getSettings('user').model).toBe('sonnet')
   })
 
@@ -345,7 +345,7 @@ describe('VoiceChatDb — настройки', () => {
   it('сохраняет и читает настройки', () => {
     db.saveSettings(U, {
       ...DEFAULT_SETTINGS,
-      model: 'opus',
+      model: 'opus[1m]',
       whisperModel: 'medium',
       diarization: false,
       voice: 'dmitri',
@@ -364,7 +364,7 @@ describe('VoiceChatDb — настройки', () => {
       defaultAgentId: null
     })
     expect(db.getSettings(U)).toEqual({
-      model: 'opus',
+      model: 'opus[1m]',
       whisperModel: 'medium',
       diarization: false,
       voice: 'dmitri',
@@ -389,9 +389,9 @@ describe('VoiceChatDb — настройки', () => {
   })
 
   it('мержит с дефолтами при частичном/битом конфиге', () => {
-    db.saveSettings(U, { ...DEFAULT_SETTINGS, model: 'opus' })
+    db.saveSettings(U, { ...DEFAULT_SETTINGS, model: 'opus[1m]' })
     const s = db.getSettings(U)
-    expect(s.model).toBe('opus')
+    expect(s.model).toBe('opus[1m]')
     expect(s.voice).toBe(DEFAULT_SETTINGS.voice)
   })
 })

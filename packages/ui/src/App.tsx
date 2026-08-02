@@ -440,7 +440,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         }}
         onDelete={actions.deleteConversation}
         onRename={actions.renameConversation}
-        onStatusChange={(id, status) => void actions.setConversationStatus(id, status)}
+        defaultPermissionMode={state.settings.permissionMode}
         agents={state.agents}
         searchQuery={state.searchQuery}
         onSearch={actions.setSearchQuery}

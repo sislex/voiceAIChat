@@ -270,12 +270,12 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
           </label>
           {llmProvider === 'claude' && <label className="convsettings-field"><span>Модель Claude</span>
             <select aria-label="Модель разговора" value={normalizeClaudeModel(llmModel)} onChange={(e) => setLlmModel(e.target.value)}>
-              {modelsForRole(role).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              {modelsForRole(role).map((m) => <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>)}
             </select>
           </label>}
           {llmProvider === 'codex' && <label className="convsettings-field"><span>Модель Codex</span>
             <select aria-label="Модель разговора" value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>
-              {llmModel && !CODEX_MODELS.some((m) => m.id === llmModel) && <option value={llmModel}>{llmModel}</option>}
+              {!CODEX_MODELS.some((m) => m.id === llmModel) && <option value={llmModel}>{llmModel || 'По умолчанию (из codex)'}</option>}
               {CODEX_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
           </label>}

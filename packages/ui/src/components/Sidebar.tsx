@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   activeStatusLabel,
-  CONVERSATION_STATUSES,
-  DEFAULT_CONVERSATION_STATUS,
+  chatModeLabel,
   type Conversation,
-  type ConversationStatus,
   type MessageRole,
   type MessageSearchHit,
+  type PermissionMode,
   type SessionUser
 } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
@@ -202,8 +201,11 @@ export interface SidebarProps {
   onPick: (id: string) => void
   onDelete: (id: string) => void
   onRename: (id: string, title: string) => void
-  /** Сменить persistent-статус жизненного цикла чата. */
-  onStatusChange?: (id: string, status: ConversationStatus) => void
+  /**
+   * Режим из общих настроек: разговор со своим `permissionMode === null`
+   * наследует его, и подпись карточки должна показывать действующий режим.
+   */
+  defaultPermissionMode?: PermissionMode
   /** Живой список нужен только для имени машины последнего сообщения. */
   agents?: AgentInfo[]
   searchQuery: string
@@ -280,7 +282,7 @@ export function Sidebar({
   onPick,
   onDelete,
   onRename,
-  onStatusChange,
+  defaultPermissionMode = 'bypassPermissions',
   agents = [],
   searchQuery,
   onSearch,
@@ -613,26 +615,15 @@ export function Sidebar({
                       Последнее: {c.lastExecTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === c.lastExecTarget)?.name ?? 'Сервер'}
                     </p>
                   )}
+                  {/* Режим чата словом: во время хода — синяя мигающая точка и
+                      «идет …», в простое — тот же режим серым и без точки. */}
                   {workingSet.has(c.id) ? (
                     <p className="cstatus on">
                       <span className="cstatus-dot" aria-hidden />
-                      {activeStatusLabel(c.permissionMode)}
+                      {activeStatusLabel(c.permissionMode, defaultPermissionMode)}
                     </p>
                   ) : (
-                    <select
-                      className="cstatus-select"
-                      aria-label={`Статус разговора «${c.title}»`}
-                      value={c.status ?? DEFAULT_CONVERSATION_STATUS}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => {
-                        e.stopPropagation()
-                        onStatusChange?.(c.id, e.target.value as ConversationStatus)
-                      }}
-                    >
-                      {CONVERSATION_STATUSES.map((status) => (
-                        <option key={status.id} value={status.id}>{status.label}</option>
-                      ))}
-                    </select>
+                    <p className="cstatus">{chatModeLabel(c.permissionMode, defaultPermissionMode)}</p>
                   )}
                 </div>
                 {confirmingId !== c.id && renamingId !== c.id && (

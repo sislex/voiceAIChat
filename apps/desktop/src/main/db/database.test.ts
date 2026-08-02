@@ -186,7 +186,7 @@ describe('VoiceChatDb — настройки', () => {
 
   it('сохраняет и читает настройки', () => {
     db.saveSettings({
-      model: 'opus',
+      model: 'opus[1m]',
       whisperModel: 'medium',
       diarization: false,
       voice: 'dmitri',
@@ -208,7 +208,7 @@ describe('VoiceChatDb — настройки', () => {
       aiAssistPrompts: DEFAULT_SETTINGS.aiAssistPrompts
     })
     expect(db.getSettings()).toEqual({
-      model: 'opus',
+      model: 'opus[1m]',
       whisperModel: 'medium',
       diarization: false,
       voice: 'dmitri',
@@ -232,9 +232,9 @@ describe('VoiceChatDb — настройки', () => {
   })
 
   it('мержит с дефолтами при частичном/битом конфиге', () => {
-    db.saveSettings({ ...DEFAULT_SETTINGS, model: 'opus' })
+    db.saveSettings({ ...DEFAULT_SETTINGS, model: 'opus[1m]' })
     const s = db.getSettings()
-    expect(s.model).toBe('opus')
+    expect(s.model).toBe('opus[1m]')
     expect(s.voice).toBe(DEFAULT_SETTINGS.voice)
   })
 })

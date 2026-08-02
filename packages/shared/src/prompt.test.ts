@@ -46,15 +46,17 @@ describe('buildPrompt', () => {
 
 describe('claudeModelAlias', () => {
   it('маппит настройки в алиасы CLI (в т.ч. новые модели и старые значения)', () => {
-    expect(claudeModelAlias('opus')).toBe('opus')
+    // Пункты меню уходят в `claude --model` как есть, включая суффикс окна 1M.
+    expect(claudeModelAlias('default')).toBe('default')
+    expect(claudeModelAlias('opus[1m]')).toBe('opus[1m]')
     expect(claudeModelAlias('sonnet')).toBe('sonnet')
     expect(claudeModelAlias('fable')).toBe('fable')
     expect(claudeModelAlias('haiku')).toBe('haiku')
     // Старые значения из БД (до перехода на алиасы) тоже понимаются.
     expect(claudeModelAlias('sonnet-4.5')).toBe('sonnet')
-    expect(claudeModelAlias('opus-4.5')).toBe('opus')
-    // Неизвестное → безопасный дефолт.
-    expect(claudeModelAlias('что-то')).toBe('opus')
+    expect(claudeModelAlias('opus-4.5')).toBe('opus[1m]')
+    // Неизвестное → пункт «Default (recommended)», модель выбирает сам CLI.
+    expect(claudeModelAlias('что-то')).toBe('default')
   })
 })
 

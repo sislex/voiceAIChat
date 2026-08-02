@@ -176,6 +176,9 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   }, [detail?.interactions])
   const interactionsOf = (stepId: string): CiInteraction[] => interactionsByStep.get(stepId) ?? []
 
+  // Меню моделей для повтора работы модели — общая форма обоих списков.
+  const retryModels: Array<{ id: string; label: string }> = modelProvider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS
+
   const renderStep = (step: CiRunStep, nested: boolean): JSX.Element => {
     const hasPending = interactionsOf(step.id).some((it) => it.status === 'pending')
     const open = expanded[step.id] ?? (hasPending || step.status === 'running' || step.status === 'failed')
@@ -241,7 +244,13 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
                 <label>
                   Модель
                   <select className="sel" value={modelName} onChange={(e) => setModelName(e.target.value)}>
-                    {(modelProvider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                    {/* Модель рана может быть не из меню (дефолт CI, старая настройка,
+                        пустая строка = модель из config.toml codex) — иначе селект
+                        показал бы первый пункт, а повтор ушёл бы с другой моделью. */}
+                    {!retryModels.some((m) => m.id === modelName) && (
+                      <option value={modelName}>{modelName || 'По умолчанию (из codex)'}</option>
+                    )}
+                    {retryModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                   </select>
                 </label>
                 <Button disabled={!props.onRetryFromStep || (modelProvider === 'claude' && !modelName)} onClick={() => props.onRetryFromStep?.(runId, { provider: modelProvider, model: modelName, ...(llmEngineId ? { llmEngineId } : {}) })}>

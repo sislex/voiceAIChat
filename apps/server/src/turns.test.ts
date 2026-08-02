@@ -251,7 +251,7 @@ describe('turns: движок и модель разговора приорит�
     await run(conv.id)
 
     expect(codex.last()).toBeNull()
-    expect(claude.last()?.model).toBe('opus')
+    expect(claude.last()?.model).toBe('default')
     db.close()
   })
 })
