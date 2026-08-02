@@ -3,7 +3,7 @@ id: llm-runners
 title: Исполнители LLM: контейнеры с claude/codex CLI
 kind: feature
 updated: 2026-08-02
-checked: 54dba49
+checked: 06abc2a
 areas:
   - apps/llm-runner/src
   - packages/shared/src/llm.ts
@@ -116,6 +116,10 @@ Codex парсит сервер (`packages/shared/src/streamJson.ts`, `codexStre
 нет, вызовы MCP идут с bypass, но без упоминания модель знает только про `bash`)
 и прямо запрещают читать и править файлы через `bash`. Режим «План» говорит то же
 самое: читать — `read`, искать — `grep`, а `bash` остаётся для `ls` и истории git.
+Запрет чтения через `bash` с тех пор стал техническим (гейт в самом MCP-инструменте,
+см. `machines.md`), и промпты обоих движков предупреждают об этом заранее — «мост
+отклонит и вернёт готовый вызов `read`, а пайплайны и `grep -r` работают как
+обычно»: отказ, которого модель не ждала, она тратит ход на попытки обойти.
 Чем это обошлось в деньгах — `llm.md` и раздел про замер в
 [ci-runner.md](ci-runner.md). Тесты `claudeCli.test.ts`/`codexCli.test.ts`
 проверяют и allow-list, и упоминание инструментов в промпте: иначе регрессия
