@@ -152,9 +152,10 @@ describe('ci: глобальные настройки', () => {
     // Правка соседнего поля стадии не трогает.
     db.updateCiSettings({ maxFixAttempts: 2 })
     expect(db.getCiSettings().stageModels.kb_update).toBe('haiku')
-    // Тело запроса приходит из REST: чужие ключи и не-строки в БД не попадают.
+    // Тело запроса приходит из REST: чужие ключи и не-строки в БД не попадают,
+    // а патч на одну стадию не сбрасывает остальные.
     db.updateCiSettings({ stageModels: { kb_update: 'sonnet', чужое: 1 } as never })
-    expect(db.getCiSettings().stageModels).toEqual({ ...DEFAULT_CI_STAGE_MODELS, kb_update: 'sonnet' })
+    expect(db.getCiSettings().stageModels).toEqual({ model_work: '', fix: '', kb_update: 'sonnet', summary: '' })
   })
 })
 

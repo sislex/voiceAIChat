@@ -2718,7 +2718,9 @@ export class VoiceChatDb {
 
   updateCiSettings(patch: Partial<CiGlobalSettings>): CiGlobalSettings {
     const cur = this.getCiSettings()
-    const next = { ...cur, ...patch, stageModels: patch.stageModels ? normCiStageModels(patch.stageModels) : cur.stageModels }
+    // Стадии сливаются с текущими, а не заменяют их целиком: патч на одну стадию
+    // (правка по REST) не должен сбрасывать остальные в дефолты кода.
+    const next = { ...cur, ...patch, stageModels: patch.stageModels ? normCiStageModels({ ...cur.stageModels, ...patch.stageModels }) : cur.stageModels }
     this.db.prepare(`UPDATE ci_settings SET max_fix_attempts=?, fix_time_limit_ms=?, fix_token_limit=?, default_step_timeout_sec=?, metrics_window=?, max_concurrent_runs=?, max_model_command_calls=?, interaction_wait_ms=?, stage_models=? WHERE id=1`).run(next.maxFixAttempts, next.fixTimeLimitMs, next.fixTokenLimit, next.defaultStepTimeoutSec, next.metricsWindow, next.maxConcurrentRuns, next.maxModelCommandCalls, next.interactionWaitMs, JSON.stringify(next.stageModels))
     return next
   }
