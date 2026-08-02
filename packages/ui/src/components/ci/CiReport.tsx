@@ -156,7 +156,9 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
         />
         <Tile label="Запросов к модели" value={fmtTokens(totals?.requests ?? 0)} testId={`${testId}-requests`} />
         <Tile label="Время рана" value={fmtDuration(durationMs)} testId={`${testId}-duration`} />
-        <Tile label="Работа модели" value={fmtDuration(totals?.modelActiveMs ?? null)} testId={`${testId}-model-time`} />
+        {/* Ноль — это «CLI не сказал длительность ни по одному ходу» (старые раны
+            через исполнителя), а не «модель работала 0мс»: показываем прочерк. */}
+        <Tile label="Работа модели" value={fmtDuration(totals?.modelActiveMs || null)} testId={`${testId}-model-time`} />
       </div>
 
       {toolCalls && <p className="ci-report__note" data-testid={`${testId}-tools`}>

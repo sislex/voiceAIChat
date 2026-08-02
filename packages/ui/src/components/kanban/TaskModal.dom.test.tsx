@@ -433,6 +433,14 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     expect(text(tools)).toContain('bash 12')
   })
 
+  it('время работы модели без данных CLI — прочерк, а не «0мс»', async () => {
+    withReport(makeTaskReport([makeRunReport({ totals: makeUsageTotals({ modelActiveMs: 0 }) })]))
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    const tile = await screen.findByTestId('task-modal-report-model-time')
+    expect(text(tile)).toContain('—')
+  })
+
   it('у рана без счётчика вызовов строки инструментов нет (а не «0»)', async () => {
     withReport(makeTaskReport([makeRunReport({ toolCalls: null })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
