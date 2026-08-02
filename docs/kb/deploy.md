@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-08-02
-checked: 8fe0064
+checked: fe8b7b5
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -193,13 +193,13 @@ cd /root/voiceAIChat && git pull --ff-only origin main
 # фаза 1: собрать образы, не трогая работающие контейнеры
 setsid nohup sh -c 'cd /root/voiceAIChat \
   && docker compose build voicechat runner-work runner-personal; \
-  echo $? > /tmp/prod-build.exit' > /tmp/prod-build.log 2>&1 < /dev/null &
-# ждать повторными дешёвыми вызовами: tail /tmp/prod-build.log + cat /tmp/prod-build.exit
+  echo $? > /tmp/prod-build-<N>.exit' > /tmp/prod-build-<N>.log 2>&1 < /dev/null &
+# ждать повторными дешёвыми вызовами: tail /tmp/prod-build-<N>.log + cat …exit
 # (sleep внутри команды моста не помогает — таймаут убивает её вместе со sleep)
 
 # фаза 2: поднять готовые образы, когда ран уже закрылся
 setsid nohup sh -c 'sleep 1600; cd /root/voiceAIChat && docker compose up -d' \
-  > /tmp/voicechat-prod-rebuild.log 2>&1 < /dev/null &
+  > /tmp/voicechat-prod-rebuild-<N>.log 2>&1 < /dev/null &
 ```
 
 `docker compose build` не пересоздаёт контейнеры, поэтому его смерть по таймауту
@@ -212,6 +212,13 @@ setsid nohup sh -c 'sleep 1600; cd /root/voiceAIChat && docker compose up -d' \
 того, что к тому моменту случилось с общим прод-каталогом. Цена — в образы
 попадает дерево на момент `build`, а собственный коммит рана доедет до прода
 следующим деплоем; для правок документации это и нужно.
+
+Проверку здоровья отложенный сеанс делает **с хоста**, по опубликованному порту
+`8787` (`http://127.0.0.1:8787/api/health`), — как `scripts/prod/deploy.sh`.
+Изнутри серверного контейнера её сделать нечем: в образе нет ни `curl`, ни `wget`.
+И результат всей второй фазы виден только в её логе — к моменту `up -d` ран уже
+закрыт, в ленте этого нет, поэтому лог называют по номеру задачи
+(`/tmp/voicechat-prod-rebuild-67.log`), чтобы он не затирался следующей пересборкой.
 
 ## Прод мог обновиться и без рана: сначала проверь, потом пересобирай
 
@@ -245,6 +252,16 @@ docker exec voiceaichat-voicechat-1 grep -c keepActiveListed /app/apps/web/dist/
 Дата сборки образа (`docker images voicechat`) отвечает только «когда», но не «что»:
 прод-каталог — заодно рабочая копия чат-сессий, поэтому образ мог быть собран и из
 грязного дерева.
+
+Полное сравнение `sha256sum` нужно именно при подозрении на грязное дерево. В
+обычном случае отставание считают лестницей от дешёвого к дорогому: `git status` и
+`git rev-list --count HEAD..origin/main` в `/root/voiceAIChat` (сколько коммитов не
+доехало и нет ли встречных), затем сверка времени создания образов с временем
+коммита `HEAD` — если образы моложе коммита на минуты, они собраны именно с этой
+вершины, — и только потом один файл-маркер из ожидаемого коммита (`docker exec …
+ls /app/scripts/ci-usage-report.mjs`). Лестницы хватает и на главный вопрос
+карточки: в ней обычно перечислен десяток задач, а отстают одна-две — те, чьи
+коммиты лежат в `HEAD..origin/main`, остальные уже предки прод-вершины.
 
 Третий способ пересобрать, помимо боевого шага и двухфазного из рана, — вынести
 пересборку из рана вообще: внешний сеанс (`setsid`) опрашивает раны проекта, ждёт,
