@@ -11,11 +11,39 @@ import {
   statSync,
   writeFileSync
 } from 'node:fs'
-import { basename, dirname, resolve, sep } from 'node:path'
+import { basename, dirname, posix, resolve, sep, win32 } from 'node:path'
 import type { AgentPolicy, FsResult } from '@voicechat/shared'
+import { isWindows } from './platform.js'
 
 /** Лимит на чтение/запись одного файла (base64 раздувает ~на треть). */
 export const FS_MAX_BYTES = 32 * 1024 * 1024
+
+/** `/c/Users/x` → `C:\Users\x`; всё остальное — как есть. */
+function fromMsysPath(path: string): string {
+  // Только прямые слэши: `\c\Users` на Windows — нормальный путь от корня
+  // текущего диска, а не MSYS-путь, и трогать его нельзя.
+  const m = /^\/([A-Za-z])(?:\/(.*))?$/.exec(path)
+  return m ? `${m[1].toUpperCase()}:\\${m[2] ?? ''}` : path
+}
+
+/**
+ * Абсолютный нативный путь. На Windows дополнительно разворачивает MSYS/Git
+ * Bash-пути диска (`/c/Users/x` → `C:\Users\x`): такие пути приходят от модели,
+ * работающей в git-bash (см. MCP `bash` в docs/kb/machines.md), а `resolve()`
+ * считал бы их путями от корня текущего диска и давал несуществующий
+ * `C:\c\Users\x` → ENOENT на fs.read.
+ *
+ * На POSIX `/c/...` — обычный каталог, поэтому преобразование только на win32;
+ * платформа параметром, чтобы win32-ветка проверялась на POSIX-CI.
+ */
+export function toNativePath(path: string, platform: NodeJS.Platform = process.platform): string {
+  const win = isWindows(platform)
+  const impl = win ? win32 : posix
+  const abs = impl.resolve(win ? fromMsysPath(path.trim()) : path.trim())
+  // Букву диска приводим к верхнему регистру: иначе `/c/...` и `c:\...` дали бы
+  // разные строки и сравнение с allowedDirs зависело бы от регистра ввода.
+  return win && /^[a-z]:/.test(abs) ? abs[0].toUpperCase() + abs.slice(1) : abs
+}
 
 /** Проверка доступа к пути по политике; кидает при нарушении. */
 function assertAllowed(policy: AgentPolicy, abs: string, forWrite: boolean): void {
@@ -23,9 +51,15 @@ function assertAllowed(policy: AgentPolicy, abs: string, forWrite: boolean): voi
     throw new Error('изменение файлов запрещено политикой машины')
   }
   if (policy.allowedDirs.length > 0) {
+    // На Windows ФС регистронезависима, поэтому и сравниваем без учёта регистра —
+    // иначе `C:\Users` в политике не совпал бы с `c:\users` из запроса.
+    const fold = (s: string): string => (isWindows() ? s.toLowerCase() : s)
+    const target = fold(abs)
     const ok = policy.allowedDirs.some((d) => {
-      const base = resolve(d)
-      return abs === base || abs.startsWith(base.endsWith(sep) ? base : base + sep)
+      // allowedDirs нормализуем той же функцией: в политику тоже могли записать
+      // MSYS-путь, и сравнивать надо однородные абсолютные пути.
+      const base = fold(toNativePath(d))
+      return target === base || target.startsWith(base.endsWith(sep) ? base : base + sep)
     })
     if (!ok) throw new Error('путь вне разрешённых каталогов машины')
   }
@@ -33,7 +67,7 @@ function assertAllowed(policy: AgentPolicy, abs: string, forWrite: boolean): voi
 
 /** Абсолютный путь из запроса: пусто → корень; иначе — как есть (нормализуется). */
 function absPath(root: string, path: string): string {
-  return resolve(path && path.trim() ? path : root)
+  return toNativePath(path && path.trim() ? path : root)
 }
 
 /** Листинг каталога → FsResult (переиспользуется после мутаций для обновления UI). */

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, win32 } from 'node:path'
 import { DEFAULT_AGENT_POLICY, type AgentPolicy } from '@voicechat/shared'
-import { fsList, fsRead, fsWrite, fsDelete, fsRename, fsMkdir } from './fileOps'
+import { fsList, fsRead, fsWrite, fsDelete, fsRename, fsMkdir, toNativePath } from './fileOps'
 
 const OPEN: AgentPolicy = { ...DEFAULT_AGENT_POLICY }
 
@@ -60,5 +60,48 @@ describe('fileOps', () => {
   it('allowedDirs ограничивает доступ вне разрешённых каталогов', () => {
     const limited: AgentPolicy = { ...DEFAULT_AGENT_POLICY, allowedDirs: [join(root, 'sub')] }
     expect(() => fsList(root, limited, root)).toThrow(/вне разрешённых/i)
+  })
+
+  it('allowedDirs проверяется по НОРМАЛИЗОВАННОМУ пути (`..` не обходит политику)', () => {
+    fsMkdir(root, OPEN, join(root, 'sub'))
+    const limited: AgentPolicy = { ...DEFAULT_AGENT_POLICY, allowedDirs: [join(root, 'sub')] }
+    expect(() => fsList(root, limited, join(root, 'sub', '..'))).toThrow(/вне разрешённых/i)
+    expect(fsList(root, limited, join(root, 'sub', '.')).cwd).toBe(join(root, 'sub'))
+  })
+})
+
+describe('пути Git Bash (MSYS) на Windows', () => {
+  const MSYS = '/c/Users/Lenovo/public/seo-second-page-retouched.png'
+
+  it('регрессия: /c/Users/... больше не превращается в …\\c\\Users\\… (ENOENT на fs.read)', () => {
+    // Старое поведение: resolve() считал MSYS-путь путём от корня текущего диска.
+    expect(win32.resolve(MSYS)).toMatch(/^(?:[A-Za-z]:)?\\c\\Users\\Lenovo\\public\\/)
+    expect(toNativePath(MSYS, 'win32')).toBe('C:\\Users\\Lenovo\\public\\seo-second-page-retouched.png')
+  })
+
+  it('буква диска в любом регистре', () => {
+    expect(toNativePath('/C/Users/Lenovo', 'win32')).toBe('C:\\Users\\Lenovo')
+    expect(toNativePath('/d/tmp/x.png', 'win32')).toBe('D:\\tmp\\x.png')
+    expect(toNativePath('/c', 'win32')).toBe('C:\\')
+  })
+
+  it('нативные Windows-пути не ломаются', () => {
+    expect(toNativePath('C:\\Users\\Lenovo\\public\\a.png', 'win32')).toBe('C:\\Users\\Lenovo\\public\\a.png')
+    expect(toNativePath('C:/Users/Lenovo/public/a.png', 'win32')).toBe('C:\\Users\\Lenovo\\public\\a.png')
+    expect(toNativePath('c:\\Users\\x', 'win32')).toBe('C:\\Users\\x') // регистр диска нормализуется
+    expect(toNativePath('\\\\srv\\share\\a.png', 'win32')).toBe('\\\\srv\\share\\a.png') // UNC не трогаем
+    // `\c\...` — путь от корня ТЕКУЩЕГО диска, а не MSYS: букву диска отсюда не берём.
+    expect(toNativePath('\\c\\tmp', 'win32')).toMatch(/\\c\\tmp$/)
+  })
+
+  it('на POSIX /c/... остаётся обычным путём', () => {
+    expect(toNativePath(MSYS, 'linux')).toBe(MSYS)
+    expect(toNativePath('/c/x/../y', 'darwin')).toBe('/c/y')
+  })
+
+  it.runIf(process.platform === 'win32')('fsRead читает файл по MSYS-пути', () => {
+    const msys = `/${root[0].toLowerCase()}${root.slice(2).replace(/\\/g, '/')}/a.txt`
+    const res = fsRead(root, OPEN, msys)
+    expect(Buffer.from(res.dataBase64!, 'base64').toString('utf8')).toBe('привет')
   })
 })
