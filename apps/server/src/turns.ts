@@ -310,7 +310,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               sections: auto.sections
             })
           } else {
-            usage?.empty(auto.emptyReason ?? 'no-match')
+            usage?.empty(auto.emptyReason ?? 'no-match', auto.bundle.confidence)
           }
         } catch (err) {
           // KB не должна блокировать основной ход: exact/BM25/reranker могут быть временно недоступны.

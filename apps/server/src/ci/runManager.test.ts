@@ -674,6 +674,9 @@ describe('ci run manager: база знаний', () => {
     const chatId = db.getCiRunRaw(runId)!.conversationId!
     const summary = db.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary)!
     expect(summary.text).toMatch(/БЗ: \d+ обращений, \d+ разделов, ≈\d+ токенов/)
+    // Попадание — часть той же строки: без доли счётчик разделов не говорит,
+    // пригодился ли хоть один из них.
+    expect(summary.text).toMatch(/пригодились \d+ из \d+ \(\d+%\)/)
   })
 
   it('режим «off» у проекта: ни контекста, ни инструментов, телеметрия пустая', async () => {

@@ -1423,7 +1423,16 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     try {
       const report = deps.db.kbUsageRunReport(userId, runId)
       if (!report || !report.totals.queries) return ''
-      return `\n\n${formatKbUsageSummaryLine(report.totals)}`
+      // Попадание считаем здесь же: резюме уходит до finalize, а без доли строка
+      // «выдано 5 разделов» не говорит, пригодился ли хоть один. Пересчёт в
+      // finalize перепишет ту же строку метрик — она upsert по рану.
+      let hit: { sectionsDelivered: number; sectionsHit: number; hitRatio: number } | null = null
+      try {
+        hit = deps.db.calculateAndSaveCiKbHit(runId)
+      } catch {
+        /* попадание — украшение строки, а не сама строка */
+      }
+      return `\n\n${formatKbUsageSummaryLine(report.totals, hit)}`
     } catch {
       return ''
     }

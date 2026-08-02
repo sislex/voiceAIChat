@@ -12,6 +12,7 @@ import type { CiRunMode, CiToolCalls, CiUsageKind, KbContextMode, TurnMeta, Turn
 import { ciToolBroker } from './ciCommandsMcp.js'
 import { kbToolBroker, kbRunDirective, type KbToolEntry } from '../kb/kbMcp.js'
 import { buildKbAutoContext } from '../kb/autoContext.js'
+import { kbCodeQuery, kbTaskQuery } from '../kb/taskQuery.js'
 import { kbViewOf } from '../kb/access.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import type { KbUsageTracker } from '../kb/usage.js'
@@ -54,28 +55,6 @@ export interface CiModelHooksDeps {
   kbToolEnabled?: boolean
   /** Брокер токенов ходов БЗ (в тестах — двойник, следящий за утечкой). */
   kbTool?: { register(token: string, entry: KbToolEntry): void; unregister(token: string): void }
-}
-
-/**
- * Кап на длину запроса к БЗ по задаче: описание и критерии приёмки бывают на
- * несколько экранов, а поиску нужна тема, а не весь текст.
- */
-const KB_QUERY_CHARS = 1200
-
-/**
- * Запрос авто-контекста БЗ по задаче. BM25 по всему тексту задачи размывается на
- * частотных словах, поэтому из описания и критериев приёмки берутся только
- * сигнальные части — содержимое `бэктиков` (пути, идентификаторы вроде
- * useAiAssist) — плюс заголовок. Многострочные ```блоки кода``` не берутся: это
- * код, а не тема. Бэктиков нет — выделять нечего, уходит весь текст с обрезкой.
- */
-export function kbTaskQuery(task: { title: string; description?: string | null; acceptanceCriteria?: string | null }): string {
-  const body = [task.description, task.acceptanceCriteria].filter(Boolean).join('\n')
-  const inline = [...body.replace(/```[\s\S]*?(```|$)/g, ' ').matchAll(/`([^`\n]+)`/g)].map((m) => m[1].trim()).filter(Boolean)
-  const query = inline.length
-    ? [task.title, ...new Set(inline)].filter(Boolean).join('\n')
-    : [task.title, task.description, task.acceptanceCriteria].filter(Boolean).join('\n')
-  return query.trim().slice(0, KB_QUERY_CHARS)
 }
 
 /**
@@ -390,15 +369,15 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   }
 
   /**
-   * Авто-контекст БЗ по теме задачи (режим `auto`): компактный запрос по задаче
-   * (kbTaskQuery) идёт тем же поиском и с тем же порогом уверенности, что и ход
-   * чата (kb/autoContext.ts). Никогда не бросает: сломанная БЗ — это пустой
-   * контекст и обращение со статусом `error`, но не упавший ран.
+   * Авто-контекст БЗ по теме задачи (режим `auto`): разобранный на прозу и код
+   * запрос (kb/taskQuery.ts) идёт тем же поиском и с тем же порогом уверенности,
+   * что и ход чата (kb/autoContext.ts). Никогда не бросает: сломанная БЗ — это
+   * пустой контекст и обращение со статусом `error`, но не упавший ран.
    */
   async function kbTaskContext(ctx: CiModelContext, turnId: string, stepId: string): Promise<string> {
     if (!deps.kb || kbModeOf(ctx) !== 'auto') return ''
     const query = kbTaskQuery(ctx.task)
-    if (!query) return ''
+    if (!query.text && !query.paths.length && !query.symbols.length) return ''
     const usage = deps.kbUsage?.begin(
       {
         userId: ctx.run.triggeredBy,
@@ -409,7 +388,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         ciStepId: stepId,
         source: 'auto'
       },
-      query
+      // В телеметрии видно ровно то, что ушло в поиск: проза, а за ней код.
+      [query.text, kbCodeQuery(query)].filter(Boolean).join('\n')
     )
     try {
       const auto = await buildKbAutoContext(deps.kb, query, {
@@ -417,7 +397,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         projectId: ctx.project.id
       })
       if (!auto.text) {
-        usage?.empty(auto.emptyReason ?? 'no-match')
+        usage?.empty(auto.emptyReason ?? 'no-match', auto.bundle.confidence)
         return ''
       }
       usage?.complete({

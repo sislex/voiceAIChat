@@ -168,8 +168,12 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
             видом, поэтому идёт отдельной припиской и только когда он был. */}
         {toolCalls.denied > 0 && ` · отказов ${toolCalls.denied}`}
       </p>}
-      {kbHit && <p className="ci-report__note" data-testid={`${testId}-kb-hit`}>
-        БЗ: выдано {kbHit.sectionsDelivered} разделов, задето {kbHit.sectionsHit} файлов из них
+      {/* Доля важнее счётчика: «выдано 5 разделов» само по себе не говорит,
+          пригодился ли хоть один. Раздел считается пригодившимся, когда модель
+          открыла файл из его areas (ci/kbHit.ts). */}
+      {kbHit && kbHit.sectionsDelivered > 0 && <p className="ci-report__note" data-testid={`${testId}-kb-hit`}>
+        БЗ: выдано {kbHit.sectionsDelivered} разделов, пригодились {kbHit.sectionsHit}
+        {' '}({Math.round((kbHit.sectionsHit / kbHit.sectionsDelivered) * 100)}% — модель открыла файлы из них)
       </p>}
       {run ? (
         <>

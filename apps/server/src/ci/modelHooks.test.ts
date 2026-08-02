@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { EMPTY_CI_TOOL_CALLS } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
 import { createCiModelHooks } from './modelHooks.js'
+import { kbTaskQuery } from '../kb/taskQuery.js'
 import type { CiFixContext, CiModelContext } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
@@ -203,7 +204,7 @@ describe('работа модели: база знаний по режимам �
     expect(asked[0]).toContain('Обращения видны')
   })
 
-  it('auto: описание с бэктиками даёт компактный запрос — заголовок и сигнальные части', async () => {
+  it('auto: описание с кодом сохраняет прозу и уводит пути с символами в свою дорожку', async () => {
     const asked: string[] = []
     const kb = stubKb({ context: async (query: string) => { asked.push(query); return bundle } })
     const { ctx } = setup('auto', undefined, {
@@ -211,12 +212,17 @@ describe('работа модели: база знаний по режимам �
       acceptanceCriteria: 'Хук `useAiAssist` сохраняет черновик.'
     })
     await hooksWith(recorder().client, { kb }).modelWork(ctx)
+    // Лексическая дорожка одна: выдача сложилась, до кодовой дело не дошло.
     expect(asked).toHaveLength(1)
     expect(asked[0]).toContain('Кнопка «Выполнить»')
-    expect(asked[0]).toContain('packages/ui/src/components/kanban/TaskModal.tsx')
-    expect(asked[0]).toContain('useAiAssist')
-    expect(asked[0]).not.toContain('модалка размывает поиск')
+    // Проза остаётся: без неё от технической задачи не остаётся темы.
+    expect(asked[0]).toContain('модалка размывает поиск')
+    // Многострочный блок кода — не тема задачи.
     expect(asked[0]).not.toContain('noise')
+    // Пути и символы уходят второй дорожкой, и она видна в тексте обращения.
+    const query = kbTaskQuery(ctx.task)
+    expect(query.paths).toContain('packages/ui/src/components/kanban/TaskModal.tsx')
+    expect(query.symbols).toContain('useAiAssist')
   })
 
   it('manual: инструменты есть, авто-контекста нет — БЗ не спрашивают вовсе', async () => {

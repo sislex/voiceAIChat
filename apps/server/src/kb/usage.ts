@@ -56,13 +56,23 @@ export interface KbUsageCompleteArgs {
   confidence?: 'high' | 'medium' | 'low' | null
 }
 
+/**
+ * Почему обращение осталось без текста. Причина пишется всегда: «пусто» без
+ * причины неотличимо от поломки, и по такой строке нельзя понять, чинить поиск
+ * или порог уверенности.
+ */
+export type KbEmptyReason = 'no-match' | 'low-confidence' | 'budget'
+
 /** Одно открытое обращение. Терминальный метод вызывается ровно один раз. */
 export interface KbUsageHandle {
   /** id обращения: он же в кадре `pending` и в строке БД. */
   readonly id: string
   complete(args: KbUsageCompleteArgs): void
-  /** Разделов нет или уверенность низкая — обращение было, текста не было. */
-  empty(reason: 'no-match' | 'low-confidence'): void
+  /**
+   * Текста не было. `confidence` — уверенность бандла, который до промпта не
+   * доехал: у пустой строки она такой же факт, как у доставленной.
+   */
+  empty(reason: KbEmptyReason, confidence?: 'high' | 'medium' | 'low' | null): void
   fail(message: string): void
 }
 
@@ -88,9 +98,10 @@ const NOOP_HANDLE: KbUsageHandle = {
 }
 
 /** Причина пустого обращения человеческим текстом (её видно в ленте панели). */
-const EMPTY_REASON: Record<'no-match' | 'low-confidence', string> = {
+const EMPTY_REASON: Record<KbEmptyReason, string> = {
   'no-match': 'в базе знаний ничего не нашлось',
-  'low-confidence': 'совпадения слабые — контекст не добавлен'
+  'low-confidence': 'совпадения слабые — контекст не добавлен',
+  budget: 'найденное не поместилось в бюджет контекста'
 }
 
 export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
@@ -239,8 +250,8 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
           confidence: args.confidence ?? null
         })
       },
-      empty(reason) {
-        finish({ status: 'empty', chars: 0, error: EMPTY_REASON[reason] })
+      empty(reason, confidence) {
+        finish({ status: 'empty', chars: 0, error: EMPTY_REASON[reason], confidence: confidence ?? null })
       },
       fail(message) {
         finish({ status: 'error', chars: 0, error: message })
