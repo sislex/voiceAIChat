@@ -426,14 +426,17 @@ describe('встроенный шаг «Актуализировать базу 
 // задним числом нельзя. Значит различать движки надо на чтении — иначе суммы
 // «до/после» складывают вход codex вместе с кэшем и вход claude без него.
 describe('ci: расход модели и семантика входных токенов', () => {
-  const legacy = (runId: string, provider: 'claude' | 'codex', over: Record<string, number> = {}): void => {
+  /** Строка расхода в старой форме: колонки семантики входа у неё нет. */
+  const legacy = (runId: string, provider: 'claude' | 'codex', over: Record<string, number> = {}): string => {
+    const id = `legacy-${runId}-${provider}`
     const handle = (db as unknown as { db: Database.Database }).db
     handle.prepare(
       `INSERT INTO ci_run_usage (id, run_id, step_id, kind, provider, model, input_tokens, output_tokens,
         cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, num_turns, input_semantics, at)
        VALUES (?, ?, NULL, 'model_work', ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, NULL, 1)`
-    ).run(`legacy-${runId}-${provider}`, runId, provider, provider === 'codex' ? 'gpt-5.4' : 'opus',
+    ).run(id, runId, provider, provider === 'codex' ? 'gpt-5.4' : 'opus',
       over.input ?? 1_000_000, over.output ?? 1000, over.cacheRead ?? 800_000)
+    return id
   }
 
   function run() {
@@ -446,11 +449,12 @@ describe('ci: расход модели и семантика входных т�
 
   it('новая строка помечена приведённой, старая строка codex — «вход с кэшем»', () => {
     const r = run()
-    db.addCiRunUsage({ runId: r.id, stepId: null, kind: 'model_work', provider: 'codex', model: 'gpt-5.4', inputTokens: 200_000, cacheReadTokens: 800_000 })
-    legacy(r.id, 'codex')
-    const [fresh, old] = db.listCiRunUsage(r.id)
-    expect(fresh.inputSemantics).toBe('no_cache')
-    expect(old.inputSemantics).toBe('with_cache')
+    const fresh = db.addCiRunUsage({ runId: r.id, stepId: null, kind: 'model_work', provider: 'codex', model: 'gpt-5.4', inputTokens: 200_000, cacheReadTokens: 800_000 })
+    const oldId = legacy(r.id, 'codex')
+    // Ищем по id, а не по позиции: у подложенной старой строки своё `at`.
+    const rows = db.listCiRunUsage(r.id)
+    expect(rows.find((x) => x.id === fresh.id)!.inputSemantics).toBe('no_cache')
+    expect(rows.find((x) => x.id === oldId)!.inputSemantics).toBe('with_cache')
   })
 
   it('старая строка claude остаётся «без кэша»: у него вход и раньше был чистым', () => {
