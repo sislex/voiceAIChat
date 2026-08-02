@@ -2,8 +2,18 @@
 
 import { buildServer } from './server.js'
 import { loadConfig } from './config.js'
+import { mcpBaseMisconfigured } from './mcp/publicBase.js'
 
 const config = loadConfig()
+
+if (mcpBaseMisconfigured(config)) {
+  console.warn(
+    '[server] VC_MCP_PUBLIC_BASE не задан при настроенном исполнителе LLM: ' +
+      'MCP-инструменты (mcp__remote__*, mcp__kb__*) не появятся у модели — ' +
+      'из контейнера исполнителя loopback ведёт в него самого. ' +
+      'Укажите адрес сервера, видимый исполнителю (в compose — http://voicechat:8787).'
+  )
+}
 
 const app = await buildServer({ config })
 
