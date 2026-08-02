@@ -87,6 +87,11 @@ describe('CodexCli', () => {
     expect(input).toContain('remote')
     expect(input).toContain('Мак')
     expect(input).toContain('сделай что-то')
+    // Файловые инструменты сервера: без упоминания модель знает только bash и
+    // читает файлы `cat`, а правит heredoc'ом — ради этого их и заводили.
+    expect(input).toContain('read')
+    expect(input).toContain('grep')
+    expect(input).toContain('edit')
   })
 
   it('kbMcpUrl: сервер kb подключается и в режиме «План» (БЗ read-only)', async () => {

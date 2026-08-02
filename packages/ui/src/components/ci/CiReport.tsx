@@ -9,10 +9,12 @@
 // задачу целиком, а «где время» — про конкретный ран.
 //
 // Расход у старых ранов пустой (строк `ci_run_usage` до фичи не было) — тогда в
-// плитках прочерки, а шаги и длительности показываются как обычно.
+// плитках прочерки, а шаги и длительности показываются как обычно. Строки
+// «Инструменты» у такого рана нет вовсе: ноль вызовов читался бы как поломка.
 
 import { useMemo, useState } from 'react'
 import type { CiRunReport, CiRunReportStep, CiTaskReport, CiUsageTotals } from '@shared/ci'
+import { ciToolCallsTotal, sumCiToolCalls } from '@shared/ci'
 import { ciStatusIcon, ciStatusLabel, ciTone, fmtDuration, fmtTokens, fmtUsd } from './ciFormat'
 
 export interface CiReportProps {
@@ -53,6 +55,10 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
   const run: CiRunReport | null = runs.find((r) => r.runId === selected) ?? null
   const totals: CiUsageTotals | null = run ? run.totals : (report?.totals ?? null)
   const durationMs = run ? run.durationMs : (report?.durationMs ?? null)
+  // Вызовы инструментов: у выбранного рана свои, у итога — сумма тех ранов, где
+  // счётчик есть. null (ран до фичи) сохраняется как null: ноль читался бы как
+  // «модель не вызвала ничего».
+  const toolCalls = run ? run.toolCalls : sumCiToolCalls(runs.map((r) => r.toolCalls))
   const kbHit = run?.kbHit ?? (!run
     ? runs.reduce<{ sectionsDelivered: number; sectionsHit: number } | null>((sum, item) => item.kbHit
       ? { sectionsDelivered: (sum?.sectionsDelivered ?? 0) + item.kbHit.sectionsDelivered, sectionsHit: (sum?.sectionsHit ?? 0) + item.kbHit.sectionsHit }
@@ -137,13 +143,15 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
         <Tile
           label="Стоимость"
           value={fmtUsd(totals?.costUsd ?? null, totals?.costEstimated)}
-          note={totals?.costEstimated ? 'оценка по прайсу' : undefined}
+          note={totals?.costUnderstated
+            ? 'оценка по прайсу, итог занижен: у части ходов модель неизвестна'
+            : totals?.costEstimated ? 'оценка по прайсу' : undefined}
           testId={`${testId}-cost`}
         />
         <Tile
           label="Токены"
           value={fmtTokens(totals?.tokens ?? 0)}
-          note={`вход ${fmtTokens(totals?.inputTokens ?? 0)} · выход ${fmtTokens(totals?.outputTokens ?? 0)} · кэш ${fmtTokens((totals?.cacheReadTokens ?? 0) + (totals?.cacheCreationTokens ?? 0))}`}
+          note={`вход ${fmtTokens(totals?.inputTokens ?? 0)} · выход ${fmtTokens(totals?.outputTokens ?? 0)} · кэш ${fmtTokens((totals?.cacheReadTokens ?? 0) + (totals?.cacheCreationTokens ?? 0))}${totals?.inputNormalized ? ' · вход приведён к «без кэша»' : ''}`}
           testId={`${testId}-tokens`}
         />
         <Tile label="Запросов к модели" value={fmtTokens(totals?.requests ?? 0)} testId={`${testId}-requests`} />
@@ -151,6 +159,10 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
         <Tile label="Работа модели" value={fmtDuration(totals?.modelActiveMs ?? null)} testId={`${testId}-model-time`} />
       </div>
 
+      {toolCalls && <p className="ci-report__note" data-testid={`${testId}-tools`}>
+        Инструменты: {ciToolCallsTotal(toolCalls)} вызовов, из них чтений {toolCalls.read}, правок {toolCalls.edit}
+        {' '}(bash {toolCalls.bash} · read {toolCalls.read} · grep {toolCalls.grep} · edit {toolCalls.edit} · БЗ {toolCalls.kb})
+      </p>}
       {kbHit && <p className="ci-report__note" data-testid={`${testId}-kb-hit`}>
         БЗ: выдано {kbHit.sectionsDelivered} разделов, задето {kbHit.sectionsHit} файлов из них
       </p>}

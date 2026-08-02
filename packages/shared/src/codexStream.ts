@@ -123,11 +123,13 @@ export function parseCodexActivity(line: string): ClaudeLogEntry | null {
       if (t === 'command_execution') {
         const cmd = typeof item.command === 'string' ? item.command : safeJson(item)
         const out = typeof item.aggregated_output === 'string' ? item.aggregated_output : undefined
-        return { kind: 'tool_use', summary: `$ ${truncate(cmd)}`, detail: out, raw }
+        // `shell` — собственный запуск команды codex (аналог встроенного Bash у
+        // claude): в счётчике вызовов он идёт как команда, а не как файловый тул.
+        return { kind: 'tool_use', summary: `$ ${truncate(cmd)}`, detail: out, raw, tool: 'shell' }
       }
       if (t === 'mcp_tool_call') {
         const name = [item.server, item.tool].filter(Boolean).join(':') || 'mcp'
-        return { kind: 'tool_use', summary: `${name}: ${truncate(safeJson(item.arguments ?? {}))}`, raw }
+        return { kind: 'tool_use', summary: `${name}: ${truncate(safeJson(item.arguments ?? {}))}`, raw, tool: name }
       }
       if (t === 'file_change' || t === 'patch') {
         return { kind: 'tool_use', summary: `Правка файлов: ${truncate(safeJson(item))}`, raw }

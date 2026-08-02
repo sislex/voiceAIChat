@@ -387,6 +387,13 @@ export interface ClaudeLogEntry {
   kind: ClaudeLogKind
   /** Короткая читаемая строка для панели. */
   summary: string
+  /**
+   * Имя инструмента ровно в том виде, как его назвал CLI: `mcp__remote__read` у
+   * claude, `remote:read` у codex, `Bash` у встроенного. Структурная метка для
+   * счётчиков вызовов (`classifyCiToolCall`) — в панели показывается `summary`,
+   * а не она. Есть только у `kind === 'tool_use'`; у старых записей нет.
+   */
+  tool?: string
   /** Доп. детали (полный ввод инструмента / результат / размышление). */
   detail?: string
   /** Сырая строка stream-json (для раскрытия «как в консоли»). */

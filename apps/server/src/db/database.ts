@@ -101,9 +101,13 @@ import {
   type CiEventActor,
   type CiRunUsage,
   type CiUsageKind,
+  type CiInputSemantics,
+  type CiToolCalls,
   type CiRunReport,
   type CiRunReportStep,
   type CiTaskReport,
+  CI_TOOL_KINDS,
+  EMPTY_CI_TOOL_CALLS,
   ciTaskTotals,
   ciUsageTotals,
   isVerificationCommand
@@ -685,6 +689,10 @@ export class VoiceChatDb {
       const mark = this.db.prepare(`UPDATE ci_commands SET is_test = 1, available_to_model = 0 WHERE id = ?`)
       for (const r of rows) if (isVerificationCommand(r)) mark.run(r.id)
     }
+    // Семантика входных токенов строки расхода. Старые строки остаются с NULL:
+    // у codex это «вход вместе с кэшем», и отчёт приводит их на чтении.
+    const ciUsageCols = this.db.prepare(`PRAGMA table_info(ci_run_usage)`).all() as Array<{ name: string }>
+    if (ciUsageCols.length && !ciUsageCols.some((c) => c.name === 'input_semantics')) this.db.exec(`ALTER TABLE ci_run_usage ADD COLUMN input_semantics TEXT`)
     const ciSettingsCols = this.db.prepare(`PRAGMA table_info(ci_settings)`).all() as Array<{ name: string }>
     if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === 'interaction_wait_ms')) this.db.exec(`ALTER TABLE ci_settings ADD COLUMN interaction_wait_ms INTEGER NOT NULL DEFAULT 1800000`)
 
@@ -2882,20 +2890,24 @@ export class VoiceChatDb {
     costUsd?: number | null
     durationMs?: number | null
     numTurns?: number | null
+    /** Семантика `inputTokens`; по умолчанию — приведённая («вход без кэша»). */
+    inputSemantics?: CiInputSemantics
   }): CiRunUsage {
     const id = this.newId()
     const at = this.now()
     this.db
       .prepare(
         `INSERT INTO ci_run_usage (id, run_id, step_id, kind, provider, model, input_tokens, output_tokens,
-                                   cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, num_turns, at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                                   cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, num_turns,
+                                   input_semantics, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id, args.runId, args.stepId, args.kind, args.provider, args.model,
         Math.max(0, Math.round(args.inputTokens ?? 0)), Math.max(0, Math.round(args.outputTokens ?? 0)),
         Math.max(0, Math.round(args.cacheReadTokens ?? 0)), Math.max(0, Math.round(args.cacheCreationTokens ?? 0)),
-        args.costUsd ?? null, args.durationMs ?? null, args.numTurns ?? null, at
+        args.costUsd ?? null, args.durationMs ?? null, args.numTurns ?? null,
+        args.inputSemantics ?? 'no_cache', at
       )
     return mapCiRunUsage(this.db.prepare(`SELECT * FROM ci_run_usage WHERE id = ?`).get(id) as CiRunUsageRow)
   }
@@ -2903,6 +2915,36 @@ export class VoiceChatDb {
   /** Строки расхода рана (в порядке ходов). Гейта нет: зовётся из отчётов. */
   listCiRunUsage(runId: string): CiRunUsage[] {
     return (this.db.prepare(`SELECT * FROM ci_run_usage WHERE run_id = ? ORDER BY at ASC, rowid ASC`).all(runId) as CiRunUsageRow[]).map(mapCiRunUsage)
+  }
+
+  /**
+   * Прибавить вызовы инструментов хода к счётчику рана. Метрика, поэтому
+   * упавшая запись гасится вызывающим — как и у расхода. Нулевые виды не пишем:
+   * «нет строки» = «счётчика у рана нет», и отчёт должен уметь это отличать от
+   * настоящего нуля вызовов.
+   */
+  addCiRunToolCalls(runId: string, calls: Partial<CiToolCalls>): void {
+    const at = this.now()
+    const upsert = this.db.prepare(
+      `INSERT INTO ci_run_tool_calls (run_id, tool, calls, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(run_id, tool) DO UPDATE SET calls = calls + excluded.calls, updated_at = excluded.updated_at`
+    )
+    for (const kind of CI_TOOL_KINDS) {
+      const n = calls[kind] ?? 0
+      if (n > 0) upsert.run(runId, kind, Math.round(n), at)
+    }
+  }
+
+  /** Счётчик вызовов инструментов рана; null — у рана его нет (ран до фичи). */
+  ciRunToolCalls(runId: string): CiToolCalls | null {
+    const rows = this.db.prepare(`SELECT tool, calls FROM ci_run_tool_calls WHERE run_id = ?`).all(runId) as Array<{ tool: string; calls: number }>
+    if (!rows.length) return null
+    const calls: CiToolCalls = { ...EMPTY_CI_TOOL_CALLS }
+    for (const row of rows) {
+      const kind = CI_TOOL_KINDS.find((k) => k === row.tool)
+      if (kind) calls[kind] += row.calls
+    }
+    return calls
   }
 
   /** Финальный агрегат: список файлов остаётся в логе, в БД сохраняются только числа. */
@@ -2982,7 +3024,8 @@ export class VoiceChatDb {
       runId: run.id, projectId: run.projectId, taskId: run.taskId, status: run.status, mode: run.mode,
       provider: run.llmProvider, model: run.llmModel, startedAt: run.startedAt, finishedAt: run.finishedAt,
       durationMs: run.durationMs, createdAt: run.createdAt, fixAttempts,
-      totals: ciUsageTotals(usage), steps, kbHit: this.ciKbHit(run.id)
+      totals: ciUsageTotals(usage), steps, kbHit: this.ciKbHit(run.id),
+      toolCalls: this.ciRunToolCalls(run.id)
     }
   }
 
@@ -3790,10 +3833,20 @@ function mapCiRunStep(r: CiRunStepRow): CiRunStep {
 interface CiRunUsageRow {
   id: string; run_id: string; step_id: string | null; kind: string; provider: string; model: string
   input_tokens: number; output_tokens: number; cache_read_tokens: number; cache_creation_tokens: number
-  cost_usd: number | null; duration_ms: number | null; num_turns: number | null; at: number
+  cost_usd: number | null; duration_ms: number | null; num_turns: number | null
+  input_semantics: string | null; at: number
 }
 function normUsageKind(k: string): CiUsageKind {
   return k === 'summary' || k === 'fix' || k === 'kb_update' ? k : 'model_work'
+}
+/**
+ * Семантика входа строки. Явно записанная — источник истины; её отсутствие
+ * означает историческую строку: у codex вход там ВМЕСТЕ с прочитанным кэшем, у
+ * claude он и раньше был без него.
+ */
+function usageInputSemantics(r: CiRunUsageRow): CiInputSemantics {
+  if (r.input_semantics === 'no_cache' || r.input_semantics === 'with_cache') return r.input_semantics
+  return r.provider === 'codex' ? 'with_cache' : 'no_cache'
 }
 function mapCiRunUsage(r: CiRunUsageRow): CiRunUsage {
   return {
@@ -3801,6 +3854,7 @@ function mapCiRunUsage(r: CiRunUsageRow): CiRunUsage {
     provider: r.provider === 'codex' ? 'codex' : 'claude', model: r.model,
     inputTokens: r.input_tokens, outputTokens: r.output_tokens,
     cacheReadTokens: r.cache_read_tokens, cacheCreationTokens: r.cache_creation_tokens,
+    inputSemantics: usageInputSemantics(r),
     costUsd: r.cost_usd, durationMs: r.duration_ms, numTurns: r.num_turns, at: r.at
   }
 }

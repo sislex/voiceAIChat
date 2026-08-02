@@ -159,6 +159,8 @@ describe('parseStreamJsonActivity (режим консоли)', () => {
     const e = parseStreamJsonActivity(line)!
     expect(e.kind).toBe('tool_use')
     expect(e.summary).toBe('remote:bash: df -h')
+    // `tool` — сырое имя: по нему считаются вызовы инструментов рана.
+    expect(e.tool).toBe('mcp__remote__bash')
   })
 
   it('assistant tool_use (Read) → путь файла', () => {

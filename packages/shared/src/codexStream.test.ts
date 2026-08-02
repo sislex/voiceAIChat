@@ -67,6 +67,18 @@ describe('parseCodexActivity', () => {
     const e = parseCodexActivity(line)!
     expect(e.kind).toBe('tool_use')
     expect(e.summary).toContain('ls -la')
+    // Собственный запуск команды codex — та же роль, что у встроенного Bash.
+    expect(e.tool).toBe('shell')
+  })
+
+  it('mcp_tool_call → сырое имя инструмента в tool (для счётчика вызовов)', () => {
+    const line = JSON.stringify({
+      type: 'item.completed',
+      item: { type: 'mcp_tool_call', server: 'remote', tool: 'read', arguments: { path: 'a.ts' } }
+    })
+    const e = parseCodexActivity(line)!
+    expect(e.kind).toBe('tool_use')
+    expect(e.tool).toBe('remote:read')
   })
 
   it('reasoning → thinking', () => {

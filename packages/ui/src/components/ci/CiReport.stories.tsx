@@ -55,6 +55,23 @@ export const NoUsage: Story = {
   }
 }
 
+/**
+ * Ран через исполнителя: стоимости от CLI нет, а у части ходов неизвестна и
+ * модель — итог помечен и оценкой, и заниженным.
+ */
+export const UnderstatedCost: Story = {
+  args: {
+    report: makeTaskReport([
+      makeRunReport({ totals: makeUsageTotals({ costUsd: 0.62, costEstimated: true, costUnderstated: true, inputNormalized: true }) })
+    ])
+  }
+}
+
+/** Ран до появления счётчика вызовов: строки «Инструменты» нет вовсе, не «0». */
+export const NoToolCalls: Story = {
+  args: { report: makeTaskReport([makeRunReport({ toolCalls: null })]) }
+}
+
 /** Отчёт не прочитался: сообщение вместо чисел — карточку это не ломает. */
 export const Failed: Story = { args: { report: null, error: 'HTTP 500' } }
 

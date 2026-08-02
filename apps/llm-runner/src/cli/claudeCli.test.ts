@@ -115,7 +115,15 @@ describe('ClaudeCli', () => {
     expect(mcpConfig.mcpServers.remote.url).toContain('agent=a1')
     expect(args[args.indexOf('--disallowedTools') + 1]).toBe('Bash')
     // toContain, а не toBe: в allow-list могут добавляться инструменты БЗ/CI.
-    expect(args[args.indexOf('--allowedTools') + 1]).toContain('mcp__remote__bash')
+    const allowedRemote = args[args.indexOf('--allowedTools') + 1]
+    expect(allowedRemote).toContain('mcp__remote__bash')
+    // Файловые инструменты обязаны быть автоодобрены: без них модель читает
+    // файлы `cat` внутри bash и правит heredoc'ом — ровно то, что убирал CHAT-54.
+    expect(allowedRemote).toContain('mcp__remote__read')
+    expect(allowedRemote).toContain('mcp__remote__grep')
+    expect(allowedRemote).toContain('mcp__remote__edit')
+    // И модель об этом сказано в системном хинте, а не только в задании рана.
+    expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('mcp__remote__read')
     expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('Мак')
     // Долгие команды (тесты/сборка) не должны срезаться дефолтным таймаутом моста.
     expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('timeout_ms')

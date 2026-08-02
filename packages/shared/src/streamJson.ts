@@ -220,7 +220,9 @@ export function parseStreamJsonActivity(line: string): ClaudeLogEntry | null {
       for (const block of content as Array<Record<string, unknown>>) {
         if (block.type === 'tool_use' && typeof block.name === 'string') {
           const summary = `${displayToolName(block.name)}: ${truncate(summarizeToolInput(block.input))}`
-          return { kind: 'tool_use', summary, detail: safeJson(block.input), raw }
+          // `tool` — сырое имя (`mcp__remote__read`, `Bash`): по нему считаются
+          // вызовы инструментов рана, а `summary` остаётся человеческим.
+          return { kind: 'tool_use', summary, detail: safeJson(block.input), raw, tool: block.name }
         }
         if (block.type === 'thinking' && typeof block.thinking === 'string') {
           return { kind: 'thinking', summary: `💭 ${truncate(block.thinking)}`, detail: block.thinking, raw }

@@ -522,6 +522,8 @@ export function makeUsageTotals(over: Partial<CiUsageTotals> = {}): CiUsageTotal
     tokens: 219_400,
     costUsd: 1.84,
     costEstimated: false,
+    costUnderstated: false,
+    inputNormalized: false,
     modelActiveMs: 640_000,
     ...over
   }
@@ -562,6 +564,7 @@ export function makeRunReport(over: Partial<CiRunReport> = {}): CiRunReport {
     createdAt: RUN_T0,
     fixAttempts: 1,
     kbHit: null,
+    toolCalls: { bash: 12, read: 31, grep: 9, edit: 14, kb: 3, other: 1 },
     totals: makeUsageTotals(),
     steps: [
       makeReportStep(),

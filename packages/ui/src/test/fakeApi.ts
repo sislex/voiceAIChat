@@ -806,6 +806,9 @@ export function createFakeCi(): FakeCi {
       runId: run.id, projectId: run.projectId, taskId: run.taskId, status: run.status, mode: run.mode,
       provider: run.llmProvider, model: run.llmModel, startedAt: run.startedAt, finishedAt: run.finishedAt,
       durationMs: run.durationMs, createdAt: run.createdAt, fixAttempts: d?.fixAttempts.length ?? 0, kbHit: null,
+      // Ходов модели фейк не делает — значит и вызовов инструментов у него нет
+      // (null, а не нули: так же выглядит ран, сделанный до появления счётчика).
+      toolCalls: null,
       totals: { ...EMPTY_CI_USAGE_TOTALS },
       steps: (d?.steps ?? []).map((s) => ({
         id: s.id, parentStepId: s.parentStepId, title: s.title, slot: s.slot, kind: s.kind,
