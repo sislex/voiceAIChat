@@ -14,7 +14,7 @@
 
 import { useMemo, useState } from 'react'
 import type { CiRunReport, CiRunReportStep, CiTaskReport, CiUsageTotals } from '@shared/ci'
-import { ciToolCallsTotal, sumCiToolCalls } from '@shared/ci'
+import { CI_USAGE_KIND_LABELS, ciToolCallsTotal, sumCiToolCalls } from '@shared/ci'
 import { ciStatusIcon, ciStatusLabel, ciTone, fmtDuration, fmtTokens, fmtUsd } from './ciFormat'
 
 export interface CiReportProps {
@@ -175,6 +175,35 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
         БЗ: выдано {kbHit.sectionsDelivered} разделов, пригодились {kbHit.sectionsHit}
         {' '}({Math.round((kbHit.sectionsHit / kbHit.sectionsDelivered) * 100)}% — модель открыла файлы из них)
       </p>}
+      {/* Стадии рана: раз модель у них разная (разработка — на модели рана,
+          актуализация БЗ и резюме — на дешёвой), в отчёте должно быть видно,
+          чем каждая посчитана и во что обошлась. Строк нет у ранов до фичи
+          расхода — там и разбивать нечего. */}
+      {run && run.stages.length > 0 && (
+        <table className="ci-report-steps" data-testid={`${testId}-stages`}>
+          <caption className="ci-report__caption">Стадии рана</caption>
+          <thead>
+            <tr>
+              <th scope="col">Стадия</th>
+              <th scope="col">Модель</th>
+              <th scope="col">Запросов</th>
+              <th scope="col">Время модели</th>
+              <th scope="col">Расход</th>
+            </tr>
+          </thead>
+          <tbody>
+            {run.stages.map((s) => (
+              <tr key={`${s.kind} ${s.model}`}>
+                <th scope="row">{CI_USAGE_KIND_LABELS[s.kind]}</th>
+                <td>{s.model}</td>
+                <td>{fmtTokens(s.totals.requests)}</td>
+                <td>{fmtDuration(s.totals.modelActiveMs || null)}</td>
+                <td>{stepUsage(s.totals)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       {run ? (
         <>
           <table className="ci-report-steps" data-testid={`${testId}-steps`}>

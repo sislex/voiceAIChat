@@ -5,8 +5,8 @@
 import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import {
-  appendQuestionsHint, ciToolCallsAny, clarifyBudget, classifyCiToolCall, DEFAULT_CI_CLAUDE_MODEL,
-  EMPTY_CI_TOOL_CALLS, isCiToolDenial, isVerificationCommand, parseQuestions, UNKNOWN_MODEL
+  appendQuestionsHint, ciToolCallsAny, clarifyBudget, classifyCiToolCall, CI_USAGE_KIND_LABELS,
+  EMPTY_CI_TOOL_CALLS, isCiToolDenial, isVerificationCommand, parseQuestions, resolveCiStageModel, UNKNOWN_MODEL
 } from '@voicechat/shared'
 import type { CiRunMode, CiToolCalls, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
@@ -239,7 +239,53 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     const resolved = deps.db.resolveLlmEngine(ctx.run.llmEngineId, ctx.run.llmProvider, role)
     return resolved.engine && deps.engineClient ? deps.engineClient(resolved.engine) : ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
   }
-  const modelFor = (ctx: CiModelContext): string => ctx.run.llmProvider === 'codex' ? ctx.run.llmModel : (ctx.run.llmModel || DEFAULT_CI_CLAUDE_MODEL)
+  /**
+   * Модель стадии: одна модель на весь ран означала, что сверка дифа с текстом
+   * статей и пересказ шагов считаются тем же тяжёлым движком, что и разработка.
+   * Назначение живёт в глобальных настройках CI (`stageModels`), а модель, о
+   * которой движок рана не знает, `resolveCiStageModel` сам превращает в модель
+   * рана.
+   */
+  const modelFor = (ctx: CiModelContext, stage: CiUsageKind): string =>
+    resolveCiStageModel(stage, deps.db.getCiSettings().stageModels, ctx.run)
+
+  /** Модель самого рана — к ней стадия откатывается, если своя не отработала. */
+  const runModelOf = (ctx: CiModelContext): string => resolveCiStageModel('model_work', null, ctx.run)
+
+  /**
+   * Ходы одной стадии в одном вызове хука. Модель стадии берётся один раз, и
+   * если она не отработала — стадия доигрывается на модели рана: настройка
+   * экономии не имеет права стоить рана (у `kb_update` шаг просто пропускается,
+   * а вот падение разработки или правки останавливает всё). Откат помнится до
+   * конца хука, поэтому следующий ход диалога и следующая попытка fix-loop уже
+   * не ходят к сломанной модели.
+   *
+   * Повтор ровно один и только у «пустого» падения — ни текста, ни расхода: так
+   * выглядит CLI, который не смог начать (модели нет у исполнителя, доступ к ней
+   * закрыт). Настоящую ошибку работы модели повторять на другой незачем.
+   */
+  function stageRunner(ctx: CiModelContext, stage: CiUsageKind, stepId: string | null) {
+    let model: string | null = null
+    return async (
+      build: (model: string) => LlmRequest,
+      onLog: (stream: 'stdout' | 'system', chunk: string) => void,
+      signal: AbortSignal,
+      abortNote?: string
+    ): Promise<TurnResult> => {
+      const runModel = runModelOf(ctx)
+      const stageModel = (model ??= modelFor(ctx, stage))
+      const first = await runTurn(clientFor(ctx), build(stageModel), onLog, signal, abortNote, now)
+      recordUsage(ctx, stage, stepId, first, stageModel)
+      const empty = !first.text.trim() && !first.meta && !first.usage
+      if (first.ok || first.cancelled || signal.aborted || stageModel === runModel || !empty) return first
+      onLog('system', `Модель «${stageModel}» стадии «${CI_USAGE_KIND_LABELS[stage]}» не отработала — повторяю на модели рана «${runModel}».\n`)
+      model = runModel
+      const second = await runTurn(clientFor(ctx), build(runModel), onLog, signal, abortNote, now)
+      recordUsage(ctx, stage, stepId, second, runModel)
+      return second
+    }
+  }
+
   const kbBroker = deps.kbTool ?? kbToolBroker
 
   /**
@@ -254,7 +300,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    * клиент без usage), строкой не становится — иначе отчёт считал бы запросы,
    * которых не было видно.
    */
-  function recordUsage(ctx: CiModelContext, kind: CiUsageKind, stepId: string | null, turn: TurnResult): void {
+  function recordUsage(ctx: CiModelContext, kind: CiUsageKind, stepId: string | null, turn: TurnResult, model: string): void {
     // Вызовы инструментов считаются отдельно от токенов: ход, о расходе которого
     // CLI промолчал, всё равно успевает что-то вызвать.
     recordToolCalls(ctx, turn)
@@ -276,8 +322,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         provider: ctx.run.llmProvider,
         // Пустая модель (у codex это штатное состояние — он берёт её из своего
         // config.toml) превращается в `unknown`: прайса для неё нет, и итог
-        // честно помечается заниженным вместо молчаливого нуля.
-        model: turn.meta?.model || modelFor(ctx) || UNKNOWN_MODEL,
+        // честно помечается заниженным вместо молчаливого нуля. Запасной вариант
+        // — модель, которой ход РЕАЛЬНО запускали (стадии считаются разными).
+        model: turn.meta?.model || model || UNKNOWN_MODEL,
         inputTokens,
         outputTokens: u.outputTokens ?? 0,
         cacheReadTokens,
@@ -447,6 +494,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     let phase: CiRunMode = ctx.run.mode === 'plan' ? 'plan' : 'development'
     let budget = clarifyBudget(ctx.run)
     let sessionId: string | null = null
+    const turnOf = stageRunner(ctx, 'model_work', ctx.parentStepId)
 
     try {
       return await withKbTools(ctx, ctx.parentStepId, async (kbFields, kbTurnId) => {
@@ -467,11 +515,11 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
           // модели только через remote MCP — в плане она оказывалась слепой. Вместо этого
           // `default` с белым списком инструментов (правки файлов CLI отклонит сам) плюс
           // remote-bash в режиме только чтения (`ro=1`) и без команд CI-справочника.
-          const req: LlmRequest = {
+          const req = (model: string): LlmRequest => ({
             userId: ctx.run.triggeredBy,
             prompt,
             sessionId,
-            model: modelFor(ctx),
+            model,
             permissionMode: phase === 'plan' ? 'default' : 'acceptEdits',
             // Инструменты БЗ — ВНЕ ветки `remote`: база read-only и от машины не
             // зависит (в фазе плана и в ходе без машины она тем более нужна).
@@ -487,9 +535,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
                     : {})
                 }
               : {})
-          }
-          const r = await runTurn(clientFor(ctx), req, log, ctx.signal, undefined, now)
-          recordUsage(ctx, 'model_work', ctx.parentStepId, r)
+          })
+          const r = await turnOf(req, log, ctx.signal)
           // Отмена рана: не «ошибка модели» — ран закрывается как cancelled.
           if (r.cancelled || ctx.signal.aborted) return { ok: false, cancelled: true }
           if (!r.ok) return { ok: false }
@@ -551,18 +598,18 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     const stepLines = (detail?.steps ?? []).map((s) => `- ${s.title}: ${s.status}${s.exitCode != null ? ` (код ${s.exitCode})` : ''}`).join('\n')
     // Инструменты БЗ есть и здесь: ход без машины и в режиме «план» — база
     // read-only, а сверить формулировки резюме с ней дешевле, чем угадывать.
+    const turnOf = stageRunner(ctx, 'summary', ctx.parentStepId)
     return await withKbTools(ctx, ctx.parentStepId, async (kbFields) => {
-      const req: LlmRequest = {
+      const req = (model: string): LlmRequest => ({
         userId: ctx.run.triggeredBy,
         prompt: `Кратко резюмируй результат воркфлоу по задаче «${ctx.task.title}». Шаги:\n${stepLines}\nДай сжатое резюме: что сделано и в каком состоянии задача.`,
         sessionId: null,
-        model: modelFor(ctx),
+        model,
         permissionMode: 'plan',
         executionDisabled: true,
         ...kbFields
-      }
-      const r = await runTurn(clientFor(ctx), req, () => {}, ctx.signal, undefined, now)
-      recordUsage(ctx, 'summary', ctx.parentStepId, r)
+      })
+      const r = await turnOf(req, () => {}, ctx.signal)
       return r.text.trim() || 'Резюме недоступно.'
     })
   }
@@ -577,13 +624,14 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     // Шаг гейта печатает много (vitest выводит каждый упавший тест), а по сводке
     // причину не найти — таким шагам отдаём хвост подлиннее.
     const tailLimit = ctx.isTestStep ? 20_000 : 2000
+    const turnOf = stageRunner(ctx, 'fix', ctx.parentStepId)
     for (let attempt = 1; attempt <= settings.maxFixAttempts; attempt++) {
       if (ctx.signal.aborted) return { fixed: false }
       if (settings.fixTimeLimitMs > 0 && now() - startAll > settings.fixTimeLimitMs) break
       const started = now()
       // Токен БЗ живёт ровно на этот ход — включая отмену рана посреди правки.
       const turn = await withKbTools(ctx, ctx.parentStepId, async (kbFields) => {
-        const req: LlmRequest = {
+        const req = (model: string): LlmRequest => ({
           userId: ctx.run.triggeredBy,
           prompt: [
             `Упал шаг воркфлоу: «${ctx.failedStep.title}».`,
@@ -601,16 +649,15 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             .filter(Boolean)
             .join('\n'),
           sessionId,
-          model: modelFor(ctx),
+          model,
           permissionMode: 'acceptEdits',
           ...kbFields,
           // См. modelWork: рабочая директория удалённой машины задаётся в MCP URL.
           ...remoteOf(deps, ctx)
-        }
-        return runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctx.signal, undefined, now)
+        })
+        // Расход правки пишет `stageRunner` — на упавший шаг: цикл живёт внутри него.
+        return turnOf(req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctx.signal)
       })
-      // Расход правки пишем на упавший шаг: fix-loop живёт внутри него.
-      recordUsage(ctx, 'fix', ctx.parentStepId, turn)
       // Между попытками id обновляем: следующая правка идёт тем же диалогом.
       if (turn.sessionId) {
         sessionId = turn.sessionId
@@ -674,7 +721,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     const repoDir = ctx.env.SLUG ? `${ctx.workspacePath}/${ctx.env.SLUG}` : ctx.workspacePath
     const projectDocs = deps.db.kbDocuments({ scope: 'project', projectId: ctx.project.id })
     const affected = affectedProjectDocs(projectDocs, changes.files)
-    const req: LlmRequest = {
+    const req = (model: string): LlmRequest => ({
       userId: ctx.run.triggeredBy,
       prompt: kbUpdatePrompt({
         projectName: ctx.project.name,
@@ -687,7 +734,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         editFileTopics: !!ctx.agentId
       }),
       sessionId: null,
-      model: modelFor(ctx),
+      model,
       permissionMode: 'acceptEdits',
       ...(ctx.agentId
         ? {
@@ -697,7 +744,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             }
           }
         : { executionDisabled: true })
-    }
+    })
 
     // Таймаут шага: свой контроллер поверх сигнала рана, чтобы отличать «не
     // уложился» от «ран отменили» — сообщения в ленте у них разные.
@@ -711,14 +758,18 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     }, deps.kbTimeoutMs ?? KB_UPDATE_TIMEOUT_MS)
     let turn: TurnResult
     try {
-      turn = await runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctl.signal, 'Шаг актуализации базы знаний остановлен.\n', now)
+      turn = await stageRunner(ctx, 'kb_update', ctx.parentStepId)(
+        req,
+        (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk),
+        ctl.signal,
+        'Шаг актуализации базы знаний остановлен.\n'
+      )
     } catch (err) {
       return { ok: false, message: `Шаг не выполнен: ${err instanceof Error ? err.message : String(err)}` }
     } finally {
       clearTimeout(timer)
       ctx.signal.removeEventListener('abort', onAbort)
     }
-    recordUsage(ctx, 'kb_update', ctx.parentStepId, turn)
     if (timedOut) return { ok: false, message: 'Шаг не уложился в отведённое время — база знаний не обновлена' }
     if (ctx.signal.aborted) return cancelled
     if (!turn.ok) return { ok: false, message: 'Модель не ответила — база знаний не обновлена' }

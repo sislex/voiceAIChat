@@ -507,12 +507,23 @@ describe('TaskModal — отчёт по завершённой задаче', ()
   })
 
   it('у старого рана без расхода отчёт открывается: шаги есть, деньги прочерком', async () => {
-    withReport(makeTaskReport([makeRunReport({ totals: { ...EMPTY_CI_USAGE_TOTALS }, steps: [makeReportStep()] })]))
+    withReport(makeTaskReport([makeRunReport({ totals: { ...EMPTY_CI_USAGE_TOTALS }, stages: [], steps: [makeReportStep()] })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
     const block = await screen.findByTestId('task-modal-report')
     expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('—')
     expect(within(block).getByRole('rowheader', { name: /npm ci/ })).toBeInTheDocument()
+    // Стадий у рана до фичи расхода нет — таблицы тоже нет, а не пустая шапка.
+    expect(within(block).queryByTestId('task-modal-report-stages')).not.toBeInTheDocument()
+  })
+
+  it('стадии рана показывают модель, которой каждая посчитана', async () => {
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    const stages = await screen.findByTestId('task-modal-report-stages')
+    const row = within(stages).getByRole('rowheader', { name: 'Актуализация базы знаний' }).closest('tr')!
+    expect(text(row)).toContain('sonnet')
+    expect(text(within(stages).getByRole('rowheader', { name: 'Работа модели' }).closest('tr')!)).toContain('opus')
   })
 
   it('у задачи с активным раном отчёта нет — там лента', async () => {

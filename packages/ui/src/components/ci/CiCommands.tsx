@@ -9,9 +9,11 @@ import type {
   CiCommandScope,
   CiGlobalSettings,
   CiCommandSuggestion,
+  CiUsageKind,
   CiWorkspaceReportItem
 } from '@shared/ci'
-import { DEFAULT_CI_GLOBAL_SETTINGS } from '@shared/ci'
+import { CI_USAGE_KIND_LABELS, CI_USAGE_KINDS, DEFAULT_CI_GLOBAL_SETTINGS } from '@shared/ci'
+import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import { ToolFrame } from '../ToolFrame'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
@@ -407,16 +409,48 @@ interface CiSettingsSectionProps {
   onSave: (settings: Partial<CiGlobalSettings>) => Promise<void>
 }
 
+/** Числовые поля настроек: модель по стадии редактируется списком, а не вводом. */
+type CiNumericSetting = { [K in keyof CiGlobalSettings]: CiGlobalSettings[K] extends number ? K : never }[keyof CiGlobalSettings]
+
 function CiSettingsSection({ open, onToggle, settings, editable, onSave }: CiSettingsSectionProps): JSX.Element {
   const current = settings ?? DEFAULT_CI_GLOBAL_SETTINGS
   const [form, setForm] = useState<CiGlobalSettings>(current)
   useEffect(() => setForm(settings ?? DEFAULT_CI_GLOBAL_SETTINGS), [settings])
-  const numField = (label: string, key: keyof CiGlobalSettings): JSX.Element => (
+  const numField = (label: string, key: CiNumericSetting): JSX.Element => (
     <label className="ci-field">
       <span>{label}</span>
       <input type="number" disabled={!editable} value={form[key]} onChange={(e) => setForm({ ...form, [key]: Number(e.target.value) })} />
     </label>
   )
+  // Модель на стадию: пусто — «как у рана». Список общий для обоих движков, а
+  // чужую модель сервер сам заменит моделью рана (resolveCiStageModel), поэтому
+  // выбор здесь ран не ломает.
+  const stageField = (stage: CiUsageKind): JSX.Element => {
+    const value = form.stageModels[stage] ?? ''
+    // Настройка могла прийти с алиасом не из меню (правка по REST, старое
+    // значение) — показываем его как есть, иначе список молча подменил бы выбор.
+    const listed = !value || [...CLAUDE_MODELS, ...CODEX_MODELS].some((m) => m.id === value)
+    return (
+    <label className="ci-field" key={stage}>
+      <span>Модель стадии «{CI_USAGE_KIND_LABELS[stage]}»</span>
+      <select
+        disabled={!editable}
+        value={value}
+        data-testid={`ci-stage-model-${stage}`}
+        onChange={(e) => setForm({ ...form, stageModels: { ...form.stageModels, [stage]: e.target.value } })}
+      >
+        <option value="">Модель рана</option>
+        {!listed && <option value={value}>{value}</option>}
+        <optgroup label="Claude">
+          {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </optgroup>
+        <optgroup label="Codex">
+          {CODEX_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </optgroup>
+      </select>
+    </label>
+    )
+  }
   return (
     <section className="ci-section" data-testid="ci-settings">
       <button className="ci-collapse-head" aria-expanded={open} onClick={onToggle}>
@@ -431,6 +465,9 @@ function CiSettingsSection({ open, onToggle, settings, editable, onSave }: CiSet
           {numField('Окно метрик (ранов)', 'metricsWindow')}
           {numField('Макс. одновременных ранов', 'maxConcurrentRuns')}
           {numField('Макс. вызовов команд моделью', 'maxModelCommandCalls')}
+          {/* Модель по стадии: вспомогательные стадии не обязаны идти на той же
+              тяжёлой модели, что и разработка. */}
+          {CI_USAGE_KINDS.map(stageField)}
           {editable && (
             <div className="ci-form-actions">
               <Button variant="primary" onClick={() => void onSave(form)}>Сохранить настройки</Button>

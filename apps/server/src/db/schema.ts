@@ -454,7 +454,9 @@ CREATE TABLE IF NOT EXISTS ci_settings (
   metrics_window         INTEGER NOT NULL,
   max_concurrent_runs    INTEGER NOT NULL,
   max_model_command_calls INTEGER NOT NULL,
-  interaction_wait_ms    INTEGER NOT NULL DEFAULT 1800000
+  interaction_wait_ms    INTEGER NOT NULL DEFAULT 1800000,
+  -- Модель на стадию рана (JSON вида {"kb_update":"sonnet"}); NULL — дефолты кода.
+  stage_models           TEXT
 );
 
 -- Использование базы знаний моделью: одно обращение = одна строка. Пишется

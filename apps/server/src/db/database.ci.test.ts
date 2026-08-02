@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from './database.js'
-import { CI_KB_UPDATE_COMMAND_ID } from '@voicechat/shared'
+import { CI_KB_UPDATE_COMMAND_ID, DEFAULT_CI_STAGE_MODELS } from '@voicechat/shared'
 
 let db: VoiceChatDb
 
@@ -144,6 +144,18 @@ describe('ci: глобальные настройки', () => {
     expect(s.maxConcurrentRuns).toBe(4)
     expect(db.getCiSettings().maxFixAttempts).toBe(5)
   })
+
+  it('модель по стадии: дефолт дешёвый, правка переживает перечитывание, мусор чистится', () => {
+    expect(db.getCiSettings().stageModels).toEqual(DEFAULT_CI_STAGE_MODELS)
+    db.updateCiSettings({ stageModels: { model_work: '', fix: '', kb_update: 'haiku', summary: '' } })
+    expect(db.getCiSettings().stageModels).toEqual({ model_work: '', fix: '', kb_update: 'haiku', summary: '' })
+    // Правка соседнего поля стадии не трогает.
+    db.updateCiSettings({ maxFixAttempts: 2 })
+    expect(db.getCiSettings().stageModels.kb_update).toBe('haiku')
+    // Тело запроса приходит из REST: чужие ключи и не-строки в БД не попадают.
+    db.updateCiSettings({ stageModels: { kb_update: 'sonnet', чужое: 1 } as never })
+    expect(db.getCiSettings().stageModels).toEqual({ ...DEFAULT_CI_STAGE_MODELS, kb_update: 'sonnet' })
+  })
 })
 
 describe('ci: раны, шаги, лог, метрики', () => {
@@ -255,6 +267,7 @@ describe('VoiceChatDb — миграция существующей БД под 
     expect(cols('ci_llm_configs')).toEqual(expect.arrayContaining(['mode', 'clarify_level', 'clarify_max']))
     expect(cols('ci_runs')).toEqual(expect.arrayContaining(['mode', 'clarify_level', 'clarify_max', 'conversation_id']))
     expect(cols('ci_settings')).toContain('interaction_wait_ms')
+    expect(cols('ci_settings')).toContain('stage_models')
     // Таблица пауз появляется как новая (CREATE TABLE IF NOT EXISTS).
     expect(migrated.listCiInteractions('run-old')).toEqual([])
 
@@ -268,6 +281,10 @@ describe('VoiceChatDb — миграция существующей БД под 
     expect(run.clarifyMax).toBe(3)
     expect(run.conversationId).toBeNull()
     expect(migrated.getCiSettings().interactionWaitMs).toBe(30 * 60 * 1000)
+    // Настройки, заведённые до модели по стадии: колонка пуста и читается как
+    // дефолт кода — обновление само переводит вспомогательные стадии на дешёвую
+    // модель, иначе экономия включалась бы только руками.
+    expect(migrated.getCiSettings().stageModels).toEqual(DEFAULT_CI_STAGE_MODELS)
 
     migrated.close()
     rmSync(dir, { recursive: true, force: true })

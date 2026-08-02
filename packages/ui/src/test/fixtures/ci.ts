@@ -566,6 +566,14 @@ export function makeRunReport(over: Partial<CiRunReport> = {}): CiRunReport {
     kbHit: null,
     toolCalls: { bash: 12, read: 31, grep: 9, edit: 14, kb: 3, other: 1, denied: 2 },
     totals: makeUsageTotals(),
+    // Разные модели по стадиям — ровно та картина, ради которой разбивка и есть:
+    // разработка на модели рана, вспомогательные стадии дешевле.
+    stages: [
+      { kind: 'model_work', model: 'opus', totals: makeUsageTotals({ requests: 2, tokens: 160_000, costUsd: 1.4, modelActiveMs: 520_000 }) },
+      { kind: 'summary', model: 'haiku', totals: makeUsageTotals({ requests: 1, tokens: 17_400, costUsd: 0.02, modelActiveMs: 19_000 }) },
+      { kind: 'fix', model: 'opus', totals: makeUsageTotals({ requests: 1, tokens: 42_000, costUsd: 0.31, modelActiveMs: 61_000 }) },
+      { kind: 'kb_update', model: 'sonnet', totals: makeUsageTotals({ requests: 1, tokens: 74_000, costUsd: 0.11, modelActiveMs: 40_000 }) }
+    ],
     steps: [
       makeReportStep(),
       makeReportStep({ id: 's2', title: 'npm run typecheck', durationMs: 96_000, status: 'failed', exitCode: 1, attempt: 2, fixedByModel: true, usage: makeUsageTotals({ requests: 1, tokens: 42_000, costUsd: 0.31, modelActiveMs: 61_000 }) }),
