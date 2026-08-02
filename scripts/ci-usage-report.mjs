@@ -11,6 +11,12 @@
 // «без кэша»: старые строки codex несут его вместе с кэшем (input_semantics
 // пустой), новые уже приведены.
 //
+// Там, где на ходе известны И настоящая цена, И оценка, рядом печатается их
+// расхождение («прайс +0.2% к факту»): это самопроверка таблицы цен. У codex
+// настоящей цены нет ни на одном ходе, весь его расход — оценка, поэтому сдвиг
+// цен claude ничем себя не выдаёт и молча ломает сравнение движков — так и
+// прожили полтора месяца с прайсом, завышавшим opus втрое.
+//
 // Вызовы инструментов берутся из ci_run_tool_calls, а у ранов до этой метрики
 // восстанавливаются из ленты (`[tool_use] имя: …`) — тогда в колонке стоит «~».
 // Правда только в коде: семантика повторяет packages/shared/src/ci.ts
@@ -32,12 +38,14 @@ const TASK = opt('task')
 const RUN = opt('run')
 const AS_JSON = args.includes('--json')
 
-// Прайс — копия packages/shared/src/pricing.ts (USD за 1M токенов).
+// Прайс — копия packages/shared/src/pricing.ts (USD за 1M токенов), включая то,
+// какие строки сверены с фактической ценой CLI, а какие нет: подробности там.
 const PRICES = [
-  [/opus/i, { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 }],
-  [/sonnet/i, { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
-  [/haiku/i, { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 }],
-  [/gpt|codex|o[0-9]/i, { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 }]
+  [/fable/i, { input: 10, output: 50, cacheRead: 1, cacheWrite: 20 }], // проверено
+  [/opus/i, { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 10 }], // проверено
+  [/sonnet/i, { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }], // НЕ проверено
+  [/haiku/i, { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 }], // НЕ проверено
+  [/gpt|codex|o[0-9]/i, { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 }] // НЕ проверено
 ]
 const priceOf = (model) => {
   if (!model || model === 'unknown') return null
@@ -111,7 +119,12 @@ const report = runs.map((run) => {
   const usage = all(`SELECT * FROM ci_run_usage WHERE run_id = ? ORDER BY at`, run.id)
   const totals = {
     requests: usage.length, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
-    costUsd: null, costEstimated: false, costUnderstated: false, inputNormalized: false, modelActiveMs: 0
+    costUsd: null, costEstimated: false, costUnderstated: false, inputNormalized: false, modelActiveMs: 0,
+    // Сверка прайса: суммы по ходам, где известны И настоящая цена от CLI, И
+    // оценка. Смысл — чтобы следующий сдвиг цен нашёлся сам: у codex цены нет
+    // вовсе, и весь его расход в отчёте — оценка, так что перекос в прайсе
+    // claude молча делает сравнение движков бессмысленным.
+    checkRequests: 0, checkActualUsd: 0, checkEstimateUsd: 0
   }
   for (const u of usage) {
     // Семантика входа: явная колонка, иначе старая строка (у codex — с кэшем).
@@ -126,10 +139,16 @@ const report = runs.map((run) => {
     totals.cacheCreationTokens += u.cache_creation_tokens
     totals.modelActiveMs += u.duration_ms ?? 0
     const price = priceOf(u.model)
-    const own = u.cost_usd ?? (price
+    const estimate = price
       ? (input * price.input + u.output_tokens * price.output + u.cache_read_tokens * price.cacheRead +
          u.cache_creation_tokens * price.cacheWrite) / 1e6
-      : null)
+      : null
+    if (u.cost_usd != null && estimate != null) {
+      totals.checkRequests++
+      totals.checkActualUsd += u.cost_usd
+      totals.checkEstimateUsd += estimate
+    }
+    const own = u.cost_usd ?? estimate
     if (own == null) { totals.costEstimated = true; totals.costUnderstated = true }
     else {
       totals.costUsd = (totals.costUsd ?? 0) + own
@@ -175,6 +194,18 @@ if (AS_JSON) {
 const money = (t) => t.costUsd == null
   ? '—'
   : `${t.costEstimated ? '≈' : ''}$${t.costUsd.toFixed(2)}${t.costUnderstated ? ' (занижено)' : ''}`
+/**
+ * Насколько оценка по прайсу разошлась с фактической ценой CLI — на ходах, где
+ * известны обе. Это самопроверка таблицы цен: у codex настоящей цены нет ни на
+ * одном ходе, весь его расход — оценка, поэтому перекос в прайсе claude ничем
+ * себя не выдаёт и тихо ломает сравнение движков. Сверять не с чем — колонки нет.
+ */
+const hasDrift = (t) => t.checkRequests > 0 && t.checkActualUsd > 0
+const driftPct = (t) => {
+  const pct = (t.checkEstimateUsd / t.checkActualUsd - 1) * 100
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`
+}
+const drift = (t) => hasDrift(t) ? `  прайс ${driftPct(t)} к факту (по ${t.checkRequests})` : ''
 const mins = (ms) => ms == null ? '—' : `${Math.round(ms / 60000)}м`
 const k = (n) => n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
 
@@ -184,7 +215,7 @@ for (const r of report) {
   const mark = r.toolCallsSource === 'log' ? '~' : r.toolCallsSource === 'none' ? '' : ''
   console.log(
     `${r.at.slice(0, 16)}  ${r.runId.slice(0, 8)}  ${r.provider}/${r.model}  ${r.status}  ${JSON.stringify(r.title.slice(0, 40))}\n` +
-    `   ${money(r.totals)}  запросов ${r.totals.requests}  вход ${k(r.totals.inputTokens)}  выход ${k(r.totals.outputTokens)}  ` +
+    `   ${money(r.totals)}${drift(r.totals)}  запросов ${r.totals.requests}  вход ${k(r.totals.inputTokens)}  выход ${k(r.totals.outputTokens)}  ` +
     `кэш ${k(r.totals.cacheReadTokens)}/${k(r.totals.cacheCreationTokens)}${r.totals.inputNormalized ? ' (вход приведён)' : ''}\n` +
     `   ран ${mins(r.runDurationMs)}  модель ${mins(r.totals.modelActiveMs || null)}  fix-loop ${r.fixAttempts}  ` +
     `инструменты ${r.toolCallsSource === 'none' ? '—' : `${mark}${toolsTotal(c)}`}` +
@@ -197,8 +228,11 @@ for (const r of report) {
 
 const byProvider = new Map()
 for (const r of report) {
-  const acc = byProvider.get(r.provider) ?? { runs: 0, cost: 0, costKnown: 0, requests: 0, input: 0, output: 0, cacheRead: 0, model: 0, run: 0, tools: { ...EMPTY_TOOLS }, bashReads: 0 }
+  const acc = byProvider.get(r.provider) ?? { runs: 0, cost: 0, costKnown: 0, requests: 0, input: 0, output: 0, cacheRead: 0, model: 0, run: 0, tools: { ...EMPTY_TOOLS }, bashReads: 0, checkRequests: 0, checkActualUsd: 0, checkEstimateUsd: 0 }
   acc.runs++
+  acc.checkRequests += r.totals.checkRequests
+  acc.checkActualUsd += r.totals.checkActualUsd
+  acc.checkEstimateUsd += r.totals.checkEstimateUsd
   acc.requests += r.totals.requests
   acc.input += r.totals.inputTokens
   acc.output += r.totals.outputTokens
@@ -220,5 +254,15 @@ for (const [provider, a] of byProvider) {
     `инструменты bash ${a.tools.bash}/read ${a.tools.read}/grep ${a.tools.grep}/edit ${a.tools.edit}/БЗ ${a.tools.kb}, ` +
     `чтений файлов через bash ${a.bashReads}`
   )
+  // Сверка прайса по движку: пока строка держится около нуля, оценке (а значит и
+  // сравнению движков) можно верить; уехала — таблица цен устарела.
+  if (hasDrift(a)) {
+    console.log(
+      `    сверка прайса: оценка ${a.checkEstimateUsd.toFixed(2)} против факта ` +
+      `${a.checkActualUsd.toFixed(2)} USD (${driftPct(a)}, по ${a.checkRequests} ходам)`
+    )
+  } else {
+    console.log('    сверка прайса: не с чем — настоящей цены от CLI ни на одном ходе нет')
+  }
 }
 db.close()
