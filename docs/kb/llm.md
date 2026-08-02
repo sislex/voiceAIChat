@@ -120,6 +120,15 @@ CLI-классы, и `RemoteLlmClient`. Там же живут `describeClaudeEx
 на каждое сообщение обоим движкам. Ни typecheck, ни тесты этого не видели — фейковый
 исполнитель в тесте повторял форму за клиентом.
 
+Вторая осечка того же чека `badRequest`: он требовал непустую `model`. У codex она
+пустая штатно (`settings.codexModel` по умолчанию `''`, `codexInvocation` тогда не
+добавляет `-m`, модель берётся из `config.toml` CLI), и каждый ход codex через
+удалённого исполнителя падал в `400 model обязательна`. Локальный `spawn` этой
+проверки не имел, поэтому баг вылезал только при настроенном `VC_LLM_RUNNER_URL`.
+Теперь `model` обязательна только для `claude` (его `claudeArgs` пушит `--model`
+всегда). Тем же чеком отбивался gateway: `apps/server/src/anthropic/gateway.ts` шлёт
+codex `model: ''` намеренно.
+
 Отсюда правило: контракт «сервер ↔ исполнитель» проверяется против НАСТОЯЩЕГО
 `buildRunner` (`apps/server/src/llm/runnerContract.test.ts` поднимает его с
 подменённым `RunManager` — spawn CLI не нужен, а валидация тела, Bearer и адресация

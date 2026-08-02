@@ -26,6 +26,13 @@ const RESULT_LINE = JSON.stringify({
   usage: { input_tokens: 1, output_tokens: 1 }
 })
 
+/** JSONL codex: у него свой формат вывода, и приёмник сервера разбирает именно его. */
+const CODEX_LINES = [
+  JSON.stringify({ type: 'thread.started', thread_id: 'th-1' }),
+  JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'Привет' } }),
+  JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } })
+]
+
 /** Приёмник ранов вместо RunManager: сохраняет тело и сразу закрывает ход. */
 class FakeRuns {
   readonly bodies: LlmRunBody[] = []
@@ -41,7 +48,9 @@ class FakeRuns {
 
   start(body: LlmRunBody, sink: { write(chunk: string): boolean; end(): void }): string {
     this.bodies.push(body)
-    sink.write(`${JSON.stringify({ t: 'out', s: RESULT_LINE })}\n`)
+    for (const line of body.kind === 'codex' ? CODEX_LINES : [RESULT_LINE]) {
+      sink.write(`${JSON.stringify({ t: 'out', s: line })}\n`)
+    }
     sink.write(`${JSON.stringify({ t: 'exit', code: 0 })}\n`)
     sink.end()
     return body.runId ?? ''
@@ -125,6 +134,27 @@ describe('контракт /v1/run: RemoteLlmClient против настоящ�
         sessionId: 'sess-1',
         model: 'sonnet'
       })
+    } finally {
+      await runner.app.close()
+    }
+  })
+
+  it('codex без выбранной модели доходит до done, а не до 400', async () => {
+    const runner = await startRunner()
+    try {
+      const c = collect()
+      new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url, token: TOKEN }).send(
+        { prompt: 'привет', sessionId: null, model: '' },
+        c.handlers
+      )
+      await c.finished
+
+      // Ответ codex приходит целым `item.completed`, поэтому текст даёт одна delta.
+      expect(c.events).toEqual([
+        { t: 'delta', text: 'Привет' },
+        { t: 'done', text: 'Привет' }
+      ])
+      expect(runner.runs.bodies[0]).toMatchObject({ kind: 'codex', model: '' })
     } finally {
       await runner.app.close()
     }

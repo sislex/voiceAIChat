@@ -29,7 +29,7 @@
 
 | Метод | Что делает |
 |---|---|
-| `POST /v1/run` | тело — `LlmRunBody` (`LlmRequest` + `kind` + необязательный `runId`). Ответ — NDJSON-поток кадров; id рана ещё и в заголовке `x-run-id`. Живой `runId` повторно → 409 |
+| `POST /v1/run` | тело — `LlmRunBody` (`LlmRequest` + `kind` + необязательный `runId`). `model` обязательна только для `claude`: у `codex` пустая строка = модель из его `config.toml`. Ответ — NDJSON-поток кадров; id рана ещё и в заголовке `x-run-id`. Живой `runId` повторно → 409 |
 | `DELETE /v1/run/:id` | отмена: SIGTERM → SIGKILL (`killCliChild`). `{stopped:false}` — рана уже нет, это не ошибка |
 | `GET /v1/health` | бинари, версии, статус входа обоих CLI, число живых ранов |
 
