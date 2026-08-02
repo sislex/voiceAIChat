@@ -383,20 +383,39 @@ describe('модель по стадии рана', () => {
   }
   const KB_REPLY = JSON.stringify({ note: 'нечего менять', topics: [], documents: [] })
 
+  /**
+   * Клиент, который отдаёт расход, но не мету: модель строки `ci_run_usage`
+   * тогда берётся от сервера — ровно та, которой ход запускали (так ведёт себя
+   * codex, и так проверяется, что стадии в отчёте различимы).
+   */
+  function usageRecorder(text = 'готово'): { client: LlmClient; models: () => string[] } {
+    const models: string[] = []
+    return {
+      client: {
+        send: (req, handlers) => {
+          models.push(req.model ?? '')
+          handlers.onUsage?.({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheCreationTokens: 0 })
+          handlers.onDelta(text)
+          handlers.onDone(text)
+          return { cancel: () => {} }
+        }
+      },
+      models: () => models
+    }
+  }
+
   /** Тот же ctx, но с машиной: без неё шаг базы знаний до модели не доходит. */
   const withAgent = (ctx: CiModelContext, log: (chunk: string) => void = () => {}): CiModelContext =>
     ({ ...ctx, agentId: 'agent-1', log: (_s: string, _stream: string, chunk: string) => log(chunk) }) as unknown as CiModelContext
 
   it('дефолт: разработка на модели рана, резюме и база знаний — дешевле', async () => {
-    const rec = recorder(KB_REPLY)
+    const rec = usageRecorder(KB_REPLY)
     const { ctx, run } = setup('off')
     const hooks = hooksWith(rec.client, { kb: undefined, executor: diffExecutor })
     await hooks.modelWork(ctx)
-    expect(rec.last()!.model).toBe('opus')
     await hooks.modelSummary(ctx)
-    expect(rec.last()!.model).toBe('haiku')
     await hooks.kbUpdate(withAgent(ctx))
-    expect(rec.last()!.model).toBe('sonnet')
+    expect(rec.models()).toEqual(['opus', 'haiku', 'sonnet'])
     // В отчёте видно, чем считалась каждая стадия: модель пишется в строку расхода.
     expect(db.listCiRunUsage(run.id).map((u) => [u.kind, u.model])).toEqual([
       ['model_work', 'opus'], ['summary', 'haiku'], ['kb_update', 'sonnet']
@@ -435,6 +454,7 @@ describe('модель по стадии рана', () => {
         seen.push(req.model ?? '')
         if (req.model === 'haiku') handlers.onError?.('model not available')
         else {
+          handlers.onUsage?.({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheCreationTokens: 0 })
           handlers.onDelta('готово')
           handlers.onDone('готово')
         }
