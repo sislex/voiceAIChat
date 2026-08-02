@@ -19,7 +19,7 @@ import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
 import { createCiModelHooks } from './ci/modelHooks.js'
 import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
-import type { CommandExecutor } from './ci/types.js'
+import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
 import { BoardHub } from './projects/boardHub.js'
 import { registerAuth, resolveUser, uid } from './users/auth.js'
 import { loadOrCreateSecret } from './users/accounts.js'
@@ -27,11 +27,16 @@ import type { SessionUser } from '@voicechat/shared'
 import { AgentRegistry } from './agents/registry.js'
 import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
+import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
-import { ClaudeCli } from './claude/claudeCli.js'
+import { RemoteLlmClient } from './llm/remoteClient.js'
+import { RunnerFsClient } from './llm/runnerFsClient.js'
 import { PromptSuggester } from './prompt/suggester.js'
-import { CodexCli } from './codex/codexCli.js'
+// Локальные spawn-реализации CLI живут в отдельном воркспейсе исполнителя
+// (apps/llm-runner), а buildServer здесь выбирает между ними и HTTP-клиентом
+// RemoteLlmClient по конфигу окружения.
+import { ClaudeCli, CodexCli, ensureCliProfile } from '@voicechat/llm-runner/cli'
 import type { LlmClient } from './claude/types.js'
 import { WhisperEngine } from './stt/whisperEngine.js'
 import { isModelPresent, listModels, modelPath } from './stt/models.js'
@@ -51,11 +56,16 @@ import { registerAnthropicGateway } from './anthropic/gateway.js'
 import { detectResources } from './system/resources.js'
 import { computeCapabilities } from './system/capabilities.js'
 import type { SystemCapabilities } from '@voicechat/shared'
-import { ensureCliProfile } from './users/cliProfiles.js'
 import { FileKnowledgeBaseService } from './kb/service.js'
-import { registerKbRoutes } from './kb/routes.js'
+import { registerKbRoutes, registerKbResearchRoutes } from './kb/routes.js'
+import { ScopedKnowledgeBase } from './kb/scoped.js'
+import { kbViewOf } from './kb/access.js'
+import { KbResearchManager } from './kb/research.js'
 import type { KnowledgeBaseService } from './kb/types.js'
 import { LlmKbReranker } from './kb/reranker.js'
+import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
+import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
+import { readUserFile } from './serverFiles.js'
 
 const VERSION = '0.1.0'
 
@@ -65,9 +75,14 @@ export interface BuildOptions {
   db?: VoiceChatDb
   /** Read-only база знаний (для тестов — мок). */
   kbService?: KnowledgeBaseService
-  /** LLM-клиент (для тестов — мок). По умолчанию ClaudeCli. */
+  /** Телеметрия обращений к БЗ (для тестов — мок/выключено). */
+  kbUsage?: KbUsageTracker
+  /**
+   * LLM-клиент (для тестов — мок). По умолчанию RemoteLlmClient, если задан адрес
+   * исполнителя (config.llmRunnerClaudeUrl), иначе локальный ClaudeCli.
+   */
   claude?: LlmClient
-  /** Codex-клиент (для тестов — мок). По умолчанию CodexCli. */
+  /** Codex-клиент (для тестов — мок). По умолчанию — как claude, но kind='codex'. */
   codex?: LlmClient
   /** STT-движок (для тестов — мок). По умолчанию WhisperEngine из config. */
   sttEngine?: SttEngine
@@ -79,6 +94,8 @@ export interface BuildOptions {
   sessionSecret?: string
   /** Исполнитель CI-команд (в тестах — мок). По умолчанию поверх AgentRegistry. */
   ciExecutor?: CommandExecutor
+  /** Хук шага «Актуализировать базу знаний» (в тестах — мок). По умолчанию — из createCiModelHooks. */
+  ciKbUpdate?: CiKbUpdateHook
 }
 
 function makeTtsEngine(config: ServerConfig): TtsEngine {
@@ -145,17 +162,53 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({ ok: true, version: VERSION }))
 
-  await registerRest(app, db, opts.config.dataDir)
+  const runnerFs =
+    opts.config.llmRunnerClaudeUrl || opts.config.llmRunnerCodexUrl
+      ? new RunnerFsClient({
+          claudeBaseUrl: opts.config.llmRunnerClaudeUrl,
+          codexBaseUrl: opts.config.llmRunnerCodexUrl,
+          ...(opts.config.llmRunnerToken ? { token: opts.config.llmRunnerToken } : {})
+        })
+      : null
+
+  await registerRest(app, db, opts.config.dataDir, { runnerFs: runnerFs ?? undefined })
 
   const profileHome = (userId: string): string =>
     ensureCliProfile(opts.config.dataDir, userId).home
-  const claude = opts.claude ?? new ClaudeCli({ profileHome })
-  const codex = opts.codex ?? new CodexCli({ profileHome })
+  // Движок либо запускается рядом (spawn CLI), либо живёт в контейнере-исполнителе
+  // и вызывается по HTTP. Выбор — по наличию адреса в env; реестра исполнителей
+  // пока нет (docs/plans/llm-runners.md, срез 2).
+  const runner = (kind: 'claude' | 'codex', baseUrl: string): LlmClient =>
+    new RemoteLlmClient({
+      kind,
+      baseUrl,
+      ...(opts.config.llmRunnerToken ? { token: opts.config.llmRunnerToken } : {}),
+      ...(opts.config.llmRunnerConnectTimeoutMs
+        ? { connectTimeoutMs: opts.config.llmRunnerConnectTimeoutMs }
+        : {})
+    })
+  const claude =
+    opts.claude ??
+    (opts.config.llmRunnerClaudeUrl
+      ? runner('claude', opts.config.llmRunnerClaudeUrl)
+      : new ClaudeCli({ profileHome }))
+  const codex =
+    opts.codex ??
+    (opts.config.llmRunnerCodexUrl
+      ? runner('codex', opts.config.llmRunnerCodexUrl)
+      : new CodexCli({ profileHome }))
   const reranker = opts.config.kbRerankProvider === 'disabled'
     ? undefined
     : new LlmKbReranker(opts.config.kbRerankProvider === 'claude' ? claude : codex)
-  const kb = opts.kbService ?? new FileKnowledgeBaseService(opts.config.kbRoot, reranker)
-  registerKbRoutes(app, kb)
+  // Файловые темы docs/kb — раздел «Использование» (общий для всех); поверх них
+  // ScopedKnowledgeBase добавляет статьи из БД (персональные и проектные) и
+  // решает, что кому видно.
+  const fileKb = opts.kbService ?? new FileKnowledgeBaseService(opts.config.kbRoot, reranker)
+  const kb = new ScopedKnowledgeBase(fileKb, db, reranker)
+  // Телеметрия обращений к БЗ: одна на процесс (как реестр ходов) — её события
+  // рассылаются всем соединениям пользователя, а строки живут в БД.
+  const kbUsage = opts.kbUsage ?? createKbUsageTracker({ db })
+  registerKbRoutes(app, kb, { db, toolEnabled: opts.config.kbToolEnabled })
 
   // Помощник формулировки — одноразовый вызов выбранного пользователем CLI.
   // Историю разговора не трогает, shell выключен.
@@ -195,13 +248,39 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const mcpSecret = randomBytes(16).toString('hex')
   registerRemoteBashMcp(app, agentRegistry, mcpSecret)
   registerCiCommandsMcp(app, mcpSecret)
+  // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
+  // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).
+  registerKbMcp(app, {
+    kb,
+    secret: mcpSecret,
+    usage: kbUsage,
+    viewOf: (entry) => ({ ...kbViewOf(db, entry.userId), ...(entry.projectId ? { projectId: entry.projectId } : {}) })
+  })
+  const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
+  const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
+  const ciCommandsMcpBaseUrl = buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)
+
+  // «Исследовать проект»: модель на машине проекта сверяет статьи раздела
+  // «Разработка проекта» с кодом. Живёт рядом с MCP-мостом — ей нужен тот же
+  // remote-bash, что и ходам модели.
+  registerKbResearchRoutes(
+    app,
+    db,
+    new KbResearchManager({
+      db,
+      claude,
+      codex,
+      mcpBaseUrl: remoteBashMcpBaseUrl,
+      agentNameOf: (agentId) => agentRegistry.nameOf(agentId)
+    })
+  )
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
   registerAdminRoutes(app, db, agentRegistry)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.update по WS.
   const boardHub = new BoardHub()
-  registerProjectRoutes(app, db, boardHub)
+  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled })
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
   // её выбор берём у канонического пользователя (admin), а не per-user.
   const machineWhisperModel = (): WhisperModel => db.getSettings('admin').whisperModel
@@ -285,7 +364,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     db,
     claude,
     codex,
+    engineClient: (engine) => new RemoteLlmClient({ kind: engine.kind, baseUrl: engine.baseUrl, ...(engine.token ? { token: engine.token } : {}) }),
     kb,
+    kbUsage,
+    kbToolEnabled: opts.config.kbToolEnabled,
+    kbTool: kbToolBroker,
     resolveUpload: (id) => uploads.pathById(id),
     agents: {
       isOnline: (id) => agentRegistry.isOnline(id),
@@ -295,17 +378,20 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       fsMkdir: (id, path) => agentRegistry.fsMkdir(id, path),
       fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data)
     },
-    // Откуда можно забирать файл картинки: профиль CLI, загрузки, рабочий каталог.
-    serverFileRoots: (userId) => {
+    readServerFile: async (userId, path) => {
+      if (runnerFs) return runnerFs.readFile(userId, path)
       const settings = db.getSettings(userId)
-      return [
+      const roots = [
         ensureCliProfile(opts.config.dataDir, userId).home,
         join(opts.config.dataDir, 'uploads'),
         ...(settings.workdir ? [settings.workdir] : [])
       ]
+      const res = readUserFile(path, roots)
+      return res.ok ? res.file : null
     },
-    // claude спавнится на этом же хосте — loopback работает при любом HOST.
-    mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`
+    // MCP для исполнителя должен смотреть либо на loopback dev-сервера, либо на публичную базу из VC_MCP_PUBLIC_BASE.
+    mcpBaseUrl: remoteBashMcpBaseUrl,
+    kbMcpBaseUrl
   })
 
   // CI-раннер (Авто-подготовка окружения для таска): процесс-глобальный менеджер
@@ -316,19 +402,65 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     db,
     claude,
     codex,
-    mcpBaseUrl: `http://127.0.0.1:${opts.config.port}${REMOTE_BASH_MCP_PATH}?k=${mcpSecret}`,
-    ciMcpBaseUrl: `http://127.0.0.1:${opts.config.port}${CI_COMMANDS_MCP_PATH}?k=${mcpSecret}`,
-    agentNameOf: (agentId) => agentRegistry.nameOf(agentId)
+    engineClient: (engine) => new RemoteLlmClient({ kind: engine.kind, baseUrl: engine.baseUrl, ...(engine.token ? { token: engine.token } : {}) }),
+    mcpBaseUrl: remoteBashMcpBaseUrl,
+    ciMcpBaseUrl: ciCommandsMcpBaseUrl,
+    agentNameOf: (agentId) => agentRegistry.nameOf(agentId),
+    // Шагу «Актуализировать базу знаний» нужен диф рабочей копии: его собирает
+    // сервер тем же исполнителем, что и команды слотов.
+    executor: ciExecutor,
+    // База знаний в ходах рана: авто-контекст по теме задачи и mcp__kb__*.
+    // Режим берётся из настройки проекта и фиксируется в ране.
+    kb,
+    kbUsage,
+    kbToolEnabled: opts.config.kbToolEnabled,
+    kbTool: kbToolBroker,
+    kbMcpBaseUrl
   })
+  // Вопросы модели дублируются в связанный чат задачи обычными сообщениями:
+  // UI разбирает блок ```questions тем же парсером, что и вопросы в чате.
+  const ciChatTime = (): string => {
+    const d = new Date()
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
   const ciRunManager = createCiRunManager({
     db,
     executor: ciExecutor,
     boardChanged: (projectId) => boardHub.emit(projectId),
+    postToChat: ({ userId, conversationId, text, runId, interactionId }) => {
+      try {
+        return db.addMessage(userId, conversationId, 'ai', text, ciChatTime(), undefined, { ciInteraction: { runId, interactionId } }).id
+      } catch {
+        return null
+      }
+    },
+    postAnswerToChat: ({ userId, conversationId, text }) => {
+      try {
+        db.addMessage(userId, conversationId, 'u1', text, ciChatTime())
+      } catch {
+        /* чат мог быть удалён — не роняем ответ на вопрос */
+      }
+    },
+    // Резюме законченного рана — обычное AI-сообщение чата; метка `ciRunSummary`
+    // связывает его с раном и отличает от ответа хода модели.
+    postSummaryToChat: ({ userId, conversationId, text, runId }) => {
+      try {
+        return db.addMessage(userId, conversationId, 'ai', text, ciChatTime(), undefined, { ciRunSummary: { runId } })
+      } catch {
+        return null // чат удалён — резюме от этого не падает
+      }
+    },
     modelWork: ciModelHooks.modelWork,
     modelSummary: ciModelHooks.modelSummary,
-    attemptFix: ciModelHooks.attemptFix
+    attemptFix: ciModelHooks.attemptFix,
+    kbUpdate: opts.ciKbUpdate ?? ciModelHooks.kbUpdate
   })
   registerCiRoutes(app, db, ciRunManager)
+
+  // Раны предыдущего процесса живут только в его памяти: после рестарта они
+  // навсегда остались бы «running» и блокировали карточку задачи.
+  const interrupted = db.failInterruptedCiRuns()
+  if (interrupted.length) app.log.warn({ runs: interrupted.map((r) => r.id) }, 'ci: прерванные раны закрыты как failed')
 
   // Плановая остановка (деплой/SIGTERM → app.close()): сохранить частичные
   // ответы активных ходов, чтобы рестарт контейнера не терял набранный текст.
@@ -362,6 +494,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         },
         subscribe: (cb) => agentRegistry.onChange(cb)
       },
+      ...(runnerFs
+        ? {
+            observerTail: {
+              watchCc: (userId, slug, id, onItems) => runnerFs.watchCc(userId, slug, id, onItems),
+              watchCx: (userId, id, onItems) => runnerFs.watchCx(userId, id, onItems)
+            }
+          }
+        : {}),
       pty: {
         start: (agentId, ptyId, cols, rows, cwd, emit) =>
           agentRegistry.ptyStart(agentId, ptyId, cols, rows, cwd, emit),
@@ -371,10 +511,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       },
       // Живая канбан-доска: чтение снапшота (с проверкой членства) + подписка на изменения.
       board: {
-        getBoard: (projectId) => db.getBoard(user.name, projectId),
+        getBoard: (projectId, includeCompleted) => db.getBoard(user.name, projectId, { includeCompleted }),
         subscribe: (cb) => boardHub.onChange(cb)
       },
-      ci: ciRunManager
+      ci: ciRunManager,
+      kbUsage
     })
 
   await app.register(async (scoped) => {

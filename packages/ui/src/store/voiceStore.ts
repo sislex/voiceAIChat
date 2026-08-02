@@ -17,7 +17,7 @@ import type {
   SttUpdate,
   UploadInfo
 } from '@shared/ipc'
-import type { Board, ProjectDetail, ProjectSummary, TaskPriority, WorkItemType, WorkItemDefaultSkills } from '@shared/projects'
+import type { Board, ProjectDetail, ProjectSummary, TaskChatBadge, TaskChatContext, TaskPriority, WorkItemType, WorkItemDefaultSkills } from '@shared/projects'
 
 import type {
   CiCommand,
@@ -31,16 +31,39 @@ import type {
   CiFixAttempt,
   CiRunSummary,
   CiRunConclusion,
+  CiInteraction,
+  CiInteractionAnswer,
+  CiRunMode,
   CiLogLine
 } from '@shared/ci'
+import { isTerminalCiStatus } from '@shared/ci'
 import type { RendererCiBridge } from '../remote/ciBridge'
+import type { RendererKbBridge } from '../remote/kbBridge'
+import type { KbStatus, KbUsageQuery } from '@shared/kb'
+import {
+  applyKbUsageFrame,
+  buildKbUsageFromMessages,
+  emptyKbUsageCache,
+  kbUsageSnapshot,
+  mergeKbUsage,
+  type KbUsageCache
+} from '../lib/kbUsage'
+import type { LoadStatus } from '../lib/loadState'
 import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
 import { detectOpenUtility, toolBlock, type ToolSpec } from '@shared/tools'
 import type { ActiveTurn, ServerFileInfo, SystemCapabilities } from '@shared/protocol'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
-import type { AdminUserInfo, UsageReport, UsageUnit } from '@shared/admin'
+import type {
+  AdminLlmEngine,
+  AdminLlmEngineHealth,
+  AdminLlmEngineInput,
+  LlmEngineOption,
+  AdminUserInfo,
+  UsageReport,
+  UsageUnit
+} from '@shared/admin'
 import type { CcProject, CcSession, CcItem } from '@shared/cc'
 import type { SessionUsage } from '@shared/types'
 import type { CxProject, CxSession, CxItem } from '@shared/codexSessions'
@@ -51,6 +74,7 @@ import type {
   LlmProvider,
   Message,
   MessageRole,
+  MessageSearchHit,
   PermissionMode,
   KbContextMode,
   ConversationStatus,
@@ -104,21 +128,110 @@ function saveSidebarProject(id: string | null): void {
   }
 }
 
-/** Ключ localStorage для последнего открытого проекта-доски (для авто-редиректа). */
-const LAST_PROJECT_KEY = 'vc.lastProject'
-function loadLastProject(): string | null {
+/**
+ * Id задач, стоящих в колонках с семантикой `done`. Ровно этот набор решает,
+ * какие чаты задач сервер прячет из списка бесед, — по его изменению видно
+ * переезд карточки в «Готово» и обратно.
+ */
+function doneTaskIds(board: Board): Set<string> {
+  const doneColumns = new Set(board.columns.filter((c) => c.semanticType === 'done').map((c) => c.id))
+  return new Set(board.tasks.filter((t) => doneColumns.has(t.columnId)).map((t) => t.id))
+}
+
+/** Совпадают ли наборы «завершённых» задач двух снапшотов доски. */
+function sameDoneTasks(a: Board, b: Board): boolean {
+  const before = doneTaskIds(a)
+  const after = doneTaskIds(b)
+  return before.size === after.size && [...before].every((id) => after.has(id))
+}
+
+/**
+ * Добавляет беседу в список, если её там нет, сохраняя порядок «свежее выше».
+ * Нужно для активного чата завершённой задачи: из общего списка он скрыт.
+ */
+function withConversation(list: Conversation[], conv: Conversation): Conversation[] {
+  if (list.some((c) => c.id === conv.id)) return list
+  const at = list.findIndex((c) => c.updatedAt < conv.updatedAt)
+  const out = [...list]
+  out.splice(at < 0 ? out.length : at, 0, conv)
+  return out
+}
+
+/**
+ * Ключ localStorage для фильтра «Показывать чаты завершённых задач». Настройка
+ * взгляда, а не данных, поэтому живёт рядом с выбранным проектом сайдбара, а не
+ * на сервере.
+ */
+const DONE_TASK_CHATS_KEY = 'vc.sidebar.doneTaskChats'
+function loadShowDoneTaskChats(): boolean {
   try {
-    return localStorage.getItem(LAST_PROJECT_KEY)
+    return localStorage.getItem(DONE_TASK_CHATS_KEY) === '1'
   } catch {
-    return null
+    return false
   }
 }
-function saveLastProject(id: string): void {
+function saveShowDoneTaskChats(show: boolean): void {
   try {
-    localStorage.setItem(LAST_PROJECT_KEY, id)
+    if (show) localStorage.setItem(DONE_TASK_CHATS_KEY, '1')
+    else localStorage.removeItem(DONE_TASK_CHATS_KEY)
   } catch {
-    // localStorage недоступен — молча игнорируем.
+    // localStorage недоступен (приватный режим/SSR) — молча игнорируем.
   }
+}
+
+/**
+ * Уведомление для тоста. Стор их только копит: показывает App (useToast), потому
+ * что рисовать умеет React, а стор фреймворк-независим.
+ */
+export interface AppNotice {
+  id: string
+  kind: 'error' | 'success' | 'info'
+  text: string
+  /** Безопасный повтор операции: тост покажет кнопку «Повторить». */
+  retry?: () => void
+}
+
+/** Область поиска в сайдбаре: названия бесед или текст сообщений (FTS5). */
+export type SearchScope = 'chats' | 'messages'
+
+/** Состояние панели поиска по сообщениям (режим «Сообщения» в сайдбаре). */
+export interface MessageSearchState {
+  /**
+   * Запрос, которому соответствуют `hits`. Отстаёт от `state.searchQuery`: тот
+   * меняется на каждое нажатие клавиши, а этот — на каждый ушедший запрос.
+   */
+  query: string
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  hits: MessageSearchHit[]
+  /** Курсор следующей страницы; null — результаты закончились. */
+  nextCursor: string | null
+  /** Идёт догрузка следующей страницы (кнопка «Показать ещё»). */
+  loadingMore: boolean
+  /** Текст ошибки: панель показывает его вместо результатов, с «Повторить». */
+  error: string | null
+}
+
+/** Пауза перед запросом: пользователь печатает быстрее, чем ходит сервер. */
+const MESSAGE_SEARCH_DEBOUNCE_MS = 250
+
+/**
+ * Окно склейки фоновых перезапросов списка бесед. Видимость строки в сайдбаре
+ * считает сервер, а меняют её события, а не действия пользователя: завершение
+ * рана, резюме в фоновом чате, переезд карточки. На одно такое событие прилетает
+ * сразу несколько кадров (`ci.done` + `ci.summary` + `board.update`), поэтому
+ * список перечитываем не чаще раза в окно.
+ */
+export const CONVERSATIONS_REFRESH_DEBOUNCE_MS = 300
+/** Размер страницы результатов. */
+const MESSAGE_SEARCH_PAGE = 20
+
+const EMPTY_MESSAGE_SEARCH: MessageSearchState = {
+  query: '',
+  status: 'idle',
+  hits: [],
+  nextCursor: null,
+  loadingMore: false,
+  error: null
 }
 
 /** Полное состояние приложения в renderer. */
@@ -133,14 +246,28 @@ export interface AppState {
   authError: string | null
   voice: VoiceState
   conversations: Conversation[]
+  /** Состояние загрузки списка бесед (сайдбар: скелетон / ошибка с «Повторить»). */
+  conversationsStatus: LoadStatus
+  /** Текст ошибки загрузки списка бесед (деталь под «Подробнее»). */
+  conversationsError: string | null
   /** Текущий поисковый запрос по разговорам (пусто — показываем все). */
   searchQuery: string
+  /** Что ищем этим запросом: беседы по названию или сообщения по тексту. */
+  searchScope: SearchScope
+  /** Результаты поиска по сообщениям (пустые, пока область — «Беседы»). */
+  messageSearch: MessageSearchState
+  /**
+   * Сообщение, к которому надо прокрутить ленту и подсветить его (переход из
+   * результатов поиска). Гасит подсветку сама лента — через `clearMessageHighlight`.
+   */
+  highlightMessageId: string | null
   activeId: string | null
   messages: Message[]
   /** Идёт загрузка сообщений разговора (обновление страницы / открытие чата). */
   loadingMessages: boolean
   liveSegments: LiveSegment[]
   settings: Settings
+  llmEngines: LlmEngineOption[]
   settingsOpen: boolean
   draft: string
   /** Помощник промптов: список переформулировок черновика и состояние панели. */
@@ -197,6 +324,10 @@ export interface AppState {
   loginStatus: LoginStatusMap | null
   /** Машины-агенты для удалённого выполнения команд (настройки). */
   agents: AgentInfo[]
+  /** Состояние загрузки реестра машин (меню «Машины»). */
+  agentsStatus: LoadStatus
+  /** Текст ошибки загрузки реестра машин. */
+  agentsError: string | null
   /** Открыт ли Проводник Claude Code. */
   ccOpen: boolean
   /** Проекты Claude Code (~/.claude/projects). */
@@ -231,6 +362,10 @@ export interface AppState {
   machinesOpen: boolean
   /** Список пользователей для админки. */
   adminUsers: AdminUserInfo[]
+  /** Состояние загрузки списка пользователей (админка). */
+  adminUsersStatus: LoadStatus
+  /** Текст ошибки загрузки списка пользователей. */
+  adminUsersError: string | null
   /** Выбранный пользователь в админке (null — не выбран). */
   adminSelected: string | null
   /** Отчёт по токенам выбранного пользователя (null — не загружен). */
@@ -241,6 +376,14 @@ export interface AppState {
   adminMessages: Message[]
   /** id разговора, открытого в админ-истории (null — не открыт). */
   adminConversationId: string | null
+  /** Реестр LLM-исполнителей. */
+  adminLlmEngines: AdminLlmEngine[]
+  /** Состояние загрузки реестра LLM-исполнителей. */
+  adminLlmEnginesStatus: LoadStatus
+  /** Ошибка загрузки реестра LLM-исполнителей. */
+  adminLlmEnginesError: string | null
+  /** Последний health-снимок по id исполнителя. */
+  adminLlmEngineHealth: Record<string, AdminLlmEngineHealth | undefined>
   /** Открытая из меню машинная утилита (консоль/проводник) + машина; null — закрыта. */
   utility: { kind: 'console' | 'explorer'; agentId: string | null; path?: string; dir?: boolean } | null
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
@@ -249,6 +392,11 @@ export interface AppState {
   ttsAvailable: boolean
   /** Текст последней ошибки для баннера (null — нет). */
   error: string | null
+  /**
+   * Очередь уведомлений для тостов: неудавшиеся вызовы мостов, успех операций
+   * без видимого результата. App показывает и сразу снимает их (dismissNotice).
+   */
+  notices: AppNotice[]
   /** Наличие локальной модели Whisper (для баннера первого запуска). */
   modelPresent: boolean
   /** Идёт ли скачивание модели. */
@@ -262,8 +410,19 @@ export interface AppState {
   projects: ProjectSummary[]
   /** Проект, выбранный в селекте сайдбара (null — «Без проекта»). Фильтрует список/поиск чатов. */
   sidebarProjectId: string | null
-  /** Последний открытый проект-доска (для авто-редиректа с #/projects). */
-  lastProjectId: string | null
+  /**
+   * Показывать ли в списке бесед чаты задач из колонки «Готово». Фильтрует
+   * сервер, поэтому переключатель — это перезапрос списка.
+   */
+  showDoneTaskChats: boolean
+  /**
+   * Открытый чат, которого нет в отфильтрованном списке (чат завершённой
+   * задачи — пришли по ссылке или из карточки). Держим его строку в сайдбаре,
+   * пока он активен: из списка берут машину и рабочую папку разговора.
+   */
+  pinnedConversation: Conversation | null
+  /** Список проектов прочитан с сервера — иначе «проекта нет» не отличить от «ещё не грузили». */
+  projectsLoaded: boolean
   /** Проект, выбранный в панели деталей (null — не выбран). */
   projectDetail: ProjectDetail | null
   /** id проекта с открытой доской (null — доска закрыта). */
@@ -274,10 +433,18 @@ export interface AppState {
   board: Board | null
   /** Идёт ли загрузка доски. */
   boardLoading: boolean
+  /** Текст ошибки загрузки доски (экран ошибки вместо доски / баннер над ней). */
+  boardError: string | null
+  /** Показывать ли на доске давно завершённые задачи (переключатель в шапке). */
+  boardIncludeCompleted: boolean
   /** Открыта ли страница «Команды» (CI-раннер). */
   ciOpen: boolean
   /** Справочник CI-команд (страница «Команды»). */
   ciCommands: CiCommand[]
+  /** Состояние загрузки страницы «Команды». */
+  ciStatus: LoadStatus
+  /** Текст ошибки загрузки страницы «Команды». */
+  ciError: string | null
   /** Глобальные настройки CI (null — не загружены). */
   ciSettings: CiGlobalSettings | null
   /** Предложения модели по правке команд. */
@@ -290,6 +457,28 @@ export interface AppState {
   ciSummaries: Record<string, CiRunSummary>
   /** Открытый в модалке ран (лента), null — закрыта. */
   ciActiveRunId: string | null
+  /** Контекст задачи активного чата для шапки; null — чат не привязан к задаче. */
+  taskChatContext: TaskChatContext | null
+  /**
+   * Метки чатов задач по id беседы: ключ задачи и её тип для строки списка.
+   * Живут отдельно от `board` — список чатов подсвечивается и без открытой
+   * доски, состояние рана берётся из `ciSummaries` по `taskId`.
+   */
+  taskChatBadges: Record<string, TaskChatBadge>
+  /**
+   * Id закрытых пауз рана. Нужен чату: вопрос продублирован туда сообщением,
+   * и после ответа (из чата или из ленты) форму надо погасить — сам текст
+   * сообщения при этом не меняется.
+   */
+  answeredCiInteractions: string[]
+  /** Открыта ли панель «Использование БЗ» активного чата. */
+  kbUsageOpen: boolean
+  /** Телеметрия БЗ по чатам (снапшот + инкременты kb.usage). */
+  kbUsage: Record<string, KbUsageCache>
+  /** Телеметрия БЗ по проектам (вкладка «По проекту»). */
+  kbUsageByProject: Record<string, KbUsageCache>
+  /** Статус индекса БЗ: панель отличает «обращений не было» от «БЗ недоступна». */
+  kbStatus: KbStatus | null
 }
 
 /** Кэш одного рана: снимок ленты + накопленный лог + заключение. */
@@ -297,6 +486,10 @@ export interface CiRunCache {
   detail: CiRunDetail | null
   log: CiLogLine[]
   conclusion: CiRunConclusion | null
+  /** Ошибка последней REST-подгрузки ленты (лента показывает её с «Повторить»). */
+  error?: string | null
+  /** Идёт REST-подгрузка ленты. */
+  loading?: boolean
 }
 
 export interface StoreDeps {
@@ -311,6 +504,8 @@ export interface StoreDeps {
   board?: RendererBoardBridge
   /** Мост CI-раннера (web). */
   ci?: RendererCiBridge
+  /** Мост телеметрии БЗ (web); без него панель живёт на фолбэке из истории. */
+  kb?: RendererKbBridge
   /** Источник времени (для формата HH:MM). По умолчанию Date.now. */
   now?: () => number
   /** Переопределение задержек пайплайна (для тестов). */
@@ -372,25 +567,47 @@ export interface StoreDeps {
 
 /** Действия, дергаемые из UI. Все асинхронные операции инкапсулированы здесь. */
 export interface StoreActions {
-  init(): Promise<void>
+  /**
+   * Первичная загрузка. `preferredChatId` — id чата из адреса (#/chat/:id):
+   * открываем именно его, а не самый свежий.
+   */
+  init(preferredChatId?: string | null): Promise<void>
   /** Войти по логину/паролю (web). Успех → загрузка данных пользователя. */
   login(name: string, password: string): Promise<void>
   /** Выйти: очистить сессию и данные, показать экран логина (web). */
   logout(): Promise<void>
-  newConversation(): Promise<void>
-  selectConversation(id: string): Promise<void>
+  /** Создать разговор и переключиться на него. Возвращает id созданного. */
+  newConversation(): Promise<string>
+  /** Открыть разговор. `false` — такого разговора нет (удалён/чужой). */
+  selectConversation(id: string): Promise<boolean>
   deleteConversation(id: string): Promise<void>
   /** Переименовать разговор (БД + список). Пустое имя игнорируется. */
   renameConversation(id: string, title: string): Promise<void>
   /** Изменить машину только одного разговора. */
-  setConversationExecTarget(id: string, execTarget: string | null, workdir?: string | null, skillNames?: string[], llmProvider?: LlmProvider | null, llmModel?: string | null, permissionMode?: PermissionMode | null, kbContextMode?: KbContextMode): Promise<void>
+  setConversationExecTarget(id: string, execTarget: string | null, workdir?: string | null, skillNames?: string[], llmProvider?: LlmProvider | null, llmModel?: string | null, permissionMode?: PermissionMode | null, kbContextMode?: KbContextMode, llmEngineId?: string | null): Promise<void>
   setConversationProject(id: string, projectId: string | null): Promise<void>
   /** Сменить статус жизненного цикла чата (дропдаун в сайдбаре). */
   setConversationStatus(id: string, status: ConversationStatus): Promise<void>
-  /** Задать поисковый запрос по разговорам (пусто — весь список). */
+  /** Задать поисковый запрос (пусто — весь список / пустая панель поиска). */
   setSearchQuery(query: string): Promise<void>
+  /** Переключить область поиска: беседы или сообщения. */
+  setSearchScope(scope: SearchScope): Promise<void>
+  /** Повторить упавший поиск по сообщениям (кнопка «Повторить»). */
+  retryMessageSearch(): Promise<void>
+  /** Повторить упавшую загрузку списка бесед (кнопка «Повторить» в сайдбаре). */
+  retryConversations(): Promise<void>
+  /** Перечитать реестр машин (кнопка «Повторить» в меню «Машины»). */
+  refreshAgents(): Promise<void>
+  /** Догрузить следующую страницу результатов поиска по сообщениям. */
+  loadMoreMessageSearch(): Promise<void>
+  /** Прокрутить ленту к сообщению и подсветить его (переход из поиска). */
+  focusMessage(messageId: string): void
+  /** Снять подсветку сообщения (лента отсветила своё). */
+  clearMessageHighlight(): void
   /** Выбрать проект в сайдбаре (null — «Без проекта»); фильтрует список/поиск чатов. */
   setSidebarProject(projectId: string | null): Promise<void>
+  /** Показывать ли в списке бесед чаты задач, завершённых на доске. */
+  setShowDoneTaskChats(show: boolean): Promise<void>
   /** Экспортировать активный разговор в Markdown/JSON (скачивание файла). */
   exportConversation(format: 'md' | 'json'): void
   /** Завершить (или пропустить) приветственный мастер. */
@@ -449,6 +666,10 @@ export interface StoreActions {
   applyClaudeUsage(usage: TurnUsage, conversationId?: string): void
   /** Скрыть баннер ошибки. */
   dismissError(): void
+  /** Поставить уведомление в очередь тостов (успех операции, ошибка). */
+  notify(notice: Omit<AppNotice, 'id'>): void
+  /** Снять показанное уведомление из очереди. */
+  dismissNotice(id: string): void
   /** Запустить скачивание модели Whisper. */
   downloadModel(): void
   /** Прогресс скачивания модели (stt:downloadProgress). */
@@ -511,7 +732,7 @@ export interface StoreActions {
   /** Выбрать сессию (грузит транскрипт + запускает live-tail). */
   selectCcSession(slug: string, id: string): Promise<void>
   /** Продолжить сессию: создать разговор с импортом истории и привязкой к session-id. */
-  resumeCcSession(slug: string, id: string): Promise<void>
+  resumeCcSession(slug: string, id: string): Promise<string | null>
   /** Добавить пришедшие по live-tail записи в транскрипт. */
   applyCcTailItems(items: CcItem[]): void
   /** Открыть Проводник Codex (грузит проекты). */
@@ -523,7 +744,7 @@ export interface StoreActions {
   /** Выбрать сессию Codex (грузит транскрипт + запускает live-tail). */
   selectCxSession(id: string): Promise<void>
   /** Продолжить сессию Codex: создать разговор с импортом истории и переключить движок на Codex. */
-  resumeCxSession(id: string): Promise<void>
+  resumeCxSession(id: string): Promise<string | null>
   /** Добавить пришедшие по live-tail записи в транскрипт Codex. */
   applyCxTailItems(items: CxItem[]): void
   /** Прогресс скачивания голоса (tts:voiceProgress). */
@@ -549,6 +770,16 @@ export interface StoreActions {
   loadAdminUsage(unit: UsageUnit, from?: number, to?: number): Promise<void>
   /** Открыть разговор пользователя в админ-просмотре истории. */
   openAdminConversation(conversationId: string): Promise<void>
+  /** Перечитать реестр LLM-исполнителей. */
+  refreshAdminLlmEngines(): Promise<void>
+  /** Создать запись исполнителя. */
+  createAdminLlmEngine(input: AdminLlmEngineInput): Promise<void>
+  /** Обновить запись исполнителя. */
+  updateAdminLlmEngine(id: string, patch: AdminLlmEngineInput): Promise<void>
+  /** Удалить запись исполнителя. */
+  deleteAdminLlmEngine(id: string): Promise<void>
+  /** Проверить живость исполнителя. */
+  checkAdminLlmEngineHealth(id: string): Promise<void>
   // --- Машинные утилиты (консоль/проводник) ---
   /** Открыть утилиту из меню (машина по умолчанию — первая онлайн-своя). */
   openUtility(kind: 'console' | 'explorer', agentId?: string | null, path?: string): void
@@ -577,7 +808,7 @@ export interface StoreActions {
   /** Закрыть режим «Проекты». */
   closeProjects(): void
   /** Перечитать список проектов. */
-  refreshProjects(): Promise<void>
+  refreshProjects(): Promise<ProjectSummary[]>
   /** Выбрать проект в панель деталей (грузит состав). */
   selectProject(id: string): Promise<void>
   /** Создать проект. */
@@ -615,6 +846,7 @@ export interface StoreActions {
     ciBranchTemplate?: string
     ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
     ciExecAuthRef?: string
+    doneRetentionDays?: number | null
     }
   ): Promise<void>
   /** Удалить проект (только владелец). */
@@ -626,7 +858,7 @@ export interface StoreActions {
   linkProjectMachine(id: string, agentId: string): Promise<void>
   unlinkProjectMachine(id: string, agentId: string): Promise<void>
   setProjectMachinePath(id: string, agentId: string, path: string): Promise<void>
-  setProjectFeatureReposRoot(id: string, agentId: string, featureReposRoot: string): Promise<void>
+  setProjectReposRoot(id: string, agentId: string, reposRoot: string): Promise<void>
   setProjectDefaultMachine(id: string, agentId: string): Promise<void>
   fetchProjectDetail(id: string): Promise<ProjectDetail | null>
   /** Открыть доску проекта (грузит снапшот, подписывается на живые обновления). */
@@ -638,6 +870,8 @@ export interface StoreActions {
   closeProjectSettings(): void
   /** Применить живой снапшот доски (из WS board.update). */
   applyBoardUpdate(projectId: string, board: Board): void
+  /** Переключатель «Показать завершённые»: перезапрашивает доску и подписку. */
+  setBoardIncludeCompleted(include: boolean): Promise<void>
   /** Колонки активной доски. */
   createColumn(name: string): Promise<void>
   updateColumn(columnId: string, fields: { name?: string; wipLimit?: number | null }): Promise<void>
@@ -658,7 +892,10 @@ export interface StoreActions {
   moveTask(taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null): Promise<void>
   deleteTask(taskId: string): Promise<void>
   /** Открыть (создав при необходимости) связанный с задачей чат и переключиться на него. */
-  openTaskChat(taskId: string): Promise<void>
+  openTaskChat(taskId: string): Promise<string | null>
+  /** Создать связанный чат, не переключаясь на него (открытие карточки). */
+  ensureTaskChat(taskId: string): Promise<void>
+  loadTaskChatContext(id: string): Promise<void>
 
   // --- CI-раннер ---
   openCi(): Promise<void>
@@ -671,10 +908,10 @@ export interface StoreActions {
   saveCiSettings(settings: Partial<CiGlobalSettings>): Promise<void>
   resolveCiSuggestion(id: string, accept: boolean): Promise<void>
   reloadCiWorkspaces(projectId?: string): Promise<void>
-  startCiRun(projectId: string, taskId: string): Promise<CiRun | null>
+  startCiRun(projectId: string, taskId: string, mode?: CiRunMode): Promise<CiRun | null>
   cancelCiRun(runId: string): Promise<void>
   retryCiRun(runId: string): Promise<CiRun | null>
-  retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun | null>
+  retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<CiRun | null>
   discardCiWorkspaceAndRetry(runId: string): Promise<CiRun | null>
   loadCiRun(runId: string): Promise<void>
   openCiRun(runId: string): void
@@ -688,6 +925,21 @@ export interface StoreActions {
   applyCiFix(runId: string, attempt: CiFixAttempt): void
   applyCiDone(runId: string, run: CiRun, conclusion?: CiRunConclusion): void
   applyCiSummary(projectId: string, summary: CiRunSummary): void
+  applyCiInteraction(runId: string, interaction: CiInteraction): void
+  /** Сообщение, дописанное сервером в чат (резюме CI-рана). */
+  applyChatMessage(conversationId: string, message: Message): void
+  /** Панель «Использование БЗ»: открыть/закрыть. */
+  openKbUsage(): void
+  closeKbUsage(): void
+  /** Снапшот телеметрии БЗ чата (+ фолбэк по истории, если моста нет). */
+  loadKbUsage(conversationId: string): Promise<void>
+  /** Снапшот телеметрии БЗ проекта (вкладка «По проекту»). */
+  loadProjectKbUsage(projectId: string): Promise<void>
+  /** Живой кадр kb.usage: upsert по id с отсечкой по seq. */
+  applyKbUsageQuery(conversationId: string, projectId: string | null, query: KbUsageQuery): void
+  /** Статус индекса БЗ (для пустых состояний панели). */
+  refreshKbStatus(): Promise<void>
+  answerCiInteraction(runId: string, interactionId: string, answer: CiInteractionAnswer): Promise<void>
   /** Отмена всех активных таймеров пайплайна (напр. при размонтировании). */
   dispose(): void
 }
@@ -705,12 +957,18 @@ function initialState(): AppState {
     authError: null,
     voice: 'idle',
     conversations: [],
+    conversationsStatus: 'loading',
+    conversationsError: null,
     searchQuery: '',
+    searchScope: 'chats',
+    messageSearch: { ...EMPTY_MESSAGE_SEARCH },
+    highlightMessageId: null,
     activeId: null,
     messages: [],
     loadingMessages: false,
     liveSegments: [],
     settings: { ...DEFAULT_SETTINGS },
+    llmEngines: [],
     settingsOpen: false,
     draft: '',
     promptHelper: { open: false, loading: false, variants: [], error: null },
@@ -734,6 +992,8 @@ function initialState(): AppState {
     mcpServers: [],
     loginStatus: null,
     agents: [],
+    agentsStatus: 'loading',
+    agentsError: null,
     ccOpen: false,
     ccProjects: [],
     ccSessions: [],
@@ -751,35 +1011,55 @@ function initialState(): AppState {
     usersOpen: false,
     machinesOpen: false,
     adminUsers: [],
+    adminUsersStatus: 'loading',
+    adminUsersError: null,
     adminSelected: null,
     adminUsage: null,
     adminConversations: [],
     adminMessages: [],
     adminConversationId: null,
+    adminLlmEngines: [],
+    adminLlmEnginesStatus: 'loading',
+    adminLlmEnginesError: null,
+    adminLlmEngineHealth: {},
     utility: null,
     speakingMessageId: null,
     ttsAvailable: false,
     error: null,
+    notices: [],
     modelPresent: true,
     downloading: false,
     downloadPercent: 0,
     projectsOpen: false,
     projects: [],
     sidebarProjectId: loadSidebarProject(),
-    lastProjectId: loadLastProject(),
+    showDoneTaskChats: loadShowDoneTaskChats(),
+    pinnedConversation: null,
+    projectsLoaded: false,
     projectDetail: null,
     activeProjectId: null,
     projectSettingsOpen: false,
     board: null,
     boardLoading: false,
+    boardError: null,
+    boardIncludeCompleted: false,
     ciOpen: false,
     ciCommands: [],
+    ciStatus: 'loading',
+    ciError: null,
     ciSettings: null,
     ciSuggestions: [],
     ciWorkspaces: [],
     ciRuns: {},
     ciSummaries: {},
-    ciActiveRunId: null
+    ciActiveRunId: null,
+    taskChatContext: null,
+    taskChatBadges: {},
+    answeredCiInteractions: [],
+    kbUsageOpen: false,
+    kbUsage: {},
+    kbUsageByProject: {},
+    kbStatus: null
   }
 }
 
@@ -805,6 +1085,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   const { api } = deps
   const boardBridge = deps.board
   const ciBridge = deps.ci
+  const kbBridge = deps.kb
   const now = deps.now ?? Date.now
   const delays: PipelineDelays = { ...DEFAULT_DELAYS, ...deps.delays }
   const audio = deps.audio ?? null
@@ -826,6 +1107,33 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   function setState(patch: Partial<AppState>): void {
     state = { ...state, ...patch }
     listeners.forEach((l) => l())
+  }
+
+  /**
+   * Состояние, принадлежащее конкретному чату: при любой смене `activeId` его
+   * надо обнулить одним патчем. Иначе оно залипает в следующем чате — так виджет
+   * задачи оставался в новом разговоре, потому что контекст чистила только
+   * `loadTaskChatContext`, а её звал лишь `selectConversation`.
+   */
+  function chatScopedReset(): Pick<AppState, 'messages' | 'taskChatContext'> {
+    return { messages: [], taskChatContext: null }
+  }
+
+  /**
+   * То же плюс живое состояние хода: нужно там, где чат открывают заново
+   * (выбор чата, «Новый разговор»), а не досылают в него готовую историю.
+   */
+  function chatSwitchReset(): Partial<AppState> {
+    return {
+      ...chatScopedReset(),
+      liveSegments: [],
+      consoleLog: [],
+      liveActivity: [],
+      voice: 'idle',
+      streamingReply: '',
+      lastTurnMeta: null,
+      liveUsage: null
+    }
   }
 
   function subscribe(listener: () => void): () => void {
@@ -904,26 +1212,251 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
-  async function refreshConversations(): Promise<void> {
+  /**
+   * Перечитать список бесед. `keepActiveListed` — обновление по событию, а не по
+   * действию пользователя: активный чат, который сервер только что скрыл (задача
+   * уехала в «Готово»), закрепляем, чтобы строка не исчезла из-под открытого
+   * чата. В действиях пользователя так делать нельзя: удаление активного чата
+   * тоже убирает его из ответа, а закреплять удалённое незачем.
+   */
+  async function refreshConversations(
+    { keepActiveListed = false }: { keepActiveListed?: boolean } = {}
+  ): Promise<void> {
     const q = state.searchQuery.trim()
-    const all = q
-      ? await api['conversations:search']({ query: q })
-      : await api['conversations:list']()
-    // Список/поиск сужаем до выбранного в сайдбаре проекта (null — чаты без проекта).
-    const pid = state.sidebarProjectId
-    const conversations = all.filter((c) => (c.projectId ?? null) === pid)
-    setState({ conversations })
+    // Статус ведём отдельно от данных: сайдбар покажет скелетон только пока
+    // списка нет, а при повторном чтении оставит его на месте (lib/loadState.ts).
+    setState({ conversationsStatus: 'loading', conversationsError: null })
+    try {
+      const includeCompleted = state.showDoneTaskChats
+      const all = q
+        ? await api['conversations:search']({ query: q, includeCompleted })
+        : await api['conversations:list']({ includeCompleted })
+      if (keepActiveListed) pinActiveIfHidden(all, q)
+      // Список/поиск сужаем до выбранного в сайдбаре проекта (null — чаты без проекта).
+      const pid = state.sidebarProjectId
+      const conversations = keepPinned(all.filter((c) => (c.projectId ?? null) === pid), pid, q)
+      setState({ conversations, conversationsStatus: 'ready', conversationsError: null })
+      void loadTaskChatBadges()
+    } catch (err) {
+      setState({
+        conversationsStatus: 'error',
+        conversationsError: err instanceof Error ? err.message : String(err)
+      })
+      throw err
+    }
+  }
+
+  /**
+   * Активный чат пропал из ответа сервера, хотя поиска нет — значит его скрыли
+   * как чат завершённой задачи. Закрепляем строку (дальше её вернёт `keepPinned`):
+   * вместе с ней из шапки пропали бы машина и рабочая папка разговора.
+   */
+  function pinActiveIfHidden(all: Conversation[], query: string): void {
+    const active = state.activeId
+    if (!active || query || all.some((c) => c.id === active)) return
+    const conv =
+      state.pinnedConversation?.id === active
+        ? state.pinnedConversation
+        : state.conversations.find((c) => c.id === active) ?? null
+    if (conv) setState({ pinnedConversation: conv })
+  }
+
+  /**
+   * Возвращает в список закреплённый чат — открытый, но скрытый как чат
+   * завершённой задачи (`pinnedConversation`). Только его: пропажа строки из-за
+   * поиска или смены проекта — это нормальная фильтрация, а не потеря доступа.
+   */
+  function keepPinned(list: Conversation[], pid: string | null, query: string): Conversation[] {
+    const pinned = state.pinnedConversation
+    if (!pinned || pinned.id !== state.activeId) return list
+    if (query || (pinned.projectId ?? null) !== pid) return list
+    return withConversation(list, pinned)
+  }
+
+  let conversationsRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+  /**
+   * Перечитать список бесед из-за события, а не действия пользователя. Раньше
+   * список обновляли только действия (отправка, выбор, поиск), и открытая
+   * страница не узнавала, что чат уехавшей в «Готово» задачи сервер уже скрыл:
+   * строка висела до перезагрузки.
+   *
+   * Кто виден — по-прежнему решает сервер: клиент только перезапрашивает.
+   * Запросы склеиваются в окно (`CONVERSATIONS_REFRESH_DEBOUNCE_MS`), поэтому
+   * пачка терминальных кадров одного рана стоит одного `conversations:list`.
+   */
+  function scheduleConversationsRefresh(): void {
+    if (conversationsRefreshTimer) return // окно уже открыто — этот повод склеится с прошлым
+    conversationsRefreshTimer = setTimeout(() => {
+      conversationsRefreshTimer = null
+      void refreshConversations({ keepActiveListed: true }).catch(() => {
+        /* ошибка уже в conversationsError; список на экране остаётся прежним */
+      })
+    }, CONVERSATIONS_REFRESH_DEBOUNCE_MS)
+  }
+
+  /** Повторить загрузку списка бесед (кнопка «Повторить» в сайдбаре). */
+  async function retryConversations(): Promise<void> {
+    try {
+      await refreshConversations()
+    } catch {
+      /* состояние уже помечено ошибкой — экран сайдбара её показывает */
+    }
   }
 
   async function setSearchQuery(query: string): Promise<void> {
     setState({ searchQuery: query })
+    if (state.searchScope === 'messages') {
+      scheduleMessageSearch()
+      return
+    }
     await refreshConversations()
+  }
+
+  // --- Поиск по сообщениям (FTS5 на сервере) -------------------------------
+  //
+  // Запрос уходит с задержкой, а ответы обесцененных запросов отбрасываются по
+  // номеру: сам HTTP-запрос предыдущей заявки отменяет мост (`httpApi`), но
+  // отменённым может оказаться и уже улетевший ответ.
+  let searchTimer: ReturnType<typeof setTimeout> | null = null
+  let searchSeq = 0
+
+  function cancelPendingMessageSearch(): void {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = null
+    // Инкремент номера обесценивает ответы всех улетевших запросов.
+    searchSeq += 1
+  }
+
+  /** Ставит поиск в очередь после паузы; пустой запрос просто чистит панель. */
+  function scheduleMessageSearch(): void {
+    cancelPendingMessageSearch()
+    const query = state.searchQuery.trim()
+    if (!query) {
+      setState({ messageSearch: { ...EMPTY_MESSAGE_SEARCH } })
+      return
+    }
+    // Скелетоны показываем сразу, не дожидаясь конца паузы: иначе панель
+    // выглядит замершей на первом же символе.
+    setState({ messageSearch: { ...state.messageSearch, status: 'loading', error: null } })
+    searchTimer = setTimeout(() => {
+      searchTimer = null
+      void runMessageSearch(query)
+    }, MESSAGE_SEARCH_DEBOUNCE_MS)
+  }
+
+  async function runMessageSearch(query: string): Promise<void> {
+    if (!query) return
+    searchSeq += 1
+    const seq = searchSeq
+    setState({ messageSearch: { ...state.messageSearch, query, status: 'loading', error: null } })
+    try {
+      const res = await api['messages:search']({
+        query,
+        // Поиск живёт в сайдбаре и подчиняется его фильтру проекта.
+        projectId: state.sidebarProjectId,
+        limit: MESSAGE_SEARCH_PAGE
+      })
+      if (seq !== searchSeq) return // ответ на устаревший запрос
+      setState({
+        messageSearch: { query, status: 'ready', hits: res.hits, nextCursor: res.nextCursor, loadingMore: false, error: null }
+      })
+    } catch (err) {
+      if (seq !== searchSeq) return
+      // Ошибку показывает сама панель с кнопкой «Повторить» — она рядом с
+      // запросом, в отличие от тоста, и не мешает продолжать печатать.
+      setState({
+        messageSearch: {
+          ...state.messageSearch,
+          query,
+          status: 'error',
+          error: err instanceof Error ? err.message : String(err)
+        }
+      })
+    }
+  }
+
+  async function setSearchScope(scope: SearchScope): Promise<void> {
+    if (scope === state.searchScope) return
+    setState({ searchScope: scope })
+    if (scope === 'messages') {
+      scheduleMessageSearch()
+      return
+    }
+    cancelPendingMessageSearch()
+    setState({ messageSearch: { ...EMPTY_MESSAGE_SEARCH } })
+    await refreshConversations()
+  }
+
+  async function retryMessageSearch(): Promise<void> {
+    cancelPendingMessageSearch()
+    await runMessageSearch(state.searchQuery.trim())
+  }
+
+  async function loadMoreMessageSearch(): Promise<void> {
+    const cursor = state.messageSearch.nextCursor
+    if (!cursor || state.messageSearch.loadingMore || state.messageSearch.status !== 'ready') return
+    const seq = searchSeq
+    const query = state.messageSearch.query
+    setState({ messageSearch: { ...state.messageSearch, loadingMore: true } })
+    try {
+      const res = await api['messages:search']({
+        query,
+        projectId: state.sidebarProjectId,
+        limit: MESSAGE_SEARCH_PAGE,
+        cursor
+      })
+      if (seq !== searchSeq) return // запрос успел смениться — страница уже не та
+      setState({
+        messageSearch: {
+          ...state.messageSearch,
+          hits: [...state.messageSearch.hits, ...res.hits],
+          nextCursor: res.nextCursor,
+          loadingMore: false
+        }
+      })
+    } catch (err) {
+      if (seq !== searchSeq) return
+      setState({
+        messageSearch: {
+          ...state.messageSearch,
+          loadingMore: false,
+          status: 'error',
+          error: err instanceof Error ? err.message : String(err)
+        }
+      })
+    }
+  }
+
+  function focusMessage(messageId: string): void {
+    setState({ highlightMessageId: messageId })
+  }
+
+  function clearMessageHighlight(): void {
+    if (state.highlightMessageId) setState({ highlightMessageId: null })
   }
 
   async function setSidebarProject(projectId: string | null): Promise<void> {
     saveSidebarProject(projectId)
     setState({ sidebarProjectId: projectId })
+    // Поиск по сообщениям тоже сужен проектом — перезапрашиваем.
+    if (state.searchScope === 'messages') scheduleMessageSearch()
     await refreshConversations()
+  }
+
+  /**
+   * «Показывать чаты завершённых задач»: список фильтрует сервер, поэтому
+   * переключатель — это перезапрос списка (или поиска, если он активен).
+   */
+  async function setShowDoneTaskChats(show: boolean): Promise<void> {
+    if (state.showDoneTaskChats === show) return
+    saveShowDoneTaskChats(show)
+    setState({ showDoneTaskChats: show })
+    try {
+      await refreshConversations()
+    } catch {
+      /* состояние уже помечено ошибкой — сайдбар покажет «Повторить» */
+    }
   }
 
   /** Скачивание файла по умолчанию — через временный `<a download>`. */
@@ -968,7 +1501,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     const conv = state.sidebarProjectId
       ? await api['conversations:setProject']({ id: created.id, projectId: state.sidebarProjectId })
       : created
-    setState({ activeId: conv.id, messages: [] })
+    setState({ activeId: conv.id, ...chatScopedReset() })
     await refreshConversations()
     return conv.id
   }
@@ -1149,7 +1682,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   // --- Публичные действия -------------------------------------------------
 
-  async function init(): Promise<void> {
+  // Чат из адреса (#/chat/:id) на момент загрузки страницы: bootstrap откроет
+  // его вместо самого свежего. Одноразовый — после первой загрузки данных
+  // выбором рулит маршрут (см. App.tsx).
+  let preferredChatId: string | null = null
+
+  async function init(wantedChatId?: string | null): Promise<void> {
+    preferredChatId = wantedChatId ?? null
     // Без моста сессии (desktop) — аутентификация не нужна: полный доступ (admin).
     if (!deps.session) {
       setState({ authRequired: false, currentUser: { name: '', role: 'admin' } })
@@ -1169,16 +1708,29 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   /** Тяжёлая загрузка данных пользователя (после успешной аутентификации). */
   async function bootstrap(): Promise<void> {
-    setState({ loadingMessages: true }) // обновление страницы: лоадер до готовности ленты
-    const [settings, conversations, projects] = await Promise.all([
-      api['settings:get'](),
-      api['conversations:list'](),
-      api['projects:list']()
-    ])
+    setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null }) // обновление страницы: лоадер до готовности ленты
+    let settings, conversations, projects, llmEngines
+    try {
+      ;[settings, conversations, projects] = await Promise.all([
+        api['settings:get'](),
+        api['conversations:list']({ includeCompleted: state.showDoneTaskChats }),
+        api['projects:list'](),
+        api['llm:engines']()
+      ])
+    } catch (err) {
+      // Иначе сайдбар остался бы со скелетоном навсегда: показываем ошибку с «Повторить».
+      setState({
+        loadingMessages: false,
+        conversationsStatus: 'error',
+        conversationsError: err instanceof Error ? err.message : String(err)
+      })
+      throw err
+    }
     // Сайдбар сразу фильтруем по восстановленному из localStorage проекту.
     const pid = state.sidebarProjectId
     const visible = conversations.filter((c) => (c.projectId ?? null) === pid)
-    setState({ settings, projects, conversations: visible })
+    setState({ settings, llmEngines, projects, projectsLoaded: true, conversations: visible, conversationsStatus: 'ready', conversationsError: null })
+    void loadTaskChatBadges()
     await refreshMics()
     await refreshModelStatus()
     await refreshWhisperModels()
@@ -1189,8 +1741,15 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshLoginStatus()
     startLoginStatusPolling()
     await refreshAgents()
-    if (visible.length > 0) {
-      await selectConversation(visible[0].id)
+    // Адрес важнее «самого свежего»: чат по ссылке может быть и из другого
+    // проекта — selectConversation сам переключит фильтр сайдбара.
+    const wanted = preferredChatId
+    preferredChatId = null
+    const target = (wanted && conversations.some((c) => c.id === wanted) ? wanted : null) ?? visible[0]?.id ?? null
+    // Ссылка на удалённый/чужой чат — открываем обычный список и говорим об этом.
+    if (wanted && target !== wanted) setState({ error: 'Разговор не найден: возможно, он удалён.' })
+    if (target) {
+      await selectConversation(target)
     } else {
       setState({ loadingMessages: false })
     }
@@ -1251,10 +1810,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Грузит машины-агенты с онлайн-статусом (ошибки не критичны). */
   async function refreshAgents(): Promise<void> {
     if (!api['agents:list']) return
+    setState({ agentsStatus: 'loading', agentsError: null })
     try {
-      setState({ agents: await api['agents:list']() })
+      setState({ agents: await api['agents:list'](), agentsStatus: 'ready', agentsError: null })
     } catch (err) {
+      // Раньше промах уходил только в console.warn, и меню «Машины» выглядело
+      // как «машин нет». Теперь состояние видно на экране.
       console.warn('[agents] не удалось получить список машин', err)
+      setState({ agentsStatus: 'error', agentsError: err instanceof Error ? err.message : String(err) })
     }
   }
 
@@ -1265,7 +1828,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await refreshAgents()
       return created
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
       return null
     }
   }
@@ -1297,7 +1860,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       if (deps.openUrl) deps.openUrl(url)
       else window.location.assign(url)
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void downloadArtifact(kind))
     }
   }
   const downloadDesktopApp = (): Promise<void> => downloadArtifact('desktop')
@@ -1309,7 +1872,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       return await api['agents:connectionString']({ token })
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
       return null
     }
   }
@@ -1336,7 +1899,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['agents:setPolicy']({ id, policy })
       setState({ agents: state.agents.map((a) => (a.id === id ? { ...a, policy } : a)) })
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void setAgentPolicy(id, policy))
     }
   }
 
@@ -1350,7 +1913,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       const { token } = await api['agents:regenerateToken']({ id })
       return token
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
       return null
     }
   }
@@ -1485,13 +2048,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Продолжить выбранную сессию Claude Code: импорт истории + привязка session-id. */
-  async function resumeCcSession(slug: string, id: string): Promise<void> {
-    if (!api['cc:resume']) return
+  async function resumeCcSession(slug: string, id: string): Promise<string | null> {
+    if (!api['cc:resume']) return null
     try {
       const { conversation, messages } = await api['cc:resume']({ slug, id })
       deps.ccTailStop?.()
       setState({
         activeId: conversation.id,
+        ...chatScopedReset(),
         messages,
         ccOpen: false,
         ccProjectSlug: null,
@@ -1501,8 +2065,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         ccUsage: null
       })
       await refreshConversations()
+      return conversation.id
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
+      return null
     }
   }
 
@@ -1580,13 +2146,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Продолжить сессию Codex: импорт истории + привязка session-id + переключение движка на Codex. */
-  async function resumeCxSession(id: string): Promise<void> {
-    if (!api['cx:resume']) return
+  async function resumeCxSession(id: string): Promise<string | null> {
+    if (!api['cx:resume']) return null
     try {
       const { conversation, messages } = await api['cx:resume']({ id })
       deps.cxTailStop?.()
       setState({
         activeId: conversation.id,
+        ...chatScopedReset(),
         messages,
         cxOpen: false,
         cxProjectCwd: null,
@@ -1598,8 +2165,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       // Следующий ход должен продолжить именно через Codex.
       if (state.settings.llmProvider !== 'codex') await updateSettings({ llmProvider: 'codex' })
       await refreshConversations()
+      return conversation.id
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
+      return null
     }
   }
 
@@ -1613,15 +2182,42 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   async function refreshAdminUsers(): Promise<void> {
     if (!api['admin:users']) return
-    setState({ adminUsers: await api['admin:users']() })
+    setState({ adminUsersStatus: 'loading', adminUsersError: null })
+    try {
+      setState({ adminUsers: await api['admin:users'](), adminUsersStatus: 'ready', adminUsersError: null })
+    } catch (err) {
+      setState({
+        adminUsersStatus: 'error',
+        adminUsersError: err instanceof Error ? err.message : String(err)
+      })
+      throw err
+    }
+  }
+
+  async function refreshAdminLlmEngines(): Promise<void> {
+    if (!api['admin:llmEngines']) return
+    setState({ adminLlmEnginesStatus: 'loading', adminLlmEnginesError: null })
+    try {
+      setState({
+        adminLlmEngines: await api['admin:llmEngines'](),
+        adminLlmEnginesStatus: 'ready',
+        adminLlmEnginesError: null
+      })
+    } catch (err) {
+      setState({
+        adminLlmEnginesStatus: 'error',
+        adminLlmEnginesError: err instanceof Error ? err.message : String(err)
+      })
+      throw err
+    }
   }
 
   async function openUsers(): Promise<void> {
     setState({ usersOpen: true })
     try {
-      await refreshAdminUsers()
+      await Promise.all([refreshAdminUsers(), refreshAdminLlmEngines()])
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void openUsers())
     }
   }
 
@@ -1632,7 +2228,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       adminUsage: null,
       adminConversations: [],
       adminMessages: [],
-      adminConversationId: null
+      adminConversationId: null,
+      adminLlmEngineHealth: {}
     })
   }
 
@@ -1641,7 +2238,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['admin:createUser']({ name, password, role })
       await refreshAdminUsers()
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
     }
   }
 
@@ -1650,7 +2247,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['admin:setBlocked']({ name, blocked })
       await refreshAdminUsers()
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void setUserBlocked(name, blocked))
     }
   }
 
@@ -1660,7 +2257,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       if (state.adminSelected === name) closeUsers()
       await refreshAdminUsers()
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err)
     }
   }
 
@@ -1679,7 +2276,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       ])
       setState({ adminUsage: usage, adminConversations: conversations })
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void selectAdminUser(name))
     }
   }
 
@@ -1689,7 +2286,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       setState({ adminUsage: await api['admin:usage']({ name, unit, from, to }) })
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void loadAdminUsage(unit, from, to))
     }
   }
 
@@ -1700,7 +2297,46 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       setState({ adminMessages: await api['admin:messages']({ name, conversationId }) })
     } catch (err) {
-      setState({ error: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void openAdminConversation(conversationId))
+    }
+  }
+
+  async function createAdminLlmEngine(input: AdminLlmEngineInput): Promise<void> {
+    try {
+      await api['admin:createLlmEngine'](input)
+      await refreshAdminLlmEngines()
+    } catch (err) {
+      fail(err)
+    }
+  }
+
+  async function updateAdminLlmEngine(id: string, patch: AdminLlmEngineInput): Promise<void> {
+    try {
+      await api['admin:updateLlmEngine']({ id, patch })
+      await refreshAdminLlmEngines()
+    } catch (err) {
+      fail(err)
+    }
+  }
+
+  async function deleteAdminLlmEngine(id: string): Promise<void> {
+    try {
+      await api['admin:deleteLlmEngine']({ id })
+      const nextHealth = { ...state.adminLlmEngineHealth }
+      delete nextHealth[id]
+      setState({ adminLlmEngineHealth: nextHealth })
+      await refreshAdminLlmEngines()
+    } catch (err) {
+      fail(err)
+    }
+  }
+
+  async function checkAdminLlmEngineHealth(id: string): Promise<void> {
+    try {
+      const health = await api['admin:checkLlmEngineHealth']({ id })
+      setState({ adminLlmEngineHealth: { ...state.adminLlmEngineHealth, [id]: health } })
+    } catch (err) {
+      fail(err, () => void checkAdminLlmEngineHealth(id))
     }
   }
 
@@ -1859,7 +2495,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     void audio.stop().catch((err) => console.warn('[audio] остановка захвата не удалась', err))
   }
 
-  async function newConversation(): Promise<void> {
+  async function newConversation(): Promise<string> {
     cancelTimers()
     stopCapture()
     resetTts() // ход текущего разговора не отменяем — он доиграет на сервере
@@ -1871,34 +2507,87 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       : created
     setState({
       activeId: conversation.id,
-      messages: [],
-      liveSegments: [],
+      ...chatSwitchReset(),
       draft: '',
       promptHelper: { open: false, loading: false, variants: [], error: null },
-      attachments: [],
-      consoleLog: [],
-      liveActivity: [],
-      voice: 'idle',
-      streamingReply: '',
-      lastTurnMeta: null,
-      liveUsage: null
+      attachments: []
     })
     await refreshConversations()
+    return conversation.id
   }
 
-  async function selectConversation(id: string): Promise<void> {
+  async function selectConversation(id: string): Promise<boolean> {
     cancelTimers()
     stopCapture()
     resetTts() // ход прежнего разговора не отменяем — он доиграет на сервере
-    setState({ liveSegments: [], consoleLog: [], liveActivity: [], voice: 'idle', streamingReply: '', lastTurnMeta: null, liveUsage: null, messages: [], loadingMessages: true })
+    setState({ ...chatSwitchReset(), loadingMessages: true })
+    let opened: Conversation | null = null
+    let known = true
     try {
       const res = await api['conversations:get']({ id })
       if (res) {
+        opened = res.conversation
+        known = state.conversations.some((c) => c.id === res.conversation.id)
         setState({ activeId: res.conversation.id, messages: res.messages })
         restoreStreamIfActive() // у разговора есть недоигранный ход → показываем стрим
       }
     } finally {
       setState({ loadingMessages: false })
+    }
+    if (!opened) {
+      setState({ error: 'Разговор не найден: возможно, он удалён.' })
+      return false
+    }
+    // Чата нет в списке сайдбара (пришли по ссылке на чат другого проекта) —
+    // переключаем фильтр, иначе активный чат не виден.
+    if (!known) await setSidebarProject(opened.projectId ?? null)
+    // Чат завершённой задачи из списка скрыт совсем: открыли его по ссылке или
+    // из карточки — закрепляем строку, пока он активен (см. `keepPinned`).
+    const listed = state.conversations.some((c) => c.id === opened.id)
+    setState({
+      pinnedConversation: listed ? null : opened,
+      conversations: listed ? state.conversations : withConversation(state.conversations, opened)
+    })
+    // Шапка чата задачи: иерархия, этап, машина/папка, ран. Грузим отдельно,
+    // чтобы не задерживать показ сообщений.
+    void loadTaskChatContext(id)
+    return true
+  }
+
+  /**
+   * Метки чатов задач для списка бесед. Ран из ответа кладём в `ciSummaries`
+   * только когда он другой (или про задачу ещё ничего не знаем): состояние
+   * известного рана ведут живые кадры `ci.*`, и медленный ответ на этот запрос
+   * не должен откатывать их назад.
+   */
+  async function loadTaskChatBadges(): Promise<void> {
+    try {
+      const badges = await api['conversations:taskChats']()
+      const byConversation: Record<string, TaskChatBadge> = {}
+      const ciSummaries = { ...state.ciSummaries }
+      for (const badge of badges) {
+        byConversation[badge.conversationId] = badge
+        const known = ciSummaries[badge.taskId]
+        if (badge.run && (!known || known.id !== badge.run.id)) ciSummaries[badge.taskId] = badge.run
+      }
+      setState({ taskChatBadges: byConversation, ciSummaries })
+    } catch {
+      /* подсветка — украшение: список чатов работает и без неё */
+    }
+  }
+
+  /**
+   * Контекст задачи активного чата (null — чат не привязан к задаче). Ответ на
+   * уже закрытый чат отбрасываем; вторая страховка — `conversationId` внутри
+   * самого контекста, по нему сверяется и рендер виджета.
+   */
+  async function loadTaskChatContext(id: string): Promise<void> {
+    setState({ taskChatContext: null })
+    try {
+      const ctx = await api['conversations:taskContext']({ id })
+      if (state.activeId === id) setState({ taskChatContext: ctx })
+    } catch {
+      /* шапка необязательна — молча без неё */
     }
   }
 
@@ -1917,9 +2606,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     llmProvider?: LlmProvider | null,
     llmModel?: string | null,
     permissionMode?: PermissionMode | null,
-    kbContextMode?: KbContextMode
+    kbContextMode?: KbContextMode,
+    llmEngineId?: string | null
   ): Promise<void> {
-    const conversation = await api['conversations:setExecTarget']({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode })
+    const conversation = await api['conversations:setExecTarget']({ id, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode })
     setState({
       conversations: state.conversations.map((c) => (c.id === id ? conversation : c))
     })
@@ -1928,6 +2618,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function deleteConversation(id: string): Promise<void> {
     try {
       await api['conversations:delete']({ id })
+      // Иначе закреплённая строка удалённого чата вернулась бы в список.
+      if (state.pinnedConversation?.id === id) setState({ pinnedConversation: null })
       const wasActive = state.activeId === id
       await refreshConversations()
       if (wasActive) {
@@ -1936,7 +2628,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         else await newConversation()
       }
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
 
@@ -2334,6 +3026,29 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ error: null })
   }
 
+  // --- Канал уведомлений ---------------------------------------------------
+  // Ошибка вызова моста раньше в лучшем случае писалась в баннер чата, а на
+  // страницах проектов/CI/машин не было видно вообще ничего: запрос упал, экран
+  // не изменился. Теперь любой такой промах кладётся сюда, а App показывает
+  // тостом — с кнопкой «Повторить» там, где повтор безопасен (чтение и
+  // идемпотентная правка; создание, удаление и запуск рана повтора не получают).
+
+  let noticeSeq = 0
+
+  function notify(notice: Omit<AppNotice, 'id'>): void {
+    noticeSeq += 1
+    setState({ notices: [...state.notices, { ...notice, id: `n${noticeSeq}` }] })
+  }
+
+  function dismissNotice(id: string): void {
+    setState({ notices: state.notices.filter((item) => item.id !== id) })
+  }
+
+  /** Показать ошибку упавшего вызова моста; retry — если повтор безопасен. */
+  function fail(err: unknown, retry?: () => void): void {
+    notify({ kind: 'error', text: err instanceof Error ? err.message : String(err), ...(retry ? { retry } : {}) })
+  }
+
   function downloadModel(): void {
     if (!deps.startModelDownload || state.downloading) return
     setState({ downloading: true, downloadPercent: 0, error: null })
@@ -2416,6 +3131,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   function dispose(): void {
     cancelTimers()
+    if (conversationsRefreshTimer) {
+      clearTimeout(conversationsRefreshTimer)
+      conversationsRefreshTimer = null
+    }
     if (loginStatusPoll) {
       clearInterval(loginStatusPoll)
       loginStatusPoll = null
@@ -2424,28 +3143,29 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   // --- Проекты + канбан ----------------------------------------------------
 
-  const perr = (e: unknown): string => (e instanceof Error ? e.message : String(e))
-
-  async function refreshProjects(): Promise<void> {
-    setState({ projects: await api['projects:list']() })
+  /** Возвращает свежий список: вход в раздел ведёт на первый проект, и его нужно знать сразу. */
+  async function refreshProjects(): Promise<ProjectSummary[]> {
+    const projects = await api['projects:list']()
+    setState({ projects, projectsLoaded: true })
+    return projects
   }
   async function openProjects(): Promise<void> {
     setState({ projectsOpen: true })
     try {
       await refreshProjects()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void openProjects())
     }
   }
   function closeProjects(): void {
     closeBoard()
-    setState({ projectsOpen: false, projects: [], projectDetail: null })
+    setState({ projectsOpen: false, projects: [], projectsLoaded: false, projectDetail: null })
   }
   async function selectProject(id: string): Promise<void> {
     try {
       setState({ projectDetail: await api['projects:get']({ id }) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void selectProject(id))
     }
   }
   async function createProject(input: {
@@ -2468,7 +3188,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ projectDetail: detail })
       return detail
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
       return null
     }
   }
@@ -2491,6 +3211,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     ciBranchTemplate?: string
     ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
     ciExecAuthRef?: string
+    doneRetentionDays?: number | null
     }
   ): Promise<void> {
     try {
@@ -2498,7 +3219,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ projectDetail: detail })
       await refreshProjects()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void updateProject(id, fields))
     }
   }
   async function deleteProject(id: string): Promise<void> {
@@ -2508,7 +3229,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       if (state.projectDetail?.id === id) setState({ projectDetail: null })
       await refreshProjects()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function addProjectMember(id: string, username: string): Promise<void> {
@@ -2516,7 +3237,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ projectDetail: await api['projects:addMember']({ id, username }) })
       await refreshProjects()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function removeProjectMember(id: string, username: string): Promise<void> {
@@ -2524,42 +3245,42 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ projectDetail: await api['projects:removeMember']({ id, username }) })
       if (state.activeProjectId === id) await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function linkProjectMachine(id: string, agentId: string): Promise<void> {
     try {
       setState({ projectDetail: await api['projects:linkMachine']({ id, agentId }) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function unlinkProjectMachine(id: string, agentId: string): Promise<void> {
     try {
       setState({ projectDetail: await api['projects:unlinkMachine']({ id, agentId }) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function setProjectMachinePath(id: string, agentId: string, path: string): Promise<void> {
     try {
       setState({ projectDetail: await api['projects:setMachinePath']({ id, agentId, path }) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void setProjectMachinePath(id, agentId, path))
     }
   }
-  async function setProjectFeatureReposRoot(id: string, agentId: string, featureReposRoot: string): Promise<void> {
+  async function setProjectReposRoot(id: string, agentId: string, reposRoot: string): Promise<void> {
     try {
-      setState({ projectDetail: await api['projects:setFeatureReposRoot']({ id, agentId, featureReposRoot }) })
+      setState({ projectDetail: await api['projects:setReposRoot']({ id, agentId, reposRoot }) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void setProjectReposRoot(id, agentId, reposRoot))
     }
   }
   async function setProjectDefaultMachine(id: string, agentId: string): Promise<void> {
     try {
       setState({ projectDetail: await api['projects:setDefaultMachine']({ id, agentId }) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void setProjectDefaultMachine(id, agentId))
     }
   }
   /** Загрузить детали проекта без записи в стор (для настроек чата). */
@@ -2567,7 +3288,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       return await api['projects:get']({ id })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
       return null
     }
   }
@@ -2592,24 +3313,47 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function refreshBoard(): Promise<void> {
     const id = state.activeProjectId
     if (!id) return
-    setState({ board: await api['board:get']({ id }) })
+    setState({ board: await api['board:get']({ id, includeCompleted: state.boardIncludeCompleted }) })
+  }
+  /**
+   * «Показать завершённые»: доска фильтруется на сервере, поэтому переключатель
+   * — это новый запрос снапшота и переподписка (живые board.update должны
+   * приходить в том же составе).
+   */
+  async function setBoardIncludeCompleted(include: boolean): Promise<void> {
+    if (state.boardIncludeCompleted === include) return
+    setState({ boardIncludeCompleted: include })
+    const id = state.activeProjectId
+    if (!id) return
+    boardBridge?.subscribe(id, include)
+    try {
+      setState({ board: await api['board:get']({ id, includeCompleted: include }) })
+    } catch (err) {
+      fail(err, () => void setBoardIncludeCompleted(include))
+    }
   }
   async function openBoard(id: string): Promise<void> {
-    saveLastProject(id)
-    setState({ activeProjectId: id, boardLoading: true, board: null, projectSettingsOpen: false, lastProjectId: id })
+    setState({ activeProjectId: id, boardLoading: true, boardError: null, board: null, projectSettingsOpen: false })
     try {
-      const [board, detail] = await Promise.all([api['board:get']({ id }), api['projects:get']({ id })])
+      const includeCompleted = state.boardIncludeCompleted
+      const [board, detail] = await Promise.all([
+        api['board:get']({ id, includeCompleted }),
+        api['projects:get']({ id })
+      ])
       const ciSummaries = { ...state.ciSummaries }
       for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
-      setState({ board, projectDetail: detail, ciSummaries, boardLoading: false })
-      boardBridge?.subscribe(id)
+      setState({ board, projectDetail: detail, ciSummaries, boardLoading: false, boardError: null })
+      boardBridge?.subscribe(id, includeCompleted)
     } catch (err) {
-      setState({ boardLoading: false, error: perr(err) })
+      // Ошибку видно и на странице (экран ошибки с «Повторить»), и тостом: тост
+      // живёт секунды, а пустая доска без объяснения — вечно.
+      setState({ boardLoading: false, boardError: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void openBoard(id))
     }
   }
   function closeBoard(): void {
     if (state.activeProjectId) boardBridge?.unsubscribe()
-    setState({ activeProjectId: null, projectSettingsOpen: false, board: null, boardLoading: false })
+    setState({ activeProjectId: null, projectSettingsOpen: false, board: null, boardLoading: false, boardError: null })
   }
   function openProjectSettings(): void {
     setState({ projectSettingsOpen: true })
@@ -2621,17 +3365,105 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (projectId !== state.activeProjectId) return
     const ciSummaries = { ...state.ciSummaries }
     for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
+    const prev = state.board
     setState({ board, ciSummaries })
+    // Карточку перенесли в «Готово» (или вернули в работу) — сервер спрятал или
+    // вернул чат задачи в список бесед. Сверяем только набор done-задач: на
+    // обычный переезд между рабочими колонками список не дёргаем.
+    if (prev && !sameDoneTasks(prev, board)) scheduleConversationsRefresh()
   }
 
   // --- CI-раннер ---------------------------------------------------------
+
+  // ---- Использование базы знаний -----------------------------------------
+
+  function patchKbUsage(conversationId: string, fn: (cache: KbUsageCache) => KbUsageCache): void {
+    const prev = state.kbUsage[conversationId] ?? emptyKbUsageCache()
+    setState({ kbUsage: { ...state.kbUsage, [conversationId]: fn(prev) } })
+  }
+  function patchKbProjectUsage(projectId: string, fn: (cache: KbUsageCache) => KbUsageCache): void {
+    const prev = state.kbUsageByProject[projectId] ?? emptyKbUsageCache()
+    setState({ kbUsageByProject: { ...state.kbUsageByProject, [projectId]: fn(prev) } })
+  }
+  function openKbUsage(): void {
+    setState({ kbUsageOpen: true })
+  }
+  function closeKbUsage(): void {
+    setState({ kbUsageOpen: false })
+  }
+  /** Фолбэк для старых чатов и для desktop без моста: отчёт из истории ходов. */
+  function kbUsageFallback(conversationId: string): ReturnType<typeof buildKbUsageFromMessages> {
+    const conv = state.conversations.find((c) => c.id === conversationId)
+    return buildKbUsageFromMessages(conversationId === state.activeId ? state.messages : [], {
+      conversationId,
+      projectId: conv?.projectId ?? null,
+      kbContextMode: conv?.kbContextMode ?? 'auto',
+      available: state.kbStatus ? state.kbStatus.available : true
+    })
+  }
+  async function loadKbUsage(conversationId: string): Promise<void> {
+    const fallback = kbUsageFallback(conversationId)
+    if (!kbBridge) {
+      // Моста нет (desktop) — панель всё равно показывает, что видела модель.
+      patchKbUsage(conversationId, () => kbUsageSnapshot(fallback))
+      return
+    }
+    patchKbUsage(conversationId, (c) => ({ ...c, loading: true, error: null }))
+    try {
+      const report = await kbBridge.getConversationUsage(conversationId)
+      patchKbUsage(conversationId, () => kbUsageSnapshot(mergeKbUsage(report, fallback)))
+    } catch (err) {
+      patchKbUsage(conversationId, (c) => ({ ...c, loading: false, error: err instanceof Error ? err.message : String(err) }))
+    }
+  }
+  async function loadProjectKbUsage(projectId: string): Promise<void> {
+    if (!kbBridge) return
+    patchKbProjectUsage(projectId, (c) => ({ ...c, loading: true, error: null }))
+    try {
+      const report = await kbBridge.getProjectUsage(projectId)
+      // Проектный отчёт кладём в тот же кэш: у него те же итоги, разделы и лента.
+      patchKbProjectUsage(projectId, () => ({
+        ...kbUsageSnapshot({
+          conversationId: '',
+          projectId,
+          kbContextMode: 'auto',
+          toolEnabled: report.toolEnabled,
+          available: report.available,
+          lastSeq: 0,
+          totals: report.totals,
+          sections: report.sections,
+          recent: report.recent
+        }),
+        conversations: report.conversations
+      }))
+    } catch (err) {
+      patchKbProjectUsage(projectId, (c) => ({ ...c, loading: false, error: err instanceof Error ? err.message : String(err) }))
+    }
+  }
+  function applyKbUsageQuery(conversationId: string, projectId: string | null, query: KbUsageQuery): void {
+    // Кадры приходят по пользователю, а не по подписке: незагруженные чаты
+    // пропускаем — их отчёт соберётся при открытии панели.
+    if (state.kbUsage[conversationId]?.report) {
+      patchKbUsage(conversationId, (c) => applyKbUsageFrame(c, query))
+    }
+    if (projectId && state.kbUsageByProject[projectId]?.report) {
+      patchKbProjectUsage(projectId, (c) => applyKbUsageFrame(c, query))
+    }
+  }
+  async function refreshKbStatus(): Promise<void> {
+    try {
+      setState({ kbStatus: await deps.api['kb:status']() })
+    } catch {
+      // Статус индекса — украшение пустого состояния, ошибку не показываем тостом.
+    }
+  }
 
   function patchCiRun(runId: string, fn: (cache: CiRunCache) => CiRunCache): void {
     const prev = state.ciRuns[runId] ?? { detail: null, log: [], conclusion: null }
     setState({ ciRuns: { ...state.ciRuns, [runId]: fn(prev) } })
   }
   function mergeStep(detail: CiRunDetail | null, step: CiRunStep): CiRunDetail | null {
-    if (!detail) return { run: { id: step.runId } as CiRun, steps: [step], fixAttempts: [] }
+    if (!detail) return { run: { id: step.runId } as CiRun, steps: [step], fixAttempts: [], interactions: [] }
     const steps = detail.steps.some((x) => x.id === step.id)
       ? detail.steps.map((x) => (x.id === step.id ? step : x))
       : [...detail.steps, step]
@@ -2639,7 +3471,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   async function openCi(): Promise<void> {
-    setState({ ciOpen: true })
+    setState({ ciOpen: true, ciStatus: 'loading', ciError: null })
     if (!ciBridge) return
     try {
       const [commands, settings, suggestions, workspaces] = await Promise.all([
@@ -2648,9 +3480,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         ciBridge.listSuggestions(),
         ciBridge.listWorkspaces()
       ])
-      setState({ ciCommands: commands, ciSettings: settings, ciSuggestions: suggestions, ciWorkspaces: workspaces })
+      setState({ ciCommands: commands, ciSettings: settings, ciSuggestions: suggestions, ciWorkspaces: workspaces, ciStatus: 'ready', ciError: null })
     } catch (err) {
-      setState({ error: perr(err) })
+      setState({ ciStatus: 'error', ciError: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void openCi())
     }
   }
   function closeCi(): void {
@@ -2667,7 +3500,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ ciCommands: [...state.ciCommands, cmd] })
       return cmd
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
       return null
     }
   }
@@ -2677,7 +3510,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       const cmd = await ciBridge.updateCommand(id, input)
       setState({ ciCommands: state.ciCommands.map((c) => (c.id === id ? cmd : c)) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void updateCiCommand(id, input))
     }
   }
   async function deleteCiCommand(id: string): Promise<void> {
@@ -2686,7 +3519,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await ciBridge.deleteCommand(id)
       setState({ ciCommands: state.ciCommands.filter((c) => c.id !== id) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function ciCommandUsage(id: string): Promise<{ projects: Array<{ id: string; name: string }>; tasks: Array<{ id: string; title: string }> }> {
@@ -2698,7 +3531,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       setState({ ciSettings: await ciBridge.putSettings(settings) })
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void saveCiSettings(settings))
     }
   }
   async function resolveCiSuggestion(id: string, accept: boolean): Promise<void> {
@@ -2708,49 +3541,53 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ ciSuggestions: state.ciSuggestions.filter((x) => x.id !== id) })
       if (accept) await reloadCiCommands()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function reloadCiWorkspaces(projectId?: string): Promise<void> {
     if (!ciBridge) return
     setState({ ciWorkspaces: await ciBridge.listWorkspaces(projectId) })
   }
-  async function startCiRun(projectId: string, taskId: string): Promise<CiRun | null> {
+  async function startCiRun(projectId: string, taskId: string, mode?: CiRunMode): Promise<CiRun | null> {
     if (!ciBridge) return null
     try {
-      const run = await ciBridge.startRun(projectId, taskId)
-      setState({ ciSummaries: { ...state.ciSummaries, [taskId]: { id: run.id, taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false } } })
-      patchCiRun(run.id, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [] } }))
+      const run = await ciBridge.startRun(projectId, taskId, mode)
+      setState({ ciSummaries: { ...state.ciSummaries, [taskId]: { id: run.id, taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false, awaitingInput: false } } })
+      patchCiRun(run.id, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [], interactions: [] } }))
       return run
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
       return null
     }
   }
   async function cancelCiRun(runId: string): Promise<void> {
     if (!ciBridge) return
-    try { await ciBridge.cancelRun(runId) } catch (err) { setState({ error: perr(err) }) }
+    try { await ciBridge.cancelRun(runId) } catch (err) { fail(err) }
   }
   async function retryCiRun(runId: string): Promise<CiRun | null> {
     if (!ciBridge) return null
-    try { return await ciBridge.retryRun(runId) } catch (err) { setState({ error: perr(err) }); return null }
+    try { return await ciBridge.retryRun(runId) } catch (err) { fail(err); return null }
   }
-  async function retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string }): Promise<CiRun | null> {
+  async function retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<CiRun | null> {
     // Повтор с упавшего шага — тот же ран; после запуска перечитываем деталь/лог.
     if (!ciBridge) return null
-    try { const r = await ciBridge.retryRunFromStep(runId, selection); await loadCiRun(runId); return r } catch (err) { setState({ error: perr(err) }); return null }
+    try { const r = await ciBridge.retryRunFromStep(runId, selection); await loadCiRun(runId); return r } catch (err) { fail(err); return null }
   }
   async function discardCiWorkspaceAndRetry(runId: string): Promise<CiRun | null> {
     if (!ciBridge) return null
-    try { return await ciBridge.discardChangesAndRetry(runId) } catch (err) { setState({ error: perr(err) }); return null }
+    try { return await ciBridge.discardChangesAndRetry(runId) } catch (err) { fail(err); return null }
   }
   async function loadCiRun(runId: string): Promise<void> {
     if (!ciBridge) return
+    patchCiRun(runId, (c) => ({ ...c, loading: true, error: null }))
     try {
       const [detail, log] = await Promise.all([ciBridge.getRun(runId), ciBridge.getRunLog(runId)])
-      patchCiRun(runId, (c) => ({ ...c, detail, log }))
+      patchCiRun(runId, (c) => ({ ...c, detail, log, loading: false, error: null }))
     } catch (err) {
-      setState({ error: perr(err) })
+      // Лента без шагов и без объяснения читалась как «ран пустой» — теперь в ней
+      // экран ошибки с «Повторить».
+      patchCiRun(runId, (c) => ({ ...c, loading: false, error: err instanceof Error ? err.message : String(err) }))
+      fail(err, () => void loadCiRun(runId))
     }
   }
   function ciSubscribe(runId: string): void {
@@ -2769,8 +3606,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     patchCiRun(runId, (c) => ({ ...c, detail, log }))
   }
   function applyCiRun(runId: string, run: CiRun): void {
-    patchCiRun(runId, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [] } }))
-    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: state.ciSummaries[run.taskId]?.modelActive ?? false } } })
+    patchCiRun(runId, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [], interactions: [] } }))
+    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: state.ciSummaries[run.taskId]?.modelActive ?? false, awaitingInput: run.status === 'awaiting_input' } } })
   }
   function applyCiStep(runId: string, step: CiRunStep): void {
     patchCiRun(runId, (c) => ({ ...c, detail: mergeStep(c.detail, step) }))
@@ -2788,11 +3625,65 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     })
   }
   function applyCiDone(runId: string, run: CiRun, conclusion?: CiRunConclusion): void {
-    patchCiRun(runId, (c) => ({ ...c, conclusion: conclusion ?? c.conclusion, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [] } }))
-    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false } } })
+    patchCiRun(runId, (c) => ({ ...c, conclusion: conclusion ?? c.conclusion, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [], interactions: [] } }))
+    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false, awaitingInput: false } } })
+    // Финализация рана увозит карточку по колонкам (успех с мержем — в «Готово»),
+    // а с ней меняется и видимость чата задачи в сайдбаре.
+    scheduleConversationsRefresh()
   }
   function applyCiSummary(_projectId: string, summary: CiRunSummary): void {
     setState({ ciSummaries: { ...state.ciSummaries, [summary.taskId]: summary } })
+    // Сводка приходит на все соединения пользователя, а не только подписчикам
+    // ленты: для страницы без открытой ленты рана это единственный сигнал, что
+    // ран кончился. Дёргаем только на терминальном статусе — очередь и работа
+    // видимости чатов не меняют.
+    if (isTerminalCiStatus(summary.status)) scheduleConversationsRefresh()
+  }
+  /** Пауза рана: вопрос модели или гейт плана (создание и ответ приходят одним типом). */
+  function applyCiInteraction(runId: string, interaction: CiInteraction): void {
+    if (interaction.status !== 'pending' && !state.answeredCiInteractions.includes(interaction.id)) {
+      setState({ answeredCiInteractions: [...state.answeredCiInteractions, interaction.id] })
+    }
+    patchCiRun(runId, (c) => {
+      if (!c.detail) return c
+      const list = c.detail.interactions ?? []
+      const interactions = list.some((x) => x.id === interaction.id)
+        ? list.map((x) => (x.id === interaction.id ? interaction : x))
+        : [...list, interaction]
+      return { ...c, detail: { ...c.detail, interactions } }
+    })
+  }
+  /**
+   * Сервер сам дописал сообщение в чат (резюме законченного рана). В открытый
+   * чат кладём реплику сразу; в остальных она уже сохранена и придёт с историей,
+   * но сайдбар о ней не знает — перечитываем список, чтобы строка поднялась по
+   * `updatedAt`, а свежесозданный чат задачи в нём появился.
+   */
+  function applyChatMessage(conversationId: string, message: Message): void {
+    if (conversationId !== state.activeId) {
+      scheduleConversationsRefresh()
+      return
+    }
+    appendPersisted(message)
+  }
+  /** Ответить на паузу рана из ленты. Ошибка 409 (ответили из чата) — не фатальна. */
+  async function answerCiInteraction(runId: string, interactionId: string, answer: CiInteractionAnswer): Promise<void> {
+    // Пауза гасится сразу, даже если запрос упал с 409 (ответили из другого места).
+    if (!state.answeredCiInteractions.includes(interactionId)) {
+      setState({ answeredCiInteractions: [...state.answeredCiInteractions, interactionId] })
+    }
+    try {
+      const updated = await ciBridge?.answerInteraction(runId, interactionId, answer)
+      if (updated) applyCiInteraction(runId, updated)
+    } catch (err) {
+      fail(err)
+      void loadCiRun(runId)
+    }
+    // Сервер дописывает ответ репликой в связанный чат — подтягиваем ленту.
+    if (state.activeId) {
+      const res = await api['conversations:get']({ id: state.activeId }).catch(() => null)
+      if (res && res.conversation.id === state.activeId) setState({ messages: res.messages })
+    }
   }
 
   async function createColumn(name: string): Promise<void> {
@@ -2802,7 +3693,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['columns:create']({ projectId: id, name })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function updateColumn(columnId: string, fields: { name?: string; wipLimit?: number | null }): Promise<void> {
@@ -2812,7 +3703,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['columns:rename']({ projectId: id, columnId, ...fields })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void updateColumn(columnId, fields))
     }
   }
   async function setColumnHidden(columnId: string, hidden: boolean): Promise<void> {
@@ -2822,7 +3713,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['columns:setHidden']({ projectId: id, columnId, hidden })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void setColumnHidden(columnId, hidden))
     }
   }
   async function reorderColumns(order: string[]): Promise<void> {
@@ -2841,7 +3732,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['columns:reorder']({ projectId: id, order })
       await refreshBoard()
     } catch (err) {
-      setState({ board: prev, error: perr(err) })
+      setState({ board: prev })
+      fail(err, () => void reorderColumns(order))
     }
   }
   async function deleteColumn(columnId: string): Promise<void> {
@@ -2851,7 +3743,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['columns:delete']({ projectId: id, columnId })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function createTask(
@@ -2864,7 +3756,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['tasks:create']({ projectId: id, columnId, ...input })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
   async function updateTask(
@@ -2878,7 +3770,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['tasks:update']({ projectId: id, taskId, ...fields })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err, () => void updateTask(taskId, fields))
     }
   }
   async function moveTask(
@@ -2910,8 +3802,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       await api['tasks:move']({ projectId: id, taskId, columnId, afterId: afterId ?? null, beforeId: beforeId ?? null })
       await refreshBoard()
+      // Переезд в «Готово» и обратно прячет/возвращает чат задачи в сайдбаре.
+      // Не в общем try: упавший список — не повод откатывать удавшийся перенос.
+      void refreshConversations({ keepActiveListed: true }).catch(() => {})
     } catch (err) {
-      setState({ board: prev, error: perr(err) })
+      setState({ board: prev })
+      fail(err, () => void moveTask(taskId, columnId, afterId, beforeId))
     }
   }
   async function deleteTask(taskId: string): Promise<void> {
@@ -2921,19 +3817,36 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['tasks:delete']({ projectId: id, taskId })
       await refreshBoard()
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
     }
   }
 
-  async function openTaskChat(taskId: string): Promise<void> {
+  async function openTaskChat(taskId: string): Promise<string | null> {
     const id = state.activeProjectId
-    if (!id) return
+    if (!id) return null
     try {
       const conv = await api['tasks:openChat']({ projectId: id, taskId })
       await Promise.all([refreshConversations(), refreshBoard()])
       await selectConversation(conv.id)
+      return conv.id
     } catch (err) {
-      setState({ error: perr(err) })
+      fail(err)
+      return null
+    }
+  }
+
+  /**
+   * Создать связанный чат, не переключаясь на него: карточку открыли — чат уже
+   * есть. Идемпотентно на сервере, поэтому повторный вызов безопасен.
+   */
+  async function ensureTaskChat(taskId: string): Promise<void> {
+    const id = state.activeProjectId
+    if (!id) return
+    try {
+      await api['tasks:openChat']({ projectId: id, taskId })
+      await refreshBoard()
+    } catch {
+      /* без чата карточка всё равно работает */
     }
   }
 
@@ -2952,7 +3865,15 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       renameConversation,
       setConversationExecTarget,
       setSearchQuery,
+      setSearchScope,
+      retryMessageSearch,
+      retryConversations,
+      refreshAgents,
+      loadMoreMessageSearch,
+      focusMessage,
+      clearMessageHighlight,
       setSidebarProject,
+      setShowDoneTaskChats,
       exportConversation,
       completeOnboarding,
       openSettings,
@@ -2983,6 +3904,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applyClaudeActive,
       applyClaudeUsage,
       dismissError,
+      notify,
+      dismissNotice,
       downloadModel,
       applyDownloadProgress,
       applyDownloadDone,
@@ -3028,6 +3951,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       selectAdminUser,
       loadAdminUsage,
       openAdminConversation,
+      refreshAdminLlmEngines,
+      createAdminLlmEngine,
+      updateAdminLlmEngine,
+      deleteAdminLlmEngine,
+      checkAdminLlmEngineHealth,
       openUtility,
       openUtilityForActiveChat,
       closeUtility,
@@ -3056,7 +3984,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       linkProjectMachine,
       unlinkProjectMachine,
       setProjectMachinePath,
-      setProjectFeatureReposRoot,
+      setProjectReposRoot,
       setProjectDefaultMachine,
       fetchProjectDetail,
       setConversationProject,
@@ -3066,6 +3994,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       openProjectSettings,
       closeProjectSettings,
       applyBoardUpdate,
+      setBoardIncludeCompleted,
       openCi,
       closeCi,
       reloadCiCommands,
@@ -3093,6 +4022,17 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applyCiFix,
       applyCiDone,
       applyCiSummary,
+      applyCiInteraction,
+      applyChatMessage,
+      answerCiInteraction,
+      openKbUsage,
+      closeKbUsage,
+      loadKbUsage,
+      loadProjectKbUsage,
+      applyKbUsageQuery,
+      refreshKbStatus,
+      ensureTaskChat,
+      loadTaskChatContext,
       createColumn,
       updateColumn,
       setColumnHidden,

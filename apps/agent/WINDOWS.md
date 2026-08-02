@@ -12,6 +12,9 @@
    вставьте команду и выполните. Она сама:
    - проверит Node.js: если нет версии 22+, скачает последнюю портативную с
      nodejs.org в `%LOCALAPPDATA%\voicechat-agent\node` (система не трогается);
+   - проверит bash.exe: найдёт установленный Git for Windows (PATH или
+     стандартные пути) или, если его нет, поставит портативный MinGit в тот же
+     каталог — система не трогается, прав администратора не нужно;
    - скачает `voicechat-agent.cjs`;
    - сохранит строку подключения;
    - настроит автозапуск при входе (HKCU `Run` → `wscript` — без окна консоли);
@@ -33,16 +36,20 @@ node voicechat-agent.cjs --connection 'vcagent:…'
 
 ## Что работает и нюансы Windows
 
-- **Выполнение команд (exec)** — через `cmd.exe` (`%ComSpec%`); синтаксис команд
-  соответственно cmd, а не bash.
-- **Консоль (PTY)** — открывается PowerShell. Нативный `@lydell/node-pty` в бандл
-  не входит, поэтому по умолчанию работает **упрощённый режим** (pipe, без
-  настоящего TTY и ресайза). Полноценный ConPTY — если рядом с `.cjs` выполнить
-  `npm i @lydell/node-pty`.
+- **Выполнение команд (exec) и консоль (PTY)** — через `bash.exe` (Git for
+  Windows), если он найден: PATH → `%ProgramFiles%\Git\bin`,
+  `%ProgramW6432%\Git\bin`, `%LOCALAPPDATA%\Programs\Git\bin` → путь,
+  который поставил/нашёл установщик (`VC_PTY_SHELL` в `run.cmd`). Не нашёлся
+  никакой bash — агент **деградирует** в `cmd.exe`: команды и терминал работают,
+  но синтаксис — cmd, а не bash, и это видно на карточке машины в веб-клиенте
+  (значок «⚠ нет bash»). Нативный `@lydell/node-pty` в бандл не входит, поэтому
+  по умолчанию работает **упрощённый режим** (pipe, без настоящего TTY и
+  ресайза) — установщик ставит его отдельно.
 - **Корневой каталог проводника** — `%USERPROFILE%` (так запускает `run.cmd`);
   переопределяется `VC_AGENT_ROOT`.
 - **Файлы агента**: `%LOCALAPPDATA%\voicechat-agent` (`voicechat-agent.cjs`,
-  `connection`, `run.cmd`, `run-hidden.vbs`, портативная `node\`).
+  `connection`, `run.cmd`, `run-hidden.vbs`, портативная `node\`, портативный
+  `git\`, если ставился).
 - **Убрать автозапуск**: удалить значение `voicechat-agent` в
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (или через «Автозагрузка»
   в диспетчере задач), остановить процесс `node`.
@@ -56,4 +63,6 @@ node voicechat-agent.cjs --connection 'vcagent:…'
 
 Те же, что и на других платформах: `VC_AGENT_CONNECTION`, `VC_AGENT_SERVER` +
 `VC_AGENT_TOKEN`, `VC_AGENT_ROOT`, `VC_PTY_SHELL`, `VC_PTY_FORCE_FALLBACK`,
-`VC_AGENT_INSECURE_TLS` (см. `ANDROID.md`).
+`VC_AGENT_INSECURE_TLS` (см. `ANDROID.md`). `VC_PTY_SHELL` на Windows должен
+быть путём к `bash.exe` — Unix-подобное значение (`/bin/bash`) игнорируется
+(в лог агента пишется, что оно проигнорировано).

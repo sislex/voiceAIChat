@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
+import { screen, within } from '@testing-library/react'
+import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { SettingsModal, type SettingsModalProps } from './SettingsModal'
 import { DEFAULT_SETTINGS, type UserRole } from '@shared/types'
@@ -77,5 +79,50 @@ describe('SettingsModal — глобальная блокировка голос
 
     expect(screen.getByLabelText('Режим hands-free')).toBeDisabled()
     expect(screen.getByLabelText('Перебивание голосом')).toBeDisabled()
+  })
+})
+
+describe('SettingsModal — выбор исполнителя', () => {
+  it('показывает доступные записи и сохраняет id вместе с kind', async () => {
+    const onChange = vi.fn()
+    renderModal('user', { engines: [{ id: 'work', name: 'Рабочий', kind: 'codex', isDefault: true }], onChange })
+    await userEvent.selectOptions(screen.getByLabelText('Исполнитель LLM'), 'work')
+    expect(onChange).toHaveBeenCalledWith({ llmEngineId: 'work', llmProvider: 'codex' })
+  })
+})
+
+
+describe('SettingsModal — доступность', () => {
+  // Разделы перечислены руками, а не собраны из DOM: если раздел переименуют или
+  // потеряют, тест должен упасть, а не тихо проверить меньше экранов.
+  const SECTIONS = ['Агент', 'AI-помощник', 'Скачать', 'Распознавание', 'Озвучка', 'Голосовой диалог', 'Интерфейс']
+
+  it('без нарушений axe в каждом разделе меню', async () => {
+    renderModal('admin')
+    await expectNoViolations()
+    expectLabelledIconButtons()
+    for (const section of SECTIONS) {
+      await userEvent.click(screen.getByRole('button', { name: section }))
+      await expectNoViolations()
+      expectLabelledIconButtons()
+    }
+  })
+
+  it('фокус при открытии уходит внутрь окна, а Tab из него не выпадает', async () => {
+    // Под окном настроек лежит вся страница; без ловушки Tab уводил бы фокус
+    // туда, и вернуться в окно с клавиатуры было бы нельзя.
+    const outside = document.createElement('button')
+    outside.textContent = 'снаружи'
+    document.body.appendChild(outside)
+    renderModal('admin')
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    for (let i = 0; i < 12; i++) {
+      await userEvent.tab()
+      expect(dialog.contains(document.activeElement)).toBe(true)
+    }
+    await userEvent.tab({ shift: true })
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    outside.remove()
   })
 })

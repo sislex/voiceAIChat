@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { CxProject, CxSession, CxItem, CxItemKind } from '@shared/codexSessions'
 import { Markdown } from './Markdown'
+import { Button } from './ui/Button'
 import { ToolFrame } from './ToolFrame'
 
 export interface CodexObserverProps {
@@ -125,13 +126,14 @@ export function CodexObserver({
               <span className="cc-live">
                 <span className="reddot" /> LIVE · слежение за сессией
               </span>
-              <button
-                className="vdl"
+              <Button
+                variant="primary"
+                size="sm"
                 aria-label="Продолжить эту сессию"
                 onClick={() => onResumeSession(activeSession)}
               >
                 ▶ Продолжить эту сессию
-              </button>
+              </Button>
             </div>
           )}
           {!activeSession && <p className="cc-empty">Выберите сессию</p>}

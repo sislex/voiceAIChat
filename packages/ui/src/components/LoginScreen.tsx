@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { Button } from './ui/Button'
 
 export interface LoginScreenProps {
   /** Вход по логину/паролю. */
@@ -50,9 +51,9 @@ export function LoginScreen({ onLogin, error, theme = 'light' }: LoginScreenProp
             {error}
           </p>
         )}
-        <button className="login-submit" type="submit" disabled={!name.trim()}>
+        <Button variant="primary" type="submit" disabled={!name.trim()}>
           Войти
-        </button>
+        </Button>
         <p className="login-hint">Пользователи: admin, user (пароль пустой)</p>
       </form>
     </div>

@@ -71,6 +71,8 @@ export interface Conversation {
   workdir: string | null
   /** Имена навыков выбранной машины, включённых для этого разговора. */
   skillNames: string[]
+  /** Исполнитель только этого разговора; null — из общих настроек пользователя. */
+  llmEngineId?: string | null
   /** Движок только этого разговора; null — из общих настроек пользователя. */
   llmProvider: LlmProvider | null
   /**
@@ -91,6 +93,40 @@ export interface Conversation {
   status?: ConversationStatus
   /** Неизменяемая цель последнего сообщения; используется подписью в списке чатов. */
   lastExecTarget: string | null
+}
+
+/** Найденное сообщение: карточка результата полнотекстового поиска. */
+export interface MessageSearchHit {
+  messageId: string
+  conversationId: string
+  /** Заголовок беседы — карточка результата показывает его вместо id. */
+  conversationTitle: string
+  /** Проект беседы (null — беседа без проекта). */
+  projectId: string | null
+  role: MessageRole
+  createdAt: number
+  /** Локальное время сообщения (HH:MM) — как в ленте чата. */
+  time: string
+  /**
+   * Фрагмент текста вокруг совпадений: совпавшие слова обёрнуты в
+   * `<mark>…</mark>`. Это **не HTML для вставки** — текст сообщения произволен,
+   * поэтому клиент разбирает разметку сам (`splitSnippet` в UI).
+   */
+  snippet: string
+  /** Оценка bm25: меньше — релевантнее (используется курсором пагинации). */
+  score: number
+}
+
+/** Страница результатов поиска по сообщениям. */
+export interface MessageSearchResult {
+  hits: MessageSearchHit[]
+  /** Курсор следующей страницы; null — результаты закончились. */
+  nextCursor: string | null
+  /**
+   * Запрос, ушедший в FTS5 после экранирования. Пустая строка — искать было
+   * нечего (только спецсимволы или пробелы), результат заведомо пустой.
+   */
+  match: string
 }
 
 /**
@@ -259,6 +295,17 @@ export interface TurnMeta extends TurnUsage {
    * набранная к этому моменту часть ответа.
    */
   interrupted?: boolean
+  /**
+   * Сообщение не является ответом хода, а продублированный в чат вопрос
+   * CI-рана: ответ на него уходит в ран, а не запускает новый ход чата.
+   */
+  ciInteraction?: { runId: string; interactionId: string }
+  /**
+   * Сообщение — резюме законченного CI-рана, дописанное сервером в связанный чат
+   * задачи (а не ответ хода). Метка нужна, чтобы резюме можно было отличить от
+   * обычного ответа модели и связать с раном.
+   */
+  ciRunSummary?: { runId: string }
 }
 
 /**
@@ -288,7 +335,22 @@ export interface TurnRequestInfo {
   /** Разделы KB, автоматически добавленные перед ходом. */
   kbContext?: {
     confidence: 'high' | 'medium' | 'low'
-    sections: Array<{ documentId: string; title: string; heading: string; sourcePath: string; anchor: string }>
+    /**
+     * Числа опциональны: сообщения, сохранённые до появления телеметрии БЗ,
+     * остаются валидными (и панель собирает по ним отчёт-фолбэк).
+     */
+    sections: Array<{
+      documentId: string
+      title: string
+      heading: string
+      sourcePath: string
+      anchor: string
+      /** Символы этого раздела в отданном модели тексте. */
+      chars?: number
+      /** Оценка токенов раздела (ceil(chars/4), см. estimateKbTokens). */
+      estimatedTokens?: number
+      freshness?: 'current' | 'stale' | 'unknown'
+    }>
   }
   /** Доступные инструменты (из system/init CLI). */
   tools?: string[]
@@ -411,6 +473,8 @@ export interface Settings {
   handsFree: boolean
   /** id машины-агента, где выполнять shell-команды; null — на сервере. */
   execTarget: string | null
+  /** Выбранный исполнитель LLM; null — default для роли и провайдера. */
+  llmEngineId: string | null
   /** LLM-движок: Claude Code CLI или Codex CLI. */
   llmProvider: LlmProvider
   /** Модель Codex (`codex exec -m`); '' — модель по умолчанию из конфига codex. */
@@ -462,6 +526,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bargeIn: false,
   handsFree: false,
   execTarget: null,
+  llmEngineId: null,
   llmProvider: 'claude',
   codexModel: '',
   defaultAgentId: null,

@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import type { AgentInfo, AgentPolicy, AgentSkill } from '@shared/agentProtocol'
+import { IconButton } from './ui/IconButton'
+import { Button } from './ui/Button'
 import { copyText } from '../lib/clipboard'
 
 export interface AgentCardProps {
@@ -34,9 +36,9 @@ function ListEditor({
       {items.map((it) => (
         <div className="vrow2" key={it}>
           <span className="vname ac-mono">{it}</span>
-          <button className="vdl vdel" aria-label={`Удалить ${it}`} title={`Удалить ${it}`} onClick={() => onChange(items.filter((x) => x !== it))}>
+          <IconButton variant="danger" size="sm" aria-label={`Удалить ${it}`} title={`Удалить ${it}`} onClick={() => onChange(items.filter((x) => x !== it))}>
             ✕
-          </button>
+          </IconButton>
         </div>
       ))}
       <div className="vrow2">
@@ -48,9 +50,9 @@ function ListEditor({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
         />
-        <button className="vdl" disabled={!draft.trim()} onClick={add}>
+        <Button variant="primary" size="sm" disabled={!draft.trim()} onClick={add}>
           Добавить
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -101,12 +103,12 @@ export function AgentCard({ agent, onSetPolicy, onDelete, onRegenerateToken }: A
           <div className="ac-section">
             <p className="flab">Токен</p>
             <div className="vrow2">
-              <button className="vdl" onClick={() => void regenerate()}>
+              <Button variant="primary" size="sm" onClick={() => void regenerate()}>
                 Перевыпустить токен
-              </button>
-              <button className="vdl vdel" onClick={() => onDelete(agent.id)}>
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => onDelete(agent.id)}>
                 Удалить машину
-              </button>
+              </Button>
             </div>
             {newToken && (
               <div className="voicedl">
@@ -114,12 +116,13 @@ export function AgentCard({ agent, onSetPolicy, onDelete, onRegenerateToken }: A
                 <code className="fsub ac-mono" style={{ userSelect: 'all', wordBreak: 'break-all' }}>
                   {newToken}
                 </code>
-                <button
-                  className="vdl"
+                <Button
+                  variant="primary"
+                  size="sm"
                   onClick={() => void copyText(newToken).then((ok) => setTokenCopied(ok))}
                 >
                   {tokenCopied ? '✓ скопирована' : 'Скопировать строку подключения'}
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -175,13 +178,15 @@ export function AgentCard({ agent, onSetPolicy, onDelete, onRegenerateToken }: A
                 <span className="vname ac-mono">
                   {s.name}: {s.command}
                 </span>
-                <button
-                  className="vdl vdel"
-                  aria-label={`Удалить навык ${s.name}`} title={`Удалить навык ${s.name}`}
+                <IconButton
+                  variant="danger"
+                  size="sm"
+                  aria-label={`Удалить навык ${s.name}`}
+                  title={`Удалить навык ${s.name}`}
                   onClick={() => patch({ skills: policy.skills.filter((_, j) => j !== i) })}
                 >
                   ✕
-                </button>
+                </IconButton>
               </div>
             ))}
             <div className="vrow2">
@@ -199,21 +204,22 @@ export function AgentCard({ agent, onSetPolicy, onDelete, onRegenerateToken }: A
                 value={skillDraft.command}
                 onChange={(e) => setSkillDraft((d) => ({ ...d, command: e.target.value }))}
               />
-              <button className="vdl" disabled={!skillDraft.name.trim() || !skillDraft.command.trim()} onClick={addSkill}>
+              <Button variant="primary" size="sm" disabled={!skillDraft.name.trim() || !skillDraft.command.trim()} onClick={addSkill}>
                 Добавить
-              </button>
+              </Button>
             </div>
           </div>
 
           <div className="vrow2">
-            <button
-              className="vdl"
+            <Button
+              variant="primary"
+              size="sm"
               disabled={!dirty}
               aria-label="Сохранить разрешения"
               onClick={() => onSetPolicy(agent.id, policy)}
             >
               {dirty ? 'Сохранить разрешения' : '✓ сохранено'}
-            </button>
+            </Button>
           </div>
         </div>
       )}

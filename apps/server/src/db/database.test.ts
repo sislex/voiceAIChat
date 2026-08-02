@@ -378,6 +378,7 @@ describe('VoiceChatDb — настройки', () => {
       bargeIn: true,
       handsFree: true,
       execTarget: 'agent-1',
+      llmEngineId: null,
       llmProvider: 'claude',
       codexModel: '',
       defaultAgentId: null,
@@ -553,3 +554,91 @@ describe('VoiceChatDb — режим базы знаний разговора', 
     db.close()
   })
 })
+
+
+describe('VoiceChatDb — резолв исполнителя LLM', () => {
+  it('выбирает запрошенный доступный и заменяет закрытый на default роли', () => {
+    const db = makeDb()
+    const def = db.createLlmEngine({ name: 'Рабочий', kind: 'claude', baseUrl: 'http://work', token: '', enabled: true, allowedRoles: ['admin', 'user'], isDefault: true })
+    const personal = db.createLlmEngine({ name: 'Личный', kind: 'claude', baseUrl: 'http://personal', token: '', enabled: true, allowedRoles: ['admin'], isDefault: false })
+    expect(db.resolveLlmEngine(personal.id, 'claude', 'admin')).toMatchObject({ engine: { id: personal.id }, substituted: false })
+    expect(db.resolveLlmEngine(personal.id, 'claude', 'user')).toMatchObject({ engine: { id: def.id }, substituted: true })
+    expect(db.listLlmEnginesForRole('user').map((engine) => engine.id)).toEqual([def.id])
+    db.close()
+  })
+})
+
+
+describe('VoiceChatDb — миграции', () => {
+  it('добавляет llm_engines в существующую БД без потери разговоров', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-db-migrate-'))
+    const file = join(dir, 'voicechat.db')
+    const raw = new Database(file)
+    raw.exec(`
+      CREATE TABLE conversations (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        claude_session_id TEXT,
+        user_id TEXT,
+        exec_target TEXT,
+        workdir TEXT,
+        skill_names TEXT NOT NULL DEFAULT '[]',
+        llm_provider TEXT,
+        llm_model TEXT,
+        permission_mode TEXT,
+        kb_context_mode TEXT NOT NULL DEFAULT 'auto',
+        project_id TEXT,
+        task_id TEXT,
+        status TEXT NOT NULL DEFAULT 'developing'
+      );
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        text TEXT NOT NULL,
+        time TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        engine TEXT,
+        meta TEXT,
+        exec_target TEXT
+      );
+      CREATE TABLE speakers (
+        conversation_id TEXT NOT NULL,
+        speaker_id INTEGER NOT NULL,
+        label TEXT NOT NULL,
+        PRIMARY KEY (conversation_id, speaker_id)
+      );
+      CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE agents (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        token_hash TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_seen INTEGER,
+        policy TEXT,
+        user_id TEXT
+      );
+      CREATE TABLE users (
+        name TEXT PRIMARY KEY,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL,
+        blocked INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+    `)
+    raw.prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at) VALUES ('admin', 'x', 'admin', 0, 1)`).run()
+    raw.prepare(`INSERT INTO conversations (id, title, created_at, updated_at, user_id, skill_names, kb_context_mode, status) VALUES ('c1', 'legacy', 1, 2, 'admin', '[]', 'auto', 'developing')`).run()
+    raw.close()
+    const db = new VoiceChatDb(file)
+    try {
+      expect(db.getConversation('admin', 'c1')?.title).toBe('legacy')
+      expect(db.listLlmEngines()).toEqual([])
+    } finally {
+      db.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+

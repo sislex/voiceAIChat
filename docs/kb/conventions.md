@@ -1,12 +1,13 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
-updated: 2026-07-27
-checked: 49465ae
+updated: 2026-08-01
+checked: 9306637
 areas:
   - package.json
   - packages/ui/vitest.config.ts
   - packages/shared/tsconfig.json
   - apps/server/tsconfig.json
+  - apps/llm-runner/tsconfig.json
 ---
 
 # Конвенции: код, тесты, гейты, коммиты
@@ -18,7 +19,8 @@ areas:
   Смотри на соседние файлы: плотность комментариев там осознанная, держи такую же.
 - TypeScript strict везде; в `packages/ui` дополнительно `noUnusedLocals`,
   `noUnusedParameters`, `noImplicitOverride`.
-- **Импорты**: в `apps/server` — с расширением `.js` (`./config.js`), потому что
+- **Импорты**: в `apps/server` и `apps/llm-runner` — с расширением `.js`
+  (`./config.js`), потому что
   запуск идёт через `tsx` в ESM без сборки. В `packages/*` — без расширений, общий
   код подключается алиасом `@shared/*` (прописан в tsconfig и в vitest-алиасах).
 - Чистая логика выносится в `packages/shared` и покрывается юнит-тестами без

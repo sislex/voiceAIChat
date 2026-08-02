@@ -2,9 +2,14 @@ import { useEffect, useState } from 'react'
 import { clampModelForRole, CODEX_MODELS, modelsForRole, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
+import type { LlmEngineOption } from '@shared/admin'
 import type { ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
 import type { MachineOps } from './machine'
 import { PopupFrame } from './PopupFrame'
+import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
+import { useConfirm } from './ui/useConfirm'
+import { useToast } from './ui/Toast'
 
 export interface ConversationSettingsProps {
   conversation: Conversation
@@ -13,7 +18,8 @@ export interface ConversationSettingsProps {
   /** Роль пользователя — прячет модели Claude, недоступные роли user. */
   role: UserRole
   /** Общие настройки — дефолты движка/модели, когда разговор их не переопределяет. */
-  settings: Pick<Settings, 'llmProvider' | 'model' | 'codexModel' | 'permissionMode'>
+  settings: Pick<Settings, 'llmProvider' | 'model' | 'codexModel' | 'permissionMode'> & { llmEngineId?: string | null }
+  engines?: LlmEngineOption[]
   /** Машина по умолчанию — предвыбирается в новых разговорах и помечается в списке. */
   defaultAgentId?: string | null
   /** Проекты пользователя — для привязки чата к проекту. */
@@ -25,6 +31,7 @@ export interface ConversationSettingsProps {
     execTarget: string | null
     workdir: string | null
     skillNames: string[]
+    llmEngineId?: string | null
     llmProvider: LlmProvider | null
     llmModel: string | null
     permissionMode: PermissionMode | null
@@ -48,7 +55,9 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, settings, defaultAgentId, projects, fetchProjectDetail, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, settings, engines = [], defaultAgentId, projects, fetchProjectDetail, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+  const confirm = useConfirm()
+  const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
   const defaultExecTarget = defaultAgentId && agents.some((a) => a.id === defaultAgentId) ? defaultAgentId : null
   const [execTarget, setExecTarget] = useState<string | null>(
@@ -56,6 +65,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
   )
   const [workdir, setWorkdir] = useState<string | null>(conversation.workdir)
   const [skillNames, setSkillNames] = useState<string[]>(conversation.skillNames)
+  const [llmEngineId, setLlmEngineId] = useState<string | null>(conversation.llmEngineId ?? settings.llmEngineId ?? null)
   const initialProvider: LlmProvider = conversation.llmProvider ?? settings.llmProvider
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(initialProvider)
   const [llmModel, setLlmModel] = useState<string>(
@@ -164,7 +174,11 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
     if (
       startedInPlan &&
       permissionMode === 'bypassPermissions' &&
-      !window.confirm('Перейти из планирования в «Полный доступ»? Агент сможет выполнять команды и изменять любые доступные файлы.')
+      !(await confirm({
+        title: 'Полный доступ',
+        message: 'Перейти из планирования в «Полный доступ»? Агент сможет выполнять команды и изменять любые доступные файлы.',
+        confirmLabel: 'Перейти'
+      }))
     ) return
     setSaving(true)
     try {
@@ -177,12 +191,14 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         execTarget,
         workdir: execTarget ? workdir : null,
         skillNames: execTarget ? skillNames : [],
+        ...(llmEngineId !== null || conversation.llmEngineId !== undefined || settings.llmEngineId !== undefined ? { llmEngineId: llmEngineId === (settings.llmEngineId ?? null) ? null : llmEngineId } : {}),
         llmProvider: inheritsGlobal ? null : llmProvider,
         llmModel: inheritsGlobal ? null : llmModel,
         permissionMode: permissionMode || null,
         kbContextMode,
         projectId
       })
+      toast.success('Настройки сохранены')
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -198,7 +214,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
   return (
     <PopupFrame title="Настройки разговора" onClose={onClose} testId="conversation-settings-overlay" panelClassName="convsettings">
       <header className="convsettings-head">
-        <button className="convsettings-back" onClick={onClose} aria-label="Вернуться в разговор" title="Вернуться в разговор">←</button>
+        <IconButton className="convsettings-back" onClick={onClose} aria-label="Вернуться в разговор" title="Вернуться в разговор">←</IconButton>
         <div><h1>Настройки разговора</h1><p>Параметры применяются только к этому разговору</p></div>
       </header>
       <main className="convsettings-body">
@@ -227,6 +243,17 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
 
         <section className="convsettings-card">
           <div className="convsettings-sectionhead"><div><h2>Движок и модель</h2><p>Действуют только в этом разговоре; по умолчанию — из общих настроек.</p></div></div>
+          <label className="convsettings-field"><span>Исполнитель</span>
+            <select aria-label="Исполнитель разговора" value={llmEngineId ?? ''} onChange={(e) => {
+              const id = e.target.value || null
+              setLlmEngineId(id)
+              const engine = engines.find((item) => item.id === id)
+              if (engine) setLlmProvider(engine.kind)
+            }}>
+              <option value="">Из общих настроек</option>
+              {engines.map((engine) => <option key={engine.id} value={engine.id}>{engine.name} · {engine.kind}</option>)}
+            </select>
+          </label>
           <label className="convsettings-field"><span>Движок</span>
             <select
               aria-label="Движок разговора"
@@ -255,14 +282,21 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         </section>
 
         <section className="convsettings-card">
-          <div className="convsettings-sectionhead"><div><h2>База знаний проекта</h2><p>Как добавлять сведения об устройстве voiceAIChat в задачи агента.</p></div></div>
+          <div className="convsettings-sectionhead"><div><h2>База знаний проекта</h2><p>Как модель получает сведения об устройстве voiceAIChat. Политика проекта — искать в базе знаний до чтения кода.</p></div></div>
           <label className="convsettings-field"><span>Контекст KB</span>
             <select aria-label="Контекст базы знаний" value={kbContextMode} onChange={(e) => setKbContextMode(e.target.value as KbContextMode)}>
-              <option value="auto">Автоматически при высокой уверенности</option>
-              <option value="manual">Только по запросу</option>
+              <option value="auto">Авто-контекст + инструменты модели</option>
+              <option value="manual">По запросу модели (только инструменты)</option>
               <option value="off">Не использовать</option>
             </select>
           </label>
+          <p className="convsettings-muted" data-testid="conv-kb-hint">
+            {kbContextMode === 'auto'
+              ? 'Сервер подмешивает подходящие разделы в промпт при высокой уверенности, и модель может дозапросить любые другие инструментами mcp__kb__*.'
+              : kbContextMode === 'manual'
+                ? 'Авто-контекста нет: модель сама решает, что читать, инструментами mcp__kb__* — и получает указание искать в базе знаний до чтения кода.'
+                : 'Ни авто-контекста, ни инструментов: модель разбирается только по коду.'}
+          </p>
         </section>
 
         <section className="convsettings-card">
@@ -281,10 +315,10 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
 
         {selectedAgent && <>
           <section className="convsettings-card">
-            <div className="convsettings-sectionhead"><div><h2>Корневая директория</h2><p>Команды этого разговора будут начинаться в выбранной папке.</p></div><button onClick={() => void loadDir(workdir ?? '')} disabled={!selectedAgent.online || loadingDir}>Выбрать</button></div>
+            <div className="convsettings-sectionhead"><div><h2>Корневая директория</h2><p>Команды этого разговора будут начинаться в выбранной папке.</p></div><Button onClick={() => void loadDir(workdir ?? '')} loading={loadingDir} disabled={!selectedAgent.online}>Выбрать</Button></div>
             <div className="convsettings-path">{workdir || 'Корень машины'}</div>
             {(cwd || entries.length > 0 || loadingDir) && <div className="convsettings-picker">
-              <div className="convsettings-pickerbar"><button onClick={() => void loadDir(parentOf(cwd))} title="На уровень выше" aria-label="На уровень выше">↑</button><span>{cwd}</span><button onClick={() => { setWorkdir(cwd); setEntries([]) }}>Выбрать эту папку</button></div>
+              <div className="convsettings-pickerbar"><IconButton onClick={() => void loadDir(parentOf(cwd))} title="На уровень выше" aria-label="На уровень выше">↑</IconButton><span>{cwd}</span><Button onClick={() => { setWorkdir(cwd); setEntries([]) }}>Выбрать эту папку</Button></div>
               {loadingDir ? <p>Загрузка…</p> : entries.filter((entry) => entry.kind === 'dir').map((entry) => <button className="convsettings-dir" key={entry.name} onClick={() => void loadDir(joinPath(cwd, entry.name))}>📁 {entry.name}</button>)}
             </div>}
           </section>
@@ -295,12 +329,12 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
               {skills.length === 0 && <p className="convsettings-muted">У машины пока нет навыков.</p>}
               {skills.map((skill) => <label className="convsettings-skill" key={skill.name}><input type="checkbox" checked={skillNames.includes(skill.name)} onChange={(e) => setSkillNames((current) => e.target.checked ? [...current, skill.name] : current.filter((name) => name !== skill.name))} /><span><b>{skill.name}</b>{skill.description && <small>{skill.description}</small>}<code>{skill.command}</code></span></label>)}
             </div>
-            <div className="convsettings-add"><h3>Добавить навык</h3><input placeholder="Название" value={skillName} onChange={(e) => setSkillName(e.target.value)} /><input placeholder="Команда" value={skillCommand} onChange={(e) => setSkillCommand(e.target.value)} /><input placeholder="Описание (необязательно)" value={skillDescription} onChange={(e) => setSkillDescription(e.target.value)} /><button disabled={!skillName.trim() || !skillCommand.trim()} onClick={() => void addSkill()}>Добавить</button></div>
+            <div className="convsettings-add"><h3>Добавить навык</h3><input placeholder="Название" value={skillName} onChange={(e) => setSkillName(e.target.value)} /><input placeholder="Команда" value={skillCommand} onChange={(e) => setSkillCommand(e.target.value)} /><input placeholder="Описание (необязательно)" value={skillDescription} onChange={(e) => setSkillDescription(e.target.value)} /><Button disabled={!skillName.trim() || !skillCommand.trim()} onClick={() => void addSkill()}>Добавить</Button></div>
           </section>
         </>}
         {error && <p className="convsettings-error" role="alert">{error}</p>}
       </main>
-      <footer className="convsettings-footer"><button onClick={onClose}>Отмена</button><button className="primary" disabled={saving} onClick={() => void save()}>{saving ? 'Сохранение…' : 'Сохранить'}</button></footer>
+      <footer className="convsettings-footer"><Button onClick={onClose}>Отмена</Button><Button variant="primary" loading={saving} onClick={() => void save()}>{saving ? 'Сохранение…' : 'Сохранить'}</Button></footer>
     </PopupFrame>
   )
 }

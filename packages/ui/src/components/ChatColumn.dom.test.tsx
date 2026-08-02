@@ -1,14 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ChatColumn } from './ChatColumn'
 import type { Message } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
+import { makeAiMessage, makeChatPair, makeMachineOps, makeUserMessage } from '../test/fixtures'
 
-const messages: Message[] = [
-  { id: 'u1', conversationId: 'c', role: 'u1', text: 'Вопрос', time: '10:00', createdAt: 1 },
-  { id: 'a1', conversationId: 'c', role: 'ai', text: 'Ответ **жирный**', time: '10:01', createdAt: 2 }
-]
+// Лента — общая фикстура (её же показывают сториз Chat/ChatColumn): вопрос
+// пользователя и ответ модели с markdown-разметкой.
+const messages: Message[] = makeChatPair()
 
 function renderCol(props: Partial<Parameters<typeof ChatColumn>[0]> = {}): void {
   render(
@@ -168,21 +169,16 @@ describe('ChatColumn — кнопка меню (мобильный сайдба�
 
 describe('ChatColumn — простой/подробный вид ответа', () => {
   const withActivity: Message[] = [
-    { id: 'u1', conversationId: 'c', role: 'u1', text: 'Вопрос', time: '10:00', createdAt: 1 },
-    {
+    makeUserMessage({ id: 'u1' }),
+    makeAiMessage({
       id: 'a1',
-      conversationId: 'c',
-      role: 'ai',
-      text: 'Ответ',
-      time: '10:01',
-      createdAt: 2,
       meta: {
         activity: [
           { kind: 'tool_use', summary: 'Bash: ls', detail: 'ls', raw: '{"t":"assistant"}' },
           { kind: 'result', summary: 'Готово', raw: '{"t":"result"}' }
         ]
       }
-    }
+    })
   ]
 
   it('по умолчанию — минимальный вид: без счётчика и секций, только текст', () => {
@@ -217,26 +213,9 @@ describe('ChatColumn — простой/подробный вид ответа',
 
 describe('ChatColumn — встроенная утилита (tool-блок)', () => {
   const toolMsg: Message[] = [
-    {
-      id: 'a1',
-      conversationId: 'c',
-      role: 'ai',
-      text: '🖥 Консоль\n\n```tool\n{"kind":"console"}\n```',
-      time: '10:01',
-      createdAt: 2
-    }
+    makeAiMessage({ id: 'a1', text: '🖥 Консоль\n\n```tool\n{"kind":"console"}\n```' })
   ]
-  const ops = {
-    list: vi.fn(),
-    read: vi.fn(),
-    write: vi.fn(),
-    remove: vi.fn(),
-    rename: vi.fn(),
-    mkdir: vi.fn(),
-    download: vi.fn(),
-    upload: vi.fn(),
-    exec: vi.fn()
-  }
+  const ops = makeMachineOps()
 
   it('рендерит консоль внутри ai-сообщения при наличии machineOps', () => {
     renderCol({ messages: toolMsg, machineOps: ops, agents: [] })
@@ -245,15 +224,12 @@ describe('ChatColumn — встроенная утилита (tool-блок)', (
 
   it('встроенный проводник открывает терминал на своей машине и в текущей папке', async () => {
     const open = vi.fn()
-    const explorerOps = {
-      ...ops,
+    const explorerOps = makeMachineOps({
       list: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r/work', entries: [] })
-    }
-    const explorerMsg: Message[] = [{
-      id: 'a2', conversationId: 'c', role: 'ai',
-      text: 'Проводник\n\n```tool\n{"kind":"explorer","agentId":"m1"}\n```',
-      time: '10:02', createdAt: 3
-    }]
+    })
+    const explorerMsg: Message[] = [
+      makeAiMessage({ id: 'a2', text: 'Проводник\n\n```tool\n{"kind":"explorer","agentId":"m1"}\n```' })
+    ]
     const agent = { id: 'm1', name: 'MacBook', online: true, policy: { allowWrite: true } } as AgentInfo
     renderCol({ messages: explorerMsg, machineOps: explorerOps, agents: [agent], onOpenTerminal: open })
     await userEvent.click(await screen.findByTitle('Открыть терминал в этой папке'))
@@ -267,20 +243,8 @@ describe('ChatColumn — встроенная утилита (tool-блок)', (
 })
 
 describe('ChatColumn — картинка от модели в сообщении', () => {
-  const imgMsg = (text: string): Message[] => [
-    { id: 'a1', conversationId: 'c', role: 'ai', text, time: '10:01', createdAt: 2, execTarget: 'm1' }
-  ]
-  const ops = {
-    list: vi.fn(),
-    read: vi.fn().mockResolvedValue({ root: '/', cwd: '', dataBase64: 'AAA' }),
-    write: vi.fn(),
-    remove: vi.fn(),
-    rename: vi.fn(),
-    mkdir: vi.fn(),
-    download: vi.fn(),
-    upload: vi.fn(),
-    exec: vi.fn()
-  }
+  const imgMsg = (text: string): Message[] => [makeAiMessage({ id: 'a1', text, execTarget: 'm1' })]
+  const ops = makeMachineOps({ read: vi.fn().mockResolvedValue({ root: '/', cwd: '', dataBase64: 'AAA' }) })
 
   it('рендерит картинку из блока и читает файл с машины сообщения', async () => {
     renderCol({ messages: imgMsg('Готово\n\n```image\n{"path":"/tmp/out.png"}\n```'), machineOps: ops })
@@ -375,15 +339,29 @@ describe('ChatColumn — высота поля редактирования', ()
 })
 
 describe('ChatColumn — загрузка сообщений', () => {
-  it('loadingMessages=true → показывает лоадер', () => {
+  it('первая загрузка → скелетон реплик вместо ленты', () => {
     renderCol({ loadingMessages: true, messages: [] })
-    expect(screen.getByTestId('messages-loading')).toBeInTheDocument()
-    expect(screen.getByText('Загрузка сообщений…')).toBeInTheDocument()
+    const skeleton = screen.getByTestId('messages-loading')
+    expect(skeleton).toHaveAttribute('aria-busy', 'true')
+    expect(within(skeleton).getAllByTestId('skeleton')).toHaveLength(3)
+    expect(screen.queryByTestId('messages-empty')).not.toBeInTheDocument()
+  })
+
+  it('повторная загрузка уже показанной истории её не подменяет скелетоном', () => {
+    renderCol({ loadingMessages: true })
+    expect(screen.queryByTestId('messages-loading')).not.toBeInTheDocument()
+    expect(screen.getByText('Обновляем историю…')).toBeInTheDocument()
+    expect(screen.getByText('Вопрос')).toBeInTheDocument()
   })
 
   it('loadingMessages=false → лоадера нет', () => {
     renderCol({ loadingMessages: false })
     expect(screen.queryByTestId('messages-loading')).not.toBeInTheDocument()
+  })
+
+  it('пустая история объясняет следующий шаг', () => {
+    renderCol({ loadingMessages: false, messages: [] })
+    expect(screen.getByTestId('messages-empty')).toHaveTextContent('Пока нет сообщений — задайте первый вопрос')
   })
 })
 
@@ -391,8 +369,8 @@ describe('ChatColumn — загрузка сообщений', () => {
 describe('ChatColumn — снимок машины сообщения', () => {
   it('показывает машину вопроса и ответа без селекторов', () => {
     const machineMessages: Message[] = [
-      { id: 'u', conversationId: 'c', role: 'u1', text: 'Вопрос', time: '10:00', createdAt: 1, execTarget: 'm1' },
-      { id: 'a', conversationId: 'c', role: 'ai', text: 'Ответ', time: '10:01', createdAt: 2, execTarget: 'none' }
+      makeUserMessage({ id: 'u', execTarget: 'm1' }),
+      makeAiMessage({ id: 'a', execTarget: 'none' })
     ]
     const agent = { id: 'm1', name: 'MacBook', online: true } as AgentInfo
     renderCol({ messages: machineMessages, agents: [agent] })
@@ -434,17 +412,7 @@ describe('ChatColumn — статус стрима внизу пузыря и п
 
   it('сообщение с meta.interrupted показывает пометку о прерванном ответе', () => {
     renderCol({
-      messages: [
-        {
-          id: 'a2',
-          conversationId: 'c',
-          role: 'ai',
-          text: 'Часть ответа',
-          time: '10:02',
-          createdAt: 3,
-          meta: { interrupted: true }
-        }
-      ]
+      messages: [makeAiMessage({ id: 'a2', text: 'Часть ответа', meta: { interrupted: true } })]
     })
     expect(screen.getByTestId('msg-interrupted').textContent).toContain('прерван')
   })
@@ -454,9 +422,7 @@ describe('ChatColumn — время сообщения в поясе зрите�
   it('рендерит время из createdAt, а не запечённую серверную строку', () => {
     const ts = new Date(2026, 6, 26, 14, 30).getTime() // локальные 14:30
     renderCol({
-      messages: [
-        { id: 'a3', conversationId: 'c', role: 'ai', text: 'Ответ', time: '23:59', createdAt: ts }
-      ]
+      messages: [makeAiMessage({ id: 'a3', time: '23:59', createdAt: ts })]
     })
     expect(screen.getByText('14:30')).toBeInTheDocument()
     expect(screen.queryByText('23:59')).toBeNull()
@@ -466,11 +432,12 @@ describe('ChatColumn — время сообщения в поясе зрите�
 
 describe('ChatColumn — режим работы', () => {
   const planMessages: Message[] = [
-    { id: 'u-plan', conversationId: 'c', role: 'u1', text: 'Составь план', time: '10:00', createdAt: 1 },
-    {
-      id: 'a-plan', conversationId: 'c', role: 'ai', text: 'План готов', time: '10:01', createdAt: 2,
+    makeUserMessage({ id: 'u-plan', text: 'Составь план' }),
+    makeAiMessage({
+      id: 'a-plan',
+      text: 'План готов',
       meta: { request: { provider: 'claude', model: 'sonnet', prompt: 'Составь план', promptChars: 11, permissionMode: 'plan', resumed: false } }
-    }
+    })
   ]
 
   it('показывает фактический режим в шапке и открывает настройки по клику', async () => {
@@ -497,5 +464,165 @@ describe('ChatColumn — режим работы', () => {
   it('не предлагает эскалацию пользователю без машины', () => {
     renderCol({ messages: planMessages, onExecutePlan: vi.fn(), canExecutePlan: false })
     expect(screen.queryByRole('button', { name: 'Выполнить план' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ChatColumn — вопрос CI-рана, продублированный в чат', () => {
+  const QBLOCK = '```questions\n[{"q":"Какую БД взять?","options":["SQLite","Postgres"]}]\n```'
+  const ciMessages: Message[] = [
+    makeUserMessage({ id: 'u1', text: 'старт' }),
+    makeAiMessage({
+      id: 'a1',
+      text: `Уточняющие вопросы по задаче:\n\n${QBLOCK}`,
+      meta: { ciInteraction: { runId: 'run-1', interactionId: 'it-1' } }
+    }),
+    makeUserMessage({ id: 'u2', text: 'что-то ещё' })
+  ]
+
+  it('ответ уходит в ран, а не запускает новый ход чата', async () => {
+    const onAnswerCiInteraction = vi.fn()
+    const onAnswerQuestions = vi.fn()
+    render(
+      <ChatColumn
+        title="Тест" state="idle" messages={ciMessages} liveSegments={[]} diarization={false} voiceBar={null}
+        onAnswerQuestions={onAnswerQuestions}
+        onAnswerCiInteraction={onAnswerCiInteraction}
+      />
+    )
+    // Сырой JSON блока в тексте не виден.
+    expect(screen.queryByText(/```questions/)).not.toBeInTheDocument()
+    // Форма доступна, хотя сообщение не последнее в ленте.
+    await userEvent.click(screen.getByLabelText('SQLite'))
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить ответы' }))
+    expect(onAnswerCiInteraction).toHaveBeenCalledWith('run-1', 'it-1', 'SQLite')
+    expect(onAnswerQuestions).not.toHaveBeenCalled()
+  })
+
+  it('после ответа (в т.ч. из ленты рана) форма гаснет и остаётся статика', () => {
+    render(
+      <ChatColumn
+        title="Тест" state="idle" messages={ciMessages} liveSegments={[]} diarization={false} voiceBar={null}
+        onAnswerQuestions={vi.fn()}
+        onAnswerCiInteraction={vi.fn()}
+        answeredCiInteractions={['it-1']}
+      />
+    )
+    expect(screen.queryByRole('button', { name: 'Отправить ответы' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('questions-static')).toHaveTextContent('Какую БД взять?')
+  })
+})
+
+describe('ChatColumn — переход из поиска по сообщениям', () => {
+  it('подсвечивает и прокручивает к сообщению, через 2 секунды гасит подсветку', () => {
+    vi.useFakeTimers()
+    try {
+      const scrollIntoView = vi.fn()
+      // jsdom не реализует прокрутку — подставляем свою, чтобы проверить вызов.
+      Object.defineProperty(Element.prototype, 'scrollIntoView', { value: scrollIntoView, configurable: true })
+      const onHighlightDone = vi.fn()
+      renderCol({ highlightMessageId: 'a1', onHighlightDone })
+
+      const found = document.querySelector('[data-mid="a1"]')
+      expect(found).toHaveClass('msg--found')
+      expect(document.querySelector('[data-mid="u1"]')).not.toHaveClass('msg--found')
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center' })
+
+      expect(onHighlightDone).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(2000)
+      expect(onHighlightDone).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('без подсветки ничего не прокручивает', () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { value: scrollIntoView, configurable: true })
+    renderCol()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    expect(document.querySelector('.msg--found')).toBeNull()
+  })
+})
+
+describe('ChatColumn — доступность', () => {
+  it('без нарушений axe: лента с ответом модели', async () => {
+    renderCol({ canSpeak: true, onSpeakMessage: vi.fn(), onDeleteMessage: vi.fn(), onEditMessage: vi.fn(), turnMeta: null })
+    await expectNoViolations()
+    expectLabelledIconButtons()
+  })
+
+  it('без нарушений axe: запись, стриминг ответа и баннер ошибки', async () => {
+    renderCol({ state: 'listening', liveSegments: [{ speakerId: 1, text: 'слышно' }], error: 'Сбой сети', onDismissError: vi.fn() })
+    await expectNoViolations()
+    cleanup()
+    renderCol({ state: 'thinking', streamingReply: 'Начал отвечать', liveActivity: [] })
+    await expectNoViolations()
+    expectLabelledIconButtons()
+  })
+})
+
+describe('ChatColumn — объявления для скринридера', () => {
+  it('стриминг ответа: «отвечает…» на старте, «Ответ получен» по завершении', () => {
+    const col = (props: Partial<Parameters<typeof ChatColumn>[0]>): JSX.Element => (
+      <ChatColumn title="Тест" state="idle" messages={messages} liveSegments={[]} diarization={false} voiceBar={null} {...props} />
+    )
+    const { rerender } = render(col({ state: 'thinking', streamingReply: 'Начал отве' }))
+    const live = screen.getByTestId('reply-announce')
+    expect(live).toHaveAttribute('aria-live', 'polite')
+    expect(live).toHaveTextContent('Claude отвечает…')
+    rerender(col({ state: 'idle', streamingReply: '' }))
+    expect(screen.getByTestId('reply-announce')).toHaveTextContent('Ответ получен')
+  })
+
+  it('в покое живая область пуста — читалке нечего объявлять', () => {
+    renderCol()
+    expect(screen.getByTestId('reply-announce')).toBeEmptyDOMElement()
+  })
+
+  it('распознавание речи — role=log: дочитывается по мере появления сегментов', () => {
+    renderCol({ state: 'listening', liveSegments: [{ speakerId: 1, text: 'слышно' }] })
+    const block = screen.getByTestId('live-block')
+    expect(block).toHaveAttribute('role', 'log')
+    expect(block).toHaveAttribute('aria-live', 'polite')
+  })
+})
+
+describe('ChatColumn — кнопка «Использование БЗ»', () => {
+  it('без onOpenKbUsage кнопки нет', () => {
+    renderCol()
+    expect(screen.queryByTestId('kb-usage-open')).not.toBeInTheDocument()
+  })
+
+  it('кнопка открывает панель, число обращений — в aria-label', async () => {
+    const onOpen = vi.fn()
+    renderCol({ onOpenKbUsage: onOpen, kbUsageCount: 3 })
+    const btn = screen.getByTestId('kb-usage-open')
+    expect(btn).toHaveAccessibleName('Использование базы знаний: 3 обращения')
+    expect(screen.getByTestId('kb-usage-count')).toHaveTextContent('3')
+    await userEvent.click(btn)
+    expect(onOpen).toHaveBeenCalled()
+  })
+
+  it('счётчик переполнения показывает 99+, но точное число остаётся в подписи', () => {
+    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 128 })
+    expect(screen.getByTestId('kb-usage-count')).toHaveTextContent('99+')
+    expect(screen.getByTestId('kb-usage-open')).toHaveAccessibleName('Использование базы знаний: 128 обращений')
+  })
+
+  it('активное обращение показывает индикатор вместо счётчика', () => {
+    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 2, kbUsageActive: true })
+    expect(screen.getByTestId('kb-usage-live')).toBeInTheDocument()
+    expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
+    expect(screen.getByTestId('kb-usage-open')).toHaveAccessibleName(/идёт обращение/)
+  })
+
+  it('при выключенной БЗ кнопка доступна и объясняет пустоту', async () => {
+    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 0, kbContextMode: 'off' })
+    const btn = screen.getByTestId('kb-usage-open')
+    expect(btn).toBeEnabled()
+    expect(btn).toHaveAccessibleName(/база знаний выключена для этого чата/)
+    expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
+    await expectNoViolations()
+    expectLabelledIconButtons()
   })
 })

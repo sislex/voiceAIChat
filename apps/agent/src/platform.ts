@@ -1,7 +1,8 @@
 // Определение платформы и разрешение shell/каталогов. Вынесено отдельно, чтобы
 // exec.ts и pty.ts выбирали рабочий shell одинаково — критично для Termux (Android),
 // где НЕТ /bin/bash, а бинарники лежат в /data/data/com.termux/files/usr/bin,
-// и для Windows, где POSIX-shell нет вовсе (работаем через cmd.exe/PowerShell).
+// и для Windows, где ищем настоящий bash.exe (Git for Windows) и только если
+// его нет — деградируем в cmd.exe.
 
 import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
@@ -48,26 +49,82 @@ export function which(
 }
 
 /**
- * Путь к shell для запуска команд. Порядок: VC_PTY_SHELL/SHELL override →
- * bash/zsh/fish/sh из PATH (с учётом Termux) → /bin/bash → /bin/sh → 'sh'.
- * На Termux /bin/bash отсутствует — поэтому ищем по PATH, а не хардкодим путь.
- * На Windows — cmd.exe (ComSpec): spawn(команда, {shell}) корректно квотит
- * аргументы только под cmd, а не под PowerShell.
+ * Известные пути установки Git for Windows (portable/обычная установка), где
+ * лежит bash.exe, если его нет в PATH. Порядок — от системной установки к
+ * пользовательской (LOCALAPPDATA — типичный путь portable-Git без прав администратора).
  */
+function knownGitBashPaths(env: NodeJS.ProcessEnv): string[] {
+  const roots = [env.ProgramFiles, env.ProgramW6432, env.LOCALAPPDATA ? join(env.LOCALAPPDATA, 'Programs') : undefined]
+  return roots.filter((r): r is string => Boolean(r)).map((root) => join(root, 'Git', 'bin', 'bash.exe'))
+}
+
+/** Ищет bash.exe по известным путям Git for Windows (не через PATH). */
+function findKnownGitBash(env: NodeJS.ProcessEnv): string | null {
+  for (const p of knownGitBashPaths(env)) {
+    if (existsSync(p)) return p
+  }
+  return null
+}
+
+/** Похож ли override на Unix-путь (`/bin/bash`) — на Windows такой путь не существует. */
+function isUnixLikePath(p: string): boolean {
+  return p.startsWith('/')
+}
+
+/** Результат разрешения shell: сам путь + признак деградации (для UI/лога). */
+export interface ShellResolution {
+  shell: string
+  /** true — на Windows не нашли bash.exe и упали в cmd.exe (ограниченная функциональность). */
+  degraded: boolean
+  /** Override (SHELL/VC_PTY_SHELL) был задан, но проигнорирован — Unix-путь на Windows. */
+  ignoredOverride?: string
+}
+
+/**
+ * Путь к shell для запуска команд (с деталями для диагностики). Порядок:
+ * VC_PTY_SHELL/SHELL override (кроме Unix-подобных путей на Windows — их
+ * игнорируем, отмечая в ignoredOverride) → на Windows: bash.exe из PATH →
+ * bash.exe по известным путям Git for Windows → cmd.exe (ComSpec) как
+ * деградация → на остальных ОС: bash/zsh/fish/sh из PATH (с учётом Termux) →
+ * /bin/bash → /bin/sh → 'sh'.
+ */
+export function resolveShellInfo(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
+): ShellResolution {
+  const override = env.VC_PTY_SHELL || env.SHELL
+  let ignoredOverride: string | undefined
+  if (override) {
+    if (isWindows(platform) && isUnixLikePath(override)) {
+      // Unix-подобный SHELL долетает на Windows из унаследованного окружения
+      // (напр. Git Bash сам себя запустил) — как путь для spawn он не годится.
+      ignoredOverride = override
+    } else if (existsSync(override)) {
+      return { shell: override, degraded: false }
+    }
+  }
+
+  if (isWindows(platform)) {
+    const bash = which('bash', env, platform) ?? findKnownGitBash(env)
+    if (bash) return { shell: bash, degraded: false, ...(ignoredOverride ? { ignoredOverride } : {}) }
+    return { shell: env.ComSpec || 'cmd.exe', degraded: true, ...(ignoredOverride ? { ignoredOverride } : {}) }
+  }
+
+  for (const s of ['bash', 'zsh', 'fish', 'sh']) {
+    const p = which(s, env, platform)
+    if (p) return { shell: p, degraded: false }
+  }
+  if (existsSync('/bin/bash')) return { shell: '/bin/bash', degraded: false }
+  if (existsSync('/bin/sh')) return { shell: '/bin/sh', degraded: false }
+  return { shell: 'sh', degraded: false }
+}
+
+/** Путь к shell для запуска команд — см. `resolveShellInfo` за деталями выбора. */
 export function resolveShell(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform
 ): string {
-  const override = env.VC_PTY_SHELL || env.SHELL
-  if (override && existsSync(override)) return override
-  if (isWindows(platform)) return env.ComSpec || 'cmd.exe'
-  for (const s of ['bash', 'zsh', 'fish', 'sh']) {
-    const p = which(s, env, platform)
-    if (p) return p
-  }
-  if (existsSync('/bin/bash')) return '/bin/bash'
-  if (existsSync('/bin/sh')) return '/bin/sh'
-  return 'sh'
+  return resolveShellInfo(env, platform).shell
 }
 
 /** Корневой каталог проводника по умолчанию: VC_AGENT_ROOT → Termux $HOME → cwd. */

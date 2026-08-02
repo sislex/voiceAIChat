@@ -15,6 +15,7 @@
     "@fastify/static": "^10.1.2",
     "@fastify/websocket": "^11.0.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@voicechat/llm-runner": "*",
     "@voicechat/shared": "*",
     "better-sqlite3": "^11.10.0",
     "esbuild": "^0.21.5",

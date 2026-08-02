@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ClaudeLogEntry } from '@shared/types'
-import { activityLocation, activityStatus, chipClass, formatDuration, formatLiveUsage, messageTime, pluralActions } from './view'
+import { activityLocation, activityStatus, chipClass, composerPeek, formatDuration, formatLiveUsage, messageTime, pluralActions } from './view'
 
 const log = (kind: ClaudeLogEntry['kind'], summary: string): ClaudeLogEntry => ({
   kind,
@@ -115,5 +115,21 @@ describe('formatDuration — человеческая длительность',
   it('минуты и секунды', () => {
     expect(formatDuration(60000)).toBe('1м')
     expect(formatDuration(80000)).toBe('1м 20с')
+  })
+})
+
+describe('composerPeek — подпись свёрнутого композера', () => {
+  it('черновик важнее всего остального', () => {
+    expect(composerPeek('  проверь ран  ', 2, 'thinking')).toBe('проверь ран')
+  })
+
+  it('без черновика показывает вложения', () => {
+    expect(composerPeek('', 3, 'idle')).toBe('Вложений: 3')
+  })
+
+  it('пустой композер в простое зовёт развернуть, в ходе — показывает состояние', () => {
+    expect(composerPeek('', 0, 'idle')).toBe('Показать поле ввода')
+    expect(composerPeek('', 0, 'listening')).toBe('Идёт запись, говорите')
+    expect(composerPeek('', 0, 'thinking', 'Codex')).toBe('Запрос отправлен движку Codex, ждём ответ')
   })
 })

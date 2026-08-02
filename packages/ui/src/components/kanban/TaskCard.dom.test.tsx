@@ -1,7 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { useEffect, useState } from 'react'
+import { act, screen, fireEvent, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { render } from '../../test/uiRender'
 import type { Task } from '@shared/projects'
-import type { CiRunSummary } from '@shared/ci'
+import type { CiRun, CiRunSummary } from '@shared/ci'
+import { createFakeCi } from '../../test/fakeApi'
 import { TaskCard, type TaskCardProps } from './TaskCard'
 
 function mkTask(over: Partial<Task> = {}): Task {
@@ -16,10 +20,14 @@ function props(over: Partial<TaskCardProps> = {}): TaskCardProps {
   return {
     task: mkTask(), projectName: 'Proj', allTasks: [], doneColumnIds: new Set(),
     onOpen: vi.fn(), onUpdate: vi.fn(), onDelete: vi.fn(), onMoveTop: vi.fn(), onMoveBottom: vi.fn(),
-    onDragStart: vi.fn(), onDragEnd: vi.fn(), dragging: false, ...over
+    dragging: false, ...over
   }
 }
 
+
+function mkSummary(over: Partial<CiRunSummary> = {}): CiRunSummary {
+  return { id: 'run-1', taskId: 't1', status: 'running', slotProgress: { done: 1, total: 4, phase: 'Модель работает' }, durationMs: null, modelActive: true, awaitingInput: false, ...over }
+}
 
 describe('TaskCard связанный чат', () => {
   it('постоянно показывает действие и открывает чат, не открывая карточку', () => {
@@ -54,11 +62,149 @@ describe('TaskCard CI-панель', () => {
 
   it('показывает сводку рана и открывает ленту', () => {
     const onOpenCiRun = vi.fn()
-    const ciSummary: CiRunSummary = { id: 'run-1', taskId: 't1', status: 'running', slotProgress: { done: 1, total: 4, phase: 'до модели' }, durationMs: null, modelActive: false }
+    const ciSummary: CiRunSummary = { id: 'run-1', taskId: 't1', status: 'running', slotProgress: { done: 1, total: 4, phase: 'до модели' }, durationMs: null, modelActive: false, awaitingInput: false }
     render(<TaskCard {...props({ ciSummary, onOpenCiRun, onStartCi: vi.fn() })} />)
     expect(screen.getByText('выполняется')).toBeInTheDocument()
     expect(screen.getByText(/до модели 1\/4/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Лента рана' }))
     expect(onOpenCiRun).toHaveBeenCalledWith('run-1')
+  })
+
+  it('пока ран идёт, «Выполнить» недоступна — остаётся только лента', () => {
+    for (const status of ['queued', 'running', 'awaiting_input'] as const) {
+      const ciSummary = mkSummary({ status, awaitingInput: status === 'awaiting_input' })
+      const { unmount } = render(<TaskCard {...props({ ciSummary, onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+      expect(screen.queryByRole('button', { name: 'Выполнить' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: status === 'awaiting_input' ? 'Ответить модели' : 'Лента рана' })).toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('у завершённого рана кнопка запуска есть при любом исходе', () => {
+    // Успех, падение, отмена, таймаут — ран закончен, повторный запуск разрешён.
+    for (const status of ['success', 'failed', 'cancelled', 'timeout'] as const) {
+      const onStartCi = vi.fn()
+      const { unmount } = render(<TaskCard {...props({ ciSummary: mkSummary({ status }), onOpenCiRun: vi.fn(), onStartCi })} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Выполнить' }))
+      expect(onStartCi).toHaveBeenCalledWith('t1')
+      unmount()
+    }
+  })
+})
+
+/**
+ * Карточка, подключённая к фейковому `window.ci` так же, как её подключает стор:
+ * «Выполнить» зовёт `startRun`, сводка обновляется ответом api и кадром `ci.done`.
+ * Проверяем не только видимость кнопки, но и что клик действительно заводит
+ * новый ран, а не переоткрывает прошлый.
+ */
+function toSummary(run: CiRun): CiRunSummary {
+  return {
+    id: run.id,
+    taskId: run.taskId,
+    status: run.status,
+    slotProgress: run.slotProgress,
+    durationMs: run.durationMs,
+    modelActive: false,
+    awaitingInput: run.status === 'awaiting_input'
+  }
+}
+
+function CardWithFakeCi({ initial }: { initial?: CiRunSummary }): JSX.Element {
+  const [summary, setSummary] = useState<CiRunSummary | undefined>(initial)
+  useEffect(() => window.ci?.onDone(({ run }) => setSummary(toSummary(run))), [])
+  return (
+    <TaskCard
+      {...props({
+        ciSummary: summary,
+        onOpenCiRun: vi.fn(),
+        onStartCi: (taskId) => {
+          void window.ci?.startRun('p1', taskId).then((run) => setSummary(toSummary(run)))
+        }
+      })}
+    />
+  )
+}
+
+describe('TaskCard CI-панель с фейковым api', () => {
+  it('на выполненной задаче «Выполнить» стартует новый ран, кнопка уходит на время рана и возвращается после', async () => {
+    const ci = createFakeCi()
+    window.ci = ci
+    const startRun = vi.spyOn(ci, 'startRun')
+    render(<CardWithFakeCi initial={mkSummary({ id: 'run-old', status: 'success', durationMs: 12_000 })} />)
+    expect(screen.getByText('успех')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Выполнить' }))
+
+    expect(startRun).toHaveBeenCalledWith('p1', 't1')
+    const started = (await startRun.mock.results[0]!.value) as CiRun
+    expect(started.id).not.toBe('run-old')
+    // Ран в очереди — активен, значит запускать нечего: остаётся только лента.
+    await waitFor(() => expect(screen.getByText('в очереди')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Выполнить' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Лента рана' })).toBeInTheDocument()
+
+    // Кадр `ci.done` приходит из сервера — в тесте досылаем его руками.
+    act(() => ci._emitDone({ ...started, status: 'success', finishedAt: (started.startedAt ?? 0) + 1000, durationMs: 1000 }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Выполнить' })).toBeInTheDocument())
+    expect(screen.getByText('успех')).toBeInTheDocument()
+  })
+})
+
+describe('TaskCard подсветка по состоянию рана', () => {
+  const cases: Array<[string, CiRunSummary, string]> = [
+    ['ран идёт — голубая рамка', mkSummary({ status: 'running' }), 'jcard--ci-running'],
+    ['модель чинит ошибку — красная', mkSummary({ status: 'running', slotProgress: { done: 2, total: 4, phase: 'Модель исправляет ошибку', fixing: true } }), 'jcard--ci-fixing'],
+    ['ждёт ответа — жёлтая', mkSummary({ status: 'awaiting_input', awaitingInput: true }), 'jcard--ci-awaiting'],
+    ['упал — красная', mkSummary({ status: 'failed' }), 'jcard--ci-failed'],
+    ['успех — зелёная', mkSummary({ status: 'success' }), 'jcard--ci-done']
+  ]
+
+  for (const [name, ciSummary, cls] of cases) {
+    it(name, () => {
+      render(<TaskCard {...props({ ciSummary, onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+      expect(screen.getByTestId('task-card').className).toContain(cls)
+    })
+  }
+
+  it('без рана и после отмены подсветки нет', () => {
+    const { unmount } = render(<TaskCard {...props({ onStartCi: vi.fn() })} />)
+    expect(screen.getByTestId('task-card').className).not.toContain('jcard--ci-')
+    unmount()
+    render(<TaskCard {...props({ ciSummary: mkSummary({ status: 'cancelled' }), onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+    expect(screen.getByTestId('task-card').className).not.toContain('jcard--ci-')
+  })
+})
+
+describe('TaskCard: следов прошлого рана не остаётся', () => {
+  it('после успешного повтора нет ни лозенга «ошибка», ни красной пульсации, ни фазы упавшего рана', () => {
+    const failed = mkSummary({ id: 'run-1', status: 'failed', slotProgress: { done: 2, total: 4, phase: 'Финальные команды (1/2)' }, modelActive: false })
+    const { rerender } = render(<TaskCard {...props({ ciSummary: failed, onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+    expect(screen.getByText('ошибка')).toBeInTheDocument()
+    expect(screen.getByTestId('task-card').className).toContain('jcard--ci-failed')
+
+    // Новый ран той же задачи завершился успехом — карточка обязана это показать.
+    const success = mkSummary({ id: 'run-2', status: 'success', slotProgress: { done: 4, total: 4, phase: 'Готово' }, durationMs: 1000, modelActive: false })
+    rerender(<TaskCard {...props({ ciSummary: success, onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+
+    expect(screen.queryByText('ошибка')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Финальные команды/)).not.toBeInTheDocument()
+    expect(screen.getByText('успех')).toBeInTheDocument()
+    const card = screen.getByTestId('task-card')
+    expect(card.className).not.toContain('jcard--ci-failed')
+    expect(card.className).toContain('jcard--ci-done')
+  })
+
+  it('после отмены и нового рана карточка показывает идущий ран, а не «отменён»', () => {
+    const cancelled = mkSummary({ id: 'run-1', status: 'cancelled', slotProgress: { done: 1, total: 4, phase: 'Ран отменён' } })
+    const { rerender } = render(<TaskCard {...props({ ciSummary: cancelled, onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+    expect(screen.getByText('отменён')).toBeInTheDocument()
+
+    rerender(<TaskCard {...props({ ciSummary: mkSummary({ id: 'run-2', status: 'running', slotProgress: { done: 0, total: 4, phase: 'Подготовка (1/2)' } }), onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+    expect(screen.queryByText('отменён')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Ран отменён/)).not.toBeInTheDocument()
+    expect(screen.getByText('выполняется')).toBeInTheDocument()
+    expect(screen.getByTestId('task-card').className).toContain('jcard--ci-running')
   })
 })

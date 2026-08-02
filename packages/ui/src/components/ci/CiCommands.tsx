@@ -13,6 +13,14 @@ import type {
 } from '@shared/ci'
 import { DEFAULT_CI_GLOBAL_SETTINGS } from '@shared/ci'
 import { ToolFrame } from '../ToolFrame'
+import { Button } from '../ui/Button'
+import { IconButton } from '../ui/IconButton'
+import { useConfirm } from '../ui/useConfirm'
+import { useToast } from '../ui/Toast'
+import { Skeleton, RefreshIndicator } from '../ui/Skeleton'
+import { EmptyState } from '../ui/EmptyState'
+import { ErrorState } from '../ui/ErrorState'
+import { loadView, type LoadStatus } from '../../lib/loadState'
 
 export interface CiCommandUsage {
   projects: Array<{ id: string; name: string }>
@@ -21,6 +29,12 @@ export interface CiCommandUsage {
 
 export interface CiCommandsProps {
   commands: CiCommand[]
+  /** Состояние загрузки справочника: скелетон на первой загрузке, ошибка — с «Повторить». */
+  status?: LoadStatus
+  /** Техническая деталь ошибки загрузки (под «Подробнее»). */
+  error?: string | null
+  /** Повторить загрузку страницы «Команды». */
+  onRetry?: () => void
   settings: CiGlobalSettings | null
   suggestions: CiCommandSuggestion[]
   workspaces: CiWorkspaceReportItem[]
@@ -37,7 +51,7 @@ export interface CiCommandsProps {
   onClose?: () => void
 }
 
-type Draft = Required<Pick<CiCommandInput, 'scope' | 'name' | 'script' | 'description' | 'workdir' | 'allowFailure' | 'isCleanup' | 'availableToModel'>> & {
+type Draft = Required<Pick<CiCommandInput, 'scope' | 'name' | 'script' | 'description' | 'workdir' | 'allowFailure' | 'isCleanup' | 'availableToModel' | 'isTest'>> & {
   projectId: string | null
   timeoutSec: number | null
   envText: string
@@ -54,7 +68,8 @@ const EMPTY: Draft = {
   envText: '',
   allowFailure: false,
   isCleanup: false,
-  availableToModel: false
+  availableToModel: false,
+  isTest: false
 }
 
 function envToText(env: Record<string, string>): string {
@@ -85,7 +100,8 @@ function draftOf(cmd: CiCommand): Draft {
     envText: envToText(cmd.env),
     allowFailure: cmd.allowFailure,
     isCleanup: cmd.isCleanup,
-    availableToModel: cmd.availableToModel
+    availableToModel: cmd.availableToModel,
+    isTest: cmd.isTest
   }
 }
 function draftToInput(d: Draft): CiCommandInput {
@@ -100,12 +116,18 @@ function draftToInput(d: Draft): CiCommandInput {
     env: textToEnv(d.envText),
     allowFailure: d.allowFailure,
     isCleanup: d.isCleanup,
-    availableToModel: d.availableToModel
+    availableToModel: d.availableToModel,
+    isTest: d.isTest
   }
 }
 
 export function CiCommands(props: CiCommandsProps): JSX.Element {
   const { commands } = props
+  // Список загружается один раз при открытии страницы; повторная загрузка
+  // (кнопка «Повторить») уже показанный справочник не подменяет.
+  const view = loadView(props.status ?? 'ready', commands.length > 0)
+  const confirm = useConfirm()
+  const toast = useToast()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [draft, setDraft] = useState<Draft>(EMPTY)
@@ -138,9 +160,11 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
         if (cmd) {
           setCreating(false)
           setSelectedId(cmd.id)
+          toast.success('Команда создана')
         }
       } else if (selected) {
         await props.onUpdate(selected.id, draftToInput(draft))
+        toast.success('Команда сохранена')
       }
     } finally {
       setSaving(false)
@@ -156,18 +180,33 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
     try {
       const usage = await props.onUsage(cmd.id)
       const n = usage.projects.length + usage.tasks.length
-      if (n > 0) extra = `\n\nИспользуется: проектов ${usage.projects.length}, задач ${usage.tasks.length}.`
+      if (n > 0) extra = `Используется: проектов ${usage.projects.length}, задач ${usage.tasks.length}.`
     } catch {
       /* usage опционально */
     }
-    if (!window.confirm(`Удалить команду «${cmd.name}»?${extra}`)) return
+    const ok = await confirm({
+      title: `Удалить команду «${cmd.name}»?`,
+      ...(extra ? { message: extra } : {}),
+      variant: 'danger',
+      confirmLabel: 'Удалить'
+    })
+    if (!ok) return
     await props.onDelete(cmd.id)
     if (selectedId === cmd.id) setSelectedId(null)
+    toast.success('Команда удалена')
   }
 
   const editForm = (
     <div className="ci-form" data-testid="ci-command-form">
-      <h3 className="ci-form-title">{creating ? 'Новая команда' : selected ? 'Правка команды' : 'Выберите команду'}</h3>
+      {(creating || selected) && <h3 className="ci-form-title">{creating ? 'Новая команда' : 'Правка команды'}</h3>}
+      {!creating && !selected && (
+        <EmptyState
+          compact
+          icon="⌨"
+          title="Команда не выбрана"
+          description="Выберите команду в списке слева, чтобы поправить скрипт, или создайте новую."
+        />
+      )}
       {(creating || selected) && (
         <>
           <label className="ci-field">
@@ -216,10 +255,12 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
             <label><input type="checkbox" checked={draft.allowFailure} onChange={(e) => setDraft({ ...draft, allowFailure: e.target.checked })} /> Продолжать при ошибке</label>
             <label><input type="checkbox" checked={draft.isCleanup} onChange={(e) => setDraft({ ...draft, isCleanup: e.target.checked })} /> Освобождает директорию (cleanup)</label>
             <label><input type="checkbox" checked={draft.availableToModel} onChange={(e) => setDraft({ ...draft, availableToModel: e.target.checked })} /> Доступна модели</label>
+            {/* Гейт гоняет только воркфлоу: такую команду модель не получит инструментом, даже если отмечена «доступна модели». */}
+            <label><input type="checkbox" checked={draft.isTest} onChange={(e) => setDraft({ ...draft, isTest: e.target.checked })} /> Проверка (тесты) — только для воркфлоу</label>
           </div>
           <div className="ci-form-actions">
-            <button className="ci-btn ci-btn--primary" disabled={saving || !draft.name.trim()} onClick={() => void save()}>Сохранить</button>
-            <button className="ci-btn" onClick={cancel}>Отмена</button>
+            <Button variant="primary" disabled={saving || !draft.name.trim()} onClick={() => void save()}>Сохранить</Button>
+            <Button onClick={cancel}>Отмена</Button>
           </div>
         </>
       )}
@@ -233,8 +274,17 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
           <div className="ci-list-pane">
             <div className="ci-list-head">
               <span>{commands.length} команд</span>
-              <button className="ci-btn ci-btn--primary" onClick={startCreate}>+ Команда</button>
+              {view.refreshing && <RefreshIndicator label="Обновляем список…" />}
+              <Button variant="primary" onClick={startCreate}>+ Команда</Button>
             </div>
+            {view.staleError && (
+              <ErrorState
+                compact
+                message="Список мог устареть: обновить не удалось"
+                detail={props.error}
+                {...(props.onRetry ? { onRetry: props.onRetry } : {})}
+              />
+            )}
             <table className="ci-table" data-testid="ci-command-table">
               <thead>
                 <tr><th>Название</th><th>Область</th><th>Обновлена</th><th>Автор</th><th /></tr>
@@ -249,11 +299,39 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
                     <td><span className="ci-lozenge ci-lozenge--neutral">{c.scope === 'global' ? 'глоб.' : 'проект'}</span></td>
                     <td>{new Date(c.updatedAt).toLocaleDateString()}</td>
                     <td>{c.createdBy}</td>
-                    <td><button className="ci-icon-btn" title="Удалить" onClick={(e) => { e.stopPropagation(); void remove(c) }}>🗑</button></td>
+                    <td><IconButton size="sm" aria-label={`Удалить команду «${c.name}»`} title="Удалить" onClick={(e) => { e.stopPropagation(); void remove(c) }}>🗑</IconButton></td>
                   </tr>
                 ))}
-                {commands.length === 0 && (
-                  <tr><td colSpan={5} className="ci-empty">Команд пока нет.</td></tr>
+                {view.state === 'skeleton' &&
+                  [0, 1, 2, 3].map((i) => (
+                    /* Косточка занимает высоту ряда таблицы: название + описание. */
+                    <tr key={i}>
+                      <td colSpan={5}><Skeleton variant="line" height={20} width="70%" testId="ci-command-skeleton" /></td>
+                    </tr>
+                  ))}
+                {view.state === 'error' && (
+                  <tr>
+                    <td colSpan={5}>
+                      <ErrorState
+                        message="Не удалось загрузить команды"
+                        detail={props.error}
+                        {...(props.onRetry ? { onRetry: props.onRetry } : {})}
+                      />
+                    </td>
+                  </tr>
+                )}
+                {view.state === 'empty' && (
+                  <tr>
+                    <td colSpan={5}>
+                      <EmptyState
+                        icon="⌨"
+                        title="Команд пока нет — создайте первую"
+                        description="Команда — это шаг воркфлоу: сборка, тесты, деплой. Её можно дать проекту и модели."
+                        actionLabel="Создать команду"
+                        onAction={startCreate}
+                      />
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -261,7 +339,10 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
           <div className="ci-edit-pane">{editForm}</div>
         </div>
 
-        <CiSettingsSection open={settingsOpen} onToggle={() => setSettingsOpen((v) => !v)} settings={props.settings} editable={props.role === 'admin'} onSave={props.onSaveSettings} />
+        <CiSettingsSection open={settingsOpen} onToggle={() => setSettingsOpen((v) => !v)} settings={props.settings} editable={props.role === 'admin'} onSave={async (next) => {
+          await props.onSaveSettings(next)
+          toast.success('Настройки сохранены')
+        }} />
 
         {props.suggestions.length > 0 && (
           <section className="ci-section" data-testid="ci-suggestions">
@@ -278,8 +359,8 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
                     <div className="ci-suggestion-reason">{sug.reason}</div>
                     <pre className="ci-suggestion-script">{sug.proposedScript}</pre>
                     <div className="ci-form-actions">
-                      <button className="ci-btn ci-btn--primary" onClick={() => void props.onResolveSuggestion(sug.id, true)}>Принять</button>
-                      <button className="ci-btn" onClick={() => void props.onResolveSuggestion(sug.id, false)}>Отклонить</button>
+                      <Button variant="primary" onClick={() => void props.onResolveSuggestion(sug.id, true)}>Принять</Button>
+                      <Button onClick={() => void props.onResolveSuggestion(sug.id, false)}>Отклонить</Button>
                     </div>
                   </li>
                 )
@@ -291,7 +372,12 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
         <section className="ci-section" data-testid="ci-workspaces">
           <h3 className="ci-section-title">Занятое место</h3>
           {props.workspaces.length === 0 ? (
-            <p className="ci-empty">Активных рабочих директорий нет.</p>
+            <EmptyState
+              compact
+              icon="📦"
+              title="Активных рабочих директорий нет"
+              description="Появятся, когда ран займёт рабочую копию репозитория на машине."
+            />
           ) : (
             <table className="ci-table">
               <thead><tr><th>Задача</th><th>Путь</th><th>Размер</th><th>Состояние</th></tr></thead>
@@ -347,7 +433,7 @@ function CiSettingsSection({ open, onToggle, settings, editable, onSave }: CiSet
           {numField('Макс. вызовов команд моделью', 'maxModelCommandCalls')}
           {editable && (
             <div className="ci-form-actions">
-              <button className="ci-btn ci-btn--primary" onClick={() => void onSave(form)}>Сохранить настройки</button>
+              <Button variant="primary" onClick={() => void onSave(form)}>Сохранить настройки</Button>
             </div>
           )}
         </div>

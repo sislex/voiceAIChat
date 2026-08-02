@@ -2,7 +2,7 @@
 // Никакой связи с fakeApi: сториз нужны синхронные готовые объекты.
 
 import type { Board, KanbanColumn, ProjectMember, Task } from '@shared/projects'
-import type { FeatureRun } from '@shared/features'
+import type { CiRunSummary, CiStatus } from '@shared/ci'
 
 let seq = 0
 
@@ -71,38 +71,6 @@ export function makeMembers(...usernames: string[]): ProjectMember[] {
   return usernames.map((username) => ({ username, role: username === 'admin' ? 'owner' : 'member', addedAt: 1 }))
 }
 
-export function makeFeature(over: Partial<FeatureRun> = {}): FeatureRun {
-  return {
-    id: 'f1',
-    projectId: 'p1',
-    sourceTaskId: 't1',
-    attempt: 1,
-    previousFeatureId: null,
-    conversationId: 'chat1',
-    repositorySlotId: null,
-    title: 'Фича',
-    description: '',
-    status: 'development',
-    deployStatus: 'not_requested',
-    baseBranch: 'main',
-    featureBranch: 'feature/f1',
-    baseCommitSha: null,
-    testedCommitSha: null,
-    mergedCommitSha: null,
-    commitPolicy: 'agent_commits',
-    mergeTransport: 'local',
-    agentPlanApprovalMode: 'automatic',
-    autoMerge: false,
-    autoDeployProduction: false,
-    createdAt: 1_700_000_000_000,
-    updatedAt: 1_700_000_000_000,
-    completedAt: null,
-    lastError: null,
-    version: 1,
-    ...over
-  }
-}
-
 /** Колбэки-заглушки для сториз. */
 export function noopHandlers() {
   return {
@@ -115,5 +83,19 @@ export function noopHandlers() {
     onUpdateTask: () => {},
     onMoveTask: () => {},
     onDeleteTask: () => {}
+  }
+}
+
+/** Сводка последнего CI-рана задачи (для сториз состояний карточки). */
+export function makeCiSummary(over: Partial<CiRunSummary> & { status?: CiStatus } = {}): CiRunSummary {
+  return {
+    id: 'run-1',
+    taskId: 't1',
+    status: 'running',
+    slotProgress: { done: 2, total: 6, phase: 'Модель работает' },
+    durationMs: 92_000,
+    modelActive: true,
+    awaitingInput: false,
+    ...over
   }
 }

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createVoiceStore, type VoiceStore } from './voiceStore'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
+import type { Message } from '@shared/types'
 
 function makeStore(): { store: VoiceStore; api: FakeApi } {
   const api = createFakeApi()
@@ -51,6 +52,23 @@ describe('voiceStore — проекты и доска', () => {
     expect(store.getState().board!.tasks.find((t) => t.id === task.id)!.chatId).toBe(active)
   })
 
+
+  it('ссылка на чат другого проекта переключает фильтр сайдбара', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const p1 = store.getState().projectDetail!.id
+    await store.actions.setSidebarProject(p1)
+    const inP1 = await store.actions.newConversation() // чат создаётся в выбранном проекте
+    await store.actions.setSidebarProject(null)
+    expect(store.getState().conversations.some((c) => c.id === inP1)).toBe(false)
+
+    const ok = await store.actions.selectConversation(inP1)
+
+    expect(ok).toBe(true)
+    expect(store.getState().activeId).toBe(inP1)
+    expect(store.getState().sidebarProjectId).toBe(p1)
+    expect(store.getState().conversations.some((c) => c.id === inP1)).toBe(true)
+  })
 
   it('createColumn и createTask отражаются в board', async () => {
 
@@ -179,5 +197,167 @@ describe('voiceStore — выбор проекта в сайдбаре', () => {
     await store.actions.setSidebarProject(pid)
     const store2 = createVoiceStore({ api: createFakeApi(), now: () => 1_700_000_000_000 })
     expect(store2.getState().sidebarProjectId).toBe(pid)
+  })
+})
+
+describe('voiceStore — резюме CI-рана в связанном чате', () => {
+  it('applyChatMessage дописывает резюме в открытый чат, чужое и повторное — игнорирует', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    await store.actions.openBoard(store.getState().projectDetail!.id)
+    const todo = store.getState().board!.columns[0]
+    await store.actions.createTask(todo.id, { title: 'Скролл' })
+    const task = store.getState().board!.tasks.find((t) => t.title === 'Скролл')!
+    await store.actions.setSidebarProject(store.getState().projectDetail!.id)
+    await store.actions.openTaskChat(task.id)
+    const chatId = store.getState().activeId!
+    // Имя связанного чата по умолчанию — «Задача <заголовок>».
+    expect(store.getState().conversations.find((c) => c.id === chatId)!.title).toBe('Задача Скролл')
+
+    const summary: Message = {
+      id: 'sum-1',
+      conversationId: chatId,
+      role: 'ai',
+      text: 'Резюме по задаче P1-1 · Скролл\n\nготово',
+      time: '10:00',
+      createdAt: 1,
+      meta: { ciRunSummary: { runId: 'run-1' } }
+    }
+    store.actions.applyChatMessage(chatId, summary)
+    expect(store.getState().messages.map((m) => m.id)).toContain('sum-1')
+    // Реплей того же сообщения после reconnect не даёт дубля.
+    store.actions.applyChatMessage(chatId, summary)
+    expect(store.getState().messages.filter((m) => m.id === 'sum-1')).toHaveLength(1)
+    // Резюме другого чата в открытый не попадает — оно придёт с историей.
+    store.actions.applyChatMessage('other', { ...summary, id: 'sum-2', conversationId: 'other' })
+    expect(store.getState().messages.map((m) => m.id)).not.toContain('sum-2')
+    // Сообщение в чужой чат ставит отложенное обновление сайдбара (оно проверено
+    // в `voiceStore.sidebar.test.ts`) — гасим таймер, чтобы не тёк в соседний кейс.
+    store.actions.dispose()
+  })
+})
+
+describe('voiceStore — метки чатов задач в списке бесед', () => {
+  it('метка появляется вместе с чатом задачи, у обычного чата её нет', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    await store.actions.openBoard(store.getState().projectDetail!.id)
+    const todo = store.getState().board!.columns[0]
+    await store.actions.createTask(todo.id, { title: 'Скролл' })
+    const task = store.getState().board!.tasks.find((t) => t.title === 'Скролл')!
+    await store.actions.setSidebarProject(store.getState().projectDetail!.id)
+    await store.actions.openTaskChat(task.id)
+    const chatId = store.getState().activeId!
+    // Метки грузятся вдогонку списку бесед — ждём микрозадачу запроса.
+    await Promise.resolve()
+    await Promise.resolve()
+    const badges = store.getState().taskChatBadges
+    expect(badges[chatId]).toMatchObject({ taskId: task.id, key: 'P1-1', type: 'task' })
+    expect(Object.keys(badges)).toEqual([chatId])
+  })
+})
+
+describe('voiceStore — канал уведомлений', () => {
+  it('упавший вызов моста кладёт ошибку с безопасным повтором', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    const real = api['board:get']
+    let broken = true
+    api['board:get'] = async (input) => {
+      if (!broken) return real(input)
+      broken = false
+      throw new Error('Сервер недоступен')
+    }
+
+    await store.actions.openBoard(id)
+    const [notice] = store.getState().notices
+    expect(notice.kind).toBe('error')
+    expect(notice.text).toBe('Сервер недоступен')
+    // Загрузка доски идемпотентна — повтор безопасен, поэтому он есть.
+    expect(notice.retry).toBeTypeOf('function')
+    expect(store.getState().boardLoading).toBe(false)
+
+    notice.retry?.()
+    await vi.waitFor(() => expect(store.getState().board).not.toBeNull())
+
+    // Показанное уведомление снимает тот, кто его показал (App).
+    store.actions.dismissNotice(notice.id)
+    expect(store.getState().notices).toHaveLength(0)
+  })
+
+  it('создание не получает «Повторить» — иначе после «упало, но применилось» будет дубль', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    await store.actions.openBoard(store.getState().projectDetail!.id)
+    api['columns:create'] = async () => {
+      throw new Error('нет сети')
+    }
+    await store.actions.createColumn('Новая')
+    const notice = store.getState().notices.at(-1)!
+    expect(notice.text).toBe('нет сети')
+    expect(notice.retry).toBeUndefined()
+  })
+
+  it('notify кладёт успех в ту же очередь', () => {
+    const { store } = makeStore()
+    store.actions.notify({ kind: 'success', text: 'Настройки сохранены' })
+    expect(store.getState().notices).toEqual([{ id: expect.any(String), kind: 'success', text: 'Настройки сохранены' }])
+  })
+})
+
+// Виджет задачи в чате — свойство открытого чата, а не состояние стора: любая
+// смена активного чата обязана его убрать, не дожидаясь ответа сервера.
+describe('voiceStore — контекст задачи не залипает при смене чата', () => {
+  /** Проект с задачей и открытым связанным чатом (контекст уже загружен). */
+  async function openedTaskChat(): Promise<{ store: VoiceStore; api: FakeApi; chatId: string }> {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const projectId = store.getState().projectDetail!.id
+    await store.actions.openBoard(projectId)
+    await store.actions.createTask(store.getState().board!.columns[0]!.id, { title: 'Задача A' })
+    const task = store.getState().board!.tasks.find((t) => t.title === 'Задача A')!
+    const chatId = (await store.actions.openTaskChat(task.id))!
+    await vi.waitFor(() => expect(store.getState().taskChatContext?.task.id).toBe(task.id))
+    // Контекст знает свой чат — по нему рендер и сверяется.
+    expect(store.getState().taskChatContext!.conversationId).toBe(chatId)
+    return { store, api, chatId }
+  }
+
+  it('newConversation обнуляет контекст задачи', async () => {
+    const { store } = await openedTaskChat()
+    await store.actions.newConversation()
+    expect(store.getState().taskChatContext).toBeNull()
+  })
+
+  it('resumeCcSession обнуляет контекст задачи', async () => {
+    const { store } = await openedTaskChat()
+    await store.actions.resumeCcSession('proj', 'sid-1')
+    expect(store.getState().taskChatContext).toBeNull()
+  })
+
+  it('resumeCxSession обнуляет контекст задачи', async () => {
+    const { store } = await openedTaskChat()
+    await store.actions.resumeCxSession('sid-42')
+    expect(store.getState().taskChatContext).toBeNull()
+  })
+
+  it('опоздавший ответ для уже закрытого чата не попадает в стор', async () => {
+    const { store, api, chatId } = await openedTaskChat()
+    const real = api['conversations:taskContext']
+    let release = (): void => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    api['conversations:taskContext'] = async (arg) => {
+      await gate
+      return await real(arg)
+    }
+    const pending = store.actions.loadTaskChatContext(chatId)
+    // Пока запрос в пути, пользователь ушёл в новый чат.
+    await store.actions.newConversation()
+    release()
+    await pending
+    expect(store.getState().taskChatContext).toBeNull()
   })
 })

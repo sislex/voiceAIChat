@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { ClaudeLogEntry, Message, PermissionMode, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
+import type { ClaudeLogEntry, KbContextMode, Message, PermissionMode, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
 import { parseImages } from '@shared/images'
@@ -22,6 +22,10 @@ import {
 } from '../lib/view'
 import { Dots } from './animations'
 import { QuestionsForm } from './QuestionsForm'
+import { Button } from './ui/Button'
+import { Skeleton, RefreshIndicator } from './ui/Skeleton'
+import { EmptyState } from './ui/EmptyState'
+import { IconButton } from './ui/IconButton'
 import { MessageMeta } from './MessageMeta'
 import {
   MessageTimeline,
@@ -33,8 +37,19 @@ import {
 import { copyText } from '../lib/clipboard'
 import { useAutoGrow } from '../lib/autoGrow'
 
+/** Сколько держим подсветку сообщения, к которому перешли из поиска. */
+const HIGHLIGHT_MS = 2000
+
 const EDIT_MIN_ROWS = 2
 const EDIT_MAX_ROWS = 4
+
+/** Подпись кнопки БЗ: число обращений и (если БЗ выключена) причина пустоты. */
+function kbUsageLabel(count: number, active: boolean, mode: KbContextMode): string {
+  const head = `Использование базы знаний: ${count} обращени${count === 1 ? 'е' : count >= 2 && count <= 4 ? 'я' : 'й'}`
+  if (active) return `${head}; идёт обращение`
+  if (mode === 'off') return `${head}; база знаний выключена для этого чата`
+  return head
+}
 
 function modeLabel(mode?: string): string {
   if (mode === 'plan') return 'Планирование'
@@ -61,6 +76,13 @@ export interface ChatColumnProps {
   messages: Message[]
   /** Идёт загрузка сообщений разговора — показываем лоадер вместо ленты. */
   loadingMessages?: boolean
+  /**
+   * Сообщение, к которому надо прокрутить ленту и подсветить его (переход из
+   * результатов поиска). Подсветка гаснет сама — через `onHighlightDone`.
+   */
+  highlightMessageId?: string | null
+  /** Подсветка отработала: стор гасит `highlightMessageId`. */
+  onHighlightDone?: () => void
   liveSegments: LiveSegment[]
   diarization: boolean
   /** Стримящийся ответ Claude (растёт по токенам); пусто — нет активного стрима. */
@@ -95,6 +117,14 @@ export interface ChatColumnProps {
   onDownloadModel?: () => void
   /** Экспортировать текущий разговор (Markdown/JSON). */
   onExport?: (format: 'md' | 'json') => void
+  /** Открыть панель «Использование БЗ» этого чата. */
+  onOpenKbUsage?: () => void
+  /** Сколько обращений к базе знаний было в чате (надстрочный счётчик кнопки). */
+  kbUsageCount?: number
+  /** Идёт обращение к БЗ прямо сейчас — вместо счётчика показываем «думает». */
+  kbUsageActive?: boolean
+  /** Режим БЗ разговора — для подписи кнопки (при 'off' она объясняет, почему пусто). */
+  kbContextMode?: KbContextMode
   /** Мета последнего хода (длительность/токены/стоимость); null — не показывать. */
   turnMeta?: TurnMeta | null
   /** Голосовая панель, рендерится внизу колонки (как в прототипе). */
@@ -109,6 +139,15 @@ export interface ChatColumnProps {
   aiLabel?: string
   /** Отправить собранные ответы на вопросы модели (форма под последним ответом). */
   onAnswerQuestions?: (text: string) => void
+  /**
+   * Ответ на вопрос CI-рана, продублированный в этот чат: уходит в ран, а не
+   * запускает новый ход чата (сообщение помечено `meta.ciInteraction`).
+   */
+  onAnswerCiInteraction?: (runId: string, interactionId: string, text: string) => void
+  /** Id пауз рана, на которые уже ответили (форма гаснет, остаётся статика). */
+  answeredCiInteractions?: string[]
+  /** Шапка чата задачи (контекст канбана + лента рана); рендерится снаружи. */
+  taskHeader?: JSX.Element | null
   /** Операции над машиной для встроенных утилит; отсутствуют → виджеты не рендерятся. */
   machineOps?: MachineOps
   /** Чтение файла с диска сервера — картинки, созданные самим CLI. */
@@ -117,6 +156,8 @@ export interface ChatColumnProps {
   onOpenImageInExplorer?: (agentId: string, path: string) => void
   /** Открыть терминал из встроенного проводника в сообщении. */
   onOpenTerminal?: (agentId: string, cwd: string) => void
+  /** Открыть раздел БЗ из «Подробнее» ответа (чипсы «База знаний»). */
+  onOpenKbDocument?: (documentId: string, anchor: string) => void
 }
 
 export function ChatColumn({
@@ -130,6 +171,8 @@ export function ChatColumn({
   state,
   messages,
   loadingMessages = false,
+  highlightMessageId = null,
+  onHighlightDone,
   liveSegments,
   diarization,
   streamingReply = '',
@@ -148,6 +191,10 @@ export function ChatColumn({
   downloadPercent = 0,
   onDownloadModel,
   onExport,
+  onOpenKbUsage,
+  kbUsageCount = 0,
+  kbUsageActive = false,
+  kbContextMode = 'auto',
   turnMeta,
   voiceBar,
   agents = [],
@@ -155,10 +202,14 @@ export function ChatColumn({
   onChangeExecTarget,
   aiLabel = 'Claude',
   onAnswerQuestions,
+  onAnswerCiInteraction,
+  answeredCiInteractions,
+  taskHeader,
   machineOps,
   readServerFile,
   onOpenImageInExplorer,
-  onOpenTerminal
+  onOpenTerminal,
+  onOpenKbDocument
 }: ChatColumnProps): JSX.Element {
   const [exportOpen, setExportOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -226,11 +277,34 @@ export function ChatColumn({
     if (el) el.scrollTop = el.scrollHeight
   }, [messages.length, liveSegments, state, streamingReply])
 
+  // Переход из поиска: прокручиваем к найденному сообщению и держим подсветку
+  // HIGHLIGHT_MS. Эффект стоит после автоскролла вниз — иначе тот перебил бы
+  // прокрутку. Сообщения могут ещё грузиться: пока элемента нет, ждём рендера.
+  useEffect(() => {
+    if (!highlightMessageId) return
+    const el = scrollRef.current?.querySelector(`[data-mid="${highlightMessageId}"]`)
+    if (!el) return
+    // jsdom не умеет scrollIntoView — в тестах просто нет прокрутки.
+    el.scrollIntoView?.({ block: 'center' })
+    const timer = setTimeout(() => onHighlightDone?.(), HIGHLIGHT_MS)
+    return () => clearTimeout(timer)
+  }, [highlightMessageId, messages, onHighlightDone])
+
   const isListening = state === 'listening'
   const hasStream = streamingReply.length > 0
   // Картинки в ещё не завершённом ответе: блок вырезаем сразу, чтобы вместо
   // сырого JSON пользователь видел саму картинку, как только файл готов.
   const liveImages = parseImages(streamingReply)
+
+  // Стриминг для скринридера. Сам ответ живой областью не делаем: он растёт по
+  // токенам, и читалка перебивала бы сама себя на каждом слове. Объявляем два
+  // события — «пошёл ответ» и «ответ получен»; текст доступен обычным чтением
+  // ленты, когда пользователь до него дойдёт.
+  const [replyAnnounce, setReplyAnnounce] = useState('')
+  useEffect(() => {
+    if (hasStream) setReplyAnnounce(`${aiLabel} отвечает…`)
+    else setReplyAnnounce((prev) => (prev === '' ? '' : 'Ответ получен'))
+  }, [hasStream, aiLabel])
   // Индикатор «думает» показываем, пока не пошли токены ответа.
   const isThinking = (state === 'thinking' || state === 'transcribing') && !hasStream
 
@@ -298,17 +372,39 @@ export function ChatColumn({
           </label>
         )}
         <span className="mhead-right">
+          {onOpenKbUsage && (
+            <span className="kbusewrap">
+              <IconButton
+                size="sm"
+                variant="secondary"
+                data-testid="kb-usage-open"
+                aria-label={kbUsageLabel(kbUsageCount, kbUsageActive, kbContextMode)}
+                title={kbUsageLabel(kbUsageCount, kbUsageActive, kbContextMode)}
+                onClick={onOpenKbUsage}
+              >
+                📚
+              </IconButton>
+              {/* Счётчик — украшение: число уже есть в aria-label кнопки,
+                  поэтому от скринридера он скрыт (иначе имя читается дважды). */}
+              {kbUsageActive ? (
+                <span className="kbusebadge kbusebadge--live" aria-hidden data-testid="kb-usage-live"><Dots /></span>
+              ) : kbUsageCount > 0 ? (
+                <span className="kbusebadge" aria-hidden data-testid="kb-usage-count">{kbUsageCount > 99 ? '99+' : kbUsageCount}</span>
+              ) : null}
+            </span>
+          )}
           <span className="badge">{statusBadge(state, aiLabel)}</span>
           {onExport && messages.length > 0 && (
             <span className="exportwrap">
-              <button
-                className="exportbtn"
+              <IconButton
+                size="sm"
+                variant="secondary"
                 aria-label="Экспорт разговора"
                 title="Экспорт разговора"
                 onClick={() => setExportOpen((v) => !v)}
               >
                 ⇩
-              </button>
+              </IconButton>
               {exportOpen && (
                 <span className="exportmenu" data-testid="export-menu">
                   <button
@@ -333,6 +429,8 @@ export function ChatColumn({
           )}
         </span>
       </header>
+
+      {taskHeader}
 
       {error && (
         <div className="errbar" role="alert" data-testid="error-bar">
@@ -361,13 +459,35 @@ export function ChatColumn({
         </div>
       )}
 
+      <p className="vc-sr-only" role="status" aria-live="polite" data-testid="reply-announce">
+        {replyAnnounce}
+      </p>
+
       <div className="scroll" ref={scrollRef} data-testid="scroll">
         <div className="col-c">
-          {loadingMessages && (
-            <div className="msgloading" data-testid="messages-loading">
-              <Dots />
-              <span>Загрузка сообщений…</span>
+          {/* Первая загрузка ленты — скелетон реплик той же геометрии, что у
+              сообщений (свои слева, ответы модели шире справа). Повторная
+              загрузка уже показанной истории её не подменяет: иначе лента
+              мигает на каждом обновлении. */}
+          {loadingMessages && messages.length === 0 && (
+            <div className="msgskel" data-testid="messages-loading" aria-busy="true">
+              <Skeleton variant="card" className="msgskel-item msgskel-item--me" height={62} lines={2} />
+              <Skeleton variant="card" className="msgskel-item msgskel-item--ai" height={96} lines={3} />
+              <Skeleton variant="card" className="msgskel-item msgskel-item--me" height={62} lines={2} />
             </div>
+          )}
+          {loadingMessages && messages.length > 0 && (
+            <div className="msgrefresh">
+              <RefreshIndicator label="Обновляем историю…" />
+            </div>
+          )}
+          {!loadingMessages && messages.length === 0 && liveSegments.length === 0 && !streamingReply && (
+            <EmptyState
+              testId="messages-empty"
+              icon="💬"
+              title="Пока нет сообщений — задайте первый вопрос"
+              description="Наберите текст в поле ниже или нажмите микрофон: и вопрос, и ответ модели появятся здесь."
+            />
           )}
           {messages.map((m) => {
             const isAi = m.role === 'ai'
@@ -385,7 +505,13 @@ export function ChatColumn({
             const aiText = parsed ? parsed.body : imageText
             const isLast = messages[messages.length - 1]?.id === m.id
             return (
-              <div key={m.id} className={isAi ? 'msg ai' : 'msg me'}>
+              <div
+                key={m.id}
+                data-mid={m.id}
+                className={[isAi ? 'msg ai' : 'msg me', m.id === highlightMessageId && 'msg--found']
+                  .filter(Boolean)
+                  .join(' ')}
+              >
                 <span className={chipClass(m.role, diarization, isAi ? m.engine : undefined)}>
                   {speakerName(m.role, diarization, isAi ? engineLabel(m.engine) : aiLabel)}
                 </span>
@@ -453,6 +579,20 @@ export function ChatColumn({
                       />
                     )}
                     {parsed &&
+                      (() => {
+                        const ci = m.meta?.ciInteraction
+                        const closed = ci ? answeredCiInteractions?.includes(ci.interactionId) : false
+                        if (ci && onAnswerCiInteraction && !closed) {
+                          return (
+                            <QuestionsForm
+                              questions={parsed.questions}
+                              onSubmit={(text) => onAnswerCiInteraction(ci.runId, ci.interactionId, text)}
+                            />
+                          )
+                        }
+                        return null
+                      })()}
+                    {parsed && (!m.meta?.ciInteraction || answeredCiInteractions?.includes(m.meta.ciInteraction.interactionId)) &&
                       (isLast && onAnswerQuestions && state === 'idle' ? (
                         <QuestionsForm questions={parsed.questions} onSubmit={onAnswerQuestions} />
                       ) : (
@@ -484,35 +624,39 @@ export function ChatColumn({
                         {formatLiveUsage(m.meta)}
                       </span>
                     )}
-                    {isAi && m.meta && <MessageMeta meta={m.meta} />}
+                    {isAi && m.meta && (
+                      <MessageMeta meta={m.meta} {...(onOpenKbDocument ? { onOpenKbDocument } : {})} />
+                    )}
                     {isAi && m.meta?.activity && m.meta.activity.length > 0 && (
-                      <button
-                        className="msgbtn actbtn"
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="msgact-mode"
                         aria-label="Переключить вид действий"
                         title={`Вид: ${TIMELINE_MODE_LABEL[modeOf(m.id)]}`}
                         onClick={() => cycleMode(m.id)}
                       >
                         {timelineModeButtonLabel(modeOf(m.id))}
-                      </button>
+                      </Button>
                     )}
                     {isAi && (
-                      <button
-                        className="msgbtn"
+                      <IconButton
+                        size="sm"
                         aria-label="Копировать ответ"
                         title="Копировать ответ"
                         onClick={() => copyMessage(m)}
                       >
                         {copiedId === m.id ? '✓' : '📋'}
-                      </button>
+                      </IconButton>
                     )}
                     {isAi && isLast && m.meta?.request?.permissionMode === 'plan' && onExecutePlan && canExecutePlan && state === 'idle' && (
-                      <button className="execute-plan" onClick={() => onExecutePlan(m.id)}>
+                      <Button size="sm" className="execute-plan" onClick={() => onExecutePlan(m.id)}>
                         Выполнить план
-                      </button>
+                      </Button>
                     )}
                     {isAi && canSpeak && onSpeakMessage && (
-                      <button
-                        className="speakbtn"
+                      <IconButton
+                        size="sm"
                         aria-label={
                           speakingMessageId === m.id ? 'Остановить озвучку' : 'Озвучить ответ'
                         }
@@ -520,27 +664,27 @@ export function ChatColumn({
                         onClick={() => onSpeakMessage(m.id, aiText)}
                       >
                         {speakingMessageId === m.id ? '⏹' : '🔊'}
-                      </button>
+                      </IconButton>
                     )}
                     {!isAi && canEdit && onEditMessage && (
-                      <button
-                        className="msgbtn"
+                      <IconButton
+                        size="sm"
                         aria-label="Изменить сообщение"
                         title="Изменить и переспросить"
                         onClick={() => startEdit(m)}
                       >
                         ✏️
-                      </button>
+                      </IconButton>
                     )}
                     {onDeleteMessage && (
-                      <button
-                        className="msgbtn"
+                      <IconButton
+                        size="sm"
                         aria-label="Удалить сообщение"
                         title="Удалить из истории"
                         onClick={() => onDeleteMessage(m.id)}
                       >
                         🗑
-                      </button>
+                      </IconButton>
                     )}
                   </div>
                 )}
@@ -555,7 +699,9 @@ export function ChatColumn({
           )}
 
           {isListening && (
-            <div className="live" data-testid="live-block">
+            /* Распознанный текст появляется по частям — это журнал, и читалка
+               должна дочитывать добавленное, а не молчать до конца записи. */
+            <div className="live" data-testid="live-block" role="log" aria-live="polite" aria-label="Распознавание речи">
               <p className="livehdr">
                 <span className="reddot" />
                 РАСПОЗНАВАНИЕ · ЛОКАЛЬНО (WHISPER)
@@ -597,14 +743,16 @@ export function ChatColumn({
                 </span>
               )}
               {liveActivity.length > 0 && (
-                <button
-                  className="msgbtn actbtn"
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="msgact-mode"
                   aria-label="Переключить вид действий"
                   title={`Вид: ${TIMELINE_MODE_LABEL[liveMode]}`}
                   onClick={cycleLiveMode}
                 >
                   {timelineModeButtonLabel(liveMode)}
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -659,14 +807,16 @@ export function ChatColumn({
                     </span>
                   )}
                   {liveActivity.length > 0 && (
-                    <button
-                      className="msgbtn actbtn actbtn--stream"
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="msgact-mode msgact-mode--stream"
                       aria-label="Переключить вид действий"
                       title={`Вид: ${TIMELINE_MODE_LABEL[liveMode]}`}
                       onClick={cycleLiveMode}
                     >
                       {timelineModeButtonLabel(liveMode)}
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>

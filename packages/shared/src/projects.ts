@@ -1,5 +1,5 @@
-import type { FeatureRunSummary } from './features'
-import type { CiRunSummary, CiReuseStrategy } from './ci'
+import type { CiRunSummary, CiReuseStrategy, CiStatus, CiRunMode } from './ci'
+import type { KbContextMode } from './types'
 
 // Типы домена «Проекты» + канбан-доска. Разделяются server/web/desktop.
 
@@ -86,6 +86,19 @@ export interface ProjectSummary {
   ciReuseStrategy?: CiReuseStrategy
   /** CI-раннер: ссылка на секрет авторизации выполнения (или ''). */
   ciExecAuthRef?: string
+  /**
+   * CI-раннер: режим базы знаний в ходах модели рана. Настройка ПРОЕКТА, а не
+   * чата: ран берёт её у проекта и фиксирует в `CiRun.kbContextMode` на старте,
+   * поэтому смена режима действует со следующего рана.
+   */
+  ciKbContextMode?: KbContextMode
+  /**
+   * Через сколько дней после попадания в колонку «Готово» задача пропадает с
+   * доски (как в Jira). `null` — не скрывать никогда, `0` — убрать в конце дня.
+   * Задача при этом не удаляется: её видно по прямой ссылке и с включённым
+   * «Показать завершённые».
+   */
+  doneRetentionDays?: number | null
 }
 
 /** Машина проекта: агент + рабочая папка проекта на этой машине. */
@@ -93,8 +106,8 @@ export interface ProjectMachine {
   agentId: string
   /** Папка проекта на этой машине (рабочий каталог). '' — не задана. */
   path: string
-  /** Корень пула изолированных копий Feature Run на этой машине. */
-  featureReposRoot: string
+  /** Корень пула рабочих копий CI на этой машине. */
+  reposRoot: string
 }
 
 /** Проект со всем составом (ответ get/create/update). */
@@ -148,6 +161,11 @@ export interface Task {
   dueDate: number | null
   /** Помечена флагом «внимание» (Jira flag). */
   flagged: boolean
+  /**
+   * Момент попадания в колонку с семантикой `done` (unix ms) или null, если
+   * задача не завершена. Отсчёт срока, после которого карточка уходит с доски.
+   */
+  doneAt?: number | null
   /** Порядковый номер задачи в проекте — основа ключа «PRJ-42». */
   seq: number
   /** Дробный ранг для порядка внутри колонки. */
@@ -161,15 +179,129 @@ export interface Task {
   chatId?: string | null
 }
 
+/** Сколько дней завершённая задача ещё висит на доске по умолчанию (как в Jira). */
+export const DEFAULT_DONE_RETENTION_DAYS = 14
+
+/** День в миллисекундах — шаг порога «сколько держать завершённые на доске». */
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Пора ли убрать завершённую задачу с доски. `doneAt` — момент попадания в
+ * колонку done, `retentionDays` — настройка проекта: null/мусор — не скрывать
+ * никогда, 0 — убрать в конце дня завершения. Ровно 0 мс не берём специально:
+ * в «Готово» карточку переносит не только человек, но и CI-раннер после
+ * успешного мержа, а карточка, исчезнувшая с доски в ту же секунду, читается как
+ * «работа пропала без следа». Скрытие не удаляет задачу: она приходит с
+ * `includeCompleted` и открывается по прямой ссылке.
+ */
+export function isCompletedHidden(
+  doneAt: number | null | undefined,
+  retentionDays: number | null | undefined,
+  now: number
+): boolean {
+  if (doneAt == null || retentionDays == null) return false
+  if (!Number.isFinite(retentionDays) || retentionDays < 0) return false
+  if (retentionDays === 0) return now >= endOfDay(doneAt)
+  return now - doneAt >= retentionDays * DAY_MS
+}
+
+/** Полночь следующего дня после `ts` (по времени машины, где считается доска). */
+function endOfDay(ts: number): number {
+  const d = new Date(ts)
+  d.setHours(24, 0, 0, 0)
+  return d.getTime()
+}
+
 /** Новое доменное имя; Task остаётся alias для совместимости. */
 
 export type WorkItem = Task
+
+// Транслитерация кириллицы: ключ проекта в Jira — латинский (ЧатАИ → CHA).
+const CYR: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y',
+  к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f',
+  х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya'
+}
+
+/** Ключ проекта из имени: латинские заглавные, как в Jira (Voice Chat → VC). */
+export function projectKey(name: string): string {
+  const words = [...name.toLowerCase()]
+    .map((ch) => CYR[ch] ?? ch)
+    .join('')
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+  if (!words.length) return 'PRJ'
+  const key = words.length === 1 ? words[0].slice(0, 4) : words.map((w) => w[0]).join('').slice(0, 4)
+  return key.toUpperCase()
+}
+
+/** Ключ задачи «PRJ-42» из имени проекта и порядкового номера. */
+export function issueKey(projectName: string, task: Pick<Task, 'seq'>): string {
+  return `${projectKey(projectName)}-${task.seq || '?'}`
+}
+
+/** Ссылка на элемент иерархии для крошек связанного чата. */
+export interface TaskChatCrumb {
+  id: string
+  title: string
+  /** Ключ вида `PRJ-42`. */
+  key: string
+}
+
+/**
+ * Контекст задачи для чата, привязанного к ней (`conversations.task_id`):
+ * иерархия, этап воркфлоу, машина и папка разработки, последний CI-ран.
+ * `null`, если чат не привязан к задаче.
+ */
+export interface TaskChatContext {
+  /**
+   * Чат, которому принадлежит контекст. Виджет задачи рисуется только когда id
+   * совпадает с открытым чатом: контекст — свойство чата, а не залипающее
+   * состояние стора, и медленный ответ на закрытый чат ничего не показывает.
+   */
+  conversationId: string
+  projectId: string
+  projectName: string
+  epic: TaskChatCrumb | null
+  story: TaskChatCrumb | null
+  task: TaskChatCrumb & { type: WorkItemType }
+  /** Подпись колонки и её машинный смысл — этап жизненного цикла разработки. */
+  columnName: string
+  columnSemantic: KanbanColumnSemanticType | null
+  agentId: string | null
+  agentName: string | null
+  /** Рабочая директория, в которой идёт разработка. */
+  workdir: string | null
+  run: {
+    id: string
+    status: CiStatus
+    mode: CiRunMode
+    startedAt: number | null
+    durationMs: number | null
+  } | null
+}
+
+/**
+ * Метка чата, привязанного к задаче, для списка бесед: ключ задачи, её тип и
+ * последний CI-ран. Ран отдаётся той же сводкой, что подсвечивает карточку на
+ * доске — список чатов и канбан показывают одно состояние одними цветами.
+ * Дальше сводку обновляют живые кадры `ci.*` (они приходят на все соединения
+ * пользователя, а не только подписчикам доски).
+ */
+export interface TaskChatBadge {
+  conversationId: string
+  projectId: string
+  taskId: string
+  /** Ключ вида `PRJ-42`. */
+  key: string
+  type: WorkItemType
+  run: CiRunSummary | null
+}
 
 /** Снапшот доски проекта. */
 export interface Board {
   columns: KanbanColumn[]
   tasks: Task[]
-  features?: FeatureRunSummary[]
   /** Сводки CI-ранов по задачам проекта (последний ран на задачу). */
   ciRuns?: CiRunSummary[]
 }

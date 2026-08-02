@@ -145,6 +145,96 @@ describe('REST: админ-роуты (только admin)', () => {
   })
 })
 
+
+describe('REST: реестр LLM-исполнителей (только admin)', () => {
+  const realFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+
+  it('user → 403 на /api/admin/llm-engines', async () => {
+    db.createUser('user', '', 'user')
+    const userTok = signToken({ name: 'user', role: 'user' }, SECRET)
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/admin/llm-engines',
+      headers: { authorization: `Bearer ${userTok}` }
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('admin: create → update → health → delete', async () => {
+    const created = await inj({
+      method: 'POST',
+      url: '/api/admin/llm-engines',
+      payload: {
+        name: 'Runner Claude',
+        kind: 'claude',
+        baseUrl: 'http://runner.test:8080',
+        token: 'secret',
+        enabled: true,
+        allowedRoles: ['admin', 'user'],
+        isDefault: true
+      }
+    })
+    expect(created.statusCode).toBe(200)
+    const engine = created.json()
+    expect(engine).toMatchObject({ name: 'Runner Claude', kind: 'claude', token: 'secret', isDefault: true })
+
+    const list = await inj({ method: 'GET', url: '/api/admin/llm-engines' })
+    expect(list.json()).toHaveLength(1)
+
+    const updated = await inj({
+      method: 'PATCH',
+      url: `/api/admin/llm-engines/${engine.id}`,
+      payload: {
+        name: 'Runner Claude 2',
+        kind: 'claude',
+        baseUrl: 'http://runner.test:8081',
+        token: 'secret-2',
+        enabled: false,
+        allowedRoles: ['admin'],
+        isDefault: false
+      }
+    })
+    expect(updated.json()).toMatchObject({ name: 'Runner Claude 2', enabled: false, allowedRoles: ['admin'] })
+
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      ok: true,
+      bins: {
+        claude: { present: true, version: '1.0.0' },
+        codex: { present: false, version: null }
+      },
+      login: {
+        claude: { provider: 'claude', loggedIn: true, detail: 'team' },
+        codex: { provider: 'codex', loggedIn: false, detail: 'login required' }
+      },
+      runs: 0
+    }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch
+    const health = await inj({ method: 'GET', url: `/api/admin/llm-engines/${engine.id}/health` })
+    expect(health.json()).toMatchObject({ available: true, kind: 'claude' })
+
+    globalThis.fetch = (async () => { throw new Error('connect ECONNREFUSED') }) as typeof fetch
+    const offline = await inj({ method: 'GET', url: `/api/admin/llm-engines/${engine.id}/health` })
+    expect(offline.statusCode).toBe(200)
+    expect(offline.json()).toMatchObject({ available: false })
+
+    const del = await inj({ method: 'DELETE', url: `/api/admin/llm-engines/${engine.id}` })
+    expect(del.statusCode).toBe(200)
+    expect((await inj({ method: 'GET', url: '/api/admin/llm-engines' })).json()).toEqual([])
+  })
+
+  it('валидация create/update полей работает', async () => {
+    const bad = await inj({
+      method: 'POST',
+      url: '/api/admin/llm-engines',
+      payload: { name: '', kind: 'bad', baseUrl: 'oops', token: '', enabled: true, allowedRoles: [], isDefault: false }
+    })
+    expect(bad.statusCode).toBe(400)
+  })
+})
+
 describe('REST: conversations/messages/settings', () => {
   it('импорт desktop требует токен и идемпотентен', async () => {
     const payload = { conversations: [{ conversation: { id: 'legacy-c', title: 'Legacy', createdAt: 10, updatedAt: 20, claudeSessionId: null, execTarget: null }, messages: [{ id: 'legacy-m', conversationId: 'legacy-c', role: 'u1', text: 'hello', time: '10:00', createdAt: 15 }] }] }
@@ -177,6 +267,28 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.statusCode).toBe(200)
     const found = res.json()
     expect(found.map((c: { title: string }) => c.title)).toEqual(['Лиссабон'])
+  })
+
+  it('чат задачи в «Готово» уходит из списка, но открывается по ссылке и из карточки', async () => {
+    const project = db.createProject(U, { name: 'P' })
+    const board = db.getBoard(U, project.id)!
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    const task = db.createTask(U, project.id, { columnId: board.columns[0]!.id, title: 'Скролл' })!
+    const chat = db.openOrCreateTaskChat(U, project.id, task.id)!
+    const ids = async (url: string): Promise<string[]> =>
+      (await inj({ method: 'GET', url })).json().map((c: { id: string }) => c.id)
+
+    expect(await ids('/api/conversations')).toContain(chat.id)
+    db.moveTask(U, project.id, task.id, { columnId: done.id })
+    expect(await ids('/api/conversations')).not.toContain(chat.id)
+    expect(await ids('/api/conversations?includeCompleted=1')).toContain(chat.id)
+    expect(await ids(`/api/conversations/search?q=${encodeURIComponent('Скролл')}`)).not.toContain(chat.id)
+    expect(await ids(`/api/conversations/search?q=${encodeURIComponent('Скролл')}&includeCompleted=1`)).toContain(chat.id)
+
+    // Прямая ссылка и кнопка «Открыть чат» на карточке работают как раньше.
+    expect((await inj({ method: 'GET', url: `/api/conversations/${chat.id}` })).json().conversation.id).toBe(chat.id)
+    const fromCard = await inj({ method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/chat` })
+    expect(fromCard.json().id).toBe(chat.id)
   })
 
   it('cc: projects/sessions/transcript из ~/.claude/projects (VC_CC_DIR)', async () => {
@@ -572,5 +684,93 @@ describe('REST: чтение файла с диска сервера (/api/files
   it('системный файл не отдаётся', async () => {
     const res = await inj({ method: 'GET', url: '/api/files/read?path=/etc/passwd' })
     expect(res.statusCode).toBe(404)
+  })
+})
+
+describe('REST: GET /api/search — полнотекстовый поиск по сообщениям', () => {
+  /** Беседа с сообщениями пользователя (по умолчанию — admin из токена). */
+  const seed = (user: string, title: string, texts: string[]): string => {
+    const conv = db.createConversation(user, title)
+    for (const t of texts) db.addMessage(user, conv.id, 'u1', t, '12:00')
+    return conv.id
+  }
+
+  it('без токена → 401', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/search?q=миграция' })).statusCode).toBe(401)
+  })
+
+  it('отдаёт ранжированные результаты со сниппетом и курсором', async () => {
+    const id = seed(U, 'Канбан', [
+      'Обсудили миграцию канбана и схему БД',
+      'Ещё раз про миграцию',
+      'Совсем про другое'
+    ])
+
+    const first = await inj({ method: 'GET', url: '/api/search?q=миграцию%20&limit=1' })
+    expect(first.statusCode).toBe(200)
+    const page1 = first.json()
+    expect(page1.hits).toHaveLength(1)
+    expect(page1.hits[0].conversationId).toBe(id)
+    expect(page1.hits[0].conversationTitle).toBe('Канбан')
+    expect(page1.hits[0].snippet).toContain('<mark>')
+    expect(typeof page1.nextCursor).toBe('string')
+
+    const second = await inj({
+      method: 'GET',
+      url: `/api/search?q=${encodeURIComponent('миграцию ')}&limit=1&cursor=${encodeURIComponent(page1.nextCursor)}`
+    })
+    const page2 = second.json()
+    expect(page2.hits).toHaveLength(1)
+    expect(page2.hits[0].messageId).not.toBe(page1.hits[0].messageId)
+  })
+
+  it('не выдаёт сообщения другого пользователя', async () => {
+    db.createUser('mallory', '', 'user')
+    const theirs = seed('mallory', 'Чужая беседа', ['чужой секрет про миграцию'])
+    seed(U, 'Своя беседа', ['свой текст про миграцию'])
+
+    const all = await inj({ method: 'GET', url: '/api/search?q=миграцию%20' })
+    expect(all.json().hits.map((h: { conversationTitle: string }) => h.conversationTitle)).toEqual(['Своя беседа'])
+
+    // Явная чужая беседа — тоже пусто, а не 403/500: чужого просто «не существует».
+    const direct = await inj({ method: 'GET', url: `/api/search?q=миграцию%20&conversationId=${theirs}` })
+    expect(direct.statusCode).toBe(200)
+    expect(direct.json().hits).toEqual([])
+  })
+
+  it('сужает по проекту, projectId=none — только беседы без проекта', async () => {
+    const project = db.createProject(U, { name: 'Проект' })
+    const inProject = seed(U, 'С проектом', ['миграция схемы'])
+    db.setConversationProject(U, inProject, project.id)
+    seed(U, 'Без проекта', ['миграция схемы'])
+
+    const byProject = await inj({ method: 'GET', url: `/api/search?q=миграция%20&projectId=${project.id}` })
+    expect(byProject.json().hits.map((h: { conversationTitle: string }) => h.conversationTitle)).toEqual(['С проектом'])
+
+    const none = await inj({ method: 'GET', url: '/api/search?q=миграция%20&projectId=none' })
+    expect(none.json().hits.map((h: { conversationTitle: string }) => h.conversationTitle)).toEqual(['Без проекта'])
+  })
+
+  it('пробел в конце запроса приезжает и как «+» (URLSearchParams)', async () => {
+    seed(U, 'Канбан', ['миграция канбана'])
+
+    // «мигра» — префикс, находит; «мигра+» — слово закончено, не находит.
+    expect((await inj({ method: 'GET', url: '/api/search?q=мигра' })).json().hits).toHaveLength(1)
+    expect((await inj({ method: 'GET', url: '/api/search?q=мигра+' })).json().hits).toHaveLength(0)
+  })
+
+  it('спецсимволы и мусорные параметры не дают 500', async () => {
+    seed(U, 'Канбан', ['миграция канбана'])
+
+    const bad = ['', '*', '"', '-', 'NEAR(', '^)(', '%%%', 'a".."b', '\\\\', '(((']
+    for (const q of bad) {
+      const res = await inj({ method: 'GET', url: `/api/search?q=${encodeURIComponent(q)}` })
+      expect(res.statusCode, `q=${JSON.stringify(q)}`).toBe(200)
+      expect(Array.isArray(res.json().hits)).toBe(true)
+    }
+    // Мусор в limit/cursor тоже не ошибка.
+    const res = await inj({ method: 'GET', url: '/api/search?q=миграция%20&limit=abc&cursor=%00%01' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().hits).toHaveLength(1)
   })
 })

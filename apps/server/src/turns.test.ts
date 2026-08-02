@@ -3,9 +3,14 @@ import { createTurnManager } from './turns.js'
 import { VoiceChatDb } from './db/database.js'
 import { DEFAULT_AGENT_POLICY, imageBlock } from '@voicechat/shared'
 import type { LlmClient, LlmRequest } from './claude/types.js'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { createKbUsageTracker } from './kb/usage.js'
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { loadConfig } from './config.js'
+import { buildPublicMcpUrl } from './mcp/publicBase.js'
+import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
+import { KB_MCP_PATH } from './kb/kbMcp.js'
 
 const U = 'admin'
 
@@ -22,6 +27,13 @@ function recorder(): { client: LlmClient; last: () => LlmRequest | null } {
     },
     last: () => last
   }
+}
+
+/** БД с пользователем-владельцем: телеметрия БЗ пишется на его чаты. */
+function freshDb(): VoiceChatDb {
+  const db = new VoiceChatDb(':memory:')
+  db.createUser(U, '', 'admin')
+  return db
 }
 
 /** Реестр «машина всегда онлайн» — чтобы ход пошёл по удалённой ветке. */
@@ -50,6 +62,19 @@ async function runTurn(client: LlmClient, db: VoiceChatDb, conversationId: strin
 }
 
 describe('turns: рабочий каталог разговора принадлежит машине, а не серверу', () => {
+  it('серверный settings.workdir уходит исполнителю как желаемый cwd без локальной проверки', async () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    db.saveSettings(U, { ...db.getSettings(U), workdir: '/definitely/missing/workdir' })
+
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+
+    expect(rec.last()?.cwd).toBe('/definitely/missing/workdir')
+    db.close()
+  })
+
   // Регрессия: `conversations.workdir` выбирается через проводник МАШИНЫ — это
   // путь на её хосте. Подставленный спавну claude в контейнере, он роняет chdir
   // ещё до запуска CLI («spawn claude EACCES» на /root, ENOENT на чужом пути),
@@ -80,6 +105,94 @@ describe('turns: рабочий каталог разговора принадл
     await runTurn(rec.client, db, conv.id)
 
     expect(rec.last()?.remote?.mcpUrl).toContain(`cwd=${encodeURIComponent('/root/dir-on-machine')}`)
+    db.close()
+  })
+})
+
+describe('turns: VC_MCP_PUBLIC_BASE', () => {
+  it('remote mcpUrl и kbMcpUrl строятся от публичной базы, секрет сохраняется', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    const agent = db.createAgent(U, 'Ноутбук')
+    db.setConversationExecTarget(U, conv.id, agent.id, '/root/dir-on-machine')
+    db.setConversationKbContextMode(U, conv.id, 'manual')
+    const kb = {
+      status: () => ({
+        available: true,
+        mode: 'source' as const,
+        searchMode: 'lexical' as const,
+        version: 'x',
+        createdAt: 'now',
+        documents: 1,
+        chunks: 1,
+        staleDocuments: 0
+      }),
+      topics: () => [],
+      document: () => null,
+      search: async () => [],
+      context: async () => ({
+        query: 'q',
+        confidence: 'high' as const,
+        autoInjectAllowed: true,
+        sections: [],
+        relatedFiles: [],
+        relatedDocuments: [],
+        staleWarnings: [],
+        estimatedTokens: 0
+      })
+    }
+
+    const config = loadConfig({ PORT: '8787', VC_MCP_PUBLIC_BASE: 'http://voicechat:8787' })
+    const rec = recorder()
+    const turns = createTurnManager({
+      db,
+      claude: rec.client,
+      kb,
+      kbToolEnabled: true,
+      agents: onlineAgents,
+      mcpBaseUrl: buildPublicMcpUrl(config, REMOTE_BASH_MCP_PATH, 'secret'),
+      kbMcpBaseUrl: buildPublicMcpUrl(config, KB_MCP_PATH, 'secret')
+    })
+
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((m) => {
+        if (m.t === 'claude.done' || m.t === 'claude.error') {
+          off()
+          resolve()
+        }
+      })
+      turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'привет' }] })
+    })
+
+    expect(rec.last()?.remote?.mcpUrl).toContain('http://voicechat:8787/mcp/remote-bash?k=secret')
+    expect(rec.last()?.kbMcpUrl).toContain('http://voicechat:8787/mcp/kb?k=secret&turn=')
+    db.close()
+  })
+})
+
+describe('turns: вложения для удалённого исполнителя', () => {
+  it('передаёт вложение байтами вместе с исходным serverPath', async () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    const dir = mkdtempSync(join(tmpdir(), 'vc-attachment-'))
+    const file = join(dir, 'report.txt')
+    writeFileSync(file, 'attachment-body')
+
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, resolveUpload: () => file })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'прочитай' }], attachments: ['a1'] })
+
+    expect(rec.last()?.prompt).toContain(file)
+    expect(rec.last()?.attachments).toEqual([
+      {
+        serverPath: file,
+        runnerName: 'report.txt',
+        dataBase64: Buffer.from('attachment-body').toString('base64')
+      }
+    ])
+
+    rmSync(dir, { recursive: true, force: true })
     db.close()
   })
 })
@@ -228,7 +341,7 @@ describe('turns: остановка сервера (flushInterrupted)', () => {
         fsMkdir: async () => ({}),
         fsWrite: async () => ({})
       },
-      serverFileRoots: () => [dir],
+      readServerFile: async (userId, path) => path.startsWith(dir) ? { name: 'pic.png', dataBase64: readFileSync(path).toString('base64') } : null,
       mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret'
     })
 
@@ -252,7 +365,7 @@ describe('turns: остановка сервера (flushInterrupted)', () => {
 describe('turns: автоматический контекст базы знаний', () => {
   const bundle = {
     query: 'как устроены ходы', confidence: 'high' as const, autoInjectAllowed: true,
-    sections: [{ documentId:'project-knowledge-base',chunkId:'project-knowledge-base#flow',title:'База знаний проекта',heading:'Поток поиска',excerpt:'Сначала exact и BM25.',score:12,matchTypes:['symbol' as const],explanation:'Точное совпадение символа',freshness:'current' as const,sourcePath:'docs/kb/features/project-knowledge-base.md',anchor:'flow',symbols:[],relatedFiles:[] }],
+    sections: [{ documentId:'project-knowledge-base',chunkId:'project-knowledge-base#flow',title:'База знаний проекта',heading:'Поток поиска',excerpt:'Сначала exact и BM25.',text:'Сначала exact и BM25.',score:12,matchTypes:['symbol' as const],explanation:'Точное совпадение символа',freshness:'current' as const,sourcePath:'docs/kb/features/project-knowledge-base.md',anchor:'flow',symbols:[],relatedFiles:[] }],
     relatedFiles:[], relatedDocuments:['project-knowledge-base'], staleWarnings:[], estimatedTokens:20
   }
   const kb = { status: () => ({ available:true,mode:'source' as const,searchMode:'lexical' as const,version:'x',createdAt:'now',documents:1,chunks:1,staleDocuments:0 }), topics: () => [], document: () => null, search: async () => [], context: async () => bundle }
@@ -269,6 +382,146 @@ describe('turns: автоматический контекст базы знан
     const db = new VoiceChatDb(':memory:'); db.createUser(U,'','admin'); const conv=db.createConversation(U,'Чат'); db.setConversationKbContextMode(U,conv.id,'off'); let calls=0; const offKb={...kb,context:async()=>{calls++;return bundle}}; const rec=recorder(); const turns=createTurnManager({db,claude:rec.client,kb:offKb})
     await turns.start({userId:U,conversationId:conv.id,segments:[{speakerId:1,text:'как устроены ходы'}]})
     expect(calls).toBe(0); expect(rec.last()?.prompt).not.toContain('Контекст базы знаний voiceAIChat')
+    db.close()
+  })
+
+  it('символы обращения совпадают с реально дописанным в промпт текстом', async () => {
+    const db = freshDb(); const conv = db.createConversation(U, 'Чат'); const rec = recorder()
+    const usage = createKbUsageTracker({ db })
+    const turns = createTurnManager({ db, claude: rec.client, kb, kbUsage: usage })
+    const before = rec.last()
+    expect(before).toBeNull()
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'как устроены ходы' }] })
+    const report = db.kbUsageReport(U, conv.id)!
+    expect(report.recent).toHaveLength(1)
+    const q = report.recent[0]
+    expect(q).toMatchObject({ source: 'auto', status: 'delivered', injected: true, confidence: 'high', sectionsCount: 1 })
+    // Ровно длина блока «## Контекст базы знаний …» — его и увидела модель
+    // (дальше в промпте идут хинты формата, они к БЗ не относятся).
+    const prompt = rec.last()!.prompt
+    const block = prompt.slice(prompt.indexOf('\n\n## Контекст базы знаний voiceAIChat'), prompt.indexOf('\n\n## Контекст базы знаний voiceAIChat') + q.chars)
+    expect(block).toContain('Сначала exact и BM25.')
+    expect(block.endsWith('Сначала exact и BM25.')).toBe(true)
+    expect(q.sections[0]).toMatchObject({ documentId: 'project-knowledge-base', anchor: 'flow' })
+    // Итоги хода дописаны: панель показывает долю БЗ в промпте.
+    expect(q.promptChars).toBeGreaterThan(q.chars)
+    expect(q.messageId).not.toBeNull()
+    db.close()
+  })
+
+  it('низкая уверенность bundle → обращение записано как empty, промпт не тронут', async () => {
+    const db = freshDb(); const conv = db.createConversation(U, 'Чат'); const rec = recorder()
+    const weak = { ...kb, context: async () => ({ ...bundle, confidence: 'medium' as const, autoInjectAllowed: false }) }
+    const turns = createTurnManager({ db, claude: rec.client, kb: weak, kbUsage: createKbUsageTracker({ db }) })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'как устроены ходы' }] })
+    expect(rec.last()?.prompt).not.toContain('Контекст базы знаний voiceAIChat')
+    expect(db.kbUsageReport(U, conv.id)!.recent[0]).toMatchObject({ status: 'empty', chars: 0 })
+    db.close()
+  })
+
+  it('падение kb.context не ломает ход: ответ сохранён, обращение помечено error', async () => {
+    const db = freshDb(); const conv = db.createConversation(U, 'Чат'); const rec = recorder()
+    const broken = { ...kb, context: async () => { throw new Error('индекс недоступен') } }
+    const turns = createTurnManager({ db, claude: rec.client, kb: broken, kbUsage: createKbUsageTracker({ db }) })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'как устроены ходы' }] })
+    // Ход завершён и ответ модели лежит в БД — БЗ его не уронила.
+    expect(db.listMessages(U, conv.id).some((m) => m.role === 'ai' && m.text === 'ок')).toBe(true)
+    expect(db.kbUsageReport(U, conv.id)!.recent[0]).toMatchObject({ status: 'error', error: 'индекс недоступен' })
+    db.close()
+  })
+})
+
+describe('turns: MCP-инструменты базы знаний и режимы kbContextMode', () => {
+  const bundle = {
+    query: 'как устроены ходы', confidence: 'high' as const, autoInjectAllowed: true,
+    sections: [{ documentId:'project-knowledge-base',chunkId:'project-knowledge-base#flow',title:'База знаний проекта',heading:'Поток поиска',excerpt:'Сначала exact и BM25.',text:'Сначала exact и BM25.',score:12,matchTypes:['symbol' as const],explanation:'Точное совпадение символа',freshness:'current' as const,sourcePath:'docs/kb/features/project-knowledge-base.md',anchor:'flow',symbols:[],relatedFiles:[] }],
+    relatedFiles:[], relatedDocuments:['project-knowledge-base'], staleWarnings:[], estimatedTokens:20
+  }
+  const kb = { status: () => ({ available:true,mode:'source' as const,searchMode:'lexical' as const,version:'x',createdAt:'now',documents:1,chunks:1,staleDocuments:0 }), topics: () => [], document: () => null, search: async () => [], context: async () => bundle }
+  const KB_MCP = 'http://127.0.0.1:8787/mcp/kb?k=secret'
+
+  /** Брокер токенов хода: следим за выдачей и — важнее — за освобождением. */
+  function broker(): { register: (t: string, e: unknown) => void; unregister: (t: string) => void; live: () => string[] } {
+    const live = new Set<string>()
+    return { register: (t) => live.add(t), unregister: (t) => live.delete(t), live: () => [...live] }
+  }
+
+  it('auto: инструмент подключён и без машины, режим хинта — auto', async () => {
+    const db = freshDb(); const conv = db.createConversation(U, 'Чат'); const rec = recorder(); const tool = broker()
+    const turns = createTurnManager({ db, claude: rec.client, kb, kbMcpBaseUrl: KB_MCP, kbToolEnabled: true, kbTool: tool })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'как устроены ходы' }] })
+    expect(rec.last()?.remote).toBeUndefined() // машины нет — а инструмент БЗ есть
+    expect(rec.last()?.kbMcpUrl).toContain('/mcp/kb?k=secret&turn=')
+    expect(rec.last()?.kbMode).toBe('auto')
+    expect(rec.last()?.prompt).toContain('Контекст базы знаний voiceAIChat')
+    expect(tool.live()).toEqual([]) // ход завершился — токен снят
+    db.close()
+  })
+
+  it('manual: авто-инъекции нет, инструмент есть, хинт усиленный', async () => {
+    const db = freshDb(); const conv = db.createConversation(U, 'Чат'); db.setConversationKbContextMode(U, conv.id, 'manual')
+    let contextCalls = 0
+    const manualKb = { ...kb, context: async () => { contextCalls++; return bundle } }
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, kb: manualKb, kbMcpBaseUrl: KB_MCP, kbToolEnabled: true, kbTool: broker(), kbUsage: createKbUsageTracker({ db }) })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'как устроены ходы' }] })
+    expect(contextCalls).toBe(0)
+    expect(rec.last()?.prompt).not.toContain('Контекст базы знаний voiceAIChat')
+    expect(rec.last()?.kbMcpUrl).toBeDefined()
+    expect(rec.last()?.kbMode).toBe('manual')
+    // Обращений нет: их создаёт сама модель через mcp__kb__*, а не сервер.
+    expect(db.kbUsageReport(U, conv.id)!.totals.queries).toBe(0)
+    db.close()
+  })
+
+  it('manual + VC_KB_TOOL=off вырождается в off: ни инъекции, ни инструмента', async () => {
+    const db = freshDb(); const conv = db.createConversation(U, 'Чат'); db.setConversationKbContextMode(U, conv.id, 'manual')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, kb, kbMcpBaseUrl: KB_MCP, kbToolEnabled: false, kbTool: broker() })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'как устроены ходы' }] })
+    expect(rec.last()?.kbMcpUrl).toBeUndefined()
+    expect(rec.last()?.prompt).not.toContain('Контекст базы знаний voiceAIChat')
+    db.close()
+  })
+
+  it('off: инструмент не подключается', async () => {
+    const db = freshDb(); const conv = db.createConversation(U, 'Чат'); db.setConversationKbContextMode(U, conv.id, 'off')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, kb, kbMcpBaseUrl: KB_MCP, kbToolEnabled: true, kbTool: broker() })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'как устроены ходы' }] })
+    expect(rec.last()?.kbMcpUrl).toBeUndefined()
+    db.close()
+  })
+
+  it('недоступный индекс БЗ не даёт подключить инструмент', async () => {
+    const db = freshDb(); const conv = db.createConversation(U, 'Чат'); const rec = recorder()
+    const emptyKb = { ...kb, status: () => ({ ...kb.status(), available: false, documents: 0, chunks: 0 }) }
+    const turns = createTurnManager({ db, claude: rec.client, kb: emptyKb, kbMcpBaseUrl: KB_MCP, kbToolEnabled: true, kbTool: broker() })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'как устроены ходы' }] })
+    expect(rec.last()?.kbMcpUrl).toBeUndefined()
+    db.close()
+  })
+
+  it('отмена хода освобождает токен инструмента (иначе утечка на каждый cancel)', async () => {
+    const db = freshDb(); const conv = db.createConversation(U, 'Чат'); const tool = broker()
+    // Движок, который держит ход открытым: отмену делаем сами.
+    const client = { send: () => ({ cancel: () => {} }) }
+    const turns = createTurnManager({ db, claude: client, kb, kbMcpBaseUrl: KB_MCP, kbToolEnabled: true, kbTool: tool })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'как устроены ходы' }] })
+    expect(tool.live()).toHaveLength(1)
+    turns.cancel(conv.id)
+    expect(tool.live()).toEqual([])
+    db.close()
+  })
+
+  it('остановка сервера тоже освобождает токен', async () => {
+    const db = freshDb(); const conv = db.createConversation(U, 'Чат'); const tool = broker()
+    const client = { send: (_req: LlmRequest, h: Parameters<LlmClient['send']>[1]) => { h.onDelta('часть'); return { cancel: () => {} } } }
+    const turns = createTurnManager({ db, claude: client, kb, kbMcpBaseUrl: KB_MCP, kbToolEnabled: true, kbTool: tool })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'как устроены ходы' }] })
+    expect(tool.live()).toHaveLength(1)
+    turns.flushInterrupted()
+    expect(tool.live()).toEqual([])
     db.close()
   })
 })

@@ -8,7 +8,9 @@
 /**
  * Собирает PowerShell-скрипт установщика с подставленным адресом сервера.
  * Начинается с BOM: Windows PowerShell 5.1 без него читает файл в ANSI
- * и портит русские строки.
+ * и портит русские строки. С 0.9.2 дополнительно обеспечивает bash.exe
+ * (Git for Windows) — без него агент на Windows деградирует в cmd.exe
+ * (см. `apps/agent/src/platform.ts:resolveShellInfo`).
  */
 export function buildWindowsInstallScript(baseUrl: string): string {
   // Отрезаем хвостовой слэш, чтобы не получить '//api/...'.
@@ -41,7 +43,7 @@ function NodeMajor([string]$Cmd) {
   return 0
 }
 
-Write-Host '[1/7] Проверяю Node.js (нужна версия 22+)…'
+Write-Host '[1/8] Проверяю Node.js (нужна версия 22+)…'
 $NodeExe = 'node'
 $LocalNode = Join-Path $AgentDir 'node\\node.exe'
 if ((NodeMajor 'node') -lt 22) {
@@ -64,7 +66,44 @@ if ((NodeMajor 'node') -lt 22) {
 }
 Write-Host "Использую Node.js: $NodeExe"
 
-Write-Host '[2/7] Ставлю нативный терминал…'
+Write-Host '[2/8] Проверяю bash (нужен Git for Windows — им агент выполняет команды и терминал)…'
+# Ищем bash.exe: сначала в PATH, потом по стандартным путям установки Git for
+# Windows (обычной и portable в LOCALAPPDATA) — тот же порядок, что и в агенте
+# (apps/agent/src/platform.ts:resolveShellInfo), плюс каталог агента (свежая
+# установка MinGit ниже).
+function FindBash {
+  $cmd = Get-Command bash.exe -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
+  $roots = @($env:ProgramFiles, $env:ProgramW6432, (Join-Path $env:LOCALAPPDATA 'Programs'))
+  foreach ($root in $roots) {
+    if (-not $root) { continue }
+    $candidate = Join-Path $root 'Git\\bin\\bash.exe'
+    if (Test-Path $candidate) { return $candidate }
+  }
+  $local = Join-Path $AgentDir 'git\\bin\\bash.exe'
+  if (Test-Path $local) { return $local }
+  return $null
+}
+$BashExe = FindBash
+if (-not $BashExe) {
+  Write-Host 'bash.exe не найден — скачиваю портативный Git (MinGit) в каталог агента…'
+  $GitArch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { '64-bit' }
+  $GitRelease = Invoke-RestMethod 'https://api.github.com/repos/git-for-windows/git/releases/latest' \`
+    -Headers @{ 'User-Agent' = 'voicechat-agent-installer' }
+  $GitAsset = $GitRelease.assets | Where-Object { $_.name -like "MinGit-*-$GitArch.zip" } | Select-Object -First 1
+  if (-not $GitAsset) { throw 'не нашёл архив MinGit нужной архитектуры в последнем релизе Git for Windows' }
+  $GitZip = Join-Path $env:TEMP 'voicechat-mingit.zip'
+  Fetch $GitAsset.browser_download_url $GitZip
+  $GitDir = Join-Path $AgentDir 'git'
+  if (Test-Path $GitDir) { Remove-Item $GitDir -Recurse -Force }
+  Expand-Archive -Path $GitZip -DestinationPath $GitDir -Force
+  Remove-Item $GitZip -Force
+  $BashExe = Join-Path $GitDir 'bin\\bash.exe'
+  if (-not (Test-Path $BashExe)) { throw 'MinGit скачан, но bash.exe внутри архива не нашёлся' }
+}
+Write-Host "Использую bash: $BashExe"
+
+Write-Host '[3/8] Ставлю нативный терминал…'
 $NodeDir = if ($NodeExe -eq 'node') { Split-Path (Get-Command node).Source } else { Split-Path $NodeExe }
 $NpmCmd = Join-Path $NodeDir 'npm.cmd'
 if (-not (Test-Path $NpmCmd)) {
@@ -78,14 +117,14 @@ if ($LASTEXITCODE -ne 0) { throw 'не удалось установить на�
 & $NodeExe -e "require(process.argv[1])" (Join-Path $AgentDir 'node_modules/@lydell/node-pty')
 if ($LASTEXITCODE -ne 0) { throw 'нативный терминал установлен, но не загружается' }
 
-Write-Host '[3/7] Скачиваю агента…'
+Write-Host '[4/8] Скачиваю агента…'
 $NewCjs = Join-Path $AgentDir 'voicechat-agent.new.cjs'
 Fetch "$Server/api/agents/script" $NewCjs
 if ((Get-Item $NewCjs).Length -lt 1000) { throw 'скачанный скрипт подозрительно мал' }
 & $NodeExe --check $NewCjs
 if ($LASTEXITCODE -ne 0) { Remove-Item $NewCjs -Force; throw 'скачанный скрипт битый — обновление отменено' }
 
-Write-Host '[4/7] Ищу строку подключения и останавливаю старый агент…'
+Write-Host '[5/8] Ищу строку подключения и останавливаю старый агент…'
 # Ищем node-процессы, у которых в командной строке наш скрипт (CIM: у Get-Process
 # командной строки нет). Повторный запуск установщика = обновление.
 $Old = @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
@@ -119,16 +158,21 @@ $Cjs = Join-Path $AgentDir 'voicechat-agent.cjs'
 if (Test-Path $Cjs) { Move-Item $Cjs (Join-Path $AgentDir 'voicechat-agent.cjs.prev') -Force }
 Move-Item $NewCjs $Cjs -Force
 
-Write-Host '[5/7] Сохраняю строку подключения…'
+Write-Host '[6/8] Сохраняю строку подключения…'
 Set-Content -Path $ConnFile -Value $Connection -NoNewline -Encoding ascii
 
-Write-Host '[6/7] Готовлю запуск и автозапуск (реестр HKCU, окно скрыто)…'
+Write-Host '[7/8] Готовлю запуск и автозапуск (реестр HKCU, окно скрыто)…'
 $RunCmd = Join-Path $AgentDir 'run.cmd'
 # OEM-кодировка: cmd.exe читает .cmd в кодовой странице консоли, иначе rem-строки в кракозябрах.
 @(
   '@echo off',
   'rem Сервер за самоподписанным TLS — агент должен ему доверять.',
   'set "VC_AGENT_INSECURE_TLS=1"',
+  # Путь к bash.exe — агент выполняет им команды и живой терминал вместо
+  # cmd.exe (см. apps/agent/src/platform.ts:resolveShellInfo). Найденный/
+  # поставленный выше $BashExe переживает обновления — переустановка
+  # перезапишет run.cmd актуальным путём.
+  ('set "VC_PTY_SHELL={0}"' -f $BashExe),
   'set /p VC_CONN=<"%~dp0connection"',
   'cd /d "%USERPROFILE%"',
   ('"{0}" "%~dp0voicechat-agent.cjs" --connection "%VC_CONN%"' -f $NodeExe)
@@ -140,7 +184,7 @@ $Vbs = Join-Path $AgentDir 'run-hidden.vbs'
 Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' \`
   -Name 'voicechat-agent' -Value ('wscript.exe "{0}"' -f $Vbs)
 
-Write-Host '[7/7] Запускаю агента (в фоне; автозапуск при входе настроен)…'
+Write-Host '[8/8] Запускаю агента (в фоне; автозапуск при входе настроен)…'
 Start-Process -FilePath 'wscript.exe' -ArgumentList ('"{0}"' -f $Vbs)
 Write-Host "Готово. Машина появится в настройках через несколько секунд. Файлы агента: $AgentDir"
 `

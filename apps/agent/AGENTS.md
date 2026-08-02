@@ -2,8 +2,10 @@
 
 Консольное приложение: подключается к серверу по WS (`/agent`), авторизуется
 токеном машины и выполняет команды, файловые операции, живой PTY, шлёт телеметрию.
-Работает на Linux, macOS, Android (Termux) и Windows (exec через `cmd.exe`,
-консоль — PowerShell в pipe-режиме; ConPTY только если рядом собран node-pty).
+Работает на Linux, macOS, Android (Termux) и Windows. На Windows с 0.9.2 `exec`
+и PTY идут через `bash.exe` (Git for Windows), если он есть — то же самое место
+поиска, что в установщике (PATH → стандартные пути Git for Windows); нет bash —
+деградация в `cmd.exe` (ConPTY только если рядом собран node-pty).
 
 ## Раскладка
 
@@ -14,9 +16,15 @@
 
 ## Правила
 
-- **Любой спавн — через `platform.ts` (`resolveShell()`)**, никогда не хардкодь
-  `/bin/bash`: в Termux его нет, бинарники в `/data/data/com.termux/files/usr/bin`,
-  PATH бывает урезан. `exec` и `pty` обязаны выбирать shell одинаково.
+- **Любой спавн — через `platform.ts` (`resolveShell()`/`resolveShellInfo()`)**,
+  никогда не хардкодь `/bin/bash`: в Termux его нет, бинарники в
+  `/data/data/com.termux/files/usr/bin`, PATH бывает урезан; на Windows ищем
+  `bash.exe` (PATH → пути Git for Windows) и только потом падаем в `cmd.exe`.
+  `exec` и `pty` обязаны выбирать shell одинаково. `resolveShellInfo()` отдаёт
+  ещё `degraded`/`ignoredOverride` — `connection.ts` логирует их через `onLog`,
+  а `telemetry.ts` кладёт в `agent.telemetry.os.shell`/`shellDegraded` (видно на
+  карточке машины в UI). Unix-подобный `SHELL`/`VC_PTY_SHELL` (`/bin/...`) на
+  Windows не используется — это унаследованное окружение, а не путь для `spawn`.
 - Агент раздаётся как **самодостаточный `voicechat-agent.cjs`**, который собирает
   сервер (`apps/server/src/agents/agentScript.ts`, esbuild, CJS). Значит: новые
   зависимости должны бандлиться или быть опциональными. `@lydell/node-pty`

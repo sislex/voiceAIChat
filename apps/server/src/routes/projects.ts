@@ -11,23 +11,43 @@ import {
   type ProjectSummary,
   type Task,
   type TaskPriority,
-  type WorkItemDefaultSkills
+  type WorkItemDefaultSkills,
+  type CiReuseStrategy,
+  type KbContextMode
 } from '@voicechat/shared'
 
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import type { BoardHub } from '../projects/boardHub.js'
+import type { KnowledgeBaseService } from '../kb/types.js'
+import { kbUsageFlags } from '../kb/routes.js'
 
 const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 'not found' })
 const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
 const badReq = (reply: FastifyReply, message: string): FastifyReply => reply.code(400).send({ error: message })
+
+/** Флаг из query-строки: `?includeCompleted=1` (или `=true`). */
+function queryFlag(v: string | undefined): boolean {
+  return v === '1' || v === 'true'
+}
+
+/** Порог скрытия завершённых: пусто/мусор → null («не скрывать»), иначе целые дни ≥ 0. */
+function normRetentionDays(v: number | null | undefined): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : null
+}
 
 /** Достаёт понятный текст ошибки БД (валидация assignee/участника/машины). */
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boardHub: BoardHub): void {
+export function registerProjectRoutes(
+  app: FastifyInstance,
+  db: VoiceChatDb,
+  boardHub: BoardHub,
+  /** Телеметрия БЗ по проекту: без неё маршрут агрегата не регистрируется. */
+  kbUsage?: { kb: KnowledgeBaseService; toolEnabled: boolean }
+): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const member = (req: FastifyRequest, id: string): ProjectDetail | null => db.getProject(uid(req), id)
 
@@ -74,13 +94,22 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
       productionDeployCommand?: string
+      ciBaseBranch?: string
+      ciBranchTemplate?: string
+      ciReuseStrategy?: CiReuseStrategy
+      ciExecAuthRef?: string
+      /** Режим базы знаний в ходах модели CI-рана (auto|manual|off). */
+      ciKbContextMode?: KbContextMode
+      doneRetentionDays?: number | null
     }
   }>('/api/projects/:id', async (req, reply) => {
 
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
     if (p.role !== 'owner') return forbidden(reply)
-    return db.updateProject(uid(req), req.params.id, req.body ?? {}) ?? nf(reply)
+    const body = { ...(req.body ?? {}) }
+    if (body.doneRetentionDays !== undefined) body.doneRetentionDays = normRetentionDays(body.doneRetentionDays)
+    return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)
   })
 
   app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
@@ -150,14 +179,14 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
   )
 
   // Папка проекта на конкретной машине.
-  app.patch<{ Params: { id: string; agentId: string }; Body: { path?: string; featureReposRoot?: string } }>(
+  app.patch<{ Params: { id: string; agentId: string }; Body: { path?: string; reposRoot?: string } }>(
     '/api/projects/:id/machines/:agentId',
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
       if (p.role !== 'owner') return forbidden(reply)
-      return req.body?.featureReposRoot !== undefined
-        ? db.setProjectMachineFeatureReposRoot(uid(req), req.params.id, req.params.agentId, req.body.featureReposRoot) ?? nf(reply)
+      return req.body?.reposRoot !== undefined
+        ? db.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot) ?? nf(reply)
         : db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? '') ?? nf(reply)
     }
   )
@@ -181,10 +210,25 @@ export function registerProjectRoutes(app: FastifyInstance, db: VoiceChatDb, boa
 
   // --- Доска -----------------------------------------------------------
 
-  app.get<{ Params: { id: string } }>('/api/projects/:id/board', async (req, reply): Promise<Board | FastifyReply> => {
-    const board = db.getBoard(uid(req), req.params.id)
-    return board ?? nf(reply)
-  })
+  // includeCompleted=1 — вместе с давно завершёнными задачами (по умолчанию их
+  // на доске нет, см. настройку проекта «сколько держать завершённые»).
+  app.get<{ Params: { id: string }; Querystring: { includeCompleted?: string } }>(
+    '/api/projects/:id/board',
+    async (req, reply): Promise<Board | FastifyReply> => {
+      const board = db.getBoard(uid(req), req.params.id, { includeCompleted: queryFlag(req.query.includeCompleted) })
+      return board ?? nf(reply)
+    }
+  )
+
+  // --- Использование базы знаний по всем чатам проекта ------------------
+
+  if (kbUsage) {
+    app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/api/projects/:id/kb-usage', async (req, reply) => {
+      // Гейт как у доски: не участник → 404, а не пустой агрегат.
+      const report = db.kbUsageProjectReport(uid(req), req.params.id, Number(req.query.limit) || undefined)
+      return report ? { ...report, ...kbUsageFlags(kbUsage.kb, kbUsage.toolEnabled) } : nf(reply)
+    })
+  }
 
   // --- Колонки (любой участник) ----------------------------------------
 

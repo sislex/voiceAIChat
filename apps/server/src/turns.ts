@@ -4,7 +4,9 @@
 // всем подключённым клиентам; при (пере)подключении клиент получает снапшот
 // активных ходов с накопленным частичным текстом (claude.active).
 
-import { existsSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { basename } from 'node:path'
 import {
   appendImageHint,
   appendQuestionsHint,
@@ -23,21 +25,41 @@ import {
   type SttSegmentWire,
   type TurnMeta,
   type TurnRequestInfo,
-  type TurnUsage
+  type TurnUsage,
+  type LlmAttachment
 } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
 import { relocateImagesToMachine } from './imageRelocate.js'
 import type { LlmClient, LlmHandle } from './claude/types.js'
 import type { KnowledgeBaseService } from './kb/types.js'
+import { kbViewOf } from './kb/access.js'
+import { buildKbAutoContext } from './kb/autoContext.js'
+import type { KbUsageTracker } from './kb/usage.js'
 
 export interface TurnManagerDeps {
   db: VoiceChatDb
   claude: LlmClient
   /** Альтернативный движок Codex (используется при settings.llmProvider='codex'). */
   codex?: LlmClient
+  /** Клиент конкретного исполнителя из реестра. */
+  engineClient?: (engine: { id: string; kind: 'claude' | 'codex'; baseUrl: string; token: string }) => LlmClient
   /** Поиск компактного контекста проекта перед ходом. */
   kb?: KnowledgeBaseService
-  /** Резолв id вложения → абсолютный путь на сервере (для промпта Claude). */
+  /** Телеметрия обращений к БЗ (авто-инъекция и вызовы модели); undefined — не считаем. */
+  kbUsage?: KbUsageTracker
+  /**
+   * База URL MCP-эндпоинта базы знаний (с секретом k). Подключается и в ходе БЕЗ
+   * машины: БЗ read-only и не зависит от агента.
+   */
+  kbMcpBaseUrl?: string
+  /** Инструмент БЗ включён администратором (config.kbToolEnabled). */
+  kbToolEnabled?: boolean
+  /** Брокер токенов инструмента БЗ: токен живёт ровно один ход. */
+  kbTool?: {
+    register(token: string, entry: { userId: string; conversationId: string; projectId: string | null; turnId: string }): void
+    unregister(token: string): void
+  }
+  /** Резолв id вложения → абсолютный путь на сервере (для промпта и runner). */
   resolveUpload?: (id: string) => string | undefined
   /** Онлайн-статус и политика машин-агентов (для проброса Bash на клиента). */
   agents?: {
@@ -49,8 +71,8 @@ export interface TurnManagerDeps {
     fsMkdir?(id: string, path: string): Promise<unknown>
     fsWrite?(id: string, path: string, dataBase64: string): Promise<unknown>
   }
-  /** Корни «своей» области сервера — откуда можно забирать файл картинки. */
-  serverFileRoots?: (userId: string) => string[]
+  /** Чтение файла картинки с диска сервера или из профиля исполнителя. */
+  readServerFile?: (userId: string, path: string) => Promise<{ name: string; dataBase64: string } | null>
   /** База URL MCP-эндпоинта remote-bash (с секретом k); undefined — проброс выключен. */
   mcpBaseUrl?: string
   /** Источник времени (для детерминированных тестов). */
@@ -58,6 +80,19 @@ export interface TurnManagerDeps {
 }
 
 /** Запрос нового хода (соответствует клиентскому claude.send). */
+function loadAttachment(path: string | undefined): LlmAttachment | null {
+  if (!path) return null
+  try {
+    return {
+      serverPath: path,
+      runnerName: basename(path),
+      dataBase64: readFileSync(path).toString('base64')
+    }
+  } catch {
+    return null
+  }
+}
+
 export interface StartTurnRequest {
   /** Владелец разговора (логин пользователя) — для изоляции данных. */
   userId: string
@@ -127,6 +162,16 @@ function policySummary(p: AgentPolicy, selectedSkills?: string[]): string {
   return `Политика машины: ${parts.join(' ')}`
 }
 
+/**
+ * Суммарный вход хода: обычный ввод плюс токены кэша. Разложить его на «сколько
+ * от БЗ» нельзя (CLI отдаёт итог по промпту) — число нужно как контекст рядом с
+ * оценкой БЗ, а не как её замена.
+ */
+function turnInputTokens(meta: TurnMeta): number | null {
+  const sum = (meta.inputTokens ?? 0) + (meta.cacheReadTokens ?? 0) + (meta.cacheCreationTokens ?? 0)
+  return sum > 0 ? sum : null
+}
+
 interface TurnState {
   handle: LlmHandle
   partial: string
@@ -145,6 +190,10 @@ interface TurnState {
   startedAt: number
   requestInfo: TurnRequestInfo
   execTarget: string | null
+  /** id хода: связывает обращения к БЗ с сохранённым сообщением и usage. */
+  turnId: string
+  /** Токен MCP-инструмента БЗ этого хода (снимается при завершении/отмене). */
+  kbToolToken: string | null
 }
 
 /** Кэп на число записей активности, хранимых у одного хода. */
@@ -189,8 +238,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // пользователя (у роли user нет opus/fable — сервер не даст обойти фильтр).
     const wantProvider = conv?.llmProvider ?? settings.llmProvider
     const provider = wantProvider === 'codex' && deps.codex ? 'codex' : 'claude'
-    const client = provider === 'codex' ? deps.codex! : deps.claude
     const role = account.role
+    const wantedEngineId = conv?.llmEngineId ?? settings.llmEngineId
+    const resolvedEngine = deps.db.resolveLlmEngine(wantedEngineId, provider, role)
+    const client = resolvedEngine.engine && deps.engineClient
+      ? deps.engineClient(resolvedEngine.engine)
+      : provider === 'codex' ? deps.codex! : deps.claude
+    const engineNotice = resolvedEngine.substituted
+      ? `⚠️ Исполнитель «${wantedEngineId}» недоступен; ход выполнен через «${resolvedEngine.engine?.name ?? `default ${provider}`}».`
+      : ''
     const convModel = conv?.llmProvider === provider ? conv.llmModel : null
     const model =
       provider === 'codex'
@@ -206,12 +262,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Рабочий каталог разговора (`conv.workdir`) выбирается через проводник
     // МАШИНЫ — это путь на её хосте, и в контейнере сервера его нет. Он уходит
     // только в MCP-мост (`&cwd=`), где `remote.bash` делает `cd` на агенте.
-    // Локальный `cwd` для процесса claude берём исключительно из серверных
-    // настроек и только если каталог реально существует здесь.
-    const localCwd = settings.workdir && existsSync(settings.workdir) ? settings.workdir : undefined
-    const attachmentPaths = (req.attachments ?? [])
-      .map((id) => deps.resolveUpload?.(id))
-      .filter((p): p is string => typeof p === 'string')
+    // Локальный `cwd` для CLI теперь не валидируем на сервере: исполнитель сам
+    // решает, существует ли каталог и можно ли в него перейти.
+    const desiredCwd = settings.workdir ?? undefined
+    const attachments = (req.attachments ?? [])
+      .map((id) => loadAttachment(deps.resolveUpload?.(id)))
+      .filter((att): att is LlmAttachment => Boolean(att))
+    const attachmentPaths = attachments.map((att) => att.serverPath)
     // Есть сессия → продолжаем одним ходом (--resume). Нет (новый разговор или
     // сессия сброшена после удаления/правки) → пересобираем промпт из текущей
     // истории БД, чтобы контекст модели совпадал с видимым (без удалённых реплик).
@@ -221,18 +278,43 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let basePrompt = sessionId
       ? buildPrompt(req.segments, attachmentPaths)
       : buildConversationPrompt(deps.db.listMessages(userId, conversationId), attachmentPaths)
-    if (deps.kb && (conv?.kbContextMode ?? 'auto') === 'auto') {
+    // Режимы БЗ разговора (одно место на все три ветки):
+    //   auto   — авто-инъекция контекста ДА + инструменты mcp__kb__* ДА;
+    //   manual — авто-инъекции НЕТ, инструменты ДА (усиленный хинт «сначала БЗ»);
+    //   off    — ничего.
+    const kbMode = conv?.kbContextMode ?? 'auto'
+    const turnId = randomUUID()
+    if (deps.kb && kbMode === 'auto') {
       const kbQuery = req.segments.map((segment) => segment.text).join(' ').trim()
       if (kbQuery) {
+        const usage = deps.kbUsage?.begin(
+          { userId, conversationId, projectId: conv?.projectId ?? null, turnId, source: 'auto' },
+          kbQuery
+        )
         try {
-          const bundle = await deps.kb.context(kbQuery, 3500)
-          if (bundle.autoInjectAllowed && bundle.sections.length) {
-            kbContext = { confidence: bundle.confidence, sections: bundle.sections.map(({ documentId, title, heading, sourcePath, anchor }) => ({ documentId, title, heading, sourcePath, anchor })) }
-            const sections = bundle.sections.map((section) => `### ${section.title} / ${section.heading}\nИсточник: ${section.sourcePath}${section.anchor ? `#${section.anchor}` : ''}\n${section.excerpt}`).join('\n\n')
-            basePrompt = `${basePrompt}\n\n## Контекст базы знаний voiceAIChat\nИспользуй как навигацию и сверяй с кодом при изменении поведения.\n\n${sections}`
+          // Вид пользователя: общий раздел + его персональные знания + знания
+          // проекта чата. Права считает kbViewOf (kb/access.ts), а не ход.
+          // Сборку блоков делает kb/autoContext.ts — та же, что у CI-рана.
+          const auto = await buildKbAutoContext(deps.kb, kbQuery, {
+            ...kbViewOf(deps.db, userId),
+            ...(conv?.projectId ? { projectId: conv.projectId } : {})
+          })
+          if (auto.text) {
+            kbContext = { confidence: auto.bundle.confidence, sections: auto.contextSections }
+            basePrompt = `${basePrompt}${auto.text}`
+            usage?.complete({
+              deliveredChars: auto.text.length,
+              injected: true,
+              bundleTokens: auto.bundle.estimatedTokens,
+              confidence: auto.bundle.confidence,
+              sections: auto.sections
+            })
+          } else {
+            usage?.empty(auto.emptyReason ?? 'no-match')
           }
-        } catch {
+        } catch (err) {
           // KB не должна блокировать основной ход: exact/BM25/reranker могут быть временно недоступны.
+          usage?.fail(err instanceof Error ? err.message : String(err))
         }
       }
     }
@@ -249,6 +331,26 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         if (lines.length) basePrompt = `${basePrompt}\n\n## Контекст проекта «${project.name}»\n${lines.join('\n')}`
       }
     }
+    // Контекст задачи, к которой привязан чат: иерархия, этап воркфлоу, папка и
+    // ветка разработки. Без этого чат «знает» только проект, хотя task_id есть.
+    if (conv?.taskId) {
+      const tc = deps.db.getTaskChatContext(userId, conversationId)
+      if (tc) {
+        const lines = [
+          `Задача: ${tc.task.key} · ${tc.task.title}`,
+          tc.epic ? `Эпик: ${tc.epic.key} · ${tc.epic.title}` : '',
+          tc.story ? `История: ${tc.story.key} · ${tc.story.title}` : '',
+          tc.columnName ? `Этап разработки: ${tc.columnName}${tc.columnSemantic ? ` (${tc.columnSemantic})` : ''}` : '',
+          tc.agentName ? `Машина разработки: ${tc.agentName}` : '',
+          tc.workdir ? `Рабочая директория: ${tc.workdir}` : '',
+          tc.run ? `Последний CI-ран: ${tc.run.status}, режим ${tc.run.mode === 'plan' ? 'план' : 'разработка'}` : ''
+        ].filter(Boolean)
+        const task = conv.projectId ? deps.db.getCiTask(userId, conv.projectId, conv.taskId) : null
+        if (task?.description) lines.push(`Описание задачи: ${task.description}`)
+        if (task?.acceptanceCriteria) lines.push(`Критерии приёмки: ${task.acceptanceCriteria}`)
+        basePrompt = `${basePrompt}\n\n## Контекст задачи\n${lines.join('\n')}`
+      }
+    }
     const prompt = appendImageHint(appendToolHint(appendQuestionsHint(basePrompt)))
     // Цель выполнения команд: выбранная машина-агент. Только своя машина
     // (чужую игнорируем → выполняем на сервере). Офлайн своей — сразу ошибка.
@@ -259,6 +361,23 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       !executionDisabled && requestedTarget && deps.db.listAgents(userId).some((a) => a.id === requestedTarget)
         ? requestedTarget
         : null
+    // Инструменты БЗ — ВНЕ ветки `remote`: база знаний read-only и нужна модели
+    // и в ходе без машины (там она вообще единственный источник контекста).
+    const kbToolAvailable = (): boolean => {
+      if (!deps.kb || !deps.kbMcpBaseUrl || kbMode === 'off' || deps.kbToolEnabled === false) return false
+      try {
+        return deps.kb.status().available
+      } catch {
+        return false // сломанный индекс = инструмента нет, ход продолжается
+      }
+    }
+    let kbToolToken: string | null = null
+    let kbMcpUrl: string | undefined
+    if (kbToolAvailable()) {
+      kbToolToken = randomUUID()
+      kbMcpUrl = `${deps.kbMcpBaseUrl}&turn=${encodeURIComponent(kbToolToken)}`
+      deps.kbTool?.register(kbToolToken, { userId, conversationId, projectId: conv?.projectId ?? null, turnId })
+    }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     if (target && deps.agents && deps.mcpBaseUrl) {
       if (!deps.agents.isOnline(target)) {
@@ -279,9 +398,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         policySummary: policy ? policySummary(policy, conv?.skillNames ?? []) : undefined
       }
     }
-    // Никогда не подставляем сюда каталог машины: chdir в несуществующий (или
-    // чужой, вроде /root) путь роняет спавн с ENOENT/EACCES ещё до запуска CLI.
-    const cwd = localCwd
+    // `cwd` здесь только желаемый: локальный spawn или удалённый runner уже сами
+    // решают, можно ли в него перейти, и при невозможности просто пропускают chdir.
+    const cwd = desiredCwd
     // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
     // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
     // выполнения). На своей машине действия регулирует политика машины.
@@ -319,15 +438,22 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       model,
       startedAt,
       requestInfo,
-      execTarget: requestedTarget
+      execTarget: requestedTarget,
+      turnId,
+      kbToolToken
     }
     turns.set(conversationId, turn)
     const finish = (): void => {
       turn.done = true
+      releaseKbTool(turn)
       if (turns.get(conversationId) === turn) turns.delete(conversationId)
     }
     turn.handle = client.send(
-      { userId, prompt, sessionId, model, permissionMode, cwd, remote, executionDisabled },
+      {
+        userId, prompt, sessionId, model, permissionMode, cwd, remote, executionDisabled,
+        ...(attachments.length ? { attachments } : {}),
+        ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {})
+      },
       {
         onSession: (sid) => deps.db.setClaudeSession(userId, conversationId, `${provider}:${sid}`),
         onInit: (info) => {
@@ -380,7 +506,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             ...(activity.length ? { activity } : {})
           }
           // Ответ сохраняет сервер: клиент мог обновить страницу или уйти.
-          const rawText = text.trim() ? text : turn.partial
+          const answerText = text.trim() ? text : turn.partial
+          const rawText = engineNotice ? `${engineNotice}\n\n${answerText}` : answerText
 
           // Картинки, созданные CLI, лежат на сервере — перекладываем их на
           // машину разговора, откуда браузер возьмёт их напрямую. Шаг сетевой,
@@ -400,7 +527,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             saved = true
             pendingSaves.delete(finalize)
             if (!finalText.trim()) return undefined
-            return deps.db.addMessage(
+            const message = deps.db.addMessage(
               userId,
               conversationId,
               'ai',
@@ -410,6 +537,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               merged,
               requestedTarget
             )
+            // Итоги хода — в его обращения к БЗ: id сообщения (панель ведёт на
+            // ход) и размеры промпта/входа (доля БЗ в промпте).
+            deps.kbUsage?.attachTurn({
+              turnId,
+              messageId: message.id,
+              promptChars: requestInfo.promptChars,
+              turnInputTokens: turnInputTokens(merged)
+            })
+            return message
           }
           const emitDone = (finalText: string, message?: Message): void => {
             broadcast(
@@ -435,12 +571,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
           const prepared = (async (): Promise<string> => {
             const a = deps.agents
-            if (!target || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.serverFileRoots) {
+            if (!target || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.readServerFile) {
               return rawText
             }
             try {
               return await relocateImagesToMachine(rawText, target, {
-                roots: deps.serverFileRoots(userId),
+                readFile: (path) => deps.readServerFile!(userId, path),
                 fsList: (id, path) => a.fsList!(id, path),
                 fsMkdir: (id, path) => a.fsMkdir!(id, path),
                 fsWrite: (id, path, data) => a.fsWrite!(id, path, data)
@@ -478,11 +614,23 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     if (turn.done) turn.handle = { cancel: () => {} }
   }
 
+  /**
+   * Снять токен инструмента БЗ. Обязателен во всех выходах хода (готово, ошибка,
+   * отмена, остановка сервера) — иначе каждый отменённый ход оставляет живой
+   * токен, по которому можно читать БЗ от его имени.
+   */
+  function releaseKbTool(turn: TurnState): void {
+    if (!turn.kbToolToken) return
+    deps.kbTool?.unregister(turn.kbToolToken)
+    turn.kbToolToken = null
+  }
+
   /** Отмена одного хода; notify — рассылать ли пустой done (сброс UI вкладок). */
   function cancelTurn(conversationId: string, notify: boolean): void {
     const turn = turns.get(conversationId)
     if (!turn) return
     turns.delete(conversationId)
+    releaseKbTool(turn)
     turn.handle.cancel()
     // Пустой done без message: клиенты сбрасывают «думает…», в БД ничего нет.
     if (notify) broadcast({ t: 'claude.done', conversationId, text: '' }, turn.userId)
@@ -508,6 +656,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     for (const [conversationId, turn] of [...turns]) {
       turns.delete(conversationId)
       turn.done = true
+      releaseKbTool(turn)
       turn.handle.cancel()
       if (!turn.partial.trim()) continue
       const meta: TurnMeta = {
@@ -529,6 +678,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         meta,
         turn.execTarget
       )
+      deps.kbUsage?.attachTurn({
+        turnId: turn.turnId,
+        messageId: message.id,
+        promptChars: turn.requestInfo.promptChars,
+        turnInputTokens: turnInputTokens(meta)
+      })
       broadcast(
         { t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, message },
         turn.userId

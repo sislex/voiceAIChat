@@ -1,12 +1,27 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { UsersAdmin, type UsersAdminProps } from './UsersAdmin'
-import type { AdminUserInfo } from '@shared/admin'
+import type { AdminLlmEngine, AdminUserInfo } from '@shared/admin'
 
 const users: AdminUserInfo[] = [
   { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 2, agents: [] },
   { name: 'bob', role: 'user', blocked: false, createdAt: 2, conversationCount: 0, agents: [] }
+]
+
+const engines: AdminLlmEngine[] = [
+  {
+    id: 'eng-1',
+    name: 'runner-work claude',
+    kind: 'claude',
+    baseUrl: 'http://runner-work:8080',
+    token: 'secret',
+    enabled: true,
+    allowedRoles: ['admin', 'user'],
+    isDefault: true,
+    createdAt: 3
+  }
 ]
 
 function renderAdmin(props: Partial<UsersAdminProps> = {}): UsersAdminProps {
@@ -24,6 +39,15 @@ function renderAdmin(props: Partial<UsersAdminProps> = {}): UsersAdminProps {
     onDelete: vi.fn(),
     onLoadUsage: vi.fn(),
     onOpenConversation: vi.fn(),
+    engines,
+    engineHealth: {
+      'eng-1': { engineId: 'eng-1', kind: 'claude', checkedAt: 1, available: true, detail: 'claude: доступен', status: null }
+    },
+    onRetryEngines: vi.fn(),
+    onCreateEngine: vi.fn(),
+    onUpdateEngine: vi.fn(),
+    onDeleteEngine: vi.fn(),
+    onCheckEngineHealth: vi.fn(),
     onClose: vi.fn(),
     ...props
   }
@@ -70,5 +94,54 @@ describe('UsersAdmin', () => {
       }
     })
     expect(screen.getByTestId('usage-total').textContent).toContain('3 отв.')
+  })
+
+  it('рендерит реестр LLM-исполнителей и health', () => {
+    renderAdmin()
+    const sec = screen.getByTestId('llm-engines-section')
+    expect(within(sec).getByText('runner-work claude')).toBeInTheDocument()
+    expect(within(sec).getByText(/health: жив/)).toBeInTheDocument()
+  })
+
+  it('создание исполнителя зовёт onCreateEngine', async () => {
+    const p = renderAdmin()
+    await userEvent.type(screen.getByLabelText('Название исполнителя'), 'runner codex')
+    await userEvent.selectOptions(screen.getByLabelText('Kind исполнителя'), 'codex')
+    await userEvent.type(screen.getByLabelText('URL исполнителя'), 'http://runner-codex:8080')
+    await userEvent.type(screen.getByLabelText('Токен исполнителя'), 'tok')
+    await userEvent.click(screen.getByRole('button', { name: 'Добавить' }))
+    expect(p.onCreateEngine).toHaveBeenCalledWith({
+      name: 'runner codex',
+      kind: 'codex',
+      baseUrl: 'http://runner-codex:8080',
+      token: 'tok',
+      enabled: true,
+      allowedRoles: ['admin', 'user'],
+      isDefault: false
+    })
+  })
+})
+
+describe('UsersAdmin — состояния загрузки и ошибки', () => {
+  it('первая загрузка — скелетон списка', () => {
+    renderAdmin({ users: [], status: 'loading' })
+    expect(screen.getAllByTestId('user-skeleton')).toHaveLength(4)
+  })
+
+  it('ошибка загрузки видна и повторяется кнопкой', () => {
+    const onRetry = vi.fn()
+    renderAdmin({ users: [], status: 'error', error: '401', onRetry })
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Не удалось загрузить пользователей')
+    fireEvent.click(within(alert).getByRole('button', { name: 'Повторить' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('UsersAdmin — доступность', () => {
+  it('без нарушений axe: список, форма создания, карточка пользователя и реестр исполнителей', async () => {
+    renderAdmin({ selected: 'bob' })
+    await expectNoViolations()
+    expectLabelledIconButtons()
   })
 })

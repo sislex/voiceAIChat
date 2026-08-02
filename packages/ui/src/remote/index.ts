@@ -21,8 +21,9 @@ import { REST, type DesktopMigrationBundle, type ServerFileInfo } from '@shared/
 import type { FsResult } from '@shared/agentProtocol'
 import type { SessionUser } from '@shared/types'
 import { WsClient } from './wsClient'
-import { createHttpApi, createCiRest } from './httpApi'
+import { createHttpApi, createCiRest, createKbUsageRest } from './httpApi'
 import type { RendererCiBridge } from './ciBridge'
+import type { RendererKbBridge } from './kbBridge'
 import { getToken, setToken } from './session'
 import { base64ToArrayBuffer } from './decode'
 
@@ -112,7 +113,7 @@ function makeAgentsBridge(ws: WsClient): RendererAgentsBridge {
 
 function makeBoardBridge(ws: WsClient): RendererBoardBridge {
   return {
-    subscribe: (projectId) => ws.send({ t: 'board.subscribe', projectId }),
+    subscribe: (projectId, includeCompleted) => ws.send({ t: 'board.subscribe', projectId, includeCompleted }),
     unsubscribe: () => ws.send({ t: 'board.unsubscribe' }),
     onUpdate: (cb) => ws.on('board.update', (m) => cb({ projectId: m.projectId, board: m.board }))
   }
@@ -130,7 +131,20 @@ function makeCiBridge(httpBase: string, ws: WsClient): RendererCiBridge {
     onLog: (cb) => ws.on('ci.log', (m) => cb({ runId: m.runId, line: m.line })),
     onFix: (cb) => ws.on('ci.fix', (m) => cb({ runId: m.runId, attempt: m.attempt })),
     onDone: (cb) => ws.on('ci.done', (m) => cb({ runId: m.runId, run: m.run, conclusion: m.conclusion })),
-    onSummary: (cb) => ws.on('ci.summary', (m) => cb({ projectId: m.projectId, summary: m.summary }))
+    onSummary: (cb) => ws.on('ci.summary', (m) => cb({ projectId: m.projectId, summary: m.summary })),
+    onInteraction: (cb) => ws.on('ci.interaction', (m) => cb({ runId: m.runId, interaction: m.interaction })),
+    onChatMessage: (cb) => ws.on('chat.message', (m) => cb({ conversationId: m.conversationId, message: m.message }))
+  }
+}
+
+/**
+ * Мост телеметрии БЗ: REST-снапшоты + инкременты kb.usage. Подписки на чат нет —
+ * сервер рассылает кадры по пользователю, стор сам раскладывает их по чатам.
+ */
+function makeKbBridge(httpBase: string, ws: WsClient): RendererKbBridge {
+  return {
+    ...createKbUsageRest(httpBase),
+    onUsage: (cb) => ws.on('kb.usage', (m) => cb({ conversationId: m.conversationId, projectId: m.projectId, query: m.query }))
   }
 }
 
@@ -307,6 +321,7 @@ export function installRemoteBridges(serverHttp: string): void {
   window.agents = makeAgentsBridge(ws)
   window.board = makeBoardBridge(ws)
   window.ci = makeCiBridge(httpBase, ws)
+  window.kb = makeKbBridge(httpBase, ws)
   window.session = makeSessionBridge(httpBase, ws)
   window.fs = makeFsBridge(httpBase)
   window.files = makeFilesBridge(httpBase)

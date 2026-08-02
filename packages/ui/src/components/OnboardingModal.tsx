@@ -1,4 +1,5 @@
-import { PopupFrame } from './PopupFrame'
+import { Button } from './ui/Button'
+import { Dialog } from './ui/Dialog'
 
 export interface OnboardingModalProps {
   /** Локальная модель Whisper уже скачана. */
@@ -32,10 +33,14 @@ export function OnboardingModal({
   onDone
 }: OnboardingModalProps): JSX.Element {
   return (
-    <PopupFrame title="Добро пожаловать" onClose={onDone} testId="onboarding-overlay" panelClassName="modal onboarding">
-        <div className="mdhead">
-          <h2 className="mdh">Добро пожаловать в Голос·Чат</h2>
-        </div>
+    <Dialog
+      title="Добро пожаловать в Голос·Чат"
+      ariaLabel="Добро пожаловать"
+      size="sm"
+      testId="onboarding-overlay"
+      onClose={onDone}
+      showClose={false}
+    >
         <div className="mdbody">
           <p className="ob-lead">
             Голосовой ассистент с распознаванием речи и озвучкой — всё локально, ответы через
@@ -53,9 +58,9 @@ export function OnboardingModal({
                   Скачивание… {downloadPercent}%
                 </p>
               ) : (
-                <button className="modeldl" onClick={onDownloadModel}>
+                <Button variant="primary" size="sm" onClick={onDownloadModel}>
                   Скачать модель
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -71,11 +76,11 @@ export function OnboardingModal({
           </div>
 
           <div className="ob-actions">
-            <button className="ob-start" onClick={onDone}>
+            <Button variant="primary" onClick={onDone}>
               {modelPresent ? 'Начать' : 'Пропустить и начать'}
-            </button>
+            </Button>
           </div>
         </div>
-    </PopupFrame>
+    </Dialog>
   )
 }

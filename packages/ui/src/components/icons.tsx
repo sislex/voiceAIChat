@@ -14,13 +14,27 @@ export function GearIcon(): JSX.Element {
   )
 }
 
+/** Воронка — фильтр списка (в сайдбаре над списком бесед). */
+export function FilterIcon(): JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M2 3.5h12l-4.6 5.3v4.2l-2.8 1.4V8.8L2 3.5z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 export function MicIcon(): JSX.Element {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-      <rect x="7" y="2.5" width="6" height="10" rx="3" fill="#fff" />
+      <rect x="7" y="2.5" width="6" height="10" rx="3" fill="currentColor" />
       <path
         d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"
-        stroke="#fff"
+        stroke="currentColor"
         strokeWidth="1.7"
         strokeLinecap="round"
       />
@@ -33,7 +47,7 @@ export function SendIcon(): JSX.Element {
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path
         d="M3 10.5 16.5 4 12 17l-3-5-6-1.5Z"
-        stroke="#fff"
+        stroke="currentColor"
         strokeWidth="1.7"
         strokeLinejoin="round"
         fill="none"
@@ -45,7 +59,7 @@ export function SendIcon(): JSX.Element {
 export function StopIcon(): JSX.Element {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16">
-      <rect x="3" y="3" width="10" height="10" rx="2.5" fill="#D5482F" />
+      <rect x="3" y="3" width="10" height="10" rx="2.5" fill="currentColor" />
     </svg>
   )
 }
@@ -54,9 +68,9 @@ export function WandIcon(): JSX.Element {
   // Волшебная палочка со «звёздами» — помощник промптов.
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path d="M11 3 4 10l-1.5 4.5L7 13l7-7-3-3Z" stroke="#55534A" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M9.5 4.5 12.5 7.5" stroke="#55534A" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M13.5 1.5v2M16 2.5h-2M14.5 12v1.6M16.3 12.8h-1.6" stroke="#55534A" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M11 3 4 10l-1.5 4.5L7 13l7-7-3-3Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M9.5 4.5 12.5 7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M13.5 1.5v2M16 2.5h-2M14.5 12v1.6M16.3 12.8h-1.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   )
 }

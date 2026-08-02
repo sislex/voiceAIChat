@@ -1,60 +1,13 @@
-// Абстракция LLM-клиента (Шаг 8). Позволяет мокать Claude в тестах и подменять
-// реализацию (сейчас — Claude Code CLI).
+// Абстракция LLM-клиента. Сами типы переехали в `@voicechat/shared` (`llm.ts`):
+// по `LlmRequest` теперь работает и исполнитель CLI (`apps/llm-runner`), а общий
+// контракт двух пакетов живёт только в shared.
+//
+// Модуль остался реэкспортом: `LlmClient`/`LlmRequest` импортируют десятки файлов
+// сервера (turns, ci, kb, gateway), и переписывать их ради переезда типов незачем.
 
-import type { ClaudeInitInfo, ClaudeLogEntry, TurnMeta, TurnUsage } from '@voicechat/shared'
-
-export interface LlmRequest {
-  /** Владелец CLI-профиля: история одного пользователя не смешивается с другими. */
-  userId?: string
-  /** Готовый текст промпта (сборка — на стороне вызывающего: см. session.ts). */
-  prompt: string
-  /** session-id Claude для продолжения разговора (null — новый/сброшенный). */
-  sessionId: string | null
-  /** Модель для CLI (алиас, напр. 'sonnet' | 'opus'). */
-  model: string
-  /** Режим прав агента (`--permission-mode`); undefined — не передавать флаг. */
-  permissionMode?: string
-  /** Рабочий каталог процесса CLI; undefined — каталог по умолчанию. */
-  cwd?: string
-  /** Удалённое выполнение Bash через MCP-мост; undefined — Bash на сервере. */
-  /** true — shell-команды запрещены полностью, даже на сервере. */
-  executionDisabled?: boolean
-  remote?: {
-    /** URL MCP-эндпоинта с agent id и секретом в query. */
-    mcpUrl: string
-    /** Имя машины для системного промпта. */
-    agentName: string
-    /** Краткое описание политики машины для системного промпта (что разрешено). */
-    policySummary?: string
-    /** URL MCP-эндпоинта команд CI-справочника (инструмент модели), если доступен. */
-    ciMcpUrl?: string
-  }
-}
-
-/** Колбэки потокового ответа. Ровно один из onDone/onError вызывается в конце. */
-export interface LlmStreamHandlers {
-  /** Очередной фрагмент текста ответа. */
-  onDelta(text: string): void
-  /** session-id, полученный от CLI (сохранить в БД для --resume). */
-  onSession(sessionId: string): void
-  /** Окружение хода из system/init (инструменты/навыки/mcp) — необязательно. */
-  onInit?(info: ClaudeInitInfo): void
-  /** Успешное завершение с полным текстом ответа и метаданными хода. */
-  onDone(fullText: string, meta?: TurnMeta): void
-  /** Ошибка (CLI не найден / не залогинен / ненулевой код и т.п.). */
-  onError(message: string): void
-  /** Запись активности агента (режим консоли) — необязательно. */
-  onActivity?(entry: ClaudeLogEntry): void
-  /** Накопленные счётчики токенов хода (кумулятивные, растут по мере ответа). */
-  onUsage?(usage: TurnUsage): void
-}
-
-export interface LlmHandle {
-  /** Прервать текущий запрос (barge-in/смена разговора). */
-  cancel(): void
-}
-
-/** Клиент к LLM. Потоковый: результаты приходят через handlers. */
-export interface LlmClient {
-  send(req: LlmRequest, handlers: LlmStreamHandlers): LlmHandle
-}
+export type {
+  LlmClient,
+  LlmHandle,
+  LlmRequest,
+  LlmStreamHandlers
+} from '@voicechat/shared'

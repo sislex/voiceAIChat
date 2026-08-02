@@ -3,10 +3,16 @@
 // эпикам/по исполнителям), колонки со счётчиком и WIP-лимитом, карточки,
 // модалка задачи. Никакого стора/роутинга/глобального состояния — все данные и
 // колбэки только через пропсы; входные данные нормализуются (normalize.ts).
-// Перетаскивание — нативный HTML5 DnD: карточки (MIME application/x-task) и
-// колонки (application/x-column) с раздельными типами. Колонка = статус.
+// Перетаскивание — на pointer-событиях (lib/dnd.ts), одинаково мышью, пальцем и
+// стилусом: HTML5 DnD мобильные браузеры не поддерживают, и доска была на
+// телефоне нередактируемой. Доска владеет жестом целиком — карточка только
+// сообщает о захвате, а место вставки считается по зонам между карточками
+// (data-dropzone → afterId/beforeId). Плюс перенос с клавиатуры: Space — взять,
+// стрелки — выбрать место, Enter — положить, Esc — отмена; каждый шаг
+// проговаривается в aria-live. Колонка = статус.
 
-import { useMemo, useRef, useState } from 'react'
+import { Fragment, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Board, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { TASK_PRIORITIES, WORK_ITEM_TYPES } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
@@ -14,17 +20,64 @@ import type { ModifierPrompt } from '@shared/types'
 import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
 import { TaskCard, epicOf } from './TaskCard'
 import { TaskModal, type TaskUpdateFields } from './TaskModal'
-import { Avatar, PRIORITY_LABEL, TYPE_LABEL, epicColor, issueKey } from './kanbanMeta'
+import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, epicColor, issueKey } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
+import { Button } from '../ui/Button'
+import { IconButton } from '../ui/IconButton'
+import { useConfirm } from '../ui/useConfirm'
+import { Skeleton, RefreshIndicator } from '../ui/Skeleton'
+import { EmptyState } from '../ui/EmptyState'
+import { ErrorState } from '../ui/ErrorState'
+import { loadView, type LoadStatus } from '../../lib/loadState'
+import { useCommandSource } from '../../lib/useCommands'
+import {
+  autoScroll,
+  nearestByCenterY,
+  nearestElement,
+  pointInRect,
+  usePointerDrag,
+  type DragPoint
+} from '../../lib/dnd'
 
 export type Swimlane = 'none' | 'epic' | 'assignee'
+
+/** Место вставки: ячейка колонки (в свимлейнах их несколько) и соседи задачи. */
+interface DropAt {
+  bodyKey: string
+  columnId: string
+  afterId: string | null
+  beforeId: string | null
+  /** Щель в отрисованном списке ячейки (0 — над первой карточкой) — где рисуем
+      плейсхолдер. Отдельно от afterId/beforeId: при клавиатурном переносе
+      карточка остаётся на месте, и позиции «между соседями» смещены на неё. */
+  slot: number
+}
+
+/** Клавиатурный перенос: выбранное стрелками место и исходное — чтобы «положил
+    туда же» не уходило на сервер. */
+interface KeyboardGrab {
+  taskId: string
+  title: string
+  columnId: string
+  index: number
+  /** Дорожка свимлейна, внутри которой идёт перенос (null — свимлейнов нет). */
+  laneId: string | null
+  from: { columnId: string; index: number }
+}
+
+/** Ключ ячейки: пара «дорожка + колонка» — в свимлейнах колонка встречается много раз. */
+function bodyKey(laneId: string | null, columnId: string): string {
+  return `${laneId ?? ''}|${columnId}`
+}
 
 export interface KanbanBoardProps {
   projectName: string
   board: Board | null
   loading: boolean
-  /** Текст ошибки загрузки/операции: баннер вместо доски (board=null) или над ней. */
+  /** Текст ошибки загрузки/операции: экран ошибки вместо доски (board=null) или баннер над ней. */
   error?: string | null
+  /** Повторить загрузку доски (кнопка «Повторить» на экране ошибки). */
+  onRetry?: () => void
   members: ProjectMember[]
   /** Логин текущего пользователя — для быстрого фильтра «Только мои». */
   currentUser?: string | null
@@ -34,6 +87,20 @@ export interface KanbanBoardProps {
   onOpenTaskChange?: (taskId: string | null) => void
   /** Стартовое значение селекта «Свимлейны». */
   defaultSwimlane?: Swimlane
+  /**
+   * Приходят ли с сервера давно завершённые задачи. Фильтрация серверная, так
+   * что переключатель — это запрос доски заново (onShowCompletedChange); без
+   * колбэка чекбокс живёт своим состоянием и ни на что не влияет (Storybook).
+   */
+  showCompleted?: boolean
+  onShowCompletedChange?: (show: boolean) => void
+  /**
+   * Показывать ли в списке бесед чаты завершённых задач. К самой доске
+   * отношения не имеет, но живёт рядом с «Показать завершённые»: это одна пара
+   * настроек «что делать с завершённым». Без колбэка галки нет.
+   */
+  showDoneTaskChats?: boolean
+  onShowDoneTaskChatsChange?: (show: boolean) => void
   onCreateColumn: (name: string) => void
   onUpdateColumn: (columnId: string, fields: { name?: string; wipLimit?: number | null }) => void
   onSetColumnHidden: (columnId: string, hidden: boolean) => void
@@ -45,6 +112,8 @@ export interface KanbanBoardProps {
   onDeleteTask: (taskId: string) => void
   /** Открыть связанный с задачей чат (кнопка на карточке и в модалке). */
   onOpenChat?: (taskId: string) => void
+  /** Создать связанный чат при первом открытии карточки, не уходя с доски. */
+  onEnsureChat?: (taskId: string) => void
   /** Сводки CI-ранов по taskId. */
   ciSummaries?: Record<string, CiRunSummary>
   /** Запустить CI-воркфлоу для задачи. */
@@ -73,7 +142,11 @@ function FilterDropdown({ label, active, children }: { label: string; active: nu
 
 export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const { loading, members } = props
+  const confirm = useConfirm()
   const [showHidden, setShowHidden] = useState(false)
+  const [internalShowCompleted, setInternalShowCompleted] = useState(false)
+  const showCompleted = props.showCompleted ?? internalShowCompleted
+  const setShowCompleted = props.onShowCompletedChange ?? setInternalShowCompleted
   const [search, setSearch] = useState('')
   const [assignees, setAssignees] = useState<ReadonlySet<string>>(new Set())
   const [types, setTypes] = useState<ReadonlySet<WorkItemType>>(new Set())
@@ -87,6 +160,14 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [collapsedLanes, setCollapsedLanes] = useState<ReadonlySet<string>>(new Set())
   const [dragTask, setDragTask] = useState<string | null>(null)
   const [dragColumn, setDragColumn] = useState<string | null>(null)
+  // Перенос: место вставки (общее для указателя и клавиатуры), высота
+  // приподнятой карточки (её занимает плейсхолдер), колонка-цель при переносе
+  // колонки, состояние клавиатурного переноса и текст для скринридера.
+  const [dropAt, setDropAt] = useState<DropAt | null>(null)
+  const [liftHeight, setLiftHeight] = useState(0)
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null)
+  const [grab, setGrab] = useState<KeyboardGrab | null>(null)
+  const [announce, setAnnounce] = useState('')
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [colMenu, setColMenu] = useState<string | null>(null)
@@ -102,6 +183,26 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const openTaskId = props.openTaskId !== undefined ? props.openTaskId : internalOpenTask
   const setOpenTaskId = props.onOpenTaskChange ?? setInternalOpenTask
   const composerRef = useRef<HTMLInputElement | null>(null)
+  const boardRef = useRef<HTMLDivElement | null>(null)
+  const drag = usePointerDrag()
+  // Esc клавиатурного переноса нужно поймать раньше Esc страницы-обёртки
+  // (useDialogStack слушает тот же window в фазе перехвата): иначе доска
+  // закрывалась бы вместо отмены переноса. Поэтому именно useLayoutEffect —
+  // layout-эффекты детей выполняются раньше родительских, и наш слушатель
+  // оказывается первым в очереди.
+  const grabRef = useRef<KeyboardGrab | null>(null)
+  grabRef.current = grab
+  const cancelGrabRef = useRef<() => void>(() => {})
+  useLayoutEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || !grabRef.current) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      cancelGrabRef.current()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
 
   const board = useMemo(() => normalizeBoard(props.board), [props.board])
   const allTasks = useMemo(() => board?.tasks ?? [], [board])
@@ -167,36 +268,215 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       })
       .sort((a, b) => a.position - b.position)
 
-  // Перенос колонки dragColumn перед target.
-  const reorderTo = (targetId: string): void => {
-    if (!board || !dragColumn || dragColumn === targetId) return
-    const ids = board.columns.map((c) => c.id).filter((id) => id !== dragColumn)
+  // Перенос колонки moving перед target.
+  const reorderTo = (targetId: string, moving: string): void => {
+    if (!board || moving === targetId) return
+    const ids = board.columns.map((c) => c.id).filter((id) => id !== moving)
     const at = ids.indexOf(targetId)
-    ids.splice(at < 0 ? ids.length : at, 0, dragColumn)
+    ids.splice(at < 0 ? ids.length : at, 0, moving)
     props.onReorderColumns(ids)
-    setDragColumn(null)
   }
 
-  // Зона вставки задачи между соседями after (сверху) и before (снизу).
-  const dropZone = (columnId: string, after: string | null, before: string | null, key: string): JSX.Element => (
-    <div
-      key={key}
-      className="kanban-dropzone"
-      onDragOver={(e) => {
-        if (dragTask) {
-          e.preventDefault()
-          e.currentTarget.classList.add('over')
-        }
-      }}
-      onDragLeave={(e) => e.currentTarget.classList.remove('over')}
-      onDrop={(e) => {
-        e.currentTarget.classList.remove('over')
-        const id = e.dataTransfer.getData('application/x-task') || dragTask
-        if (id) props.onMoveTask(id, columnId, after, before)
-        setDragTask(null)
-      }}
-    />
-  )
+  const columnName = (columnId: string): string =>
+    (board?.columns ?? []).find((c) => c.id === columnId)?.name ?? 'без названия'
+
+  const laneOf = (laneId: string | null): { kind: Swimlane; id: string } | undefined =>
+    swimlane === 'none' || laneId == null ? undefined : { kind: swimlane, id: laneId }
+
+  /** Задачи ячейки без переносимой: по ним считаются позиции и соседи. */
+  const neighbours = (taskId: string, columnId: string, laneId: string | null): Task[] =>
+    tasksOf(columnId, laneOf(laneId)).filter((t) => t.id !== taskId)
+
+  // Цель по точке указателя: сначала ячейка (колонка × дорожка), внутри неё —
+  // ближайшая по вертикали зона вставки. Указатель мог уйти и за пределы доски
+  // (палец у кромки экрана), поэтому при промахе берём ближайшую ячейку.
+  const findDropAt = (p: DragPoint): DropAt | null => {
+    const root = boardRef.current
+    if (!root) return null
+    const bodies = Array.from(root.querySelectorAll<HTMLElement>('[data-drop-body]'))
+    const body = bodies.find((b) => pointInRect(b.getBoundingClientRect(), p)) ?? nearestElement(bodies, p)
+    if (!body) return null
+    const zone = nearestByCenterY(Array.from(body.querySelectorAll<HTMLElement>('[data-dropzone]')), p.y)
+    if (!zone) return null
+    return {
+      bodyKey: body.dataset.dropBody ?? '',
+      columnId: body.dataset.dropColumn ?? '',
+      afterId: zone.dataset.after || null,
+      beforeId: zone.dataset.before || null,
+      slot: Number(zone.dataset.slot ?? 0)
+    }
+  }
+
+  const columnAt = (p: DragPoint): string | null => {
+    const root = boardRef.current
+    if (!root) return null
+    const cols = Array.from(root.querySelectorAll<HTMLElement>('[data-column-id]'))
+    const hit = cols.find((c) => pointInRect(c.getBoundingClientRect(), p)) ?? nearestElement(cols, p)
+    return hit?.dataset.columnId ?? null
+  }
+
+  // У края экрана доска доскролливается сама: иначе на телефоне до дальней
+  // колонки карточку не дотащить, а в длинной колонке — не доехать до конца.
+  const autoScrollTo = (p: DragPoint): void => {
+    const root = boardRef.current
+    if (!root) return
+    autoScroll(root, p, 'x')
+    const body = Array.from(root.querySelectorAll<HTMLElement>('[data-drop-body]')).find((b) =>
+      pointInRect(b.getBoundingClientRect(), p)
+    )
+    if (body) autoScroll(body, p, 'y')
+  }
+
+  /** Положить задачу в выбранное место. Обратно на своё — молча, без запроса. */
+  const applyDrop = (taskId: string, at: DropAt): void => {
+    if (at.afterId === taskId || at.beforeId === taskId) return
+    props.onMoveTask(taskId, at.columnId, at.afterId, at.beforeId)
+  }
+
+  const endPointerDrag = (): void => {
+    setDragTask(null)
+    setDropAt(null)
+  }
+
+  const grabTask = (e: ReactPointerEvent<HTMLElement>, card: HTMLElement, taskId: string, immediate: boolean): void => {
+    if (grab) return
+    drag.begin(e, {
+      lift: card,
+      immediate,
+      onStart: (p) => {
+        setLiftHeight(Math.round(card.getBoundingClientRect().height))
+        setDragTask(taskId)
+        setDropAt(findDropAt(p))
+      },
+      onMove: (p) => setDropAt(findDropAt(p)),
+      tick: autoScrollTo,
+      onDrop: (p) => {
+        const at = findDropAt(p)
+        endPointerDrag()
+        if (at) applyDrop(taskId, at)
+      },
+      onCancel: endPointerDrag
+    })
+  }
+
+  const grabColumn = (e: ReactPointerEvent<HTMLElement>, handle: HTMLElement, columnId: string, immediate: boolean): void => {
+    const section = handle.closest<HTMLElement>('[data-column-id]') ?? handle
+    drag.begin(e, {
+      lift: section,
+      immediate,
+      onStart: () => setDragColumn(columnId),
+      onMove: (p) => setDragOverColumn(columnAt(p)),
+      tick: (p) => {
+        if (boardRef.current) autoScroll(boardRef.current, p, 'x')
+      },
+      onDrop: (p) => {
+        const target = columnAt(p)
+        setDragColumn(null)
+        setDragOverColumn(null)
+        if (target) reorderTo(target, columnId)
+      },
+      onCancel: () => {
+        setDragColumn(null)
+        setDragOverColumn(null)
+      }
+    })
+  }
+
+  // ---- Перенос с клавиатуры -------------------------------------------------
+  // Мышью и пальцем место видно, клавиатурой — нет: поэтому каждый шаг и уходит
+  // в aria-live («Задача X, колонка Y, позиция 2 из 5»).
+  const dropOfGrab = (g: KeyboardGrab): DropAt => {
+    const list = neighbours(g.taskId, g.columnId, g.laneId)
+    // Взятая карточка из списка не исчезает (иначе с неё слетел бы фокус),
+    // поэтому щель для плейсхолдера считается со сдвигом на неё саму.
+    const own = tasksOf(g.columnId, laneOf(g.laneId)).findIndex((t) => t.id === g.taskId)
+    return {
+      bodyKey: bodyKey(g.laneId, g.columnId),
+      columnId: g.columnId,
+      afterId: list[g.index - 1]?.id ?? null,
+      beforeId: list[g.index]?.id ?? null,
+      slot: own >= 0 && g.index > own ? g.index + 1 : g.index
+    }
+  }
+
+  const stepGrab = (next: KeyboardGrab): void => {
+    setGrab(next)
+    setDropAt(dropOfGrab(next))
+    const total = neighbours(next.taskId, next.columnId, next.laneId).length + 1
+    setAnnounce(`Задача «${next.title}», колонка «${columnName(next.columnId)}», позиция ${next.index + 1} из ${total}.`)
+  }
+
+  const cancelGrab = (): void => {
+    const g = grabRef.current
+    setGrab(null)
+    setDropAt(null)
+    if (g) setAnnounce(`Перенос задачи «${g.title}» отменён.`)
+  }
+  cancelGrabRef.current = cancelGrab
+
+  const onCardKeys = (task: Task) => (e: ReactKeyboardEvent<HTMLElement>, card: HTMLElement): void => {
+    // Клавиши кнопок внутри карточки (⋯, «Чат», CI) остаются их собственными.
+    if (e.target !== e.currentTarget) return
+    const take = e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter'
+    if (!grab) {
+      if (!take) return
+      e.preventDefault()
+      const laneId =
+        swimlane === 'none' ? null : (card.closest<HTMLElement>('[data-drop-body]')?.dataset.dropBody?.split('|')[0] ?? '')
+      const index = Math.max(0, tasksOf(task.columnId, laneOf(laneId)).findIndex((t) => t.id === task.id))
+      const g: KeyboardGrab = {
+        taskId: task.id,
+        title: task.title,
+        columnId: task.columnId,
+        index,
+        laneId,
+        from: { columnId: task.columnId, index }
+      }
+      setLiftHeight(Math.round(card.getBoundingClientRect().height))
+      setGrab(g)
+      setDropAt(dropOfGrab(g))
+      const total = neighbours(task.id, g.columnId, laneId).length + 1
+      setAnnounce(
+        `Задача «${task.title}» взята. Колонка «${columnName(g.columnId)}», позиция ${index + 1} из ${total}. ` +
+          'Стрелки — выбрать место, Enter — положить, Esc — отмена.'
+      )
+      return
+    }
+    if (grab.taskId !== task.id) return
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault()
+      const at = columns.findIndex((c) => c.id === grab.columnId)
+      const next = columns[at + (e.key === 'ArrowRight' ? 1 : -1)]
+      if (!next) return
+      const index = Math.min(grab.index, neighbours(task.id, next.id, grab.laneId).length)
+      stepGrab({ ...grab, columnId: next.id, index })
+      return
+    }
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      const limit = neighbours(task.id, grab.columnId, grab.laneId).length
+      const index = Math.min(Math.max(grab.index + (e.key === 'ArrowDown' ? 1 : -1), 0), limit)
+      if (index === grab.index) return
+      stepGrab({ ...grab, index })
+      return
+    }
+    if (take) {
+      e.preventDefault()
+      const at = dropOfGrab(grab)
+      const sameSpot = grab.columnId === grab.from.columnId && grab.index === grab.from.index
+      const position = grab.index + 1
+      setGrab(null)
+      setDropAt(null)
+      if (sameSpot) {
+        setAnnounce(`Задача «${task.title}» осталась на месте.`)
+        return
+      }
+      applyDrop(task.id, at)
+      setAnnounce(`Задача «${task.title}» перенесена: колонка «${columnName(at.columnId)}», позиция ${position}.`)
+    }
+    // Esc сюда не доходит: его перехватывает оконный слушатель выше (иначе
+    // страница-обёртка закрылась бы раньше отмены).
+  }
 
   const moveTop = (taskId: string): void => {
     const t = allTasks.find((x) => x.id === taskId)
@@ -225,6 +505,24 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setTimeout(() => composerRef.current?.focus(), 0)
   }
 
+  // Своя команда экрана в общем реестре (lib/commands.ts): пока доска открыта,
+  // «Создать задачу» есть в палитре, а как только ушла — исчезает. Держать этот
+  // пункт в App нельзя: он знал бы про колонки доски.
+  useCommandSource(() => {
+    const target = columns[0]
+    if (!target) return []
+    return [
+      {
+        id: 'kanban.create-task',
+        title: 'Создать задачу',
+        section: 'action',
+        hint: `Проект «${props.projectName}» · ${target.name}`,
+        keywords: ['новая задача', 'добавить', 'new task'],
+        run: () => openComposer(target.id)
+      }
+    ]
+  })
+
   const cardOf = (t: Task): JSX.Element => (
     <TaskCard
       task={t}
@@ -240,10 +538,13 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       ciSummary={props.ciSummaries?.[t.id]}
       onStartCi={props.onStartCi}
       onOpenCiRun={props.onOpenCiRun}
-      onDragStart={setDragTask}
-
-      onDragEnd={() => setDragTask(null)}
+      onGrab={(e, card, immediate) => grabTask(e, card, t.id, immediate)}
+      onCardKeys={onCardKeys(t)}
+      onCardBlur={() => {
+        if (grab?.taskId === t.id) cancelGrab()
+      }}
       dragging={dragTask === t.id}
+      grabbed={grab?.taskId === t.id}
     />
   )
 
@@ -253,19 +554,24 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     const overWip = col.wipLimit != null && total > col.wipLimit
     return (
       <header
-        className={`jcol-head${overWip ? ' jcol-head--over' : ''}`}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData('application/x-column', col.id)
-          e.dataTransfer.effectAllowed = 'move'
-          setDragColumn(col.id)
+        className={`jcol-head${overWip ? ' jcol-head--over' : ''}${
+          dragColumn && dragColumn !== col.id && dragOverColumn === col.id ? ' jcol-head--drop' : ''
+        }${dragColumn === col.id ? ' jcol-head--lifted' : ''}`}
+        onPointerDown={(e) => {
+          if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return
+          grabColumn(e, e.currentTarget, col.id, false)
         }}
-        onDragEnd={() => setDragColumn(null)}
-        onDragOver={(e) => {
-          if (dragColumn) e.preventDefault()
-        }}
-        onDrop={() => reorderTo(col.id)}
       >
+        <span
+          className="jcol-grip"
+          aria-hidden="true"
+          onPointerDown={(e) => {
+            e.stopPropagation()
+            grabColumn(e, e.currentTarget, col.id, true)
+          }}
+        >
+          ⠿
+        </span>
         {renaming === col.id ? (
           <input
             className="ctitle-edit"
@@ -303,15 +609,16 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           </span>
         )}
         <span className="jcard-menuwrap">
-          <button
-            className="jcard-menubtn"
+          <IconButton
+            className="jcard-reveal"
+            size="sm"
             aria-label={`Меню колонки «${col.name}»`}
             title="Меню колонки"
             aria-expanded={colMenu === col.id}
             onClick={() => setColMenu((v) => (v === col.id ? null : col.id))}
           >
             ⋯
-          </button>
+          </IconButton>
           {colMenu === col.id && (
             <div className="jcard-menu">
               <button
@@ -364,7 +671,15 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                   className="jcard-menu-danger"
                   onClick={() => {
                     setColMenu(null)
-                    if (window.confirm(`Удалить колонку «${col.name}» со всеми задачами?`)) props.onDeleteColumn(col.id)
+                    // Необратимо и уносит задачи с собой — включаем ввод названия.
+                    void confirm({
+                      title: `Удалить колонку «${col.name}» со всеми задачами?`,
+                      variant: 'danger',
+                      confirmLabel: 'Удалить колонку',
+                      requireText: col.name
+                    }).then((ok) => {
+                      if (ok) props.onDeleteColumn(col.id)
+                    })
                   }}
                 >
                   Удалить
@@ -431,15 +746,52 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const columnBody = (col: KanbanColumn, lane?: { kind: Swimlane; id: string }): JSX.Element => {
     const tasks = tasksOf(col.id, lane)
     const overWip = col.wipLimit != null && allTasks.filter((t) => t.columnId === col.id).length > col.wipLimit
+    const key = bodyKey(lane ? lane.id : null, col.id)
+    // Зона вставки между соседями after (сверху) и before (снизу): по ней
+    // считается место указателя, из неё же берутся afterId/beforeId. Активная
+    // зона показывает плейсхолдер — карточку под пальцем видно отдельно.
+    const zone = (slot: number, after: string | null, before: string | null): JSX.Element => {
+      const active = dropAt != null && dropAt.bodyKey === key && dropAt.slot === slot
+      return (
+        <Fragment key={`zone-${slot}`}>
+          <div
+            className={`kanban-dropzone${active ? ' over' : ''}`}
+            data-dropzone=""
+            data-slot={slot}
+            data-after={after ?? ''}
+            data-before={before ?? ''}
+          />
+          {active && (
+            <div
+              className="jcard-placeholder"
+              data-testid="drop-placeholder"
+              aria-hidden="true"
+              {...(liftHeight > 0 ? { style: { height: liftHeight } } : {})}
+            />
+          )}
+        </Fragment>
+      )
+    }
     return (
-      <div className={`jcol-body${overWip ? ' jcol-body--over' : ''}`}>
-        {dropZone(col.id, null, tasks[0]?.id ?? null, `${lane?.id ?? ''}-${col.id}-top`)}
+      <div className={`jcol-body${overWip ? ' jcol-body--over' : ''}`} data-drop-body={key} data-drop-column={col.id}>
+        {zone(0, null, tasks[0]?.id ?? null)}
         {tasks.map((t, i) => (
           <div key={t.id}>
             {cardOf(t)}
-            {dropZone(col.id, t.id, tasks[i + 1]?.id ?? null, `${lane?.id ?? ''}-${col.id}-${t.id}`)}
+            {zone(i + 1, t.id, tasks[i + 1]?.id ?? null)}
           </div>
         ))}
+        {/* Пустая колонка объясняет, чем её наполнить. В свимлейнах подсказку не
+            повторяем в каждой ячейке — там пустых пересечений много по природе. */}
+        {tasks.length === 0 && !lane && (
+          <EmptyState
+            compact
+            className="jcol-empty"
+            icon="＋"
+            title={filtersActive ? 'Нет задач под фильтром' : 'Здесь пока пусто'}
+            description={filtersActive ? 'Сбросьте фильтры, чтобы увидеть остальные задачи.' : 'Перетащите карточку сюда или создайте задачу кнопкой ниже.'}
+          />
+        )}
       </div>
     )
   }
@@ -486,6 +838,31 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   const openTask = openTaskId ? allTasks.find((t) => t.id === openTaskId) : undefined
 
+  // Скелетон повторяет геометрию доски: колонки 272px, шапка, карточки 70px
+  // (высота минимальной .jcard — измерена в сториз UI/Skeleton).
+  // Иначе при подстановке данных вся доска прыгает.
+  const boardSkeleton = (
+    <div className="jboard-wrap" data-testid="kanban-skeleton" aria-busy="true">
+      <div className="jboard-filters">
+        <Skeleton variant="line" width={200} height={30} />
+        <Skeleton variant="line" width={120} height={30} />
+        <Skeleton variant="line" width={90} height={30} />
+      </div>
+      <div className="kanban-board jboard">
+        {[0, 1, 2].map((i) => (
+          <section className="jcol" key={i}>
+            <header className="jcol-head">
+              <Skeleton variant="line" width="55%" />
+            </header>
+            <div className="jcol-body jcol-body--skel">
+              <Skeleton variant="list" count={3 - (i % 2)} height={70} lines={2} itemClassName="jcard-skel" />
+            </div>
+          </section>
+        ))}
+      </div>
+    </div>
+  )
+
   const addColumnBox = (
     <div className="jcol jcol--add">
       <input
@@ -501,8 +878,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           }
         }}
       />
-      <button
-        className="login-submit"
+      <Button
+        variant="primary"
         onClick={() => {
           if (newColumn.trim()) {
             props.onCreateColumn(newColumn.trim())
@@ -512,18 +889,41 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         disabled={!newColumn.trim()}
       >
         Добавить
-      </button>
+      </Button>
     </div>
   )
 
+  // Единое правило: скелетон только пока доски нет; загруженная доска при
+  // повторном чтении остаётся на экране, а ошибка ложится баннером над ней.
+  const status: LoadStatus = loading ? 'loading' : props.error ? 'error' : board ? 'ready' : 'idle'
+  const view = loadView(status, board != null)
+
   return (
     <>
-      {loading && <p className="kanban-empty">Загрузка доски…</p>}
-      {!loading && props.error && (
-        <p className="kanban-error" role="alert">{props.error}</p>
+      {view.state === 'skeleton' && boardSkeleton}
+      {view.state === 'error' && (
+        <ErrorState
+          className="kanban-state"
+          message="Не удалось загрузить доску"
+          detail={props.error}
+          {...(props.onRetry ? { onRetry: props.onRetry } : {})}
+        />
       )}
-      {!loading && board && (
+      {view.state === 'data' && board && (
         <div className="jboard-wrap">
+          {/* Перенос с клавиатуры не видно фокусом — его проговаривает эта область. */}
+          <div className="vc-sr-only" role="status" aria-live="polite" data-testid="kanban-live">
+            {announce}
+          </div>
+          {view.staleError && (
+            <ErrorState
+              compact
+              className="jboard-error"
+              message="Последнее действие не сохранилось"
+              detail={props.error}
+              {...(props.onRetry ? { onRetry: props.onRetry } : {})}
+            />
+          )}
           <div className="jboard-filters" data-testid="board-filters">
             <input
               className="login-input jsearch"
@@ -618,24 +1018,62 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             <label className="kanban-showhidden">
               <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> скрытые
             </label>
+            {/* Завершённые прячет сервер (порог — в настройках проекта), поэтому
+                галка не фильтрует загруженное, а просит доску целиком. */}
+            <label className="kanban-showcompleted">
+              <input
+                type="checkbox"
+                checked={showCompleted}
+                onChange={(e) => setShowCompleted(e.target.checked)}
+              />{' '}
+              Показать завершённые
+            </label>
+            {/* Чаты завершённых задач уходят из сайдбара сразу по done (порог
+                дней тут не действует) — вернуть их в список можно отсюда и
+                иконкой-фильтром над списком бесед. */}
+            {props.onShowDoneTaskChatsChange && (
+              <label className="kanban-showcompleted">
+                <input
+                  type="checkbox"
+                  checked={props.showDoneTaskChats ?? false}
+                  onChange={(e) => props.onShowDoneTaskChatsChange?.(e.target.checked)}
+                />{' '}
+                Показывать чаты завершённых задач
+              </label>
+            )}
             {filtersActive && (
               <button className="jquick jquick--clear" onClick={resetFilters}>
                 Сбросить
               </button>
             )}
+            {view.refreshing && <RefreshIndicator label="Обновляем доску…" />}
           </div>
 
+          {/* Именно «колонок нет вообще»: при снятом чекбоксе «скрытые» видимых
+              колонок тоже нет, но подсказка про создание там была бы неправдой. */}
+          {board.columns.length === 0 && (
+            <EmptyState
+              className="kanban-state"
+              icon="🗂"
+              title="Колонок пока нет — создайте первую"
+              description="Колонка на доске — это статус задачи: «Бэклог», «В работе», «Готово»."
+            />
+          )}
+
           {swimlane === 'none' ? (
-            <div className="kanban-board jboard" data-testid="kanban-board">
+            <div className="kanban-board jboard" data-testid="kanban-board" ref={boardRef}>
               {columns.map((col) => (
                 <section
                   key={col.id}
-                  className={`jcol${col.hidden ? ' jcol--hidden' : ''}`}
+                  className={`jcol${col.hidden ? ' jcol--hidden' : ''}${
+                    dragColumn && dragColumn !== col.id && dragOverColumn === col.id ? ' jcol--drop' : ''
+                  }`}
                   data-testid="kanban-column"
-                  onDragOver={(e) => {
-                    if (dragColumn) e.preventDefault()
-                  }}
-                  onDrop={() => reorderTo(col.id)}
+                  data-column-id={col.id}
+                  /* Имя делает колонку регионом: скринридер объявляет «Колонка
+                     «В работе», 3 задачи» и умеет прыгать по ним. Без имени
+                     section для доступности — обычный div. */
+                  aria-label={columnRegionLabel(col, tasksOf(col.id).length)}
                 >
                   {columnHead(col)}
                   {columnBody(col)}
@@ -645,17 +1083,17 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               {addColumnBox}
             </div>
           ) : (
-            <div className="kanban-board jboard jboard--lanes" data-testid="kanban-board">
+            <div className="kanban-board jboard jboard--lanes" data-testid="kanban-board" ref={boardRef}>
               <div className="jlane-heads">
                 {columns.map((col) => (
                   <section
                     key={col.id}
-                    className={`jcol jcol--headonly${col.hidden ? ' jcol--hidden' : ''}`}
+                    className={`jcol jcol--headonly${col.hidden ? ' jcol--hidden' : ''}${
+                      dragColumn && dragColumn !== col.id && dragOverColumn === col.id ? ' jcol--drop' : ''
+                    }`}
                     data-testid="kanban-column"
-                    onDragOver={(e) => {
-                      if (dragColumn) e.preventDefault()
-                    }}
-                    onDrop={() => reorderTo(col.id)}
+                    data-column-id={col.id}
+                    aria-label={columnRegionLabel(col, tasksOf(col.id).length)}
                   >
                     {columnHead(col)}
                   </section>
@@ -699,6 +1137,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onDelete={props.onDeleteTask}
           onMoveToColumn={(taskId, columnId) => props.onMoveTask(taskId, columnId, null, null)}
           onOpenChat={props.onOpenChat}
+          onEnsureChat={props.onEnsureChat}
+          ciSummary={props.ciSummaries?.[openTask.id]}
+          onStartCi={props.onStartCi}
+          onOpenCiRun={props.onOpenCiRun}
 
           aiAssistPrompts={props.aiAssistPrompts}
           onAiAssistPromptsChange={props.onAiAssistPromptsChange}

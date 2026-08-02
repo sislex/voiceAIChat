@@ -10,6 +10,7 @@ import type {
   Message,
   ModifierPrompt,
   MessageRole,
+  MessageSearchResult,
   PermissionMode,
   SessionUser,
   SessionUsage,
@@ -22,7 +23,15 @@ import type {
   WhisperModelInfo
 } from './types'
 import type { ServerFileInfo, SystemCapabilities } from './protocol'
-import type { AdminUserInfo, UsageReport, UsageUnit } from './admin'
+import type {
+  AdminLlmEngine,
+  AdminLlmEngineHealth,
+  AdminLlmEngineInput,
+  LlmEngineOption,
+  AdminUserInfo,
+  UsageReport,
+  UsageUnit
+} from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
@@ -34,12 +43,13 @@ import type {
   ProjectDetail,
   ProjectSummary,
   Task,
+  TaskChatBadge,
+  TaskChatContext,
   TaskPriority,
   WorkItemDefaultSkills
 } from './projects'
 
-import type { FeatureRun, FeatureStatus, AgentTask, FeatureDeployment } from './features'
-import type { KbContextBundle, KbDocument, KbDocumentSummary, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
+import type { KbContextBundle, KbDocument, KbDocumentDraft, KbDocumentSummary, KbResearchRun, KbScope, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
 
 /** Статус локальной модели Whisper. */
 export interface SttStatus {
@@ -81,10 +91,17 @@ export interface UploadInfo {
 export interface IpcInvokeMap {
   'app:ping': { arg: void; result: string }
   'kb:status': { arg: void; result: KbStatus }
-  'kb:topics': { arg: void; result: KbDocumentSummary[] }
+  /** Оглавление доступных разделов; фильтр по разделу/проекту — необязательный. */
+  'kb:topics': { arg: { scope?: KbScope; projectId?: string | null } | void; result: KbDocumentSummary[] }
   'kb:search': { arg: KbSearchRequest; result: KbSearchResult[] }
   'kb:document': { arg: { id: string }; result: KbDocument | null }
   'kb:context': { arg: { query: string; budget?: number }; result: KbContextBundle }
+  /** Создать/переписать статью раздела «Настройки пользователя» или «Разработка проекта». */
+  'kb:saveDocument': { arg: KbDocumentDraft; result: KbDocument }
+  'kb:deleteDocument': { arg: { id: string }; result: void }
+  /** «Исследовать проект»: запустить сверку статей с кодом и получить состояние. */
+  'kb:research': { arg: { projectId: string }; result: KbResearchRun }
+  'kb:researchStatus': { arg: { projectId: string }; result: KbResearchRun | null }
   /**
    * Помощник промптов: по черновику запроса вернуть несколько переформулировок.
    * Одноразовый LLM-вызов, историю разговора не трогает.
@@ -93,14 +110,41 @@ export interface IpcInvokeMap {
     arg: { prompt: string; modifiers: ModifierPrompt[] }
     result: { variants: Array<{ id: string; text: string }> }
   }
-  'conversations:list': { arg: void; result: Conversation[] }
+  /**
+   * Список бесед. `includeCompleted` — вместе с чатами задач, лежащих в колонке
+   * «Готово»: по умолчанию сервер их не отдаёт (переключатель «Показывать чаты
+   * завершённых задач»).
+   */
+  'conversations:list': { arg: { includeCompleted?: boolean }; result: Conversation[] }
   'conversations:create': { arg: { title?: string }; result: Conversation }
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
-  /** Поиск разговоров по названию и содержимому сообщений (регистронезависимо). */
-  'conversations:search': { arg: { query: string }; result: Conversation[] }
+  /**
+   * Поиск разговоров по названию и содержимому сообщений (регистронезависимо).
+   * Состав тот же, что у `conversations:list`, включая `includeCompleted`.
+   */
+  'conversations:search': { arg: { query: string; includeCompleted?: boolean }; result: Conversation[] }
+  /**
+   * Полнотекстовый поиск по сообщениям (FTS5 на сервере). Пустой `query` —
+   * пустой результат. `projectId`: undefined — по всем беседам, null — только
+   * беседы без проекта. Постранично через `cursor` из прошлого ответа.
+   */
+  'messages:search': {
+    arg: {
+      query: string
+      projectId?: string | null
+      conversationId?: string
+      limit?: number
+      cursor?: string | null
+    }
+    result: MessageSearchResult
+  }
   'conversations:rename': { arg: { id: string; title: string }; result: void }
   /** Привязать/отвязать чат к проекту; сервер применяет настройки проекта. */
   'conversations:setProject': { arg: { id: string; projectId: string | null }; result: Conversation }
+  /** Контекст задачи для шапки связанного чата; null — чат не привязан к задаче. */
+  'conversations:taskContext': { arg: { id: string }; result: TaskChatContext | null }
+  /** Метки чатов задач для списка бесед: ключ, тип и последний ран. */
+  'conversations:taskChats': { arg: void; result: TaskChatBadge[] }
   /** Сменить статус жизненного цикла чата. */
   'conversations:setStatus': { arg: { id: string; status: ConversationStatus }; result: Conversation }
   'conversations:setExecTarget': {
@@ -109,6 +153,8 @@ export interface IpcInvokeMap {
       execTarget: string | null
       workdir?: string | null
       skillNames?: string[]
+      /** Исполнитель разговора; null — из общих настроек. undefined — не менять. */
+      llmEngineId?: string | null
       /** Движок разговора; null — из общих настроек. undefined — не менять. */
       llmProvider?: LlmProvider | null
       /** Модель разговора (действует вместе с llmProvider). undefined — не менять. */
@@ -125,6 +171,7 @@ export interface IpcInvokeMap {
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }
   'uploads:add': { arg: { name: string; dataBase64: string }; result: UploadInfo }
   'settings:get': { arg: void; result: Settings }
+  'llm:engines': { arg: void; result: LlmEngineOption[] }
   'settings:save': { arg: Settings; result: void }
   /** Возможности системы по ресурсам контейнера (блокировка STT/TTS при нехватке памяти). */
   'system:capabilities': { arg: void; result: SystemCapabilities }
@@ -190,6 +237,11 @@ export interface IpcInvokeMap {
   'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number }; result: UsageReport }
   'admin:conversations': { arg: { name: string }; result: Conversation[] }
   'admin:messages': { arg: { name: string; conversationId: string }; result: Message[] }
+  'admin:llmEngines': { arg: void; result: AdminLlmEngine[] }
+  'admin:createLlmEngine': { arg: AdminLlmEngineInput; result: AdminLlmEngine }
+  'admin:updateLlmEngine': { arg: { id: string; patch: AdminLlmEngineInput }; result: AdminLlmEngine }
+  'admin:deleteLlmEngine': { arg: { id: string }; result: void }
+  'admin:checkLlmEngineHealth': { arg: { id: string }; result: AdminLlmEngineHealth }
   // --- Проекты + канбан ---
   /** Проекты, где текущий пользователь — участник. */
   'projects:list': { arg: void; result: ProjectSummary[] }
@@ -217,6 +269,7 @@ export interface IpcInvokeMap {
       ciBranchTemplate?: string
       ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
       ciExecAuthRef?: string
+      doneRetentionDays?: number | null
     }
     result: ProjectDetail
   }
@@ -229,12 +282,12 @@ export interface IpcInvokeMap {
   'projects:linkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   'projects:unlinkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Задать папку проекта на конкретной машине (только владелец). */
+  'projects:setReposRoot': { arg: { id: string; agentId: string; reposRoot: string }; result: ProjectDetail }
   'projects:setMachinePath': { arg: { id: string; agentId: string; path: string }; result: ProjectDetail }
-  'projects:setFeatureReposRoot': { arg: { id: string; agentId: string; featureReposRoot: string }; result: ProjectDetail }
   /** Назначить машину проекта по умолчанию (только владелец). */
   'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
-  /** Снапшот доски (колонки + задачи). */
-  'board:get': { arg: { id: string }; result: Board }
+  /** Снапшот доски (колонки + задачи); includeCompleted — вместе со скрытыми завершёнными. */
+  'board:get': { arg: { id: string; includeCompleted?: boolean }; result: Board }
   'columns:create': { arg: { projectId: string; name: string }; result: KanbanColumn }
   'columns:rename': { arg: { projectId: string; columnId: string; name?: string; wipLimit?: number | null }; result: void }
   'columns:setHidden': { arg: { projectId: string; columnId: string; hidden: boolean }; result: void }
@@ -287,17 +340,6 @@ export interface IpcInvokeMap {
   'tasks:delete': { arg: { projectId: string; taskId: string }; result: void }
   /** Открыть (или создать) связанный с задачей чат текущего пользователя. */
   'tasks:openChat': { arg: { projectId: string; taskId: string }; result: Conversation }
-
-  'features:list': { arg: { projectId: string }; result: FeatureRun[] }
-  'features:createFromTask': { arg: { projectId: string; taskId: string; autoMerge?: boolean; autoDeployProduction?: boolean }; result: FeatureRun }
-  'features:createFromStory': { arg: { projectId: string; storyId: string; autoMerge?: boolean; autoDeployProduction?: boolean }; result: FeatureRun }
-  'features:get': { arg: { id: string }; result: FeatureRun | null }
-  'features:setAutomation': { arg: { id: string; autoMerge?: boolean; autoDeployProduction?: boolean }; result: FeatureRun }
-  'features:transition': { arg: { id: string; status: FeatureStatus; expectedVersion?: number }; result: FeatureRun }
-  'features:deploy': { arg: { id: string }; result: FeatureRun }
-  'features:deployments': { arg: { id: string }; result: FeatureDeployment[] }
-  'agentTasks:list': { arg: { featureId: string }; result: AgentTask[] }
-  'agentTasks:create': { arg: { featureId: string; title: string; description?: string; kind?: AgentTask['kind']; dependsOn?: string[] }; result: AgentTask }
 }
 
 export type IpcChannel = keyof IpcInvokeMap
@@ -498,7 +540,7 @@ export interface RendererAgentsBridge {
  */
 export interface RendererBoardBridge {
   /** Подписаться на доску проекта (сервер сразу шлёт снапшот). */
-  subscribe(projectId: string): void
+  subscribe(projectId: string, includeCompleted?: boolean): void
   /** Отписаться от текущей доски. */
   unsubscribe(): void
   /** Подписка на снапшоты доски. */
@@ -622,13 +664,20 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'kb:search',
   'kb:document',
   'kb:context',
+  'kb:saveDocument',
+  'kb:deleteDocument',
+  'kb:research',
+  'kb:researchStatus',
   'prompt:suggest',
   'conversations:list',
   'conversations:create',
   'conversations:get',
   'conversations:search',
+  'messages:search',
   'conversations:rename',
   'conversations:setProject',
+  'conversations:taskContext',
+  'conversations:taskChats',
   'conversations:setStatus',
   'conversations:setExecTarget',
   'conversations:delete',
@@ -669,6 +718,11 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:usage',
   'admin:conversations',
   'admin:messages',
+  'admin:llmEngines',
+  'admin:createLlmEngine',
+  'admin:updateLlmEngine',
+  'admin:deleteLlmEngine',
+  'admin:checkLlmEngineHealth',
   'projects:list',
   'projects:create',
   'projects:get',
@@ -679,7 +733,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:linkMachine',
   'projects:unlinkMachine',
   'projects:setMachinePath',
-  'projects:setFeatureReposRoot',
+  'projects:setReposRoot',
   'projects:setDefaultMachine',
   'board:get',
   'columns:create',
@@ -691,18 +745,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:update',
   'tasks:move',
   'tasks:delete',
-  'tasks:openChat',
-
-  'features:list',
-  'features:createFromTask',
-  'features:createFromStory',
-  'features:get',
-  'features:setAutomation',
-  'features:transition',
-  'features:deploy',
-  'features:deployments',
-  'agentTasks:list',
-  'agentTasks:create'
+  'tasks:openChat'
 ]
 
 /**

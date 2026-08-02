@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
@@ -96,6 +97,8 @@ describe('App — интеграция UI со стором и IPC', () => {
 
   it('отправка текста Enter создаёт сообщение и переводит в «Claude думает»', async () => {
     await renderApp()
+    // Композер открывается свёрнутым — до набора текста его надо развернуть.
+    await userEvent.click(screen.getByTestId('composer-expand'))
     const input = screen.getByLabelText('Поле ввода сообщения')
     await userEvent.type(input, 'Привет!{Enter}')
     expect(await screen.findByText('Claude думает', {}, { timeout: 10_000 })).toBeInTheDocument()
@@ -298,5 +301,44 @@ describe('App — мобильное меню', () => {
     expect(document.querySelector('.side--open')).not.toBeNull()
     await userEvent.click(screen.getByText('Настройки'))
     expect(document.querySelector('.side--open')).toBeNull()
+  })
+
+  it('смена маршрута закрывает сайдбар — иначе он висит поверх открытой страницы', async () => {
+    await renderApp()
+    try {
+      await userEvent.click(screen.getByLabelText('Меню разговоров'))
+      expect(document.querySelector('.side--open')).not.toBeNull()
+      // Переход не через пункт меню (так работает «Открыть задачу» из шапки
+      // связанного чата): раньше панель оставалась поверх карточки задачи.
+      window.location.hash = '#/kb'
+      await waitFor(() => expect(document.querySelector('.side--open')).toBeNull())
+    } finally {
+      window.location.hash = ''
+    }
+  })
+})
+
+describe('App — доступность', () => {
+  it('без нарушений axe: сайдбар, чат и композер', async () => {
+    await renderApp()
+    // Единственное место, где включено правило region: у целого приложения весь
+    // контент обязан лежать в ориентирах (сайдбар — complementary, чат — main),
+    // иначе скринридеру не по чему прыгать. В тестах отдельных экранов правило
+    // отключено — там рендерится фрагмент, у которого ориентиров нет по природе.
+    await expectNoViolations(document.body, { rules: { region: { enabled: true } } })
+    expectLabelledIconButtons()
+  })
+
+  it('ориентиры на месте: сайдбар и чат объявлены как области', async () => {
+    await renderApp()
+    expect(screen.getByRole('complementary')).toBeInTheDocument()
+    expect(screen.getByRole('main')).toBeInTheDocument()
+  })
+
+  it('без нарушений axe: открытые настройки', async () => {
+    await renderApp()
+    await openSettings()
+    await expectNoViolations()
+    expectLabelledIconButtons()
   })
 })

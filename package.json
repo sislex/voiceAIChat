@@ -6,6 +6,7 @@
   "//": "desktop и agent-tray НЕ в workspaces намеренно: у них свой node_modules с Electron — корневой npm install их не трогает.",
   "workspaces": [
     "packages/*",
+    "apps/llm-runner",
     "apps/server",
     "apps/web",
     "apps/agent"
@@ -19,7 +20,9 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
-    "verify": "npm run typecheck && npm run test && npm run build && npm run typecheck:desktop && npm run test:desktop && npm --prefix apps/desktop run build && npm run typecheck:agent-tray && npm run test:agent-tray",
+    "//storybook": "Смоук-сборка витрины: единственное, что ловит сломанную сториз — tsc её JSX проверяет, а рендер нет.",
+    "build:storybook": "npm run -w @voicechat/ui build-storybook",
+    "verify": "npm run typecheck && npm run test && npm run build && npm run build:storybook && npm run typecheck:desktop && npm run test:desktop && npm --prefix apps/desktop run build && npm run typecheck:agent-tray && npm run test:agent-tray",
     "typecheck:desktop": "npm --prefix apps/desktop run typecheck",
     "test:desktop": "npm --prefix apps/desktop run test",
     "typecheck:agent-tray": "npm --prefix apps/agent-tray run typecheck",

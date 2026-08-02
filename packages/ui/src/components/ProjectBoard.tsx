@@ -1,41 +1,26 @@
-// Страница «Доска проекта»: тонкая обёртка над изолированным KanbanBoard —
-// рамка страницы (ToolFrame), кнопка настроек и Esc-семантика «сначала
-// закрывается модалка задачи, потом страница». Сама доска ничего не знает про
-// приложение — все данные и колбэки идут пропсами насквозь.
+// Раздел «Канбан» страницы проекта: тонкая обёртка над изолированным
+// KanbanBoard. Держит открытую карточку задачи (в том числе приход по ссылке
+// «Открыть задачу» из связанного чата) и пробрасывает остальное насквозь — сама
+// доска ничего не знает про приложение.
+//
+// Рамку страницы и переключатель разделов рисует ProjectPage, поэтому своей
+// ToolFrame здесь нет: Esc над открытой карточкой закрывает карточку через общий
+// стек окон, а страница остаётся открытой.
 
-import { useState } from 'react'
-import { ToolFrame } from './ToolFrame'
+import { useEffect, useState } from 'react'
 import { KanbanBoard, type KanbanBoardProps } from './kanban'
 
 export interface ProjectBoardProps extends Omit<KanbanBoardProps, 'openTaskId' | 'onOpenTaskChange' | 'defaultSwimlane'> {
-  onOpenSettings?: () => void
-  onClose: () => void
+  /** Открыть карточку сразу при входе (переход «в задачу» из связанного чата). */
+  initialOpenTaskId?: string | null
 }
 
 export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
-  const { onOpenSettings, onClose, ...boardProps } = props
-  // Esc-хендлеры страницы и модалки оба висят на window (capture), stopPropagation
-  // соседей не гасит — поэтому страница сама закрывает модалку первой.
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
-  return (
-    <ToolFrame
-      title={props.projectName}
-      onClose={() => {
-        if (openTaskId) setOpenTaskId(null)
-        else onClose()
-      }}
-      testId="project-board"
-      variant="page"
-      className="kanban-frame"
-      actions={
-        onOpenSettings && (
-          <button className="renbtn kanban-settings" title="Настройки проекта" onClick={onOpenSettings}>
-            ⚙ Настройки
-          </button>
-        )
-      }
-    >
-      <KanbanBoard {...boardProps} openTaskId={openTaskId} onOpenTaskChange={setOpenTaskId} />
-    </ToolFrame>
-  )
+  const { initialOpenTaskId, ...boardProps } = props
+  const [openTaskId, setOpenTaskId] = useState<string | null>(initialOpenTaskId ?? null)
+  // Приход из чата: URL несёт задачу, её карточку открываем сразу.
+  useEffect(() => {
+    if (initialOpenTaskId) setOpenTaskId(initialOpenTaskId)
+  }, [initialOpenTaskId])
+  return <KanbanBoard {...boardProps} openTaskId={openTaskId} onOpenTaskChange={setOpenTaskId} />
 }

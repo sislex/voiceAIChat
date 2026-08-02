@@ -7,23 +7,41 @@
   --panel: #f2f1ec;
   --surface: #fff;
   --text: #1c1b18;
-  --text-dim: #8a877c;
+  /* Приглушённый текст обязан брать AA (4.5:1) на всех подложках, где он
+     встречается: --bg, --panel, --surface, --surface-hover и --surface-selected.
+     Самая тёмная из них — выбранная строка списка бесед, она и задаёт предел.
+     Прежнее #8a877c давало 2.7–3.6:1 — мета в сайдбаре читалась на грани.
+     Цифры считает styles/contrast.test.ts и показывает витрина Foundations. */
+  --text-dim: #656358;
   --border: #e3e1d9;
   --border-soft: #eeede7;
   --accent: #3d64c8;
-  --ci-neutral: #6b7280;
+  /* Лозенги статуса — текст 11px на своей подложке: тоже 4.5:1, поэтому серый и
+     оранжевый темнее «естественного» (было 4.05:1 и 3.71:1). */
+  --ci-neutral: #5f6673;
   --ci-neutral-bg: #ecebe6;
-  --ci-progress: #b06a00;
+  --ci-progress: #985a00;
   --ci-progress-bg: #fbeecb;
   --ci-success: #216e4e;
   --ci-success-bg: #d8efe2;
   --ci-removed: #ae2a19;
   --ci-removed-bg: #f7dcd7;
   --surface-warning: var(--ci-progress-bg);
+  --accent-fg: #fff;
+  --accent-soft: #eef1fb;
+  --danger: var(--ci-removed);
+  --danger-fg: #fff;
+  --surface-hover: #e9e7e0;
+  /* Выбранная строка списка (беседа в сайдбаре): темнее hover, поэтому вынесена
+     в токен — на ней проверяется контраст приглушённого текста. */
+  --surface-selected: #e2e0d7;
   --space-050: 4px;
   --space-100: 8px;
   --space-150: 12px;
   --radius-medium: 6px;
+  /* Скелетон загрузки: подложка «косточки» и блик, который по ней бежит. */
+  --skeleton-base: #e6e4dc;
+  --skeleton-shine: #f5f4ef;
 }
 [data-theme='dark'] {
   --bg: #191916;
@@ -42,6 +60,16 @@
   --ci-success-bg: #163326;
   --ci-removed: #e8897c;
   --ci-removed-bg: #3a1f1a;
+  /* Акцент и красный в тёмной теме светлые — подпись на них тёмная, иначе
+     кнопка «выцветает» и текст не читается. */
+  --accent-fg: #191916;
+  --accent-soft: #2b2f44;
+  --danger: var(--ci-removed);
+  --danger-fg: #191916;
+  --surface-hover: #2c2c25;
+  --surface-selected: #2e2d25;
+  --skeleton-base: #2e2e26;
+  --skeleton-shine: #3b3a31;
   color-scheme: dark;
 }
 
@@ -51,6 +79,13 @@
   height: 100vh;
   background: var(--bg);
   overflow: hidden;
+  /* Блок-контейнер для абсолютных потомков. Без него у любого
+     `position: absolute` без позиционированного предка (подсказки .vc-sr-only на
+     карточках доски) блок-контейнером становится страница: overflow: hidden их не
+     обрезает, и документ растягивается на всю высоту скрытого содержимого —
+     колонка доски скроллила html вместо себя. Окна уходят порталом в body, а
+     слой переноса .vc-draglayer фиксирован — им это правило безразлично. */
+  position: relative;
 }
 
 /* ---- Сайдбар ---- */
@@ -82,20 +117,6 @@
   display: inline-block;
   margin-right: 8px;
 }
-.newbtn {
-  border: 1px solid #d8d6cc;
-  background: var(--surface);
-  border-radius: 8px;
-  padding: 5px 10px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  color: var(--text);
-  font-family: inherit;
-}
-.newbtn:hover {
-  border-color: #b9b6a8;
-}
 .convolist {
   overflow-y: auto;
   min-height: 0;
@@ -110,19 +131,45 @@
   font-size: 13px;
 }
 .convo:hover {
-  background: #e9e7e0;
+  background: var(--surface-hover);
 }
 .convo.on {
-  background: #e2e0d7;
+  background: var(--surface-selected);
 }
+/* Название беседы — кнопка (с клавиатуры выбирается только так), поэтому
+   сбрасываем всё кнопочное: вид остаётся строкой списка. */
 .ctitle {
   font-weight: 700;
   margin: 0 0 3px 0;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 .cmeta {
   font-size: 11px;
   color: var(--text-dim);
   margin: 0;
+}
+/* Чат задачи в списке: тип, ключ и состояние последнего рана — та же
+   атрибутика, что на карточке доски, только в одну строку. */
+.ctask {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin: 0 0 3px 0;
+  font-size: 11px;
+}
+.ctask-key {
+  color: var(--text-dim);
+  font-weight: 600;
 }
 .cstatus {
   display: flex;
@@ -196,21 +243,6 @@
     transform: scale(0.7);
   }
 }
-.micbtn:disabled,
-.sendbtn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  background: #c2bfb2;
-}
-.msgloading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 40px 0;
-  color: var(--text-dim);
-  font-size: 13px;
-}
 .crow {
   display: flex;
   align-items: flex-start;
@@ -267,34 +299,17 @@
   gap: 2px;
   flex: none;
 }
-.delbtn,
-.renbtn {
+/* Правка и удаление разговора — .vc-btn ghost; в списке они спрятаны и
+   проявляются на строке под курсором (и по Tab, иначе с клавиатуры не найти). */
+.crow-actions .vc-btn {
   opacity: 0;
-  border: none;
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  padding: 2px 4px;
-  border-radius: 6px;
-  flex: none;
 }
-.convo:hover .delbtn,
-.convo:hover .renbtn {
+.convo:hover .crow-actions .vc-btn,
+.crow-actions .vc-btn:focus-visible {
   opacity: 1;
-}
-.delbtn:hover {
-  background: #d9d7ce;
-  color: #a33a3a;
-}
-.renbtn:hover {
-  background: #d9d7ce;
-  color: var(--text);
 }
 /* Кнопки-действия в шапках тулов (ToolFrame actions) видны всегда: hover-reveal
    через .convo относится только к строкам списка чатов, а не к шапкам страниц. */
-.util-head-btns .renbtn { opacity: 1; }
 
 .ctitle-edit {
   font-weight: 700;
@@ -316,46 +331,30 @@
   font-size: 12px;
   color: var(--text-dim);
 }
-.delyes,
-.delno {
-  border: none;
-  border-radius: 6px;
-  padding: 3px 8px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.delyes {
-  background: #f3c2c2;
-  color: #a33a3a;
-}
-.delno {
-  background: var(--border);
-  color: #5b594f;
-}
 .sidefoot {
   margin-top: auto;
   padding: 12px;
   border-top: 1px solid var(--border);
 }
-.footbtn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  border: none;
-  background: none;
-  padding: 9px 10px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  color: #55534a;
-  font-family: inherit;
+/* Ряд меню в подвале сайдбара: та же .vc-btn ghost, но во всю ширину и слева.
+   Селектор с .vc-btn — чтобы перебить саму .vc-btn (justify-content: center и
+   text-align: center), которая в файле ниже: при равной специфичности выигрывало
+   последнее правило, и пункты меню аккаунта разъезжались по центру. */
+.vc-btn.sidefoot-row {
+  justify-content: flex-start;
+  gap: var(--space-100);
+  padding: 9px var(--space-100);
   text-align: left;
 }
-.footbtn:hover {
-  background: #e9e7e0;
+/* Иконка пункта — слот постоянной ширины. Эмодзи (🤖, ⌨️) и svg-шестерёнка
+   рисуются разной ширины, и без слота подписи начинались с разного отступа —
+   колонка текста выглядела рваной даже при flex-start. */
+.vc-btn.sidefoot-row > .footico,
+.vc-btn.sidefoot-row > svg {
+  flex: 0 0 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ---- Основная колонка ---- */
@@ -505,18 +504,33 @@
   position: relative;
   display: inline-flex;
 }
-.exportbtn {
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: #55534a;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  padding: 5px 9px;
-  border-radius: 8px;
+/* Кнопка «Использование БЗ» в тулбаре чата: обёртка нужна надстрочному
+   счётчику обращений (он абсолютный, как бейдж уведомлений). */
+.kbusewrap {
+  position: relative;
+  display: inline-flex;
 }
-.exportbtn:hover {
-  border-color: #b9b6a8;
+.kbusebadge {
+  position: absolute;
+  top: -5px;
+  right: -6px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+.kbusebadge--live {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  background: var(--surface2);
+  color: var(--accent);
 }
 .exportmenu {
   position: absolute;
@@ -763,33 +777,15 @@
   align-items: center;
   gap: 8px;
 }
-.speakbtn {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  padding: 2px 4px;
-  border-radius: 6px;
+/* Мелкие действия под сообщением (копировать, озвучить, править, удалить) —
+   .vc-btn ghost. Приглушены, пока на них не наведёшь: глифы-эмодзи цветом не
+   управляются, поэтому тусклость даёт opacity, а не токен. */
+.mfoot .vc-btn--ghost {
   opacity: 0.55;
 }
-.speakbtn:hover {
+.mfoot .vc-btn--ghost:hover,
+.mfoot .vc-btn--ghost:focus-visible {
   opacity: 1;
-  background: #ece9e0;
-}
-.msgbtn {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  padding: 2px 4px;
-  border-radius: 6px;
-  opacity: 0.5;
-}
-.msgbtn:hover {
-  opacity: 1;
-  background: #ece9e0;
 }
 
 /* ---- Инфо об ответе модели (иконка ⓘ + тултип при наведении + модал) ---- */
@@ -852,9 +848,7 @@
 .metamore:hover {
   text-decoration: underline;
 }
-.modal.metamodal {
-  width: 640px;
-}
+/* Ширина окна — size="md" у Dialog; здесь только внутренняя раскладка. */
 .metamodal-body {
   padding: 6px 22px 22px;
   overflow-y: auto;
@@ -1085,16 +1079,6 @@
   font-size: 13px;
   font-weight: 600;
 }
-.modeldl {
-  border: none;
-  border-radius: 8px;
-  padding: 6px 14px;
-  background: #3d64c8;
-  color: #fff;
-  font-weight: 700;
-  cursor: pointer;
-  flex: none;
-}
 .modelprog {
   flex: none;
   color: #2f4a86;
@@ -1123,21 +1107,6 @@
 .vprog {
   color: #2f4a86;
   font-weight: 600;
-}
-.vdl {
-  border: none;
-  border-radius: 8px;
-  padding: 4px 12px;
-  background: #3d64c8;
-  color: #fff;
-  font-weight: 600;
-  cursor: pointer;
-  flex: none;
-}
-.vdel {
-  background: #fbeeea;
-  color: #c0392b;
-  border: 1px solid #e6c3ba;
 }
 .vrowr {
   display: inline-flex;
@@ -1191,6 +1160,57 @@
   align-items: center;
   gap: 12px;
 }
+/* Ручка «свернуть» — узкая полоска над композером, как у выдвижной панели. */
+.vhandle {
+  display: flex;
+  justify-content: center;
+  margin: -8px 0 -6px;
+}
+.vhandle-btn {
+  color: var(--text-dim);
+}
+/* Свёрнутый композер: строка с тем, что в нём осталось (черновик, вложения,
+   состояние хода), и кнопка остановки, если ход идёт. */
+.voicebar--collapsed {
+  padding-top: 8px;
+  padding-bottom: 10px;
+}
+.vcollapsed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.vcollapsed-peek {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+.vcollapsed-peek:hover {
+  background: var(--surface-hover);
+}
+.vcollapsed-chevron {
+  flex: none;
+  font-size: 15px;
+  line-height: 1;
+}
+.vcollapsed-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tin {
   flex: 1;
   border: 1px solid #dddbd1;
@@ -1209,24 +1229,12 @@
 .tin:focus {
   border-color: #9ba9d6;
 }
-.attachbtn {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 1px solid #dddbd1;
-  background: var(--surface);
-  cursor: pointer;
-  font-size: 18px;
-  flex-shrink: 0;
-  transition: transform 0.15s;
-}
-.attachbtn:hover {
-  transform: scale(1.06);
-}
-/* Помощник промптов: круглая кнопка-палочка и всплывающий список вариантов. */
-.wandbtn.active {
-  border-color: #9ba9d6;
-  background: #eef1fb;
+/* Помощник промптов: круглая кнопка-палочка и всплывающий список вариантов.
+   Пока панель раскрыта, кнопка подсвечена акцентом. */
+.composer-wand[aria-expanded='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .prompt-helper {
   position: absolute;
@@ -1244,6 +1252,12 @@
   box-shadow: 0 10px 34px rgba(0, 0, 0, 0.16);
   max-height: 340px;
   overflow-y: auto;
+}
+/* Список вариантов: role=listbox живёт на нём, а не на всей панели. */
+.prompt-helper-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .prompt-helper-head {
   display: flex;
@@ -1320,34 +1334,6 @@
 .attx:hover {
   color: #d5482f;
 }
-.micbtn {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  flex-shrink: 0;
-  transition: transform 0.15s;
-}
-.micbtn:hover {
-  transform: scale(1.06);
-}
-.stopbtn {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 1.5px solid #d5482f;
-  background: #fbeeea;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
 .wavewrap {
   flex: 1;
   display: flex;
@@ -1402,6 +1388,10 @@
 .speak .fw6 {
   font-weight: 600;
 }
+/* Приглушённая подпись статуса: токен, а не копия его значения инлайном. */
+.speak .speak-dim {
+  color: var(--text-dim);
+}
 .speak .fw7 {
   font-weight: 700;
 }
@@ -1420,7 +1410,13 @@
   animation: wave 0.7s ease-in-out infinite;
 }
 
-/* ---- Модалка настроек ---- */
+/* ---- Модальные окна ---- */
+/* Шкала слоёв (чтобы не пересекались): .side-backdrop 50 < мобильный сайдбар
+   .side 60 < панели тулов (.ovl, .util-embed--fs) 70 < .convsettings 90 <
+   .ci-console 1000 < окна .vc-dialog-overlay 1200 и выше. Раньше .ovl был на 50
+   и выдвижной сайдбар на телефоне закрывал собой всю карточку задачи.
+   Итоговый z-index окон и панелей выдаёт useDialogStack по глубине стека —
+   вложенное окно (подтверждение из карточки задачи) всегда выше родителя. */
 .ovl {
   position: fixed;
   inset: 0;
@@ -1428,18 +1424,75 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+  z-index: 70;
 }
-.modal {
+
+/* Единый примитив окна (components/ui/Dialog): раньше то же самое было пять раз —
+   .modal, .jmodal-frame, .metamodal, .pb-overlay/.pb-dialog и своя разметка
+   онбординга. Шапка окна — общие .mdhead/.mdh и IconButton, как у тулов. */
+.vc-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 27, 24, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  /* Появление — те же кадры, что у панелей тулов (ниже, «Анимации попапов»). */
+  animation: tf-fade 0.18s ease-out;
+}
+.vc-dialog {
+  animation: tf-pop 0.18s ease-out;
   background: var(--bg);
+  color: var(--text);
   border-radius: 16px;
-  width: 480px;
-  max-width: 90vw;
+  max-width: 94vw;
   max-height: 90vh; /* не вылезаем за экран */
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
   overflow: hidden;
   display: flex;
   flex-direction: column; /* шапка фиксирована, тело скроллится */
+}
+/* Окно фокусируемо (tabIndex=-1), но обводка на нём самом не нужна. */
+.vc-dialog:focus {
+  outline: none;
+}
+.vc-dialog--sm {
+  width: 480px;
+}
+.vc-dialog--md {
+  width: 640px;
+}
+.vc-dialog--lg {
+  width: 1120px;
+}
+.vc-dialog--full {
+  width: calc(100vw - 32px);
+  height: calc(100vh - 32px);
+}
+/* Телефон: окно на весь экран. Граница 720px совпадает с MOBILE_QUERY в
+   lib/mediaQuery.ts — класс ставит сам Dialog, правь вместе. Два класса в
+   селекторе — чтобы перебить размеры конкретных окон (.jmodal-frame). */
+.vc-dialog.vc-dialog--phone {
+  width: 100vw;
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+  box-shadow: none;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.vc-dialog-overlay--phone {
+  align-items: stretch;
+  justify-content: stretch;
+}
+.vc-dialog-foot {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--border-soft);
 }
 .mdhead {
   padding: 18px 22px;
@@ -1454,14 +1507,7 @@
   font-weight: 800;
   margin: 0;
 }
-.xbtn {
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-size: 18px;
-  color: var(--text-dim);
-  padding: 4px 8px;
-}
+
 .mdbody {
   padding: 10px 22px 22px 22px;
   display: flex;
@@ -1471,10 +1517,7 @@
   flex: 1;
 }
 
-/* ---- Настройки: меню слева + панель раздела справа ---- */
-.modal.settings {
-  width: 640px;
-}
+/* ---- Настройки: меню слева + панель раздела справа (ширина — size="md") ---- */
 .settbody {
   display: flex;
   min-height: 0;
@@ -1767,21 +1810,6 @@
   color: #c0392b;
   font-size: 13px;
 }
-.login-submit {
-  margin-top: 4px;
-  padding: 10px 14px;
-  border: none;
-  border-radius: 9px;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-}
-.login-submit:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
 .login-hint {
   margin: 0;
   text-align: center;
@@ -1805,20 +1833,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.logoutbtn {
-  flex: none;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-dim);
-  border-radius: 7px;
-  padding: 3px 9px;
-  font-size: 12px;
-  cursor: pointer;
-}
-.logoutbtn:hover {
-  background: var(--panel);
-  color: var(--text);
 }
 
 /* ---- Админ-страница пользователей ---- */
@@ -1966,27 +1980,15 @@
   outline: none;
   border-color: var(--accent);
 }
-.fsbtn {
-  flex: none;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-  border-radius: 7px;
-  padding: 4px 10px;
-  font-size: 12px;
-  cursor: pointer;
-}
-.fsbtn:hover:not(:disabled) {
-  background: var(--panel);
-}
-.fsbtn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
 .fserror {
   margin: 8px 16px 0;
-  color: #c0392b;
-  font-size: 13px;
+}
+.fsskel {
+  padding: 3px 8px;
+}
+.fsrefresh {
+  margin: 0;
+  padding: 6px 10px;
 }
 .fslist {
   overflow-y: auto;
@@ -2061,13 +2063,18 @@
 .util-embed--fs {
   position: fixed;
   inset: 12px;
-  z-index: 60;
+  z-index: 70;
   max-height: none;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.25);
 }
 .util-head-btns {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--space-050);
+}
+/* Кнопки-иконки в шапке (закрыть, на весь экран, действия экрана) крупнее
+   обычных: по ним попадают мышью на ходу и пальцем на телефоне. */
+.util-head-btns .vc-btn--icon {
+  font-size: 18px;
 }
 
 /* ---- Консоль машины ---- */
@@ -2097,7 +2104,7 @@
   color: #cfcdc2;
 }
 .conserr {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
   font-size: 12px;
   color: #e0796f;
 }
@@ -2218,22 +2225,21 @@
   white-space: nowrap;
 }
 /* Кнопка «Подробнее / Кратко» — компактная, с акцентным текстом. */
-.actbtn {
-  width: auto;
+.msgact-mode {
   font-size: 11px;
-  font-weight: 600;
   color: var(--accent);
-  opacity: 0.75;
 }
-.actbtn--stream {
-  display: inline-block;
-  margin-top: 8px;
+.mfoot .msgact-mode:hover:not(:disabled) {
+  color: var(--accent);
+}
+.msgact-mode--stream {
+  margin-top: var(--space-100);
 }
 /* Нижний дубль строки статуса в стрим-пузыре. */
 .msgact--bottom {
   margin-top: 8px;
 }
-.msgact--bottom .actbtn--stream {
+.msgact--bottom .msgact-mode--stream {
   margin-top: 0;
 }
 /* Пометка прерванного ответа (сервер перезапустился в середине хода). */
@@ -2245,14 +2251,12 @@
 }
 
 /* ---- Тёмная тема: точечные оверрайды поверхностей, не покрытых токенами ---- */
-[data-theme='dark'] .convo:hover,
-[data-theme='dark'] .footbtn:hover {
-  background: #262620;
+[data-theme='dark'] .convo:hover {
+  background: var(--surface);
 }
 [data-theme='dark'] .convo.on {
-  background: #2e2d25;
+  background: var(--surface-selected);
 }
-[data-theme='dark'] .newbtn,
 [data-theme='dark'] .prompt-helper {
   background: var(--surface);
   border-color: #3a3a3a;
@@ -2262,18 +2266,11 @@
   background: var(--bg);
   border-color: #3a3a3a;
 }
-[data-theme='dark'] .wandbtn.active {
-  background: #2b2f44;
-  border-color: #4a5378;
-}
-[data-theme='dark'] .tin,
-[data-theme='dark'] .attachbtn {
+[data-theme='dark'] .tin {
   border-color: var(--border);
 }
-[data-theme='dark'] .newbtn:hover,
 [data-theme='dark'] .searchinput:focus,
 [data-theme='dark'] .projectselect:focus,
-[data-theme='dark'] .exportbtn:hover,
 [data-theme='dark'] .ctitle-edit,
 [data-theme='dark'] .mtitle-edit {
   border-color: #4a4940;
@@ -2281,9 +2278,7 @@
 [data-theme='dark'] .tin:focus {
   border-color: var(--accent);
 }
-[data-theme='dark'] .badge,
-[data-theme='dark'] .exportbtn,
-[data-theme='dark'] .footbtn {
+[data-theme='dark'] .badge {
   color: var(--text-dim);
 }
 [data-theme='dark'] .me .bub {
@@ -2308,10 +2303,7 @@
   color: #e9e7dd;
 }
 
-/* ---- Онбординг ---- */
-.modal.onboarding {
-  max-width: 480px;
-}
+/* ---- Онбординг (ширина окна — size="sm" у Dialog) ---- */
 .ob-lead {
   color: var(--text-dim);
   font-size: 13.5px;
@@ -2352,17 +2344,6 @@
   margin-top: 18px;
   display: flex;
   justify-content: flex-end;
-}
-.ob-start {
-  border: none;
-  border-radius: 9px;
-  padding: 10px 18px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  background: var(--accent);
-  color: #fff;
-  font-family: inherit;
 }
 
 .turnmeta {
@@ -2481,12 +2462,6 @@
   width: 220px;
   border-right: 1px solid var(--border-soft);
   padding: 8px;
-}
-.cc-projects--full {
-  flex: 1;
-  width: auto;
-  border-right: none;
-  padding: 12px;
 }
 .cc-sessions {
   flex: none;
@@ -2650,8 +2625,21 @@
   .msg {
     max-width: 92%;
   }
+  /* Отступы ленты — её минимальная высота: колонка сжимает ленту первой, и на
+     коротком экране 26px сверху и снизу отнимались у последних сообщений. */
+  .scroll {
+    padding: 14px 0;
+  }
+  /* Экран ниже, чем на десктопе: шапке задачи достаётся меньше. */
+  .taskchat {
+    max-height: 40%;
+  }
   .voicebar {
     padding: 10px 12px 14px 12px;
+  }
+  .voicebar--collapsed {
+    padding-top: 8px;
+    padding-bottom: 10px;
   }
 }
 
@@ -2717,20 +2705,6 @@
   font-size: 12px;
   color: var(--text-dim);
 }
-.qsubmit {
-  border-radius: 8px;
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  background: #2f3b5c;
-  color: #fff;
-  border: 1px solid #2f3b5c;
-}
-.qsubmit:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
 
 /* Вопросы у прошлых сообщений — статичный список без формы. */
 .qstatic {
@@ -2746,26 +2720,35 @@
   color: var(--text-dim);
 }
 
-/* ==== Мобильные модалки: настройки и прочие — на весь экран ==== */
+/* ==== Мобильные панели тулов — на весь экран ====
+   Окна Dialog переключает сам компонент по MOBILE_QUERY (720px), см. .vc-dialog--phone. */
 @media (max-width: 768px) {
   .ovl {
     align-items: stretch;
     justify-content: stretch;
   }
-  .modal,
-  .modal.settings {
+  /* Модальные тулы ToolFrame (.ccobs — карточка задачи, наблюдатели, консоль) —
+     тоже во весь экран. Свои 94vw/88vh на телефоне давали панель в углу, а 88vh
+     (не dvh) уезжали под адресную строку браузера вместе с низом карточки. */
+  .ccobs,
+  .ccobs--fs {
     width: 100vw;
     max-width: 100vw;
     height: 100dvh;
     max-height: 100dvh;
     border-radius: 0;
     box-shadow: none;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Кнопка «на весь экран» (единственная с aria-pressed) — уже и так весь экран. */
+  .ccobs .util-head-btns .vc-btn[aria-pressed] {
+    display: none;
   }
   .mdhead {
     padding: 12px 14px;
   }
   /* Крестик закрытия — крупнее, удобнее попадать пальцем. */
-  .xbtn {
+  .util-head-btns .vc-btn--icon {
     font-size: 22px;
     padding: 8px 14px;
   }
@@ -2833,7 +2816,9 @@
 @media (prefers-reduced-motion: reduce) {
   .ovl--anim,
   .ccobs--anim,
-  .util-embed--fs {
+  .util-embed--fs,
+  .vc-dialog-overlay,
+  .vc-dialog {
     animation: none;
   }
   .ccobs--anim {
@@ -2889,12 +2874,6 @@
   padding: 14px 16px;
   gap: 12px;
 }
-.mst-empty {
-  color: var(--text-dim);
-  font-size: 14px;
-  padding: 24px 8px;
-  text-align: center;
-}
 .mst {
   width: 100%;
   border-collapse: collapse;
@@ -2928,6 +2907,14 @@
 }
 .mst-dim {
   color: var(--text-dim);
+}
+.mst-shell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 .mst-status {
   display: inline-flex;
@@ -3033,12 +3020,13 @@
 .convsettings { position: fixed; inset: 0; z-index: 90; display: grid; grid-template-rows: auto 1fr auto; background: var(--bg, #f6f7fb); color: var(--text, #20232b); }
 .convsettings-head { display: flex; gap: 16px; align-items: center; padding: 20px max(24px, calc((100vw - 900px) / 2)); border-bottom: 1px solid var(--line, #ddd); background: var(--panel, #fff); }
 .convsettings-head h1 { margin: 0; font-size: 24px; }.convsettings-head p,.convsettings-sectionhead p { margin: 4px 0 0; color: var(--muted, #737987); }
-.convsettings-back,.convsettings-open { border: 0; background: transparent; cursor: pointer; font-size: 22px; color: inherit; }.convsettings-open { padding: 6px 9px; border-radius: 8px; }.convsettings-open:hover { background: var(--hover, rgba(127,127,127,.12)); }
+.convsettings-back { font-size: 22px; }
+.convsettings-open { border: 0; background: transparent; cursor: pointer; font-size: 22px; color: inherit; }.convsettings-open { padding: 6px 9px; border-radius: 8px; }.convsettings-open:hover { background: var(--hover, rgba(127,127,127,.12)); }
 .convsettings-body { overflow: auto; padding: 24px max(24px, calc((100vw - 900px) / 2)); }.convsettings-card { padding: 22px; margin-bottom: 18px; border: 1px solid var(--line, #ddd); border-radius: 14px; background: var(--panel, #fff); }
 .convsettings-field { display: grid; gap: 7px; margin-bottom: 18px; font-weight: 600; }.convsettings-field:last-child { margin-bottom: 0; }.convsettings-field input,.convsettings-field select,.convsettings-add input { box-sizing: border-box; width: 100%; padding: 11px 12px; border: 1px solid var(--line, #ccd0d8); border-radius: 9px; background: var(--bg, #fff); color: inherit; font: inherit; }
-.convsettings-sectionhead { display: flex; justify-content: space-between; gap: 16px; align-items: start; }.convsettings-sectionhead h2,.convsettings-add h3 { margin: 0; }.convsettings-sectionhead button,.convsettings-add button,.convsettings-pickerbar button,.convsettings-footer button { padding: 9px 14px; border: 1px solid var(--line, #ccd0d8); border-radius: 8px; background: var(--panel, #fff); color: inherit; cursor: pointer; }
+.convsettings-sectionhead { display: flex; justify-content: space-between; gap: 16px; align-items: start; }.convsettings-sectionhead h2,.convsettings-add h3 { margin: 0; }
 .convsettings-path { margin-top: 16px; padding: 11px; border-radius: 8px; background: var(--bg, #f5f6fa); font-family: monospace; }.convsettings-picker { margin-top: 12px; border: 1px solid var(--line, #ddd); border-radius: 9px; overflow: hidden; }.convsettings-pickerbar { display: flex; gap: 8px; align-items: center; padding: 8px; border-bottom: 1px solid var(--line, #ddd); }.convsettings-pickerbar span { flex: 1; overflow: hidden; text-overflow: ellipsis; font-family: monospace; }.convsettings-dir { display: block; width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line, #eee); background: transparent; color: inherit; text-align: left; cursor: pointer; }
-.convsettings-skill { display: flex; gap: 12px; align-items: start; padding: 13px 0; border-bottom: 1px solid var(--line, #eee); }.convsettings-skill span { display: grid; gap: 4px; }.convsettings-skill small,.convsettings-muted { color: var(--muted, #737987); }.convsettings-skill code { font-size: 12px; }.convsettings-add { display: grid; grid-template-columns: 1fr 2fr 2fr auto; gap: 9px; margin-top: 20px; }.convsettings-add h3 { grid-column: 1 / -1; font-size: 15px; }.convsettings-error { color: #c43838; }.convsettings-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px max(24px, calc((100vw - 900px) / 2)); border-top: 1px solid var(--line, #ddd); background: var(--panel, #fff); }.convsettings-footer .primary { border-color: #5068d8; background: #5068d8; color: #fff; }
+.convsettings-skill { display: flex; gap: 12px; align-items: start; padding: 13px 0; border-bottom: 1px solid var(--line, #eee); }.convsettings-skill span { display: grid; gap: 4px; }.convsettings-skill small,.convsettings-muted { color: var(--muted, #737987); }.convsettings-skill code { font-size: 12px; }.convsettings-add { display: grid; grid-template-columns: 1fr 2fr 2fr auto; gap: 9px; margin-top: 20px; }.convsettings-add h3 { grid-column: 1 / -1; font-size: 15px; }.convsettings-error { color: #c43838; }.convsettings-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px max(24px, calc((100vw - 900px) / 2)); border-top: 1px solid var(--line, #ddd); background: var(--panel, #fff); }
 @media (max-width: 700px) { .convsettings-head,.convsettings-body,.convsettings-footer { padding-left: 14px; padding-right: 14px; }.convsettings-add { grid-template-columns: 1fr; }.convsettings-add h3 { grid-column: auto; } }
 
 /* ---- Картинка от модели в сообщении (ToolFrame + просмотрщик) ---- */
@@ -3223,7 +3211,7 @@
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px;
 }
-.agcmd-os .vdl {
+.agcmd-os .vc-btn {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -3283,27 +3271,6 @@
   gap: 4px;
   margin-top: 4px;
 }
-.mst-btn {
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--surface);
-  color: inherit;
-  cursor: pointer;
-  font-size: 11px;
-}
-.mst-btn:hover:not(:disabled) {
-  background: var(--border-soft);
-}
-.mst-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-.mst-btn.primary {
-  border-color: #5068d8;
-  background: #5068d8;
-  color: #fff;
-}
 .mst-add {
   display: flex;
   flex-wrap: wrap;
@@ -3349,17 +3316,13 @@
   font-weight: 700;
 }
 .execute-plan {
-  border: 1px solid #8aa994;
-  border-radius: 7px;
-  padding: 4px 9px;
-  background: #e9f8ef;
-  color: #1e6a45;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 800;
-  cursor: pointer;
+  border-color: var(--ci-success);
+  background: var(--ci-success-bg);
+  color: var(--ci-success);
 }
-.execute-plan:hover { background: #d9f1e3; }
+.execute-plan:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
 
 .vbottom {
   display: flex;
@@ -3421,8 +3384,8 @@
 .proj-danger { border-top: 1px solid rgba(128,128,128,0.2); padding-top: 10px; }
 .proj-delete { color: #f85149; }
 
-/* ===== Jira design-system alignment (страница настроек проекта) ===== */
-.proj-detail, .kanban-frame {
+/* ===== Jira design-system alignment (страница проекта) ===== */
+.projpage, .proj-detail {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
 }
 /* Подписи полей — в стиле Atlassian: капс, разрядка, серый */
@@ -3437,12 +3400,20 @@
 [data-theme='dark'] .proj-default-skills .proj-chip { background: #133527; color: #7ee2b8; }
 
 
+/* Страница проекта: вкладки разделов в шапке — тот же вид, что у переключателя
+   списка в сайдбаре (.sideswitch), только без его отступов (здесь их даёт
+   .mdhead). Селектор с .mdhead — чтобы перебить .sideswitch, который в файле
+   ниже. На узком экране шапка переносит вкладки на вторую строку. */
+.mdhead .projtabs { padding: 0; }
+.projpage .mdhead { gap: 12px; flex-wrap: wrap; }
+/* Пустота и ожидание в области контента страницы проекта — по центру. */
+.toolpage > .proj-page-state { flex: 1; min-height: 0; overflow-y: auto; display: flex;
+  align-items: center; justify-content: center; padding: 22px; }
+
 /* Доска */
-.kanban-frame .ccobs-body, .kanban-frame { display: block; }
-.kanban-empty { padding: 24px; opacity: 0.6; }
 .kanban-showhidden { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; opacity: 0.8; }
-.kanban-settings { font-size: 13px; padding: 2px 8px; }
-.kanban-board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 12px; min-height: 60vh; }
+.kanban-showcompleted { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; opacity: 0.8; white-space: nowrap; }
+.kanban-board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 12px; }
 .kanban-col { flex: 0 0 260px; display: flex; flex-direction: column; gap: 6px;
   background: rgba(128,128,128,0.08); border-radius: 8px; padding: 8px; max-height: 78vh; }
 .kanban-col--hidden { opacity: 0.6; outline: 1px dashed rgba(128,128,128,0.4); }
@@ -3488,8 +3459,21 @@
 .kbresult { display:flex; width:100%; flex-direction:column; gap:4px; text-align:left; padding:11px; border:1px solid transparent; border-radius:10px; background:transparent; color:var(--text); cursor:pointer; }
 .kbresult:hover, .kbresult.active { border-color:var(--line); background:var(--surface2); }
 .kbresult-title { font-weight:700; }.kbresult-heading,.kbresult-why { color:var(--accent); font-size:12px; }.kbresult-text { color:var(--muted); font-size:13px; line-height:1.35; }
-.kbdoc { overflow:auto; padding:20px 26px 50px; }.kbdoc header { border-bottom:1px solid var(--line); margin-bottom:18px; }.kbdoc header h3 { margin:0 0 5px; }.kbdoc header p,.kbempty,.kbwelcome { color:var(--muted); }
-.kbfiles { display:flex; flex-direction:column; gap:6px; margin-top:24px; padding:14px; border:1px solid var(--line); border-radius:10px; }.kbfiles code { overflow-wrap:anywhere; }.kberror { color:var(--danger,#c44); }
+.kbdoc { overflow:auto; padding:20px 26px 50px; }.kbdoc header { border-bottom:1px solid var(--line); margin-bottom:18px; }.kbdoc header h3 { margin:0 0 5px; }.kbdoc header p { color:var(--muted); }
+.kbfiles { display:flex; flex-direction:column; gap:6px; margin-top:24px; padding:14px; border:1px solid var(--line); border-radius:10px; }.kbfiles code { overflow-wrap:anywhere; }.kberror { margin-bottom:16px; }
+/* Разделы БЗ: «Использование» / «Настройки пользователя» / «Разработка проекта». */
+.kbscopes { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); }
+.kbscopes button { border:1px solid var(--line); background:transparent; color:var(--muted); padding:6px 12px; border-radius:999px; cursor:pointer; font-family:inherit; }
+.kbscopes button.active { background:var(--surface2); color:var(--text); font-weight:600; }
+.kbscopes select { padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font-family:inherit; }
+.kbresearch { margin:0; padding:8px 16px; color:var(--muted); font-size:13px; border-bottom:1px solid var(--line); }
+.kbdoc-actions { display:flex; gap:8px; padding:0 0 10px; }
+.kbeditor { display:flex; flex-direction:column; gap:10px; }
+.kbeditor input, .kbeditor textarea { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--text); font-family:inherit; }
+.kbeditor textarea { resize:vertical; min-height:220px; font-family:var(--mono, monospace); font-size:13px; }
+.kbeditor-actions { display:flex; gap:8px; }
+.kbskel { padding:4px; }
+.kbrefresh { margin:0; padding:6px 8px; }
 @media (max-width: 760px) { .kbtool { width:100vw; height:100vh; }.kbbar { align-items:stretch; flex-direction:column; }.kbstatus { white-space:normal; }.kblayout { grid-template-columns:1fr; overflow:auto; }.kbfilters { display:flex; gap:4px; border-right:0; border-bottom:1px solid var(--line); overflow:auto; }.kbfilters button { width:auto; white-space:nowrap; }.kbresults { border-right:0; border-bottom:1px solid var(--line); max-height:38vh; }.kbdoc { min-height:45vh; padding:18px; } }
 
 /* ---- Сворачивание сайдбара + компактный футер ---- */
@@ -3510,23 +3494,12 @@
 
 /* Инструменты — ряд иконок вместо столбца кнопок. */
 .foottools { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
-.footico-btn {
+/* Компактный ряд иконок-инструментов: делят ширину подвала между собой. */
+.foottools-item {
   flex: 1 1 auto;
   min-width: 42px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: none;
-  padding: 8px;
-  border-radius: 8px;
   font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
-  color: #55534a;
-  font-family: inherit;
 }
-.footico-btn:hover { background: #e9e7e0; }
 
 /* Меню аккаунта. */
 .acct { position: relative; }
@@ -3556,11 +3529,13 @@
   background: var(--border);
 }
 
+/* Список селекторов остался без блока объявлений, когда из файла ушёл
+   .footico-btn (переезд кнопок на Button): правило становилось невалидным и
+   утягивало за собой следующий @media — стили свёрнутого сайдбара просто не
+   применялись. Фон берём токеном, а не прошитым #262620. */
 [data-theme='dark'] .cstatus-select:hover,
 [data-theme='dark'] .cstatus-select:focus,
-[data-theme='dark'] .side-collapse:hover,
-[data-theme='dark'] .footico-btn:hover { background: #262620; }
-[data-theme='dark'] .footico-btn { color: var(--text-dim); }
+[data-theme='dark'] .side-collapse:hover { background: var(--surface-hover); }
 
 /* Свёрнутый сайдбар — только десктоп; на мобильном действует выдвижной drawer. */
 @media (min-width: 769px) {
@@ -3594,7 +3569,9 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  height: 100vh;
+  /* Не 100vh: на телефоне .app считает высоту в dvh (адресная строка), и рамка
+     оказалась бы выше своей клетки — низ колонки уезжал под край экрана. */
+  height: 100%;
   overflow: hidden;
   background: var(--bg);
 }
@@ -3605,16 +3582,26 @@
 .toolpage > .kblayout { flex: 1; min-height: 0; }
 .toolpage > .proj-detail { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 22px; }
 .toolpage > .kanban-board { flex: 1; min-height: 0; }
-.toolpage > .kanban-empty { padding: 24px; }
-.toolpage .cc-projects--full { max-width: 720px; }
+
+/* ===== Перетаскивание на pointer-событиях (lib/dnd.ts) ================== */
+/* Приподнятая копия перетаскиваемого элемента: слой поверх всего, сквозной для
+   указателя (иначе она сама попадала бы в хит-тест вместо колонки под ней). */
+.vc-draglayer { position: fixed; inset: 0; z-index: 900; pointer-events: none; overflow: hidden; }
+.vc-drag-ghost { position: absolute; left: 0; top: 0; margin: 0; max-height: 60vh; overflow: hidden;
+  opacity: 0.95; box-shadow: 0 12px 28px rgba(9, 30, 66, 0.35); will-change: transform; }
+[data-theme='dark'] .vc-drag-ghost { box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6); }
+/* Пока несём — курсор «схвачено» на всей странице, и ничего не выделяется. */
+body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+
+/* Подпись только для скринридера: подсказка на карточке и область объявлений. */
+.vc-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 /* ===== Канбан в стиле Jira ============================================== */
 .toolpage > .jboard-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.kanban-error { margin: 12px; padding: 10px 14px; border-radius: 6px; background: #ffd2cc; color: #ae2a19; font-size: 13px; }
-[data-theme='dark'] .kanban-error { background: #5d1f1a; color: #ff9c8f; }
 
 /* Панель фильтров */
-.jboard-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px 4px; }
+.jboard-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px 4px; flex: none; }
 .jboard-filters .jsearch { width: 200px; padding: 5px 10px; font-size: 13px; }
 .javatars { display: inline-flex; align-items: center; }
 .javatar-btn { border: 2px solid transparent; background: none; padding: 0; border-radius: 50%; cursor: pointer; margin-left: -4px; transition: transform 0.1s; }
@@ -3646,16 +3633,21 @@
 /* Доска и колонки */
 .jboard { display: flex; gap: 8px; align-items: flex-start; overflow: auto; padding: 8px 12px 16px; flex: 1; min-height: 0; }
 .jboard--lanes { flex-direction: column; align-items: stretch; }
-.jcol { flex: 0 0 272px; width: 272px; display: flex; flex-direction: column; background: #f7f8f9; border-radius: 8px; max-height: 100%; }
+.jcol { flex: 0 0 272px; width: 272px; display: flex; flex-direction: column; background: #f7f8f9; border-radius: 8px;
+  max-height: 100%; min-height: 0; }
 [data-theme='dark'] .jcol { background: #161b22; }
 .jcol--hidden { opacity: 0.55; outline: 1px dashed rgba(128, 128, 128, 0.4); }
 .jcol--add { background: none; gap: 6px; padding: 4px; }
 .jcol--headonly { max-height: none; }
 .jcol--incell { background: #f7f8f9; border-radius: 8px; }
 [data-theme='dark'] .jcol--incell { background: #161b22; }
-.jcol-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 10px 10px 6px; cursor: grab; }
+.jcol-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 10px 10px 6px; cursor: grab; flex: none; }
 .jcol-head--over { background: #ffedeb; border-radius: 8px 8px 0 0; }
 [data-theme='dark'] .jcol-head--over { background: #42221f; }
+/* Перенос колонки: поднятая колонка гаснет, колонка-цель обведена. */
+.jcol--drop { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.jcol-head--drop { background: var(--accent-soft); border-radius: 8px 8px 0 0; }
+.jcol-head--lifted { opacity: 0.5; }
 .jcol-name { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #6b778c; display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 [data-theme='dark'] .jcol-name { color: #8b949e; }
 .jcol-count { font-weight: 400; opacity: 0.8; text-transform: none; }
@@ -3668,11 +3660,28 @@
 .jcol-body--over { background: linear-gradient(rgba(255, 86, 48, 0.06), rgba(255, 86, 48, 0.06)); }
 
 /* Карточка */
-.jcard { background: var(--card-bg, #fff); border-radius: 3px; box-shadow: 0 1px 2px rgba(9, 30, 66, 0.25); padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
+/* position: relative — подсказка .vc-sr-only внутри карточки абсолютная, и её
+   блок-контейнером должна быть карточка, а не страница (см. .app). */
+.jcard { background: var(--card-bg, #fff); border-radius: 3px; box-shadow: 0 1px 2px rgba(9, 30, 66, 0.25); padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow-y: auto; position: relative; }
 [data-theme='dark'] .jcard { background: #1c2128; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
 .jcard:hover { background: #f4f5f7; }
 [data-theme='dark'] .jcard:hover { background: #22272e; }
-.jcard.dragging { opacity: 0.4; transform: rotate(2deg); }
+/* Карточку несут указателем: на её месте стоит плейсхолдер, а сама она уехала
+   в копию под пальцем — иначе колонка «росла» бы на высоту карточки. */
+.jcard.dragging { display: none; }
+/* Взята с клавиатуры: карточка остаётся на месте (иначе потеряется фокус) и
+   подсвечивается, а плейсхолдер показывает выбранное стрелками место. */
+.jcard--grabbed { outline: 2px solid var(--accent); outline-offset: 1px; box-shadow: 0 6px 14px rgba(9, 30, 66, 0.28); }
+.jcard:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Ручка захвата — единственное место с touch-action: none: на всей карточке он
+   отнял бы у пальца скролл колонки. Карточку целиком берут удержанием. */
+.jcard-grip, .jcol-grip { flex: 0 0 auto; align-self: flex-start; touch-action: none; cursor: grab;
+  color: var(--text-dim); font-size: 13px; line-height: 1.2; user-select: none; }
+.jcard-grip { opacity: 0; }
+.jcard:hover .jcard-grip, .jcard:focus-within .jcard-grip, .jcard--grabbed .jcard-grip { opacity: 1; }
+/* Плейсхолдер места вставки: ровно та высота, что была у карточки. */
+.jcard-placeholder { min-height: 44px; margin: 2px 0; border: 2px dashed var(--accent); border-radius: 4px;
+  background: var(--accent-soft); }
 .jcard--flagged { background: #fffae6; }
 .jcard--flagged:hover { background: #fff7d6; }
 [data-theme='dark'] .jcard--flagged { background: #332e1b; }
@@ -3680,10 +3689,9 @@
 .jcard-top { display: flex; align-items: flex-start; gap: 4px; }
 .jcard-title { flex: 1; font-size: 14px; line-height: 1.35; word-break: break-word; }
 .jcard-menuwrap { position: relative; flex: 0 0 auto; }
-.jcard-menubtn { border: none; background: none; cursor: pointer; border-radius: 4px; padding: 0 6px; font-size: 14px; line-height: 20px; color: inherit; opacity: 0; }
-.jcard:hover .jcard-menubtn, .jcard-menubtn[aria-expanded='true'], .jcol-head .jcard-menubtn { opacity: 0.75; }
-.jcard-menubtn:hover { background: rgba(9, 30, 66, 0.13); opacity: 1; }
-[data-theme='dark'] .jcard-menubtn:hover { background: rgba(255, 255, 255, 0.12); }
+/* ⋯-меню карточки и колонки: проявляется по ховеру карточки, вид — .vc-btn ghost. */
+.jcard-reveal { opacity: 0; }
+.jcard:hover .jcard-reveal, .jcard-reveal[aria-expanded='true'], .jcol-head .jcard-reveal { opacity: 1; }
 .jcard-menu { position: absolute; top: 100%; right: 0; z-index: 50; min-width: 170px; background: var(--card-bg, #fff); border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 6px; box-shadow: 0 8px 16px rgba(9, 30, 66, 0.25); padding: 4px; display: flex; flex-direction: column; }
 [data-theme='dark'] .jcard-menu { background: #1c2128; }
 .jcard-menu > button { border: none; background: none; color: inherit; text-align: left; font-size: 13px; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
@@ -3730,19 +3738,19 @@
 .jmodal-skills .jcard-skill { font-weight: 500; }
 
 /* Кнопка перехода в связанный чат на карточке */
-.jcard-chat { display: inline-flex; align-items: center; gap: var(--space-050); border: none;
-  background: transparent; color: var(--accent); cursor: pointer; padding: 0 var(--space-050);
-  font: inherit; font-size: 11px; font-weight: 600; line-height: 18px; border-radius: var(--space-050); }
-.jcard-chat:hover, .jcard-chat:focus-visible { background: var(--border-soft); }
-.jcard-chat--linked { color: var(--accent); }
-.jmodal-chat-btn { color: var(--accent); font-weight: 600; }
+/* Кнопка чата на карточке — .vc-btn ghost, здесь только плотность строки подвала
+   и акцентный цвет (в подвале карточки 13px были бы великоваты). */
+.jcard-chat { color: var(--accent); padding: 0 var(--space-050); font-size: 11px; line-height: 18px; }
+.jcard-chat:hover:not(:disabled) { color: var(--accent); }
+.jmodal-chat-action { color: var(--accent); }
+.jmodal-chat-action:hover:not(:disabled) { color: var(--accent); }
 
 /* Композер и зоны вставки */
 
-.jcompose-open { border: none; background: none; color: #6b778c; text-align: left; font-size: 13px; padding: 8px 10px; border-radius: 0 0 8px 8px; cursor: pointer; }
+.jcompose-open { border: none; background: none; color: #6b778c; text-align: left; font-size: 13px; padding: 8px 10px; border-radius: 0 0 8px 8px; cursor: pointer; flex: none; }
 .jcompose-open:hover { background: rgba(9, 30, 66, 0.08); color: inherit; }
 [data-theme='dark'] .jcompose-open:hover { background: rgba(255, 255, 255, 0.08); }
-.jcompose { display: flex; flex-direction: column; gap: 4px; padding: 4px 6px 8px; }
+.jcompose { display: flex; flex-direction: column; gap: 4px; padding: 4px 6px 8px; flex: none; }
 .jcompose-row { display: flex; gap: 4px; }
 .jcompose-row .sel { flex: 1; min-width: 0; }
 .kanban-dropzone { height: 5px; border-radius: 3px; margin: 1px 0; flex: 0 0 auto; }
@@ -3759,9 +3767,21 @@
 .jlane-cols .jcol--incell { flex: 0 0 272px; width: 272px; min-height: 40px; }
 
 /* Модалка задачи */
-.jmodal-frame .ccobs-body { overflow-y: auto; }
-.jmodal { display: flex; gap: 24px; padding: 16px 20px; align-items: flex-start; }
-.jmodal-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+/* Карточка крупнее обычного окна и фиксированной высоты: колонки скроллятся
+   каждая своя, поэтому у .jmodal overflow: hidden. Без min-height: 0 и
+   align-items: stretch колонки растут по контенту и высокая карточка обрезается.
+   Размеры перебивают .vc-dialog--lg — правило ниже него в файле. */
+.jmodal-frame { width: 1040px; height: 88vh; }
+.jmodal-frame .jmodal { flex: 1; min-height: 0; overflow: hidden; }
+.jmodal { display: flex; gap: 24px; padding: 16px 20px; align-items: stretch; }
+.jmodal-main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.jmodal-desc-wrap { position: relative; display: block; width: 100%; }
+.jmodal-desc-wrap .jmodal-desc { width: 100%; box-sizing: border-box; padding-right: 42px; }
+.jmodal-ai-trigger { position: absolute; top: 7px; right: 7px; }
+/* Палочка AI — у верхней кромки поля. Общее правило .ai-assist-trigger центрует
+   её по вертикали (оно ниже в файле и перебивает .jmodal-ai-trigger), а в поле
+   описания на 10 строк центр — это середина текста. */
+.jmodal-desc-wrap .jmodal-ai-trigger { top: 7px; transform: none; }
 .jmodal-breadcrumb { display: inline-flex; align-items: center; gap: 6px; border: none; background: none; color: #6b778c; font-size: 12px; cursor: pointer; padding: 0; align-self: flex-start; }
 .jmodal-breadcrumb:hover { text-decoration: underline; }
 .jmodal-title { font-size: 20px; font-weight: 600; border: 1px solid transparent; border-radius: 4px; background: none; color: inherit; resize: none; padding: 4px 6px; font-family: inherit; }
@@ -3770,6 +3790,22 @@
 [data-theme='dark'] .jmodal-title:focus { background: #1c2128; }
 .jmodal-h { font-size: 13px; font-weight: 600; margin: 8px 0 0; opacity: 0.85; }
 .jmodal-desc { min-height: 72px; resize: vertical; font-size: 13px; }
+/* Описание: по умолчанию отрисованный маркдаун, правка — по кнопке «Изменить».
+   Заголовок и кнопка стоят одной строкой, поэтому у .jmodal-h внутри неё margin
+   снят: отступ секции держит сама строка. */
+.jmodal-desc-head { display: flex; align-items: center; gap: 4px; margin: 8px 0 0; }
+.jmodal-desc-head .jmodal-h { margin: 0; }
+.jmodal-desc-view { font-size: 13px; padding: 0 2px; }
+/* Маркдаун живёт в узкой колонке карточки рядом с 13px полями: заголовки ленты
+   чата (17-20px) ломали бы здесь вертикальный ритм, поэтому они мельче. */
+.jmodal-desc-view .md h1, .jmodal-desc-view .md h2 { font-size: 15px; }
+.jmodal-desc-view .md h3, .jmodal-desc-view .md h4 { font-size: 14px; }
+.jmodal-desc-view .md h1, .jmodal-desc-view .md h2,
+.jmodal-desc-view .md h3, .jmodal-desc-view .md h4 { margin: 10px 0 6px; }
+.jmodal-desc-view .md p, .jmodal-desc-view .md ul, .jmodal-desc-view .md ol { margin-bottom: 8px; }
+.jmodal-desc-empty { align-self: flex-start; border: none; border-radius: 4px; background: none; color: #6b778c; font: inherit; font-size: 13px; text-align: left; padding: 4px 6px; cursor: pointer; }
+.jmodal-desc-empty:hover { background: rgba(128, 128, 128, 0.08); }
+.jmodal-desc-actions { display: flex; gap: 8px; margin-top: 6px; }
 .jmodal-children { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .jmodal-child { display: flex; align-items: center; gap: 8px; width: 100%; border: none; background: rgba(128, 128, 128, 0.07); color: inherit; border-radius: 4px; padding: 6px 8px; cursor: pointer; font-size: 13px; text-align: left; }
 .jmodal-child:hover { background: rgba(128, 128, 128, 0.15); }
@@ -3777,7 +3813,18 @@
 .jmodal-child-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jmodal-child-status { font-size: 11px; text-transform: uppercase; background: rgba(9, 30, 66, 0.1); border-radius: 3px; padding: 1px 6px; color: #6b778c; }
 [data-theme='dark'] .jmodal-child-status { background: rgba(255, 255, 255, 0.12); color: #8b949e; }
-.jmodal-side { flex: 0 0 240px; display: flex; flex-direction: column; gap: 10px; border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 8px; padding: 12px; }
+.jmodal-side { flex: 0 0 240px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 8px; padding: 12px; }
+/* Поля панели деталей в своей обёртке: на телефоне она сворачивается кнопкой
+   «Подробности» (как в мобильной Jira), на десктопе всегда раскрыта. */
+.jmodal-side-fields { display: flex; flex-direction: column; gap: 10px; }
+.jmodal-side-toggle { display: flex; align-items: center; gap: 8px; width: 100%; border: none; background: none; color: inherit; font: inherit; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; cursor: pointer; padding: 0; }
+.jmodal-side-caret { font-size: 10px; opacity: 0.7; }
+/* Статус и исполнитель под заголовком — только мобильная раскладка. */
+.jmodal-quick { display: flex; flex-direction: column; gap: 10px; }
+/* ⋯-меню действий в шапке карточки (мобильная замена трём кнопкам). */
+.jmodal-menuwrap { position: relative; display: inline-flex; }
+.jmodal-menu { min-width: 210px; }
+.jmodal-menu > button { min-height: 44px; font-size: 15px; }
 .jmodal-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; opacity: 0.95; }
 .jmodal-field .sel, .jmodal-field .login-input { font-weight: 400; font-size: 13px; width: 100%; }
 .jmodal-assignee { display: flex; align-items: center; gap: 6px; }
@@ -3786,10 +3833,63 @@
 .jlabel-input { width: 90px; font-size: 12px; padding: 2px 6px; }
 .jmodal-dates { font-size: 11px; opacity: 0.6; font-weight: 400; margin: 4px 0 0; line-height: 1.6; }
 
+/* Телефон: карточка как в мобильной Jira — один вертикальный скролл, статус и
+   исполнитель сразу под заголовком, остальные поля в свёрнутых «Подробностях»,
+   тапы от 44px и 16px в полях ввода (меньше — iOS зумит страницу при фокусе).
+   Граница 720px совпадает с MOBILE_QUERY в lib/mediaQuery.ts — правь вместе. */
 @media (max-width: 720px) {
+  /* Ручка захвата на телефоне видна всегда (ховера нет) и размером под палец:
+     тап по ней сразу поднимает карточку, не дожидаясь удержания. */
+  .jcard-grip, .jcol-grip { opacity: 1; display: inline-flex; align-items: center; justify-content: center;
+    min-width: 36px; min-height: 40px; font-size: 16px; }
+
+  /* Узкий экран: колонки стопкой, один общий скролл — два вложенных конфликтуют. */
   .jmodal { flex-direction: column; }
+  .jmodal-frame .jmodal { overflow-y: auto; }
+  .jmodal-main, .jmodal-side { overflow: visible; }
   .jmodal-side { flex: none; width: 100%; box-sizing: border-box; }
   .jswimlane { margin-left: 0; }
+
+  /* Шапка: тип·ключ одной строкой, дальше ⋯ и ✕. */
+  .jmodal-frame .mdhead { padding: 8px 8px 8px 14px; gap: 8px; }
+  .jmodal-frame .mdh { font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .jmodal { gap: 14px; padding: 12px 14px 24px; }
+  .jmodal-main { gap: 10px; }
+  .jmodal-title { font-size: 22px; padding: 4px 6px; }
+  .jmodal-h { font-size: 14px; }
+
+  /* Панель деталей — секции с разделителем, без рамки-коробки. */
+  .jmodal-side { border: none; border-top: 1px solid rgba(128, 128, 128, 0.25); border-radius: 0; padding: 12px 0 0; gap: 12px; }
+  .jmodal-side-toggle { min-height: 44px; }
+
+  /* Поля: подпись сверху, контрол во всю ширину и с пальцевым размером. */
+  .jmodal-quick .jmodal-field, .jmodal-side .jmodal-field { font-size: 12px; gap: 6px; }
+  .jmodal-field .sel, .jmodal-field .login-input { font-size: 16px; min-height: 44px; }
+  .jmodal-status { font-weight: 600; }
+  .jmodal-assignee .sel { flex: 1; min-width: 0; }
+  .jmodal-desc { font-size: 16px; min-height: 128px; }
+  /* Отрисованное описание на телефоне читается кеглем полей (16px), а его
+     заголовки — на ступень крупнее: иначе секция теряется среди «Подробностей». */
+  .jmodal-desc-view { font-size: 16px; }
+  .jmodal-desc-view .md h1, .jmodal-desc-view .md h2 { font-size: 17px; }
+  .jmodal-desc-view .md h3, .jmodal-desc-view .md h4 { font-size: 16px; }
+  .jmodal-desc-empty { font-size: 16px; min-height: 44px; }
+  .jmodal-desc-actions button { flex: 1 1 auto; min-height: 44px; }
+  .jlabel-input { width: 100%; min-height: 40px; font-size: 16px; }
+  .jmodal-labels { gap: 6px; }
+  .jlabel-x { min-width: 30px; min-height: 30px; font-size: 15px; }
+
+  /* Подзадачи: заголовок переносится, а не обрезается. */
+  .jmodal-child { min-height: 44px; padding: 8px 10px; flex-wrap: wrap; }
+  .jmodal-child-title { white-space: normal; overflow: visible; text-overflow: clip; }
+
+  /* CI остаётся видимым, но в одну колонку и с крупными кнопками. */
+  .jmodal-ci-actions button { flex: 1 1 auto; min-height: 44px; }
+  .ci-task-llm { grid-template-columns: 1fr; }
+  .ci-task-clarify-max .login-input { width: 100%; }
+  .ci-task .sel, .ci-task .login-input { font-size: 16px; min-height: 44px; }
+  .ci-task-save, .ci-task-reset { min-height: 44px; }
 }
 
 /* ===== Сайдбар: переключатель «Чаты | Проекты» и список проектов ========= */
@@ -3806,9 +3906,11 @@
 .projadd:hover { opacity: 1; background: rgba(128, 128, 128, 0.1); }
 .projcreate { display: block; width: calc(100% - 24px); margin: 0 12px 8px; box-sizing: border-box; }
 
-/* AI-помощник формулировки: самостоятельная модалка и две прокручиваемые колонки. */
-.pb-overlay{position:fixed;inset:0;z-index:1200;background:#1118;display:grid;place-items:center;padding:20px}.pb-dialog{width:min(1120px,96vw);max-height:90vh;background:var(--panel,#fff);color:var(--text,#172033);border-radius:16px;box-shadow:0 24px 80px #0005;display:flex;flex-direction:column;overflow:hidden}.pb-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border,#d9deea)}.pb-head h2{font-size:18px;margin:0}.pb-head button,.pb-item button,.pb-preview button,.pb-editor button,.pb-add-prompt{margin-left:6px}.pb-icon{width:36px;height:36px}.pb-builder{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);min-height:0;height:min(690px,75vh)}.pb-column,.pb-settings{padding:18px;overflow:auto;min-width:0}.pb-generation{border-right:1px solid var(--border,#d9deea)}.pb-label,.pb-editor label{display:grid;gap:7px;font-weight:600}.pb-label textarea,.pb-editor textarea,.pb-editor input{box-sizing:border-box;width:100%;padding:10px;border:1px solid var(--border,#cbd2df);border-radius:9px;background:var(--panel,#fff);color:inherit}.pb-prompt-wrap{position:relative;display:block}.pb-prompt-wrap textarea{padding-right:52px}.pb-generate{position:absolute;right:8px;top:8px;width:36px;height:36px;display:grid;place-items:center;border-radius:9px}.pb-generate svg{width:18px;height:18px}.pb-preview{margin:14px 0;padding:12px;border:1px solid #7b61ff;border-radius:10px;white-space:pre-wrap}.pb-row{display:flex;justify-content:space-between;gap:10px;align-items:center}.pb-list{display:grid;gap:10px}.pb-item{border:1px solid var(--border,#d9deea);border-radius:10px;padding:11px;background:color-mix(in srgb,var(--panel,#fff) 94%,#7b61ff)}.pb-item p{margin:0 0 9px;white-space:pre-wrap;overflow-wrap:anywhere}.pb-item>div:last-child{text-align:right}.pb-status{min-height:28px;padding:5px 0}.pb-skeletons{display:grid;gap:8px}.pb-skeletons i{height:54px;border-radius:8px;background:linear-gradient(90deg,#ddd,#f4f4f4,#ddd);background-size:200%;animation:pb-shine 1.2s infinite}.pb-blocks{display:flex;flex-direction:column}.pb-blocks h3{margin-top:0}.pb-blocks>.pb-list{flex:1}.pb-apply{margin-top:14px;padding:11px}.pb-settings{min-height:480px}.pb-modifier{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:start}.pb-ellipsis{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis}.pb-editor{margin-top:14px;padding:14px;border:1px solid var(--border,#d9deea);border-radius:10px;display:grid;gap:12px}.pb-editor [role=alert]{color:#b42318}.pb-empty{padding:40px;text-align:center}.pb-switch input{width:20px;height:20px}.pb-add-prompt{margin-top:14px}.ai-assist-wrap{position:relative}.ai-assist-trigger{position:absolute;right:8px;top:50%;transform:translateY(-50%);z-index:2}.ai-assist-wrap>input[data-ai-assist],.ai-assist-wrap>textarea[data-ai-assist]{padding-right:48px!important}@keyframes pb-shine{to{background-position:-200%}}
-@media(max-width:760px){.pb-overlay{padding:0}.pb-dialog{width:100vw;max-height:100vh;height:100vh;border-radius:0}.pb-builder{grid-template-columns:1fr;height:auto;overflow:auto}.pb-column{overflow:visible}.pb-generation{border-right:0;border-bottom:1px solid var(--border,#d9deea)}.pb-modifier{grid-template-columns:auto 1fr}.pb-modifier>div:last-child{grid-column:1/-1}}
+/* AI-помощник формулировки: две прокручиваемые колонки внутри общего окна
+   (рамка, оверлей и шапка — .vc-dialog, см. components/ui/Dialog). */
+.pb-item button,.pb-preview button,.pb-editor button,.pb-add-prompt{margin-left:6px}.pb-icon{width:36px;height:36px}.pb-builder{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);min-height:0;height:min(690px,75vh)}.pb-column,.pb-settings{padding:18px;overflow:auto;min-width:0}.pb-generation{border-right:1px solid var(--border,#d9deea)}.pb-label,.pb-editor label{display:grid;gap:7px;font-weight:600}.pb-label textarea,.pb-editor textarea,.pb-editor input{box-sizing:border-box;width:100%;padding:10px;border:1px solid var(--border,#cbd2df);border-radius:9px;background:var(--panel,#fff);color:inherit}.pb-prompt-wrap{position:relative;display:block}.pb-prompt-wrap textarea{padding-right:52px}.pb-generate{position:absolute;right:8px;top:8px;width:36px;height:36px;border-radius:9px}.pb-generate svg{width:18px;height:18px}.pb-preview{margin:14px 0;padding:12px;border:1px solid #7b61ff;border-radius:10px;white-space:pre-wrap}.pb-row{display:flex;justify-content:space-between;gap:10px;align-items:center}.pb-list{display:grid;gap:10px}.pb-item{border:1px solid var(--border,#d9deea);border-radius:10px;padding:11px;background:color-mix(in srgb,var(--panel,#fff) 94%,#7b61ff)}.pb-item p{margin:0 0 9px;white-space:pre-wrap;overflow-wrap:anywhere}.pb-item>div:last-child{text-align:right}.pb-status{min-height:28px;padding:5px 0}.pb-blocks{display:flex;flex-direction:column}.pb-blocks h3{margin-top:0}.pb-blocks>.pb-list{flex:1}.pb-apply{margin-top:14px;padding:11px}.pb-settings{min-height:480px}.pb-modifier{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:start}.pb-ellipsis{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis}.pb-editor{margin-top:14px;padding:14px;border:1px solid var(--border,#d9deea);border-radius:10px;display:grid;gap:12px}.pb-editor [role=alert]{color:#b42318}.pb-switch input{width:20px;height:20px}.pb-add-prompt{margin-top:14px}.ai-assist-wrap{position:relative}.ai-assist-trigger{position:absolute;right:8px;top:50%;transform:translateY(-50%);z-index:2}.ai-assist-wrap>input[data-ai-assist],.ai-assist-wrap>textarea[data-ai-assist]{padding-right:48px!important}
+/* Граница та же, что у полноэкранного окна на телефоне (MOBILE_QUERY, 720px). */
+@media(max-width:720px){.pb-builder{grid-template-columns:1fr;height:auto;overflow:auto}.pb-column{overflow:visible}.pb-generation{border-right:0;border-bottom:1px solid var(--border,#d9deea)}.pb-modifier{grid-template-columns:auto 1fr}.pb-modifier>div:last-child{grid-column:1/-1}}
 .ai-default-prompts{display:grid;gap:10px}.ai-default-row{display:grid;grid-template-columns:auto minmax(110px,.5fr) minmax(180px,1fr) repeat(3,auto);gap:7px;align-items:center}.ai-default-row textarea{min-height:58px;resize:vertical}@media(max-width:760px){.ai-default-row{grid-template-columns:auto 1fr auto auto auto}.ai-default-row textarea{grid-column:2/-1}.ai-default-row input.sel{grid-column:2/-1}}
 
 /* ---- CI-раннер (страница «Команды», лента рана, консоль) ---- */
@@ -3825,7 +3927,6 @@
 .ci-row--orphan td { color: var(--ci-removed); }
 .ci-row-name { font-weight: 600; color: var(--text); }
 .ci-row-desc { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
-.ci-empty { color: var(--text-dim); text-align: center; padding: 16px; }
 .ci-mono, .ci-suggestion-script { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .ci-edit-pane { position: sticky; top: 0; }
@@ -3838,13 +3939,6 @@
 .ci-flags label { display: flex; align-items: center; gap: 6px; }
 .ci-form-actions { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 
-.ci-btn { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
-.ci-btn:hover { background: var(--panel); }
-.ci-btn:disabled { opacity: 0.5; cursor: default; }
-.ci-btn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.ci-btn--primary:hover { filter: brightness(1.05); }
-.ci-icon-btn { background: none; border: none; cursor: pointer; font-size: 14px; opacity: 0.7; }
-.ci-icon-btn:hover { opacity: 1; }
 
 .ci-section { border-top: 1px solid var(--border); padding-top: 14px; }
 .ci-section-title { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
@@ -3874,9 +3968,108 @@
 .jcard-ci-fill--success { background: var(--ci-success); }
 .jcard-ci-fill--removed { background: var(--ci-removed); }
 .jcard-ci-phase { font-size: 11px; color: var(--text-dim); }
-.jcard-ci-run { background: var(--accent); border: 1px solid var(--accent); color: #fff; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
-.jcard-ci-run:hover { filter: brightness(1.05); }
-.jcard-ci-open { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+
+/* Состояние CI-рана на карточке колонки: ран идёт — медленное голубое «дыхание»,
+   модель разбирается с ошибкой — медленное красное мигание, ждёт ответа
+   пользователя — частое жёлтое, упал окончательно — частое красное, успех
+   (разработка закончена, ждёт пересборки прода) — статичная зелёная рамка. */
+.jcard--ci-running { animation: jcard-ci-blue 2.6s ease-in-out infinite; }
+.jcard--ci-fixing { animation: jcard-ci-red 2.2s ease-in-out infinite; }
+.jcard--ci-awaiting { animation: jcard-ci-yellow 0.9s ease-in-out infinite; }
+.jcard--ci-failed { animation: jcard-ci-red 0.7s ease-in-out infinite; }
+.jcard--ci-done { box-shadow: 0 0 0 2px var(--ci-success), 0 1px 2px rgba(9, 30, 66, 0.25); }
+
+@keyframes jcard-ci-blue {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(76, 154, 255, 0.3), 0 1px 2px rgba(9, 30, 66, 0.25); }
+  50% { box-shadow: 0 0 0 3px rgba(76, 154, 255, 0.95), 0 0 12px rgba(76, 154, 255, 0.55); }
+}
+@keyframes jcard-ci-red {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(222, 53, 11, 0.25), 0 1px 2px rgba(9, 30, 66, 0.25); }
+  50% { box-shadow: 0 0 0 3px rgba(222, 53, 11, 0.95), 0 0 12px rgba(222, 53, 11, 0.5); }
+}
+@keyframes jcard-ci-yellow {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 171, 0, 0.3), 0 1px 2px rgba(9, 30, 66, 0.25); }
+  50% { box-shadow: 0 0 0 3px rgba(255, 171, 0, 1), 0 0 12px rgba(255, 171, 0, 0.55); }
+}
+
+/* Те же состояния в списке чатов и в шапке открытого чата задачи: чат живёт
+   рядом с карточкой и обязан читаться так же — те же кейфреймы и цвета. Отличие
+   одно: мигает только активный ран (идёт / чинит / ждёт ответа), у терминального
+   рамка статичная. Красное мигание по давно упавшему рану в списке чатов —
+   постоянный шум на экране, за которым сидят и без всякого CI.
+   Сама принадлежность к задаче видна всегда — accent-полоской слева. */
+.convo--task { border-left: 3px solid var(--accent); padding-left: 9px; }
+.convo--ci-running { animation: jcard-ci-blue 2.6s ease-in-out infinite; }
+.convo--ci-fixing { animation: jcard-ci-red 2.2s ease-in-out infinite; }
+.convo--ci-awaiting { animation: jcard-ci-yellow 0.9s ease-in-out infinite; }
+.convo--ci-failed { box-shadow: 0 0 0 2px var(--ci-removed); }
+.convo--ci-done { box-shadow: 0 0 0 2px var(--ci-success); }
+
+.taskchat--ci-running { animation: jcard-ci-blue 2.6s ease-in-out infinite; }
+.taskchat--ci-fixing { animation: jcard-ci-red 2.2s ease-in-out infinite; }
+.taskchat--ci-awaiting { animation: jcard-ci-yellow 0.9s ease-in-out infinite; }
+.taskchat--ci-failed { box-shadow: 0 0 0 2px var(--ci-removed); }
+.taskchat--ci-done { box-shadow: 0 0 0 2px var(--ci-success); }
+
+/* Без анимации подсветка остаётся, но статичной рамкой. */
+@media (prefers-reduced-motion: reduce) {
+  .convo--ci-running, .convo--ci-fixing, .convo--ci-awaiting,
+  .taskchat--ci-running, .taskchat--ci-fixing, .taskchat--ci-awaiting { animation: none; }
+  .convo--ci-running, .taskchat--ci-running { box-shadow: 0 0 0 2px #4c9aff; }
+  .convo--ci-fixing, .taskchat--ci-fixing { box-shadow: 0 0 0 2px var(--ci-removed); }
+  .convo--ci-awaiting, .taskchat--ci-awaiting { box-shadow: 0 0 0 2px #ffab00; }
+  .jcard--ci-running, .jcard--ci-fixing, .jcard--ci-awaiting, .jcard--ci-failed { animation: none; }
+  .jcard--ci-running { box-shadow: 0 0 0 2px #4c9aff, 0 1px 2px rgba(9, 30, 66, 0.25); }
+  .jcard--ci-fixing, .jcard--ci-failed { box-shadow: 0 0 0 2px var(--ci-removed), 0 1px 2px rgba(9, 30, 66, 0.25); }
+  .jcard--ci-awaiting { box-shadow: 0 0 0 2px #ffab00, 0 1px 2px rgba(9, 30, 66, 0.25); }
+}
+
+/* Пауза рана: вопрос модели / гейт плана в ленте */
+.ci-interaction { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--ci-progress); border-radius: 6px; padding: 10px; margin: 8px 0; background: var(--ci-neutral-bg); }
+.ci-interaction-title { font-size: 13px; }
+.ci-interaction-plan { margin: 0; max-height: 240px; overflow: auto; white-space: pre-wrap; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface); border-radius: 6px; padding: 8px; }
+.ci-interaction-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.ci-interaction-answer { margin: 0; font-size: 12px; color: var(--text-dim); }
+
+/* Режим и глубина уточнений в настройках задачи/проекта */
+.ci-task-clarify-max { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.ci-task-clarify-max .login-input { width: 90px; }
+.ci-task-hint { margin: 0; font-size: 11px; color: var(--text-dim); }
+
+/* Панель CI-рана в модалке задачи */
+.jmodal-ci { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--border-soft); border-radius: 8px; padding: 10px; }
+.jmodal-ci-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.jmodal-ci-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+/* Ран ждёт ответа модели: та же кнопка, но зовёт на себя внимание. */
+.jcard-ci-attention { border-color: var(--ci-progress); color: var(--ci-progress); }
+
+/* Шапка чата, привязанного к задаче канбана.
+   Потолок высоты обязателен: шапка — обычный элемент колонки .main, у которой
+   ровно высота экрана. Без него раскрытая лента рана растягивала шапку, лента
+   сообщений садилась на свой минимум, а композер уезжал за нижний край — на
+   телефоне у .app стоит overflow: hidden, и достать его было нечем. Проценты
+   считаются от .main (высота у неё определённая), поэтому в сториз и тестах,
+   где шапка стоит одна, потолок просто не применяется. */
+.taskchat { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--surface); max-height: 45%; min-height: 0; }
+.taskchat-top { display: flex; align-items: center; gap: 8px; flex: none; }
+.taskchat-crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.taskchat-crumb { color: var(--text-dim); }
+.taskchat-sep { color: var(--text-dim); opacity: 0.6; }
+.taskchat-task { font-size: 13px; }
+.taskchat-open, .taskchat-feed-toggle { border: 1px solid var(--border-soft); background: none; color: inherit; border-radius: 6px; padding: 3px 8px; font-size: 12px; cursor: pointer; }
+.taskchat-open:hover, .taskchat-feed-toggle:hover { background: rgba(128, 128, 128, 0.12); }
+.taskchat-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none; }
+.taskchat-dim { font-size: 11px; color: var(--text-dim); }
+.taskchat-dir { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.taskchat-feed-toggle { margin-left: auto; }
+/* Лента забирает остаток шапки и скроллится внутри себя — своей max-height в
+   vh у неё быть не может: vh на мобильном браузере считается от «большого»
+   экрана (без адресной строки), а колонка живёт в 100dvh, и лента вылезала. */
+.taskchat-feed { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 0 2px; }
+/* Свёрнутая шапка — одна строка: ключ задачи, статус рана и «Открыть задачу». */
+.taskchat-collapse { flex: none; }
+.taskchat--collapsed .taskchat-crumbs { flex-wrap: nowrap; overflow: hidden; }
+.taskchat--collapsed .taskchat-task { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Лента рана (RunFeed) */
 .ci-runfeed { display: flex; flex-direction: column; gap: 8px; }
@@ -3910,7 +4103,13 @@
 .ci-task { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
 .ci-task-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .ci-task-title { font-weight: 600; font-size: 13px; color: var(--text); }
-.ci-task-save, .ci-defaults .btn-primary { margin-top: 8px; }
+.ci-task-save, .ci-defaults .vc-btn { margin-top: var(--space-100); }
+.ci-task-llm-head { margin-top: 14px; }
+.ci-task-llm { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ci-task-llm label { display: grid; gap: 4px; font-size: 12px; color: var(--text-dim); }
+.ci-task-llm-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ci-task-reset { margin-top: 8px; background: none; border: none; padding: 0; font-size: 12px; color: var(--text-dim); text-decoration: underline; cursor: pointer; }
+.ci-task-reset:hover { color: var(--text); }
 .lozenge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; background: var(--panel); color: var(--text-dim); }
 .lozenge-neutral { background: var(--panel); color: var(--text-dim); }
 .lozenge-progress { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
@@ -3941,3 +4140,934 @@
 
 .ci-model-retry { display: flex; align-items: end; gap: var(--space-100); flex-wrap: wrap; margin-top: var(--space-100); padding: var(--space-150); background: var(--surface-warning); border-radius: var(--radius-medium); }
 .ci-model-retry label { display: grid; gap: var(--space-050); }
+
+/* ---- Кнопка (components/ui/Button, IconButton) ---- */
+/* Единственный блок кнопок приложения: четыре варианта (primary / secondary /
+   ghost / danger) × два размера (sm / md). Эталон — прежняя основная кнопка с
+   акцентной заливкой; остальные подтянуты к ней.
+   Цвета только токенами, поэтому тёмная тема достаётся без отдельных правил, а
+   :focus-visible-кольцо есть у всех вариантов, не у избранных.
+   Классы .is-hover/.is-focus — крючки для сториз: матрица состояний показывает
+   те же правила, а не их копию (см. Button.stories.tsx). */
+.vc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-050);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vc-btn--md {
+  padding: var(--space-100) var(--space-150);
+  font-size: 13px;
+}
+.vc-btn--sm {
+  padding: var(--space-050) var(--space-100);
+  font-size: 12px;
+}
+/* Без видимой подписи (IconButton) — квадрат: падинг по кругу, а не по бокам. */
+.vc-btn--icon.vc-btn--md {
+  padding: var(--space-100);
+}
+.vc-btn--icon.vc-btn--sm {
+  padding: var(--space-050);
+}
+.vc-btn--block {
+  display: flex;
+  width: 100%;
+}
+
+.vc-btn:focus-visible,
+.vc-btn.is-focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.vc-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.vc-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.vc-btn--danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-fg);
+}
+.vc-btn--primary:hover:not(:disabled),
+.vc-btn--primary.is-hover,
+.vc-btn--danger:hover:not(:disabled),
+.vc-btn--danger.is-hover {
+  filter: brightness(1.07);
+}
+
+.vc-btn--secondary:hover:not(:disabled),
+.vc-btn--secondary.is-hover {
+  background: var(--surface-hover);
+}
+
+/* Опасное действие без заливки: крестик «удалить» в списке. Красным становится
+   под курсором — иначе список пестрит красным ещё до наведения. */
+.vc-btn--danger-quiet:hover:not(:disabled),
+.vc-btn--danger-quiet.is-hover {
+  color: var(--danger);
+}
+
+/* ghost — действие без рамки: иконки в шапках, ряды в подвале сайдбара,
+   мелкие действия под сообщением. Приглушён, пока на него не наведёшь. */
+.vc-btn--ghost {
+  border-color: transparent;
+  background: none;
+  color: var(--text-dim);
+}
+.vc-btn--ghost:hover:not(:disabled),
+.vc-btn--ghost.is-hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* Круглые кнопки композера (микрофон, отправка, скрепка): та же кнопка, другая
+   геометрия — md 48px, sm 44px, как было у .micbtn и .attachbtn. */
+.vc-btn--circle {
+  border-radius: 50%;
+  padding: 0;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.vc-btn--circle:hover:not(:disabled) {
+  transform: scale(1.06);
+}
+.vc-btn--circle.vc-btn--md {
+  width: 48px;
+  height: 48px;
+}
+.vc-btn--circle.vc-btn--sm {
+  width: 44px;
+  height: 44px;
+}
+
+.vc-btn__ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+/* Спиннер на currentColor: цвет берётся от варианта, отдельных правил не нужно.
+   Кнопка в loading заблокирована, но гасим её слабее обычного disabled —
+   спиннер должно быть видно. */
+.vc-btn.is-loading:disabled {
+  opacity: 0.8;
+  cursor: progress;
+}
+.vc-btn__spinner {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: vc-btn-spin 0.7s linear infinite;
+}
+@keyframes vc-btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vc-btn__spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+/* ---- Тосты (components/ui/Toast) ---- */
+/* Стек в правом нижнем углу; на телефоне — во всю ширину над композером
+   (отступ снизу считает сам компонент по высоте .voicebar, см. avoidSelector).
+   Слой выше окон Dialog: сообщение об ошибке относится и к тому, что сделали в
+   окне, — иначе оно оказывалось под ним. Сам контейнер клики не ловит, чтобы
+   пустая живая область не перекрывала интерфейс. */
+.vc-toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.vc-toasts--phone {
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  max-width: none;
+}
+.vc-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 10px 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+  line-height: 1.35;
+  animation: tf-pop 0.18s ease-out;
+}
+/* Цвета — семантические токены палитры (объявлены в начале файла, тёмная тема
+   их переопределяет): зелёный успех, красная ошибка, нейтральный факт. */
+.vc-toast--success {
+  border-color: var(--ci-success);
+  background: var(--ci-success-bg);
+}
+.vc-toast--error {
+  border-color: var(--ci-removed);
+  background: var(--ci-removed-bg);
+}
+.vc-toast-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--ci-neutral);
+}
+.vc-toast--success .vc-toast-icon {
+  background: var(--ci-success);
+}
+.vc-toast--error .vc-toast-icon {
+  background: var(--ci-removed);
+}
+.vc-toast-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.vc-toast-action {
+  flex: none;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.vc-toast-action:hover {
+  background: var(--panel);
+}
+.vc-toast-close {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 4px;
+  border-radius: 6px;
+}
+.vc-toast-close:hover {
+  color: var(--text);
+}
+
+/* ---- Подтверждение (components/ui/ConfirmDialog) ---- */
+.vc-confirm-body {
+  gap: 12px;
+}
+.vc-confirm-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.45;
+}
+.vc-confirm-field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ---- Поиск по сообщениям (сайдбар) ---- */
+.searchscope {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.searchscope button {
+  flex: 1;
+  border: none;
+  background: rgba(128, 128, 128, 0.12);
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.searchscope button:hover {
+  background: rgba(128, 128, 128, 0.22);
+}
+.searchscope button.on {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.msgfound-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 10px 10px;
+}
+.msgfound-hint {
+  padding: 8px 6px;
+  line-height: 1.45;
+}
+.msgfound {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.msgfound:hover {
+  border-color: var(--accent);
+}
+.msgfound-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+.msgfound-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msgfound-date,
+.msgfound-role {
+  color: var(--text-dim);
+  font-size: 11px;
+  flex: none;
+}
+.msgfound-snippet {
+  /* Сниппет — обрезанный кусок текста: переносим по словам, но не растим карточку. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.msgfound-snippet mark {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+.msgfound-more {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.msgfound-more {
+  align-self: center;
+}
+.msgfound-more:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* Сообщение, к которому перешли из поиска: подсветка живёт две секунды. */
+.msg--found {
+  animation: msgfound-flash 2s ease-out;
+  border-radius: 10px;
+}
+@keyframes msgfound-flash {
+  0%,
+  70% {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
+/* ---- Состояния экрана: скелетон, пустота, ошибка (components/ui) ---- */
+/* Один набор правил на все экраны. Раньше здесь жили `.pb-skeletons` со своим
+   градиентом и `@keyframes pb-shine`, `.msgloading` с точками, `.skelline`
+   поиска, «Загрузка доски…» текстом и три разных пустых блока. */
+.vc-skel {
+  display: block;
+  border-radius: var(--radius-medium);
+  background-color: var(--skeleton-base);
+  /* Блик бежит по подложке: сам цвет — токен, поэтому тёмная тема не требует
+     отдельного правила (у `.pb-skeletons` градиент был вбит светлым #ddd). */
+  background-image: linear-gradient(90deg, transparent 0%, var(--skeleton-shine) 50%, transparent 100%);
+  background-repeat: no-repeat;
+  background-size: 60% 100%;
+  background-position: -60% 0;
+  animation: vc-skel-sweep 1.3s ease-in-out infinite;
+}
+.vc-skel--line {
+  height: 10px;
+  width: 100%;
+}
+.vc-skel--block {
+  height: 54px;
+  width: 100%;
+}
+.vc-skel-list {
+  display: grid;
+  gap: var(--space-100);
+}
+.vc-skel-card {
+  display: grid;
+  align-content: center;
+  gap: var(--space-100);
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  background: var(--surface);
+  box-sizing: border-box;
+}
+@keyframes vc-skel-sweep {
+  to {
+    background-position: 160% 0;
+  }
+}
+
+/* Повторная загрузка уже показанных данных: индикатор рядом с содержимым, а не
+   скелетон вместо него (иначе список мигает на каждом обновлении). */
+.vc-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-100);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.vc-refresh__spinner {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-top-color: currentColor;
+  animation: vc-refresh-spin 0.8s linear infinite;
+}
+@keyframes vc-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Пустота и ошибка: одна геометрия, разный тон. */
+.vc-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-100);
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.vc-state--compact {
+  padding: 14px 10px;
+  gap: var(--space-050);
+}
+.vc-state__ico {
+  font-size: 22px;
+  line-height: 1;
+  opacity: 0.75;
+}
+.vc-state--compact .vc-state__ico {
+  font-size: 16px;
+}
+.vc-state__title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text);
+}
+.vc-state__text {
+  margin: 0;
+  max-width: 44ch;
+  line-height: 1.45;
+}
+.vc-state__detail {
+  max-width: 100%;
+  font-size: 12px;
+}
+.vc-state__detail summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+.vc-state__detail pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 160px;
+  overflow: auto;
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.vc-state--error .vc-state__ico {
+  color: var(--danger);
+  opacity: 1;
+}
+/* Ошибка поверх уже показанных данных — строка-баннер, а не экран по центру. */
+.vc-state--error.vc-state--compact {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+  padding: 10px 14px;
+  border-radius: var(--radius-medium);
+  background: var(--ci-removed-bg);
+  color: var(--ci-removed);
+}
+.vc-state--error.vc-state--compact .vc-state__title {
+  color: inherit;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Бегущий блик и спиннер — декорация: при запросе на «меньше движения»
+     скелетон остаётся статичной подложкой. */
+  .vc-skel,
+  .vc-refresh__spinner {
+    animation: none;
+  }
+}
+
+/* Скелетон и индикатор истории сообщений (ChatColumn). Геометрия — как у .msg:
+   свои реплики уже и справа, ответы модели шире и слева. */
+.msgskel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 12px 0;
+}
+.msgskel-item {
+  max-width: 82%;
+}
+.msgskel-item--me {
+  align-self: flex-end;
+  width: min(58%, 380px);
+}
+.msgskel-item--ai {
+  align-self: flex-start;
+  width: min(76%, 560px);
+}
+.msgrefresh {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+/* Состояния списка бесед (Sidebar): скелетон повторяет отбивку .convo. */
+.convolist-skel {
+  padding: 2px 10px;
+}
+.convolist-refresh {
+  margin: 0;
+  padding: 6px 16px;
+}
+.convolist-stale {
+  margin: 4px 10px;
+}
+
+/* Состояния доски (KanbanBoard): скелетон и подсказки не должны менять геометрию. */
+.kanban-state {
+  margin: 0 auto;
+}
+.jboard-error {
+  margin: 10px 12px 0;
+}
+.jcol-body--skel {
+  gap: 8px;
+  padding: 0 6px 4px;
+}
+/* Косточка карточки — та же тень и радиус, что у .jcard, рамки у карточки нет. */
+.jcard-skel {
+  border: 0;
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(9, 30, 66, 0.25);
+}
+[data-theme='dark'] .jcard-skel {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.jcol-empty {
+  color: #6b778c;
+}
+[data-theme='dark'] .jcol-empty {
+  color: #8b949e;
+}
+
+/* Состояния ленты CI-рана (RunFeed). */
+.ci-steps--skel {
+  padding: 8px 0;
+}
+.ci-runfeed-error {
+  margin: 8px 0;
+}
+
+/* Скелетон списка пользователей (UsersAdmin). */
+.uadmin-skel {
+  padding: 6px;
+}
+
+/* Индикатор выполняющейся команды в консоли машины. */
+.consrun {
+  margin: 0;
+  padding: 6px 2px;
+}
+
+/* Консоль машины — тёмный терминал в обеих темах, поэтому общие состояния в ней
+   перекрашиваются под её палитру: иначе в светлой теме текст был бы чёрным на
+   почти чёрном фоне. */
+.consout .vc-state {
+  color: #b8b6ab;
+}
+.consout .vc-state__title {
+  color: #d7d5ca;
+}
+.consout .vc-state--error.vc-state--compact {
+  background: rgba(224, 121, 111, 0.14);
+  color: #e0796f;
+}
+.consout .vc-state__detail summary {
+  color: #9fbfe0;
+}
+.consout .vc-state__detail pre {
+  background: rgba(255, 255, 255, 0.06);
+  color: #d7d5ca;
+}
+
+/* ==== Командная палитра (⌘K) и шпаргалка горячих клавиш ==================== */
+
+/* Кнопка «⌘K» рядом с поиском в сайдбаре: точка входа мышью, иначе про палитру
+   узнают только те, кто наугад нажал сочетание. Ряд — чтобы поле осталось
+   растяжимым, а подпись комбинации не сжималась. */
+.sidesearch-row {
+  display: flex;
+  /* stretch, а не center: высоту ряда задаёт поле поиска, и кнопка ровно под него —
+     иначе она получается вдвое ниже поля (у .vc-btn нет своей min-height). */
+  align-items: stretch;
+  gap: var(--space-050);
+}
+.sidesearch-row .searchinput {
+  flex: 1;
+  min-width: 0;
+}
+/* Иконка-фильтр списка бесед: соседка ⌘K, поэтому геометрия та же. Нажатое
+   состояние подсвечиваем акцентом — иначе «фильтр включён» видно только по
+   пропавшим строкам. */
+.convo-filter.vc-btn--icon {
+  border-radius: 8px;
+  color: var(--text-dim);
+}
+.convo-filter.vc-btn--icon.on {
+  color: var(--accent);
+  border-color: currentColor;
+}
+
+/* Подпись длиннее иконки — квадратную геометрию .vc-btn--icon расширяем. */
+.cmdk-open.vc-btn--icon {
+  width: auto;
+  min-width: 34px;
+  padding: 0 var(--space-100);
+  border-radius: 8px; /* как у .searchinput рядом */
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* Высота окна фиксирована: выдача меняется на каждую букву, и без неё палитра
+   прыгала бы по вертикали при каждом нажатии (окно центрировано по оверлею).
+   На телефоне Dialog и так во весь экран — там своя высота не нужна. */
+.cmdk:not(.vc-dialog--phone) {
+  height: min(560px, 80vh);
+}
+.cmdk .mdhead {
+  border-bottom: none;
+}
+.cmdk-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  padding: 0 var(--space-150) var(--space-100) var(--space-150);
+}
+.cmdk-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 15px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  color: var(--text);
+}
+.cmdk-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.cmdk-list {
+  margin-top: var(--space-100);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.cmdk-sec {
+  margin: var(--space-100) 0 var(--space-050) 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.cmdk-group:first-child .cmdk-sec {
+  margin-top: 0;
+}
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-100);
+  padding: 7px var(--space-100);
+  border-radius: var(--radius-medium);
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text);
+}
+.cmdk-item--active {
+  background: var(--surface-hover);
+}
+.cmdk-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Совпавшие буквы: фон акцента, а не жёлтый маркер браузера — тот не знает
+   про тему и в тёмной выглядит как дефект. */
+.cmdk-hit {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 3px;
+  padding: 0 1px;
+  font-weight: 600;
+}
+.cmdk-hint {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-dim);
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmdk-key,
+.cmdk-foot kbd,
+.hkeys kbd {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.cmdk-more {
+  margin: var(--space-050) 0 0 var(--space-100);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.cmdk-foot {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* Шпаргалка: две колонки «действие — комбинация», сгруппированные по разделам
+   реестра команд. */
+.hkeys-group + .hkeys-group {
+  margin-top: var(--space-150);
+}
+.hkeys-sec {
+  margin: 0 0 var(--space-050) 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.hkeys-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hkeys-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-100);
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 14px;
+}
+.hkeys-row:last-child {
+  border-bottom: none;
+}
+.hkeys-combo {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-050);
+}
+.hkeys-note {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.hkeys-tail {
+  margin: var(--space-150) 0 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* --- Панель «Использование БЗ» ------------------------------------------
+   Плитки чисел, таблица разделов и лента обращений. Только токены темы: панель
+   живёт и в светлой, и в тёмной, а тон статусов берётся из общих --ci-*. */
+.kbutool { width: min(96vw, 1100px); height: min(92vh, 860px); }
+.kbu-body { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px; overflow: auto; }
+.kbu-tabs { display: inline-flex; gap: 6px; }
+.kbu-tab {
+  padding: 6px 12px; border: 1px solid var(--border); border-radius: 99px;
+  background: var(--panel); color: var(--text-dim); font: inherit; font-size: 13px; cursor: pointer;
+}
+.kbu-tab.on { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 700; }
+.kbu-summary { display: flex; flex-direction: column; gap: 10px; }
+.kbu-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
+.kbu-mode, .kbu-warn, .kbu-index {
+  padding: 3px 9px; border-radius: 99px; border: 1px solid var(--border); background: var(--panel); color: var(--text-dim);
+}
+.kbu-mode--auto { background: var(--ci-success-bg); color: var(--ci-success); border-color: transparent; }
+.kbu-mode--manual { background: var(--ci-progress-bg); color: var(--ci-progress); border-color: transparent; }
+.kbu-mode--off { background: var(--ci-neutral-bg); color: var(--ci-neutral); border-color: transparent; }
+.kbu-warn { background: var(--ci-progress-bg); color: var(--ci-progress); border-color: transparent; }
+.kbu-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.kbu-tile {
+  display: flex; flex-direction: column; gap: 2px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--panel);
+}
+.kbu-tile__val { font-size: 20px; font-weight: 700; }
+.kbu-tile__lbl { font-size: 12px; color: var(--text-dim); }
+.kbu-tile__hint { font-size: 11px; color: var(--text-dim); }
+.kbu-note { margin: 0; font-size: 12px; color: var(--text-dim); }
+.kbu-refresh { margin: 0; font-size: 12px; color: var(--text-dim); }
+.kbu-banner {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface-warning);
+}
+.kbu-banner p { margin: 0; font-size: 13px; }
+.kbu-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.kbu-table th, .kbu-table td { padding: 7px 8px; text-align: left; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+.kbu-table thead th { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.kbu-table tbody th { display: flex; flex-direction: column; gap: 3px; font-weight: 400; }
+.kbu-table td { white-space: nowrap; }
+.kbu-sort { border: none; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.kbu-sort.on { color: var(--text); font-weight: 700; text-decoration: underline; }
+.kbu-doc { border: none; background: none; padding: 0; font: inherit; font-weight: 700; color: var(--accent); text-align: left; cursor: pointer; }
+.kbu-path { font-size: 11px; color: var(--text-dim); }
+.kbu-fresh { align-self: flex-start; font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--ci-neutral-bg); color: var(--ci-neutral); }
+.kbu-fresh--current { background: var(--ci-success-bg); color: var(--ci-success); }
+.kbu-fresh--stale { background: var(--ci-progress-bg); color: var(--ci-progress); }
+.kbu-feed { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.kbu-ev {
+  display: grid; grid-template-columns: 48px 130px minmax(0, 1fr) 130px auto; gap: 8px; align-items: baseline;
+  padding: 6px 8px; border-radius: 8px; background: var(--panel); font-size: 12px;
+}
+.kbu-ev--pending { background: var(--ci-progress-bg); }
+.kbu-ev--error { background: var(--ci-removed-bg); }
+.kbu-ev__time, .kbu-ev__src, .kbu-ev__nums, .kbu-ev__chat { color: var(--text-dim); }
+.kbu-ev__q { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+@media (max-width: 760px) {
+  .kbutool { width: 100vw; height: 100vh; }
+  .kbu-ev { grid-template-columns: 1fr; }
+  .kbu-table td { white-space: normal; }
+}
+/* Врез «Использование БЗ» в ленте рана и модалке задачи (KbUsageBrief). */
+.kbu-brief { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.kbu-brief__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.kbu-brief__note, .kbu-brief__empty, .kbu-brief__more, .kbu-brief__times { font-size: 12px; color: var(--text-dim); }
+.kbu-brief__nums { margin: 0; font-size: 12px; color: var(--text); }
+.kbu-brief__empty, .kbu-brief__more { margin: 0; }
+.kbu-brief__list { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
+.kbu-brief__list li { display: flex; align-items: baseline; gap: 6px; }
+.kbu-brief__list .kbu-doc { text-decoration: none; }
+/* Раздел «Отчёт» карточки задачи: плитки итогов + таблица шагов рана. */
+.ci-report { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.ci-report__head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ci-report__note, .ci-report__empty { margin: 0; font-size: 12px; color: var(--text-dim); }
+.ci-report__runs { display: flex; flex-wrap: wrap; gap: 4px; }
+.ci-report__run { border: 1px solid var(--border); border-radius: 99px; padding: 2px 9px; font: inherit; font-size: 12px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.ci-report__run.is-active { border-color: var(--accent); color: var(--text); }
+.ci-report__tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
+.ci-report-tile { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
+.ci-report-tile__label { font-size: 11px; color: var(--text-dim); }
+.ci-report-tile__value { font-size: 15px; color: var(--text); }
+.ci-report-tile__note { font-size: 11px; color: var(--text-dim); }
+.ci-report-steps { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ci-report__caption { display: flex; align-items: baseline; gap: 8px; padding-bottom: 4px; font-size: 12px; color: var(--text-dim); text-align: left; }
+.ci-report__link { border: none; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+.ci-report-steps th, .ci-report-steps td { padding: 3px 6px 3px 0; text-align: left; font-weight: 400; vertical-align: top; }
+.ci-report-steps thead th { color: var(--text-dim); font-size: 11px; border-bottom: 1px solid var(--border); }
+.ci-report-steps tbody th { color: var(--text); }
+.ci-report-step { display: inline-flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+.ci-report-steps tbody td { color: var(--text-dim); white-space: nowrap; }
+.ci-report-row--nested > th { padding-left: 14px; }
+
+/* Метка обращения из CI-рана в ленте панели: путь в ленту этого рана. */
+.kbu-ev__run { margin-left: 6px; border: none; background: var(--ci-progress-bg); color: var(--ci-progress); border-radius: 99px; padding: 0 7px; font: inherit; font-size: 11px; cursor: pointer; }
+
+/* Чипс «База знаний» в «Подробнее» — ссылка на раздел (#/kb/:documentId). */
+.metachip--link { border: none; font: inherit; color: var(--accent); cursor: pointer; text-align: left; }

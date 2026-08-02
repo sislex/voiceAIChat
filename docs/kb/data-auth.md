@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-07-27
-checked: 49465ae
+updated: 2026-08-01
+checked: 12c087a
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -23,23 +23,106 @@ journal_mode = WAL`, `foreign_keys = ON`.
 |---|---|
 | `conversations` | разговор: `title`, таймстемпы, `claude_session_id` (для `--resume`), `user_id`, `exec_target` (изменяемая цель новых ходов чата), `permission_mode` (режим прав только этого чата; NULL — из общих настроек), `status` (persistent-статус жизненного цикла, по умолчанию `developing`) |
 | `messages` | `role` (`u<N>` для говорящих, `ai`), `text`, `engine`, `meta` (JSON `TurnMeta`), `exec_target` (неизменяемый снимок цели выполнения), каскад по разговору |
+| `messages_fts` | FTS5-индекс текста сообщений (`content='messages'`, внешнее содержимое) + `fts_state` — состояние бэкфилла |
 | `speakers` | метки говорящих внутри разговора |
 | `settings` | key-value, значения — JSON-строки |
 | `agents` | машины: `token_hash`, `last_seen`, `policy` (JSON), `user_id` |
 | `users` | `name` (PK и он же id владельца), `password_hash`, `role`, `blocked` |
+| `llm_engines` | реестр HTTP-исполнителей LLM для админки: `name`, `kind` (`claude`/`codex`), `base_url`, открытый `token`, `enabled`, `allowed_roles` (JSON-массив ролей), `is_default`, `created_at` |
+| `kb_usage_queries` | обращение к базе знаний: `seq` (монотонный курсор внутри разговора — по нему клиент отсекает устаревшие кадры `kb.usage`), `source` (`auto`/`tool_*`), `status`, `chars`/`est_tokens`, `prompt_chars`, `project_id` — СНИМОК проекта на момент обращения, `ci_run_id`/`ci_step_id` — ран и шаг CI-раннера, если обращение случилось в его ходе (NULL — обычный чат); каскад по разговору |
+| `kb_usage_sections` | разделы одного обращения (`document_id`+`anchor`, символы и оценка токенов), каскад по обращению |
+| `kb_documents` | статьи базы знаний, которые ведут пользователь и модель: `scope` (`usage`/`user`/`project`), `owner_id` для персональных, `project_id` для проектных (каскад по проекту); файловые темы `docs/kb/*.md` сюда не попадают |
 
 Файл БД — `<dataDir>/voicechat.db` (в Docker `/data`). Тесты работают на
 `:memory:` через `BuildOptions.db`. Вложения — `apps/server/src/uploads.ts`
 (`POST /api/uploads` → id, путь резолвится в промпт для модели).
 
+`llm_engines` живёт в той же схеме без отдельного migration-фреймворка:
+`schema.ts` создаёт таблицу и индексы на новых базах, а `VoiceChatDb.migrate()`
+добавляет недостающие колонки и индексы на уже существующих. Это важно для
+старых инсталляций: тест на legacy-БД фиксирует, что появление `llm_engines` не
+ломает чтение старых `conversations` и не требует ручного шага миграции.
+
+У реестра два инварианта на уровне SQLite: индекс
+`idx_llm_engines_kind_enabled` обслуживает список по `kind/enabled/created_at`, а
+частичный unique-индекс `idx_llm_engines_default_kind` не даёт держать две
+default-записи одного `kind`. Сам токен хранится в БД открытым текстом;
+ограничение доступа обеспечивается не схемой, а тем, что CRUD и health-check
+висят только на `requireAdmin` в `apps/server/src/routes/admin.ts`.
+
+Видимость статей `kb_documents` считает не БД, а слой БЗ (`apps/server/src/kb/scoped.ts`
+поверх «вида» из `kb/access.ts`): персональная статья — только владельцу, проектная —
+участникам проекта (`db.getProject(uid, projectId)`), «Использование» — всем. В таблице
+хранится только принадлежность; см. `features/project-knowledge-base.md`.
+
+Итоги обращений к БЗ считаются ОТДЕЛЬНЫМ запросом по `kb_usage_queries`, без
+JOIN с `kb_usage_sections`: иначе суммы размножаются по числу разделов. `prompt_chars`
+суммируется по одному значению на `turn_id` — промпт хода общий для всех его
+обращений. Изоляция: отчёт по чату начинается с `getConversation(userId, id)`,
+проектный, по рану и по задаче — с `isProjectMember` (иначе 404).
+Подробности — `features/kb-usage.md`.
+
+Срез отчёта — это только `WHERE`: итоги (`kbUsageTotals`), разделы
+(`kbUsageSections`) и лента (`kbUsageQueries`) — приватные хелперы с общим
+условием по алиасу `q`, а чат/проект/ран/задача подставляют своё
+(`q.ci_run_id = ?`, для задачи — подзапрос по `ci_runs`). Четыре копии одного
+`GROUP BY` разъехались бы в мелочах вроде порядка сортировки, и одни и те же
+обращения показывали бы разные числа в чате и в карточке задачи.
+
+`ci_run_id`, `ci_step_id` и индекс `idx_kb_usage_ci_run` добавляет только
+`migrate()`, а не `SCHEMA_SQL`: на базе, которая старше этих колонок,
+`CREATE TABLE IF NOT EXISTS` их не создаст, и `CREATE INDEX` в общей DDL-строке
+уронил бы старт. Тот же приём — у CI-полей `projects` (`ci_kb_context_mode`,
+`auto`|`manual`|`off`, дефолт `auto`) и у `ci_runs.kb_context_mode` — снимка
+этой настройки на момент старта рана.
+
 **У desktop своя копия схемы** (`apps/desktop/src/main/db/schema.ts`) — меняя одну,
 проверь вторую (см. `architecture.md`, раздел про осознанную дубликацию).
+
+## Полнотекстовый поиск по сообщениям (FTS5)
+
+`messages_fts` — виртуальная таблица FTS5 с **внешним содержимым**
+(`content='messages'`, `content_rowid='rowid'`): текст не дублируется, индекс
+читает его из `messages`. DDL лежит отдельно от `SCHEMA_SQL` —
+`MESSAGES_FTS_SQL` в `schema.ts`, и выполняется в `try/catch`: сборка SQLite без
+FTS5 не должна валить старт (тогда `searchMessages` просто отдаёт пустую страницу).
+
+Синхронизацию держат три триггера (`AFTER INSERT/UPDATE/DELETE ON messages`).
+Отсюда правило: **правки `messages` идут обычным SQL**, чтобы триггеры сработали;
+массовая вставка в обход них разошлась бы с индексом молча.
+
+Токенайзер — `unicode61 remove_diacritics 2`: складывает регистр кириллицы и
+снимает диакритику с латиницы. Кириллическую «ё» в «е» он **не** превращает —
+это разные токены.
+
+Бэкфилл истории (боевая база до фичи) идёт порциями по 500 сообщений через
+`unref`-нутый таймер: старт сервера не ждёт индексации 100k сообщений
+(`backfillMessagesFts` — одна порция, `ensureMessagesIndexed` — всё сразу, для
+тестов и bench). Состояние — таблица `fts_state`: `last_rowid` (докуда дошли),
+`max_rowid` (граница на момент старта — всё новее уже проиндексировано
+триггерами), `done`, `repairs`. Старт с `last_rowid = 0` начинается с
+`'delete-all'`, поэтому повторный запуск или потерянное состояние **пересобирают**
+индекс, а не удваивают его; по завершении — `'integrity-check'` и одна попытка
+пересборки, если проверка не прошла.
+
+`searchMessages(userId, { q, projectId?, conversationId?, limit, cursor })`:
+ранжирование `bm25()` (меньше — релевантнее), сниппет
+`snippet(messages_fts, 0, '<mark>', '</mark>', '…', 12)`, курсор — непрозрачная
+пара `(score, rowid)` в base64url. Владелец фильтруется джойном на
+`conversations.user_id`, поэтому чужие сообщения недостижимы при любых
+параметрах (в том числе при явном `conversationId` или чужом курсоре).
+Пользовательский ввод превращает в MATCH `toFtsMatchQuery` (`db/fts.ts`): слова в
+кавычках, спецсинтаксис FTS обезврежен, последнее незакрытое слово ищется
+префиксом. Стоимость запроса линейна по числу совпадений (~2.8 мкс на
+совпадение): на 100k сообщений типичный запрос — 5–75 мс, слово, встречающееся в
+70% сообщений, — около 200 мс. Замер: `db/search.perf.test.ts`
+(`VC_SEARCH_BENCH=1`).
 
 ## Пользователи и роли
 
 `UserRole = 'admin' | 'user'` (`packages/shared/src/types.ts`). Роль ограничивает
 доступные модели: `isModelAllowed` / `modelsForRole` / `clampModelForRole` —
-зажим применяется на сервере в `turns.ts`, а не только в UI.
+зажим применяется на сервере в `turns.ts`, а не только в UI. Роль также ограничивает исполнителей LLM по `llm_engines.allowed_roles`: безопасный список `/api/llm-engines`, сохранение настроек/разговора и резолв самого хода проверяют это независимо.
 
 Первый запуск на пустой БД создаёт `admin`; пароль берётся из
 `VC_ADMIN_PASSWORD` (пусто — без пароля). Если БД уже существует, переменная
@@ -78,5 +161,10 @@ journal_mode = WAL`, `foreign_keys = ON`.
 файла контейнера. Чужой путь, системный файл и несуществующий дают одинаковый 404 —
 по ответу не должно быть видно, что где лежит. Лимит `SERVER_FILE_MAX_BYTES` 32 МБ
 (больше → 413). Расширяешь список корней — помни, что это единственная граница.
+
+Сам профиль создаёт уже не сервер: `cliProfiles.ts` переехал в
+`apps/llm-runner/src/cli/`. Путь совпадает, пока сервер и исполнитель делят один
+`VC_DATA_DIR` (сейчас — один контейнер); разъедутся тома — этот роут перестанет
+видеть картинки, созданные CLI.
 
 **Проекты** (таблицы `projects`/`project_members`/`project_machines`/`kanban_columns`/`tasks`, доступ по членству, а не по единственному владельцу) — см. [projects.md](projects.md).

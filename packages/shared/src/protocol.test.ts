@@ -36,9 +36,25 @@ describe('контракт протокола', () => {
   })
 })
 
+describe('сообщения, дописанные сервером в чат', () => {
+  it('содержит chat.message (резюме CI-рана в связанном чате)', () => {
+    expect(SERVER_MESSAGE_TYPES).toContain('chat.message')
+  })
+})
+
 describe('ходы, переживающие reconnect', () => {
   it('содержит claude.active (снапшот активных ходов) и адресный claude.cancel', () => {
     expect(SERVER_MESSAGE_TYPES).toContain('claude.active')
     expect(CLIENT_MESSAGE_TYPES).toContain('claude.cancel')
+  })
+})
+
+describe('телеметрия использования базы знаний', () => {
+  it('содержит кадр kb.usage и REST-пути отчётов', () => {
+    expect(SERVER_MESSAGE_TYPES).toContain('kb.usage')
+    // Подписки нет: кадр рассылается по userId, как claude.usage.
+    expect(CLIENT_MESSAGE_TYPES).not.toContain('kb.usage')
+    expect(REST.conversationKbUsage('c1')).toBe('/api/conversations/c1/kb-usage')
+    expect(REST.projectKbUsage('p 1')).toBe('/api/projects/p%201/kb-usage')
   })
 })
