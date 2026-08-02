@@ -4,10 +4,14 @@
 // авто-возвратом в read-only по таймеру. Выполнение — через window.ci.consoleExec.
 import { useEffect, useRef, useState, type JSX } from 'react'
 import type { CiLogLine } from '@shared/ci'
+import { copyText } from '../../lib/clipboard'
+import { Button } from '../ui/Button'
+import { useToast } from '../ui/Toast'
 
 const EDIT_LIMIT_MS = 5 * 60 * 1000
 
 export function CiConsole(props: { runId: string; onClose: () => void }): JSX.Element {
+  const toast = useToast()
   const [log, setLog] = useState<CiLogLine[]>([])
   const [search, setSearch] = useState('')
   const [cmd, setCmd] = useState('')
@@ -26,7 +30,10 @@ export function CiConsole(props: { runId: string; onClose: () => void }): JSX.El
 
   const filtered = search ? log.filter((l) => l.chunk.includes(search)) : log
   const logText = (): string => log.map((l) => l.chunk).join('')
-  const copy = (): void => { void navigator.clipboard?.writeText(logText()) }
+  // Кнопка «Копировать лог» ничем себя не выдавала — ни успехом, ни отказом.
+  const copy = (): void => {
+    void copyText(logText()).then((ok) => (ok ? toast.success('Скопировано') : toast.error('Не удалось скопировать лог')))
+  }
   const exec = async (): Promise<void> => {
     const c = cmd.trim()
     if (!c) return
@@ -41,9 +48,9 @@ export function CiConsole(props: { runId: string; onClose: () => void }): JSX.El
         <span className="ci-console-title">Консоль рана</span>
         <span className={`lozenge ${edit ? 'lozenge-removed' : 'lozenge-neutral'}`}>{edit ? 'режим редактирования' : 'только чтение'}</span>
         <input className="login-input ci-console-search" placeholder="Поиск по логу" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <button className="ci-btn" onClick={copy}>Копировать лог</button>
-        <button className="ci-btn" onClick={() => setEdit((v) => !v)}>{edit ? 'Выйти из редактирования' : 'Режим редактирования'}</button>
-        <button className="ci-btn" onClick={props.onClose}>Закрыть</button>
+        <Button onClick={copy}>Копировать лог</Button>
+        <Button onClick={() => setEdit((v) => !v)}>{edit ? 'Выйти из редактирования' : 'Режим редактирования'}</Button>
+        <Button onClick={props.onClose}>Закрыть</Button>
       </div>
       <pre className="ci-console-log">{filtered.map((l) => l.chunk).join('')}</pre>
       <div className="ci-console-out" ref={outRef}>
@@ -57,7 +64,7 @@ export function CiConsole(props: { runId: string; onClose: () => void }): JSX.El
       <form className="ci-console-input" onSubmit={(e) => { e.preventDefault(); void exec() }}>
         <span className="ci-console-prompt">$</span>
         <input className="login-input" value={cmd} onChange={(e) => setCmd(e.target.value)} placeholder={edit ? 'команда (режим редактирования)' : 'ls, cat, git status…'} aria-label="Команда консоли" />
-        <button type="submit" className="ci-btn">Выполнить</button>
+        <Button type="submit">Выполнить</Button>
       </form>
     </div>
   )

@@ -21,8 +21,15 @@ export interface UseVoiceStore {
  * по умолчанию из окружения (window.audio / enumerateDevices / window.stt);
  * в тестах их можно переопределить через deps.
  */
-export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
+export interface UseVoiceStoreDeps extends StoreDeps {
+  /** Чат из адреса (#/chat/:id) на момент монтирования — открыть его первым. */
+  initialChatId?: string | null
+}
+
+export function useVoiceStore(deps: UseVoiceStoreDeps): UseVoiceStore {
   const storeRef = useRef<ReturnType<typeof createVoiceStore>>()
+  // Адрес читаем один раз: дальше выбором чата рулит маршрут (App.tsx).
+  const initialChatId = useRef(deps.initialChatId ?? null)
   if (!storeRef.current) {
     const hasStt = typeof window !== 'undefined' && !!window.stt
     const hasClaude = typeof window !== 'undefined' && !!window.claude
@@ -82,6 +89,7 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
     const files = deps.files ?? (typeof window !== 'undefined' ? window.files : undefined)
     const board = deps.board ?? (typeof window !== 'undefined' ? window.board : undefined)
     const ci = deps.ci ?? (typeof window !== 'undefined' ? window.ci : undefined)
+    const kb = deps.kb ?? (typeof window !== 'undefined' ? window.kb : undefined)
     storeRef.current = createVoiceStore({
       ...deps,
       session,
@@ -89,6 +97,7 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
       files,
       board,
       ci,
+      kb,
       audio,
       listMics,
       voiceInputEnabled: deps.voiceInputEnabled ?? VOICE_INPUT_ENABLED,
@@ -113,7 +122,7 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
   const state = useSyncExternalStore(store.subscribe, store.getState)
 
   useEffect(() => {
-    void store.actions.init()
+    void store.actions.init(initialChatId.current)
 
     const unsubs: Array<() => void> = []
     if (typeof window !== 'undefined' && window.stt) {
@@ -169,6 +178,13 @@ export function useVoiceStore(deps: StoreDeps): UseVoiceStore {
       unsubs.push(ci.onFix((m) => store.actions.applyCiFix(m.runId, m.attempt)))
       unsubs.push(ci.onDone((m) => store.actions.applyCiDone(m.runId, m.run, m.conclusion)))
       unsubs.push(ci.onSummary((m) => store.actions.applyCiSummary(m.projectId, m.summary)))
+      unsubs.push(ci.onInteraction((m) => store.actions.applyCiInteraction(m.runId, m.interaction)))
+      unsubs.push(ci.onChatMessage((m) => store.actions.applyChatMessage(m.conversationId, m.message)))
+    }
+    if (typeof window !== 'undefined' && window.kb) {
+      unsubs.push(
+        window.kb.onUsage((m) => store.actions.applyKbUsageQuery(m.conversationId, m.projectId, m.query))
+      )
     }
     if (typeof window !== 'undefined' && window.tts) {
       unsubs.push(

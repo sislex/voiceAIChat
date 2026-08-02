@@ -1,10 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { WebSocket } from 'ws'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
-import { VoiceChatDb } from '../db/database.js'
+import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from '../db/database.js'
+import { DEFAULT_CI_CLAUDE_MODEL, issueKey } from '@voicechat/shared'
 import { signToken } from '../users/accounts.js'
 import type { CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
@@ -14,13 +17,25 @@ const SECRET = 'ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
 let scripts: string[] = []
 let failClaude = false
+let failPush = false
+/** Управляемое падение шага TOGGLE: «сломано» → «починили» между ранами. */
+let failStep = false
+/** Локальные правки в рабочей копии: шаг CLONE отвечает на них exit 66, как боевой. */
+let dirtyWorkspace = false
+let onModelSend: (() => void) | null = null
+/** Снять состояние доски ровно в момент шага (после ответа ран может успеть закончиться). */
+let onExec: ((script: string) => void) | null = null
+/** Задержать ответ модели: нужно тестам, которым важен ран «в работе». */
+let modelGate: Promise<void> | null = null
 let codexModel = ''
 let modelRequests: LlmRequest[] = []
 
 const fakeClaude: LlmClient = {
   send: (req, handlers) => {
     modelRequests.push(req)
+    onModelSend?.()
     void (async () => {
+      if (modelGate) await modelGate
       if (failClaude) { handlers.onError('лимит исчерпан'); return }
       // Эмуляция MCP-вызова: если модели доступна команда 'model-tool', вызываем её
       // через брокер по токену из ciMcpUrl (как реальный /mcp/ci-commands эндпоинт).
@@ -39,6 +54,7 @@ const fakeClaude: LlmClient = {
 const fakeCodex: LlmClient = {
   send: (req, handlers) => {
     modelRequests.push(req)
+    onModelSend?.()
     codexModel = req.model
     queueMicrotask(() => { handlers.onDelta('готово codex'); handlers.onDone('готово codex') })
     return { cancel: () => {} }
@@ -49,12 +65,20 @@ const counts = new Map<string, number>()
 const ciExecutor: CommandExecutor = {
   run: async (req, onChunk) => {
     scripts.push(req.script)
+    onExec?.(req.script)
     const n = (counts.get(req.script) ?? 0) + 1
     counts.set(req.script, n)
     onChunk(`run:${req.script.slice(0, 20)}\n`)
     // FLAKY падает на первом прогоне и проходит на повторе (эмуляция «исправлено моделью»).
     const flakyOk = req.script.includes('FLAKY') && n >= 2
     if (req.script === 'DIRTY') return { exitCode: 66, timedOut: false }
+    // Подготовка директории приводит копию прошлого рана в чистое состояние.
+    if (req.script.includes('stash push') && req.script.includes('reset --hard')) dirtyWorkspace = false
+    // Боевой шаг клонирования: существующая копия с правками → exit 66.
+    if (req.script === 'CLONE') return { exitCode: dirtyWorkspace ? 66 : 0, timedOut: false }
+    // Падение шага «оставляет» в копии правки модели — как в реальном ране.
+    if (req.script === 'TOGGLE' && failStep) { dirtyWorkspace = true; return { exitCode: 1, timedOut: false } }
+    if (req.script.includes('git push')) return { exitCode: failPush ? 1 : 0, timedOut: false }
     const fail = req.script.includes('FAIL') || (req.script.includes('FLAKY') && !flakyOk)
     return { exitCode: fail ? 1 : 0, timedOut: false }
   }
@@ -64,6 +88,12 @@ beforeEach(async () => {
   let id = 0
   scripts = []
   failClaude = false
+  failPush = false
+  failStep = false
+  dirtyWorkspace = false
+  onModelSend = null
+  onExec = null
+  modelGate = null
   codexModel = ''
   modelRequests = []
   counts.clear()
@@ -80,7 +110,7 @@ function setup() {
   const project = db.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
   const agent = db.createAgent('admin', 'M')
   db.linkMachine('admin', project.id, agent.id)
-  db.setProjectMachineFeatureReposRoot('admin', project.id, agent.id, '/repos')
+  db.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
   db.setProjectDefaultMachine('admin', project.id, agent.id)
   const board = db.getBoard('admin', project.id)!
   const ready = board.columns.find((c) => c.semanticType === 'ready')!
@@ -94,7 +124,7 @@ async function run(projectId: string, taskId: string): Promise<string> {
   return res.json().id as string
 }
 
-async function waitRun(runId: string): Promise<{ run: { status: string; taskId: string }; steps: Array<{ kind: string; status: string }> }> {
+async function waitRun(runId: string): Promise<{ run: { status: string; taskId: string; llmProvider: string; llmModel: string }; steps: Array<{ kind: string; status: string }> }> {
   for (let i = 0; i < 100; i++) {
     const r = await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}` })
     const d = r.json()
@@ -105,6 +135,57 @@ async function waitRun(runId: string): Promise<{ run: { status: string; taskId: 
 }
 
 describe('ci run manager', () => {
+  it('при запуске переносит карточку в колонку development и использует наследуемую модель', async () => {
+    const { project, task } = setup()
+    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    // Колонку снимаем в момент запроса к модели: к концу успешного рана карточка
+    // уходит в «Ожидает мержа», и проверка после `waitRun` ловила бы уже её.
+    let columnAtModel: string | null = null
+    onModelSend = () => { columnAtModel = db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId }
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+    const development = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
+    expect(columnAtModel).toBe(development.id)
+    expect(detail.run.status).toBe('success')
+    expect(codexModel).toBe('gpt-5.4')
+  })
+
+  it('проект без явной настройки CI гоняет ран на claude opus', async () => {
+    const { project, task } = setup()
+    // Ни у проекта, ни у задачи нет записи в ci_llm_configs — значит DEFAULT_CI_LLM_CONFIG.
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+    expect(detail.run.status).toBe('success')
+    expect(detail.run.llmProvider).toBe('claude')
+    expect(detail.run.llmModel).toBe(DEFAULT_CI_CLAUDE_MODEL)
+    expect(modelRequests.map((r) => r.model)).toEqual([DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_CLAUDE_MODEL])
+  })
+
+  it('DELETE ci/llm снимает переопределение задачи и возвращает наследование', async () => {
+    const { project, task } = setup()
+    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    await inj(admin, { method: 'PUT', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm`, payload: { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 } })
+    const before = await inj(admin, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm` })
+    expect(before.json()).toMatchObject({ config: { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 }, overridden: true })
+
+    const res = await inj(admin, { method: 'DELETE', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm` })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      config: { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 },
+      overridden: false,
+      projectDefault: { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 }
+    })
+    // настройка проекта не затронута, GET согласован с ответом DELETE
+    const after = await inj(admin, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm` })
+    expect(after.json()).toEqual(res.json())
+  })
+
+  it('DELETE ci/llm для несуществующей задачи → 404', async () => {
+    const { project } = setup()
+    const res = await inj(admin, { method: 'DELETE', url: `/api/projects/${project.id}/tasks/нет-такой/ci/llm` })
+    expect(res.statusCode).toBe(404)
+  })
+
   it('пустые слоты: ран = работа модели + резюме → success', async () => {
     const { project, task } = setup()
     const runId = await run(project.id, task.id)
@@ -119,6 +200,57 @@ describe('ci run manager', () => {
     const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json()
     expect(Array.isArray(log)).toBe(true)
     expect(log.length).toBeGreaterThan(0)
+  })
+
+  it('резюме рана уходит отдельным сообщением в связанный чат задачи', async () => {
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('success')
+    const chatId = db.getCiRunRaw(runId)!.conversationId!
+    expect(chatId).toBeTruthy()
+    const summary = db.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary)!
+    expect(summary.role).toBe('ai')
+    expect(summary.meta!.ciRunSummary).toEqual({ runId })
+    // Шапка сообщения — ключ и заголовок задачи, дальше текст модели.
+    expect(summary.text).toContain('Резюме по задаче P-1 · T1')
+    expect(summary.text).toContain('готово')
+    // Тот же текст остаётся и в ленте рана: чат её не заменяет.
+    const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json() as Array<{ chunk: string }>
+    expect(log.some((l) => l.chunk.includes('готово'))).toBe(true)
+  })
+
+  it('резюме приходит по WS сообщением chat.message — открытый чат обновляется сам', async () => {
+    const { project, task } = setup()
+    // Чат создаём заранее, чтобы знать его id до старта рана.
+    const chat = db.openOrCreateTaskChat('admin', project.id, task.id)!
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const port = (app.server.address() as AddressInfo).port
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${admin}`)
+    await new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej) })
+    const got = new Promise<{ conversationId: string; message: { text: string } }>((resolve) => {
+      ws.on('message', (d: Buffer) => {
+        const m = JSON.parse(d.toString()) as { t: string; conversationId: string; message: { text: string } }
+        if (m.t === 'chat.message') resolve({ conversationId: m.conversationId, message: m.message })
+      })
+    })
+    const runId = await run(project.id, task.id)
+    const pushed = await got
+    expect(pushed.conversationId).toBe(chat.id)
+    expect(pushed.message.text).toContain('Резюме по задаче')
+    await waitRun(runId)
+    ws.close()
+  })
+
+  it('упавший слот «после»: резюме всё равно попадает в чат', async () => {
+    const { project, task } = setup()
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'test', script: 'FAIL test' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('failed')
+    const chatId = db.getCiRunRaw(runId)!.conversationId!
+    expect(db.listMessages('admin', chatId).some((m) => m.meta?.ciRunSummary?.runId === runId)).toBe(true)
   })
 
   it('падение в слоте «до» → ран failed и откат задачи в предыдущую колонку', async () => {
@@ -157,13 +289,79 @@ describe('ci run manager', () => {
     expect(report.some((w) => w.state === 'released')).toBe(true)
   })
 
-  it('конкурентные раны одного проекта сериализуются очередью', async () => {
+  it('перед cleanup отправляет ветку задачи в origin', async () => {
     const { project, task } = setup()
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'cleanup', script: 'rm -rf', isCleanup: true })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('success')
+    // Пуш идёт до удаления рабочей директории, иначе коммиты модели пропадут.
+    const pushIdx = scripts.findIndex((x) => x.includes('git push origin "HEAD:refs/heads/$BRANCH"'))
+    const cleanupIdx = scripts.indexOf('rm -rf')
+    expect(pushIdx).toBeGreaterThanOrEqual(0)
+    expect(pushIdx).toBeLessThan(cleanupIdx)
+    const steps = db.getCiRun('admin', runId)!.steps
+    const push = steps.find((x) => x.title === 'Отправить ветку задачи в origin')!
+    const cleanup = steps.find((x) => x.title === 'cleanup')!
+    expect(push.status).toBe('success')
+    expect(push.position).toBeLessThan(cleanup.position)
+    // Позиции не пересекаются: резюме остаётся последним шагом ленты.
+    expect(new Set(steps.map((x) => x.position)).size).toBe(steps.length)
+    expect(steps[steps.length - 1].kind).toBe('model_summary')
+  })
+
+  it('пуш ветки не удался → cleanup не выполняется, рабочая директория сохранена', async () => {
+    const { project, task } = setup()
+    failPush = true
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'cleanup', script: 'rm -rf', isCleanup: true })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('failed')
+    expect(scripts).not.toContain('rm -rf')
+    const report = db.listCiWorkspaceReport('admin', project.id)
+    expect(report.some((w) => w.state === 'released')).toBe(false)
+  })
+
+  it('пока модель разбирается с упавшим шагом, в прогрессе рана поднят fixing', async () => {
+    const { project, task } = setup()
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'build', script: 'FLAKY build' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    // Снимок сводки доски на каждый запрос к модели: первый — работа, второй — fix-loop.
+    const fixingSeen: boolean[] = []
+    onModelSend = () => {
+      const summary = db.latestCiRunSummaries(project.id)[0]
+      if (summary) fixingSeen.push(summary.slotProgress.fixing === true)
+    }
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('success')
+    expect(fixingSeen[0]).toBe(false)
+    expect(fixingSeen).toContain(true)
+    // После fix-loop флаг снят — карточка снова «голубая».
+    expect(db.getCiRunRaw(runId)!.slotProgress.fixing).toBe(false)
+  })
+
+  it('второй запуск той же задачи отклоняется 409, пока первый не закончился', async () => {
+    const { project, task } = setup()
+    // Держим первый ран на работе модели: пока он активен, задача занята.
+    let release: () => void = () => {}
+    modelGate = new Promise<void>((res) => { release = res })
     const r1 = await run(project.id, task.id)
+    for (let i = 0; i < 200 && !modelRequests.length; i++) await new Promise((res) => setTimeout(res, 5))
+
+    const second = await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/ci/run` })
+    expect(second.statusCode).toBe(409)
+    expect(second.json().error).toContain('уже выполняется')
+    // Ран у задачи ровно один — второй даже не создался.
+    expect(db.latestCiRunSummaries(project.id).filter((x) => x.taskId === task.id)).toHaveLength(1)
+
+    release()
+    expect((await waitRun(r1)).run.status).toBe('success')
+    // Задача освободилась — запускать снова можно.
     const r2 = await run(project.id, task.id)
-    const [d1, d2] = await Promise.all([waitRun(r1), waitRun(r2)])
-    expect(d1.run.status).toBe('success')
-    expect(d2.run.status).toBe('success')
+    expect((await waitRun(r2)).run.status).toBe('success')
   })
   it('fix-loop: модель чинит упавший шаг → ран success, зафиксирована попытка', async () => {
     const { project, task } = setup()
@@ -192,6 +390,75 @@ describe('ci run manager', () => {
     const t = db.getBoard('admin', project.id)!.tasks.find((x) => x.id === task.id)!
     expect(t.columnId).toBe(devCol.id)
   })
+  it('успешный ран без шага мержа переводит карточку в «Ожидает мержа»', async () => {
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('success')
+    const board = db.getBoard('admin', project.id)!
+    const awaitingMerge = board.columns.find((c) => c.semanticType === 'awaiting_merge')!
+    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(awaitingMerge.id)
+    // Причина переноса видна в ленте рана.
+    const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json() as Array<{ chunk: string }>
+    expect(log.some((l) => l.chunk.includes('не влита'))).toBe(true)
+  })
+
+  it('успешный шаг мержа переносит карточку в «Готово»', async () => {
+    const { project, task } = setup()
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('success')
+    const board = db.getBoard('admin', project.id)!
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(done.id)
+    // Перенос ровно один: карточка не заезжает сначала в «Ожидает мержа».
+    const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json() as Array<{ chunk: string }>
+    expect(log.some((l) => l.chunk.includes('переехала в «Готово»'))).toBe(true)
+    expect(log.some((l) => l.chunk.includes('ждёт мержа'))).toBe(false)
+    // Резюме записано ДО переноса — иначе оно ушло бы в скрытый чат завершённой задачи.
+    const chatId = db.getCiRunRaw(runId)!.conversationId!
+    expect(db.listMessages('admin', chatId).some((m) => m.meta?.ciRunSummary)).toBe(true)
+  })
+
+  it('нет колонки done в проекте — успешный мерж карточку не двигает', async () => {
+    const { project, task } = setup()
+    const devCol = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
+    const real = db.getColumnIdBySemantic.bind(db)
+    const spy = vi.spyOn(db, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'done' ? null : real(pid, semantic)))
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const d = await waitRun(await run(project.id, task.id))
+    expect(d.run.status).toBe('success')
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(devCol.id)
+    spy.mockRestore()
+  })
+
+  it('упавший шаг мержа: карточка возвращается в исходную колонку, а не ждёт мержа', async () => {
+    const { project, task, readyColId } = setup()
+    db.updateCiSettings({ maxFixAttempts: 1 })
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'FAIL git merge --no-edit' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('failed')
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
+  })
+
+  it('нет колонки awaiting_merge в проекте — ран success и карточка не двигается', async () => {
+    const { project, task } = setup()
+    const real = db.getColumnIdBySemantic.bind(db)
+    const spy = vi.spyOn(db, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'awaiting_merge' ? null : real(pid, semantic)))
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('success')
+    const board = db.getBoard('admin', project.id)!
+    const development = board.columns.find((c) => c.semanticType === 'development')!
+    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(development.id)
+    spy.mockRestore()
+  })
+
   it('консоль: read-only пропускает ls и отклоняет rm', async () => {
     const { project, task } = setup()
     const runId = await run(project.id, task.id)
@@ -230,7 +497,7 @@ describe('ci run manager', () => {
     expect(failed.steps.some((s) => s.kind === 'model_summary')).toBe(false)
 
     failClaude = false
-    const retry = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step`, payload: { provider: 'codex', model: '' } })
+    const retry = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step`, payload: { provider: 'codex', model: '', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 } })
     expect(retry.statusCode).toBe(202)
     const done = await waitRun(runId)
     expect(done.run.status).toBe('success')
@@ -273,5 +540,266 @@ describe('ci run manager', () => {
     expect(scripts.filter((x) => x === 'echo ok').length).toBe(1)
     // FLAKY выполнялся дважды (упал, затем прошёл на повторе).
     expect(scripts.filter((x) => x === 'FLAKY build').length).toBe(2)
+  })
+  // --- Автозадача «Пересборка прода» (мерж в прод-ветку без пересборки прода) ---
+
+  /** Команда мержа ветки задачи в прод-ветку (шаг раннер узнаёт по названию/скрипту). */
+  const mergeCommand = (projectId: string) =>
+    db.createCiCommand('admin', { scope: 'project', projectId, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
+  const openRebuildTasks = (projectId: string) => {
+    const board = db.getBoard('admin', projectId)!
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    return board.tasks.filter((t) => t.title === PROD_REBUILD_TASK_TITLE && t.columnId !== done.id)
+  }
+
+  it('мерж без пересборки прода: два рана — одна открытая задача «Пересборка прода» с двумя строками', async () => {
+    const { project, task, readyColId } = setup()
+    const merge = mergeCommand(project.id)
+    db.setCiSlotCommands('project', project.id, 'after_model', [merge.id])
+    const second = db.createTask('admin', project.id, { columnId: readyColId, title: 'T2' })!
+
+    const firstRun = await run(project.id, task.id)
+    expect((await waitRun(firstRun)).run.status).toBe('success')
+    expect((await waitRun(await run(project.id, second.id))).run.status).toBe('success')
+
+    const rebuild = openRebuildTasks(project.id)
+    expect(rebuild.length).toBe(1)
+    const card = rebuild[0]
+    // Заводим в колонке ready, тип task, без исполнителя.
+    expect(card.columnId).toBe(readyColId)
+    expect(card.type).toBe('task')
+    expect(card.assignee).toBe(null)
+    const lines = card.description.split('\n').filter((l) => l.startsWith('- '))
+    expect(lines).toEqual([`- ${issueKey(project.name, task)}: T1`, `- ${issueKey(project.name, second)}: T2`])
+    // Причина видна в ленте рана.
+    const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${firstRun}/log` })).json() as Array<{ chunk: string }>
+    expect(log.some((l) => l.chunk.includes(PROD_REBUILD_TASK_TITLE))).toBe(true)
+  })
+
+  it('повторный ран той же задачи не дублирует строку в «Пересборке прода»', async () => {
+    const { project, task } = setup()
+    const merge = mergeCommand(project.id)
+    db.setCiSlotCommands('task', task.id, 'after_model', [merge.id])
+    expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
+    expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
+    const rebuild = openRebuildTasks(project.id)
+    expect(rebuild.length).toBe(1)
+    expect(rebuild[0].description.split('\n').filter((l) => l.startsWith('- '))).toEqual([`- ${issueKey(project.name, task)}: T1`])
+  })
+
+  it('успешный шаг пересборки прода в ране — автозадача не заводится', async () => {
+    const { project, task } = setup()
+    const merge = mergeCommand(project.id)
+    const rebuild = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Обновить прод-контейнер', script: 'docker compose up --build -d' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [merge.id, rebuild.id])
+    expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
+    expect(openRebuildTasks(project.id).length).toBe(0)
+  })
+
+  it('ран без мержа в прод-ветку автозадачу не заводит', async () => {
+    const { project, task } = setup()
+    expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
+    expect(openRebuildTasks(project.id).length).toBe(0)
+  })
+
+  it('«Пересборка прода» уехала в done — следующий мерж заводит новую карточку', async () => {
+    const { project, task, readyColId } = setup()
+    const merge = mergeCommand(project.id)
+    db.setCiSlotCommands('project', project.id, 'after_model', [merge.id])
+    expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
+    const first = openRebuildTasks(project.id)[0]
+    const doneCol = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'done')!
+    db.moveTask('admin', project.id, first.id, { columnId: doneCol.id })
+
+    const second = db.createTask('admin', project.id, { columnId: readyColId, title: 'T2' })!
+    expect((await waitRun(await run(project.id, second.id))).run.status).toBe('success')
+    const open = openRebuildTasks(project.id)
+    expect(open.length).toBe(1)
+    expect(open[0].id).not.toBe(first.id)
+    expect(open[0].description.split('\n').filter((l) => l.startsWith('- '))).toEqual([`- ${issueKey(project.name, second)}: T2`])
+    // Закрытая карточка не дополняется.
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === first.id)!.description).toContain('T1')
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === first.id)!.description).not.toContain('T2')
+  })
+})
+
+// База знаний в ране: обращения привязаны к рану (их видно в ленте и в модалке
+// задачи), итог попадает в резюме, а сбой базы знаний ран не роняет.
+describe('ci run manager: база знаний', () => {
+  const hit = {
+    documentId: 'ci-runner', chunkId: 'ci-runner#model', title: 'CI-раннер', heading: 'Работа модели',
+    excerpt: 'Хуки модели живут в modelHooks.', score: 12, matchTypes: ['symbol' as const],
+    explanation: 'символ', freshness: 'current' as const, sourcePath: 'docs/kb/features/ci-runner.md',
+    anchor: 'model', symbols: [], relatedFiles: []
+  }
+  const kbStub = (search: () => Promise<typeof hit[]>) => ({
+    status: () => ({ available: true, mode: 'source' as const, searchMode: 'lexical' as const, version: 'x', createdAt: 'now', documents: 1, chunks: 1, staleDocuments: 0 }),
+    topics: () => [],
+    document: () => null,
+    search,
+    context: async () => ({ query: '', confidence: 'low' as const, autoInjectAllowed: false, sections: [], relatedFiles: [], relatedDocuments: [], staleWarnings: [], estimatedTokens: 0 })
+  })
+
+  /** Пересобрать сервер с подменённой базой знаний (остальное — как в beforeEach). */
+  async function rebuild(kbService: ReturnType<typeof kbStub>): Promise<void> {
+    await app.close()
+    app = await buildServer({
+      config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-ci-kb-${Date.now()}`) }),
+      db, sessionSecret: SECRET, ciExecutor, claude: fakeClaude, codex: fakeCodex, kbService
+    })
+  }
+
+  it('обращения рана записаны с ci_run_id и видны в отчётах по ране и задаче', async () => {
+    await rebuild(kbStub(async () => [hit]))
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id)
+    expect((await waitRun(runId)).run.status).toBe('success')
+
+    const report = db.kbUsageRunReport('admin', runId)!
+    expect(report.totals.queries).toBeGreaterThan(0)
+    expect(report.recent.every((q) => q.ciRunId === runId)).toBe(true)
+    expect(report.sections[0]).toMatchObject({ documentId: 'ci-runner', anchor: 'model' })
+    // Тот же ран виден и в агрегате по задаче (блок в модалке).
+    expect(db.kbUsageTaskReport('admin', project.id, task.id)!.runs).toBe(1)
+    // И в промпте модели: блок контекста ушёл вместе с задачей.
+    expect(modelRequests[0].prompt).toContain('### CI-раннер / Работа модели')
+    expect(modelRequests[0].kbMcpUrl).toContain('/mcp/kb?k=')
+  })
+
+  it('резюме в чате содержит строку с итогами по базе знаний', async () => {
+    await rebuild(kbStub(async () => [hit]))
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id)
+    await waitRun(runId)
+    const chatId = db.getCiRunRaw(runId)!.conversationId!
+    const summary = db.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary)!
+    expect(summary.text).toMatch(/БЗ: \d+ обращений, \d+ разделов, ≈\d+ токенов/)
+  })
+
+  it('режим «off» у проекта: ни контекста, ни инструментов, телеметрия пустая', async () => {
+    await rebuild(kbStub(async () => [hit]))
+    const { project, task } = setup()
+    db.updateProject('admin', project.id, { ciKbContextMode: 'off' })
+    const runId = await run(project.id, task.id)
+    expect((await waitRun(runId)).run.status).toBe('success')
+    expect(db.getCiRunRaw(runId)!.kbContextMode).toBe('off')
+    expect(modelRequests[0].kbMcpUrl).toBeUndefined()
+    expect(modelRequests[0].prompt).not.toContain('### CI-раннер')
+    expect(db.kbUsageRunReport('admin', runId)!.totals.queries).toBe(0)
+    const chatId = db.getCiRunRaw(runId)!.conversationId!
+    expect(db.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary)!.text).not.toContain('БЗ:')
+  })
+
+  it('сломанная база знаний не меняет статус рана', async () => {
+    await rebuild(kbStub(async () => { throw new Error('индекс недоступен') }))
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id)
+    expect((await waitRun(runId)).run.status).toBe('success')
+    expect(db.kbUsageRunReport('admin', runId)!.totals.errors).toBeGreaterThan(0)
+  })
+
+  it('отчёты по ране и задаче: свой — 200, чужой — 404', async () => {
+    await rebuild(kbStub(async () => [hit]))
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id)
+    await waitRun(runId)
+    db.createUser('bob', '', 'user')
+    const bob = signToken({ name: 'bob', role: 'user' }, SECRET)
+
+    const mine = await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/kb-usage` })
+    expect(mine.statusCode).toBe(200)
+    expect(mine.json()).toMatchObject({ runId, taskId: task.id, kbContextMode: 'auto' })
+    const mineTask = await inj(admin, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/kb-usage` })
+    expect(mineTask.statusCode).toBe(200)
+
+    expect((await inj(bob, { method: 'GET', url: `/api/ci/runs/${runId}/kb-usage` })).statusCode).toBe(404)
+    expect((await inj(bob, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/kb-usage` })).statusCode).toBe(404)
+  })
+})
+
+/**
+ * Терминальный статус прошлого рана не имеет права пережить следующий успешный
+ * запуск: карточка после падения/отмены и последующего успеха обязана оказаться
+ * ровно там же, где после обычного успешного рана.
+ */
+describe('карточка после падения, отмены и повтора', () => {
+  /** Пайплайн «сломанный шаг + мерж» в слоте «после» — как боевой. */
+  function pipeline(projectId: string, taskId: string): void {
+    const gate = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Запустить тестирование', script: 'TOGGLE' })
+    const merge = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
+    db.setCiSlotCommands('task', taskId, 'after_model', [gate.id, merge.id])
+  }
+
+  it('ран упал → починили → новый ран доводит карточку до «Готово», лозенг свежий', async () => {
+    const { project, task, readyColId } = setup()
+    db.updateCiSettings({ maxFixAttempts: 1 })
+    pipeline(project.id, task.id)
+    failStep = true
+
+    const first = await run(project.id, task.id)
+    expect((await waitRun(first)).run.status).toBe('failed')
+    // Исход B: карточка вернулась туда, где была, мержа не было.
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
+
+    failStep = false
+    const second = await run(project.id, task.id)
+    expect((await waitRun(second)).run.status).toBe('success')
+    const board = db.getBoard('admin', project.id)!
+    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(board.columns.find((c) => c.semanticType === 'done')!.id)
+    // Сводка на доске — про новый ран, а не про упавший.
+    const summary = db.latestCiRunSummary(task.id)!
+    expect(summary.id).toBe(second)
+    expect(summary.status).toBe('success')
+    expect(db.latestCiRunSummaries(project.id).find((x) => x.taskId === task.id)!.id).toBe(second)
+  })
+
+  it('повторный ран после падения не требует ручной чистки рабочей копии', async () => {
+    const { project, task } = setup()
+    db.updateCiSettings({ maxFixAttempts: 1 })
+    const clone = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Клонировать репозиторий задачи', script: 'CLONE' })
+    db.setCiSlotCommands('task', task.id, 'before_model', [clone.id])
+    const gate = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Запустить тестирование', script: 'TOGGLE' })
+    db.setCiSlotCommands('task', task.id, 'after_model', [gate.id])
+    failStep = true
+
+    const first = await run(project.id, task.id)
+    expect((await waitRun(first)).run.status).toBe('failed')
+    // Упавший шаг оставил в копии правки модели — прежде это ловил только exit 66.
+    expect(dirtyWorkspace).toBe(true)
+
+    failStep = false
+    const second = await run(project.id, task.id)
+    const d = await waitRun(second)
+    expect(d.run.status).toBe('success')
+    // Шаг клонирования прошёл сам: подготовка привела копию в чистое состояние.
+    const cloneStep = db.getCiRun('admin', second)!.steps.find((s) => s.title === 'Клонировать репозиторий задачи')!
+    expect(cloneStep.status).toBe('success')
+    expect(scripts.some((x) => x.includes('stash push') && x.includes('reset --hard'))).toBe(true)
+  })
+
+  it('повтор с упавшего шага: карточка уходит в разработку и после успеха доезжает до «Готово»', async () => {
+    const { project, task, readyColId } = setup()
+    db.updateCiSettings({ maxFixAttempts: 1 })
+    pipeline(project.id, task.id)
+    failStep = true
+
+    const runId = await run(project.id, task.id)
+    expect((await waitRun(runId)).run.status).toBe('failed')
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
+
+    failStep = false
+    const columns = db.getBoard('admin', project.id)!.columns
+    // Колонку снимаем в момент повторяемого шага: к концу рана карточка уже в «Готово».
+    let columnAtStep: string | null = null
+    onExec = (script) => { if (script === 'TOGGLE') columnAtStep = db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId }
+    const retry = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step` })
+    expect(retry.statusCode).toBe(202)
+
+    const done = await waitRun(runId)
+    expect(done.run.status).toBe('success')
+    // Повтор — это работа, а не простой: карточка вернулась в разработку на время рана.
+    expect(columnAtStep).toBe(columns.find((c) => c.semanticType === 'development')!.id)
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(columns.find((c) => c.semanticType === 'done')!.id)
+    expect(db.latestCiRunSummary(task.id)!.status).toBe('success')
   })
 })

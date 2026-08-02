@@ -5,7 +5,7 @@
 // при добавлении возможностей. Тулы объявляют минимальную версию агента; если
 // подключённый агент старее — тула не выполняется (просим обновиться).
 
-export const AGENT_VERSION = '0.9.1'
+export const AGENT_VERSION = '0.9.2'
 
 /**
  * Минимальная версия агента для тула. 0.1.0 — базовый агент (умеет exec/bash);
@@ -13,7 +13,9 @@ export const AGENT_VERSION = '0.9.1'
  * 0.3.0 — добавлен живой PTY-терминал по машине (node-pty);
  * 0.4.0 — агент шлёт живую телеметрию (ОС/CPU/память/диск/батарея, push-only);
  * 0.5.0 — агент раздаёт картинки по HTTP из `<rootDir>/.generated_images`;
- * 0.6.0 — агент работает на Windows (shell cmd.exe/PowerShell, установщик .ps1).
+ * 0.6.0 — агент работает на Windows (shell cmd.exe/PowerShell, установщик .ps1);
+ * 0.9.2 — на Windows shell резолвится в bash.exe (Git for Windows), а не cmd.exe;
+ * телеметрия несёт os.shell/os.shellDegraded, установщик ставит портативный Git.
  */
 export const TOOL_MIN_VERSION: Record<string, string> = {
   exec: '0.1.0',

@@ -1,12 +1,29 @@
 #!/bin/sh
-# Стартуем под root: чиним владельца томов (могли быть созданы прежним
-# root-контейнером → node не смог бы писать, SQLITE_READONLY / auth недоступна),
-# затем роняем привилегии до node (claude CLI запрещает bypass-права под root).
+# Стартуем под root: чиним владельца томов и, при необходимости, переносим старые
+# CLI-профили в отдельный data-volume исполнителя. Затем сбрасываем привилегии до
+# node: claude CLI не даёт bypass-права под root/sudo.
 set -e
 
-# Данные (SQLite + вложения) и авторизация CLI (тома vc-claude/vc-codex) —
-# во владении node, иначе node не сможет писать/читать токены.
-mkdir -p /home/node/.claude /home/node/.codex
-chown -R node:node /data /home/node/.claude /home/node/.codex 2>/dev/null || true
+DATA_DIR=${VC_DATA_DIR:-/data}
+HOME_DIR=${HOME:-/home/node}
+CLAUDE_DIR="$HOME_DIR/.claude"
+CODEX_DIR="$HOME_DIR/.codex"
+
+mkdir -p "$DATA_DIR" "$CLAUDE_DIR" "$CODEX_DIR"
+
+MIGRATE_FROM=${VC_RUNNER_MIGRATE_CLI_USERS_FROM:-}
+if [ -n "$MIGRATE_FROM" ]; then
+  SRC="$MIGRATE_FROM/cli-users"
+  DST="$DATA_DIR/cli-users"
+  if [ -d "$SRC" ] && [ ! -e "$DST/.migrated-from-server-data" ]; then
+    mkdir -p "$DST"
+    if [ -z "$(ls -A "$DST" 2>/dev/null)" ]; then
+      cp -a "$SRC/." "$DST/" 2>/dev/null || true
+    fi
+    touch "$DST/.migrated-from-server-data"
+  fi
+fi
+
+chown -R node:node "$DATA_DIR" "$CLAUDE_DIR" "$CODEX_DIR" 2>/dev/null || true
 
 exec gosu node "$@"

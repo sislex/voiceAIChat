@@ -5,12 +5,26 @@ import {
   DEFAULT_CONVERSATION_STATUS,
   type Conversation,
   type ConversationStatus,
+  type MessageRole,
+  type MessageSearchHit,
   type SessionUser
 } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
-import type { ProjectSummary } from '@shared/projects'
+import type { ProjectSummary, TaskChatBadge } from '@shared/projects'
+import type { CiRunSummary } from '@shared/ci'
+import { ciCardPulse } from '@shared/ci'
+import { TypeIcon } from './kanban/kanbanMeta'
+import { ciStatusLabel, ciTone } from './ci/ciFormat'
 import { ACCENT } from '../lib/view'
-import { GearIcon } from './icons'
+import { splitSnippet } from '../lib/snippet'
+import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
+import { Skeleton, RefreshIndicator } from './ui/Skeleton'
+import { EmptyState } from './ui/EmptyState'
+import { ErrorState } from './ui/ErrorState'
+import { loadView, type LoadStatus } from '../lib/loadState'
+import { FilterIcon, GearIcon } from './icons'
+import { formatCombo } from '../lib/hotkeys'
 
 /** Человекочитаемая мета разговора: «Сегодня · 6 сообщений». */
 function formatMeta(c: Conversation, now: number): string {
@@ -40,13 +54,149 @@ function pluralMessages(n: number): string {
   return 'сообщений'
 }
 
+/** Что показывает панель результатов поиска по сообщениям (данные из стора). */
+export interface MessageSearchView {
+  query: string
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  hits: MessageSearchHit[]
+  nextCursor: string | null
+  loadingMore: boolean
+  error: string | null
+}
+
+const EMPTY_SEARCH_VIEW: MessageSearchView = {
+  query: '',
+  status: 'idle',
+  hits: [],
+  nextCursor: null,
+  loadingMore: false,
+  error: null
+}
+
+/** Автор найденного сообщения: у пользователя может быть несколько спикеров. */
+function roleLabel(role: MessageRole): string {
+  if (role === 'ai') return 'Модель'
+  return role === 'u1' ? 'Вы' : `Спикер ${role.slice(1)}`
+}
+
+/** «Сегодня, 14:05» — дата беседы плюс готовое локальное время сообщения. */
+function formatHitDate(hit: MessageSearchHit, now: number): string {
+  const d = new Date(hit.createdAt)
+  const today = new Date(now)
+  const yesterday = new Date(now - 86_400_000)
+  const sameDay = (a: Date, b: Date): boolean =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  const day = sameDay(d, today)
+    ? 'Сегодня'
+    : sameDay(d, yesterday)
+      ? 'Вчера'
+      : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+  return hit.time ? `${day}, ${hit.time}` : day
+}
+
+interface MessageResultsProps {
+  search: MessageSearchView
+  now: number
+  onPick: (hit: MessageSearchHit) => void
+  onRetry?: () => void
+  onLoadMore?: () => void
+}
+
+/**
+ * Результаты поиска по сообщениям. Четыре состояния: пусто (подсказка про
+ * синтаксис), загрузка (скелетоны), ошибка (с «Повторить») и найденное.
+ */
+function MessageResults({ search, now, onPick, onRetry, onLoadMore }: MessageResultsProps): JSX.Element {
+  const { status, hits, error } = search
+  if (status === 'error') {
+    return (
+      <div className="convolist msgfound-list">
+        <ErrorState message="Поиск не удался" detail={error} {...(onRetry ? { onRetry } : {})} />
+      </div>
+    )
+  }
+  if (status === 'loading' && hits.length === 0) {
+    return (
+      <div className="convolist msgfound-list" aria-busy="true">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} variant="card" testId="msgfound-skeleton" height={92} lines={3} />
+        ))}
+      </div>
+    )
+  }
+  if (status === 'idle' || search.query === '') {
+    return (
+      <div className="convolist msgfound-list">
+        <p className="convo-empty msgfound-hint">
+          Ищем по тексту всех ваших сообщений. Несколько слов — все должны встретиться в сообщении;
+          последнее слово ищется по началу («мигра» найдёт «миграцию»). Регистр не важен.
+        </p>
+      </div>
+    )
+  }
+  if (hits.length === 0) {
+    return (
+      <div className="convolist msgfound-list">
+        <EmptyState
+          compact
+          icon="🔍"
+          title="Ничего не найдено"
+          description="Уберите последнее слово или поищите по названиям беседы."
+        />
+      </div>
+    )
+  }
+  return (
+    <div className="convolist msgfound-list">
+      {hits.map((hit) => (
+        <button key={hit.messageId} className="msgfound" onClick={() => onPick(hit)}>
+          <span className="msgfound-head">
+            <span className="msgfound-title">{hit.conversationTitle}</span>
+            <span className="msgfound-date">{formatHitDate(hit, now)}</span>
+          </span>
+          <span className="msgfound-snippet">
+            {splitSnippet(hit.snippet).map((part, i) =>
+              part.hit ? <mark key={i}>{part.text}</mark> : <span key={i}>{part.text}</span>
+            )}
+          </span>
+          <span className="msgfound-role">{roleLabel(hit.role)}</span>
+        </button>
+      ))}
+      {search.nextCursor && onLoadMore && (
+        <button className="msgfound-more" onClick={onLoadMore} disabled={search.loadingMore}>
+          {search.loadingMore ? 'Загружаем…' : 'Показать ещё'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export type SidebarMode = 'chats' | 'projects'
+
+/** Область поиска в сайдбаре: названия бесед или текст сообщений. */
+export type SearchScope = 'chats' | 'messages'
 
 export interface SidebarProps {
   conversations: Conversation[]
+  /** Состояние загрузки списка: скелетон на первой загрузке, ошибка — с «Повторить». */
+  conversationsStatus?: LoadStatus
+  /** Техническая деталь ошибки загрузки списка (под «Подробнее»). */
+  conversationsError?: string | null
+  /** Повторить загрузку списка бесед. */
+  onRetryConversations?: () => void
   activeId: string | null
   /** id разговоров, где сейчас идёт ход модели (индикатор «идёт работа»). */
   workingIds?: string[]
+  /**
+   * Метки чатов задач по id беседы: ключ и тип задачи. Есть метка — строка
+   * отличается от обычного чата всегда, а не только во время рана.
+   */
+  taskBadges?: Record<string, TaskChatBadge>
+  /**
+   * Сводки последних CI-ранов по `taskId` — тот же источник, что подсвечивает
+   * карточку на доске, поэтому список чатов мигает теми же цветами.
+   */
+  ciSummaries?: Record<string, CiRunSummary>
   now: number
   onNew: () => void
   onPick: (id: string) => void
@@ -58,6 +208,23 @@ export interface SidebarProps {
   agents?: AgentInfo[]
   searchQuery: string
   onSearch: (query: string) => void
+  /** Область поиска; не задан `onSearchScopeChange` — переключатель скрыт. */
+  searchScope?: SearchScope
+  onSearchScopeChange?: (scope: SearchScope) => void
+  /** Результаты поиска по сообщениям (режим «Сообщения»). */
+  messageSearch?: MessageSearchView
+  /** Открыть найденное сообщение: беседа + прокрутка к нему. */
+  onPickMessage?: (hit: MessageSearchHit) => void
+  /** Повторить упавший поиск. */
+  onRetryMessageSearch?: () => void
+  /** Догрузить следующую страницу результатов. */
+  onLoadMoreMessages?: () => void
+  /**
+   * Показывать ли чаты задач, завершённых на доске. Фильтрует сервер, поэтому
+   * переключатель — запрос списка заново; без колбэка иконки-фильтра нет.
+   */
+  showDoneTaskChats?: boolean
+  onShowDoneTaskChatsChange?: (show: boolean) => void
   /** Проекты пользователя для селекта над поиском. */
   projects?: ProjectSummary[]
   /** Выбранный в сайдбаре проект (null — «Без проекта»). */
@@ -91,6 +258,8 @@ export interface SidebarProps {
   onPickProject?: (id: string) => void
   /** Создать проект из инлайн-формы списка (имя уже обрезано и не пустое). */
   onCreateProject?: (name: string) => void
+  /** Открыть командную палитру (кнопка «⌘K» рядом с поиском); не задан — кнопки нет. */
+  onOpenCommandPalette?: () => void
   /** Мобильный режим: сайдбар выдвинут поверх контента. */
   open?: boolean
   /** Свернуть сайдбар на десктопе (шеврон в шапке); undefined — кнопку не показываем. */
@@ -99,8 +268,13 @@ export interface SidebarProps {
 
 export function Sidebar({
   conversations,
+  conversationsStatus = 'ready',
+  conversationsError = null,
+  onRetryConversations,
   activeId,
   workingIds = [],
+  taskBadges = {},
+  ciSummaries = {},
   now,
   onNew,
   onPick,
@@ -110,6 +284,14 @@ export function Sidebar({
   agents = [],
   searchQuery,
   onSearch,
+  searchScope = 'chats',
+  onSearchScopeChange,
+  messageSearch = EMPTY_SEARCH_VIEW,
+  onPickMessage,
+  onRetryMessageSearch,
+  onLoadMoreMessages,
+  showDoneTaskChats = false,
+  onShowDoneTaskChatsChange,
   projects = [],
   selectedProjectId = null,
   onSelectProject,
@@ -128,6 +310,7 @@ export function Sidebar({
   activeProjectId = null,
   onPickProject,
   onCreateProject,
+  onOpenCommandPalette,
   open = false,
   onToggleCollapse
 }: SidebarProps): JSX.Element {
@@ -143,6 +326,11 @@ export function Sidebar({
   const [projectDraft, setProjectDraft] = useState('')
   const acctRef = useRef<HTMLDivElement | null>(null)
   const workingSet = new Set(workingIds)
+  // Поиск по сообщениям заменяет список бесед: у панели свои состояния и карточки.
+  const inMessages = searchScope === 'messages'
+  // Состояния списка бесед по общему правилу: скелетон — только пока данных нет,
+  // при повторной загрузке список остаётся на месте (см. lib/loadState.ts).
+  const chats = loadView(conversationsStatus, conversations.length > 0)
 
   // Меню аккаунта закрывается по клику вне и по Esc.
   useEffect(() => {
@@ -189,9 +377,9 @@ export function Sidebar({
           Голос·Чат
         </span>
         <div className="sidehead-actions">
-          <button className="newbtn" onClick={onNew}>
+          <Button size="sm" onClick={onNew}>
             + Новый
-          </button>
+          </Button>
           {onToggleCollapse && (
             <button
               className="side-collapse"
@@ -233,131 +421,275 @@ export function Sidebar({
       )}
       {mode === 'chats' && (<>
       <div className="sidesearch">
-        <input
-          className="searchinput"
-          type="search"
-          value={searchQuery}
-          placeholder="Поиск по разговорам…"
-          aria-label="Поиск по разговорам"
-          onChange={(e) => onSearch(e.target.value)}
-        />
-      </div>
-      <div className="convolist">
-        {conversations.length === 0 && searchQuery.trim() !== '' && (
-          <p className="convo-empty">Ничего не найдено</p>
+        {onSearchScopeChange && (
+          <div className="searchscope" role="group" aria-label="Область поиска">
+            <button
+              className={searchScope === 'chats' ? 'on' : ''}
+              aria-pressed={searchScope === 'chats'}
+              onClick={() => onSearchScopeChange('chats')}
+            >
+              Беседы
+            </button>
+            <button
+              className={searchScope === 'messages' ? 'on' : ''}
+              aria-pressed={searchScope === 'messages'}
+              onClick={() => onSearchScopeChange('messages')}
+            >
+              Сообщения
+            </button>
+          </div>
         )}
-        {conversations.map((c) => (
-          <div
-            key={c.id}
-            className={c.id === activeId ? 'convo on' : 'convo'}
-            onClick={() => renamingId !== c.id && onPick(c.id)}
-          >
-            <div className="crow">
-              <div className="cinfo">
-                {renamingId === c.id ? (
-                  <input
-                    className="ctitle-edit"
-                    value={renameDraft}
-                    autoFocus
-                    aria-label="Новое название разговора"
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => setRenameDraft(e.target.value)}
-                    onBlur={commitRename}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        commitRename()
-                      } else if (e.key === 'Escape') {
-                        cancelRename()
-                      }
-                    }}
-                  />
-                ) : (
-                  <p
-                    className="ctitle"
-                    onDoubleClick={(e) => {
-                      e.stopPropagation()
-                      startRename(c)
-                    }}
-                  >
-                    {c.title}
-                  </p>
-                )}
-                <p className="cmeta">{formatMeta(c, now)}</p>
-                {c.messageCount > 0 && (
-                  <p className="chat-last-machine" title="Машина последнего сообщения">
-                    Последнее: {c.lastExecTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === c.lastExecTarget)?.name ?? 'Сервер'}
-                  </p>
-                )}
-                {workingSet.has(c.id) ? (
-                  <p className="cstatus on">
-                    <span className="cstatus-dot" aria-hidden />
-                    {activeStatusLabel(c.permissionMode)}
-                  </p>
-                ) : (
-                  <select
-                    className="cstatus-select"
-                    aria-label={`Статус разговора «${c.title}»`}
-                    value={c.status ?? DEFAULT_CONVERSATION_STATUS}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                      e.stopPropagation()
-                      onStatusChange?.(c.id, e.target.value as ConversationStatus)
-                    }}
-                  >
-                    {CONVERSATION_STATUSES.map((status) => (
-                      <option key={status.id} value={status.id}>{status.label}</option>
-                    ))}
-                  </select>
+        <div className="sidesearch-row">
+          <input
+            className="searchinput"
+            type="search"
+            value={searchQuery}
+            placeholder={inMessages ? 'Поиск по сообщениям…' : 'Поиск по разговорам…'}
+            aria-label={inMessages ? 'Поиск по сообщениям' : 'Поиск по разговорам'}
+            onChange={(e) => onSearch(e.target.value)}
+          />
+          {/* Фильтр списка: чаты завершённых задач по умолчанию скрыты, и без
+              видимой кнопки о них бы просто забыли. Нажатое состояние — тот же
+              флаг, что и галка в шапке доски. */}
+          {onShowDoneTaskChatsChange && (
+            <IconButton
+              className={showDoneTaskChats ? 'convo-filter on' : 'convo-filter'}
+              aria-label="Показывать чаты завершённых задач"
+              aria-pressed={showDoneTaskChats}
+              title="Показывать чаты завершённых задач"
+              onClick={() => onShowDoneTaskChatsChange(!showDoneTaskChats)}
+            >
+              <FilterIcon />
+            </IconButton>
+          )}
+          {/* Точка входа мышью: без неё про палитру узнают только те, кто угадал
+              сочетание. Подпись — та же, что в шпаргалке (⌘ на macOS, Ctrl на остальных). */}
+          {onOpenCommandPalette && (
+            <IconButton
+              className="cmdk-open"
+              aria-label="Командная палитра"
+              title={`Командная палитра (${formatCombo('mod+k')})`}
+              onClick={onOpenCommandPalette}
+            >
+              {formatCombo('mod+k')}
+            </IconButton>
+          )}
+        </div>
+      </div>
+      {inMessages ? (
+        <MessageResults
+          search={messageSearch}
+          now={now}
+          onPick={(hit) => onPickMessage?.(hit)}
+          {...(onRetryMessageSearch ? { onRetry: onRetryMessageSearch } : {})}
+          {...(onLoadMoreMessages ? { onLoadMore: onLoadMoreMessages } : {})}
+        />
+      ) : (
+      <div className="convolist">
+        {chats.state === 'skeleton' && (
+          <div className="convolist-skel" aria-busy="true">
+            {/* Высота косточки — высота .convo с названием, метой и статусом. */}
+            <Skeleton variant="list" count={5} height={76} lines={3} testId="convo-skeleton" />
+          </div>
+        )}
+        {chats.state === 'error' && (
+          <ErrorState
+            message="Не удалось загрузить беседы"
+            detail={conversationsError}
+            {...(onRetryConversations ? { onRetry: onRetryConversations } : {})}
+          />
+        )}
+        {chats.state === 'empty' &&
+          (searchQuery.trim() !== '' ? (
+            <EmptyState
+              compact
+              icon="🔍"
+              title="Ничего не найдено"
+              description="Измените запрос или выберите другой проект в списке над поиском."
+            />
+          ) : (
+            <EmptyState
+              icon="💬"
+              title="Пока нет бесед — начните первую"
+              description="Разговор появится в этом списке и сохранит историю вопросов и ответов."
+              actionLabel="Новый разговор"
+              onAction={onNew}
+            />
+          ))}
+        {chats.staleError && (
+          <ErrorState
+            compact
+            className="convolist-stale"
+            message="Список мог устареть: обновить не удалось"
+            detail={conversationsError}
+            {...(onRetryConversations ? { onRetry: onRetryConversations } : {})}
+          />
+        )}
+        {chats.refreshing && (
+          <p className="convolist-refresh">
+            <RefreshIndicator label="Обновляем список…" />
+          </p>
+        )}
+        {/* Список — именно список: скринридер объявляет «список, N элементов» и
+            ходит по нему по элементам. role=list висит на обёртке только с
+            беседами: скелетон, пустота и баннер ошибки — не элементы списка, и
+            внутри list им быть нельзя. */}
+        <div className="convo-items" role="list" aria-label="Беседы">
+          {conversations.map((c) => {
+            // Чат задачи виден в списке как задача: ключ, тип и состояние
+            // последнего рана. Подсветку считает та же shared-функция, что и
+            // для карточки на доске (`jcard--ci-*`), поэтому цвета совпадают;
+            // мигает только активный ран, у терминального рамка статичная.
+            const badge = taskBadges[c.id]
+            const run = badge ? ciSummaries[badge.taskId] : undefined
+            const pulse = ciCardPulse(run)
+            return (
+            <div
+              key={c.id}
+              role="listitem"
+              className={['convo', c.id === activeId && 'on', badge && 'convo--task', pulse && `convo--ci-${pulse}`]
+                .filter(Boolean)
+                .join(' ')}
+              onClick={() => renamingId !== c.id && onPick(c.id)}
+            >
+              <div className="crow">
+                <div className="cinfo">
+                  {renamingId === c.id ? (
+                    <input
+                      className="ctitle-edit"
+                      value={renameDraft}
+                      autoFocus
+                      aria-label="Новое название разговора"
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onBlur={commitRename}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          commitRename()
+                        } else if (e.key === 'Escape') {
+                          cancelRename()
+                        }
+                      }}
+                    />
+                  ) : (
+                    /* Название — настоящая кнопка: строку целиком открывает и
+                       клик мышью по любому её месту, но с клавиатуры выбрать
+                       беседу иначе было нельзя (div с onClick не фокусируется и
+                       не реагирует на Enter). aria-current помечает открытую;
+                       aria-selected здесь не годится — он допустим только внутри
+                       listbox/grid, а в строке живут свои кнопки и селект статуса,
+                       то есть option'ом она быть не может. */
+                    <button
+                      type="button"
+                      className="ctitle"
+                      aria-current={c.id === activeId ? 'true' : undefined}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onPick(c.id)
+                      }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation()
+                        startRename(c)
+                      }}
+                    >
+                      {c.title}
+                    </button>
+                  )}
+                  {badge && (
+                    <p className="ctask">
+                      <TypeIcon type={badge.type} />
+                      <span className="ctask-key">{badge.key}</span>
+                      {run && (
+                        <span className={`ci-lozenge ci-lozenge--${ciTone(run.status)}`} title="Последний ран задачи">
+                          {ciStatusLabel(run.status)}
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  <p className="cmeta">{formatMeta(c, now)}</p>
+                  {c.messageCount > 0 && (
+                    <p className="chat-last-machine" title="Машина последнего сообщения">
+                      Последнее: {c.lastExecTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === c.lastExecTarget)?.name ?? 'Сервер'}
+                    </p>
+                  )}
+                  {workingSet.has(c.id) ? (
+                    <p className="cstatus on">
+                      <span className="cstatus-dot" aria-hidden />
+                      {activeStatusLabel(c.permissionMode)}
+                    </p>
+                  ) : (
+                    <select
+                      className="cstatus-select"
+                      aria-label={`Статус разговора «${c.title}»`}
+                      value={c.status ?? DEFAULT_CONVERSATION_STATUS}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => {
+                        e.stopPropagation()
+                        onStatusChange?.(c.id, e.target.value as ConversationStatus)
+                      }}
+                    >
+                      {CONVERSATION_STATUSES.map((status) => (
+                        <option key={status.id} value={status.id}>{status.label}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                {confirmingId !== c.id && renamingId !== c.id && (
+                  <span className="crow-actions">
+                    <IconButton
+                      size="sm"
+                    
+                      aria-label={`Переименовать разговор «${c.title}»`}
+                      title="Переименовать"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        startRename(c)
+                      }}
+                    >
+                      ✎
+                    </IconButton>
+                    <IconButton
+                      size="sm"
+                      className="vc-btn--danger-quiet"
+                    
+                      aria-label={`Удалить разговор «${c.title}»`}
+                      title="Удалить разговор"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setConfirmingId(c.id)
+                      }}
+                    >
+                      ✕
+                    </IconButton>
+                  </span>
                 )}
               </div>
-              {confirmingId !== c.id && renamingId !== c.id && (
-                <span className="crow-actions">
-                  <button
-                    className="renbtn"
-                    aria-label={`Переименовать разговор «${c.title}»`}
-                    title="Переименовать"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      startRename(c)
+              {confirmingId === c.id && (
+                <div className="delconfirm" onClick={(e) => e.stopPropagation()}>
+                  <span>Удалить?</span>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                  
+                    onClick={() => {
+                      setConfirmingId(null)
+                      onDelete(c.id)
                     }}
                   >
-                    ✎
-                  </button>
-                  <button
-                    className="delbtn"
-                    aria-label={`Удалить разговор «${c.title}»`}
-                    title="Удалить разговор"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setConfirmingId(c.id)
-                    }}
-                  >
-                    ✕
-                  </button>
-                </span>
+                    Удалить
+                  </Button>
+                  <Button size="sm" onClick={() => setConfirmingId(null)}>
+                    Отмена
+                  </Button>
+                </div>
               )}
             </div>
-            {confirmingId === c.id && (
-              <div className="delconfirm" onClick={(e) => e.stopPropagation()}>
-                <span>Удалить?</span>
-                <button
-                  className="delyes"
-                  onClick={() => {
-                    setConfirmingId(null)
-                    onDelete(c.id)
-                  }}
-                >
-                  Удалить
-                </button>
-                <button className="delno" onClick={() => setConfirmingId(null)}>
-                  Отмена
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
+            )
+          })}
+        </div>
       </div>
+      )}
       </>)}
       {mode === 'projects' && (
         <div className="convolist projlist">
@@ -384,7 +716,14 @@ export function Sidebar({
                 + Проект
               </button>
             ))}
-          {projects.length === 0 && <p className="convo-empty">Проектов пока нет</p>}
+          {projects.length === 0 && (
+            <EmptyState
+              compact
+              icon="🗂"
+              title="Проектов пока нет"
+              description="Создайте первый — доска, задачи и CI появятся внутри него."
+            />
+          )}
           {projects.map((p) => (
             <button
               key={p.id}
@@ -403,8 +742,11 @@ export function Sidebar({
             всплывают по клику на пользователя. */}
         {currentUser && currentUser.name ? (
           <div className="acct" ref={acctRef}>
-            <button
-              className="footbtn acct-toggle"
+            <Button
+              variant="ghost"
+              fullWidth
+              className="sidefoot-row acct-toggle"
+              
               onClick={() => setAcctOpen((v) => !v)}
               aria-haspopup="menu"
               aria-expanded={acctOpen}
@@ -413,59 +755,59 @@ export function Sidebar({
               <span className="footico">👤</span>
               <span className="username">{currentUser.name}</span>
               <span className="acct-caret" aria-hidden>▾</span>
-            </button>
+            </Button>
             {acctOpen && (
               <div className="acct-menu" role="menu">
-                <button className="footbtn" role="menuitem" onClick={acct(onOpenObserver)}>
+                <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenObserver)}>
                   <span className="footico">🤖</span>
                   Агенты
-                </button>
+                </Button>
                 {onOpenKnowledgeBase && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onOpenKnowledgeBase)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenKnowledgeBase)}>
                     <span className="footico">📚</span>
                     База знаний
-                  </button>
+                  </Button>
                 )}
                 {onOpenFiles && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onOpenFiles)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenFiles)}>
                     <span className="footico">📁</span>
                     Проводник
-                  </button>
+                  </Button>
                 )}
                 {onOpenConsole && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onOpenConsole)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenConsole)}>
                     <span className="footico">⌨️</span>
                     Консоль
-                  </button>
+                  </Button>
                 )}
                 <div className="acct-sep" aria-hidden />
                 {onOpenMachines && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onOpenMachines)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenMachines)}>
                     <span className="footico">🖥</span>
                     Машины
-                  </button>
+                  </Button>
                 )}
                 {onOpenCi && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onOpenCi)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenCi)}>
                     <span className="footico">🧩</span>
                     Команды
-                  </button>
+                  </Button>
                 )}
                 {onOpenUsers && currentUser.role === 'admin' && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onOpenUsers)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenUsers)}>
                     <span className="footico">👥</span>
                     Пользователи
-                  </button>
+                  </Button>
                 )}
-                <button className="footbtn" role="menuitem" onClick={acct(onOpenSettings)}>
+                <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenSettings)}>
                   <GearIcon />
                   Настройки
-                </button>
+                </Button>
                 {onLogout && (
-                  <button className="footbtn" role="menuitem" onClick={acct(onLogout)}>
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onLogout)}>
                     <span className="footico">🚪</span>
                     Выйти
-                  </button>
+                  </Button>
                 )}
               </div>
             )}
@@ -475,29 +817,29 @@ export function Sidebar({
              инструменты остаются компактным рядом иконок + Настройки. */
           <>
             <div className="foottools">
-              <button className="footico-btn" onClick={onOpenObserver} title="Агенты (Claude / Codex)" aria-label="Агенты">
+              <IconButton className="foottools-item" onClick={onOpenObserver} title="Агенты (Claude / Codex)" aria-label="Агенты">
                 🤖
-              </button>
+              </IconButton>
               {onOpenKnowledgeBase && (
-                <button className="footico-btn" onClick={onOpenKnowledgeBase} title="База знаний" aria-label="База знаний">
+                <IconButton className="foottools-item" onClick={onOpenKnowledgeBase} title="База знаний" aria-label="База знаний">
                   📚
-                </button>
+                </IconButton>
               )}
               {onOpenFiles && (
-                <button className="footico-btn" onClick={onOpenFiles} title="Открыть проводник" aria-label="Открыть проводник">
+                <IconButton className="foottools-item" onClick={onOpenFiles} title="Открыть проводник" aria-label="Открыть проводник">
                   📁
-                </button>
+                </IconButton>
               )}
               {onOpenConsole && (
-                <button className="footico-btn" onClick={onOpenConsole} title="Открыть консоль" aria-label="Открыть консоль">
+                <IconButton className="foottools-item" onClick={onOpenConsole} title="Открыть консоль" aria-label="Открыть консоль">
                   ⌨️
-                </button>
+                </IconButton>
               )}
             </div>
-            <button className="footbtn" onClick={onOpenSettings}>
+            <Button variant="ghost" fullWidth className="sidefoot-row" onClick={onOpenSettings}>
               <GearIcon />
               Настройки
-            </button>
+            </Button>
           </>
         )}
       </div>

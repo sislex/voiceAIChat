@@ -20,6 +20,17 @@ class FakeWS extends EventEmitter {
 }
 vi.mock('ws', () => ({ default: FakeWS }))
 
+// Управляемый результат resolveShellInfo — по умолчанию «всё хорошо» (не Windows,
+// bash нашёлся), тесты деградации/override переопределяют через mockShellInfo().
+let shellInfo: { shell: string; degraded: boolean; ignoredOverride?: string } = {
+  shell: '/bin/bash',
+  degraded: false
+}
+function mockShellInfo(info: typeof shellInfo): void {
+  shellInfo = info
+}
+vi.mock('./platform.js', () => ({ resolveShellInfo: () => shellInfo }))
+
 // Импорт после vi.mock (hoisted), чтобы connection увидел мок.
 const { startConnection } = await import('./connection')
 
@@ -130,5 +141,26 @@ describe('startConnection (handlers)', () => {
     const conn = startConnection({ serverUrl: 'ws://x/agent', token: 't', rootDir: '/tmp' }, h)
     conn.stop()
     expect(h.onStatus).toHaveBeenCalledWith('stopped')
+  })
+
+  it('деградация в cmd.exe (bash не найден) логируется через onLog', () => {
+    mockShellInfo({ shell: 'cmd.exe', degraded: true })
+    const h = { onLog: vi.fn() }
+    startConnection({ serverUrl: 'ws://x/agent', token: 't', rootDir: '/tmp' }, h)
+    expect(h.onLog).toHaveBeenCalledWith(expect.stringContaining('bash.exe не найден'))
+  })
+
+  it('игнорированный Unix-подобный override логируется через onLog', () => {
+    mockShellInfo({ shell: 'C:\\Git\\bin\\bash.exe', degraded: false, ignoredOverride: '/bin/bash' })
+    const h = { onLog: vi.fn() }
+    startConnection({ serverUrl: 'ws://x/agent', token: 't', rootDir: '/tmp' }, h)
+    expect(h.onLog).toHaveBeenCalledWith(expect.stringContaining('SHELL/VC_PTY_SHELL="/bin/bash"'))
+  })
+
+  it('bash найден без деградации → лог о shell не пишется', () => {
+    mockShellInfo({ shell: '/bin/bash', degraded: false })
+    const h = { onLog: vi.fn() }
+    startConnection({ serverUrl: 'ws://x/agent', token: 't', rootDir: '/tmp' }, h)
+    expect(h.onLog).not.toHaveBeenCalled()
   })
 })

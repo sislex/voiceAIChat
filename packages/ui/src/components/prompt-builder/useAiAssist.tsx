@@ -11,7 +11,13 @@ export interface UseAiAssistOptions {
 }
 
 export function useAiAssist({ value, onChange, prompts, onPromptsChange, generate }: UseAiAssistOptions): {
-  triggerProps: ButtonHTMLAttributes<HTMLButtonElement> & { ref: RefObject<HTMLButtonElement> }
+  // aria-label и title обязательны: кнопка-открывашка — иконка без подписи, и
+  // IconButton требует оба поля. Тип это гарантирует на месте вызова.
+  triggerProps: ButtonHTMLAttributes<HTMLButtonElement> & {
+    ref: RefObject<HTMLButtonElement>
+    'aria-label': string
+    title: string
+  }
   popupProps: PromptBuilderProps
 } {
   const [open, setOpen] = useState(false)

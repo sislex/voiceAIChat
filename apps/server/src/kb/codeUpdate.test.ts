@@ -1,0 +1,134 @@
+// Актуализация базы знаний по изменениям кода: разбор дифа, выбор задетых
+// статей по areas, разбор ответа модели, текст промпта. Чистые функции —
+// ни CLI, ни машины здесь нет.
+
+import { describe, it, expect } from 'vitest'
+import {
+  areaMatchesFile, formatKbUpdateSummary, kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput, pickAffectedDocs
+} from './codeUpdate.js'
+
+const BUNDLE = `===FILES===
+apps/server/src/ci/runManager.ts
+docs/kb/features/ci-runner.md
+===STAT===
+ 2 files changed, 40 insertions(+)
+===PATCH===
+diff --git a/apps/server/src/ci/runManager.ts b/apps/server/src/ci/runManager.ts
++код
+`
+
+describe('parseDiffBundle', () => {
+  it('разбирает секции скрипта сбора дифа', () => {
+    const changes = parseDiffBundle(BUNDLE)
+    expect(changes.unavailable).toBe(false)
+    expect(changes.files).toEqual(['apps/server/src/ci/runManager.ts', 'docs/kb/features/ci-runner.md'])
+    expect(changes.stat).toContain('2 files changed')
+    expect(changes.patch).toContain('+код')
+  })
+
+  it('без репозитория или базовой ветки диф считается недоступным', () => {
+    expect(parseDiffBundle('===NOGIT===').unavailable).toBe(true)
+    expect(parseDiffBundle('===NOBASE===').unavailable).toBe(true)
+    expect(parseDiffBundle('').unavailable).toBe(true)
+  })
+
+  it('пустой список файлов — валидный диф без изменений', () => {
+    const changes = parseDiffBundle('===FILES===\n===STAT===\n===PATCH===\n')
+    expect(changes.unavailable).toBe(false)
+    expect(changes.files).toEqual([])
+  })
+})
+
+describe('выбор задетых статей по areas', () => {
+  const docs = [
+    { id: 'a', title: 'CI-раннер', areas: ['apps/server/src/ci'] },
+    { id: 'b', title: 'Протокол', areas: ['packages/shared/src/protocol.ts'] },
+    { id: 'c', title: 'База знаний', areas: ['apps/server/src/kb', 'docs/kb'] }
+  ]
+
+  it('каталог из areas ловит файл под ним, файл — сам себя', () => {
+    expect(areaMatchesFile('apps/server/src/ci', 'apps/server/src/ci/runManager.ts')).toBe(true)
+    expect(areaMatchesFile('./docs/kb/', 'docs/kb/README.md')).toBe(true)
+    expect(areaMatchesFile('packages/shared/src/protocol.ts', 'packages/shared/src/protocol.ts')).toBe(true)
+    expect(areaMatchesFile('apps/server/src/ci', 'apps/server/src/kb/service.ts')).toBe(false)
+  })
+
+  it('статья без пересечения не выбирается, самая задетая идёт первой', () => {
+    const picked = pickAffectedDocs(['apps/server/src/kb/codeUpdate.ts', 'docs/kb/kb-workflow.md', 'apps/server/src/ci/runManager.ts'], docs)
+    expect(picked.map((d) => d.id)).toEqual(['c', 'a'])
+  })
+
+  it('число статей капается', () => {
+    const many = Array.from({ length: 20 }, (_, i) => ({ id: `d${i}`, title: `T${i}`, areas: ['src'] }))
+    expect(pickAffectedDocs(['src/index.ts'], many, 3)).toHaveLength(3)
+  })
+})
+
+describe('parseKbUpdateOutput', () => {
+  it('терпит ```json-обёртку и текст вокруг', () => {
+    const out = parseKbUpdateOutput('Готово.\n```json\n{"note":"обновил","topics":["ci-runner"],"documents":[{"title":"CI","body":"# CI","areas":["apps/server/src/ci"]}]}\n```')
+    expect(out.note).toBe('обновил')
+    expect(out.topics).toEqual(['ci-runner'])
+    expect(out.documents).toHaveLength(1)
+    expect(out.nothingToUpdate).toBe(false)
+  })
+
+  it('явный nothingToUpdate и пустой ответ — «нечего обновлять»', () => {
+    expect(parseKbUpdateOutput('{"note":"мелкий рефакторинг","nothingToUpdate":true}').nothingToUpdate).toBe(true)
+    expect(parseKbUpdateOutput('{"documents":[]}').nothingToUpdate).toBe(true)
+  })
+
+  it('неразборчивый ответ — ошибка (шаг превратит её в предупреждение)', () => {
+    expect(() => parseKbUpdateOutput('совсем не json')).toThrow()
+  })
+
+  it('статьи без заголовка или текста отбрасываются', () => {
+    const out = parseKbUpdateOutput('{"documents":[{"title":"Есть","body":"# Есть"},{"title":"","body":"x"},{"title":"Пусто"}]}')
+    expect(out.documents.map((d) => d.title)).toEqual(['Есть'])
+  })
+})
+
+describe('kbUpdatePrompt', () => {
+  const changes = parseDiffBundle(BUNDLE)
+
+  it('в режиме шага рана требует править темы репозитория и не коммитить', () => {
+    const prompt = kbUpdatePrompt({
+      projectName: 'ChatAI',
+      workdir: '/repos/chatai/44/slug',
+      taskTitle: 'Новый шаг',
+      baseLabel: 'базовая ветка main',
+      changes,
+      affected: [{ id: 'doc-1', title: 'CI-раннер', areas: ['apps/server/src/ci'] }],
+      editFileTopics: true
+    })
+    expect(prompt).toContain('docs/kb/*.md')
+    expect(prompt).toContain('node scripts/kb.mjs touch')
+    expect(prompt).toContain('npm run kb:index')
+    expect(prompt).toContain('НЕ коммить')
+    expect(prompt).toContain('doc-1 · CI-раннер')
+    expect(prompt).toContain('apps/server/src/ci/runManager.ts')
+  })
+
+  it('в режиме только чтения файлы трогать запрещено, диф модель собирает сама', () => {
+    const prompt = kbUpdatePrompt({
+      projectName: 'ChatAI',
+      workdir: '/root/voiceAIChat',
+      baseLabel: 'abc1234',
+      changes: { files: [], stat: '', patch: '', unavailable: true },
+      affected: [],
+      editFileTopics: false
+    })
+    expect(prompt).toContain('Файлы репозитория не меняй')
+    expect(prompt).toContain('git diff --stat abc1234')
+    expect(prompt).not.toContain('kb:index')
+  })
+})
+
+describe('formatKbUpdateSummary', () => {
+  it('различает «нечего обновлять» и запись', () => {
+    expect(formatKbUpdateSummary({ note: 'только тесты', nothingToUpdate: true, topics: [], documents: [] }, [])).toContain('Нечего обновлять')
+    const msg = formatKbUpdateSummary({ note: '', nothingToUpdate: false, topics: ['ci-runner'], documents: [] }, [{ title: 'CI', action: 'updated' }])
+    expect(msg).toContain('ci-runner')
+    expect(msg).toContain('CI (обновлена)')
+  })
+})

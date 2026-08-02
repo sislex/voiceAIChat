@@ -2,12 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MessageTimeline } from './MessageTimeline'
 import type { ClaudeLogEntry } from '@shared/types'
+import { ACTIVITY_LEGACY, makeActivity } from '../test/fixtures'
 
 describe('MessageTimeline', () => {
   it('minimal: только текст, без действий', () => {
-    const activity: ClaudeLogEntry[] = [
-      { kind: 'tool_use', summary: 'Bash: ls', raw: '{}', at: 3, ts: 1000 }
-    ]
+    const activity: ClaudeLogEntry[] = [makeActivity({ summary: 'Bash: ls', at: 3, ts: 1000 })]
     render(<MessageTimeline text="Абв где" activity={activity} mode="minimal" />)
     expect(screen.queryByTestId('message-timeline')).toBeNull()
     expect(screen.queryByTestId('activity-section')).toBeNull()
@@ -17,7 +16,7 @@ describe('MessageTimeline', () => {
 
   it('detailed: чередует текст и действие по смещению at', () => {
     const activity: ClaudeLogEntry[] = [
-      { kind: 'tool_use', summary: 'Bash: ls', detail: 'ls', raw: '{"x":1}', at: 3, ts: 1000 }
+      makeActivity({ summary: 'Bash: ls', detail: 'ls', raw: '{"x":1}', at: 3, ts: 1000 })
     ]
     const { container } = render(
       <MessageTimeline text="Абв где" activity={activity} mode="detailed" />
@@ -35,8 +34,8 @@ describe('MessageTimeline', () => {
 
   it('detailed: несколько действий в хронологическом порядке (по at)', () => {
     const activity: ClaudeLogEntry[] = [
-      { kind: 'tool_use', summary: 'Второе', raw: '{}', at: 5, ts: 2000 },
-      { kind: 'tool_use', summary: 'Первое', raw: '{}', at: 2, ts: 1000 }
+      makeActivity({ summary: 'Второе', at: 5, ts: 2000 }),
+      makeActivity({ summary: 'Первое', at: 2, ts: 1000 })
     ]
     render(<MessageTimeline text="0123456789" activity={activity} mode="detailed" />)
     const secs = screen.getAllByTestId('activity-section')
@@ -47,8 +46,8 @@ describe('MessageTimeline', () => {
 
   it('brief: сводка секции с количеством и длительностью', () => {
     const activity: ClaudeLogEntry[] = [
-      { kind: 'tool_use', summary: 'Bash: ls', raw: '{}', at: 3, ts: 1000 },
-      { kind: 'tool_result', summary: '✓ результат', raw: '{}', at: 3, ts: 5000 }
+      makeActivity({ summary: 'Bash: ls', at: 3, ts: 1000 }),
+      makeActivity({ kind: 'tool_result', summary: '✓ результат', at: 3, ts: 5000 })
     ]
     // endMs — конец хода: секция шла 1000..9000 = 8с, последнее 5000..9000 = 4с.
     render(<MessageTimeline text="Абв где" activity={activity} mode="brief" endMs={9000} />)
@@ -60,7 +59,8 @@ describe('MessageTimeline', () => {
   })
 
   it('старое сообщение без at — fallback (detailed → секции, minimal → текст)', () => {
-    const activity: ClaudeLogEntry[] = [{ kind: 'tool_use', summary: 'Bash: ls', raw: '{}' }]
+    // Старое сообщение: у записей нет смещений — как в ACTIVITY_LEGACY.
+    const activity: ClaudeLogEntry[] = [ACTIVITY_LEGACY[1]]
     const { rerender, container } = render(
       <MessageTimeline text="Текст ответа" activity={activity} mode="detailed" />
     )

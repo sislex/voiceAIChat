@@ -1,36 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MachineStatus } from './MachineStatus'
-import { DEFAULT_AGENT_POLICY, type AgentInfo, type AgentTelemetry } from '@shared/agentProtocol'
+import { makeAgent as agent, makeTelemetry as telemetry, makeWindowsDegradedAgent } from '../test/fixtures'
 import { AGENT_VERSION } from '@shared/version'
-
-function telemetry(over: Partial<AgentTelemetry> = {}): AgentTelemetry {
-  return {
-    ts: 1000,
-    os: { platform: 'linux', release: '6.8', arch: 'x64', isAndroid: false },
-    cpu: { count: 8, loadPct: 42 },
-    mem: { totalBytes: 16 * 1024 ** 3, usedBytes: 8 * 1024 ** 3 },
-    disk: {
-      root: { totalBytes: 100 * 1024 ** 3, freeBytes: 40 * 1024 ** 3 },
-      work: { totalBytes: 100 * 1024 ** 3, freeBytes: 55 * 1024 ** 3 }
-    },
-    ...over
-  }
-}
-
-function agent(over: Partial<AgentInfo> = {}): AgentInfo {
-  return {
-    id: 'a1',
-    name: 'Мак',
-    online: true,
-    createdAt: 0,
-    lastSeen: 1,
-    policy: { ...DEFAULT_AGENT_POLICY },
-    version: '0.4.0',
-    telemetry: telemetry(),
-    ...over
-  }
-}
 
 describe('MachineStatus', () => {
   it('онлайн-машина: статус «агент запущен» и телеметрия', () => {
@@ -75,6 +47,26 @@ describe('MachineStatus', () => {
   it('нет машин → подсказка', () => {
     render(<MachineStatus agents={[]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByText(/Нет добавленных машин/)).toBeInTheDocument()
+  })
+
+  it('shell из телеметрии показан в строке машины', () => {
+    render(<MachineStatus agents={[agent()]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
+    const row = screen.getByTestId('machine-row-a1')
+    expect(within(row).getByText('bash')).toBeInTheDocument()
+  })
+
+  it('bash.exe не найден на Windows → предупреждающий значок в строке', () => {
+    const a = makeWindowsDegradedAgent()
+    render(<MachineStatus agents={[a]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
+    const row = screen.getByTestId(`machine-row-${a.id}`)
+    expect(within(row).getByText(/нет bash/)).toBeInTheDocument()
+    expect(within(row).getByText('cmd.exe')).toBeInTheDocument()
+  })
+
+  it('bash найден (не деградировано) → значка предупреждения нет', () => {
+    render(<MachineStatus agents={[agent()]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
+    const row = screen.getByTestId('machine-row-a1')
+    expect(within(row).queryByText(/нет bash/)).toBeNull()
   })
 })
 

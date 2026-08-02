@@ -3,7 +3,7 @@
 // Сами ходы LLM живут в процесс-глобальном TurnManager и переживают обрыв
 // соединения: обновление страницы не отменяет генерацию ответа.
 
-import type { AgentInfo, Board, SessionUser, SystemCapabilities } from '@voicechat/shared'
+import type { AgentInfo, Board, SessionUser, SystemCapabilities, CcItem, CxItem } from '@voicechat/shared'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'
 import type { TurnManager } from './turns.js'
@@ -16,8 +16,8 @@ import type { TtsEngine } from './tts/types.js'
 import { createTtsSession, type TtsSession } from './tts/ttsSession.js'
 import { watchTranscript } from './cc/ccSessions.js'
 import { watchCxTranscript } from './codex/codexSessions.js'
-
 import type { CiRunManager } from './ci/runManager.js'
+import type { KbUsageTracker } from './kb/usage.js'
 
 export interface SessionDeps {
   db: VoiceChatDb
@@ -45,13 +45,20 @@ export interface SessionDeps {
   }
   /** Живая канбан-доска проекта: снапшот (с проверкой членства) + подписка на изменения. */
   board?: {
-    getBoard(projectId: string): Board | null
+    getBoard(projectId: string, includeCompleted?: boolean): Board | null
     subscribe(cb: (projectId: string) => void): () => void
+  }
+  /** Live-tail проводника CC/Codex: локальный fs.watch или SSE исполнителя. */
+  observerTail?: {
+    watchCc(userId: string, slug: string, id: string, onItems: (items: CcItem[]) => void): () => void
+    watchCx(userId: string, id: string, onItems: (items: CxItem[]) => void): () => void
   }
   /** Релей живого PTY-терминала по машине (отдельно от однострочного exec). */
   pty?: PtyRelay
   /** Процесс-глобальный менеджер CI-ранов (события переживают reconnect). */
   ci?: CiRunManager
+  /** Телеметрия обращений к базе знаний (кадры kb.usage своему пользователю). */
+  kbUsage?: KbUsageTracker
 }
 
 /** Минимальный релей PTY для сессии (реализует AgentRegistry). */
@@ -69,8 +76,11 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubAgents: (() => void) | null = null
   let unsubBoard: (() => void) | null = null
   let boardProjectId: string | null = null
+  /** Просит ли подписчик отдавать и давно завершённые задачи («Показать завершённые»). */
+  let boardIncludeCompleted = false
   let unsubTurns: (() => void) | null = null
   let unsubCi: (() => void) | null = null
+  let unsubKbUsage: (() => void) | null = null
   let ccTailStop: (() => void) | null = null
   let cxTailStop: (() => void) | null = null
   const ptyIds = new Set<string>()
@@ -82,34 +92,31 @@ export function createSession(deps: SessionDeps): WsHandlers {
 
   return {
     onOpen(ctx) {
-      // Подписываемся на менеджер загрузки: если модель качается прямо сейчас
-      // (например, страницу обновили посреди загрузки), сразу получим текущий
-      // прогресс и последующие события — прогресс-бар восстановится.
       unsubDownload = deps.modelDownload?.subscribe((ev) => ctx.send(ev)) ?? null
-      // События ходов LLM (token/done/error/log) — только своему пользователю;
-      // плюс снапшот активных ходов, чтобы после обновления страницы стрим продолжился.
       unsubTurns = deps.turns.subscribe((m, ownerUserId) => {
         if (ownerUserId === deps.user.name) ctx.send(m)
       })
       ctx.send({ t: 'claude.active', turns: deps.turns.active(deps.user.name) })
-      // События CI-ранов — только своему пользователю (лог/шаги/статус).
       if (deps.ci) {
         unsubCi = deps.ci.subscribe((m, ownerUserId) => {
           if (ownerUserId === deps.user.name) ctx.send(m)
         })
       }
-      // Живой список машин-агентов: начальное состояние + пуш при изменениях.
+      if (deps.kbUsage) {
+        unsubKbUsage = deps.kbUsage.subscribe((m, ownerUserId) => {
+          if (ownerUserId === deps.user.name) ctx.send(m)
+        })
+      }
       if (deps.agentsFeed) {
         ctx.send({ t: 'agents', agents: deps.agentsFeed.list() })
         unsubAgents = deps.agentsFeed.subscribe(() =>
           ctx.send({ t: 'agents', agents: deps.agentsFeed!.list() })
         )
       }
-      // Живая доска: при изменении подписанного проекта шлём свежий снапшот.
       if (deps.board) {
         unsubBoard = deps.board.subscribe((projectId) => {
           if (projectId !== boardProjectId) return
-          const board = deps.board!.getBoard(projectId)
+          const board = deps.board!.getBoard(projectId, boardIncludeCompleted)
           if (board) ctx.send({ t: 'board.update', projectId, board })
         })
       }
@@ -131,7 +138,6 @@ export function createSession(deps: SessionDeps): WsHandlers {
           break
 
         case 'audio.start': {
-          // Жёсткий блок: если ресурсов контейнера мало — STT не запускаем.
           const sttCap = deps.capabilities().stt
           if (!sttCap.available) {
             ctx.send({ t: 'stt.error', message: sttCap.reason })
@@ -153,12 +159,10 @@ export function createSession(deps: SessionDeps): WsHandlers {
           break
 
         case 'stt.download':
-          // Идемпотентно: если уже качается — просто дождёмся через подписку в onOpen.
           deps.modelDownload?.start()
           break
 
         case 'tts.speak': {
-          // Жёсткий блок озвучки при нехватке ресурсов контейнера.
           const ttsCap = deps.capabilities().tts
           if (!ttsCap.available) {
             ctx.send({ t: 'tts.error', message: ttsCap.reason })
@@ -190,7 +194,11 @@ export function createSession(deps: SessionDeps): WsHandlers {
         case 'cc.tail.start': {
           ccTailStop?.()
           const { slug, id } = msg
-          ccTailStop = watchTranscript(slug, id, (items) =>
+          const watchCc =
+            deps.observerTail?.watchCc ??
+            ((_: string, s: string, sessId: string, onItems: (items: CcItem[]) => void) =>
+              watchTranscript(s, sessId, onItems))
+          ccTailStop = watchCc(deps.user.name, slug, id, (items) =>
             ctx.send({ t: 'cc.tail', slug, id, items })
           )
           break
@@ -203,7 +211,11 @@ export function createSession(deps: SessionDeps): WsHandlers {
         case 'cx.tail.start': {
           cxTailStop?.()
           const { id } = msg
-          cxTailStop = watchCxTranscript(id, (items) => ctx.send({ t: 'cx.tail', id, items }))
+          const watchCx =
+            deps.observerTail?.watchCx ??
+            ((_: string, sessId: string, onItems: (items: CxItem[]) => void) =>
+              watchCxTranscript(sessId, onItems))
+          cxTailStop = watchCx(deps.user.name, id, (items) => ctx.send({ t: 'cx.tail', id, items }))
           break
         }
         case 'cx.tail.stop':
@@ -212,7 +224,6 @@ export function createSession(deps: SessionDeps): WsHandlers {
           break
 
         case 'pty.start': {
-          // Живой терминал: только по своей машине (проверка владения по списку).
           const owns = deps.agentsFeed?.list().some((a) => a.id === msg.agentId) ?? false
           if (!owns) {
             ctx.send({ t: 'pty.error', ptyId: msg.ptyId, message: 'Машина не найдена' })
@@ -234,18 +245,18 @@ export function createSession(deps: SessionDeps): WsHandlers {
           break
 
         case 'board.subscribe': {
-          // Подписка на доску: молча игнорируем, если не участник / нет доступа.
-          const board = deps.board?.getBoard(msg.projectId) ?? null
+          const board = deps.board?.getBoard(msg.projectId, msg.includeCompleted) ?? null
           if (!board) break
           boardProjectId = msg.projectId
+          boardIncludeCompleted = msg.includeCompleted === true
           ctx.send({ t: 'board.update', projectId: msg.projectId, board })
           break
         }
         case 'board.unsubscribe':
           boardProjectId = null
+          boardIncludeCompleted = false
           break
         case 'ci.subscribe': {
-          // Снапшот рана для восстановления ленты + лога (реплей с начала).
           const snap = deps.ci?.snapshot(deps.user.name, msg.runId)
           if (snap) ctx.send(snap)
           break
@@ -261,27 +272,28 @@ export function createSession(deps: SessionDeps): WsHandlers {
       stt?.chunk(pcmFromBinary(data))
     },
     onClose() {
-      // Ходы LLM НЕ отменяем: они доигрывают в TurnManager, ответ сохранит сервер.
       stt?.dispose()
       stt = null
       tts?.dispose()
       tts = null
-      unsubDownload?.() // отписка от менеджера загрузки; сама загрузка продолжается
+      unsubDownload?.()
       unsubDownload = null
       unsubAgents?.()
       unsubAgents = null
       unsubBoard?.()
       unsubBoard = null
       boardProjectId = null
+      boardIncludeCompleted = false
       unsubTurns?.()
       unsubTurns = null
       unsubCi?.()
       unsubCi = null
+      unsubKbUsage?.()
+      unsubKbUsage = null
       ccTailStop?.()
       ccTailStop = null
       cxTailStop?.()
       cxTailStop = null
-      // Живые терминалы этого соединения закрываем (обновление страницы = новый сеанс).
       for (const id of ptyIds) deps.pty?.kill(id)
       ptyIds.clear()
     }

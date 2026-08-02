@@ -3,10 +3,13 @@
 // ('' = same-origin), agentWsUrl — ws-адрес /agent для строки подключения.
 
 import { REST } from '@shared/protocol'
+import type { RendererKbRest } from './kbBridge'
+import type { KbProjectUsageReport, KbRunUsageReport, KbTaskUsageReport, KbUsageReport } from '@shared/kb'
 import type {
   RendererCiRest,
   CiCommandUsage,
   CiTaskConfig,
+  CiTaskLlmConfig,
   CiMetrics
 } from './ciBridge'
 import type {
@@ -15,16 +18,28 @@ import type {
   CiCommandSuggestion,
   CiWorkspaceReportItem,
   CiSlotConfig,
+  CiLlmConfig,
+  CiInteraction,
   CiRun,
   CiRunDetail,
+  CiRunReport,
+  CiTaskReport,
   CiLogLine,
   CiConsoleExecResult
 } from '@shared/ci'
 import { encodeAgentConnection } from '@shared/agentProtocol'
 import type { RendererApi } from '@shared/ipc'
+import type { MessageSearchResult } from '@shared/types'
 import { getToken } from './session'
 
 export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi {
+  /**
+   * Живой запрос поиска по сообщениям: пользователь печатает, и каждый новый
+   * ввод обесценивает предыдущий запрос. Отменяем его здесь, в транспорте, —
+   * стор про fetch не знает, а сервер не тратит время на никому не нужный ответ.
+   */
+  let searchAbort: AbortController | null = null
+
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
     // Content-Type ставим только при наличии тела: иначе Fastify пытается распарсить
     // пустое JSON-тело у DELETE и отвечает 400. Токен сессии — в Authorization.
@@ -44,20 +59,32 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       return h.version
     },
     'kb:status': () => req(REST.kbStatus),
-    'kb:topics': () => req(REST.kbTopics),
-    'kb:search': ({ query, kinds, tags, limit }) => {
+    'kb:topics': (arg) => {
+      const q = new URLSearchParams()
+      if (arg?.scope) q.set('scope', arg.scope)
+      if (arg?.projectId) q.set('projectId', arg.projectId)
+      return req(`${REST.kbTopics}${q.size ? `?${q.toString()}` : ''}`)
+    },
+    'kb:search': ({ query, kinds, tags, limit, scope, projectId }) => {
       const q = new URLSearchParams({ q: query })
       if (kinds?.length) q.set('kind', kinds.join(','))
       if (tags?.length) q.set('tags', tags.join(','))
       if (limit) q.set('limit', String(limit))
+      if (scope) q.set('scope', scope)
+      if (projectId) q.set('projectId', projectId)
       return req(`${REST.kbSearch}?${q.toString()}`)
     },
+    'kb:saveDocument': (draft) => req(REST.kbDocuments, { method: 'POST', body: JSON.stringify(draft) }),
+    'kb:deleteDocument': ({ id }) => req(REST.kbDocument(id), { method: 'DELETE' }),
+    'kb:research': ({ projectId }) => req(REST.projectKbResearch(projectId), { method: 'POST' }),
+    'kb:researchStatus': ({ projectId }) => req(REST.projectKbResearch(projectId)),
     'kb:document': async ({ id }) => {
       try { return await req(REST.kbDocument(id)) } catch { return null }
     },
     'kb:context': ({ query, budget }) => req(`${REST.kbContext}?q=${encodeURIComponent(query)}${budget ? `&budget=${budget}` : ''}`),
     'prompt:suggest': ({ prompt, modifiers }) => req(REST.promptSuggest, { method: 'POST', body: JSON.stringify({ prompt, modifiers }) }),
-    'conversations:list': () => req(REST.conversations),
+    'conversations:list': ({ includeCompleted }) =>
+      req(`${REST.conversations}${includeCompleted ? '?includeCompleted=1' : ''}`),
     'conversations:create': ({ title }) =>
       req(REST.conversations, { method: 'POST', body: JSON.stringify({ title }) }),
     'conversations:get': async ({ id }) => {
@@ -69,22 +96,39 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       if (!res.ok) throw new Error(`GET ${REST.conversation(id)} → ${res.status}`)
       return res.json()
     },
-    'conversations:search': ({ query }) =>
-      req(`${REST.conversationsSearch}?q=${encodeURIComponent(query)}`),
+    'conversations:search': ({ query, includeCompleted }) =>
+      req(`${REST.conversationsSearch}?q=${encodeURIComponent(query)}${includeCompleted ? '&includeCompleted=1' : ''}`),
+    'messages:search': ({ query, projectId, conversationId, limit, cursor }) => {
+      searchAbort?.abort()
+      const ctl = new AbortController()
+      searchAbort = ctl
+      const q = new URLSearchParams({ q: query })
+      // undefined — по всем беседам, null — только беседы без проекта.
+      if (projectId !== undefined) q.set('projectId', projectId ?? 'none')
+      if (conversationId) q.set('conversationId', conversationId)
+      if (limit) q.set('limit', String(limit))
+      if (cursor) q.set('cursor', cursor)
+      return req<MessageSearchResult>(`${REST.messagesSearch}?${q.toString()}`, { signal: ctl.signal }).finally(() => {
+        if (searchAbort === ctl) searchAbort = null
+      })
+    },
     'conversations:rename': async ({ id, title }) => {
       await req(REST.conversation(id), { method: 'PATCH', body: JSON.stringify({ title }) })
     },
     'conversations:setProject': ({ id, projectId }) =>
       req(REST.conversationProject(id), { method: 'POST', body: JSON.stringify({ projectId }) }),
+    'conversations:taskContext': ({ id }) => req(REST.conversationTaskContext(id)),
+    'conversations:taskChats': () => req(REST.conversationTaskChats),
     'conversations:setStatus': ({ id, status }) =>
       req(REST.conversationStatus(id), { method: 'POST', body: JSON.stringify({ status }) }),
-    'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode }) =>
+    'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode }) =>
       req(REST.conversation(id), {
         method: 'PATCH',
         body: JSON.stringify({
           execTarget,
           ...(workdir !== undefined ? { workdir } : {}),
           ...(skillNames !== undefined ? { skillNames } : {}),
+          ...(llmEngineId !== undefined ? { llmEngineId } : {}),
           ...(llmProvider !== undefined ? { llmProvider } : {}),
           ...(llmModel !== undefined ? { llmModel } : {}),
           ...(permissionMode !== undefined ? { permissionMode } : {}),
@@ -105,6 +149,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'uploads:add': ({ name, dataBase64 }) =>
       req(REST.uploads, { method: 'POST', body: JSON.stringify({ name, dataBase64 }) }),
     'settings:get': () => req(REST.settings),
+    'llm:engines': () => req(REST.llmEngines),
     'settings:save': async (settings) => {
       await req(REST.settings, { method: 'PUT', body: JSON.stringify(settings) })
     },
@@ -171,6 +216,15 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'admin:conversations': ({ name }) => req(REST.adminUserConversations(name)),
     'admin:messages': ({ name, conversationId }) =>
       req(`${REST.adminUserMessages(name)}?conversationId=${encodeURIComponent(conversationId)}`),
+    'admin:llmEngines': () => req(REST.adminLlmEngines),
+    'admin:createLlmEngine': (body) =>
+      req(REST.adminLlmEngines, { method: 'POST', body: JSON.stringify(body) }),
+    'admin:updateLlmEngine': ({ id, patch }) =>
+      req(REST.adminLlmEngine(id), { method: 'PATCH', body: JSON.stringify(patch) }),
+    'admin:deleteLlmEngine': async ({ id }) => {
+      await req(REST.adminLlmEngine(id), { method: 'DELETE' })
+    },
+    'admin:checkLlmEngineHealth': ({ id }) => req(REST.adminLlmEngineHealth(id)),
     // --- Проекты + канбан ---
     'projects:list': () => req(REST.projects),
     'projects:create': (b) => req(REST.projects, { method: 'POST', body: JSON.stringify(b) }),
@@ -198,11 +252,11 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectMachine(id, agentId), { method: 'DELETE' }),
     'projects:setMachinePath': ({ id, agentId, path }) =>
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ path }) }),
-    'projects:setFeatureReposRoot': ({ id, agentId, featureReposRoot }) =>
-      req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ featureReposRoot }) }),
+    'projects:setReposRoot': ({ id, agentId, reposRoot }) =>
+      req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ reposRoot }) }),
     'projects:setDefaultMachine': ({ id, agentId }) =>
       req(REST.projectDefaultMachine(id), { method: 'POST', body: JSON.stringify({ agentId }) }),
-    'board:get': ({ id }) => req(REST.projectBoard(id)),
+    'board:get': ({ id, includeCompleted }) => req(REST.projectBoard(id, includeCompleted)),
     'columns:create': ({ projectId, name }) =>
       req(REST.projectColumns(projectId), { method: 'POST', body: JSON.stringify({ name }) }),
     'columns:rename': async ({ projectId, columnId, name, wipLimit }) => {
@@ -227,20 +281,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectTaskChat(projectId, taskId), { method: 'POST' }),
     'tasks:delete': async ({ projectId, taskId }) => {
       await req(REST.projectTask(projectId, taskId), { method: 'DELETE' })
-
-    },
-    'features:list': ({ projectId }) => req(REST.projectFeatures(projectId)),
-    'features:createFromTask': ({ projectId, taskId, ...body }) => req(REST.taskFeature(projectId, taskId), { method: 'POST', body: JSON.stringify(body) }),
-    'features:createFromStory': ({ projectId, storyId, ...body }) => req(REST.storyFeature(projectId, storyId), { method: 'POST', body: JSON.stringify(body) }),
-    'features:get': async ({ id }) => {
-      try { return await req(REST.feature(id)) } catch { return null }
-    },
-    'features:setAutomation': ({ id, ...body }) => req(REST.featureAutomation(id), { method: 'PATCH', body: JSON.stringify(body) }),
-    'features:transition': ({ id, status, expectedVersion }) => req(REST.featureTransition(id), { method: 'POST', body: JSON.stringify({ status, expectedVersion }) }),
-    'features:deploy': ({ id }) => req(REST.featureDeploy(id), { method: 'POST' }),
-    'features:deployments': ({ id }) => req(REST.featureDeployments(id)),
-    'agentTasks:list': ({ featureId }) => req(REST.featureAgentTasks(featureId)),
-    'agentTasks:create': ({ featureId, ...body }) => req(REST.featureAgentTasks(featureId), { method: 'POST', body: JSON.stringify(body) })
+    }
   }
 }
 
@@ -249,6 +290,20 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
  * REST-часть моста window.ci. WS-часть добавляется в remote/index.ts.
  * Повторяет схему createHttpApi (Bearer-токен, JSON-тело только при наличии).
  */
+/** REST телеметрии БЗ: снапшоты по чату и по проекту (инкременты идут по WS). */
+export function createKbUsageRest(httpBase: string): RendererKbRest {
+  async function req<T>(path: string): Promise<T> {
+    const token = getToken()
+    const res = await fetch(httpBase + path, { headers: token ? { authorization: `Bearer ${token}` } : {} })
+    if (!res.ok) throw new Error(`GET ${path} → ${res.status}`)
+    return (await res.json()) as T
+  }
+  return {
+    getConversationUsage: (conversationId) => req<KbUsageReport>(REST.conversationKbUsage(conversationId)),
+    getProjectUsage: (projectId) => req<KbProjectUsageReport>(REST.projectKbUsage(projectId))
+  }
+}
+
 export function createCiRest(httpBase: string): RendererCiRest {
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
     const headers: Record<string, string> = {}
@@ -275,16 +330,27 @@ export function createCiRest(httpBase: string): RendererCiRest {
     listWorkspaces: (projectId) => req<CiWorkspaceReportItem[]>(REST.ciWorkspaces + qs(projectId)),
     getProjectCi: (projectId) => req<CiSlotConfig>(REST.projectCi(projectId)),
     putProjectCi: (projectId, config) => req<CiSlotConfig>(REST.projectCi(projectId), { method: 'PUT', body: JSON.stringify(config) }),
+    getProjectCiLlm: (projectId) => req<CiLlmConfig>(REST.projectCiLlm(projectId)),
+    putProjectCiLlm: (projectId, config) => req<CiLlmConfig>(REST.projectCiLlm(projectId), { method: 'PUT', body: JSON.stringify(config) }),
+    getTaskCiLlm: (projectId, taskId) => req<CiTaskLlmConfig>(REST.taskCiLlm(projectId, taskId)),
+    putTaskCiLlm: (projectId, taskId, config) => req<CiLlmConfig>(REST.taskCiLlm(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
+    resetTaskCiLlm: (projectId, taskId) => req<CiTaskLlmConfig>(REST.taskCiLlm(projectId, taskId), { method: 'DELETE' }),
     getTaskCi: (projectId, taskId) => req<CiTaskConfig>(REST.taskCi(projectId, taskId)),
     putTaskCi: (projectId, taskId, config) => req<CiSlotConfig>(REST.taskCi(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
-    startRun: (projectId, taskId) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST' }),
+    startRun: (projectId, taskId, mode) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST', body: JSON.stringify(mode ? { mode } : {}) }),
     getRun: (runId) => req<CiRunDetail>(REST.ciRun(runId)),
     getRunLog: (runId) => req<CiLogLine[]>(REST.ciRunLog(runId)),
+    getRunKbUsage: (runId) => req<KbRunUsageReport>(REST.ciRunKbUsage(runId)),
+    getTaskKbUsage: (projectId, taskId) => req<KbTaskUsageReport>(REST.taskKbUsage(projectId, taskId)),
+    getRunReport: (runId) => req<CiRunReport>(REST.ciRunReport(runId)),
+    getTaskReport: (projectId, taskId) => req<CiTaskReport>(REST.taskCiReport(projectId, taskId)),
     cancelRun: (runId) => req<{ ok: boolean }>(REST.ciRunCancel(runId), { method: 'POST' }),
     retryRun: (runId) => req<CiRun>(REST.ciRunRetry(runId), { method: 'POST' }),
     retryRunFromStep: (runId, selection) => req<CiRun>(REST.ciRunRetryFromStep(runId), { method: 'POST', body: JSON.stringify(selection ?? {}) }),
     discardChangesAndRetry: (runId) => req<CiRun>(REST.ciRunDiscardAndRetry(runId), { method: 'POST' }),
     getMetrics: (projectId) => req<CiMetrics>(REST.ciMetrics(projectId)),
-    consoleExec: (runId, command, editMode) => req<CiConsoleExecResult>(REST.ciConsoleExec(runId), { method: 'POST', body: JSON.stringify({ command, editMode }) })
+    consoleExec: (runId, command, editMode) => req<CiConsoleExecResult>(REST.ciConsoleExec(runId), { method: 'POST', body: JSON.stringify({ command, editMode }) }),
+    answerInteraction: (runId, interactionId, answer) =>
+      req<CiInteraction>(REST.ciRunInteraction(runId, interactionId), { method: 'POST', body: JSON.stringify(answer) })
   }
 }

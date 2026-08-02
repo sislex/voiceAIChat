@@ -1,11 +1,12 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-07-29
-checked: 0115f12
+updated: 2026-08-01
+checked: 12c087a
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
   - packages/shared/src/agentProtocol.ts
+  - packages/shared/src/llm.ts
   - apps/server/src/ws.ts
   - apps/server/src/routes
   - packages/ui/src/remote
@@ -17,6 +18,8 @@ areas:
 `packages/shared/src/protocol.ts` (REST-пути + WS-сообщения),
 `packages/shared/src/ipc.ts` (формы мостов `window.*`),
 `packages/shared/src/agentProtocol.ts` (сервер↔машина).
+Протокол сервер↔исполнитель LLM живёт отдельно — `packages/shared/src/llm.ts`,
+описание в [features/llm-runners.md](features/llm-runners.md).
 
 ## Правило добавления чего угодно в контракт
 
@@ -43,12 +46,27 @@ URL руками. Параметризованные пути — функции
 идемпотентный импорт legacy-данных desktop (`POST /api/migrations/desktop`), вложения (`/api/uploads`),
 настройки, возможности системы, STT-модели, TTS-голоса и каталог, MCP-серверы,
 статус входа CLI, машины (+ политика, токен, файловые операции, exec),
-наблюдатели сессий Claude (`/api/cc/*`) и Codex (`/api/cx/*`), админка
-пользователей, помощник промптов (`POST /api/prompt/suggest` — одноразовый LLM-вызов,
+наблюдатели сессий Claude (`/api/cc/*`) и Codex (`/api/cx/*`), база знаний
+(`/api/kb/*` + телеметрия обращений `/api/conversations/:id/kb-usage`,
+`/api/projects/:id/kb-usage`, `/api/ci/runs/:runId/kb-usage`,
+`/api/projects/:id/tasks/:taskId/kb-usage`), отчёт по расходу модели в CI-ране
+(`/api/ci/runs/:runId/report`, `/api/projects/:id/tasks/:taskId/report`), админка
+пользователей и реестр LLM-исполнителей (`/api/admin/llm-engines`,
+`/api/admin/llm-engines/:id`, `/api/admin/llm-engines/:id/health`), помощник промптов (`POST /api/prompt/suggest` — одноразовый LLM-вызов,
 переформулировки черновика; канал `prompt:suggest`). Полный список — константа `REST`.
 
 Владелец данных — логин пользователя (`uid(req)` = `req.user.name`); запросы к
 разговорам и машинам фильтруются по нему.
+
+`GET /api/search` (`REST.messagesSearch`) — полнотекстовый поиск по сообщениям:
+`q` (ввод пользователя, экранируется на сервере), `projectId` (`none` или пусто —
+только беседы без проекта; параметра нет — по всем), `conversationId`, `limit`
+(1–50, по умолчанию 20), `cursor` из прошлого ответа. Ответ —
+`MessageSearchResult` (`hits` со сниппетами `<mark>…</mark>`, `nextCursor`,
+`match` — то, что реально ушло в FTS5). Мост — канал `messages:search`; он же
+**отменяет предыдущий незавершённый запрос** (AbortController в `httpApi`), потому
+что при наборе с клавиатуры прошлая заявка уже никому не нужна. Детали индекса —
+`data-auth.md`.
 
 ## WebSocket `/ws`
 
@@ -63,7 +81,33 @@ URL руками. Параметризованные пути — функции
 
 Сервер→клиент: `stt.partial/final/error`, `claude.token/done/error/log/active`,
 `tts.audio/error`, прогресс скачивания голоса и модели, `cc.tail`, `cx.tail`,
-`agents` (живой список машин), `pty.output/exit/error`.
+`agents` (живой список машин), `pty.output/exit/error`, `kb.usage`.
+
+`kb.usage` — обращение к базе знаний (авто-инъекция контекста сервером или вызов
+`mcp__kb__*` моделью). **Подписки нет**: кадр рассылается по `userId`, как
+`claude.usage`, а лишние чаты отсекает стор. Первый кадр обращения приходит со
+статусом `pending` («запрашивает…»), терминальный — вторым, с тем же `query.id`;
+гонку «REST-снапшот против инкремента» закрывает монотонный `query.seq` внутри
+разговора (клиент игнорирует `seq ≤ lastSeq`, upsert по id). Снапшоты —
+`GET /api/conversations/:id/kb-usage` и `GET /api/projects/:id/kb-usage`
+(изоляция: чужой чат/проект → 404). Детали — `features/kb-usage.md`.
+
+Обращение из работы модели в CI-ране приходит тем же кадром и в тот же чат
+(связанный чат задачи, `ci_runs.conversation_id`), но несёт `ciRunId`/`ciStepId`
+— панель помечает его источником «CI-ран» и ведёт в ленту рана. Срезы вне чата
+— `GET /api/ci/runs/:runId/kb-usage` (один ран, `KbRunUsageReport`) и
+`GET /api/projects/:id/tasks/:taskId/kb-usage` (все раны задачи,
+`KbTaskUsageReport`); у обоих гейт — членство в проекте, чужому 404. Ран без
+связанного чата кадров не шлёт и в телеметрию не пишет — база знаний при этом
+работает.
+
+Расход модели в ране (стоимость, токены, число запросов, время работы модели и
+шаги CI с длительностями) кадрами не ходит вовсе: он копится в БД по ходам CLI, а
+читается снапшотами `GET /api/ci/runs/:runId/report` (`CiRunReport`) и
+`GET /api/projects/:id/tasks/:taskId/report` (`CiTaskReport` — все раны задачи с
+итогом). Гейт тот же, что у `kb-usage`: членство в проекте, чужому 404, а не
+пустой отчёт. Мост — `window.ci.getRunReport` / `getTaskReport`. Детали —
+`features/ci-runner.md`.
 
 `claude.send` несёт `verbose?: boolean` — режим консоли, при котором сервер шлёт
 поток `claude.log` с активностью агента. `claude.done` несёт готовое `message`,
@@ -77,7 +121,7 @@ SIGTERM) `flushInterrupted` сохраняет частичный текст а�
 
 Настройки выполнения принадлежат разговору: `Conversation.execTarget` (id машины,
 `null` — сервер, `'none'` — команды запрещены), `workdir` и `skillNames`, плюс
-переопределение движка/модели `llmProvider`/`llmModel` (`null` — из общих
+переопределение исполнителя/движка/модели `llmEngineId`/`llmProvider`/`llmModel` (`null` — из общих
 настроек; модель codex `''` — дефолт из конфига codex) и режима прав
 `permissionMode` (`plan`/`acceptEdits`/`bypassPermissions`, `null` — из общих
 настроек; страница настроек разговора показывает фактический режим с учётом
@@ -121,6 +165,12 @@ WS дозванивается только при наличии токена с
 реализует те же интерфейсы через IPC. Если добавил метод в мост, но не в тип —
 второй бэкенд молча отстанет; поэтому начинай с типа.
 
+Админский реестр LLM-исполнителей ходит тем же `window.api`: каналы
+`admin:llmEngines`, `admin:createLlmEngine`, `admin:updateLlmEngine`,
+`admin:deleteLlmEngine`, `admin:checkLlmEngineHealth` объявлены в
+`packages/shared/src/ipc.ts`, web-мост проксирует их в `REST.adminLlmEngines*`.
+Health-check — обычный REST-запрос, а не отдельный WS-канал.
+
 ## Сервер↔машина (`/agent`)
 
 Отдельный WS с собственным протоколом (`agentProtocol.ts`): `AgentToServer` и
@@ -133,7 +183,7 @@ WS дозванивается только при наличии токена с
 **Проекты и канбан** (REST `projects:*`/`columns:*`/`tasks:*`, WS `board.subscribe`/`board.update`, мост `window.board`) — отдельная подсистема, см. [projects.md](projects.md).
 
 
-**Feature Run** (REST `features:*`, Agent Tasks и deployments) описан в [features/feature-workflow.md](features/feature-workflow.md). Живые краткие состояния приходят в существующем `board.update`.
+**CI-раннер** (REST `ci:*`, лента рана и консоль) описан в [features/ci-runner.md](features/ci-runner.md). Живые краткие состояния приходят в существующем `board.update`. Пауза рана в ожидании пользователя — WS `ci.interaction` + REST `ciRunInteraction`; сообщение, которое сервер сам дописал в чат (резюме рана), приходит WS-кадром `chat.message` (`{conversationId, message}`, мост `window.ci.onChatMessage`) — открытый чат дописывает его, не перезагружая историю; контекст задачи для шапки связанного чата — `conversations:taskContext` (`GET /api/conversations/:id/task-context`; в ответе есть `conversationId` запрошенного чата — клиент рисует виджет только в нём, см. [ui.md](ui.md)), а метки всех чатов задач для списка бесед (ключ, тип, сводка последнего рана) — `conversations:taskChats` (`GET /api/conversations/task-chats`, статический путь объявлен рядом с параметрическим `/api/conversations/:id`). Feature Run удалён полностью — каналов `features:*`/`agentTasks:*` больше нет.
 ## AI-помощник формулировки
 
 `POST /api/prompt/suggest` принимает `{ prompt, modifiers }`, где `modifiers` — упорядоченный массив `ModifierPrompt`; UI передаёт только активные элементы. Ответ — `{ variants: Suggestion[] }`. Маршрут требует Bearer-токен, не создаёт разговор и не сохраняет ход. Движок и модель берутся из per-user настроек `aiAssistProvider`/`aiAssistModel`; вызов CLI идёт с `executionDisabled: true` и без session id. Web-мост предоставляет тот же контракт как `window.api['prompt:suggest']`.

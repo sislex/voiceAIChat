@@ -6,6 +6,9 @@ export { default as App } from './App'
 
 // Установка мостов window.* для удалённого режима (REST+WS) — web и desktop-клиент.
 export { installRemoteBridges } from './remote'
+// Тип живого моста CI: нужен хостам, чтобы объявить window.ci в своём global.d.ts.
+export type { RendererCiBridge } from './remote/ciBridge'
+export type { RendererKbBridge } from './remote/kbBridge'
 
 // Стили подключаются приложениями через '@voicechat/ui/styles.css' либо напрямую.
 

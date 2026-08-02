@@ -1,35 +1,31 @@
 // Атрибутика Jira-карточек: иконки типов и приоритетов, ключи задач (PRJ-42),
 // цвета аватаров/эпиков, форматирование сроков. Чистые функции — без стора.
 
-import type { Task, TaskPriority, WorkItemType } from '@shared/projects'
+import type { KanbanColumn, TaskPriority, WorkItemType } from '@shared/projects'
 
 export const TYPE_LABEL: Record<WorkItemType, string> = { epic: 'Эпик', story: 'История', task: 'Задача' }
 export const PRIORITY_LABEL: Record<TaskPriority, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий', urgent: 'Срочный' }
 
-// Транслитерация кириллицы: ключ проекта в Jira — латинский (ЧатАИ → CHA).
-const CYR: Record<string, string> = {
-  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y',
-  к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f',
-  х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya'
+// Ключи задач живут в shared: их считает и сервер (контекст связанного чата).
+export { issueKey, projectKey } from '@shared/projects'
+
+/** «1 задача» / «3 задачи» / «7 задач». */
+export function pluralTasks(n: number): string {
+  const m10 = n % 10
+  const m100 = n % 100
+  if (m10 === 1 && m100 !== 11) return 'задача'
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return 'задачи'
+  return 'задач'
 }
 
-function translit(s: string): string {
-  return [...s.toLowerCase()].map((ch) => CYR[ch] ?? ch).join('')
-}
-
-/** Ключ проекта из имени: латинские заглавные, как в Jira (Voice Chat → VC). */
-export function projectKey(name: string): string {
-  const words = translit(name)
-    .split(/[^a-z0-9]+/)
-    .filter(Boolean)
-  if (!words.length) return 'PRJ'
-  const key = words.length === 1 ? words[0].slice(0, 4) : words.map((w) => w[0]).join('').slice(0, 4)
-  return key.toUpperCase()
-}
-
-/** Ключ задачи «PRJ-42» из имени проекта и порядкового номера. */
-export function issueKey(projectName: string, task: Pick<Task, 'seq'>): string {
-  return `${projectKey(projectName)}-${task.seq || '?'}`
+/**
+ * Имя колонки как региона для скринридера: «Колонка «В работе», 3 задачи».
+ * Считаем видимые под фильтром задачи — ровно то, что человек услышит, пройдя
+ * колонку до конца. Скрытую колонку помечаем: иначе на слух она не отличается.
+ */
+export function columnRegionLabel(col: Pick<KanbanColumn, 'name' | 'hidden'>, visible: number): string {
+  const count = visible === 0 ? 'задач нет' : `${visible} ${pluralTasks(visible)}`
+  return `Колонка «${col.name}», ${count}${col.hidden ? ', скрыта' : ''}`
 }
 
 function hash(s: string): number {

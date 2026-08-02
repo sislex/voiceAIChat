@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { dueState, epicColor, initials, issueKey, projectKey } from './kanbanMeta'
+import { columnRegionLabel, dueState, epicColor, initials, issueKey, projectKey } from './kanbanMeta'
 
 describe('kanbanMeta', () => {
   it('projectKey: латиница из инициалов слов, кириллица транслитерируется', () => {
@@ -21,6 +21,14 @@ describe('kanbanMeta', () => {
     expect(dueState(now - 2 * day, now)).toBe('overdue')
     expect(dueState(now + day / 2, now)).toBe('soon')
     expect(dueState(now + 10 * day, now)).toBe('ok')
+  })
+
+  it('имя колонки для скринридера: название, счёт и признак «скрыта»', () => {
+    expect(columnRegionLabel({ name: 'To Do', hidden: false }, 1)).toBe('Колонка «To Do», 1 задача')
+    expect(columnRegionLabel({ name: 'To Do', hidden: false }, 3)).toBe('Колонка «To Do», 3 задачи')
+    expect(columnRegionLabel({ name: 'To Do', hidden: false }, 11)).toBe('Колонка «To Do», 11 задач')
+    expect(columnRegionLabel({ name: 'To Do', hidden: false }, 0)).toBe('Колонка «To Do», задач нет')
+    expect(columnRegionLabel({ name: 'Архив', hidden: true }, 2)).toBe('Колонка «Архив», 2 задачи, скрыта')
   })
 
   it('инициалы и стабильные цвета', () => {

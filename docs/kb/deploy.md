@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-07-30
-checked: 102bfbf
+updated: 2026-08-01
+checked: 6171b3c
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -17,37 +17,49 @@ areas:
 
 ## Образ
 
-Многостадийный `Dockerfile`. Особенности, которые легко сломать:
+Многостадийный `Dockerfile` теперь собирает **два runtime-target**: `server-runtime`
+(сервер + web) и `llm-runner-runtime` (внутренний HTTP-исполнитель CLI).
+Особенности, которые легко сломать:
 
-- **Сервер не компилируется в JS** — запускается `tsx` прямо из исходников и
-  резолвит `@voicechat/shared` из `.ts` через workspace-симлинки. Поэтому в
-  runtime-слой копируются исходники + `node_modules` + `tsx`, а не `dist/`. Не
-  добавляй шаг «собрать сервер» — его нет намеренно.
+- **Ни сервер, ни runner не компилируются в JS** — оба запускаются `tsx` прямо
+  из исходников и резолвят `@voicechat/*` через workspace-симлинки. Поэтому в
+  runtime-слой копируются исходники + `node_modules` + `tsx`, а не `dist/`.
 - **better-sqlite3 нативный** → в build-стадии нужен toolchain (python3/make/g++),
   база — glibc (`bookworm`), не musl.
 - **whisper-cli** собирается отдельной стадией из whisper.cpp v1.7.5 статически
-  (`BUILD_SHARED_LIBS=OFF`); в runtime нужен `libgomp1`.
+  (`BUILD_SHARED_LIBS=OFF`); он попадает только в серверный target, где нужен STT.
 - **web собирается без `VITE_SERVER_URL`** → same-origin, тот же порт, что и API
   (`VC_WEB_DIR=/app/apps/web/dist` раздаётся сервером).
-- Процесс работает под пользователем `node`, не root: claude CLI запрещает
+- Процессы работают под пользователем `node`, не root: claude CLI запрещает
   `--dangerously-skip-permissions` под root/sudo. `gosu` в entrypoint делает
   `chown` томов под root и сбрасывает привилегии.
-- `ca-certificates` — codex это Rust-бинарь с rustls, без системного хранилища
-  падает на `invalid peer certificate: UnknownIssuer`. `bubblewrap` — его песочница.
+- **`claude`/`codex` больше нет в образе сервера.** Они ставятся только в
+  `llm-runner-runtime`; `runner-personal` можно собрать без Codex через
+  `INSTALL_CODEX_CLI=0`.
+- `ca-certificates` нужны и серверу (upstream HTTPS), и runner'ам; `bubblewrap`
+  ставится только в runner-target для песочницы Codex.
 
 ## Аутентификация CLI живёт в контейнере
 
-Тома `vc-claude` (`/home/node/.claude`) и `vc-codex` (`/home/node/.codex`) —
-**именованные**, не bind-mount с хоста. Логин делается один раз внутри контейнера
-и обязательно под `node`:
+Логин CLI теперь живёт не в контейнере сервера, а в контейнерах исполнителя:
+`runner-work` и `runner-personal`. Персональные профили пользователей лежат внутри
+`VC_DATA_DIR/cli-users/<base64url(user)>`; сервер видит только HTTP API
+исполнителя и bearer-токен к нему. Общий `HOME` исполнителя нужен лишь как seed
+для auth/config.
 
-```bash
-docker compose exec -u node voicechat claude auth login   # или claude setup-token
-docker compose exec -u node voicechat codex login
-```
+`runner-work` переиспользует прежние volume `vc-claude` / `vc-codex`, поэтому рабочая
+авторизация переезжает без повторного логина. Его профили пользователей теперь
+живут в отдельном volume `vc-runner-work-data`; при первом старте entrypoint
+копирует туда старое дерево `vc-data:/data/cli-users`, чтобы не потерять
+историю сессий, usage и generated images. `runner-personal` хранит свои volume
+авторизации и профилей отдельно и требует одноразового `claude auth login` внутри
+контейнера.
 
-Каталоги создаются в образе с владельцем `node` — иначе Docker создал бы новые
-тома root-овыми и логин был бы недоступен серверному процессу.
+Практическое следствие: при проблемах с проводником CC/Codex, `imageRelocate` или
+`/api/auth/status` смотреть нужно не файловую систему контейнера сервера, а
+профиль пользователя внутри соответствующего исполнителя. Именно исполнитель
+читает `/v1/auth/status`, `/v1/files/read`, `/v1/fs/cc/*` и `/v1/fs/cx/*`; bind-mount
+общих `.claude` / `.codex` в серверный контейнер для этих функций больше не нужен.
 
 ## HTTPS по IP
 
@@ -74,7 +86,10 @@ docker compose exec -u node voicechat codex login
 (`VC_CLAUDE_GATEWAY_BACKEND`, `VC_CLAUDE_UPSTREAM_URL`,
 `VC_CLAUDE_UPSTREAM_API_KEY`, `VC_CLAUDE_UPSTREAM_AUTH`, `VC_CLAUDE_MODEL_MAP`); GitHub PR merge (`VC_GITHUB_TOKEN`).
 `VC_CLAUDE_MODEL_MAP` — JSON-объект; невалидный JSON валит старт с понятной
-ошибкой (это осознанно, а не баг).
+ошибкой (это осознанно, а не баг). `VC_MCP_PUBLIC_BASE` задаёт базу MCP-URL,
+которые сервер отдаёт контейнеру-исполнителю (`/mcp/remote-bash`, `/mcp/kb`,
+`/mcp/ci-commands`); без неё в dev/тестах остаётся текущее loopback-поведение
+`http://127.0.0.1:<PORT>`.
 
 ## Прод
 
@@ -85,6 +100,10 @@ docker compose exec -u node voicechat codex login
 voicechat-deploy               # вернётся сразу, деплой идёт в фоне
 tail -f /var/log/voicechat-deploy.log
 ```
+
+Внутри `voicechat-deploy` — те же `git pull --ff-only origin main` и
+`docker compose up -d --build voicechat runner-work runner-personal caddy`, но
+переживающие обрыв канала (см. ниже).
 
 Секреты (`VC_ADMIN_PASSWORD`, upstream-ключи) задаются в shell/`.env` на сервере и
 в репозиторий не попадают.
@@ -125,3 +144,91 @@ tail -f /var/log/voicechat-deploy.log
 Установка/переустановка (идемпотентна): `cd /root/voiceAIChat && bash scripts/prod/install.sh`.
 Скрипты копируются в `/usr/local/bin` намеренно — деплой делает `git pull`, и
 запускаться из файла, который этот pull перезаписывает, ему нельзя.
+
+## Прод-каталог заодно рабочая копия — коммит там пушится сразу
+
+`/root/voiceAIChat` — не только прод-чекаут, из которого `docker compose` собирает
+образ, но и общая рабочая копия чат-сессий на этой машине. Второй писатель в `main`
+— CI-раннер: шаг «Влить ветку задачи в прод-ветку» пушит мерж в `origin/main` из
+клона в `repos_root`, а шаг «Обновить прод-контейнер» поднимает прод
+**только `git pull --ff-only`** (см. [features/ci-runner.md](features/ci-runner.md)).
+
+Отсюда правило: **закоммитил в `/root/voiceAIChat` — сразу `git push origin main`.**
+Незапушенный локальный коммит проходит проверку на локальные изменения (дерево-то
+чистое) и разводит ветки в момент, когда CI пушит свой мерж; `pull --ff-only`
+падает с `fatal: Not possible to fast-forward` (код `128`), и ран встаёт на шаге
+обновления прода. Лечится это на стороне прод-каталога — поднять локальный коммит
+в `origin/main` (`git pull --rebase` + `push`, либо влить его через клон), а не
+ослаблением `--ff-only`: прод обязан оставаться линейным продолжением `origin/main`,
+иначе он собирается из кода, которого ни у кого больше нет.
+
+Длинные правки и гейт держи в отдельном клоне (`docs/kb/features/ci-runner.md` →
+`repos_root`), а прод-каталог используй как деплой-чекаут.
+
+## Пересборка прода изнутри рана: собрать сразу, поднять отложенно
+
+Задача «Пересборка прода» (автозадача учёта, `features/ci-runner.md`) выполняется
+моделью в ране на том же хосте, где живёт прод, — то есть шаг пересборки убивает
+контейнер, в котором работает сам раннер. Боевой шаг «Обновить прод-контейнер»
+решает это задержкой `PROD_REBUILD_DELAY=180`, но эти 180 секунд рассчитаны на его
+место в пайплайне (позиция 8: дальше только cleanup и резюме). Из шага модели
+впереди ещё тесты (`npm test` на этом репозитории — около 7 минут), коммит, пуш и
+мерж, поэтому задержку берут с запасом на весь остаток рана (рабочее значение —
+1600 с), иначе ран не успевает закрыться и ветка не уезжает в origin.
+
+Разложение на две фазы делает окно рестарта секундным и проверяемым:
+
+```bash
+cd /root/voiceAIChat && git pull --ff-only origin main
+docker compose build            # работающий контейнер не трогает
+setsid nohup sh -c 'sleep 1600; cd /root/voiceAIChat && docker compose up -d' \
+  > /tmp/voicechat-prod-rebuild.log 2>&1 < /dev/null &
+```
+
+`docker compose build` собирает образ, не пересоздавая контейнер, — значит успех
+сборки виден в ленте рана, а не в логе, который читать уже некому. Отложенному
+сеансу остаётся `up -d` **без** `--build`: он поднимает готовые образы сервера и
+обоих исполнителей (`voicechat`, `runner-work`, `runner-personal`, плюс `caddy`) и
+не зависит от того, что к тому моменту случилось с общим прод-каталогом. Цена —
+в образы попадает дерево на момент `build`, а собственный коммит рана доедет до
+прода следующим деплоем; для правок документации это и нужно.
+
+## Прод мог обновиться и без рана: сначала проверь, потом пересобирай
+
+Карточка «Пересборка прода» — след факта («в ране N пересборки не было»), а не
+состояния прода. Если прод к моменту рана по карточке уже обновили — из чат-сессии
+или внешним сеансом-финишером, — автоматика её не снимает: `ensureProdRebuildTask`
+держит карточку открытой, пока её не увезут в done руками. Поэтому ран по ней
+начинают с проверки, а не с пересборки: повторная сборка того же дерева ничего не
+меняет, зато даёт лишний рестарт контейнера, а рестарт роняет очередные раны.
+
+В образе нет `.git`, поэтому «какой коммит на проде» выясняют сравнением дерева
+контейнера с ревизией:
+
+```bash
+# дешёвый маркер ревизии — любой файл, который правился в интересующем коммите
+docker exec voiceaichat-voicechat-1 cat /app/docs/kb/ui.md > /tmp/prod-ui.md
+git show <sha>:docs/kb/ui.md | cmp - /tmp/prod-ui.md
+
+# серверный код целиком (сортировать обязательно, см. ниже)
+docker exec voiceaichat-voicechat-1 sh -lc \
+  'cd /app && find apps/server/src packages/shared/src scripts -type f -name "*.ts" | xargs sha256sum' | sort
+
+# правка клиента: packages/ui/src в образе нет, есть только собранный бандл
+docker exec voiceaichat-voicechat-1 grep -c keepActiveListed /app/apps/web/dist/assets/index-*.js
+```
+
+Имена свойств объектов минификатор сохраняет, так что грепом по
+`apps/web/dist/assets/index-*.js` видно и клиентскую правку. Списки `sha256sum`
+перед диффом надо сортировать: `find` в контейнере и на хосте выдаёт файлы в разном
+порядке (разная локаль), и без `sort` дифф показывает расхождение там, где его нет.
+Дата сборки образа (`docker images voicechat`) отвечает только «когда», но не «что»:
+прод-каталог — заодно рабочая копия чат-сессий, поэтому образ мог быть собран и из
+грязного дерева.
+
+Третий способ пересобрать, помимо боевого шага и двухфазного из рана, — вынести
+пересборку из рана вообще: внешний сеанс (`setsid`) опрашивает раны проекта, ждёт,
+пока не останется ни одного `queued|running|awaiting_input`, и только тогда делает
+`pull --ff-only → docker compose build → up -d` с секундной паузой. Задержку угадывать
+не нужно, и пачка ранов не рвётся на середине; цена — результат виден только в логе
+сеанса, в ленте рана его нет.

@@ -84,6 +84,15 @@ export function parseQuestions(text: string): ParsedQuestions | null {
   return { body, questions }
 }
 
+/**
+ * Обратная операция к `parseQuestions`: собрать fenced-блок с вопросами, чтобы
+ * продублировать вопрос модели обычным сообщением чата — UI разберёт его тем же
+ * `parseQuestions` и покажет ту же форму.
+ */
+export function formatQuestionsBlock(questions: QuestionSpec[]): string {
+  return ['```' + QUESTIONS_FENCE, JSON.stringify(questions), '```'].join('\n')
+}
+
 /** Ответ пользователя на один вопрос (выбранные варианты и/или свой текст). */
 export interface QuestionAnswer {
   q: string

@@ -1,12 +1,22 @@
 // Карточка задачи в стиле Jira: заголовок, чип эпика, метки, флаг, прогресс
 // подзадач, снизу — иконка типа + ключ, срок, стори-поинты, приоритет, аватар.
-// Клик — открывает модалку задачи; меню «⋯» — быстрые действия.
+// Клик (тап) — открывает модалку задачи; меню «⋯» — быстрые действия.
+//
+// Перенос карточка не реализует: геометрия доски известна только ей, поэтому
+// карточка лишь сообщает о захвате (onGrab) и о клавишах (onCardKeys), а порог
+// жеста, копию под пальцем и цель считает KanbanBoard. Захватить можно с ручки
+// «⠿» (единственное место с touch-action: none — палец там не скроллит) или
+// удержанием самой карточки; с клавиатуры карточка фокусируется (tabIndex).
 
 import { useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Task } from '@shared/projects'
-import type { CiRunSummary } from '@shared/ci'
+import { canStartCiRun, ciCardPulse, type CiRunSummary } from '@shared/ci'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
+import { Button } from '../ui/Button'
+import { IconButton } from '../ui/IconButton'
+import { useConfirm } from '../ui/useConfirm'
 
 export interface TaskCardProps {
   task: Task
@@ -29,9 +39,17 @@ export interface TaskCardProps {
   /** Открыть ленту рана. */
   onOpenCiRun?: (runId: string) => void
 
-  onDragStart: (taskId: string) => void
-  onDragEnd: () => void
+  /** Захват указателем: доска решает, перенос это или клик/скролл.
+      `immediate` — захват с ручки, удержание пальца не нужно. */
+  onGrab?: (e: ReactPointerEvent<HTMLElement>, card: HTMLElement, immediate: boolean) => void
+  /** Клавиши на карточке — клавиатурный перенос разбирает доска. */
+  onCardKeys?: (e: KeyboardEvent<HTMLElement>, card: HTMLElement) => void
+  /** Фокус ушёл с карточки — доска отменяет незавершённый клавиатурный перенос. */
+  onCardBlur?: () => void
+  /** Карточку несут указателем: на месте вставки доска рисует плейсхолдер. */
   dragging: boolean
+  /** Карточка «взята» с клавиатуры: остаётся на месте и подсвечена. */
+  grabbed?: boolean
 }
 
 /** Эпик-предок задачи (родитель истории или родитель родителя задачи). */
@@ -46,8 +64,10 @@ export function epicOf(task: Task, all: Task[]): Task | null {
 
 export function TaskCard(props: TaskCardProps): JSX.Element {
   const { task, ciSummary } = props
+  const confirm = useConfirm()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const cardRef = useRef<HTMLDivElement | null>(null)
 
   // Меню закрывается кликом мимо него.
   useEffect(() => {
@@ -59,6 +79,10 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
     return () => document.removeEventListener('mousedown', onDown)
   }, [menuOpen])
 
+  // Состояние последнего рана: подсветка карточки и доступность запуска.
+  const pulse = ciCardPulse(ciSummary)
+  const canStart = canStartCiRun(ciSummary)
+
   const epic = epicOf(task, props.allTasks)
   const children = props.allTasks.filter((t) => t.parentId === task.id)
   const doneChildren = children.filter((t) => props.doneColumnIds.has(t.columnId))
@@ -67,22 +91,38 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
 
   return (
     <div
-      className={`jcard${task.flagged ? ' jcard--flagged' : ''}${props.dragging ? ' dragging' : ''}`}
-      draggable
+      ref={cardRef}
+      className={`jcard${task.flagged ? ' jcard--flagged' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
       data-testid="task-card"
+      data-task-id={task.id}
+      tabIndex={0}
       onClick={() => props.onOpen(task.id)}
-      onDragStart={(e) => {
-        e.dataTransfer.setData('application/x-task', task.id)
-        e.dataTransfer.effectAllowed = 'move'
-        props.onDragStart(task.id)
+      onPointerDown={(e) => {
+        // С кнопок, полей и меню внутри карточки перенос не начинаем.
+        if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return
+        if (cardRef.current) props.onGrab?.(e, cardRef.current, false)
       }}
-      onDragEnd={props.onDragEnd}
+      onKeyDown={(e) => {
+        if (cardRef.current) props.onCardKeys?.(e, cardRef.current)
+      }}
+      onBlur={() => props.onCardBlur?.()}
     >
       <div className="jcard-top">
+        <span
+          className="jcard-grip"
+          aria-hidden="true"
+          onPointerDown={(e) => {
+            e.stopPropagation()
+            if (cardRef.current) props.onGrab?.(e, cardRef.current, true)
+          }}
+        >
+          ⠿
+        </span>
         <span className="jcard-title">{task.title}</span>
         <span className="jcard-menuwrap" ref={menuRef}>
-          <button
-            className="jcard-menubtn"
+          <IconButton
+            className="jcard-reveal"
+            size="sm"
             aria-label={`Действия с «${task.title}»`}
             title="Действия"
             aria-expanded={menuOpen}
@@ -92,7 +132,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
             }}
           >
             ⋯
-          </button>
+          </IconButton>
           {menuOpen && (
             <div className="jcard-menu" onClick={(e) => e.stopPropagation()}>
               <button onClick={() => { setMenuOpen(false); props.onOpen(task.id) }}>Открыть</button>
@@ -105,7 +145,9 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 className="jcard-menu-danger"
                 onClick={() => {
                   setMenuOpen(false)
-                  if (window.confirm(`Удалить «${task.title}»?`)) props.onDelete(task.id)
+                  void confirm({ title: `Удалить «${task.title}»?`, variant: 'danger', confirmLabel: 'Удалить' }).then((ok) => {
+                    if (ok) props.onDelete(task.id)
+                  })
                 }}
               >
                 Удалить
@@ -164,19 +206,38 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
             )
           })()}
           <div className="jcard-ci-row">
-            {ciSummary && <button className="jcard-ci-open" onClick={() => props.onOpenCiRun?.(ciSummary.id)}>Лента рана</button>}
-            <button className="jcard-ci-run" onClick={() => props.onStartCi?.(task.id)}>Выполнить</button>
+            {ciSummary && (
+              <Button
+                size="sm"
+                className={ciSummary.awaitingInput ? 'jcard-ci-attention' : undefined}
+                onClick={() => props.onOpenCiRun?.(ciSummary.id)}
+              >
+                {ciSummary.awaitingInput ? 'Ответить модели' : 'Лента рана'}
+              </Button>
+            )}
+            {/* Пока ран идёт, запускать нечего — остаётся только лента. После
+                завершения (успех, падение, отмена) кнопка возвращается: с карточки
+                всегда можно запустить задачу заново. */}
+            {canStart && props.onStartCi && (
+              <Button variant="primary" size="sm" onClick={() => props.onStartCi?.(task.id)}>Выполнить</Button>
+            )}
           </div>
         </div>
       )}
+
+      {/* Клавиатурный перенос иначе не найти: подсказка видна только скринридеру. */}
+      <span className="vc-sr-only">Пробел — взять задачу для переноса</span>
 
       <div className="jcard-foot">
         <span className="jcard-foot-left">
           <TypeIcon type={task.type} />
           <span className={`jcard-key${done ? ' jcard-key--done' : ''}`}>{key}</span>
           {props.onOpenChat && (
-            <button
-              className={`jcard-chat${task.chatId ? ' jcard-chat--linked' : ''}`}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="jcard-chat"
+              iconLeft={<span aria-hidden="true">💬</span>}
               title={task.chatId ? 'Открыть связанный чат' : 'Создать связанный чат'}
               aria-label="Связанный чат"
               onClick={(e) => {
@@ -184,9 +245,8 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 props.onOpenChat?.(task.id)
               }}
             >
-              <span aria-hidden="true">💬</span>
-              <span>Чат</span>
-            </button>
+              Чат
+            </Button>
           )}
         </span>
 

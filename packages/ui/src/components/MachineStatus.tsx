@@ -9,12 +9,23 @@ import { AGENT_VERSION, compareVersions } from '@shared/version'
 import { agentOsFromPlatform, installCommand, UPDATE_HINT } from '@shared/agentInstall'
 import { copyText } from '../lib/clipboard'
 import { AgentCommands } from './AgentCommands'
+import { Button } from './ui/Button'
 import { ToolFrame } from './ToolFrame'
+import { Skeleton, RefreshIndicator } from './ui/Skeleton'
+import { EmptyState } from './ui/EmptyState'
+import { ErrorState } from './ui/ErrorState'
+import { loadView, type LoadStatus } from '../lib/loadState'
 
 export interface MachineStatusProps {
   /** Размещение: модалка из меню (по умолчанию) или страница контентной колонки. */
   variant?: 'modal' | 'page'
   agents: AgentInfo[]
+  /** Состояние загрузки реестра машин: скелетон на первой загрузке, ошибка — с «Повторить». */
+  status?: LoadStatus
+  /** Техническая деталь ошибки загрузки (под «Подробнее»). */
+  error?: string | null
+  /** Повторить загрузку списка машин. */
+  onRetry?: () => void
   /** Быстрое изменение разрешений (сервер сразу применит онлайн-агенту). */
   onSetPolicy: (id: string, policy: AgentPolicy) => void
   /** Добавить машину; вернёт токен один раз. Нет — блок добавления скрыт. */
@@ -66,6 +77,13 @@ function osLabel(os: AgentTelemetry['os']): string {
   return `${name} · ${os.arch}`
 }
 
+/** Имя файла shell без пути (для компактного показа в таблице). */
+function shellBaseName(shellPath: string): string {
+  const norm = shellPath.replace(/\\/g, '/')
+  const parts = norm.split('/')
+  return parts[parts.length - 1] || shellPath
+}
+
 function ratioPct(used: number, total: number): number {
   return total > 0 ? Math.round((used / total) * 100) : 0
 }
@@ -97,7 +115,22 @@ function TelemetryCells({ t }: { t?: AgentTelemetry }): JSX.Element {
   const ramPct = ratioPct(t.mem.usedBytes, t.mem.totalBytes)
   return (
     <>
-      <td>{osLabel(t.os)}</td>
+      <td>
+        {osLabel(t.os)}
+        {t.os.shell && (
+          <div className="mst-shell" title={`Shell для команд и терминала: ${t.os.shell}`}>
+            <span className="mst-dim ac-mono">{shellBaseName(t.os.shell)}</span>
+            {t.os.shellDegraded && (
+              <span
+                className="mst-badge"
+                title="bash.exe не найден — команды и терминал идут через cmd.exe, функциональность ограничена. Поставьте Git for Windows."
+              >
+                ⚠ нет bash
+              </span>
+            )}
+          </div>
+        )}
+      </td>
       <td>
         <Meter value={t.cpu.loadPct} label={`${t.cpu.loadPct}% · ${t.cpu.count} ядр.`} />
       </td>
@@ -171,35 +204,36 @@ function AgentActions({
       </span>
       <span className="mst-agent-btns">
         {outdated && onCopyCommand && (
-          <button
-            className="mst-btn"
+          <Button
+            size="sm"
             title={`Скопировать команду обновления. ${UPDATE_HINT}`}
             aria-label={`Скопировать команду обновления для ${agent.name}`}
             onClick={onCopyCommand}
           >
             {copied ? '✓ скопировано' : '⧉ команда'}
-          </button>
+          </Button>
         )}
         {outdated && onUpdate && (
-          <button
-            className="mst-btn primary"
+          <Button
+            variant="primary"
+            size="sm"
             title="Обновить агента на машине: сервер выполнит на ней ту же команду"
             aria-label={`Обновить агента на ${agent.name}`}
             disabled={busy}
             onClick={onUpdate}
           >
             {busy ? 'обновляю…' : '⬆ обновить'}
-          </button>
+          </Button>
         )}
         {onRegenerate && (
-          <button
-            className="mst-btn"
+          <Button
+            size="sm"
             title="Перевыпустить токен: старый перестанет работать, агента нужно переустановить новой командой"
             aria-label={`Перевыпустить токен для ${agent.name}`}
             onClick={onRegenerate}
           >
             ↻ токен
-          </button>
+          </Button>
         )}
       </span>
     </td>
@@ -208,6 +242,9 @@ function AgentActions({
 
 export function MachineStatus({
   agents,
+  status = 'ready',
+  error = null,
+  onRetry,
   onSetPolicy,
   onCreateAgent,
   onRegenerateToken,
@@ -223,6 +260,7 @@ export function MachineStatus({
   const [busyId, setBusyId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  const view = loadView(status, agents.length > 0)
 
   const add = async (): Promise<void> => {
     const n = name.trim()
@@ -282,9 +320,33 @@ export function MachineStatus({
   return (
     <ToolFrame title="Машины" variant={variant} onClose={onClose} testId="machines-overlay">
       <div className="mst-body">
-        {agents.length === 0 ? (
-          <p className="mst-empty">Нет добавленных машин — добавьте первую ниже.</p>
-        ) : (
+        {view.state === 'skeleton' && (
+          /* Высота косточки — высота строки таблицы машин с полосками CPU/памяти. */
+          <Skeleton variant="list" item="block" count={3} height={46} gap={6} testId="machine-skeleton" />
+        )}
+        {view.state === 'error' && (
+          <ErrorState
+            message="Не удалось загрузить список машин"
+            detail={error}
+            {...(onRetry ? { onRetry } : {})}
+          />
+        )}
+        {view.staleError && (
+          <ErrorState
+            compact
+            message="Список мог устареть: обновить не удалось"
+            detail={error}
+            {...(onRetry ? { onRetry } : {})}
+          />
+        )}
+        {view.refreshing && <RefreshIndicator label="Обновляем список…" />}
+        {view.state === 'empty' ? (
+          <EmptyState
+            icon="💻"
+            title="Нет добавленных машин — добавьте первую ниже"
+            description="Машина даёт модели терминал, файлы и запуск CI: имя, кнопка «Добавить» и команда установки агента."
+          />
+        ) : view.state !== 'data' ? null : (
           <table className="mst" data-testid="machines-table">
             <thead>
               <tr>
@@ -377,15 +439,16 @@ export function MachineStatus({
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && void add()}
             />
-            <button
-              className="mst-btn primary"
+            <Button
+              variant="primary"
+              size="sm"
               title="Добавить машину и получить команду установки"
               aria-label="Добавить машину"
               disabled={!name.trim()}
               onClick={() => void add()}
             >
               ＋ Добавить машину
-            </button>
+            </Button>
           </div>
         )}
 

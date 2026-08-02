@@ -3,6 +3,7 @@ import type { RendererApi } from '@shared/ipc'
 import type { PermissionMode } from '@shared/types'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
+import { TaskChatHeader } from './components/chat/TaskChatHeader'
 import { VoiceBar } from './components/VoiceBar'
 import { VOICE_INPUT_ENABLED } from './lib/featureFlags'
 import { SettingsModal } from './components/SettingsModal'
@@ -11,9 +12,9 @@ import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen } from './components/LoginScreen'
 import { EnginesObserver, type ObserverEngine } from './components/EnginesObserver'
 import { UsersAdmin } from './components/UsersAdmin'
-import { ProjectsOverlay } from './components/ProjectsOverlay'
 import { ProjectSettings } from './components/ProjectSettings'
 import { ProjectBoard } from './components/ProjectBoard'
+import { ProjectPage, ProjectsEmptyPage, ProjectNotFoundPage } from './components/ProjectPage'
 import { MachineStatus } from './components/MachineStatus'
 import { MachineUtility } from './components/MachineUtility'
 import { CiCommands } from './components/ci/CiCommands'
@@ -21,11 +22,21 @@ import { RunFeed } from './components/ci/RunFeed'
 import { ToolFrame } from './components/ToolFrame'
 import type { MachineOps } from './components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
+import { UiProviders } from './components/ui/UiProviders'
+import { Skeleton } from './components/ui/Skeleton'
+import { useToast } from './components/ui/Toast'
+import { useConfirm } from './components/ui/useConfirm'
 import { KnowledgeBase } from './components/KnowledgeBase'
+import { KbUsagePanel } from './components/kb/KbUsagePanel'
+import { hasPendingKbUsage } from './lib/kbUsage'
+import { CommandPalette } from './components/CommandPalette'
+import { HotkeysCheatSheet } from './components/HotkeysCheatSheet'
 import { useVoiceStore } from './store/useVoiceStore'
 import { useVoiceCues } from './lib/useVoiceCues'
 import { useHashRoute } from './lib/useHashRoute'
-import { useHotkeys } from './lib/useHotkeys'
+import { useHotkeys, type HotkeyBinding } from './lib/useHotkeys'
+import { useCommandSource } from './lib/useCommands'
+import { buildAppCommands, buildHotkeyBindings } from './lib/appCommands'
 import './styles/app.css'
 
 // Шаг 5: состояние живёт в сторе (store/voiceStore.ts) на базе машины состояний.
@@ -44,19 +55,50 @@ export interface AppProps {
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
 const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users', 'ci']
 
-export default function App({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
-  const { state, actions } = useVoiceStore({ api, now, delays })
-  // Hash-роутинг раздела «Проекты»: URL — источник навигации (см. useHashRoute).
-  const { segments, navigate } = useHashRoute()
+/**
+ * Корень приложения. Тосты и подтверждения — провайдеры вокруг всего дерева:
+ * спросить подтверждение или показать ошибку может любой экран на любой глубине.
+ * avoidSelector — композер: на телефоне стек тостов стоит над ним, а не поверх.
+ */
+export default function App(props: AppProps = {}): JSX.Element {
+  return (
+    <UiProviders avoidSelector=".voicebar">
+      <AppBody {...props} />
+    </UiProviders>
+  )
+}
+
+function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
+  // Hash-роутинг: URL — источник навигации (см. useHashRoute).
+  const { path, segments, navigate } = useHashRoute()
   const inProjects = segments[0] === 'projects'
   const routeProjectId = inProjects ? (segments[1] ?? null) : null
   const routeSettings = inProjects && segments[2] === 'settings'
+  // «Открыть задачу» из шапки связанного чата: #/projects/:id/task/:taskId.
+  const routeTaskId = inProjects && segments[2] === 'task' ? (segments[3] ?? null) : null
   // Утилиты-страницы: один сегмент из белого списка (#/machines, #/kb, …).
-  const utilitySeg = segments.length === 1 && UTILITY_PAGES.includes(segments[0]) ? segments[0] : null
+  // У базы знаний есть второй сегмент — открытый документ (#/kb/:documentId):
+  // так на раздел можно дать ссылку из панели «Использование БЗ» и из «Подробнее».
+  const utilitySeg =
+    segments.length >= 1 && UTILITY_PAGES.includes(segments[0]) && (segments.length === 1 || (segments[0] === 'kb' && segments.length === 2))
+      ? segments[0]
+      : null
+  const routeKbDocumentId = segments[0] === 'kb' ? (segments[1] ?? null) : null
   const onUtilityPage = utilitySeg !== null
+  // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
+  // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
+  const routeChatId = segments[0] === 'chat' ? (segments[1] ?? null) : null
+  const inChat = !inProjects && !onUtilityPage
+  const { state, actions } = useVoiceStore({ api, now, delays, initialChatId: routeChatId })
+  const toast = useToast()
+  const confirm = useConfirm()
   const authed = !state.authRequired || Boolean(state.currentUser)
   // Мобильный режим: выдвинут ли сайдбар (на десктопе класс side--open не влияет).
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Любой переход закрывает выдвижной сайдбар: он рисуется поверх контента, и
+  // забытая открытой панель закрывала собой открытую страницу или карточку
+  // (напр. переход «Открыть задачу» из шапки связанного чата).
+  useEffect(() => { setSidebarOpen(false) }, [path])
   // Десктоп: свёрнут ли сайдбар (колонка → 0). Персист в localStorage.
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('vc:sidebarCollapsed') === '1' } catch { return false }
@@ -72,18 +114,141 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   useEffect(() => { setSidebarMode(inProjects ? 'projects' : 'chats') }, [inProjects])
   useVoiceCues(state.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
-  // Горячие клавиши: пробел (hold) — запись, Esc — стоп/отмена по состоянию.
-  // Выключены при открытом модале настроек (там свои поля/фокус).
+  // Канал уведомлений стора → тосты. Показанные сразу снимаем из очереди, а
+  // отданные id помним: без этого повторный прогон эффекта (StrictMode) показал
+  // бы каждое уведомление дважды.
+  const shownNotices = useRef(new Set<string>())
+  useEffect(() => {
+    for (const notice of state.notices) {
+      if (!shownNotices.current.has(notice.id)) {
+        shownNotices.current.add(notice.id)
+        toast[notice.kind](notice.text, notice.retry ? { action: { label: 'Повторить', onClick: notice.retry } } : undefined)
+      }
+      actions.dismissNotice(notice.id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.notices])
+
+  // Тема дублируется на <html>: модальные окна уходят порталом в document.body,
+  // вне .app, и без этого теряли бы токены [data-theme='dark'].
+  useEffect(() => {
+    document.documentElement.dataset.theme = state.settings.theme
+  }, [state.settings.theme])
+
+  // Командная палитра (⌘K) и шпаргалка (?) — окна поверх всего остального.
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [cheatSheetOpen, setCheatSheetOpen] = useState(false)
+
+  const stopOrCancel = (): void => {
+    const v = state.voice
+    if (v === 'thinking' || v === 'speaking') actions.cancelRequest()
+    else if (v === 'listening') actions.stopVoice()
+  }
+
+  // Горячие клавиши: пробел (hold) — запись, Esc — стоп/отмена по состоянию,
+  // плюс биндинги палитры и шпаргалки. `enabled` гасит только голосовые клавиши
+  // (модал настроек — свои поля и фокус); у остальных биндингов свой `enabled`.
+  const hotkeyBindings: HotkeyBinding[] = buildHotkeyBindings({
+    onboarded: state.settings.onboarded,
+    voice: state.voice,
+    togglePalette: () => setPaletteOpen((v) => !v),
+    openCheatSheet: () => setCheatSheetOpen(true)
+  })
+
   useHotkeys({
     enabled: !state.settingsOpen && state.settings.onboarded,
     onPushStart: actions.startVoice,
     onPushEnd: actions.stopVoice,
-    onEscape: () => {
-      const v = state.voice
-      if (v === 'thinking' || v === 'speaking') actions.cancelRequest()
-      else if (v === 'listening') actions.stopVoice()
-    }
+    onEscape: stopOrCancel,
+    bindings: hotkeyBindings
   })
+
+  // Команды уровня приложения в общем реестре (lib/commands.ts): базовый набор
+  // плюс пункты по данным — беседы, проекты, задачи открытой доски, машины.
+  // Экранные команды регистрируют сами экраны (канбан, лента CI-рана).
+  // Источник — функция: она вызывается в момент сборки списка, поэтому видит
+  // свежее состояние стора, а не то, что было на момент регистрации.
+  const boardProjectName =
+    state.projectDetail?.id === state.activeProjectId
+      ? state.projectDetail.name
+      : state.projects.find((p) => p.id === state.activeProjectId)?.name ?? null
+  // Куда ведёт вход в раздел «Проекты» и удаление текущего проекта.
+  const firstProjectId = state.projects[0]?.id ?? null
+  const routeProjectName =
+    (state.projectDetail?.id === routeProjectId ? state.projectDetail.name : null) ??
+    state.projects.find((p) => p.id === routeProjectId)?.name ??
+    'Проект'
+  // Список загружен, а проекта из адреса в нём нет: удалён или нет доступа.
+  const projectMissing =
+    routeProjectId !== null && state.projectsLoaded && !state.projects.some((p) => p.id === routeProjectId)
+  useCommandSource(() =>
+    buildAppCommands({
+      voiceEnabled: VOICE_INPUT_ENABLED,
+      voice: state.voice,
+      autoSpeak: state.settings.autoSpeak,
+      theme: state.settings.theme,
+      web: state.authRequired,
+      paletteOpen,
+      boardProjectId: state.activeProjectId ?? state.projects[0]?.id ?? null,
+      chats: state.conversations,
+      projects: state.projects,
+      tasks: state.board?.tasks ?? [],
+      taskProject:
+        state.activeProjectId && boardProjectName
+          ? { id: state.activeProjectId, name: boardProjectName }
+          : null,
+      machines: state.authRequired ? state.agents : [],
+      newChat: () => void actions.newConversation().then((id) => navigate(`/chat/${id}`)),
+      toggleMic: () => (state.voice === 'listening' ? actions.stopVoice() : actions.startVoice()),
+      stopOrCancel,
+      toggleAutoSpeak: () => void actions.updateSettings({ autoSpeak: !state.settings.autoSpeak }),
+      toggleTheme: () => void actions.updateSettings({ theme: state.settings.theme === 'dark' ? 'light' : 'dark' }),
+      openSettings: actions.openSettings,
+      openBoard: (projectId) => navigate(`/projects/${projectId}`),
+      openMachineConsole: (agentId) =>
+        agentId ? actions.openUtility('console', agentId) : actions.openUtilityForActiveChat('console'),
+      openKnowledgeBase: () => navigate('/kb'),
+      openKbUsage: actions.openKbUsage,
+      logout: () => void actions.logout(),
+      openPalette: () => setPaletteOpen(true),
+      openCheatSheet: () => setCheatSheetOpen(true),
+      openChat: (id) => navigate(`/chat/${id}`),
+      openProject: (id) => navigate(`/projects/${id}`),
+      openTask: (projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)
+    })
+  )
+
+  // Маршрут ↔ активный чат. Одна точка синхронизации, чтобы стороны не тянули
+  // адрес друг у друга: syncedChatId — последний согласованный id. Изменился
+  // адрес (клик по чату, «Назад», ссылка извне) — грузим чат из адреса;
+  // изменился активный чат в сторе (создание, удаление, resume, автосоздание
+  // первой репликой) — переписываем адрес без новой записи в истории.
+  const syncedChatId = useRef<string | null>(routeChatId)
+  useEffect(() => {
+    if (!authed || !inChat) return
+    if (routeChatId && routeChatId !== syncedChatId.current) {
+      syncedChatId.current = routeChatId
+      if (routeChatId === state.activeId) return // стор уже открыл этот чат
+      const fallback = state.activeId
+      void actions.selectConversation(routeChatId).then((ok) => {
+        if (ok || syncedChatId.current !== routeChatId) return
+        // Чата нет (удалён или чужой) — возвращаемся к прежнему.
+        syncedChatId.current = fallback
+        if (fallback) {
+          void actions.selectConversation(fallback)
+          navigate(`/chat/${fallback}`, { replace: true })
+        } else {
+          navigate('/', { replace: true })
+        }
+      })
+      return
+    }
+    if (state.activeId && (routeChatId === null || state.activeId !== syncedChatId.current)) {
+      syncedChatId.current = state.activeId
+      navigate(`/chat/${state.activeId}`, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, inChat, routeChatId, state.activeId])
 
   // URL → данные стора: вход/выход в раздел «Проекты», загрузка доски и
   // оверлея настроек. Навигацию делают клики (navigate), данные грузятся тут.
@@ -99,18 +264,25 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
     else if (state.activeProjectId) actions.closeBoard()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects, routeProjectId])
-  // Авто-редирект при запуске: открыли #/projects (список) — уводим на последний
-  // использованный проект, если он ещё доступен. Срабатывает один раз за сессию
-  // (ref-гард), поэтому закрытие доски к списку потом не перекидывает обратно.
-  const redirectedToLastProject = useRef(false)
+  // Прямая ссылка на завершённую задачу: сервер прячет с доски давно готовые
+  // карточки, и открывать было бы нечего. Если задачи из URL в снапшоте нет —
+  // один раз включаем «Показать завершённые» и доска приходит целиком.
   useEffect(() => {
-    if (!authed || redirectedToLastProject.current) return
-    if (!inProjects || routeProjectId || state.projects.length === 0) return
-    redirectedToLastProject.current = true
-    const last = state.lastProjectId
-    if (last && state.projects.some((p) => p.id === last)) navigate(`/projects/${last}`)
+    if (!authed || !inProjects || !routeTaskId) return
+    if (state.boardIncludeCompleted || state.boardLoading || !state.board) return
+    if (state.board.tasks.some((t) => t.id === routeTaskId)) return
+    void actions.setBoardIncludeCompleted(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inProjects, routeProjectId, state.projects, state.lastProjectId])
+  }, [authed, inProjects, routeTaskId, state.board, state.boardLoading, state.boardIncludeCompleted])
+  // Страницы-списка проектов нет: #/projects без id — это всегда переход на
+  // первый проект списка. Правило то же, что у клика «Проекты» в сайдбаре,
+  // поэтому персист последнего проекта не нужен. Нет проектов — редиректа нет,
+  // и в области контента остаётся пустое состояние (создать — в сайдбаре).
+  useEffect(() => {
+    if (!authed || !inProjects || routeProjectId || !firstProjectId) return
+    navigate(`/projects/${firstProjectId}`, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, inProjects, routeProjectId, firstProjectId])
   useEffect(() => {
     if (!authed) return
     if (routeSettings) { if (!state.projectSettingsOpen) actions.openProjectSettings() }
@@ -157,6 +329,14 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
   const activeConversation = state.conversations.find((c) => c.id === state.activeId)
   const activeTitle = activeConversation?.title ?? 'Новый разговор'
   const activeExecTarget = activeConversation?.execTarget ?? null
+  const activeKbUsage = state.activeId ? state.kbUsage[state.activeId] : undefined
+  // Счётчик обращений на кнопке «Использование БЗ» должен быть честным ДО
+  // открытия панели, поэтому снапшот читаем при открытии чата и после каждого
+  // нового сообщения (новый ход = возможные новые обращения).
+  useEffect(() => {
+    if (authed && state.activeId) void actions.loadKbUsage(state.activeId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, state.activeId, state.messages.length])
   const forcedPlan = state.currentUser?.role === 'user' && (!activeExecTarget || activeExecTarget === 'none')
   const activePermissionMode: PermissionMode = forcedPlan
     ? 'plan'
@@ -164,9 +344,15 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
 
   const changeConversationMode = async (mode: PermissionMode): Promise<void> => {
     if (!activeConversation || mode === activePermissionMode) return
-    if (activePermissionMode === 'plan' && mode === 'bypassPermissions' && !window.confirm(
-      'Перейти из планирования в «Полный доступ»? Агент сможет выполнять команды и изменять любые доступные файлы.'
-    )) return
+    if (
+      activePermissionMode === 'plan' &&
+      mode === 'bypassPermissions' &&
+      !(await confirm({
+        title: 'Полный доступ',
+        message: 'Перейти из планирования в «Полный доступ»? Агент сможет выполнять команды и изменять любые доступные файлы.',
+        confirmLabel: 'Перейти'
+      }))
+    ) return
     await actions.setConversationExecTarget(
       activeConversation.id,
       activeConversation.execTarget,
@@ -231,7 +417,12 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         open={sidebarOpen}
         onToggleCollapse={() => setCollapsedPersist(true)}
         conversations={state.conversations}
+        conversationsStatus={state.conversationsStatus}
+        conversationsError={state.conversationsError}
+        onRetryConversations={() => void actions.retryConversations()}
         activeId={state.activeId}
+        taskBadges={state.taskChatBadges}
+        ciSummaries={state.ciSummaries}
         workingIds={[
           ...Object.keys(state.activeTurns),
           ...((state.voice === 'thinking' || state.voice === 'speaking') && state.activeId
@@ -240,14 +431,12 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         ]}
         now={now ? now() : Date.now()}
         onNew={() => {
-          void actions.newConversation()
           setSidebarOpen(false)
-          if (inProjects) navigate('/')
+          void actions.newConversation().then((id) => navigate(`/chat/${id}`))
         }}
         onPick={(id) => {
-          void actions.selectConversation(id)
           setSidebarOpen(false)
-          if (inProjects) navigate('/')
+          navigate(`/chat/${id}`)
         }}
         onDelete={actions.deleteConversation}
         onRename={actions.renameConversation}
@@ -255,6 +444,20 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         agents={state.agents}
         searchQuery={state.searchQuery}
         onSearch={actions.setSearchQuery}
+        searchScope={state.searchScope}
+        onSearchScopeChange={(scope) => void actions.setSearchScope(scope)}
+        messageSearch={state.messageSearch}
+        onPickMessage={(hit) => {
+          setSidebarOpen(false)
+          // Подсветку просим заранее: лента прокрутится к сообщению, как только
+          // оно окажется в DOM (беседа может ещё грузиться).
+          actions.focusMessage(hit.messageId)
+          navigate(`/chat/${hit.conversationId}`)
+        }}
+        onRetryMessageSearch={() => void actions.retryMessageSearch()}
+        onLoadMoreMessages={() => void actions.loadMoreMessageSearch()}
+        showDoneTaskChats={state.showDoneTaskChats}
+        onShowDoneTaskChatsChange={(show) => void actions.setShowDoneTaskChats(show)}
         projects={state.projects}
         selectedProjectId={state.sidebarProjectId}
         onSelectProject={(id) => void actions.setSidebarProject(id)}
@@ -271,7 +474,16 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         mode={sidebarMode}
         onModeChange={state.authRequired ? (m) => {
           setSidebarMode(m)
-          if (m === 'projects') void actions.refreshProjects()
+          // «Проекты» — не просто другой список в сайдбаре: раздел открывается
+          // страницей первого проекта. Список сначала перечитываем — выходя из
+          // раздела, стор его чистит (closeProjects).
+          if (m === 'projects') {
+            void actions.refreshProjects().catch(() => state.projects).then((list) => {
+              if (inProjects) return
+              const first = list[0]?.id
+              navigate(first ? `/projects/${first}` : '/projects')
+            })
+          }
         } : undefined}
         activeProjectId={routeProjectId}
         onPickProject={(id) => {
@@ -283,6 +495,10 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           void actions.createProject({ name }).then((detail) => {
             if (detail) navigate(`/projects/${detail.id}`)
           })
+        }}
+        onOpenCommandPalette={() => {
+          setSidebarOpen(false)
+          setPaletteOpen(true)
         }}
       />
       {sidebarOpen && (
@@ -306,6 +522,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         state={state.voice}
         messages={state.messages}
         loadingMessages={state.loadingMessages}
+        highlightMessageId={state.highlightMessageId}
+        onHighlightDone={actions.clearMessageHighlight}
         liveSegments={state.liveSegments}
         diarization={state.settings.diarization}
         streamingReply={state.streamingReply}
@@ -317,10 +535,39 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         onDeleteMessage={actions.deleteMessage}
         onEditMessage={actions.editMessage}
         onAnswerQuestions={(text) => void actions.answerQuestions(text)}
+        onAnswerCiInteraction={(runId, interactionId, text) => void actions.answerCiInteraction(runId, interactionId, { text })}
+        answeredCiInteractions={state.answeredCiInteractions}
+        taskHeader={
+          // Виджет задачи — свойство открытого чата: показываем только контекст
+          // этого чата. Так залипание невозможно по построению, кто бы и где ни
+          // сменил `activeId` (новый чат, resume CC/Codex, переход по адресу).
+          state.taskChatContext && state.taskChatContext.conversationId === state.activeId ? (
+            <TaskChatHeader
+              context={state.taskChatContext}
+              summary={state.ciSummaries[state.taskChatContext.task.id] ?? null}
+              onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)}
+              renderRunFeed={(runId) => (
+                <RunFeed
+                  runId={runId}
+                  cache={state.ciRuns[runId]}
+                  onSubscribe={actions.ciSubscribe}
+                  onUnsubscribe={actions.ciUnsubscribe}
+                  onLoad={(id) => void actions.loadCiRun(id)}
+                  onRetry={(id) => void actions.retryCiRun(id)}
+                  onRetryFromStep={(id, selection) => void actions.retryCiRunFromStep(id, selection)}
+                  onDiscardAndRetry={(id) => void actions.discardCiWorkspaceAndRetry(id)}
+                  onCancel={(id) => void actions.cancelCiRun(id)}
+                  onAnswerInteraction={(id, interactionId, answer) => void actions.answerCiInteraction(id, interactionId, answer)}
+                />
+              )}
+            />
+          ) : null
+        }
         machineOps={machineOps}
         readServerFile={actions.readServerFile}
         onOpenImageInExplorer={(agentId, path) => actions.openUtility('explorer', agentId, path)}
         onOpenTerminal={(agentId, cwd) => actions.openUtility('console', agentId, cwd)}
+        onOpenKbDocument={(documentId) => navigate(`/kb/${encodeURIComponent(documentId)}`)}
         error={state.error}
         onDismissError={actions.dismissError}
         modelMissing={!state.modelPresent}
@@ -329,6 +576,10 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         downloadPercent={state.downloadPercent}
         onDownloadModel={actions.downloadModel}
         onExport={actions.exportConversation}
+        onOpenKbUsage={state.activeId ? actions.openKbUsage : undefined}
+        kbUsageCount={activeKbUsage?.report?.totals.queries ?? 0}
+        kbUsageActive={hasPendingKbUsage(activeKbUsage?.report ?? null)}
+        kbContextMode={activeConversation?.kbContextMode ?? 'auto'}
         turnMeta={state.lastTurnMeta}
         agents={state.agents}
         execTarget={activeExecTarget}
@@ -361,65 +612,87 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
       />
       )}
 
-      {inProjects && !routeProjectId && (
-        <ProjectsOverlay
-          projects={state.projects}
-          onOpenProject={(id) => navigate(`/projects/${id}`)}
-          onCreate={(input) => void actions.createProject(input)}
-          onClose={() => navigate(`/`)}
-        />
-      )}
+      {/* Проектов нет вообще: редиректу некуда вести — показываем, что делать. */}
+      {inProjects && !routeProjectId && firstProjectId === null && <ProjectsEmptyPage />}
 
-      {inProjects && routeProjectId && !routeSettings && (
-        <ProjectBoard
-          projectName={
-            state.projectDetail?.name ??
-            state.projects.find((p) => p.id === routeProjectId)?.name ??
-            `Проект`
+      {inProjects && routeProjectId && projectMissing && <ProjectNotFoundPage />}
+
+      {/* Одна страница проекта на все три маршрута: шапка с именем и вкладками
+          общая, меняется только содержимое. */}
+      {inProjects && routeProjectId && !projectMissing && (
+        <ProjectPage
+          projectName={routeProjectName}
+          section={routeSettings ? 'settings' : 'board'}
+          onSectionChange={(section) =>
+            navigate(section === 'settings' ? `/projects/${routeProjectId}/settings` : `/projects/${routeProjectId}`)
           }
-          board={state.board}
-          loading={state.boardLoading || state.activeProjectId !== routeProjectId}
-          members={state.projectDetail?.members ?? []}
-          currentUser={state.currentUser?.name ?? null}
-          onCreateColumn={(name) => void actions.createColumn(name)}
-          onUpdateColumn={(id, fields) => void actions.updateColumn(id, fields)}
-          onSetColumnHidden={(id, hidden) => void actions.setColumnHidden(id, hidden)}
-          onReorderColumns={(order) => void actions.reorderColumns(order)}
-          onDeleteColumn={(id) => void actions.deleteColumn(id)}
-          onCreateTask={(columnId, input) => void actions.createTask(columnId, input)}
-          onUpdateTask={(taskId, fields) => void actions.updateTask(taskId, fields)}
-          onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
-          onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
-          onOpenChat={(taskId) => void actions.openTaskChat(taskId).then(() => navigate('/'))}
-          ciSummaries={state.ciSummaries}
-          onStartCi={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId).then((run) => { if (run) actions.openCiRun(run.id) }) }}
-          onOpenCiRun={(runId) => actions.openCiRun(runId)}
-          aiAssistPrompts={state.settings.aiAssistPrompts}
-          onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
-          generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
-          onOpenSettings={() => navigate(`/projects/${routeProjectId}/settings`)}
-          onClose={() => navigate(`/projects`)}
-        />
+        >
+          {routeSettings ? (
+            state.projectDetail?.id === routeProjectId ? (
+              <ProjectSettings
+                detail={state.projectDetail}
+                agents={state.agents}
+                onUpdate={(id, fields) => void actions.updateProject(id, fields)}
+                onDelete={(id) => {
+                  // Удалили проект — уводим на другой доступный, а если их не
+                  // осталось, в пустое состояние (#/projects без id).
+                  const next = state.projects.find((p) => p.id !== id)?.id ?? null
+                  void actions.deleteProject(id).then(() => {
+                    navigate(next ? `/projects/${next}` : '/projects', { replace: true })
+                  })
+                }}
+                onAddMember={(id, username) => void actions.addProjectMember(id, username)}
+                onRemoveMember={(id, username) => void actions.removeProjectMember(id, username)}
+                onLinkMachine={(id, agentId) => void actions.linkProjectMachine(id, agentId)}
+                onUnlinkMachine={(id, agentId) => void actions.unlinkProjectMachine(id, agentId)}
+                onSetMachinePath={(id, agentId, path) => void actions.setProjectMachinePath(id, agentId, path)}
+                onSetReposRoot={(id, agentId, root) => void actions.setProjectReposRoot(id, agentId, root)}
+                onSetDefaultMachine={(id, agentId) => void actions.setProjectDefaultMachine(id, agentId)}
+              />
+            ) : (
+              <div className="proj-page-state" aria-busy="true">
+                <Skeleton variant="list" count={4} item="block" height={64} gap={12} />
+              </div>
+            )
+          ) : (
+            <ProjectBoard
+              initialOpenTaskId={routeTaskId}
+              projectName={routeProjectName}
+              board={state.board}
+              loading={state.boardLoading || state.activeProjectId !== routeProjectId}
+              error={state.boardError}
+              onRetry={() => void actions.openBoard(routeProjectId)}
+              showCompleted={state.boardIncludeCompleted}
+              onShowCompletedChange={(show) => void actions.setBoardIncludeCompleted(show)}
+              showDoneTaskChats={state.showDoneTaskChats}
+              onShowDoneTaskChatsChange={(show) => void actions.setShowDoneTaskChats(show)}
+              members={state.projectDetail?.members ?? []}
+              currentUser={state.currentUser?.name ?? null}
+              onCreateColumn={(name) => void actions.createColumn(name)}
+              onUpdateColumn={(id, fields) => void actions.updateColumn(id, fields)}
+              onSetColumnHidden={(id, hidden) => void actions.setColumnHidden(id, hidden)}
+              onReorderColumns={(order) => void actions.reorderColumns(order)}
+              onDeleteColumn={(id) => void actions.deleteColumn(id)}
+              onCreateTask={(columnId, input) => void actions.createTask(columnId, input)}
+              onUpdateTask={(taskId, fields) => void actions.updateTask(taskId, fields)}
+              onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
+              onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
+              onOpenChat={(taskId) => void actions.openTaskChat(taskId).then((id) => navigate(id ? `/chat/${id}` : '/'))}
+              onEnsureChat={(taskId) => void actions.ensureTaskChat(taskId)}
+              ciSummaries={state.ciSummaries}
+              onStartCi={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId).then((run) => { if (run) actions.openCiRun(run.id) }) }}
+              onOpenCiRun={(runId) => actions.openCiRun(runId)}
+              aiAssistPrompts={state.settings.aiAssistPrompts}
+              onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
+              generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
+            />
+          )}
+        </ProjectPage>
       )}
 
-      {inProjects && routeProjectId && routeSettings && state.projectDetail?.id === routeProjectId && (
-        <ProjectSettings
-          detail={state.projectDetail}
-          agents={state.agents}
-          onUpdate={(id, fields) => void actions.updateProject(id, fields)}
-          onDelete={(id) => { void actions.deleteProject(id); navigate(`/projects`) }}
-          onAddMember={(id, username) => void actions.addProjectMember(id, username)}
-          onRemoveMember={(id, username) => void actions.removeProjectMember(id, username)}
-          onLinkMachine={(id, agentId) => void actions.linkProjectMachine(id, agentId)}
-          onUnlinkMachine={(id, agentId) => void actions.unlinkProjectMachine(id, agentId)}
-          onSetMachinePath={(id, agentId, path) => void actions.setProjectMachinePath(id, agentId, path)}
-          onSetFeatureReposRoot={(id, agentId, root) => void actions.setProjectFeatureReposRoot(id, agentId, root)}
-          onSetDefaultMachine={(id, agentId) => void actions.setProjectDefaultMachine(id, agentId)}
-          onClose={() => navigate(`/projects/${routeProjectId}`)}
-        />
+      {utilitySeg === 'kb' && (
+        <KnowledgeBase api={api} variant="page" documentId={routeKbDocumentId} onClose={() => navigate('/')} />
       )}
-
-      {utilitySeg === 'kb' && <KnowledgeBase api={api} variant="page" onClose={() => navigate('/')} />}
 
       {/* Объединённый наблюдатель агентов: один компонент с переключателем
           движка Claude/Codex. Движок и открытость выводятся из маршрута
@@ -444,7 +717,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
               usage: state.ccUsage,
               onSelectProject: actions.selectCcProject,
               onSelectSession: actions.selectCcSession,
-              onResumeSession: (slug, id) => void actions.resumeCcSession(slug, id)
+              onResumeSession: (slug, id) =>
+                void actions.resumeCcSession(slug, id).then((cid) => navigate(cid ? `/chat/${cid}` : '/'))
             }}
             codex={{
               projects: state.cxProjects,
@@ -455,7 +729,8 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
               usage: state.cxUsage,
               onSelectProject: actions.selectCxProject,
               onSelectSession: actions.selectCxSession,
-              onResumeSession: (id) => void actions.resumeCxSession(id)
+              onResumeSession: (id) =>
+                void actions.resumeCxSession(id).then((cid) => navigate(cid ? `/chat/${cid}` : '/'))
             }}
           />
         )
@@ -465,6 +740,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         <MachineStatus
           variant="page"
           agents={state.agents}
+          status={state.agentsStatus}
+          error={state.agentsError}
+          onRetry={() => void actions.refreshAgents()}
           onSetPolicy={(id, policy) => void actions.setAgentPolicy(id, policy)}
           onCreateAgent={actions.createAgent}
           onRegenerateToken={actions.regenerateAgentToken}
@@ -480,6 +758,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         <UsersAdmin
           variant="page"
           users={state.adminUsers}
+          status={state.adminUsersStatus}
+          error={state.adminUsersError}
+          onRetry={() => void actions.openUsers()}
           selected={state.adminSelected}
           usage={state.adminUsage}
           conversations={state.adminConversations}
@@ -492,6 +773,15 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           onDelete={(name) => void actions.deleteUserAccount(name)}
           onLoadUsage={(unit) => void actions.loadAdminUsage(unit)}
           onOpenConversation={(id) => void actions.openAdminConversation(id)}
+          engines={state.adminLlmEngines}
+          enginesStatus={state.adminLlmEnginesStatus}
+          enginesError={state.adminLlmEnginesError}
+          engineHealth={state.adminLlmEngineHealth}
+          onRetryEngines={() => void actions.refreshAdminLlmEngines()}
+          onCreateEngine={(input) => void actions.createAdminLlmEngine(input)}
+          onUpdateEngine={(id, patch) => void actions.updateAdminLlmEngine(id, patch)}
+          onDeleteEngine={(id) => void actions.deleteAdminLlmEngine(id)}
+          onCheckEngineHealth={(id) => void actions.checkAdminLlmEngineHealth(id)}
           onClose={() => navigate('/')}
         />
       )}
@@ -499,6 +789,9 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
       {utilitySeg === 'ci' && state.ciOpen && (
         <CiCommands
           commands={state.ciCommands}
+          status={state.ciStatus}
+          error={state.ciError}
+          onRetry={() => void actions.openCi()}
           settings={state.ciSettings}
           suggestions={state.ciSuggestions}
           workspaces={state.ciWorkspaces}
@@ -521,13 +814,14 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
           machineOps={machineOps}
           role={state.currentUser?.role ?? 'admin'}
           settings={state.settings}
+          engines={state.llmEngines}
           defaultAgentId={state.settings.defaultAgentId}
           projects={state.projects}
           fetchProjectDetail={actions.fetchProjectDetail}
-          onSave={async ({ title, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
+          onSave={async ({ title, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
             await actions.renameConversation(activeConversation.id, title)
             await actions.setConversationProject(activeConversation.id, projectId)
-            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode)
+            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, llmEngineId)
           }}
           onAddSkill={async (agentId, skill) => {
             const agent = state.agents.find((item) => item.id === agentId)
@@ -563,6 +857,25 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         />
       )}
 
+      {state.kbUsageOpen && state.activeId && (
+        <KbUsagePanel
+          conversationId={state.activeId}
+          projectId={activeConversation?.projectId ?? null}
+          cache={activeKbUsage}
+          projectCache={activeConversation?.projectId ? state.kbUsageByProject[activeConversation.projectId] : undefined}
+          kbStatus={state.kbStatus}
+          mode={activeConversation?.kbContextMode ?? 'auto'}
+          onLoad={(id) => { void actions.loadKbUsage(id); void actions.refreshKbStatus() }}
+          onLoadProject={(id) => void actions.loadProjectKbUsage(id)}
+          onClose={actions.closeKbUsage}
+          onOpenDocument={(documentId) => { actions.closeKbUsage(); navigate(`/kb/${encodeURIComponent(documentId)}`) }}
+          onOpenKnowledgeBase={() => { actions.closeKbUsage(); navigate('/kb') }}
+          onOpenConversationSettings={() => { actions.closeKbUsage(); setConversationSettingsOpen(true) }}
+          titleOf={(id) => state.conversations.find((c) => c.id === id)?.title}
+          onOpenRun={(runId) => { actions.closeKbUsage(); actions.openCiRun(runId) }}
+        />
+      )}
+
       {state.ciActiveRunId && (
         <ToolFrame title="Лента CI-рана" variant="modal" testId="ci-run-modal" onClose={actions.closeCiRun}>
           <div style={{ padding: '12px', overflow: 'auto' }}>
@@ -576,6 +889,7 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
               onRetryFromStep={(runId, selection) => { void actions.retryCiRunFromStep(runId, selection); actions.openCiRun(runId) }}
               onDiscardAndRetry={(runId) => void actions.discardCiWorkspaceAndRetry(runId).then((run) => { if (run) actions.openCiRun(run.id) })}
               onCancel={(runId) => void actions.cancelCiRun(runId)}
+              onAnswerInteraction={(runId, interactionId, answer) => void actions.answerCiInteraction(runId, interactionId, answer)}
             />
           </div>
         </ToolFrame>
@@ -593,9 +907,13 @@ export default function App({ api = window.api, now, delays }: AppProps = {}): J
         />
       )}
 
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <HotkeysCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
+
       {state.settingsOpen && (
         <SettingsModal
           settings={state.settings}
+          engines={state.llmEngines}
           mics={state.mics}
           voices={state.ttsVoices}
           voiceCatalog={state.voiceCatalog}

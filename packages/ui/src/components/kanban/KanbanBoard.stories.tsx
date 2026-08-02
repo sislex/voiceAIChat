@@ -1,6 +1,8 @@
 // Сториз изолированной канбан-доски: все состояния входных данных —
 // от пустой доски и загрузки до битых данных и переполнения текстом.
+import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
+import { userEvent, within } from '@storybook/test'
 import type { Board } from '@shared/projects'
 import { KanbanBoard } from './KanbanBoard'
 import { makeBoard, makeColumn, makeDefaultColumns, makeMembers, makeTask, noopHandlers } from './fixtures'
@@ -19,12 +21,12 @@ const meta: Meta<typeof KanbanBoard> = {
 export default meta
 type Story = StoryObj<typeof KanbanBoard>
 
-/** Полностью пустая доска: ни колонок, ни задач — только бокс «+ колонка». */
+/** Пусто: ни колонок, ни задач — подсказка про колонки и бокс «+ колонка». */
 export const EmptyBoard: Story = {
   args: { board: makeBoard([], []) }
 }
 
-/** Одна колонка без задач. */
+/** Одна колонка без задач: подсказка, чем её наполнить. */
 export const SingleColumn: Story = {
   args: { board: makeBoard([makeColumn({ id: 'solo', name: 'Бэклог', semanticType: 'backlog' })], []) }
 }
@@ -84,21 +86,30 @@ export const LongTitles: Story = {
   }
 }
 
-/** Загрузка. */
+/** Загрузка (первая): скелетон колонок и карточек, геометрия — как у доски. */
 export const Loading: Story = {
   args: { board: null, loading: true }
 }
 
-/** Ошибка без доски. */
+/** Ошибка без доски: сообщение, деталь под «Подробнее», «Повторить». */
 export const ErrorState: Story = {
-  args: { board: null, error: 'Не удалось загрузить доску: сервер недоступен' }
+  args: { board: null, error: 'Не удалось загрузить доску: сервер недоступен', onRetry: () => {} }
 }
 
-/** Ошибка поверх загруженной доски. */
+/** Повторная загрузка: доска остаётся на месте, сверху — индикатор обновления. */
+export const Refreshing: Story = {
+  args: {
+    board: makeBoard(makeDefaultColumns(), [makeTask({ columnId: 'col-development' })]),
+    loading: true
+  }
+}
+
+/** Ошибка поверх загруженной доски: данные остаются, ошибка — баннером. */
 export const ErrorWithBoard: Story = {
   args: {
     board: makeBoard([makeColumn({ id: 'e1', name: 'Бэклог' })], [makeTask({ columnId: 'e1' })]),
-    error: 'Не удалось сохранить изменение: повторите попытку'
+    error: 'Не удалось сохранить изменение: повторите попытку',
+    onRetry: () => {}
   }
 }
 
@@ -194,4 +205,98 @@ export const HiddenColumns: Story = {
       [makeTask({ columnId: 'v1' }), makeTask({ columnId: 'h1', title: 'Задача в скрытой колонке' })]
     )
   }
+}
+
+/** Доска с задачами в нескольких колонках — основа сториз про перенос. */
+const dragBoard = (): Board => {
+  const cols = makeDefaultColumns()
+  return makeBoard(cols, [
+    makeTask({ id: 'dr1', title: 'Починить авторизацию по токену', columnId: 'col-backlog', assignee: 'bob' }),
+    makeTask({ id: 'dr2', title: 'Экран настроек: вкладка «Голос»', columnId: 'col-backlog' }),
+    makeTask({ id: 'dr3', title: 'Перенести карточку пальцем', columnId: 'col-development', assignee: 'admin', labels: ['ui'] }),
+    makeTask({ id: 'dr4', title: 'Скролл доски у края экрана', columnId: 'col-development' }),
+    makeTask({ id: 'dr5', title: 'Озвучить перенос в aria-live', columnId: 'col-testing', assignee: 'carol' })
+  ])
+}
+
+/**
+ * Карточка захвачена: так доска выглядит в середине переноса. Взято с
+ * клавиатуры (Space) и сдвинуто стрелкой — карточка подсвечена и остаётся на
+ * месте (иначе слетел бы фокус), а плейсхолдер показывает выбранное место.
+ * Тот же плейсхолдер видно и при переносе пальцем — только там карточка уезжает
+ * в приподнятую копию под пальцем, которую скриншотом не поймать.
+ */
+export const GrabbedCard: Story = {
+  args: { board: dragBoard() },
+  play: async ({ canvasElement }) => {
+    const card = within(canvasElement).getAllByTestId('task-card')[0]
+    card?.focus()
+    await userEvent.keyboard(' ')
+    await userEvent.keyboard('{ArrowDown}')
+  }
+}
+
+/**
+ * Телефон: ручки захвата «⠿» видны всегда (ховера нет) и размером под палец —
+ * тап по ручке поднимает карточку сразу, удержание на самой карточке 200 мс
+ * делает то же, а обычный скролл колонки и доски при этом не ломается.
+ */
+export const MobileViewport: Story = {
+  args: { board: dragBoard() },
+  parameters: { viewport: { defaultViewport: 'mobile2' } }
+}
+
+/** Телефон в середине переноса: плейсхолдер и подсвеченная карточка на узком экране. */
+export const MobileGrabbedCard: Story = {
+  args: { board: dragBoard() },
+  parameters: { viewport: { defaultViewport: 'mobile2' } },
+  play: GrabbedCard.play
+}
+
+/**
+ * Живая доска: перенос действительно меняет порядок — единственная сториз, где
+ * можно потрогать жест руками (в том числе с телефона, открыв Storybook по
+ * адресу машины). Ранг считается как на сервере: середина между соседями.
+ */
+function InteractiveBoard(): JSX.Element {
+  const [board, setBoard] = useState<Board>(dragBoard)
+  const STEP = 1024
+  return (
+    <KanbanBoard
+      projectName="Голос Чат"
+      loading={false}
+      members={makeMembers('admin', 'bob', 'carol')}
+      currentUser="admin"
+      {...noopHandlers()}
+      board={board}
+      onReorderColumns={(order) =>
+        setBoard((prev) => ({
+          ...prev,
+          columns: order.flatMap((id, i) => {
+            const col = prev.columns.find((c) => c.id === id)
+            return col ? [{ ...col, position: (i + 1) * STEP }] : []
+          })
+        }))
+      }
+      onMoveTask={(taskId, columnId, afterId, beforeId) =>
+        setBoard((prev) => {
+          const after = afterId ? prev.tasks.find((t) => t.id === afterId) : null
+          const before = beforeId ? prev.tasks.find((t) => t.id === beforeId) : null
+          const position =
+            after && before
+              ? (after.position + before.position) / 2
+              : after
+                ? after.position + STEP
+                : before
+                  ? before.position - STEP
+                  : Math.max(0, ...prev.tasks.filter((t) => t.columnId === columnId && t.id !== taskId).map((t) => t.position)) + STEP
+          return { ...prev, tasks: prev.tasks.map((t) => (t.id === taskId ? { ...t, columnId, position } : t)) }
+        })
+      }
+    />
+  )
+}
+
+export const Interactive: Story = {
+  render: () => <InteractiveBoard />
 }

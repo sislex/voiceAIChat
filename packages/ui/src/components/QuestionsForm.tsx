@@ -3,6 +3,7 @@
 // Кнопка отправки активируется, когда отвечены ВСЕ вопросы.
 
 import { useState } from 'react'
+import { Button } from './ui/Button'
 import { formatAnswers, type QuestionSpec } from '@shared/questions'
 
 export interface QuestionsFormProps {
@@ -95,9 +96,9 @@ export function QuestionsForm({ questions, onSubmit, disabled = false }: Questio
         <span className="qcount">
           Отвечено {answeredCount} из {questions.length}
         </span>
-        <button className="qsubmit" disabled={!allAnswered || disabled} onClick={submit}>
+        <Button variant="primary" disabled={!allAnswered || disabled} onClick={submit}>
           Отправить ответы
-        </button>
+        </Button>
       </div>
     </div>
   )

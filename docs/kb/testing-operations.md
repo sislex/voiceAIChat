@@ -1,11 +1,12 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-07-27
-checked: 49465ae
+updated: 2026-08-01
+checked: e2002e5
 areas:
   - package.json
   - scripts
   - apps/server/vitest.config.ts
+  - apps/llm-runner/vitest.config.ts
   - apps/agent/vitest.config.ts
   - packages/shared/vitest.config.ts
   - packages/ui/vitest.config.ts
@@ -19,7 +20,7 @@ areas:
 
 ## Установка зависимостей
 
-Корневой `npm install` обслуживает `packages/shared`, `packages/ui`, `apps/server`, `apps/web`, `apps/agent`. `apps/desktop` и `apps/agent-tray` устанавливаются отдельно из-за Electron/native ABI и собственных lockfiles.
+Корневой `npm install` обслуживает `packages/shared`, `packages/ui`, `apps/llm-runner`, `apps/server`, `apps/web`, `apps/agent`. `apps/desktop` и `apps/agent-tray` устанавливаются отдельно из-за Electron/native ABI и собственных lockfiles.
 
 Не переносить Electron-пакеты в workspaces без отдельного решения миграции: корневой hoisting способен подменить native module сборкой под другой runtime.
 
@@ -35,8 +36,9 @@ Server запускает исходники через tsx. Web dev proxy со�
 |---|---|---|---|
 | shared contract | `npm run -w @voicechat/shared typecheck` | `npm run -w @voicechat/shared test` | consumers при изменении публичного типа |
 | server | `npm run -w @voicechat/server typecheck` | `npm run -w @voicechat/server test` | HTTP/WS integration |
+| llm runner | `npm run -w @voicechat/llm-runner typecheck` | `npm run -w @voicechat/llm-runner test` | стрим `/v1/run` — реальный `listen()` + `fetch` |
 | agent | `npm run -w @voicechat/agent typecheck` | `npm run -w @voicechat/agent test` | bundle test при протоколе/deps |
-| UI | `npm run -w @voicechat/ui typecheck` | `npm run -w @voicechat/ui test` | web build для CSS/bootstrap |
+| UI | `npm run -w @voicechat/ui typecheck` | `npm run -w @voicechat/ui test` | web build для CSS/bootstrap; `npm run build:storybook` при правке сториз/фикстур |
 | web | `npm run -w @voicechat/web typecheck` | package test при наличии | `npm run -w @voicechat/web build` |
 | desktop | `npm run typecheck:desktop` | `npm run test:desktop` | electron-vite build; native rebuild |
 | agent tray | `npm run typecheck:agent-tray` | `npm run test:agent-tray` | electron-vite build/dist |
@@ -49,6 +51,8 @@ Shared — чистые unit и contract tests без моков. Здесь п�
 
 Server HTTP тестируется `app.inject()` с `:memory:` SQLite. WebSocket поднимает ephemeral listener и реальный ws-клиент, но engines/CLI заменяются fake. Spawn, fetch, filesystem и resource probes инъектируются. Тест никогда не использует настоящий HOME или найденные repo-модели; `VITEST` отключает autodiscovery.
 
+Исполнитель LLM (`apps/llm-runner`) тестируется как сервер — `app.inject()` и фейковый `spawn`, — но поток `/v1/run` проверяется только через реальный `listen()` и построчное чтение `fetch`: `inject()` отдаёт тело целиком и не показал бы, что строки не буферизуются. Тем же `inject()` покрываются профильные файловые API `/v1/auth/status`, `/v1/files/read`, `/v1/fs/cc/*` и `/v1/fs/cx/*`: тесты заводят временный `dataDir`, создают профили `cli-users/<base64url(user)>` и проверяют, что формы ответов совпадают с прежними серверными роутами. Bearer в тестах обязательно ASCII: значение заголовка — ByteString, и `fetch` с кириллическим токеном падает до запроса.
+
 UI store тестируется без React; DOM components — jsdom + Testing Library + fake bridges. Проверяются пользовательские действия и наблюдаемый результат, не внутренние state setters. Таймеры voice/TTS управляются fake clock.
 
 Agent тестирует config/platform/exec/fs/pty/telemetry/shutdown/single-instance отдельно от socket. Connection test проверяет routing/reconnect с fake ws. Платформенные ветки должны покрывать Linux/macOS/Windows/Termux через инъекцию или controlled platform override.
@@ -60,7 +64,7 @@ Electron main/preload код тестируется без запуска реа
 1. `/api/health` — процесс и HTTP доступны.
 2. `/api/session/me` — bearer token и пользователь.
 3. `/api/system/capabilities` — сервер видит CPU/RAM и разрешает STT/TTS.
-4. `/api/auth/status` — CLI profile авторизован.
+4. `/api/auth/status` — исполнитель видит авторизованный CLI profile нужного пользователя, а не только контейнер сервера; если Claude и Codex разведены по разным executor URL, проверять надо оба.
 5. `/api/agents` — machine зарегистрирована, online, версия и telemetry.
 6. Browser devtools network — REST status и `/ws` reconnect.
 7. Server stdout — Fastify/CLI ошибки; UI console panel — нормализованные LLM events.

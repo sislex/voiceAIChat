@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs'
 import { arch, cpus, freemem, platform, release, totalmem } from 'node:os'
 import { promisify } from 'node:util'
 import type { AgentTelemetry, DiskUsage } from '@voicechat/shared'
+import { resolveShellInfo, type ShellResolution } from './platform.js'
 
 const exec = promisify(execCb)
 const CMD_TIMEOUT_MS = 5_000
@@ -86,7 +87,10 @@ async function batteryStatus(): Promise<AgentTelemetry['battery']> {
  * загрузку между вызовами (для первого вызова — с момента старта процесса).
  * @param workDir рабочий каталог агента (для диска рабочего раздела)
  */
-export function createTelemetryCollector(workDir: string): () => Promise<AgentTelemetry> {
+export function createTelemetryCollector(
+  workDir: string,
+  shellInfo: ShellResolution = resolveShellInfo()
+): () => Promise<AgentTelemetry> {
   let prev = cpuTimes()
   return async (): Promise<AgentTelemetry> => {
     const now = cpuTimes()
@@ -105,7 +109,14 @@ export function createTelemetryCollector(workDir: string): () => Promise<AgentTe
 
     return {
       ts: Date.now(),
-      os: { platform: platform(), release: release(), arch: arch(), isAndroid: isTermux() },
+      os: {
+        platform: platform(),
+        release: release(),
+        arch: arch(),
+        isAndroid: isTermux(),
+        shell: shellInfo.shell,
+        shellDegraded: shellInfo.degraded
+      },
       cpu: { count: cpus().length, loadPct },
       mem: { totalBytes: total, usedBytes: Math.max(0, total - freemem()) },
       disk: { ...(root ? { root } : {}), ...(work ? { work } : {}) },

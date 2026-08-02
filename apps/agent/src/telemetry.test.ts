@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseDf, parseBattery, isTermux } from './telemetry'
+import { parseDf, parseBattery, isTermux, createTelemetryCollector } from './telemetry'
 
 describe('telemetry — parseDf', () => {
   it('разбирает df -kP: размеры из КиБ в байты (Used/Available)', () => {
@@ -46,5 +46,22 @@ describe('telemetry — isTermux', () => {
   })
   it('обычное окружение без Termux-bin → false', () => {
     expect(isTermux({} as NodeJS.ProcessEnv)).toBe(false)
+  })
+})
+
+describe('createTelemetryCollector — shell', () => {
+  it('прокидывает переданный shellInfo в os.shell/os.shellDegraded', async () => {
+    const collect = createTelemetryCollector(process.cwd(), { shell: 'cmd.exe', degraded: true })
+    const t = await collect()
+    expect(t.os.shell).toBe('cmd.exe')
+    expect(t.os.shellDegraded).toBe(true)
+  })
+
+  it('без явного shellInfo резолвит его сам (не деградирует на POSIX-CI)', async () => {
+    const collect = createTelemetryCollector(process.cwd())
+    const t = await collect()
+    expect(typeof t.os.shell).toBe('string')
+    expect(t.os.shell?.length).toBeGreaterThan(0)
+    expect(t.os.shellDegraded).toBe(false)
   })
 })

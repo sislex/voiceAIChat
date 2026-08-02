@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import Database from 'better-sqlite3'
 import { VoiceChatDb } from './database.js'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 let db: VoiceChatDb
 
@@ -13,6 +17,37 @@ beforeEach(() => {
 })
 
 afterEach(() => db.close())
+
+describe('projects: миграция имён связанных чатов', () => {
+  it('старый чат задачи получает префикс «Задача », переименованный вручную — нет', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-taskchat-'))
+    const file = join(dir, 'db.sqlite')
+    const first = new VoiceChatDb(file)
+    first.createUser('alice', '', 'user')
+    const p = first.createProject('alice', { name: 'P' })
+    const col = first.getBoard('alice', p.id)!.columns[0]
+    const t1 = first.createTask('alice', p.id, { columnId: col.id, title: 'Скролл' })!
+    const t2 = first.createTask('alice', p.id, { columnId: col.id, title: 'Пагинация' })!
+    const old1 = first.openOrCreateTaskChat('alice', p.id, t1.id)!
+    const old2 = first.openOrCreateTaskChat('alice', p.id, t2.id)!
+    // Имитируем чаты, созданные до префикса: имя = заголовок задачи.
+    first.renameConversation('alice', old1.id, 'Скролл')
+    first.renameConversation('alice', old2.id, 'Мои заметки по пагинации')
+    first.close()
+
+    const migrated = new VoiceChatDb(file)
+    expect(migrated.getConversation('alice', old1.id)!.title).toBe('Задача Скролл')
+    // Пользовательское имя не трогаем.
+    expect(migrated.getConversation('alice', old2.id)!.title).toBe('Мои заметки по пагинации')
+    migrated.close()
+
+    // Повторный старт не наращивает префикс.
+    const again = new VoiceChatDb(file)
+    expect(again.getConversation('alice', old1.id)!.title).toBe('Задача Скролл')
+    again.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
 
 describe('projects: создание и членство', () => {
   it('createProject сеет владельца и дефолтные колонки', () => {
@@ -237,7 +272,7 @@ describe('projects: папка машины, дефолт, привязка ча
 })
 
 
-describe('work items + feature runs', () => {
+describe('work items', () => {
   it('строит иерархию Epic → Story → Task и запрещает неверного родителя', () => {
     const p = db.createProject('alice', { name: 'P' })
     const backlog = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'backlog')!
@@ -250,65 +285,12 @@ describe('work items + feature runs', () => {
     expect(() => db.updateTask('alice', p.id, epic.id, { parentId: task.id })).toThrow()
   })
 
-  it('хранит историю Feature Run и синхронизирует системные колонки', () => {
+  it('deleteTask убирает задачу с доски', () => {
     const p = db.createProject('alice', { name: 'P' })
-    const agent = db.createAgent('alice', 'M')
-    db.linkMachine('alice', p.id, agent.id)
-    db.setProjectMachineFeatureReposRoot('alice', p.id, agent.id, '/repos')
-    db.setProjectDefaultMachine('alice', p.id, agent.id)
     const ready = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'ready')!
-    const task = db.createTask('alice', p.id, { columnId: ready.id, title: 'Feature task' })!
-    let feature = db.createFeatureFromTask('alice', p.id, task.id, { autoMerge: true })!
-    expect(feature.attempt).toBe(1)
-    expect(db.getBoard('alice', p.id)!.tasks.find((t) => t.id === task.id)!.columnId).not.toBe(ready.id)
-    feature = db.transitionFeature('alice', feature.id, 'planning')!
-    feature = db.transitionFeature('alice', feature.id, 'awaiting_plan_approval')!
-    feature = db.transitionFeature('alice', feature.id, 'development')!
-    feature = db.transitionFeature('alice', feature.id, 'testing')!
-    expect(db.getBoard('alice', p.id)!.columns.find((c) => c.id === db.getBoard('alice', p.id)!.tasks.find((t) => t.id === task.id)!.columnId)!.semanticType).toBe('testing')
-    feature = db.transitionFeature('alice', feature.id, 'cancelled')!
-    expect(db.getBoard('alice', p.id)!.columns.find((c) => c.id === db.getBoard('alice', p.id)!.tasks.find((t) => t.id === task.id)!.columnId)!.semanticType).toBe('ready')
-    const retry = db.createFeatureFromTask('alice', p.id, task.id, {})!
-    expect(retry.attempt).toBe(2)
-    expect(retry.previousFeatureId).toBe(feature.id)
-  })
-
-  it('deleteTask удаляет задачу вместе с её Feature Run и освобождает рабочую копию', () => {
-    const p = db.createProject('alice', { name: 'P' })
-    const agent = db.createAgent('alice', 'M')
-    db.linkMachine('alice', p.id, agent.id)
-    db.setProjectMachineFeatureReposRoot('alice', p.id, agent.id, '/repos')
-    db.setProjectDefaultMachine('alice', p.id, agent.id)
-    const ready = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'ready')!
-    const task = db.createTask('alice', p.id, { columnId: ready.id, title: 'Feature task' })!
-    const feature = db.createFeatureFromTask('alice', p.id, task.id, {})!
-    const slot = db.reserveRepositorySlot('alice', feature.id)!
-    // Задача с фичей раньше не удалялась: FK features.source_task_id RESTRICT.
+    const task = db.createTask('alice', p.id, { columnId: ready.id, title: 'T' })!
     expect(db.deleteTask('alice', p.id, task.id)).toBe(true)
     expect(db.getBoard('alice', p.id)!.tasks.find((t) => t.id === task.id)).toBeUndefined()
-    expect(db.listFeatures('alice', p.id)!.find((f) => f.id === feature.id)).toBeUndefined()
-    // Рабочая копия освобождена и снова доступна к резервированию.
-    const t2 = db.createTask('alice', p.id, { columnId: ready.id, title: 'Next' })!
-    const f2 = db.createFeatureFromTask('alice', p.id, t2.id, {})!
-    const reused = db.reserveRepositorySlot('alice', f2.id)!
-    expect(reused.id).toBe(slot.id)
-  })
-
-  it('атомарно резервирует разные repository slots для параллельных фич', () => {
-    const p = db.createProject('alice', { name: 'P' })
-    const agent = db.createAgent('alice', 'M')
-    db.linkMachine('alice', p.id, agent.id)
-    db.setProjectMachineFeatureReposRoot('alice', p.id, agent.id, '/repos')
-    db.setProjectDefaultMachine('alice', p.id, agent.id)
-    const ready = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'ready')!
-    const t1 = db.createTask('alice', p.id, { columnId: ready.id, title: 'A' })!
-    const t2 = db.createTask('alice', p.id, { columnId: ready.id, title: 'B' })!
-    const f1 = db.createFeatureFromTask('alice', p.id, t1.id, {})!
-    const f2 = db.createFeatureFromTask('alice', p.id, t2.id, {})!
-    const s1 = db.reserveRepositorySlot('alice', f1.id)!
-    const s2 = db.reserveRepositorySlot('alice', f2.id)!
-    expect(s1.id).not.toBe(s2.id)
-    expect(s1.path).not.toBe(s2.path)
   })
 })
 
@@ -345,11 +327,12 @@ describe('projects: навыки по умолчанию и связанный �
   it('openOrCreateTaskChat: идемпотентен, привязывает задачу/проект/навыки, виден в board.chatId', () => {
     const p = db.createProject('alice', { name: 'P', defaultSkills: { epic: [], story: [], task: ['ts'] } })
     const col = db.getBoard('alice', p.id)!.columns[0]
-    const t = db.createTask('alice', p.id, { columnId: col.id, title: 'Задача X' })!
+    const t = db.createTask('alice', p.id, { columnId: col.id, title: 'Скролл в модалке' })!
     const chat = db.openOrCreateTaskChat('alice', p.id, t.id)!
     expect(chat.taskId).toBe(t.id)
     expect(chat.projectId).toBe(p.id)
-    expect(chat.title).toBe('Задача X')
+    // Имя по умолчанию — «Задача <заголовок>»: чат задачи виден в общем списке.
+    expect(chat.title).toBe('Задача Скролл в модалке')
     expect(chat.skillNames).toEqual(['ts'])
     const again = db.openOrCreateTaskChat('alice', p.id, t.id)!
     expect(again.id).toBe(chat.id) // не плодит второй чат
@@ -367,5 +350,183 @@ describe('projects: навыки по умолчанию и связанный �
     expect(chatB.id).not.toBe(chatA.id) // у каждого свой связанный чат
     expect(db.getBoard('bob', p.id)!.tasks.find((x) => x.id === t.id)!.chatId).toBe(chatB.id)
     expect(db.getBoard('alice', p.id)!.tasks.find((x) => x.id === t.id)!.chatId).toBe(chatA.id)
+  })
+})
+
+describe('доска: завершённые задачи уходят с доски по порогу проекта', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  /** БД с управляемыми часами: порог считается в днях, шаг по 10 мс не годится. */
+  function withClock(): { db: VoiceChatDb; set: (t: number) => void } {
+    let id = 0
+    let clock = 1_700_000_000_000
+    const fresh = new VoiceChatDb(':memory:', { newId: () => `c-${++id}`, now: () => clock })
+    fresh.createUser('alice', '', 'user')
+    return { db: fresh, set: (t) => { clock = t } }
+  }
+
+  it('moveTask ставит doneAt в «Готово» и сбрасывает при возврате в работу', () => {
+    const { db: d, set } = withClock()
+    const p = d.createProject('alice', { name: 'P' })
+    const cols = d.getBoard('alice', p.id)!.columns
+    const done = cols.find((c) => c.semanticType === 'done')!
+    const dev = cols.find((c) => c.semanticType === 'development')!
+    const task = d.createTask('alice', p.id, { columnId: dev.id, title: 'T' })!
+    expect(task.doneAt).toBeNull()
+    set(1_700_000_100_000)
+    expect(d.moveTask('alice', p.id, task.id, { columnId: done.id })!.doneAt).toBe(1_700_000_100_000)
+    // Повторный переезд внутри «Готово» отсчёт не сбрасывает.
+    set(1_700_000_200_000)
+    expect(d.moveTask('alice', p.id, task.id, { columnId: done.id })!.doneAt).toBe(1_700_000_100_000)
+    expect(d.moveTask('alice', p.id, task.id, { columnId: dev.id })!.doneAt).toBeNull()
+    d.close()
+  })
+
+  it('createTask сразу в «Готово» начинает отсчёт', () => {
+    const { db: d } = withClock()
+    const p = d.createProject('alice', { name: 'P' })
+    const done = d.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'done')!
+    expect(d.createTask('alice', p.id, { columnId: done.id, title: 'T' })!.doneAt).toBe(1_700_000_000_000)
+    d.close()
+  })
+
+  it('порог 0 — карточка держится до конца дня завершения', () => {
+    const { db: d, set } = withClock()
+    const p = d.createProject('alice', { name: 'P' })
+    d.updateProject('alice', p.id, { doneRetentionDays: 0 })
+    const cols = d.getBoard('alice', p.id)!.columns
+    const done = cols.find((c) => c.semanticType === 'done')!
+    const dev = cols.find((c) => c.semanticType === 'development')!
+    const task = d.createTask('alice', p.id, { columnId: dev.id, title: 'T' })!
+    d.moveTask('alice', p.id, task.id, { columnId: done.id })
+    // Автоперенос CI-рана не имеет права смахнуть карточку с доски в ту же секунду.
+    expect(d.getBoard('alice', p.id)!.tasks.map((t) => t.id)).toContain(task.id)
+    const endOfDay = new Date(1_700_000_000_000).setHours(24, 0, 0, 0)
+    set(endOfDay - 1)
+    expect(d.getBoard('alice', p.id)!.tasks.map((t) => t.id)).toContain(task.id)
+    set(endOfDay)
+    expect(d.getBoard('alice', p.id)!.tasks.map((t) => t.id)).not.toContain(task.id)
+    expect(d.getBoard('alice', p.id, { includeCompleted: true })!.tasks.map((t) => t.id)).toContain(task.id)
+    d.close()
+  })
+
+  it('старше порога — нет на доске, includeCompleted возвращает', () => {
+    const { db: d, set } = withClock()
+    const p = d.createProject('alice', { name: 'P' })
+    const cols = d.getBoard('alice', p.id)!.columns
+    const done = cols.find((c) => c.semanticType === 'done')!
+    const dev = cols.find((c) => c.semanticType === 'development')!
+    const old = d.createTask('alice', p.id, { columnId: dev.id, title: 'Старая' })!
+    const fresh = d.createTask('alice', p.id, { columnId: dev.id, title: 'Свежая' })!
+    d.moveTask('alice', p.id, old.id, { columnId: done.id })
+    set(1_700_000_000_000 + 13 * DAY)
+    d.moveTask('alice', p.id, fresh.id, { columnId: done.id })
+    // Дефолт проекта — 14 дней: старая уже за порогом, свежая (1 день) нет.
+    set(1_700_000_000_000 + 14 * DAY)
+    const ids = d.getBoard('alice', p.id)!.tasks.map((t) => t.id)
+    expect(ids).not.toContain(old.id)
+    expect(ids).toContain(fresh.id)
+    const all = d.getBoard('alice', p.id, { includeCompleted: true })!.tasks.map((t) => t.id)
+    expect(all).toContain(old.id)
+    expect(all).toContain(fresh.id)
+    // Возврат в работу возвращает карточку на доску.
+    d.moveTask('alice', p.id, old.id, { columnId: dev.id })
+    expect(d.getBoard('alice', p.id)!.tasks.map((t) => t.id)).toContain(old.id)
+    d.close()
+  })
+
+  it('порог 0 скрывает за полночью, пустой порог не скрывает никогда', () => {
+    const { db: d, set } = withClock()
+    const p = d.createProject('alice', { name: 'P' })
+    const done = d.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'done')!
+    const t = d.createTask('alice', p.id, { columnId: done.id, title: 'T' })!
+    expect(d.updateProject('alice', p.id, { doneRetentionDays: 0 })!.doneRetentionDays).toBe(0)
+    // День завершения карточка досиживает: перенос в «Готово» делает и CI-ран.
+    expect(d.getBoard('alice', p.id)!.tasks.map((x) => x.id)).toContain(t.id)
+    set(new Date(1_700_000_000_000).setHours(24, 0, 0, 0))
+    expect(d.getBoard('alice', p.id)!.tasks.map((x) => x.id)).not.toContain(t.id)
+    expect(d.updateProject('alice', p.id, { doneRetentionDays: null })!.doneRetentionDays).toBeNull()
+    set(1_700_000_000_000 + 999 * DAY)
+    expect(d.getBoard('alice', p.id)!.tasks.map((x) => x.id)).toContain(t.id)
+    d.close()
+  })
+
+  it('по умолчанию проект держит завершённые 14 дней', () => {
+    const { db: d } = withClock()
+    expect(d.createProject('alice', { name: 'P' }).doneRetentionDays).toBe(14)
+    d.close()
+  })
+
+  it('миграция: у лежащих в «Готово» задач появляется doneAt', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-doneat-'))
+    const file = join(dir, 'db.sqlite')
+    const first = new VoiceChatDb(file, { now: () => 1_700_000_000_000 })
+    first.createUser('alice', '', 'user')
+    const p = first.createProject('alice', { name: 'P' })
+    const done = first.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'done')!
+    const t = first.createTask('alice', p.id, { columnId: done.id, title: 'T' })!
+    // Имитируем БД до миграции: колонки done_at ещё нет.
+    first.close()
+    const raw = new Database(file)
+    raw.exec(`ALTER TABLE tasks DROP COLUMN done_at`)
+    raw.close()
+
+    const migrated = new VoiceChatDb(file, { now: () => 1_700_000_000_000 + 100 * 24 * 60 * 60 * 1000 })
+    // doneAt взят из updated_at, порог 14 дней уже вышел — карточки на доске нет.
+    expect(migrated.getBoard('alice', p.id)!.tasks.map((x) => x.id)).not.toContain(t.id)
+    expect(migrated.getBoard('alice', p.id, { includeCompleted: true })!.tasks.find((x) => x.id === t.id)!.doneAt)
+      .toBe(1_700_000_000_000)
+    migrated.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('projects: чаты завершённых задач в списке бесед', () => {
+  /** Проект с задачей в работе, её чатом и колонкой «Готово». */
+  function withTaskChat(): { pid: string; taskId: string; chatId: string; dev: string; done: string } {
+    const p = db.createProject('alice', { name: 'P' })
+    const board = db.getBoard('alice', p.id)!
+    const dev = board.columns[0]!
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    const task = db.createTask('alice', p.id, { columnId: dev.id, title: 'Скролл' })!
+    const chat = db.openOrCreateTaskChat('alice', p.id, task.id)!
+    return { pid: p.id, taskId: task.id, chatId: chat.id, dev: dev.id, done: done.id }
+  }
+
+  it('задача в «Готово» убирает свой чат из списка, возврат в работу — возвращает', () => {
+    const { pid, taskId, chatId, dev, done } = withTaskChat()
+    expect(db.listConversations('alice').map((c) => c.id)).toContain(chatId)
+
+    db.moveTask('alice', pid, taskId, { columnId: done })
+    expect(db.listConversations('alice').map((c) => c.id)).not.toContain(chatId)
+    // Скрытие — только про список: сам чат открывается по id как раньше.
+    expect(db.getConversation('alice', chatId)!.id).toBe(chatId)
+    expect(db.listConversations('alice', { includeCompleted: true }).map((c) => c.id)).toContain(chatId)
+
+    db.moveTask('alice', pid, taskId, { columnId: dev })
+    expect(db.listConversations('alice').map((c) => c.id)).toContain(chatId)
+  })
+
+  it('скрытие не зависит от порога дней: done — и чата в списке нет', () => {
+    const { pid, taskId, chatId, done } = withTaskChat()
+    // Порог «не скрывать никогда» держит карточку на доске, но не чат в списке.
+    db.updateProject('alice', pid, { doneRetentionDays: null })
+    db.moveTask('alice', pid, taskId, { columnId: done })
+    expect(db.getBoard('alice', pid)!.tasks.map((t) => t.id)).toContain(taskId)
+    expect(db.listConversations('alice').map((c) => c.id)).not.toContain(chatId)
+  })
+
+  it('поиск по беседам скрывает те же чаты', () => {
+    const { pid, taskId, chatId, done } = withTaskChat()
+    expect(db.searchConversations('alice', 'Скролл').map((c) => c.id)).toContain(chatId)
+    db.moveTask('alice', pid, taskId, { columnId: done })
+    expect(db.searchConversations('alice', 'Скролл').map((c) => c.id)).not.toContain(chatId)
+    expect(db.searchConversations('alice', 'Скролл', { includeCompleted: true }).map((c) => c.id)).toContain(chatId)
+  })
+
+  it('обычные чаты (без задачи) в списке остаются', () => {
+    const { pid, taskId, done } = withTaskChat()
+    const plain = db.createConversation('alice', 'Просто чат')
+    db.moveTask('alice', pid, taskId, { columnId: done })
+    expect(db.listConversations('alice').map((c) => c.id)).toContain(plain.id)
   })
 })

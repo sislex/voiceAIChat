@@ -16,7 +16,8 @@ import type { CcItem } from './cc'
 import type { CxItem } from './codexSessions'
 import type { AgentInfo } from './agentProtocol'
 import type { Board } from './projects'
-import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary } from './ci'
+import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary, CiInteraction } from './ci'
+import type { KbUsageQuery } from './kb'
 
 // --- Общие ---------------------------------------------------------------
 
@@ -117,11 +118,20 @@ export const REST = {
   kbSearch: '/api/kb/search',
   kbContext: '/api/kb/context',
   kbDocument: (id: string) => `/api/kb/documents/${encodeURIComponent(id)}`,
+  /** Запись статьи БЗ (создание/правка); раздел и проект — в теле запроса. */
+  kbDocuments: '/api/kb/documents',
+  /** «Исследовать проект»: POST — запустить, GET — состояние последнего прогона. */
+  projectKbResearch: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb/research`,
+  /** Телеметрия обращений модели к БЗ: по одному чату и агрегат по проекту. */
+  conversationKbUsage: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage`,
+  projectKbUsage: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb-usage`,
   sessionLogin: '/api/session/login',
   sessionMe: '/api/session/me',
   sessionLogout: '/api/session/logout',
   conversations: '/api/conversations',
   conversationsSearch: '/api/conversations/search',
+  /** Полнотекстовый поиск по сообщениям пользователя (FTS5). */
+  messagesSearch: '/api/search',
   conversation: (id: string) => `/api/conversations/${id}`,
   conversationProject: (id: string) => `/api/conversations/${encodeURIComponent(id)}/project`,
   conversationStatus: (id: string) => `/api/conversations/${encodeURIComponent(id)}/status`,
@@ -132,6 +142,7 @@ export const REST = {
   /** Чтение файла с диска сервера (только «своя» область) — картинки от CLI. */
   serverFile: '/api/files/read',
   settings: '/api/settings',
+  llmEngines: '/api/llm-engines',
   /** Помощник промптов: переформулировки черновика запроса (одноразовый LLM-вызов). */
   promptSuggest: '/api/prompt/suggest',
   systemCapabilities: '/api/system/capabilities',
@@ -183,6 +194,9 @@ export const REST = {
   adminUserConversations: (name: string) =>
     `/api/admin/users/${encodeURIComponent(name)}/conversations`,
   adminUserMessages: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/messages`,
+  adminLlmEngines: '/api/admin/llm-engines',
+  adminLlmEngine: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}`,
+  adminLlmEngineHealth: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}/health`,
   // --- Проекты + канбан ---
   projects: '/api/projects',
   project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,
@@ -193,7 +207,9 @@ export const REST = {
   projectMachine: (id: string, agentId: string) =>
     `/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}`,
   projectDefaultMachine: (id: string) => `/api/projects/${encodeURIComponent(id)}/default-machine`,
-  projectBoard: (id: string) => `/api/projects/${encodeURIComponent(id)}/board`,
+  /** Снапшот доски; includeCompleted=1 добавляет давно завершённые задачи. */
+  projectBoard: (id: string, includeCompleted?: boolean) =>
+    `/api/projects/${encodeURIComponent(id)}/board${includeCompleted ? '?includeCompleted=1' : ''}`,
   projectColumns: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns`,
   projectColumnsReorder: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns/reorder`,
   projectColumn: (id: string, columnId: string) =>
@@ -208,15 +224,6 @@ export const REST = {
   projectTaskChat: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/chat`,
 
-  projectFeatures: (id: string) => `/api/projects/${encodeURIComponent(id)}/features`,
-  taskFeature: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/feature`,
-  storyFeature: (id: string, storyId: string) => `/api/projects/${encodeURIComponent(id)}/stories/${encodeURIComponent(storyId)}/feature`,
-  feature: (id: string) => `/api/features/${encodeURIComponent(id)}`,
-  featureAutomation: (id: string) => `/api/features/${encodeURIComponent(id)}/automation`,
-  featureTransition: (id: string) => `/api/features/${encodeURIComponent(id)}/transition`,
-  featureAgentTasks: (id: string) => `/api/features/${encodeURIComponent(id)}/agent-tasks`,
-  featureDeploy: (id: string) => `/api/features/${encodeURIComponent(id)}/deploy`,
-  featureDeployments: (id: string) => `/api/features/${encodeURIComponent(id)}/deployments`,
   // --- CI-раннер (Авто-подготовка окружения для таска) ---
   ciCommands: '/api/ci/commands',
   ciCommand: (id: string) => `/api/ci/commands/${encodeURIComponent(id)}`,
@@ -226,17 +233,32 @@ export const REST = {
   ciSuggestion: (id: string) => `/api/ci/suggestions/${encodeURIComponent(id)}`,
   ciWorkspaces: '/api/ci/workspaces',
   projectCi: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci`,
+  projectCiLlm: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci/llm`,
+  taskCiLlm: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/ci/llm`,
   taskCi: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/ci`,
   ciRunStart: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/ci/run`,
   ciMetrics: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci/metrics`,
   ciRun: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}`,
   ciRunLog: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/log`,
+  /** Обращения модели к БЗ внутри одного рана и агрегат по всем ранам задачи. */
+  ciRunKbUsage: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/kb-usage`,
+  taskKbUsage: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/kb-usage`,
+  /** Отчёт по расходу модели: один ран и все раны задачи (раздел «Отчёт» карточки). */
+  ciRunReport: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/report`,
+  taskCiReport: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/report`,
   ciRunCancel: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/cancel`,
   ciRunRetry: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/retry`,
   ciRunRetryFromStep: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/retry-from-step`,
   ciRunDiscardAndRetry: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/discard-and-retry`,
   ciConsoleExec: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/console`,
-  ciConsoleMode: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/console/mode`
+  ciConsoleMode: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/console/mode`,
+  ciRunInteraction: (runId: string, interactionId: string) =>
+    `/api/ci/runs/${encodeURIComponent(runId)}/interactions/${encodeURIComponent(interactionId)}`,
+  conversationTaskContext: (id: string) => `/api/conversations/${encodeURIComponent(id)}/task-context`,
+  /** Метки всех чатов пользователя, привязанных к задачам (подсветка списка бесед). */
+  conversationTaskChats: '/api/conversations/task-chats'
 } as const
 
 // --- WebSocket -----------------------------------------------------------
@@ -300,7 +322,7 @@ export type ClientMessage =
   | { t: 'pty.input'; ptyId: string; data: string }
   | { t: 'pty.resize'; ptyId: string; cols: number; rows: number }
   | { t: 'pty.kill'; ptyId: string }
-  | { t: 'board.subscribe'; projectId: string }
+  | { t: 'board.subscribe'; projectId: string; includeCompleted?: boolean }
   | { t: 'board.unsubscribe' }
   | { t: 'ci.subscribe'; runId: string }
   | { t: 'ci.unsubscribe'; runId: string }
@@ -346,6 +368,21 @@ export type ServerMessage =
   | { t: 'ci.fix'; runId: string; attempt: CiFixAttempt }
   | { t: 'ci.done'; runId: string; run: CiRun; conclusion?: CiRunConclusion }
   | { t: 'ci.summary'; projectId: string; summary: CiRunSummary }
+  | { t: 'ci.interaction'; runId: string; interaction: CiInteraction }
+  /**
+   * Сообщение, которое сервер сам дописал в чат (резюме CI-рана): открытый чат
+   * должен показать его сразу, а не после переоткрытия. Ход модели здесь не при
+   * чём — поэтому это не `claude.done`.
+   */
+  | { t: 'chat.message'; conversationId: string; message: Message }
+  /**
+   * Обращение к базе знаний (авто-инъекция сервером или вызов mcp__kb__*
+   * моделью). Рассылается по userId, как `claude.usage`, — подписки нет.
+   * `query.status: 'pending'` приходит в начале обращения, терминальный статус —
+   * вторым кадром с тем же `query.id`; гонку «REST-снапшот vs инкремент» клиент
+   * закрывает монотонным `query.seq`.
+   */
+  | { t: 'kb.usage'; conversationId: string; projectId: string | null; query: KbUsageQuery }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']
@@ -405,5 +442,8 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'ci.log',
   'ci.fix',
   'ci.done',
-  'ci.summary'
+  'ci.summary',
+  'ci.interaction',
+  'chat.message',
+  'kb.usage'
 ]

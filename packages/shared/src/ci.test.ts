@@ -1,0 +1,240 @@
+// Чистая логика домена CI: бюджет уточняющих вопросов и полнота списков.
+import { describe, it, expect } from 'vitest'
+import {
+  canStartCiRun,
+  ciCardPulse,
+  clarifyBudget,
+  CI_CLARIFY_LEVELS,
+  CI_CLARIFY_MAX_LIMIT,
+  CI_RUN_MODES,
+  CI_STATUSES,
+  DEFAULT_CI_CLAUDE_MODEL,
+  DEFAULT_CI_LLM_CONFIG,
+  isActiveCiStatus,
+  isTerminalCiStatus,
+  isVerificationCommand,
+  ciTaskTotals,
+  ciUsageTotals,
+  sumCiUsageTotals,
+  EMPTY_CI_USAGE_TOTALS,
+  type CiRunReport,
+  type CiRunUsage,
+  type CiUsageTotals
+} from './ci'
+
+describe('clarifyBudget', () => {
+  it('фиксированные уровни дают 0/3/6', () => {
+    expect(clarifyBudget({ clarifyLevel: 'none', clarifyMax: 30 })).toBe(0)
+    expect(clarifyBudget({ clarifyLevel: 'few', clarifyMax: 30 })).toBe(3)
+    expect(clarifyBudget({ clarifyLevel: 'medium', clarifyMax: 30 })).toBe(6)
+  })
+
+  it('детальное уточнение берёт clarifyMax и зажимается в 1..30', () => {
+    expect(clarifyBudget({ clarifyLevel: 'detailed', clarifyMax: 12 })).toBe(12)
+    expect(clarifyBudget({ clarifyLevel: 'detailed', clarifyMax: 0 })).toBe(1)
+    expect(clarifyBudget({ clarifyLevel: 'detailed', clarifyMax: -5 })).toBe(1)
+    expect(clarifyBudget({ clarifyLevel: 'detailed', clarifyMax: 999 })).toBe(CI_CLARIFY_MAX_LIMIT)
+    expect(clarifyBudget({ clarifyLevel: 'detailed', clarifyMax: 2.6 })).toBe(3)
+  })
+
+  it('дефолт конфигурации — разработка с тремя вопросами', () => {
+    expect(DEFAULT_CI_LLM_CONFIG.mode).toBe('development')
+    expect(clarifyBudget(DEFAULT_CI_LLM_CONFIG)).toBe(3)
+  })
+
+  it('дефолтный движок CI — claude opus', () => {
+    expect(DEFAULT_CI_LLM_CONFIG.provider).toBe('claude')
+    expect(DEFAULT_CI_LLM_CONFIG.model).toBe('opus')
+    expect(DEFAULT_CI_CLAUDE_MODEL).toBe('opus')
+  })
+})
+
+describe('списки и статусы', () => {
+  it('все уровни уточнения дают неотрицательный бюджет', () => {
+    for (const clarifyLevel of CI_CLARIFY_LEVELS) {
+      expect(clarifyBudget({ clarifyLevel, clarifyMax: 3 })).toBeGreaterThanOrEqual(0)
+    }
+  })
+
+  it('режимов ровно два', () => {
+    expect(CI_RUN_MODES).toEqual(['plan', 'development'])
+  })
+
+  it('ожидание ввода — не терминальный статус', () => {
+    expect(CI_STATUSES).toContain('awaiting_input')
+    expect(isTerminalCiStatus('awaiting_input')).toBe(false)
+    expect(isTerminalCiStatus('success')).toBe(true)
+  })
+})
+
+describe('isActiveCiStatus', () => {
+  it('активны очередь, работа и ожидание ответа', () => {
+    expect(isActiveCiStatus('queued')).toBe(true)
+    expect(isActiveCiStatus('running')).toBe(true)
+    expect(isActiveCiStatus('awaiting_input')).toBe(true)
+  })
+
+  it('терминальные статусы неактивны — запуск снова доступен', () => {
+    for (const s of CI_STATUSES.filter(isTerminalCiStatus)) expect(isActiveCiStatus(s)).toBe(false)
+    expect(isActiveCiStatus('skipped')).toBe(false)
+  })
+})
+
+describe('canStartCiRun', () => {
+  it('без рана запуск доступен', () => {
+    expect(canStartCiRun(null)).toBe(true)
+    expect(canStartCiRun(undefined)).toBe(true)
+  })
+
+  it('завершённый ран запуску не мешает — «Выполнить» стартует новый', () => {
+    for (const s of ['success', 'failed', 'cancelled', 'timeout', 'skipped'] as const) {
+      expect(canStartCiRun({ status: s })).toBe(true)
+    }
+  })
+
+  it('пока ран активен, запуск закрыт', () => {
+    for (const s of ['queued', 'running', 'awaiting_input'] as const) {
+      expect(canStartCiRun({ status: s })).toBe(false)
+    }
+  })
+
+  it('покрыты все статусы: запуск закрыт ровно на активных', () => {
+    for (const s of CI_STATUSES) expect(canStartCiRun({ status: s })).toBe(!isActiveCiStatus(s))
+  })
+})
+
+describe('ciCardPulse', () => {
+  const sp = (fixing?: boolean): { done: number; total: number; phase: string; fixing?: boolean } =>
+    ({ done: 1, total: 4, phase: 'ф', fixing })
+
+  it('без рана подсветки нет', () => {
+    expect(ciCardPulse(null)).toBeNull()
+    expect(ciCardPulse(undefined)).toBeNull()
+  })
+
+  it('ран идёт — голубое «дыхание», а с флагом fixing — красное мигание', () => {
+    expect(ciCardPulse({ status: 'running', slotProgress: sp() })).toBe('running')
+    expect(ciCardPulse({ status: 'queued', slotProgress: sp() })).toBe('running')
+    expect(ciCardPulse({ status: 'running', slotProgress: sp(true) })).toBe('fixing')
+  })
+
+  it('ожидание ответа, падение и успех дают свои состояния', () => {
+    expect(ciCardPulse({ status: 'awaiting_input', slotProgress: sp() })).toBe('awaiting')
+    expect(ciCardPulse({ status: 'failed', slotProgress: sp() })).toBe('failed')
+    expect(ciCardPulse({ status: 'timeout', slotProgress: sp() })).toBe('failed')
+    expect(ciCardPulse({ status: 'success', slotProgress: sp() })).toBe('done')
+  })
+
+  it('ожидание ответа важнее флага fixing', () => {
+    expect(ciCardPulse({ status: 'awaiting_input', slotProgress: sp(true) })).toBe('awaiting')
+  })
+
+  it('отменённый и пропущенный ран карточку не подсвечивают', () => {
+    expect(ciCardPulse({ status: 'cancelled', slotProgress: sp() })).toBeNull()
+    expect(ciCardPulse({ status: 'skipped', slotProgress: sp() })).toBeNull()
+  })
+})
+
+describe('isVerificationCommand', () => {
+  it('узнаёт гейт по тексту команды, даже если флаг не проставлен', () => {
+    expect(isVerificationCommand({ name: 'Запустить тестирование (npm test)', script: 'npm test' })).toBe(true)
+    expect(isVerificationCommand({ name: 'Гейт', script: 'npm run -w @voicechat/server typecheck && npm run -w @voicechat/server test' })).toBe(true)
+    expect(isVerificationCommand({ name: 'UI', script: 'npx vitest run' })).toBe(true)
+    expect(isVerificationCommand({ name: 'Линт', script: 'npm run lint' })).toBe(true)
+  })
+
+  it('флаг справочника перевешивает текст', () => {
+    expect(isVerificationCommand({ isTest: true, name: 'Проверка', script: './check.sh' })).toBe(true)
+  })
+
+  it('установка зависимостей и сборка гейтом не считаются — они модели нужны', () => {
+    expect(isVerificationCommand({ name: 'Установить зависимости (npm ci)', script: 'npm ci' })).toBe(false)
+    expect(isVerificationCommand({ name: 'Сборка', script: 'npm run build' })).toBe(false)
+    expect(isVerificationCommand({ name: 'Клонировать репозиторий', script: 'git clone --branch "$BASE_BRANCH" "$GIT_URL"' })).toBe(false)
+    expect(isVerificationCommand({ name: 'Обновить прод-контейнер', script: 'docker compose up --build -d' })).toBe(false)
+  })
+})
+
+// Агрегаторы расхода модели: числа отчёта по рану и по задаче считаются здесь,
+// а сервер и UI только показывают их. Поэтому тесты — на числах, без моков.
+describe('ciUsageTotals', () => {
+  const row = (over: Partial<CiRunUsage> = {}): CiRunUsage => ({
+    id: 'u1', runId: 'r1', stepId: 's1', kind: 'model_work', provider: 'claude', model: 'sonnet',
+    inputTokens: 100, outputTokens: 200, cacheReadTokens: 300, cacheCreationTokens: 400,
+    costUsd: null, durationMs: 1000, numTurns: 1, at: 1, ...over
+  })
+
+  it('пустой список — нули и отсутствующая стоимость', () => {
+    expect(ciUsageTotals([])).toEqual(EMPTY_CI_USAGE_TOTALS)
+  })
+
+  it('складывает токены, запросы и время работы модели', () => {
+    const t = ciUsageTotals([row(), row({ id: 'u2', durationMs: 500, costUsd: 0.5 })])
+    expect(t.requests).toBe(2)
+    expect(t.inputTokens).toBe(200)
+    expect(t.outputTokens).toBe(400)
+    expect(t.cacheReadTokens).toBe(600)
+    expect(t.cacheCreationTokens).toBe(800)
+    expect(t.tokens).toBe(2000)
+    expect(t.modelActiveMs).toBe(1500)
+  })
+
+  it('стоимость от CLI берётся как есть — итог точный', () => {
+    const t = ciUsageTotals([row({ costUsd: 0.25 }), row({ id: 'u2', costUsd: 0.75 })])
+    expect(t.costUsd).toBeCloseTo(1, 10)
+    expect(t.costEstimated).toBe(false)
+  })
+
+  it('без стоимости от CLI считает оценку по прайсу и помечает итог', () => {
+    const t = ciUsageTotals([row({ model: 'sonnet' })])
+    // sonnet: 100·3 + 200·15 + 300·0.3 + 400·3.75 за 1M токенов.
+    expect(t.costUsd).toBeCloseTo((100 * 3 + 200 * 15 + 300 * 0.3 + 400 * 3.75) / 1e6, 12)
+    expect(t.costEstimated).toBe(true)
+  })
+
+  it('неизвестная модель: слагаемого нет, но итог помечен приблизительным', () => {
+    const t = ciUsageTotals([row({ model: 'своя-модель' }), row({ id: 'u2', costUsd: 2 })])
+    expect(t.costUsd).toBe(2)
+    expect(t.costEstimated).toBe(true)
+  })
+
+  it('нет ни одной посчитанной стоимости — null, а не ноль', () => {
+    expect(ciUsageTotals([row({ model: '' })]).costUsd).toBeNull()
+  })
+
+  it('ход без длительности не ломает время работы модели', () => {
+    expect(ciUsageTotals([row({ durationMs: null })]).modelActiveMs).toBe(0)
+  })
+})
+
+describe('sumCiUsageTotals и ciTaskTotals', () => {
+  const totals = (over: Partial<CiUsageTotals> = {}): CiUsageTotals => ({
+    ...EMPTY_CI_USAGE_TOTALS, requests: 1, inputTokens: 10, outputTokens: 20, tokens: 30,
+    costUsd: 1, modelActiveMs: 100, ...over
+  })
+
+  it('складывает итоги и наследует пометку оценки', () => {
+    const s = sumCiUsageTotals([totals(), totals({ costEstimated: true, costUsd: 0.5 })])
+    expect(s.requests).toBe(2)
+    expect(s.tokens).toBe(60)
+    expect(s.costUsd).toBeCloseTo(1.5, 10)
+    expect(s.costEstimated).toBe(true)
+    expect(s.modelActiveMs).toBe(200)
+  })
+
+  it('сумма пустого списка — нули без стоимости', () => {
+    expect(sumCiUsageTotals([])).toEqual(EMPTY_CI_USAGE_TOTALS)
+  })
+
+  it('итог по задаче складывает раны, включая ран без расхода', () => {
+    const run = (over: Partial<CiRunReport> = {}): CiRunReport => ({
+      runId: 'r1', projectId: 'p1', taskId: 't1', status: 'success', mode: 'development',
+      provider: 'claude', model: 'opus', startedAt: 1, finishedAt: 2, durationMs: 5000, createdAt: 1,
+      fixAttempts: 0, kbHit: null, totals: totals(), steps: [], ...over
+    })
+    const r = ciTaskTotals([run(), run({ runId: 'r2', durationMs: null, totals: { ...EMPTY_CI_USAGE_TOTALS } })])
+    expect(r.durationMs).toBe(5000)
+    expect(r.totals.requests).toBe(1)
+    expect(r.totals.costUsd).toBe(1)
+  })
+})

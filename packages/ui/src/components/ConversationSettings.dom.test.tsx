@@ -1,14 +1,22 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { render } from '../test/uiRender'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { ConversationSettings } from './ConversationSettings'
 import type { ProjectDetail, ProjectSummary } from '@shared/projects'
+import { makeAgent, makeConversation } from '../test/fixtures'
 
-const agent: AgentInfo = {
-  id: 'm1', name: 'Рабочая машина', online: true, createdAt: 1, lastSeen: 1, version: '1', telemetry: undefined,
+// Машина и беседа — общие фикстуры: раньше беседа собиралась частичным литералом,
+// и новое обязательное поле контракта в этом тесте не проявлялось.
+const agent: AgentInfo = makeAgent({
+  id: 'm1',
+  name: 'Рабочая машина',
+  createdAt: 1,
+  version: '1',
+  telemetry: undefined,
   policy: { allowedDirs: [], allowNetwork: true, allowWrite: true, denyPatterns: [], allowPatterns: [], skills: [{ name: 'build', command: 'npm run build' }] }
-}
-const conversation = { id: 'c1', title: 'Старое имя', createdAt: 1, updatedAt: 1, messageCount: 0, claudeSessionId: null, execTarget: 'm1', workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, lastExecTarget: null }
+})
+const conversation = makeConversation({ id: 'c1', title: 'Старое имя', messageCount: 0, execTarget: 'm1' })
 const settings = { llmProvider: 'claude', model: 'opus', codexModel: '', permissionMode: 'bypassPermissions' } as const
 
 describe('ConversationSettings', () => {
@@ -90,15 +98,17 @@ describe('ConversationSettings', () => {
   })
 
   it('просит подтверждение при переходе из плана в полный доступ', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     const onSave = vi.fn().mockResolvedValue(undefined)
     const conv = { ...conversation, permissionMode: 'plan' as const }
     render(<ConversationSettings conversation={conv} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Режим разговора' }), { target: { value: 'bypassPermissions' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    expect(confirm).toHaveBeenCalledOnce()
+    // Предупреждение дословно то же, что было в нативном диалоге.
+    const dialog = await screen.findByTestId('confirm-dialog')
+    expect(within(dialog).getByText('Перейти из планирования в «Полный доступ»? Агент сможет выполнять команды и изменять любые доступные файлы.')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }))
+    await waitFor(() => expect(screen.queryByTestId('confirm-dialog')).toBeNull())
     expect(onSave).not.toHaveBeenCalled()
-    confirm.mockRestore()
   })
 
 
@@ -106,7 +116,7 @@ describe('ConversationSettings', () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     const summary: ProjectSummary = { id: 'p1', name: 'Proj', description: '', gitUrl: null, technologies: [], skills: ['ts'], defaultSkills: { epic: [], story: [], task: [] }, createdBy: 'admin', createdAt: 1, updatedAt: 1, role: 'owner', commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual' }
 
-    const detail: ProjectDetail = { ...summary, members: [], machines: [{ agentId: 'm1', path: '/srv/p', featureReposRoot: '/srv/repos' }], defaultAgentId: 'm1' }
+    const detail: ProjectDetail = { ...summary, members: [], machines: [{ agentId: 'm1', path: '/srv/p', reposRoot: '/srv/repos' }], defaultAgentId: 'm1' }
     const fetchProjectDetail = vi.fn().mockResolvedValue(detail)
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[summary]} fetchProjectDetail={fetchProjectDetail} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Проект разговора' }), { target: { value: 'p1' } })
@@ -114,6 +124,20 @@ describe('ConversationSettings', () => {
     await screen.findByText('/srv/p') // рабочая папка подставилась из проекта
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'p1', execTarget: 'm1', workdir: '/srv/p' })))
+  })
+
+  it('подписи режимов БЗ соответствуют семантике «инструменты модели», а не «вручную»', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    const select = screen.getByRole('combobox', { name: 'Контекст базы знаний' })
+    expect(within(select).getByRole('option', { name: 'Авто-контекст + инструменты модели' })).toBeInTheDocument()
+    expect(within(select).getByRole('option', { name: 'По запросу модели (только инструменты)' })).toBeInTheDocument()
+    // Пояснение под селектом объясняет режим, а не повторяет его название.
+    expect(screen.getByTestId('conv-kb-hint')).toHaveTextContent('подмешивает подходящие разделы')
+    fireEvent.change(select, { target: { value: 'manual' } })
+    expect(screen.getByTestId('conv-kb-hint')).toHaveTextContent('до чтения кода')
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ kbContextMode: 'manual' })))
   })
 
 })

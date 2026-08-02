@@ -4,8 +4,10 @@
 // страница в области контента ('page', без модального фона). В modal/embedded
 // разворот на весь экран живёт здесь, а не в самих тулах.
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { PopupFrame } from './PopupFrame'
+import { IconButton } from './ui/IconButton'
+import { useDialogStack } from './ui/useDialogStack'
 import type { UtilityVariant } from './machine'
 
 /** Управление разворотом — для содержимого, которому нужен фуллскрин по клику. */
@@ -41,22 +43,20 @@ export function ToolFrame({
   children
 }: ToolFrameProps): JSX.Element {
   const [fullscreen, setFullscreen] = useState(false)
-  // Esc: сначала сворачивает разворот, затем закрывает (для modal). Слушатель на
-  // фазе перехвата и со stopPropagation — чтобы не сработали глобальные хоткеи
-  // (отмена записи). В embedded без разворота Esc не трогаем — работают хоткеи.
-  // В page Esc закрывает страницу (возврат навигацией).
-  useEffect(() => {
-    if (variant === 'embedded' && !fullscreen) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape' && e.code !== 'Escape') return
-      e.preventDefault()
-      e.stopPropagation()
-      if (fullscreen) setFullscreen(false)
-      else onClose?.()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [variant, fullscreen, onClose])
+  // Esc: сначала сворачивает разворот, затем закрывает. Обработка идёт через общий
+  // стек окон, поэтому тул под открытой поверх него модалкой не закрывается вместе
+  // с ней. В embedded без разворота слоя нет — Esc остаётся глобальным хоткеем
+  // (отмена записи). В page Esc закрывает страницу (возврат навигацией).
+  const handleEscape = (): void => {
+    if (fullscreen) setFullscreen(false)
+    else onClose?.()
+  }
+  // Слой варианта modal держит PopupFrame — второй раз регистрировать нельзя.
+  useDialogStack({
+    active: variant === 'page' || (variant === 'embedded' && fullscreen),
+    onEscape: handleEscape,
+    lockScroll: false
+  })
 
   const ctl: ToolFrameControl = { fullscreen, setFullscreen }
 
@@ -66,20 +66,20 @@ export function ToolFrame({
       <span className="util-head-btns">
         {typeof actions === 'function' ? actions(ctl) : actions}
         {variant !== 'page' && (
-          <button
-            className="xbtn"
+          <IconButton
             title={fullscreen ? 'Свернуть' : 'На весь экран'}
+            aria-label={fullscreen ? 'Свернуть' : 'Развернуть на весь экран'}
             aria-pressed={fullscreen}
             onClick={() => setFullscreen((v) => !v)}
           >
             {/* Не эмодзи: 🗕 (U+1F5D5) в Chrome/macOS рисуется пустым квадратом. */}
             {fullscreen ? '▭' : '⛶'}
-          </button>
+          </IconButton>
         )}
         {onClose && (
-          <button className="xbtn" aria-label="Закрыть" title="Закрыть" onClick={onClose}>
+          <IconButton aria-label="Закрыть" title="Закрыть" onClick={onClose}>
             ✕
-          </button>
+          </IconButton>
         )}
       </span>
     </div>
@@ -102,9 +102,9 @@ export function ToolFrame({
       <PopupFrame
         title={title}
         onClose={onClose}
+        onEscape={handleEscape}
         testId={testId}
         overlayClassName="ovl--anim"
-        closeOnEscape={false}
         panelClassName={`ccobs ccobs--anim${fullscreen ? ' ccobs--fs' : ''}${extra}`}
       >
         {head}

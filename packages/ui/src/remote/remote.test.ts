@@ -127,7 +127,7 @@ describe('createHttpApi', () => {
   it('httpBase учитывается в URL', async () => {
     mockFetch(() => ({ _text: JSON.stringify([{ id: 'c1' }]) }))
     const api = createHttpApi('http://srv:8787', 'ws://srv:8787/agent')
-    await api['conversations:list']()
+    await api['conversations:list']({})
     expect(calls[0].url).toBe('http://srv:8787/api/conversations')
   })
 
@@ -149,6 +149,36 @@ describe('createHttpApi', () => {
     mockFetch(() => ({ _text: '' }))
     const api = createHttpApi('http://srv:8787', 'ws://srv:8787/agent')
     expect(await api['downloads:url']({ kind: 'agent-app' })).toBe('http://srv:8787/api/agents/app')
+  })
+
+  it('messages:search собирает параметры (projectId=none — без проекта)', async () => {
+    mockFetch(() => ({ _text: JSON.stringify({ hits: [], nextCursor: null, match: '' }) }))
+    const api = createHttpApi('', 'ws://x/agent')
+
+    await api['messages:search']({ query: 'миграция канбана', projectId: null, limit: 20 })
+    // URLSearchParams кодирует пробел как «+», и Fastify разбирает его обратно
+    // в пробел — иначе завершающий пробел (признак «слово закончено») терялся бы.
+    expect(calls[0].url).toBe(`/api/search?q=${new URLSearchParams({ q: 'миграция канбана' }).toString().slice(2)}&projectId=none&limit=20`)
+
+    await api['messages:search']({ query: 'q', projectId: 'p1', conversationId: 'c1', cursor: 'cur' })
+    expect(calls[1].url).toBe('/api/search?q=q&projectId=p1&conversationId=c1&cursor=cur')
+
+    // Без projectId — поиск по всем беседам, параметра в URL нет.
+    await api['messages:search']({ query: 'q' })
+    expect(calls[2].url).toBe('/api/search?q=q')
+  })
+
+  it('новый поиск отменяет предыдущий запрос (AbortController)', async () => {
+    // Ответ не приходит: так видно, что отменяется именно живая заявка.
+    mockFetch(() => ({ text: async () => new Promise<string>(() => {}) }) as never)
+    const api = createHttpApi('', 'ws://x/agent')
+
+    void api['messages:search']({ query: 'ми' })
+    void api['messages:search']({ query: 'миграция' })
+
+    expect(calls).toHaveLength(2)
+    expect(calls[0].init?.signal?.aborted).toBe(true)
+    expect(calls[1].init?.signal?.aborted).toBe(false)
   })
 })
 

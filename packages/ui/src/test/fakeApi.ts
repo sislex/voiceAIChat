@@ -3,16 +3,21 @@
 
 import type { RendererApi } from '@shared/ipc'
 import type { Conversation, Message, Settings } from '@shared/types'
-import type { AdminUserInfo } from '@shared/admin'
+import type { AdminLlmEngine, AdminLlmEngineHealth, AdminUserInfo } from '@shared/admin'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { Board, KanbanColumn, ProjectDetail, ProjectMember, ProjectSummary, Task, WorkItemDefaultSkills } from '@shared/projects'
+import { issueKey, isCompletedHidden, DEFAULT_DONE_RETENTION_DAYS } from '@shared/projects'
 
-
-import type { FeatureRun, AgentTask } from '@shared/features'
 
 export interface FakeApi extends RendererApi {
+  /**
+   * Часы фейкового бэкенда: «состарить» завершённую задачу, не дожидаясь суток.
+   * Порог `0` теперь означает «убрать в конце дня», а не «в ту же секунду»
+   * (`isCompletedHidden`), поэтому иначе скрытие с доски не проверить.
+   */
+  _advanceDays: (days: number) => void
   /** Прямой доступ к состоянию для ассертов в тестах. */
   _state: {
     conversations: Conversation[]
@@ -24,6 +29,8 @@ export interface FakeApi extends RendererApi {
 export function createFakeApi(seedConversations: string[] = []): FakeApi {
   let idCounter = 0
   let clock = 1_700_000_000_000
+  /** «Сейчас» фейкового бэкенда — двигается только `_advanceDays`. */
+  let nowMs = Date.now()
   const nextId = (): string => `id-${++idCounter}`
   const tick = (): number => (clock += 1000)
 
@@ -33,6 +40,29 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const adminUsers: AdminUserInfo[] = [
     { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 0, agents: [] }
   ]
+  const llmEngines: AdminLlmEngine[] = [
+    {
+      id: 'eng-claude',
+      name: 'runner-work claude',
+      kind: 'claude',
+      baseUrl: 'http://runner-work:8080',
+      token: 'secret',
+      enabled: true,
+      allowedRoles: ['admin', 'user'],
+      isDefault: true,
+      createdAt: 2
+    }
+  ]
+  const llmHealth: Record<string, AdminLlmEngineHealth> = {
+    'eng-claude': {
+      engineId: 'eng-claude',
+      kind: 'claude',
+      checkedAt: 3,
+      available: true,
+      detail: 'claude: доступен',
+      status: null
+    }
+  }
   let settings: Settings = { ...DEFAULT_SETTINGS }
 
   // --- Проекты + канбан (in-memory) ---
@@ -50,17 +80,16 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     createdAt: number
     updatedAt: number
     members: ProjectMember[]
-    machines: Array<{ agentId: string; path: string; featureReposRoot: string }>
+    machines: Array<{ agentId: string; path: string; reposRoot: string }>
     defaultAgentId: string | null
     commitPolicy: ProjectSummary['commitPolicy']
     mergeTransport: ProjectSummary['mergeTransport']
     agentPlanApprovalMode: ProjectSummary['agentPlanApprovalMode']
+    doneRetentionDays: number | null
   }
   const projects: FProject[] = []
   const columns: KanbanColumn[] = []
   const tasks: Task[] = []
-  const features: FeatureRun[] = []
-  const agentTasks: AgentTask[] = []
   const summary = (p: FProject): ProjectSummary => ({
     id: p.id,
     name: p.name,
@@ -76,7 +105,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     role: p.members.find((m) => m.username === ME)?.role ?? 'owner',
     commitPolicy: p.commitPolicy,
     mergeTransport: p.mergeTransport,
-    agentPlanApprovalMode: p.agentPlanApprovalMode
+    agentPlanApprovalMode: p.agentPlanApprovalMode,
+    doneRetentionDays: p.doneRetentionDays
   })
   const detail = (p: FProject): ProjectDetail => ({
     ...summary(p),
@@ -84,11 +114,17 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     machines: p.machines.map((m) => ({ ...m })),
     defaultAgentId: p.defaultAgentId
   })
-  const boardOf = (pid: string): Board => ({
-    columns: columns.filter((c) => c.projectId === pid).sort((a, b) => a.position - b.position).map((c) => ({ ...c })),
-    tasks: tasks.filter((t) => t.projectId === pid).sort((a, b) => a.position - b.position).map((t) => ({ ...t })),
-    features: features.filter((f) => f.projectId === pid).map((f) => ({ id: f.id, sourceTaskId: f.sourceTaskId, attempt: f.attempt, status: f.status, deployStatus: f.deployStatus, featureBranch: f.featureBranch, agentActive: false }))
-  })
+  const boardOf = (pid: string, includeCompleted?: boolean): Board => {
+    // Как на сервере: давно завершённые задачи в снапшот не попадают.
+    const retention = includeCompleted ? null : projects.find((p) => p.id === pid)?.doneRetentionDays ?? null
+    return {
+      columns: columns.filter((c) => c.projectId === pid).sort((a, b) => a.position - b.position).map((c) => ({ ...c })),
+      tasks: tasks
+        .filter((t) => t.projectId === pid && !isCompletedHidden(t.doneAt, retention, nowMs))
+        .sort((a, b) => a.position - b.position)
+        .map((t) => ({ ...t }))
+    }
+  }
 
   function makeConversation(title: string): Conversation {
     const ts = tick()
@@ -96,6 +132,15 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   }
 
   for (const title of seedConversations) conversations.push(makeConversation(title))
+
+  /**
+   * Как на сервере: чат задачи, лежащей в колонке с семантикой `done`, из
+   * списка/поиска бесед убран, пока не попросили `includeCompleted`.
+   */
+  const doneTaskChat = (c: Conversation): boolean => {
+    const task = c.taskId ? tasks.find((t) => t.id === c.taskId) : undefined
+    return !!task && columns.find((k) => k.id === task.columnId)?.semanticType === 'done'
+  }
 
   function withCounts(c: Conversation): Conversation {
     const own = messages.filter((m) => m.conversationId === c.id)
@@ -113,9 +158,21 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'kb:search': async () => [],
     'prompt:suggest': async ({ prompt }) => ({ variants: [{ id: 'suggestion-1', text: `${prompt} — уточнённый вариант` }] }),
     'kb:document': async () => null,
+    'kb:saveDocument': async (draft) => ({
+      id: draft.id ?? 'kb-doc-1', title: draft.title, kind: draft.kind ?? 'subsystem', scope: draft.scope,
+      projectId: draft.projectId ?? null, editable: true, tags: draft.tags ?? [], packages: [], freshness: 'unknown',
+      sourcePath: 'мои знания/kb-doc-1', body: draft.body, symbols: [], protocols: [], areas: draft.areas ?? [],
+      related: [], headings: []
+    }),
+    'kb:deleteDocument': async () => {},
+    'kb:research': async ({ projectId }) => ({ projectId, state: 'running', startedBy: 'admin', startedAt: 0, finishedAt: null, documents: [], note: '', error: null }),
+    'kb:researchStatus': async () => null,
     'kb:context': async ({ query }) => ({ query, confidence: 'low', autoInjectAllowed: false, sections: [], relatedFiles: [], relatedDocuments: [], staleWarnings: [], estimatedTokens: 0 }),
-    'conversations:list': async () =>
-      [...conversations].sort((a, b) => b.updatedAt - a.updatedAt).map(withCounts),
+    'conversations:list': async ({ includeCompleted } = {}) =>
+      [...conversations]
+        .filter((c) => includeCompleted || !doneTaskChat(c))
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .map(withCounts),
     'conversations:create': async ({ title } = {}) => {
       const conv = makeConversation(title ?? 'Новый разговор')
       conversations.push(conv)
@@ -131,10 +188,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
           .sort((a, b) => a.createdAt - b.createdAt)
       }
     },
-    'conversations:search': async ({ query }) => {
+    'conversations:search': async ({ query, includeCompleted }) => {
       const q = query.trim().toLowerCase()
-      if (!q) return [...conversations].sort((a, b) => b.updatedAt - a.updatedAt).map(withCounts)
-      return [...conversations]
+      const visible = [...conversations].filter((c) => includeCompleted || !doneTaskChat(c))
+      if (!q) return visible.sort((a, b) => b.updatedAt - a.updatedAt).map(withCounts)
+      return visible
         .filter(
           (c) =>
             c.title.toLowerCase().includes(q) ||
@@ -143,6 +201,45 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map(withCounts)
     },
+    /**
+     * Поиск по сообщениям: подстрокой вместо FTS5, но с той же формой ответа —
+     * сниппет с `<mark>`, курсор постранично, порядок «свежее выше».
+     */
+    'messages:search': async ({ query, projectId, conversationId, limit, cursor }) => {
+      const q = query.trim().toLowerCase()
+      if (!q) return { hits: [], nextCursor: null, match: '' }
+      const size = limit ?? 20
+      const from = cursor ? Number(cursor) : 0
+      const found = messages
+        .filter((m) => m.text.toLowerCase().includes(q))
+        .filter((m) => !conversationId || m.conversationId === conversationId)
+        .filter((m) => {
+          if (projectId === undefined) return true
+          const conv = conversations.find((c) => c.id === m.conversationId)
+          return (conv?.projectId ?? null) === projectId
+        })
+        .sort((a, b) => b.createdAt - a.createdAt)
+      const page = found.slice(from, from + size)
+      return {
+        hits: page.map((m) => {
+          const at = m.text.toLowerCase().indexOf(q)
+          const conv = conversations.find((c) => c.id === m.conversationId)
+          return {
+            messageId: m.id,
+            conversationId: m.conversationId,
+            conversationTitle: conv?.title ?? '',
+            projectId: conv?.projectId ?? null,
+            role: m.role,
+            createdAt: m.createdAt,
+            time: m.time,
+            snippet: `${m.text.slice(0, at)}<mark>${m.text.slice(at, at + q.length)}</mark>${m.text.slice(at + q.length)}`,
+            score: -1 - at / 100
+          }
+        }),
+        nextCursor: from + size < found.length ? String(from + size) : null,
+        match: `"${q}"*`
+      }
+    },
     'conversations:rename': async ({ id, title }) => {
       const conv = conversations.find((c) => c.id === id)
       if (conv) {
@@ -150,6 +247,42 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         conv.updatedAt = tick()
       }
     },
+    // Контекст задачи для виджета чата: как на сервере — только у чата,
+    // привязанного к задаче, и всегда со своим `conversationId`.
+    'conversations:taskContext': async ({ id }) => {
+      const conv = conversations.find((c) => c.id === id)
+      const task = conv?.taskId ? tasks.find((t) => t.id === conv.taskId) : undefined
+      const project = projects.find((p) => p.id === task?.projectId)
+      if (!conv || !task || !project) return null
+      const crumb = (t: Task) => ({ id: t.id, title: t.title, key: issueKey(project.name, t) })
+      const parent = task.parentId ? tasks.find((t) => t.id === task.parentId) : undefined
+      const column = columns.find((k) => k.id === task.columnId)
+      return {
+        conversationId: conv.id,
+        projectId: project.id,
+        projectName: project.name,
+        epic: parent?.type === 'epic' ? crumb(parent) : null,
+        story: parent?.type === 'story' ? crumb(parent) : null,
+        task: { ...crumb(task), type: task.type },
+        columnName: column?.name ?? '',
+        columnSemantic: column?.semanticType ?? null,
+        agentId: conv.execTarget ?? null,
+        agentName: agents.find((a) => a.id === conv.execTarget)?.name ?? null,
+        workdir: conv.workdir,
+        run: null
+      }
+    },
+    // Метки чатов задач: ключ считаем той же shared-функцией, что сервер, а ран
+    // фейк не хранит — состояние подсветки тесты досылают кадрами `ci.*`.
+    'conversations:taskChats': async () =>
+      conversations
+        .filter((c) => c.taskId)
+        .flatMap((c) => {
+          const task = tasks.find((t) => t.id === c.taskId)
+          const project = projects.find((p) => p.id === task?.projectId)
+          if (!task || !project) return []
+          return [{ conversationId: c.id, projectId: project.id, taskId: task.id, key: issueKey(project.name, task), type: task.type, run: null }]
+        }),
     'conversations:setProject': async ({ id, projectId }) => {
       const conv = conversations.find((c) => c.id === id)!
       conv.projectId = projectId
@@ -169,12 +302,13 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       conv.status = status
       return withCounts(conv)
     },
-    'conversations:setExecTarget': async ({ id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode }) => {
+    'conversations:setExecTarget': async ({ id, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode }) => {
       const conv = conversations.find((c) => c.id === id)
       if (!conv) throw new Error('not found')
       conv.execTarget = execTarget
       if (workdir !== undefined) conv.workdir = workdir
       if (skillNames !== undefined) conv.skillNames = skillNames
+      if (llmEngineId !== undefined) conv.llmEngineId = llmEngineId
       if (llmProvider !== undefined) conv.llmProvider = llmProvider
       if (llmModel !== undefined) conv.llmModel = llmModel
       if (permissionMode !== undefined) conv.permissionMode = permissionMode
@@ -208,6 +342,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (idx >= 0) messages.splice(idx, 1)
     },
     'uploads:add': async ({ name }) => ({ id: nextId(), name }),
+    'llm:engines': async () => llmEngines.filter((e) => e.enabled).map(({ id, name, kind, isDefault }) => ({ id, name, kind, isDefault })),
     'settings:get': async () => ({ ...settings }),
     'settings:save': async (next) => {
       settings = { ...next }
@@ -312,6 +447,27 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     }),
     'admin:conversations': async () => [],
     'admin:messages': async () => [],
+    'admin:llmEngines': async () => llmEngines.map((e) => ({ ...e, allowedRoles: [...e.allowedRoles] })),
+    'admin:createLlmEngine': async (input) => {
+      const created: AdminLlmEngine = { ...input, id: nextId(), createdAt: tick(), allowedRoles: [...input.allowedRoles] }
+      if (created.isDefault) for (const item of llmEngines) if (item.kind === created.kind) item.isDefault = false
+      llmEngines.push(created)
+      llmHealth[created.id] = { engineId: created.id, kind: created.kind, checkedAt: tick(), available: created.enabled, detail: created.enabled ? `${created.kind}: доступен` : 'выключен', status: null }
+      return { ...created, allowedRoles: [...created.allowedRoles] }
+    },
+    'admin:updateLlmEngine': async ({ id, patch }) => {
+      const found = llmEngines.find((e) => e.id === id)
+      if (!found) throw new Error('not found')
+      if (patch.isDefault) for (const item of llmEngines) if (item.kind === patch.kind) item.isDefault = false
+      Object.assign(found, { ...patch, allowedRoles: [...patch.allowedRoles] })
+      return { ...found, allowedRoles: [...found.allowedRoles] }
+    },
+    'admin:deleteLlmEngine': async ({ id }) => {
+      const idx = llmEngines.findIndex((e) => e.id === id)
+      if (idx >= 0) llmEngines.splice(idx, 1)
+      delete llmHealth[id]
+    },
+    'admin:checkLlmEngineHealth': async ({ id }) => ({ ...(llmHealth[id] ?? { engineId: id, kind: 'claude', checkedAt: tick(), available: false, detail: 'offline', status: null }) }),
     'projects:list': async () => projects.map(summary),
     'projects:create': async (b) => {
       const ts = tick()
@@ -337,7 +493,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         defaultAgentId: null,
         commitPolicy: b.commitPolicy ?? 'agent_commits',
         mergeTransport: b.mergeTransport ?? 'local',
-        agentPlanApprovalMode: b.agentPlanApprovalMode ?? 'manual'
+        agentPlanApprovalMode: b.agentPlanApprovalMode ?? 'manual',
+        doneRetentionDays: DEFAULT_DONE_RETENTION_DAYS
       }
       projects.push(p)
       ;[
@@ -364,6 +521,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
       if (f.mergeTransport !== undefined) p.mergeTransport = f.mergeTransport
       if (f.agentPlanApprovalMode !== undefined) p.agentPlanApprovalMode = f.agentPlanApprovalMode
+      if (f.doneRetentionDays !== undefined) p.doneRetentionDays = f.doneRetentionDays
       p.updatedAt = tick()
       return detail(p)
     },
@@ -388,7 +546,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'projects:linkMachine': async ({ id, agentId }) => {
       const p = projects.find((x) => x.id === id)!
-      if (!p.machines.some((m) => m.agentId === agentId)) p.machines.push({ agentId, path: '', featureReposRoot: '' })
+      if (!p.machines.some((m) => m.agentId === agentId)) p.machines.push({ agentId, path: '', reposRoot: '' })
       return detail(p)
     },
     'projects:unlinkMachine': async ({ id, agentId }) => {
@@ -403,13 +561,13 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (m) m.path = path
       return detail(p)
     },
-    'projects:setFeatureReposRoot': async ({ id, agentId, featureReposRoot }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) m.featureReposRoot = featureReposRoot; return detail(p) },
+    'projects:setReposRoot': async ({ id, agentId, reposRoot }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) m.reposRoot = reposRoot; return detail(p) },
     'projects:setDefaultMachine': async ({ id, agentId }) => {
       const p = projects.find((x) => x.id === id)!
       if (p.machines.some((m) => m.agentId === agentId)) p.defaultAgentId = agentId
       return detail(p)
     },
-    'board:get': async ({ id }) => boardOf(id),
+    'board:get': async ({ id, includeCompleted }) => boardOf(id, includeCompleted),
     'columns:create': async ({ projectId, name }) => {
       const ts = tick()
       const max = Math.max(0, ...columns.filter((c) => c.projectId === projectId).map((c) => c.position))
@@ -490,6 +648,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'tasks:move': async ({ taskId, columnId, afterId, beforeId }) => {
       const t = tasks.find((x) => x.id === taskId)!
       t.columnId = columnId
+      // Как на сервере: попадание в «Готово» запускает отсчёт скрытия.
+      const done = columns.find((c) => c.id === columnId)?.semanticType === 'done'
+      t.doneAt = done ? t.doneAt ?? nowMs : null
       const after = afterId ? tasks.find((x) => x.id === afterId) : null
       const before = beforeId ? tasks.find((x) => x.id === beforeId) : null
       t.position =
@@ -511,7 +672,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const task = tasks.find((x) => x.id === taskId)!
       const existing = conversations.find((c) => c.taskId === taskId)
       if (existing) return withCounts(existing)
-      const conv = makeConversation(task.title || 'Задача')
+      const conv = makeConversation(task.title ? `Задача ${task.title}` : 'Задача') // как на сервере
       conv.projectId = projectId
       conv.taskId = taskId
       conv.skillNames = [...task.skills]
@@ -520,41 +681,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       return withCounts(conv)
     },
 
-    'features:list': async ({ projectId }) => features.filter((f) => f.projectId === projectId),
-    'features:createFromTask': async ({ projectId, taskId, autoMerge, autoDeployProduction }) => {
-      const task = tasks.find((t) => t.id === taskId)!
-      const previous = features.filter((f) => f.sourceTaskId === taskId).at(-1)
-      const ts = tick(), id = nextId()
-      const feature: FeatureRun = { id, projectId, sourceTaskId: taskId, attempt: (previous?.attempt ?? 0) + 1, previousFeatureId: previous?.id ?? null, conversationId: null, repositorySlotId: null, title: task.title, description: task.description, status: 'preparing', deployStatus: 'not_requested', baseBranch: 'main', featureBranch: `feature/${id}`, baseCommitSha: null, testedCommitSha: null, mergedCommitSha: null, commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual', autoMerge: !!autoMerge, autoDeployProduction: !!autoDeployProduction, createdAt: ts, updatedAt: ts, completedAt: null, lastError: null, version: 1 }
-      features.push(feature)
-      return feature
-    },
-    'features:createFromStory': async ({ projectId, storyId, ...opts }) => {
-      const story = tasks.find((t) => t.id === storyId)!
-      const ready = columns.find((c) => c.projectId === projectId && c.semanticType === 'ready')!
-      const task = await api['tasks:create']({ projectId, columnId: ready.id, title: `Реализовать: ${story.title}`, description: story.description, acceptanceCriteria: story.acceptanceCriteria, type: 'task', parentId: storyId })
-      return api['features:createFromTask']({ projectId, taskId: task.id, ...opts })
-    },
-    'features:get': async ({ id }) => features.find((f) => f.id === id) ?? null,
-    'features:setAutomation': async ({ id, autoMerge, autoDeployProduction }) => {
-      const f = features.find((x) => x.id === id)!
-      if (autoMerge !== undefined) f.autoMerge = autoMerge
-      if (autoDeployProduction !== undefined) f.autoDeployProduction = autoDeployProduction
-      f.version++
-      return { ...f }
-    },
-    'features:deployments': async () => [],
-    'features:deploy': async ({ id }) => { const f = features.find((x) => x.id === id)!; f.deployStatus = 'queued'; return { ...f } },
-    'features:transition': async ({ id, status }) => {
-      const f = features.find((x) => x.id === id)!
-      f.status = status; f.version++; f.updatedAt = tick()
-      return { ...f }
-    },
-    'agentTasks:list': async ({ featureId }) => agentTasks.filter((t) => t.featureId === featureId),
-    'agentTasks:create': async ({ featureId, title, description, kind, dependsOn }) => {
-      const task: AgentTask = { id: nextId(), featureId, title, description: description ?? '', kind: kind ?? 'custom', status: 'planned', createdBy: 'user', dependsOn: dependsOn ?? [], attempt: 1, resultSummary: null, error: null, createdAt: tick(), startedAt: null, finishedAt: null }
-      agentTasks.push(task); return task
-    },
+    _advanceDays: (days) => { nowMs += days * 24 * 60 * 60 * 1000 },
+
     _state: {
       get conversations() {
         return conversations
@@ -580,10 +708,14 @@ import type {
   CiGlobalSettings,
   CiRun,
   CiRunDetail,
+  CiInteraction,
+  CiLlmConfig,
   CiRunStep,
+  CiRunReport,
+  CiTaskReport,
   CiLogLine
 } from '@shared/ci'
-import { DEFAULT_CI_GLOBAL_SETTINGS } from '@shared/ci'
+import { DEFAULT_CI_GLOBAL_SETTINGS, DEFAULT_CI_LLM_CONFIG, EMPTY_CI_USAGE_TOTALS, ciTaskTotals } from '@shared/ci'
 
 export interface FakeCi extends RendererCiBridge {
   /** Тест-хелперы: прямой прогон realtime-событий. */
@@ -591,6 +723,9 @@ export interface FakeCi extends RendererCiBridge {
   _emitStep(runId: string, step: CiRunStep): void
   _emitLog(runId: string, line: CiLogLine): void
   _emitDone(run: CiRun): void
+  _emitInteraction(runId: string, interaction: CiInteraction): void
+  /** Сервер дописал сообщение в чат (резюме рана). */
+  _emitChatMessage(conversationId: string, message: Message): void
   _commands: CiCommand[]
 }
 
@@ -601,7 +736,16 @@ export function createFakeCi(): FakeCi {
   const commands: CiCommand[] = []
   let settings: CiGlobalSettings = { ...DEFAULT_CI_GLOBAL_SETTINGS }
   const runs = new Map<string, CiRunDetail>()
+  /** Пустые итоги БЗ: фейк ходов модели не делает, значит и обращений нет. */
+  const EMPTY_KB_TOTALS = {
+    queries: 0, delivered: 0, empty: 0, errors: 0, toolQueries: 0, sections: 0, documents: 0,
+    chars: 0, estimatedTokens: 0, promptChars: 0, lastAt: null
+  }
   const logs = new Map<string, CiLogLine[]>()
+  let projectLlm: CiLlmConfig = { ...DEFAULT_CI_LLM_CONFIG }
+  let taskLlm: CiLlmConfig | null = null
+  /** Паузы ранов, чтобы Storybook/dom-тесты умели показывать вопрос модели. */
+  const interactions = new Map<string, CiInteraction[]>()
   type L = (...args: never[]) => void
   const listeners: Record<string, Set<L>> = {}
   const on = (t: string, cb: L): (() => void) => {
@@ -623,6 +767,7 @@ export function createFakeCi(): FakeCi {
     allowFailure: input.allowFailure ?? false,
     isCleanup: input.isCleanup ?? false,
     availableToModel: input.availableToModel ?? false,
+    isTest: input.isTest ?? false,
     version: 1,
     createdBy: 'admin',
     createdAt: now(),
@@ -640,13 +785,35 @@ export function createFakeCi(): FakeCi {
     triggeredBy: 'admin',
     prevColumnId: null,
     llmProvider: 'claude',
-    llmModel: 'sonnet',
+    llmModel: 'opus',
+    mode: 'development',
+    kbContextMode: 'auto',
+    clarifyLevel: 'few',
+    clarifyMax: 3,
+    conversationId: null,
     slotProgress: { done: 0, total: 4, phase: 'подготовка' },
     startedAt: now(),
     finishedAt: null,
     durationMs: null,
     createdAt: now()
   })
+
+  /** Отчёт по рану из фейковой ленты: шаги и длительности есть, расход пуст. */
+  const runReport = (rid: string): CiRunReport => {
+    const d = runs.get(rid)
+    const run = d?.run ?? mkRun('p', 't')
+    return {
+      runId: run.id, projectId: run.projectId, taskId: run.taskId, status: run.status, mode: run.mode,
+      provider: run.llmProvider, model: run.llmModel, startedAt: run.startedAt, finishedAt: run.finishedAt,
+      durationMs: run.durationMs, createdAt: run.createdAt, fixAttempts: d?.fixAttempts.length ?? 0, kbHit: null,
+      totals: { ...EMPTY_CI_USAGE_TOTALS },
+      steps: (d?.steps ?? []).map((s) => ({
+        id: s.id, parentStepId: s.parentStepId, title: s.title, slot: s.slot, kind: s.kind,
+        initiatedBy: s.initiatedBy, status: s.status, attempt: s.attempt, fixedByModel: s.fixedByModel,
+        exitCode: s.exitCode, durationMs: s.durationMs, usage: null
+      }))
+    }
+  }
 
   const bridge: FakeCi = {
     listCommands: async () => commands.map((c) => ({ ...c })),
@@ -662,17 +829,58 @@ export function createFakeCi(): FakeCi {
     listWorkspaces: async () => [],
     getProjectCi: async () => ({ beforeModel: [], afterModel: [] }),
     putProjectCi: async (_pid, config) => config,
+    getProjectCiLlm: async () => ({ ...projectLlm }),
+    putProjectCiLlm: async (_pid, config) => { projectLlm = { ...config }; return { ...config } },
+    getTaskCiLlm: async () => ({ config: { ...(taskLlm ?? projectLlm) }, overridden: taskLlm !== null, projectDefault: { ...projectLlm } }),
+    putTaskCiLlm: async (_pid, _tid, config) => { taskLlm = { ...config }; return { ...config } },
+    resetTaskCiLlm: async () => { taskLlm = null; return { config: { ...projectLlm }, overridden: false, projectDefault: { ...projectLlm } } },
     getTaskCi: async () => ({ config: { beforeModel: [], afterModel: [] }, overridden: false, projectDefault: { beforeModel: [], afterModel: [] } }),
     putTaskCi: async (_pid, _tid, config) => config,
-    startRun: async (projectId, taskId) => { const run = mkRun(projectId, taskId); runs.set(run.id, { run, steps: [], fixAttempts: [] }); logs.set(run.id, []); return { ...run } },
-    getRun: async (rid) => runs.get(rid) ?? { run: mkRun('p', 't'), steps: [], fixAttempts: [] },
+    startRun: async (projectId, taskId, mode) => { const run = { ...mkRun(projectId, taskId), mode: mode ?? projectLlm.mode }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
+    getRun: async (rid) => runs.get(rid) ?? { run: mkRun('p', 't'), steps: [], fixAttempts: [], interactions: [] },
     getRunLog: async (rid) => logs.get(rid) ?? [],
+    // Телеметрия БЗ в фейке пустая: её наполняют только реальные ходы модели.
+    getRunKbUsage: async (rid) => ({
+      runId: rid,
+      projectId: runs.get(rid)?.run.projectId ?? 'p1',
+      taskId: runs.get(rid)?.run.taskId ?? 't1',
+      kbContextMode: 'auto' as const,
+      conversationId: null,
+      totals: EMPTY_KB_TOTALS,
+      sections: [],
+      recent: []
+    }),
+    getTaskKbUsage: async (projectId, taskId) => ({
+      projectId,
+      taskId,
+      runs: 0,
+      totals: EMPTY_KB_TOTALS,
+      sections: [],
+      recent: []
+    }),
+    // Расхода у фейка тоже нет — ходов модели он не делает; шаги и время берём
+    // из его же ленты, чтобы отчёт было на чём открыть.
+    getRunReport: async (rid) => runReport(rid),
+    getTaskReport: async (projectId, taskId) => {
+      const list = [...runs.values()].filter((d) => d.run.taskId === taskId).map((d) => runReport(d.run.id))
+      return { projectId, taskId, runs: list, ...ciTaskTotals(list) } as CiTaskReport
+    },
     cancelRun: async () => ({ ok: true }),
     retryRun: async (rid) => { const d = runs.get(rid)!; return await bridge.startRun(d.run.projectId, d.run.taskId) },
     retryRunFromStep: async (runId: string) => ({ id: runId } as unknown as CiRun),
     discardChangesAndRetry: async (runId: string) => ({ id: runId } as unknown as CiRun),
     getMetrics: async () => ({ commands: [], modelWork: { projectId: 'p', avgMs: null, samples: 0 } }),
     consoleExec: async () => ({ output: '', exitCode: 0, rejected: false, message: '' }),
+    answerInteraction: async (runId, interactionId, answer) => {
+      const list = interactions.get(runId) ?? []
+      const it = list.find((x) => x.id === interactionId)!
+      const next: CiInteraction = { ...it, status: 'answered', answerText: answer.text ?? null, decision: answer.decision ?? null, answeredAt: now(), answeredBy: 'admin' }
+      interactions.set(runId, list.map((x) => (x.id === interactionId ? next : x)))
+      const d = runs.get(runId)
+      if (d) d.interactions = interactions.get(runId) ?? []
+      emit('ci.interaction', { runId, interaction: next })
+      return next
+    },
     subscribe: (runId) => { const d = runs.get(runId); if (d) emit('ci.snapshot', { runId, detail: d, log: logs.get(runId) ?? [] }) },
     unsubscribe: () => {},
     onSnapshot: (cb) => on('ci.snapshot', cb as L),
@@ -682,10 +890,21 @@ export function createFakeCi(): FakeCi {
     onFix: (cb) => on('ci.fix', cb as L),
     onDone: (cb) => on('ci.done', cb as L),
     onSummary: (cb) => on('ci.summary', cb as L),
-    _emitRun: (run) => { runs.set(run.id, runs.get(run.id) ?? { run, steps: [], fixAttempts: [] }); emit('ci.run', { runId: run.id, run }) },
+    onInteraction: (cb) => on('ci.interaction', cb as L),
+    onChatMessage: (cb) => on('chat.message', cb as L),
+    _emitRun: (run) => { runs.set(run.id, runs.get(run.id) ?? { run, steps: [], fixAttempts: [], interactions: [] }); emit('ci.run', { runId: run.id, run }) },
     _emitStep: (runId, step) => { const d = runs.get(runId); if (d) d.steps.push(step); emit('ci.step', { runId, step }) },
     _emitLog: (runId, line) => { const l = logs.get(runId) ?? []; l.push(line); logs.set(runId, l); emit('ci.log', { runId, line }) },
     _emitDone: (run) => emit('ci.done', { runId: run.id, run }),
+    _emitInteraction: (runId, interaction) => {
+      const list = interactions.get(runId) ?? []
+      list.push(interaction)
+      interactions.set(runId, list)
+      const d = runs.get(runId)
+      if (d) d.interactions = list
+      emit('ci.interaction', { runId, interaction })
+    },
+    _emitChatMessage: (conversationId, message) => emit('chat.message', { conversationId, message }),
     _commands: commands
   }
   return bridge

@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentInfo, FsEntry } from '@shared/agentProtocol'
 import type { MachineOps, UtilityVariant } from './machine'
+import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
+import { Skeleton, RefreshIndicator } from './ui/Skeleton'
+import { EmptyState } from './ui/EmptyState'
+import { ErrorState } from './ui/ErrorState'
+import { loadView, type LoadStatus } from '../lib/loadState'
 import { ToolFrame } from './ToolFrame'
 
 export interface FileExplorerProps {
@@ -51,15 +57,19 @@ export function FileExplorer({
   const [root, setRoot] = useState('')
   const [entries, setEntries] = useState<FsEntry[]>([])
   const [error, setError] = useState<string | null>(null)
+  // Состояние чтения каталога: скелетон только пока строк нет (см. lib/loadState.ts).
+  const [status, setStatus] = useState<LoadStatus>('loading')
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [selectedName, setSelectedName] = useState(() => initialFilePath ? nameOf(initialFilePath) : '')
   const selectedRow = useRef<HTMLDivElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const writable = agents.find((a) => a.id === agentId)?.policy.allowWrite ?? false
+  const view = loadView(status, entries.length > 0)
 
   const load = async (path: string): Promise<void> => {
     if (!agentId) return
+    setStatus('loading')
     try {
       const res = await ops.list(agentId, path)
       setRoot(res.root)
@@ -67,8 +77,10 @@ export function FileExplorer({
       setAddress(res.cwd)
       setEntries(res.entries ?? [])
       setError(null)
+      setStatus('ready')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+      setStatus('error')
     }
   }
 
@@ -90,6 +102,7 @@ export function FileExplorer({
       await load(cwd) // всегда перечитываем текущий каталог
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+      setStatus('error')
     }
   }
 
@@ -127,9 +140,9 @@ export function FileExplorer({
             ))}
           </select>
         )}
-        <button className="fsbtn" title="Вверх" disabled={!agentId} onClick={() => void load(parentOf(cwd))}>
+        <IconButton size="sm" title="Вверх" aria-label="На уровень выше" disabled={!agentId} onClick={() => void load(parentOf(cwd))}>
           ⬆
-        </button>
+        </IconButton>
         <form
           className="fspath-form"
           onSubmit={(e) => {
@@ -148,18 +161,18 @@ export function FileExplorer({
           />
         </form>
         {onOpenTerminal && agentId && cwd && (
-          <button className="fsbtn" title="Открыть терминал в этой папке" onClick={() => onOpenTerminal(agentId, cwd)}>
+          <Button size="sm" title="Открыть терминал в этой папке" onClick={() => onOpenTerminal(agentId, cwd)}>
             &gt;_ Терминал
-          </button>
+          </Button>
         )}
         {writable && (
           <>
-            <button className="fsbtn" disabled={!agentId} onClick={doMkdir}>
+            <Button size="sm" disabled={!agentId} onClick={doMkdir}>
               ＋ Папка
-            </button>
-            <button className="fsbtn" disabled={!agentId} onClick={() => fileInput.current?.click()}>
+            </Button>
+            <Button size="sm" disabled={!agentId} onClick={() => fileInput.current?.click()}>
               ⬆ Загрузить
-            </button>
+            </Button>
             <input
               ref={fileInput}
               type="file"
@@ -174,14 +187,48 @@ export function FileExplorer({
           </>
         )}
       </div>
-      {error && (
-        <p className="fserror" role="alert">
-          {error}
-        </p>
+      {view.staleError && (
+        <ErrorState
+          compact
+          className="fserror"
+          message="Последнее действие не удалось"
+          detail={error}
+          onRetry={() => void load(cwd)}
+        />
       )}
       <div className="fslist" data-testid="fs-list">
-        {agents.length === 0 && <p className="cc-empty">Нет машин. Добавьте машину в настройках.</p>}
-        {agentId && entries.length === 0 && !error && <p className="cc-empty">Пусто</p>}
+        {agents.length === 0 && (
+          <EmptyState
+            icon="💻"
+            title="Нет машин — добавьте первую"
+            description="Машина подключается в настройках: там выдаётся команда установки агента."
+          />
+        )}
+        {agentId && view.state === 'skeleton' && (
+          <div className="fsskel" aria-busy="true">
+            {/* Высота косточки — высота .fsrow, иначе список подпрыгивает. */}
+            <Skeleton variant="list" item="block" count={8} height={30} gap={4} testId="fs-skeleton" />
+          </div>
+        )}
+        {agentId && view.state === 'error' && (
+          <ErrorState
+            message="Не удалось прочитать папку"
+            detail={error}
+            onRetry={() => void load(address.trim() || cwd)}
+          />
+        )}
+        {agentId && view.state === 'empty' && (
+          <EmptyState
+            icon="📁"
+            title="Папка пуста"
+            description={writable ? 'Создайте папку или загрузите файл кнопками выше.' : 'Ни файлов, ни папок — поднимитесь на уровень выше кнопкой ⬆.'}
+          />
+        )}
+        {view.refreshing && (
+          <p className="fsrefresh">
+            <RefreshIndicator label="Читаем папку…" />
+          </p>
+        )}
         {entries.map((entry) => {
           const abs = joinPath(cwd, entry.name)
           return (
@@ -202,39 +249,41 @@ export function FileExplorer({
               <span className="fssize">{entry.kind === 'file' ? fmtSize(entry.size) : ''}</span>
               <span className="fsrow-actions">
                 {entry.kind === 'file' && (
-                  <button
-                    className="msgbtn"
+                  <IconButton
+                    size="sm"
                     title="Скачать"
+                    aria-label={`Скачать ${entry.name}`}
                     onClick={() => agentId && void ops.download(agentId, abs, entry.name)}
                   >
                     ⬇
-                  </button>
+                  </IconButton>
                 )}
                 {writable && (
-                  <button className="msgbtn" title="Переименовать" onClick={() => doRename(entry)}>
+                  <IconButton size="sm" title="Переименовать" aria-label={`Переименовать ${entry.name}`} onClick={() => doRename(entry)}>
                     ✎
-                  </button>
+                  </IconButton>
                 )}
                 {writable &&
                   (confirmDel === abs ? (
                     <>
-                      <button
-                        className="delyes"
+                      <Button
+                        variant="danger"
+                        size="sm"
                         onClick={() => {
                           setConfirmDel(null)
                           if (agentId) void run(ops.remove(agentId, abs))
                         }}
                       >
                         Удалить
-                      </button>
-                      <button className="delno" onClick={() => setConfirmDel(null)}>
+                      </Button>
+                      <Button size="sm" onClick={() => setConfirmDel(null)}>
                         Отмена
-                      </button>
+                      </Button>
                     </>
                   ) : (
-                    <button className="msgbtn" title="Удалить" onClick={() => setConfirmDel(abs)}>
+                    <IconButton size="sm" title="Удалить" aria-label={`Удалить ${entry.name}`} onClick={() => setConfirmDel(abs)}>
                       🗑
-                    </button>
+                    </IconButton>
                   ))}
               </span>
             </div>
