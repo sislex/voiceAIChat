@@ -109,7 +109,9 @@ import {
   CI_TOOL_KINDS,
   EMPTY_CI_TOOL_CALLS,
   ciTaskTotals,
+  ciUsageStages,
   ciUsageTotals,
+  normCiStageModels,
   isVerificationCommand
 } from '@voicechat/shared'
 import { hashPassword, verifyPassword } from '../users/passwords.js'
@@ -344,6 +346,17 @@ function parseStringArray(raw: string | null): string[] {
     return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
   } catch {
     return []
+  }
+}
+
+/** Разбор JSON-объекта из колонки; битое или пустое значение — `null`. */
+function parseJsonObject(raw: unknown): Record<string, unknown> | null {
+  if (typeof raw !== 'string' || !raw.trim()) return null
+  try {
+    const v = JSON.parse(raw) as unknown
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+  } catch {
+    return null
   }
 }
 
@@ -695,6 +708,10 @@ export class VoiceChatDb {
     if (ciUsageCols.length && !ciUsageCols.some((c) => c.name === 'input_semantics')) this.db.exec(`ALTER TABLE ci_run_usage ADD COLUMN input_semantics TEXT`)
     const ciSettingsCols = this.db.prepare(`PRAGMA table_info(ci_settings)`).all() as Array<{ name: string }>
     if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === 'interaction_wait_ms')) this.db.exec(`ALTER TABLE ci_settings ADD COLUMN interaction_wait_ms INTEGER NOT NULL DEFAULT 1800000`)
+    // Модель по стадии рана. Старая строка настроек остаётся с NULL и читается
+    // как дефолт кода: обновление само переводит вспомогательные стадии на
+    // дешёвую модель, иначе фича включалась бы только руками.
+    if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === 'stage_models')) this.db.exec(`ALTER TABLE ci_settings ADD COLUMN stage_models TEXT`)
 
     // Привязка обращения к БЗ к рану и шагу CI: отчёты по ране/задаче строятся
     // по ним, а старые строки просто остаются с NULL (это обращения из чата).
@@ -2681,24 +2698,28 @@ export class VoiceChatDb {
   // --- Глобальные настройки CI ---
 
   getCiSettings(): CiGlobalSettings {
-    const r = this.db.prepare(`SELECT * FROM ci_settings WHERE id = 1`).get() as Record<string, number> | undefined
+    const r = this.db.prepare(`SELECT * FROM ci_settings WHERE id = 1`).get() as Record<string, number | string | null> | undefined
     if (!r) {
       const d = DEFAULT_CI_GLOBAL_SETTINGS
-      this.db.prepare(`INSERT INTO ci_settings (id, max_fix_attempts, fix_time_limit_ms, fix_token_limit, default_step_timeout_sec, metrics_window, max_concurrent_runs, max_model_command_calls, interaction_wait_ms) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.maxFixAttempts, d.fixTimeLimitMs, d.fixTokenLimit, d.defaultStepTimeoutSec, d.metricsWindow, d.maxConcurrentRuns, d.maxModelCommandCalls, d.interactionWaitMs)
-      return { ...d }
+      this.db.prepare(`INSERT INTO ci_settings (id, max_fix_attempts, fix_time_limit_ms, fix_token_limit, default_step_timeout_sec, metrics_window, max_concurrent_runs, max_model_command_calls, interaction_wait_ms, stage_models) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.maxFixAttempts, d.fixTimeLimitMs, d.fixTokenLimit, d.defaultStepTimeoutSec, d.metricsWindow, d.maxConcurrentRuns, d.maxModelCommandCalls, d.interactionWaitMs, JSON.stringify(d.stageModels))
+      return { ...d, stageModels: { ...d.stageModels } }
     }
     return {
-      maxFixAttempts: r.max_fix_attempts, fixTimeLimitMs: r.fix_time_limit_ms, fixTokenLimit: r.fix_token_limit,
-      defaultStepTimeoutSec: r.default_step_timeout_sec, metricsWindow: r.metrics_window,
-      maxConcurrentRuns: r.max_concurrent_runs, maxModelCommandCalls: r.max_model_command_calls,
-      interactionWaitMs: r.interaction_wait_ms ?? DEFAULT_CI_GLOBAL_SETTINGS.interactionWaitMs
+      maxFixAttempts: r.max_fix_attempts as number, fixTimeLimitMs: r.fix_time_limit_ms as number, fixTokenLimit: r.fix_token_limit as number,
+      defaultStepTimeoutSec: r.default_step_timeout_sec as number, metricsWindow: r.metrics_window as number,
+      maxConcurrentRuns: r.max_concurrent_runs as number, maxModelCommandCalls: r.max_model_command_calls as number,
+      interactionWaitMs: (r.interaction_wait_ms as number) ?? DEFAULT_CI_GLOBAL_SETTINGS.interactionWaitMs,
+      // Строка настроек, заведённая до фичи: колонки нет или она пуста — дефолты
+      // кода. Разбор битого JSON тоже уводит в них: настройка не должна мешать
+      // читать все остальные лимиты.
+      stageModels: normCiStageModels(parseJsonObject(r.stage_models))
     }
   }
 
   updateCiSettings(patch: Partial<CiGlobalSettings>): CiGlobalSettings {
     const cur = this.getCiSettings()
-    const next = { ...cur, ...patch }
-    this.db.prepare(`UPDATE ci_settings SET max_fix_attempts=?, fix_time_limit_ms=?, fix_token_limit=?, default_step_timeout_sec=?, metrics_window=?, max_concurrent_runs=?, max_model_command_calls=?, interaction_wait_ms=? WHERE id=1`).run(next.maxFixAttempts, next.fixTimeLimitMs, next.fixTokenLimit, next.defaultStepTimeoutSec, next.metricsWindow, next.maxConcurrentRuns, next.maxModelCommandCalls, next.interactionWaitMs)
+    const next = { ...cur, ...patch, stageModels: patch.stageModels ? normCiStageModels(patch.stageModels) : cur.stageModels }
+    this.db.prepare(`UPDATE ci_settings SET max_fix_attempts=?, fix_time_limit_ms=?, fix_token_limit=?, default_step_timeout_sec=?, metrics_window=?, max_concurrent_runs=?, max_model_command_calls=?, interaction_wait_ms=?, stage_models=? WHERE id=1`).run(next.maxFixAttempts, next.fixTimeLimitMs, next.fixTokenLimit, next.defaultStepTimeoutSec, next.metricsWindow, next.maxConcurrentRuns, next.maxModelCommandCalls, next.interactionWaitMs, JSON.stringify(next.stageModels))
     return next
   }
 
@@ -3024,7 +3045,7 @@ export class VoiceChatDb {
       runId: run.id, projectId: run.projectId, taskId: run.taskId, status: run.status, mode: run.mode,
       provider: run.llmProvider, model: run.llmModel, startedAt: run.startedAt, finishedAt: run.finishedAt,
       durationMs: run.durationMs, createdAt: run.createdAt, fixAttempts,
-      totals: ciUsageTotals(usage), steps, kbHit: this.ciKbHit(run.id),
+      totals: ciUsageTotals(usage), stages: ciUsageStages(usage), steps, kbHit: this.ciKbHit(run.id),
       toolCalls: this.ciRunToolCalls(run.id)
     }
   }

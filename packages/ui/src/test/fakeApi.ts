@@ -810,6 +810,9 @@ export function createFakeCi(): FakeCi {
       // (null, а не нули: так же выглядит ран, сделанный до появления счётчика).
       toolCalls: null,
       totals: { ...EMPTY_CI_USAGE_TOTALS },
+      // Стадий тоже нет: они считаются по строкам расхода, а ходов модели у
+      // фейка не бывает.
+      stages: [],
       steps: (d?.steps ?? []).map((s) => ({
         id: s.id, parentStepId: s.parentStepId, title: s.title, slot: s.slot, kind: s.kind,
         initiatedBy: s.initiatedBy, status: s.status, attempt: s.attempt, fixedByModel: s.fixedByModel,

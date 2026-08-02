@@ -74,6 +74,22 @@ describe('CiCommands', () => {
     expect(await screen.findByText('Команда удалена')).toBeInTheDocument()
   })
 
+  it('модель по стадии: дефолт дешёвый, выбор уезжает в настройки', async () => {
+    const p = props()
+    render(<CiCommands {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: /Глобальные настройки CI/ }))
+    // Разработка идёт на модели рана, вспомогательные стадии — на дешёвой.
+    expect(screen.getByTestId('ci-stage-model-model_work')).toHaveValue('')
+    expect(screen.getByTestId('ci-stage-model-kb_update')).toHaveValue('sonnet')
+    expect(screen.getByTestId('ci-stage-model-summary')).toHaveValue('haiku')
+    fireEvent.change(screen.getByTestId('ci-stage-model-kb_update'), { target: { value: 'haiku' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить настройки' }))
+    await waitFor(() => expect(p.onSaveSettings).toHaveBeenCalledTimes(1))
+    expect((p.onSaveSettings as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({
+      stageModels: { model_work: '', fix: '', kb_update: 'haiku', summary: 'haiku' }
+    })
+  })
+
   it('глобальные настройки только для чтения у обычного пользователя', () => {
     render(<CiCommands {...props({ role: 'user' })} />)
     fireEvent.click(screen.getByRole('button', { name: /Глобальные настройки CI/ }))

@@ -199,6 +199,24 @@ describe('GET /api/ci/runs/:runId/report', () => {
     expect(report.totals.costUsd).toBeCloseTo(6, 6)
   })
 
+  // Модель у стадий разная (разработка — на модели рана, резюме — на дешёвой),
+  // и по одной сумме за ран уже не понять, кто сколько съел.
+  it('разбивает расход по стадиям и моделям, которыми они считались', async () => {
+    // CLI модель не назвал (штатное поведение codex) — в расход идёт та, которой
+    // ход РЕАЛЬНО запускали: у резюме это дешёвая модель стадии.
+    turnMeta = { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheCreationTokens: 0, durationMs: 2000 }
+    const { project, task } = setup()
+    const runId = await runTask(project.id, task.id)
+
+    const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
+    expect(report.stages.map((s) => [s.kind, s.model, s.totals.requests])).toEqual([
+      ['model_work', 'opus', 1],
+      ['summary', 'haiku', 1]
+    ])
+    // Сумма стадий — тот же итог рана: разбивка ничего не теряет и не двоит.
+    expect(report.stages.reduce((acc, s) => acc + s.totals.tokens, 0)).toBe(report.totals.tokens)
+  })
+
   it('показывает вызовы инструментов рана с разбивкой по видам', async () => {
     turnTools = ['mcp__remote__read', 'mcp__remote__read', 'mcp__remote__grep', 'mcp__remote__edit', 'mcp__remote__bash', 'mcp__kb__search']
     const { project, task } = setup()

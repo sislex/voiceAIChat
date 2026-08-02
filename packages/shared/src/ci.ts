@@ -4,6 +4,7 @@
 
 import type { QuestionSpec } from './questions'
 import type { KbContextMode } from './types'
+import { CLAUDE_MODELS, CODEX_MODELS } from './types'
 import { estimateCostUsd } from './pricing'
 
 // --- Справочник команд ---------------------------------------------------
@@ -171,6 +172,75 @@ export function clarifyBudget(c: Pick<CiLlmConfig, 'clarifyLevel' | 'clarifyMax'
   }
 }
 
+// --- Модель по стадии рана -------------------------------------------------
+
+/**
+ * Модель на стадию рана. Ключ — тот же `CiUsageKind`, которым помечается строка
+ * расхода, поэтому настройка и отчёт говорят об одном и том же: чем стадию
+ * назначили считать, тем в отчёте она и посчитана. Пустая строка — «модель
+ * рана».
+ */
+export type CiStageModels = Record<CiUsageKind, string>
+
+/**
+ * Дефолт: вспомогательные стадии — на дешёвой модели, разработка и fix-loop — на
+ * модели рана. Сверка дифа с текстом статей и пересказ шагов — работа не того
+ * класса, что разработка: по факту CHAT-70 актуализация базы знаний забирала 14%
+ * цены рана ($2.75) и 7 минут, резюме — ещё $0.11. Экономить на самой разработке
+ * нельзя: там она означает худший код, а он дороже сэкономленного.
+ */
+export const DEFAULT_CI_STAGE_MODELS: CiStageModels = {
+  model_work: '',
+  fix: '',
+  kb_update: 'sonnet',
+  summary: 'haiku'
+}
+
+/**
+ * Известен ли алиас модели движку. Реестр исполнителей моделей не перечисляет,
+ * поэтому единственная доступная проверка — знает ли такой алиас сам CLI: у
+ * claude это `default`/`opus`/`fable`/`sonnet`/`haiku` (с необязательным
+ * префиксом `claude-` и суффиксом окна `[1m]`), у codex — список его моделей.
+ * Неизвестная модель стадии не должна ронять ран — вызов откатится на модель
+ * рана (`resolveCiStageModel`).
+ */
+export function ciModelKnown(provider: CiLlmProvider, model: string): boolean {
+  const raw = model.trim()
+  if (!raw) return false
+  if (provider === 'codex') return CODEX_MODELS.some((m) => m.id === raw)
+  const alias = raw.replace(/^claude-/, '').replace(/\[1m\]$/, '')
+  return CLAUDE_MODELS.some((m) => m.id.replace(/\[1m\]$/, '') === alias)
+}
+
+/**
+ * Какой моделью считать стадию. Пусто, «то же, что у рана» или модель, которой у
+ * движка рана нет (claude-алиас в codex-ране, опечатка в настройке) — берётся
+ * модель рана: стадия обязана выполниться, пусть и дороже.
+ */
+export function resolveCiStageModel(
+  stage: CiUsageKind,
+  stageModels: Partial<CiStageModels> | null | undefined,
+  run: { llmProvider: CiLlmProvider; llmModel: string }
+): string {
+  // У codex пустая модель штатна (он берёт её из своего config.toml), у claude
+  // пустое поле означает дефолт CI — так же, как при старте рана.
+  const runModel = run.llmProvider === 'codex' ? run.llmModel : run.llmModel || DEFAULT_CI_CLAUDE_MODEL
+  const wanted = (stageModels?.[stage] ?? '').trim()
+  if (!wanted || wanted === runModel) return runModel
+  return ciModelKnown(run.llmProvider, wanted) ? wanted : runModel
+}
+
+/** Настройка стадий из БД/тела запроса: чужие ключи прочь, значения — строки. */
+export function normCiStageModels(raw: unknown): CiStageModels {
+  const src = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const out: CiStageModels = { ...DEFAULT_CI_STAGE_MODELS }
+  for (const kind of CI_USAGE_KINDS) {
+    if (!(kind in src)) continue
+    out[kind] = typeof src[kind] === 'string' ? (src[kind] as string).trim() : ''
+  }
+  return out
+}
+
 // --- Глобальные настройки CI ---------------------------------------------
 
 export interface CiGlobalSettings {
@@ -190,6 +260,8 @@ export interface CiGlobalSettings {
   maxModelCommandCalls: number
   /** Сколько ждать ответа пользователя на вопрос/одобрение, мс (0 — без лимита). */
   interactionWaitMs: number
+  /** Модель на стадию рана; пустое значение стадии — модель рана. */
+  stageModels: CiStageModels
 }
 
 export const DEFAULT_CI_GLOBAL_SETTINGS: CiGlobalSettings = {
@@ -200,7 +272,8 @@ export const DEFAULT_CI_GLOBAL_SETTINGS: CiGlobalSettings = {
   metricsWindow: 20,
   maxConcurrentRuns: 2,
   maxModelCommandCalls: 20,
-  interactionWaitMs: 30 * 60 * 1000
+  interactionWaitMs: 30 * 60 * 1000,
+  stageModels: DEFAULT_CI_STAGE_MODELS
 }
 
 /** Стратегия повторного запуска при существующей рабочей директории. */
@@ -587,6 +660,14 @@ export type CiUsageKind = 'model_work' | 'summary' | 'fix' | 'kb_update'
 
 export const CI_USAGE_KINDS: CiUsageKind[] = ['model_work', 'summary', 'fix', 'kb_update']
 
+/** Подписи стадий: одни и те же в настройках моделей и в отчёте по рану. */
+export const CI_USAGE_KIND_LABELS: Record<CiUsageKind, string> = {
+  model_work: 'Работа модели',
+  summary: 'Резюме',
+  fix: 'Правки после падения',
+  kb_update: 'Актуализация базы знаний'
+}
+
 /**
  * Что означает `inputTokens` строки расхода. `no_cache` — «вход без кэша»: то,
  * что оплачивается по полной цене входа (у claude так всегда, у codex — после
@@ -714,6 +795,35 @@ export function ciUsageTotals(rows: CiRunUsage[]): CiUsageTotals {
   t.tokens = t.inputTokens + t.outputTokens + t.cacheReadTokens + t.cacheCreationTokens
   t.costUsd = cost
   return t
+}
+
+/** Расход одной стадии рана, посчитанной одной моделью. */
+export interface CiUsageStage {
+  kind: CiUsageKind
+  /** Модель ходов; у стадии их бывает несколько (смена настройки, повтор рана). */
+  model: string
+  totals: CiUsageTotals
+}
+
+/**
+ * Разбивка расхода по стадиям и моделям. Смысл — увидеть, чем считалась каждая
+ * стадия и во что она обошлась: с моделью по стадии «$16 за ран» без разбивки
+ * больше ничего не объясняет. Группировка по паре (стадия, модель), а не по
+ * стадии: одна и та же стадия в разных ранах и после смены настройки идёт на
+ * разных моделях, и складывать их в одну цену нельзя. Порядок — как в
+ * `CI_USAGE_KINDS`, внутри стадии — по первому появлению.
+ */
+export function ciUsageStages(rows: CiRunUsage[]): CiUsageStage[] {
+  const groups = new Map<string, { kind: CiUsageKind; model: string; rows: CiRunUsage[] }>()
+  for (const r of rows) {
+    const key = `${r.kind} ${r.model}`
+    const g = groups.get(key) ?? { kind: r.kind, model: r.model, rows: [] }
+    g.rows.push(r)
+    groups.set(key, g)
+  }
+  return [...groups.values()]
+    .sort((a, b) => CI_USAGE_KINDS.indexOf(a.kind) - CI_USAGE_KINDS.indexOf(b.kind))
+    .map((g) => ({ kind: g.kind, model: g.model, totals: ciUsageTotals(g.rows) }))
 }
 
 /** Сложить готовые итоги (шаги рана, раны задачи). */
@@ -881,6 +991,8 @@ export interface CiRunReport {
   /** Сколько раз модель бралась чинить упавшие шаги. */
   fixAttempts: number
   totals: CiUsageTotals
+  /** Расход по стадиям рана и моделям, которыми они считались. */
+  stages: CiUsageStage[]
   steps: CiRunReportStep[]
   /** null — БЗ ничего не выдала либо метрика для старого/незавершённого рана не считалась. */
   kbHit: CiKbHitMetric | null

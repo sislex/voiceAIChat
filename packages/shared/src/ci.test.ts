@@ -13,9 +13,15 @@ import {
   isActiveCiStatus,
   isTerminalCiStatus,
   isVerificationCommand,
+  ciModelKnown,
   ciTaskTotals,
+  ciUsageStages,
   ciUsageTotals,
   ciUsageInputTokens,
+  normCiStageModels,
+  resolveCiStageModel,
+  DEFAULT_CI_GLOBAL_SETTINGS,
+  DEFAULT_CI_STAGE_MODELS,
   sumCiUsageTotals,
   classifyCiToolCall,
   countCiToolCalls,
@@ -251,6 +257,85 @@ describe('ciUsageTotals', () => {
   })
 })
 
+// Модель по стадии рана: вспомогательные стадии не обязаны идти на модели
+// разработки, но и уронить ран настройка не имеет права.
+describe('resolveCiStageModel', () => {
+  const run = { llmProvider: 'claude' as const, llmModel: 'opus' }
+
+  it('дефолт: разработка и правки — на модели рана, база знаний и резюме — дешевле', () => {
+    expect(DEFAULT_CI_STAGE_MODELS.model_work).toBe('')
+    expect(DEFAULT_CI_STAGE_MODELS.fix).toBe('')
+    expect(resolveCiStageModel('model_work', DEFAULT_CI_STAGE_MODELS, run)).toBe('opus')
+    expect(resolveCiStageModel('fix', DEFAULT_CI_STAGE_MODELS, run)).toBe('opus')
+    expect(resolveCiStageModel('kb_update', DEFAULT_CI_STAGE_MODELS, run)).toBe('sonnet')
+    expect(resolveCiStageModel('summary', DEFAULT_CI_STAGE_MODELS, run)).toBe('haiku')
+    expect(DEFAULT_CI_GLOBAL_SETTINGS.stageModels).toEqual(DEFAULT_CI_STAGE_MODELS)
+  })
+
+  it('без настройки стадии берётся модель рана, у claude пустая — дефолт CI', () => {
+    expect(resolveCiStageModel('kb_update', null, run)).toBe('opus')
+    expect(resolveCiStageModel('kb_update', {}, { llmProvider: 'claude', llmModel: '' })).toBe(DEFAULT_CI_CLAUDE_MODEL)
+    // У codex пустая модель штатна: он берёт её из своего config.toml.
+    expect(resolveCiStageModel('kb_update', {}, { llmProvider: 'codex', llmModel: '' })).toBe('')
+  })
+
+  it('модель, которой у движка рана нет, откатывается на модель рана', () => {
+    // claude-алиас в codex-ране и наоборот: исполнитель такую модель не запустит.
+    expect(resolveCiStageModel('kb_update', { kb_update: 'sonnet' }, { llmProvider: 'codex', llmModel: 'gpt-5.4' })).toBe('gpt-5.4')
+    expect(resolveCiStageModel('kb_update', { kb_update: 'gpt-5.4' }, run)).toBe('opus')
+    expect(resolveCiStageModel('summary', { summary: 'сонет' }, run)).toBe('opus')
+  })
+
+  it('алиасы claude узнаются с префиксом и суффиксом окна', () => {
+    expect(ciModelKnown('claude', 'opus')).toBe(true)
+    expect(ciModelKnown('claude', 'opus[1m]')).toBe(true)
+    expect(ciModelKnown('claude', 'claude-haiku')).toBe(true)
+    expect(ciModelKnown('claude', 'gpt-5.4')).toBe(false)
+    expect(ciModelKnown('claude', '')).toBe(false)
+    expect(ciModelKnown('codex', 'gpt-5.4')).toBe(true)
+  })
+
+  it('настройка чистится: чужие ключи прочь, не-строка — «модель рана»', () => {
+    const norm = normCiStageModels({ kb_update: ' haiku ', summary: 7, чужое: 'x' })
+    expect(norm).toEqual({ ...DEFAULT_CI_STAGE_MODELS, kb_update: 'haiku', summary: '' })
+    expect(normCiStageModels(null)).toEqual(DEFAULT_CI_STAGE_MODELS)
+    expect(normCiStageModels('строка')).toEqual(DEFAULT_CI_STAGE_MODELS)
+  })
+})
+
+describe('ciUsageStages', () => {
+  const row = (over: Partial<CiRunUsage> = {}): CiRunUsage => ({
+    id: 'u1', runId: 'r1', stepId: 's1', kind: 'model_work', provider: 'claude', model: 'opus',
+    inputTokens: 0, outputTokens: 100, cacheReadTokens: 0, cacheCreationTokens: 0,
+    inputSemantics: 'no_cache', costUsd: 1, durationMs: 1000, numTurns: 1, at: 1, ...over
+  })
+
+  it('разбивает расход по стадии и модели в порядке стадий', () => {
+    const stages = ciUsageStages([
+      row(),
+      row({ id: 'u2', kind: 'kb_update', model: 'sonnet', costUsd: 0.1, durationMs: 500 }),
+      row({ id: 'u3', costUsd: 2 }),
+      row({ id: 'u4', kind: 'summary', model: 'haiku', costUsd: 0.01 })
+    ])
+    expect(stages.map((s) => [s.kind, s.model])).toEqual([
+      ['model_work', 'opus'], ['summary', 'haiku'], ['kb_update', 'sonnet']
+    ])
+    expect(stages[0].totals.requests).toBe(2)
+    expect(stages[0].totals.costUsd).toBe(3)
+    expect(stages[2].totals.modelActiveMs).toBe(500)
+  })
+
+  it('одна стадия на двух моделях — две строки: цену от разных моделей не смешиваем', () => {
+    const stages = ciUsageStages([row({ kind: 'kb_update', model: 'sonnet' }), row({ id: 'u2', kind: 'kb_update', model: 'opus' })])
+    expect(stages).toHaveLength(2)
+    expect(stages.map((s) => s.model)).toEqual(['sonnet', 'opus'])
+  })
+
+  it('расхода нет — стадий нет (ран до фичи)', () => {
+    expect(ciUsageStages([])).toEqual([])
+  })
+})
+
 // Вызовы инструментов: имя приходит от CLI в трёх разных видах, а вид
 // инструмента должен получаться один и тот же — иначе разбивка по движкам
 // несравнима, а гипотезу «читаем read, а не cat в bash» не проверить.
@@ -335,7 +420,7 @@ describe('sumCiUsageTotals и ciTaskTotals', () => {
     const run = (over: Partial<CiRunReport> = {}): CiRunReport => ({
       runId: 'r1', projectId: 'p1', taskId: 't1', status: 'success', mode: 'development',
       provider: 'claude', model: 'opus', startedAt: 1, finishedAt: 2, durationMs: 5000, createdAt: 1,
-      fixAttempts: 0, kbHit: null, toolCalls: null, totals: totals(), steps: [], ...over
+      fixAttempts: 0, kbHit: null, toolCalls: null, totals: totals(), stages: [], steps: [], ...over
     })
     const r = ciTaskTotals([run(), run({ runId: 'r2', durationMs: null, totals: { ...EMPTY_CI_USAGE_TOTALS } })])
     expect(r.durationMs).toBe(5000)
@@ -349,7 +434,7 @@ describe('sumCiUsageTotals и ciTaskTotals', () => {
     const run = (over: Partial<CiRunReport> = {}): CiRunReport => ({
       runId: 'r1', projectId: 'p1', taskId: 't1', status: 'success', mode: 'development',
       provider: 'codex', model: 'gpt-5.4', startedAt: 1, finishedAt: 2, durationMs: 1000, createdAt: 1,
-      fixAttempts: 0, kbHit: null, toolCalls: null, totals: totals(), steps: [], ...over
+      fixAttempts: 0, kbHit: null, toolCalls: null, totals: totals(), stages: [], steps: [], ...over
     })
     const r = ciTaskTotals([
       run({ toolCalls: { ...EMPTY_CI_TOOL_CALLS, read: 10, bash: 4 } }),

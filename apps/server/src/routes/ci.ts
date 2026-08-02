@@ -4,7 +4,7 @@
 // команды и глобальные настройки — глобальный admin; запуск — любой участник проекта.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import type { CiCommandInput, CiLlmConfig, CiSlot, CiRunMode, CiPlanDecision } from '@voicechat/shared'
+import type { CiCommandInput, CiGlobalSettings, CiLlmConfig, CiSlot, CiRunMode, CiPlanDecision } from '@voicechat/shared'
 import { DEFAULT_CI_LLM_CONFIG } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CiRunManager } from '../ci/runManager.js'
@@ -64,7 +64,9 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   app.get('/api/ci/settings', async () => db.getCiSettings())
   app.put('/api/ci/settings', async (req, reply) => {
     if (!isAdmin(req)) return forbid(reply)
-    return db.updateCiSettings((req.body ?? {}) as Record<string, number>)
+    // Настройка стадий приходит объектом и чистится в `updateCiSettings`
+    // (`normCiStageModels`): чужие ключи и не-строки в БД не попадают.
+    return db.updateCiSettings((req.body ?? {}) as Partial<CiGlobalSettings>)
   })
 
   // --- Слот-конфиг проекта (дефолты) ---

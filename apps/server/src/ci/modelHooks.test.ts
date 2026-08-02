@@ -10,7 +10,7 @@ import { EMPTY_CI_TOOL_CALLS } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
 import { createCiModelHooks } from './modelHooks.js'
 import { kbTaskQuery } from '../kb/taskQuery.js'
-import type { CiFixContext, CiModelContext } from './types.js'
+import type { CiFixContext, CiModelContext, CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import { createKbUsageTracker } from '../kb/usage.js'
@@ -366,6 +366,114 @@ describe('инструменты БЗ в остальных ходах рана'
     await hooksWith(rec.client).modelWork(planCtx)
     expect(rec.last()!.kbMcpUrl).toBeDefined()
     expect(rec.last()!.readOnlyRemote).toBe(true)
+  })
+})
+
+// Модель по стадии рана: одна модель на весь ран означала, что сверка дифа с
+// текстом статей и пересказ шагов считаются тем же тяжёлым движком, что и
+// разработка (CHAT-70: актуализация базы знаний — 14% цены рана и 7 минут).
+// Экономия при этом не имеет права стоить рана — отсюда откат на модель рана.
+describe('модель по стадии рана', () => {
+  /** Диф рабочей копии для шага базы знаний: сервер собирает его исполнителем. */
+  const diffExecutor: CommandExecutor = {
+    run: async (_req, onChunk) => {
+      onChunk('===FILES===\napps/server/src/ci/runManager.ts\n===STAT===\n 1 file changed\n===PATCH===\ndiff\n')
+      return { exitCode: 0, timedOut: false }
+    }
+  }
+  const KB_REPLY = JSON.stringify({ note: 'нечего менять', topics: [], documents: [] })
+
+  /** Тот же ctx, но с машиной: без неё шаг базы знаний до модели не доходит. */
+  const withAgent = (ctx: CiModelContext, log: (chunk: string) => void = () => {}): CiModelContext =>
+    ({ ...ctx, agentId: 'agent-1', log: (_s: string, _stream: string, chunk: string) => log(chunk) }) as unknown as CiModelContext
+
+  it('дефолт: разработка на модели рана, резюме и база знаний — дешевле', async () => {
+    const rec = recorder(KB_REPLY)
+    const { ctx, run } = setup('off')
+    const hooks = hooksWith(rec.client, { kb: undefined, executor: diffExecutor })
+    await hooks.modelWork(ctx)
+    expect(rec.last()!.model).toBe('opus')
+    await hooks.modelSummary(ctx)
+    expect(rec.last()!.model).toBe('haiku')
+    await hooks.kbUpdate(withAgent(ctx))
+    expect(rec.last()!.model).toBe('sonnet')
+    // В отчёте видно, чем считалась каждая стадия: модель пишется в строку расхода.
+    expect(db.listCiRunUsage(run.id).map((u) => [u.kind, u.model])).toEqual([
+      ['model_work', 'opus'], ['summary', 'haiku'], ['kb_update', 'sonnet']
+    ])
+  })
+
+  it('настройка переопределяет стадию, в том числе разработку', async () => {
+    const rec = recorder()
+    const { ctx } = setup('off')
+    db.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
+    const hooks = hooksWith(rec.client, { kb: undefined })
+    await hooks.modelWork(ctx)
+    expect(rec.last()!.model).toBe('haiku')
+    // Стадия с пустой настройкой осталась на модели рана.
+    await hooks.modelSummary(ctx)
+    expect(rec.last()!.model).toBe('opus')
+  })
+
+  it('модели, которой у движка рана нет, стадия не получает — идёт на модели рана', async () => {
+    const rec = recorder()
+    const { ctx } = setup('off')
+    db.updateCiSettings({ stageModels: { model_work: '', fix: '', kb_update: 'gpt-5.4', summary: 'сонет' } })
+    const hooks = hooksWith(rec.client, { kb: undefined, executor: diffExecutor })
+    await hooks.modelSummary(ctx)
+    expect(rec.last()!.model).toBe('opus')
+    await hooks.kbUpdate(withAgent(ctx))
+    expect(rec.last()!.model).toBe('opus')
+  })
+
+  it('модель стадии не отработала — ход повторяется на модели рана, ран не падает', async () => {
+    // Исполнитель знает алиас, но саму модель не тянет: CLI падает, не начав, —
+    // ни текста, ни расхода. Именно так выглядит «у исполнителя её нет».
+    const seen: string[] = []
+    const flaky: LlmClient = {
+      send: (req, handlers) => {
+        seen.push(req.model ?? '')
+        if (req.model === 'haiku') handlers.onError?.('model not available')
+        else {
+          handlers.onDelta('готово')
+          handlers.onDone('готово')
+        }
+        return { cancel: () => {} }
+      }
+    }
+    const lines: string[] = []
+    const { ctx, run } = setup('off')
+    db.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
+    const logCtx = { ...ctx, log: (_step: string, _stream: string, chunk: string) => lines.push(chunk) } as unknown as CiModelContext
+    expect(await hooksWith(flaky, { kb: undefined }).modelWork(logCtx)).toEqual({ ok: true })
+    expect(seen).toEqual(['haiku', 'opus'])
+    expect(lines.join('')).toContain('повторяю на модели рана')
+    // Пустой ход строкой расхода не становится — в отчёте только состоявшийся.
+    expect(db.listCiRunUsage(run.id).map((u) => u.model)).toEqual(['opus'])
+  })
+
+  it('откат помнится до конца хука: второй ход диалога к сломанной модели не идёт', async () => {
+    const seen: string[] = []
+    const flaky: LlmClient = {
+      send: (req, handlers) => {
+        seen.push(req.model ?? '')
+        if (req.model === 'haiku') handlers.onError?.('model not available')
+        else {
+          // Первый ответ — вопрос пользователю: он продолжает тот же диалог.
+          const text = seen.filter((m) => m === 'opus').length === 1
+            ? 'Уточню:\n```questions\n[{"q":"Ветка?","options":["a","b"]}]\n```'
+            : 'готово'
+          handlers.onDelta(text)
+          handlers.onDone(text)
+        }
+        return { cancel: () => {} }
+      }
+    }
+    const { ctx } = setup('off')
+    db.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
+    const askCtx = { ...ctx, askUser: async () => 'ветка a' } as unknown as CiModelContext
+    expect(await hooksWith(flaky, { kb: undefined }).modelWork(askCtx)).toEqual({ ok: true })
+    expect(seen).toEqual(['haiku', 'opus', 'opus'])
   })
 })
 
