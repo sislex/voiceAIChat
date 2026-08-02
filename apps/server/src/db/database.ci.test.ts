@@ -421,3 +421,62 @@ describe('встроенный шаг «Актуализировать базу 
     rmSync(dir, { recursive: true, force: true })
   })
 })
+
+// Расход старых ранов: колонки семантики входа у них нет, и переписывать историю
+// задним числом нельзя. Значит различать движки надо на чтении — иначе суммы
+// «до/после» складывают вход codex вместе с кэшем и вход claude без него.
+describe('ci: расход модели и семантика входных токенов', () => {
+  const legacy = (runId: string, provider: 'claude' | 'codex', over: Record<string, number> = {}): void => {
+    const handle = (db as unknown as { db: Database.Database }).db
+    handle.prepare(
+      `INSERT INTO ci_run_usage (id, run_id, step_id, kind, provider, model, input_tokens, output_tokens,
+        cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, num_turns, input_semantics, at)
+       VALUES (?, ?, NULL, 'model_work', ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, NULL, 1)`
+    ).run(`legacy-${runId}-${provider}`, runId, provider, provider === 'codex' ? 'gpt-5.4' : 'opus',
+      over.input ?? 1_000_000, over.output ?? 1000, over.cacheRead ?? 800_000)
+  }
+
+  function run() {
+    const { p, task } = project()
+    return db.createCiRun({
+      projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null,
+      llmProvider: 'codex', llmModel: 'gpt-5.4', slotProgress: { done: 0, total: 1, phase: '' }
+    })
+  }
+
+  it('новая строка помечена приведённой, старая строка codex — «вход с кэшем»', () => {
+    const r = run()
+    db.addCiRunUsage({ runId: r.id, stepId: null, kind: 'model_work', provider: 'codex', model: 'gpt-5.4', inputTokens: 200_000, cacheReadTokens: 800_000 })
+    legacy(r.id, 'codex')
+    const [fresh, old] = db.listCiRunUsage(r.id)
+    expect(fresh.inputSemantics).toBe('no_cache')
+    expect(old.inputSemantics).toBe('with_cache')
+  })
+
+  it('старая строка claude остаётся «без кэша»: у него вход и раньше был чистым', () => {
+    const r = run()
+    legacy(r.id, 'claude')
+    expect(db.listCiRunUsage(r.id)[0].inputSemantics).toBe('no_cache')
+  })
+
+  it('отчёт по рану приводит старые строки к одной семантике и говорит об этом', () => {
+    const r = run()
+    legacy(r.id, 'codex')
+    const report = db.ciRunReport('alice', r.id)!
+    expect(report.totals.inputTokens).toBe(200_000) // 1M пришедших минус 800k кэша
+    expect(report.totals.inputNormalized).toBe(true)
+    expect(report.toolCalls).toBeNull()
+  })
+
+  it('счётчик вызовов инструментов копится по видам и не путает раны', () => {
+    const a = run()
+    const b = run()
+    db.addCiRunToolCalls(a.id, { read: 3, bash: 1 })
+    db.addCiRunToolCalls(a.id, { read: 2, edit: 4, kb: 1 })
+    db.addCiRunToolCalls(b.id, { grep: 2 })
+    expect(db.ciRunToolCalls(a.id)).toEqual({ bash: 1, read: 5, grep: 0, edit: 4, kb: 1, other: 0 })
+    expect(db.ciRunToolCalls(b.id)).toEqual({ bash: 0, read: 0, grep: 2, edit: 0, kb: 0, other: 0 })
+    // Нулевые виды не пишутся вовсе: «нет строки» = «счётчика у рана нет».
+    expect(db.ciRunToolCalls('нет-такого-рана')).toBeNull()
+  })
+})

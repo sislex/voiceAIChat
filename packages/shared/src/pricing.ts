@@ -26,11 +26,20 @@ const PRICES: { match: RegExp; price: ModelPrice }[] = [
 ]
 
 /**
+ * Модель хода осталась неизвестной: CLI её не назвал, и в настройке рана её тоже
+ * нет (у codex пустая модель — штатное состояние, он берёт её из своего
+ * `config.toml`). Пишется в расход вместо пустой строки, чтобы «неизвестно» было
+ * видно, а прайса для неё нет намеренно: итог помечается заниженным, а не
+ * досчитывается вымышленной ценой.
+ */
+export const UNKNOWN_MODEL = 'unknown'
+
+/**
  * Оценка стоимости в USD по токенам. `undefined`, если модель неизвестна или
  * прайс не найден — тогда UI показывает «—» вместо суммы.
  */
 export function estimateCostUsd(model: string | undefined, usage: TurnUsage): number | undefined {
-  if (!model) return undefined
+  if (!model || model === UNKNOWN_MODEL) return undefined
   const row = PRICES.find((p) => p.match.test(model))
   if (!row) return undefined
   const p = row.price

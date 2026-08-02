@@ -424,6 +424,34 @@ describe('TaskModal — отчёт по завершённой задаче', ()
   })
 
 
+  it('показывает вызовы инструментов рана с разбивкой', async () => {
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    const tools = await screen.findByTestId('task-modal-report-tools')
+    // 12 bash + 31 read + 9 grep + 14 edit + 3 kb + 1 прочий = 70 вызовов.
+    expect(text(tools)).toContain('Инструменты: 70 вызовов, из них чтений 31, правок 14')
+    expect(text(tools)).toContain('bash 12')
+  })
+
+  it('у рана без счётчика вызовов строки инструментов нет (а не «0»)', async () => {
+    withReport(makeTaskReport([makeRunReport({ toolCalls: null })]))
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    await screen.findByTestId('task-modal-report')
+    expect(screen.queryByTestId('task-modal-report-tools')).not.toBeInTheDocument()
+  })
+
+  it('итог с ходами без прайса помечен заниженным, а не просто оценкой', async () => {
+    withReport(makeTaskReport([makeRunReport({
+      totals: makeUsageTotals({ costUsd: 0.9, costEstimated: true, costUnderstated: true })
+    })]))
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    const cost = await screen.findByTestId('task-modal-report-cost')
+    expect(text(cost)).toContain('≈ $0.90')
+    expect(text(cost)).toContain('итог занижен')
+  })
+
   it('показывает попадание БЗ рядом с расходом завершённого рана', async () => {
     withReport(makeTaskReport([makeRunReport({
       kbHit: { sectionsDelivered: 5, sectionsHit: 3, hitRatio: 0.6 }

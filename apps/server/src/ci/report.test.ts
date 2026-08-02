@@ -22,10 +22,21 @@ const SECRET = 'ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
 /** Что мок CLI сообщает о ходе; null — CLI промолчал (старое поведение). */
 let turnMeta: TurnMeta | null = null
+/** Инструменты, которые «вызывает» мок за ход (имена — как их называет CLI). */
+let turnTools: string[] = []
+/**
+ * Сколько мок «думает» перед ответом. Нужно там, где проверяется замер
+ * длительности хода сервером: мгновенный ход укладывается в одну миллисекунду, и
+ * замер честно даёт ноль.
+ */
+let turnDelayMs = 0
 
 const fakeClaude: LlmClient = {
   send: (_req, handlers) => {
-    queueMicrotask(() => {
+    setTimeout(() => {
+      for (const tool of turnTools) {
+        handlers.onActivity?.({ kind: 'tool_use', summary: `${tool}: …`, raw: '{}', tool })
+      }
       if (turnMeta) {
         handlers.onUsage?.({
           inputTokens: turnMeta.inputTokens,
@@ -36,7 +47,7 @@ const fakeClaude: LlmClient = {
       }
       handlers.onDelta('готово')
       handlers.onDone('готово', turnMeta ?? undefined)
-    })
+    }, turnDelayMs)
     return { cancel: () => {} }
   }
 }
@@ -50,6 +61,8 @@ const ciExecutor: CommandExecutor = {
 
 beforeEach(async () => {
   let id = 0
+  turnTools = []
+  turnDelayMs = 0
   turnMeta = {
     inputTokens: 1000, outputTokens: 200, cacheReadTokens: 5000, cacheCreationTokens: 300,
     costUsd: 0.25, durationMs: 4000, numTurns: 3, model: 'claude-sonnet-5'
@@ -179,6 +192,39 @@ describe('GET /api/ci/runs/:runId/report', () => {
     expect(report.totals.costUsd).toBeCloseTo(6, 6)
   })
 
+  it('показывает вызовы инструментов рана с разбивкой по видам', async () => {
+    turnTools = ['mcp__remote__read', 'mcp__remote__read', 'mcp__remote__grep', 'mcp__remote__edit', 'mcp__remote__bash', 'mcp__kb__search']
+    const { project, task } = setup()
+    const runId = await runTask(project.id, task.id)
+
+    const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
+    // Два хода (работа модели и резюме) — счётчики складываются по рану.
+    expect(report.toolCalls).toEqual({ bash: 2, read: 4, grep: 2, edit: 2, kb: 2, other: 0 })
+  })
+
+  it('ран через исполнителя: у codex время работы модели считает сервер, стоимость — прайс', async () => {
+    // Так отвечает codex: usage без стоимости, длительности и num_turns.
+    turnDelayMs = 5
+    const { project, task } = setup()
+    db.setCiLlmConfig('task', task.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    const codexUsage = { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 800_000, cacheCreationTokens: 0 }
+    turnMeta = { ...codexUsage } // мок отдаёт только счётчики, без costUsd/durationMs
+    const runId = await runTask(project.id, task.id)
+
+    const rows = db.listCiRunUsage(runId)
+    // Вход приведён к «без кэша» на записи: 1M пришедших минус 800k из кэша.
+    expect(rows[0]).toMatchObject({ provider: 'codex', model: 'gpt-5.4', inputTokens: 200_000, inputSemantics: 'no_cache' })
+    const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
+    expect(report.totals.requests).toBe(2)
+    expect(report.totals.inputTokens).toBe(400_000)
+    // gpt-семейство: вход 1.25 и чтение кэша 0.125 за 1M — оценка, а не прочерк.
+    expect(report.totals.costUsd).toBeCloseTo((400_000 * 1.25 + 1_600_000 * 0.125) / 1e6, 6)
+    expect(report.totals.costEstimated).toBe(true)
+    expect(report.totals.costUnderstated).toBe(false)
+    // Длительности CLI не дал — «работа модели» считается по замеру хода.
+    expect(report.totals.modelActiveMs).toBeGreaterThan(0)
+  })
+
   it('ран без строк расхода (старые раны) открывается: шаги и время есть, расход пуст', async () => {
     const { project, task } = setup()
     const run = db.createCiRun({ projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin', prevColumnId: null, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
@@ -193,6 +239,8 @@ describe('GET /api/ci/runs/:runId/report', () => {
     expect(report.totals.costUsd).toBeNull()
     expect(report.totals.costEstimated).toBe(false)
     expect(report.kbHit).toBeNull()
+    // Счётчика вызовов у старого рана нет вовсе: нули читались бы как поломка.
+    expect(report.toolCalls).toBeNull()
   })
 
   it('чужому пользователю — 404, а не пустой отчёт', async () => {

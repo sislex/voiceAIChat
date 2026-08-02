@@ -4,8 +4,11 @@
 
 import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
-import { appendQuestionsHint, clarifyBudget, DEFAULT_CI_CLAUDE_MODEL, isVerificationCommand, parseQuestions } from '@voicechat/shared'
-import type { CiRunMode, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
+import {
+  appendQuestionsHint, ciToolCallsTotal, clarifyBudget, classifyCiToolCall, DEFAULT_CI_CLAUDE_MODEL,
+  EMPTY_CI_TOOL_CALLS, isVerificationCommand, parseQuestions, UNKNOWN_MODEL
+} from '@voicechat/shared'
+import type { CiRunMode, CiToolCalls, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import { kbToolBroker, kbRunDirective, type KbToolEntry } from '../kb/kbMcp.js'
 import { buildKbAutoContext } from '../kb/autoContext.js'
@@ -90,6 +93,17 @@ interface TurnResult {
   meta?: TurnMeta
   /** Последние накопленные счётчики токенов (приходят и у прерванного хода). */
   usage?: TurnUsage
+  /**
+   * Сколько ход занял по часам сервера. Нужен там, где CLI длительность не
+   * сообщает (`codex exec --json` не сообщает никогда), иначе «работа модели» в
+   * отчёте — вечный прочерк. Замер сервера включает накладные расходы транспорта
+   * и потому не подменяет `meta.durationMs`, а лишь заменяет его отсутствие.
+   */
+  elapsedMs: number
+  /** Сколько событий расхода прислал CLI — по ним считается `num_turns`. */
+  usageEvents: number
+  /** Вызовы инструментов этого хода по видам (bash/read/grep/edit/kb/other). */
+  toolCalls: CiToolCalls
 }
 
 /**
@@ -107,20 +121,26 @@ function runTurn(
   req: LlmRequest,
   onLog: (stream: 'stdout' | 'system', chunk: string) => void,
   signal: AbortSignal,
-  abortNote = 'Ран отменён — работа модели остановлена.\n'
+  abortNote = 'Ран отменён — работа модели остановлена.\n',
+  now: () => number = Date.now
 ): Promise<TurnResult> {
-  if (signal.aborted) return Promise.resolve({ ok: false, text: '', sessionId: null, cancelled: true })
+  const startedAt = now()
+  const toolCalls: CiToolCalls = { ...EMPTY_CI_TOOL_CALLS }
+  if (signal.aborted) {
+    return Promise.resolve({ ok: false, text: '', sessionId: null, cancelled: true, elapsedMs: 0, usageEvents: 0, toolCalls })
+  }
   return new Promise((resolve) => {
     let text = ''
     let sessionId: string | null = null
     let meta: TurnMeta | undefined
     let usage: TurnUsage | undefined
+    let usageEvents = 0
     let settled = false
     const finish = (r: { ok: boolean; cancelled?: boolean }): void => {
       if (settled) return
       settled = true
       signal.removeEventListener('abort', onAbort)
-      resolve({ ...r, text, sessionId, meta, usage })
+      resolve({ ...r, text, sessionId, meta, usage, elapsedMs: Math.max(0, now() - startedAt), usageEvents, toolCalls })
     }
     const onAbort = (): void => {
       // Убиваем процесс CLI и закрываем ход сами: клиент после cancel() молчит.
@@ -148,11 +168,18 @@ function runTurn(
         onLog('system', `Ошибка модели: ${m}\n`)
         finish({ ok: false })
       },
-      onActivity: (e) => onLog('system', `[${e.kind}] ${e.summary}${e.detail ? ` · ${e.detail}` : ''}\n`),
+      onActivity: (e) => {
+        // Единственное место, где мимо сервера проходит КАЖДЫЙ вызов инструмента
+        // любого движка: у MCP-эндпоинта рана нет (он знает лишь машину и папку),
+        // а имена в логе у claude и codex записаны по-разному.
+        if (e.tool) toolCalls[classifyCiToolCall(e.tool)]++
+        onLog('system', `[${e.kind}] ${e.summary}${e.detail ? ` · ${e.detail}` : ''}\n`)
+      },
       // Счётчики кумулятивны: держим последние — у прерванного хода это всё,
       // что о его расходе вообще известно.
       onUsage: (u) => {
         usage = u
+        usageEvents++
       }
     }
     const handle: LlmHandle | undefined = claude.send(req, handlers)
@@ -244,26 +271,57 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    * которых не было видно.
    */
   function recordUsage(ctx: CiModelContext, kind: CiUsageKind, stepId: string | null, turn: TurnResult): void {
+    // Вызовы инструментов считаются отдельно от токенов: ход, о расходе которого
+    // CLI промолчал, всё равно успевает что-то вызвать.
+    recordToolCalls(ctx, turn)
     const u: TurnUsage = turn.meta ?? turn.usage ?? {}
     const tokens = (u.inputTokens ?? 0) + (u.outputTokens ?? 0) + (u.cacheReadTokens ?? 0) + (u.cacheCreationTokens ?? 0)
     if (!turn.meta && tokens === 0) return
+    const cacheReadTokens = u.cacheReadTokens ?? 0
+    const rawInput = u.inputTokens ?? 0
+    // Одна семантика входа на оба движка — «вход без кэша»: codex сообщает
+    // input_tokens ВМЕСТЕ с прочитанным кэшем, claude — уже без него. Пока их
+    // складывали как есть, суммы «до/после» сравнивали разные величины, а оценка
+    // по прайсу считала кэш по полной цене входа и завышала её в разы.
+    const inputTokens = ctx.run.llmProvider === 'codex' ? Math.max(0, rawInput - cacheReadTokens) : rawInput
     try {
       deps.db.addCiRunUsage({
         runId: ctx.run.id,
         stepId,
         kind,
         provider: ctx.run.llmProvider,
-        model: turn.meta?.model || modelFor(ctx),
-        inputTokens: u.inputTokens ?? 0,
+        // Пустая модель (у codex это штатное состояние — он берёт её из своего
+        // config.toml) превращается в `unknown`: прайса для неё нет, и итог
+        // честно помечается заниженным вместо молчаливого нуля.
+        model: turn.meta?.model || modelFor(ctx) || UNKNOWN_MODEL,
+        inputTokens,
         outputTokens: u.outputTokens ?? 0,
-        cacheReadTokens: u.cacheReadTokens ?? 0,
+        cacheReadTokens,
         cacheCreationTokens: u.cacheCreationTokens ?? 0,
+        inputSemantics: 'no_cache',
         costUsd: turn.meta?.costUsd ?? null,
-        durationMs: turn.meta?.durationMs ?? null,
-        numTurns: turn.meta?.numTurns ?? null
+        // Длительность и число запросов: у codex CLI не сообщает ни то, ни
+        // другое, поэтому время берём по замеру хода на сервере, а `num_turns` —
+        // по числу событий расхода (одно событие = один ответ модели).
+        durationMs: turn.meta?.durationMs ?? (turn.elapsedMs > 0 ? turn.elapsedMs : null),
+        numTurns: turn.meta?.numTurns ?? (turn.usageEvents > 0 ? turn.usageEvents : null)
       })
     } catch {
       /* метрика расхода не имеет права уронить ран */
+    }
+  }
+
+  /**
+   * Вызовы инструментов хода — в счётчик рана. Ход без вызовов ничего не пишет:
+   * «строки нет» должно означать «счётчика у рана нет», а не «модель не вызвала
+   * ничего». Не бросает никогда — это метрика.
+   */
+  function recordToolCalls(ctx: CiModelContext, turn: TurnResult): void {
+    if (ciToolCallsTotal(turn.toolCalls) === 0) return
+    try {
+      deps.db.addCiRunToolCalls(ctx.run.id, turn.toolCalls)
+    } catch {
+      /* метрика вызовов не имеет права уронить ран */
     }
   }
 
@@ -444,7 +502,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
                 }
               : {})
           }
-          const r = await runTurn(clientFor(ctx), req, log, ctx.signal)
+          const r = await runTurn(clientFor(ctx), req, log, ctx.signal, undefined, now)
           recordUsage(ctx, 'model_work', ctx.parentStepId, r)
           // Отмена рана: не «ошибка модели» — ран закрывается как cancelled.
           if (r.cancelled || ctx.signal.aborted) return { ok: false, cancelled: true }
@@ -517,7 +575,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         executionDisabled: true,
         ...kbFields
       }
-      const r = await runTurn(clientFor(ctx), req, () => {}, ctx.signal)
+      const r = await runTurn(clientFor(ctx), req, () => {}, ctx.signal, undefined, now)
       recordUsage(ctx, 'summary', ctx.parentStepId, r)
       return r.text.trim() || 'Резюме недоступно.'
     })
@@ -563,7 +621,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
           // См. modelWork: рабочая директория удалённой машины задаётся в MCP URL.
           ...remoteOf(deps, ctx)
         }
-        return runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctx.signal)
+        return runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctx.signal, undefined, now)
       })
       // Расход правки пишем на упавший шаг: fix-loop живёт внутри него.
       recordUsage(ctx, 'fix', ctx.parentStepId, turn)
@@ -667,7 +725,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     }, deps.kbTimeoutMs ?? KB_UPDATE_TIMEOUT_MS)
     let turn: TurnResult
     try {
-      turn = await runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctl.signal, 'Шаг актуализации базы знаний остановлен.\n')
+      turn = await runTurn(clientFor(ctx), req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctl.signal, 'Шаг актуализации базы знаний остановлен.\n', now)
     } catch (err) {
       return { ok: false, message: `Шаг не выполнен: ${err instanceof Error ? err.message : String(err)}` }
     } finally {

@@ -381,10 +381,28 @@ CREATE TABLE IF NOT EXISTS ci_run_usage (
   cost_usd              REAL,
   duration_ms           INTEGER,
   num_turns             INTEGER,
+  -- Что означает input_tokens: 'no_cache' — вход без прочитанного кэша (единая
+  -- семантика, приводится на записи). NULL — историческая строка: у codex там
+  -- вход ВМЕСТЕ с кэшем, и складывать его с claude нельзя. Историю задним
+  -- числом не переписываем, поэтому различаем на чтении.
+  input_semantics       TEXT,
   at                    INTEGER NOT NULL,
   FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_ci_run_usage_run ON ci_run_usage(run_id, at);
+
+-- Вызовы инструментов модели за ран, по видам (bash/read/grep/edit/kb/other).
+-- Отдельная таблица, а не колонки расхода: ход без строки расхода (мгновенная
+-- отмена) всё равно успевает вызвать инструменты, а «нет строки» должно
+-- отличаться от «нуля вызовов» — у ранов до фичи счётчика нет вовсе.
+CREATE TABLE IF NOT EXISTS ci_run_tool_calls (
+  run_id     TEXT NOT NULL,
+  tool       TEXT NOT NULL,
+  calls      INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (run_id, tool),
+  FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
+);
 
 CREATE TABLE IF NOT EXISTS ci_run_kb_metrics (
   run_id             TEXT PRIMARY KEY,

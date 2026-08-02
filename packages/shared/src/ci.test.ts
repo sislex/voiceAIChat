@@ -15,7 +15,13 @@ import {
   isVerificationCommand,
   ciTaskTotals,
   ciUsageTotals,
+  ciUsageInputTokens,
   sumCiUsageTotals,
+  classifyCiToolCall,
+  countCiToolCalls,
+  ciToolCallsTotal,
+  sumCiToolCalls,
+  EMPTY_CI_TOOL_CALLS,
   EMPTY_CI_USAGE_TOTALS,
   type CiRunReport,
   type CiRunUsage,
@@ -161,7 +167,7 @@ describe('ciUsageTotals', () => {
   const row = (over: Partial<CiRunUsage> = {}): CiRunUsage => ({
     id: 'u1', runId: 'r1', stepId: 's1', kind: 'model_work', provider: 'claude', model: 'sonnet',
     inputTokens: 100, outputTokens: 200, cacheReadTokens: 300, cacheCreationTokens: 400,
-    costUsd: null, durationMs: 1000, numTurns: 1, at: 1, ...over
+    inputSemantics: 'no_cache', costUsd: null, durationMs: 1000, numTurns: 1, at: 1, ...over
   })
 
   it('пустой список — нули и отсутствующая стоимость', () => {
@@ -205,6 +211,84 @@ describe('ciUsageTotals', () => {
   it('ход без длительности не ломает время работы модели', () => {
     expect(ciUsageTotals([row({ durationMs: null })]).modelActiveMs).toBe(0)
   })
+
+  it('модель unknown: слагаемого нет, итог помечен заниженным', () => {
+    const t = ciUsageTotals([row({ model: 'unknown' }), row({ id: 'u2', costUsd: 3 })])
+    expect(t.costUsd).toBe(3)
+    expect(t.costEstimated).toBe(true)
+    expect(t.costUnderstated).toBe(true)
+  })
+
+  it('точная стоимость от CLI не считается заниженной', () => {
+    const t = ciUsageTotals([row({ costUsd: 1 })])
+    expect(t.costEstimated).toBe(false)
+    expect(t.costUnderstated).toBe(false)
+  })
+
+  // Историческая строка codex: вход в БД лежит ВМЕСТЕ с прочитанным кэшем.
+  // Переписывать её нельзя, поэтому семантики сводятся на чтении.
+  it('старая строка codex приводится к «входу без кэша» и помечает итог', () => {
+    const legacy = row({ provider: 'codex', model: 'gpt-5.4', inputSemantics: 'with_cache', inputTokens: 1000, cacheReadTokens: 800 })
+    expect(ciUsageInputTokens(legacy)).toBe(200)
+    const t = ciUsageTotals([legacy])
+    expect(t.inputTokens).toBe(200)
+    expect(t.cacheReadTokens).toBe(800)
+    expect(t.inputNormalized).toBe(true)
+    // Оценка идёт по приведённому входу: 200 по цене входа, а не 1000.
+    expect(t.costUsd).toBeCloseTo((200 * 1.25 + 200 * 10 + 800 * 0.125 + 400 * 1.25) / 1e6, 12)
+  })
+
+  it('вход меньше кэша (иная арифметика CLI) зажимается в ноль, а не уходит в минус', () => {
+    expect(ciUsageInputTokens(row({ inputSemantics: 'with_cache', inputTokens: 100, cacheReadTokens: 900 }))).toBe(0)
+  })
+
+  it('приведённые строки не пересчитываются повторно', () => {
+    const t = ciUsageTotals([row({ provider: 'codex', model: 'gpt-5.4', inputTokens: 1000, cacheReadTokens: 800 })])
+    expect(t.inputTokens).toBe(1000)
+    expect(t.inputNormalized).toBe(false)
+  })
+})
+
+// Вызовы инструментов: имя приходит от CLI в трёх разных видах, а вид
+// инструмента должен получаться один и тот же — иначе разбивка по движкам
+// несравнима, а гипотезу «читаем read, а не cat в bash» не проверить.
+describe('classifyCiToolCall', () => {
+  it('сводит имена claude, codex и встроенных инструментов к одному виду', () => {
+    expect(classifyCiToolCall('mcp__remote__read')).toBe('read')
+    expect(classifyCiToolCall('remote:read')).toBe('read')
+    expect(classifyCiToolCall('Read')).toBe('read')
+    expect(classifyCiToolCall('mcp__remote__bash')).toBe('bash')
+    expect(classifyCiToolCall('shell')).toBe('bash')
+    expect(classifyCiToolCall('remote:grep')).toBe('grep')
+    expect(classifyCiToolCall('mcp__remote__edit')).toBe('edit')
+    expect(classifyCiToolCall('Write')).toBe('edit')
+  })
+
+  it('сервер БЗ важнее имени тула: поиск по базе — это обращение к базе', () => {
+    expect(classifyCiToolCall('mcp__kb__search')).toBe('kb')
+    expect(classifyCiToolCall('kb:document')).toBe('kb')
+    expect(classifyCiToolCall('kb:topics')).toBe('kb')
+  })
+
+  it('незнакомое и пустое имя — прочее, а не выдуманный вид', () => {
+    expect(classifyCiToolCall('mcp__ci__run_command')).toBe('other')
+    expect(classifyCiToolCall('WebFetch')).toBe('other')
+    expect(classifyCiToolCall('  ')).toBe('other')
+  })
+})
+
+describe('счётчики вызовов инструментов', () => {
+  it('считает по видам и даёт общий итог', () => {
+    const calls = countCiToolCalls(['mcp__remote__read', 'remote:read', 'remote:bash', 'kb:search', 'ToolSearch'])
+    expect(calls).toEqual({ ...EMPTY_CI_TOOL_CALLS, read: 2, bash: 1, kb: 1, other: 1 })
+    expect(ciToolCallsTotal(calls)).toBe(5)
+  })
+
+  it('сумма ранов без счётчика — null, а не нули: «нет метрики» ≠ «нет вызовов»', () => {
+    expect(sumCiToolCalls([null, null])).toBeNull()
+    expect(sumCiToolCalls([])).toBeNull()
+    expect(sumCiToolCalls([null, { ...EMPTY_CI_TOOL_CALLS, read: 3 }])).toEqual({ ...EMPTY_CI_TOOL_CALLS, read: 3 })
+  })
 })
 
 describe('sumCiUsageTotals и ciTaskTotals', () => {
@@ -230,11 +314,27 @@ describe('sumCiUsageTotals и ciTaskTotals', () => {
     const run = (over: Partial<CiRunReport> = {}): CiRunReport => ({
       runId: 'r1', projectId: 'p1', taskId: 't1', status: 'success', mode: 'development',
       provider: 'claude', model: 'opus', startedAt: 1, finishedAt: 2, durationMs: 5000, createdAt: 1,
-      fixAttempts: 0, kbHit: null, totals: totals(), steps: [], ...over
+      fixAttempts: 0, kbHit: null, toolCalls: null, totals: totals(), steps: [], ...over
     })
     const r = ciTaskTotals([run(), run({ runId: 'r2', durationMs: null, totals: { ...EMPTY_CI_USAGE_TOTALS } })])
     expect(r.durationMs).toBe(5000)
     expect(r.totals.requests).toBe(1)
     expect(r.totals.costUsd).toBe(1)
+    // Счётчика вызовов нет ни у одного рана — в итоге тоже null.
+    expect(r.toolCalls).toBeNull()
+  })
+
+  it('итог по задаче складывает вызовы инструментов тех ранов, где счётчик есть', () => {
+    const run = (over: Partial<CiRunReport> = {}): CiRunReport => ({
+      runId: 'r1', projectId: 'p1', taskId: 't1', status: 'success', mode: 'development',
+      provider: 'codex', model: 'gpt-5.4', startedAt: 1, finishedAt: 2, durationMs: 1000, createdAt: 1,
+      fixAttempts: 0, kbHit: null, toolCalls: null, totals: totals(), steps: [], ...over
+    })
+    const r = ciTaskTotals([
+      run({ toolCalls: { ...EMPTY_CI_TOOL_CALLS, read: 10, bash: 4 } }),
+      run({ runId: 'r2' }),
+      run({ runId: 'r3', toolCalls: { ...EMPTY_CI_TOOL_CALLS, read: 5, edit: 2 } })
+    ])
+    expect(r.toolCalls).toEqual({ ...EMPTY_CI_TOOL_CALLS, read: 15, bash: 4, edit: 2 })
   })
 })

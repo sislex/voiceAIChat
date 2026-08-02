@@ -587,6 +587,15 @@ export type CiUsageKind = 'model_work' | 'summary' | 'fix' | 'kb_update'
 
 export const CI_USAGE_KINDS: CiUsageKind[] = ['model_work', 'summary', 'fix', 'kb_update']
 
+/**
+ * Что означает `inputTokens` строки расхода. `no_cache` — «вход без кэша»: то,
+ * что оплачивается по полной цене входа (у claude так всегда, у codex — после
+ * приведения на записи). `with_cache` — исторические строки codex: там CLI
+ * включал прочитанный из кэша ввод в `input_tokens`, и складывать их с claude
+ * нельзя. Историю задним числом не правим, поэтому семантику различаем на чтении.
+ */
+export type CiInputSemantics = 'no_cache' | 'with_cache'
+
 /** Расход одного хода модели внутри рана (строка `ci_run_usage`). */
 export interface CiRunUsage {
   id: string
@@ -601,6 +610,8 @@ export interface CiRunUsage {
   outputTokens: number
   cacheReadTokens: number
   cacheCreationTokens: number
+  /** Семантика `inputTokens` этой строки — см. `CiInputSemantics`. */
+  inputSemantics: CiInputSemantics
   /**
    * Стоимость, которую сообщил CLI (`total_cost_usd`). `null` — не сообщил:
    * тогда отчёт считает оценку по прайсу и помечает её «≈». В БД оценку не
@@ -628,6 +639,17 @@ export interface CiUsageTotals {
   costUsd: number | null
   /** Хотя бы одно слагаемое — оценка (или его вовсе не посчитать): в UI «≈». */
   costEstimated: boolean
+  /**
+   * У части ходов прайса нет вовсе (модель `unknown`), поэтому итог заведомо
+   * НИЖЕ настоящего — это не то же самое, что «оценка по прайсу», и в UI
+   * говорится отдельно.
+   */
+  costUnderstated: boolean
+  /**
+   * Часть строк пришла в старой семантике входа (codex до приведения) и была
+   * пересчитана на чтении: суммы сравнимы, но получены не из БД как есть.
+   */
+  inputNormalized: boolean
   /** Суммарное время работы модели, мс (сумма длительностей ходов). */
   modelActiveMs: number
 }
@@ -641,28 +663,50 @@ export const EMPTY_CI_USAGE_TOTALS: CiUsageTotals = {
   tokens: 0,
   costUsd: null,
   costEstimated: false,
+  costUnderstated: false,
+  inputNormalized: false,
   modelActiveMs: 0
+}
+
+/**
+ * «Вход без кэша» строки: исторические строки codex несут вход ВМЕСТЕ с
+ * прочитанным кэшем, поэтому их приводят к общей семантике вычитанием (с
+ * зажимом в ноль — на случай, если CLI когда-нибудь начнёт считать иначе).
+ * Строки, записанные уже приведёнными, остаются как есть.
+ */
+export function ciUsageInputTokens(row: CiRunUsage): number {
+  return row.inputSemantics === 'with_cache'
+    ? Math.max(0, row.inputTokens - row.cacheReadTokens)
+    : row.inputTokens
 }
 
 /**
  * Итог по ходам. Стоимость берётся от CLI, а если её нет — оценивается по
  * прайсу (`estimateCostUsd`), и тогда весь итог помечается `costEstimated`.
  * Неизвестная модель (прайса нет) тоже делает итог приблизительным: сумма
- * заведомо занижена, и показывать её точным числом нельзя.
+ * заведомо занижена (`costUnderstated`), и показывать её точным числом нельзя.
+ * Вход считается в одной семантике — «без кэша»: смешивать движки в одной сумме
+ * нельзя, иначе «до/после» сравнивает разные величины.
  */
 export function ciUsageTotals(rows: CiRunUsage[]): CiUsageTotals {
   const t: CiUsageTotals = { ...EMPTY_CI_USAGE_TOTALS }
   let cost: number | null = null
   for (const r of rows) {
     t.requests++
-    t.inputTokens += r.inputTokens
+    const inputTokens = ciUsageInputTokens(r)
+    if (inputTokens !== r.inputTokens) t.inputNormalized = true
+    t.inputTokens += inputTokens
     t.outputTokens += r.outputTokens
     t.cacheReadTokens += r.cacheReadTokens
     t.cacheCreationTokens += r.cacheCreationTokens
     t.modelActiveMs += r.durationMs ?? 0
-    const own = r.costUsd ?? estimateCostUsd(r.model, r)
-    if (own == null) t.costEstimated = true
-    else {
+    // Оценка идёт по приведённому входу: у старой строки codex он включал кэш,
+    // и цена по полному тарифу завышала итог в разы.
+    const own = r.costUsd ?? estimateCostUsd(r.model, { ...r, inputTokens })
+    if (own == null) {
+      t.costEstimated = true
+      t.costUnderstated = true
+    } else {
       cost = (cost ?? 0) + own
       if (r.costUsd == null) t.costEstimated = true
     }
@@ -685,10 +729,83 @@ export function sumCiUsageTotals(list: CiUsageTotals[]): CiUsageTotals {
     t.tokens += s.tokens
     t.modelActiveMs += s.modelActiveMs
     if (s.costEstimated) t.costEstimated = true
+    if (s.costUnderstated) t.costUnderstated = true
+    if (s.inputNormalized) t.inputNormalized = true
     if (s.costUsd != null) cost = (cost ?? 0) + s.costUsd
   }
   t.costUsd = cost
   return t
+}
+
+// --- Вызовы инструментов за ран -------------------------------------------
+
+/**
+ * Вид инструмента в счётчике вызовов. Смысл разбивки — проверяемая гипотеза
+ * CHAT-54: файлы читаются `read`/`grep` и правятся `edit`, а `bash` остаётся для
+ * команд. Пока чтение шло `cat` внутри `bash`, весь файл попадал в контекст, и
+ * ход стоил в разы дороже. `kb` — обращения к базе знаний инструментом.
+ */
+export type CiToolKind = 'bash' | 'read' | 'grep' | 'edit' | 'kb' | 'other'
+
+export const CI_TOOL_KINDS: CiToolKind[] = ['bash', 'read', 'grep', 'edit', 'kb', 'other']
+
+/** Сколько раз за ран вызван инструмент каждого вида. */
+export type CiToolCalls = Record<CiToolKind, number>
+
+export const EMPTY_CI_TOOL_CALLS: CiToolCalls = { bash: 0, read: 0, grep: 0, edit: 0, kb: 0, other: 0 }
+
+/**
+ * Вид инструмента по имени, которым его назвал CLI. Форматы у движков разные, а
+ * вызов — один и тот же: `mcp__remote__read` (claude), `remote:read` (codex),
+ * `Read` (встроенный инструмент хода без машины). Сервер MCP в имени важнее
+ * тула: `mcp__kb__search` — это обращение к базе знаний, а не «поиск».
+ */
+export function classifyCiToolCall(name: string): CiToolKind {
+  const raw = name.trim()
+  if (!raw) return 'other'
+  const parts = raw.match(/^mcp__(.+?)__(.+)$/) ?? raw.match(/^([^:\s]+):(.+)$/)
+  const server = (parts ? parts[1] : '').toLowerCase()
+  const tool = (parts ? parts[2] : raw).toLowerCase()
+  if (server === 'kb') return 'kb'
+  switch (tool) {
+    case 'bash':
+    case 'shell':
+      return 'bash'
+    case 'read':
+      return 'read'
+    case 'grep':
+      return 'grep'
+    case 'edit':
+    case 'write':
+    case 'multiedit':
+      return 'edit'
+    default:
+      return 'other'
+  }
+}
+
+/** Счётчик по именам инструментов (имена — как их назвал CLI). */
+export function countCiToolCalls(names: Iterable<string>): CiToolCalls {
+  const calls: CiToolCalls = { ...EMPTY_CI_TOOL_CALLS }
+  for (const name of names) calls[classifyCiToolCall(name)]++
+  return calls
+}
+
+/** Всего вызовов — сумма по видам. */
+export function ciToolCallsTotal(calls: CiToolCalls): number {
+  return CI_TOOL_KINDS.reduce((acc, kind) => acc + calls[kind], 0)
+}
+
+/**
+ * Сложить счётчики ранов. `null` — ни у одного рана счётчика нет (метрики тогда
+ * ещё не было): ноль на её месте читался бы как «модель не вызвала ничего».
+ */
+export function sumCiToolCalls(list: Array<CiToolCalls | null>): CiToolCalls | null {
+  const known = list.filter((c): c is CiToolCalls => c !== null)
+  if (!known.length) return null
+  const sum: CiToolCalls = { ...EMPTY_CI_TOOL_CALLS }
+  for (const c of known) for (const kind of CI_TOOL_KINDS) sum[kind] += c[kind]
+  return sum
 }
 
 /** Шаг рана в отчёте: то же, что в ленте, плюс расход ходов модели. */
@@ -735,6 +852,11 @@ export interface CiRunReport {
   steps: CiRunReportStep[]
   /** null — БЗ ничего не выдала либо метрика для старого/незавершённого рана не считалась. */
   kbHit: CiKbHitMetric | null
+  /**
+   * Вызовы инструментов модели за ран. `null` — у рана счётчика нет (сделан до
+   * фичи): нули на его месте читались бы как «модель не вызвала ничего».
+   */
+  toolCalls: CiToolCalls | null
 }
 
 /** Отчёт по задаче: все её раны (повторы, отмены) и итог по ним. */
@@ -746,12 +868,15 @@ export interface CiTaskReport {
   totals: CiUsageTotals
   /** Суммарное время ранов задачи, мс. */
   durationMs: number
+  /** Вызовы инструментов по всем ранам; `null` — счётчика нет ни у одного. */
+  toolCalls: CiToolCalls | null
 }
 
 /** Итог по задаче — сумма по всем её ранам (чистая функция, без БД). */
-export function ciTaskTotals(runs: CiRunReport[]): { totals: CiUsageTotals; durationMs: number } {
+export function ciTaskTotals(runs: CiRunReport[]): { totals: CiUsageTotals; durationMs: number; toolCalls: CiToolCalls | null } {
   return {
     totals: sumCiUsageTotals(runs.map((r) => r.totals)),
-    durationMs: runs.reduce((acc, r) => acc + (r.durationMs ?? 0), 0)
+    durationMs: runs.reduce((acc, r) => acc + (r.durationMs ?? 0), 0),
+    toolCalls: sumCiToolCalls(runs.map((r) => r.toolCalls))
   }
 }

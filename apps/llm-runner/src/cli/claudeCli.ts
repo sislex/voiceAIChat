@@ -83,7 +83,14 @@ export function claudeArgs(req: LlmRequest): string[] {
     // MCP-инструмент bash (сервер `remote`), который выполняет команду на агенте.
     // Опционально — сервер `ci`: именованные команды CI-справочника как инструмент.
     mcpServers.remote = { type: 'http', url: req.remote.mcpUrl }
-    allowed.push('mcp__remote__bash')
+    // Все инструменты сервера `remote`, а не только bash. В headless (`-p`)
+    // `--allowedTools` — allow-list АВТООДОБРЕНИЯ: чего в нём нет, то не
+    // отклоняется сервером, а просто не одобряется, и вызов не происходит.
+    // Пока в списке был один bash, файловые инструменты (read/grep/edit) были
+    // объявлены модели, но каждый их вызов упирался в неодобренное разрешение —
+    // и модель возвращалась к `cat` внутри bash и правкам через heredoc, ради
+    // отказа от которых их и делали.
+    allowed.push('mcp__remote__bash', 'mcp__remote__read', 'mcp__remote__grep', 'mcp__remote__edit')
     let ciHint = ''
     if (req.remote.ciMcpUrl) {
       mcpServers.ci = { type: 'http', url: req.remote.ciMcpUrl }
@@ -99,9 +106,13 @@ export function claudeArgs(req: LlmRequest): string[] {
         `а не на сервере. У инструмента есть аргумент timeout_ms (по умолчанию 120000, ` +
         `максимум 300000) — для долгих команд (тесты, сборка, установка зависимостей) ` +
         `передавай его явно, иначе получишь таймаут на середине.` +
+        `\n\nФайлы на этой машине читай инструментом mcp__remote__read (окно строк), ` +
+        `ищи mcp__remote__grep, правь mcp__remote__edit (точная замена). Через bash файлы ` +
+        `не читай (cat/sed тянут в контекст весь файл) и не правь (heredoc/python).` +
         (req.readOnlyRemote
-          ? `\n\nРежим «План»: только исследование. Читай файлы и историю (ls, cat, grep, ` +
-            `git log/diff/status), но ничего не меняй — правки, установки и сборки будут отклонены.`
+          ? `\n\nРежим «План»: только исследование. Читай файлы mcp__remote__read, ищи ` +
+            `mcp__remote__grep, историю смотри bash (ls, git log/diff/status), но ничего не ` +
+            `меняй — правки, установки и сборки будут отклонены.`
           : '') +
         (req.remote.policySummary ? `\n\n${req.remote.policySummary}` : '') +
         ciHint

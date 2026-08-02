@@ -359,3 +359,86 @@ describe('инструменты БЗ в остальных ходах рана'
     expect(rec.last()!.readOnlyRemote).toBe(true)
   })
 })
+
+// Измеримость расхода хода: у codex CLI не сообщает ни стоимости, ни длительности,
+// ни числа ходов, а модель у него бывает пустой штатно (берётся из его
+// config.toml). Пока это писалось «как пришло», отчёт рана через исполнителя был
+// из одних прочерков, а токены входа у двух движков значили разное.
+describe('расход хода: модель, время, семантика входа и вызовы инструментов', () => {
+  /** Клиент, который отдаёт usage и «вызывает» инструменты, но не мету CLI. */
+  function codexLike(tools: string[], usage = { inputTokens: 1000, outputTokens: 50, cacheReadTokens: 800, cacheCreationTokens: 0 }): LlmClient {
+    return {
+      send: (_req, handlers) => {
+        for (const tool of tools) handlers.onActivity?.({ kind: 'tool_use', summary: `${tool}: …`, raw: '{}', tool })
+        handlers.onUsage?.(usage)
+        handlers.onDelta?.('готово')
+        handlers.onDone?.('готово') // мету codex не присылает
+        return { cancel: () => {} }
+      }
+    }
+  }
+
+  /** Ран через исполнителя: провайдер codex, модель задаётся явно (бывает пустой). */
+  function codexRun(llmModel: string) {
+    const project = db.createProject(U, { name: 'P' })
+    const board = db.getBoard(U, project.id)!
+    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    const run = db.createCiRun({
+      projectId: project.id, taskId: task.id, agentId: null, triggeredBy: U, prevColumnId: null,
+      llmProvider: 'codex', llmModel, kbContextMode: 'off', slotProgress: { done: 0, total: 1, phase: '' }
+    })
+    const ctx = {
+      runId: run.id, agentId: null, workspacePath: '/repos/p/1', env: { BRANCH: 'b' },
+      signal: new AbortController().signal, parentStepId: 'step-1', log: () => {}, run, task,
+      project: db.getProject(U, project.id)!, askUser: async () => null, askPlanApproval: async () => null,
+      runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
+    } as unknown as CiModelContext
+    return { run, ctx }
+  }
+
+  it('вход пишется без кэша, а время и число запросов — по замеру сервера', async () => {
+    const { run, ctx } = codexRun('gpt-5.4')
+    // Часы хода инъектируются: замер сервера — единственный источник длительности
+    // для codex, и проверять её надо числом, а не «сколько успел настоящий Date».
+    let clock = 5_000
+    await hooksWith(codexLike([]), { kb: undefined, now: () => (clock += 250) }).modelWork(ctx)
+
+    const rows = db.listCiRunUsage(run.id)
+    expect(rows).toHaveLength(1)
+    // 1000 пришедших минус 800 из кэша: у claude вход и так без кэша.
+    expect(rows[0]).toMatchObject({ model: 'gpt-5.4', inputTokens: 200, cacheReadTokens: 800, inputSemantics: 'no_cache', numTurns: 1 })
+    expect(rows[0].durationMs).toBeGreaterThan(0)
+    expect(rows[0].costUsd).toBeNull() // настоящей стоимости CLI не дал — оценит отчёт
+  })
+
+  it('модель, которую не назвал ни CLI, ни настройка рана, становится unknown', async () => {
+    const { run, ctx } = codexRun('')
+    await hooksWith(codexLike([]), { kb: undefined }).modelWork(ctx)
+    expect(db.listCiRunUsage(run.id)[0].model).toBe('unknown')
+  })
+
+  it('вызовы инструментов копятся по видам за ран, а не теряются', async () => {
+    const { run, ctx } = codexRun('gpt-5.4')
+    const tools = ['remote:read', 'remote:read', 'remote:bash', 'remote:edit', 'kb:document', 'mcp__ci__run_command']
+    const hooks = hooksWith(codexLike(tools), { kb: undefined })
+    await hooks.modelWork(ctx)
+    await hooks.modelSummary(ctx) // второй ход добавляет свои вызовы к тем же счётчикам
+
+    expect(db.ciRunToolCalls(run.id)).toEqual({ bash: 2, read: 4, grep: 0, edit: 2, kb: 2, other: 2 })
+  })
+
+  it('ход без вызовов не создаёт счётчик: «нет строки» ≠ «ноль вызовов»', async () => {
+    const { run, ctx } = codexRun('gpt-5.4')
+    await hooksWith(codexLike([]), { kb: undefined }).modelWork(ctx)
+    expect(db.ciRunToolCalls(run.id)).toBeNull()
+  })
+
+  it('сломанная запись метрики не роняет ход модели', async () => {
+    const { ctx } = codexRun('gpt-5.4')
+    const hooks = hooksWith(codexLike(['remote:read']), { kb: undefined })
+    // Обе метрики хода падают — ход обязан завершиться успехом (правило расхода).
+    db.addCiRunUsage = () => { throw new Error('БД недоступна') }
+    db.addCiRunToolCalls = () => { throw new Error('БД недоступна') }
+    expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
+  })
+})
