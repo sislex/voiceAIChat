@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-02
-checked: 4694903
+checked: 65621d2
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -50,6 +50,17 @@ Claude это `default` («Default (recommended)» — модель выбира
 настройках обошёл бы запрет. Пустая модель codex (прежний пункт «По умолчанию
 (из codex)») по-прежнему допустима — исполнитель тогда не добавляет `-m`, а UI
 показывает её отдельным пунктом, как любую модель не из пресетов.
+
+Дефолты новых пользователей — `DEFAULT_SETTINGS.model = 'default'` и
+`codexModel = DEFAULT_CODEX_MODEL`, то есть первый пункт каждого меню. Роль
+`user` теряет только `opus[1m]` и `fable` (`RESTRICTED_FOR_USER`): `default`
+доступен всем — это выбор самого CLI, а не явно взятая дорогая модель, и без
+него у роли не осталось бы пункта по умолчанию. У CI своя константа
+`DEFAULT_CI_CLAUDE_MODEL = 'opus'` (`packages/shared/src/ci.ts`), и она
+намеренно осталась прежней: ран отдаёт `ci_runs.llm_model` в `--model` без
+нормализации (`modelFor` в `ci/modelHooks.ts`), а голый алиас `opus` CLI
+по-прежнему понимает. В меню его нет, поэтому селекты дорисовывают такую
+модель отдельным пунктом — см. [features/ci-runner.md](features/ci-runner.md).
 
 Отсюда два следствия: (1) аутентификация — это `claude login` / `codex login` на
 хосте или в контейнере runner-а, ключей в конфиге нет; (2) ошибки CLI переводятся в
