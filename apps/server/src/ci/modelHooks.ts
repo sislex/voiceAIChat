@@ -5,8 +5,8 @@
 import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import {
-  appendQuestionsHint, ciToolCallsTotal, clarifyBudget, classifyCiToolCall, DEFAULT_CI_CLAUDE_MODEL,
-  EMPTY_CI_TOOL_CALLS, isVerificationCommand, parseQuestions, UNKNOWN_MODEL
+  appendQuestionsHint, ciToolCallsAny, clarifyBudget, classifyCiToolCall, DEFAULT_CI_CLAUDE_MODEL,
+  EMPTY_CI_TOOL_CALLS, isCiToolDenial, isVerificationCommand, parseQuestions, UNKNOWN_MODEL
 } from '@voicechat/shared'
 import type { CiRunMode, CiToolCalls, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
@@ -173,6 +173,9 @@ function runTurn(
         // любого движка: у MCP-эндпоинта рана нет (он знает лишь машину и папку),
         // а имена в логе у claude и codex записаны по-разному.
         if (e.tool) toolCalls[classifyCiToolCall(e.tool)]++
+        // Отказ виден только в результате вызова: имени инструмента там уже нет,
+        // а сам вызов посчитан своим видом выше — поэтому отдельный счётчик.
+        else if (e.kind === 'tool_result' && isCiToolDenial(`${e.summary}\n${e.detail ?? ''}`)) toolCalls.denied++
         onLog('system', `[${e.kind}] ${e.summary}${e.detail ? ` · ${e.detail}` : ''}\n`)
       },
       // Счётчики кумулятивны: держим последние — у прерванного хода это всё,
@@ -204,7 +207,9 @@ function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmReque
  */
 const REMOTE_FILE_TOOLS_DIRECTIVE =
   'Файлы читай инструментом read, ищи grep и правь edit; bash используй для команд ' +
-  '(git, npm, тесты), а не для чтения файлов и не для правок через heredoc.'
+  '(git, npm, тесты), а не для чтения файлов и не для правок через heredoc. ' +
+  'Команду, вся суть которой — прочитать файл рабочей копии (cat, sed -n, head, tail), ' +
+  'мост отклонит и подскажет готовый вызов read с нужным окном строк.'
 
 const NO_SELF_VERIFICATION = [
   'Тесты, typecheck, линтер и сборку сам не запускай — за проверку отвечает шаг воркфлоу после твоей работы.',
@@ -314,10 +319,11 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   /**
    * Вызовы инструментов хода — в счётчик рана. Ход без вызовов ничего не пишет:
    * «строки нет» должно означать «счётчика у рана нет», а не «модель не вызвала
-   * ничего». Не бросает никогда — это метрика.
+   * ничего». Ход из одних отказов писать надо — иначе они снова не видны.
+   * Не бросает никогда — это метрика.
    */
   function recordToolCalls(ctx: CiModelContext, turn: TurnResult): void {
-    if (ciToolCallsTotal(turn.toolCalls) === 0) return
+    if (!ciToolCallsAny(turn.toolCalls)) return
     try {
       deps.db.addCiRunToolCalls(ctx.run.id, turn.toolCalls)
     } catch {

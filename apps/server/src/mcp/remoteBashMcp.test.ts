@@ -214,6 +214,55 @@ describe('remoteBashMcp', () => {
     expect(execCalls).toBe(1)
   })
 
+  it('чистое чтение файла отклоняется до exec и возвращает готовый вызов read', async () => {
+    const { registry, lastCommand } = spyRegistry(undefined)
+    app = await makeApp(registry)
+    const query = `?k=${SECRET}&agent=a1&cwd=${encodeURIComponent('/repos/task')}`
+    await rpc(app, INIT_BODY, query)
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'bash', arguments: { command: "sed -n '10,20p' apps/server/src/server.ts" } }
+    }, query)
+    const result = (call.json() as { result: { content: Array<{ text: string }>; isError: boolean } }).result
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('read {"path":"apps/server/src/server.ts","offset":10,"limit":11}')
+    expect(lastCommand()).toBe('') // до машины команда не дошла
+  })
+
+  it('команда, где чтение — часть работы, выполняется как раньше', async () => {
+    const { registry, lastCommand } = spyRegistry(undefined)
+    app = await makeApp(registry)
+    const query = `?k=${SECRET}&agent=a1&cwd=${encodeURIComponent('/repos/task')}`
+    await rpc(app, INIT_BODY, query)
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'bash', arguments: { command: 'npm test 2>&1 | tail -50' } }
+    }, query)
+    expect((call.json() as { result: { isError?: boolean } }).result.isError).toBeFalsy()
+    expect(lastCommand()).toContain('npm test 2>&1 | tail -50')
+  })
+
+  it('ro=1 (фаза плана): гейт чтения работает, исследование bash — нет', async () => {
+    const { registry, lastCommand } = spyRegistry(undefined)
+    app = await makeApp(registry)
+    const query = `?k=${SECRET}&agent=a1&cwd=${encodeURIComponent('/repos/task')}&ro=1`
+    await rpc(app, INIT_BODY, query)
+    const read = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'bash', arguments: { command: 'cat AGENTS.md' } }
+    }, query)
+    const text = (read.json() as { result: { content: Array<{ text: string }> } }).result.content[0].text
+    expect(text).toContain('read {"path":"AGENTS.md"}')
+    expect(lastCommand()).toBe('')
+
+    const explore = await rpc(app, {
+      jsonrpc: '2.0', id: 3, method: 'tools/call',
+      params: { name: 'bash', arguments: { command: 'git log --oneline -5' } }
+    }, query)
+    expect((explore.json() as { result: { isError?: boolean } }).result.isError).toBeFalsy()
+    expect(lastCommand()).toContain('git log --oneline -5')
+  })
+
   it('tools/list показывает bash и файловые инструменты', async () => {
     app = await makeApp(stubRegistry({ exitCode: 0, output: '', timedOut: false }))
     await rpc(app, INIT_BODY)

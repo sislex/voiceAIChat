@@ -9,6 +9,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { evaluatePlanModeCommand } from './planMode.js'
+import { bashFileReadRejection, evaluateBashFileRead } from './bashFileRead.js'
 
 export const REMOTE_BASH_MCP_PATH = '/mcp/remote-bash'
 
@@ -128,7 +129,9 @@ export function registerRemoteBashMcp(
           {
             description:
               'Выполняет shell-команду на машине пользователя (не на сервере). ' +
-              'Для команд (git, npm, тесты), не для чтения и правки файлов. Возвращает stdout+stderr и код выхода.',
+              'Для команд (git, npm, тесты), не для чтения и правки файлов: команда, вся суть ' +
+              'которой — прочитать файл рабочей копии (cat/sed -n/head/tail), отклоняется с ' +
+              'готовым вызовом read. Возвращает stdout+stderr и код выхода.',
             inputSchema: {
               command: z.string().describe('Команда для /bin/bash'),
               timeout_ms: z
@@ -155,8 +158,18 @@ export function registerRemoteBashMcp(
                   }
                 }
               }
-              const timeoutMs = Math.min(timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
               const cwd = req.query.cwd
+              // Чтение файла — работа инструмента read: он отдаёт окно строк, а
+              // не файл целиком. Отказ идёт до exec и несёт готовую замену,
+              // чтобы модель не гадала, чем заменить команду.
+              const fileRead = evaluateBashFileRead(command, cwd)
+              if (fileRead) {
+                return {
+                  content: [{ type: 'text' as const, text: bashFileReadRejection(fileRead) }],
+                  isError: true
+                }
+              }
+              const timeoutMs = Math.min(timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
               const shellCommand = cwd
                 ? `cd -- '${quoteCwd(cwd, registry.platformOf(agentId))}' && ${command}`
                 : command

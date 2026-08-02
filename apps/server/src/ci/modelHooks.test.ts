@@ -6,6 +6,7 @@
 // для fix-loop, а брокер здесь — двойник, который умеет показать живые токены.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { EMPTY_CI_TOOL_CALLS } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
 import { createCiModelHooks } from './modelHooks.js'
 import type { CiFixContext, CiModelContext } from './types.js'
@@ -185,6 +186,8 @@ describe('работа модели: база знаний по режимам �
     expect(req.prompt).toContain('Начни работу с базы знаний проекта, а не с кода')
     expect(req.prompt).toContain('Файлы читай инструментом read, ищи grep и правь edit')
     expect(req.prompt).toContain('bash используй для команд')
+    // Про гейт модель предупреждена заранее: отказ не должен быть сюрпризом.
+    expect(req.prompt).toContain('мост отклонит и подскажет готовый вызов read')
     // Сам блок контекста: заголовок раздела БЗ в промпте (директива лишь ссылается на него).
     expect(req.prompt).toContain('### CI-раннер / Работа модели')
   })
@@ -424,13 +427,34 @@ describe('расход хода: модель, время, семантика в
     await hooks.modelWork(ctx)
     await hooks.modelSummary(ctx) // второй ход добавляет свои вызовы к тем же счётчикам
 
-    expect(db.ciRunToolCalls(run.id)).toEqual({ bash: 2, read: 4, grep: 0, edit: 2, kb: 2, other: 2 })
+    expect(db.ciRunToolCalls(run.id)).toEqual({ bash: 2, read: 4, grep: 0, edit: 2, kb: 2, other: 2, denied: 0 })
   })
 
   it('ход без вызовов не создаёт счётчик: «нет строки» ≠ «ноль вызовов»', async () => {
     const { run, ctx } = codexRun('gpt-5.4')
     await hooksWith(codexLike([]), { kb: undefined }).modelWork(ctx)
     expect(db.ciRunToolCalls(run.id)).toBeNull()
+  })
+
+  it('ход из одних отказов всё равно пишет счётчик — иначе отказов никто не видит', async () => {
+    const { run, ctx } = codexRun('gpt-5.4')
+    const denials: LlmClient = {
+      send: (_req, handlers) => {
+        // Результат вызова приходит без имени инструмента — только текстом.
+        handlers.onActivity?.({
+          kind: 'tool_result',
+          summary: '✗ ошибка: Отклонено: это чтение файла, а его делает инструмент read.',
+          detail: 'Отклонено: это чтение файла, а его делает инструмент read.',
+          raw: '{}'
+        })
+        handlers.onActivity?.({ kind: 'tool_result', summary: '✗ ошибка: [exit code: 1]', raw: '{}' })
+        handlers.onDelta?.('готово')
+        handlers.onDone?.('готово')
+        return { cancel: () => {} }
+      }
+    }
+    await hooksWith(denials, { kb: undefined }).modelWork(ctx)
+    expect(db.ciRunToolCalls(run.id)).toEqual({ ...EMPTY_CI_TOOL_CALLS, denied: 1 })
   })
 
   it('сломанная запись метрики не роняет ход модели', async () => {

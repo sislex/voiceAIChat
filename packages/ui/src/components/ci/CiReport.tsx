@@ -164,6 +164,9 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
       {toolCalls && <p className="ci-report__note" data-testid={`${testId}-tools`}>
         Инструменты: {ciToolCallsTotal(toolCalls)} вызовов, из них чтений {toolCalls.read}, правок {toolCalls.edit}
         {' '}(bash {toolCalls.bash} · read {toolCalls.read} · grep {toolCalls.grep} · edit {toolCalls.edit} · БЗ {toolCalls.kb})
+        {/* Отказ — не вид инструмента, а исход вызова: он уже посчитан своим
+            видом, поэтому идёт отдельной припиской и только когда он был. */}
+        {toolCalls.denied > 0 && ` · отказов ${toolCalls.denied}`}
       </p>}
       {kbHit && <p className="ci-report__note" data-testid={`${testId}-kb-hit`}>
         БЗ: выдано {kbHit.sectionsDelivered} разделов, задето {kbHit.sectionsHit} файлов из них

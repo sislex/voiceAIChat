@@ -744,15 +744,42 @@ export function sumCiUsageTotals(list: CiUsageTotals[]): CiUsageTotals {
  * CHAT-54: файлы читаются `read`/`grep` и правятся `edit`, а `bash` остаётся для
  * команд. Пока чтение шло `cat` внутри `bash`, весь файл попадал в контекст, и
  * ход стоил в разы дороже. `kb` — обращения к базе знаний инструментом.
+ *
+ * `denied` стоит особняком: это не инструмент, а исход вызова — отказ (вызов
+ * упёрся в неодобренное разрешение CLI либо его отклонил remote-мост). Отказы
+ * были видны только в сырой ленте, а без счётчика неотличимы от «модель этим
+ * инструментом не пользуется».
  */
-export type CiToolKind = 'bash' | 'read' | 'grep' | 'edit' | 'kb' | 'other'
+export type CiToolKind = 'bash' | 'read' | 'grep' | 'edit' | 'kb' | 'other' | 'denied'
 
-export const CI_TOOL_KINDS: CiToolKind[] = ['bash', 'read', 'grep', 'edit', 'kb', 'other']
+export const CI_TOOL_KINDS: CiToolKind[] = ['bash', 'read', 'grep', 'edit', 'kb', 'other', 'denied']
+
+/**
+ * Виды, из которых складывается «всего вызовов». `denied` не входит: сам вызов
+ * уже посчитан своим видом, и сумма с отказами считала бы его дважды.
+ */
+export const CI_TOOL_CALL_KINDS: CiToolKind[] = ['bash', 'read', 'grep', 'edit', 'kb', 'other']
 
 /** Сколько раз за ран вызван инструмент каждого вида. */
 export type CiToolCalls = Record<CiToolKind, number>
 
-export const EMPTY_CI_TOOL_CALLS: CiToolCalls = { bash: 0, read: 0, grep: 0, edit: 0, kb: 0, other: 0 }
+export const EMPTY_CI_TOOL_CALLS: CiToolCalls = { bash: 0, read: 0, grep: 0, edit: 0, kb: 0, other: 0, denied: 0 }
+
+/**
+ * Отказ ли это, а не обычная ошибка команды. Считается по тексту результата —
+ * единственному, что о вызове известно и claude, и codex: имени инструмента в
+ * `tool_result` нет. Список маркеров узкий намеренно: упавший `npm test` или
+ * `ENOENT` отказом не являются, и записать их в отказы хуже, чем недосчитать.
+ */
+export function isCiToolDenial(text: string): boolean {
+  if (!text) return false
+  return (
+    /requested permissions/i.test(text) || // claude -p: «…but you haven't granted it yet»
+    /haven'?t granted/i.test(text) ||
+    /Отклонено:/.test(text) || // remote-мост: режим «План» и чтение файла через bash
+    /tool use was (?:denied|rejected)/i.test(text)
+  )
+}
 
 /**
  * Вид инструмента по имени, которым его назвал CLI. Форматы у движков разные, а
@@ -791,9 +818,14 @@ export function countCiToolCalls(names: Iterable<string>): CiToolCalls {
   return calls
 }
 
-/** Всего вызовов — сумма по видам. */
+/** Всего вызовов — сумма по видам инструментов (отказы считаются отдельно). */
 export function ciToolCallsTotal(calls: CiToolCalls): number {
-  return CI_TOOL_KINDS.reduce((acc, kind) => acc + calls[kind], 0)
+  return CI_TOOL_CALL_KINDS.reduce((acc, kind) => acc + calls[kind], 0)
+}
+
+/** Есть ли что записывать: ход мог состоять из одних отказов. */
+export function ciToolCallsAny(calls: CiToolCalls): boolean {
+  return ciToolCallsTotal(calls) > 0 || calls.denied > 0
 }
 
 /**

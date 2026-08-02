@@ -429,8 +429,20 @@ describe('TaskModal — отчёт по завершённой задаче', ()
 
     const tools = await screen.findByTestId('task-modal-report-tools')
     // 12 bash + 31 read + 9 grep + 14 edit + 3 kb + 1 прочий = 70 вызовов.
+    // Два отказа в «всего» не входят: сами вызовы уже посчитаны своими видами.
     expect(text(tools)).toContain('Инструменты: 70 вызовов, из них чтений 31, правок 14')
     expect(text(tools)).toContain('bash 12')
+    expect(text(tools)).toContain('отказов 2')
+  })
+
+  it('без отказов приписки в строке инструментов нет', async () => {
+    withReport(makeTaskReport([makeRunReport({
+      toolCalls: { bash: 1, read: 2, grep: 0, edit: 0, kb: 0, other: 0, denied: 0 }
+    })]))
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    const tools = await screen.findByTestId('task-modal-report-tools')
+    expect(text(tools)).not.toContain('отказов')
   })
 
   it('время работы модели без данных CLI — прочерк, а не «0мс»', async () => {
