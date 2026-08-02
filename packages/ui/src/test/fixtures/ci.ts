@@ -525,6 +525,10 @@ export function makeUsageTotals(over: Partial<CiUsageTotals> = {}): CiUsageTotal
     costUnderstated: false,
     inputNormalized: false,
     modelActiveMs: 640_000,
+    // Запросов к API за ходами в разы больше, чем самих ходов: каждый вызов
+    // инструмента — новый запрос со всем накопленным контекстом.
+    apiRequests: 24,
+    maxContextPerRequest: 12_000,
     ...over
   }
 }
@@ -565,6 +569,12 @@ export function makeRunReport(over: Partial<CiRunReport> = {}): CiRunReport {
     fixAttempts: 1,
     kbHit: null,
     toolCalls: { bash: 12, read: 31, grep: 9, edit: 14, kb: 3, other: 1, denied: 2 },
+    toolChars: { bash: 148_000, read: 96_000, grep: 12_400, edit: 1800, kb: 32_000, other: 0, denied: 0 },
+    toolResponses: [
+      { tool: 'mcp__remote__bash', kind: 'bash', label: 'remote:bash: npm ci', chars: 20_000, originalChars: 243_100, stepId: 'model-1', at: RUN_T0 + 120_000 },
+      { tool: 'mcp__remote__read', kind: 'read', label: 'remote:read: apps/server/src/db/database.ts', chars: 18_400, originalChars: null, stepId: 'model-1', at: RUN_T0 + 200_000 },
+      { tool: 'mcp__kb__document', kind: 'kb', label: 'kb:document: ci-runner', chars: 8000, originalChars: null, stepId: 'model-1', at: RUN_T0 + 60_000 }
+    ],
     totals: makeUsageTotals(),
     // Разные модели по стадиям — ровно та картина, ради которой разбивка и есть:
     // разработка на модели рана, вспомогательные стадии дешевле.

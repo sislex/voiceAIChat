@@ -103,12 +103,18 @@ import {
   type CiUsageKind,
   type CiInputSemantics,
   type CiToolCalls,
+  type CiToolChars,
+  type CiToolKind,
+  type CiRunToolResponse,
   type CiRunReport,
   type CiRunReportStep,
   type CiTaskReport,
   type KbGapNote,
   CI_TOOL_KINDS,
+  CI_TOOL_RESPONSES_KEEP,
+  CI_TOOL_RESPONSES_SHOWN,
   EMPTY_CI_TOOL_CALLS,
+  EMPTY_CI_TOOL_CHARS,
   ciTaskTotals,
   ciUsageStages,
   ciUsageTotals,
@@ -709,10 +715,21 @@ export class VoiceChatDb {
     if (ciUsageCols.length && !ciUsageCols.some((c) => c.name === 'input_semantics')) this.db.exec(`ALTER TABLE ci_run_usage ADD COLUMN input_semantics TEXT`)
     const ciSettingsCols = this.db.prepare(`PRAGMA table_info(ci_settings)`).all() as Array<{ name: string }>
     if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === 'interaction_wait_ms')) this.db.exec(`ALTER TABLE ci_settings ADD COLUMN interaction_wait_ms INTEGER NOT NULL DEFAULT 1800000`)
-    // Модель по стадии рана. Старая строка настроек остаётся с NULL и читается
-    // как дефолт кода: обновление само переводит вспомогательные стадии на
-    // дешёвую модель, иначе фича включалась бы только руками.
     if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === 'stage_models')) this.db.exec(`ALTER TABLE ci_settings ADD COLUMN stage_models TEXT`)
+    const toolLimitColumns: Array<[string, number]> = [
+      ['bash_output_limit_chars', DEFAULT_CI_GLOBAL_SETTINGS.bashOutputLimitChars],
+      ['read_output_limit_chars', DEFAULT_CI_GLOBAL_SETTINGS.readOutputLimitChars],
+      ['read_window_max_lines', DEFAULT_CI_GLOBAL_SETTINGS.readWindowMaxLines],
+      ['grep_match_limit', DEFAULT_CI_GLOBAL_SETTINGS.grepMatchLimit],
+      ['grep_output_limit_chars', DEFAULT_CI_GLOBAL_SETTINGS.grepOutputLimitChars]
+    ]
+    for (const [column, fallback] of toolLimitColumns) {
+      if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === column)) {
+        this.db.exec(`ALTER TABLE ci_settings ADD COLUMN ${column} INTEGER NOT NULL DEFAULT ${fallback}`)
+      }
+    }
+    const ciToolCallCols = this.db.prepare(`PRAGMA table_info(ci_run_tool_calls)`).all() as Array<{ name: string }>
+    if (ciToolCallCols.length && !ciToolCallCols.some((c) => c.name === 'chars')) this.db.exec(`ALTER TABLE ci_run_tool_calls ADD COLUMN chars INTEGER NOT NULL DEFAULT 0`)
 
     // Привязка обращения к БЗ к рану и шагу CI: отчёты по ране/задаче строятся
     // по ним, а старые строки просто остаются с NULL (это обращения из чата).
@@ -2419,8 +2436,7 @@ export class VoiceChatDb {
     return changes > 0
   }
 
-  // ============================ CI-раннер ============================
-
+  // ============================ CI-раннер =====================
   /** Видима ли команда пользователю (глобальная — всем; проектная — участнику). */
   private ciCommandVisible(userId: string, r: CiCommandRow): boolean {
     if (r.scope === 'global') return true
@@ -2702,27 +2718,28 @@ export class VoiceChatDb {
     const r = this.db.prepare(`SELECT * FROM ci_settings WHERE id = 1`).get() as Record<string, number | string | null> | undefined
     if (!r) {
       const d = DEFAULT_CI_GLOBAL_SETTINGS
-      this.db.prepare(`INSERT INTO ci_settings (id, max_fix_attempts, fix_time_limit_ms, fix_token_limit, default_step_timeout_sec, metrics_window, max_concurrent_runs, max_model_command_calls, interaction_wait_ms, stage_models) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.maxFixAttempts, d.fixTimeLimitMs, d.fixTokenLimit, d.defaultStepTimeoutSec, d.metricsWindow, d.maxConcurrentRuns, d.maxModelCommandCalls, d.interactionWaitMs, JSON.stringify(d.stageModels))
+      this.db.prepare(`INSERT INTO ci_settings (id, max_fix_attempts, fix_time_limit_ms, fix_token_limit, default_step_timeout_sec, metrics_window, max_concurrent_runs, max_model_command_calls, interaction_wait_ms, stage_models, bash_output_limit_chars, read_output_limit_chars, read_window_max_lines, grep_match_limit, grep_output_limit_chars) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.maxFixAttempts, d.fixTimeLimitMs, d.fixTokenLimit, d.defaultStepTimeoutSec, d.metricsWindow, d.maxConcurrentRuns, d.maxModelCommandCalls, d.interactionWaitMs, JSON.stringify(d.stageModels), d.bashOutputLimitChars, d.readOutputLimitChars, d.readWindowMaxLines, d.grepMatchLimit, d.grepOutputLimitChars)
       return { ...d, stageModels: { ...d.stageModels } }
     }
+    const d = DEFAULT_CI_GLOBAL_SETTINGS
     return {
       maxFixAttempts: r.max_fix_attempts as number, fixTimeLimitMs: r.fix_time_limit_ms as number, fixTokenLimit: r.fix_token_limit as number,
       defaultStepTimeoutSec: r.default_step_timeout_sec as number, metricsWindow: r.metrics_window as number,
       maxConcurrentRuns: r.max_concurrent_runs as number, maxModelCommandCalls: r.max_model_command_calls as number,
-      interactionWaitMs: (r.interaction_wait_ms as number) ?? DEFAULT_CI_GLOBAL_SETTINGS.interactionWaitMs,
-      // Строка настроек, заведённая до фичи: колонки нет или она пуста — дефолты
-      // кода. Разбор битого JSON тоже уводит в них: настройка не должна мешать
-      // читать все остальные лимиты.
-      stageModels: normCiStageModels(parseJsonObject(r.stage_models))
+      interactionWaitMs: (r.interaction_wait_ms as number) ?? d.interactionWaitMs,
+      stageModels: normCiStageModels(parseJsonObject(r.stage_models)),
+      bashOutputLimitChars: (r.bash_output_limit_chars as number) ?? d.bashOutputLimitChars,
+      readOutputLimitChars: (r.read_output_limit_chars as number) ?? d.readOutputLimitChars,
+      readWindowMaxLines: (r.read_window_max_lines as number) ?? d.readWindowMaxLines,
+      grepMatchLimit: (r.grep_match_limit as number) ?? d.grepMatchLimit,
+      grepOutputLimitChars: (r.grep_output_limit_chars as number) ?? d.grepOutputLimitChars
     }
   }
 
   updateCiSettings(patch: Partial<CiGlobalSettings>): CiGlobalSettings {
     const cur = this.getCiSettings()
-    // Стадии сливаются с текущими, а не заменяют их целиком: патч на одну стадию
-    // (правка по REST) не должен сбрасывать остальные в дефолты кода.
     const next = { ...cur, ...patch, stageModels: patch.stageModels ? normCiStageModels({ ...cur.stageModels, ...patch.stageModels }) : cur.stageModels }
-    this.db.prepare(`UPDATE ci_settings SET max_fix_attempts=?, fix_time_limit_ms=?, fix_token_limit=?, default_step_timeout_sec=?, metrics_window=?, max_concurrent_runs=?, max_model_command_calls=?, interaction_wait_ms=?, stage_models=? WHERE id=1`).run(next.maxFixAttempts, next.fixTimeLimitMs, next.fixTokenLimit, next.defaultStepTimeoutSec, next.metricsWindow, next.maxConcurrentRuns, next.maxModelCommandCalls, next.interactionWaitMs, JSON.stringify(next.stageModels))
+    this.db.prepare(`UPDATE ci_settings SET max_fix_attempts=?, fix_time_limit_ms=?, fix_token_limit=?, default_step_timeout_sec=?, metrics_window=?, max_concurrent_runs=?, max_model_command_calls=?, interaction_wait_ms=?, stage_models=?, bash_output_limit_chars=?, read_output_limit_chars=?, read_window_max_lines=?, grep_match_limit=?, grep_output_limit_chars=? WHERE id=1`).run(next.maxFixAttempts, next.fixTimeLimitMs, next.fixTokenLimit, next.defaultStepTimeoutSec, next.metricsWindow, next.maxConcurrentRuns, next.maxModelCommandCalls, next.interactionWaitMs, JSON.stringify(next.stageModels), next.bashOutputLimitChars, next.readOutputLimitChars, next.readWindowMaxLines, next.grepMatchLimit, next.grepOutputLimitChars)
     return next
   }
 
@@ -2947,15 +2964,19 @@ export class VoiceChatDb {
    * «нет строки» = «счётчика у рана нет», и отчёт должен уметь это отличать от
    * настоящего нуля вызовов.
    */
-  addCiRunToolCalls(runId: string, calls: Partial<CiToolCalls>): void {
+  addCiRunToolCalls(runId: string, calls: Partial<CiToolCalls>, chars?: Partial<CiToolChars>): void {
     const at = this.now()
     const upsert = this.db.prepare(
-      `INSERT INTO ci_run_tool_calls (run_id, tool, calls, updated_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT(run_id, tool) DO UPDATE SET calls = calls + excluded.calls, updated_at = excluded.updated_at`
+      `INSERT INTO ci_run_tool_calls (run_id, tool, calls, chars, updated_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(run_id, tool) DO UPDATE SET calls = calls + excluded.calls,
+         chars = chars + excluded.chars, updated_at = excluded.updated_at`
     )
     for (const kind of CI_TOOL_KINDS) {
       const n = calls[kind] ?? 0
-      if (n > 0) upsert.run(runId, kind, Math.round(n), at)
+      const c = Math.max(0, Math.round(chars?.[kind] ?? 0))
+      // Объём без вызовов бывает: ответ пришёл, а вызов посчитан другим видом
+      // (в `tool_result` имени инструмента нет) — такую строку писать надо.
+      if (n > 0 || c > 0) upsert.run(runId, kind, Math.round(n), c, at)
     }
   }
 
@@ -3024,6 +3045,65 @@ export class VoiceChatDb {
       )
       .all(runId, Math.max(1, Math.min(limit, 50))) as Array<{ query: string; reason: string; at: number }>)
       .map((row) => ({ query: row.query, reason: row.reason || 'база знаний не ответила' }))
+   * Объём ответов инструментов рана (символы по видам); null — метрики у рана
+   * нет. Ран до метрики и ран, где ответы были пустыми, — разные вещи: колонка
+   * `chars` у старых строк нулевая, поэтому «нет строк» и «есть нули» различаем
+   * по наличию строк самой таблицы.
+   */
+  ciRunToolChars(runId: string): CiToolChars | null {
+    const rows = this.db.prepare(`SELECT tool, chars FROM ci_run_tool_calls WHERE run_id = ?`).all(runId) as Array<{ tool: string; chars: number }>
+    if (!rows.length) return null
+    const chars: CiToolChars = { ...EMPTY_CI_TOOL_CHARS }
+    for (const row of rows) {
+      const kind = CI_TOOL_KINDS.find((k) => k === row.tool)
+      if (kind) chars[kind] += row.chars ?? 0
+    }
+    return chars
+  }
+
+  /**
+   * Записать тяжёлый ответ инструмента и оставить у рана только верхушку по
+   * объёму (`CI_TOOL_RESPONSES_KEEP`): это метрика «кто раздул контекст», а не
+   * архив ленты — она и так целиком в `ci_run_logs`.
+   */
+  addCiRunToolResponse(args: {
+    runId: string
+    stepId: string | null
+    tool: string
+    kind: CiToolKind
+    label: string
+    chars: number
+    originalChars?: number | null
+  }): void {
+    const id = this.newId()
+    this.db.prepare(
+      `INSERT INTO ci_run_tool_responses (id, run_id, step_id, tool, kind, label, chars, original_chars, at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id, args.runId, args.stepId, args.tool, args.kind, args.label.slice(0, 300),
+      Math.max(0, Math.round(args.chars)), args.originalChars ?? null, this.now()
+    )
+    this.db.prepare(
+      `DELETE FROM ci_run_tool_responses WHERE run_id = ? AND id NOT IN (
+         SELECT id FROM ci_run_tool_responses WHERE run_id = ? ORDER BY chars DESC, at ASC LIMIT ?
+       )`
+    ).run(args.runId, args.runId, CI_TOOL_RESPONSES_KEEP)
+  }
+
+  /** Самые тяжёлые ответы инструментов рана — от тяжёлого к лёгкому. */
+  ciRunToolResponses(runId: string, limit = CI_TOOL_RESPONSES_SHOWN): CiRunToolResponse[] {
+    return (this.db.prepare(
+      `SELECT * FROM ci_run_tool_responses WHERE run_id = ? ORDER BY chars DESC, at ASC LIMIT ?`
+    ).all(runId, limit) as Array<{ step_id: string | null; tool: string; kind: string; label: string; chars: number; original_chars: number | null; at: number }>)
+      .map((row) => ({
+        tool: row.tool,
+        kind: CI_TOOL_KINDS.find((k) => k === row.kind) ?? 'other',
+        label: row.label,
+        chars: row.chars,
+        originalChars: row.original_chars,
+        stepId: row.step_id,
+        at: row.at
+      }))
   }
 
   /** Финальный агрегат: список файлов остаётся в логе, в БД сохраняются только числа. */
@@ -3104,7 +3184,9 @@ export class VoiceChatDb {
       provider: run.llmProvider, model: run.llmModel, startedAt: run.startedAt, finishedAt: run.finishedAt,
       durationMs: run.durationMs, createdAt: run.createdAt, fixAttempts,
       totals: ciUsageTotals(usage), stages: ciUsageStages(usage), steps, kbHit: this.ciKbHit(run.id),
-      toolCalls: this.ciRunToolCalls(run.id)
+      toolCalls: this.ciRunToolCalls(run.id),
+      toolChars: this.ciRunToolChars(run.id),
+      toolResponses: this.ciRunToolResponses(run.id)
     }
   }
 
@@ -3682,8 +3764,7 @@ export class VoiceChatDb {
   }
 }
 
-// ============== Использование базы знаний: строки БД и мапперы ==============
-
+// ============== Использование базы знаний: строки БД и мапперы =======
 /**
  * Отчёты БД без флагов конфигурации: доступность индекса и включённость
  * mcp__kb__* знает не БД, а роут (config + kb.status()) — он их и дописывает.
@@ -3755,8 +3836,7 @@ function mapKbSectionAggregate(r: KbSectionAggRow): KbUsageSectionAggregate {
   }
 }
 
-// ======================= CI-раннер: строки БД и мапперы =======================
-
+// ======================= CI-раннер: строки БД и мапперы ================
 interface CiCommandRow {
   id: string; scope: string; project_id: string | null; name: string; script: string
   description: string; workdir: string; timeout_sec: number | null; env_json: string
@@ -3984,8 +4064,7 @@ function mapCiSuggestion(r: CiSuggestionRow): CiCommandSuggestion {
 }
 
 
-// ============== Статьи базы знаний: строка БД и маппер ==============
-
+// ============== Статьи базы знаний: строка БД и маппер =======
 interface KbDocumentRow {
   id: string; scope: string; owner_id: string | null; project_id: string | null; title: string; kind: string
   tags: string; areas: string; body: string; checked_on: string | null; created_by: string

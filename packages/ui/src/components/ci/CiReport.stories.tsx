@@ -71,7 +71,19 @@ export const UnderstatedCost: Story = {
 
 /** Ран до появления счётчика вызовов: строки «Инструменты» нет вовсе, не «0». */
 export const NoToolCalls: Story = {
-  args: { report: makeTaskReport([makeRunReport({ toolCalls: null })]) }
+  args: { report: makeTaskReport([makeRunReport({ toolCalls: null, toolChars: null, toolResponses: [] })]) }
+}
+
+/**
+ * Ран codex: числа запросов к API CLI не сообщает, поэтому контекст на запрос —
+ * прочерк с объяснением, а не ноль.
+ */
+export const NoContextPerRequest: Story = {
+  args: {
+    report: makeTaskReport([
+      makeRunReport({ provider: 'codex', totals: makeUsageTotals({ apiRequests: 0, maxContextPerRequest: 0 }) })
+    ])
+  }
 }
 
 /** Отчёт не прочитался: сообщение вместо чисел — карточку это не ломает. */

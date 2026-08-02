@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
+import { ciToolOutputLimits, isTrimmedToolOutput, trimmedToolOutputOriginalChars } from '@voicechat/shared'
 import { registerRemoteBashMcp, quoteCwd } from './remoteBashMcp'
 import type { AgentRegistry, ExecResult } from '../agents/registry'
 
@@ -415,6 +416,147 @@ describe('remoteBashMcp', () => {
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toContain('режим «План»')
     expect(reads).toBe(0)
+  })
+
+  // Сжатие контекста хода: каждый вызов инструмента — новый запрос ко ВСЕМУ
+  // накопленному контексту, поэтому один толстый ответ оплачивается столько раз,
+  // сколько запросов осталось до конца хода. Ответы капнуты настройкой.
+  describe('лимиты ответов (сжатие контекста хода)', () => {
+    it('длинный вывод bash обрезается с пометкой, хвост и код выхода остаются', async () => {
+      const output = `ШАПКА npm ci\n${'x'.repeat(60_000)}\nnpm ERR! код 1 — вот причина`
+      app = await makeApp(stubRegistry({ exitCode: 1, output, timedOut: false }))
+      await rpc(app, INIT_BODY)
+      const call = await rpc(app, {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'bash', arguments: { command: 'npm ci' } }
+      })
+      const result = (call.json() as { result: { content: Array<{ text: string }>; isError: boolean } }).result
+      const text = result.content[0].text
+      expect(result.isError).toBe(true)
+      // Модель обязана знать, что данные неполные, и чем их добрать.
+      expect(isTrimmedToolOutput(text)).toBe(true)
+      expect(text).toContain('Данные неполные')
+      expect(trimmedToolOutputOriginalChars(text)).toBe(output.length)
+      // Хвост важнее головы: причина падения и код выхода на месте — fix-loop
+      // должен видеть, из-за чего упало.
+      expect(text).toContain('npm ERR! код 1 — вот причина')
+      expect(text).toContain('[exit code: 1]')
+      expect(text).toContain('ШАПКА npm ci')
+      expect(text.length).toBeLessThan(output.length / 2)
+    })
+
+    it('короткий вывод bash не обрезается и пометки не несёт', async () => {
+      app = await makeApp(stubRegistry({ exitCode: 0, output: 'готово', timedOut: false }))
+      await rpc(app, INIT_BODY)
+      const call = await rpc(app, {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'bash', arguments: { command: 'ls' } }
+      })
+      const text = (call.json() as { result: { content: Array<{ text: string }> } }).result.content[0].text
+      expect(text).toBe('готово\n[exit code: 0]')
+      expect(isTrimmedToolOutput(text)).toBe(false)
+    })
+
+    it('лимиты берутся из настроек на каждый запрос и живут в описаниях инструментов', async () => {
+      let bashChars = 2_000
+      const app2 = Fastify({ logger: false })
+      registerRemoteBashMcp(app2, stubRegistry({ exitCode: 0, output: 'y'.repeat(5_000), timedOut: false }), SECRET,
+        () => ciToolOutputLimits({ bashOutputLimitChars: bashChars, readWindowMaxLines: 50, grepMatchLimit: 7 }))
+      await app2.ready()
+      app = app2
+      await rpc(app, INIT_BODY)
+      const list = await rpc(app, { jsonrpc: '2.0', id: 2, method: 'tools/list' })
+      const tools = (list.json() as { result: { tools: Array<{ name: string; description: string }> } }).result.tools
+      expect(tools.find((t) => t.name === 'bash')!.description).toContain('2000')
+      expect(tools.find((t) => t.name === 'read')!.description).toContain('50 строк')
+      expect(tools.find((t) => t.name === 'grep')!.description).toContain('(7)')
+
+      const tight = await rpc(app, {
+        jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'bash', arguments: { command: 'ls' } }
+      })
+      expect(isTrimmedToolOutput((tight.json() as { result: { content: Array<{ text: string }> } }).result.content[0].text)).toBe(true)
+
+      // Настройку поменяли без перезапуска сервера — следующий вызов уже с новым лимитом.
+      bashChars = 400_000
+      const loose = await rpc(app, {
+        jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'bash', arguments: { command: 'ls' } }
+      })
+      expect(isTrimmedToolOutput((loose.json() as { result: { content: Array<{ text: string }> } }).result.content[0].text)).toBe(false)
+    })
+
+    it('сломанный источник настроек не роняет вызов: работают дефолты', async () => {
+      const app2 = Fastify({ logger: false })
+      registerRemoteBashMcp(app2, stubRegistry({ exitCode: 0, output: 'ок', timedOut: false }), SECRET, () => {
+        throw new Error('БД недоступна')
+      })
+      await app2.ready()
+      app = app2
+      await rpc(app, INIT_BODY)
+      const call = await rpc(app, {
+        jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'bash', arguments: { command: 'ls' } }
+      })
+      expect((call.json() as { result: { content: Array<{ text: string }> } }).result.content[0].text).toBe('ок\n[exit code: 0]')
+    })
+
+    it('окно read зажимается по строкам и по объёму — с явной пометкой', async () => {
+      // Строки длинные намеренно: окно упирается в лимит объёма раньше, чем в
+      // лимит строк — именно так в контекст уезжал файл целиком.
+      const file = Array.from({ length: 500 }, (_, i) => `строка ${i + 1}: ${'я'.repeat(60)}`).join('\n')
+      const registry = {
+        fsRead: async () => ({ root: '/repos', cwd: '', dataBase64: Buffer.from(file).toString('base64') }),
+        cancelAll: () => {}
+      } as unknown as AgentRegistry
+      const app2 = Fastify({ logger: false })
+      registerRemoteBashMcp(app2, registry, SECRET, () => ciToolOutputLimits({ readWindowMaxLines: 60, readOutputLimitChars: 1_000 }))
+      await app2.ready()
+      app = app2
+      const query = `?k=${SECRET}&agent=a1&cwd=/repos/task`
+      await rpc(app, INIT_BODY, query)
+      // Просить больше максимума нельзя: схема инструмента лимит уже знает.
+      const tooMany = await rpc(app, {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'read', arguments: { path: 'a.ts', limit: 500 } }
+      }, query)
+      expect((tooMany.json() as { result?: { isError?: boolean }; error?: unknown }).result?.isError ?? true).toBeTruthy()
+      // Разрешённое окно упирается в лимит объёма и говорит об этом.
+      const call = await rpc(app, {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'read', arguments: { path: 'a.ts', limit: 60 } }
+      }, query)
+      const text = (call.json() as { result: { content: Array<{ text: string }> } }).result.content[0].text
+      expect(text).toContain('строка 1')
+      expect(text).toContain('из 500.')
+      expect(isTrimmedToolOutput(text)).toBe(true)
+      expect(text).toContain('читай дальше со смещением')
+      expect(text.length).toBeLessThan(1_400)
+    })
+
+    it('grep режется по объёму на границе совпадения, а не посреди строки', async () => {
+      const line = (n: number): string => `a.ts:${n}:${'y'.repeat(400)}`
+      const output = `${Array.from({ length: 50 }, (_, i) => line(i + 1)).join('\n')}\n`
+      const registry = {
+        exec: async () => ({ exitCode: 0, output, timedOut: false }),
+        cancelAll: () => {}
+      } as unknown as AgentRegistry
+      const app2 = Fastify({ logger: false })
+      registerRemoteBashMcp(app2, registry, SECRET, () => ciToolOutputLimits({ grepOutputLimitChars: 2_000 }))
+      await app2.ready()
+      app = app2
+      const query = `?k=${SECRET}&agent=a1&cwd=/repos/task`
+      await rpc(app, INIT_BODY, query)
+      const call = await rpc(app, {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'grep', arguments: { pattern: 'y' } }
+      }, query)
+      const text = (call.json() as { result: { content: Array<{ text: string }> } }).result.content[0].text
+      expect(isTrimmedToolOutput(text)).toBe(true)
+      expect(text).toContain('из 50 совпадений')
+      // Каждая показанная строка — целая: обрубленный путь модель прочтёт как настоящий.
+      for (const shown of text.split('\n').filter((l) => l.startsWith('a.ts:'))) {
+        expect(shown.endsWith('y')).toBe(true)
+      }
+      expect(text.length).toBeLessThan(3_000)
+    })
   })
 
   it('регресс: нормальный tools/call не отменяет команду (close ответа, не запроса)', async () => {

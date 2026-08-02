@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { REST, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, REST, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -246,7 +246,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     desktopApp: opts.config.desktopAppPath
   })
   const mcpSecret = randomBytes(16).toString('hex')
-  registerRemoteBashMcp(app, agentRegistry, mcpSecret)
+  // Лимиты ответов инструментов моста — из настроек CI, на каждый вызов: они
+  // режут размер контекста хода, а его цена = контекст × число запросов.
+  registerRemoteBashMcp(app, agentRegistry, mcpSecret, () => ciToolOutputLimits(db.getCiSettings()))
   registerCiCommandsMcp(app, mcpSecret)
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
   // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).

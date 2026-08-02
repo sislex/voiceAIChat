@@ -100,3 +100,14 @@ export function fmtTokens(value: number | null | undefined): string {
   if (value == null) return '—'
   return value.toLocaleString('ru')
 }
+
+/**
+ * Объём текста в символах. Крупные числа сокращаем («24k», «1.4M»): точная
+ * длина ответа инструмента не решение, а порядок величины — решение.
+ */
+export function fmtChars(value: number | null | undefined): string {
+  if (value == null) return '—'
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 10_000) return `${Math.round(value / 1000)}k`
+  return value.toLocaleString('ru')
+}
