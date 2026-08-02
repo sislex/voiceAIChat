@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-08-02
-checked: 54dba49
+checked: 9e8fbdb
 areas:
   - package.json
   - scripts
@@ -55,7 +55,7 @@ Server HTTP тестируется `app.inject()` с `:memory:` SQLite. WebSocke
 
 UI store тестируется без React; DOM components — jsdom + Testing Library + fake bridges. Проверяются пользовательские действия и наблюдаемый результат, не внутренние state setters. Таймеры voice/TTS управляются fake clock.
 
-Agent тестирует config/platform/exec/fs/pty/telemetry/shutdown/single-instance отдельно от socket. Connection test проверяет routing/reconnect с fake ws. Платформенные ветки должны покрывать Linux/macOS/Windows/Termux через инъекцию или controlled platform override.
+Agent тестирует config/platform/exec/fs/pty/telemetry/shutdown/single-instance отдельно от socket. Connection test проверяет routing/reconnect с fake ws. Платформенные ветки должны покрывать Linux/macOS/Windows/Termux через инъекцию или controlled platform override. Рабочий приём — платформа необязательным параметром функции со значением `process.platform` по умолчанию (`fileOps.ts:toNativePath(path, platform)`): тогда win32-ветка проверяется на POSIX-CI обычным вызовом с `'win32'` и семейством `path.win32`. То, что эмулировать нельзя (реальное чтение файла по MSYS-пути), закрывается `it.runIf(process.platform === 'win32')` и на Linux просто пропускается.
 
 Electron main/preload код тестируется без запуска реального окна, где возможно. Native SQLite перед тестом пересобирается под Node ABI, перед Electron build — обратно под Electron ABI.
 
