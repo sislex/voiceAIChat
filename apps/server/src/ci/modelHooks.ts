@@ -5,11 +5,12 @@
 import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import {
-  appendQuestionsHint, ciToolCallsAny, clarifyBudget, classifyCiToolCall, CI_USAGE_KIND_LABELS,
-  EMPTY_CI_TOOL_CALLS, isCiToolDenial, isVerificationCommand, KB_GAPS_HINT, parseKbGaps, parseQuestions,
-  resolveCiStageModel, UNKNOWN_MODEL
+  appendQuestionsHint, ciToolCallsAny, ciToolCharsTotal, ciToolOutputLimits, clarifyBudget,
+  classifyCiToolCall, CI_TOOL_RESPONSES_KEEP, EMPTY_CI_TOOL_CALLS, EMPTY_CI_TOOL_CHARS,
+  isCiToolDenial, isVerificationCommand, KB_GAPS_HINT, parseKbGaps, parseQuestions,
+  resolveCiStageModel, trimmedToolOutputOriginalChars, trimToolOutput, UNKNOWN_MODEL
 } from '@voicechat/shared'
-import type { CiRunMode, CiToolCalls, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
+import type { CiRunMode, CiToolCalls, CiToolChars, CiToolKind, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import { kbToolBroker, kbRunDirective, type KbToolEntry } from '../kb/kbMcp.js'
 import { buildKbAutoContext } from '../kb/autoContext.js'
@@ -84,7 +85,38 @@ interface TurnResult {
   usageEvents: number
   /** Вызовы инструментов этого хода по видам (bash/read/grep/edit/kb/other). */
   toolCalls: CiToolCalls
+  /**
+   * Символы ответов инструментов этого хода по видам — измеренный вклад в
+   * контекст: за него и платится, потому что контекст перечитывается на каждом
+   * следующем запросе хода.
+   */
+  toolChars: CiToolChars
+  /** Самые тяжёлые ответы хода (верхушка по объёму) — для метрики рана. */
+  toolResponses: TurnToolResponse[]
 }
+
+/** Тяжёлый ответ инструмента внутри хода (кандидат в метрику рана). */
+interface TurnToolResponse {
+  tool: string
+  kind: CiToolKind
+  label: string
+  chars: number
+  originalChars: number | null
+}
+
+/**
+ * Ниже этого объёма ответ на цену хода не влияет, а строку в метрике занимает:
+ * тяжёлыми считаем то, что заметно на фоне контекста (десятки тысяч символов
+ * набегают именно такими ответами).
+ */
+const HEAVY_TOOL_RESPONSE_CHARS = 2_000
+
+/**
+ * Сколько вызовов держим в ожидании результата. Ответ сшивается с вызовом по
+ * `tool_use_id`, но у codex его нет — там работает порядок, и очередь нужна
+ * короткая: потерянный ответ хуже посчитать «прочим», чем растить память хода.
+ */
+const MAX_PENDING_TOOL_CALLS = 64
 
 /**
  * Один ход модели как Promise: собирает текст, стримит активность в лог шага и
@@ -106,8 +138,10 @@ function runTurn(
 ): Promise<TurnResult> {
   const startedAt = now()
   const toolCalls: CiToolCalls = { ...EMPTY_CI_TOOL_CALLS }
+  const toolChars: CiToolChars = { ...EMPTY_CI_TOOL_CHARS }
+  const toolResponses: TurnToolResponse[] = []
   if (signal.aborted) {
-    return Promise.resolve({ ok: false, text: '', sessionId: null, cancelled: true, elapsedMs: 0, usageEvents: 0, toolCalls })
+    return Promise.resolve({ ok: false, text: '', sessionId: null, cancelled: true, elapsedMs: 0, usageEvents: 0, toolCalls, toolChars, toolResponses })
   }
   return new Promise((resolve) => {
     let text = ''
@@ -116,11 +150,38 @@ function runTurn(
     let usage: TurnUsage | undefined
     let usageEvents = 0
     let settled = false
+    /** Вызовы, чей результат ещё не пришёл (сшивка объёма ответа с инструментом). */
+    const pendingCalls: Array<{ id?: string; tool: string; label: string }> = []
+    /**
+     * Объём ответа инструмента — в метрику хода. Ответ сшивается со своим
+     * вызовом по `tool_use_id` (claude), а без него — по порядку (codex): вид
+     * важнее точности сшивки, а «прочее» на месте потерянного вызова честнее
+     * молчания. Метрика ничего не бросает и ход не трогает.
+     */
+    const recordToolResponse = (detail: string, toolUseId?: string): void => {
+      const index = toolUseId ? pendingCalls.findIndex((c) => c.id === toolUseId) : 0
+      const call = index >= 0 ? pendingCalls.splice(index, 1)[0] : undefined
+      const kind: CiToolKind = call ? classifyCiToolCall(call.tool) : 'other'
+      toolChars[kind] += detail.length
+      if (detail.length < HEAVY_TOOL_RESPONSE_CHARS) return
+      toolResponses.push({
+        tool: call?.tool ?? '',
+        kind,
+        label: call?.label ?? 'вызов неизвестен',
+        chars: detail.length,
+        // Обрезанный ответ несёт исходный объём в своей метке — только так видно,
+        // сколько лимит реально сэкономил.
+        originalChars: trimmedToolOutputOriginalChars(detail)
+      })
+      // Держим верхушку: ход делает сотни вызовов, а метрике нужны тяжёлые.
+      toolResponses.sort((a, b) => b.chars - a.chars)
+      if (toolResponses.length > CI_TOOL_RESPONSES_KEEP) toolResponses.length = CI_TOOL_RESPONSES_KEEP
+    }
     const finish = (r: { ok: boolean; cancelled?: boolean }): void => {
       if (settled) return
       settled = true
       signal.removeEventListener('abort', onAbort)
-      resolve({ ...r, text, sessionId, meta, usage, elapsedMs: Math.max(0, now() - startedAt), usageEvents, toolCalls })
+      resolve({ ...r, text, sessionId, meta, usage, elapsedMs: Math.max(0, now() - startedAt), usageEvents, toolCalls, toolChars, toolResponses })
     }
     const onAbort = (): void => {
       // Убиваем процесс CLI и закрываем ход сами: клиент после cancel() молчит.
@@ -152,10 +213,18 @@ function runTurn(
         // Единственное место, где мимо сервера проходит КАЖДЫЙ вызов инструмента
         // любого движка: у MCP-эндпоинта рана нет (он знает лишь машину и папку),
         // а имена в логе у claude и codex записаны по-разному.
-        if (e.tool) toolCalls[classifyCiToolCall(e.tool)]++
-        // Отказ виден только в результате вызова: имени инструмента там уже нет,
-        // а сам вызов посчитан своим видом выше — поэтому отдельный счётчик.
-        else if (e.kind === 'tool_result' && isCiToolDenial(`${e.summary}\n${e.detail ?? ''}`)) toolCalls.denied++
+        if (e.tool) {
+          toolCalls[classifyCiToolCall(e.tool)]++
+          // Ответ придёт отдельной записью и БЕЗ имени инструмента, поэтому вызов
+          // ждёт своего результата здесь: иначе объём не привязать к инструменту.
+          pendingCalls.push({ id: e.toolUseId, tool: e.tool, label: e.summary })
+          if (pendingCalls.length > MAX_PENDING_TOOL_CALLS) pendingCalls.shift()
+        } else if (e.kind === 'tool_result') {
+          // Отказ виден только в результате вызова: имени инструмента там уже нет,
+          // а сам вызов посчитан своим видом выше — поэтому отдельный счётчик.
+          if (isCiToolDenial(`${e.summary}\n${e.detail ?? ''}`)) toolCalls.denied++
+          recordToolResponse(e.detail ?? '', e.toolUseId)
+        }
         onLog('system', `[${e.kind}] ${e.summary}${e.detail ? ` · ${e.detail}` : ''}\n`)
       },
       // Счётчики кумулятивны: держим последние — у прерванного хода это всё,
@@ -189,7 +258,13 @@ const REMOTE_FILE_TOOLS_DIRECTIVE =
   'Файлы читай инструментом read, ищи grep и правь edit; bash используй для команд ' +
   '(git, npm, тесты), а не для чтения файлов и не для правок через heredoc. ' +
   'Команду, вся суть которой — прочитать файл рабочей копии (cat, sed -n, head, tail), ' +
-  'мост отклонит и подскажет готовый вызов read с нужным окном строк.'
+  'мост отклонит и подскажет готовый вызов read с нужным окном строк. ' +
+  'Длинные ответы инструментов обрезаются с пометкой ⟦обрезано…⟧ — это значит, что ' +
+  'данные неполные: сужай команды и окна чтения сам, вместо повторного вызова того же.'
+
+/** Чем добрать вырезанное из вывода команды справочника (лог шага в ленте). */
+const MODEL_COMMAND_TRIM_HINT =
+  'полный вывод остался в ленте шага; повтори команду с фильтром, если нужна середина'
 
 const NO_SELF_VERIFICATION = [
   'Тесты, typecheck, линтер и сборку сам не запускай — за проверку отвечает шаг воркфлоу после твоей работы.',
@@ -350,9 +425,23 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    * Не бросает никогда — это метрика.
    */
   function recordToolCalls(ctx: CiModelContext, turn: TurnResult): void {
-    if (!ciToolCallsAny(turn.toolCalls)) return
+    const chars = ciToolCharsTotal(turn.toolChars)
+    if (!ciToolCallsAny(turn.toolCalls) && chars === 0) return
     try {
-      deps.db.addCiRunToolCalls(ctx.run.id, turn.toolCalls)
+      deps.db.addCiRunToolCalls(ctx.run.id, turn.toolCalls, turn.toolChars)
+      // Тяжёлые ответы — отдельными строками: по ним видно, ЧТО раздуло контекст,
+      // а не только сколько его было.
+      for (const r of turn.toolResponses) {
+        deps.db.addCiRunToolResponse({
+          runId: ctx.run.id,
+          stepId: ctx.parentStepId,
+          tool: r.tool,
+          kind: r.kind,
+          label: r.label,
+          chars: r.chars,
+          originalChars: r.originalChars
+        })
+      }
     } catch {
       /* метрика вызовов не имеет права уронить ран */
     }
@@ -525,7 +614,11 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         if (!cmd) return { output: '', exitCode: null, message: 'Команда не найдена среди доступных.' }
         calls++
         const r = await ctx.runCommandById(cmd.id, ctx.parentStepId)
-        return { output: r.output, exitCode: r.exitCode }
+        // Вывод команды — тот же контекст, что и у bash: `npm ci` печатает
+        // десятки тысяч символов, и они перечитываются до конца хода. В ленте
+        // вложенного шага лог остаётся полным, модель получает голову и хвост.
+        const trimmed = trimToolOutput(r.output, ciToolOutputLimits(settings).bashChars, MODEL_COMMAND_TRIM_HINT)
+        return { output: trimmed.text, exitCode: r.exitCode }
       }
     })
     const base = remoteOf(deps, ctx)

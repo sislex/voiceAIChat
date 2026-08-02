@@ -7,6 +7,8 @@ import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { DEFAULT_TOOL_OUTPUT_LIMITS, TOOL_OUTPUT_TRIM_MARK, trimToolOutput } from '@voicechat/shared'
+import type { ToolOutputLimits } from '@voicechat/shared'
 import type { AgentRegistry } from '../agents/registry.js'
 import { evaluatePlanModeCommand } from './planMode.js'
 import { bashFileReadRejection, evaluateBashFileRead } from './bashFileRead.js'
@@ -16,11 +18,14 @@ export const REMOTE_BASH_MCP_PATH = '/mcp/remote-bash'
 const DEFAULT_TIMEOUT_MS = 120_000
 const MAX_TIMEOUT_MS = 300_000
 const DEFAULT_READ_LIMIT = 400
-const MAX_READ_LIMIT = 2_000
-const MAX_READ_RESPONSE_CHARS = 100_000
-const DEFAULT_GREP_MATCHES = 100
-const MAX_GREP_MATCHES = 1_000
 const MAX_GREP_LINE_CHARS = 2_000
+
+/**
+ * Чем модели дочитать пропущенное. Метка обрезки обязана давать способ добрать
+ * данные точечно: иначе модель повторит ту же команду и заплатит второй раз.
+ */
+const BASH_TRIM_HINT =
+  'сузь вывод фильтром (grep/tail/--reporter=dot) или читай файлы инструментом read'
 
 /**
  * Экранирует `cwd` для одинарных кавычек bash и, на win32-машине, нормализует
@@ -55,7 +60,14 @@ function fileText(dataBase64: string | undefined): string {
   return Buffer.from(dataBase64, 'base64').toString('utf8')
 }
 
-export function readWindow(text: string, offset: number, limit: number): string {
+/**
+ * Окно строк файла с номерами и итогом «показаны строки A–B из N». Объём окна
+ * капнут: по строкам (`limit`) и по символам (`maxChars`) — файл в одну строку на
+ * 300 КБ иначе уезжал в контекст целиком и оплачивался на каждом следующем
+ * запросе хода. Урезание по объёму помечается явно: молча урезанное окно модель
+ * читает как полное.
+ */
+export function readWindow(text: string, offset: number, limit: number, maxChars = DEFAULT_TOOL_OUTPUT_LIMITS.readChars): string {
   const lines = text === '' ? [] : text.split('\n')
   if (lines.length && lines[lines.length - 1] === '') lines.pop()
   const total = lines.length
@@ -63,18 +75,32 @@ export function readWindow(text: string, offset: number, limit: number): string 
   const wantedEnd = Math.min(startIndex + limit, total)
   const shown: string[] = []
   let chars = 0
+  let cutByChars = false
   for (let i = startIndex; i < wantedEnd; i++) {
     let line = `${i + 1}\t${lines[i]}`
-    const room = MAX_READ_RESPONSE_CHARS - chars - 100
-    if (room <= 0) break
-    if (line.length > room) line = `${line.slice(0, Math.max(0, room - 1))}…`
+    const room = maxChars - chars - 100
+    if (room <= 0) {
+      cutByChars = true
+      break
+    }
+    if (line.length > room) {
+      line = `${line.slice(0, Math.max(0, room - 1))}…`
+      cutByChars = true
+    }
     shown.push(line)
     chars += line.length + 1
-    if (chars >= MAX_READ_RESPONSE_CHARS) break
+    if (chars >= maxChars) {
+      cutByChars = i + 1 < wantedEnd
+      break
+    }
   }
   const first = shown.length ? startIndex + 1 : 0
   const last = shown.length ? startIndex + shown.length : 0
-  const tail = `Показаны строки ${first}–${last} из ${total}.`
+  const cut = cutByChars
+    ? ` ${TOOL_OUTPUT_TRIM_MARK}: окно урезано по объёму (лимит ${maxChars} символов), ` +
+      `данные неполные — читай дальше со смещением ${last + 1}.⟧`
+    : ''
+  const tail = `Показаны строки ${first}–${last} из ${total}.${cut}`
   return shown.length ? `${shown.join('\n')}\n\n${tail}` : tail
 }
 
@@ -85,10 +111,17 @@ function toolError(err: unknown): { content: Array<{ type: 'text'; text: string 
   }
 }
 
+/**
+ * `limits` — лимиты ответов инструментов (настройки CI, приведённые
+ * `ciToolOutputLimits`). Читаются на КАЖДЫЙ запрос: эндпоинт stateless, а
+ * настройку меняют без перезапуска сервера. Не передан — дефолты (тесты и
+ * сборки без БД).
+ */
 export function registerRemoteBashMcp(
   app: FastifyInstance,
   registry: AgentRegistry,
-  secret: string
+  secret: string,
+  limits?: () => ToolOutputLimits
 ): void {
   // Тело читает сам транспорт, поэтому маршрут живёт в своей области видимости
   // с парсером-пустышкой: Fastify отдаёт управление, не трогая поток.
@@ -123,6 +156,15 @@ export function registerRemoteBashMcp(
           if (!reply.raw.writableEnded) abort.abort()
         })
 
+        // Лимиты снимаем на запрос: их правят настройкой, а не пересборкой.
+        // Сломанный источник настроек — не повод ронять ход: тогда дефолты.
+        let toolLimits = DEFAULT_TOOL_OUTPUT_LIMITS
+        try {
+          toolLimits = limits?.() ?? DEFAULT_TOOL_OUTPUT_LIMITS
+        } catch {
+          /* настройки недоступны — работаем на дефолтах */
+        }
+
         const server = new McpServer({ name: 'remote', version: '1.0.0' })
         server.registerTool(
           'bash',
@@ -131,7 +173,9 @@ export function registerRemoteBashMcp(
               'Выполняет shell-команду на машине пользователя (не на сервере). ' +
               'Для команд (git, npm, тесты), не для чтения и правки файлов: команда, вся суть ' +
               'которой — прочитать файл рабочей копии (cat/sed -n/head/tail), отклоняется с ' +
-              'готовым вызовом read. Возвращает stdout+stderr и код выхода.',
+              'готовым вызовом read. Возвращает stdout+stderr и код выхода. Длинный вывод ' +
+              `обрезается (лимит ${toolLimits.bashChars} символов): остаются голова и хвост ` +
+              'с пометкой об обрезке, поэтому многословные команды лучше сразу сужать фильтром.',
             inputSchema: {
               command: z.string().describe('Команда для /bin/bash'),
               timeout_ms: z
@@ -175,8 +219,11 @@ export function registerRemoteBashMcp(
                 : command
               const res = await registry.exec(agentId, shellCommand, timeoutMs, abort.signal)
               const tail = `[exit code: ${res.exitCode ?? '?'}${res.timedOut ? ', таймаут' : ''}]`
+              // Вывод сжимаем ДО приписки с кодом выхода: код и хвост лога —
+              // самое ценное для fix-loop, и терять их из-за обрезки нельзя.
+              const trimmed = trimToolOutput(res.output, toolLimits.bashChars, BASH_TRIM_HINT)
               return {
-                content: [{ type: 'text', text: `${res.output}\n${tail}`.trim() }],
+                content: [{ type: 'text', text: `${trimmed.text}\n${tail}`.trim() }],
                 isError: res.exitCode !== 0
               }
             } catch (err) {
@@ -193,21 +240,28 @@ export function registerRemoteBashMcp(
         server.registerTool(
           'read',
           {
-            description: 'Читает окно строк текстового файла внутри рабочей директории рана.',
+            description:
+              'Читает окно строк текстового файла внутри рабочей директории рана. ' +
+              `Окно ограничено (${toolLimits.readLines} строк и ${toolLimits.readChars} символов): ` +
+              'читай нужный фрагмент, а не файл целиком — весь прочитанный текст ' +
+              'перечитывается моделью на каждом следующем запросе хода.',
             inputSchema: {
               path: z.string().describe('Путь относительно cwd рана'),
               offset: z.number().int().min(1).optional().describe('Первая строка (с 1)'),
-              limit: z.number().int().min(1).max(MAX_READ_LIMIT).optional()
-                .describe(`Число строк (по умолчанию ${DEFAULT_READ_LIMIT})`)
+              // Кап окна — настройка: `.max()` считается на запрос, поэтому
+              // заниженный лимит модель видит сразу в схеме инструмента.
+              limit: z.number().int().min(1).max(toolLimits.readLines).optional()
+                .describe(`Число строк (по умолчанию ${Math.min(DEFAULT_READ_LIMIT, toolLimits.readLines)}, максимум ${toolLimits.readLines})`)
             }
           },
           async ({ path, offset, limit }) => {
             try {
               const result = await registry.fsRead(agentId, remotePath(req.query.cwd, path))
+              const window = Math.min(limit ?? DEFAULT_READ_LIMIT, toolLimits.readLines)
               return {
                 content: [{
                   type: 'text' as const,
-                  text: readWindow(fileText(result.dataBase64), offset ?? 1, limit ?? DEFAULT_READ_LIMIT)
+                  text: readWindow(fileText(result.dataBase64), offset ?? 1, window, toolLimits.readChars)
                 }]
               }
             } catch (err) {
@@ -219,13 +273,16 @@ export function registerRemoteBashMcp(
         server.registerTool(
           'grep',
           {
-            description: 'Ищет текст системным grep внутри рабочей директории рана.',
+            description:
+              'Ищет текст системным grep внутри рабочей директории рана. Ответ ограничен ' +
+              `по числу совпадений (${toolLimits.grepMatches}) и по объёму (${toolLimits.grepChars} символов); ` +
+              'обрезка помечается в ответе — сужай шаблон вместо повторного вызова.',
             inputSchema: {
               pattern: z.string().min(1).describe('Шаблон grep'),
               path: z.string().optional().describe('Файл или каталог относительно cwd (по умолчанию cwd)'),
               glob: z.string().optional().describe('Необязательная маска файлов для --include'),
-              maxMatches: z.number().int().min(1).max(MAX_GREP_MATCHES).optional()
-                .describe(`Максимум совпадений (по умолчанию ${DEFAULT_GREP_MATCHES})`)
+              maxMatches: z.number().int().min(1).max(toolLimits.grepMatches).optional()
+                .describe(`Максимум совпадений (по умолчанию и максимум ${toolLimits.grepMatches})`)
             }
           },
           async ({ pattern, path, glob, maxMatches }) => {
@@ -237,13 +294,27 @@ export function registerRemoteBashMcp(
               if (res.exitCode !== 0 && res.exitCode !== 1) {
                 throw new Error(res.output.trim() || `grep завершился с кодом ${res.exitCode ?? '?'}`)
               }
-              const cap = maxMatches ?? DEFAULT_GREP_MATCHES
+              const cap = Math.min(maxMatches ?? toolLimits.grepMatches, toolLimits.grepMatches)
               const all = res.output ? res.output.split('\n').filter(Boolean) : []
-              const matches = all.slice(0, cap).map((line) =>
-                line.length > MAX_GREP_LINE_CHARS ? `${line.slice(0, MAX_GREP_LINE_CHARS - 1)}…` : line
-              )
+              // Двойной кап: по числу совпадений и по объёму ответа. Список
+              // режется по границе совпадения, а не посередине строки — иначе
+              // модель читает обрубленный путь как настоящий. Сотня совпадений по
+              // 2 КБ — это 200 КБ контекста, перечитываемых до конца хода.
+              const matches: string[] = []
+              let chars = 0
+              let cutByChars = false
+              for (const raw of all.slice(0, cap)) {
+                const line = raw.length > MAX_GREP_LINE_CHARS ? `${raw.slice(0, MAX_GREP_LINE_CHARS - 1)}…` : raw
+                if (chars + line.length + 1 > toolLimits.grepChars && matches.length) {
+                  cutByChars = true
+                  break
+                }
+                matches.push(line)
+                chars += line.length + 1
+              }
               const suffix = all.length > matches.length
-                ? `\n\nПоказаны первые ${matches.length} из ${all.length} совпадений.`
+                ? `\n\nПоказаны первые ${matches.length} из ${all.length} совпадений` +
+                  `${cutByChars ? ` ${TOOL_OUTPUT_TRIM_MARK}: ответ упёрся в лимит объёма (${toolLimits.grepChars} символов), данные неполные — сузь шаблон или путь.⟧` : '. Данные неполные — сузь шаблон, если нужного нет.'}`
                 : `\n\nНайдено совпадений: ${matches.length}.`
               return { content: [{ type: 'text' as const, text: `${matches.join('\n')}${suffix}`.trim() }] }
             } catch (err) {

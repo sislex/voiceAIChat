@@ -14,8 +14,8 @@
 
 import { useMemo, useState } from 'react'
 import type { CiRunReport, CiRunReportStep, CiTaskReport, CiUsageTotals } from '@shared/ci'
-import { CI_USAGE_KIND_LABELS, ciToolCallsTotal, sumCiToolCalls } from '@shared/ci'
-import { ciStatusIcon, ciStatusLabel, ciTone, fmtDuration, fmtTokens, fmtUsd } from './ciFormat'
+import { CI_USAGE_KIND_LABELS, ciAvgContextPerRequest, ciToolCallsTotal, ciToolCharsTotal, sumCiToolCalls, sumCiToolChars, topCiToolResponses } from '@shared/ci'
+import { ciStatusIcon, ciStatusLabel, ciTone, fmtChars, fmtDuration, fmtTokens, fmtUsd } from './ciFormat'
 
 export interface CiReportProps {
   report: CiTaskReport | null
@@ -59,6 +59,11 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
   // счётчик есть. null (ран до фичи) сохраняется как null: ноль читался бы как
   // «модель не вызвала ничего».
   const toolCalls = run ? run.toolCalls : sumCiToolCalls(runs.map((r) => r.toolCalls))
+  // Объём ответов и самые тяжёлые из них — второй множитель цены хода: контекст
+  // раздувают именно ответы, и они перечитываются на каждом следующем запросе.
+  const toolChars = run ? run.toolChars : sumCiToolChars(runs.map((r) => r.toolChars))
+  const heaviest = run ? run.toolResponses : topCiToolResponses(runs.flatMap((r) => r.toolResponses))
+  const avgContext = totals ? ciAvgContextPerRequest(totals) : null
   const kbHit = run?.kbHit ?? (!run
     ? runs.reduce<{ sectionsDelivered: number; sectionsHit: number } | null>((sum, item) => item.kbHit
       ? { sectionsDelivered: (sum?.sectionsDelivered ?? 0) + item.kbHit.sectionsDelivered, sectionsHit: (sum?.sectionsHit ?? 0) + item.kbHit.sectionsHit }
@@ -155,6 +160,18 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
           testId={`${testId}-tokens`}
         />
         <Tile label="Запросов к модели" value={fmtTokens(totals?.requests ?? 0)} testId={`${testId}-requests`} />
+        {/* Цена хода = размер контекста × число запросов к API. Средний контекст
+            на запрос — тот множитель, который и съедает 3/4 стоимости; максимум
+            показывает, до чего он дорос к концу хода. Прочерк — когда CLI не
+            сказал числа запросов (codex): ноль читался бы как «контекста нет». */}
+        <Tile
+          label="Контекст на запрос"
+          value={avgContext == null ? '—' : fmtTokens(avgContext)}
+          note={avgContext == null
+            ? 'CLI не сообщил число запросов'
+            : `макс ${fmtTokens(totals?.maxContextPerRequest ?? 0)} · запросов к API ${fmtTokens(totals?.apiRequests ?? 0)}`}
+          testId={`${testId}-context`}
+        />
         <Tile label="Время рана" value={fmtDuration(durationMs)} testId={`${testId}-duration`} />
         {/* Ноль — это «CLI не сказал длительность ни по одному ходу» (старые раны
             через исполнителя), а не «модель работала 0мс»: показываем прочерк. */}
@@ -167,6 +184,24 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
         {/* Отказ — не вид инструмента, а исход вызова: он уже посчитан своим
             видом, поэтому идёт отдельной припиской и только когда он был. */}
         {toolCalls.denied > 0 && ` · отказов ${toolCalls.denied}`}
+        {/* Объём важнее счётчика: 40 окон read дешевле одного `npm ci`, чей вывод
+            потом перечитывается на каждом следующем запросе хода. */}
+        {toolChars && ciToolCharsTotal(toolChars) > 0 && (
+          <> · ответами {fmtChars(ciToolCharsTotal(toolChars))} симв.
+            {' '}(bash {fmtChars(toolChars.bash)} · read {fmtChars(toolChars.read)} · grep {fmtChars(toolChars.grep)} · БЗ {fmtChars(toolChars.kb)})
+          </>
+        )}
+      </p>}
+      {/* Три самых тяжёлых ответа за ран: у «контекст раздулся» должен быть
+          виновник с именем, иначе резать нечего. */}
+      {heaviest.length > 0 && <p className="ci-report__note" data-testid={`${testId}-heaviest`}>
+        Самые тяжёлые ответы: {heaviest.map((r, i) => (
+          <span key={`${r.at}-${i}`}>
+            {i > 0 && '; '}
+            {r.label || r.tool || r.kind} — {fmtChars(r.chars)} симв.
+            {r.originalChars != null && r.originalChars > r.chars && ` (обрезано из ${fmtChars(r.originalChars)})`}
+          </span>
+        ))}
       </p>}
       {/* Доля важнее счётчика: «выдано 5 разделов» само по себе не говорит,
           пригодился ли хоть один. Раздел считается пригодившимся, когда модель
