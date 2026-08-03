@@ -299,9 +299,29 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       return withCounts(conv)
     },
     'conversations:setStatus': async ({ id, status }) => {
-      const conv = conversations.find((c) => c.id === id)!
-      conv.status = status
-      return withCounts(conv)
+      const conv = conversations.find((c) => c.id === id)
+      if (conv) {
+        conv.status = status
+        return withCounts(conv)
+      }
+      // Поздний кадр может прийти уже после удаления/смены чата. Сервер в этом
+      // случае отвечает контрактным объектом, а фейк не должен ронять тестовый лог.
+      return {
+        id,
+        title: '',
+        createdAt: 0,
+        updatedAt: 0,
+        messageCount: 0,
+        claudeSessionId: null,
+        execTarget: null,
+        workdir: null,
+        skillNames: [],
+        llmProvider: null,
+        llmModel: null,
+        permissionMode: null,
+        lastExecTarget: null,
+        status
+      }
     },
     'conversations:setExecTarget': async ({ id, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode }) => {
       const conv = conversations.find((c) => c.id === id)
