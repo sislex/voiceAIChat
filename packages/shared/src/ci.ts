@@ -432,10 +432,10 @@ export interface CiGlobalSettings {
 }
 
 export const DEFAULT_CI_GLOBAL_SETTINGS: CiGlobalSettings = {
-  maxFixAttempts: 3,
-  fixTimeLimitMs: 10 * 60 * 1000,
-  fixTokenLimit: 200_000,
-  defaultStepTimeoutSec: 600,
+  maxFixAttempts: 9,
+  fixTimeLimitMs: 30 * 60 * 1000,
+  fixTokenLimit: 600_000,
+  defaultStepTimeoutSec: 1_800,
   metricsWindow: 20,
   maxConcurrentRuns: 2,
   maxModelCommandCalls: 20,

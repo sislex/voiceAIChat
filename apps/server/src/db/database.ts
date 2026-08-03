@@ -722,6 +722,17 @@ export class VoiceChatDb {
     const ciSettingsCols = this.db.prepare(`PRAGMA table_info(ci_settings)`).all() as Array<{ name: string }>
     if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === 'interaction_wait_ms')) this.db.exec(`ALTER TABLE ci_settings ADD COLUMN interaction_wait_ms INTEGER NOT NULL DEFAULT 1800000`)
     if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === 'stage_models')) this.db.exec(`ALTER TABLE ci_settings ADD COLUMN stage_models TEXT`)
+    // Увеличиваем втрое только прежний полный набор дефолтных предохранителей.
+    // Любая вручную изменённая настройка сохраняется без вмешательства.
+    this.db.exec(`UPDATE ci_settings
+      SET max_fix_attempts = 9,
+          fix_time_limit_ms = 1800000,
+          fix_token_limit = 600000,
+          default_step_timeout_sec = 1800
+      WHERE max_fix_attempts = 3
+        AND fix_time_limit_ms = 600000
+        AND fix_token_limit = 200000
+        AND default_step_timeout_sec = 600`)
     const toolLimitColumns: Array<[string, number]> = [
       ['bash_output_limit_chars', DEFAULT_CI_GLOBAL_SETTINGS.bashOutputLimitChars],
       ['read_output_limit_chars', DEFAULT_CI_GLOBAL_SETTINGS.readOutputLimitChars],
