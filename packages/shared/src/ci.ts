@@ -90,7 +90,7 @@ export interface CiCommandInput {
  * зависимостей модели по-прежнему доступна.
  */
 const VERIFICATION_RE =
-  /\b(vitest|jest)\b|\b(npm|pnpm|yarn)\s+(run\s+)?(-w\s+\S+\s+|--workspace[=\s]\S+\s+)?(test|typecheck|lint)([:\w-]*)\b/i
+  /\b(vitest|jest|affected-check)\b|\b(npm|pnpm|yarn)\s+(run\s+)?(-w\s+\S+\s+|--workspace[=\s]\S+\s+)?(test|typecheck|lint)([:\w-]*)\b/i
 
 /** Команда — прогон гейта (по флагу справочника или по тексту команды)? */
 export function isVerificationCommand(cmd: { isTest?: boolean; name?: string | null; script?: string | null }): boolean {
