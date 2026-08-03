@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { PermissionMode } from '@shared/types'
+import type { HealthResponse } from '@shared/protocol'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -90,6 +91,12 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const routeChatId = segments[0] === 'chat' ? (segments[1] ?? null) : null
   const inChat = !inProjects && !onUtilityPage
   const { state, actions } = useVoiceStore({ api, now, delays, initialChatId: routeChatId })
+  const [release, setRelease] = useState<HealthResponse | null>(null)
+  useEffect(() => {
+    let active = true
+    void api['app:ping']().then((value) => { if (active) setRelease(value) }).catch(() => undefined)
+    return () => { active = false }
+  }, [api])
   const toast = useToast()
   const confirm = useConfirm()
   const authed = !state.authRequired || Boolean(state.currentUser)
@@ -413,6 +420,15 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       ].filter(Boolean).join(' ')}
       data-theme={state.settings.theme}
     >
+      {release && (
+        <footer
+          className="release-version"
+          title={new Date(release.releasedAt).toLocaleString()}
+          aria-label={`Версия ${release.version}; выпущена ${new Date(release.releasedAt).toLocaleString()}`}
+        >
+          v{release.version}
+        </footer>
+      )}
       <Sidebar
         open={sidebarOpen}
         onToggleCollapse={() => setCollapsedPersist(true)}

@@ -72,6 +72,14 @@ describe('App — онбординг первого запуска', () => {
 })
 
 describe('App — интеграция UI со стором и IPC', () => {
+  it('показывает версию релиза на любой странице и дату в подсказке', async () => {
+    await renderApp()
+    const version = await screen.findByText('v0.1.0')
+    expect(version).toHaveAttribute('title')
+    expect(version.getAttribute('title')).not.toBe('')
+    expect(version).toHaveAccessibleName(/Версия 0\.1\.0; выпущена/)
+  })
+
   it('рендерит сайдбар с логотипом и разговорами из БД', async () => {
     await renderApp()
     expect(screen.getByText('Голос·Чат')).toBeInTheDocument()
