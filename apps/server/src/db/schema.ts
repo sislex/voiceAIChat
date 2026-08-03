@@ -406,6 +406,26 @@ CREATE TABLE IF NOT EXISTS ci_run_tool_calls (
   FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
 );
 
+-- Пробелы базы знаний, о которых сообщила сама модель (fenced-блок kb-gaps в
+-- конце ответа): вопрос, на который база не ответила или ответила неполно, и
+-- проверенный по коду ответ. Их читает шаг «Актуализировать базу знаний» — без
+-- этой таблицы найденный в коде ответ умирал бы вместе с контекстом хода.
+--
+-- Ключ (ран, вопрос): fix-loop и повторные ходы называют тот же пробел снова, а
+-- дубль в промпте шага превращается в две записи об одном и том же. Ссылки на
+-- ci_run_steps нет намеренно — шаг может быть синтетическим (повтор, вложенный
+-- вызов), и терять пробел из-за внешнего ключа нельзя.
+CREATE TABLE IF NOT EXISTS ci_run_kb_gaps (
+  run_id   TEXT NOT NULL,
+  question TEXT NOT NULL,
+  answer   TEXT NOT NULL DEFAULT '',
+  topic    TEXT,
+  step_id  TEXT,
+  at       INTEGER NOT NULL,
+  PRIMARY KEY (run_id, question),
+  FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS ci_run_kb_metrics (
   run_id             TEXT PRIMARY KEY,
   sections_delivered INTEGER NOT NULL,

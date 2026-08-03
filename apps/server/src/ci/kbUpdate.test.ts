@@ -19,6 +19,7 @@ import { KB_DIFF_SCRIPT } from '../kb/codeUpdate.js'
 const SECRET = 'kb-ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
 let modelReply = ''
+let workReply = ''
 let diffBundle = ''
 let prompts: string[] = []
 
@@ -27,7 +28,7 @@ const fakeClaude: LlmClient = {
     prompts.push(req.prompt)
     const kbTurn = req.prompt.startsWith('Ты ведёшь базу знаний')
     queueMicrotask(() => {
-      const text = kbTurn ? modelReply : 'готово'
+      const text = kbTurn ? modelReply : workReply
       handlers.onDelta(text)
       handlers.onDone(text)
     })
@@ -71,6 +72,7 @@ async function boot(kbUpdate?: CiKbUpdateHook): Promise<void> {
 
 beforeEach(() => {
   prompts = []
+  workReply = 'готово'
   diffBundle = BUNDLE_WITH_CHANGES
   modelReply = JSON.stringify({
     note: 'записал новый шаг',
@@ -151,16 +153,47 @@ describe('шаг «Актуализировать базу знаний»', () =
     expect(kbPrompt).toContain('npm run kb:index')
   })
 
-  it('без изменений кода шаг успешен и ничего не пишет', async () => {
+  it('пробел базы знаний из работы модели доезжает до шага целым пайплайном', async () => {
+    await boot()
+    // Модель назвала пробел блоком `kb-gaps` — шаг обязан увидеть и вопрос, и
+    // найденный в коде ответ, иначе они умрут вместе с контекстом рана.
+    workReply = ['готово', '```kb-gaps', JSON.stringify([{ question: 'кто собирает диф шага', answer: 'сервер скриптом KB_DIFF_SCRIPT, не модель', topic: 'ci-runner' }]), '```'].join('\n')
+    const { projectId, taskId } = setup()
+    const runId = await runToEnd(projectId, taskId)
+
+    expect(db.getCiRunRaw(runId)!.status).toBe('success')
+    expect(db.ciRunKbGaps(runId).map((g) => g.question)).toEqual(['кто собирает диф шага'])
+    const kbPrompt = prompts.find((p) => p.startsWith('Ты ведёшь базу знаний'))!
+    expect(kbPrompt).toContain('Пробелы базы знаний в этом ране')
+    expect(kbPrompt).toContain('выяснено: сервер скриптом KB_DIFF_SCRIPT, не модель')
+    // Кроме названного моделью пробела, авто-контекст задачи не нашёл
+    // ответа в пустой тестовой БЗ: объективный пробел тоже обязан доехать.
+    expect(kbStep(runId).log).toContain('Пробелов базы знаний за ран: 2')
+  })
+
+  it('без изменений кода, но с пустым ответом БЗ всё равно запускает пополнение', async () => {
     await boot()
     diffBundle = BUNDLE_EMPTY
     const { projectId, taskId } = setup()
     const runId = await runToEnd(projectId, taskId)
     const step = kbStep(runId)
     expect(step.status).toBe('success')
+    expect(step.log).toContain('Пробелов базы знаний за ран: 1')
+    expect(db.kbDocuments({ scope: 'project', projectId }).some((d) => d.title === 'CI-раннер')).toBe(true)
+    const kbPrompt = prompts.find((p) => p.startsWith('Ты ведёшь базу знаний'))!
+    expect(kbPrompt).toContain('ответа база не дала')
+  })
+
+  it('без изменений и обращений к БЗ шаг успешен и ничего не пишет', async () => {
+    await boot()
+    diffBundle = BUNDLE_EMPTY
+    const { projectId, taskId } = setup()
+    db.updateProject('admin', projectId, { ciKbContextMode: 'off' })
+    const runId = await runToEnd(projectId, taskId)
+    const step = kbStep(runId)
+    expect(step.status).toBe('success')
     expect(step.log).toContain('Нечего обновлять')
     expect(db.kbDocuments({ scope: 'project', projectId }).some((d) => d.title === 'CI-раннер')).toBe(false)
-    // Хода модели по базе знаний не было — диф пустой.
     expect(prompts.some((p) => p.startsWith('Ты ведёшь базу знаний'))).toBe(false)
   })
 

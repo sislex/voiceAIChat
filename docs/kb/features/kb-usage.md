@@ -2,8 +2,8 @@
 id: kb-usage
 title: Использование базы знаний (телеметрия и панель)
 kind: feature
-updated: 2026-08-02
-checked: 259877e
+updated: 2026-08-03
+checked: 4cba8f9
 areas:
   - apps/server/src/kb/usage.ts
   - apps/server/src/kb/kbMcp.ts
@@ -15,6 +15,7 @@ areas:
   - apps/server/src/ci/kbHit.ts
   - apps/server/src/db/schema.ts
   - packages/shared/src/kb.ts
+  - packages/shared/src/kbGaps.ts
   - packages/ui/src/components/kb
   - packages/ui/src/lib/kbUsage.ts
 symbols:
@@ -105,6 +106,8 @@ Claude получает `--mcp-config` с сервером `kb` и общий `-
 
 Пустая выдача причину записывает всегда: `usage.empty(reason, confidence)` кладёт в `error` человеческий текст (`no-match` — ничего не нашлось, `low-confidence` — совпадения слабые, `budget` — найденное не поместилось), а в `confidence` — уверенность бандла, который до промпта не доехал. Без этой пары строка «empty, confidence null» не отличает провал поиска от порога уверенности — а чинить это разные вещи.
 
+У этих строк есть второй потребитель: `db.kbUsageRunGaps(runId)` собирает из них **пробелы базы знаний за ран** (`empty`/`error`, дедуп по тексту запроса; вопрос, на который тот же текст позже ответ дал, отбрасывается) и отдаёт шагу «Актуализировать базу знаний» — он обязан закрыть пробел записью. Поэтому телеметрия здесь не только статистика: она страховка на случай, когда модель забыла назвать пробел блоком `kb-gaps`. Механика — [kb-workflow.md](../kb-workflow.md#пробел-базы-знаний-обязан-стать-записью).
+
 ## Честность метрики токенов
 
 Разложить `usage.inputTokens` хода на «сколько от БЗ» нельзя: CLI отдаёт суммарный вход промпта. Поэтому показываются три числа: точные СИМВОЛЫ отданного модели текста, оценка токенов `estimateKbTokens = ceil(chars/4)` (одна функция на сервер и UI, `packages/shared/src/kb.ts`) и доля от `promptChars` хода. В панели про оценку написано прямым текстом.
@@ -135,4 +138,4 @@ Claude получает `--mcp-config` с сервером `kb` и общий `-
 
 ## Тесты
 
-Сервер: `db/database.kbUsage.test.ts` (монотонность `seq`, агрегаты, отсутствие дублирования сумм, каскад, изоляция), `kb/usage.test.ts` (pending с тем же id, трекер не выбрасывает при сломанной БД), `kb/kbMcp.test.ts` (403, `tools/list`, `deliveredChars === text.length`, кап, просроченный токен, `sectionOf`), `kb/usageRoutes.test.ts` (200/404, `lastSeq`), секции KB в `turns.test.ts`, форма аргументов в `apps/llm-runner/src/cli/claudeCli.test.ts` и `codexCli.test.ts`, маршрутизация кадра в `session.test.ts`. UI: `lib/kbUsage.test.ts`, `components/kb/KbUsagePanel.dom.test.tsx`, `store/voiceStore.kb.test.ts`, дополнения в `ChatColumn.dom.test.tsx`, `MessageMeta.dom.test.tsx`, `ConversationSettings.dom.test.tsx`, `App.commands.dom.test.tsx`, `App.pages.dom.test.tsx`, сториз `KbUsagePanel.stories.tsx`. База знаний в ране: `ci/modelHooks.test.ts` (форма запроса по режимам, авто-контекст из полей задачи, снятие токена при отмене работы модели и fix-loop), `ci/runManager.test.ts` (обращения с `ci_run_id`, строка БЗ в резюме, ран не падает на сломанной базе, 200/404 у отчётов), `db/database.kbUsage.test.ts` (колонки и агрегаты по ране и задаче), UI — `ProjectSettings.dom.test.tsx`, дополнения в `RunFeed.dom.test.tsx`, `TaskModal.dom.test.tsx` и `KbUsagePanel.dom.test.tsx`.
+Сервер: `db/database.kbUsage.test.ts` (монотонность `seq`, агрегаты, отсутствие дублирования сумм, каскад, изоляция, пробелы рана: `empty`/`error` без ответа против отвеченного вопроса и дедуп названных моделью), `kb/usage.test.ts` (pending с тем же id, трекер не выбрасывает при сломанной БД), `kb/kbMcp.test.ts` (403, `tools/list`, `deliveredChars === text.length`, кап, просроченный токен, `sectionOf`), `kb/usageRoutes.test.ts` (200/404, `lastSeq`), секции KB в `turns.test.ts`, форма аргументов в `apps/llm-runner/src/cli/claudeCli.test.ts` и `codexCli.test.ts`, маршрутизация кадра в `session.test.ts`. UI: `lib/kbUsage.test.ts`, `components/kb/KbUsagePanel.dom.test.tsx`, `store/voiceStore.kb.test.ts`, дополнения в `ChatColumn.dom.test.tsx`, `MessageMeta.dom.test.tsx`, `ConversationSettings.dom.test.tsx`, `App.commands.dom.test.tsx`, `App.pages.dom.test.tsx`, сториз `KbUsagePanel.stories.tsx`. База знаний в ране: `ci/modelHooks.test.ts` (форма запроса по режимам, авто-контекст из полей задачи, снятие токена при отмене работы модели и fix-loop), `ci/runManager.test.ts` (обращения с `ci_run_id`, строка БЗ в резюме, ран не падает на сломанной базе, 200/404 у отчётов), `db/database.kbUsage.test.ts` (колонки и агрегаты по ране и задаче), UI — `ProjectSettings.dom.test.tsx`, дополнения в `RunFeed.dom.test.tsx`, `TaskModal.dom.test.tsx` и `KbUsagePanel.dom.test.tsx`.

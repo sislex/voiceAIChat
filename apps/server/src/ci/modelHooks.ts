@@ -6,7 +6,8 @@ import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import {
   appendQuestionsHint, ciToolCallsAny, clarifyBudget, classifyCiToolCall, CI_USAGE_KIND_LABELS,
-  EMPTY_CI_TOOL_CALLS, isCiToolDenial, isVerificationCommand, parseQuestions, resolveCiStageModel, UNKNOWN_MODEL
+  EMPTY_CI_TOOL_CALLS, isCiToolDenial, isVerificationCommand, KB_GAPS_HINT, parseKbGaps, parseQuestions,
+  resolveCiStageModel, UNKNOWN_MODEL
 } from '@voicechat/shared'
 import type { CiRunMode, CiToolCalls, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
@@ -19,8 +20,8 @@ import type { KbUsageTracker } from '../kb/usage.js'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook } from './types.js'
 import {
-  EMPTY_CHANGES, KB_DIFF_SCRIPT, KB_UPDATE_TIMEOUT_MS, affectedProjectDocs, formatKbUpdateSummary,
-  kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput
+  EMPTY_CHANGES, KB_DIFF_SCRIPT, KB_UPDATE_TIMEOUT_MS, MAX_PROMPT_GAPS, affectedProjectDocs, formatKbUpdateSummary,
+  kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput, type KbGapForPrompt
 } from '../kb/codeUpdate.js'
 
 export interface CiModelHooksDeps {
@@ -358,6 +359,48 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   }
 
   /**
+   * Пробелы базы знаний, о которых модель сообщила блоком `kb-gaps`, — в ран,
+   * чтобы шаг «Актуализировать базу знаний» их занёс. Зовётся после КАЖДОГО хода
+   * (работа модели и fix-loop): пробел закрывается и в исследовании, и по ходу
+   * правки, а ход, в котором это случилось, заранее неизвестен.
+   *
+   * Не бросает: потерянный пробел — упущенная запись в базе, а не повод валить
+   * ран. Дубли снимает само хранение (ключ «ран + вопрос»).
+   */
+  function recordKbGaps(ctx: CiModelContext, stepId: string, text: string): void {
+    const gaps = parseKbGaps(text)
+    if (!gaps.length) return
+    try {
+      deps.db.addCiRunKbGaps(ctx.run.id, stepId, gaps)
+    } catch {
+      /* запись пробелов не имеет права уронить ран */
+    }
+  }
+
+  /**
+   * Пробелы рана для промпта шага актуализации. Источников два: названные самой
+   * моделью (с ответом) и обращения, на которые база не ответила вовсе (ответ
+   * шаг найдёт в коде). Второе нужно именно потому, что первое зависит от
+   * дисциплины модели: забыла блок — пробел всё равно виден по телеметрии.
+   * Названный пробел старше: у него уже есть ответ, повторять его вопросом
+   * незачем.
+   */
+  function collectKbGaps(ctx: CiModelContext): KbGapForPrompt[] {
+    try {
+      const reported = deps.db.ciRunKbGaps(ctx.run.id)
+      const named = new Set(reported.map((gap) => gap.question.trim().toLowerCase()))
+      const unanswered = deps.db
+        .kbUsageRunGaps(ctx.run.id, MAX_PROMPT_GAPS)
+        .filter((gap) => !named.has(gap.query.trim().toLowerCase()))
+        .map((gap) => ({ question: gap.query, reason: gap.reason }))
+      return [...reported, ...unanswered].slice(0, MAX_PROMPT_GAPS)
+    } catch {
+      // Пробелы — добавка к дифу: без них шаг работает как раньше.
+      return []
+    }
+  }
+
+  /**
    * Режим БЗ рана — снимок настройки ПРОЕКТА на старте (`ci_runs.kb_context_mode`),
    * а не режим связанного чата: в ране модель исследует проект по задаче, и от
    * настроек конкретного чата это зависеть не должно.
@@ -540,6 +583,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
           // Отмена рана: не «ошибка модели» — ран закрывается как cancelled.
           if (r.cancelled || ctx.signal.aborted) return { ok: false, cancelled: true }
           if (!r.ok) return { ok: false }
+          // Пробелы базы знаний снимаем с каждого хода: назвать их модель может
+          // и в плане, и в ответе на уточнение, а не только в последнем ходе.
+          recordKbGaps(ctx, ctx.parentStepId, r.text)
           if (r.sessionId) {
             sessionId = r.sessionId
             // Тот же диалог продолжит fix-loop: он живёт в другом вызове хука.
@@ -644,7 +690,10 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             'Кратко (1-2 фразы) поставь диагноз, затем исправь причину в рабочей директории',
             '(правь файлы/ставь зависимости/меняй конфиг). НЕ ослабляй саму команду ради обхода ошибки',
             'и не пропускай проверки. Шаг перезапустит воркфлоу — сам его не запускай.',
-            kbFields.kbMcpUrl ? 'Если причина связана с устройством проекта — сверься с базой знаний (mcp__kb__*) до правок.' : ''
+            // Правка — такое же исследование проекта, как разработка: причина
+            // падения, которой в базе не оказалось, обязана в неё попасть.
+            kbFields.kbMcpUrl ? 'Если причина связана с устройством проекта — сверься с базой знаний (mcp__kb__*) до правок.' : '',
+            kbFields.kbMcpUrl ? KB_GAPS_HINT : ''
           ]
             .filter(Boolean)
             .join('\n'),
@@ -658,6 +707,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         // Расход правки пишет `stageRunner` — на упавший шаг: цикл живёт внутри него.
         return turnOf(req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctx.signal)
       })
+      recordKbGaps(ctx, ctx.parentStepId, turn.text)
       // Между попытками id обновляем: следующая правка идёт тем же диалогом.
       if (turn.sessionId) {
         sessionId = turn.sessionId
@@ -713,8 +763,13 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     }
     if (ctx.signal.aborted) return cancelled
     if (changes.unavailable) return { ok: false, message: 'Диф рабочей копии собрать не удалось — база знаний не обновлена' }
-    if (!changes.files.length) return { ok: true, message: 'Нечего обновлять: изменений кода в ветке задачи нет' }
-    log(`Изменённых файлов: ${changes.files.length}.\n`)
+    // Пробелы базы знаний — вторая причина этого шага, наравне с дифом: ран без
+    // правок кода мог быть исследованием, у которого база знаний не ответила, и
+    // найденный в коде ответ обязан остаться в базе.
+    const gaps = collectKbGaps(ctx)
+    if (!changes.files.length && !gaps.length) return { ok: true, message: 'Нечего обновлять: изменений кода в ветке задачи нет' }
+    if (changes.files.length) log(`Изменённых файлов: ${changes.files.length}.\n`)
+    if (gaps.length) log(`Пробелов базы знаний за ран: ${gaps.length}.\n`)
 
     // Рабочая копия лежит в подкаталоге $SLUG рабочей директории рана: команды
     // базы знаний (`kb.mjs touch`, `kb:index`) запускаются из корня репозитория.
@@ -731,7 +786,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         baseLabel: `базовая ветка ${ctx.env.BASE_BRANCH ?? 'main'}`,
         changes,
         affected,
-        editFileTopics: !!ctx.agentId
+        editFileTopics: !!ctx.agentId,
+        gaps
       }),
       sessionId: null,
       model,
