@@ -413,6 +413,7 @@ describe('Sidebar — чаты, связанные с задачами', () => {
     taskId: 't1',
     key: 'VC-42',
     type: 'task',
+    columnSemantic: 'development',
     run: null,
     ...over
   })
@@ -454,6 +455,16 @@ describe('Sidebar — чаты, связанные с задачами', () => {
   ])('подсвечивает строку как карточку на доске: %s', (_name, run, expected) => {
     setup({ taskBadges: { c1: badge() }, ciSummaries: { t1: run } })
     expect(row('c1').className).toContain(expected)
+  })
+
+  it('ручное завершение задачи убирает старую ошибку из строки чата', () => {
+    setup({
+      taskBadges: { c1: badge({ columnSemantic: 'done' }) },
+      ciSummaries: { t1: summary({ status: 'failed', modelActive: false }) }
+    })
+    expect(row('c1').className).not.toContain('convo--ci-failed')
+    expect(screen.queryByText('ошибка')).not.toBeInTheDocument()
+    expect(screen.getByText('VC-42')).toBeInTheDocument()
   })
 
   it('отменённый и пропущенный ран подсветки не дают', () => {

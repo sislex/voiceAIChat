@@ -500,6 +500,20 @@ export function canStartCiRun(summary: { status: CiStatus } | null | undefined):
  */
 export type CiCardPulse = 'running' | 'fixing' | 'awaiting' | 'failed' | 'done'
 
+/**
+ * Состояние рана, актуальное для поверхностей задачи. Ручное завершение задачи
+ * сильнее старого терминального падения: ошибка остаётся в истории рана, но не
+ * должна продолжать красить уже закрытую карточку и её чат. Активный ран не
+ * скрываем — перенос во время работы не должен маскировать живой процесс.
+ */
+export function ciSummaryForTask<T extends { status: CiStatus }>(
+  summary: T | null | undefined,
+  taskDone: boolean
+): T | null {
+  if (!summary) return null
+  return taskDone && (summary.status === 'failed' || summary.status === 'timeout') ? null : summary
+}
+
 export function ciCardPulse(
   summary: { status: CiStatus; slotProgress: Pick<CiSlotProgress, 'fixing'> } | null | undefined
 ): CiCardPulse | null {

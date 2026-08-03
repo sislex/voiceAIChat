@@ -93,6 +93,25 @@ describe('TaskChatHeader — подсветка состояния рана', ()
     expect(header().className).toContain('taskchat--ci-awaiting')
   })
 
+  it('ручное завершение убирает старую ошибку, но оставляет ленту рана', () => {
+    render(
+      <TaskChatHeader
+        {...props}
+        context={ctx({
+          columnSemantic: 'done',
+          columnName: 'Готово',
+          run: { id: 'run-1', status: 'failed', mode: 'development', startedAt: 1000, durationMs: 42_000 }
+        })}
+        summary={summary({ status: 'failed', modelActive: false })}
+        onOpenTask={vi.fn()}
+        renderRunFeed={(id) => <div>{id}</div>}
+      />
+    )
+    expect(header().className).not.toContain('taskchat--ci-failed')
+    expect(screen.queryByText('ошибка')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Лента рана' })).toBeInTheDocument()
+  })
+
   it('без сводки берёт состояние из контекста, а без рана не подсвечивает', () => {
     const { unmount } = render(<TaskChatHeader {...props} context={ctx()} onOpenTask={vi.fn()} />)
     expect(header().className).toContain('taskchat--ci-running')

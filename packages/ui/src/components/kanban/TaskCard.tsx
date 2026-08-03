@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Task } from '@shared/projects'
-import { canStartCiRun, ciCardPulse, type CiRunSummary } from '@shared/ci'
+import { canStartCiRun, ciCardPulse, ciSummaryForTask, type CiRunSummary } from '@shared/ci'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
 import { Button } from '../ui/Button'
@@ -79,14 +79,16 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
     return () => document.removeEventListener('mousedown', onDown)
   }, [menuOpen])
 
-  // Состояние последнего рана: подсветка карточки и доступность запуска.
-  const pulse = ciCardPulse(ciSummary)
+  const done = props.doneColumnIds.has(task.columnId)
+  // Ручное завершение закрывает старую ошибку на поверхности задачи, сохраняя
+  // сам ран в истории и ленте.
+  const visibleCiSummary = ciSummaryForTask(ciSummary, done)
+  const pulse = ciCardPulse(visibleCiSummary)
   const canStart = canStartCiRun(ciSummary)
 
   const epic = epicOf(task, props.allTasks)
   const children = props.allTasks.filter((t) => t.parentId === task.id)
   const doneChildren = children.filter((t) => props.doneColumnIds.has(t.columnId))
-  const done = props.doneColumnIds.has(task.columnId)
   const key = issueKey(props.projectName, task)
 
   return (
@@ -185,9 +187,10 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </div>
       )}
 
-      {task.type === 'task' && (props.onStartCi || ciSummary) && (
+      {task.type === 'task' && (props.onStartCi || visibleCiSummary) && (
         <div className="jcard-ci" data-testid="task-ci-panel" onClick={(e) => e.stopPropagation()}>
-          {ciSummary && (() => {
+          {visibleCiSummary && (() => {
+            const ciSummary = visibleCiSummary
             const tone = ciTone(ciSummary.status)
             const fillMod = tone === 'success' ? ' jcard-ci-fill--success' : tone === 'removed' ? ' jcard-ci-fill--removed' : ''
             const total = ciSummary.slotProgress.total || 1

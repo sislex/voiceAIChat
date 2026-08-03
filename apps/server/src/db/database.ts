@@ -2079,19 +2079,22 @@ export class VoiceChatDb {
   taskChatBadges(userId: string): TaskChatBadge[] {
     const rows = this.db
       .prepare(
-        `SELECT c.id AS conversation_id, t.id AS task_id, t.project_id, t.seq, t.type, p.name AS project_name
+        `SELECT c.id AS conversation_id, t.id AS task_id, t.project_id, t.seq, t.type,
+                p.name AS project_name, kc.semantic_type AS column_semantic
          FROM conversations c
          JOIN tasks t ON t.id = c.task_id
          JOIN projects p ON p.id = t.project_id
+         JOIN kanban_columns kc ON kc.id = t.column_id
          WHERE c.user_id = ? AND c.task_id IS NOT NULL`
       )
-      .all(userId) as Array<{ conversation_id: string; task_id: string; project_id: string; seq: number; type: string; project_name: string }>
+      .all(userId) as Array<{ conversation_id: string; task_id: string; project_id: string; seq: number; type: string; project_name: string; column_semantic: string | null }>
     return rows.map((r) => ({
       conversationId: r.conversation_id,
       projectId: r.project_id,
       taskId: r.task_id,
       key: issueKey(r.project_name, { seq: r.seq }),
       type: normWorkItemType(r.type),
+      columnSemantic: (r.column_semantic as TaskChatBadge['columnSemantic']) ?? null,
       run: this.latestCiRunSummary(r.task_id)
     }))
   }

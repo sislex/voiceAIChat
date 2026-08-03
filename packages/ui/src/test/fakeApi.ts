@@ -281,7 +281,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
           const task = tasks.find((t) => t.id === c.taskId)
           const project = projects.find((p) => p.id === task?.projectId)
           if (!task || !project) return []
-          return [{ conversationId: c.id, projectId: project.id, taskId: task.id, key: issueKey(project.name, task), type: task.type, run: null }]
+          const column = columns.find((col) => col.id === task.columnId)
+          return [{ conversationId: c.id, projectId: project.id, taskId: task.id, key: issueKey(project.name, task), type: task.type, columnSemantic: column?.semanticType ?? null, run: null }]
         }),
     'conversations:setProject': async ({ id, projectId }) => {
       const conv = conversations.find((c) => c.id === id)!
