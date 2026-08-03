@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest'
 import {
   canStartCiRun,
   ciCardPulse,
+  ciSummaryForTask,
   clarifyBudget,
   CI_CLARIFY_LEVELS,
   CI_CLARIFY_MAX_LIMIT,
@@ -125,6 +126,23 @@ describe('canStartCiRun', () => {
 
   it('покрыты все статусы: запуск закрыт ровно на активных', () => {
     for (const s of CI_STATUSES) expect(canStartCiRun({ status: s })).toBe(!isActiveCiStatus(s))
+  })
+})
+
+describe('ciSummaryForTask', () => {
+  it('закрытая вручную задача не наследует старую ошибку рана', () => {
+    const failed = { status: 'failed' as const }
+    const timedOut = { status: 'timeout' as const }
+    expect(ciSummaryForTask(failed, true)).toBeNull()
+    expect(ciSummaryForTask(timedOut, true)).toBeNull()
+    expect(ciSummaryForTask(failed, false)).toBe(failed)
+  })
+
+  it('не скрывает активный или успешный ран даже в done', () => {
+    const running = { status: 'running' as const }
+    const success = { status: 'success' as const }
+    expect(ciSummaryForTask(running, true)).toBe(running)
+    expect(ciSummaryForTask(success, true)).toBe(success)
   })
 })
 

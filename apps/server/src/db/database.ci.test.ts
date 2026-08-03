@@ -349,7 +349,7 @@ describe('ci: метки чатов задач для списка бесед', 
 
     const before = db.taskChatBadges('alice')
     expect(before).toHaveLength(1)
-    expect(before[0]).toMatchObject({ conversationId: chat.id, taskId: task.id, projectId: p.id, key: 'P1-1', type: 'task', run: null })
+    expect(before[0]).toMatchObject({ conversationId: chat.id, taskId: task.id, projectId: p.id, key: 'P1-1', type: 'task', columnSemantic: 'backlog', run: null })
 
     // Появился ран — в метке живёт та же сводка, что подсвечивает карточку.
     const run = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, slotProgress: { done: 1, total: 3, phase: 'Модель работает' } })
@@ -357,6 +357,11 @@ describe('ci: метки чатов задач для списка бесед', 
     const after = db.taskChatBadges('alice')[0]
     expect(after.run).toMatchObject({ id: run.id, taskId: task.id, status: 'awaiting_input', awaitingInput: true })
     expect(after.run?.slotProgress.phase).toBe('Модель работает')
+
+    // Семантика колонки обновляется вместе с ручным завершением задачи.
+    const done = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'done')!
+    db.moveTask('alice', p.id, task.id, { columnId: done.id })
+    expect(db.taskChatBadges('alice')[0].columnSemantic).toBe('done')
 
     // Метки — свои: bob чужой чат задачи не видит.
     expect(db.taskChatBadges('bob')).toEqual([])
