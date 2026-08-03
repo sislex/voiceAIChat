@@ -709,6 +709,12 @@ export class VoiceChatDb {
       const mark = this.db.prepare(`UPDATE ci_commands SET is_test = 1, available_to_model = 0 WHERE id = ?`)
       for (const r of rows) if (isVerificationCommand(r)) mark.run(r.id)
     }
+    // Стандартный гейт живёт в данных справочника. Переводим только его точный
+    // прежний текст, не затрагивая пользовательские команды с другим скриптом.
+    this.db.prepare(`UPDATE ci_commands
+      SET script = 'npm run affected-check', is_test = 1, available_to_model = 0,
+          version = version + 1, updated_at = ?
+      WHERE script = 'npm run typecheck && npm test'`).run(this.now())
     // Семантика входных токенов строки расхода. Старые строки остаются с NULL:
     // у codex это «вход вместе с кэшем», и отчёт приводит их на чтении.
     const ciUsageCols = this.db.prepare(`PRAGMA table_info(ci_run_usage)`).all() as Array<{ name: string }>

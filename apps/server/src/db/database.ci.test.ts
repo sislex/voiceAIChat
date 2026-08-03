@@ -91,6 +91,30 @@ describe('ci: справочник команд', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  it('миграция переводит штатный гейт на affected-check и сохраняет его проверочным', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-affected-gate-'))
+    const file = join(dir, 'db.sqlite')
+    let n = 0
+    const first = new VoiceChatDb(file, { newId: () => `a-${++n}`, now: () => 1000 })
+    first.createUser('alice', '', 'user')
+    const gate = first.createCiCommand('alice', {
+      scope: 'global',
+      name: 'Запустить проверки (typecheck + npm test)',
+      script: 'npm run typecheck && npm test'
+    })
+    first.close()
+
+    const second = new VoiceChatDb(file, { newId: () => `a-${++n}`, now: () => 2000 })
+    expect(second.getCiCommand('alice', gate.id)).toMatchObject({
+      script: 'npm run affected-check',
+      isTest: true,
+      availableToModel: false,
+      version: 2
+    })
+    second.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('глобальные команды видны всем', () => {
     const g = db.createCiCommand('alice', { scope: 'global', name: 'npm ci', script: 'npm ci' })
     expect(db.listCiCommands('bob').map((x) => x.id)).toContain(g.id)
