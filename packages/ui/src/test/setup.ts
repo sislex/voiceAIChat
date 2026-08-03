@@ -61,6 +61,12 @@ if (typeof Element !== 'undefined' && typeof Element.prototype.scrollTo !== 'fun
   Element.prototype.scrollTo = function scrollTo(): void {}
 }
 
+// xterm initializes its color table at import time and asks jsdom's canvas for a
+// 2D context. The real canvas package is unnecessary for UI tests.
+if (typeof HTMLCanvasElement !== 'undefined') {
+  HTMLCanvasElement.prototype.getContext = (() => null) as unknown as typeof HTMLCanvasElement.prototype.getContext
+}
+
 afterEach(() => {
   // cleanup нужен только в DOM-окружении.
   if (typeof document !== 'undefined') cleanup()

@@ -22,13 +22,19 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   useEffect(() => {
     const bridge = window.ci
     if (!bridge) return
-    void bridge.listCommands(props.projectId).then(setCommands)
+    let cancelled = false
+    void bridge.listCommands(props.projectId).then((value) => {
+      if (!cancelled) setCommands(value)
+    })
     void bridge.getTaskCi(props.projectId, props.taskId).then((r) => {
+      if (cancelled) return
       setBefore(r.config.beforeModel); setAfter(r.config.afterModel); setOverridden(r.overridden)
     })
     void bridge.getTaskCiLlm(props.projectId, props.taskId).then((r) => {
+      if (cancelled) return
       setLlm(r.config); setLlmOverridden(r.overridden)
     })
+    return () => { cancelled = true }
   }, [props.projectId, props.taskId])
 
   const isCleanup = (id: string): boolean => commands.find((c) => c.id === id)?.isCleanup ?? false
