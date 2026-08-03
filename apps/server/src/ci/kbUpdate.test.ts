@@ -166,19 +166,34 @@ describe('шаг «Актуализировать базу знаний»', () =
     const kbPrompt = prompts.find((p) => p.startsWith('Ты ведёшь базу знаний'))!
     expect(kbPrompt).toContain('Пробелы базы знаний в этом ране')
     expect(kbPrompt).toContain('выяснено: сервер скриптом KB_DIFF_SCRIPT, не модель')
-    expect(kbStep(runId).log).toContain('Пробелов базы знаний за ран: 1')
+    // Кроме названного моделью пробела, авто-контекст задачи не нашёл
+    // ответа в пустой тестовой БЗ: объективный пробел тоже обязан доехать.
+    expect(kbStep(runId).log).toContain('Пробелов базы знаний за ран: 2')
   })
 
-  it('без изменений кода шаг успешен и ничего не пишет', async () => {
+  it('без изменений кода, но с пустым ответом БЗ всё равно запускает пополнение', async () => {
     await boot()
     diffBundle = BUNDLE_EMPTY
     const { projectId, taskId } = setup()
     const runId = await runToEnd(projectId, taskId)
     const step = kbStep(runId)
     expect(step.status).toBe('success')
+    expect(step.log).toContain('Пробелов базы знаний за ран: 1')
+    expect(db.kbDocuments({ scope: 'project', projectId }).some((d) => d.title === 'CI-раннер')).toBe(true)
+    const kbPrompt = prompts.find((p) => p.startsWith('Ты ведёшь базу знаний'))!
+    expect(kbPrompt).toContain('ответа база не дала')
+  })
+
+  it('без изменений и обращений к БЗ шаг успешен и ничего не пишет', async () => {
+    await boot()
+    diffBundle = BUNDLE_EMPTY
+    const { projectId, taskId } = setup()
+    db.updateProject('admin', projectId, { ciKbContextMode: 'off' })
+    const runId = await runToEnd(projectId, taskId)
+    const step = kbStep(runId)
+    expect(step.status).toBe('success')
     expect(step.log).toContain('Нечего обновлять')
     expect(db.kbDocuments({ scope: 'project', projectId }).some((d) => d.title === 'CI-раннер')).toBe(false)
-    // Хода модели по базе знаний не было — диф пустой.
     expect(prompts.some((p) => p.startsWith('Ты ведёшь базу знаний'))).toBe(false)
   })
 

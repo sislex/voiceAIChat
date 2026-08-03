@@ -2987,7 +2987,7 @@ export class VoiceChatDb {
       `INSERT INTO ci_run_kb_gaps (run_id, question, answer, topic, step_id, at) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(run_id, question) DO UPDATE SET
          answer = CASE WHEN length(excluded.answer) > length(answer) THEN excluded.answer ELSE answer END,
-         topic = COALESCE(excluded.topic, topic), step_id = excluded.step_id, at = excluded.at`
+         topic = COALESCE(excluded.topic, topic), step_id = excluded.step_id`
     )
     for (const gap of gaps) {
       if (!gap.question.trim() || !gap.answer.trim()) continue
