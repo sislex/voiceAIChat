@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import {
   appendQuestionsHint, ciToolCallsAny, ciToolCharsTotal, ciToolOutputLimits, clarifyBudget,
-  classifyCiToolCall, CI_TOOL_RESPONSES_KEEP, EMPTY_CI_TOOL_CALLS, EMPTY_CI_TOOL_CHARS,
+  classifyCiToolCall, CI_TOOL_RESPONSES_KEEP, CI_USAGE_KIND_LABELS, EMPTY_CI_TOOL_CALLS, EMPTY_CI_TOOL_CHARS,
   isCiToolDenial, isVerificationCommand, KB_GAPS_HINT, parseKbGaps, parseQuestions,
   resolveCiStageModel, trimmedToolOutputOriginalChars, trimToolOutput, UNKNOWN_MODEL
 } from '@voicechat/shared'
