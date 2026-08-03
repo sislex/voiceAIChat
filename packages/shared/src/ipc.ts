@@ -22,7 +22,7 @@ import type {
   WhisperModel,
   WhisperModelInfo
 } from './types'
-import type { ServerFileInfo, SystemCapabilities } from './protocol'
+import type { HealthResponse, ServerFileInfo, SystemCapabilities } from './protocol'
 import type {
   AdminLlmEngine,
   AdminLlmEngineHealth,
@@ -89,7 +89,7 @@ export interface UploadInfo {
  * `arg: void` означает вызов без аргументов.
  */
 export interface IpcInvokeMap {
-  'app:ping': { arg: void; result: string }
+  'app:ping': { arg: void; result: HealthResponse }
   'kb:status': { arg: void; result: KbStatus }
   /** Оглавление доступных разделов; фильтр по разделу/проекту — необязательный. */
   'kb:topics': { arg: { scope?: KbScope; projectId?: string | null } | void; result: KbDocumentSummary[] }
