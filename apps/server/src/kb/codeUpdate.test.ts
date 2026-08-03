@@ -109,6 +109,55 @@ describe('kbUpdatePrompt', () => {
     expect(prompt).toContain('apps/server/src/ci/runManager.ts')
   })
 
+  it('пробелы базы знаний идут в промпт: с найденным ответом и без него', () => {
+    const prompt = kbUpdatePrompt({
+      projectName: 'ChatAI',
+      workdir: '/repos/chatai/80/slug',
+      baseLabel: 'базовая ветка main',
+      changes,
+      affected: [],
+      editFileTopics: true,
+      gaps: [
+        { question: 'где живёт fix-loop', answer: 'хук attemptFix в ci/modelHooks.ts', topic: 'ci-runner' },
+        { question: 'формат блока kb-gaps', reason: 'в базе знаний ничего не нашлось' }
+      ]
+    })
+    expect(prompt).toContain('Пробелы базы знаний в этом ране (2)')
+    expect(prompt).toContain('выяснено: хук attemptFix в ci/modelHooks.ts')
+    expect(prompt).toContain('куда писать по мнению модели: ci-runner')
+    // Ответа нет — шаг обязан найти его в коде, а не переписать вопрос в статью.
+    expect(prompt).toContain('в базе знаний ничего не нашлось')
+    expect(prompt).toContain('найди его в коде')
+    // Три требования: правка раздела, сверка с кодом, запрет догадок.
+    expect(prompt).toContain('ДОПОЛНИ существующий раздел')
+    expect(prompt).toContain('сверь факт')
+    expect(prompt).toContain('лучше записанной догадки')
+    expect(prompt).toContain('На пробелы базы знаний это исключение не распространяется')
+  })
+
+  it('без пробелов блока нет, а nothingToUpdate остаётся без оговорки', () => {
+    const prompt = kbUpdatePrompt({
+      projectName: 'ChatAI', workdir: '/repos', baseLabel: 'базовая ветка main', changes, affected: [], editFileTopics: true
+    })
+    expect(prompt).not.toContain('Пробелы базы знаний')
+    expect(prompt).not.toContain('это исключение не распространяется')
+  })
+
+  it('диф собран и пуст, но пробелы есть — шаг пишет только их', () => {
+    const prompt = kbUpdatePrompt({
+      projectName: 'ChatAI',
+      workdir: '/repos',
+      baseLabel: 'базовая ветка main',
+      changes: { files: [], stat: '', patch: '', unavailable: false },
+      affected: [],
+      editFileTopics: true,
+      gaps: [{ question: 'кто снимает токен БЗ', answer: 'withKbTools во всех выходах хода' }]
+    })
+    expect(prompt).toContain('Изменений кода в ветке нет')
+    expect(prompt).not.toContain('собери его сам')
+    expect(prompt).toContain('кто снимает токен БЗ')
+  })
+
   it('в режиме только чтения файлы трогать запрещено, диф модель собирает сама', () => {
     const prompt = kbUpdatePrompt({
       projectName: 'ChatAI',

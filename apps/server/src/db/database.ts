@@ -106,6 +106,7 @@ import {
   type CiRunReport,
   type CiRunReportStep,
   type CiTaskReport,
+  type KbGapNote,
   CI_TOOL_KINDS,
   EMPTY_CI_TOOL_CALLS,
   ciTaskTotals,
@@ -2968,6 +2969,61 @@ export class VoiceChatDb {
       if (kind) calls[kind] += row.calls
     }
     return calls
+  }
+
+  /**
+   * Пробелы базы знаний, о которых сообщила модель (блок `kb-gaps` в её ответе).
+   * Ключ — (ран, вопрос): fix-loop и следующие ходы называют тот же пробел
+   * снова, а два одинаковых пункта в промпте шага актуализации дают две записи
+   * об одном и том же. При повторе берётся более полный ответ: вторая попытка
+   * обычно знает больше первой.
+   *
+   * Пробел без ответа не пишется вовсе — заносить в базу нечего (фильтрует
+   * `parseKbGaps`). Метрика по духу: упавшую запись гасит вызывающий.
+   */
+  addCiRunKbGaps(runId: string, stepId: string | null, gaps: KbGapNote[]): void {
+    const at = this.now()
+    const upsert = this.db.prepare(
+      `INSERT INTO ci_run_kb_gaps (run_id, question, answer, topic, step_id, at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(run_id, question) DO UPDATE SET
+         answer = CASE WHEN length(excluded.answer) > length(answer) THEN excluded.answer ELSE answer END,
+         topic = COALESCE(excluded.topic, topic), step_id = excluded.step_id`
+    )
+    for (const gap of gaps) {
+      if (!gap.question.trim() || !gap.answer.trim()) continue
+      upsert.run(runId, gap.question.trim(), gap.answer.trim(), gap.topic?.trim() || null, stepId, at)
+    }
+  }
+
+  /** Пробелы рана в порядке появления: раньше назван — раньше в промпте шага. */
+  ciRunKbGaps(runId: string): KbGapNote[] {
+    return (this.db
+      .prepare(`SELECT question, answer, topic FROM ci_run_kb_gaps WHERE run_id = ? ORDER BY at ASC, rowid ASC`)
+      .all(runId) as Array<{ question: string; answer: string; topic: string | null }>)
+      .map((row) => ({ question: row.question, answer: row.answer, ...(row.topic ? { topic: row.topic } : {}) }))
+  }
+
+  /**
+   * Вопросы рана, на которые база знаний не ответила вовсе (`empty`/`error`) —
+   * объективная половина пробелов: она есть даже тогда, когда модель забыла
+   * назвать пробел блоком `kb-gaps`. Один вопрос — одна строка (модель повторяет
+   * запросы), а вопрос, который позже ВСЁ ЖЕ был отвечен тем же текстом, из
+   * списка выпадает: там пробела нет, была неудачная попытка.
+   */
+  kbUsageRunGaps(runId: string, limit = 12): Array<{ query: string; reason: string }> {
+    return (this.db
+      .prepare(
+        `SELECT q.query AS query, MAX(COALESCE(q.error, '')) AS reason, MIN(q.created_at) AS at
+           FROM kb_usage_queries q
+          WHERE q.ci_run_id = ? AND q.status IN ('empty', 'error')
+            AND NOT EXISTS (SELECT 1 FROM kb_usage_queries d
+                             WHERE d.ci_run_id = q.ci_run_id AND d.query = q.query AND d.status = 'delivered')
+          GROUP BY q.query
+          ORDER BY at ASC
+          LIMIT ?`
+      )
+      .all(runId, Math.max(1, Math.min(limit, 50))) as Array<{ query: string; reason: string; at: number }>)
+      .map((row) => ({ query: row.query, reason: row.reason || 'база знаний не ответила' }))
   }
 
   /** Финальный агрегат: список файлов остаётся в логе, в БД сохраняются только числа. */
