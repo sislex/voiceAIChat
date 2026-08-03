@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from './database.js'
-import { CI_KB_UPDATE_COMMAND_ID, DEFAULT_CI_STAGE_MODELS } from '@voicechat/shared'
+import { CI_KB_UPDATE_COMMAND_ID, ciToolOutputLimits, DEFAULT_CI_STAGE_MODELS, DEFAULT_TOOL_OUTPUT_SETTINGS } from '@voicechat/shared'
 
 let db: VoiceChatDb
 
@@ -149,13 +149,22 @@ describe('ci: глобальные настройки', () => {
     expect(db.getCiSettings().stageModels).toEqual(DEFAULT_CI_STAGE_MODELS)
     db.updateCiSettings({ stageModels: { model_work: '', fix: '', kb_update: 'haiku', summary: '' } })
     expect(db.getCiSettings().stageModels).toEqual({ model_work: '', fix: '', kb_update: 'haiku', summary: '' })
-    // Правка соседнего поля стадии не трогает.
     db.updateCiSettings({ maxFixAttempts: 2 })
     expect(db.getCiSettings().stageModels.kb_update).toBe('haiku')
-    // Тело запроса приходит из REST: чужие ключи и не-строки в БД не попадают,
-    // а патч на одну стадию не сбрасывает остальные.
     db.updateCiSettings({ stageModels: { kb_update: 'sonnet', чужое: 1 } as never })
     expect(db.getCiSettings().stageModels).toEqual({ model_work: '', fix: '', kb_update: 'sonnet', summary: '' })
+  })
+
+  it('лимиты ответов инструментов хранятся и переживают перечитывание', () => {
+    expect(db.getCiSettings()).toMatchObject(DEFAULT_TOOL_OUTPUT_SETTINGS)
+    db.updateCiSettings({ bashOutputLimitChars: 8000, readWindowMaxLines: 120, grepMatchLimit: 40 })
+    const saved = db.getCiSettings()
+    expect(saved.bashOutputLimitChars).toBe(8000)
+    expect(saved.readWindowMaxLines).toBe(120)
+    expect(saved.grepMatchLimit).toBe(40)
+    expect(saved.readOutputLimitChars).toBe(DEFAULT_TOOL_OUTPUT_SETTINGS.readOutputLimitChars)
+    db.updateCiSettings({ bashOutputLimitChars: 0 })
+    expect(ciToolOutputLimits(db.getCiSettings()).bashChars).toBe(DEFAULT_TOOL_OUTPUT_SETTINGS.bashOutputLimitChars)
   })
 })
 
@@ -269,6 +278,11 @@ describe('VoiceChatDb — миграция существующей БД под 
     expect(cols('ci_runs')).toEqual(expect.arrayContaining(['mode', 'clarify_level', 'clarify_max', 'conversation_id']))
     expect(cols('ci_settings')).toContain('interaction_wait_ms')
     expect(cols('ci_settings')).toContain('stage_models')
+    expect(cols('ci_settings')).toEqual(expect.arrayContaining([
+      'bash_output_limit_chars', 'read_output_limit_chars', 'read_window_max_lines',
+      'grep_match_limit', 'grep_output_limit_chars'
+    ]))
+    expect(migrated.getCiSettings()).toMatchObject(DEFAULT_TOOL_OUTPUT_SETTINGS)
     // Таблица пауз появляется как новая (CREATE TABLE IF NOT EXISTS).
     expect(migrated.listCiInteractions('run-old')).toEqual([])
 

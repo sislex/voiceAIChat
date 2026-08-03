@@ -241,6 +241,163 @@ export function normCiStageModels(raw: unknown): CiStageModels {
   return out
 }
 
+// --- Сжатие контекста хода: лимиты ответов инструментов -------------------
+
+/**
+ * Цена хода — произведение размера контекста на число запросов: каждый вызов
+ * инструмента уходит новым запросом ко ВСЕМУ накопленному контексту, поэтому
+ * один толстый ответ (вывод `npm ci`, лог тестов) оплачивается столько раз,
+ * сколько запросов осталось до конца хода. Замер CHAT-70: 24.1M токенов чтения
+ * кэша на 186 запросов — около 130k контекста в среднем на запрос и 75% цены
+ * рана. Отсюда капы на ответы инструментов моста: они режут МНОЖИТЕЛЬ «размер
+ * контекста», а не число вызовов.
+ *
+ * Лимиты — настройки (`ci_settings`), а не константы кода: подобрать их можно
+ * только замером, и менять их приходится без пересборки.
+ */
+export interface ToolOutputLimits {
+  /** Кап на ответ `bash` (символы): голова + хвост с пометкой об обрезке. */
+  bashChars: number
+  /** Кап на ответ `read` (символы) — окно строк режется по нему. */
+  readChars: number
+  /** Максимум строк в одном окне `read`. */
+  readLines: number
+  /** Максимум совпадений в ответе `grep`. */
+  grepMatches: number
+  /** Кап на ответ `grep` (символы). */
+  grepChars: number
+}
+
+/**
+ * Дефолты лимитов; они же — значения по умолчанию колонок `ci_settings`.
+ *
+ * Подобраны замером на ранах CHAT-68/70 (симуляция по ленте: каждый ответ
+ * перечитывается на всех последующих запросах хода). Дальше 8k у `bash` эффект
+ * почти не растёт — 6k дают лишний процент, — а вот резать окно `read` ниже
+ * ~20k вредно: модель добирает файл повторными вызовами, и вместо экономии
+ * растёт ЧИСЛО запросов, второй множитель цены. Значения — настройки, потому
+ * что этот баланс проверяется только следующим замером.
+ */
+export const DEFAULT_TOOL_OUTPUT_SETTINGS = {
+  bashOutputLimitChars: 8_000,
+  readOutputLimitChars: 24_000,
+  readWindowMaxLines: 600,
+  grepMatchLimit: 100,
+  grepOutputLimitChars: 8_000
+}
+
+/**
+ * Границы значений. Ран не имеет права упасть из-за настройки: NaN, ноль и
+ * минус превращаются в дефолт, слишком маленькое — в минимум (иначе модель не
+ * увидит ни причины падения, ни контекста), слишком большое — в максимум.
+ */
+const TOOL_OUTPUT_BOUNDS: Record<keyof ToolOutputLimits, [number, number]> = {
+  bashChars: [1_000, 400_000],
+  readChars: [1_000, 400_000],
+  readLines: [40, 2_000],
+  grepMatches: [5, 1_000],
+  grepChars: [1_000, 200_000]
+}
+
+function clampLimit(value: unknown, fallback: number, [min, max]: [number, number]): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : NaN
+  if (!Number.isFinite(n) || n <= 0) return fallback
+  return Math.min(max, Math.max(min, n))
+}
+
+/** Лимиты моста из настроек CI (частичные и битые значения → дефолты). */
+export function ciToolOutputLimits(settings?: Partial<CiGlobalSettings> | null): ToolOutputLimits {
+  const d = DEFAULT_TOOL_OUTPUT_SETTINGS
+  const s = settings ?? {}
+  return {
+    bashChars: clampLimit(s.bashOutputLimitChars, d.bashOutputLimitChars, TOOL_OUTPUT_BOUNDS.bashChars),
+    readChars: clampLimit(s.readOutputLimitChars, d.readOutputLimitChars, TOOL_OUTPUT_BOUNDS.readChars),
+    readLines: clampLimit(s.readWindowMaxLines, d.readWindowMaxLines, TOOL_OUTPUT_BOUNDS.readLines),
+    grepMatches: clampLimit(s.grepMatchLimit, d.grepMatchLimit, TOOL_OUTPUT_BOUNDS.grepMatches),
+    grepChars: clampLimit(s.grepOutputLimitChars, d.grepOutputLimitChars, TOOL_OUTPUT_BOUNDS.grepChars)
+  }
+}
+
+/** Лимиты по умолчанию в виде, готовом для моста (без настроек — дефолты). */
+export const DEFAULT_TOOL_OUTPUT_LIMITS: ToolOutputLimits = ciToolOutputLimits()
+
+/**
+ * Метка обрезанного ответа. Обязана быть в тексте, который увидела модель:
+ * молча урезанный вывод она читает как полный и делает вывод по обрубку.
+ * По этой же метке обрезка видна в ленте рана и считается в метрике.
+ */
+export const TOOL_OUTPUT_TRIM_MARK = '⟦обрезано'
+
+/** Ответ несёт метку обрезки (лента, метрика, тесты). */
+export function isTrimmedToolOutput(text: string): boolean {
+  return text.includes(TOOL_OUTPUT_TRIM_MARK)
+}
+
+/**
+ * Сколько символов было до обрезки — по самой метке. Сервер видит ответ уже
+ * готовым (мост живёт в другом запросе), и «сколько бы ушло в контекст без
+ * лимита» больше взять негде. `null` — метки нет или в ней нет числа (окно
+ * `read` и `grep` режутся по строкам, там исходного объёма не считают).
+ */
+export function trimmedToolOutputOriginalChars(text: string): number | null {
+  const m = text.match(/⟦обрезано: из (\d+) символов/)
+  return m ? Number(m[1]) : null
+}
+
+/**
+ * Доля лимита под голову вывода. Хвост важнее головы: причина падения (упавший
+ * тест, стек, `npm ERR!`) внизу, а сверху — шапка и прогресс. Fix-loop смотрит
+ * именно в хвост, поэтому обрезка режет середину.
+ */
+const TRIM_HEAD_SHARE = 0.25
+
+export interface TrimmedToolOutput {
+  /** Текст для модели: голова, метка, хвост (или исходник, если влез). */
+  text: string
+  /** Длина отданного текста. */
+  chars: number
+  /** Длина исходного вывода — сколько бы ушло в контекст без обрезки. */
+  originalChars: number
+  truncated: boolean
+}
+
+/** Обрезать по границе строки, чтобы модель не читала полстроки как целую. */
+function cutHead(text: string, budget: number): string {
+  const raw = text.slice(0, budget)
+  const nl = raw.lastIndexOf('\n')
+  return nl > budget / 2 ? raw.slice(0, nl) : raw
+}
+
+function cutTail(text: string, budget: number): string {
+  const raw = text.slice(text.length - budget)
+  const nl = raw.indexOf('\n')
+  return nl >= 0 && nl < budget / 2 ? raw.slice(nl + 1) : raw
+}
+
+/**
+ * Сжать ответ инструмента до лимита: голова, явная метка с числами, хвост.
+ * Не бросает ни на каких входных данных: битый лимит уже приведён
+ * `ciToolOutputLimits`, а пустой текст возвращается как есть.
+ *
+ * `hint` — чем дочитать пропущенное (у каждого инструмента своё): метка обязана
+ * не только сообщить об обрезке, но и дать модели способ добрать данные
+ * точечно, иначе она повторит ту же команду и заплатит второй раз.
+ */
+export function trimToolOutput(text: string, limitChars: number, hint?: string): TrimmedToolOutput {
+  const originalChars = text.length
+  if (originalChars <= limitChars) return { text, chars: originalChars, originalChars, truncated: false }
+  const headBudget = Math.max(1, Math.floor(limitChars * TRIM_HEAD_SHARE))
+  const head = cutHead(text, headBudget)
+  const tail = cutTail(text, Math.max(1, limitChars - head.length))
+  const cut = originalChars - head.length - tail.length
+  const mark =
+    `${TOOL_OUTPUT_TRIM_MARK}: из ${originalChars} символов показаны первые ${head.length} и последние ` +
+    `${tail.length}, вырезано ${cut} в середине — вывод не влез в лимит контекста хода (${limitChars}). ` +
+    `Данные неполные${hint ? `; ${hint}` : ''}.⟧`
+  const out = `${head}\n\n${mark}\n\n${tail}`
+  return { text: out, chars: out.length, originalChars, truncated: true }
+}
+
 // --- Глобальные настройки CI ---------------------------------------------
 
 export interface CiGlobalSettings {
@@ -262,6 +419,16 @@ export interface CiGlobalSettings {
   interactionWaitMs: number
   /** Модель на стадию рана; пустое значение стадии — модель рана. */
   stageModels: CiStageModels
+  /** Кап на ответ инструмента `bash` (символы) — см. `ciToolOutputLimits`. */
+  bashOutputLimitChars: number
+  /** Кап на ответ инструмента `read` (символы). */
+  readOutputLimitChars: number
+  /** Максимум строк в одном окне `read`. */
+  readWindowMaxLines: number
+  /** Максимум совпадений в ответе `grep`. */
+  grepMatchLimit: number
+  /** Кап на ответ инструмента `grep` (символы). */
+  grepOutputLimitChars: number
 }
 
 export const DEFAULT_CI_GLOBAL_SETTINGS: CiGlobalSettings = {
@@ -273,7 +440,8 @@ export const DEFAULT_CI_GLOBAL_SETTINGS: CiGlobalSettings = {
   maxConcurrentRuns: 2,
   maxModelCommandCalls: 20,
   interactionWaitMs: 30 * 60 * 1000,
-  stageModels: DEFAULT_CI_STAGE_MODELS
+  stageModels: DEFAULT_CI_STAGE_MODELS,
+  ...DEFAULT_TOOL_OUTPUT_SETTINGS
 }
 
 /** Стратегия повторного запуска при существующей рабочей директории. */
@@ -733,6 +901,19 @@ export interface CiUsageTotals {
   inputNormalized: boolean
   /** Суммарное время работы модели, мс (сумма длительностей ходов). */
   modelActiveMs: number
+  /**
+   * Сколько запросов к API стояло за ходами (`num_turns`): вызов инструмента —
+   * это новый запрос со всем накопленным контекстом, и именно на это число
+   * умножается размер контекста в цене хода. 0 — CLI не сказал ни по одному ходу
+   * (codex), тогда контекст на запрос не считается.
+   */
+  apiRequests: number
+  /**
+   * Самый тяжёлый контекст на запрос среди ходов (токенов). Средний считает
+   * `ciAvgContextPerRequest`; максимум показывает, до чего контекст дорос к концу
+   * хода — по среднему разбухание не видно.
+   */
+  maxContextPerRequest: number
 }
 
 export const EMPTY_CI_USAGE_TOTALS: CiUsageTotals = {
@@ -746,7 +927,28 @@ export const EMPTY_CI_USAGE_TOTALS: CiUsageTotals = {
   costEstimated: false,
   costUnderstated: false,
   inputNormalized: false,
-  modelActiveMs: 0
+  modelActiveMs: 0,
+  apiRequests: 0,
+  maxContextPerRequest: 0
+}
+
+/**
+ * Входная сторона хода — то, что оплачивается как «контекст»: вход без кэша плюс
+ * чтение кэша плюс его запись (запись — тот же контекст, просто в первый проход).
+ * Выход сюда не входит: он не перечитывается на следующем запросе.
+ */
+export function ciContextTokens(row: Pick<CiRunUsage, 'inputTokens' | 'inputSemantics' | 'cacheReadTokens' | 'cacheCreationTokens'>): number {
+  return ciUsageInputTokens(row) + row.cacheReadTokens + row.cacheCreationTokens
+}
+
+/**
+ * Средний контекст на один запрос к API — второй множитель цены хода. `null`,
+ * когда число запросов неизвестно: ноль на его месте читался бы как «контекста
+ * не было».
+ */
+export function ciAvgContextPerRequest(t: CiUsageTotals): number | null {
+  if (t.apiRequests <= 0) return null
+  return Math.round((t.inputTokens + t.cacheReadTokens + t.cacheCreationTokens) / t.apiRequests)
 }
 
 /**
@@ -755,7 +957,7 @@ export const EMPTY_CI_USAGE_TOTALS: CiUsageTotals = {
  * зажимом в ноль — на случай, если CLI когда-нибудь начнёт считать иначе).
  * Строки, записанные уже приведёнными, остаются как есть.
  */
-export function ciUsageInputTokens(row: CiRunUsage): number {
+export function ciUsageInputTokens(row: Pick<CiRunUsage, 'inputTokens' | 'inputSemantics' | 'cacheReadTokens'>): number {
   return row.inputSemantics === 'with_cache'
     ? Math.max(0, row.inputTokens - row.cacheReadTokens)
     : row.inputTokens
@@ -781,6 +983,13 @@ export function ciUsageTotals(rows: CiRunUsage[]): CiUsageTotals {
     t.cacheReadTokens += r.cacheReadTokens
     t.cacheCreationTokens += r.cacheCreationTokens
     t.modelActiveMs += r.durationMs ?? 0
+    // Запросы к API считаются отдельно от ходов CLI: один ход — это десятки
+    // запросов (по одному на каждый вызов инструмента), и цена хода равна
+    // «размер контекста × число запросов».
+    if (r.numTurns && r.numTurns > 0) {
+      t.apiRequests += r.numTurns
+      t.maxContextPerRequest = Math.max(t.maxContextPerRequest, Math.round(ciContextTokens(r) / r.numTurns))
+    }
     // Оценка идёт по приведённому входу: у старой строки codex он включал кэш,
     // и цена по полному тарифу завышала итог в разы.
     const own = r.costUsd ?? estimateCostUsd(r.model, { ...r, inputTokens })
@@ -838,6 +1047,9 @@ export function sumCiUsageTotals(list: CiUsageTotals[]): CiUsageTotals {
     t.cacheCreationTokens += s.cacheCreationTokens
     t.tokens += s.tokens
     t.modelActiveMs += s.modelActiveMs
+    t.apiRequests += s.apiRequests
+    // Максимум — именно максимум, а не сумма: это «самый дорогой запрос».
+    t.maxContextPerRequest = Math.max(t.maxContextPerRequest, s.maxContextPerRequest)
     if (s.costEstimated) t.costEstimated = true
     if (s.costUnderstated) t.costUnderstated = true
     if (s.inputNormalized) t.inputNormalized = true
@@ -950,6 +1162,63 @@ export function sumCiToolCalls(list: Array<CiToolCalls | null>): CiToolCalls | n
   return sum
 }
 
+// --- Объём ответов инструментов -------------------------------------------
+
+/**
+ * Сколько СИМВОЛОВ ответов инструментов легло в контекст хода, по видам. Число
+ * вызовов само по себе о цене не говорит: 40 окон `read` дешевле одного `npm ci`,
+ * вывод которого потом перечитывается на каждом следующем запросе. Символы, а не
+ * токены: сервер видит ровно текст, а токенизация — дело модели (оценка —
+ * `estimateKbTokens`, та же, что у базы знаний).
+ */
+export type CiToolChars = Record<CiToolKind, number>
+
+export const EMPTY_CI_TOOL_CHARS: CiToolChars = { bash: 0, read: 0, grep: 0, edit: 0, kb: 0, other: 0, denied: 0 }
+
+/** Всего символов ответов — по видам инструментов (`denied` — исход, не вид). */
+export function ciToolCharsTotal(chars: CiToolChars): number {
+  return CI_TOOL_CALL_KINDS.reduce((acc, kind) => acc + chars[kind], 0)
+}
+
+/** Сложить объёмы ранов; `null` — ни у одного рана метрики нет (ран до фичи). */
+export function sumCiToolChars(list: Array<CiToolChars | null>): CiToolChars | null {
+  const known = list.filter((c): c is CiToolChars => c !== null)
+  if (!known.length) return null
+  const sum: CiToolChars = { ...EMPTY_CI_TOOL_CHARS }
+  for (const c of known) for (const kind of CI_TOOL_KINDS) sum[kind] += c[kind]
+  return sum
+}
+
+/**
+ * Один тяжёлый ответ инструмента за ран — чтобы «контекст раздулся» имело
+ * виновника с именем: что вызвали и сколько символов это стоило.
+ */
+export interface CiRunToolResponse {
+  /** Имя инструмента ровно как его назвал CLI (`mcp__remote__bash`). */
+  tool: string
+  kind: CiToolKind
+  /** Что вызывали: команда/путь/паттерн — как в ленте, обрезанное. */
+  label: string
+  /** Сколько символов ушло в контекст. */
+  chars: number
+  /** Сколько было до обрезки; `null` — ответ не обрезался. */
+  originalChars: number | null
+  /** Шаг ленты, внутри которого шёл вызов; null — шага уже нет. */
+  stepId: string | null
+  at: number
+}
+
+/** Сколько тяжёлых ответов храним на ран (метрика, а не архив ленты). */
+export const CI_TOOL_RESPONSES_KEEP = 5
+
+/** Сколько показываем в отчёте: три самых тяжёлых. */
+export const CI_TOOL_RESPONSES_SHOWN = 3
+
+/** Самые тяжёлые ответы из нескольких списков (раны задачи, ходы). */
+export function topCiToolResponses(list: CiRunToolResponse[], limit = CI_TOOL_RESPONSES_SHOWN): CiRunToolResponse[] {
+  return [...list].sort((a, b) => b.chars - a.chars || a.at - b.at).slice(0, limit)
+}
+
 /** Шаг рана в отчёте: то же, что в ленте, плюс расход ходов модели. */
 export interface CiRunReportStep {
   id: string
@@ -1001,6 +1270,13 @@ export interface CiRunReport {
    * фичи): нули на его месте читались бы как «модель не вызвала ничего».
    */
   toolCalls: CiToolCalls | null
+  /**
+   * Символы ответов инструментов по видам — измеренный вклад в контекст хода.
+   * `null` — метрики у рана нет (ран до неё).
+   */
+  toolChars: CiToolChars | null
+  /** Самые тяжёлые ответы инструментов рана (от тяжёлого к легкому); [] — нет. */
+  toolResponses: CiRunToolResponse[]
 }
 
 /** Отчёт по задаче: все её раны (повторы, отмены) и итог по ним. */
@@ -1014,13 +1290,25 @@ export interface CiTaskReport {
   durationMs: number
   /** Вызовы инструментов по всем ранам; `null` — счётчика нет ни у одного. */
   toolCalls: CiToolCalls | null
+  /** Объём ответов по всем ранам; `null` — метрики нет ни у одного. */
+  toolChars: CiToolChars | null
+  /** Самые тяжёлые ответы среди всех ранов задачи. */
+  toolResponses: CiRunToolResponse[]
 }
 
 /** Итог по задаче — сумма по всем её ранам (чистая функция, без БД). */
-export function ciTaskTotals(runs: CiRunReport[]): { totals: CiUsageTotals; durationMs: number; toolCalls: CiToolCalls | null } {
+export function ciTaskTotals(runs: CiRunReport[]): {
+  totals: CiUsageTotals
+  durationMs: number
+  toolCalls: CiToolCalls | null
+  toolChars: CiToolChars | null
+  toolResponses: CiRunToolResponse[]
+} {
   return {
     totals: sumCiUsageTotals(runs.map((r) => r.totals)),
     durationMs: runs.reduce((acc, r) => acc + (r.durationMs ?? 0), 0),
-    toolCalls: sumCiToolCalls(runs.map((r) => r.toolCalls))
+    toolCalls: sumCiToolCalls(runs.map((r) => r.toolCalls)),
+    toolChars: sumCiToolChars(runs.map((r) => r.toolChars)),
+    toolResponses: topCiToolResponses(runs.flatMap((r) => r.toolResponses))
   }
 }

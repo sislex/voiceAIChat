@@ -29,8 +29,19 @@ import {
   ciToolCallsAny,
   isCiToolDenial,
   sumCiToolCalls,
+  ciAvgContextPerRequest,
+  ciToolCharsTotal,
+  ciToolOutputLimits,
+  isTrimmedToolOutput,
+  sumCiToolChars,
+  topCiToolResponses,
+  trimmedToolOutputOriginalChars,
+  trimToolOutput,
+  DEFAULT_TOOL_OUTPUT_LIMITS,
   EMPTY_CI_TOOL_CALLS,
+  EMPTY_CI_TOOL_CHARS,
   EMPTY_CI_USAGE_TOTALS,
+  TOOL_OUTPUT_TRIM_MARK,
   type CiRunReport,
   type CiRunUsage,
   type CiUsageTotals
@@ -255,6 +266,131 @@ describe('ciUsageTotals', () => {
     expect(t.inputTokens).toBe(1000)
     expect(t.inputNormalized).toBe(false)
   })
+
+  // Второй множитель цены хода: контекст на ОДИН запрос к API. Ходов CLI мало
+  // (единицы), запросов — сотни: каждый вызов инструмента идёт новым запросом со
+  // всем накопленным контекстом, и по сумме токенов это не видно.
+  it('считает запросы к API и контекст на запрос — средний и самый тяжёлый', () => {
+    const light = row({ numTurns: 10, inputTokens: 0, outputTokens: 500, cacheReadTokens: 100_000, cacheCreationTokens: 0 })
+    const heavy = row({ id: 'u2', numTurns: 5, inputTokens: 0, outputTokens: 500, cacheReadTokens: 400_000, cacheCreationTokens: 0 })
+    const t = ciUsageTotals([light, heavy])
+    expect(t.requests).toBe(2) // ходов CLI — два
+    expect(t.apiRequests).toBe(15) // а запросов к API — пятнадцать
+    expect(ciAvgContextPerRequest(t)).toBe(Math.round(500_000 / 15))
+    // Максимум — самый дорогой ход, а не сумма: 400k на 5 запросов.
+    expect(t.maxContextPerRequest).toBe(80_000)
+  })
+
+  it('запись кэша входит в контекст запроса, выход — нет', () => {
+    const t = ciUsageTotals([row({ numTurns: 2, inputTokens: 1000, outputTokens: 1_000_000, cacheReadTokens: 2000, cacheCreationTokens: 1000 })])
+    expect(ciAvgContextPerRequest(t)).toBe(2000)
+  })
+
+  it('без num_turns контекст на запрос — null, а не ноль', () => {
+    const t = ciUsageTotals([row({ numTurns: null })])
+    expect(t.apiRequests).toBe(0)
+    expect(ciAvgContextPerRequest(t)).toBeNull()
+    expect(t.maxContextPerRequest).toBe(0)
+  })
+
+  it('итог по ранам складывает запросы, а максимум оставляет максимумом', () => {
+    const a = ciUsageTotals([row({ numTurns: 4, cacheReadTokens: 40_000, inputTokens: 0, cacheCreationTokens: 0 })])
+    const b = ciUsageTotals([row({ id: 'u2', numTurns: 2, cacheReadTokens: 60_000, inputTokens: 0, cacheCreationTokens: 0 })])
+    const sum = sumCiUsageTotals([a, b])
+    expect(sum.apiRequests).toBe(6)
+    expect(sum.maxContextPerRequest).toBe(30_000)
+    expect(ciAvgContextPerRequest(sum)).toBe(Math.round(100_000 / 6))
+  })
+})
+
+// Сжатие ответов инструментов: главный множитель цены хода — размер контекста, а
+// он набирается ответами, которые перечитываются на каждом следующем запросе.
+describe('trimToolOutput', () => {
+  const text = (n: number, ch = 'a'): string => Array.from({ length: n }, () => `${ch}`).join('')
+
+  it('короткий вывод не трогает и обрезанным не помечает', () => {
+    const r = trimToolOutput('ровно то, что нужно', 1000)
+    expect(r.truncated).toBe(false)
+    expect(r.text).toBe('ровно то, что нужно')
+    expect(r.originalChars).toBe('ровно то, что нужно'.length)
+    expect(isTrimmedToolOutput(r.text)).toBe(false)
+  })
+
+  it('длинный вывод режет середину: хвост важнее головы', () => {
+    const out = `ШАПКА\n${text(4000, 'x')}\nПРИЧИНА ПАДЕНИЯ`
+    const r = trimToolOutput(out, 1000, 'сузь вывод')
+    expect(r.truncated).toBe(true)
+    expect(r.text.startsWith('ШАПКА')).toBe(true)
+    // Хвост на месте — по нему fix-loop и понимает, из-за чего упали тесты.
+    expect(r.text.endsWith('ПРИЧИНА ПАДЕНИЯ')).toBe(true)
+    expect(r.text).not.toContain(text(2000, 'x'))
+    // Метка явная, с числами и подсказкой, чем дочитать.
+    expect(isTrimmedToolOutput(r.text)).toBe(true)
+    expect(r.text).toContain('Данные неполные; сузь вывод')
+    expect(trimmedToolOutputOriginalChars(r.text)).toBe(out.length)
+    // Под хвост уходит больше, чем под голову (доля 25/75).
+    const head = r.text.slice(0, r.text.indexOf(TOOL_OUTPUT_TRIM_MARK))
+    const tail = r.text.slice(r.text.lastIndexOf('⟧') + 1)
+    expect(tail.length).toBeGreaterThan(head.length)
+  })
+
+  it('не падает ни на пустом выводе, ни на крошечном лимите, ни на выводе без переводов строк', () => {
+    expect(trimToolOutput('', 1).truncated).toBe(false)
+    const r = trimToolOutput(text(5000, 'z'), 1)
+    expect(r.truncated).toBe(true)
+    expect(r.text.length).toBeLessThan(1000)
+    expect(trimmedToolOutputOriginalChars(r.text)).toBe(5000)
+  })
+})
+
+describe('ciToolOutputLimits', () => {
+  it('без настроек — дефолты, а настройки применяются как есть', () => {
+    expect(ciToolOutputLimits()).toEqual({ bashChars: 8_000, readChars: 24_000, readLines: 600, grepMatches: 100, grepChars: 8_000 })
+    expect(ciToolOutputLimits({ bashOutputLimitChars: 5000 }).bashChars).toBe(5000)
+  })
+
+  it('мусор в настройке не роняет ход: ноль, минус и NaN дают дефолт', () => {
+    const limits = ciToolOutputLimits({
+      bashOutputLimitChars: 0, readOutputLimitChars: -5, readWindowMaxLines: Number.NaN, grepMatchLimit: undefined
+    })
+    expect(limits.bashChars).toBe(8_000)
+    expect(limits.readChars).toBe(24_000)
+    expect(limits.readLines).toBe(600)
+    expect(limits.grepMatches).toBe(100)
+  })
+
+  it('слишком мелкие и слишком крупные значения зажимаются в границы', () => {
+    // Ниже минимума модель не увидит ни причины падения, ни контекста.
+    expect(ciToolOutputLimits({ bashOutputLimitChars: 10 }).bashChars).toBe(1000)
+    expect(ciToolOutputLimits({ readWindowMaxLines: 1 }).readLines).toBe(40)
+    expect(ciToolOutputLimits({ grepMatchLimit: 1 }).grepMatches).toBe(5)
+    expect(ciToolOutputLimits({ bashOutputLimitChars: 9_000_000 }).bashChars).toBe(400_000)
+  })
+
+  it('дефолты настроек CI и дефолты моста — одно и то же', () => {
+    expect(ciToolOutputLimits(DEFAULT_CI_GLOBAL_SETTINGS)).toEqual(DEFAULT_TOOL_OUTPUT_LIMITS)
+  })
+})
+
+// Объём ответов и тяжёлые ответы: число вызовов о цене не говорит, платится за
+// символы, которые перечитываются на каждом следующем запросе хода.
+describe('объём ответов инструментов', () => {
+  it('всего символов — по видам инструментов, отказы отдельно', () => {
+    const chars = { ...EMPTY_CI_TOOL_CHARS, bash: 100_000, read: 20_000, denied: 500 }
+    expect(ciToolCharsTotal(chars)).toBe(120_000)
+  })
+
+  it('складывает раны, а ран без метрики оставляет null', () => {
+    expect(sumCiToolChars([null, null])).toBeNull()
+    const sum = sumCiToolChars([{ ...EMPTY_CI_TOOL_CHARS, bash: 10 }, null, { ...EMPTY_CI_TOOL_CHARS, bash: 5, read: 1 }])
+    expect(sum).toMatchObject({ bash: 15, read: 1 })
+  })
+
+  it('топ ответов — от тяжёлого к лёгкому, при равенстве раньше пришедший', () => {
+    const mk = (chars: number, at: number) => ({ tool: 'mcp__remote__bash', kind: 'bash' as const, label: `#${at}`, chars, originalChars: null, stepId: null, at })
+    const top = topCiToolResponses([mk(10, 3), mk(300, 1), mk(300, 2), mk(50, 4)], 3)
+    expect(top.map((r) => r.label)).toEqual(['#1', '#2', '#4'])
+  })
 })
 
 // Модель по стадии рана: вспомогательные стадии не обязаны идти на модели
@@ -422,7 +558,8 @@ describe('sumCiUsageTotals и ciTaskTotals', () => {
     const run = (over: Partial<CiRunReport> = {}): CiRunReport => ({
       runId: 'r1', projectId: 'p1', taskId: 't1', status: 'success', mode: 'development',
       provider: 'claude', model: 'opus', startedAt: 1, finishedAt: 2, durationMs: 5000, createdAt: 1,
-      fixAttempts: 0, kbHit: null, toolCalls: null, totals: totals(), stages: [], steps: [], ...over
+      fixAttempts: 0, kbHit: null, toolCalls: null, toolChars: null, toolResponses: [],
+      totals: totals(), stages: [], steps: [], ...over
     })
     const r = ciTaskTotals([run(), run({ runId: 'r2', durationMs: null, totals: { ...EMPTY_CI_USAGE_TOTALS } })])
     expect(r.durationMs).toBe(5000)
@@ -436,7 +573,8 @@ describe('sumCiUsageTotals и ciTaskTotals', () => {
     const run = (over: Partial<CiRunReport> = {}): CiRunReport => ({
       runId: 'r1', projectId: 'p1', taskId: 't1', status: 'success', mode: 'development',
       provider: 'codex', model: 'gpt-5.4', startedAt: 1, finishedAt: 2, durationMs: 1000, createdAt: 1,
-      fixAttempts: 0, kbHit: null, toolCalls: null, totals: totals(), stages: [], steps: [], ...over
+      fixAttempts: 0, kbHit: null, toolCalls: null, toolChars: null, toolResponses: [],
+      totals: totals(), stages: [], steps: [], ...over
     })
     const r = ciTaskTotals([
       run({ toolCalls: { ...EMPTY_CI_TOOL_CALLS, read: 10, bash: 4 } }),

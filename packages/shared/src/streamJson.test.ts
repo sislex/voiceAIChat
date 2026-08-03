@@ -203,6 +203,26 @@ describe('parseStreamJsonActivity (режим консоли)', () => {
     expect(parseStreamJsonActivity(err)!.summary).toContain('ошибка')
   })
 
+  // id вызова нужен, чтобы объём ответа привязать к инструменту: в tool_result
+  // имени нет, а вызовы бывают параллельными — по порядку они не сшиваются.
+  it('tool_use и tool_result несут id вызова, когда его дал CLI', () => {
+    const use = parseStreamJsonActivity(JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', id: 'toolu_42', name: 'mcp__remote__bash', input: { command: 'ls' } }] }
+    }))!
+    expect(use.toolUseId).toBe('toolu_42')
+    const result = parseStreamJsonActivity(JSON.stringify({
+      type: 'user',
+      message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_42', content: 'ok' }] }
+    }))!
+    expect(result.toolUseId).toBe('toolu_42')
+    // Без id поле не появляется вовсе — сшивка падает на порядок (codex).
+    const noId = parseStreamJsonActivity(JSON.stringify({
+      type: 'user', message: { content: [{ type: 'tool_result', content: 'ok' }] }
+    }))!
+    expect(noId.toolUseId).toBeUndefined()
+  })
+
   it('result → итог; stream_event и мусор → null', () => {
     const res = parseStreamJsonActivity(
       JSON.stringify({ type: 'result', is_error: false, num_turns: 2, duration_ms: 3000 })

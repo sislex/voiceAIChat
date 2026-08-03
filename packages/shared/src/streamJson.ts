@@ -222,7 +222,15 @@ export function parseStreamJsonActivity(line: string): ClaudeLogEntry | null {
           const summary = `${displayToolName(block.name)}: ${truncate(summarizeToolInput(block.input))}`
           // `tool` — сырое имя (`mcp__remote__read`, `Bash`): по нему считаются
           // вызовы инструментов рана, а `summary` остаётся человеческим.
-          return { kind: 'tool_use', summary, detail: safeJson(block.input), raw, tool: block.name }
+          // `toolUseId` сшивает вызов с его результатом (объём ответа в контексте).
+          return {
+            kind: 'tool_use',
+            summary,
+            detail: safeJson(block.input),
+            raw,
+            tool: block.name,
+            ...(typeof block.id === 'string' ? { toolUseId: block.id } : {})
+          }
         }
         if (block.type === 'thinking' && typeof block.thinking === 'string') {
           return { kind: 'thinking', summary: `💭 ${truncate(block.thinking)}`, detail: block.thinking, raw }
@@ -238,7 +246,13 @@ export function parseStreamJsonActivity(line: string): ClaudeLogEntry | null {
           const isError = block.is_error === true
           const text = toolResultText(block.content)
           const mark = isError ? '✗ ошибка' : '✓ результат'
-          return { kind: 'tool_result', summary: `${mark}: ${truncate(text)}`, detail: text, raw }
+          return {
+            kind: 'tool_result',
+            summary: `${mark}: ${truncate(text)}`,
+            detail: text,
+            raw,
+            ...(typeof block.tool_use_id === 'string' ? { toolUseId: block.tool_use_id } : {})
+          }
         }
       }
       return null

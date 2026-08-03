@@ -16,6 +16,7 @@ import { VoiceChatDb } from '../db/database.js'
 import { signToken } from '../users/accounts.js'
 import type { CommandExecutor } from './types.js'
 import type { LlmClient } from '../claude/types.js'
+import { ciAvgContextPerRequest, ciToolCharsTotal, trimToolOutput } from '@voicechat/shared'
 import type { CiRunReport, CiTaskReport, TurnMeta } from '@voicechat/shared'
 
 const SECRET = 'ci-secret'
@@ -227,6 +228,62 @@ describe('GET /api/ci/runs/:runId/report', () => {
     expect(report.toolCalls).toEqual({ bash: 2, read: 4, grep: 2, edit: 2, kb: 2, other: 0, denied: 0 })
   })
 
+  // Цена хода — «размер контекста × число запросов к API». Ни один множитель по
+  // сумме токенов не виден: ходов CLI единицы, а запросов сотни.
+  it('показывает контекст на запрос: средний, максимальный и число запросов к API', async () => {
+    const { project, task } = setup()
+    const runId = await runTask(project.id, task.id)
+
+    const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
+    // Два хода по num_turns: 3 → шесть запросов к API.
+    expect(report.totals.apiRequests).toBe(6)
+    // Контекст запроса — вход + чтение кэша + его запись (выход не перечитывается).
+    expect(report.totals.maxContextPerRequest).toBe(Math.round((1000 + 5000 + 300) / 3))
+    expect(ciAvgContextPerRequest(report.totals)).toBe(Math.round((2000 + 10_000 + 600) / 6))
+  })
+
+  it('показывает объём ответов инструментов и три самых тяжёлых ответа', async () => {
+    turnTools = ['mcp__remote__bash', 'mcp__remote__read']
+    turnResults = ['B'.repeat(40_000), 'R'.repeat(3000)]
+    const { project, task } = setup()
+    const runId = await runTask(project.id, task.id)
+
+    const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
+    // Два хода (работа модели и резюме) — объёмы складываются по рану.
+    expect(report.toolChars).toMatchObject({ bash: 80_000, read: 6000 })
+    expect(ciToolCharsTotal(report.toolChars!)).toBe(86_000)
+    // Тяжёлые ответы: у «контекст раздулся» есть виновник с именем.
+    expect(report.toolResponses).toHaveLength(3)
+    expect(report.toolResponses[0]).toMatchObject({ tool: 'mcp__remote__bash', kind: 'bash', chars: 40_000 })
+    expect(report.toolResponses[0].label).toContain('mcp__remote__bash')
+    expect(report.toolResponses.map((r) => r.chars)).toEqual([40_000, 40_000, 3000])
+    // Ответ не обрезался (мост в тесте не участвует) — исходного объёма нет.
+    expect(report.toolResponses[0].originalChars).toBeNull()
+  })
+
+  it('обрезанный ответ несёт исходный объём — видно, сколько лимит сэкономил', async () => {
+    turnTools = ['mcp__remote__bash']
+    turnResults = [trimToolOutput('Ш'.repeat(300_000), 20_000, 'сузь вывод').text]
+    const { project, task } = setup()
+    const runId = await runTask(project.id, task.id)
+
+    const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
+    const heaviest = report.toolResponses[0]
+    expect(heaviest.chars).toBeLessThan(21_000)
+    expect(heaviest.originalChars).toBe(300_000)
+  })
+
+  it('мелкие ответы в тяжёлые не попадают, но в объём входят', async () => {
+    turnTools = ['mcp__remote__read']
+    turnResults = ['коротко']
+    const { project, task } = setup()
+    const runId = await runTask(project.id, task.id)
+
+    const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
+    expect(report.toolResponses).toEqual([])
+    expect(report.toolChars!.read).toBe('коротко'.length * 2)
+  })
+
   it('отказы вызовов считаются отдельно и не путаются с упавшей командой', async () => {
     turnTools = ['mcp__remote__bash']
     turnResults = [
@@ -281,6 +338,11 @@ describe('GET /api/ci/runs/:runId/report', () => {
     expect(report.kbHit).toBeNull()
     // Счётчика вызовов у старого рана нет вовсе: нули читались бы как поломка.
     expect(report.toolCalls).toBeNull()
+    expect(report.toolChars).toBeNull()
+    expect(report.toolResponses).toEqual([])
+    // Контекст на запрос неизвестен — не ноль: строк расхода нет вовсе.
+    expect(report.totals.apiRequests).toBe(0)
+    expect(ciAvgContextPerRequest(report.totals)).toBeNull()
   })
 
   it('чужому пользователю — 404, а не пустой отчёт', async () => {
