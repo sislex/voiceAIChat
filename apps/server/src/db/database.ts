@@ -3045,6 +3045,9 @@ export class VoiceChatDb {
       )
       .all(runId, Math.max(1, Math.min(limit, 50))) as Array<{ query: string; reason: string; at: number }>)
       .map((row) => ({ query: row.query, reason: row.reason || 'база знаний не ответила' }))
+  }
+
+  /**
    * Объём ответов инструментов рана (символы по видам); null — метрики у рана
    * нет. Ран до метрики и ран, где ответы были пустыми, — разные вещи: колонка
    * `chars` у старых строк нулевая, поэтому «нет строк» и «есть нули» различаем

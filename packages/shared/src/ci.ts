@@ -239,6 +239,8 @@ export function normCiStageModels(raw: unknown): CiStageModels {
     out[kind] = typeof src[kind] === 'string' ? (src[kind] as string).trim() : ''
   }
   return out
+}
+
 // --- Сжатие контекста хода: лимиты ответов инструментов -------------------
 
 /**

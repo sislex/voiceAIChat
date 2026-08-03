@@ -22,7 +22,9 @@ describe('loadRunnerConfig', () => {
       home: '/home/node',
       claudeBin: '/usr/local/bin/claude',
       codexBin: '/usr/local/bin/codex',
-      orphanMs: 5000
+      orphanMs: 5000,
+      sharedCodexAuth: false,
+      sharedCodexAuthUser: ''
     })
   })
 
