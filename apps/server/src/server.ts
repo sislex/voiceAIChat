@@ -67,7 +67,8 @@ import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
 import { readUserFile } from './serverFiles.js'
 
-const VERSION = '0.1.0'
+const VERSION = process.env.VC_RELEASE_VERSION?.trim() || '0.1.0'
+const RELEASED_AT = process.env.VC_RELEASED_AT?.trim() || new Date().toISOString()
 
 export interface BuildOptions {
   config: ServerConfig
@@ -160,7 +161,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   db.ensureAdmin(opts.config.adminPassword) // сид админа (пароль из VC_ADMIN_PASSWORD)
   registerAuth(app, db, sessionSecret)
 
-  app.get(REST.health, async (): Promise<HealthResponse> => ({ ok: true, version: VERSION }))
+  app.get(REST.health, async (): Promise<HealthResponse> => ({
+    ok: true,
+    version: VERSION,
+    releasedAt: RELEASED_AT
+  }))
 
   const runnerFs =
     opts.config.llmRunnerClaudeUrl || opts.config.llmRunnerCodexUrl

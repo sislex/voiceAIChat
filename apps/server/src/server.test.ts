@@ -36,7 +36,8 @@ describe('server: HTTP', () => {
   it('GET /api/health → ok', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/health' })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toMatchObject({ ok: true })
+    expect(res.json()).toMatchObject({ ok: true, version: expect.any(String) })
+    expect(new Date(res.json().releasedAt).toISOString()).toBe(res.json().releasedAt)
   })
 })
 
