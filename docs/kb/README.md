@@ -9,25 +9,25 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 11 коммит(ов) в areas после сверки: 259877e fix(kb): авто-инъекция не молчит на кодовых описаниях задач … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 12 коммит(ов) в areas после сверки: fc1eef3 fix(llm): fallback для офлайн-машин и общий Codex-профиль … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 6 коммит(ов) в areas после сверки: 65621d2 feat(ui): режим чата в карточке сайдбара + актуальные меню моделей Claude/Codex … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-01 | ⚠ 10 коммит(ов) в areas после сверки: 1c76af1 fix(db): обратные кавычки в SQL-комментарии закрывали SCHEMA_SQL … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-02 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-03 | ✓ |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-03 | ⚠ 2 коммит(ов) в areas после сверки: 1c76af1 fix(db): обратные кавычки в SQL-комментарии закрывали SCHEMA_SQL … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 6 коммит(ов) в areas после сверки: 01f86f6 feat(kb): пробел базы знаний обязан стать записью … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-01 | ⚠ 13 коммит(ов) в areas после сверки: ea86924 Merge branch 'feature/80-обязательное-пополнение-бз-после-пробела' … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-02 | ⚠ 1 коммит(ов) в areas после сверки: fc1eef3 fix(llm): fallback для офлайн-машин и общий Codex-профиль |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-03 | ⚠ 3 коммит(ов) в areas после сверки: ea86924 Merge branch 'feature/80-обязательное-пополнение-бз-после-пробела' … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-03 | ⚠ 4 коммит(ов) в areas после сверки: ea86924 Merge branch 'feature/80-обязательное-пополнение-бз-после-пробела' … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 1 коммит(ов) в areas после сверки: fc1eef3 fix(llm): fallback для офлайн-машин и общий Codex-профиль |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 9 коммит(ов) в areas после сверки: ea86924 Merge branch 'feature/80-обязательное-пополнение-бз-после-пробела' … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-03 | ⚠ 1 коммит(ов) в areas после сверки: 01f86f6 feat(kb): пробел базы знаний обязан стать записью |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-03 | ⚠ 1 коммит(ов) в areas после сверки: 01f86f6 feat(kb): пробел базы знаний обязан стать записью |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-03 | ⚠ 3 коммит(ов) в areas после сверки: ea86924 Merge branch 'feature/80-обязательное-пополнение-бз-после-пробела' … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-02 | ✓ |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-01 | ⚠ 17 коммит(ов) в areas после сверки: 1c76af1 fix(db): обратные кавычки в SQL-комментарии закрывали SCHEMA_SQL … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-01 | ⚠ 20 коммит(ов) в areas после сверки: ea86924 Merge branch 'feature/80-обязательное-пополнение-бз-после-пробела' … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-02 | ⚠ 1 коммит(ов) в areas после сверки: c2d0836 feat(ci): модель по стадии рана — актуализация БЗ и резюме дешевле |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-01 | ⚠ 28 коммит(ов) в areas после сверки: 1c76af1 fix(db): обратные кавычки в SQL-комментарии закрывали SCHEMA_SQL … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-02 | ⚠ 4 коммит(ов) в areas после сверки: 01f86f6 feat(kb): пробел базы знаний обязан стать записью … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-01 | ⚠ 31 коммит(ов) в areas после сверки: ea86924 Merge branch 'feature/80-обязательное-пополнение-бз-после-пробела' … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-02 | ⚠ 6 коммит(ов) в areas после сверки: ea86924 Merge branch 'feature/80-обязательное-пополнение-бз-после-пробела' … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-02 | ⚠ 1 коммит(ов) в areas после сверки: dc53e1e docs(kb): модель по стадии рана и замер opus против sonnet на шаге БЗ |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-02 | ⚠ 4 коммит(ов) в areas после сверки: a91b61c style(ui): отступы JSX селектора модели стадии … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-02 | ⚠ 2 коммит(ов) в areas после сверки: fc1eef3 fix(llm): fallback для офлайн-машин и общий Codex-профиль … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-02 | ⚠ 5 коммит(ов) в areas после сверки: fc1eef3 fix(llm): fallback для офлайн-машин и общий Codex-профиль … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-02, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 
 ## Инструкции по пакетам

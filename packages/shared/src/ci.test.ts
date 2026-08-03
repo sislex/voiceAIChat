@@ -184,6 +184,7 @@ describe('isVerificationCommand', () => {
     expect(isVerificationCommand({ name: 'Гейт', script: 'npm run -w @voicechat/server typecheck && npm run -w @voicechat/server test' })).toBe(true)
     expect(isVerificationCommand({ name: 'UI', script: 'npx vitest run' })).toBe(true)
     expect(isVerificationCommand({ name: 'Линт', script: 'npm run lint' })).toBe(true)
+    expect(isVerificationCommand({ name: 'Гейт', script: 'npm run affected-check' })).toBe(true)
   })
 
   it('флаг справочника перевешивает текст', () => {
