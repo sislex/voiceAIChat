@@ -20,6 +20,10 @@ export interface RunnerConfig {
   claudeBin: string
   /** Имя/путь бинаря Codex CLI. */
   codexBin: string
+  /** Использовать общий Codex OAuth-профиль из HOME для всех пользователей. */
+  sharedCodexAuth?: boolean
+  /** Пользователь-источник общего Codex OAuth-профиля. */
+  sharedCodexAuthUser?: string
   /**
    * Сколько ждать, пока клиент вычитает поток `/v1/run`, прежде чем убить CLI.
    * Защита от сироты: сервер перезапустился, ход читать некому, а токены горят.
@@ -38,6 +42,8 @@ export function loadRunnerConfig(env: NodeJS.ProcessEnv = process.env): RunnerCo
     home: env.HOME ?? homedir(),
     claudeBin: env.VC_CLAUDE_BIN ?? 'claude',
     codexBin: env.VC_CODEX_BIN ?? 'codex',
+    sharedCodexAuth: env.VC_CODEX_SHARED_AUTH === 'true',
+    sharedCodexAuthUser: env.VC_CODEX_SHARED_AUTH_USER ?? '',
     orphanMs: Number(env.VC_RUNNER_ORPHAN_MS ?? 30_000)
   }
 }

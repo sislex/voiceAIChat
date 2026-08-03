@@ -356,8 +356,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // (чужую игнорируем → выполняем на сервере). Офлайн своей — сразу ошибка.
     const requestedTarget =
       req.execTarget === undefined ? (conv ? conv.execTarget : settings.execTarget) : req.execTarget
-    const executionDisabled = requestedTarget === 'none'
-    const target =
+    let executionDisabled = requestedTarget === 'none'
+    let target =
       !executionDisabled && requestedTarget && deps.db.listAgents(userId).some((a) => a.id === requestedTarget)
         ? requestedTarget
         : null
@@ -381,21 +381,44 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     if (target && deps.agents && deps.mcpBaseUrl) {
       if (!deps.agents.isOnline(target)) {
-        broadcast(
-          {
-            t: 'claude.error',
-            conversationId,
-            message: `Машина «${deps.agents.nameOf(target) ?? target}» не в сети. Запустите на ней агента или выберите «На сервере» в настройках.`
-          },
-          userId
-        )
-        return
+        const unavailableName = deps.agents.nameOf(target) ?? target
+        const alternative = deps.db
+          .listAgents(userId)
+          .find((agent) => agent.id !== target && deps.agents?.isOnline(agent.id))
+        if (alternative) {
+          const alternativeName = deps.agents.nameOf(alternative.id) ?? alternative.id
+          broadcast(
+            {
+              t: 'claude.error',
+              conversationId,
+              message: `WARNING: Предупреждение: машина «${unavailableName}» не в сети. Ход переключён на машину «${alternativeName}».`
+            },
+            userId
+          )
+          target = alternative.id
+        } else {
+          executionDisabled = true
+          target = null
+          permissionMode = 'plan'
+          broadcast(
+            {
+              t: 'claude.error',
+              conversationId,
+              message: `WARNING: Предупреждение: машина «${unavailableName}» не в сети, и доступных машин нет. Все машины не в сети — модель продолжит отвечать без агентского режима.`
+            },
+            userId
+          )
+        }
       }
+      if (!target) {
+        // Продолжаем ход без remote MCP; модель может отвечать текстом.
+      } else {
       const policy = deps.agents.policyOf(target)
       remote = {
         mcpUrl: `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}${conv?.workdir ? `&cwd=${encodeURIComponent(conv.workdir)}` : ''}`,
         agentName: deps.agents.nameOf(target) ?? target,
         policySummary: policy ? policySummary(policy, conv?.skillNames ?? []) : undefined
+      }
       }
     }
     // `cwd` здесь только желаемый: локальный spawn или удалённый runner уже сами

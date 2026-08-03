@@ -78,10 +78,15 @@ describe('подписи режима чата (карточка в сайдба
 
 describe('меню моделей Codex', () => {
   it('повторяет список CLI по порядку; id = то, что уходит в `codex -m`', () => {
-    expect(CODEX_MODELS.map((m) => m.id)).toEqual([
-      'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'
+    expect(CODEX_MODELS).toEqual([
+      { id: 'gpt-5.6-sol', label: 'gpt-5.6-sol (default) — Latest frontier agentic coding model.' },
+      { id: 'gpt-5.6-terra', label: 'gpt-5.6-terra — Balanced agentic coding model for everyday work.' },
+      { id: 'gpt-5.6-luna', label: 'gpt-5.6-luna — Fast and affordable agentic coding model.' },
+      { id: 'gpt-5.5', label: 'gpt-5.5 — Frontier model for complex coding, research, and real-world work.' },
+      { id: 'gpt-5.4', label: 'gpt-5.4 — Strong model for everyday coding.' },
+      { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini — Small, fast, and cost-efficient model for simpler coding tasks.' },
+      { id: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark — Ultra-fast coding model.' }
     ])
-    expect(CODEX_MODELS.every((m) => m.label === m.id)).toBe(true)
     expect(DEFAULT_CODEX_MODEL).toBe('gpt-5.6-sol')
   })
 })

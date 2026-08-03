@@ -43,7 +43,8 @@ Claude это `default` («Default (recommended)» — модель выбира
 `opus[1m]` («Opus (1M context)»), `fable`, `sonnet`, `haiku`: id уходит в
 `claude --model` как есть, включая суффикс окна `[1m]`. У Codex —
 `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`,
-`gpt-5.4-mini` (в `codex -m`; первый — `DEFAULT_CODEX_MODEL`). Старые значения
+`gpt-5.4-mini`, `gpt-5.3-codex-spark` (в `codex -m`; первый —
+`DEFAULT_CODEX_MODEL`). Старые значения
 из БД/настроек не ломают ход: `normalizeClaudeModel` тянет их к пункту меню по
 префиксу алиаса (`opus`, `opus-4.5` → `opus[1m]`; неизвестное → `default`), и
 `turns.ts` нормализует ДО клампа по роли — иначе `user` с legacy-`opus` в

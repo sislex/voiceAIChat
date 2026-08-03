@@ -31,8 +31,8 @@ export function cliProfileDirs(dataDir: string, userId: string): CliProfileDirs 
   }
 }
 
-function seedFile(source: string, target: string): void {
-  if (existsSync(target) || !existsSync(source)) return
+function seedFile(source: string, target: string, overwrite = false): void {
+  if ((!overwrite && existsSync(target)) || !existsSync(source)) return
   try {
     copyFileSync(source, target)
     chmodSync(target, 0o600)
@@ -78,7 +78,8 @@ function repairClaudeCredentials(source: string, target: string): void {
 export function ensureCliProfile(
   dataDir: string,
   userId: string,
-  sharedHome = homedir()
+  sharedHome = homedir(),
+  options: { sharedCodexAuth?: boolean; sharedCodexAuthUser?: string } = {}
 ): CliProfileDirs {
   const dirs = cliProfileDirs(dataDir, userId)
   for (const dir of [dirs.home, dirs.claude, dirs.codex, dirs.ccProjects, dirs.codexSessions]) {
@@ -95,7 +96,10 @@ export function ensureCliProfile(
   seedFile(sharedClaudeCredentials, profileClaudeCredentials)
   repairClaudeCredentials(sharedClaudeCredentials, profileClaudeCredentials)
   seedFile(join(sharedHome, '.claude', 'settings.json'), join(dirs.claude, 'settings.json'))
-  seedFile(join(sharedHome, '.codex', 'auth.json'), join(dirs.codex, 'auth.json'))
+  const sharedCodexAuth = options.sharedCodexAuthUser
+    ? join(cliProfileDirs(dataDir, options.sharedCodexAuthUser).codex, 'auth.json')
+    : join(sharedHome, '.codex', 'auth.json')
+  seedFile(sharedCodexAuth, join(dirs.codex, 'auth.json'), options.sharedCodexAuth === true)
   seedFile(join(sharedHome, '.codex', 'config.toml'), join(dirs.codex, 'config.toml'))
   return dirs
 }

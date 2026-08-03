@@ -1018,6 +1018,12 @@
   font-size: 13px;
   font-weight: 600;
 }
+.errbar.warnbar {
+  background: #fff7df;
+  border-color: #ecd58a;
+  color: #795b00;
+}
+.errbar.warnbar .errclose { color: #795b00; }
 .errclose {
   border: none;
   background: transparent;

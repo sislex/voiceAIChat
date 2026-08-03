@@ -558,12 +558,13 @@ export interface CodexModelInfo {
  * ~/.codex/config.toml, — UI добавит её отдельным пунктом.
  */
 export const CODEX_MODELS: CodexModelInfo[] = [
-  { id: 'gpt-5.6-sol', label: 'gpt-5.6-sol' },
-  { id: 'gpt-5.6-terra', label: 'gpt-5.6-terra' },
-  { id: 'gpt-5.6-luna', label: 'gpt-5.6-luna' },
-  { id: 'gpt-5.5', label: 'gpt-5.5' },
-  { id: 'gpt-5.4', label: 'gpt-5.4' },
-  { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' }
+  { id: 'gpt-5.6-sol', label: 'gpt-5.6-sol (default) — Latest frontier agentic coding model.' },
+  { id: 'gpt-5.6-terra', label: 'gpt-5.6-terra — Balanced agentic coding model for everyday work.' },
+  { id: 'gpt-5.6-luna', label: 'gpt-5.6-luna — Fast and affordable agentic coding model.' },
+  { id: 'gpt-5.5', label: 'gpt-5.5 — Frontier model for complex coding, research, and real-world work.' },
+  { id: 'gpt-5.4', label: 'gpt-5.4 — Strong model for everyday coding.' },
+  { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini — Small, fast, and cost-efficient model for simpler coding tasks.' },
+  { id: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark — Ultra-fast coding model.' }
 ]
 
 /** Модель Codex по умолчанию — первый пункт меню. */
