@@ -88,6 +88,18 @@
   position: relative;
 }
 
+.release-version {
+  position: fixed;
+  right: 10px;
+  bottom: 8px;
+  z-index: 20;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1;
+  cursor: help;
+  user-select: none;
+}
+
 /* ---- Сайдбар ---- */
 .side {
   background: var(--panel);

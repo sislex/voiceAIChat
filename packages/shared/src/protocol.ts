@@ -107,7 +107,10 @@ export interface DesktopMigrationResult {
 
 export interface HealthResponse {
   ok: true
+  /** Номер версии собранного релиза. */
   version: string
+  /** ISO-время сборки/выпуска релиза. */
+  releasedAt: string
 }
 
 /** Пути REST (единый источник для сервера и клиентов). */

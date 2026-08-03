@@ -54,10 +54,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
   }
 
   return {
-    'app:ping': async () => {
-      const h = await req<{ version: string }>(REST.health)
-      return h.version
-    },
+    'app:ping': () => req(REST.health),
     'kb:status': () => req(REST.kbStatus),
     'kb:topics': (arg) => {
       const q = new URLSearchParams()
