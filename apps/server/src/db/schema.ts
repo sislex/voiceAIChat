@@ -195,8 +195,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_column
   ON tasks(project_id, column_id, position);
 
--- ============================ CI-раннер ============================
-
+-- ============================ CI-раннер =====================
 CREATE TABLE IF NOT EXISTS ci_commands (
   id                TEXT PRIMARY KEY,
   scope             TEXT NOT NULL DEFAULT 'project',
@@ -397,10 +396,14 @@ CREATE INDEX IF NOT EXISTS idx_ci_run_usage_run ON ci_run_usage(run_id, at);
 -- Отдельная таблица, а не колонки расхода: ход без строки расхода (мгновенная
 -- отмена) всё равно успевает вызвать инструменты, а «нет строки» должно
 -- отличаться от «нуля вызовов» — у ранов до фичи счётчика нет вовсе.
+-- chars — сколько СИМВОЛОВ ответов этого вида легло в контекст хода: число
+-- вызовов о цене не говорит (40 окон read дешевле одного npm ci), а платится
+-- именно за объём, перечитываемый на каждом следующем запросе.
 CREATE TABLE IF NOT EXISTS ci_run_tool_calls (
   run_id     TEXT NOT NULL,
   tool       TEXT NOT NULL,
   calls      INTEGER NOT NULL DEFAULT 0,
+  chars      INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (run_id, tool),
   FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
@@ -425,6 +428,26 @@ CREATE TABLE IF NOT EXISTS ci_run_kb_gaps (
   PRIMARY KEY (run_id, question),
   FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
 );
+-- Самые тяжёлые ответы инструментов рана: у «контекст раздулся» должен быть
+-- виновник с именем. Хранится не вся лента вызовов, а верхушка по объёму
+-- (CI_TOOL_RESPONSES_KEEP строк на ран, лишние удаляются на записи) — это
+-- метрика, а сама лента и так лежит в ci_run_logs.
+CREATE TABLE IF NOT EXISTS ci_run_tool_responses (
+  id             TEXT PRIMARY KEY,
+  run_id         TEXT NOT NULL,
+  -- Ссылки на ci_run_steps нет по той же причине, что у ci_run_usage: шаг бывает
+  -- синтетическим, а метрика не имеет права уронить ран нарушением FK.
+  step_id        TEXT,
+  tool           TEXT NOT NULL DEFAULT '',
+  kind           TEXT NOT NULL DEFAULT 'other',
+  label          TEXT NOT NULL DEFAULT '',
+  chars          INTEGER NOT NULL DEFAULT 0,
+  -- Сколько было до обрезки; NULL — ответ влез целиком.
+  original_chars INTEGER,
+  at             INTEGER NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_run_tool_responses_run ON ci_run_tool_responses(run_id, chars DESC);
 
 CREATE TABLE IF NOT EXISTS ci_run_kb_metrics (
   run_id             TEXT PRIMARY KEY,
@@ -476,7 +499,12 @@ CREATE TABLE IF NOT EXISTS ci_settings (
   max_model_command_calls INTEGER NOT NULL,
   interaction_wait_ms    INTEGER NOT NULL DEFAULT 1800000,
   -- Модель на стадию рана (JSON вида {"kb_update":"sonnet"}); NULL — дефолты кода.
-  stage_models           TEXT
+  stage_models             TEXT,
+  bash_output_limit_chars INTEGER NOT NULL DEFAULT 8000,
+  read_output_limit_chars INTEGER NOT NULL DEFAULT 24000,
+  read_window_max_lines   INTEGER NOT NULL DEFAULT 600,
+  grep_match_limit        INTEGER NOT NULL DEFAULT 100,
+  grep_output_limit_chars INTEGER NOT NULL DEFAULT 8000
 );
 
 -- Использование базы знаний моделью: одно обращение = одна строка. Пишется

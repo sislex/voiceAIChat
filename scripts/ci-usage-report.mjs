@@ -4,7 +4,14 @@
 // поэтому отдельный скрипт, а не ручка API: его гоняют по прод-БД руками.
 //
 //   node scripts/ci-usage-report.mjs [--db путь] [--since 2026-08-02] [--task ЧАСТЬ]
-//                                    [--run ЧАСТЬ] [--json]
+//                                    [--run ЧАСТЬ] [--json] [--context]
+//
+// `--context` печатает состав контекста хода по каждому рану: чем набран объём,
+// который перечитывается на КАЖДОМ запросе к API. Цена хода — произведение
+// размера контекста на число запросов, и ни один множитель по строке расхода не
+// виден: запросы считаются по `num_turns`, а состав — по ленте рана (ответы
+// инструментов), телеметрии БЗ (инъекция) и первому ходу (системный промпт CLI
+// со схемами инструментов примерно равен записи кэша первого запроса).
 //
 // Стоимость: настоящая от CLI, иначе оценка по прайсу — «≈»; когда прайса нет
 // вовсе (модель `unknown`), к оценке добавляется «занижено». Вход приводится к
@@ -37,6 +44,7 @@ const SINCE = opt('since') ? Date.parse(opt('since')) : null
 const TASK = opt('task')
 const RUN = opt('run')
 const AS_JSON = args.includes('--json')
+const WITH_CONTEXT = args.includes('--context')
 
 // Прайс — копия packages/shared/src/pricing.ts (USD за 1M токенов), включая то,
 // какие строки сверены с фактической ценой CLI, а какие нет: подробности там.
@@ -105,8 +113,58 @@ function toolsFromLog(text) {
   return { calls, bashFileReads, bashHeredocEdits }
 }
 
+/**
+ * Состав ответов инструментов по ленте рана: сколько символов каждый ответ
+ * положил в контекст и какие ответы были самыми тяжёлыми. Лента пишет запись как
+ * `[tool_result] краткое · полный текст`, поэтому продолжение записи — строки до
+ * следующего `[вид]`. Числа с запасом на краткую часть (~180 символов), зато это
+ * единственный способ измерить раны, сделанные до метрики объёма.
+ */
+function toolResponsesFromLog(text) {
+  const KIND = /^\[(tool_use|tool_result|system|thinking|result|other)\]\s?/
+  const CALL = /^([A-Za-z_][\w:.-]*)\s*:\s*([\s\S]*)/
+  const SHELL_PREFIX = '$ ' // codex печатает запуск команды как `$ npm test`
+  const byKind = { bash: 0, read: 0, grep: 0, edit: 0, kb: 0, other: 0 }
+  const heaviest = []
+  let lastCall = null // подпись последнего вызова: вид и что вызывали
+  let current = null // накапливаемая запись результата
+  const flush = () => {
+    if (!current) return
+    byKind[current.kind] += current.chars
+    heaviest.push(current)
+    current = null
+  }
+  for (const line of text.split('\n')) {
+    const m = line.match(KIND)
+    if (!m) {
+      if (current) current.chars += line.length + 1
+      continue
+    }
+    flush()
+    const rest = line.slice(m[0].length)
+    if (m[1] === 'tool_use') {
+      if (rest.startsWith(SHELL_PREFIX)) {
+        lastCall = { kind: 'bash', label: rest.slice(0, 80) }
+      } else {
+        const call = rest.match(CALL)
+        lastCall = call
+          ? { kind: classify(call[1]), label: `${call[1]}: ${call[2].slice(0, 70)}` }
+          : { kind: 'other', label: rest.slice(0, 80) }
+      }
+      continue
+    }
+    if (m[1] !== 'tool_result') continue
+    current = { kind: lastCall ? lastCall.kind : 'other', label: lastCall ? lastCall.label : 'вызов неизвестен', chars: rest.length }
+  }
+  flush()
+  heaviest.sort((a, b) => b.chars - a.chars)
+  return { byKind, heaviest: heaviest.slice(0, 3), total: Object.values(byKind).reduce((a, n) => a + n, 0) }
+}
+
 const db = new Database(DB_PATH, { readonly: true })
 const all = (sql, ...p) => db.prepare(sql).all(...p)
+const hasColumn = (table, column) => all(`PRAGMA table_info(${table})`).some((c) => c.name === column)
+const hasTable = (table) => all(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).length > 0
 
 const where = ['1 = 1']
 const params = []
@@ -116,13 +174,17 @@ if (RUN) { where.push('r.id LIKE ?'); params.push(`${RUN}%`) }
 
 const runs = all(
   `SELECT r.id, r.llm_provider AS provider, r.llm_model AS model, r.status, r.mode, r.created_at,
-          r.duration_ms, t.title
+          r.duration_ms, t.title, t.description, t.acceptance_criteria
      FROM ci_runs r LEFT JOIN tasks t ON t.id = r.task_id
     WHERE ${where.join(' AND ')} ORDER BY r.created_at`,
   ...params
 )
 
-const hasToolTable = all(`SELECT name FROM sqlite_master WHERE type='table' AND name='ci_run_tool_calls'`).length > 0
+const hasToolTable = hasTable('ci_run_tool_calls')
+// Объём ответов и тяжёлые ответы — метрики моложе счётчика вызовов: у ранов до
+// них состав контекста считается по ленте (в выводе помечается «~»).
+const hasToolChars = hasToolTable && hasColumn('ci_run_tool_calls', 'chars')
+const hasResponsesTable = hasTable('ci_run_tool_responses')
 
 const report = runs.map((run) => {
   const usage = all(`SELECT * FROM ci_run_usage WHERE run_id = ? ORDER BY at`, run.id)
@@ -133,7 +195,10 @@ const report = runs.map((run) => {
     // оценка. Смысл — чтобы следующий сдвиг цен нашёлся сам: у codex цены нет
     // вовсе, и весь его расход в отчёте — оценка, так что перекос в прайсе
     // claude молча делает сравнение движков бессмысленным.
-    checkRequests: 0, checkActualUsd: 0, checkEstimateUsd: 0
+    checkRequests: 0, checkActualUsd: 0, checkEstimateUsd: 0,
+    // Второй множитель цены: запросов к API за ходами (num_turns) и контекст на
+    // запрос — средний и самый тяжёлый. Ход CLI — это десятки запросов.
+    apiRequests: 0, maxContextPerRequest: 0
   }
   // Разбивка по стадиям и моделям: после «модели по стадии» стадии рана считают
   // разные движки, и по одной сумме за ран уже не видно, кто сколько съел (та же
@@ -151,6 +216,11 @@ const report = runs.map((run) => {
     totals.cacheReadTokens += u.cache_read_tokens
     totals.cacheCreationTokens += u.cache_creation_tokens
     totals.modelActiveMs += u.duration_ms ?? 0
+    if (u.num_turns > 0) {
+      totals.apiRequests += u.num_turns
+      const context = input + u.cache_read_tokens + u.cache_creation_tokens
+      totals.maxContextPerRequest = Math.max(totals.maxContextPerRequest, Math.round(context / u.num_turns))
+    }
     const price = priceOf(u.model)
     const estimate = price
       ? (input * price.input + u.output_tokens * price.output + u.cache_read_tokens * price.cacheRead +
@@ -198,9 +268,47 @@ const report = runs.map((run) => {
        FROM kb_usage_queries WHERE ci_run_id = ?`, run.id
   )[0]
 
+  // Состав контекста хода: чем набран объём, перечитываемый на каждом запросе.
+  // Ответы инструментов — из метрики, а у старых ранов из ленты (source: 'log').
+  const storedChars = hasToolChars
+    ? all(`SELECT tool, chars FROM ci_run_tool_calls WHERE run_id = ?`, run.id).filter((r) => r.chars > 0)
+    : []
+  const fromLogResponses = toolResponsesFromLog(logText)
+  const responseChars = { ...EMPTY_TOOLS }
+  delete responseChars.denied
+  for (const row of storedChars) if (row.tool in responseChars) responseChars[row.tool] += row.chars
+  const responsesSource = storedChars.length ? 'metric' : (fromLogResponses.total > 0 ? 'log' : 'none')
+  const heaviest = hasResponsesTable
+    ? all(
+        `SELECT tool, kind, label, chars, original_chars FROM ci_run_tool_responses
+          WHERE run_id = ? ORDER BY chars DESC, at ASC LIMIT 3`, run.id
+      ).map((r) => ({ kind: r.kind, label: r.label || r.tool, chars: r.chars, originalChars: r.original_chars }))
+    : []
+  // Директива задачи: то, что раннер кладёт в промпт хода (плюс ~1200 символов
+  // инструкций моста и запрета самопроверки — они в коде, не в БД).
+  const taskPromptChars =
+    (run.title ?? '').length + (run.description ?? '').length + (run.acceptance_criteria ?? '').length + 1200
+  // Системный промпт CLI со схемами инструментов отдельной строкой в БД не
+  // лежит: запись кэша хода включает и его, и рост контекста по ходу. Верхняя
+  // оценка базового промпта — самый скромный ход рана (обычно резюме): меньше
+  // него базовый промпт быть не может, больше — уже накопленный контекст.
+  const cacheWrites = usage.map((u) => u.cache_creation_tokens).filter((n) => n > 0)
+  const basePromptCeilTokens = cacheWrites.length ? Math.min(...cacheWrites) : 0
+
   return {
     runId: run.id, at: new Date(run.created_at).toISOString(), provider: run.provider,
     model: run.model || '(пусто)', status: run.status, title: run.title ?? '',
+    context: {
+      taskPromptChars,
+      basePromptCeilTokens,
+      cacheWriteTokens: totals.cacheCreationTokens,
+      responseChars: responsesSource === 'log' ? fromLogResponses.byKind : responseChars,
+      responseCharsTotal: responsesSource === 'log'
+        ? fromLogResponses.total
+        : Object.values(responseChars).reduce((a, n) => a + n, 0),
+      responsesSource,
+      heaviest: heaviest.length ? heaviest : fromLogResponses.heaviest
+    },
     runDurationMs: run.duration_ms, fixAttempts, totals, stages: [...stages.values()],
     toolCalls: calls, toolCallsSource: stored.length ? 'metric' : (toolsAny(fromLog.calls) ? 'log' : 'none'),
     bashFileReads: fromLog.bashFileReads, bashHeredocEdits: fromLog.bashHeredocEdits,
@@ -236,6 +344,41 @@ const STAGE_LABELS = {
 }
 const k = (n) => n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
 
+/**
+ * Контекст на один запрос к API — тот множитель, который и съедает три четверти
+ * цены рана. Прочерк, когда CLI не сказал числа запросов (codex): ноль читался бы
+ * как «контекста не было».
+ */
+const ctxPerRequest = (t) => {
+  if (!t.apiRequests) return '—'
+  const avg = (t.inputTokens + t.cacheReadTokens + t.cacheCreationTokens) / t.apiRequests
+  return `ср. ${k(Math.round(avg))}, макс ${k(t.maxContextPerRequest)}`
+}
+
+/** Состав контекста хода: части с числами (`--context`). */
+function printContext(r) {
+  const c = r.context
+  const mark = c.responsesSource === 'log' ? '~' : ''
+  const kinds = Object.entries(c.responseChars)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([kind, n]) => `${kind} ${k(n)}`)
+    .join(' · ')
+  console.log(
+    `   состав контекста (символы): директива задачи ${k(c.taskPromptChars)} · ` +
+    `инъекция БЗ ${k(r.kbInjectedChars)} · ответы инструментов ${mark}${k(c.responseCharsTotal)}` +
+    `${kinds ? ` (${kinds})` : ''}\n` +
+    `      запись кэша ${k(c.cacheWriteTokens)} токенов за ран; самый скромный ход — ${k(c.basePromptCeilTokens)} ` +
+    'токенов: это верхняя оценка «системный промпт CLI + схемы инструментов + директива»'
+  )
+  if (!c.heaviest.length) return
+  console.log('      самые тяжёлые ответы:')
+  for (const h of c.heaviest) {
+    const from = h.originalChars ? ` (обрезано из ${k(h.originalChars)})` : ''
+    console.log(`        ${k(h.chars)} симв.${from} — ${h.label}`)
+  }
+}
+
 console.log(`БД: ${DB_PATH}; ранов: ${report.length}\n`)
 for (const r of report) {
   const c = r.toolCalls
@@ -256,18 +399,25 @@ for (const r of report) {
       `  запросов ${s.requests}  модель ${mins(s.ms || null)}`).join('\n')}${r.stages.length ? '\n' : ''}` +
     `   в bash: чтений файлов ${r.bashFileReads}, правок heredoc ${r.bashHeredocEdits}  ` +
     `БЗ: обращений ${r.kbQueries}, символов ${r.kbChars} (инъекцией ${r.kbInjectedChars})` +
-    `${r.kbSectionsDelivered != null ? `, разделов ${r.kbSectionsDelivered} (попало ${r.kbSectionsHit})` : ''}`
+    `${r.kbSectionsDelivered != null ? `, разделов ${r.kbSectionsDelivered} (попало ${r.kbSectionsHit})` : ''}\n` +
+    // Главные числа задачи «сжать контекст»: цена = контекст × запросы.
+    `   контекст/запрос ${ctxPerRequest(r.totals)}  запросов к API ${r.totals.apiRequests || '—'}`
   )
+  if (WITH_CONTEXT) printContext(r)
 }
 
 const byProvider = new Map()
 for (const r of report) {
-  const acc = byProvider.get(r.provider) ?? { runs: 0, cost: 0, costKnown: 0, requests: 0, input: 0, output: 0, cacheRead: 0, model: 0, run: 0, tools: { ...EMPTY_TOOLS }, bashReads: 0, checkRequests: 0, checkActualUsd: 0, checkEstimateUsd: 0 }
+  const acc = byProvider.get(r.provider) ?? { runs: 0, cost: 0, costKnown: 0, requests: 0, input: 0, output: 0, cacheRead: 0, model: 0, run: 0, tools: { ...EMPTY_TOOLS }, bashReads: 0, checkRequests: 0, checkActualUsd: 0, checkEstimateUsd: 0, apiRequests: 0, ctxTokens: 0, maxContextPerRequest: 0, responseChars: 0 }
   acc.runs++
   acc.checkRequests += r.totals.checkRequests
   acc.checkActualUsd += r.totals.checkActualUsd
   acc.checkEstimateUsd += r.totals.checkEstimateUsd
   acc.requests += r.totals.requests
+  acc.apiRequests += r.totals.apiRequests
+  acc.ctxTokens += r.totals.inputTokens + r.totals.cacheReadTokens + r.totals.cacheCreationTokens
+  acc.maxContextPerRequest = Math.max(acc.maxContextPerRequest, r.totals.maxContextPerRequest)
+  acc.responseChars += r.context.responseCharsTotal
   acc.input += r.totals.inputTokens
   acc.output += r.totals.outputTokens
   acc.cacheRead += r.totals.cacheReadTokens
@@ -287,6 +437,12 @@ for (const [provider, a] of byProvider) {
     `ран ${mins(a.run / a.runs)} в среднем, модель ${mins(a.model / a.runs)}, ` +
     `инструменты bash ${a.tools.bash}/read ${a.tools.read}/grep ${a.tools.grep}/edit ${a.tools.edit}/БЗ ${a.tools.kb}, ` +
     `отказов ${a.tools.denied}, чтений файлов через bash ${a.bashReads}`
+  )
+  // Сравнение «до/после» по задаче «сжать контекст»: цена рана — это контекст на
+  // запрос, умноженный на число запросов, а не отдельно токены и отдельно вызовы.
+  console.log(
+    `    контекст/запрос: ${a.apiRequests ? `ср. ${k(Math.round(a.ctxTokens / a.apiRequests))}, макс ${k(a.maxContextPerRequest)}` : '—'}` +
+    ` (запросов к API ${a.apiRequests || '—'}), ответы инструментов ${k(a.responseChars)} симв.`
   )
   // Сверка прайса по движку: пока строка держится около нуля, оценке (а значит и
   // сравнению движков) можно верить; уехала — таблица цен устарела.

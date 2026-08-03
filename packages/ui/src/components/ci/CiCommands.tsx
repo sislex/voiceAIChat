@@ -468,6 +468,12 @@ function CiSettingsSection({ open, onToggle, settings, editable, onSave }: CiSet
           {/* Модель по стадии: вспомогательные стадии не обязаны идти на той же
               тяжёлой модели, что и разработка. */}
           {CI_USAGE_KINDS.map(stageField)}
+          {/* Лимиты ответов инструментов моста: они режут размер контекста хода. */}
+          {numField('Лимит вывода bash, символов', 'bashOutputLimitChars')}
+          {numField('Лимит ответа read, символов', 'readOutputLimitChars')}
+          {numField('Макс. строк окна read', 'readWindowMaxLines')}
+          {numField('Макс. совпадений grep', 'grepMatchLimit')}
+          {numField('Лимит ответа grep, символов', 'grepOutputLimitChars')}
           {editable && (
             <div className="ci-form-actions">
               <Button variant="primary" onClick={() => void onSave(form)}>Сохранить настройки</Button>

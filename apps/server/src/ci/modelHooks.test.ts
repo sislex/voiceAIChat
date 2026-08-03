@@ -6,7 +6,7 @@
 // для fix-loop, а брокер здесь — двойник, который умеет показать живые токены.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { EMPTY_CI_TOOL_CALLS } from '@voicechat/shared'
+import { EMPTY_CI_TOOL_CALLS, isTrimmedToolOutput, trimmedToolOutputOriginalChars } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
 import { createCiModelHooks } from './modelHooks.js'
 import { kbTaskQuery } from '../kb/taskQuery.js'
@@ -18,7 +18,7 @@ import { loadConfig } from '../config.js'
 import { buildPublicMcpUrl } from '../mcp/publicBase.js'
 import { REMOTE_BASH_MCP_PATH } from '../mcp/remoteBashMcp.js'
 import { KB_MCP_PATH } from '../kb/kbMcp.js'
-import { CI_COMMANDS_MCP_PATH } from './ciCommandsMcp.js'
+import { CI_COMMANDS_MCP_PATH, ciToolBroker } from './ciCommandsMcp.js'
 
 const U = 'alice'
 const KB_MCP = 'http://127.0.0.1:8787/mcp/kb?k=secret'
@@ -598,6 +598,126 @@ describe('расход хода: модель, время, семантика в
     db.addCiRunUsage = () => { throw new Error('БД недоступна') }
     db.addCiRunToolCalls = () => { throw new Error('БД недоступна') }
     expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
+  })
+
+  it('сломанная запись тяжёлого ответа тоже не роняет ход', async () => {
+    const { ctx } = codexRun('gpt-5.4')
+    const hooks = hooksWith(withResponses([{ tool: 'remote:bash', detail: 'x'.repeat(5000) }]), { kb: undefined })
+    db.addCiRunToolResponse = () => { throw new Error('БД недоступна') }
+    expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
+  })
+})
+
+/**
+ * Объём ответов инструментов — измеренный вклад в контекст хода: за него и
+ * платится, потому что контекст перечитывается на каждом следующем запросе.
+ * Ответ приходит БЕЗ имени инструмента, поэтому сшивка вызова с результатом —
+ * отдельная механика (по `tool_use_id`, а без него по порядку).
+ */
+function withResponses(list: Array<{ tool: string; detail: string; id?: string }>): LlmClient {
+  return {
+    send: (_req, handlers) => {
+      for (const item of list) {
+        handlers.onActivity?.({
+          kind: 'tool_use', summary: `${item.tool}: …`, raw: '{}', tool: item.tool,
+          ...(item.id ? { toolUseId: item.id } : {})
+        })
+      }
+      // Результаты — отдельными записями, у claude с id вызова.
+      for (const item of [...list].reverse()) {
+        handlers.onActivity?.({
+          kind: 'tool_result', summary: '✓ результат: …', detail: item.detail, raw: '{}',
+          ...(item.id ? { toolUseId: item.id } : {})
+        })
+      }
+      handlers.onUsage?.({ inputTokens: 10, outputTokens: 10, cacheReadTokens: 100, cacheCreationTokens: 0 })
+      handlers.onDelta?.('готово')
+      handlers.onDone?.('готово')
+      return { cancel: () => {} }
+    }
+  }
+}
+
+describe('объём ответов инструментов и тяжёлые ответы', () => {
+  it('объём привязывается к виду инструмента по id вызова, даже если ответы пришли не по порядку', async () => {
+    const { run, ctx } = setup('off')
+    const client = withResponses([
+      { tool: 'remote:bash', detail: 'B'.repeat(30_000), id: 'toolu_1' },
+      { tool: 'remote:read', detail: 'R'.repeat(4000), id: 'toolu_2' }
+    ])
+    await hooksWith(client, { kb: undefined }).modelWork(ctx)
+
+    // Ответы пришли в обратном порядке — сшивка по id всё равно верна.
+    expect(db.ciRunToolChars(run.id)).toMatchObject({ bash: 30_000, read: 4000, other: 0 })
+    const heaviest = db.ciRunToolResponses(run.id)
+    expect(heaviest.map((r) => [r.kind, r.chars])).toEqual([['bash', 30_000], ['read', 4000]])
+    expect(heaviest[0].label).toContain('remote:bash')
+    expect(heaviest[0].stepId).toBe('step-1')
+  })
+
+  it('без id вызова (codex) сшивка идёт по порядку', async () => {
+    const { run, ctx } = setup('off')
+    await hooksWith(withResponses([{ tool: 'remote:bash', detail: 'B'.repeat(9000) }]), { kb: undefined }).modelWork(ctx)
+    expect(db.ciRunToolChars(run.id)).toMatchObject({ bash: 9000 })
+  })
+
+  it('у рана без метрики объёма — null, а не нули', async () => {
+    const { run, ctx } = setup('off')
+    await hooksWith(recorder().client, { kb: undefined }).modelWork(ctx)
+    expect(db.ciRunToolChars(run.id)).toBeNull()
+    expect(db.ciRunToolResponses(run.id)).toEqual([])
+  })
+
+  it('в БД остаётся верхушка по объёму, а не вся лента вызовов', async () => {
+    const { run, ctx } = setup('off')
+    const many = Array.from({ length: 9 }, (_, i) => ({ tool: 'remote:bash', detail: 'x'.repeat(3000 + i * 1000), id: `t${i}` }))
+    await hooksWith(withResponses(many), { kb: undefined }).modelWork(ctx)
+    const rows = db.ciRunToolResponses(run.id, 50)
+    expect(rows).toHaveLength(5) // CI_TOOL_RESPONSES_KEEP
+    expect(rows[0].chars).toBe(11_000)
+    expect(rows.at(-1)!.chars).toBe(7000)
+  })
+
+  it('вывод команды справочника обрезается по настройке, полный лог остаётся в ленте', async () => {
+    db.updateCiSettings({ bashOutputLimitChars: 2000 })
+    const project = db.createProject(U, { name: 'P' })
+    const board = db.getBoard(U, project.id)!
+    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    const cmd = db.createCiCommand(U, {
+      scope: 'project', projectId: project.id, name: 'Установить зависимости', script: 'npm ci', availableToModel: true
+    })
+    const run = db.createCiRun({
+      projectId: project.id, taskId: task.id, agentId: null, triggeredBy: U, prevColumnId: null,
+      kbContextMode: 'off', slotProgress: { done: 0, total: 1, phase: '' }
+    })
+    const fullOutput = `начало npm ci\n${'y'.repeat(50_000)}\nadded 900 packages`
+    let seen = ''
+    const ctx = {
+      runId: run.id, agentId: 'agent-1', workspacePath: '/repos/p/1', env: { BRANCH: 'b' },
+      signal: new AbortController().signal, parentStepId: 'step-1', log: () => {}, run, task,
+      project: db.getProject(U, project.id)!, askUser: async () => null, askPlanApproval: async () => null,
+      runCommandById: async () => ({ exitCode: 0, timedOut: false, output: fullOutput })
+    } as unknown as CiModelContext
+    // Инструмент команд публикуется на время хода: токен рана лежит в ciMcpUrl.
+    const client: LlmClient = {
+      send: (req, handlers) => {
+        const token = new URL(req.remote!.ciMcpUrl!).searchParams.get('run')!
+        void ciToolBroker.get(token)!.invoke(cmd.name).then((r) => {
+          seen = r.output
+          handlers.onDelta?.('готово')
+          handlers.onDone?.('готово')
+        })
+        return { cancel: () => {} }
+      }
+    }
+    await hooksWith(client, { kb: undefined }).modelWork(ctx)
+
+    expect(isTrimmedToolOutput(seen)).toBe(true)
+    expect(seen).toContain('начало npm ci')
+    expect(seen).toContain('added 900 packages') // хвост важнее головы
+    expect(seen).toContain('полный вывод остался в ленте шага')
+    expect(seen.length).toBeLessThan(fullOutput.length / 10)
+    expect(trimmedToolOutputOriginalChars(seen)).toBe(fullOutput.length)
   })
 })
 

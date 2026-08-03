@@ -78,7 +78,6 @@ describe('CiCommands', () => {
     const p = props()
     render(<CiCommands {...p} />)
     fireEvent.click(screen.getByRole('button', { name: /Глобальные настройки CI/ }))
-    // Разработка идёт на модели рана, вспомогательные стадии — на дешёвой.
     expect(screen.getByTestId('ci-stage-model-model_work')).toHaveValue('')
     expect(screen.getByTestId('ci-stage-model-kb_update')).toHaveValue('sonnet')
     expect(screen.getByTestId('ci-stage-model-summary')).toHaveValue('haiku')
@@ -87,6 +86,19 @@ describe('CiCommands', () => {
     await waitFor(() => expect(p.onSaveSettings).toHaveBeenCalledTimes(1))
     expect((p.onSaveSettings as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({
       stageModels: { model_work: '', fix: '', kb_update: 'haiku', summary: 'haiku' }
+    })
+  })
+
+  it('лимиты ответов инструментов правятся в настройках и уходят в сохранение', async () => {
+    const p = props()
+    render(<CiCommands {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: /Глобальные настройки CI/ }))
+    fireEvent.change(screen.getByLabelText('Лимит вывода bash, символов'), { target: { value: '8000' } })
+    fireEvent.change(screen.getByLabelText('Макс. совпадений grep'), { target: { value: '40' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить настройки' }))
+    await waitFor(() => expect(p.onSaveSettings).toHaveBeenCalledTimes(1))
+    expect((p.onSaveSettings as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({
+      bashOutputLimitChars: 8000, grepMatchLimit: 40
     })
   })
 

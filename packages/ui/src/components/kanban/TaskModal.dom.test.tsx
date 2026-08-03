@@ -435,6 +435,49 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     expect(text(tools)).toContain('отказов 2')
   })
 
+  // Задача «сжать контекст»: в отчёте обязаны быть видны оба множителя цены —
+  // контекст на запрос и объём ответов, плюс три самых тяжёлых ответа.
+  it('показывает средний и максимальный контекст на запрос', async () => {
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    const tile = await screen.findByTestId('task-modal-report-context')
+    // (12 000 входа + 180 000 чтения кэша + 24 000 записи) / 24 запроса = 9 000.
+    expect(text(tile)).toContain('9 000')
+    expect(text(tile)).toContain('макс 12 000')
+    expect(text(tile)).toContain('запросов к API 24')
+  })
+
+  it('контекст на запрос без данных CLI — прочерк с объяснением, а не ноль', async () => {
+    withReport(makeTaskReport([makeRunReport({ totals: makeUsageTotals({ apiRequests: 0, maxContextPerRequest: 0 }) })]))
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    const tile = await screen.findByTestId('task-modal-report-context')
+    expect(text(tile)).toContain('—')
+    expect(text(tile)).toContain('CLI не сообщил число запросов')
+  })
+
+  it('показывает объём ответов инструментов и три самых тяжёлых ответа', async () => {
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    const tools = await screen.findByTestId('task-modal-report-tools')
+    expect(text(tools)).toContain('ответами 290k симв.')
+    expect(text(tools)).toContain('bash 148k')
+
+    const heaviest = await screen.findByTestId('task-modal-report-heaviest')
+    expect(text(heaviest)).toContain('npm ci')
+    expect(text(heaviest)).toContain('20k симв.')
+    // Обрезка видна вместе с исходным объёмом: сколько лимит сэкономил.
+    expect(text(heaviest)).toContain('обрезано из 243k')
+  })
+
+  it('у рана без тяжёлых ответов строки самых тяжёлых нет', async () => {
+    withReport(makeTaskReport([makeRunReport({ toolResponses: [] })]))
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+
+    await screen.findByTestId('task-modal-report')
+    expect(screen.queryByTestId('task-modal-report-heaviest')).not.toBeInTheDocument()
+  })
+
   it('без отказов приписки в строке инструментов нет', async () => {
     withReport(makeTaskReport([makeRunReport({
       toolCalls: { bash: 1, read: 2, grep: 0, edit: 0, kb: 0, other: 0, denied: 0 }
