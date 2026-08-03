@@ -110,7 +110,8 @@ export async function buildRunner(opts: BuildRunnerOptions): Promise<FastifyInst
       claudeBin: config.claudeBin,
       codexBin: config.codexBin,
       orphanMs: config.orphanMs,
-      profileHome: (userId) => ensureCliProfile(config.dataDir, userId, config.home).home
+      profileHome: (userId) =>
+        ensureCliProfile(config.dataDir, userId, config.home, { sharedCodexAuth: config.sharedCodexAuth === true, sharedCodexAuthUser: config.sharedCodexAuthUser }).home
     })
   const health =
     opts.health ??
@@ -122,7 +123,8 @@ export async function buildRunner(opts: BuildRunnerOptions): Promise<FastifyInst
         runs: () => runs.size
       }))
 
-  const profile = (userId: string) => ensureCliProfile(config.dataDir, userId, config.home)
+  const profile = (userId: string) =>
+    ensureCliProfile(config.dataDir, userId, config.home, { sharedCodexAuth: config.sharedCodexAuth === true, sharedCodexAuthUser: config.sharedCodexAuthUser })
 
   app.post<{ Body: LlmRunBody }>(LLM_RUNNER.run, async (req, reply) => {
     const problem = badRequest(req.body)

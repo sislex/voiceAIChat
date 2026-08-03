@@ -2988,7 +2988,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ activeTurns: rest, activeActivity: restActivity, activeUsage: restUsage })
     }
     if (convId !== state.activeId) return // ошибка фонового хода — текущий UI не трогаем
-    console.warn('[claude] ошибка:', message)
+    const warning = message.startsWith('WARNING:')
+    const visibleMessage = warning ? message.slice('WARNING:'.length).trim() : message
+    console.warn(`[claude] ${warning ? 'предупреждение' : 'ошибка'}:`, visibleMessage)
+    if (warning) {
+      setState({ error: visibleMessage })
+      return
+    }
     resetTts()
     setState({ streamingReply: '', error: message, liveActivity: [], liveUsage: null })
     if (state.voice === 'thinking' || state.voice === 'speaking') dispatchVoice('error')

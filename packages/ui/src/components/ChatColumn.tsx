@@ -433,7 +433,7 @@ export function ChatColumn({
       {taskHeader}
 
       {error && (
-        <div className="errbar" role="alert" data-testid="error-bar">
+        <div className={error.startsWith('Предупреждение:') ? 'errbar warnbar' : 'errbar'} role="alert" data-testid="error-bar">
           <span>{error}</span>
           <button className="errclose" aria-label="Закрыть ошибку" title="Закрыть ошибку" onClick={onDismissError}>
             ✕

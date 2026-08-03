@@ -66,6 +66,8 @@ services:
       PORT: "8790"
       VC_DATA_DIR: /data
       VC_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
+      VC_CODEX_SHARED_AUTH: "true"
+      VC_CODEX_SHARED_AUTH_USER: admin
       VC_RUNNER_MIGRATE_CLI_USERS_FROM: /mnt/server-data
     volumes:
       - vc-runner-work-data:/data

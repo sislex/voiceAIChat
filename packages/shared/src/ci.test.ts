@@ -281,7 +281,7 @@ describe('resolveCiStageModel', () => {
 
   it('модель, которой у движка рана нет, откатывается на модель рана', () => {
     // claude-алиас в codex-ране и наоборот: исполнитель такую модель не запустит.
-    expect(resolveCiStageModel('kb_update', { kb_update: 'sonnet' }, { llmProvider: 'codex', llmModel: 'gpt-5.4' })).toBe('gpt-5.4')
+    expect(resolveCiStageModel('kb_update', { kb_update: 'sonnet' }, { llmProvider: 'codex', llmModel: 'gpt-5.5' })).toBe('gpt-5.5')
     expect(resolveCiStageModel('kb_update', { kb_update: 'gpt-5.4' }, run)).toBe('opus')
     expect(resolveCiStageModel('summary', { summary: 'сонет' }, run)).toBe('opus')
   })
@@ -292,7 +292,9 @@ describe('resolveCiStageModel', () => {
     expect(ciModelKnown('claude', 'claude-haiku')).toBe(true)
     expect(ciModelKnown('claude', 'gpt-5.4')).toBe(false)
     expect(ciModelKnown('claude', '')).toBe(false)
+    expect(ciModelKnown('codex', 'gpt-5.5')).toBe(true)
     expect(ciModelKnown('codex', 'gpt-5.4')).toBe(true)
+    expect(ciModelKnown('codex', 'gpt-5.3-codex-spark')).toBe(true)
   })
 
   it('настройка чистится: чужие ключи прочь, не-строка — «модель рана»', () => {

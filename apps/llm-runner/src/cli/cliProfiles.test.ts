@@ -41,4 +41,19 @@ describe('ensureCliProfile', () => {
     ensureCliProfile(dataDir, 'user', sharedHome)
     expect(readFileSync(join(profile.claude, '.credentials.json'), 'utf8')).toBe(own)
   })
+
+  it('в режиме общего Codex OAuth синхронизирует auth.json из HOME', () => {
+    const root = mkdtempSync(join(tmpdir(), 'voicechat-cli-profile-'))
+    const sharedHome = join(root, 'shared')
+    const dataDir = join(root, 'data')
+    mkdirSync(join(sharedHome, '.codex'), { recursive: true })
+    const sharedAuth = '{"tokens":{"access_token":"shared"}}'
+    writeFileSync(join(sharedHome, '.codex', 'auth.json'), sharedAuth)
+
+    const profile = ensureCliProfile(dataDir, 'user', sharedHome, { sharedCodexAuth: true })
+    writeFileSync(join(profile.codex, 'auth.json'), '{"tokens":{"access_token":"stale"}}')
+    ensureCliProfile(dataDir, 'user', sharedHome, { sharedCodexAuth: true })
+
+    expect(readFileSync(join(profile.codex, 'auth.json'), 'utf8')).toBe(sharedAuth)
+  })
 })
