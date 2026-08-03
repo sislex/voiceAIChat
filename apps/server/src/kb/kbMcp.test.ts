@@ -7,7 +7,8 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import type { KbDocument, KbSearchResult } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
 import { createKbUsageTracker } from './usage.js'
-import { registerKbMcp, kbToolBroker, sectionOf, kbToolHint, KB_DOCUMENT_CHAR_CAP, KB_MCP_PATH } from './kbMcp.js'
+import { KB_GAPS_FENCE, KB_GAP_RULE } from '@voicechat/shared'
+import { registerKbMcp, kbToolBroker, sectionOf, kbToolHint, kbRunDirective, KB_DOCUMENT_CHAR_CAP, KB_MCP_PATH } from './kbMcp.js'
 import type { KnowledgeBaseService } from './types.js'
 
 const SECRET = 'test-secret'
@@ -218,5 +219,18 @@ describe('kbToolHint', () => {
   it('manual объясняет, что инструмент — единственный путь к базе', () => {
     expect(kbToolHint('manual')).toContain('единственный путь')
     expect(kbToolHint('auto')).toContain('добавлен автоматически')
+  })
+})
+
+describe('kbRunDirective', () => {
+  it('оба режима начинают с базы знаний и требуют закрыть её пробелы', () => {
+    for (const mode of ['auto', 'manual'] as const) {
+      const directive = kbRunDirective(mode)
+      expect(directive).toContain('Начни работу с базы знаний проекта, а не с кода')
+      expect(directive).toContain(KB_GAP_RULE)
+      // В ране пишет не модель, а шаг воркфлоу — поэтому нужен формат блока.
+      expect(directive).toContain('```' + KB_GAPS_FENCE)
+      expect(directive).toContain('Актуализировать базу знаний')
+    }
   })
 })

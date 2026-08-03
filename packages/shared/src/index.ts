@@ -29,3 +29,4 @@ export * from './ci'
 export * from './llm'
 
 export * from './kb'
+export * from './kbGaps'

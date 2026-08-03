@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-08-02
-checked: 06abc2a
+updated: 2026-08-03
+checked: 4cba8f9
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -18,6 +18,8 @@ areas:
   - packages/shared/src/tools.ts
   - packages/shared/src/questions.ts
   - packages/shared/src/images.ts
+  - packages/shared/src/kb.ts
+  - packages/shared/src/kbGaps.ts
 ---
 
 # LLM: claude/codex CLI, ходы, stream-json, gateway
@@ -262,7 +264,13 @@ Usage нормализуется в `TurnUsage` и рассылается как
 (`turns.ts`): `auto` — сервер подмешивает контекст БЗ в промпт при высокой
 уверенности И выдаёт модели инструменты `mcp__kb__*`; `manual` — авто-инъекции
 нет, инструменты есть, системный хинт усиленный («сначала БЗ, потом код»);
-`off` — ничего. Инструменты подключаются ВНЕ ветки `remote`: база read-only и
+`off` — ничего. Системный хинт (`kbToolHint`, `packages/shared/src/kb.ts`)
+несёт вторым абзацем `KB_GAP_RULE`: молчание базы или неполный ответ, закрытые
+кодом либо разработкой, обязаны вернуться в базу записью — дополнением того же
+раздела, по проверенному коду и без догадок. Хинт добавляется на КАЖДЫЙ ход с
+`kbMcpUrl` (`claudeCli`/`codexCli`), поэтому правило одинаково действует в чате
+и во всех фазах CI-рана; механика записи — в
+[kb-workflow.md](kb-workflow.md#пробел-базы-знаний-обязан-стать-записью). Инструменты подключаются ВНЕ ветки `remote`: база read-only и
 нужна модели даже в ходе без машины. Выключатель на весь срез — `VC_KB_TOOL=off`.
 
 MCP-эндпоинт `/mcp/kb` stateless, ход адресуется токеном `?turn=`, который

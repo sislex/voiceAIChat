@@ -19,6 +19,7 @@ import { KB_DIFF_SCRIPT } from '../kb/codeUpdate.js'
 const SECRET = 'kb-ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
 let modelReply = ''
+let workReply = ''
 let diffBundle = ''
 let prompts: string[] = []
 
@@ -27,7 +28,7 @@ const fakeClaude: LlmClient = {
     prompts.push(req.prompt)
     const kbTurn = req.prompt.startsWith('Ты ведёшь базу знаний')
     queueMicrotask(() => {
-      const text = kbTurn ? modelReply : 'готово'
+      const text = kbTurn ? modelReply : workReply
       handlers.onDelta(text)
       handlers.onDone(text)
     })
@@ -71,6 +72,7 @@ async function boot(kbUpdate?: CiKbUpdateHook): Promise<void> {
 
 beforeEach(() => {
   prompts = []
+  workReply = 'готово'
   diffBundle = BUNDLE_WITH_CHANGES
   modelReply = JSON.stringify({
     note: 'записал новый шаг',
@@ -149,6 +151,22 @@ describe('шаг «Актуализировать базу знаний»', () =
     const kbPrompt = prompts.find((p) => p.startsWith('Ты ведёшь базу знаний'))!
     expect(kbPrompt).toContain('apps/server/src/ci/runManager.ts')
     expect(kbPrompt).toContain('npm run kb:index')
+  })
+
+  it('пробел базы знаний из работы модели доезжает до шага целым пайплайном', async () => {
+    await boot()
+    // Модель назвала пробел блоком `kb-gaps` — шаг обязан увидеть и вопрос, и
+    // найденный в коде ответ, иначе они умрут вместе с контекстом рана.
+    workReply = ['готово', '```kb-gaps', JSON.stringify([{ question: 'кто собирает диф шага', answer: 'сервер скриптом KB_DIFF_SCRIPT, не модель', topic: 'ci-runner' }]), '```'].join('\n')
+    const { projectId, taskId } = setup()
+    const runId = await runToEnd(projectId, taskId)
+
+    expect(db.getCiRunRaw(runId)!.status).toBe('success')
+    expect(db.ciRunKbGaps(runId).map((g) => g.question)).toEqual(['кто собирает диф шага'])
+    const kbPrompt = prompts.find((p) => p.startsWith('Ты ведёшь базу знаний'))!
+    expect(kbPrompt).toContain('Пробелы базы знаний в этом ране')
+    expect(kbPrompt).toContain('выяснено: сервер скриптом KB_DIFF_SCRIPT, не модель')
+    expect(kbStep(runId).log).toContain('Пробелов базы знаний за ран: 1')
   })
 
   it('без изменений кода шаг успешен и ничего не пишет', async () => {
