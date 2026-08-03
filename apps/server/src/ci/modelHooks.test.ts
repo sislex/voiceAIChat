@@ -600,3 +600,137 @@ describe('расход хода: модель, время, семантика в
     expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
   })
 })
+
+// Пробел базы знаний обязан стать записью: обращение без ответа (или с неполным
+// ответом) плюс найденный в коде ответ доходят до шага «Актуализировать базу
+// знаний» и попадают в базу. Иначе следующий ран задаёт базе тот же вопрос и
+// снова платит за исследование кода — ровно то, от чего база и заведена.
+describe('пробелы базы знаний доходят до шага актуализации', () => {
+  /** Диф рабочей копии: шаг базы знаний собирает его исполнителем, а не моделью. */
+  const diffExecutor: CommandExecutor = {
+    run: async (_req, onChunk) => {
+      onChunk('===FILES===\napps/server/src/ci/modelHooks.ts\n===STAT===\n 1 file changed\n===PATCH===\ndiff\n')
+      return { exitCode: 0, timedOut: false }
+    }
+  }
+  /** Пустой диф: правок кода нет, а пробелы базы знаний — есть. */
+  const emptyDiffExecutor: CommandExecutor = {
+    run: async (_req, onChunk) => {
+      onChunk('===FILES===\n===STAT===\n===PATCH===\n')
+      return { exitCode: 0, timedOut: false }
+    }
+  }
+  const KB_REPLY = JSON.stringify({
+    note: 'закрыл пробел',
+    topics: ['ci-runner'],
+    documents: [{ title: 'Пробелы БЗ', kind: 'feature', areas: ['apps/server/src/ci'], body: '# Пробелы БЗ\n\nfix-loop живёт в attemptFix.' }]
+  })
+
+  /** Ход работы модели и ход шага базы знаний отвечают по-разному. */
+  function twoStage(work: string, kbReply = KB_REPLY) {
+    const seen: string[] = []
+    const isKb = (prompt: string): boolean => prompt.startsWith('Ты ведёшь базу знаний')
+    const client: LlmClient = {
+      send: (req, handlers) => {
+        seen.push(req.prompt)
+        const text = isKb(req.prompt) ? kbReply : work
+        handlers.onDelta?.(text)
+        handlers.onDone?.(text)
+        return { cancel: () => {} }
+      }
+    }
+    return { client, kbPrompt: () => seen.find(isKb) ?? '', workPrompt: () => seen.find((p) => !isKb(p)) ?? '' }
+  }
+
+  /** Тот же ctx, но с машиной: без неё шаг базы знаний до модели не доходит. */
+  const withAgent = (ctx: CiModelContext): CiModelContext =>
+    ({ ...ctx, agentId: 'agent-1' }) as unknown as CiModelContext
+
+  /** Блок, которым модель называет пробел и найденный ответ. */
+  const gapsBlock = (question: string, answer: string, topic?: string): string =>
+    ['готово', '```kb-gaps', JSON.stringify([{ question, answer, ...(topic ? { topic } : {}) }]), '```'].join('\n')
+
+  it('база не ответила: вопрос уходит в промпт шага, ответ шаг ищет в коде', async () => {
+    // Выдача пустая — обращение закрывается как empty, и это объективный пробел:
+    // он виден даже если модель забыла назвать его блоком.
+    const kb = stubKb({ context: async () => ({ ...bundle, sections: [] }) })
+    const stage = twoStage('готово')
+    const { ctx, run } = setup('auto')
+    const hooks = hooksWith(stage.client, { kb, executor: diffExecutor })
+
+    expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
+    expect(db.kbUsageRunReport(U, run.id)!.recent[0]).toMatchObject({ status: 'empty' })
+    expect(await hooks.kbUpdate(withAgent(ctx))).toMatchObject({ ok: true })
+
+    const prompt = stage.kbPrompt()
+    expect(prompt).toContain('Пробелы базы знаний в этом ране')
+    expect(prompt).toContain('Кнопка «Выполнить»') // текст обращения, оставшегося без ответа
+    expect(prompt).toContain('найди его в коде')
+    expect(prompt).toContain('ДОПОЛНИ существующий раздел')
+  })
+
+  it('неполный ответ: названный моделью пробел и его ответ попадают в базу', async () => {
+    // База ответила (delivered), но ответа не хватило: модель дочитала код и
+    // назвала пробел блоком — записать его обязан шаг актуализации.
+    const stage = twoStage(gapsBlock('лимиты fix-loop', 'maxFixAttempts и fixTimeLimitMs из настроек CI', 'ci-runner'))
+    const { ctx, run, project } = setup('auto')
+    const hooks = hooksWith(stage.client, { executor: diffExecutor })
+
+    expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
+    expect(db.kbUsageRunReport(U, run.id)!.recent[0]).toMatchObject({ status: 'delivered' })
+    expect(db.ciRunKbGaps(run.id)).toEqual([
+      { question: 'лимиты fix-loop', answer: 'maxFixAttempts и fixTimeLimitMs из настроек CI', topic: 'ci-runner' }
+    ])
+
+    expect(await hooks.kbUpdate(withAgent(ctx))).toMatchObject({ ok: true })
+    const prompt = stage.kbPrompt()
+    expect(prompt).toContain('лимиты fix-loop')
+    expect(prompt).toContain('выяснено: maxFixAttempts и fixTimeLimitMs из настроек CI')
+    expect(prompt).toContain('куда писать по мнению модели: ci-runner')
+    // Пополнение состоялось: статья раздела проекта записана сервером.
+    expect(db.kbDocuments({ scope: 'project', projectId: project.id }).some((d) => d.title === 'Пробелы БЗ')).toBe(true)
+  })
+
+  it('fix-loop: правка — то же исследование, пробел из неё тоже уезжает в базу', async () => {
+    const stage = twoStage(gapsBlock('почему падает npm ci', 'lockfile в образе старее package.json'))
+    const { ctx, run } = setup('auto')
+    const fixCtx = {
+      ...ctx,
+      failedStep: { id: 'step-2', title: 'npm ci', exitCode: 1, commandSnapshot: 'npm ci' },
+      logTail: 'ошибка',
+      rerunFailedStep: async () => ({ exitCode: 0, timedOut: false }),
+      recordFix: () => {}
+    } as unknown as CiFixContext
+
+    expect(await hooksWith(stage.client, { executor: diffExecutor }).attemptFix(fixCtx)).toEqual({ fixed: true })
+    // Формат блока в промпте правки: без него модели нечем назвать пробел.
+    expect(stage.workPrompt()).toContain('```kb-gaps')
+    expect(db.ciRunKbGaps(run.id).map((g) => g.question)).toEqual(['почему падает npm ci'])
+  })
+
+  it('правок кода нет, но пробел есть — шаг всё равно идёт и пишет только пробел', async () => {
+    const stage = twoStage(gapsBlock('кто снимает токен БЗ', 'withKbTools во всех выходах хода'))
+    const { ctx } = setup('auto')
+    const hooks = hooksWith(stage.client, { executor: emptyDiffExecutor })
+    await hooks.modelWork(ctx)
+    expect(await hooks.kbUpdate(withAgent(ctx))).toMatchObject({ ok: true })
+    expect(stage.kbPrompt()).toContain('Изменений кода в ветке нет')
+    expect(stage.kbPrompt()).toContain('кто снимает токен БЗ')
+  })
+
+  it('без пробелов и без правок кода шаг закрывается «нечего обновлять» — хода нет', async () => {
+    const stage = twoStage('готово')
+    const { ctx } = setup('off')
+    const hooks = hooksWith(stage.client, { kb: undefined, executor: emptyDiffExecutor })
+    await hooks.modelWork(ctx)
+    expect(await hooks.kbUpdate(withAgent(ctx))).toMatchObject({ ok: true, message: expect.stringContaining('Нечего обновлять') })
+    expect(stage.kbPrompt()).toBe('')
+  })
+
+  it('сломанная запись пробелов не роняет ход модели', async () => {
+    const stage = twoStage(gapsBlock('вопрос', 'ответ'))
+    const { ctx } = setup('auto')
+    db.addCiRunKbGaps = () => { throw new Error('БД недоступна') }
+    expect(await hooksWith(stage.client).modelWork(ctx)).toEqual({ ok: true })
+  })
+})

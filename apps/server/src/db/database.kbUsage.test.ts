@@ -194,6 +194,50 @@ describe('VoiceChatDb — обращения к БЗ внутри CI-рана', 
     expect(report.sections[0]).toMatchObject({ documentId: 'protocol', times: 2, autoTimes: 1 })
   })
 
+  // Пробелы базы знаний: то, о чём модель сообщила сама (`kb-gaps`), и вопросы,
+  // на которые база не ответила вовсе. Оба списка читает шаг актуализации.
+  it('вопросы без ответа попадают в пробелы рана, отвеченные — нет', () => {
+    const { project, conv, first, second } = runs()
+    const usage = (query: string, status: 'empty' | 'error' | 'delivered', error?: string) => db.addKbUsage({
+      userId: 'alice', conversationId: conv.id, projectId: project.id, ciRunId: first.id, source: 'tool_search',
+      query, status, chars: status === 'delivered' ? 200 : 0, ...(error ? { error } : {})
+    })
+    usage('где живёт fix-loop', 'empty', 'в базе знаний ничего не нашлось')
+    usage('где живёт fix-loop', 'empty', 'в базе знаний ничего не нашлось')
+    usage('индекс сломан', 'error', 'индекс недоступен')
+    usage('модель в цикле', 'delivered')
+    // Тот же вопрос со второй попытки ответ дал — это не пробел.
+    usage('токен хода', 'empty')
+    usage('токен хода', 'delivered')
+    // Обращение другого рана в этот список не лезет.
+    db.addKbUsage({ userId: 'alice', conversationId: conv.id, projectId: project.id, ciRunId: second.id, source: 'auto', query: 'чужой ран', status: 'empty', chars: 0 })
+
+    const gaps = db.kbUsageRunGaps(first.id)
+    expect(gaps.map((g) => g.query)).toEqual(['где живёт fix-loop', 'индекс сломан'])
+    expect(gaps[0].reason).toBe('в базе знаний ничего не нашлось')
+    expect(gaps[1].reason).toBe('индекс недоступен')
+    // Причина пишется всегда: пустая строка в БД не должна давать пустой пункт.
+    db.addKbUsage({ userId: 'alice', conversationId: conv.id, projectId: project.id, ciRunId: second.id, source: 'auto', query: 'без причины', status: 'empty', chars: 0 })
+    expect(db.kbUsageRunGaps(second.id).find((g) => g.query === 'без причины')!.reason).toBe('база знаний не ответила')
+  })
+
+  it('названный моделью пробел хранится один раз, повтор берёт более полный ответ', () => {
+    const { first } = runs()
+    db.addCiRunKbGaps(first.id, 'step-1', [
+      { question: 'где живёт fix-loop', answer: 'в ci/modelHooks.ts', topic: 'ci-runner' },
+      { question: 'кто снимает токен', answer: 'withKbTools' }
+    ])
+    // Fix-loop называет тот же пробел снова — дубля быть не должно.
+    db.addCiRunKbGaps(first.id, 'step-2', [{ question: 'где живёт fix-loop', answer: 'хук attemptFix в ci/modelHooks.ts, лимиты в настройках CI' }])
+    const gaps = db.ciRunKbGaps(first.id)
+    expect(gaps).toHaveLength(2)
+    expect(gaps[0]).toEqual({ question: 'где живёт fix-loop', answer: 'хук attemptFix в ci/modelHooks.ts, лимиты в настройках CI', topic: 'ci-runner' })
+    expect(gaps[1].topic).toBeUndefined()
+    // Короткий повтор не затирает более полный ответ.
+    db.addCiRunKbGaps(first.id, 'step-3', [{ question: 'где живёт fix-loop', answer: 'там же' }])
+    expect(db.ciRunKbGaps(first.id)[0].answer).toContain('лимиты в настройках CI')
+  })
+
   it('чужому пользователю отчёты по ране и задаче недоступны (404 у роута)', () => {
     const { project, task, first } = runs()
     expect(db.kbUsageRunReport('bob', first.id)).toBeNull()

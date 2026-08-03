@@ -11,7 +11,7 @@ import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { kbToolHint, type KbDocument } from '@voicechat/shared'
+import { KB_GAPS_HINT, KB_GAP_RULE, kbToolHint, type KbDocument } from '@voicechat/shared'
 import type { KbView, KnowledgeBaseService } from './types.js'
 import { PUBLIC_KB_VIEW } from './types.js'
 import type { KbUsageTracker } from './usage.js'
@@ -69,15 +69,21 @@ export const kbToolBroker = new KbToolBroker()
  * отличие от `kbToolHint` (системный хинт CLI, справка об инструментах) это
  * часть ЗАДАНИЯ: ран начинается с исследования проекта по базе знаний, и только
  * потом модель идёт в файлы.
+ *
+ * Обратная половина требования — `KB_GAP_RULE` плюс формат блока `kb-gaps`:
+ * в ране модель сама в базу не пишет (это делает шаг «Актуализировать базу
+ * знаний» перед коммитом), поэтому закрытый пробел она обязана НАЗВАТЬ — иначе
+ * найденный в коде ответ умирает вместе с контекстом рана.
  */
 export function kbRunDirective(mode: 'auto' | 'manual'): string {
   const common =
     'Начни работу с базы знаний проекта, а не с кода: найди тему задачи через mcp__kb__search, ' +
     'прочитай найденные разделы через mcp__kb__document (mcp__kb__topics — оглавление) ' +
     'и только потом открывай файлы. При расхождении базы знаний и кода источник истины — код.'
-  return mode === 'manual'
+  const mine = mode === 'manual'
     ? `${common} Авто-контекст базы знаний для этого рана выключен: инструменты mcp__kb__* — единственный путь к ней.`
     : `${common} Блок «${KB_CONTEXT_HEADING.replace(/^#+\s*/, '')}» ниже добавлен автоматически по теме задачи и не полон — за подробностями иди инструментами.`
+  return `${mine}\n\n${KB_GAP_RULE}\n\n${KB_GAPS_HINT}`
 }
 
 /** Устойчивый anchor раздела — та же схема, что в индексе (service.ts). */
