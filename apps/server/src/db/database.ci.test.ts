@@ -162,7 +162,12 @@ describe('ci: движок и модель', () => {
 
 describe('ci: глобальные настройки', () => {
   it('возвращает дефолты и обновляется', () => {
-    expect(db.getCiSettings().maxFixAttempts).toBe(3)
+    expect(db.getCiSettings()).toMatchObject({
+      maxFixAttempts: 9,
+      fixTimeLimitMs: 30 * 60 * 1000,
+      fixTokenLimit: 600_000,
+      defaultStepTimeoutSec: 1_800,
+    })
     const s = db.updateCiSettings({ maxFixAttempts: 5, maxConcurrentRuns: 4 })
     expect(s.maxFixAttempts).toBe(5)
     expect(s.maxConcurrentRuns).toBe(4)
