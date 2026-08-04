@@ -913,7 +913,7 @@ export interface StoreActions {
   saveCiSettings(settings: Partial<CiGlobalSettings>): Promise<void>
   resolveCiSuggestion(id: string, accept: boolean): Promise<void>
   reloadCiWorkspaces(projectId?: string): Promise<void>
-  startCiRun(projectId: string, taskId: string, mode?: CiRunMode): Promise<CiRun | null>
+  startCiRun(projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string }): Promise<CiRun | null>
   cancelCiRun(runId: string): Promise<void>
   retryCiRun(runId: string): Promise<CiRun | null>
   retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<CiRun | null>
@@ -3567,10 +3567,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!ciBridge) return
     setState({ ciWorkspaces: await ciBridge.listWorkspaces(projectId) })
   }
-  async function startCiRun(projectId: string, taskId: string, mode?: CiRunMode): Promise<CiRun | null> {
+  async function startCiRun(projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string }): Promise<CiRun | null> {
     if (!ciBridge) return null
     try {
-      const run = await ciBridge.startRun(projectId, taskId, mode)
+      const launchOptions = typeof options === 'string' ? { mode: options } : options
+      const run = await ciBridge.startRun(projectId, taskId, launchOptions)
       setState({ ciSummaries: { ...state.ciSummaries, [taskId]: { id: run.id, taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false, awaitingInput: false } } })
       patchCiRun(run.id, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [], interactions: [] } }))
       return run
@@ -3800,16 +3801,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         priority: input.priority,
         assignee: input.assignee
       })
-      // Выбор в окне запуска — конфигурация новой задачи. Сохраняем его до
-      // создания рана, чтобы снимок рана не успел взять проектное наследование.
-      const inheritedLlm = await ciBridge.getProjectCiLlm(projectId)
-      await ciBridge.putTaskCiLlm(projectId, task.id, {
-        ...inheritedLlm,
-        provider: input.provider,
-        model: input.model
-      })
       if (state.activeProjectId === projectId) await refreshBoard()
-      return await startCiRun(projectId, task.id)
+      return await startCiRun(projectId, task.id, { provider: input.provider, model: input.model })
     } catch (err) {
       fail(err)
       return null

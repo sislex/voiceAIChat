@@ -129,9 +129,11 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   })
 
   // --- Запуск / отмена / повтор рана ---
-  app.post<{ Params: { id: string; taskId: string }; Body: { mode?: CiRunMode } | undefined }>('/api/projects/:id/tasks/:taskId/ci/run', async (req, reply) => {
+  app.post<{ Params: { id: string; taskId: string }; Body: { mode?: CiRunMode; provider?: string; model?: string } | undefined }>('/api/projects/:id/tasks/:taskId/ci/run', async (req, reply) => {
     const mode = req.body?.mode === 'plan' || req.body?.mode === 'development' ? req.body.mode : undefined
-    const res = ci.start(uid(req), req.params.id, req.params.taskId, mode)
+    const provider = req.body?.provider === 'claude' || req.body?.provider === 'codex' ? req.body.provider : undefined
+    const model = provider && typeof req.body?.model === 'string' ? req.body.model : undefined
+    const res = ci.start(uid(req), req.params.id, req.params.taskId, { mode, provider, model })
     if ('error' in res) return reply.code(409).send({ error: res.error })
     return reply.code(202).send(res.run)
   })
