@@ -70,18 +70,32 @@ function toQuestion(v: unknown): QuestionSpec | null {
  */
 export function parseQuestions(text: string): ParsedQuestions | null {
   const m = FENCE_RE.exec(text)
-  if (!m) return null
+  if (m) {
+    const questions = parseQuestionList(m[1])
+    if (!questions) return null
+    const body = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim()
+    return { body, questions }
+  }
+
+  // Некоторые транспорты форматируют fenced-блок до того, как ответ дойдёт до
+  // ленты. Принимаем только сообщение, состоящее ЦЕЛИКОМ из валидного массива
+  // QuestionSpec: произвольный JSON внутри обычного Markdown не превратится в
+  // форму по ошибке.
+  const questions = parseQuestionList(text)
+  return questions ? { body: '', questions } : null
+}
+
+/** Разбирает и валидирует JSON-массив вопросов; битый или пустой → null. */
+function parseQuestionList(json: string): QuestionSpec[] | null {
   let raw: unknown
   try {
-    raw = JSON.parse(m[1])
+    raw = JSON.parse(json)
   } catch {
     return null
   }
   if (!Array.isArray(raw)) return null
   const questions = raw.map(toQuestion).filter((q): q is QuestionSpec => q !== null)
-  if (questions.length === 0) return null
-  const body = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim()
-  return { body, questions }
+  return questions.length > 0 ? questions : null
 }
 
 /**
