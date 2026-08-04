@@ -56,6 +56,7 @@ describe('App — страница проекта по URL', () => {
     await waitFor(() => expect(within(page).getByTestId('kanban-board')).toBeInTheDocument())
     // Уходят со страницы навигацией: крестика в шапке нет.
     expect(within(page).queryByRole('button', { name: 'Закрыть' })).not.toBeInTheDocument()
+    expect(within(page).getByRole('button', { name: 'Открыть меню' })).toBeInTheDocument()
   })
 
   it('вкладки меняют только содержимое: шапка и имя проекта остаются на месте', async () => {

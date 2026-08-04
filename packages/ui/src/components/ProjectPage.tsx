@@ -28,11 +28,13 @@ export interface ProjectPageProps {
   section: ProjectSection
   /** Клик по вкладке: навигация, а не локальное состояние. */
   onSectionChange: (section: ProjectSection) => void
+  /** Открыть мобильный сайдбар со списком чатов и проектов. */
+  onToggleSidebar?: () => void
   /** Содержимое активного раздела. */
   children: ReactNode
 }
 
-export function ProjectPage({ projectName, section, onSectionChange, children }: ProjectPageProps): JSX.Element {
+export function ProjectPage({ projectName, section, onSectionChange, onToggleSidebar, children }: ProjectPageProps): JSX.Element {
   const tabsRef = useRef<HTMLDivElement>(null)
   // Стрелки переключают вкладку сразу (automatic activation в терминах ARIA).
   // Фокус переносим руками: активная вкладка единственная в tab-порядке
@@ -58,7 +60,11 @@ export function ProjectPage({ projectName, section, onSectionChange, children }:
       testId="project-page"
       className="projpage"
       actions={
-        <div
+        <>
+          {onToggleSidebar && (
+            <button className="proj-sidebar-toggle" aria-label="Открыть меню" onClick={onToggleSidebar}>☰</button>
+          )}
+          <div
           className="sideswitch projtabs"
           role="tablist"
           aria-label="Разделы проекта"
@@ -79,7 +85,8 @@ export function ProjectPage({ projectName, section, onSectionChange, children }:
               {s.label}
             </button>
           ))}
-        </div>
+          </div>
+        </>
       }
     >
       {children}

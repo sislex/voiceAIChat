@@ -3413,6 +3413,13 @@
    ниже. На узком экране шапка переносит вкладки на вторую строку. */
 .mdhead .projtabs { padding: 0; }
 .projpage .mdhead { gap: 12px; flex-wrap: wrap; }
+/* На телефоне страница канбана тоже должна открывать общий сайдбар: без этой
+   кнопки список чатов был доступен только из экрана разговора. */
+.proj-sidebar-toggle { display: none; }
+@media (max-width: 700px) {
+  .proj-sidebar-toggle { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font-size: 20px; cursor: pointer; }
+  .proj-sidebar-toggle:hover { background: var(--surface2); }
+}
 /* Пустота и ожидание в области контента страницы проекта — по центру. */
 .toolpage > .proj-page-state { flex: 1; min-height: 0; overflow-y: auto; display: flex;
   align-items: center; justify-content: center; padding: 22px; }

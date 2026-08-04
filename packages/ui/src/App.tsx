@@ -686,6 +686,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onSectionChange={(section) =>
             navigate(section === 'settings' ? `/projects/${routeProjectId}/settings` : `/projects/${routeProjectId}`)
           }
+          onToggleSidebar={() => {
+            if (collapsed) setCollapsedPersist(false)
+            setSidebarOpen((v) => !v)
+          }}
         >
           {routeSettings ? (
             state.projectDetail?.id === routeProjectId ? (
