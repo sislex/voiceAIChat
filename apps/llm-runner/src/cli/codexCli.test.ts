@@ -92,6 +92,7 @@ describe('CodexCli', () => {
     expect(input).toContain('read')
     expect(input).toContain('grep')
     expect(input).toContain('edit')
+    expect(input).toContain('Независимые чтения и поиски объединяй')
   })
 
   it('kbMcpUrl: сервер kb подключается и в режиме «План» (БЗ read-only)', async () => {
