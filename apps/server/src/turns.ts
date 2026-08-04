@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import {
   appendImageHint,
+  appendChangeAuthorizationHint,
   appendQuestionsHint,
   appendToolHint,
   buildConversationPrompt,
@@ -357,7 +358,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         basePrompt = `${basePrompt}\n\n## Контекст задачи\n${lines.join('\n')}`
       }
     }
-    const prompt = appendImageHint(appendToolHint(appendQuestionsHint(basePrompt)))
+    const prompt = appendChangeAuthorizationHint(appendImageHint(appendToolHint(appendQuestionsHint(basePrompt))))
     // Цель выполнения команд: выбранная машина-агент. Только своя машина
     // (чужую игнорируем → выполняем на сервере). Офлайн своей — сразу ошибка.
     const requestedTarget =

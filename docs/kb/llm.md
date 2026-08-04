@@ -250,8 +250,8 @@ Usage нормализуется в `TurnUsage` и рассылается как
   появляется раньше, чем файл дописан, и без опроса это была бы вечная ошибка.
   Ошибку показываем, только когда ход закончился, а файла всё нет.
 
-Все три парсера — чистые функции без DOM и сети, тесты рядом. `parseQuestions` также принимает сообщение, которое целиком состоит из валидного JSON-массива `QuestionSpec`: это fallback для транспорта, который снял обёртку ` ```questions `. JSON внутри обычного текста без fence не распознаётся. Подсказки
-навешиваются в `turns.ts` цепочкой `appendImageHint(appendToolHint(appendQuestionsHint(…)))`.
+Все три парсера — чистые функции без DOM и сети, тесты рядом. `parseQuestions` также принимает сообщение, которое целиком состоит из валидного JSON-массива `QuestionSpec`: это fallback для транспорта, который снял обёртку ` ```questions `. JSON внутри обычного текста без fence не распознаётся. Перед отправкой модель получает ещё и `CHANGE_AUTHORIZATION_HINT` (`packages/shared/src/prompt.ts`): до изменения проекта она обязана спросить, создать ли задачу в TODO, поставить её в InProgress или работать прямо в чате; в последнем случае после работы отдельно спрашивает разрешение на commit/push. Подсказки
+навешиваются в `turns.ts` цепочкой `appendChangeAuthorizationHint(appendImageHint(appendToolHint(appendQuestionsHint(…))))`.
 
 Служебные блоки **не озвучиваются**: `SERVICE_FENCES` в
 `packages/shared/src/sentences.ts` (`tool`/`questions`/`image`) заставляет
