@@ -64,11 +64,15 @@ function changedFiles(baseRef) {
   }
 }
 
-function packageArgs(pkg, script, maxWorkers) {
+function packageArgs(pkg, script, maxWorkers, extraArgs = []) {
   const args = pkg.workspace
     ? ['run', '-w', pkg.workspace, script]
     : ['--prefix', pkg.prefix, 'run', script]
-  if (script === 'test' && maxWorkers) args.push('--', `--maxWorkers=${maxWorkers}`)
+  if (script === 'test' && (maxWorkers || extraArgs.length)) {
+    args.push('--')
+    if (maxWorkers) args.push(`--maxWorkers=${maxWorkers}`)
+    args.push(...extraArgs)
+  }
   return args
 }
 
@@ -109,6 +113,116 @@ export function startPackageCommand(pkg, script, { maxWorkers } = {}) {
       }
     }
   }
+}
+
+const fastUnsafeFile = /(?:^|\/)(?:[^/]*\.config\.[^/]+|package\.json|tsconfig(?:\.[^/]+)?\.json|[^/]*(?:schema|migration)\.(?:[cm]?[jt]sx?|sql))$/i
+const migrationPath = /(?:^|\/)migrations?\//i
+
+// Related не заменяет гейт: контракты shared, миграции и конфигурация могут менять
+// интеграции, которые Vitest не выводит из статического графа импортов.
+export function fastCheckForPackage(pkg, files) {
+  const packageFiles = files
+    .filter((file) => file.startsWith(`${pkg.path}/`))
+    .map((file) => file.slice(pkg.path.length + 1))
+
+  if (!packageFiles.length) return { pkg, files: [], reason: 'изменений этого пакета нет' }
+  if (pkg.id === 'shared') return { pkg, files: [], reason: 'shared-контракт' }
+  if (packageFiles.some((file) => fastUnsafeFile.test(file) || migrationPath.test(file))) {
+    return { pkg, files: [], reason: 'конфиг, схема или миграция' }
+  }
+  return { pkg, files: packageFiles, reason: null }
+}
+
+function compactOutput(output) {
+  return output.trim().split('\n').slice(-16).join('\n')
+}
+
+export function startRelatedTest(check, { maxWorkers } = {}) {
+  const args = packageArgs(check.pkg, 'test', maxWorkers, ['--related', ...check.files, '--passWithNoTests'])
+  const child = spawn('npm', args, { stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
+  let output = ''
+  let killTimer
+  let settled = false
+  const append = (chunk) => {
+    output = (output + chunk).slice(-8_000)
+  }
+  child.stdout.on('data', append)
+  child.stderr.on('data', append)
+
+  const kill = (signal) => {
+    if (settled) return
+    if (process.platform === 'win32' || !child.pid) child.kill(signal)
+    else process.kill(-child.pid, signal)
+  }
+  return {
+    done: new Promise((resolve, reject) => {
+      child.once('error', reject)
+      child.once('exit', (code, signal) => {
+        settled = true
+        clearTimeout(killTimer)
+        if (code === 0) {
+          resolve({ found: !/No test files found/i.test(output) })
+          return
+        }
+        const diagnostic = compactOutput(output)
+        if (diagnostic) console.error(`[affected-check] fast ${check.pkg.id} diagnostic:\n${diagnostic}`)
+        reject(Object.assign(new Error(`${check.pkg.id} related-тесты завершились${signal ? ` по сигналу ${signal}` : ` с кодом ${code}`}`), { code: code ?? 1 }))
+      })
+    }),
+    stop: () => {
+      try {
+        kill('SIGTERM')
+        killTimer = setTimeout(() => {
+          try {
+            kill('SIGKILL')
+          } catch {
+            // Процесс мог закончиться между таймаутом и принудительным сигналом.
+          }
+        }, 2_000)
+      } catch {
+        // Уже завершившийся процесс не должен скрывать исходную ошибку пакета.
+      }
+    }
+  }
+}
+
+// Быстрый этап заканчивается до typecheck и полных тестов: его ошибка даёт fix-loop
+// короткий диагноз и не тратит время на основной пакетный гейт.
+export async function runFastChecks(checks, { jobs = 2, start = startRelatedTest } = {}) {
+  const runnable = checks.filter((check) => check.files.length)
+  for (const check of checks.filter((check) => !check.files.length)) {
+    console.log(`[affected-check] fast ${check.pkg.id}: skipped (${check.reason}); full gate remains mandatory`)
+  }
+  if (!runnable.length) return
+
+  const limit = Number.isInteger(jobs) && jobs > 0 ? Math.min(jobs, 2) : 2
+  const maxWorkers = limit > 1 && runnable.length > 1 ? 1 : undefined
+  const pending = [...runnable]
+  const active = new Set()
+  let firstError
+
+  const worker = async () => {
+    while (!firstError && pending.length) {
+      const check = pending.shift()
+      const startedAt = Date.now()
+      const task = start(check, { maxWorkers })
+      active.add(task)
+      try {
+        const result = await task.done
+        console.log(`[affected-check] fast ${check.pkg.id}: ${result?.found === false ? 'no related tests' : 'passed'} in ${Date.now() - startedAt}ms; full gate remains mandatory`)
+      } catch (error) {
+        if (!firstError) {
+          firstError = error
+          for (const activeTask of active) activeTask.stop?.()
+        }
+      } finally {
+        active.delete(task)
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, runnable.length) }, worker))
+  if (firstError) throw firstError
 }
 
 // Один пакет проходит typecheck перед собственными тестами; два пакета могут идти
@@ -180,18 +294,26 @@ async function main() {
   console.log(`[affected-check] selected packages: ${decision.packages.length ? decision.packages.map((pkg) => pkg.id).join(', ') : '(none)'}`)
   if (decision.full) {
     console.log(`[affected-check] full fallback: ${decision.reason}`)
+    console.log('[affected-check] fast stage: skipped (full fallback)')
     // Полный fallback обязан сохранить прежний корневой гейт: в нём есть тесты
     // самого скрипта выбора пакетов, которых нет среди npm-workspaces.
+    const fullStartedAt = Date.now()
     console.log('[affected-check] full gate: npm run typecheck && npm test')
     run('npm', ['run', 'typecheck'])
     run('npm', ['test'])
+    console.log(`[affected-check] full stage: completed in ${Date.now() - fullStartedAt}ms`)
     return
   }
   if (!decision.packages.length) return
 
   const jobs = parseJobs(process.argv.slice(2))
   console.log(`[affected-check] jobs: ${jobs}`)
+  const fastStartedAt = Date.now()
+  await runFastChecks(decision.packages.map((pkg) => fastCheckForPackage(pkg, diff)), { jobs })
+  console.log(`[affected-check] fast stage: completed in ${Date.now() - fastStartedAt}ms`)
+  const fullStartedAt = Date.now()
   await runPackageGates(decision.packages, { jobs })
+  console.log(`[affected-check] full stage: completed in ${Date.now() - fullStartedAt}ms`)
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
