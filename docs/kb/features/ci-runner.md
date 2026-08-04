@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-04
-checked: 35ed99f
+checked: 931a6ba
 areas:
   - packages/shared/src/ci.ts
   - apps/server/src/ci
@@ -302,7 +302,10 @@ cwd/env собираются с shell-escape (пользовательский �
    разошедшейся ветке — `--force-with-lease`.
 7. **Влить ветку задачи в прод-ветку** — `checkout -B $BASE_BRANCH
    origin/$BASE_BRANCH`, `merge --no-edit`, `push`. Конфликт — обычный упавший
-   шаг: останавливает ран и попадает в fix-loop.
+   шаг: останавливает ран и попадает в fix-loop. Чтобы повтор не встретил тот же
+   конфликт, исправление вносят в ветке задачи: вливают в неё актуальный
+   `origin/$BASE_BRANCH`, для сгенерированного `docs/kb/README.md` запускают
+   `npm run kb:index`, а затем коммитят merge.
 8. **Обновить прод-контейнер** — env шага: `PROD_DIR=/root/voiceAIChat`,
    `PROD_BRANCH=main`, `PROD_REBUILD_DELAY=180`, лог
    `/tmp/voicechat-prod-rebuild.log`. Git-часть (проверка на локальные изменения →
