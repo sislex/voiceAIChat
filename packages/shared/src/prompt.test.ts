@@ -105,6 +105,20 @@ describe('buildConversationPrompt (пересбор истории)', () => {
     expect(p).toContain('Какое было прошлое сообщение?')
   })
 
+  it('не отправляет служебный image-блок AI-ответа в историю', () => {
+    const p = buildConversationPrompt([
+      { role: 'u1', text: 'Нарисуй кота' },
+      {
+        role: 'ai',
+        text: 'Готово.\n\n```image\n{"path":"/tmp/cat.png","caption":"Кот"}\n```'
+      },
+      { role: 'u1', text: 'Сделай его синим' }
+    ])
+    expect(p).toContain('Ассистент: Готово.')
+    expect(p).not.toContain('```image')
+    expect(p).not.toContain('/tmp/cat.png')
+  })
+
   it('добавляет пути вложений', () => {
     const p = buildConversationPrompt([{ role: 'u1', text: 'смотри' }], ['/data/a.png'])
     expect(p).toContain('/data/a.png')

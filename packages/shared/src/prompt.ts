@@ -1,5 +1,6 @@
 // Сборка промпта для Claude (Шаг 8). Чистые функции.
 
+import { parseImages } from './images'
 import type { SttSegmentWire } from './protocol'
 import type { MessageRole } from './types'
 import { normalizeClaudeModel } from './types'
@@ -71,7 +72,11 @@ export function buildConversationPrompt(
   messages: PromptMessage[],
   attachmentPaths: string[] = []
 ): string {
-  const nonEmpty = messages.filter((m) => m.text.trim().length > 0)
+  // Служебные image-блоки AI-ответа нужны UI, но не модели при пересборке
+  // истории: она уже получила описание картинки в предыдущем ответе.
+  const nonEmpty = messages
+    .map((m) => (m.role === 'ai' ? { ...m, text: parseImages(m.text).body } : m))
+    .filter((m) => m.text.trim().length > 0)
   let body: string
   if (nonEmpty.length <= 1) {
     body = nonEmpty[0]?.text.trim() ?? ''
