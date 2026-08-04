@@ -234,7 +234,7 @@ export interface IpcInvokeMap {
   'admin:createUser': { arg: { name: string; password: string; role: 'admin' | 'user' }; result: AdminUserInfo }
   'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
   'admin:deleteUser': { arg: { name: string }; result: void }
-  'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number }; result: UsageReport }
+  'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }
   'admin:conversations': { arg: { name: string }; result: Conversation[] }
   'admin:messages': { arg: { name: string; conversationId: string }; result: Message[] }
   'admin:llmEngines': { arg: void; result: AdminLlmEngine[] }

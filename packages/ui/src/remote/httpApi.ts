@@ -204,10 +204,11 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'admin:deleteUser': async ({ name }) => {
       await req(REST.adminUser(name), { method: 'DELETE' })
     },
-    'admin:usage': ({ name, unit, from, to }) => {
+    'admin:usage': ({ name, unit, from, to, conversationId }) => {
       const q = new URLSearchParams({ unit })
       if (from) q.set('from', String(from))
       if (to) q.set('to', String(to))
+      if (conversationId) q.set('conversationId', conversationId)
       return req(`${REST.adminUserUsage(name)}?${q.toString()}`)
     },
     'admin:conversations': ({ name }) => req(REST.adminUserConversations(name)),

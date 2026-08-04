@@ -541,6 +541,25 @@ describe('VoiceChatDb — пользователи и админ-данные', 
     // Изоляция: у другого пользователя пусто.
     expect(db.usageReport('alice', 'day').totals.messages).toBe(0)
   })
+
+  it('usageReport фильтрует разговор и оценивает Codex по таблице цен БД', () => {
+    const priced = db.createConversation('bob', 'Codex')
+    const other = db.createConversation('bob', 'Другой чат')
+    db.addMessage('bob', priced.id, 'ai', 'ответ', '10:01', 'codex', {
+      model: 'gpt-5.4', inputTokens: 1_000_000, cacheReadTokens: 200_000, outputTokens: 100_000
+    })
+    db.addMessage('bob', other.id, 'ai', 'ответ', '10:02', 'codex', {
+      model: 'unknown-codex', inputTokens: 9_000_000, outputTokens: 9_000_000
+    })
+
+    const report = db.usageReport('bob', 'day', undefined, undefined, priced.id)
+    expect(report.conversationId).toBe(priced.id)
+    expect(report.totals.messages).toBe(1)
+    // Standard: (800k × $2.50 + 200k × $0.25 + 100k × $15) / 1M.
+    expect(report.totals.costUsd).toBeCloseTo(3.55, 6)
+    expect(report.byConversation).toHaveLength(2)
+    expect(report.byConversation.find((row) => row.conversationId === other.id)?.costUsd).toBe(0)
+  })
 })
 
 describe('VoiceChatDb — режим базы знаний разговора', () => {

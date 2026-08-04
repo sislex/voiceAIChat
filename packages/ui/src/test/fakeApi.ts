@@ -460,11 +460,13 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const idx = adminUsers.findIndex((x) => x.name === name)
       if (idx >= 0) adminUsers.splice(idx, 1)
     },
-    'admin:usage': async ({ unit }) => ({
+    'admin:usage': async ({ unit, conversationId }) => ({
       unit,
+      conversationId: conversationId ?? null,
       totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, messages: 0 },
       byBucket: [],
-      byModel: []
+      byModel: [],
+      byConversation: []
     }),
     'admin:conversations': async () => [],
     'admin:messages': async () => [],

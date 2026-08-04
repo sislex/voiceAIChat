@@ -38,12 +38,20 @@ export interface UsageByModel extends UsageTotals {
   model: string
 }
 
-/** Полный отчёт по токенам пользователя за период. */
+/** Метрики по конкретному разговору — одновременно данные для фильтра и сверки итогов. */
+export interface UsageByConversation extends UsageTotals {
+  conversationId: string
+  title: string
+}
+
+/** Полный отчёт по токенам пользователя за период и необязательный разговор. */
 export interface UsageReport {
   unit: UsageUnit
+  conversationId: string | null
   totals: UsageTotals
   byBucket: UsageBucket[]
   byModel: UsageByModel[]
+  byConversation: UsageByConversation[]
 }
 
 
