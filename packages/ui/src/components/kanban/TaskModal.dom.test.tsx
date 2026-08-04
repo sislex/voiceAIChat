@@ -111,6 +111,12 @@ describe('TaskModal — панель CI-рана', () => {
     expect(onStartCi).toHaveBeenCalledWith('t1')
   })
 
+  it('в колонке «Готово» кнопка запуска не показывается', () => {
+    const doneBoard: Board = { ...board, columns: [{ ...board.columns[0]!, semanticType: 'done' }] }
+    render(<TaskModal {...props({ board: doneBoard, ciSummary: mkSummary({ status: 'success', modelActive: false }), onStartCi: vi.fn() })} />)
+    expect(screen.queryByRole('button', { name: 'Выполнить' })).not.toBeInTheDocument()
+  })
+
   it('когда ран ждёт ответа, кнопка зовёт ответить', () => {
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'awaiting_input', awaitingInput: true }), onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
     expect(screen.getByTestId('task-modal-ci')).toHaveTextContent('ждёт ответа')

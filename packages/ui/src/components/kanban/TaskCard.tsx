@@ -84,7 +84,9 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   // сам ран в истории и ленте.
   const visibleCiSummary = ciSummaryForTask(ciSummary, done)
   const pulse = ciCardPulse(visibleCiSummary)
-  const canStart = canStartCiRun(ciSummary)
+  // В «Готово» запуск нового CI-рана запрещён: завершённая карточка остаётся
+  // историей результата, а не точкой повторного выполнения.
+  const canStart = !done && canStartCiRun(ciSummary)
 
   const epic = epicOf(task, props.allTasks)
   const children = props.allTasks.filter((t) => t.parentId === task.id)

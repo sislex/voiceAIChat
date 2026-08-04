@@ -165,8 +165,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     if (task.type === 'task' && !task.chatId && ensureChat) ensureChat(task.id)
   }, [task.id, task.type, task.chatId, ensureChat])
 
-  // Пока ран задачи идёт, запуск недоступен; завершённый ран не мешает (см. canStartCiRun).
-  const canStartCi = canStartCiRun(props.ciSummary)
   // Использование БЗ — агрегат по ВСЕМ ранам задачи. Перечитываем, когда
   // меняется статус последнего рана: только что закончившийся ран добавил свои
   // обращения, и цифры в карточке обязаны это показать.
@@ -184,6 +182,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   )
 
   const column = board.columns.find((c) => c.id === task.columnId)
+  // Пока ран задачи идёт запуск недоступен; в семантическом «Готово» новый
+  // запуск также запрещён — задача завершена, даже если старый ран терминальный.
+  const canStartCi = column?.semanticType !== 'done' && canStartCiRun(props.ciSummary)
   const parent = task.parentId ? board.tasks.find((t) => t.id === task.parentId) : null
   const children = board.tasks.filter((t) => t.parentId === task.id)
   const key = issueKey(props.projectName, task)
