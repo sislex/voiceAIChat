@@ -163,7 +163,7 @@ export function FileExplorer({
           />
         </form>
         {onOpenTerminal && agentOnline && agentId && cwd && (
-          <Button size="sm" title="Открыть терминал в этой папке" onClick={() => onOpenTerminal(agentId, cwd)>
+          <Button size="sm" title="Открыть терминал в этой папке" onClick={() => onOpenTerminal(agentId, cwd)}>
             &gt;_ Терминал
           </Button>
         )}
