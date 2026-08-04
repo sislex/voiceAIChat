@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { buildConversationPrompt, buildPrompt, claudeModelAlias } from './prompt'
+import {
+  appendChangeAuthorizationHint,
+  buildConversationPrompt,
+  buildPrompt,
+  CHANGE_AUTHORIZATION_HINT,
+  claudeModelAlias
+} from './prompt'
 
 describe('buildPrompt', () => {
   it('один говорящий → просто текст без меток', () => {
@@ -57,6 +63,19 @@ describe('claudeModelAlias', () => {
     expect(claudeModelAlias('opus-4.5')).toBe('opus[1m]')
     // Неизвестное → пункт «Default (recommended)», модель выбирает сам CLI.
     expect(claudeModelAlias('что-то')).toBe('default')
+  })
+})
+
+describe('appendChangeAuthorizationHint', () => {
+  it('добавляет выбор способа работы к непустому промпту', () => {
+    const prompt = appendChangeAuthorizationHint('Исправь ошибку')
+    expect(prompt).toBe(`Исправь ошибку\n\n${CHANGE_AUTHORIZATION_HINT}`)
+    expect(prompt).toContain('TODO')
+    expect(prompt).toContain('InProgress')
+  })
+
+  it('пустой промпт не меняет', () => {
+    expect(appendChangeAuthorizationHint('  ')).toBe('  ')
   })
 })
 
