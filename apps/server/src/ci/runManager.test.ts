@@ -20,6 +20,7 @@ let failClaude = false
 let failPush = false
 /** Управляемое падение шага TOGGLE: «сломано» → «починили» между ранами. */
 let failStep = false
+let repoMissing = false
 /** Локальные правки в рабочей копии: шаг CLONE отвечает на них exit 66, как боевой. */
 let dirtyWorkspace = false
 let onModelSend: (() => void) | null = null
@@ -71,6 +72,7 @@ const ciExecutor: CommandExecutor = {
     onChunk(`run:${req.script.slice(0, 20)}\n`)
     // FLAKY падает на первом прогоне и проходит на повторе (эмуляция «исправлено моделью»).
     const flakyOk = req.script.includes('FLAKY') && n >= 2
+    if (req.script === 'git rev-parse --show-toplevel >/dev/null') return { exitCode: repoMissing ? 128 : 0, timedOut: false }
     if (req.script === 'DIRTY') return { exitCode: 66, timedOut: false }
     // Подготовка директории приводит копию прошлого рана в чистое состояние.
     if (req.script.includes('stash push') && req.script.includes('reset --hard')) dirtyWorkspace = false
@@ -90,6 +92,7 @@ beforeEach(async () => {
   failClaude = false
   failPush = false
   failStep = false
+  repoMissing = false
   dirtyWorkspace = false
   onModelSend = null
   onExec = null
@@ -197,11 +200,26 @@ describe('ci run manager', () => {
     expect(d.steps.map((s) => s.kind)).toContain('model_summary')
     const workRequest = modelRequests.find((req) => req.permissionMode === 'acceptEdits')!
     expect(workRequest.cwd).toBeUndefined()
-    expect(workRequest.remote?.mcpUrl).toContain('cwd=%2Frepos%2Fp%2F1')
+    expect(workRequest.remote?.mcpUrl).toContain('cwd=%2Frepos%2Fp%2F1%2Ft1')
+    const chat = db.getConversation('admin', db.getCiRunRaw(runId)!.conversationId!)!
+    expect(chat.execTarget).toBeTruthy()
+    expect(chat.workdir).toBe('/repos/p/1/t1')
     // Лог рана содержит строки.
     const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json()
     expect(Array.isArray(log)).toBe(true)
     expect(log.length).toBeGreaterThan(0)
+  })
+
+  it('не запускает модель и валит ран, если клон отсутствует в ожидаемой папке', async () => {
+    const { project, task, readyColId } = setup()
+    repoMissing = true
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+    expect(detail.run.status).toBe('failed')
+    expect(modelRequests).toHaveLength(0)
+    expect(db.getBoard('admin', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).toBe(readyColId)
+    const steps = db.getCiRun('admin', runId)!.steps
+    expect(steps.find((step) => step.title === 'Проверка рабочей директории модели')?.status).toBe('failed')
   })
 
   it('резюме рана уходит отдельным сообщением в связанный чат задачи', async () => {
