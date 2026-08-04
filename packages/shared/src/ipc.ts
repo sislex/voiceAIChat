@@ -169,7 +169,7 @@ export interface IpcInvokeMap {
   'conversations:delete': { arg: { id: string }; result: void }
   'messages:add': { arg: AddMessageArgs; result: Message }
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }
-  'uploads:add': { arg: { name: string; dataBase64: string }; result: UploadInfo }
+  'uploads:add': { arg: { name: string; dataBase64: string; agentId?: string }; result: UploadInfo }
   'settings:get': { arg: void; result: Settings }
   'llm:engines': { arg: void; result: LlmEngineOption[] }
   'settings:save': { arg: Settings; result: void }
