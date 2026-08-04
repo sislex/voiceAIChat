@@ -185,10 +185,9 @@ describe('работа модели: база знаний по режимам �
     expect(req.kbMcpUrl).toContain('/mcp/kb?k=secret&turn=')
     expect(req.kbMode).toBe('auto')
     expect(req.prompt).toContain('Начни работу с базы знаний проекта, а не с кода')
-    expect(req.prompt).toContain('Файлы читай инструментом read, ищи grep и правь edit')
-    expect(req.prompt).toContain('bash используй для команд')
-    // Про гейт модель предупреждена заранее: отказ не должен быть сюрпризом.
-    expect(req.prompt).toContain('мост отклонит и подскажет готовый вызов read')
+    // Правила remote-инструментов передаёт системный хинт CLI: в taskPrompt их
+    // больше нет, чтобы не платить за дубль на каждом запросе.
+    expect(req.prompt).not.toContain('Файлы читай инструментом read, ищи grep и правь edit')
     // Сам блок контекста: заголовок раздела БЗ в промпте (директива лишь ссылается на него).
     expect(req.prompt).toContain('### CI-раннер / Работа модели')
   })
