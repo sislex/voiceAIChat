@@ -1235,6 +1235,15 @@ export class VoiceChatDb {
 
   // ---- Settings ---------------------------------------------------------
 
+  /** Настройки LLM, которые связанный чат задачи наследует от своего владельца. */
+  private taskChatLlmDefaults(userId: string, settings = this.getSettings(userId)): { engineId: string | null; provider: LlmProvider; model: string } {
+    const role = this.getUser(userId)?.role ?? 'user'
+    const provider = settings.llmProvider
+    const model = provider === 'codex' ? settings.codexModel : settings.model
+    const engineId = this.resolveLlmEngine(settings.llmEngineId, provider, role).engine?.id ?? null
+    return { engineId, provider, model }
+  }
+
   getSettings(userId: string): Settings {
     const row = this.db
       .prepare(`SELECT value FROM settings WHERE key = ?`)
@@ -1255,6 +1264,12 @@ export class VoiceChatDb {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`
       )
       .run(settingsKey(userId), JSON.stringify(settings))
+    // Связанные чаты — про ту же задачу, что и CI-раны, поэтому смена
+    // пользовательского дефолта должна сразу обновить и уже созданные чаты.
+    const llm = this.taskChatLlmDefaults(userId, settings)
+    this.db
+      .prepare(`UPDATE conversations SET llm_engine_id = ?, llm_provider = ?, llm_model = ?, updated_at = ? WHERE user_id = ? AND task_id IS NOT NULL`)
+      .run(llm.engineId, llm.provider, llm.model, this.now(), userId)
   }
 
   /** Идемпотентно переносит legacy-разговоры desktop, сохраняя id и даты. */
@@ -1993,11 +2008,7 @@ export class VoiceChatDb {
     if (!task) return null
     // Связанный чат закрепляет пользовательские LLM-настройки на момент
     // открытия/запуска задачи, чтобы чат и CI-ран работали на одной конфигурации.
-    const settings = this.getSettings(userId)
-    const role = this.getUser(userId)?.role ?? 'user'
-    const provider = settings.llmProvider
-    const model = provider === 'codex' ? settings.codexModel : settings.model
-    const engineId = this.resolveLlmEngine(settings.llmEngineId, provider, role).engine?.id ?? null
+    const { engineId, provider, model } = this.taskChatLlmDefaults(userId)
     const existing = this.db
       .prepare(`SELECT id FROM conversations WHERE task_id = ? AND user_id = ? ORDER BY created_at ASC LIMIT 1`)
       .get(taskId, userId) as { id: string } | undefined
