@@ -392,7 +392,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     try {
       if (mode === 'todo') {
         const board = await api['board:get']({ id: taskProposal.projectId })
-        const column = board.columns.find((item) => item.semanticType === 'todo') ?? board.columns[0]
+        const column = board.columns.find((item) => item.semanticType === 'backlog') ?? board.columns[0]
         if (!column) return
         await api['tasks:create']({
           projectId: taskProposal.projectId,
