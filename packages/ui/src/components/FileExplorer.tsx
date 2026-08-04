@@ -64,11 +64,13 @@ export function FileExplorer({
   const selectedRow = useRef<HTMLDivElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const writable = agents.find((a) => a.id === agentId)?.policy.allowWrite ?? false
+  const selectedAgent = agents.find((agent) => agent.id === agentId)
+  const agentOnline = selectedAgent?.online ?? false
+  const writable = agentOnline && (selectedAgent?.policy.allowWrite ?? false)
   const view = loadView(status, entries.length > 0)
 
   const load = async (path: string): Promise<void> => {
-    if (!agentId) return
+    if (!agentId || !agentOnline) return
     setStatus('loading')
     try {
       const res = await ops.list(agentId, path)
@@ -140,7 +142,7 @@ export function FileExplorer({
             ))}
           </select>
         )}
-        <IconButton size="sm" title="Вверх" aria-label="На уровень выше" disabled={!agentId} onClick={() => void load(parentOf(cwd))}>
+        <IconButton size="sm" title="Вверх" aria-label="На уровень выше" disabled={!agentOnline} onClick={() => void load(parentOf(cwd))}>
           ⬆
         </IconButton>
         <form
@@ -156,11 +158,11 @@ export function FileExplorer({
             title="Введите или вставьте путь и нажмите Enter"
             value={address}
             placeholder="Введите путь к папке"
-            disabled={!agentId}
+            disabled={!agentOnline}
             onChange={(e) => setAddress(e.target.value)}
           />
         </form>
-        {onOpenTerminal && agentId && cwd && (
+        {onOpenTerminal && agentOnline && agentId && cwd && (
           <Button size="sm" title="Открыть терминал в этой папке" onClick={() => onOpenTerminal(agentId, cwd)}>
             &gt;_ Терминал
           </Button>
@@ -204,7 +206,14 @@ export function FileExplorer({
             description="Машина подключается в настройках: там выдаётся команда установки агента."
           />
         )}
-        {agentId && view.state === 'skeleton' && (
+        {agentId && !agentOnline && (
+          <EmptyState
+            icon="⏳"
+            title={'Машина «' + (selectedAgent?.name ?? agentId) + '» переподключается'}
+            description="Проводник станет доступен после восстановления соединения. Попробуйте снова через несколько секунд."
+          />
+        )}
+        {agentOnline && view.state === 'skeleton' && (
           <div className="fsskel" aria-busy="true">
             {/* Высота косточки — высота .fsrow, иначе список подпрыгивает. */}
             <Skeleton variant="list" item="block" count={8} height={30} gap={4} testId="fs-skeleton" />
