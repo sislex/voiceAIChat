@@ -2357,10 +2357,15 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   // (для чата с проектом эти значения уже проектные; иначе — из настроек чата).
   function openUtilityForActiveChat(kind: 'console' | 'explorer'): void {
     const path = activeConversationWorkdir()
+    // Утилита должна оставаться на эффективной машине чата даже во время
+    // переподключения: иначе проводник/терминал незаметно открывались бы на
+    // другой онлайн-машине вместо явного сообщения о недоступности нужной.
+    const target = activeConversationExecTarget()
+    const agentId = target && target !== 'none' ? target : defaultUtilityAgent()
     setState({
       utility: {
         kind,
-        agentId: defaultUtilityAgent(),
+        agentId,
         ...(path ? { path } : {}),
         ...(path && kind === 'explorer' ? { dir: true } : {})
       }

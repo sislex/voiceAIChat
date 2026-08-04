@@ -32,6 +32,15 @@ describe('MachineConsole', () => {
     expect(await screen.findByText('офлайн')).toBeInTheDocument()
   })
 
+  it('объясняет, что офлайн-машина переподключается, и не запускает команду', async () => {
+    const exec = vi.fn()
+    render(<MachineConsole agents={[{ ...agent, online: false }]} initialAgentId="m1" exec={exec} variant="embedded" />)
+
+    expect(screen.getByText('Машина «Мак» переподключается')).toBeInTheDocument()
+    expect(screen.getByLabelText('Команда')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Выполнить команду' })).toBeDisabled()
+  })
+
   it('переключение на весь экран добавляет класс', async () => {
     const exec = vi.fn()
     const { container } = render(
