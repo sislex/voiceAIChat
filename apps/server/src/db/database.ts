@@ -1550,7 +1550,8 @@ export class VoiceChatDb {
       COALESCE(SUM(json_extract(m.meta,'$.inputTokens')),0) AS inputTokens,
       COALESCE(SUM(json_extract(m.meta,'$.outputTokens')),0) AS outputTokens,
       COALESCE(SUM(json_extract(m.meta,'$.cacheReadTokens')),0) AS cacheReadTokens,
-      COALESCE(SUM(COALESCE(json_extract(m.meta,'$.costUsd'), ${estimatedCost})),0) AS costUsd`
+      COALESCE(SUM(COALESCE(json_extract(m.meta,'$.costUsd'), ${estimatedCost})),0) AS costUsd,
+      MAX(CASE WHEN m.engine = 'codex' AND json_extract(m.meta,'$.costUsd') IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
     const dateWhere = `${from !== undefined ? 'AND m.created_at >= @from' : ''}
       ${to !== undefined ? 'AND m.created_at <= @to' : ''}`
     const where = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere}
@@ -1559,16 +1560,18 @@ export class VoiceChatDb {
     const joins = `FROM messages m JOIN conversations c ON m.conversation_id = c.id
       LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(json_extract(m.meta,'$.model'), c.llm_model)`
 
-    const totals = this.db.prepare(`SELECT ${sums} ${joins} WHERE ${where}`).get(bind) as UsageTotals
-    const byBucket = this.db.prepare(`SELECT strftime('${fmt}', m.created_at/1000, 'unixepoch') AS bucket, ${sums}
-      ${joins} WHERE ${where} GROUP BY bucket ORDER BY bucket ASC`).all(bind) as UsageBucket[]
-    const byModel = this.db.prepare(`SELECT COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') AS model, ${sums}
-      ${joins} WHERE ${where} GROUP BY COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') ORDER BY outputTokens DESC`).all(bind) as UsageByModel[]
+    type UsageRow = UsageTotals & { costIncomplete?: number }
+    const complete = <T extends UsageRow>(row: T): Omit<T, 'costIncomplete'> & { costIncomplete: boolean } => ({ ...row, costIncomplete: Boolean(row.costIncomplete) })
+    const totals = complete(this.db.prepare(`SELECT ${sums} ${joins} WHERE ${where}`).get(bind) as UsageRow)
+    const byBucket = (this.db.prepare(`SELECT strftime('${fmt}', m.created_at/1000, 'unixepoch') AS bucket, ${sums}
+      ${joins} WHERE ${where} GROUP BY bucket ORDER BY bucket ASC`).all(bind) as UsageBucket[]).map(complete)
+    const byModel = (this.db.prepare(`SELECT COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') AS model, ${sums}
+      ${joins} WHERE ${where} GROUP BY COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') ORDER BY outputTokens DESC`).all(bind) as UsageByModel[]).map(complete)
     // Фильтр разговоров всегда строится для всего выбранного периода, чтобы после
     // выбора одного разговора остальные варианты не исчезали из селекта.
     const conversationWhere = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere}`
-    const byConversation = this.db.prepare(`SELECT c.id AS conversationId, c.title, ${sums}
-      ${joins} WHERE ${conversationWhere} GROUP BY c.id, c.title ORDER BY costUsd DESC, c.updated_at DESC`).all(bind) as UsageByConversation[]
+    const byConversation = (this.db.prepare(`SELECT c.id AS conversationId, c.title, ${sums}
+      ${joins} WHERE ${conversationWhere} GROUP BY c.id, c.title ORDER BY costUsd DESC, c.updated_at DESC`).all(bind) as UsageByConversation[]).map(complete)
     return { unit, conversationId: conversationId ?? null, totals, byBucket, byModel, byConversation }
   }
 

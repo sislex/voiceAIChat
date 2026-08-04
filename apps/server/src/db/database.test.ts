@@ -558,7 +558,11 @@ describe('VoiceChatDb — пользователи и админ-данные', 
     // Standard: (800k × $2.50 + 200k × $0.25 + 100k × $15) / 1M.
     expect(report.totals.costUsd).toBeCloseTo(3.55, 6)
     expect(report.byConversation).toHaveLength(2)
-    expect(report.byConversation.find((row) => row.conversationId === other.id)?.costUsd).toBe(0)
+    const unknown = report.byConversation.find((row) => row.conversationId === other.id)
+    // Неизвестную Codex-модель не оцениваем по похожему семейству и помечаем,
+    // что $0 — только известная часть агрегата, а не цена ответа.
+    expect(unknown?.costUsd).toBe(0)
+    expect(unknown?.costIncomplete).toBe(true)
   })
 })
 
