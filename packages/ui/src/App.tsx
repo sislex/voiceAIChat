@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { PermissionMode } from '@shared/types'
+import type { TaskPriority } from '@shared/projects'
 import type { HealthResponse } from '@shared/protocol'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
@@ -24,6 +25,8 @@ import { ToolFrame } from './components/ToolFrame'
 import type { MachineOps } from './components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
 import { UiProviders } from './components/ui/UiProviders'
+import { Dialog } from './components/ui/Dialog'
+import { Button } from './components/ui/Button'
 import { Skeleton } from './components/ui/Skeleton'
 import { useToast } from './components/ui/Toast'
 import { useConfirm } from './components/ui/useConfirm'
@@ -55,6 +58,11 @@ export interface AppProps {
 
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
 const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users', 'ci']
+
+/** Запрос разработки, для которого вместо обычного хода предлагаем завести CI-задачу. */
+function isDevelopmentTaskIntent(text: string): boolean {
+  return /(?:созда(?:й|ть)|заведи|поставь|нужно|надо|давай).{0,80}(?:задач|таск|разработ|реализ|добав|исправ)|(?:разработ|реализ|добав|исправ).{0,80}(?:фич|функц|экран|api|задач|таск)/iu.test(text)
+}
 
 /**
  * Корень приложения. Тосты и подтверждения — провайдеры вокруг всего дерева:
@@ -115,6 +123,14 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     try { localStorage.setItem('vc:sidebarCollapsed', v ? '1' : '0') } catch { /* приватный режим */ }
   }
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false)
+  const [taskProposal, setTaskProposal] = useState<{
+    projectId: string
+    title: string
+    description: string
+    priority: TaskPriority
+    assignee: string | null
+  } | null>(null)
+  const [taskLaunchPending, setTaskLaunchPending] = useState(false)
   // Режим списка сайдбара: маршрут ведёт его автоматически, ручной выбор
   // (переключатель) живёт до следующей смены маршрута.
   const [sidebarMode, setSidebarMode] = useState<'chats' | 'projects'>('chats')
@@ -348,6 +364,20 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const activePermissionMode: PermissionMode = forcedPlan
     ? 'plan'
     : activeConversation?.permissionMode ?? state.settings.permissionMode
+  const ciProvider = state.settings.llmProvider
+  const ciModel = ciProvider === 'codex' ? state.settings.codexModel : state.settings.model
+  const ciEngine = state.llmEngines.find((engine) => engine.id === state.settings.llmEngineId)?.name ?? 'По умолчанию'
+
+  const confirmTaskLaunch = async (): Promise<void> => {
+    if (!taskProposal || taskLaunchPending) return
+    setTaskLaunchPending(true)
+    const run = await actions.createTaskAndStartCi(taskProposal.projectId, taskProposal)
+    setTaskLaunchPending(false)
+    if (!run) return
+    actions.setDraft('')
+    setTaskProposal(null)
+    toast.success('Задача создана и поставлена в CI-очередь')
+  }
 
   const changeConversationMode = async (mode: PermissionMode): Promise<void> => {
     if (!activeConversation || mode === activePermissionMode) return
@@ -610,7 +640,20 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
             aiLabel={(activeConversation?.llmProvider ?? state.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
             attachments={state.attachments}
             onDraftChange={actions.setDraft}
-            onSubmitText={actions.submitText}
+            onSubmitText={() => {
+              const text = state.draft.trim()
+              if (activeConversation?.projectId && state.attachments.length === 0 && isDevelopmentTaskIntent(text)) {
+                setTaskProposal({
+                  projectId: activeConversation.projectId,
+                  title: text,
+                  description: text,
+                  priority: 'medium',
+                  assignee: state.currentUser?.name ?? null
+                })
+                return
+              }
+              void actions.submitText()
+            }}
             onStartVoice={actions.startVoice}
             onStopVoice={actions.stopVoice}
             onStopSpeak={actions.stopSpeak}
@@ -821,6 +864,54 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onResolveSuggestion={(id, accept) => actions.resolveCiSuggestion(id, accept)}
           onClose={() => navigate('/')}
         />
+      )}
+
+      {taskProposal && (
+        <Dialog
+          title="Запустить разработку?"
+          ariaLabel="Настройки задачи разработки"
+          size="sm"
+          onClose={() => { if (!taskLaunchPending) setTaskProposal(null) }}
+          closeOnOverlay={!taskLaunchPending}
+          className="task-launch-dialog"
+          footer={<>
+            <Button variant="secondary" onClick={() => setTaskProposal(null)} disabled={taskLaunchPending}>Отмена</Button>
+            <Button variant="primary" onClick={() => void confirmTaskLaunch()} loading={taskLaunchPending} disabled={!taskProposal.title.trim()}>Создать и запустить CI</Button>
+          </>}
+        >
+          <p className="task-launch-intro">Задача будет создана от вашего имени и сразу поставлена в CI-очередь.</p>
+          <div className="task-launch-fields">
+            <label>Название
+              <input value={taskProposal.title} onChange={(event) => setTaskProposal({ ...taskProposal, title: event.target.value })} />
+            </label>
+            <label>Движок
+              <input value={ciProvider === 'codex' ? 'Codex' : 'Claude'} readOnly />
+            </label>
+            <label>Модель
+              <input value={ciModel} readOnly />
+            </label>
+            <label>Исполнитель
+              <input value={ciEngine} readOnly />
+            </label>
+            <label>Очередь
+              <input value="FIFO" readOnly />
+            </label>
+            <label>Приоритет
+              <select value={taskProposal.priority} onChange={(event) => setTaskProposal({ ...taskProposal, priority: event.target.value as TaskPriority })}>
+                <option value="low">Низкий</option>
+                <option value="medium">Средний</option>
+                <option value="high">Высокий</option>
+                <option value="urgent">Срочный</option>
+              </select>
+            </label>
+            <label>Слияние
+              <input value="Влить в main" readOnly />
+            </label>
+            <label>Ответственный
+              <input value={taskProposal.assignee ?? ''} onChange={(event) => setTaskProposal({ ...taskProposal, assignee: event.target.value || null })} />
+            </label>
+          </div>
+        </Dialog>
       )}
 
       {conversationSettingsOpen && activeConversation && (
