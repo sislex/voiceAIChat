@@ -226,10 +226,11 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId)
     const settings = deps.db.getSettings(userId)
     const role = deps.db.getUser(userId)?.role ?? 'user'
-    // CI-задача всегда наследует движок и модель из настроек её пользователя.
-    // Настройки CI карточки сохраняют только режим и параметры уточнений.
-    const provider = settings.llmProvider
-    const model = provider === 'codex' ? settings.codexModel : settings.model
+    // Движок и модель — часть наследуемой CI-конфигурации задачи. Поэтому выбор
+    // в карточке и окне запуска фиксируется в снимке рана, а не подменяется
+    // текущими настройками чата пользователя.
+    const provider = taskCi.provider
+    const model = taskCi.model
     const engineResolution = deps.db.resolveLlmEngine(settings.llmEngineId, provider, role)
     const total = slots.beforeModel.length + slots.afterModel.length + 2
     // Связанный чат нужен, чтобы дублировать туда вопросы модели. Идемпотентно:

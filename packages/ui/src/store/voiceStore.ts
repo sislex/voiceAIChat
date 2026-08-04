@@ -886,7 +886,7 @@ export interface StoreActions {
   /** Создать задачу из чата проекта и сразу поставить её CI-ран в общую FIFO-очередь. */
   createTaskAndStartCi(
     projectId: string,
-    input: { title: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+    input: { title: string; description?: string; acceptanceCriteria?: string; priority?: TaskPriority; assignee?: string | null; provider: 'claude' | 'codex'; model: string }
   ): Promise<CiRun | null>
   updateTask(
     taskId: string,
@@ -3780,7 +3780,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   async function createTaskAndStartCi(
     projectId: string,
-    input: { title: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+    input: { title: string; description?: string; acceptanceCriteria?: string; priority?: TaskPriority; assignee?: string | null; provider: 'claude' | 'codex'; model: string }
   ): Promise<CiRun | null> {
     if (!ciBridge) return null
     try {
@@ -3796,8 +3796,17 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         columnId: column.id,
         title: input.title,
         description: input.description,
+        acceptanceCriteria: input.acceptanceCriteria,
         priority: input.priority,
         assignee: input.assignee
+      })
+      // Выбор в окне запуска — конфигурация новой задачи. Сохраняем его до
+      // создания рана, чтобы снимок рана не успел взять проектное наследование.
+      const inheritedLlm = await ciBridge.getProjectCiLlm(projectId)
+      await ciBridge.putTaskCiLlm(projectId, task.id, {
+        ...inheritedLlm,
+        provider: input.provider,
+        model: input.model
       })
       if (state.activeProjectId === projectId) await refreshBoard()
       return await startCiRun(projectId, task.id)

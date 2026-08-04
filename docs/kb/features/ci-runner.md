@@ -418,11 +418,14 @@ cwd/env собираются с shell-escape (пользовательский �
 
 `CiLlmConfig` несёт не только `provider`/`model`, но и `mode` (`plan`|`development`),
 `clarifyLevel` (`none`|`few`|`medium`|`detailed`) и `clarifyMax` (1..30, только для
-`detailed`); бюджет вопросов считает `clarifyBudget()`. Наследование то же, что у
-движка: задача → проект → `DEFAULT_CI_LLM_CONFIG` (`resolveTaskLlmConfig`), правится
-в `CiTaskSettings` (под выбором модели) и `CiProjectDefaults`. Выбор снимком
-фиксируется в `ci_runs.mode/clarify_level/clarify_max`, поэтому повтор рана его
-сохраняет; `POST …/ci/run` принимает разовый `{ mode }`.
+`detailed`); бюджет вопросов считает `clarifyBudget()`. Наследование всех полей,
+включая `provider`/`model`: задача → проект → `DEFAULT_CI_LLM_CONFIG`
+(`resolveTaskLlmConfig`), правится в `CiTaskSettings` (под выбором модели) и
+`CiProjectDefaults`. Окно запуска задачи по умолчанию берёт движок и модель из
+пользовательских настроек, сохраняет выбранную пару как переопределение новой
+задачи до старта и ран фиксирует её в `ci_runs.llm_provider/llm_model`; режим и
+уточнения сохраняются тем же снимком. Поэтому изменения настроек после постановки
+задачи не меняют уже поставленный ран; `POST …/ci/run` принимает разовый `{ mode }`.
 
 ## Пауза рана: вопросы модели и одобрение плана
 
