@@ -58,6 +58,11 @@ function usd(n: number): string {
   return `$${n.toFixed(n < 0.1 ? 4 : 2)}`
 }
 
+/** Не выдаём известную часть суммы за цену ответа с неизвестным тарифом. */
+function displayedUsd(n: number, costIncomplete?: boolean): string {
+  return costIncomplete ? '—' : usd(n)
+}
+
 const EMPTY_ENGINE: AdminLlmEngineInput = {
   name: '',
   kind: 'claude',
@@ -108,6 +113,9 @@ export function UsersAdmin({
   const [confirmEngineDelete, setConfirmEngineDelete] = useState<string | null>(null)
 
   const cur = users.find((u) => u.name === selected) ?? null
+  // Сервер возвращает список разговоров периода даже при активном фильтре,
+  // поэтому варианты селекта не зависят от загруженной истории пользователя.
+  const usageConversations = usage?.byConversation ?? conversations
   const view = loadView(status, users.length > 0)
   const enginesView = loadView(enginesStatus, engines.length > 0)
   const canManage = (name: string): boolean => name !== 'admin' && name !== currentUserName
@@ -228,7 +236,7 @@ export function UsersAdmin({
                     <select aria-label="Разговор расхода" value={usageConversationId} onChange={(e) => {
                       setUsageConversationId(e.target.value)
                       loadUsage(usage?.unit ?? 'day', usageDays, e.target.value)
-                    }}><option value="">Все разговоры</option>{conversations.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}</select>
+                    }}><option value="">Все разговоры</option>{usageConversations.map((c) => <option key={'conversationId' in c ? c.conversationId : c.id} value={'conversationId' in c ? c.conversationId : c.id}>{c.title}</option>)}</select>
                   </div>
                 </div>
                 <div className="useg" aria-label="Группировка отчёта">
@@ -243,12 +251,12 @@ export function UsersAdmin({
                       <div><span>Вход</span><strong>{kilo(usage.totals.inputTokens)}</strong></div>
                       <div><span>Выход</span><strong>{kilo(usage.totals.outputTokens)}</strong></div>
                       <div><span>Из кэша</span><strong>{kilo(usage.totals.cacheReadTokens)}</strong></div>
-                      <div><span>Стоимость</span><strong>{usd(usage.totals.costUsd)}</strong></div>
+                      <div><span>Стоимость</span><strong title={usage.totals.costIncomplete ? 'Есть ответы без известного тарифа' : undefined}>{displayedUsd(usage.totals.costUsd, usage.totals.costIncomplete)}</strong></div>
                       <div><span>Ответы</span><strong>{usage.totals.messages}</strong></div>
                     </div>
                     <div className="uusage-grid">
-                      <div><h4>По моделям</h4><table className="utable"><thead><tr><th>Модель</th><th>Вход</th><th>Выход</th><th>Стоимость</th></tr></thead><tbody>{usage.byModel.map((m) => <tr key={m.model}><td>{m.model}</td><td>{kilo(m.inputTokens)}</td><td>{kilo(m.outputTokens)}</td><td>{usd(m.costUsd)}</td></tr>)}</tbody></table></div>
-                      <div><h4>Динамика (UTC)</h4><table className="utable"><thead><tr><th>Период</th><th>Вход</th><th>Выход</th><th>Стоимость</th></tr></thead><tbody>{usage.byBucket.map((b) => <tr key={b.bucket}><td>{b.bucket}</td><td>{kilo(b.inputTokens)}</td><td>{kilo(b.outputTokens)}</td><td>{usd(b.costUsd)}</td></tr>)}</tbody></table></div>
+                      <div><h4>По моделям</h4><table className="utable"><thead><tr><th>Модель</th><th>Вход</th><th>Выход</th><th>Стоимость</th></tr></thead><tbody>{usage.byModel.map((m) => <tr key={m.model}><td>{m.model}</td><td>{kilo(m.inputTokens)}</td><td>{kilo(m.outputTokens)}</td><td>{displayedUsd(m.costUsd, m.costIncomplete)}</td></tr>)}</tbody></table></div>
+                      <div><h4>Динамика (UTC)</h4><table className="utable"><thead><tr><th>Период</th><th>Вход</th><th>Выход</th><th>Стоимость</th></tr></thead><tbody>{usage.byBucket.map((b) => <tr key={b.bucket}><td>{b.bucket}</td><td>{kilo(b.inputTokens)}</td><td>{kilo(b.outputTokens)}</td><td>{displayedUsd(b.costUsd, b.costIncomplete)}</td></tr>)}</tbody></table></div>
                     </div>
                   </>
                 )}

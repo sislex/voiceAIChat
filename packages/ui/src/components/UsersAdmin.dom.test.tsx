@@ -99,6 +99,21 @@ describe('UsersAdmin', () => {
     expect(screen.getByTestId('usage-total')).toHaveTextContent('Ответы3')
   })
 
+  it('не показывает нулевую цену при неизвестном тарифе Codex', () => {
+    renderAdmin({
+      selected: 'bob',
+      usage: {
+        unit: 'day', conversationId: null,
+        totals: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, costUsd: 0, costIncomplete: true, messages: 1 },
+        byBucket: [],
+        byModel: [{ model: 'unknown-codex', inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, costUsd: 0, costIncomplete: true, messages: 1 }],
+        byConversation: []
+      }
+    })
+    expect(screen.getByTestId('usage-total')).toHaveTextContent('Стоимость—')
+    expect(screen.getByTitle('Есть ответы без известного тарифа')).toBeInTheDocument()
+  })
+
   it('перезагружает расход при смене периода и разговора', async () => {
     const conversation = makeConversation({ id: 'chat-usage', title: 'Точный разговор' })
     const p = renderAdmin({ selected: 'bob', conversations: [conversation] })

@@ -24,6 +24,12 @@ export interface UsageTotals {
   outputTokens: number
   cacheReadTokens: number
   costUsd: number
+  /**
+   * В выборке есть Codex-ответ без стоимости CLI и без строки в model_prices.
+   * costUsd в этом случае — лишь известная часть суммы и не должна отображаться
+   * как точная стоимость.
+   */
+  costIncomplete?: boolean
   /** Число ответов модели (ai-сообщений) в выборке. */
   messages: number
 }
