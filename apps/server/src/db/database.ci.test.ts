@@ -91,6 +91,30 @@ describe('ci: справочник команд', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  it('миграция переводит штатный гейт на affected-check и сохраняет его проверочным', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-affected-gate-'))
+    const file = join(dir, 'db.sqlite')
+    let n = 0
+    const first = new VoiceChatDb(file, { newId: () => `a-${++n}`, now: () => 1000 })
+    first.createUser('alice', '', 'user')
+    const gate = first.createCiCommand('alice', {
+      scope: 'global',
+      name: 'Запустить проверки (typecheck + npm test)',
+      script: 'npm run typecheck && npm test'
+    })
+    first.close()
+
+    const second = new VoiceChatDb(file, { newId: () => `a-${++n}`, now: () => 2000 })
+    expect(second.getCiCommand('alice', gate.id)).toMatchObject({
+      script: 'npm run affected-check',
+      isTest: true,
+      availableToModel: false,
+      version: 2
+    })
+    second.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('глобальные команды видны всем', () => {
     const g = db.createCiCommand('alice', { scope: 'global', name: 'npm ci', script: 'npm ci' })
     expect(db.listCiCommands('bob').map((x) => x.id)).toContain(g.id)
@@ -138,7 +162,12 @@ describe('ci: движок и модель', () => {
 
 describe('ci: глобальные настройки', () => {
   it('возвращает дефолты и обновляется', () => {
-    expect(db.getCiSettings().maxFixAttempts).toBe(3)
+    expect(db.getCiSettings()).toMatchObject({
+      maxFixAttempts: 9,
+      fixTimeLimitMs: 30 * 60 * 1000,
+      fixTokenLimit: 600_000,
+      defaultStepTimeoutSec: 1_800,
+    })
     const s = db.updateCiSettings({ maxFixAttempts: 5, maxConcurrentRuns: 4 })
     expect(s.maxFixAttempts).toBe(5)
     expect(s.maxConcurrentRuns).toBe(4)
@@ -349,7 +378,7 @@ describe('ci: метки чатов задач для списка бесед', 
 
     const before = db.taskChatBadges('alice')
     expect(before).toHaveLength(1)
-    expect(before[0]).toMatchObject({ conversationId: chat.id, taskId: task.id, projectId: p.id, key: 'P1-1', type: 'task', run: null })
+    expect(before[0]).toMatchObject({ conversationId: chat.id, taskId: task.id, projectId: p.id, key: 'P1-1', type: 'task', columnSemantic: 'backlog', run: null })
 
     // Появился ран — в метке живёт та же сводка, что подсвечивает карточку.
     const run = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, slotProgress: { done: 1, total: 3, phase: 'Модель работает' } })
@@ -357,6 +386,11 @@ describe('ci: метки чатов задач для списка бесед', 
     const after = db.taskChatBadges('alice')[0]
     expect(after.run).toMatchObject({ id: run.id, taskId: task.id, status: 'awaiting_input', awaitingInput: true })
     expect(after.run?.slotProgress.phase).toBe('Модель работает')
+
+    // Семантика колонки обновляется вместе с ручным завершением задачи.
+    const done = db.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'done')!
+    db.moveTask('alice', p.id, task.id, { columnId: done.id })
+    expect(db.taskChatBadges('alice')[0].columnSemantic).toBe('done')
 
     // Метки — свои: bob чужой чат задачи не видит.
     expect(db.taskChatBadges('bob')).toEqual([])

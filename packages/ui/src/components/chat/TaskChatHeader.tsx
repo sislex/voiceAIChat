@@ -10,7 +10,7 @@
 import { useEffect, useState, type JSX } from 'react'
 import type { TaskChatContext } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
-import { ciCardPulse, isTerminalCiStatus } from '@shared/ci'
+import { ciCardPulse, ciSummaryForTask, isTerminalCiStatus } from '@shared/ci'
 import { RUN_MODE_LABEL, ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { IconButton } from '../ui/IconButton'
 
@@ -57,8 +57,14 @@ export function TaskChatHeader(props: TaskChatHeaderProps): JSX.Element {
   const finished = run ? isTerminalCiStatus(run.status) : true
   const live = useRunElapsed(run?.startedAt ?? null, finished, now)
   const duration = run ? (finished ? run.durationMs : live) : null
-  // Шапка подсвечивается как карточка задачи на доске: один расчёт, одни цвета.
-  const pulse = ciCardPulse(props.summary ?? (run ? { status: run.status, slotProgress: { fixing: false } } : null))
+  // Ручное завершение задачи сильнее старого терминального падения: лента рана
+  // остаётся доступна, но красная метка и рамка больше не «залипают».
+  const surfaceRun = ciSummaryForTask(
+    props.summary ?? (run ? { status: run.status, slotProgress: { fixing: false } } : null),
+    ctx.columnSemantic === 'done'
+  )
+  const pulse = ciCardPulse(surfaceRun)
+  const showRunStatus = surfaceRun != null
 
   const collapseLabel = collapsed ? 'Развернуть виджет задачи' : 'Свернуть виджет задачи'
 
@@ -93,7 +99,7 @@ export function TaskChatHeader(props: TaskChatHeaderProps): JSX.Element {
           <strong className="taskchat-task">{ctx.task.key} {ctx.task.title}</strong>
         </span>
         {/* Статус рана виден и свёрнутым: ради него в шапку и смотрят. */}
-        {collapsed && run && (
+        {collapsed && run && showRunStatus && (
           <span className={`ci-lozenge ci-lozenge--${ciTone(run.status)}`}>{ciStatusLabel(run.status)}</span>
         )}
         <button className="taskchat-open" onClick={() => props.onOpenTask(ctx.projectId, ctx.task.id)}>
@@ -104,7 +110,7 @@ export function TaskChatHeader(props: TaskChatHeaderProps): JSX.Element {
       {!collapsed && (
         <div className="taskchat-meta">
           {ctx.columnName && <span className="lozenge lozenge-neutral" title="Этап воркфлоу">{ctx.columnName}</span>}
-          {run && <span className={`ci-lozenge ci-lozenge--${ciTone(run.status)}`}>{ciStatusLabel(run.status)}</span>}
+          {run && showRunStatus && <span className={`ci-lozenge ci-lozenge--${ciTone(run.status)}`}>{ciStatusLabel(run.status)}</span>}
           {run && <span className="taskchat-dim">Режим: {RUN_MODE_LABEL[run.mode]}</span>}
           {duration != null && (
             <span className="taskchat-dim" data-testid="task-chat-elapsed">

@@ -67,7 +67,7 @@ describe('SettingsModal — модели Codex', () => {
     renderModal('admin', { settings: { ...DEFAULT_SETTINGS, llmProvider: 'codex' }, onChange })
     const select = screen.getByLabelText('Модель Codex')
     const opts = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
-    expect(opts).toEqual(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'])
+    expect(opts).toEqual(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'])
     await userEvent.selectOptions(select, 'gpt-5.5')
     expect(onChange).toHaveBeenCalledWith({ codexModel: 'gpt-5.5' })
   })

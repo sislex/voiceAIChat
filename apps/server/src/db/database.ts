@@ -23,6 +23,7 @@ import {
   type TurnMeta,
   type UsageBucket,
   type UsageByModel,
+  type UsageByConversation,
   type UsageReport,
   type UsageTotals,
   type UsageUnit,
@@ -709,6 +710,12 @@ export class VoiceChatDb {
       const mark = this.db.prepare(`UPDATE ci_commands SET is_test = 1, available_to_model = 0 WHERE id = ?`)
       for (const r of rows) if (isVerificationCommand(r)) mark.run(r.id)
     }
+    // Стандартный гейт живёт в данных справочника. Переводим только его точный
+    // прежний текст, не затрагивая пользовательские команды с другим скриптом.
+    this.db.prepare(`UPDATE ci_commands
+      SET script = 'npm run affected-check', is_test = 1, available_to_model = 0,
+          version = version + 1, updated_at = ?
+      WHERE script = 'npm run typecheck && npm test'`).run(Date.now())
     // Семантика входных токенов строки расхода. Старые строки остаются с NULL:
     // у codex это «вход вместе с кэшем», и отчёт приводит их на чтении.
     const ciUsageCols = this.db.prepare(`PRAGMA table_info(ci_run_usage)`).all() as Array<{ name: string }>
@@ -716,6 +723,17 @@ export class VoiceChatDb {
     const ciSettingsCols = this.db.prepare(`PRAGMA table_info(ci_settings)`).all() as Array<{ name: string }>
     if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === 'interaction_wait_ms')) this.db.exec(`ALTER TABLE ci_settings ADD COLUMN interaction_wait_ms INTEGER NOT NULL DEFAULT 1800000`)
     if (ciSettingsCols.length && !ciSettingsCols.some((c) => c.name === 'stage_models')) this.db.exec(`ALTER TABLE ci_settings ADD COLUMN stage_models TEXT`)
+    // Увеличиваем втрое только прежний полный набор дефолтных предохранителей.
+    // Любая вручную изменённая настройка сохраняется без вмешательства.
+    this.db.exec(`UPDATE ci_settings
+      SET max_fix_attempts = 9,
+          fix_time_limit_ms = 1800000,
+          fix_token_limit = 600000,
+          default_step_timeout_sec = 1800
+      WHERE max_fix_attempts = 3
+        AND fix_time_limit_ms = 600000
+        AND fix_token_limit = 200000
+        AND default_step_timeout_sec = 600`)
     const toolLimitColumns: Array<[string, number]> = [
       ['bash_output_limit_chars', DEFAULT_CI_GLOBAL_SETTINGS.bashOutputLimitChars],
       ['read_output_limit_chars', DEFAULT_CI_GLOBAL_SETTINGS.readOutputLimitChars],
@@ -1517,43 +1535,44 @@ export class VoiceChatDb {
    * моделям + итог. Считается из meta ai-сообщений (JSON1 json_extract). Бакеты
    * времени — в UTC (created_at хранится в мс).
    */
-  usageReport(userId: string, unit: UsageUnit, from?: number, to?: number): UsageReport {
-    // Формат бакета для strftime над created_at/1000 (unixepoch, UTC).
+  usageReport(userId: string, unit: UsageUnit, from?: number, to?: number, conversationId?: string): UsageReport {
     const fmt = unit === 'hour' ? '%Y-%m-%d %H:00' : unit === 'week' ? '%Y-W%W' : '%Y-%m-%d'
-    // Суммы токенов/стоимости (COALESCE, т.к. json_extract даёт NULL при отсутствии).
+    // Codex CLI не сообщает costUsd. Для него берём поддерживаемый прайс из БД;
+    // input_tokens включает cached_input_tokens, поэтому обычный вход вычитаем.
+    const estimatedCost = `CASE WHEN m.engine = 'codex' AND mp.model IS NOT NULL THEN (
+      MAX(COALESCE(json_extract(m.meta,'$.inputTokens'),0) - COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0), 0) * mp.input_per_million +
+      COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0) * mp.cached_input_per_million +
+      COALESCE(json_extract(m.meta,'$.cacheCreationTokens'),0) * mp.cache_write_per_million +
+      COALESCE(json_extract(m.meta,'$.outputTokens'),0) * mp.output_per_million
+    ) / 1000000.0 END`
     const sums = `
       COUNT(*) AS messages,
       COALESCE(SUM(json_extract(m.meta,'$.inputTokens')),0) AS inputTokens,
       COALESCE(SUM(json_extract(m.meta,'$.outputTokens')),0) AS outputTokens,
       COALESCE(SUM(json_extract(m.meta,'$.cacheReadTokens')),0) AS cacheReadTokens,
-      COALESCE(SUM(json_extract(m.meta,'$.costUsd')),0) AS costUsd`
-    const where = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL
-      ${from !== undefined ? 'AND m.created_at >= @from' : ''}
+      COALESCE(SUM(COALESCE(json_extract(m.meta,'$.costUsd'), ${estimatedCost})),0) AS costUsd,
+      MAX(CASE WHEN m.engine = 'codex' AND json_extract(m.meta,'$.costUsd') IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
+    const dateWhere = `${from !== undefined ? 'AND m.created_at >= @from' : ''}
       ${to !== undefined ? 'AND m.created_at <= @to' : ''}`
-    const bind = {
-      userId,
-      ...(from !== undefined ? { from } : {}),
-      ...(to !== undefined ? { to } : {})
-    }
+    const where = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere}
+      ${conversationId ? 'AND c.id = @conversationId' : ''}`
+    const bind = { userId, ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}), ...(conversationId ? { conversationId } : {}) }
+    const joins = `FROM messages m JOIN conversations c ON m.conversation_id = c.id
+      LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(json_extract(m.meta,'$.model'), c.llm_model)`
 
-    const totals = this.db
-      .prepare(`SELECT ${sums} FROM messages m JOIN conversations c ON m.conversation_id = c.id WHERE ${where}`)
-      .get(bind) as UsageTotals
-    const byBucket = this.db
-      .prepare(
-        `SELECT strftime('${fmt}', m.created_at/1000, 'unixepoch') AS bucket, ${sums}
-         FROM messages m JOIN conversations c ON m.conversation_id = c.id
-         WHERE ${where} GROUP BY bucket ORDER BY bucket ASC`
-      )
-      .all(bind) as UsageBucket[]
-    const byModel = this.db
-      .prepare(
-        `SELECT COALESCE(json_extract(m.meta,'$.model'),'?') AS model, ${sums}
-         FROM messages m JOIN conversations c ON m.conversation_id = c.id
-         WHERE ${where} GROUP BY model ORDER BY outputTokens DESC`
-      )
-      .all(bind) as UsageByModel[]
-    return { unit, totals, byBucket, byModel }
+    type SqlUsage<T extends UsageTotals> = Omit<T, 'costIncomplete'> & { costIncomplete?: number }
+    const complete = <T extends UsageTotals>(row: SqlUsage<T>): T => ({ ...row, costIncomplete: Boolean(row.costIncomplete) } as T)
+    const totals = complete(this.db.prepare(`SELECT ${sums} ${joins} WHERE ${where}`).get(bind) as SqlUsage<UsageTotals>)
+    const byBucket = (this.db.prepare(`SELECT strftime('${fmt}', m.created_at/1000, 'unixepoch') AS bucket, ${sums}
+      ${joins} WHERE ${where} GROUP BY bucket ORDER BY bucket ASC`).all(bind) as SqlUsage<UsageBucket>[]).map((row) => complete<UsageBucket>(row))
+    const byModel = (this.db.prepare(`SELECT COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') AS model, ${sums}
+      ${joins} WHERE ${where} GROUP BY COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') ORDER BY outputTokens DESC`).all(bind) as SqlUsage<UsageByModel>[]).map((row) => complete<UsageByModel>(row))
+    // Фильтр разговоров всегда строится для всего выбранного периода, чтобы после
+    // выбора одного разговора остальные варианты не исчезали из селекта.
+    const conversationWhere = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere}`
+    const byConversation = (this.db.prepare(`SELECT c.id AS conversationId, c.title, ${sums}
+      ${joins} WHERE ${conversationWhere} GROUP BY c.id, c.title ORDER BY costUsd DESC, c.updated_at DESC`).all(bind) as SqlUsage<UsageByConversation>[]).map((row) => complete<UsageByConversation>(row))
+    return { unit, conversationId: conversationId ?? null, totals, byBucket, byModel, byConversation }
   }
 
   // ---- helpers ----------------------------------------------------------
@@ -2079,19 +2098,22 @@ export class VoiceChatDb {
   taskChatBadges(userId: string): TaskChatBadge[] {
     const rows = this.db
       .prepare(
-        `SELECT c.id AS conversation_id, t.id AS task_id, t.project_id, t.seq, t.type, p.name AS project_name
+        `SELECT c.id AS conversation_id, t.id AS task_id, t.project_id, t.seq, t.type,
+                p.name AS project_name, kc.semantic_type AS column_semantic
          FROM conversations c
          JOIN tasks t ON t.id = c.task_id
          JOIN projects p ON p.id = t.project_id
+         JOIN kanban_columns kc ON kc.id = t.column_id
          WHERE c.user_id = ? AND c.task_id IS NOT NULL`
       )
-      .all(userId) as Array<{ conversation_id: string; task_id: string; project_id: string; seq: number; type: string; project_name: string }>
+      .all(userId) as Array<{ conversation_id: string; task_id: string; project_id: string; seq: number; type: string; project_name: string; column_semantic: string | null }>
     return rows.map((r) => ({
       conversationId: r.conversation_id,
       projectId: r.project_id,
       taskId: r.task_id,
       key: issueKey(r.project_name, { seq: r.seq }),
       type: normWorkItemType(r.type),
+      columnSemantic: (r.column_semantic as TaskChatBadge['columnSemantic']) ?? null,
       run: this.latestCiRunSummary(r.task_id)
     }))
   }

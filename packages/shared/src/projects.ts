@@ -295,6 +295,8 @@ export interface TaskChatBadge {
   /** Ключ вида `PRJ-42`. */
   key: string
   type: WorkItemType
+  /** Текущая колонка задачи: нужна, чтобы ручное завершение сильнее старой ошибки рана. */
+  columnSemantic: KanbanColumnSemanticType | null
   run: CiRunSummary | null
 }
 

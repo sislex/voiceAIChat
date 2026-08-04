@@ -767,7 +767,7 @@ export interface StoreActions {
   /** Выбрать пользователя в админке (грузит отчёт по токенам и разговоры). */
   selectAdminUser(name: string): Promise<void>
   /** Загрузить отчёт по токенам выбранного пользователя. */
-  loadAdminUsage(unit: UsageUnit, from?: number, to?: number): Promise<void>
+  loadAdminUsage(unit: UsageUnit, from?: number, to?: number, conversationId?: string): Promise<void>
   /** Открыть разговор пользователя в админ-просмотре истории. */
   openAdminConversation(conversationId: string): Promise<void>
   /** Перечитать реестр LLM-исполнителей. */
@@ -2280,13 +2280,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
-  async function loadAdminUsage(unit: UsageUnit, from?: number, to?: number): Promise<void> {
+  async function loadAdminUsage(unit: UsageUnit, from?: number, to?: number, conversationId?: string): Promise<void> {
     const name = state.adminSelected
     if (!name) return
     try {
-      setState({ adminUsage: await api['admin:usage']({ name, unit, from, to }) })
+      setState({ adminUsage: await api['admin:usage']({ name, unit, from, to, conversationId }) })
     } catch (err) {
-      fail(err, () => void loadAdminUsage(unit, from, to))
+      fail(err, () => void loadAdminUsage(unit, from, to, conversationId))
     }
   }
 
@@ -2775,7 +2775,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function addAttachment(file: File): Promise<void> {
     try {
       const dataBase64 = await fileToBase64(file)
-      const info = await api['uploads:add']({ name: file.name, dataBase64 })
+      const conversation = state.conversations.find((item) => item.id === state.activeId)
+      const selectedTarget = conversation?.execTarget ?? state.settings.execTarget
+      const agentId = selectedTarget && selectedTarget !== 'none' ? selectedTarget : undefined
+      const info = await api['uploads:add']({ name: file.name, dataBase64, ...(agentId ? { agentId } : {}) })
       setState({ attachments: [...state.attachments, info] })
     } catch (err) {
       setState({

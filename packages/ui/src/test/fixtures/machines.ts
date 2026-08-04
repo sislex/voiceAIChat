@@ -43,7 +43,7 @@ export function makePolicy(over: Partial<AgentPolicy> = {}): AgentPolicy {
     allowPatterns: [],
     skills: [
       { name: 'build', command: 'npm run build' },
-      { name: 'gate', command: 'npm run typecheck && npm test' }
+      { name: 'gate', command: 'npm run affected-check' }
     ],
     ...over
   }

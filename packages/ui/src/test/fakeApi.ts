@@ -152,7 +152,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   }
 
   const api: FakeApi = {
-    'app:ping': async () => 'pong',
+    'app:ping': async () => ({ ok: true, version: '0.1.0', releasedAt: '2026-08-03T00:00:00.000Z' }),
     'kb:status': async () => ({ available: true, mode: 'source', searchMode: 'lexical', version: 'test', createdAt: new Date(0).toISOString(), documents: 0, chunks: 0, staleDocuments: 0 }),
     'kb:topics': async () => [],
     'kb:search': async () => [],
@@ -281,7 +281,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
           const task = tasks.find((t) => t.id === c.taskId)
           const project = projects.find((p) => p.id === task?.projectId)
           if (!task || !project) return []
-          return [{ conversationId: c.id, projectId: project.id, taskId: task.id, key: issueKey(project.name, task), type: task.type, run: null }]
+          const column = columns.find((col) => col.id === task.columnId)
+          return [{ conversationId: c.id, projectId: project.id, taskId: task.id, key: issueKey(project.name, task), type: task.type, columnSemantic: column?.semanticType ?? null, run: null }]
         }),
     'conversations:setProject': async ({ id, projectId }) => {
       const conv = conversations.find((c) => c.id === id)!
@@ -298,9 +299,29 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       return withCounts(conv)
     },
     'conversations:setStatus': async ({ id, status }) => {
-      const conv = conversations.find((c) => c.id === id)!
-      conv.status = status
-      return withCounts(conv)
+      const conv = conversations.find((c) => c.id === id)
+      if (conv) {
+        conv.status = status
+        return withCounts(conv)
+      }
+      // Поздний кадр может прийти уже после удаления/смены чата. Сервер в этом
+      // случае отвечает контрактным объектом, а фейк не должен ронять тестовый лог.
+      return {
+        id,
+        title: '',
+        createdAt: 0,
+        updatedAt: 0,
+        messageCount: 0,
+        claudeSessionId: null,
+        execTarget: null,
+        workdir: null,
+        skillNames: [],
+        llmProvider: null,
+        llmModel: null,
+        permissionMode: null,
+        lastExecTarget: null,
+        status
+      }
     },
     'conversations:setExecTarget': async ({ id, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode }) => {
       const conv = conversations.find((c) => c.id === id)
@@ -439,11 +460,13 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const idx = adminUsers.findIndex((x) => x.name === name)
       if (idx >= 0) adminUsers.splice(idx, 1)
     },
-    'admin:usage': async ({ unit }) => ({
+    'admin:usage': async ({ unit, conversationId }) => ({
       unit,
+      conversationId: conversationId ?? null,
       totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, messages: 0 },
       byBucket: [],
-      byModel: []
+      byModel: [],
+      byConversation: []
     }),
     'admin:conversations': async () => [],
     'admin:messages': async () => [],
