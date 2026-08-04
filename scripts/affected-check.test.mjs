@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { runPackageGates, selectAffected } from './affected-check.mjs'
+import { fastCheckForPackage, runFastChecks, runPackageGates, selectAffected } from './affected-check.mjs'
 
 const ids = (decision) => decision.packages.map((pkg) => pkg.id)
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -103,4 +103,52 @@ test('runPackageGates останавливает активные процесс
 
   assert.ok(events.some((event) => event.type === 'stop' && event.pkg === 'two'))
   assert.equal(events.some((event) => event.type === 'start' && event.pkg === 'three'), false)
+})
+
+test('fastCheckForPackage пропускает shared, конфиги и миграции к полному гейту', () => {
+  const shared = { id: 'shared', path: 'packages/shared' }
+  const server = { id: 'server', path: 'apps/server' }
+
+  assert.equal(fastCheckForPackage(shared, ['packages/shared/src/ci.ts']).reason, 'shared-контракт')
+  assert.equal(fastCheckForPackage(server, ['apps/server/vitest.config.ts']).reason, 'конфиг, схема или миграция')
+  assert.equal(fastCheckForPackage(server, ['apps/server/src/db/migrations/001.sql']).reason, 'конфиг, схема или миграция')
+  assert.deepEqual(fastCheckForPackage(server, ['apps/server/src/ci/runManager.ts']).files, ['src/ci/runManager.ts'])
+})
+
+test('related проходит до обязательного полного гейта и ноль тестов не даёт успех', async () => {
+  const pkg = { id: 'server', path: 'apps/server' }
+  const events = []
+  const startedAt = Date.now()
+  const fast = (check) => {
+    events.push(`fast:${check.pkg.id}`)
+    return { done: delay(20).then(() => ({ found: false })), stop() {} }
+  }
+  const full = (current, script) => {
+    events.push(`full:${current.id}:${script}`)
+    return { done: delay(20), stop() {} }
+  }
+
+  await runFastChecks([fastCheckForPackage(pkg, ['apps/server/src/ci/runManager.ts'])], { jobs: 1, start: fast })
+  const fastMs = Date.now() - startedAt
+  await runPackageGates([pkg], { jobs: 1, start: full })
+  const fullMs = Date.now() - startedAt - fastMs
+
+  assert.deepEqual(events, ['fast:server', 'full:server:typecheck', 'full:server:test'])
+  assert.ok(fastMs >= 15, `fast stage duration: ${fastMs}ms`)
+  assert.ok(fullMs >= 35, `full stage duration: ${fullMs}ms`)
+})
+
+test('ошибка related останавливает этап до полного гейта', async () => {
+  const events = []
+  const pkg = { id: 'server', path: 'apps/server' }
+  const fast = () => ({
+    done: Promise.reject(Object.assign(new Error('related failed'), { code: 31 })),
+    stop() { events.push('fast:stop') }
+  })
+
+  await assert.rejects(
+    runFastChecks([fastCheckForPackage(pkg, ['apps/server/src/ci/runManager.ts'])], { start: fast }),
+    (error) => error.code === 31
+  )
+  assert.deepEqual(events, ['fast:stop'])
 })
