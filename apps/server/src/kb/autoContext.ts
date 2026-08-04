@@ -14,10 +14,14 @@ import { areaTouchesPath, kbCodeQuery, prepareKbQuery, type KbQuery } from './ta
 import type { KbView, KnowledgeBaseService } from './types.js'
 import type { KbEmptyReason, KbUsageSectionInput } from './usage.js'
 
-/** Бюджет контекста (символы) — один и тот же в чате и в ране. */
-// Авто-инъекция — навигация, а не второй справочник: подробности модель читает
-// точечным kb:document. Малый стабильный бюджет экономит его на каждом API-запросе.
-export const KB_AUTO_CONTEXT_BUDGET = 1600
+/** Бюджет авто-инъекции по умолчанию (символы) — для обычного хода чата. */
+export const KB_AUTO_CONTEXT_BUDGET = 3500
+/**
+ * CI-рану достаточно навигации: подробности модель читает точечным kb:document.
+ * Отдельный стабильный бюджет не меняет контракт чата и экономит его на каждом
+ * API-запросе длинного агентного хода.
+ */
+export const CI_KB_AUTO_CONTEXT_BUDGET = 1600
 
 /**
  * Меньше этого куска тела раздел отдавать бессмысленно — от него останется
