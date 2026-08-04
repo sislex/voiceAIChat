@@ -14,7 +14,7 @@ import { signToken } from '../users/accounts.js'
 import type { CommandExecutor, CiKbUpdateHook, CiModelContext } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
 import { createCiModelHooks } from './modelHooks.js'
-import { KB_DIFF_SCRIPT } from '../kb/codeUpdate.js'
+import { KB_DIFF_SCRIPT, KB_REPO_ROOT_CHECK_SCRIPT } from '../kb/codeUpdate.js'
 
 const SECRET = 'kb-ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
@@ -22,11 +22,15 @@ let modelReply = ''
 let workReply = ''
 let diffBundle = ''
 let prompts: string[] = []
+let kbMcpUrls: string[] = []
+let repoCheckWorkdirs: string[] = []
+let repoCheckExitCode = 0
 
 const fakeClaude: LlmClient = {
   send: (req: LlmRequest, handlers) => {
     prompts.push(req.prompt)
     const kbTurn = req.prompt.startsWith('Ты ведёшь базу знаний')
+    if (kbTurn && req.remote?.mcpUrl) kbMcpUrls.push(req.remote.mcpUrl)
     queueMicrotask(() => {
       const text = kbTurn ? modelReply : workReply
       handlers.onDelta(text)
@@ -38,6 +42,10 @@ const fakeClaude: LlmClient = {
 
 const ciExecutor: CommandExecutor = {
   run: async (req, onChunk) => {
+    if (req.script === KB_REPO_ROOT_CHECK_SCRIPT) {
+      repoCheckWorkdirs.push(req.workdir)
+      return { exitCode: repoCheckExitCode, timedOut: false }
+    }
     if (req.script === KB_DIFF_SCRIPT) {
       onChunk(diffBundle)
       return { exitCode: 0, timedOut: false }
@@ -72,6 +80,9 @@ async function boot(kbUpdate?: CiKbUpdateHook): Promise<void> {
 
 beforeEach(() => {
   prompts = []
+  kbMcpUrls = []
+  repoCheckWorkdirs = []
+  repoCheckExitCode = 0
   workReply = 'готово'
   diffBundle = BUNDLE_WITH_CHANGES
   modelReply = JSON.stringify({
@@ -194,6 +205,31 @@ describe('шаг «Актуализировать базу знаний»', () =
     expect(step.status).toBe('success')
     expect(step.log).toContain('Нечего обновлять')
     expect(db.kbDocuments({ scope: 'project', projectId }).some((d) => d.title === 'CI-раннер')).toBe(false)
+    expect(prompts.some((p) => p.startsWith('Ты ведёшь базу знаний'))).toBe(false)
+  })
+
+  it('использует проверенный корень клона, а не несуществующий вложенный путь с повторным SLUG', async () => {
+    await boot()
+    const { projectId, taskId } = setup()
+    const runId = await runToEnd(projectId, taskId)
+
+    expect(kbStep(runId).status).toBe('success')
+    const cwd = new URL(kbMcpUrls[0]).searchParams.get('cwd')!
+    expect(repoCheckWorkdirs).toEqual([cwd])
+    expect(cwd).toMatch(/\/t1$/)
+    expect(cwd).not.toMatch(/\/t1\/t1$/)
+  })
+
+  it('не запускает модель и явно пропускает шаг, если корень рабочей копии недоступен', async () => {
+    await boot()
+    repoCheckExitCode = 128
+    const { projectId, taskId } = setup()
+    const runId = await runToEnd(projectId, taskId)
+
+    expect(db.getCiRunRaw(runId)!.status).toBe('success')
+    const step = kbStep(runId)
+    expect(step.status).toBe('skipped')
+    expect(step.log).toContain('Корень рабочей копии KB недоступен')
     expect(prompts.some((p) => p.startsWith('Ты ведёшь базу знаний'))).toBe(false)
   })
 
