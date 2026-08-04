@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 
 export const PACKAGES = [
   { id: 'shared', path: 'packages/shared', workspace: '@voicechat/shared' },
@@ -64,15 +64,110 @@ function changedFiles(baseRef) {
   }
 }
 
-function runPackage(pkg, script) {
+function packageArgs(pkg, script, maxWorkers) {
   const args = pkg.workspace
     ? ['run', '-w', pkg.workspace, script]
     : ['--prefix', pkg.prefix, 'run', script]
-  console.log(`[affected-check] ${pkg.id}: npm ${args.join(' ')}`)
-  run('npm', args)
+  if (script === 'test' && maxWorkers) args.push('--', `--maxWorkers=${maxWorkers}`)
+  return args
 }
 
-function main() {
+export function startPackageCommand(pkg, script, { maxWorkers } = {}) {
+  const args = packageArgs(pkg, script, maxWorkers)
+  console.log(`[affected-check] ${pkg.id}: npm ${args.join(' ')}`)
+  // Отдельная группа позволяет остановить npm вместе с запущенным им Vitest.
+  const child = spawn('npm', args, { stdio: 'inherit', detached: process.platform !== 'win32' })
+  let killTimer
+  let settled = false
+  const kill = (signal) => {
+    if (settled) return
+    if (process.platform === 'win32' || !child.pid) child.kill(signal)
+    else process.kill(-child.pid, signal)
+  }
+  return {
+    done: new Promise((resolve, reject) => {
+      child.once('error', reject)
+      child.once('exit', (code, signal) => {
+        settled = true
+        clearTimeout(killTimer)
+        if (code === 0) resolve()
+        else reject(Object.assign(new Error(`${pkg.id} ${script} завершился${signal ? ` по сигналу ${signal}` : ` с кодом ${code}`}`), { code: code ?? 1 }))
+      })
+    }),
+    stop: () => {
+      try {
+        kill('SIGTERM')
+        killTimer = setTimeout(() => {
+          try {
+            kill('SIGKILL')
+          } catch {
+            // Процесс мог закончиться между таймаутом и принудительным сигналом.
+          }
+        }, 2_000)
+      } catch {
+        // Уже завершившийся процесс не должен скрывать исходную ошибку пакета.
+      }
+    }
+  }
+}
+
+// Один пакет проходит typecheck перед собственными тестами; два пакета могут идти
+// одновременно. После ошибки новые задания не выдаются, а живые процессы гасятся.
+export async function runPackageGates(packages, { jobs = 2, start = startPackageCommand } = {}) {
+  const limit = Number.isInteger(jobs) && jobs > 0 ? Math.min(jobs, 2) : 2
+  const maxWorkers = limit > 1 && packages.length > 1 ? 1 : undefined
+  const pending = [...packages]
+  const active = new Set()
+  let firstError
+
+  const stopActive = () => {
+    for (const task of active) task.stop?.()
+  }
+
+  const worker = async () => {
+    while (!firstError && pending.length) {
+      const pkg = pending.shift()
+      const startedAt = Date.now()
+      let completed = true
+      for (const script of ['typecheck', 'test']) {
+        if (firstError) {
+          completed = false
+          break
+        }
+        const task = start(pkg, script, { maxWorkers })
+        active.add(task)
+        try {
+          await task.done
+        } catch (error) {
+          completed = false
+          if (!firstError) {
+            firstError = error
+            stopActive()
+          }
+          break
+        } finally {
+          active.delete(task)
+        }
+      }
+      const duration = Date.now() - startedAt
+      console.log(`[affected-check] ${pkg.id}: ${completed ? 'completed' : 'failed'} in ${duration}ms`)
+      if (!completed) return
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, packages.length) }, worker))
+  if (firstError) throw firstError
+}
+
+function parseJobs(argv) {
+  const index = argv.indexOf('--jobs')
+  if (index === -1) return 2
+  const value = Number(argv[index + 1])
+  if (!Number.isInteger(value) || value < 1) throw new Error('--jobs должен быть положительным целым числом')
+  return value
+}
+
+async function main() {
   const baseBranch = process.env.BASE_BRANCH || 'main'
   const baseRef = `origin/${baseBranch}`
   const diff = changedFiles(baseRef)
@@ -94,8 +189,14 @@ function main() {
   }
   if (!decision.packages.length) return
 
-  for (const pkg of decision.packages) runPackage(pkg, 'typecheck')
-  for (const pkg of decision.packages) runPackage(pkg, 'test')
+  const jobs = parseJobs(process.argv.slice(2))
+  console.log(`[affected-check] jobs: ${jobs}`)
+  await runPackageGates(decision.packages, { jobs })
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main()
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((error) => {
+    console.error(`[affected-check] ${error.message}`)
+    process.exitCode = error.code ?? 1
+  })
+}
