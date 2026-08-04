@@ -36,6 +36,18 @@ describe('parseQuestions', () => {
     expect(parsed!.questions[0].options).toEqual(['а'])
   })
 
+  it('сообщение из одного JSON-массива вопросов принимает без fence', () => {
+    const text = '[{"q":"Продолжить?","options":["Да","Нет"]}]'
+    expect(parseQuestions(text)).toEqual({
+      body: '',
+      questions: [{ q: 'Продолжить?', options: ['Да', 'Нет'] }]
+    })
+  })
+
+  it('JSON внутри обычного ответа без fence не превращает в форму', () => {
+    expect(parseQuestions('Данные: [{"q":"В?","options":["Да"]}]')).toBeNull()
+  })
+
   it('нет блока → null', () => {
     expect(parseQuestions('Обычный ответ с ```js\ncode\n```')).toBeNull()
   })
