@@ -4,7 +4,8 @@ import {
   buildConversationPrompt,
   buildPrompt,
   CHANGE_AUTHORIZATION_HINT,
-  claudeModelAlias
+  claudeModelAlias,
+  parseTaskLaunchRequest
 } from './prompt'
 
 describe('buildPrompt', () => {
@@ -76,6 +77,20 @@ describe('appendChangeAuthorizationHint', () => {
 
   it('пустой промпт не меняет', () => {
     expect(appendChangeAuthorizationHint('  ')).toBe('  ')
+  })
+})
+
+describe('parseTaskLaunchRequest', () => {
+  it('принимает только структурированный сигнал и убирает его из видимого ответа', () => {
+    const parsed = parseTaskLaunchRequest('Нужен ваш выбор.\n```task-launch\n{"title":"Исправить форму","description":"Описание","acceptanceCriteria":"Тест проходит"}\n```')
+    expect(parsed).toEqual({
+      text: 'Нужен ваш выбор.',
+      request: { title: 'Исправить форму', description: 'Описание', acceptanceCriteria: 'Тест проходит' }
+    })
+  })
+
+  it('не считает обычный текст запросом запуска', () => {
+    expect(parseTaskLaunchRequest('Давайте создадим задачу и исправим разработку.')).toEqual({ text: 'Давайте создадим задачу и исправим разработку.' })
   })
 })
 

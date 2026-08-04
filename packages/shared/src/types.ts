@@ -6,6 +6,13 @@ export type VoiceState = 'idle' | 'listening' | 'transcribing' | 'thinking' | 's
 /** Роль автора сообщения. `u1`/`u2`/… — спикеры пользователя, `ai` — Claude. */
 export type MessageRole = `u${number}` | 'ai'
 
+/** Явный запрос ассистента на выбор способа начать разработку. */
+export interface TaskLaunchRequest {
+  title: string
+  description: string
+  acceptanceCriteria: string
+}
+
 /** Сообщение в ленте чата. */
 export interface Message {
   id: string
