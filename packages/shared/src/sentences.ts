@@ -11,7 +11,7 @@ export const CODE_SPEECH = 'Далее пример кода.'
  * Служебные fenced-блоки: разметка для UI (виджет, форма вопросов, картинка),
  * а не код. Их не озвучиваем вовсе — иначе вместо ответа звучит «далее пример кода».
  */
-export const SERVICE_FENCES = new Set(['tool', 'questions', 'image'])
+export const SERVICE_FENCES = new Set(['tool', 'questions', 'image', 'task-launch'])
 
 /** Слово-язык сразу после открывающей ``` в нижнем регистре ('' — его нет). */
 export function fenceLang(afterFence: string): string {
