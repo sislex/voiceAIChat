@@ -37,10 +37,12 @@ export function MachineConsole({
   const [cmd, setCmd] = useState('')
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [running, setRunning] = useState(false)
+  const selectedAgent = agents.find((agent) => agent.id === agentId)
+  const agentOnline = selectedAgent?.online ?? false
 
   /** Выполнить команду и дописать результат в историю (та же дорога у «Повторить»). */
   const runCommand = async (command: string): Promise<void> => {
-    if (!command || !agentId || running) return
+    if (!command || !agentId || !agentOnline || running) return
     setRunning(true)
     try {
       const res = await exec(agentId, command)
@@ -99,7 +101,14 @@ export function MachineConsole({
             description="Машина подключается в настройках: там выдаётся команда установки агента."
           />
         )}
-        {agents.length > 0 && history.length === 0 && !running && (
+        {agentId && !agentOnline && (
+          <EmptyState
+            icon="⏳"
+            title={'Машина «' + (selectedAgent?.name ?? agentId) + '» переподключается'}
+            description="Консоль станет доступна после восстановления соединения. Попробуйте снова через несколько секунд."
+          />
+        )}
+        {agentOnline && history.length === 0 && !running && (
           <EmptyState
             icon="▶"
             title="Команд ещё не было"
@@ -138,7 +147,7 @@ export function MachineConsole({
           aria-label="Команда"
           placeholder="команда…"
           value={cmd}
-          disabled={!agentId || running}
+          disabled={!agentOnline || running}
           onChange={(e) => setCmd(e.target.value)}
         />
         <IconButton
@@ -147,7 +156,7 @@ export function MachineConsole({
           title="Выполнить команду"
           aria-label="Выполнить команду"
           loading={running}
-          disabled={!agentId || !cmd.trim()}
+          disabled={!agentOnline || !cmd.trim()}
         >
           ▶
         </IconButton>
