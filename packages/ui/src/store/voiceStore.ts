@@ -883,6 +883,11 @@ export interface StoreActions {
     columnId: string,
     input: { title: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null }
   ): Promise<void>
+  /** Создать задачу из чата проекта и сразу поставить её CI-ран в общую FIFO-очередь. */
+  createTaskAndStartCi(
+    projectId: string,
+    input: { title: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+  ): Promise<CiRun | null>
   updateTask(
     taskId: string,
     fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
@@ -3773,6 +3778,35 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       fail(err)
     }
   }
+  async function createTaskAndStartCi(
+    projectId: string,
+    input: { title: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+  ): Promise<CiRun | null> {
+    if (!ciBridge) return null
+    try {
+      // Чат может быть открыт без доски, поэтому колонку берём свежим снимком, а
+      // не из state.board. «Готово» не годится: ран сам переведёт задачу в разработку.
+      const board = await api['board:get']({ id: projectId })
+      const column = board.columns.find((item) => item.semanticType === 'ready')
+        ?? board.columns.find((item) => item.semanticType === 'backlog')
+        ?? board.columns[0]
+      if (!column) throw new Error('В проекте нет колонки для новой задачи')
+      const task = await api['tasks:create']({
+        projectId,
+        columnId: column.id,
+        title: input.title,
+        description: input.description,
+        priority: input.priority,
+        assignee: input.assignee
+      })
+      if (state.activeProjectId === projectId) await refreshBoard()
+      return await startCiRun(projectId, task.id)
+    } catch (err) {
+      fail(err)
+      return null
+    }
+  }
+
   async function updateTask(
     taskId: string,
     fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
@@ -4053,6 +4087,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       reorderColumns,
       deleteColumn,
       createTask,
+      createTaskAndStartCi,
       updateTask,
       openTaskChat,
 
