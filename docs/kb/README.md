@@ -9,26 +9,26 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 15 коммит(ов) в areas после сверки: ab1927a feat(images): хранить исходники на машине пользователя … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 16 коммит(ов) в areas после сверки: 35ed99f feat: redesign user usage and price codex tokens … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 6 коммит(ов) в areas после сверки: 65621d2 feat(ui): режим чата в карточке сайдбара + актуальные меню моделей Claude/Codex … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: e39fa65 feat(ci): проверять только затронутые пакеты |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-04 | ✓ |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-04 | ⚠ 1 коммит(ов) в areas после сверки: 35ed99f feat: redesign user usage and price codex tokens |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-02 | ⚠ 2 коммит(ов) в areas после сверки: 6975e38 feat: показать версию и дату прод-релиза … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-03 | ⚠ 15 коммит(ов) в areas после сверки: ab1927a feat(images): хранить исходники на машине пользователя … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-03 | ⚠ 8 коммит(ов) в areas после сверки: ab1927a feat(images): хранить исходники на машине пользователя … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-04 | ✓ |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-03 | ⚠ 9 коммит(ов) в areas после сверки: 35ed99f feat: redesign user usage and price codex tokens … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 5 коммит(ов) в areas после сверки: ab1927a feat(images): хранить исходники на машине пользователя … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 17 коммит(ов) в areas после сверки: ab1927a feat(images): хранить исходники на машине пользователя … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 18 коммит(ов) в areas после сверки: 35ed99f feat: redesign user usage and price codex tokens … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-03 | ⚠ 1 коммит(ов) в areas после сверки: 01f86f6 feat(kb): пробел базы знаний обязан стать записью |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-03 | ⚠ 6 коммит(ов) в areas после сверки: ab1927a feat(images): хранить исходники на машине пользователя … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-02 | ⚠ 1 коммит(ов) в areas после сверки: 51cfa30 chat-73: сжать контекст хода модели и начать его измерять |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-01 | ⚠ 28 коммит(ов) в areas после сверки: ab1927a feat(images): хранить исходники на машине пользователя … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-02 | ⚠ 3 коммит(ов) в areas после сверки: ab1927a feat(images): хранить исходники на машине пользователя … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-01 | ⚠ 41 коммит(ов) в areas после сверки: ab1927a feat(images): хранить исходники на машине пользователя … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-02 | ⚠ 14 коммит(ов) в areas после сверки: ab1927a feat(images): хранить исходники на машине пользователя … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-04 | ✓ |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-02 | ⚠ 4 коммит(ов) в areas после сверки: 35ed99f feat: redesign user usage and price codex tokens … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-01 | ⚠ 42 коммит(ов) в areas после сверки: 35ed99f feat: redesign user usage and price codex tokens … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-02 | ⚠ 15 коммит(ов) в areas после сверки: 35ed99f feat: redesign user usage and price codex tokens … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-02 | ⚠ 5 коммит(ов) в areas после сверки: e39fa65 feat(ci): проверять только затронутые пакеты … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-04 | ✓ |
-| [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-03, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-04 | ⚠ 1 коммит(ов) в areas после сверки: 35ed99f feat: redesign user usage and price codex tokens |
+| [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-04, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 
 ## Инструкции по пакетам
 
@@ -43,9 +43,10 @@
 
 ## Журнал сессий
 
-Всего записей: 73. Последние:
+Всего записей: 74. Последние:
 
 - [2026-08-04-2470-com-user-usage-codex-pricing.md](log/2026-08-04-2470-com-user-usage-codex-pricing.md) — user-usage-codex-pricing
+- [2026-08-04-2470-com-ci-model-repo-workdir.md](log/2026-08-04-2470-com-ci-model-repo-workdir.md) — ci-model-repo-workdir
 - [2026-08-03-2470-com-обязательное-пополнение-бз.md](log/2026-08-03-2470-com-обязательное-пополнение-бз.md) — обязательное-пополнение-бз
 - [2026-08-03-2470-com-ci-runner.md](log/2026-08-03-2470-com-ci-runner.md) — ci-runner
 - [2026-08-02-alexeys-macbook-air-2-run-body-contract.md](log/2026-08-02-alexeys-macbook-air-2-run-body-contract.md) — run-body-contract
@@ -54,7 +55,6 @@
 - [2026-08-02-2470-com-пересборка-прода-chat-67.md](log/2026-08-02-2470-com-пересборка-прода-chat-67.md) — пересборка-прода-chat-67
 - [2026-08-02-2470-com-пересборка-прода-chat-67-kb.md](log/2026-08-02-2470-com-пересборка-прода-chat-67-kb.md) — пересборка-прода-chat-67-kb
 - [2026-08-02-2470-com-модель-по-стадии-рана.md](log/2026-08-02-2470-com-модель-по-стадии-рана.md) — модель-по-стадии-рана
-- [2026-08-02-2470-com-windows-msys-paths-fs.md](log/2026-08-02-2470-com-windows-msys-paths-fs.md) — windows-msys-paths-fs
 
 ## Исторические планы
 

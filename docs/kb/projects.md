@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-08-01
-checked: 57591f0
+updated: 2026-08-04
+checked: 35ed99f
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/routes/projects.ts
@@ -313,7 +313,11 @@ CI-настройки живут в самих `projects` (`ci_base_branch`, `ci
 перехода на чат). У эпиков и стори автосоздания нет — ранов у них не бывает.
 `CiRunManager.start` тоже вызывает `openOrCreateTaskChat` и пишет
 `ci_runs.conversation_id`: туда дублируются вопросы модели и уходит резюме
-законченного рана (см. [features/ci-runner.md](features/ci-runner.md)).
+законченного рана. Когда ран вычислил изолированный путь клона, он обновляет у
+этого чата `execTarget` и `workdir` на машину рана и
+`{repos_root}/{project}/{task_number}/{slug}`. До первого рана новый чат использует
+путь проекта как безопасный fallback; после запуска команды связанного чата и
+шапка задачи смотрят в тот же корень репозитория, что remote-MCP модели CI (см. [features/ci-runner.md](features/ci-runner.md)).
 
 Имя нового связанного чата — **«Задача &lt;заголовок карточки&gt;»**: в общем списке
 чатов такой чат сразу отличим от обычного разговора. Переименовать его можно

@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-08-03
-checked: 1c76af1
+updated: 2026-08-04
+checked: 35ed99f
 areas:
   - packages/shared/src/ci.ts
   - apps/server/src/ci
@@ -458,8 +458,9 @@ AI-сообщением в связанный чат задачи** (`postSummar
 ## Модель в цикле
 
 `createCiModelHooks` (`ci/modelHooks.ts`) на инъектируемом `LlmClient`: работа
-модели (remote-bash MCP в рабочей папке, многоходовый цикл с паузами, предел
-`MAX_MODEL_TURNS`), резюме, fix-loop (диагноз→правка→повтор
+модели (remote-bash MCP строго в корне клонированного репозитория
+`{repos_root}/{project}/{task_number}/{slug}`, а не в родительском workspace,
+многоходовый цикл с паузами, предел `MAX_MODEL_TURNS`), резюме, fix-loop (диагноз→правка→повтор
 упавшего шага, лимиты `maxFixAttempts`/`fixTimeLimitMs`, предложения по правке
 скрипта). URL для `remote-bash`, `ci-commands` и `kb` сервер теперь строит одной
 функцией `buildPublicMcpUrl` (`apps/server/src/mcp/publicBase.ts`): с
@@ -525,7 +526,14 @@ typecheck, линтер и сборку модель сама не запуск�
 рана; лимит `maxModelCommandCalls`, `is_cleanup` и проверки исключены). Каждый
 вызов — вложенный шаг ленты. Удалённый workspace передаётся только через
 `remote.mcpUrl`; его хостовый путь нельзя задавать как локальный
-`LlmRequest.cwd`, потому что CLI запускается внутри server-контейнера.
+`LlmRequest.cwd`, потому что CLI запускается внутри server-контейнера. Командные
+шаги по-прежнему стартуют из родителя и сами делают `cd $SLUG`, поэтому раннер
+держит два пути: контейнер workspace для скриптов и корень клона для модели,
+fix-loop и KB-update. После слота «до» системный шаг выполняет
+`git rev-parse --show-toplevel` именно в корне клона; если clone-скрипт положил
+репозиторий не туда или ничего не создал, модель не стартует, ран становится
+`failed`, а карточка возвращается в исходную колонку — пустой ответ модели больше
+не может доехать до ложного merge/success.
 Ошибка `model_work` останавливает ран до after-слота и сохраняет workspace. В `RunFeed`
 можно выбрать Claude/Codex и модель, затем повторить с `model_work`; подготовительные
 команды не запускаются повторно, выбранные provider/model сохраняются в ране и аудите.
