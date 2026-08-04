@@ -86,8 +86,10 @@ test('runPackageGates ограничивает два независимых г�
   assert.equal(sequentialRunner.maxActive(), 1)
   assert.equal(parallelRunner.maxActive(), 2)
   assert.ok(parallelMs < sequentialMs, `parallel ${parallelMs}ms must be faster than sequential ${sequentialMs}ms`)
-  assert.ok(parallelEvents.filter((event) => event.script === 'test').every((event) => event.maxWorkers === 1))
-  assert.ok(sequentialEvents.filter((event) => event.script === 'test').every((event) => event.maxWorkers === undefined))
+  const parallelTests = parallelEvents.filter((event) => event.type === 'start' && event.script === 'test')
+  const sequentialTests = sequentialEvents.filter((event) => event.type === 'start' && event.script === 'test')
+  assert.ok(parallelTests.every((event) => event.maxWorkers === 1))
+  assert.ok(sequentialTests.every((event) => event.maxWorkers === undefined))
 })
 
 test('runPackageGates останавливает активные процессы и не выдаёт новые после ошибки', async () => {
