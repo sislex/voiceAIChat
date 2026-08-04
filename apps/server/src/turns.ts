@@ -59,8 +59,8 @@ export interface TurnManagerDeps {
     register(token: string, entry: { userId: string; conversationId: string; projectId: string | null; turnId: string }): void
     unregister(token: string): void
   }
-  /** Резолв id вложения → абсолютный путь на сервере (для промпта и runner). */
-  resolveUpload?: (id: string) => string | undefined
+  /** Резолв id вложения → локальный путь либо уже прочитанные байты с машины. */
+  resolveUpload?: (id: string) => string | LlmAttachment | null | undefined | Promise<string | LlmAttachment | null | undefined>
   /** Онлайн-статус и политика машин-агентов (для проброса Bash на клиента). */
   agents?: {
     isOnline(id: string): boolean
@@ -80,13 +80,17 @@ export interface TurnManagerDeps {
 }
 
 /** Запрос нового хода (соответствует клиентскому claude.send). */
-function loadAttachment(path: string | undefined): LlmAttachment | null {
-  if (!path) return null
+async function loadAttachment(
+  source: string | LlmAttachment | null | undefined | Promise<string | LlmAttachment | null | undefined>
+): Promise<LlmAttachment | null> {
+  const resolved = await source
+  if (!resolved) return null
+  if (typeof resolved !== 'string') return resolved
   try {
     return {
-      serverPath: path,
-      runnerName: basename(path),
-      dataBase64: readFileSync(path).toString('base64')
+      serverPath: resolved,
+      runnerName: basename(resolved),
+      dataBase64: readFileSync(resolved).toString('base64')
     }
   } catch {
     return null
@@ -265,9 +269,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Локальный `cwd` для CLI теперь не валидируем на сервере: исполнитель сам
     // решает, существует ли каталог и можно ли в него перейти.
     const desiredCwd = settings.workdir ?? undefined
-    const attachments = (req.attachments ?? [])
-      .map((id) => loadAttachment(deps.resolveUpload?.(id)))
-      .filter((att): att is LlmAttachment => Boolean(att))
+    const attachments = req.attachments?.length
+      ? (await Promise.all(
+          req.attachments.map((id) => loadAttachment(deps.resolveUpload?.(id)))
+        )).filter((att): att is LlmAttachment => Boolean(att))
+      : []
     const attachmentPaths = attachments.map((att) => att.serverPath)
     // Есть сессия → продолжаем одним ходом (--resume). Нет (новый разговор или
     // сессия сброшена после удаления/правки) → пересобираем промпт из текущей

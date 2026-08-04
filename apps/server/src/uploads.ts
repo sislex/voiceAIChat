@@ -7,10 +7,26 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join, extname, basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
+export const MACHINE_UPLOAD_DIR = '.voicechat_uploads'
+
 export interface StoredUpload {
   id: string
   name: string
   path: string
+  /** Машина, на которой постоянно хранится файл; undefined — старый серверный режим. */
+  agentId?: string
+}
+
+export function machineUploadDir(root: string): string {
+  const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+  return `${root.replace(/[/\\]$/, '')}${sep}${MACHINE_UPLOAD_DIR}`
+}
+
+/** Путь постоянного исходника внутри корня проводника пользовательской машины. */
+export function machineUploadPath(root: string, id: string, name: string): string {
+  const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+  const ext = extname(basename(name)).replace(/[^.a-zA-Z0-9]/g, '')
+  return `${machineUploadDir(root)}${sep}${id}${ext}`
 }
 
 export class UploadStore {
@@ -33,6 +49,19 @@ export class UploadStore {
     return rec
   }
 
+  /** Регистрирует уже записанный на пользовательскую машину файл. */
+  saveRemote(name: string, path: string, agentId: string): StoredUpload {
+    const id = randomUUID()
+    const safeName = basename(name) || 'file'
+    const rec: StoredUpload = { id, name: safeName, path, agentId }
+    this.byId.set(id, rec)
+    return rec
+  }
+
+  get(id: string): StoredUpload | undefined {
+    return this.byId.get(id)
+  }
+
   /** Абсолютный путь по id (или undefined, если id неизвестен). */
   pathById(id: string): string | undefined {
     return this.byId.get(id)?.path
@@ -42,7 +71,7 @@ export class UploadStore {
   remove(id: string): void {
     const rec = this.byId.get(id)
     if (!rec) return
-    rmSync(rec.path, { force: true })
+    if (!rec.agentId) rmSync(rec.path, { force: true })
     this.byId.delete(id)
   }
 }

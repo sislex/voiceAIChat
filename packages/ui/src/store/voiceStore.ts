@@ -2775,7 +2775,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function addAttachment(file: File): Promise<void> {
     try {
       const dataBase64 = await fileToBase64(file)
-      const info = await api['uploads:add']({ name: file.name, dataBase64 })
+      const conversation = state.conversations.find((item) => item.id === state.activeId)
+      const selectedTarget = conversation?.execTarget ?? state.settings.execTarget
+      const agentId = selectedTarget && selectedTarget !== 'none' ? selectedTarget : undefined
+      const info = await api['uploads:add']({ name: file.name, dataBase64, ...(agentId ? { agentId } : {}) })
       setState({ attachments: [...state.attachments, info] })
     } catch (err) {
       setState({
