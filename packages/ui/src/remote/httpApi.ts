@@ -335,7 +335,7 @@ export function createCiRest(httpBase: string): RendererCiRest {
     resetTaskCiLlm: (projectId, taskId) => req<CiTaskLlmConfig>(REST.taskCiLlm(projectId, taskId), { method: 'DELETE' }),
     getTaskCi: (projectId, taskId) => req<CiTaskConfig>(REST.taskCi(projectId, taskId)),
     putTaskCi: (projectId, taskId, config) => req<CiSlotConfig>(REST.taskCi(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
-    startRun: (projectId, taskId, mode) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST', body: JSON.stringify(mode ? { mode } : {}) }),
+    startRun: (projectId, taskId, options) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST', body: JSON.stringify(options ?? {}) }),
     getRun: (runId) => req<CiRunDetail>(REST.ciRun(runId)),
     getRunLog: (runId) => req<CiLogLine[]>(REST.ciRunLog(runId)),
     getRunKbUsage: (runId) => req<KbRunUsageReport>(REST.ciRunKbUsage(runId)),

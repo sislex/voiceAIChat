@@ -5089,7 +5089,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .task-launch-intro { margin: 0; color: var(--text-dim); font-size: 13px; }
 .task-launch-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-100); padding: var(--space-150); }
 .task-launch-fields label { display: flex; flex-direction: column; gap: var(--space-050); color: var(--text-dim); font-size: 12px; }
-.task-launch-fields input, .task-launch-fields select { box-sizing: border-box; min-width: 0; width: 100%; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); font: inherit; }
+.task-launch-fields input, .task-launch-fields select, .task-launch-fields textarea { box-sizing: border-box; min-width: 0; width: 100%; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); font: inherit; }
 .task-launch-fields input[readonly] { background: var(--panel); color: var(--text-dim); }
-.task-launch-fields label:first-child { grid-column: 1 / -1; }
+.task-launch-fields label:first-child, .task-launch-fields label:has(textarea) { grid-column: 1 / -1; }
 @media (max-width: 520px) { .task-launch-fields { grid-template-columns: 1fr; } }

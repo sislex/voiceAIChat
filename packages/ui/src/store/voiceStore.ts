@@ -886,7 +886,7 @@ export interface StoreActions {
   /** Создать задачу из чата проекта и сразу поставить её CI-ран в общую FIFO-очередь. */
   createTaskAndStartCi(
     projectId: string,
-    input: { title: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+    input: { title: string; description?: string; acceptanceCriteria?: string; priority?: TaskPriority; assignee?: string | null; provider: 'claude' | 'codex'; model: string }
   ): Promise<CiRun | null>
   updateTask(
     taskId: string,
@@ -913,7 +913,7 @@ export interface StoreActions {
   saveCiSettings(settings: Partial<CiGlobalSettings>): Promise<void>
   resolveCiSuggestion(id: string, accept: boolean): Promise<void>
   reloadCiWorkspaces(projectId?: string): Promise<void>
-  startCiRun(projectId: string, taskId: string, mode?: CiRunMode): Promise<CiRun | null>
+  startCiRun(projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string }): Promise<CiRun | null>
   cancelCiRun(runId: string): Promise<void>
   retryCiRun(runId: string): Promise<CiRun | null>
   retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<CiRun | null>
@@ -3567,10 +3567,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!ciBridge) return
     setState({ ciWorkspaces: await ciBridge.listWorkspaces(projectId) })
   }
-  async function startCiRun(projectId: string, taskId: string, mode?: CiRunMode): Promise<CiRun | null> {
+  async function startCiRun(projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string }): Promise<CiRun | null> {
     if (!ciBridge) return null
     try {
-      const run = await ciBridge.startRun(projectId, taskId, mode)
+      const launchOptions = typeof options === 'string' ? { mode: options } : options
+      const run = await ciBridge.startRun(projectId, taskId, launchOptions)
       setState({ ciSummaries: { ...state.ciSummaries, [taskId]: { id: run.id, taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false, awaitingInput: false } } })
       patchCiRun(run.id, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [], interactions: [] } }))
       return run
@@ -3780,7 +3781,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   async function createTaskAndStartCi(
     projectId: string,
-    input: { title: string; description?: string; priority?: TaskPriority; assignee?: string | null }
+    input: { title: string; description?: string; acceptanceCriteria?: string; priority?: TaskPriority; assignee?: string | null; provider: 'claude' | 'codex'; model: string }
   ): Promise<CiRun | null> {
     if (!ciBridge) return null
     try {
@@ -3796,11 +3797,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         columnId: column.id,
         title: input.title,
         description: input.description,
+        acceptanceCriteria: input.acceptanceCriteria,
         priority: input.priority,
         assignee: input.assignee
       })
       if (state.activeProjectId === projectId) await refreshBoard()
-      return await startCiRun(projectId, task.id)
+      return await startCiRun(projectId, task.id, { provider: input.provider, model: input.model })
     } catch (err) {
       fail(err)
       return null
