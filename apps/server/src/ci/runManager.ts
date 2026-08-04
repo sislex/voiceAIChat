@@ -223,10 +223,14 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (hasActiveRunForTask(taskId)) return { error: 'Для этой задачи уже выполняется ран' }
     const agentId = project.defaultAgentId
     const slots = deps.db.resolveTaskSlots(projectId, taskId)
-    const llm = deps.db.resolveTaskLlmConfig(projectId, taskId)
+    const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId)
     const settings = deps.db.getSettings(userId)
     const role = deps.db.getUser(userId)?.role ?? 'user'
-    const engineResolution = deps.db.resolveLlmEngine(settings.llmEngineId, llm.provider, role)
+    // CI-задача всегда наследует движок и модель из настроек её пользователя.
+    // Настройки CI карточки сохраняют только режим и параметры уточнений.
+    const provider = settings.llmProvider
+    const model = provider === 'codex' ? settings.codexModel : settings.model
+    const engineResolution = deps.db.resolveLlmEngine(settings.llmEngineId, provider, role)
     const total = slots.beforeModel.length + slots.afterModel.length + 2
     // Связанный чат нужен, чтобы дублировать туда вопросы модели. Идемпотентно:
     // если пользователь уже открывал карточку, вернётся существующий чат.
@@ -243,11 +247,11 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       triggeredBy: userId,
       prevColumnId: task.columnId,
       llmEngineId: engineResolution.engine?.id ?? null,
-      llmProvider: llm.provider,
-      llmModel: llm.model,
-      mode: modeOverride ?? llm.mode,
-      clarifyLevel: llm.clarifyLevel,
-      clarifyMax: llm.clarifyMax,
+      llmProvider: provider,
+      llmModel: model,
+      mode: modeOverride ?? taskCi.mode,
+      clarifyLevel: taskCi.clarifyLevel,
+      clarifyMax: taskCi.clarifyMax,
       conversationId,
       // Режим БЗ — снимок настройки проекта: смена настройки действует со
       // следующего рана, а этот до конца работает в зафиксированном режиме.

@@ -16,7 +16,7 @@ import { VoiceChatDb } from '../db/database.js'
 import { signToken } from '../users/accounts.js'
 import type { CommandExecutor } from './types.js'
 import type { LlmClient } from '../claude/types.js'
-import { ciAvgContextPerRequest, ciToolCharsTotal, trimToolOutput } from '@voicechat/shared'
+import { ciAvgContextPerRequest, ciToolCharsTotal, DEFAULT_SETTINGS, trimToolOutput } from '@voicechat/shared'
 import type { CiRunReport, CiTaskReport, TurnMeta } from '@voicechat/shared'
 
 const SECRET = 'ci-secret'
@@ -211,7 +211,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
 
     const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
     expect(report.stages.map((s) => [s.kind, s.model, s.totals.requests])).toEqual([
-      ['model_work', 'opus', 1],
+      ['model_work', DEFAULT_SETTINGS.model, 1],
       ['summary', 'haiku', 1]
     ])
     // Сумма стадий — тот же итог рана: разбивка ничего не теряет и не двоит.
@@ -303,7 +303,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
     // Так отвечает codex: usage без стоимости, длительности и num_turns.
     turnDelayMs = 5
     const { project, task } = setup()
-    db.setCiLlmConfig('task', task.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.saveSettings('admin', { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.4' })
     const codexUsage = { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 800_000, cacheCreationTokens: 0 }
     turnMeta = { ...codexUsage } // мок отдаёт только счётчики, без costUsd/durationMs
     const runId = await runTask(project.id, task.id)

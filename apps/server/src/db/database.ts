@@ -1991,10 +1991,22 @@ export class VoiceChatDb {
     if (!this.isProjectMember(userId, projectId)) return null
     const task = this.getTask(projectId, taskId)
     if (!task) return null
+    // Связанный чат закрепляет пользовательские LLM-настройки на момент
+    // открытия/запуска задачи, чтобы чат и CI-ран работали на одной конфигурации.
+    const settings = this.getSettings(userId)
+    const role = this.getUser(userId)?.role ?? 'user'
+    const provider = settings.llmProvider
+    const model = provider === 'codex' ? settings.codexModel : settings.model
+    const engineId = this.resolveLlmEngine(settings.llmEngineId, provider, role).engine?.id ?? null
     const existing = this.db
       .prepare(`SELECT id FROM conversations WHERE task_id = ? AND user_id = ? ORDER BY created_at ASC LIMIT 1`)
       .get(taskId, userId) as { id: string } | undefined
-    if (existing) return this.getConversation(userId, existing.id)
+    if (existing) {
+      this.db
+        .prepare(`UPDATE conversations SET llm_engine_id = ?, llm_provider = ?, llm_model = ?, updated_at = ? WHERE id = ? AND user_id = ?`)
+        .run(engineId, provider, model, this.now(), existing.id, userId)
+      return this.getConversation(userId, existing.id)
+    }
     const project = this.getProject(userId, projectId)
     const defAgent = project?.defaultAgentId ?? null
     const rawPath = defAgent ? project?.machines.find((m) => m.agentId === defAgent)?.path ?? '' : ''
@@ -2004,10 +2016,10 @@ export class VoiceChatDb {
     const title = task.title.trim() ? `Задача ${task.title.trim()}` : 'Задача'
     this.db
       .prepare(
-        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, project_id, task_id)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_engine_id, llm_provider, llm_model, project_id, task_id)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(id, title, ts, ts, userId, defAgent, workdir, JSON.stringify(task.skills), projectId, taskId)
+      .run(id, title, ts, ts, userId, defAgent, workdir, JSON.stringify(task.skills), engineId, provider, model, projectId, taskId)
     return this.getConversation(userId, id)
   }
 
