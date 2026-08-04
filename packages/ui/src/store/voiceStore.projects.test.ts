@@ -157,6 +157,21 @@ describe('voiceStore — связка проекта с чатом', () => {
     expect(store.getState().utility!.dir).toBeUndefined()
     expect(store.getState().utility!.path).toBe('/srv/p')
   })
+
+  it('openUtilityForActiveChat сохраняет целевую офлайн-машину, чтобы показать её переподключение', async () => {
+    const { store } = makeStore()
+    await store.actions.newConversation()
+    const cid = store.getState().activeId!
+    await store.actions.setConversationExecTarget(cid, 'm1', '/srv/p')
+    store.actions.applyAgents([
+      { id: 'm1', name: 'MacBook', online: false, createdAt: 1, lastSeen: null, policy: DEFAULT_AGENT_POLICY },
+      { id: 'm2', name: 'Linux', online: true, createdAt: 1, lastSeen: null, policy: DEFAULT_AGENT_POLICY }
+    ])
+
+    store.actions.openUtilityForActiveChat('console')
+
+    expect(store.getState().utility!.agentId).toBe('m1')
+  })
 })
 
 describe('voiceStore — выбор проекта в сайдбаре', () => {

@@ -31,7 +31,7 @@ export interface UsersAdminProps {
   onCreate: (name: string, password: string, role: 'admin' | 'user') => void
   onSetBlocked: (name: string, blocked: boolean) => void
   onDelete: (name: string) => void
-  onLoadUsage: (unit: UsageUnit) => void
+  onLoadUsage: (unit: UsageUnit, from?: number, to?: number, conversationId?: string) => void
   onOpenConversation: (id: string) => void
   engines: AdminLlmEngine[]
   enginesStatus?: LoadStatus
@@ -56,6 +56,11 @@ function kilo(n: number): string {
 }
 function usd(n: number): string {
   return `$${n.toFixed(n < 0.1 ? 4 : 2)}`
+}
+
+/** Не выдаём известную часть суммы за цену ответа с неизвестным тарифом. */
+function displayedUsd(n: number, costIncomplete?: boolean): string {
+  return costIncomplete ? '—' : usd(n)
 }
 
 const EMPTY_ENGINE: AdminLlmEngineInput = {
@@ -101,14 +106,23 @@ export function UsersAdmin({
   const [newPass, setNewPass] = useState('')
   const [newRole, setNewRole] = useState<'admin' | 'user'>('user')
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
+  const [usageDays, setUsageDays] = useState<7 | 30 | null>(30)
+  const [usageConversationId, setUsageConversationId] = useState('')
   const [engineDraft, setEngineDraft] = useState<AdminLlmEngineInput>(EMPTY_ENGINE)
   const [editingEngineId, setEditingEngineId] = useState<string | null>(null)
   const [confirmEngineDelete, setConfirmEngineDelete] = useState<string | null>(null)
 
   const cur = users.find((u) => u.name === selected) ?? null
+  // Сервер возвращает список разговоров периода даже при активном фильтре,
+  // поэтому варианты селекта не зависят от загруженной истории пользователя.
+  const usageConversations = usage?.byConversation ?? conversations
   const view = loadView(status, users.length > 0)
   const enginesView = loadView(enginesStatus, engines.length > 0)
   const canManage = (name: string): boolean => name !== 'admin' && name !== currentUserName
+  const loadUsage = (unit: UsageUnit, days: 7 | 30 | null = usageDays, conversationId = usageConversationId): void => {
+    const to = Date.now()
+    onLoadUsage(unit, days ? to - days * 86_400_000 : undefined, days ? to : undefined, conversationId || undefined)
+  }
 
   const submitCreate = (): void => {
     const n = newName.trim()
@@ -210,25 +224,40 @@ export function UsersAdmin({
                 ))}
               </section>
 
-              <section className="uadmin-sec">
-                <h3 className="uadmin-h">Токены</h3>
-                <div className="useg">
+              <section className="uadmin-sec uusage" aria-labelledby="usage-heading">
+                <div className="uusage-heading">
+                  <div><h3 id="usage-heading" className="uadmin-h">Использование моделей</h3><p className="uusage-note">Токены и стоимость ответов за выбранный период</p></div>
+                  <div className="uusage-filters">
+                    <select aria-label="Период расхода" value={usageDays ?? 'all'} onChange={(e) => {
+                      const days = e.target.value === 'all' ? null : Number(e.target.value) as 7 | 30
+                      setUsageDays(days)
+                      loadUsage(usage?.unit ?? 'day', days)
+                    }}><option value="7">7 дней</option><option value="30">30 дней</option><option value="all">Всё время</option></select>
+                    <select aria-label="Разговор расхода" value={usageConversationId} onChange={(e) => {
+                      setUsageConversationId(e.target.value)
+                      loadUsage(usage?.unit ?? 'day', usageDays, e.target.value)
+                    }}><option value="">Все разговоры</option>{usageConversations.map((c) => <option key={'conversationId' in c ? c.conversationId : c.id} value={'conversationId' in c ? c.conversationId : c.id}>{c.title}</option>)}</select>
+                  </div>
+                </div>
+                <div className="useg" aria-label="Группировка отчёта">
                   {UNITS.map((u) => (
-                    <button key={u.id} className={usage?.unit === u.id ? 'useg-item on' : 'useg-item'} onClick={() => onLoadUsage(u.id)}>{u.label}</button>
+                    <button key={u.id} className={usage?.unit === u.id ? 'useg-item on' : 'useg-item'} aria-pressed={usage?.unit === u.id} onClick={() => loadUsage(u.id)}>{u.label}</button>
                   ))}
                 </div>
                 {!usage && <EmptyState compact icon="📊" title="Период не выбран" description="Выберите разбивку выше — покажем токены, стоимость и число ответов." />}
                 {usage && (
                   <>
-                    <p className="uadmin-total" data-testid="usage-total">Итого: {kilo(usage.totals.inputTokens)} → {kilo(usage.totals.outputTokens)} ток. · {usd(usage.totals.costUsd)} · {usage.totals.messages} отв.</p>
-                    <table className="utable">
-                      <thead><tr><th>Модель</th><th>вход</th><th>выход</th><th>$</th></tr></thead>
-                      <tbody>{usage.byModel.map((m) => <tr key={m.model}><td>{m.model}</td><td>{kilo(m.inputTokens)}</td><td>{kilo(m.outputTokens)}</td><td>{usd(m.costUsd)}</td></tr>)}</tbody>
-                    </table>
-                    <table className="utable">
-                      <thead><tr><th>Период (UTC)</th><th>вход</th><th>выход</th><th>$</th></tr></thead>
-                      <tbody>{usage.byBucket.map((b) => <tr key={b.bucket}><td>{b.bucket}</td><td>{kilo(b.inputTokens)}</td><td>{kilo(b.outputTokens)}</td><td>{usd(b.costUsd)}</td></tr>)}</tbody>
-                    </table>
+                    <div className="uusage-stats" data-testid="usage-total">
+                      <div><span>Вход</span><strong>{kilo(usage.totals.inputTokens)}</strong></div>
+                      <div><span>Выход</span><strong>{kilo(usage.totals.outputTokens)}</strong></div>
+                      <div><span>Из кэша</span><strong>{kilo(usage.totals.cacheReadTokens)}</strong></div>
+                      <div><span>Стоимость</span><strong title={usage.totals.costIncomplete ? 'Есть ответы без известного тарифа' : undefined}>{displayedUsd(usage.totals.costUsd, usage.totals.costIncomplete)}</strong></div>
+                      <div><span>Ответы</span><strong>{usage.totals.messages}</strong></div>
+                    </div>
+                    <div className="uusage-grid">
+                      <div><h4>По моделям</h4><table className="utable"><thead><tr><th>Модель</th><th>Вход</th><th>Выход</th><th>Стоимость</th></tr></thead><tbody>{usage.byModel.map((m) => <tr key={m.model}><td>{m.model}</td><td>{kilo(m.inputTokens)}</td><td>{kilo(m.outputTokens)}</td><td>{displayedUsd(m.costUsd, m.costIncomplete)}</td></tr>)}</tbody></table></div>
+                      <div><h4>Динамика (UTC)</h4><table className="utable"><thead><tr><th>Период</th><th>Вход</th><th>Выход</th><th>Стоимость</th></tr></thead><tbody>{usage.byBucket.map((b) => <tr key={b.bucket}><td>{b.bucket}</td><td>{kilo(b.inputTokens)}</td><td>{kilo(b.outputTokens)}</td><td>{displayedUsd(b.costUsd, b.costIncomplete)}</td></tr>)}</tbody></table></div>
+                    </div>
                   </>
                 )}
               </section>

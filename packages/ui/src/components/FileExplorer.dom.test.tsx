@@ -52,6 +52,15 @@ describe('FileExplorer (самодостаточный)', () => {
     expect(ops.list).toHaveBeenCalledWith('m1', '')
   })
 
+  it('объясняет переподключение офлайн-машины и не листит её', () => {
+    const ops = makeOps()
+    render(<FileExplorer agents={[{ ...agent(), online: false }]} initialAgentId="m1" ops={ops} variant="embedded" />)
+
+    expect(screen.getByText('Машина «Мак» переподключается')).toBeInTheDocument()
+    expect(ops.list).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Адрес папки')).toBeDisabled()
+  })
+
   it('клик по папке листит её абсолютный путь', async () => {
     const ops = makeOps()
     render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={ops} variant="embedded" />)

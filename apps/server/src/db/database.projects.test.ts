@@ -4,6 +4,7 @@ import { VoiceChatDb } from './database.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DEFAULT_SETTINGS } from '@voicechat/shared'
 
 let db: VoiceChatDb
 
@@ -324,7 +325,9 @@ describe('projects: навыки по умолчанию и связанный �
     expect(upd.skills).toEqual(['ts', 'redis'])
   })
 
-  it('openOrCreateTaskChat: идемпотентен, привязывает задачу/проект/навыки, виден в board.chatId', () => {
+  it('openOrCreateTaskChat: наследует LLM-настройки пользователя, привязывает задачу/проект/навыки и виден в board.chatId', () => {
+    const engine = db.createLlmEngine({ name: 'Codex', kind: 'codex', baseUrl: 'http://codex', token: '', enabled: true, allowedRoles: ['user'], isDefault: false })
+    db.saveSettings('alice', { ...DEFAULT_SETTINGS, llmEngineId: engine.id, llmProvider: 'codex', codexModel: 'gpt-5.6-luna' })
     const p = db.createProject('alice', { name: 'P', defaultSkills: { epic: [], story: [], task: ['ts'] } })
     const col = db.getBoard('alice', p.id)!.columns[0]
     const t = db.createTask('alice', p.id, { columnId: col.id, title: 'Скролл в модалке' })!
@@ -334,8 +337,14 @@ describe('projects: навыки по умолчанию и связанный �
     // Имя по умолчанию — «Задача <заголовок>»: чат задачи виден в общем списке.
     expect(chat.title).toBe('Задача Скролл в модалке')
     expect(chat.skillNames).toEqual(['ts'])
+    expect(chat).toMatchObject({ llmEngineId: engine.id, llmProvider: 'codex', llmModel: 'gpt-5.6-luna' })
+    // Повторное открытие синхронизирует уже созданный связанный чат с новыми
+    // настройками пользователя, не создавая второй разговор.
+    db.saveSettings('alice', { ...DEFAULT_SETTINGS, llmEngineId: engine.id, llmProvider: 'codex', codexModel: 'gpt-5.6-sol' })
+    expect(db.getConversation('alice', chat.id)).toMatchObject({ llmEngineId: engine.id, llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
     const again = db.openOrCreateTaskChat('alice', p.id, t.id)!
     expect(again.id).toBe(chat.id) // не плодит второй чат
+    expect(again).toMatchObject({ llmEngineId: engine.id, llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
     expect(db.getBoard('alice', p.id)!.tasks.find((x) => x.id === t.id)!.chatId).toBe(chat.id)
   })
 

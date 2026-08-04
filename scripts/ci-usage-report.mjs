@@ -284,23 +284,46 @@ const report = runs.map((run) => {
           WHERE run_id = ? ORDER BY chars DESC, at ASC LIMIT 3`, run.id
       ).map((r) => ({ kind: r.kind, label: r.label || r.tool, chars: r.chars, originalChars: r.original_chars }))
     : []
-  // Директива задачи: то, что раннер кладёт в промпт хода (плюс ~1200 символов
-  // инструкций моста и запрета самопроверки — они в коде, не в БД).
+  // Директива задачи: поля задачи плюс стабильная обвязка (режим, путь, ветка и
+  // запрет самопроверки). Правила remote-инструментов здесь больше не считаются:
+  // они единожды живут в системном хинте CLI.
   const taskPromptChars =
-    (run.title ?? '').length + (run.description ?? '').length + (run.acceptance_criteria ?? '').length + 1200
+    (run.title ?? '').length + (run.description ?? '').length + (run.acceptance_criteria ?? '').length + 600
   // Системный промпт CLI со схемами инструментов отдельной строкой в БД не
   // лежит: запись кэша хода включает и его, и рост контекста по ходу. Верхняя
   // оценка базового промпта — самый скромный ход рана (обычно резюме): меньше
   // него базовый промпт быть не может, больше — уже накопленный контекст.
   const cacheWrites = usage.map((u) => u.cache_creation_tokens).filter((n) => n > 0)
   const basePromptCeilTokens = cacheWrites.length ? Math.min(...cacheWrites) : 0
+  // Это не токенизация исходников: контекст и число запросов сообщил живой CLI.
+  // Минимальный контекст запроса — потолок постоянной части (в нём уже мог быть
+  // первый ответ), а превышение среднего над ним — накопленный хвост диалога.
+  const contextsPerRequest = usage
+    .filter((u) => u.num_turns > 0)
+    .map((u) => {
+      const input = u.input_semantics === 'with_cache' || (!u.input_semantics && u.provider === 'codex')
+        ? Math.max(0, u.input_tokens - u.cache_read_tokens)
+        : u.input_tokens
+      return Math.round((input + u.cache_read_tokens + u.cache_creation_tokens) / u.num_turns)
+    })
+  const baselineContextTokens = contextsPerRequest.length ? Math.min(...contextsPerRequest) : null
+  const avgContextTokens = totals.apiRequests
+    ? Math.round((totals.inputTokens + totals.cacheReadTokens + totals.cacheCreationTokens) / totals.apiRequests)
+    : null
 
   return {
     runId: run.id, at: new Date(run.created_at).toISOString(), provider: run.provider,
     model: run.model || '(пусто)', status: run.status, title: run.title ?? '',
     context: {
       taskPromptChars,
+      taskPromptTokenEstimate: Math.ceil(taskPromptChars / 4),
+      kbInjectedTokenEstimate: Math.ceil(kbChars.injectedChars / 4),
       basePromptCeilTokens,
+      baselineContextTokens,
+      avgContextTokens,
+      conversationTailTokens: baselineContextTokens != null && avgContextTokens != null
+        ? Math.max(0, avgContextTokens - baselineContextTokens)
+        : null,
       cacheWriteTokens: totals.cacheCreationTokens,
       responseChars: responsesSource === 'log' ? fromLogResponses.byKind : responseChars,
       responseCharsTotal: responsesSource === 'log'
@@ -365,11 +388,13 @@ function printContext(r) {
     .map(([kind, n]) => `${kind} ${k(n)}`)
     .join(' · ')
   console.log(
-    `   состав контекста (символы): директива задачи ${k(c.taskPromptChars)} · ` +
-    `инъекция БЗ ${k(r.kbInjectedChars)} · ответы инструментов ${mark}${k(c.responseCharsTotal)}` +
-    `${kinds ? ` (${kinds})` : ''}\n` +
-    `      запись кэша ${k(c.cacheWriteTokens)} токенов за ран; самый скромный ход — ${k(c.basePromptCeilTokens)} ` +
-    'токенов: это верхняя оценка «системный промпт CLI + схемы инструментов + директива»'
+    `   постоянная часть (токены): директива задачи ≈${k(c.taskPromptTokenEstimate)} · ` +
+    `инъекция БЗ ≈${k(c.kbInjectedTokenEstimate)}; весь базовый промпт (CLI+схемы+директива) ≤${k(c.basePromptCeilTokens)}\n` +
+    `      живой контекст/запрос: базовый ≤${c.baselineContextTokens == null ? '—' : k(c.baselineContextTokens)} · ` +
+    `накопленный хвост в среднем ${c.conversationTailTokens == null ? '—' : k(c.conversationTailTokens)} · ` +
+    `средний ${c.avgContextTokens == null ? '—' : k(c.avgContextTokens)}\n` +
+    `      ответы инструментов ${mark}${k(c.responseCharsTotal)} симв.${kinds ? ` (${kinds})` : ''}; ` +
+    `запись кэша ${k(c.cacheWriteTokens)} токенов за ран`
   )
   if (!c.heaviest.length) return
   console.log('      самые тяжёлые ответы:')
@@ -401,7 +426,10 @@ for (const r of report) {
     `БЗ: обращений ${r.kbQueries}, символов ${r.kbChars} (инъекцией ${r.kbInjectedChars})` +
     `${r.kbSectionsDelivered != null ? `, разделов ${r.kbSectionsDelivered} (попало ${r.kbSectionsHit})` : ''}\n` +
     // Главные числа задачи «сжать контекст»: цена = контекст × запросы.
-    `   контекст/запрос ${ctxPerRequest(r.totals)}  запросов к API ${r.totals.apiRequests || '—'}`
+    `   контекст/запрос ${ctxPerRequest(r.totals)}  запросов к API ${r.totals.apiRequests || '—'}` +
+    (r.totals.apiRequests && toolsTotal(c)
+      ? `  API-запросов на вызов инструмента в среднем ${(r.totals.apiRequests / toolsTotal(c)).toFixed(1)}`
+      : '')
   )
   if (WITH_CONTEXT) printContext(r)
 }

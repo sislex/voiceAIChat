@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseImages } from '@voicechat/shared'
 import { machineImagePath, relocateImagesToMachine } from './imageRelocate.js'
+import { machineUploadDir, machineUploadPath } from './uploads.js'
 
 let home: string
 let pic: string
@@ -40,6 +41,19 @@ describe('machineImagePath', () => {
 
   it('windows-корень — обратные слэши', () => {
     expect(machineImagePath('C:\\Users\\u', 'a.png')).toBe('C:\\Users\\u\\.generated_images\\a.png')
+  })
+})
+
+describe('machineUploadPath', () => {
+  it('кладёт исходник в скрытый каталог машины и сохраняет безопасное расширение', () => {
+    expect(machineUploadDir('/home/user/')).toBe('/home/user/.voicechat_uploads')
+    expect(machineUploadDir('C:\\Users\\u')).toBe('C:\\Users\\u\\.voicechat_uploads')
+    expect(machineUploadPath('/home/user', 'upload-id', 'my photo.png')).toBe(
+      '/home/user/.voicechat_uploads/upload-id.png'
+    )
+    expect(machineUploadPath('C:\\Users\\u', 'upload-id', 'photo.p$n')).toBe(
+      'C:\\Users\\u\\.voicechat_uploads\\upload-id.pn'
+    )
   })
 })
 

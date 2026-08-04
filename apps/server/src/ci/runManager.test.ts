@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from '../db/database.js'
-import { DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_STAGE_MODELS, issueKey } from '@voicechat/shared'
+import { DEFAULT_CI_STAGE_MODELS, DEFAULT_SETTINGS, issueKey } from '@voicechat/shared'
 import { signToken } from '../users/accounts.js'
 import type { CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
@@ -20,6 +20,7 @@ let failClaude = false
 let failPush = false
 /** Управляемое падение шага TOGGLE: «сломано» → «починили» между ранами. */
 let failStep = false
+let repoMissing = false
 /** Локальные правки в рабочей копии: шаг CLONE отвечает на них exit 66, как боевой. */
 let dirtyWorkspace = false
 let onModelSend: (() => void) | null = null
@@ -71,6 +72,7 @@ const ciExecutor: CommandExecutor = {
     onChunk(`run:${req.script.slice(0, 20)}\n`)
     // FLAKY падает на первом прогоне и проходит на повторе (эмуляция «исправлено моделью»).
     const flakyOk = req.script.includes('FLAKY') && n >= 2
+    if (req.script === 'git rev-parse --show-toplevel >/dev/null') return { exitCode: repoMissing ? 128 : 0, timedOut: false }
     if (req.script === 'DIRTY') return { exitCode: 66, timedOut: false }
     // Подготовка директории приводит копию прошлого рана в чистое состояние.
     if (req.script.includes('stash push') && req.script.includes('reset --hard')) dirtyWorkspace = false
@@ -90,6 +92,7 @@ beforeEach(async () => {
   failClaude = false
   failPush = false
   failStep = false
+  repoMissing = false
   dirtyWorkspace = false
   onModelSend = null
   onExec = null
@@ -135,9 +138,11 @@ async function waitRun(runId: string): Promise<{ run: { status: string; taskId: 
 }
 
 describe('ci run manager', () => {
-  it('при запуске переносит карточку в колонку development и использует наследуемую модель', async () => {
+  it('при запуске переносит карточку в development и берёт модель пользователя, а не CI-конфига', async () => {
     const { project, task } = setup()
-    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.saveSettings('admin', { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.6-luna' })
+    // Сохранённый CI-конфиг не должен переопределять настройку пользователя.
+    db.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     // Колонку снимаем в момент запроса к модели: к концу успешного рана карточка
     // уходит в «Ожидает мержа», и проверка после `waitRun` ловила бы уже её.
     let columnAtModel: string | null = null
@@ -147,20 +152,19 @@ describe('ci run manager', () => {
     const development = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
     expect(columnAtModel).toBe(development.id)
     expect(detail.run.status).toBe('success')
-    expect(codexModel).toBe('gpt-5.4')
+    expect(codexModel).toBe('gpt-5.6-luna')
   })
 
-  it('проект без явной настройки CI гоняет разработку на claude opus, резюме — на дешёвой модели', async () => {
+  it('проект без явной настройки CI наследует пользовательский Claude default, резюме — на дешёвой модели', async () => {
     const { project, task } = setup()
-    // Ни у проекта, ни у задачи нет записи в ci_llm_configs — значит DEFAULT_CI_LLM_CONFIG.
     const runId = await run(project.id, task.id)
     const detail = await waitRun(runId)
     expect(detail.run.status).toBe('success')
     expect(detail.run.llmProvider).toBe('claude')
-    expect(detail.run.llmModel).toBe(DEFAULT_CI_CLAUDE_MODEL)
+    expect(detail.run.llmModel).toBe(DEFAULT_SETTINGS.model)
     // Модель рана — только у разработки: резюме идёт по своей стадии
     // (DEFAULT_CI_STAGE_MODELS.summary), пересказ шагов не требует модели рана.
-    expect(modelRequests.map((r) => r.model)).toEqual([DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_STAGE_MODELS.summary])
+    expect(modelRequests.map((r) => r.model)).toEqual([DEFAULT_SETTINGS.model, DEFAULT_CI_STAGE_MODELS.summary])
   })
 
   it('DELETE ci/llm снимает переопределение задачи и возвращает наследование', async () => {
@@ -197,11 +201,26 @@ describe('ci run manager', () => {
     expect(d.steps.map((s) => s.kind)).toContain('model_summary')
     const workRequest = modelRequests.find((req) => req.permissionMode === 'acceptEdits')!
     expect(workRequest.cwd).toBeUndefined()
-    expect(workRequest.remote?.mcpUrl).toContain('cwd=%2Frepos%2Fp%2F1')
+    expect(workRequest.remote?.mcpUrl).toContain('cwd=%2Frepos%2Fp%2F1%2Ft1')
+    const chat = db.getConversation('admin', db.getCiRunRaw(runId)!.conversationId!)!
+    expect(chat.execTarget).toBeTruthy()
+    expect(chat.workdir).toBe('/repos/p/1/t1')
     // Лог рана содержит строки.
     const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json()
     expect(Array.isArray(log)).toBe(true)
     expect(log.length).toBeGreaterThan(0)
+  })
+
+  it('не запускает модель и валит ран, если клон отсутствует в ожидаемой папке', async () => {
+    const { project, task, readyColId } = setup()
+    repoMissing = true
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+    expect(detail.run.status).toBe('failed')
+    expect(modelRequests).toHaveLength(0)
+    expect(db.getBoard('admin', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).toBe(readyColId)
+    const steps = db.getCiRun('admin', runId)!.steps
+    expect(steps.find((step) => step.title === 'Проверка рабочей директории модели')?.status).toBe('failed')
   })
 
   it('резюме рана уходит отдельным сообщением в связанный чат задачи', async () => {

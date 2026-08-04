@@ -195,6 +195,25 @@ describe('turns: вложения для удалённого исполните
     rmSync(dir, { recursive: true, force: true })
     db.close()
   })
+
+  it('принимает уже прочитанное с пользовательской машины вложение', async () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    const remote = {
+      serverPath: '/home/user/.voicechat_uploads/photo.png',
+      runnerName: 'photo.png',
+      dataBase64: Buffer.from('remote-image').toString('base64')
+    }
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, resolveUpload: async () => remote })
+
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'измени фото' }], attachments: ['a1'] })
+
+    expect(rec.last()?.prompt).toContain(remote.serverPath)
+    expect(rec.last()?.attachments).toEqual([remote])
+    db.close()
+  })
 })
 
 describe('turns: движок и модель разговора приоритетнее общих настроек', () => {

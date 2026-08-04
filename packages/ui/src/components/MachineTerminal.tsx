@@ -106,6 +106,8 @@ export function MachineTerminal({
   const [agentId, setAgentId] = useState<string | null>(
     initialAgentId ?? agents.find((a) => a.online)?.id ?? agents[0]?.id ?? null
   )
+  const selectedAgent = agents.find((agent) => agent.id === agentId)
+  const agentOnline = selectedAgent?.online ?? false
 
   return (
     <ToolFrame
@@ -134,7 +136,11 @@ export function MachineTerminal({
           <span className="fspath">Нет машин. Добавьте машину в настройках.</span>
         )}
       </div>
-      {agentId ? (
+      {agentId && !agentOnline ? (
+        <p className="cc-empty">
+          Машина «{selectedAgent?.name ?? agentId}» переподключается. Терминал станет доступен после восстановления соединения.
+        </p>
+      ) : agentId ? (
         <TerminalView key={`${agentId}:${initialCwd ?? ''}`} agentId={agentId} cwd={initialCwd} pty={pty} />
       ) : (
         <p className="cc-empty">Нет доступной машины.</p>
