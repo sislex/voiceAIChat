@@ -15,7 +15,9 @@ import type { KbView, KnowledgeBaseService } from './types.js'
 import type { KbEmptyReason, KbUsageSectionInput } from './usage.js'
 
 /** Бюджет контекста (символы) — один и тот же в чате и в ране. */
-export const KB_AUTO_CONTEXT_BUDGET = 3500
+// Авто-инъекция — навигация, а не второй справочник: подробности модель читает
+// точечным kb:document. Малый стабильный бюджет экономит его на каждом API-запросе.
+export const KB_AUTO_CONTEXT_BUDGET = 1600
 
 /**
  * Меньше этого куска тела раздел отдавать бессмысленно — от него останется
