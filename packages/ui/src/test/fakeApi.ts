@@ -867,7 +867,7 @@ export function createFakeCi(): FakeCi {
     resetTaskCiLlm: async () => { taskLlm = null; return { config: { ...projectLlm }, overridden: false, projectDefault: { ...projectLlm } } },
     getTaskCi: async () => ({ config: { beforeModel: [], afterModel: [] }, overridden: false, projectDefault: { beforeModel: [], afterModel: [] } }),
     putTaskCi: async (_pid, _tid, config) => config,
-    startRun: async (projectId, taskId, mode) => { const run = { ...mkRun(projectId, taskId), mode: mode ?? projectLlm.mode }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
+    startRun: async (projectId, taskId, options) => { const run = { ...mkRun(projectId, taskId), mode: options?.mode ?? projectLlm.mode }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
     getRun: async (rid) => runs.get(rid) ?? { run: mkRun('p', 't'), steps: [], fixAttempts: [], interactions: [] },
     getRunLog: async (rid) => logs.get(rid) ?? [],
     // Телеметрия БЗ в фейке пустая: её наполняют только реальные ходы модели.
