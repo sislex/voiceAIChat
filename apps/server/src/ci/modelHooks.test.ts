@@ -367,6 +367,14 @@ describe('инструменты БЗ в остальных ходах рана'
     expect(rec.last()!.kbMcpUrl).toBeDefined()
     expect(rec.last()!.readOnlyRemote).toBe(true)
   })
+
+  it('не дублирует правила remote-инструментов в задаче: они уже в системном хинте CLI', async () => {
+    const rec = recorder()
+    const { ctx } = setup('off')
+    await hooksWith(rec.client).modelWork(ctx)
+    expect(rec.last()!.prompt).not.toContain('Файлы читай инструментом read')
+    expect(rec.last()!.prompt).toContain('Тесты, typecheck, линтер и сборку сам не запускай')
+  })
 })
 
 // Модель по стадии рана: одна модель на весь ран означала, что сверка дифа с

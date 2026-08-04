@@ -90,7 +90,8 @@ export function codexInvocation(req: LlmRequest): { args: string[]; prompt: stri
       `Локальный shell недоступен: команды — только MCP remote:bash на машине «${req.remote.agentName}»; ` +
       `для долгих команд передавай timeout_ms (120000 по умолчанию, максимум 300000). ` +
       `Файлы: remote:read, remote:grep, remote:edit; не используй bash для cat/sed/head/tail или heredoc. ` +
-      `Мост отклонит файловое чтение bash и подскажет read; пайплайны, grep -r и подстановки разрешены.` +
+      `Мост отклонит файловое чтение bash и подскажет read; пайплайны, grep -r и подстановки разрешены. ` +
+      `Независимые чтения и поиски объединяй в один вызов, не перечитывай уже полученный файл.` +
       (req.readOnlyRemote
         ? `\nРежим «План»: только read/grep, ls и git log/diff/status; любые изменения запрещены.`
         : '') +

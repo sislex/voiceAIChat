@@ -254,13 +254,6 @@ function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmReque
  * дольше, а расхождение между прогонами модель чинит вслепую. Упавший шаг
  * вернётся к ней в fix-loop — уже с логом.
  */
-const REMOTE_FILE_TOOLS_DIRECTIVE =
-  'Файлы читай инструментом read, ищи grep и правь edit; bash используй для команд ' +
-  '(git, npm, тесты), а не для чтения файлов и не для правок через heredoc. ' +
-  'Команду, вся суть которой — прочитать файл рабочей копии (cat, sed -n, head, tail), ' +
-  'мост отклонит и подскажет готовый вызов read с нужным окном строк. ' +
-  'Длинные ответы инструментов обрезаются с пометкой ⟦обрезано…⟧ — это значит, что ' +
-  'данные неполные: сужай команды и окна чтения сам, вместо повторного вызова того же.'
 
 /** Чем добрать вырезанное из вывода команды справочника (лог шага в ленте). */
 const MODEL_COMMAND_TRIM_HINT =
@@ -289,7 +282,6 @@ function taskPrompt(ctx: CiModelContext, mode: CiRunMode): string {
     `Рабочая директория: ${ctx.workspacePath}`,
     `Ветка: ${ctx.env.BRANCH ?? ''}`,
     '',
-    REMOTE_FILE_TOOLS_DIRECTIVE,
     ...tail
   ]
     .filter(Boolean)

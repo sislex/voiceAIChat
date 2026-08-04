@@ -105,7 +105,8 @@ export function claudeArgs(req: LlmRequest): string[] {
         `Для долгих команд передавай timeout_ms (120000 по умолчанию, максимум 300000). ` +
         `Файлы читай mcp__remote__read, ищи mcp__remote__grep, правь mcp__remote__edit; ` +
         `не используй bash для cat/sed или heredoc/python. мост отклонит файловое чтение bash ` +
-        `и вернёт вызов mcp__remote__read. Пайплайны, grep -r и подстановки разрешены.` +
+        `и вернёт вызов mcp__remote__read. Пайплайны, grep -r и подстановки разрешены. ` +
+        `Независимые чтения и поиски объединяй в один вызов, не перечитывай уже полученный файл.` +
         (req.readOnlyRemote
           ? `\nРежим «План»: только чтение (read/grep, ls и git log/diff/status); правки, установки и сборки запрещены.`
           : '') +
