@@ -196,7 +196,7 @@ describe('CI: гейт гоняет воркфлоу, не модель', () => 
     // Обе попытки продолжают диалог работы модели (--resume), а не начинают с нуля.
     expect(fixes.map((f) => f.sessionId)).toEqual(['sess-1', 'sess-1'])
     // Вторая попытка знает, что первая не помогла.
-    expect(fixes[1].prompt).toContain('Попытка 2 из 3')
+    expect(fixes[1].prompt).toContain('Попытка 2 из 9')
   })
 
   it('в промпт fix-loop уходит длинный хвост теста и запрет ослаблять гейт', async () => {
@@ -212,18 +212,20 @@ describe('CI: гейт гоняет воркфлоу, не модель', () => 
     expect(fix.prompt).toContain('НЕ ослабляй саму команду ради обхода ошибки')
   })
 
-  it('гейт не чинится за три попытки → ран failed, в ленте три диагноза', async () => {
+  it('гейт не чинится за девять попыток → ран failed, в ленте девять диагнозов', async () => {
     const { projectId, taskId } = setup()
     afterSlot(projectId, taskId)
     gateFailures = Infinity
     const runId = await run(projectId, taskId)
     expect((await waitRun(runId)).run.status).toBe('failed')
-    // Дефолтные лимиты: три попытки, значит четыре прогона гейта (первый + три повтора).
-    expect(scripts.filter((s) => s === GATE)).toHaveLength(4)
+    // Дефолтные лимиты: девять попыток, значит десять прогонов гейта (первый + девять повторов).
+    expect(scripts.filter((s) => s === GATE)).toHaveLength(10)
     // До остальных шагов слота ран не дошёл.
     expect(scripts).not.toContain('git commit -am wip')
     const detail = db.getCiRun('admin', runId)!
-    expect(detail.fixAttempts.map((f) => f.result)).toEqual(['retrying', 'retrying', 'gave_up'])
+    expect(detail.fixAttempts).toHaveLength(9)
+    expect(detail.fixAttempts.slice(0, -1).every((f) => f.result === 'retrying')).toBe(true)
+    expect(detail.fixAttempts.at(-1)?.result).toBe('gave_up')
     expect(detail.fixAttempts.every((f) => f.diagnosis.includes('диагноз'))).toBe(true)
   })
 

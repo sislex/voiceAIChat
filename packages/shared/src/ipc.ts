@@ -22,7 +22,7 @@ import type {
   WhisperModel,
   WhisperModelInfo
 } from './types'
-import type { ServerFileInfo, SystemCapabilities } from './protocol'
+import type { HealthResponse, ServerFileInfo, SystemCapabilities } from './protocol'
 import type {
   AdminLlmEngine,
   AdminLlmEngineHealth,
@@ -89,7 +89,7 @@ export interface UploadInfo {
  * `arg: void` означает вызов без аргументов.
  */
 export interface IpcInvokeMap {
-  'app:ping': { arg: void; result: string }
+  'app:ping': { arg: void; result: HealthResponse }
   'kb:status': { arg: void; result: KbStatus }
   /** Оглавление доступных разделов; фильтр по разделу/проекту — необязательный. */
   'kb:topics': { arg: { scope?: KbScope; projectId?: string | null } | void; result: KbDocumentSummary[] }
@@ -169,7 +169,7 @@ export interface IpcInvokeMap {
   'conversations:delete': { arg: { id: string }; result: void }
   'messages:add': { arg: AddMessageArgs; result: Message }
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }
-  'uploads:add': { arg: { name: string; dataBase64: string }; result: UploadInfo }
+  'uploads:add': { arg: { name: string; dataBase64: string; agentId?: string }; result: UploadInfo }
   'settings:get': { arg: void; result: Settings }
   'llm:engines': { arg: void; result: LlmEngineOption[] }
   'settings:save': { arg: Settings; result: void }
@@ -234,7 +234,7 @@ export interface IpcInvokeMap {
   'admin:createUser': { arg: { name: string; password: string; role: 'admin' | 'user' }; result: AdminUserInfo }
   'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
   'admin:deleteUser': { arg: { name: string }; result: void }
-  'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number }; result: UsageReport }
+  'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }
   'admin:conversations': { arg: { name: string }; result: Conversation[] }
   'admin:messages': { arg: { name: string; conversationId: string }; result: Message[] }
   'admin:llmEngines': { arg: void; result: AdminLlmEngine[] }

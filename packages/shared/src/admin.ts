@@ -24,6 +24,12 @@ export interface UsageTotals {
   outputTokens: number
   cacheReadTokens: number
   costUsd: number
+  /**
+   * В выборке есть Codex-ответ без стоимости CLI и без строки в model_prices.
+   * costUsd в этом случае — лишь известная часть суммы и не должна отображаться
+   * как точная стоимость.
+   */
+  costIncomplete?: boolean
   /** Число ответов модели (ai-сообщений) в выборке. */
   messages: number
 }
@@ -38,12 +44,20 @@ export interface UsageByModel extends UsageTotals {
   model: string
 }
 
-/** Полный отчёт по токенам пользователя за период. */
+/** Метрики по конкретному разговору — одновременно данные для фильтра и сверки итогов. */
+export interface UsageByConversation extends UsageTotals {
+  conversationId: string
+  title: string
+}
+
+/** Полный отчёт по токенам пользователя за период и необязательный разговор. */
 export interface UsageReport {
   unit: UsageUnit
+  conversationId: string | null
   totals: UsageTotals
   byBucket: UsageBucket[]
   byModel: UsageByModel[]
+  byConversation: UsageByConversation[]
 }
 
 

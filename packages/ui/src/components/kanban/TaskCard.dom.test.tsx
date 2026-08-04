@@ -80,6 +80,23 @@ describe('TaskCard CI-панель', () => {
     }
   })
 
+  it('ручное завершение убирает старую ошибку с карточки, сохраняя ленту', () => {
+    render(
+      <TaskCard
+        {...props({
+          task: mkTask({ columnId: 'done' }),
+          doneColumnIds: new Set(['done']),
+          ciSummary: mkSummary({ status: 'failed', modelActive: false }),
+          onOpenCiRun: vi.fn(),
+          onStartCi: vi.fn()
+        })}
+      />
+    )
+    expect(screen.queryByText('ошибка')).not.toBeInTheDocument()
+    expect(screen.getByTestId('task-card').className).not.toContain('jcard--ci-failed')
+    expect(screen.getByRole('button', { name: 'Лента рана' })).toBeInTheDocument()
+  })
+
   it('у завершённого рана кнопка запуска есть при любом исходе', () => {
     // Успех, падение, отмена, таймаут — ран закончен, повторный запуск разрешён.
     for (const status of ['success', 'failed', 'cancelled', 'timeout'] as const) {

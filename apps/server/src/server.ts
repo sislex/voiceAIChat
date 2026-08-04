@@ -44,7 +44,7 @@ import type { SttEngine } from './stt/types.js'
 import { StubDiarizationEngine } from './diarization/stubDiarization.js'
 import { downloadModel } from './stt/download.js'
 import { ModelDownloadManager } from './stt/downloadManager.js'
-import { UploadStore } from './uploads.js'
+import { UploadStore, machineUploadDir, machineUploadPath } from './uploads.js'
 import type { UploadInfo } from '@voicechat/shared'
 import { PiperTtsEngine } from './tts/piperTts.js'
 import { SayTtsEngine } from './tts/sayTts.js'
@@ -67,7 +67,8 @@ import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
 import { readUserFile } from './serverFiles.js'
 
-const VERSION = '0.1.0'
+const VERSION = process.env.VC_RELEASE_VERSION?.trim() || '0.1.0'
+const RELEASED_AT = process.env.VC_RELEASED_AT?.trim() || new Date().toISOString()
 
 export interface BuildOptions {
   config: ServerConfig
@@ -160,7 +161,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   db.ensureAdmin(opts.config.adminPassword) // сид админа (пароль из VC_ADMIN_PASSWORD)
   registerAuth(app, db, sessionSecret)
 
-  app.get(REST.health, async (): Promise<HealthResponse> => ({ ok: true, version: VERSION }))
+  app.get(REST.health, async (): Promise<HealthResponse> => ({
+    ok: true,
+    version: VERSION,
+    releasedAt: RELEASED_AT
+  }))
 
   const runnerFs =
     opts.config.llmRunnerClaudeUrl || opts.config.llmRunnerCodexUrl
@@ -335,16 +340,34 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     downloadModel(machineWhisperModel(), opts.config.modelsDir, onProgress)
   )
 
-  // Загрузка вложений: клиент шлёт base64, сервер сохраняет файл и возвращает id.
+  // Вложения разговора с выбранной машиной постоянно хранятся на ней. Сервер
+  // только принимает байты запроса и пересылает агенту; без машины сохраняется
+  // совместимый локальный режим.
   const uploads = new UploadStore(join(opts.config.dataDir, 'uploads'))
-  app.post<{ Body: { name?: string; dataBase64?: string } }>(
+  app.post<{ Body: { name?: string; dataBase64?: string; agentId?: string } }>(
     REST.uploads,
     { bodyLimit: 64 * 1024 * 1024 }, // до 64 МБ на вложение (base64 раздувает ~на треть)
     async (req, reply): Promise<UploadInfo> => {
-      const { name, dataBase64 } = req.body ?? {}
+      const { name, dataBase64, agentId } = req.body ?? {}
       if (!dataBase64) return reply.code(400).send({ error: 'no data' }) as never
-      const buf = Buffer.from(dataBase64, 'base64')
-      const rec = uploads.save(name ?? 'file', buf)
+      const uploadName = name ?? 'file'
+      if (agentId) {
+        const userId = uid(req)
+        if (!db.listAgents(userId).some((agent) => agent.id === agentId)) {
+          return reply.code(404).send({ error: 'machine not found' }) as never
+        }
+        try {
+          const root = (await agentRegistry.fsList(agentId, '')).root
+          const target = machineUploadPath(root, randomBytes(16).toString('hex'), uploadName)
+          await agentRegistry.fsMkdir(agentId, machineUploadDir(root))
+          await agentRegistry.fsWrite(agentId, target, dataBase64)
+          const rec = uploads.saveRemote(uploadName, target, agentId)
+          return { id: rec.id, name: rec.name }
+        } catch (err) {
+          return reply.code(503).send({ error: err instanceof Error ? err.message : String(err) }) as never
+        }
+      }
+      const rec = uploads.save(uploadName, Buffer.from(dataBase64, 'base64'))
       return { id: rec.id, name: rec.name }
     }
   )
@@ -371,7 +394,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     kbUsage,
     kbToolEnabled: opts.config.kbToolEnabled,
     kbTool: kbToolBroker,
-    resolveUpload: (id) => uploads.pathById(id),
+    resolveUpload: async (id) => {
+      const upload = uploads.get(id)
+      if (!upload) return null
+      if (!upload.agentId) return upload.path
+      try {
+        const file = await agentRegistry.fsRead(upload.agentId, upload.path)
+        if (!file.dataBase64) return null
+        return { serverPath: upload.path, runnerName: upload.name, dataBase64: file.dataBase64 }
+      } catch {
+        return null
+      }
+    },
     agents: {
       isOnline: (id) => agentRegistry.isOnline(id),
       nameOf: (id) => agentRegistry.nameOf(id),

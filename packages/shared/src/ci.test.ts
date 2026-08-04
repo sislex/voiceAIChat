@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest'
 import {
   canStartCiRun,
   ciCardPulse,
+  ciSummaryForTask,
   clarifyBudget,
   CI_CLARIFY_LEVELS,
   CI_CLARIFY_MAX_LIMIT,
@@ -128,6 +129,23 @@ describe('canStartCiRun', () => {
   })
 })
 
+describe('ciSummaryForTask', () => {
+  it('закрытая вручную задача не наследует старую ошибку рана', () => {
+    const failed = { status: 'failed' as const }
+    const timedOut = { status: 'timeout' as const }
+    expect(ciSummaryForTask(failed, true)).toBeNull()
+    expect(ciSummaryForTask(timedOut, true)).toBeNull()
+    expect(ciSummaryForTask(failed, false)).toBe(failed)
+  })
+
+  it('не скрывает активный или успешный ран даже в done', () => {
+    const running = { status: 'running' as const }
+    const success = { status: 'success' as const }
+    expect(ciSummaryForTask(running, true)).toBe(running)
+    expect(ciSummaryForTask(success, true)).toBe(success)
+  })
+})
+
 describe('ciCardPulse', () => {
   const sp = (fixing?: boolean): { done: number; total: number; phase: string; fixing?: boolean } =>
     ({ done: 1, total: 4, phase: 'ф', fixing })
@@ -166,6 +184,7 @@ describe('isVerificationCommand', () => {
     expect(isVerificationCommand({ name: 'Гейт', script: 'npm run -w @voicechat/server typecheck && npm run -w @voicechat/server test' })).toBe(true)
     expect(isVerificationCommand({ name: 'UI', script: 'npx vitest run' })).toBe(true)
     expect(isVerificationCommand({ name: 'Линт', script: 'npm run lint' })).toBe(true)
+    expect(isVerificationCommand({ name: 'Гейт', script: 'npm run affected-check' })).toBe(true)
   })
 
   it('флаг справочника перевешивает текст', () => {

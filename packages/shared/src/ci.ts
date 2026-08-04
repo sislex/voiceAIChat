@@ -90,7 +90,7 @@ export interface CiCommandInput {
  * зависимостей модели по-прежнему доступна.
  */
 const VERIFICATION_RE =
-  /\b(vitest|jest)\b|\b(npm|pnpm|yarn)\s+(run\s+)?(-w\s+\S+\s+|--workspace[=\s]\S+\s+)?(test|typecheck|lint)([:\w-]*)\b/i
+  /\b(vitest|jest|affected-check)\b|\b(npm|pnpm|yarn)\s+(run\s+)?(-w\s+\S+\s+|--workspace[=\s]\S+\s+)?(test|typecheck|lint)([:\w-]*)\b/i
 
 /** Команда — прогон гейта (по флагу справочника или по тексту команды)? */
 export function isVerificationCommand(cmd: { isTest?: boolean; name?: string | null; script?: string | null }): boolean {
@@ -432,10 +432,10 @@ export interface CiGlobalSettings {
 }
 
 export const DEFAULT_CI_GLOBAL_SETTINGS: CiGlobalSettings = {
-  maxFixAttempts: 3,
-  fixTimeLimitMs: 10 * 60 * 1000,
-  fixTokenLimit: 200_000,
-  defaultStepTimeoutSec: 600,
+  maxFixAttempts: 9,
+  fixTimeLimitMs: 30 * 60 * 1000,
+  fixTokenLimit: 600_000,
+  defaultStepTimeoutSec: 1_800,
   metricsWindow: 20,
   maxConcurrentRuns: 2,
   maxModelCommandCalls: 20,
@@ -499,6 +499,20 @@ export function canStartCiRun(summary: { status: CiStatus } | null | undefined):
  * `null` — подсветки нет (рана не было, отменён или пропущен).
  */
 export type CiCardPulse = 'running' | 'fixing' | 'awaiting' | 'failed' | 'done'
+
+/**
+ * Состояние рана, актуальное для поверхностей задачи. Ручное завершение задачи
+ * сильнее старого терминального падения: ошибка остаётся в истории рана, но не
+ * должна продолжать красить уже закрытую карточку и её чат. Активный ран не
+ * скрываем — перенос во время работы не должен маскировать живой процесс.
+ */
+export function ciSummaryForTask<T extends { status: CiStatus }>(
+  summary: T | null | undefined,
+  taskDone: boolean
+): T | null {
+  if (!summary) return null
+  return taskDone && (summary.status === 'failed' || summary.status === 'timeout') ? null : summary
+}
 
 export function ciCardPulse(
   summary: { status: CiStatus; slotProgress: Pick<CiSlotProgress, 'fixing'> } | null | undefined

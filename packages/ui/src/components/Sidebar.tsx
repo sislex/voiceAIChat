@@ -11,7 +11,7 @@ import {
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { ProjectSummary, TaskChatBadge } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
-import { ciCardPulse } from '@shared/ci'
+import { ciCardPulse, ciSummaryForTask } from '@shared/ci'
 import { TypeIcon } from './kanban/kanbanMeta'
 import { ciStatusLabel, ciTone } from './ci/ciFormat'
 import { ACCENT } from '../lib/view'
@@ -544,7 +544,8 @@ export function Sidebar({
             // мигает только активный ран, у терминального рамка статичная.
             const badge = taskBadges[c.id]
             const run = badge ? ciSummaries[badge.taskId] : undefined
-            const pulse = ciCardPulse(run)
+            const visibleRun = ciSummaryForTask(run, badge?.columnSemantic === 'done')
+            const pulse = ciCardPulse(visibleRun)
             return (
             <div
               key={c.id}
@@ -602,9 +603,9 @@ export function Sidebar({
                     <p className="ctask">
                       <TypeIcon type={badge.type} />
                       <span className="ctask-key">{badge.key}</span>
-                      {run && (
-                        <span className={`ci-lozenge ci-lozenge--${ciTone(run.status)}`} title="Последний ран задачи">
-                          {ciStatusLabel(run.status)}
+                      {visibleRun && (
+                        <span className={`ci-lozenge ci-lozenge--${ciTone(visibleRun.status)}`} title="Последний ран задачи">
+                          {ciStatusLabel(visibleRun.status)}
                         </span>
                       )}
                     </p>

@@ -690,7 +690,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     if (run) emitRun(run, userId)
   }
 
-  function makePrimitives(runId: string, userId: string, agentId: string | null, workspacePath: string, env: Record<string, string>, signal: AbortSignal): CiRunPrimitives {
+  function makePrimitives(runId: string, userId: string, agentId: string | null, workspacePath: string, commandWorkspacePath: string, env: Record<string, string>, signal: AbortSignal): CiRunPrimitives {
     return {
       runId,
       agentId,
@@ -716,7 +716,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
         const command = deps.db.getCiCommand(userId, commandId)
         if (!command) return { exitCode: null, timedOut: false, output: 'Команда не найдена' }
         const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
-        const r = await runCommandStep(runId, userId, agentId, workspacePath, env, null, steps.length, command, 'model', parentStepId, signal)
+        const r = await runCommandStep(runId, userId, agentId, commandWorkspacePath, env, null, steps.length, command, 'model', parentStepId, signal)
         return { exitCode: r.exitCode, timedOut: r.status === 'timeout', output: r.output }
       },
       setModelSessionId: (sessionId) => {
@@ -949,6 +949,11 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     // падения требовал ручного «Откатить изменения и повторить». Незакоммиченное
     // не пропадает: сначала `git stash`, и его всегда можно достать из копии.
     const repoPath = `${workspacePath}/${slug}`
+    // Связанный чат задачи должен выполнять команды там же, где модель CI: внутри
+    // клонированного репозитория, а не в каталоге-контейнере workspace.
+    if (runRow.conversationId) {
+      deps.db.setConversationExecTarget(userId, runRow.conversationId, agentId, repoPath, task.skills)
+    }
     const reclaim = [
       `  echo "Рабочая копия прошлого рана найдена — привожу её в чистое состояние"`,
       `  git -C ${shq(repoPath)} stash push --include-untracked --message ${shq(`ci-run ${runId}`)} >/dev/null 2>&1 || true`,
@@ -1038,7 +1043,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       let message = 'Актуализация базы знаний пропущена (хук не подключён)'
       if (deps.kbUpdate) {
         const ctx: CiModelContext = {
-          ...makePrimitives(runId, userId, agentId, workspacePath, env, signal),
+          ...makePrimitives(runId, userId, agentId, repoPath, workspacePath, env, signal),
           run: deps.db.getCiRunRaw(runId)!,
           task,
           project,
@@ -1113,7 +1118,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
             return false
           }
           // fix-loop (если подключён) на упавший шаг.
-          const fixed = await tryFix(runId, userId, agentId, workspacePath, env, project, task, signal)
+          const fixed = await tryFix(runId, userId, agentId, repoPath, workspacePath, env, project, task, signal)
           if (!fixed) {
             const failStatus = res.status === 'timeout' ? 'timeout' : 'failed'
             if (slot === 'before_model') {
@@ -1134,13 +1139,41 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     // 1) Слот «до».
     const beforeOk = await runSlot('before_model', slots.beforeModel, 'Подготовка', resume?.kind === 'command' && resume.slot === 'before_model' ? resume.index : resume ? slots.beforeModel.length : 0)
     if (!beforeOk) return
+    // Команды подготовки исполняются из контейнера workspace и сами заходят в
+    // $SLUG. Перед выдачей MCP модели проверяем именно корень клона: иначе CLI
+    // честно стартовал в родительской папке, не находил репозиторий и пустой ран
+    // всё равно доходил до merge/success.
+    const repoStep = deps.db.addCiRunStep({ runId, slot: 'before_model', position: posBase + done + 1 + extraSteps++, kind: 'command', initiatedBy: 'system', title: 'Проверка рабочей директории модели', workdir: repoPath, status: 'running' })
+    emitStep(repoStep, userId)
+    const repoStarted = now()
+    let repoReady = false
+    try {
+      if (!agentId) throw new Error('У проекта не задана машина по умолчанию для выполнения')
+      const check = await deps.executor.run({ agentId, script: 'git rev-parse --show-toplevel >/dev/null', workdir: repoPath, env, timeoutMs: 30_000, secrets: [] }, (data) => {
+        const line = deps.db.appendCiLog(runId, repoStep.id, 'stdout', data)
+        broadcast({ t: 'ci.log', runId, line }, userId)
+      }, signal)
+      repoReady = check.exitCode === 0
+      const upd = deps.db.updateCiRunStep(repoStep.id, { status: repoReady ? 'success' : 'failed', exitCode: check.exitCode, finishedAt: now(), durationMs: now() - repoStarted })
+      if (upd) emitStep(upd, userId)
+    } catch (err) {
+      const line = deps.db.appendCiLog(runId, repoStep.id, 'system', `${err instanceof Error ? err.message : String(err)}\n`)
+      broadcast({ t: 'ci.log', runId, line }, userId)
+      const upd = deps.db.updateCiRunStep(repoStep.id, { status: signal.aborted ? 'cancelled' : 'failed', finishedAt: now(), durationMs: now() - repoStarted })
+      if (upd) emitStep(upd, userId)
+    }
+    if (!repoReady) {
+      if (signal.aborted) finishCancelled()
+      else rollbackAndFail(runId, userId, runRow.prevColumnId, 'script_error')
+      return
+    }
     if (signal.aborted) {
       finishCancelled()
       return
     }
 
     // 2) Работа модели (при повторе из слота «после» — уже сделана, пропускаем).
-    const prim = makePrimitives(runId, userId, agentId, workspacePath, env, signal)
+    const prim = makePrimitives(runId, userId, agentId, repoPath, workspacePath, env, signal)
     let modelOk = true
     let modelCancelled = false
     if (!(resume?.kind === 'command' && resume.slot === 'after_model')) {
@@ -1236,7 +1269,8 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     runId: string,
     userId: string,
     agentId: string | null,
-    workspacePath: string,
+    modelWorkspacePath: string,
+    commandWorkspacePath: string,
     env: Record<string, string>,
     project: import('@voicechat/shared').ProjectDetail,
     task: import('@voicechat/shared').Task,
@@ -1246,7 +1280,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     const detail = deps.db.getCiRun(userId, runId)
     const failedStep = detail?.steps.slice().reverse().find((s) => s.status === 'failed' || s.status === 'timeout')
     if (!failedStep) return false
-    const prim = makePrimitives(runId, userId, agentId, workspacePath, env, signal)
+    const prim = makePrimitives(runId, userId, agentId, modelWorkspacePath, commandWorkspacePath, env, signal)
     // Шаг гейта (тесты/typecheck/линт) отличаем от обычного: vitest печатает
     // много, и по сорока строкам хвоста упавших тестов не видно.
     const failedCommand = failedStep.commandId ? deps.db.getCiCommand(userId, failedStep.commandId) : null
@@ -1270,7 +1304,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       rerunFailedStep: async () => {
         const command = failedStep.commandId ? deps.db.getCiCommand(userId, failedStep.commandId) : null
         if (!command) return { exitCode: null, timedOut: false }
-        const r = await runCommandStep(runId, userId, agentId, workspacePath, env, failedStep.slot, failedStep.position, command, 'model', null, signal)
+        const r = await runCommandStep(runId, userId, agentId, commandWorkspacePath, env, failedStep.slot, failedStep.position, command, 'model', null, signal)
         return { exitCode: r.exitCode, timedOut: r.status === 'timeout' }
       }
     }
