@@ -101,23 +101,15 @@ export function claudeArgs(req: LlmRequest): string[] {
     }
     args.push('--disallowedTools', 'Bash')
     systemHints.push(
-      `Встроенный инструмент Bash отключён. Все shell-команды выполняй инструментом ` +
-        `mcp__remote__bash — они выполняются на машине пользователя «${req.remote.agentName}», ` +
-        `а не на сервере. У инструмента есть аргумент timeout_ms (по умолчанию 120000, ` +
-        `максимум 300000) — для долгих команд (тесты, сборка, установка зависимостей) ` +
-        `передавай его явно, иначе получишь таймаут на середине.` +
-        `\n\nФайлы на этой машине читай инструментом mcp__remote__read (окно строк), ` +
-        `ищи mcp__remote__grep, правь mcp__remote__edit (точная замена). Через bash файлы ` +
-        `не читай (cat/sed тянут в контекст весь файл) и не правь (heredoc/python). ` +
-        `Команду, вся суть которой — прочитать файл рабочей директории, мост отклонит и ` +
-        `вернёт готовый вызов mcp__remote__read; команды с пайплайнами, grep -r и ` +
-        `подстановками работают как обычно.` +
+      `Встроенный Bash отключён: команды выполняй только mcp__remote__bash на машине «${req.remote.agentName}». ` +
+        `Для долгих команд передавай timeout_ms (120000 по умолчанию, максимум 300000). ` +
+        `Файлы читай mcp__remote__read, ищи mcp__remote__grep, правь mcp__remote__edit; ` +
+        `не используй bash для cat/sed или heredoc/python. мост отклонит файловое чтение bash ` +
+        `и вернёт вызов mcp__remote__read. Пайплайны, grep -r и подстановки разрешены.` +
         (req.readOnlyRemote
-          ? `\n\nРежим «План»: только исследование. Читай файлы mcp__remote__read, ищи ` +
-            `mcp__remote__grep, историю смотри bash (ls, git log/diff/status), но ничего не ` +
-            `меняй — правки, установки и сборки будут отклонены.`
+          ? `\nРежим «План»: только чтение (read/grep, ls и git log/diff/status); правки, установки и сборки запрещены.`
           : '') +
-        (req.remote.policySummary ? `\n\n${req.remote.policySummary}` : '') +
+        (req.remote.policySummary ? `\n${req.remote.policySummary}` : '') +
         ciHint
     )
   }

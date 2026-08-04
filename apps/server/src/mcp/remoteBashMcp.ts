@@ -170,12 +170,8 @@ export function registerRemoteBashMcp(
           'bash',
           {
             description:
-              'Выполняет shell-команду на машине пользователя (не на сервере). ' +
-              'Для команд (git, npm, тесты), не для чтения и правки файлов: команда, вся суть ' +
-              'которой — прочитать файл рабочей копии (cat/sed -n/head/tail), отклоняется с ' +
-              'готовым вызовом read. Возвращает stdout+stderr и код выхода. Длинный вывод ' +
-              `обрезается (лимит ${toolLimits.bashChars} символов): остаются голова и хвост ` +
-              'с пометкой об обрезке, поэтому многословные команды лучше сразу сужать фильтром.',
+              `Shell-команда на машине пользователя; stdout, stderr и код выхода. Для файлов используй read/edit: ` +
+              `cat/sed/head/tail и heredoc отклоняются. Вывод ограничен ${toolLimits.bashChars} символами; сужай его фильтром.`,
             inputSchema: {
               command: z.string().describe('Команда для /bin/bash'),
               timeout_ms: z
@@ -241,10 +237,7 @@ export function registerRemoteBashMcp(
           'read',
           {
             description:
-              'Читает окно строк текстового файла внутри рабочей директории рана. ' +
-              `Окно ограничено (${toolLimits.readLines} строк и ${toolLimits.readChars} символов): ` +
-              'читай нужный фрагмент, а не файл целиком — весь прочитанный текст ' +
-              'перечитывается моделью на каждом следующем запросе хода.',
+              `Окно строк файла в рабочей директории (не весь файл): до ${toolLimits.readLines} строк и ${toolLimits.readChars} символов.`,
             inputSchema: {
               path: z.string().describe('Путь относительно cwd рана'),
               offset: z.number().int().min(1).optional().describe('Первая строка (с 1)'),
@@ -274,9 +267,7 @@ export function registerRemoteBashMcp(
           'grep',
           {
             description:
-              'Ищет текст системным grep внутри рабочей директории рана. Ответ ограничен ' +
-              `по числу совпадений (${toolLimits.grepMatches}) и по объёму (${toolLimits.grepChars} символов); ` +
-              'обрезка помечается в ответе — сужай шаблон вместо повторного вызова.',
+              `Поиск grep в рабочей директории; до ${toolLimits.grepMatches} совпадений и ${toolLimits.grepChars} символов. При обрезке сузь шаблон или путь.`,
             inputSchema: {
               pattern: z.string().min(1).describe('Шаблон grep'),
               path: z.string().optional().describe('Файл или каталог относительно cwd (по умолчанию cwd)'),

@@ -64,6 +64,11 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
   const toolChars = run ? run.toolChars : sumCiToolChars(runs.map((r) => r.toolChars))
   const heaviest = run ? run.toolResponses : topCiToolResponses(runs.flatMap((r) => r.toolResponses))
   const avgContext = totals ? ciAvgContextPerRequest(totals) : null
+  // Не «запросы модели» (ходы CLI), а API-запросы на один инструментальный
+  // вызов: это второй множитель цены и прямой сигнал, где выгоден батч.
+  const apiRequestsPerToolCall = totals?.apiRequests && toolCalls && ciToolCallsTotal(toolCalls)
+    ? totals.apiRequests / ciToolCallsTotal(toolCalls)
+    : null
   const kbHit = run?.kbHit ?? (!run
     ? runs.reduce<{ sectionsDelivered: number; sectionsHit: number } | null>((sum, item) => item.kbHit
       ? { sectionsDelivered: (sum?.sectionsDelivered ?? 0) + item.kbHit.sectionsDelivered, sectionsHit: (sum?.sectionsHit ?? 0) + item.kbHit.sectionsHit }
@@ -181,6 +186,7 @@ export function CiReport(props: CiReportProps): JSX.Element | null {
       {toolCalls && <p className="ci-report__note" data-testid={`${testId}-tools`}>
         Инструменты: {ciToolCallsTotal(toolCalls)} вызовов, из них чтений {toolCalls.read}, правок {toolCalls.edit}
         {' '}(bash {toolCalls.bash} · read {toolCalls.read} · grep {toolCalls.grep} · edit {toolCalls.edit} · БЗ {toolCalls.kb})
+        {apiRequestsPerToolCall != null && ` · API-запросов на вызов в среднем ${apiRequestsPerToolCall.toFixed(1)}`}
         {/* Отказ — не вид инструмента, а исход вызова: он уже посчитан своим
             видом, поэтому идёт отдельной припиской и только когда он был. */}
         {toolCalls.denied > 0 && ` · отказов ${toolCalls.denied}`}

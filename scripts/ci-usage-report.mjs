@@ -401,7 +401,10 @@ for (const r of report) {
     `БЗ: обращений ${r.kbQueries}, символов ${r.kbChars} (инъекцией ${r.kbInjectedChars})` +
     `${r.kbSectionsDelivered != null ? `, разделов ${r.kbSectionsDelivered} (попало ${r.kbSectionsHit})` : ''}\n` +
     // Главные числа задачи «сжать контекст»: цена = контекст × запросы.
-    `   контекст/запрос ${ctxPerRequest(r.totals)}  запросов к API ${r.totals.apiRequests || '—'}`
+    `   контекст/запрос ${ctxPerRequest(r.totals)}  запросов к API ${r.totals.apiRequests || '—'}` +
+    (r.totals.apiRequests && toolsTotal(c)
+      ? `  API-запросов на вызов инструмента в среднем ${(r.totals.apiRequests / toolsTotal(c)).toFixed(1)}`
+      : '')
   )
   if (WITH_CONTEXT) printContext(r)
 }
