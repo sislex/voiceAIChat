@@ -83,7 +83,15 @@ function main() {
   console.log(`[affected-check] base ref: ${baseRef}`)
   console.log(`[affected-check] changed files: ${'error' in diff ? '(diff unavailable)' : diff.length ? diff.join(', ') : '(none)'}`)
   console.log(`[affected-check] selected packages: ${decision.packages.length ? decision.packages.map((pkg) => pkg.id).join(', ') : '(none)'}`)
-  if (decision.full) console.log(`[affected-check] full fallback: ${decision.reason}`)
+  if (decision.full) {
+    console.log(`[affected-check] full fallback: ${decision.reason}`)
+    // Полный fallback обязан сохранить прежний корневой гейт: в нём есть тесты
+    // самого скрипта выбора пакетов, которых нет среди npm-workspaces.
+    console.log('[affected-check] full gate: npm run typecheck && npm test')
+    run('npm', ['run', 'typecheck'])
+    run('npm', ['test'])
+    return
+  }
   if (!decision.packages.length) return
 
   for (const pkg of decision.packages) runPackage(pkg, 'typecheck')
