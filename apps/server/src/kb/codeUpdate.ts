@@ -37,6 +37,13 @@ export interface KbCodeChanges {
 export const EMPTY_CHANGES: KbCodeChanges = { files: [], stat: '', patch: '', unavailable: true }
 
 /**
+ * Проверка корня перед ходом KB. `workspacePath` в контексте модели уже указывает
+ * на клон, а не на каталог-контейнер команд: проверяем именно его, чтобы в MCP
+ * не ушёл несуществующий вложенный путь и пустой ответ модели не стал успехом.
+ */
+export const KB_REPO_ROOT_CHECK_SCRIPT = 'git rev-parse --show-toplevel'
+
+/**
  * Скрипт сбора дифа. Значения берёт из окружения шага (`SLUG`, `BASE_BRANCH`,
  * необязательный `KB_BASE_REF`) — в текст скрипта пользовательские данные не
  * конкатенируются. Диф считается от базы к рабочему дереву, а не к HEAD:

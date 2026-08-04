@@ -21,7 +21,7 @@ import type { KbUsageTracker } from '../kb/usage.js'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook } from './types.js'
 import {
-  EMPTY_CHANGES, KB_DIFF_SCRIPT, KB_UPDATE_TIMEOUT_MS, MAX_PROMPT_GAPS, affectedProjectDocs, formatKbUpdateSummary,
+  EMPTY_CHANGES, KB_DIFF_SCRIPT, KB_REPO_ROOT_CHECK_SCRIPT, KB_UPDATE_TIMEOUT_MS, MAX_PROMPT_GAPS, affectedProjectDocs, formatKbUpdateSummary,
   kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput, type KbGapForPrompt
 } from '../kb/codeUpdate.js'
 
@@ -832,12 +832,33 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     const cancelled = { ok: true, message: 'Ран отменён — база знаний не обновлялась' }
     if (ctx.signal.aborted) return cancelled
 
+    // В примитивах CI `workspacePath` уже является корнем клона (`repoPath`).
+    // Не добавляем сюда SLUG повторно: так remote MCP получал путь
+    // `.../<slug>/<slug>`, которого на машине нет, а модель отвечала
+    // `nothingToUpdate`, маскируя инфраструктурную ошибку под успех.
+    const repoDir = ctx.workspacePath
+    if (ctx.agentId && deps.executor) {
+      try {
+        const check = await deps.executor.run(
+          { agentId: ctx.agentId, script: KB_REPO_ROOT_CHECK_SCRIPT, workdir: repoDir, env: ctx.env, timeoutMs: 30_000 },
+          () => {},
+          ctx.signal
+        )
+        if (check.exitCode !== 0) {
+          return { ok: false, message: 'Корень рабочей копии KB недоступен — база знаний не обновлена' }
+        }
+      } catch (err) {
+        return { ok: false, message: `Корень рабочей копии KB недоступен: ${err instanceof Error ? err.message : String(err)}` }
+      }
+    }
+    if (ctx.signal.aborted) return cancelled
+
     let changes = { ...EMPTY_CHANGES }
     if (ctx.agentId && deps.executor) {
       const chunks: string[] = []
       try {
         await deps.executor.run(
-          { agentId: ctx.agentId, script: KB_DIFF_SCRIPT, workdir: ctx.workspacePath, env: ctx.env, timeoutMs: 120_000 },
+          { agentId: ctx.agentId, script: KB_DIFF_SCRIPT, workdir: repoDir, env: ctx.env, timeoutMs: 120_000 },
           (d) => chunks.push(d),
           ctx.signal
         )
@@ -856,9 +877,6 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     if (changes.files.length) log(`Изменённых файлов: ${changes.files.length}.\n`)
     if (gaps.length) log(`Пробелов базы знаний за ран: ${gaps.length}.\n`)
 
-    // Рабочая копия лежит в подкаталоге $SLUG рабочей директории рана: команды
-    // базы знаний (`kb.mjs touch`, `kb:index`) запускаются из корня репозитория.
-    const repoDir = ctx.env.SLUG ? `${ctx.workspacePath}/${ctx.env.SLUG}` : ctx.workspacePath
     const projectDocs = deps.db.kbDocuments({ scope: 'project', projectId: ctx.project.id })
     const affected = affectedProjectDocs(projectDocs, changes.files)
     const req = (model: string): LlmRequest => ({
