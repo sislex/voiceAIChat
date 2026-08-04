@@ -67,7 +67,7 @@ interface ActiveRun {
 }
 
 export interface CiRunManager {
-  start(userId: string, projectId: string, taskId: string, mode?: CiRunMode): { run: CiRun } | { error: string }
+  start(userId: string, projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string }): { run: CiRun } | { error: string }
   retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): { run: CiRun } | { error: string }
   discardChangesAndRetry(userId: string, runId: string): Promise<{ run: CiRun } | { error: string }>
   cancel(userId: string, runId: string): boolean
@@ -213,7 +213,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     broadcast({ t: 'ci.step', runId: step.runId, step }, userId)
   }
 
-  function start(userId: string, projectId: string, taskId: string, modeOverride?: CiRunMode): { run: CiRun } | { error: string } {
+  function start(userId: string, projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string }): { run: CiRun } | { error: string } {
+    const launchOptions = typeof options === 'string' ? { mode: options } : options
+    const modeOverride = launchOptions?.mode
     const project = deps.db.getProject(userId, projectId)
     if (!project) return { error: 'Проект недоступен' }
     const task = deps.db.getCiTask(userId, projectId, taskId)
@@ -226,10 +228,10 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId)
     const settings = deps.db.getSettings(userId)
     const role = deps.db.getUser(userId)?.role ?? 'user'
-    // CI-задача всегда наследует движок и модель из настроек её пользователя.
-    // Настройки CI карточки сохраняют только режим и параметры уточнений.
-    const provider = settings.llmProvider
-    const model = provider === 'codex' ? settings.codexModel : settings.model
+    // Обычный запуск наследует пару из пользовательских настроек. Окно создания
+    // задачи передаёт разовый выбор, который фиксируется только в этом ране.
+    const provider = launchOptions?.provider ?? settings.llmProvider
+    const model = launchOptions?.model ?? (provider === 'codex' ? settings.codexModel : settings.model)
     const engineResolution = deps.db.resolveLlmEngine(settings.llmEngineId, provider, role)
     const total = slots.beforeModel.length + slots.afterModel.length + 2
     // Связанный чат нужен, чтобы дублировать туда вопросы модели. Идемпотентно:

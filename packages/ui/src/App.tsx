@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
-import type { PermissionMode } from '@shared/types'
+import type { LlmProvider, PermissionMode } from '@shared/types'
+import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { TaskPriority } from '@shared/projects'
 import type { HealthResponse } from '@shared/protocol'
 import { Sidebar } from './components/Sidebar'
@@ -127,8 +128,11 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     projectId: string
     title: string
     description: string
+    acceptanceCriteria: string
     priority: TaskPriority
     assignee: string | null
+    provider: LlmProvider
+    model: string
   } | null>(null)
   const [taskLaunchPending, setTaskLaunchPending] = useState(false)
   // Режим списка сайдбара: маршрут ведёт его автоматически, ручной выбор
@@ -366,8 +370,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     : activeConversation?.permissionMode ?? state.settings.permissionMode
   const ciProvider = state.settings.llmProvider
   const ciModel = ciProvider === 'codex' ? state.settings.codexModel : state.settings.model
-  // Лёгкие состояния App в тестах и до загрузки реестра могут не нести список.
-  const ciEngine = (state.llmEngines ?? []).find((engine) => engine.id === state.settings.llmEngineId)?.name ?? 'По умолчанию'
+  const proposalModels = taskProposal?.provider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS
 
   const confirmTaskLaunch = async (): Promise<void> => {
     if (!taskProposal || taskLaunchPending) return
@@ -648,8 +651,11 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
                   projectId: activeConversation.projectId,
                   title: text,
                   description: text,
+                  acceptanceCriteria: text,
                   priority: 'medium',
-                  assignee: state.currentUser?.name ?? null
+                  assignee: state.currentUser?.name ?? null,
+                  provider: ciProvider,
+                  model: ciModel
                 })
                 return
               }
@@ -881,6 +887,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           className="task-launch-dialog"
           footer={<>
             <Button variant="secondary" onClick={() => setTaskProposal(null)} disabled={taskLaunchPending}>Отмена</Button>
+            <Button variant="secondary" onClick={() => { setTaskProposal(null); void actions.submitText() }} disabled={taskLaunchPending}>Отправить в текущий чат</Button>
             <Button variant="primary" onClick={() => void confirmTaskLaunch()} loading={taskLaunchPending} disabled={!taskProposal.title.trim()}>Создать и запустить CI</Button>
           </>}
         >
@@ -889,14 +896,26 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
             <label>Название
               <input value={taskProposal.title} onChange={(event) => setTaskProposal({ ...taskProposal, title: event.target.value })} />
             </label>
+            <label>Описание
+              <textarea value={taskProposal.description} rows={4} onChange={(event) => setTaskProposal({ ...taskProposal, description: event.target.value })} />
+            </label>
+            <label>Критерии приёмки
+              <textarea value={taskProposal.acceptanceCriteria} rows={4} onChange={(event) => setTaskProposal({ ...taskProposal, acceptanceCriteria: event.target.value })} />
+            </label>
             <label>Движок
-              <input value={ciProvider === 'codex' ? 'Codex' : 'Claude'} readOnly />
+              <select value={taskProposal.provider} onChange={(event) => {
+                const provider = event.target.value as LlmProvider
+                setTaskProposal({ ...taskProposal, provider, model: provider === 'codex' ? CODEX_MODELS[0].id : CLAUDE_MODELS[0].id })
+              }}>
+                <option value="claude">Claude</option>
+                <option value="codex">Codex</option>
+              </select>
             </label>
             <label>Модель
-              <input value={ciModel} readOnly />
-            </label>
-            <label>Исполнитель
-              <input value={ciEngine} readOnly />
+              <select value={taskProposal.model} onChange={(event) => setTaskProposal({ ...taskProposal, model: event.target.value })}>
+                {!proposalModels.some((model) => model.id === taskProposal.model) && <option value={taskProposal.model}>{taskProposal.model || 'По умолчанию'}</option>}
+                {proposalModels.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+              </select>
             </label>
             <label>Очередь
               <input value="FIFO" readOnly />

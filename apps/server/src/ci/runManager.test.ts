@@ -121,8 +121,8 @@ function setup() {
   return { project, task, readyColId: ready.id }
 }
 
-async function run(projectId: string, taskId: string): Promise<string> {
-  const res = await inj(admin, { method: 'POST', url: `/api/projects/${projectId}/tasks/${taskId}/ci/run` })
+async function run(projectId: string, taskId: string, payload?: object): Promise<string> {
+  const res = await inj(admin, { method: 'POST', url: `/api/projects/${projectId}/tasks/${taskId}/ci/run`, ...(payload ? { payload } : {}) })
   expect(res.statusCode).toBe(202)
   return res.json().id as string
 }
@@ -152,6 +152,14 @@ describe('ci run manager', () => {
     const development = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
     expect(columnAtModel).toBe(development.id)
     expect(detail.run.status).toBe('success')
+    expect(codexModel).toBe('gpt-5.6-luna')
+  })
+
+  it('разовый выбор окна запуска фиксирует пару модели только в новом ране', async () => {
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id, { provider: 'codex', model: 'gpt-5.6-luna' })
+    const detail = await waitRun(runId)
+    expect(detail.run).toMatchObject({ llmProvider: 'codex', llmModel: 'gpt-5.6-luna' })
     expect(codexModel).toBe('gpt-5.6-luna')
   })
 
