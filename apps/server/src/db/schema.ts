@@ -39,6 +39,33 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_conversation
   ON messages(conversation_id, created_at);
 
+-- Редактируемый прайс моделей: USD за 1M токенов. Начальные строки Codex/OpenAI
+-- зафиксированы по developers.openai.com/api/docs/pricing (Standard, short context,
+-- 04.08.2026); INSERT OR IGNORE сохраняет будущие ручные обновления.
+CREATE TABLE IF NOT EXISTS model_prices (
+  provider          TEXT NOT NULL,
+  model             TEXT NOT NULL,
+  input_per_million REAL NOT NULL,
+  cached_input_per_million REAL NOT NULL,
+  cache_write_per_million REAL NOT NULL DEFAULT 0,
+  output_per_million REAL NOT NULL,
+  source_url        TEXT NOT NULL,
+  effective_at      INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL,
+  PRIMARY KEY (provider, model)
+);
+INSERT OR IGNORE INTO model_prices VALUES
+  ('codex','gpt-5.6-sol',5.00,0.50,6.25,30.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.6-terra',2.00,0.20,2.50,12.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.6-luna',0.20,0.02,0.25,1.20,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.5',5.00,0.50,0,30.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.5-pro',30.00,0,0,180.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.4',2.50,0.25,0,15.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.4-mini',0.75,0.075,0,4.50,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.4-nano',0.20,0.02,0,1.25,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.4-pro',30.00,0,0,180.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.3-codex',1.75,0.175,0,14.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000);
+
 -- Состояние бэкфилла FTS-индексов. Живёт отдельно от settings: это внутренняя
 -- служебная запись движка, а не настройка пользователя.
 CREATE TABLE IF NOT EXISTS fts_state (

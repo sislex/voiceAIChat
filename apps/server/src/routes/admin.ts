@@ -166,7 +166,7 @@ export function registerAdminRoutes(
     return { ok: true }
   })
 
-  app.get<{ Params: { name: string }; Querystring: { unit?: string; from?: string; to?: string } }>(
+  app.get<{ Params: { name: string }; Querystring: { unit?: string; from?: string; to?: string; conversationId?: string } }>(
     REST.adminUserUsage(':name').replace('%3Aname', ':name'),
     guard,
     async (req) => {
@@ -175,7 +175,7 @@ export function registerAdminRoutes(
         : 'day'
       const from = req.query.from ? Number(req.query.from) : undefined
       const to = req.query.to ? Number(req.query.to) : undefined
-      return db.usageReport(req.params.name, unit, from, to)
+      return db.usageReport(req.params.name, unit, from, to, req.query.conversationId || undefined)
     }
   )
 

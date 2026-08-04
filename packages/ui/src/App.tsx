@@ -787,7 +787,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onCreate={(name, password, role) => void actions.createUserAccount(name, password, role)}
           onSetBlocked={(name, blocked) => void actions.setUserBlocked(name, blocked)}
           onDelete={(name) => void actions.deleteUserAccount(name)}
-          onLoadUsage={(unit) => void actions.loadAdminUsage(unit)}
+          onLoadUsage={(unit, from, to, conversationId) => void actions.loadAdminUsage(unit, from, to, conversationId)}
           onOpenConversation={(id) => void actions.openAdminConversation(id)}
           engines={state.adminLlmEngines}
           enginesStatus={state.adminLlmEnginesStatus}

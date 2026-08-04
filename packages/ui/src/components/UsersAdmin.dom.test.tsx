@@ -4,6 +4,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { UsersAdmin, type UsersAdminProps } from './UsersAdmin'
 import type { AdminLlmEngine, AdminUserInfo } from '@shared/admin'
+import { makeConversation } from '../test/fixtures/conversations'
 
 const users: AdminUserInfo[] = [
   { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 2, agents: [] },
@@ -88,12 +89,23 @@ describe('UsersAdmin', () => {
       selected: 'bob',
       usage: {
         unit: 'day',
+        conversationId: null,
         totals: { inputTokens: 1500, outputTokens: 300, cacheReadTokens: 0, costUsd: 0.02, messages: 3 },
         byBucket: [],
-        byModel: [{ model: 'opus', inputTokens: 1500, outputTokens: 300, cacheReadTokens: 0, costUsd: 0.02, messages: 3 }]
+        byModel: [{ model: 'opus', inputTokens: 1500, outputTokens: 300, cacheReadTokens: 0, costUsd: 0.02, messages: 3 }],
+        byConversation: []
       }
     })
-    expect(screen.getByTestId('usage-total').textContent).toContain('3 отв.')
+    expect(screen.getByTestId('usage-total')).toHaveTextContent('Ответы3')
+  })
+
+  it('перезагружает расход при смене периода и разговора', async () => {
+    const conversation = makeConversation({ id: 'chat-usage', title: 'Точный разговор' })
+    const p = renderAdmin({ selected: 'bob', conversations: [conversation] })
+    await userEvent.selectOptions(screen.getByLabelText('Период расхода'), '7')
+    expect(p.onLoadUsage).toHaveBeenLastCalledWith('day', expect.any(Number), expect.any(Number), undefined)
+    await userEvent.selectOptions(screen.getByLabelText('Разговор расхода'), conversation.id)
+    expect(p.onLoadUsage).toHaveBeenLastCalledWith('day', expect.any(Number), expect.any(Number), conversation.id)
   })
 
   it('рендерит реестр LLM-исполнителей и health', () => {

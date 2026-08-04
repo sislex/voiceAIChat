@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-08-01
-checked: 12c087a
+updated: 2026-08-04
+checked: ab1927a
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -153,7 +153,15 @@ FTS5 не должна валить старт (тогда `searchMessages` пр
 
 `/api/admin/users*` (`routes/admin.ts`, типы в `packages/shared/src/admin.ts`):
 список, создание/удаление, блокировка, отчёт по использованию
-(`UsageReport`/`UsageUnit`), просмотр чужих разговоров и сообщений. UI —
+(`UsageReport`/`UsageUnit`), просмотр чужих разговоров и сообщений. Отчёт принимает
+`from`, `to`, `unit` и необязательный `conversationId`, возвращает агрегаты по
+бакетам, моделям и разговорам. Для сообщений Codex без `meta.costUsd`
+`usageReport` оценивает стоимость по `model_prices`; обычный вход считается как
+`inputTokens - cacheReadTokens`, чтобы кэш не оплачивался дважды. Таблица содержит
+USD за 1M обычных/кэшированных/записанных в кэш/выходных токенов, URL источника и
+даты тарифа/обновления; начальные строки OpenAI сидятся `INSERT OR IGNORE`, поэтому
+будущее ручное обновление цен переживает рестарт. Неизвестная модель даёт нулевую
+оценку, а не семейный выдуманный тариф. UI —
 `packages/ui/src/components/UsersAdmin.tsx`.
 
 ## Чтение файлов с диска сервера (`/api/files/read`)
