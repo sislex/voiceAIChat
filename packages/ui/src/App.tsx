@@ -366,7 +366,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     : activeConversation?.permissionMode ?? state.settings.permissionMode
   const ciProvider = state.settings.llmProvider
   const ciModel = ciProvider === 'codex' ? state.settings.codexModel : state.settings.model
-  const ciEngine = state.llmEngines.find((engine) => engine.id === state.settings.llmEngineId)?.name ?? 'По умолчанию'
+  // Лёгкие состояния App в тестах и до загрузки реестра могут не нести список.
+  const ciEngine = (state.llmEngines ?? []).find((engine) => engine.id === state.settings.llmEngineId)?.name ?? 'По умолчанию'
 
   const confirmTaskLaunch = async (): Promise<void> => {
     if (!taskProposal || taskLaunchPending) return
