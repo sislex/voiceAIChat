@@ -60,10 +60,7 @@ export interface AppProps {
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
 const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users', 'ci']
 
-/** Запрос разработки, для которого вместо обычного хода предлагаем завести CI-задачу. */
-function isDevelopmentTaskIntent(text: string): boolean {
-  return /(?:созда(?:й|ть)|заведи|поставь|нужно|надо|давай).{0,80}(?:задач|таск|разработ|реализ|добав|исправ)|(?:разработ|реализ|добав|исправ).{0,80}(?:фич|функц|экран|api|задач|таск)/iu.test(text)
-}
+// Запуск задачи предлагает только явный структурированный сигнал ассистента.
 
 /**
  * Корень приложения. Тосты и подтверждения — провайдеры вокруг всего дерева:
@@ -372,15 +369,57 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const ciModel = ciProvider === 'codex' ? state.settings.codexModel : state.settings.model
   const proposalModels = taskProposal?.provider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS
 
-  const confirmTaskLaunch = async (): Promise<void> => {
+  useEffect(() => {
+    const request = state.taskLaunchRequest
+    if (!request) return
+    actions.clearTaskLaunchRequest()
+    if (!activeConversation?.projectId) return
+    setTaskProposal({
+      projectId: activeConversation.projectId,
+      title: request.title,
+      description: request.description,
+      acceptanceCriteria: request.acceptanceCriteria,
+      priority: 'medium',
+      assignee: state.currentUser?.name ?? null,
+      provider: ciProvider,
+      model: ciModel
+    })
+  }, [state.taskLaunchRequest, activeConversation?.projectId, state.currentUser?.name, ciProvider, ciModel])
+
+  const chooseTaskLaunch = async (mode: 'todo' | 'in-progress' | 'chat'): Promise<void> => {
     if (!taskProposal || taskLaunchPending) return
     setTaskLaunchPending(true)
-    const run = await actions.createTaskAndStartCi(taskProposal.projectId, taskProposal)
-    setTaskLaunchPending(false)
-    if (!run) return
-    actions.setDraft('')
-    setTaskProposal(null)
-    toast.success('Задача создана и поставлена в CI-очередь')
+    try {
+      if (mode === 'todo') {
+        const board = await api['board:get']({ id: taskProposal.projectId })
+        const column = board.columns.find((item) => item.semanticType === 'todo') ?? board.columns[0]
+        if (!column) return
+        await api['tasks:create']({
+          projectId: taskProposal.projectId,
+          columnId: column.id,
+          title: taskProposal.title,
+          description: taskProposal.description,
+          acceptanceCriteria: taskProposal.acceptanceCriteria,
+          priority: taskProposal.priority,
+          assignee: taskProposal.assignee
+        })
+        toast.success('Задача создана в TODO')
+      } else if (mode === 'in-progress') {
+        const run = await actions.createTaskAndStartCi(taskProposal.projectId, taskProposal)
+        if (!run) return
+        toast.success('Задача создана и поставлена в CI-очередь')
+      }
+      setTaskProposal(null)
+      await actions.answerQuestions(
+        mode === 'todo'
+          ? 'Выбираю: создать задачу в TODO.'
+          : mode === 'in-progress'
+            ? 'Выбираю: создать задачу в InProgress и начать выполнение.'
+            : 'Выбираю: выполнять работу в текущем чате.'
+      )
+    } finally {
+      setTaskLaunchPending(false)
+    }
   }
 
   const changeConversationMode = async (mode: PermissionMode): Promise<void> => {
@@ -644,23 +683,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
             aiLabel={(activeConversation?.llmProvider ?? state.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
             attachments={state.attachments}
             onDraftChange={actions.setDraft}
-            onSubmitText={() => {
-              const text = state.draft.trim()
-              if (activeConversation?.projectId && state.attachments.length === 0 && isDevelopmentTaskIntent(text)) {
-                setTaskProposal({
-                  projectId: activeConversation.projectId,
-                  title: text,
-                  description: text,
-                  acceptanceCriteria: text,
-                  priority: 'medium',
-                  assignee: state.currentUser?.name ?? null,
-                  provider: ciProvider,
-                  model: ciModel
-                })
-                return
-              }
-              void actions.submitText()
-            }}
+            onSubmitText={() => void actions.submitText()}
             onStartVoice={actions.startVoice}
             onStopVoice={actions.stopVoice}
             onStopSpeak={actions.stopSpeak}
@@ -879,19 +902,19 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
 
       {taskProposal && (
         <Dialog
-          title="Запустить разработку?"
+          title="Как начать разработку?"
           ariaLabel="Настройки задачи разработки"
           size="sm"
           onClose={() => { if (!taskLaunchPending) setTaskProposal(null) }}
           closeOnOverlay={!taskLaunchPending}
           className="task-launch-dialog"
           footer={<>
-            <Button variant="secondary" onClick={() => setTaskProposal(null)} disabled={taskLaunchPending}>Отмена</Button>
-            <Button variant="secondary" onClick={() => { setTaskProposal(null); void actions.submitText() }} disabled={taskLaunchPending}>Отправить в текущий чат</Button>
-            <Button variant="primary" onClick={() => void confirmTaskLaunch()} loading={taskLaunchPending} disabled={!taskProposal.title.trim()}>Создать и запустить CI</Button>
+            <Button variant="secondary" onClick={() => void chooseTaskLaunch('todo')} loading={taskLaunchPending} disabled={!taskProposal.title.trim()}>Создать в TODO</Button>
+            <Button variant="primary" onClick={() => void chooseTaskLaunch('in-progress')} loading={taskLaunchPending} disabled={!taskProposal.title.trim()}>Создать в InProgress</Button>
+            <Button variant="secondary" onClick={() => void chooseTaskLaunch('chat')} loading={taskLaunchPending}>Работать в текущем чате</Button>
           </>}
         >
-          <p className="task-launch-intro">Задача будет создана от вашего имени и сразу поставлена в CI-очередь.</p>
+          <p className="task-launch-intro">Ассистент подготовил задачу. Выберите, где начать работу.</p>
           <div className="task-launch-fields">
             <label>Название
               <input value={taskProposal.title} onChange={(event) => setTaskProposal({ ...taskProposal, title: event.target.value })} />

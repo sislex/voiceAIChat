@@ -8,6 +8,7 @@ import type {
   Message,
   MessageRole,
   SttSegment,
+  TaskLaunchRequest,
   TurnMeta,
   TurnUsage,
   WhisperModel
@@ -344,6 +345,8 @@ export type ServerMessage =
       engine?: LlmProvider
       /** Сообщение, сохранённое сервером в БД (клиент не сохраняет сам). */
       message?: Message
+      /** Явный запрос ассистента выбрать способ начала разработки. */
+      taskLaunch?: TaskLaunchRequest
     }
   | { t: 'claude.error'; conversationId: string; message: string }
   | { t: 'claude.log'; conversationId: string; entry: ClaudeLogEntry }

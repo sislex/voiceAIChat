@@ -10,6 +10,7 @@ import { basename } from 'node:path'
 import {
   appendImageHint,
   appendChangeAuthorizationHint,
+  parseTaskLaunchRequest,
   appendQuestionsHint,
   appendToolHint,
   buildConversationPrompt,
@@ -538,6 +539,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           // Ответ сохраняет сервер: клиент мог обновить страницу или уйти.
           const answerText = text.trim() ? text : turn.partial
           const rawText = engineNotice ? `${engineNotice}\n\n${answerText}` : answerText
+          // Модель явно запрашивает выбор через структурированный блок. Сам блок
+          // служебный: в историю и видимый ответ он не попадает.
+          const taskLaunch = parseTaskLaunchRequest(rawText)
 
           // Картинки, созданные CLI, лежат на сервере — перекладываем их на
           // машину разговора, откуда браузер возьмёт их напрямую. Шаг сетевой,
@@ -585,7 +589,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
                 text: finalText,
                 meta: merged,
                 engine: provider,
-                ...(message ? { message } : {})
+                ...(message ? { message } : {}),
+                ...(taskLaunch.request ? { taskLaunch: taskLaunch.request } : {})
               },
               userId
             )
@@ -595,24 +600,24 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           // без перекладки (картинки останутся серверными, но покажутся).
           function finalize(): void {
             if (saved) return
-            emitDone(rawText, persist(rawText))
+            emitDone(taskLaunch.text, persist(taskLaunch.text))
           }
           pendingSaves.add(finalize)
 
           const prepared = (async (): Promise<string> => {
             const a = deps.agents
             if (!target || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.readServerFile) {
-              return rawText
+              return taskLaunch.text
             }
             try {
-              return await relocateImagesToMachine(rawText, target, {
+              return await relocateImagesToMachine(taskLaunch.text, target, {
                 readFile: (path) => deps.readServerFile!(userId, path),
                 fsList: (id, path) => a.fsList!(id, path),
                 fsMkdir: (id, path) => a.fsMkdir!(id, path),
                 fsWrite: (id, path, data) => a.fsWrite!(id, path, data)
               })
             } catch {
-              return rawText
+              return taskLaunch.text
             }
           })()
 
