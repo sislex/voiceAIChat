@@ -341,6 +341,7 @@ describe('projects: навыки по умолчанию и связанный �
     // Повторное открытие синхронизирует уже созданный связанный чат с новыми
     // настройками пользователя, не создавая второй разговор.
     db.saveSettings('alice', { ...DEFAULT_SETTINGS, llmEngineId: engine.id, llmProvider: 'codex', codexModel: 'gpt-5.6-sol' })
+    expect(db.getConversation('alice', chat.id)).toMatchObject({ llmEngineId: engine.id, llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
     const again = db.openOrCreateTaskChat('alice', p.id, t.id)!
     expect(again.id).toBe(chat.id) // не плодит второй чат
     expect(again).toMatchObject({ llmEngineId: engine.id, llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
