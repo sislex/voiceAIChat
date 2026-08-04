@@ -13,7 +13,7 @@ import {
 import type { CiRunMode, CiToolCalls, CiToolChars, CiToolKind, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import { kbToolBroker, kbRunDirective, type KbToolEntry } from '../kb/kbMcp.js'
-import { buildKbAutoContext } from '../kb/autoContext.js'
+import { buildKbAutoContext, CI_KB_AUTO_CONTEXT_BUDGET } from '../kb/autoContext.js
 import { kbCodeQuery, kbTaskQuery } from '../kb/taskQuery.js'
 import { kbViewOf } from '../kb/access.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
@@ -574,7 +574,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       const auto = await buildKbAutoContext(deps.kb, query, {
         ...kbViewOf(deps.db, ctx.run.triggeredBy),
         projectId: ctx.project.id
-      })
+      }, CI_KB_AUTO_CONTEXT_BUDGET)
       if (!auto.text) {
         usage?.empty(auto.emptyReason ?? 'no-match', auto.bundle.confidence)
         return ''

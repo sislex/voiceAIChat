@@ -267,7 +267,7 @@ export function registerRemoteBashMcp(
           'grep',
           {
             description:
-              `Поиск grep в рабочей директории; до ${toolLimits.grepMatches} совпадений и ${toolLimits.grepChars} символов. При обрезке сузь шаблон или путь.`,
+              `Поиск grep в рабочей директории; до (${toolLimits.grepMatches}) совпадений и ${toolLimits.grepChars} символов. При обрезке сузь шаблон или путь.`,
             inputSchema: {
               pattern: z.string().min(1).describe('Шаблон grep'),
               path: z.string().optional().describe('Файл или каталог относительно cwd (по умолчанию cwd)'),
