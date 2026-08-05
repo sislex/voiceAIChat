@@ -2021,11 +2021,13 @@ export class VoiceChatDb {
     const defAgent = project.defaultAgentId
     const rawPath = defAgent ? project.machines.find((m) => m.agentId === defAgent)?.path ?? '' : ''
     const workdir = rawPath !== '' ? rawPath : null
+    const userLlm = this.taskChatLlmDefaults(userId)
+    const projectLlm = this.getCiLlmConfig('project', projectId) ?? this.ciLlmDefaultsForUser(userId)
     this.db
       .prepare(
-        `UPDATE conversations SET project_id = ?, exec_target = ?, workdir = ?, skill_names = ? WHERE id = ? AND user_id = ?`
+        `UPDATE conversations SET project_id = ?, exec_target = ?, workdir = ?, skill_names = ?, llm_engine_id = ?, llm_provider = ?, llm_model = ? WHERE id = ? AND user_id = ?`
       )
-      .run(projectId, defAgent, workdir, JSON.stringify(project.skills), convId, userId)
+      .run(projectId, defAgent, workdir, JSON.stringify(project.skills), userLlm.engineId, projectLlm.provider, projectLlm.model, convId, userId)
     return this.getConversation(userId, convId)
   }
 
@@ -2041,9 +2043,13 @@ export class VoiceChatDb {
     if (!this.isProjectMember(userId, projectId)) return null
     const task = this.getTask(projectId, taskId)
     if (!task) return null
-    // Связанный чат закрепляет пользовательские LLM-настройки на момент
-    // открытия/запуска задачи, чтобы чат и CI-ран работали на одной конфигурации.
-    const { engineId, provider, model } = this.taskChatLlmDefaults(userId)
+    // Связанный чат наследует ту же пару, что и CI: задача → проект → пользователь.
+    // Движок-исполнитель пока пользовательский: конфигурация CI хранит provider/model.
+    const userLlm = this.taskChatLlmDefaults(userId)
+    const ciLlm = this.resolveTaskLlmConfig(projectId, taskId, userId)
+    const engineId = userLlm.engineId
+    const provider = ciLlm.provider
+    const model = ciLlm.model
     const existing = this.db
       .prepare(`SELECT id FROM conversations WHERE task_id = ? AND user_id = ? ORDER BY created_at ASC LIMIT 1`)
       .get(taskId, userId) as { id: string } | undefined
@@ -2727,6 +2733,12 @@ export class VoiceChatDb {
            mode=excluded.mode, clarify_level=excluded.clarify_level, clarify_max=excluded.clarify_max`
       )
       .run(ownerType, ownerId, next.provider, next.model, next.mode, next.clarifyLevel, next.clarifyMax)
+    // Обычные чаты проекта и связанные с задачами чаты немедленно получают
+    // новую пару; локальный исполнитель остаётся прежним.
+    if (ownerType === 'project') {
+      this.db.prepare(`UPDATE conversations SET llm_provider = ?, llm_model = ?, updated_at = ? WHERE project_id = ?`)
+        .run(next.provider, next.model, this.now(), ownerId)
+    }
     return next
   }
 
@@ -2735,8 +2747,21 @@ export class VoiceChatDb {
     return this.db.prepare(`DELETE FROM ci_llm_configs WHERE owner_type = ? AND owner_id = ?`).run(ownerType, ownerId).changes > 0
   }
 
-  resolveTaskLlmConfig(projectId: string, taskId: string): CiLlmConfig {
-    return this.getCiLlmConfig('task', taskId) ?? this.getCiLlmConfig('project', projectId) ?? { ...DEFAULT_CI_LLM_CONFIG }
+  /** Пользовательские LLM-настройки — последний уровень наследования CI. */
+  ciLlmDefaultsForUser(userId: string): CiLlmConfig {
+    const settings = this.getSettings(userId)
+    return {
+      ...DEFAULT_CI_LLM_CONFIG,
+      provider: settings.llmProvider,
+      model: settings.llmProvider === 'codex' ? settings.codexModel : settings.model
+    }
+  }
+
+  /** Эффективная конфигурация: задача → проект → пользователь → системный дефолт. */
+  resolveTaskLlmConfig(projectId: string, taskId: string, userId?: string): CiLlmConfig {
+    return this.getCiLlmConfig('task', taskId)
+      ?? this.getCiLlmConfig('project', projectId)
+      ?? (userId ? this.ciLlmDefaultsForUser(userId) : { ...DEFAULT_CI_LLM_CONFIG })
   }
 
   /** Найти системную колонку проекта для автоматического перехода CI. */

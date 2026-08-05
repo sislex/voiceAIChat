@@ -38,6 +38,14 @@ export interface KbToolEntry {
    */
   conversationId: string | null
   projectId: string | null
+  /** Снимок доступного модели контекста. В нём нет токенов, путей профилей и иных секретов. */
+  runtimeContext?: {
+    projectName?: string
+    projectGitUrl?: string | null
+    llm?: { provider: string; model: string; engineId: string | null; source: 'conversation' | 'project' | 'user' }
+    /** Личные настройки текущего пользователя; передаются только для его собственного хода. */
+    userSettings?: Record<string, unknown>
+  }
   turnId: string
   /** Ход внутри CI-рана: ран и шаг его ленты — для отчётов по ране и задаче. */
   ciRunId?: string | null
@@ -299,6 +307,45 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
             handle?.fail(message)
             return { content: [{ type: 'text', text: `Оглавление базы знаний недоступно: ${message}` }], isError: true }
           }
+        }
+      )
+
+      server.registerTool(
+        'runtime_context',
+        {
+          description:
+            'Актуальный контекст этого хода: чат, привязанный проект и эффективные настройки LLM. ' +
+            'Возвращает только данные, доступные владельцу текущего хода; секреты и настройки других пользователей не выдаются.',
+          inputSchema: {}
+        },
+        async () => {
+          if (!entry) return noContext
+          const project = entry.projectId
+            ? `Проект: ${entry.runtimeContext?.projectName ?? 'без имени'} (id: ${entry.projectId})`
+            : 'Чат не привязан к проекту.'
+          const git = entry.runtimeContext?.projectGitUrl ? `Git-репозиторий: ${entry.runtimeContext.projectGitUrl}` : ''
+          const llm = entry.runtimeContext?.llm
+            ? `LLM: ${entry.runtimeContext.llm.provider} / ${entry.runtimeContext.llm.model || 'по умолчанию CLI'}; источник: ${entry.runtimeContext.llm.source}.`
+            : ''
+          const text = [project, git, llm].filter(Boolean).join('\n')
+          return { content: [{ type: 'text', text }] }
+        }
+      )
+
+      server.registerTool(
+        'user_settings',
+        {
+          description:
+            'Настройки владельца текущего чата. Возвращает только настройки этого пользователя; ' +
+            'персональные токены и секреты никогда не включаются.',
+          inputSchema: {}
+        },
+        async () => {
+          if (!entry) return noContext
+          if (!entry.runtimeContext?.userSettings) {
+            return { content: [{ type: 'text', text: 'Снимок пользовательских настроек для этого хода недоступен.' }], isError: true }
+          }
+          return { content: [{ type: 'text', text: JSON.stringify(entry.runtimeContext.userSettings, null, 2) }] }
         }
       )
 

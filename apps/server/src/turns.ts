@@ -58,7 +58,18 @@ export interface TurnManagerDeps {
   kbToolEnabled?: boolean
   /** Брокер токенов инструмента БЗ: токен живёт ровно один ход. */
   kbTool?: {
-    register(token: string, entry: { userId: string; conversationId: string; projectId: string | null; turnId: string }): void
+    register(token: string, entry: {
+      userId: string
+      conversationId: string
+      projectId: string | null
+      turnId: string
+      runtimeContext?: {
+        projectName?: string
+        projectGitUrl?: string | null
+        llm?: { provider: string; model: string; engineId: string | null; source: 'conversation' | 'project' | 'user' }
+        userSettings?: Record<string, unknown>
+      }
+    }): void
     unregister(token: string): void
   }
   /** Резолв id вложения → локальный путь либо уже прочитанные байты с машины. */
@@ -239,10 +250,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
     const conv = deps.db.getConversation(userId, conversationId)
     const settings = deps.db.getSettings(userId)
-    // Движок и модель: переопределение разговора приоритетнее общих настроек
-    // (conv.llmProvider=null — наследуем). Модель Claude клампим по роли
-    // пользователя (у роли user нет opus/fable — сервер не даст обойти фильтр).
-    const wantProvider = conv?.llmProvider ?? settings.llmProvider
+    // Связанный с проектом чат всегда работает на паре проекта (или на
+    // пользовательском дефолте проекта). Для непривязанного чата остаётся
+    // обычное переопределение разговора → пользователь.
+    const projectLlm = conv?.projectId
+      ? deps.db.getCiLlmConfig('project', conv.projectId) ?? deps.db.ciLlmDefaultsForUser(userId)
+      : null
+    // Модель Claude клампим по роли пользователя (у роли user нет opus/fable —
+    // сервер не даст обойти фильтр).
+    const wantProvider = projectLlm?.provider ?? conv?.llmProvider ?? settings.llmProvider
     const provider = wantProvider === 'codex' && deps.codex ? 'codex' : 'claude'
     const role = account.role
     const wantedEngineId = conv?.llmEngineId ?? settings.llmEngineId
@@ -253,13 +269,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const engineNotice = resolvedEngine.substituted
       ? `⚠️ Исполнитель «${wantedEngineId}» недоступен; ход выполнен через «${resolvedEngine.engine?.name ?? `default ${provider}`}».`
       : ''
-    const convModel = conv?.llmProvider === provider ? conv.llmModel : null
+    const selectedModel = projectLlm?.provider === provider
+      ? projectLlm.model
+      : (conv?.llmProvider === provider ? conv.llmModel : null)
     const model =
       provider === 'codex'
-        ? (convModel ?? settings.codexModel)
+        ? (selectedModel ?? settings.codexModel)
         : // Нормализуем ДО клампа: в настройках/БД лежат и старые значения
           // (`opus`, `sonnet-4.5`), а роль клампится по актуальным пунктам меню.
-          claudeModelAlias(clampModelForRole(normalizeClaudeModel(convModel || settings.model), role))
+          claudeModelAlias(clampModelForRole(normalizeClaudeModel(selectedModel || settings.model), role))
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
     // смене движка чужой resume-id игнорируем (свежий ход).
     const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)
@@ -326,18 +344,21 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         }
       }
     }
-    // Контекст проекта, к которому привязан чат (git/технологии/навыки/описание).
+    // Контекст проекта — явная часть каждого хода связанного чата, даже если
+    // у проекта ещё нет описания или репозитория: модель не должна угадывать,
+    // к какому проекту относится разговор.
+    const projectContext = conv?.projectId ? deps.db.getProject(userId, conv.projectId) : null
     if (conv?.projectId) {
-      const project = deps.db.getProject(userId, conv.projectId)
-      if (project) {
-        const lines = [
-          project.gitUrl ? `Git-репозиторий: ${project.gitUrl}` : '',
-          project.technologies.length ? `Технологии: ${project.technologies.join(', ')}` : '',
-          project.skills.length ? `Навыки/области: ${project.skills.join(', ')}` : '',
-          project.description ? project.description : ''
-        ].filter(Boolean)
-        if (lines.length) basePrompt = `${basePrompt}\n\n## Контекст проекта «${project.name}»\n${lines.join('\n')}`
-      }
+      const lines = projectContext
+        ? [
+            `ID проекта: ${projectContext.id}`,
+            projectContext.gitUrl ? `Git-репозиторий: ${projectContext.gitUrl}` : '',
+            projectContext.technologies.length ? `Технологии: ${projectContext.technologies.join(', ')}` : '',
+            projectContext.skills.length ? `Навыки/области: ${projectContext.skills.join(', ')}` : '',
+            projectContext.description ? projectContext.description : ''
+          ].filter(Boolean)
+        : [`ID проекта: ${conv.projectId}`, 'Проект больше недоступен этому пользователю.']
+      basePrompt = `${basePrompt}\n\n## Контекст проекта «${projectContext?.name ?? 'неизвестный проект'}»\n${lines.join('\n')}`
     }
     // Контекст задачи, к которой привязан чат: иерархия, этап воркфлоу, папка и
     // ветка разработки. Без этого чат «знает» только проект, хотя task_id есть.
@@ -384,7 +405,30 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     if (kbToolAvailable()) {
       kbToolToken = randomUUID()
       kbMcpUrl = `${deps.kbMcpBaseUrl}&turn=${encodeURIComponent(kbToolToken)}`
-      deps.kbTool?.register(kbToolToken, { userId, conversationId, projectId: conv?.projectId ?? null, turnId })
+      deps.kbTool?.register(kbToolToken, {
+        userId,
+        conversationId,
+        projectId: conv?.projectId ?? null,
+        turnId,
+        runtimeContext: {
+          ...(projectContext ? { projectName: projectContext.name, projectGitUrl: projectContext.gitUrl } : {}),
+          llm: {
+            provider,
+            model,
+            engineId: resolvedEngine.engine?.id ?? null,
+            source: projectLlm ? 'project' : (conv?.llmProvider ? 'conversation' : 'user')
+          },
+          userSettings: {
+            llmEngineId: settings.llmEngineId,
+            llmProvider: settings.llmProvider,
+            claudeModel: settings.model,
+            codexModel: settings.codexModel,
+            permissionMode: settings.permissionMode,
+            kbContextMode: conv?.kbContextMode ?? 'auto',
+            defaultAgentId: settings.defaultAgentId
+          }
+        }
+      })
     }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     if (target && deps.agents && deps.mcpBaseUrl) {

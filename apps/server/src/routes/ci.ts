@@ -85,20 +85,20 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   // --- Движок/модель проекта и задачи (с наследованием) ---
   app.get<{ Params: { id: string } }>('/api/projects/:id/ci/llm', async (req, reply) => {
     if (!db.getProject(uid(req), req.params.id)) return nf(reply)
-    return db.getCiLlmConfig('project', req.params.id) ?? DEFAULT_CI_LLM_CONFIG
+    return db.getCiLlmConfig('project', req.params.id) ?? db.ciLlmDefaultsForUser(uid(req))
   })
   app.put<{ Params: { id: string }; Body: CiLlmConfig }>('/api/projects/:id/ci/llm', async (req, reply) => {
     if (!isOwner(req, req.params.id)) return forbid(reply)
     return db.setCiLlmConfig('project', req.params.id, req.body)
   })
-  const taskLlmView = (projectId: string, taskId: string): { config: CiLlmConfig; overridden: boolean; projectDefault: CiLlmConfig } => ({
-    config: db.resolveTaskLlmConfig(projectId, taskId),
+  const taskLlmView = (userId: string, projectId: string, taskId: string): { config: CiLlmConfig; overridden: boolean; projectDefault: CiLlmConfig } => ({
+    config: db.resolveTaskLlmConfig(projectId, taskId, userId),
     overridden: db.getCiLlmConfig('task', taskId) !== null,
-    projectDefault: db.getCiLlmConfig('project', projectId) ?? DEFAULT_CI_LLM_CONFIG
+    projectDefault: db.getCiLlmConfig('project', projectId) ?? db.ciLlmDefaultsForUser(userId)
   })
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci/llm', async (req, reply) => {
     if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
-    return taskLlmView(req.params.id, req.params.taskId)
+    return taskLlmView(uid(req), req.params.id, req.params.taskId)
   })
   app.put<{ Params: { id: string; taskId: string }; Body: CiLlmConfig }>('/api/projects/:id/tasks/:taskId/ci/llm', async (req, reply) => {
     if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
@@ -108,7 +108,7 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   app.delete<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci/llm', async (req, reply) => {
     if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     db.clearCiLlmConfig('task', req.params.taskId)
-    return taskLlmView(req.params.id, req.params.taskId)
+    return taskLlmView(uid(req), req.params.id, req.params.taskId)
   })
 
   // --- Слот-конфиг задачи (переопределение + метка наследования) ---
