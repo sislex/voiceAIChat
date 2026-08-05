@@ -47,7 +47,7 @@ function makeSttBridge(ws: WsClient): RendererSttBridge {
   }
 }
 
-function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
+export function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
   return {
     send: ({ conversationId, segments, attachments, verbose, execTarget }) =>
       ws.send({ t: 'claude.send', conversationId, segments, attachments, verbose, execTarget }),
@@ -65,7 +65,8 @@ function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
           text: m.text,
           meta: m.meta,
           engine: m.engine,
-          message: m.message
+          message: m.message,
+          taskLaunch: m.taskLaunch
         })
       ),
     onError: (cb) =>

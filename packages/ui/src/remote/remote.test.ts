@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WsClient } from './wsClient'
 import { createHttpApi } from './httpApi'
 import { base64ToArrayBuffer } from './decode'
-import { migrateDesktopLegacy } from './index'
+import { makeClaudeBridge, migrateDesktopLegacy } from './index'
 
 class FakeWebSocket {
   static OPEN = 1
@@ -69,6 +69,28 @@ describe('WsClient', () => {
     off()
     ws._emit({ t: 'claude.token', conversationId: 'c1', delta: '!' })
     expect(tokens).toEqual(['Привет'])
+    c.close()
+  })
+
+  it('передаёт taskLaunch из claude.done в renderer-мост', async () => {
+    const c = new WsClient('ws://x/ws')
+    const ws = FakeWebSocket.last!
+    ws._open()
+    const done = vi.fn()
+    makeClaudeBridge(c).onDone(done)
+    await Promise.resolve()
+
+    ws._emit({
+      t: 'claude.done',
+      conversationId: 'c1',
+      text: 'Выберите вариант.',
+      taskLaunch: { title: 'Исправить запуск', description: 'Описание', acceptanceCriteria: 'Карточка открывается' }
+    })
+
+    expect(done).toHaveBeenCalledWith(expect.objectContaining({
+      conversationId: 'c1',
+      taskLaunch: { title: 'Исправить запуск', description: 'Описание', acceptanceCriteria: 'Карточка открывается' }
+    }))
     c.close()
   })
 
