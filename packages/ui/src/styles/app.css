@@ -3075,6 +3075,56 @@ button.conscmd:hover {
 .term-status--err {
   color: #ff9b9b;
 }
+/* Вкладки сеансов: несколько shell'ов на одной и разных машинах. */
+.term-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px 0;
+  background: #0d1220;
+}
+.term-tab {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: #0b0e14;
+}
+.term-tab--active {
+  background: #16203a;
+}
+.term-tab__name,
+.term-tab__close {
+  border: none;
+  background: none;
+  color: #9aa4b2;
+  font-size: 12px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+.term-tab--active .term-tab__name {
+  color: #d7dce5;
+}
+.term-tab__close:hover {
+  color: #ff9b9b;
+}
+.term-actions {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #0d1220;
+  border-bottom: 1px solid var(--border);
+}
+.term-actions button {
+  font-size: 12px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: #d7dce5;
+  cursor: pointer;
+}
 
 /* --- Меню «Машины»: таблица статуса агентских машин --- */
 .mst-body {

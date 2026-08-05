@@ -33,6 +33,39 @@ export interface ConsoleHistoryStore {
   push(agentId: string, command: string): void
 }
 
+/** Открытый PTY-сеанс = вкладка терминала машины. */
+export interface PtySessionTab {
+  /** Id сеанса на сервере: по нему идёт переподписка к тому же живому shell. */
+  ptyId: string
+  agentId: string
+  /** Начальный каталог сеанса (подпись вкладки и cwd при первом старте). */
+  cwd?: string
+}
+
+/** Снимок открытых вкладок; неизменяемый — его читает `useSyncExternalStore`. */
+export interface PtySessionSnapshot {
+  tabs: PtySessionTab[]
+  activeId: string | null
+}
+
+/**
+ * Открытые сеансы терминала: живут в сторе, а не в компоненте, поэтому переживают
+ * закрытие утилиты и переключение машины — размонтирование xterm больше не убивает
+ * shell (см. `docs/kb/machines.md`, «Жизненный цикл PTY-сеанса»). Сам PTY закрывает
+ * тот, кто закрывает вкладку: стор только ведёт список.
+ */
+export interface PtySessionStore {
+  snapshot(): PtySessionSnapshot
+  subscribe(cb: () => void): () => void
+  /** Вкладка машины: с тем же (agentId + cwd) переиспользуется, иначе заводится новая. */
+  open(agentId: string, cwd?: string): string
+  /** Всегда новый сеанс на машине — кнопка «Новый сеанс». */
+  create(agentId: string, cwd?: string): string
+  activate(ptyId: string): void
+  /** Убрать вкладку из списка; `pty.kill` шлёт вызывающий. */
+  close(ptyId: string): void
+}
+
 /** Вариант отображения виджета: карточка в сообщении или модалка из меню. */
 export type UtilityVariant = 'embedded' | 'modal'
 
