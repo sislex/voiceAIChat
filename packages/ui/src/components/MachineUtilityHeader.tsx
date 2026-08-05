@@ -45,11 +45,12 @@ export function policyBadges(policy: AgentPolicy): PolicyBadge[] {
       hint: 'Команды с обращением в сеть (curl, wget, ssh, scp…) политика машины отклоняет.'
     })
   }
-  if (policy.allowedDirs.length > 0) {
+  const allowedDirs = policy.allowedDirs ?? []
+  if (allowedDirs.length > 0) {
     badges.push({
       key: 'dirs',
       label: 'каталоги ограничены',
-      hint: `Разрешены только каталоги: ${policy.allowedDirs.join(', ')}. Путь вне них политика отклоняет.`
+      hint: `Разрешены только каталоги: ${allowedDirs.join(', ')}. Путь вне них политика отклоняет.`
     })
   }
   return badges
