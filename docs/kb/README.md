@@ -17,7 +17,7 @@
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-05 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-03 | ⚠ 21 коммит(ов) в areas после сверки: cb4d4a0 feat(ci): наследование LLM и контекст БЗ … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 9 коммит(ов) в areas после сверки: 103017e feat(chat): persist attachment metadata and render images … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 50 коммит(ов) в areas после сверки: 0efd10d chatai-97: работа CI-рана … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 51 коммит(ов) в areas после сверки: 98abc33 chatai-98: исправить CI-воркфлоу … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-03 | ⚠ 2 коммит(ов) в areas после сверки: e3a1439 fix(ci): validate KB update repository root … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-03 | ⚠ 16 коммит(ов) в areas после сверки: cb4d4a0 feat(ci): наследование LLM и контекст БЗ … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-02 | ⚠ 4 коммит(ов) в areas после сверки: 4db7c74 Show reconnecting state for machine utilities … |
