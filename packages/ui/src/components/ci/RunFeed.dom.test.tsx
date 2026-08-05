@@ -9,6 +9,7 @@ import type { KbRunUsageReport } from '@shared/kb'
 import {
   NOW,
   makeInteraction as mkInteraction,
+  makeFixAttempt,
   makeLogLine as mkLog,
   makeRun as mkRun,
   makeStep as mkStep
@@ -40,6 +41,22 @@ describe('RunFeed', () => {
     // running-шаг раскрыт автоматически → виден лог
     expect(screen.getByText('installing deps…')).toBeInTheDocument()
     expect(screen.getByText('выполняется')).toBeInTheDocument()
+  })
+
+  it('показывает диагноз, файлы, точечный тест и полный повтор fix-loop', () => {
+    const failed = mkStep({ id: 's-test', status: 'failed', title: 'Проверки' })
+    const attempt = makeFixAttempt({
+      runStepId: failed.id,
+      changedFiles: ['src/task.ts'],
+      failures: [{ packageName: '@voicechat/ui', file: 'src/task.test.ts', testName: 'открывает карточку', command: 'npm test', message: 'expected true' }],
+      targetedTests: [{ command: 'npm test -- src/task.test.ts -t "открывает"', exitCode: 0, timedOut: false, output: 'passed' }],
+      fullRerun: { stepId: 's-rerun', exitCode: 1, timedOut: false }
+    })
+    const cache: RunFeedCache = { detail: { run: mkRun({ status: 'failed' }), steps: [failed], fixAttempts: [attempt], interactions: [] }, log: [], conclusion: null }
+    render(<RunFeed {...baseProps(cache)} />)
+    expect(screen.getByTestId('ci-fix-attempt')).toHaveTextContent('Изменённые файлы: src/task.ts')
+    expect(screen.getByTestId('ci-fix-attempt')).toHaveTextContent('открывает карточку')
+    expect(screen.getByTestId('ci-fix-attempt')).toHaveTextContent('Полный повтор: exit 1')
   })
 
   it('вложенный вызов команды модели под model_work', () => {

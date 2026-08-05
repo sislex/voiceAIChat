@@ -32,7 +32,7 @@ export interface CommandExecutor {
 
 // --- Контекст для инъектируемых шагов «работа модели» и «fix-loop» ---------
 
-import type { CiRun, CiRunStep, CiStatus, CiSlot, CiInitiatedBy, CiStepKind, CiPlanDecision, QuestionSpec } from '@voicechat/shared'
+import type { CiRun, CiRunStep, CiStatus, CiSlot, CiInitiatedBy, CiStepKind, CiPlanDecision, QuestionSpec, CiFixAttempt, CiFixDiagnosticContext, CiTargetedTestRun, CiTestFailure } from '@voicechat/shared'
 import type { Task, ProjectDetail } from '@voicechat/shared'
 
 /** Примитивы, которые раннер даёт хукам модели/фикса. */
@@ -70,7 +70,7 @@ export interface CiRunPrimitives {
    */
   setModelSessionId(sessionId: string | null): void
   /** Зафиксировать итерацию fix-loop (персист + broadcast ci.fix). */
-  recordFix(args: { runStepId: string; attemptNo: number; diagnosis: string; action: string; result: 'fixed' | 'retrying' | 'gave_up'; diff?: string | null; durationMs?: number | null; tokensUsed?: number | null }): void
+  recordFix(args: { runStepId: string; attemptNo: number; diagnosis: string; action: string; result: 'fixed' | 'retrying' | 'gave_up'; diff?: string | null; changedFiles?: string[]; targetedTests?: CiTargetedTestRun[]; fullRerun?: CiFixAttempt['fullRerun']; failures?: CiTestFailure[]; durationMs?: number | null; tokensUsed?: number | null }): void
   /** Предложить правку скрипта команды (Исход A: рекомендация). */
   suggest(commandId: string, runStepId: string | null, reason: string, proposedScript: string): void
   /**
@@ -106,8 +106,14 @@ export interface CiFixContext extends CiModelContext {
   modelSessionId: string | null
   /** Упал шаг-проверка (тесты/typecheck/линт) — хвост лога нужен подлиннее. */
   isTestStep: boolean
-  /** Повторно выполнить упавший шаг; вернёт новый статус. */
-  rerunFailedStep(): Promise<{ exitCode: number | null; timedOut: boolean }>
+  /** Сохранить свежую диагностику для повторов и восстановления после рестарта. */
+  setFixContext?(context: CiFixDiagnosticContext | null): void
+  /** Запустить одну ограниченную точечную проверку внутри fix-loop. */
+  runTargetedTest?(command: string): Promise<CiTargetedTestRun>
+  /** Получить список изменённых файлов для UI попытки. */
+  listChangedFiles?(): Promise<string[]>
+  /** Повторно выполнить упавший шаг; новые поля опциональны для совместимых хуков. */
+  rerunFailedStep(): Promise<{ stepId?: string; exitCode: number | null; timedOut: boolean; output?: string }>
 }
 
 /**

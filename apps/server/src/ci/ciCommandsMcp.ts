@@ -14,6 +14,8 @@ export const CI_COMMANDS_MCP_PATH = '/mcp/ci-commands'
 export interface CiToolEntry {
   list(): Array<{ name: string; description: string }>
   invoke(name: string): Promise<{ output: string; exitCode: number | null; message?: string }>
+  /** Доступен только во время fix-loop; реализация проверяет, что команда точечная. */
+  runTargetedTests?(command: string): Promise<{ output: string; exitCode: number | null; timedOut: boolean; message?: string }>
 }
 
 /** In-memory брокер: токен рана → активный контекст инструментов. */
@@ -45,6 +47,19 @@ export function registerCiCommandsMcp(app: FastifyInstance, secret: string): voi
         const list = entry?.list() ?? []
         const text = list.length ? list.map((c) => `- ${c.name}: ${c.description || '(без описания)'}`).join('\n') : 'Доступных команд нет.'
         return { content: [{ type: 'text', text }] }
+      }
+    )
+    server.registerTool(
+      'run_targeted_tests',
+      {
+        description: 'Fix-loop: запустить только конкретный тестовый файл или test name. Полный гейт, typecheck, lint и build запрещены.',
+        inputSchema: { command: z.string().describe('Точечная команда теста, например npm run -w pkg test -- src/x.test.ts -t "case"') }
+      },
+      async ({ command }) => {
+        if (!entry?.runTargetedTests) return { content: [{ type: 'text', text: 'Инструмент доступен только во время исправления упавшего шага.' }], isError: true }
+        const r = await entry.runTargetedTests(command)
+        const tail = `[exit code: ${r.exitCode ?? '?'}${r.timedOut ? ', timeout' : ''}]${r.message ? ` ${r.message}` : ''}`
+        return { content: [{ type: 'text', text: `${r.output}\n${tail}`.trim() }], isError: r.exitCode !== 0 }
       }
     )
     server.registerTool(

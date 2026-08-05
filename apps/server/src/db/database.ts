@@ -93,6 +93,9 @@ import {
   type CiSlotProgress,
   type CiLogLine,
   type CiFixAttempt,
+  type CiFixDiagnosticContext,
+  type CiTargetedTestRun,
+  type CiTestFailure,
   type CiWorkspace,
   type CiWorkspaceReportItem,
   type CiCommandSuggestion,
@@ -693,6 +696,13 @@ export class VoiceChatDb {
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'clarify_level')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN clarify_level TEXT NOT NULL DEFAULT 'few'`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'clarify_max')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN clarify_max INTEGER NOT NULL DEFAULT 3`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'conversation_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN conversation_id TEXT`)
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'model_session_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN model_session_id TEXT`)
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'fix_context_json')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN fix_context_json TEXT`)
+    const ciFixCols = this.db.prepare(`PRAGMA table_info(ci_fix_attempts)`).all() as Array<{ name: string }>
+    if (ciFixCols.length && !ciFixCols.some((c) => c.name === 'changed_files_json')) this.db.exec(`ALTER TABLE ci_fix_attempts ADD COLUMN changed_files_json TEXT NOT NULL DEFAULT '[]'`)
+    if (ciFixCols.length && !ciFixCols.some((c) => c.name === 'targeted_tests_json')) this.db.exec(`ALTER TABLE ci_fix_attempts ADD COLUMN targeted_tests_json TEXT NOT NULL DEFAULT '[]'`)
+    if (ciFixCols.length && !ciFixCols.some((c) => c.name === 'full_rerun_json')) this.db.exec(`ALTER TABLE ci_fix_attempts ADD COLUMN full_rerun_json TEXT`)
+    if (ciFixCols.length && !ciFixCols.some((c) => c.name === 'failures_json')) this.db.exec(`ALTER TABLE ci_fix_attempts ADD COLUMN failures_json TEXT NOT NULL DEFAULT '[]'`)
     // Режим базы знаний рана — снимок настройки проекта на момент старта.
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'kb_context_mode')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN kb_context_mode TEXT NOT NULL DEFAULT 'auto'`)
     const ciLlmCols = this.db.prepare(`PRAGMA table_info(ci_llm_configs)`).all() as Array<{ name: string }>
@@ -2820,7 +2830,7 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC`).all(taskId) as CiRunRow[]).map(mapCiRun)
   }
 
-  updateCiRun(runId: string, patch: { status?: CiStatus; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null }): CiRun | null {
+  updateCiRun(runId: string, patch: { status?: CiStatus; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null; modelSessionId?: string | null; fixContext?: CiFixDiagnosticContext | null }): CiRun | null {
     const set: string[] = []
     const vals: unknown[] = []
     if (patch.status !== undefined) { set.push('status = ?'); vals.push(patch.status) }
@@ -2834,6 +2844,8 @@ export class VoiceChatDb {
     if (patch.llmModel !== undefined) { set.push('llm_model = ?'); vals.push(patch.llmModel) }
     if (patch.mode !== undefined) { set.push('mode = ?'); vals.push(normRunMode(patch.mode)) }
     if (patch.conversationId !== undefined) { set.push('conversation_id = ?'); vals.push(patch.conversationId) }
+    if (patch.modelSessionId !== undefined) { set.push('model_session_id = ?'); vals.push(patch.modelSessionId) }
+    if (patch.fixContext !== undefined) { set.push('fix_context_json = ?'); vals.push(patch.fixContext ? JSON.stringify(patch.fixContext) : null) }
     if (!set.length) return this.getCiRunRaw(runId)
     this.db.prepare(`UPDATE ci_runs SET ${set.join(', ')} WHERE id = ?`).run(...vals, runId)
     return this.getCiRunRaw(runId)
@@ -2954,9 +2966,9 @@ export class VoiceChatDb {
     return this.getCiInteraction(id)
   }
 
-  addCiFixAttempt(args: { runStepId: string; attemptNo: number; diagnosis: string; action: string; result: CiFixAttempt['result']; diff?: string | null; durationMs?: number | null; tokensUsed?: number | null }): CiFixAttempt {
+  addCiFixAttempt(args: { runStepId: string; attemptNo: number; diagnosis: string; action: string; result: CiFixAttempt['result']; diff?: string | null; changedFiles?: string[]; targetedTests?: CiTargetedTestRun[]; fullRerun?: CiFixAttempt['fullRerun']; failures?: CiTestFailure[]; durationMs?: number | null; tokensUsed?: number | null }): CiFixAttempt {
     const id = this.newId()
-    this.db.prepare(`INSERT INTO ci_fix_attempts (id, run_step_id, attempt_no, diagnosis, action, result, diff, duration_ms, tokens_used, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.runStepId, args.attemptNo, args.diagnosis, args.action, args.result, args.diff ?? null, args.durationMs ?? null, args.tokensUsed ?? null, this.now())
+    this.db.prepare(`INSERT INTO ci_fix_attempts (id, run_step_id, attempt_no, diagnosis, action, result, diff, changed_files_json, targeted_tests_json, full_rerun_json, failures_json, duration_ms, tokens_used, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.runStepId, args.attemptNo, args.diagnosis, args.action, args.result, args.diff ?? null, JSON.stringify(args.changedFiles ?? []), JSON.stringify(args.targetedTests ?? []), args.fullRerun ? JSON.stringify(args.fullRerun) : null, JSON.stringify(args.failures ?? []), args.durationMs ?? null, args.tokensUsed ?? null, this.now())
     return mapCiFix(this.db.prepare(`SELECT * FROM ci_fix_attempts WHERE id = ?`).get(id) as CiFixRow)
   }
 
@@ -3987,6 +3999,11 @@ interface CiInteractionRow {
   decision: string | null; status: string; conversation_id: string | null; message_id: string | null
   created_at: number; answered_at: number | null; answered_by: string | null
 }
+function parseJsonValue<T>(raw: string | null | undefined, fallback: T): T {
+  if (!raw) return fallback
+  try { return JSON.parse(raw) as T } catch { return fallback }
+}
+
 function parseSlotProgress(j: string): CiSlotProgress {
   try {
     const o = JSON.parse(j) as Partial<CiSlotProgress>
@@ -4001,7 +4018,7 @@ interface CiRunRow {
   workspace_id: string | null; triggered_by: string; prev_column_id: string | null
   llm_engine_id: string | null; llm_provider: string; llm_model: string
   mode: string | null; clarify_level: string | null; clarify_max: number | null
-  conversation_id: string | null; kb_context_mode: string | null
+  conversation_id: string | null; model_session_id: string | null; fix_context_json: string | null; kb_context_mode: string | null
   slot_progress_json: string; started_at: number | null; finished_at: number | null
   duration_ms: number | null; created_at: number
 }
@@ -4011,7 +4028,8 @@ function mapCiRun(r: CiRunRow): CiRun {
     status: normCiStatus(r.status), workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
     prevColumnId: r.prev_column_id, llmEngineId: r.llm_engine_id ?? null, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || DEFAULT_CI_CLAUDE_MODEL),
     mode: normRunMode(r.mode), clarifyLevel: normClarifyLevel(r.clarify_level), clarifyMax: clampClarifyMax(r.clarify_max),
-    conversationId: r.conversation_id, kbContextMode: normKbContextMode(r.kb_context_mode),
+    conversationId: r.conversation_id, modelSessionId: r.model_session_id ?? null,
+    fixContext: parseJsonValue<CiFixDiagnosticContext | null>(r.fix_context_json, null), kbContextMode: normKbContextMode(r.kb_context_mode),
     slotProgress: parseSlotProgress(r.slot_progress_json),
     startedAt: r.started_at, finishedAt: r.finished_at, durationMs: r.duration_ms, createdAt: r.created_at
   }
@@ -4081,13 +4099,18 @@ function mapCiLog(r: CiLogRow): CiLogLine {
 
 interface CiFixRow {
   id: string; run_step_id: string; attempt_no: number; diagnosis: string; action: string
-  result: string; diff: string | null; duration_ms: number | null; tokens_used: number | null; created_at: number
+  result: string; diff: string | null; changed_files_json: string; targeted_tests_json: string; full_rerun_json: string | null; failures_json: string; duration_ms: number | null; tokens_used: number | null; created_at: number
 }
 function mapCiFix(r: CiFixRow): CiFixAttempt {
   return {
     id: r.id, runStepId: r.run_step_id, attemptNo: r.attempt_no, diagnosis: r.diagnosis, action: r.action,
     result: r.result === 'fixed' || r.result === 'gave_up' ? r.result : 'retrying',
-    diff: r.diff, durationMs: r.duration_ms, tokensUsed: r.tokens_used, createdAt: r.created_at
+    diff: r.diff,
+    changedFiles: parseJsonValue<string[]>(r.changed_files_json, []),
+    targetedTests: parseJsonValue<CiTargetedTestRun[]>(r.targeted_tests_json, []),
+    fullRerun: parseJsonValue<CiFixAttempt['fullRerun']>(r.full_rerun_json, null),
+    failures: parseJsonValue<CiTestFailure[]>(r.failures_json, []),
+    durationMs: r.duration_ms, tokensUsed: r.tokens_used, createdAt: r.created_at
   }
 }
 

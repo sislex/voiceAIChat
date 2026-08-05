@@ -29,6 +29,7 @@ let toolNames: string[] = []
 let gateFailures = 0
 /** Гейт падает инфраструктурным сбоем машины (повреждённый кэш npm). */
 let gateInfra = false
+let runTargeted = false
 let sessionNo = 0
 const counts = new Map<string, number>()
 
@@ -39,7 +40,13 @@ const fakeClaude: LlmClient = {
     const sid = req.sessionId ?? `sess-${++sessionNo}`
     void (async () => {
       const m = /run=([^&]+)/.exec(req.remote?.ciMcpUrl ?? '')
-      if (m) toolNames = (ciToolBroker.get(m[1])?.list() ?? []).map((c) => c.name)
+      if (m) {
+        const entry = ciToolBroker.get(m[1])
+        toolNames = (entry?.list() ?? []).map((c) => c.name)
+        if (runTargeted && req.prompt.startsWith('Упал шаг воркфлоу')) {
+          await entry?.runTargetedTests?.('npm run -w @voicechat/server test -- src/x1.test.ts -t "падает проверка 1"')
+        }
+      }
       handlers.onSession(sid)
       handlers.onDelta('диагноз: правлю код')
       handlers.onDone('диагноз: правлю код')
@@ -67,6 +74,7 @@ const ciExecutor: CommandExecutor = {
       return { exitCode: 0, timedOut: false }
     }
     // Хвост настоящего vitest — сотни строк: по сорока последним упавшего теста не видно.
+    onChunk(`gate attempt ${n}\n`)
     for (let i = 1; i <= 200; i++) onChunk(`FAIL src/x${i}.test.ts > падает проверка ${i}\n`)
     return { exitCode: 1, timedOut: false }
   }
@@ -79,6 +87,7 @@ beforeEach(async () => {
   toolNames = []
   gateFailures = 0
   gateInfra = false
+  runTargeted = false
   sessionNo = 0
   counts.clear()
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => Date.now() })
@@ -183,6 +192,21 @@ describe('CI: гейт гоняет воркфлоу, не модель', () => 
     expect(gateSteps.every((s) => s.status === 'success')).toBe(true)
   })
 
+  it('fix-loop даёт модели ограниченную точечную проверку и сохраняет её в попытке', async () => {
+    const { projectId, taskId } = setup()
+    afterSlot(projectId, taskId)
+    gateFailures = 1
+    runTargeted = true
+    const runId = await run(projectId, taskId)
+    expect((await waitRun(runId)).run.status).toBe('success')
+    const attempt = db.getCiRun('admin', runId)!.fixAttempts[0]!
+    expect(attempt.targetedTests).toHaveLength(1)
+    expect(attempt.targetedTests[0]).toMatchObject({ exitCode: 0, timedOut: false })
+    expect(attempt.targetedTests[0].command).toContain('src/x1.test.ts')
+    expect(attempt.fullRerun).toMatchObject({ exitCode: 0, timedOut: false })
+    expect(attempt.failures[0]).toMatchObject({ file: 'src/x1.test.ts' })
+  })
+
   it('правки fix-loop идут той же сессией CLI, что и работа модели', async () => {
     const { projectId, taskId } = setup()
     afterSlot(projectId, taskId)
@@ -197,6 +221,7 @@ describe('CI: гейт гоняет воркфлоу, не модель', () => 
     expect(fixes.map((f) => f.sessionId)).toEqual(['sess-1', 'sess-1'])
     // Вторая попытка знает, что первая не помогла.
     expect(fixes[1].prompt).toContain('Попытка 2 из 10')
+    expect(fixes[1].prompt).toContain('gate attempt 2')
   })
 
   it('в промпт fix-loop уходит длинный хвост теста и запрет ослаблять гейт', async () => {
