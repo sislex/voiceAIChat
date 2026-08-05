@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FileExplorer } from './FileExplorer'
 import type { AgentInfo } from '@shared/agentProtocol'
@@ -119,4 +119,75 @@ describe('FileExplorer (самодостаточный)', () => {
     await waitFor(() => expect(ops.list).toHaveBeenCalledWith('m1', '/srv/proj'))
   })
 
+  it('фильтрует уже полученный список без нового запроса', async () => {
+    const ops = makeOps()
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={ops} variant="embedded" />)
+    await screen.findByText(/a\.txt/)
+    await userEvent.type(screen.getByLabelText('Фильтр по имени'), 'sub')
+    expect(screen.getByText(/sub/)).toBeInTheDocument()
+    expect(screen.queryByText(/a\.txt/)).toBeNull()
+    expect(ops.list).toHaveBeenCalledTimes(1)
+    await userEvent.clear(screen.getByLabelText('Фильтр по имени'))
+    await userEvent.type(screen.getByLabelText('Фильтр по имени'), 'nothing')
+    expect(screen.getByText('Ничего не найдено')).toBeInTheDocument()
+  })
+
+  it('сортирует размер в обе стороны, сохраняя папки первыми', async () => {
+    const ops = makeOps()
+    vi.mocked(ops.list).mockResolvedValue({
+      root: '/r',
+      cwd: '/r',
+      entries: [
+        { name: 'folder', kind: 'dir', size: 0, mtime: 1 },
+        { name: 'small.txt', kind: 'file', size: 10, mtime: 2 },
+        { name: 'large.txt', kind: 'file', size: 1000, mtime: 3 }
+      ]
+    })
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={ops} variant="embedded" />)
+    await screen.findByText(/large\.txt/)
+    await userEvent.selectOptions(screen.getByLabelText('Сортировать по'), 'size')
+    expect(screen.getAllByTestId('fs-row').map((row) => row.querySelector('.fsname')?.textContent)).toEqual(
+      ['📁 folder', '📄 small.txt', '📄 large.txt']
+    )
+    await userEvent.click(screen.getByLabelText('Сортировка по возрастанию'))
+    expect(screen.getAllByTestId('fs-row').map((row) => row.querySelector('.fsname')?.textContent)).toEqual(
+      ['📁 folder', '📄 large.txt', '📄 small.txt']
+    )
+  })
+
+  it('показывает кликабельные крошки от корня', async () => {
+    const ops = makeOps()
+    vi.mocked(ops.list).mockResolvedValue({ root: '/r', cwd: '/r/one/two', entries: [] })
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={ops} variant="embedded" />)
+    expect(await screen.findByRole('button', { name: 'Корень: /r' })).toHaveClass('fscrumb-link--root')
+    await userEvent.click(screen.getByRole('button', { name: 'one' }))
+    expect(ops.list).toHaveBeenCalledWith('m1', '/r/one')
+  })
+
+  it('ходит по строкам клавиатурой и открывает папку по Enter', async () => {
+    const ops = makeOps()
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={ops} variant="embedded" />)
+    const list = await screen.findByTestId('fs-list')
+    list.focus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(screen.getByText(/sub/).closest('[data-testid="fs-row"]')).toHaveAttribute('data-selected', 'true')
+    await userEvent.keyboard('{Enter}')
+    expect(ops.list).toHaveBeenCalledWith('m1', '/r/sub')
+  })
+
+  it('загружает несколько файлов дропом и объясняет запрет записи', async () => {
+    const ops = makeOps()
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={ops} variant="embedded" />)
+    const list = await screen.findByTestId('fs-list')
+    fireEvent.drop(list, { dataTransfer: { files: [new File(['one'], 'one.txt'), new File(['two'], 'two.txt')] } })
+    await waitFor(() => expect(ops.upload).toHaveBeenCalledTimes(2))
+    expect(ops.upload).toHaveBeenCalledWith('m1', '/r', expect.objectContaining({ name: 'one.txt' }))
+
+    const readonlyOps = makeOps()
+    render(<FileExplorer agents={[agent(false)]} initialAgentId="m1" ops={readonlyOps} variant="embedded" />)
+    const readonlyList = (await screen.findAllByTestId('fs-list'))[1]
+    fireEvent.drop(readonlyList, { dataTransfer: { files: [new File(['blocked'], 'blocked.txt')] } })
+    expect(await screen.findByText(/blocked\.txt: Загрузка запрещена/)).toBeInTheDocument()
+    expect(readonlyOps.upload).not.toHaveBeenCalled()
+  })
 })
