@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS messages (
   engine          TEXT,
   meta            TEXT,
   exec_target     TEXT,
+  attachments     TEXT,
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 

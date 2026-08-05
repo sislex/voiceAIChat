@@ -8,6 +8,8 @@
 //
 // Чистые функции — без DOM, сети и файловой системы.
 
+import type { Message, MessageAttachment } from './types'
+
 /** Одна картинка в ответе модели. */
 export interface ImageRef {
   /** Абсолютный путь к файлу на машине (или на сервере, если машина не выбрана). */
@@ -187,4 +189,38 @@ export function machineImageUrls(
 export function appendImageHint(prompt: string): string {
   if (!prompt.trim()) return prompt
   return `${prompt}\n\n${IMAGE_HINT}`
+}
+
+/** Элемент раздела «Файлы чата»: один физический файл и все сообщения-источники. */
+export interface ChatFileRef extends MessageAttachment {
+  messageIds: string[]
+  /** image-блок или MIME/расширение допускают показ в MessageImage. */
+  image: boolean
+}
+
+/**
+ * Собирает файлы из компактных вложений, корректных image-блоков и локального
+ * markdown. Дедупликация всегда по машине и фактическому пути: одно и то же имя
+ * в разных рабочих копиях — разные файлы.
+ */
+export function collectChatFiles(messages: Message[]): ChatFileRef[] {
+  const byPhysicalPath = new Map<string, ChatFileRef>()
+  const add = (file: MessageAttachment, messageId: string, image = false): void => {
+    if (!file.path.trim()) return
+    const key = `${file.agentId ?? 'server'}:${file.path}`
+    const existing = byPhysicalPath.get(key)
+    if (existing) {
+      if (!existing.messageIds.includes(messageId)) existing.messageIds.push(messageId)
+      return
+    }
+    byPhysicalPath.set(key, { ...file, messageIds: [messageId], image: image || file.mimeType.startsWith('image/') || isImagePath(file.path) })
+  }
+  for (const message of messages) {
+    for (const attachment of message.attachments ?? []) add(attachment, message.id)
+    const images = parseImages(message.text).images
+    for (const image of images) {
+      add({ path: image.path, name: imageName(image.path), mimeType: imageMime(image.path), size: 0, ...(image.agentId ? { agentId: image.agentId } : {}), ...(image.caption ? { caption: image.caption } : {}) }, message.id, true)
+    }
+  }
+  return [...byPhysicalPath.values()]
 }

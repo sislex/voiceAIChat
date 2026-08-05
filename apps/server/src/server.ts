@@ -344,13 +344,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // только принимает байты запроса и пересылает агенту; без машины сохраняется
   // совместимый локальный режим.
   const uploads = new UploadStore(join(opts.config.dataDir, 'uploads'))
-  app.post<{ Body: { name?: string; dataBase64?: string; agentId?: string } }>(
+  app.post<{ Body: { name?: string; dataBase64?: string; agentId?: string; mimeType?: string } }>(
     REST.uploads,
     { bodyLimit: 64 * 1024 * 1024 }, // до 64 МБ на вложение (base64 раздувает ~на треть)
     async (req, reply): Promise<UploadInfo> => {
-      const { name, dataBase64, agentId } = req.body ?? {}
-      if (!dataBase64) return reply.code(400).send({ error: 'no data' }) as never
+      const { name, dataBase64, agentId, mimeType } = req.body ?? {}
+      if (!dataBase64 || !/^[A-Za-z0-9+/]*={0,2}$/.test(dataBase64) || dataBase64.length % 4 !== 0) return reply.code(400).send({ error: 'invalid data' }) as never
+      const bytes = Buffer.from(dataBase64, 'base64')
+      if (bytes.byteLength > 32 * 1024 * 1024) return reply.code(413).send({ error: 'too large' }) as never
       const uploadName = name ?? 'file'
+      const safeMime = typeof mimeType === 'string' && /^[a-z]+\/[a-z0-9.+-]+$/i.test(mimeType) ? mimeType : 'application/octet-stream'
       if (agentId) {
         const userId = uid(req)
         if (!db.listAgents(userId).some((agent) => agent.id === agentId)) {
@@ -361,14 +364,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           const target = machineUploadPath(root, randomBytes(16).toString('hex'), uploadName)
           await agentRegistry.fsMkdir(agentId, machineUploadDir(root))
           await agentRegistry.fsWrite(agentId, target, dataBase64)
-          const rec = uploads.saveRemote(uploadName, target, agentId)
-          return { id: rec.id, name: rec.name }
+          const rec = uploads.saveRemote(uploadName, target, agentId, bytes.byteLength, safeMime)
+          return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size, agentId: rec.agentId }
         } catch (err) {
           return reply.code(503).send({ error: err instanceof Error ? err.message : String(err) }) as never
         }
       }
-      const rec = uploads.save(uploadName, Buffer.from(dataBase64, 'base64'))
-      return { id: rec.id, name: rec.name }
+      const rec = uploads.save(uploadName, bytes, safeMime)
+      return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size }
     }
   )
 

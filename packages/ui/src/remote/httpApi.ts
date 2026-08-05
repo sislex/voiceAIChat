@@ -135,16 +135,16 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:delete': async ({ id }) => {
       await req(REST.conversation(id), { method: 'DELETE' })
     },
-    'messages:add': ({ conversationId, role, text, time, engine, meta, execTarget }) =>
+    'messages:add': ({ conversationId, role, text, time, engine, meta, execTarget, attachments }) =>
       req(REST.messages(conversationId), {
         method: 'POST',
-        body: JSON.stringify({ role, text, time, ...(engine ? { engine } : {}), ...(meta ? { meta } : {}), ...(execTarget !== undefined ? { execTarget } : {}) })
+        body: JSON.stringify({ role, text, time, ...(engine ? { engine } : {}), ...(meta ? { meta } : {}), ...(execTarget !== undefined ? { execTarget } : {}), ...(attachments?.length ? { attachments } : {}) })
       }),
     'messages:delete': async ({ conversationId, messageId }) => {
       await req(REST.message(conversationId, messageId), { method: 'DELETE' })
     },
-    'uploads:add': ({ name, dataBase64, agentId }) =>
-      req(REST.uploads, { method: 'POST', body: JSON.stringify({ name, dataBase64, ...(agentId ? { agentId } : {}) }) }),
+    'uploads:add': ({ name, dataBase64, mimeType, agentId }) =>
+      req(REST.uploads, { method: 'POST', body: JSON.stringify({ name, dataBase64, ...(mimeType ? { mimeType } : {}), ...(agentId ? { agentId } : {}) }) }),
     'settings:get': () => req(REST.settings),
     'llm:engines': () => req(REST.llmEngines),
     'settings:save': async (settings) => {

@@ -212,8 +212,8 @@ export async function registerRest(
   app.post<{ Params: { id: string }; Body: AddMessageArgs }>(
     '/api/conversations/:id/messages',
     async (req) => {
-      const { role, text, time, engine, meta, execTarget } = req.body
-      return db.addMessage(uid(req), req.params.id, role, text, time, engine, meta, execTarget)
+      const { role, text, time, engine, meta, execTarget, attachments } = req.body
+      return db.addMessage(uid(req), req.params.id, role, text, time, engine, meta, execTarget, attachments)
     }
   )
 

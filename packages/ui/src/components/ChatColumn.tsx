@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ClaudeLogEntry, KbContextMode, Message, PermissionMode, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
-import { parseImages } from '@shared/images'
+import { parseImages, isImagePath } from '@shared/images'
 import type { ServerFileInfo } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { MachineUtility } from './MachineUtility'
@@ -606,7 +606,20 @@ export function ChatColumn({
                       ))}
                   </div>
                 ) : (
-                  <p className="bub">{m.text}</p>
+                  <div className="bub">
+                    <p>{m.text}</p>
+                    {machineOps && m.attachments?.filter((file) => file.mimeType.startsWith('image/') || isImagePath(file.path)).map((file) => (
+                      <MessageImage
+                        key={file.uploadId ?? file.path}
+                        image={{ path: file.path, ...(file.agentId ? { agentId: file.agentId } : {}), ...(file.caption ? { caption: file.caption } : {}) }}
+                        execAgentId={m.execTarget ?? execTarget}
+                        ops={machineOps}
+                        readServerFile={readServerFile}
+                        agents={agents}
+                        onOpenInExplorer={onOpenImageInExplorer}
+                      />
+                    ))}
+                  </div>
                 )}
                 {!isEditing && (
                   <div className="mfoot">

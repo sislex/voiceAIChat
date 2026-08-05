@@ -13,6 +13,8 @@ export interface StoredUpload {
   id: string
   name: string
   path: string
+  mimeType: string
+  size: number
   /** Машина, на которой постоянно хранится файл; undefined — старый серверный режим. */
   agentId?: string
 }
@@ -37,23 +39,23 @@ export class UploadStore {
   }
 
   /** Сохраняет файл, возвращает метаданные (id — для передачи в claude.send). */
-  save(name: string, data: Buffer): StoredUpload {
+  save(name: string, data: Buffer, mimeType = 'application/octet-stream'): StoredUpload {
     const id = randomUUID()
     // Санитизируем имя, сохраняем расширение (важно для распознавания изображений).
     const safeBase = basename(name).replace(/[^\w.\- ]+/g, '_') || 'file'
     const ext = extname(safeBase)
     const path = join(this.dir, ext ? `${id}${ext}` : `${id}-${safeBase}`)
     writeFileSync(path, data)
-    const rec: StoredUpload = { id, name: basename(name) || safeBase, path }
+    const rec: StoredUpload = { id, name: basename(name) || safeBase, path, mimeType, size: data.byteLength }
     this.byId.set(id, rec)
     return rec
   }
 
   /** Регистрирует уже записанный на пользовательскую машину файл. */
-  saveRemote(name: string, path: string, agentId: string): StoredUpload {
+  saveRemote(name: string, path: string, agentId: string, size: number, mimeType = 'application/octet-stream'): StoredUpload {
     const id = randomUUID()
     const safeName = basename(name) || 'file'
-    const rec: StoredUpload = { id, name: safeName, path, agentId }
+    const rec: StoredUpload = { id, name: safeName, path, agentId, size, mimeType }
     this.byId.set(id, rec)
     return rec
   }
