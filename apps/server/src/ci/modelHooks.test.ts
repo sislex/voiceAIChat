@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { EMPTY_CI_TOOL_CALLS, isTrimmedToolOutput, trimmedToolOutputOriginalChars } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
-import { createCiModelHooks } from './modelHooks.js'
+import { createCiModelHooks, parseCiTestFailures } from './modelHooks.js'
 import { kbTaskQuery } from '../kb/taskQuery.js'
 import type { CiFixContext, CiModelContext, CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
@@ -859,5 +859,17 @@ describe('пробелы базы знаний доходят до шага ак
     const { ctx } = setup('auto')
     db.addCiRunKbGaps = () => { throw new Error('БД недоступна') }
     expect(await hooksWith(stage.client).modelWork(ctx)).toEqual({ ok: true })
+  })
+})
+
+describe('parseCiTestFailures', () => {
+  it('извлекает файл и test name из вывода Vitest', () => {
+    const failures = parseCiTestFailures('FAIL src/chat/taskLaunch.test.ts > task launch > открывает карточку\nAssertionError: expected false to be true', 'npm test')
+    expect(failures[0]).toMatchObject({ file: 'src/chat/taskLaunch.test.ts', testName: 'task launch > открывает карточку', command: 'npm test' })
+    expect(failures[0]?.message).toContain('AssertionError')
+  })
+
+  it('оставляет компактный fallback для неструктурированного падения', () => {
+    expect(parseCiTestFailures('команда завершилась с кодом 2')[0]?.message).toContain('кодом 2')
   })
 })

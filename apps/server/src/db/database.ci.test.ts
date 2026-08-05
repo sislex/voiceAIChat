@@ -231,10 +231,16 @@ describe('ci: раны, шаги, лог, метрики', () => {
     const mw = db.addCiRunStep({ runId: run.id, slot: null, position: 1, kind: 'model_work', title: 'Работа модели', status: 'running' })
     db.updateCiRunStep(mw.id, { status: 'success', durationMs: 1200, finishedAt: 3000 })
     const step = db.addCiRunStep({ runId: run.id, slot: 'after_model', position: 2, kind: 'command', title: 'build', status: 'failed' })
-    db.addCiFixAttempt({ runStepId: step.id, attemptNo: 1, diagnosis: 'нет зависимости', action: 'npm i', result: 'fixed', durationMs: 400, tokensUsed: 100 })
+    db.updateCiRun(run.id, { modelSessionId: 'session-1', fixContext: { stepId: step.id, logTail: 'FAIL x.test.ts', failures: [], updatedAt: 42 } })
+    db.addCiFixAttempt({
+      runStepId: step.id, attemptNo: 1, diagnosis: 'нет зависимости', action: 'npm i', result: 'fixed',
+      changedFiles: ['src/x.ts'], targetedTests: [{ command: 'npm test -- x.test.ts', exitCode: 0, timedOut: false, output: 'ok' }],
+      fullRerun: { stepId: 'rerun-1', exitCode: 0, timedOut: false }, failures: [], durationMs: 400, tokensUsed: 100
+    })
     const detail = db.getCiRun('alice', run.id)!
+    expect(detail.run).toMatchObject({ modelSessionId: 'session-1', fixContext: { stepId: step.id, logTail: 'FAIL x.test.ts' } })
     expect(detail.fixAttempts).toHaveLength(1)
-    expect(detail.fixAttempts[0].result).toBe('fixed')
+    expect(detail.fixAttempts[0]).toMatchObject({ result: 'fixed', changedFiles: ['src/x.ts'], fullRerun: { exitCode: 0 } })
     expect(db.ciModelWorkMetric('alice', p.id).avgMs).toBe(1200)
   })
 })

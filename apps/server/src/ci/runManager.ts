@@ -727,6 +727,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       },
       setModelSessionId: (sessionId) => {
         modelSessions.set(runId, sessionId)
+        deps.db.updateCiRun(runId, { modelSessionId: sessionId })
       },
       recordFix: (a) => {
         const attempt = deps.db.addCiFixAttempt(a)
@@ -1271,6 +1272,19 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     }
   }
 
+  /** Fix-only команда должна адресовать конкретный тест и не быть shell-конвейером. */
+  function targetedTestDenial(command: string): string | null {
+    const value = command.trim()
+    if (!value || value.length > 1000) return 'Команда пустая или слишком длинная.'
+    if (/[\n\r;&|><`]/.test(value) || value.includes('$(')) return 'Shell-конвейеры и подстановки в точечной проверке запрещены.'
+    if (!isVerificationCommand({ script: value })) return 'Разрешены только тестовые команды.'
+    if (/affected-check|typecheck|\blint\b|\bbuild\b/i.test(value)) return 'Полный гейт, typecheck, lint и build запускает только workflow.'
+    if (!/(?:\.(?:test|spec)\.[cm]?[jt]sx?\b|(?:^|\s)-t(?:\s|=)|--testNamePattern|--runTestsByPath)/i.test(value)) {
+      return 'Укажите конкретный test-файл или test name.'
+    }
+    return null
+  }
+
   async function tryFix(
     runId: string,
     userId: string,
@@ -1305,13 +1319,62 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       parentStepId: failedStep.id,
       failedStep,
       logTail,
-      modelSessionId: modelSessions.get(runId) ?? null,
+      modelSessionId: modelSessions.get(runId) ?? detail?.run.modelSessionId ?? null,
       isTestStep,
+      setFixContext: (context) => {
+        deps.db.updateCiRun(runId, { fixContext: context })
+      },
+      runTargetedTest: async (command) => {
+        const denial = targetedTestDenial(command)
+        if (denial) return { command, exitCode: null, timedOut: false, output: denial }
+        if (!agentId) return { command, exitCode: null, timedOut: false, output: 'У проекта не задана машина выполнения.' }
+        const step = prim.addStep({
+          slot: failedStep.slot,
+          kind: 'model_command',
+          title: `Точечная проверка: ${command.slice(0, 100)}`,
+          parentStepId: failedStep.id,
+          initiatedBy: 'model',
+          commandSnapshot: command
+        })
+        const chunks: string[] = []
+        let exitCode: number | null = null
+        let timedOut = false
+        try {
+          const result = await deps.executor.run(
+            { agentId, script: command, workdir: modelWorkspacePath, env, timeoutMs: 120_000, secrets: [] },
+            (chunk) => { chunks.push(chunk); prim.log(step.id, 'stdout', chunk) },
+            signal
+          )
+          exitCode = result.exitCode
+          timedOut = result.timedOut
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          chunks.push(message)
+          prim.log(step.id, 'system', message + '\n')
+        }
+        prim.finishStep(step.id, timedOut ? 'timeout' : exitCode === 0 ? 'success' : 'failed', exitCode)
+        const output = chunks.join('')
+        return { command, exitCode, timedOut, output: output.length > 20_000 ? output.slice(-20_000) : output }
+      },
+      listChangedFiles: async () => {
+        if (!agentId) return []
+        const chunks: string[] = []
+        try {
+          await deps.executor.run(
+            { agentId, script: 'git status --short', workdir: modelWorkspacePath, env, timeoutMs: 30_000, secrets: [] },
+            (chunk) => chunks.push(chunk),
+            signal
+          )
+        } catch {
+          return []
+        }
+        return chunks.join('').split(/\r?\n/).map((line) => line.slice(3).trim()).filter(Boolean).slice(0, 100)
+      },
       rerunFailedStep: async () => {
         const command = failedStep.commandId ? deps.db.getCiCommand(userId, failedStep.commandId) : null
-        if (!command) return { exitCode: null, timedOut: false }
+        if (!command) return { stepId: failedStep.id, exitCode: null, timedOut: false, output: 'Команда повторного шага не найдена.' }
         const r = await runCommandStep(runId, userId, agentId, commandWorkspacePath, env, failedStep.slot, failedStep.position, command, 'model', null, signal)
-        return { exitCode: r.exitCode, timedOut: r.status === 'timeout' }
+        return { stepId: r.stepId, exitCode: r.exitCode, timedOut: r.status === 'timeout', output: r.output }
       }
     }
     setFixing(runId, userId, true, 'Модель исправляет ошибку')

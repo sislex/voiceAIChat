@@ -184,6 +184,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
     const open = expanded[step.id] ?? (hasPending || step.status === 'running' || step.status === 'failed')
     const tone = ciTone(step.status)
     const lines = logByStep.get(step.id) ?? []
+    const fixes = (detail?.fixAttempts ?? []).filter((attempt) => attempt.runStepId === step.id)
     const typical = metricFor(step.commandId)
     const elapsed = step.startedAt ? (step.finishedAt ?? now()) - step.startedAt : null
     const pct = typical && elapsed ? Math.min(100, Math.round((elapsed / typical) * 100)) : null
@@ -207,6 +208,20 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
             {lines.length > 0 && (
               <StepLog lines={lines} autoscroll={autoscroll} />
             )}
+            {fixes.map((attempt) => (
+              <section key={attempt.id} className="ci-fix-attempt" data-testid="ci-fix-attempt">
+                <strong>Исправление {attempt.attemptNo}: {attempt.diagnosis || 'диагноз не указан'}</strong>
+                <div>{attempt.action}</div>
+                {attempt.changedFiles.length > 0 && <div>Изменённые файлы: {attempt.changedFiles.join(', ')}</div>}
+                {attempt.failures.length > 0 && (
+                  <ul>{attempt.failures.map((failure, index) => <li key={`${attempt.id}-failure-${index}`}>{failure.file ?? failure.packageName ?? 'Проверка'}{failure.testName ? ` · ${failure.testName}` : ''}: {failure.message}</li>)}</ul>
+                )}
+                {attempt.targetedTests.length > 0 && (
+                  <ul>{attempt.targetedTests.map((test, index) => <li key={`${attempt.id}-test-${index}`}><code>{test.command}</code> — {test.timedOut ? 'таймаут' : `exit ${test.exitCode ?? '?'}`}</li>)}</ul>
+                )}
+                {attempt.fullRerun && <div>Полный повтор: {attempt.fullRerun.timedOut ? 'таймаут' : `exit ${attempt.fullRerun.exitCode ?? '?'}`}</div>}
+              </section>
+            ))}
             {interactionsOf(step.id).map((it) => (
               <InteractionCard
                 key={it.id}

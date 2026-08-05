@@ -10,7 +10,7 @@ import {
   isCiToolDenial, isVerificationCommand, KB_GAPS_HINT, parseKbGaps, parseQuestions,
   resolveCiStageModel, trimmedToolOutputOriginalChars, trimToolOutput, UNKNOWN_MODEL
 } from '@voicechat/shared'
-import type { CiRunMode, CiToolCalls, CiToolChars, CiToolKind, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
+import type { CiRunMode, CiTestFailure, CiTargetedTestRun, CiToolCalls, CiToolChars, CiToolKind, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import { kbToolBroker, kbRunDirective, type KbToolEntry } from '../kb/kbMcp.js'
 import { buildKbAutoContext, CI_KB_AUTO_CONTEXT_BUDGET } from '../kb/autoContext.js'
@@ -64,6 +64,29 @@ export interface CiModelHooksDeps {
  * доработки плана уже ограничены, это страховка от зацикливания.
  */
 const MAX_MODEL_TURNS = 40
+const MAX_TARGETED_TESTS_PER_ATTEMPT = 3
+
+/** Компактно извлекает из Vitest/Jest/npm-лога данные, нужные модели для фикса. */
+export function parseCiTestFailures(log: string, command: string | null = null): CiTestFailure[] {
+  const lines = log.split(/\r?\n/)
+  const out: CiTestFailure[] = []
+  let packageName: string | null = null
+  for (const line of lines) {
+    const pkg = /(?:^|\s)(?:@?[^\s]+)@[^\s]+\s+test|workspace\s+([^\s]+)/i.exec(line)
+    if (pkg?.[1]) packageName = pkg[1]
+    const failed = /^\s*(?:×|✗|FAIL)\s+(.+?)(?:\s+\d+ms)?\s*$/.exec(line)
+    const file = /((?:[\w@.-]+\/)*[\w.-]+\.(?:test|spec)\.[cm]?[jt]sx?)/.exec(line)?.[1] ?? null
+    if (!failed && !file) continue
+    const raw = (failed?.[1] ?? line).trim()
+    const parts = raw.split(/\s+>\s+/)
+    const testName = parts.length > 1 ? parts.slice(1).join(' > ') : failed ? raw : null
+    const message = lines.slice(Math.max(0, lines.indexOf(line)), Math.min(lines.length, lines.indexOf(line) + 4)).join('\n').slice(0, 1200)
+    out.push({ packageName, file: file ?? (parts[0]?.match(/\.(?:test|spec)\.[cm]?[jt]sx?$/) ? parts[0] : null), testName, command, message })
+    if (out.length >= 20) break
+  }
+  if (!out.length && log.trim()) out.push({ packageName, file: null, testName: null, command, message: log.trim().slice(-1200) })
+  return out
+}
 
 interface TurnResult {
   ok: boolean
@@ -748,73 +771,105 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   const attemptFix: CiFixHook = async (ctx: CiFixContext) => {
     const settings = deps.db.getCiSettings()
     const startAll = now()
-    // Настройка могла прийти из старой БД или API без валидации: больше десяти
-    // повторов одного шага не допускаем, чтобы fix-loop оставался ограниченным.
     const maxFixAttempts = Math.min(Math.max(0, settings.maxFixAttempts), 10)
-    // Чиним в диалоге работы модели (`--resume`): она помнит и что делала, и что
-    // пробовала на прошлой попытке. Между попытками id обновляем — иначе вторая
-    // попытка снова начнётся с чистого листа.
-    let sessionId = ctx.modelSessionId
-    // Шаг гейта печатает много (vitest выводит каждый упавший тест), а по сводке
-    // причину не найти — таким шагам отдаём хвост подлиннее.
+    let sessionId = ctx.modelSessionId ?? ctx.run.modelSessionId ?? null
     const tailLimit = ctx.isTestStep ? 20_000 : 2000
+    let latestLogTail = (ctx.run.fixContext?.logTail || ctx.logTail).slice(-tailLimit)
+    let latestStepId = ctx.run.fixContext?.stepId || ctx.failedStep.id
+    let failures = parseCiTestFailures(latestLogTail, ctx.failedStep.commandSnapshot)
     const turnOf = stageRunner(ctx, 'fix', ctx.parentStepId)
+
     for (let attempt = 1; attempt <= maxFixAttempts; attempt++) {
       if (ctx.signal.aborted) return { fixed: false }
       if (settings.fixTimeLimitMs > 0 && now() - startAll > settings.fixTimeLimitMs) break
       const started = now()
-      // Токен БЗ живёт ровно на этот ход — включая отмену рана посреди правки.
-      const turn = await withKbTools(ctx, ctx.parentStepId, async (kbFields) => {
-        const req = (model: string): LlmRequest => ({
-          userId: ctx.run.triggeredBy,
-          prompt: [
-            `Упал шаг воркфлоу: «${ctx.failedStep.title}».`,
-            ctx.failedStep.commandSnapshot ? `Команда:\n${ctx.failedStep.commandSnapshot}` : '',
-            `Код выхода: ${ctx.failedStep.exitCode ?? 'неизвестен'}`,
-            `Хвост вывода:\n${ctx.logTail.slice(-tailLimit)}`,
-            `Рабочая директория: ${ctx.workspacePath}`,
-            attempt > 1 ? `Попытка ${attempt} из ${maxFixAttempts}: прошлая правка шаг не починила.` : '',
-            '',
-            'Кратко (1-2 фразы) поставь диагноз, затем исправь причину в рабочей директории',
-            '(правь файлы/ставь зависимости/меняй конфиг). НЕ ослабляй саму команду ради обхода ошибки',
-            'После правки разрешается точечно запустить только тест(ы), затронутые этой ошибкой; не запускай весь гейт, typecheck, линтер или сборку.',
-            'Затем шаг воркфлоу сам целиком перезапустит упавшую команду.',
-            // Правка — такое же исследование проекта, как разработка: причина
-            // падения, которой в базе не оказалось, обязана в неё попасть.
-            kbFields.kbMcpUrl ? 'Если причина связана с устройством проекта — сверься с базой знаний (mcp__kb__*) до правок.' : '',
-            kbFields.kbMcpUrl ? KB_GAPS_HINT : ''
-          ]
-            .filter(Boolean)
-            .join('\n'),
-          sessionId,
-          model,
-          permissionMode: 'acceptEdits',
-          ...kbFields,
-          // См. modelWork: рабочая директория удалённой машины задаётся в MCP URL.
-          ...remoteOf(deps, ctx)
-        })
-        // Расход правки пишет `stageRunner` — на упавший шаг: цикл живёт внутри него.
-        return turnOf(req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctx.signal)
+      const targetedTests: CiTargetedTestRun[] = []
+      const token = randomUUID()
+      ciToolBroker.register(token, {
+        list: () => [],
+        invoke: async () => ({ output: '', exitCode: null, message: 'Обычные команды в fix-loop недоступны.' }),
+        runTargetedTests: async (command) => {
+          if (targetedTests.length >= MAX_TARGETED_TESTS_PER_ATTEMPT) {
+            return { output: '', exitCode: null, timedOut: false, message: `Лимит точечных проверок (${MAX_TARGETED_TESTS_PER_ATTEMPT}) исчерпан.` }
+          }
+          const result = ctx.runTargetedTest
+            ? await ctx.runTargetedTest(command)
+            : { command, exitCode: null, timedOut: false, output: 'Инструмент точечных тестов недоступен.' }
+          targetedTests.push(result)
+          return result
+        }
       })
+      ctx.setFixContext?.({ stepId: latestStepId, logTail: latestLogTail, failures, updatedAt: now() })
+
+      let turn: TurnResult
+      try {
+        turn = await withKbTools(ctx, ctx.parentStepId, async (kbFields) => {
+          const req = (model: string): LlmRequest => {
+            const remote = remoteOf(deps, ctx)
+            if (ctx.agentId && remote.remote) remote.remote.ciMcpUrl = `${deps.ciMcpBaseUrl}&run=${token}`
+            return {
+              userId: ctx.run.triggeredBy,
+              prompt: [
+                `Упал шаг воркфлоу: «${ctx.failedStep.title}».`,
+                ctx.failedStep.commandSnapshot ? `Команда:\n${ctx.failedStep.commandSnapshot}` : '',
+                `Свежий шаг падения: ${latestStepId}`,
+                `Структурированные ошибки:\n${JSON.stringify(failures, null, 2)}`,
+                `Свежий хвост вывода:\n${latestLogTail}`,
+                `Рабочая директория: ${ctx.workspacePath}`,
+                attempt > 1 ? `Попытка ${attempt} из ${maxFixAttempts}: прошлая правка не прошла полный повтор.` : '',
+                '',
+                'Кратко поставь диагноз, исправь причину. НЕ ослабляй саму команду ради обхода ошибки.',
+                `До полного повтора можешь сделать до ${MAX_TARGETED_TESTS_PER_ATTEMPT} внутренних циклов правка→точечный тест через mcp__ci__run_targeted_tests.`,
+                'Инструмент принимает только конкретный test-файл или test name; полный гейт, typecheck, lint и build запрещены.',
+                'После завершения хода workflow сам целиком перезапустит упавшую команду.',
+                kbFields.kbMcpUrl ? 'Если причина связана с устройством проекта — сверься с базой знаний (mcp__kb__*) до правок.' : '',
+                kbFields.kbMcpUrl ? KB_GAPS_HINT : ''
+              ].filter(Boolean).join('\n'),
+              sessionId,
+              model,
+              permissionMode: 'acceptEdits',
+              ...kbFields,
+              ...remote
+            }
+          }
+          return turnOf(req, (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk), ctx.signal)
+        })
+      } finally {
+        ciToolBroker.unregister(token)
+      }
+
       recordKbGaps(ctx, ctx.parentStepId, turn.text)
-      // Между попытками id обновляем: следующая правка идёт тем же диалогом.
       if (turn.sessionId) {
         sessionId = turn.sessionId
         ctx.setModelSessionId(sessionId)
       }
       if (turn.cancelled || ctx.signal.aborted) return { fixed: false }
-      const diagnosis = turn.text.split('\n').find((l) => l.trim())?.slice(0, 200) ?? ''
+      const diagnosis = turn.text.split('\n').find((line) => line.trim())?.slice(0, 200) ?? ''
+      const changedFiles = ctx.listChangedFiles ? await ctx.listChangedFiles() : []
       const rr = await ctx.rerunFailedStep()
+      const rerunStepId = rr.stepId ?? latestStepId
+      const rerunOutput = rr.output ?? latestLogTail
       const fixed = rr.exitCode === 0
       ctx.recordFix({
         runStepId: ctx.failedStep.id,
         attemptNo: attempt,
         diagnosis,
-        action: 'Правки в рабочей директории',
+        action: targetedTests.length ? `Правки и точечных проверок: ${targetedTests.length}` : 'Правки в рабочей директории',
         result: fixed ? 'fixed' : attempt >= maxFixAttempts ? 'gave_up' : 'retrying',
+        changedFiles,
+        targetedTests,
+        fullRerun: { stepId: rerunStepId, exitCode: rr.exitCode, timedOut: rr.timedOut },
+        failures,
         durationMs: now() - started
       })
-      if (fixed) return { fixed: true }
+      if (fixed) {
+        ctx.setFixContext?.(null)
+        return { fixed: true }
+      }
+      latestStepId = rerunStepId
+      latestLogTail = rerunOutput.slice(-tailLimit)
+      failures = parseCiTestFailures(latestLogTail, ctx.failedStep.commandSnapshot)
+      ctx.setFixContext?.({ stepId: latestStepId, logTail: latestLogTail, failures, updatedAt: now() })
     }
     return { fixed: false }
   }

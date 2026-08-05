@@ -564,6 +564,10 @@ export interface CiRun {
   clarifyMax: number
   /** Связанный чат задачи, куда дублируются вопросы модели. */
   conversationId: string | null
+  /** Сессия CLI разработки/fix-loop; хранится в БД для продолжения после рестарта. */
+  modelSessionId?: string | null
+  /** Последняя диагностика fix-loop; позволяет продолжить со свежего падения после рестарта. */
+  fixContext?: CiFixDiagnosticContext | null
   /**
    * Снимок режима базы знаний на момент старта (берётся из настройки проекта
    * `ciKbContextMode`, а НЕ из связанного чата): смена настройки не меняет уже
@@ -695,6 +699,31 @@ export interface CiRunSummary {
 
 // --- fix-loop ------------------------------------------------------------
 
+/** Структурированная ошибка теста, извлечённая из вывода проверочного шага. */
+export interface CiTestFailure {
+  packageName: string | null
+  file: string | null
+  testName: string | null
+  command: string | null
+  message: string
+}
+
+/** Сохраняемый контекст последнего падения fix-loop. */
+export interface CiFixDiagnosticContext {
+  stepId: string
+  logTail: string
+  failures: CiTestFailure[]
+  updatedAt: number
+}
+
+/** Точечная проверка, которую модель запускала внутри попытки исправления. */
+export interface CiTargetedTestRun {
+  command: string
+  exitCode: number | null
+  timedOut: boolean
+  output: string
+}
+
 /** Одна итерация цикла исправления упавшего шага моделью. */
 export interface CiFixAttempt {
   id: string
@@ -708,6 +737,14 @@ export interface CiFixAttempt {
   result: 'fixed' | 'retrying' | 'gave_up'
   /** Дифф изменений в рабочей директории. */
   diff: string | null
+  /** Файлы, изменённые моделью в этой попытке. */
+  changedFiles: string[]
+  /** Точечные тесты, запущенные моделью до полного повтора. */
+  targetedTests: CiTargetedTestRun[]
+  /** Итог полного повторного запуска упавшей команды. */
+  fullRerun: { stepId: string; exitCode: number | null; timedOut: boolean } | null
+  /** Структурированные ошибки, на которых основывалась попытка. */
+  failures: CiTestFailure[]
   durationMs: number | null
   tokensUsed: number | null
   createdAt: number
