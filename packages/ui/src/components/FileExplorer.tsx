@@ -44,6 +44,35 @@ function joinPath(dir: string, name: string): string {
   return `${dir.replace(/\/$/, '')}/${name}`
 }
 
+const PREVIEW_MAX_BYTES = 1024 * 1024
+const IMAGE_TYPES: Record<string, string> = {
+  avif: 'image/avif', bmp: 'image/bmp', gif: 'image/gif', ico: 'image/x-icon',
+  jpeg: 'image/jpeg', jpg: 'image/jpeg', png: 'image/png', svg: 'image/svg+xml', webp: 'image/webp'
+}
+
+type Preview = { path: string; name: string; size: number; kind: 'text' | 'image' | 'unavailable' }
+
+function extensionOf(name: string): string {
+  return name.split('.').pop()?.toLowerCase() ?? ''
+}
+function bytesFromBase64(dataBase64: string): Uint8Array {
+  return Uint8Array.from(atob(dataBase64), (char) => char.charCodeAt(0))
+}
+function decodeUtf8(dataBase64: string): string | null {
+  try {
+    const bytes = bytesFromBase64(dataBase64)
+    if (bytes.includes(0)) return null
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    return null
+  }
+}
+function encodeUtf8(text: string): string {
+  let binary = ''
+  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
+
 type SortBy = 'name' | 'size' | 'type'
 type SortDirection = 'asc' | 'desc'
 
@@ -101,6 +130,14 @@ export function FileExplorer({
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [uploading, setUploading] = useState<string[]>([])
   const [uploadErrors, setUploadErrors] = useState<Array<{ name: string; error: string }>>([])
+  const [preview, setPreview] = useState<Preview | null>(null)
+  const [previewText, setPreviewText] = useState('')
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewErrorKind, setPreviewErrorKind] = useState<'read' | 'save'>('read')
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [confirmSave, setConfirmSave] = useState(false)
   const selectedRow = useRef<HTMLDivElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -192,6 +229,62 @@ export function FileExplorer({
     if (!agentId) return
     const name = window.prompt('Имя новой папки')
     if (name) void run(ops.mkdir(agentId, joinPath(cwd, name)))
+  }
+
+  const openFile = async (entry: FsEntry): Promise<void> => {
+    if (!agentId) return
+    const path = joinPath(cwd, entry.name)
+    setEditing(false)
+    setConfirmSave(false)
+    setPreviewText('')
+    setPreviewError(null)
+    setPreviewErrorKind('read')
+    if (entry.size > PREVIEW_MAX_BYTES) {
+      setPreview({ path, name: entry.name, size: entry.size, kind: 'unavailable' })
+      return
+    }
+    setPreviewLoading(true)
+    try {
+      const result = await ops.read(agentId, path)
+      const dataBase64 = result.dataBase64
+      if (!dataBase64) throw new Error('машина не вернула содержимое файла')
+      const imageType = IMAGE_TYPES[extensionOf(entry.name)]
+      if (imageType) {
+        setPreview({ path, name: entry.name, size: entry.size, kind: 'image' })
+        setPreviewText(`data:${imageType};base64,${dataBase64}`)
+      } else {
+        const text = decodeUtf8(dataBase64)
+        if (text === null) setPreview({ path, name: entry.name, size: entry.size, kind: 'unavailable' })
+        else {
+          setPreview({ path, name: entry.name, size: entry.size, kind: 'text' })
+          setPreviewText(text)
+        }
+      }
+    } catch (err) {
+      setPreview({ path, name: entry.name, size: entry.size, kind: 'unavailable' })
+      setPreviewErrorKind('read')
+      setPreviewError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  const savePreview = async (): Promise<void> => {
+    if (!agentId || !preview || preview.kind !== 'text' || !writable) return
+    setSaving(true)
+    setPreviewErrorKind('save')
+    setPreviewError(null)
+    try {
+      await ops.write(agentId, preview.path, encodeUtf8(previewText))
+      await load(cwd)
+      setEditing(false)
+      setConfirmSave(false)
+    } catch (err) {
+      setPreviewErrorKind('save')
+      setPreviewError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -321,6 +414,46 @@ export function FileExplorer({
           onRetry={() => void load(cwd)}
         />
       )}
+      {(preview || previewLoading || previewError) && (
+        <section className="fspreview" aria-label="Предпросмотр файла">
+          <div className="fspreview-head">
+            <strong>{preview?.name ?? 'Предпросмотр файла'}</strong>
+            {preview && <span className="fssize">{fmtSize(preview.size)}</span>}
+            <IconButton size="sm" title="Закрыть предпросмотр" aria-label="Закрыть предпросмотр" onClick={() => { setPreview(null); setPreviewError(null); setEditing(false); setConfirmSave(false) }}>×</IconButton>
+          </div>
+          {previewLoading && <p role="status">Читаем файл…</p>}
+          {previewError && (
+            <ErrorState
+              compact
+              message={previewErrorKind === 'save' ? 'Не удалось сохранить файл' : 'Не удалось прочитать файл'}
+              detail={previewError}
+              onRetry={() => {
+                if (previewErrorKind === 'save') void savePreview()
+                else if (preview) void openFile({ name: preview.name, kind: 'file', size: preview.size, mtime: 0 })
+              }}
+            />
+          )}
+          {!previewLoading && !previewError && preview?.kind === 'image' && <img className="fspreview-image" src={previewText} alt={`Предпросмотр ${preview.name}`} />}
+          {!previewLoading && !previewError && preview?.kind === 'unavailable' && (
+            <div className="fspreview-unavailable">
+              <p>{preview.size > PREVIEW_MAX_BYTES ? `Файл больше ${fmtSize(PREVIEW_MAX_BYTES)}; предпросмотр не загружается.` : 'Предпросмотр недоступен: файл не является текстом UTF-8 или поддерживаемой картинкой.'}</p>
+              <Button size="sm" onClick={() => agentId && void ops.download(agentId, preview.path, preview.name)}>⬇ Скачать</Button>
+            </div>
+          )}
+          {!previewLoading && !previewError && preview?.kind === 'text' && (
+            <>
+              {editing ? <textarea className="fspreview-text fspreview-editor" aria-label="Содержимое файла" value={previewText} onChange={(event) => setPreviewText(event.target.value)} /> : <pre className="fspreview-text">{previewText}</pre>}
+              {writable ? (
+                <div className="fspreview-actions">
+                  {editing ? (
+                    confirmSave ? <><Button size="sm" disabled={saving} onClick={() => void savePreview()}>{saving ? 'Сохраняем…' : 'Подтвердить сохранение'}</Button><Button size="sm" disabled={saving} onClick={() => setConfirmSave(false)}>Отмена</Button></> : <Button size="sm" onClick={() => setConfirmSave(true)}>Сохранить</Button>
+                  ) : <Button size="sm" onClick={() => setEditing(true)}>Редактировать</Button>}
+                </div>
+              ) : <p className="fsnote">Правка недоступна: изменять файлы на этой машине запрещено политикой.</p>}
+            </>
+          )}
+        </section>
+      )}
       <div
         className={uploading.length > 0 ? 'fslist fslist--uploading' : 'fslist'}
         data-testid="fs-list"
@@ -347,7 +480,7 @@ export function FileExplorer({
             event.preventDefault()
             const path = joinPath(cwd, entry.name)
             if (entry.kind === 'dir') void load(path)
-            else void ops.download(agentId, path, entry.name)
+            else void openFile(entry)
           }
         }}
       >
@@ -416,7 +549,7 @@ export function FileExplorer({
                 onClick={() => {
                   setSelectedName(entry.name)
                   if (entry.kind === 'dir') void load(abs)
-                  else if (agentId) void ops.download(agentId, abs, entry.name)
+                  else void openFile(entry)
                 }}
               >
                 {entry.kind === 'dir' ? '📁' : '📄'} {entry.name}

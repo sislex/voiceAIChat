@@ -2122,6 +2122,38 @@
   color: var(--text-dim);
   font-family: 'SF Mono', ui-monospace, Menlo, monospace;
 }
+.fspreview {
+  margin: 8px 16px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--panel);
+}
+.fspreview-head,
+.fspreview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fspreview-head .fssize { margin-left: auto; }
+.fspreview-text {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  overflow: auto;
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: 12px/1.45 'SF Mono', ui-monospace, Menlo, monospace;
+  white-space: pre-wrap;
+}
+.fspreview-editor { min-height: 180px; resize: vertical; }
+.fspreview-image { display: block; max-width: 100%; max-height: 360px; margin: 8px auto; }
+.fspreview-unavailable { color: var(--text-dim); }
 
 /* ---- Общая шапка утилиты машины (MachineUtilityHeader) ---- */
 .uhead {
