@@ -34,6 +34,24 @@ describe('voiceStore — проекты и доска', () => {
     expect(store.getState().board?.columns.map((c) => c.name)).toEqual(['Бэклог', 'Готово к разработке', 'В разработке', 'Тестирование', 'Ожидает мержа', 'Готово'])
   })
 
+  it('createTaskAndStartCi создаёт задачу и запускает CI с моделью из предложения', async () => {
+    const api = createFakeApi()
+    const startRun = vi.fn(async (_projectId: string, taskId: string) => ({
+      id: 'run-1', projectId: 'project', taskId, status: 'queued', slotProgress: null, durationMs: null
+    }))
+    const store = createVoiceStore({ api, ci: { startRun } as never })
+    const project = await api['projects:create']({ name: 'P1' })
+
+    const run = await store.actions.createTaskAndStartCi(project.id, {
+      title: 'Из предложения', description: 'Описание', acceptanceCriteria: 'Критерий', provider: 'codex', model: 'gpt-5'
+    })
+
+    expect(run?.id).toBe('run-1')
+    expect(startRun).toHaveBeenCalledWith(project.id, expect.any(String), { provider: 'codex', model: 'gpt-5' })
+    const board = await api['board:get']({ id: project.id })
+    expect(board.tasks.some((task) => task.title === 'Из предложения')).toBe(true)
+  })
+
   it('навыки по умолчанию проекта попадают в новую задачу, openTaskChat открывает связанный чат', async () => {
     const { store } = makeStore()
     await store.actions.createProject({ name: 'P1', defaultSkills: { epic: [], story: [], task: ['ts'] } })
