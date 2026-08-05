@@ -1848,9 +1848,19 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
-  /** Удаляет машину-агента; сбрасывает цель выполнения, если она указывала на неё. */
+  /**
+   * Удаляет машину-агента (токен отзывается, соединение рвётся). Цель выполнения
+   * и машину по умолчанию сбрасывает и сервер (в БД), и стор — иначе до
+   * перезагрузки страницы селекторы показывали бы удалённую машину.
+   * Ошибка — тостом без «Повторить»: удаление не идемпотентно.
+   */
   async function deleteAgent(id: string): Promise<void> {
-    await api['agents:delete']({ id })
+    try {
+      await api['agents:delete']({ id })
+    } catch (err) {
+      fail(err)
+      return
+    }
     setState({
       conversations: state.conversations.map((c) =>
         c.execTarget === id ? { ...c, execTarget: null } : c

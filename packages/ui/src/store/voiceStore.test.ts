@@ -284,6 +284,39 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().agents[0].policy.allowNetwork).toBe(false)
   })
 
+  it('deleteAgent снимает удалённую машину с дефолта, цели настроек и разговора', async () => {
+    const { store } = makeStore(['Первый'])
+    await store.actions.init()
+    const created = await store.actions.createAgent('Mac')
+    expect(created).not.toBeNull()
+    const id = created!.id
+    const convId = store.getState().activeId!
+    await store.actions.setConversationExecTarget(convId, id)
+    await store.actions.updateSettings({ execTarget: id, defaultAgentId: id })
+
+    await store.actions.deleteAgent(id)
+
+    // Висячий id увёл бы следующий ход на машину, которой больше нет, поэтому
+    // проверяем все три ссылки сразу.
+    expect(store.getState().agents.some((a) => a.id === id)).toBe(false)
+    expect(store.getState().settings.execTarget).toBeNull()
+    expect(store.getState().settings.defaultAgentId).toBeNull()
+    expect(store.getState().conversations.find((c) => c.id === convId)?.execTarget).toBeNull()
+  })
+
+  it('deleteAgent при ошибке канала показывает тост и не выкидывает исключение', async () => {
+    const { store, api } = makeStore()
+    await store.actions.init()
+    const created = await store.actions.createAgent('Mac')
+    vi.spyOn(api, 'agents:delete').mockRejectedValue(new Error('HTTP 500'))
+
+    await store.actions.deleteAgent(created!.id)
+
+    expect(store.getState().notices.at(-1)?.text).toMatch(/HTTP 500/)
+    // Машина осталась: сервер её не удалил, и список врать не должен.
+    expect(store.getState().agents.some((a) => a.id === created!.id)).toBe(true)
+  })
+
   it('init грузит список MCP-серверов', async () => {
     const api = createFakeApi([])
     vi.spyOn(api, 'mcp:list').mockResolvedValue([

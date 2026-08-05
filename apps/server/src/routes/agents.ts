@@ -157,9 +157,17 @@ export async function registerAgentRoutes(
     registry.disconnect(id)
     db.deleteAgent(u, id)
     db.clearConversationExecTargetForAgent(u, id)
-    // Удалили legacy-цель выполнения — возвращаемся на сервер.
+    // Удалили legacy-цель выполнения или машину по умолчанию — возвращаемся на
+    // сервер. Дефолт обязателен: он подставляется в новые разговоры, и висячий id
+    // удалённой машины давал бы ход с ошибкой «машина не найдена».
     const settings = db.getSettings(u)
-    if (settings.execTarget === id) db.saveSettings(u, { ...settings, execTarget: null })
+    if (settings.execTarget === id || settings.defaultAgentId === id) {
+      db.saveSettings(u, {
+        ...settings,
+        ...(settings.execTarget === id ? { execTarget: null } : {}),
+        ...(settings.defaultAgentId === id ? { defaultAgentId: null } : {})
+      })
+    }
     return { ok: true }
   })
 

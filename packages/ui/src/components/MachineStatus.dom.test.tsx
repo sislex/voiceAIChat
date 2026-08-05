@@ -1,7 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MachineStatus } from './MachineStatus'
-import { makeAgent as agent, makeTelemetry as telemetry, makeWindowsDegradedAgent } from '../test/fixtures'
+import {
+  makeAgent as agent,
+  makePolicy as policy,
+  makeTelemetry as telemetry,
+  makeWindowsDegradedAgent
+} from '../test/fixtures'
 import { AGENT_VERSION } from '@shared/version'
 
 describe('MachineStatus', () => {
@@ -194,5 +199,84 @@ describe('MachineStatus — устаревший агент и обновлен�
     expect(radio).toBeChecked()
     fireEvent.click(radio)
     expect(onSetDefault).toHaveBeenCalledWith(null)
+  })
+})
+
+describe('MachineStatus — удаление машины', () => {
+  it('клик по иконке удаления сам ничего не удаляет: сначала подтверждение', () => {
+    const onDeleteAgent = vi.fn()
+    render(<MachineStatus agents={[agent()]} onSetPolicy={vi.fn()} onDeleteAgent={onDeleteAgent} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('Удалить машину «Мак»'))
+    expect(onDeleteAgent).not.toHaveBeenCalled()
+    expect(screen.getByTestId('machine-delete-confirm-a1')).toBeInTheDocument()
+  })
+
+  it('подтверждение удаляет машину по её id', () => {
+    const onDeleteAgent = vi.fn()
+    render(<MachineStatus agents={[agent()]} onSetPolicy={vi.fn()} onDeleteAgent={onDeleteAgent} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('Удалить машину «Мак»'))
+    fireEvent.click(screen.getByLabelText('Подтвердить удаление машины «Мак»'))
+    expect(onDeleteAgent).toHaveBeenCalledWith('a1')
+  })
+
+  it('подтверждение объясняет, что агент останется запущенным, но не подключится', () => {
+    render(<MachineStatus agents={[agent()]} onSetPolicy={vi.fn()} onDeleteAgent={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('Удалить машину «Мак»'))
+    const confirm = screen.getByTestId('machine-delete-confirm-a1')
+    expect(confirm).toHaveTextContent(/останется запущенным/)
+    expect(confirm).toHaveTextContent(/переустановка с новым токеном/)
+    expect(confirm).toHaveTextContent(/целью выполнения/)
+  })
+
+  it('«Отмена» убирает подтверждение и не удаляет', () => {
+    const onDeleteAgent = vi.fn()
+    render(<MachineStatus agents={[agent()]} onSetPolicy={vi.fn()} onDeleteAgent={onDeleteAgent} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('Удалить машину «Мак»'))
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
+    expect(screen.queryByTestId('machine-delete-confirm-a1')).toBeNull()
+    expect(onDeleteAgent).not.toHaveBeenCalled()
+  })
+
+  it('без onDeleteAgent удаления в таблице нет (режим только-просмотр)', () => {
+    render(<MachineStatus agents={[agent()]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
+    expect(screen.queryByLabelText('Удалить машину «Мак»')).toBeNull()
+  })
+})
+
+describe('MachineStatus — редактор политики строки (AgentCard)', () => {
+  it('стрелка раскрывает каталоги, паттерны и навыки машины', () => {
+    render(<MachineStatus agents={[agent({ policy: policy() })]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
+    expect(screen.queryByTestId('machine-policy-a1')).toBeNull()
+    fireEvent.click(screen.getByLabelText('Политика машины «Мак»'))
+    const editor = screen.getByTestId('machine-policy-a1')
+    expect(within(editor).getByText('/home/dev/projects')).toBeInTheDocument()
+    expect(within(editor).getByText('rm\\s+-rf')).toBeInTheDocument()
+    expect(within(editor).getByText('build: npm run build')).toBeInTheDocument()
+  })
+
+  it('повторный клик по стрелке сворачивает редактор', () => {
+    render(<MachineStatus agents={[agent({ policy: policy() })]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('Политика машины «Мак»'))
+    fireEvent.click(screen.getByLabelText('Политика машины «Мак»'))
+    expect(screen.queryByTestId('machine-policy-a1')).toBeNull()
+  })
+
+  it('удаление каталога из политики сразу уходит через onSetPolicy', () => {
+    const onSetPolicy = vi.fn()
+    render(<MachineStatus agents={[agent({ policy: policy() })]} onSetPolicy={onSetPolicy} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('Политика машины «Мак»'))
+    fireEvent.click(screen.getByLabelText('Удалить /home/dev/projects'))
+    expect(onSetPolicy).toHaveBeenCalledWith('a1', expect.objectContaining({ allowedDirs: [] }))
+  })
+
+  it('добавленный навык уходит в политику машины', () => {
+    const onSetPolicy = vi.fn()
+    render(<MachineStatus agents={[agent({ policy: policy({ skills: [] }) })]} onSetPolicy={onSetPolicy} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('Политика машины «Мак»'))
+    const editor = screen.getByTestId('machine-policy-a1')
+    fireEvent.change(within(editor).getByPlaceholderText('Имя (напр. сборка)'), { target: { value: 'сборка' } })
+    fireEvent.change(within(editor).getByPlaceholderText('Команда (npm run build)'), { target: { value: 'npm run build' } })
+    fireEvent.click(within(editor).getByLabelText('Добавить навык'))
+    expect(onSetPolicy).toHaveBeenCalledWith('a1', expect.objectContaining({ skills: [{ name: 'сборка', command: 'npm run build' }] }))
   })
 })

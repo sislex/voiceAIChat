@@ -1,15 +1,19 @@
 // Отдельное меню «Машины»: таблица агентских машин со статусом (запущен ли агент),
-// ОС, загрузкой CPU/памяти, диском и (для Android) батареей, а также быстрыми
-// чекбоксами разрешений (сеть / запись файлов). Полный редактор политики —
-// по-прежнему в «Настройках» (AgentCard). Данные приходят живым пушем (state.agents).
+// ОС, загрузкой CPU/памяти, диском и (для Android) батареей, быстрыми чекбоксами
+// разрешений (сеть / запись файлов), обслуживанием агента и удалением машины.
+// Остальная политика (каталоги, паттерны команд, навыки) правится в раскрывающемся
+// редакторе строки — `AgentCard`; другого места для неё в UI нет.
+// Данные приходят живым пушем (state.agents).
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import type { AgentCreated, AgentInfo, AgentPolicy, AgentTelemetry, DiskUsage } from '@shared/agentProtocol'
 import { AGENT_VERSION, compareVersions } from '@shared/version'
 import { agentOsFromPlatform, installCommand, UPDATE_HINT } from '@shared/agentInstall'
 import { copyText } from '../lib/clipboard'
+import { AgentCard } from './AgentCard'
 import { AgentCommands } from './AgentCommands'
 import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
 import { ToolFrame } from './ToolFrame'
 import { Skeleton, RefreshIndicator } from './ui/Skeleton'
 import { EmptyState } from './ui/EmptyState'
@@ -36,6 +40,11 @@ export interface MachineStatusProps {
   onGetConnectionString?: (token: string) => Promise<string | null>
   /** Обновить агента на машине (сервер выполнит на ней команду установки). */
   onUpdateAgent?: (id: string) => Promise<string | null>
+  /**
+   * Удалить машину: токен отзывается, цель выполнения и машина по умолчанию
+   * сбрасываются. Нет — удаления в таблице нет (режим только-просмотр).
+   */
+  onDeleteAgent?: (id: string) => void
   /** Машина по умолчанию для новых разговоров (radio). */
   defaultAgentId?: string | null
   /** Выбрать/снять машину по умолчанию (повторный клик по выбранной — сброс). */
@@ -185,6 +194,7 @@ function AgentActions({
   onUpdate,
   onCopyCommand,
   onRegenerate,
+  onAskDelete,
   busy,
   copied
 }: {
@@ -192,6 +202,8 @@ function AgentActions({
   onUpdate?: () => void
   onCopyCommand?: () => void
   onRegenerate?: () => void
+  /** Первый шаг удаления: подтверждение раскрывается строкой под машиной. */
+  onAskDelete?: () => void
   busy: boolean
   copied: boolean
 }): JSX.Element {
@@ -235,6 +247,17 @@ function AgentActions({
             ↻ токен
           </Button>
         )}
+        {onAskDelete && (
+          <IconButton
+            variant="danger"
+            size="sm"
+            title="Удалить машину: токен будет отозван, агент на ней больше не подключится"
+            aria-label={`Удалить машину «${agent.name}»`}
+            onClick={onAskDelete}
+          >
+            🗑
+          </IconButton>
+        )}
       </span>
     </td>
   )
@@ -250,6 +273,7 @@ export function MachineStatus({
   onRegenerateToken,
   onGetConnectionString,
   onUpdateAgent,
+  onDeleteAgent,
   defaultAgentId,
   onSetDefault,
   onClose,
@@ -260,7 +284,14 @@ export function MachineStatus({
   const [busyId, setBusyId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  /** Машина, для которой раскрыт второй шаг удаления (одна на таблицу). */
+  const [confirmDelId, setConfirmDelId] = useState<string | null>(null)
+  /** Машина с раскрытым редактором политики (одна на таблицу). */
+  const [policyId, setPolicyId] = useState<string | null>(null)
   const view = loadView(status, agents.length > 0)
+  // Ширина раскрывающихся строк (подтверждение удаления, редактор политики) —
+  // столько же столбцов, сколько в шапке, иначе таблица разъезжается.
+  const cols = onSetDefault ? 10 : 9
 
   const add = async (): Promise<void> => {
     const n = name.trim()
@@ -285,6 +316,17 @@ export function MachineStatus({
     // Показываем тот же блок команд: с новым токеном агента надо переустановить.
     setCreated({ id: a.id, name: a.name, token })
     setNote(null)
+  }
+
+  // Удаление подтверждено вторым кликом. Раскрытые панели этой машины закрываем
+  // сами: её строки сейчас не станет, а confirmDelId/policyId остались бы указывать
+  // на удалённый id и «переехали» бы на новую машину с тем же местом в таблице.
+  const remove = (a: AgentInfo): void => {
+    if (!onDeleteAgent) return
+    setConfirmDelId(null)
+    setPolicyId((cur) => (cur === a.id ? null : cur))
+    setNote(null)
+    onDeleteAgent(a.id)
   }
 
   const update = async (a: AgentInfo): Promise<void> => {
@@ -364,51 +406,103 @@ export function MachineStatus({
             </thead>
             <tbody>
               {agents.map((a) => (
-                <tr key={a.id} data-testid={`machine-row-${a.id}`}>
-                  <td className="mst-name">{a.name}</td>
-                  <td>
-                    <span className={a.online ? 'mst-status on' : 'mst-status off'}>
-                      <span className="mst-dot" aria-hidden />
-                      {a.online ? 'агент запущен' : 'не запущен'}
-                    </span>
-                  </td>
-                  <TelemetryCells t={a.online ? a.telemetry : undefined} />
-                  <td className="mst-perms">
-                    <PermToggle
-                      checked={a.policy.allowNetwork}
-                      label="Сеть"
-                      disabled={!a.online}
-                      onToggle={() => onSetPolicy(a.id, { ...a.policy, allowNetwork: !a.policy.allowNetwork })}
-                    />
-                    <PermToggle
-                      checked={a.policy.allowWrite}
-                      label="Запись файлов"
-                      disabled={!a.online}
-                      onToggle={() => onSetPolicy(a.id, { ...a.policy, allowWrite: !a.policy.allowWrite })}
-                    />
-                  </td>
-                  {onSetDefault && (
-                    <td className="mst-default">
-                      <input
-                        type="radio"
-                        name="default-machine"
-                        checked={a.id === defaultAgentId}
-                        aria-label={`Сделать «${a.name}» машиной по умолчанию`}
-                        title="Использовать по умолчанию в новых разговорах"
-                        onChange={() => onSetDefault(a.id)}
-                        onClick={() => { if (a.id === defaultAgentId) onSetDefault(null) }}
+                <Fragment key={a.id}>
+                  <tr data-testid={`machine-row-${a.id}`}>
+                    <td className="mst-name">
+                      <span className="mst-nameline">
+                        <IconButton
+                          size="sm"
+                          aria-expanded={policyId === a.id}
+                          title="Каталоги, паттерны команд и навыки машины"
+                          aria-label={`Политика машины «${a.name}»`}
+                          onClick={() => setPolicyId((cur) => (cur === a.id ? null : a.id))}
+                        >
+                          {policyId === a.id ? '▾' : '▸'}
+                        </IconButton>
+                        {a.name}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={a.online ? 'mst-status on' : 'mst-status off'}>
+                        <span className="mst-dot" aria-hidden />
+                        {a.online ? 'агент запущен' : 'не запущен'}
+                      </span>
+                    </td>
+                    <TelemetryCells t={a.online ? a.telemetry : undefined} />
+                    <td className="mst-perms">
+                      <PermToggle
+                        checked={a.policy.allowNetwork}
+                        label="Сеть"
+                        disabled={!a.online}
+                        onToggle={() => onSetPolicy(a.id, { ...a.policy, allowNetwork: !a.policy.allowNetwork })}
+                      />
+                      <PermToggle
+                        checked={a.policy.allowWrite}
+                        label="Запись файлов"
+                        disabled={!a.online}
+                        onToggle={() => onSetPolicy(a.id, { ...a.policy, allowWrite: !a.policy.allowWrite })}
                       />
                     </td>
+                    {onSetDefault && (
+                      <td className="mst-default">
+                        <input
+                          type="radio"
+                          name="default-machine"
+                          checked={a.id === defaultAgentId}
+                          aria-label={`Сделать «${a.name}» машиной по умолчанию`}
+                          title="Использовать по умолчанию в новых разговорах"
+                          onChange={() => onSetDefault(a.id)}
+                          onClick={() => { if (a.id === defaultAgentId) onSetDefault(null) }}
+                        />
+                      </td>
+                    )}
+                    <AgentActions
+                      agent={a}
+                      busy={busyId === a.id}
+                      copied={copiedId === a.id}
+                      onUpdate={onUpdateAgent ? () => void update(a) : undefined}
+                      onCopyCommand={() => void copyUpdateCommand(a)}
+                      onRegenerate={onRegenerateToken ? () => void regenerate(a) : undefined}
+                      onAskDelete={
+                        onDeleteAgent && confirmDelId !== a.id ? () => setConfirmDelId(a.id) : undefined
+                      }
+                    />
+                  </tr>
+                  {onDeleteAgent && confirmDelId === a.id && (
+                    <tr className="mst-confirmrow" data-testid={`machine-delete-confirm-${a.id}`}>
+                      <td colSpan={cols}>
+                        <div className="mst-confirm">
+                          <p className="mst-confirmtext">
+                            Удалить машину «{a.name}»? Токен будет отозван: агент на машине
+                            останется запущенным, но подключиться больше не сможет — понадобится
+                            переустановка с новым токеном. Машина перестанет быть целью выполнения
+                            в разговорах и машиной по умолчанию.
+                          </p>
+                          <span className="mst-confirmbtns">
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              aria-label={`Подтвердить удаление машины «${a.name}»`}
+                              onClick={() => remove(a)}
+                            >
+                              Удалить
+                            </Button>
+                            <Button size="sm" onClick={() => setConfirmDelId(null)}>
+                              Отмена
+                            </Button>
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
                   )}
-                  <AgentActions
-                    agent={a}
-                    busy={busyId === a.id}
-                    copied={copiedId === a.id}
-                    onUpdate={onUpdateAgent ? () => void update(a) : undefined}
-                    onCopyCommand={() => void copyUpdateCommand(a)}
-                    onRegenerate={onRegenerateToken ? () => void regenerate(a) : undefined}
-                  />
-                </tr>
+                  {policyId === a.id && (
+                    <tr className="mst-policyrow" data-testid={`machine-policy-${a.id}`}>
+                      <td colSpan={cols}>
+                        <AgentCard agent={a} onSetPolicy={onSetPolicy} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -454,7 +548,7 @@ export function MachineStatus({
 
         <p className="mst-hint">
           Телеметрия обновляется каждые 30 секунд, пока агент в сети (нужна версия агента 0.4+).
-          Полное управление разрешениями — в «Настройках».
+          Каталоги, паттерны команд и навыки машины — под стрелкой «▸» в её строке.
         </p>
       </div>
     </ToolFrame>

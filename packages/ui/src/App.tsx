@@ -841,6 +841,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onRegenerateToken={actions.regenerateAgentToken}
           onGetConnectionString={actions.getAgentConnectionString}
           onUpdateAgent={actions.updateAgent}
+          onDeleteAgent={(id) => void actions.deleteAgent(id)}
           defaultAgentId={state.settings.defaultAgentId}
           onSetDefault={(id) => void actions.updateSettings({ defaultAgentId: id })}
           onClose={() => navigate('/')}
