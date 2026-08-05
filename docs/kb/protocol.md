@@ -55,7 +55,7 @@ URL руками. Параметризованные пути — функции
 (`/api/ci/runs/:runId/report`, `/api/projects/:id/tasks/:taskId/report`), админка
 пользователей и реестр LLM-исполнителей (`/api/admin/llm-engines`,
 `/api/admin/llm-engines/:id`, `/api/admin/llm-engines/:id/health`), помощник промптов (`POST /api/prompt/suggest` — одноразовый LLM-вызов,
-переформулировки черновика; канал `prompt:suggest`). Полный список — константа `REST`.
+переформулировки черновика; канал `prompt:suggest`). `GET REST.usage` (`/api/usage`) выдаёт отчёт расхода только владельцу Bearer-сессии: `unit`, `from`, `to`, `conversationId`; мост — `usage:report`. Полный список — константа `REST`.
 
 Владелец данных — логин пользователя (`uid(req)` = `req.user.name`); запросы к
 разговорам и машинам фильтруются по нему.

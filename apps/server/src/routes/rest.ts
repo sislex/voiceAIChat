@@ -14,7 +14,8 @@ import {
   cxTimeLabel,
   type AddMessageArgs,
   type DesktopMigrationBundle,
-  type Settings
+  type Settings,
+  type UsageUnit
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
@@ -357,6 +358,22 @@ export async function registerRest(
   app.get(REST.llmEngines, async (req) => db.listLlmEnginesForRole(db.getUser(uid(req))?.role ?? 'user'))
 
   app.get(REST.settings, async (req) => db.getSettings(uid(req)))
+
+  // Личный отчёт строится всегда от uid сессии: query не содержит userId и не
+  // может открыть расход другого пользователя.
+  app.get<{ Querystring: { unit?: string; from?: string; to?: string; conversationId?: string } }>(REST.usage, async (req, reply) => {
+    const unit = req.query.unit ?? 'day'
+    if (unit !== 'hour' && unit !== 'day' && unit !== 'week') return reply.code(400).send({ error: 'unit must be hour, day or week' })
+    const number = (value: string | undefined): number | undefined => {
+      if (value === undefined || value === '') return undefined
+      const parsed = Number(value)
+      return Number.isFinite(parsed) ? parsed : undefined
+    }
+    const from = number(req.query.from)
+    const to = number(req.query.to)
+    if ((req.query.from && from === undefined) || (req.query.to && to === undefined)) return reply.code(400).send({ error: 'from and to must be timestamps' })
+    return db.usageReport(uid(req), unit as UsageUnit, from, to, req.query.conversationId || undefined)
+  })
 
   app.put<{ Body: Settings }>(REST.settings, async (req, reply) => {
     const role = db.getUser(uid(req))?.role ?? 'user'
