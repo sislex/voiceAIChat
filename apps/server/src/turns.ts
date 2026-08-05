@@ -479,9 +479,18 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       releaseKbTool(turn)
       if (turns.get(conversationId) === turn) turns.delete(conversationId)
     }
+    // Нативный CLI-режим plan глушит MCP-инструменты. Если есть машина,
+    // запускаем CLI в default, но remote-мост получает ro=1 и отклоняет любые
+    // изменения; так в план-фазе доступны только чтение файлов и БЗ.
+    const readOnlyRemote = permissionMode === 'plan' && Boolean(remote)
+    const executionPermissionMode = readOnlyRemote ? 'default' : permissionMode
+    const executionRemote = readOnlyRemote && remote
+      ? { ...remote, mcpUrl: `${remote.mcpUrl}&ro=1` }
+      : remote
     turn.handle = client.send(
       {
-        userId, prompt, sessionId, model, permissionMode, cwd, remote, executionDisabled,
+        userId, prompt, sessionId, model, permissionMode: executionPermissionMode, cwd,
+        remote: executionRemote, readOnlyRemote, executionDisabled,
         ...(attachments.length ? { attachments } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {})
       },

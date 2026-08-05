@@ -107,6 +107,23 @@ describe('turns: рабочий каталог разговора принадл
     expect(rec.last()?.remote?.mcpUrl).toContain(`cwd=${encodeURIComponent('/root/dir-on-machine')}`)
     db.close()
   })
+
+  it('план с машиной запускает CLI вне native plan, а remote-мост — только для чтения', async () => {
+    const db = new VoiceChatDb(':memory:')
+    db.createUser(U, '', 'admin')
+    const conv = db.createConversation(U, 'Чат')
+    const agent = db.createAgent(U, 'Ноутбук')
+    db.setConversationExecTarget(U, conv.id, agent.id, '/root/dir-on-machine')
+    db.saveSettings(U, { ...db.getSettings(U), permissionMode: 'plan' })
+
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+
+    expect(rec.last()?.permissionMode).toBe('default')
+    expect(rec.last()?.readOnlyRemote).toBe(true)
+    expect(rec.last()?.remote?.mcpUrl).toContain('&ro=1')
+    db.close()
+  })
 })
 
 describe('turns: VC_MCP_PUBLIC_BASE', () => {
