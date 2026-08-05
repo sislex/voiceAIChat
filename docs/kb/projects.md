@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-08-04
-checked: f1a46bf
+updated: 2026-08-05
+checked: 05a6c5d
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/routes/projects.ts
@@ -251,6 +251,13 @@ AI-помощник (`useAiAssist` + `applyNativeInputValue`) привязан �
 вкладке «Настройки» страницы проекта (`ProjectSettings`) — там же и удаление
 проекта: после него уводим на другой доступный проект, а если их не осталось —
 в пустое состояние.
+
+`default_agent_id` — обычная колонка, без внешнего ключа на `agents`, поэтому
+удаление самой машины (не отвязка от проекта, а `DELETE /api/agents/:id`) её не
+трогает автоматически: это отдельно чистит `db.deleteAgent` (см. «Подключение и
+жизненный цикл» в [machines.md](machines.md)). Без этой чистки CI-ран проекта
+(`runManager.ts` берёт `project.defaultAgentId` для старта) уходил бы на машину,
+которой больше нет.
 
 Чат привязывается к проекту полем `conversations.project_id`
 (`setConversationProject`, REST `POST /api/conversations/:id/project`, канал
