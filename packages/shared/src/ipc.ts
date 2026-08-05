@@ -8,6 +8,7 @@ import type {
   LlmProvider,
   KbContextMode,
   Message,
+  MessageAttachment,
   ModifierPrompt,
   MessageRole,
   MessageSearchResult,
@@ -77,12 +78,18 @@ export interface AddMessageArgs {
   meta?: TurnMeta
   /** Цель этой реплики: id машины, null — сервер, 'none' — команды запрещены. */
   execTarget?: string | null
+  /** Компактные метаданные вложений; байтов в IPC-сообщении нет. */
+  attachments?: MessageAttachment[]
 }
 
 /** Метаданные загруженного вложения. */
 export interface UploadInfo {
   id: string
   name: string
+  path: string
+  mimeType: string
+  size: number
+  agentId?: string
 }
 
 /**
