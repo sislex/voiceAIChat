@@ -4,12 +4,14 @@ import type { RendererPtyBridge } from '@shared/ipc'
 import { FileExplorer } from './FileExplorer'
 import { MachineConsole } from './MachineConsole'
 import { MachineTerminal } from './MachineTerminal'
-import type { MachineOps, UtilityVariant } from './machine'
+import type { ConsoleHistoryStore, MachineOps, UtilityVariant } from './machine'
 
 export interface MachineUtilityProps {
   tool: ToolSpec
   agents: AgentInfo[]
   ops: MachineOps
+  /** Память команд консоли по машине (стор): переживает закрытие утилиты. */
+  consoleHistory?: ConsoleHistoryStore
   variant?: UtilityVariant
   onClose?: () => void
   /** Мост живого PTY-терминала. По умолчанию — window.pty (web); отсутствует → однострочная консоль. */
@@ -23,6 +25,7 @@ export function MachineUtility({
   tool,
   agents,
   ops,
+  consoleHistory,
   variant = 'modal',
   onClose,
   onOpenTerminal,
@@ -47,6 +50,7 @@ export function MachineUtility({
         agents={agents}
         initialAgentId={tool.agentId ?? null}
         exec={ops.exec}
+        {...(consoleHistory ? { historyStore: consoleHistory } : {})}
         variant={variant}
         onClose={onClose}
       />

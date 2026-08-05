@@ -580,8 +580,12 @@ export interface RendererFsBridge {
   remove(agentId: string, path: string): Promise<FsResult>
   rename(agentId: string, from: string, to: string): Promise<FsResult>
   mkdir(agentId: string, path: string): Promise<FsResult>
-  /** Выполнить команду на машине (утилита «Консоль»). */
-  exec(agentId: string, command: string): Promise<AgentExecResult>
+  /**
+   * Выполнить команду на машине (утилита «Консоль»). `signal` — «Стоп» в консоли:
+   * обрыв запроса доходит до сервера, тот шлёт агенту `exec.cancel`, и команда
+   * на машине снимается вместе с деревом процессов.
+   */
+  exec(agentId: string, command: string, signal?: AbortSignal): Promise<AgentExecResult>
 }
 
 /**

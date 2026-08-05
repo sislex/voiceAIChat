@@ -23,7 +23,7 @@ import { MachineUtility } from './components/MachineUtility'
 import { CiCommands } from './components/ci/CiCommands'
 import { RunFeed } from './components/ci/RunFeed'
 import { ToolFrame } from './components/ToolFrame'
-import type { MachineOps } from './components/machine'
+import type { ConsoleHistoryStore, MachineOps } from './components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
 import { UiProviders } from './components/ui/UiProviders'
 import { Dialog } from './components/ui/Dialog'
@@ -467,6 +467,14 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       }
     : undefined
 
+  // История команд консоли живёт в сторе: утилиту закрывают и открывают заново, а
+  // ↑/↓ должны листать то же, что набирали до этого. Объект пересобирается на
+  // каждый рендер (как machineOps) — в зависимости эффектов его не кладут.
+  const consoleHistory: ConsoleHistoryStore = {
+    get: (agentId) => state.consoleHistory[agentId] ?? [],
+    push: actions.pushConsoleCommand
+  }
+
   // Закрывает мобильный сайдбар и выполняет действие пункта меню.
   const menu = (fn: () => void) => (): void => {
     setSidebarOpen(false)
@@ -653,6 +661,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           ) : null
         }
         machineOps={machineOps}
+        consoleHistory={consoleHistory}
         readServerFile={actions.readServerFile}
         onOpenImageInExplorer={(agentId, path) => actions.openUtility('explorer', agentId, path)}
         onOpenTerminal={(agentId, cwd) => actions.openUtility('console', agentId, cwd)}
@@ -1006,6 +1015,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           }}
           agents={state.agents}
           ops={machineOps}
+          consoleHistory={consoleHistory}
           variant="modal"
           onOpenTerminal={(agentId, cwd) => actions.openUtility('console', agentId, cwd)}
           onClose={actions.closeUtility}

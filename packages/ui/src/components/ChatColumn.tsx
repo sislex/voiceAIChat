@@ -7,7 +7,7 @@ import type { ServerFileInfo } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { MachineUtility } from './MachineUtility'
 import { MessageImage } from './MessageImage'
-import type { MachineOps } from './machine'
+import type { ConsoleHistoryStore, MachineOps } from './machine'
 import {
   activityStatus,
   chipClass,
@@ -150,6 +150,8 @@ export interface ChatColumnProps {
   taskHeader?: JSX.Element | null
   /** Операции над машиной для встроенных утилит; отсутствуют → виджеты не рендерятся. */
   machineOps?: MachineOps
+  /** Память команд консоли по машине (стор) — одна на приложение, см. `machine.ts`. */
+  consoleHistory?: ConsoleHistoryStore
   /** Чтение файла с диска сервера — картинки, созданные самим CLI. */
   readServerFile?: (path: string) => Promise<ServerFileInfo | null>
   /** Открыть файл картинки в проводнике нужной машины. */
@@ -206,6 +208,7 @@ export function ChatColumn({
   answeredCiInteractions,
   taskHeader,
   machineOps,
+  consoleHistory,
   readServerFile,
   onOpenImageInExplorer,
   onOpenTerminal,
@@ -574,6 +577,7 @@ export function ChatColumn({
                         tool={toolParsed.tool}
                         agents={agents}
                         ops={machineOps}
+                        {...(consoleHistory ? { consoleHistory } : {})}
                         variant="embedded"
                         onOpenTerminal={onOpenTerminal}
                       />

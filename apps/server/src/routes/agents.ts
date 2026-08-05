@@ -302,8 +302,20 @@ export async function registerAgentRoutes(
   // Утилита «Консоль»: выполнить команду на своей машине (проверка политики — в registry.exec).
   app.post<{ Params: { id: string }; Body: { command?: string } }>(
     '/api/agents/:id/exec',
-    async (req, reply) =>
-      withFs(req, reply, (id) => registry.exec(id, req.body?.command ?? '', EXEC_TIMEOUT_MS))
+    async (req, reply) => {
+      // Кнопка «Стоп» в консоли = обрыв этого запроса: сигнал доходит до
+      // registry.exec, тот шлёт агенту exec.cancel и снимает дерево процессов
+      // на машине. Слушаем close ОТВЕТА, а не запроса: у req.raw 'close'
+      // срабатывает сразу после чтения тела и отменял бы команду мгновенно
+      // (та же грабля, что в mcp/remoteBashMcp.ts).
+      const abort = new AbortController()
+      reply.raw.on('close', () => {
+        if (!reply.raw.writableEnded) abort.abort()
+      })
+      return withFs(req, reply, (id) =>
+        registry.exec(id, req.body?.command ?? '', EXEC_TIMEOUT_MS, abort.signal)
+      )
+    }
   )
 }
 
