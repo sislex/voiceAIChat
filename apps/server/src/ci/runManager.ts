@@ -227,11 +227,12 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const slots = deps.db.resolveTaskSlots(projectId, taskId)
     const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId, userId)
     const settings = deps.db.getSettings(userId)
+    const userLlm = deps.db.ciLlmDefaultsForUser(userId)
     const role = deps.db.getUser(userId)?.role ?? 'user'
     // Обычный запуск наследует пару задачи → проекта → пользователя. Окно создания
     // задачи передаёт разовый выбор, который фиксируется только в этом ране.
-    const provider = launchOptions?.provider ?? taskCi.provider
-    const model = launchOptions?.model ?? taskCi.model
+    const provider = launchOptions?.provider ?? userLlm.provider
+    const model = launchOptions?.model ?? userLlm.model
     const engineResolution = deps.db.resolveLlmEngine(settings.llmEngineId, provider, role)
     const total = slots.beforeModel.length + slots.afterModel.length + 2
     // Связанный чат нужен, чтобы дублировать туда вопросы модели. Идемпотентно:
