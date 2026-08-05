@@ -748,6 +748,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   const attemptFix: CiFixHook = async (ctx: CiFixContext) => {
     const settings = deps.db.getCiSettings()
     const startAll = now()
+    // Настройка могла прийти из старой БД или API без валидации: больше десяти
+    // повторов одного шага не допускаем, чтобы fix-loop оставался ограниченным.
+    const maxFixAttempts = Math.min(Math.max(0, settings.maxFixAttempts), 10)
     // Чиним в диалоге работы модели (`--resume`): она помнит и что делала, и что
     // пробовала на прошлой попытке. Между попытками id обновляем — иначе вторая
     // попытка снова начнётся с чистого листа.
@@ -756,7 +759,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     // причину не найти — таким шагам отдаём хвост подлиннее.
     const tailLimit = ctx.isTestStep ? 20_000 : 2000
     const turnOf = stageRunner(ctx, 'fix', ctx.parentStepId)
-    for (let attempt = 1; attempt <= settings.maxFixAttempts; attempt++) {
+    for (let attempt = 1; attempt <= maxFixAttempts; attempt++) {
       if (ctx.signal.aborted) return { fixed: false }
       if (settings.fixTimeLimitMs > 0 && now() - startAll > settings.fixTimeLimitMs) break
       const started = now()
@@ -770,11 +773,12 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             `Код выхода: ${ctx.failedStep.exitCode ?? 'неизвестен'}`,
             `Хвост вывода:\n${ctx.logTail.slice(-tailLimit)}`,
             `Рабочая директория: ${ctx.workspacePath}`,
-            attempt > 1 ? `Попытка ${attempt} из ${settings.maxFixAttempts}: прошлая правка шаг не починила.` : '',
+            attempt > 1 ? `Попытка ${attempt} из ${maxFixAttempts}: прошлая правка шаг не починила.` : '',
             '',
             'Кратко (1-2 фразы) поставь диагноз, затем исправь причину в рабочей директории',
             '(правь файлы/ставь зависимости/меняй конфиг). НЕ ослабляй саму команду ради обхода ошибки',
-            'и не пропускай проверки. Шаг перезапустит воркфлоу — сам его не запускай.',
+            'После правки разрешается точечно запустить только тест(ы), затронутые этой ошибкой; не запускай весь гейт, typecheck, линтер или сборку.',
+            'Затем шаг воркфлоу сам целиком перезапустит упавшую команду.',
             // Правка — такое же исследование проекта, как разработка: причина
             // падения, которой в базе не оказалось, обязана в неё попасть.
             kbFields.kbMcpUrl ? 'Если причина связана с устройством проекта — сверься с базой знаний (mcp__kb__*) до правок.' : '',
@@ -807,7 +811,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         attemptNo: attempt,
         diagnosis,
         action: 'Правки в рабочей директории',
-        result: fixed ? 'fixed' : attempt >= settings.maxFixAttempts ? 'gave_up' : 'retrying',
+        result: fixed ? 'fixed' : attempt >= maxFixAttempts ? 'gave_up' : 'retrying',
         durationMs: now() - started
       })
       if (fixed) return { fixed: true }

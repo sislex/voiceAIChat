@@ -1,4 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 export const PACKAGES = [
   { id: 'shared', path: 'packages/shared', workspace: '@voicechat/shared' },
@@ -76,11 +79,50 @@ function packageArgs(pkg, script, maxWorkers, extraArgs = []) {
   return args
 }
 
+function vitestResultFile() {
+  return join(tmpdir(), `voicechat-vitest-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`)
+}
+
+function vitestSummary(file) {
+  if (!existsSync(file)) return null
+  try {
+    const report = JSON.parse(readFileSync(file, 'utf8'))
+    const failed = Number(report.numFailedTests ?? 0)
+    const passed = Number(report.numPassedTests ?? 0)
+    const total = Number(report.numTotalTests ?? failed + passed)
+    const failures = []
+    for (const result of report.testResults ?? []) {
+      for (const assertion of result.assertionResults ?? []) {
+        if (assertion.status !== 'failed') continue
+        const title = [...(assertion.ancestorTitles ?? []), assertion.title].filter(Boolean).join(' > ')
+        const error = (assertion.failureMessages ?? []).join('\n').trim() || 'Текст ошибки отсутствует'
+        failures.push({ title: title || result.name || 'Без названия', error })
+      }
+    }
+    return { total, passed, failed, failures }
+  } catch {
+    return null
+  } finally {
+    try { rmSync(file, { force: true }) } catch {}
+  }
+}
+
+function printVitestFailure(pkg, summary, fallback) {
+  for (const failure of summary?.failures ?? []) {
+    console.error(`[test failed] ${pkg.id}: ${failure.title}\n${failure.error}`)
+  }
+  if (!summary?.failures?.length && fallback.trim()) console.error(`[test failed] ${pkg.id}\n${compactOutput(fallback)}`)
+}
+
 export function startPackageCommand(pkg, script, { maxWorkers } = {}) {
-  const args = packageArgs(pkg, script, maxWorkers)
-  console.log(`[affected-check] ${pkg.id}: npm ${args.join(' ')}`)
-  // Отдельная группа позволяет остановить npm вместе с запущенным им Vitest.
-  const child = spawn('npm', args, { stdio: 'inherit', detached: process.platform !== 'win32' })
+  const reportFile = script === 'test' ? vitestResultFile() : null
+  const args = packageArgs(pkg, script, maxWorkers, reportFile ? ['--reporter=json', `--outputFile=${reportFile}`, '--silent'] : [])
+  // Успешные проверки и предупреждения не засоряют ленту. Для Vitest берём
+  // структурированный отчёт, чтобы в ошибке остались только имя теста и причина.
+  const child = spawn('npm', args, { stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
+  let output = ''
+  child.stdout.on('data', (chunk) => { output = (output + chunk).slice(-8_000) })
+  child.stderr.on('data', (chunk) => { output = (output + chunk).slice(-8_000) })
   let killTimer
   let settled = false
   const kill = (signal) => {
@@ -94,8 +136,14 @@ export function startPackageCommand(pkg, script, { maxWorkers } = {}) {
       child.once('exit', (code, signal) => {
         settled = true
         clearTimeout(killTimer)
-        if (code === 0) resolve()
-        else reject(Object.assign(new Error(`${pkg.id} ${script} завершился${signal ? ` по сигналу ${signal}` : ` с кодом ${code}`}`), { code: code ?? 1 }))
+        const summary = reportFile ? vitestSummary(reportFile) : null
+        if (code === 0) {
+          resolve(summary)
+          return
+        }
+        if (script === 'test') printVitestFailure(pkg, summary, output)
+        else if (output.trim()) console.error(`[check failed] ${pkg.id}: ${script}\n${compactOutput(output)}`)
+        reject(Object.assign(new Error(`${pkg.id} ${script} завершился${signal ? ` по сигналу ${signal}` : ` с кодом ${code}`}`), { code: code ?? 1, summary }))
       })
     }),
     stop: () => {
@@ -138,7 +186,8 @@ function compactOutput(output) {
 }
 
 export function startRelatedTest(check, { maxWorkers } = {}) {
-  const args = packageArgs(check.pkg, 'test', maxWorkers, ['--related', ...check.files, '--passWithNoTests'])
+  const reportFile = vitestResultFile()
+  const args = packageArgs(check.pkg, 'test', maxWorkers, ['--related', ...check.files, '--passWithNoTests', '--reporter=json', `--outputFile=${reportFile}`, '--silent'])
   const child = spawn('npm', args, { stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
   let output = ''
   let killTimer
@@ -160,12 +209,12 @@ export function startRelatedTest(check, { maxWorkers } = {}) {
       child.once('exit', (code, signal) => {
         settled = true
         clearTimeout(killTimer)
+        const summary = vitestSummary(reportFile)
         if (code === 0) {
-          resolve({ found: !/No test files found/i.test(output) })
+          resolve({ found: !/No test files found/i.test(output), summary })
           return
         }
-        const diagnostic = compactOutput(output)
-        if (diagnostic) console.error(`[affected-check] fast ${check.pkg.id} diagnostic:\n${diagnostic}`)
+        printVitestFailure(check.pkg, summary, output)
         reject(Object.assign(new Error(`${check.pkg.id} related-тесты завершились${signal ? ` по сигналу ${signal}` : ` с кодом ${code}`}`), { code: code ?? 1 }))
       })
     }),
@@ -190,9 +239,7 @@ export function startRelatedTest(check, { maxWorkers } = {}) {
 // короткий диагноз и не тратит время на основной пакетный гейт.
 export async function runFastChecks(checks, { jobs = 2, start = startRelatedTest } = {}) {
   const runnable = checks.filter((check) => check.files.length)
-  for (const check of checks.filter((check) => !check.files.length)) {
-    console.log(`[affected-check] fast ${check.pkg.id}: skipped (${check.reason}); full gate remains mandatory`)
-  }
+  // Пропущенный related не означает успех: пакет всё равно войдёт в полный гейт.
   if (!runnable.length) return
 
   const limit = Number.isInteger(jobs) && jobs > 0 ? Math.min(jobs, 2) : 2
@@ -208,8 +255,7 @@ export async function runFastChecks(checks, { jobs = 2, start = startRelatedTest
       const task = start(check, { maxWorkers })
       active.add(task)
       try {
-        const result = await task.done
-        console.log(`[affected-check] fast ${check.pkg.id}: ${result?.found === false ? 'no related tests' : 'passed'} in ${Date.now() - startedAt}ms; full gate remains mandatory`)
+        await task.done
       } catch (error) {
         if (!firstError) {
           firstError = error
@@ -228,6 +274,7 @@ export async function runFastChecks(checks, { jobs = 2, start = startRelatedTest
 // Один пакет проходит typecheck перед собственными тестами; два пакета могут идти
 // одновременно. После ошибки новые задания не выдаются, а живые процессы гасятся.
 export async function runPackageGates(packages, { jobs = 2, start = startPackageCommand } = {}) {
+  const totals = { total: 0, passed: 0, failed: 0 }
   const limit = Number.isInteger(jobs) && jobs > 0 ? Math.min(jobs, 2) : 2
   const maxWorkers = limit > 1 && packages.length > 1 ? 1 : undefined
   const pending = [...packages]
@@ -251,8 +298,18 @@ export async function runPackageGates(packages, { jobs = 2, start = startPackage
         const task = start(pkg, script, { maxWorkers })
         active.add(task)
         try {
-          await task.done
+          const result = await task.done
+          if (script === 'test' && result) {
+            totals.total += result.total
+            totals.passed += result.passed
+            totals.failed += result.failed
+          }
         } catch (error) {
+          if (script === 'test' && error.summary) {
+            totals.total += error.summary.total
+            totals.passed += error.summary.passed
+            totals.failed += error.summary.failed
+          }
           completed = false
           if (!firstError) {
             firstError = error
@@ -263,13 +320,12 @@ export async function runPackageGates(packages, { jobs = 2, start = startPackage
           active.delete(task)
         }
       }
-      const duration = Date.now() - startedAt
-      console.log(`[affected-check] ${pkg.id}: ${completed ? 'completed' : 'failed'} in ${duration}ms`)
       if (!completed) return
     }
   }
 
   await Promise.all(Array.from({ length: Math.min(limit, packages.length) }, worker))
+  console.log(`[tests] total: ${totals.total}; passed: ${totals.passed}; failed: ${totals.failed}`)
   if (firstError) throw firstError
 }
 
