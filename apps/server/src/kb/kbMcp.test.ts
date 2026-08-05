@@ -101,7 +101,7 @@ describe('kbMcp — инструменты базы знаний', () => {
     await makeApp()
     const list = await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
     const body = list.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['document', 'search', 'topics'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['document', 'machines', 'projects', 'runtime_context', 'search', 'topics', 'usage', 'user_settings'])
   })
 
   it('search пишет обращение с deliveredChars === длине отданного текста', async () => {
