@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-08-04
-checked: f1a46bf
+updated: 2026-08-05
+checked: 5cad358
 areas:
   - packages/ui/src
   - apps/web/src
@@ -44,7 +44,7 @@ web/desktop host → installRemoteBridges → HTTP + WebSocket → server
 Навигация — собственный `lib/useHashRoute.ts` без зависимостей: hash выбран потому,
 что desktop грузит рендерер по `file://`, где path-роутинг не работает. Маршруты:
 `#/chat/:id` (открытый разговор), `#/projects/:id[/settings|/task/:taskId]` и
-страницы-утилиты `#/claude-code`, `#/codex`, `#/machines`, `#/kb`, `#/users`, `#/ci`; меню аккаунта также открывает личный экран «Использование моделей» на общем отчёте расхода.
+страницы-утилиты `#/claude-code`, `#/codex`, `#/machines`, `#/kb`, `#/users`, `#/ci`. Мост `usage:report` уже запрашивает личный `GET /api/usage`, но отдельный экран и пункт меню для него в текущем `packages/ui` ещё не подключены; отчёт по-прежнему показывает только админская страница пользователей.
 Все три адреса проекта — одна и та же страница с общей шапкой (`ProjectPage`),
 меняется только содержимое; `#/projects` без id страницей-списком больше не
 является — с него сразу уводим на первый проект (`replace`), а если проектов нет,
