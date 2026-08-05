@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 import { createFakeApi, type FakeApi } from './test/fakeApi'
@@ -72,6 +72,47 @@ describe('App — онбординг первого запуска', () => {
 })
 
 describe('App — интеграция UI со стором и IPC', () => {
+  it('task-launch активного чата проекта открывает карточку и создаёт TODO', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const project = await api['projects:create']({ name: 'Проект запуска' })
+    const board = await api['board:get']({ id: project.id })
+    const source = await api['tasks:create']({ projectId: project.id, columnId: board.columns[0]!.id, title: 'Исходная' })
+    const chat = await api['tasks:openChat']({ projectId: project.id, taskId: source.id })
+    let done: Parameters<NonNullable<typeof window.claude>['onDone']>[0] | null = null
+    window.claude = {
+      send: vi.fn(),
+      cancel: vi.fn(),
+      onToken: () => () => {},
+      onDone: (callback) => { done = callback; return () => {} },
+      onError: () => () => {},
+      onLog: () => () => {}
+    }
+
+    try {
+      window.location.hash = `#/chat/${chat.id}`
+      render(<App api={api} delays={SLOW} />)
+      await screen.findByTestId('task-chat-header')
+      await act(async () => {
+        done!({
+          conversationId: chat.id,
+          text: 'Выберите способ работы.',
+          taskLaunch: { title: 'Исправить запуск', description: 'Описание задачи', acceptanceCriteria: 'TODO создан' }
+        })
+      })
+
+      const dialog = await screen.findByRole('dialog', { name: 'Настройки задачи разработки' })
+      expect(within(dialog).getByLabelText('Название')).toHaveValue('Исправить запуск')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Создать в TODO' }))
+      await waitFor(async () => {
+        const nextBoard = await api['board:get']({ id: project.id })
+        expect(nextBoard.tasks.some((task) => task.title === 'Исправить запуск' && task.columnId === board.columns[0]!.id)).toBe(true)
+      })
+    } finally {
+      delete (window as Partial<Window>).claude
+    }
+  })
+
   it('показывает версию релиза на любой странице и дату в подсказке', async () => {
     await renderApp()
     const version = await screen.findByText('v0.1.0')

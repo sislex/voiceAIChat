@@ -1127,8 +1127,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
    * задачи оставался в новом разговоре, потому что контекст чистила только
    * `loadTaskChatContext`, а её звал лишь `selectConversation`.
    */
-  function chatScopedReset(): Pick<AppState, 'messages' | 'taskChatContext'> {
-    return { messages: [], taskChatContext: null }
+  function chatScopedReset(): Pick<AppState, 'messages' | 'taskChatContext' | 'taskLaunchRequest'> {
+    return { messages: [], taskChatContext: null, taskLaunchRequest: null }
   }
 
   /**
@@ -2933,7 +2933,15 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   ): Promise<void> {
     // Ход завершён — убираем из активных.
     const convId = conversationId ?? state.activeId
-    if (taskLaunch && convId === state.activeId) setState({ taskLaunchRequest: taskLaunch })
+    if (taskLaunch) {
+      if (convId !== state.activeId) {
+        setState({ error: 'Запуск задачи запрошен в неактивном разговоре. Откройте этот разговор и повторите запрос.' })
+      } else if (!state.conversations.find((conversation) => conversation.id === convId)?.projectId) {
+        setState({ error: 'Невозможно начать разработку: активный разговор не привязан к проекту.' })
+      } else {
+        setState({ taskLaunchRequest: taskLaunch })
+      }
+    }
     let statusUpdate: Promise<void> = Promise.resolve()
     if (convId) {
       const { [convId]: _done, ...rest } = state.activeTurns
