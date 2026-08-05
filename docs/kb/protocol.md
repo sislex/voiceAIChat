@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-08-02
-checked: 65621d2
+updated: 2026-08-05
+checked: 4934f4a
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -33,6 +33,8 @@ areas:
 
 Новый REST-путь **всегда** добавляется в объект `REST` — клиенты не пишут строки
 URL руками. Параметризованные пути — функции: `REST.conversation(id)`.
+
+Для форм сообщений и загрузок есть намеренное дублирование: REST-версия `AddMessageArgs` и `UploadInfo` описана в `packages/shared/src/protocol.ts`, а bridge-версия в `packages/shared/src/ipc.ts` добавляет `conversationId` к сообщению и задаёт `IpcInvokeMap`. Поэтому новое поле вложения или загрузки меняется синхронно в обоих файлах, затем прокидывается серверным route и `packages/ui/src/remote/httpApi.ts`; иначе web и desktop разойдутся по типам или телу запроса.
 
 ## REST
 
