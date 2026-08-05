@@ -547,6 +547,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           agentRegistry.ptyStart(agentId, ptyId, cols, rows, cwd, emit),
         input: (ptyId, data) => agentRegistry.ptyInput(ptyId, data),
         resize: (ptyId, cols, rows) => agentRegistry.ptyResize(ptyId, cols, rows),
+        detach: (ptyId) => agentRegistry.ptyDetach(ptyId),
         kill: (ptyId) => agentRegistry.ptyKill(ptyId)
       },
       // Живая канбан-доска: чтение снапшота (с проверкой членства) + подписка на изменения.

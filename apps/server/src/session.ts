@@ -66,6 +66,8 @@ export interface PtyRelay {
   start(agentId: string, ptyId: string, cols: number, rows: number, cwd: string | undefined, emit: (e: PtyEvent) => void): void
   input(ptyId: string, data: string): void
   resize(ptyId: string, cols: number, rows: number): void
+  /** Отвязать WS-клиента, сохранив shell для повторного подключения. */
+  detach(ptyId: string): void
   kill(ptyId: string): void
 }
 
@@ -294,7 +296,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
       ccTailStop = null
       cxTailStop?.()
       cxTailStop = null
-      for (const id of ptyIds) deps.pty?.kill(id)
+      for (const id of ptyIds) deps.pty?.detach(id)
       ptyIds.clear()
     }
   }

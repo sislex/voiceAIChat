@@ -29,8 +29,20 @@ function newPtyId(): string {
   return g.crypto?.randomUUID ? g.crypto.randomUUID() : `pty-${Date.now()}-${performance.now()}`
 }
 
-/** Один живой xterm-сеанс на выбранную машину (перемонтируется по key=agentId). */
-function TerminalView({ agentId, cwd, pty }: { agentId: string; cwd?: string; pty: RendererPtyBridge }): JSX.Element {
+/** Id сеансов открытки хранится вне xterm: размонтирование окна не должно убивать shell. */
+const sessionIds = new Map<string, string>()
+function sessionId(agentId: string, cwd?: string): string {
+  const key = `${agentId}:${cwd ?? ''}`
+  let id = sessionIds.get(key)
+  if (!id) {
+    id = newPtyId()
+    sessionIds.set(key, id)
+  }
+  return id
+}
+
+/** Представление одного присоединённого PTY-сеанса. */
+function TerminalView({ agentId, cwd, pty, ptyId, onTerminate }: { agentId: string; cwd?: string; pty: RendererPtyBridge; ptyId: string; onTerminate: () => void }): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'live' | 'exited' | 'error'>('live')
   const [statusMsg, setStatusMsg] = useState('')
@@ -38,7 +50,6 @@ function TerminalView({ agentId, cwd, pty }: { agentId: string; cwd?: string; pt
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
-    const ptyId = newPtyId()
     const term = new Terminal({
       cursorBlink: true,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
@@ -58,7 +69,7 @@ function TerminalView({ agentId, cwd, pty }: { agentId: string; cwd?: string; pt
       }
     }
     doFit()
-    pty.start({ agentId, ptyId, cols: term.cols, rows: term.rows, ...(cwd ? { cwd } : {}) })
+    const attach = (): void => pty.start({ agentId, ptyId, cols: term.cols, rows: term.rows, ...(cwd ? { cwd } : {}) })
     const onData = term.onData((data) => pty.input({ ptyId, data }))
     const offOut = pty.onOutput((m) => {
       if (m.ptyId === ptyId) term.write(m.data)
@@ -78,6 +89,8 @@ function TerminalView({ agentId, cwd, pty }: { agentId: string; cwd?: string; pt
       pty.resize({ ptyId, cols: term.cols, rows: term.rows })
     })
     ro.observe(host)
+    const offConnected = pty.onConnected(attach)
+    attach()
     term.focus()
     return () => {
       ro.disconnect()
@@ -85,13 +98,17 @@ function TerminalView({ agentId, cwd, pty }: { agentId: string; cwd?: string; pt
       offOut()
       offExit()
       offErr()
-      pty.kill({ ptyId })
+      offConnected()
+      // PTY остаётся на сервере: при новом монтировании attach() вернёт его с буфером.
       term.dispose()
     }
-  }, [agentId, cwd, pty])
+  }, [agentId, cwd, pty, ptyId])
 
   return (
     <div className="term-wrap">
+      <div className="term-actions">
+        <button type="button" onClick={() => { pty.kill({ ptyId }); onTerminate() }}>Завершить сеанс</button>
+      </div>
       <div ref={hostRef} className="term-host" data-testid="terminal-host" />
       {status !== 'live' && (
         <p className={status === 'error' ? 'term-status term-status--err' : 'term-status'}>{statusMsg}</p>
@@ -116,6 +133,8 @@ export function MachineTerminal({
   )
   const selectedAgent = agents.find((agent) => agent.id === agentId)
   const agentOnline = selectedAgent?.online ?? false
+  const [, setSessionVersion] = useState(0)
+  const activeSessionKey = agentId ? `${agentId}:${initialCwd ?? ''}` : ''
 
   return (
     <ToolFrame
@@ -133,6 +152,11 @@ export function MachineTerminal({
         onSwitch={onSwitchUtility && agentId ? (next) => onSwitchUtility(next, agentId, initialCwd) : undefined}
         onOpenMachines={onOpenMachines}
       />
+      {agentId && (
+        <div className="term-actions">
+          <button type="button" onClick={() => { sessionIds.delete(activeSessionKey); setSessionVersion((n) => n + 1) }}>Новый сеанс</button>
+        </div>
+      )}
       {agentId && !agentOnline ? (
         <EmptyState
           icon="⏳"
@@ -140,7 +164,14 @@ export function MachineTerminal({
           description="Терминал станет доступен после восстановления соединения. Попробуйте снова через несколько секунд."
         />
       ) : agentId ? (
-        <TerminalView key={`${agentId}:${initialCwd ?? ''}`} agentId={agentId} cwd={initialCwd} pty={pty} />
+        <TerminalView
+          key={`${agentId}:${initialCwd ?? ''}`}
+          agentId={agentId}
+          cwd={initialCwd}
+          pty={pty}
+          ptyId={sessionId(agentId, initialCwd)}
+          onTerminate={() => sessionIds.delete(`${agentId}:${initialCwd ?? ''}`)}
+        />
       ) : (
         <EmptyState
           icon="💻"

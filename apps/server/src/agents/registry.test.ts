@@ -232,6 +232,21 @@ describe('AgentRegistry', () => {
     expect(sock.sent.length).toBe(before)
   })
 
+  it('pty: переподписка не запускает второй shell и возвращает ограниченный буфер', () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.9.0')
+    const first: Array<{ t: string; data?: string }> = []
+    reg.ptyStart('a1', 'p1', 80, 24, undefined, (e) => first.push(e))
+    reg.handleMessage('a1', { t: 'pty.output', ptyId: 'p1', data: 'готово\\r\\n' })
+    reg.ptyDetach('p1')
+    const second: Array<{ t: string; data?: string }> = []
+    reg.ptyStart('a1', 'p1', 100, 30, undefined, (e) => second.push(e))
+    expect(sock.sent.filter((m) => m.t === 'pty.start')).toHaveLength(1)
+    expect(second).toContainEqual({ t: 'pty.output', ptyId: 'p1', data: 'готово\\r\\n' })
+    expect(sock.sent).toContainEqual({ t: 'pty.resize', ptyId: 'p1', cols: 100, rows: 30 })
+  })
+
   it('pty: старый агент (<0.9.0) → pty.error клиенту, без pty.start агенту', () => {
     const reg = makeRegistry()
     const sock = fakeSocket()

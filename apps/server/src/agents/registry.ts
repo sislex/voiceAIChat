@@ -35,12 +35,16 @@ export type PtyEvent =
   | { t: 'pty.exit'; ptyId: string; exitCode: number | null }
   | { t: 'pty.error'; ptyId: string; message: string }
 
-/** Активная PTY-сессия: к какому агенту привязана и куда слать вывод. */
+/** Активная PTY-сессия: процесс живёт независимо от браузерской подписки. */
 interface PtySession {
   agentId: string
-  emit: (e: PtyEvent) => void
+  emit: ((e: PtyEvent) => void) | null
+  output: string[]
+  outputBytes: number
 }
 
+/** Кап кольцевого буфера PTY: достаточно для восстановления экрана, но без роста памяти. */
+const PTY_OUTPUT_CAP_BYTES = 200 * 1024
 /** Кап буфера вывода одной команды — результат уходит в контекст модели. */
 const OUTPUT_CAP_BYTES = 200 * 1024
 /** Запас серверного страховочного таймаута сверх таймаута агента. */
@@ -188,7 +192,7 @@ export class AgentRegistry {
       if (sess.agentId !== agentId) continue
       this.ptys.delete(ptyId)
       try {
-        sess.emit({ t: 'pty.error', ptyId, message: 'Машина отключилась' })
+        sess.emit?.({ t: 'pty.error', ptyId, message: 'Машина отключилась' })
       } catch {
         /* слушатель не должен ронять реестр */
       }
@@ -413,6 +417,18 @@ export class AgentRegistry {
     cwd: string | undefined,
     emit: (e: PtyEvent) => void
   ): void {
+    const existing = this.ptys.get(ptyId)
+    if (existing) {
+      if (existing.agentId !== agentId) {
+        emit({ t: 'pty.error', ptyId, message: 'Идентификатор уже занят другим сеансом' })
+        return
+      }
+      // Переподписка после закрытия модалки или reconnect браузера: shell не стартуем снова.
+      existing.emit = emit
+      for (const data of existing.output) emit({ t: 'pty.output', ptyId, data })
+      this.ptyResize(ptyId, cols, rows)
+      return
+    }
     if (!this.online.has(agentId)) {
       emit({ t: 'pty.error', ptyId, message: 'Машина не в сети' })
       return
@@ -422,7 +438,7 @@ export class AgentRegistry {
       emit({ t: 'pty.error', ptyId, message: ve.message })
       return
     }
-    this.ptys.set(ptyId, { agentId, emit })
+    this.ptys.set(ptyId, { agentId, emit, output: [], outputBytes: 0 })
     this.send(agentId, { t: 'pty.start', ptyId, cols, rows, ...(cwd ? { cwd } : {}) })
   }
 
@@ -438,7 +454,22 @@ export class AgentRegistry {
     if (sess) this.send(sess.agentId, { t: 'pty.resize', ptyId, cols, rows })
   }
 
-  /** Закрытие PTY-сессии (по запросу клиента/дисконнекту). */
+  /** Снимает только браузерскую подписку; процесс на машине и его буфер остаются живы. */
+  ptyDetach(ptyId: string): void {
+    const sess = this.ptys.get(ptyId)
+    if (sess) sess.emit = null
+  }
+
+  private appendPtyOutput(sess: PtySession, data: string): void {
+    sess.output.push(data)
+    sess.outputBytes += Buffer.byteLength(data)
+    while (sess.outputBytes > PTY_OUTPUT_CAP_BYTES && sess.output.length > 1) {
+      const removed = sess.output.shift()
+      if (removed) sess.outputBytes -= Buffer.byteLength(removed)
+    }
+  }
+
+  /** Закрытие PTY-сессии — только явный запрос пользователя. */
   ptyKill(ptyId: string): void {
     const sess = this.ptys.get(ptyId)
     if (!sess) return
@@ -481,13 +512,15 @@ export class AgentRegistry {
     if (msg.t === 'pty.output' || msg.t === 'pty.exit' || msg.t === 'pty.error') {
       const sess = this.ptys.get(msg.ptyId)
       if (!sess || sess.agentId !== agentId) return
-      if (msg.t === 'pty.output') sess.emit({ t: 'pty.output', ptyId: msg.ptyId, data: msg.data })
-      else if (msg.t === 'pty.exit') {
+      if (msg.t === 'pty.output') {
+        this.appendPtyOutput(sess, msg.data)
+        sess.emit?.({ t: 'pty.output', ptyId: msg.ptyId, data: msg.data })
+      } else if (msg.t === 'pty.exit') {
         this.ptys.delete(msg.ptyId)
-        sess.emit({ t: 'pty.exit', ptyId: msg.ptyId, exitCode: msg.exitCode })
+        sess.emit?.({ t: 'pty.exit', ptyId: msg.ptyId, exitCode: msg.exitCode })
       } else {
         this.ptys.delete(msg.ptyId)
-        sess.emit({ t: 'pty.error', ptyId: msg.ptyId, message: msg.message })
+        sess.emit?.({ t: 'pty.error', ptyId: msg.ptyId, message: msg.message })
       }
       return
     }
