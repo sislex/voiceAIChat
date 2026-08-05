@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import type { AgentExecResult, AgentInfo } from '@shared/agentProtocol'
-import type { ConsoleHistoryStore, UtilityVariant } from './machine'
+import type { ConsoleHistoryStore, SwitchUtility, UtilityVariant } from './machine'
+import { MachineUtilityHeader } from './MachineUtilityHeader'
 import { copyText } from '../lib/clipboard'
 import { IconButton } from './ui/IconButton'
 import { ToolFrame } from './ToolFrame'
@@ -21,8 +22,18 @@ export interface MachineConsoleProps {
    * до закрытия окна: сам компонент умирает вместе с утилитой.
    */
   historyStore?: ConsoleHistoryStore
+  /**
+   * Папка, для которой открыли утилиту. Сама команда идёт не в ней, а в корне
+   * агента (`exec` без cwd), поэтому консоль её не показывает — папка нужна лишь
+   * затем, чтобы переход в проводник открылся там, откуда пришли.
+   */
+  initialCwd?: string
   variant?: UtilityVariant
   onClose?: () => void
+  /** Переключиться на проводник этой машины (шапка утилиты). */
+  onSwitchUtility?: SwitchUtility
+  /** Ссылка в раздел «Машины» из шапки утилиты. */
+  onOpenMachines?: () => void
 }
 
 export interface HistoryItem {
@@ -60,8 +71,11 @@ export function MachineConsole({
   initialAgentId,
   exec,
   historyStore,
+  initialCwd,
   variant = 'modal',
-  onClose
+  onClose,
+  onSwitchUtility,
+  onOpenMachines
 }: MachineConsoleProps): JSX.Element {
   const [agentId, setAgentId] = useState<string | null>(
     initialAgentId ?? agents.find((a) => a.online)?.id ?? agents[0]?.id ?? null
@@ -217,27 +231,20 @@ export function MachineConsole({
         </IconButton>
       }
     >
-      <div className="fsbar">
-        {agents.length > 1 && (
-          <select
-            className="sel"
-            aria-label="Машина"
-            value={agentId ?? ''}
-            onChange={(e) => {
-              // У другой машины своя история — листание начинаем заново.
-              setAgentId(e.target.value)
-              resetNav()
-            }}
-          >
-            {agents.map((a) => (
-              <option key={a.id} value={a.id} disabled={!a.online}>
-                💻 {a.name}
-                {a.online ? '' : ' (офлайн)'}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+      <MachineUtilityHeader
+        agents={agents}
+        agentId={agentId}
+        onAgentChange={(id) => {
+          // У другой машины своя история — листание начинаем заново.
+          setAgentId(id)
+          resetNav()
+        }}
+        kind="console"
+        consoleLabel="Консоль"
+        dir={initialCwd}
+        onSwitch={onSwitchUtility && agentId ? (next) => onSwitchUtility(next, agentId, initialCwd) : undefined}
+        onOpenMachines={onOpenMachines}
+      />
 
       <div className="consout" data-testid="console-output">
         {agents.length === 0 && (

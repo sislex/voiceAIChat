@@ -222,7 +222,7 @@ describe('ChatColumn — встроенная утилита (tool-блок)', (
     expect(screen.getByTestId('console-embed')).toBeInTheDocument()
   })
 
-  it('встроенный проводник открывает терминал на своей машине и в текущей папке', async () => {
+  it('встроенный проводник переключается на консоль своей машины в текущей папке', async () => {
     const open = vi.fn()
     const explorerOps = makeMachineOps({
       list: vi.fn().mockResolvedValue({ root: '/r', cwd: '/r/work', entries: [] })
@@ -231,9 +231,11 @@ describe('ChatColumn — встроенная утилита (tool-блок)', (
       makeAiMessage({ id: 'a2', text: 'Проводник\n\n```tool\n{"kind":"explorer","agentId":"m1"}\n```' })
     ]
     const agent = { id: 'm1', name: 'MacBook', online: true, policy: { allowWrite: true } } as AgentInfo
-    renderCol({ messages: explorerMsg, machineOps: explorerOps, agents: [agent], onOpenTerminal: open })
-    await userEvent.click(await screen.findByTitle('Открыть терминал в этой папке'))
-    expect(open).toHaveBeenCalledWith('m1', '/r/work')
+    renderCol({ messages: explorerMsg, machineOps: explorerOps, agents: [agent], onSwitchUtility: open })
+    // Ждём прочитанную папку: до неё переключателю нечего сохранять.
+    await screen.findByText('Папка пуста')
+    await userEvent.click(screen.getByRole('button', { name: /Консоль/ }))
+    expect(open).toHaveBeenCalledWith('console', 'm1', '/r/work')
   })
 
   it('без machineOps виджет не рендерится (блок просто скрыт)', () => {

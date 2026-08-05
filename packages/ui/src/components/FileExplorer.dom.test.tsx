@@ -84,20 +84,23 @@ describe('FileExplorer (самодостаточный)', () => {
     expect(screen.getByText(/a\.txt/).closest('[data-testid="fs-row"]')).toHaveAttribute('data-selected', 'true')
   })
 
-  it('кнопка терминала передаёт машину и текущую папку', async () => {
+  it('переключатель шапки передаёт машину и текущую папку', async () => {
     const open = vi.fn()
-    render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={makeOps()} variant="embedded" onOpenTerminal={open} />)
-    await userEvent.click(await screen.findByTitle('Открыть терминал в этой папке'))
-    expect(open).toHaveBeenCalledWith('m1', '/r')
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={makeOps()} variant="embedded" onSwitchUtility={open} />)
+    await screen.findByText(/a\.txt/)
+    await userEvent.click(screen.getByRole('button', { name: /Терминал/ }))
+    expect(open).toHaveBeenCalledWith('console', 'm1', '/r')
   })
 
-  it('без allowWrite кнопки мутаций скрыты', async () => {
+  it('без allowWrite кнопки мутаций скрыты, но объяснено почему', async () => {
     const ops = makeOps()
     render(<FileExplorer agents={[agent(false)]} initialAgentId="m1" ops={ops} variant="embedded" />)
     await screen.findByText(/a\.txt/)
     expect(screen.queryByRole('button', { name: /Загрузить/ })).toBeNull()
     expect(screen.queryByTitle('Удалить')).toBeNull()
     expect(screen.getByTitle('Скачать')).toBeInTheDocument()
+    // Пустое место на панели читалось как «функции нет»: теперь там причина.
+    expect(screen.getByTestId('fs-readonly')).toHaveAttribute('title', expect.stringContaining('запрещены её политикой'))
   })
 
 

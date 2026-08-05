@@ -35,3 +35,15 @@ export interface ConsoleHistoryStore {
 
 /** Вариант отображения виджета: карточка в сообщении или модалка из меню. */
 export type UtilityVariant = 'embedded' | 'modal'
+
+/** Что открыто в утилите машины: консоль/терминал или файловый проводник. */
+export type UtilityKind = 'console' | 'explorer'
+
+/**
+ * Переключить утилиту на другую (переключатель общей шапки — `MachineUtilityHeader`):
+ * из проводника в терминал и обратно. Машину передаёт сам виджет — ту, что выбрана
+ * в его селекторе, а не «первую онлайн»; `dir` — текущая папка проводника или cwd
+ * терминала, чтобы переход не терял место работы (нет папки — откроется корень
+ * агента).
+ */
+export type SwitchUtility = (kind: UtilityKind, agentId: string, dir?: string) => void

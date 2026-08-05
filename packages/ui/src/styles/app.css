@@ -2049,6 +2049,88 @@
   font-family: 'SF Mono', ui-monospace, Menlo, monospace;
 }
 
+/* ---- Общая шапка утилиты машины (MachineUtilityHeader) ---- */
+.uhead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-100);
+  flex-wrap: wrap;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--panel);
+}
+.uhead-machine {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-100);
+  min-width: 0;
+}
+.uhead-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.uhead-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+}
+.uhead-status.on {
+  color: var(--ci-success);
+}
+.uhead-status.off {
+  color: var(--text-dim);
+}
+.uhead-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.uhead-ver {
+  color: var(--text-dim);
+}
+.uhead-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-050);
+  flex-wrap: wrap;
+}
+/* Бейдж запрета — тот же оранжевый лозенг, что у CI-статуса «идёт»: его пара
+   цветов уже проверена на AA при 11px (см. contrast.test.ts). */
+.uhead-badge {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: var(--ci-progress);
+  background: var(--ci-progress-bg);
+  cursor: help;
+}
+/* Переключатель утилит и ссылка в «Машины» — к правому краю шапки. */
+.uhead-switch {
+  display: inline-flex;
+  gap: var(--space-050);
+  margin-left: auto;
+}
+.uhead-switch .vc-btn[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.uhead-link {
+  color: var(--text-dim);
+}
+/* Пометка проводника на месте кнопок изменения файлов (машина без allowWrite). */
+.fsnote {
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: help;
+}
+
 /* ---- Рамка тулов (ToolFrame): карточка в сообщении + разворот на весь экран ---- */
 .util-embed {
   display: flex;

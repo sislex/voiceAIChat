@@ -1630,6 +1630,13 @@ describe('voiceStore — машинные утилиты', () => {
     expect(store.getState().utility).toBeNull()
   })
 
+  it('openUtility с dir открывает проводник ВНУТРИ папки (переключение из терминала)', () => {
+    const store = createVoiceStore({ api: createFakeApi([]), fs: makeFs() })
+    store.actions.openUtility('explorer', 'm1', '/work', true)
+    // Без dir тот же путь считался бы файлом, и проводник открыл бы его родителя.
+    expect(store.getState().utility).toEqual({ kind: 'explorer', agentId: 'm1', path: '/work', dir: true })
+  })
+
   it('команда «открой консоль» создаёт ai-сообщение с tool-блоком (без LLM)', async () => {
     const store = createVoiceStore({ api: createFakeApi([]), fs: makeFs() })
     await store.actions.init()

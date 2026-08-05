@@ -4,7 +4,7 @@ import type { RendererPtyBridge } from '@shared/ipc'
 import { FileExplorer } from './FileExplorer'
 import { MachineConsole } from './MachineConsole'
 import { MachineTerminal } from './MachineTerminal'
-import type { ConsoleHistoryStore, MachineOps, UtilityVariant } from './machine'
+import type { ConsoleHistoryStore, MachineOps, SwitchUtility, UtilityVariant } from './machine'
 
 export interface MachineUtilityProps {
   tool: ToolSpec
@@ -16,8 +16,13 @@ export interface MachineUtilityProps {
   onClose?: () => void
   /** Мост живого PTY-терминала. По умолчанию — window.pty (web); отсутствует → однострочная консоль. */
   pty?: RendererPtyBridge
-  /** Переключить popup проводника на терминал в указанной папке. */
-  onOpenTerminal?: (agentId: string, cwd: string) => void
+  /**
+   * Переключить утилиту на другую (кнопки «Консоль/Терминал ↔ Проводник» в общей
+   * шапке), сохранив машину и папку. Нет — переключателя в шапке нет.
+   */
+  onSwitchUtility?: SwitchUtility
+  /** Открыть раздел «Машины» — ссылка в шапке утилиты. */
+  onOpenMachines?: () => void
 }
 
 /** Рендерит нужную утилиту (консоль/проводник) по ToolSpec. */
@@ -28,7 +33,8 @@ export function MachineUtility({
   consoleHistory,
   variant = 'modal',
   onClose,
-  onOpenTerminal,
+  onSwitchUtility,
+  onOpenMachines,
   pty = typeof window !== 'undefined' ? window.pty : undefined
 }: MachineUtilityProps): JSX.Element {
   if (tool.kind === 'console') {
@@ -42,6 +48,8 @@ export function MachineUtility({
           pty={pty}
           variant={variant}
           onClose={onClose}
+          onSwitchUtility={onSwitchUtility}
+          onOpenMachines={onOpenMachines}
         />
       )
     }
@@ -51,8 +59,11 @@ export function MachineUtility({
         initialAgentId={tool.agentId ?? null}
         exec={ops.exec}
         {...(consoleHistory ? { historyStore: consoleHistory } : {})}
+        initialCwd={tool.path}
         variant={variant}
         onClose={onClose}
+        onSwitchUtility={onSwitchUtility}
+        onOpenMachines={onOpenMachines}
       />
     )
   }
@@ -63,7 +74,11 @@ export function MachineUtility({
       initialFilePath={tool.dir ? undefined : tool.path}
       initialDir={tool.dir ? tool.path : undefined}
       ops={ops}
-      onOpenTerminal={onOpenTerminal}
+      // Переключатель шапки обещает то, что откроется на самом деле: без моста PTY
+      // консоль однострочная, и называть её «Терминалом» было бы неправдой.
+      consoleLabel={pty ? 'Терминал' : 'Консоль'}
+      onSwitchUtility={onSwitchUtility}
+      onOpenMachines={onOpenMachines}
       variant={variant}
       onClose={onClose}
     />
