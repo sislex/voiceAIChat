@@ -468,6 +468,14 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       byModel: [],
       byConversation: []
     }),
+    'usage:report': async ({ unit, conversationId }) => ({
+      unit,
+      conversationId: conversationId ?? null,
+      totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, messages: 0 },
+      byBucket: [],
+      byModel: [],
+      byConversation: []
+    }),
     'admin:conversations': async () => [],
     'admin:messages': async () => [],
     'admin:llmEngines': async () => llmEngines.map((e) => ({ ...e, allowedRoles: [...e.allowedRoles] })),

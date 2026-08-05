@@ -156,6 +156,16 @@ export interface RegisterKbMcpOptions {
    * «Использование» (безопасный дефолт — инструмент не должен обходить доступ).
    */
   viewOf?: (entry: KbToolEntry) => KbView
+  /**
+   * Живое состояние машин (реестр агентов): в БД его нет — статус, версия и ОС
+   * известны только по текущему подключению. Не передан → инструмент «machines»
+   * отдаёт машины без онлайн-полей.
+   */
+  agents?: {
+    isOnline(agentId: string): boolean
+    versionOf(agentId: string): string | undefined
+    platformOf(agentId: string): string | undefined
+  }
 }
 
 export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions): void {
@@ -377,9 +387,9 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         if (!entry || !opts.db) return noContext
         const settings = opts.db.getSettings(entry.userId)
         const machines = opts.db.listAgents(entry.userId).map((agent) => ({
-          id: agent.id, name: agent.name, online: agent.online, version: agent.version ?? null,
-          os: agent.telemetry?.platform.os ?? null, policy: agent.policy,
-          isDefault: settings.defaultAgentId === agent.id
+          id: agent.id, name: agent.name, online: opts.agents?.isOnline(agent.id) ?? false,
+          version: opts.agents?.versionOf(agent.id) ?? null, os: opts.agents?.platformOf(agent.id) ?? null,
+          policy: agent.policy, isDefault: settings.defaultAgentId === agent.id
         }))
         return { content: [{ type: 'text', text: JSON.stringify(machines, null, 2) }] }
       })

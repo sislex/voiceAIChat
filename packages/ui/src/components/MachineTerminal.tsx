@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -7,7 +7,8 @@ import type { RendererPtyBridge } from '@shared/ipc'
 import { ToolFrame } from './ToolFrame'
 import { MachineUtilityHeader } from './MachineUtilityHeader'
 import { EmptyState } from './ui/EmptyState'
-import type { SwitchUtility, UtilityVariant } from './machine'
+import type { PtySessionStore, PtySessionTab, SwitchUtility, UtilityVariant } from './machine'
+import { ptySessionStore } from '../store/ptySessions'
 
 export interface MachineTerminalProps {
   agents: AgentInfo[]
@@ -22,27 +23,21 @@ export interface MachineTerminalProps {
   onSwitchUtility?: SwitchUtility
   /** Ссылка в раздел «Машины» из шапки утилиты. */
   onOpenMachines?: () => void
+  /** Стор открытых сеансов (вкладок). По умолчанию — общий стор приложения. */
+  sessions?: PtySessionStore
 }
 
-function newPtyId(): string {
-  const g = globalThis as { crypto?: { randomUUID?: () => string } }
-  return g.crypto?.randomUUID ? g.crypto.randomUUID() : `pty-${Date.now()}-${performance.now()}`
-}
-
-/** Id сеансов открытки хранится вне xterm: размонтирование окна не должно убивать shell. */
-const sessionIds = new Map<string, string>()
-function sessionId(agentId: string, cwd?: string): string {
-  const key = `${agentId}:${cwd ?? ''}`
-  let id = sessionIds.get(key)
-  if (!id) {
-    id = newPtyId()
-    sessionIds.set(key, id)
-  }
-  return id
+/** Подпись вкладки: машина, номер сеанса (если их несколько) и каталог. */
+function tabLabel(tab: PtySessionTab, tabs: PtySessionTab[], agents: AgentInfo[]): string {
+  const name = agents.find((a) => a.id === tab.agentId)?.name ?? tab.agentId
+  const sameMachine = tabs.filter((t) => t.agentId === tab.agentId)
+  const num = sameMachine.length > 1 ? ` #${sameMachine.indexOf(tab) + 1}` : ''
+  const dir = tab.cwd ? ` · ${tab.cwd.replace(/\/+$/, '').split('/').pop() || '/'}` : ''
+  return `${name}${num}${dir}`
 }
 
 /** Представление одного присоединённого PTY-сеанса. */
-function TerminalView({ agentId, cwd, pty, ptyId, onTerminate }: { agentId: string; cwd?: string; pty: RendererPtyBridge; ptyId: string; onTerminate: () => void }): JSX.Element {
+function TerminalView({ agentId, cwd, pty, ptyId }: { agentId: string; cwd?: string; pty: RendererPtyBridge; ptyId: string }): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'live' | 'exited' | 'error'>('live')
   const [statusMsg, setStatusMsg] = useState('')
@@ -106,9 +101,6 @@ function TerminalView({ agentId, cwd, pty, ptyId, onTerminate }: { agentId: stri
 
   return (
     <div className="term-wrap">
-      <div className="term-actions">
-        <button type="button" onClick={() => { pty.kill({ ptyId }); onTerminate() }}>Завершить сеанс</button>
-      </div>
       <div ref={hostRef} className="term-host" data-testid="terminal-host" />
       {status !== 'live' && (
         <p className={status === 'error' ? 'term-status term-status--err' : 'term-status'}>{statusMsg}</p>
@@ -126,15 +118,28 @@ export function MachineTerminal({
   variant = 'modal',
   onClose,
   onSwitchUtility,
-  onOpenMachines
+  onOpenMachines,
+  sessions = ptySessionStore
 }: MachineTerminalProps): JSX.Element {
-  const [agentId, setAgentId] = useState<string | null>(
-    initialAgentId ?? agents.find((a) => a.online)?.id ?? agents[0]?.id ?? null
-  )
+  const { tabs, activeId } = useSyncExternalStore(sessions.subscribe, sessions.snapshot, sessions.snapshot)
+  // Машина, которую просили открыть: её вкладка либо находится, либо заводится.
+  const wantedAgentId = initialAgentId ?? agents.find((a) => a.online)?.id ?? agents[0]?.id ?? null
+  useEffect(() => {
+    if (wantedAgentId) sessions.open(wantedAgentId, initialCwd)
+  }, [sessions, wantedAgentId, initialCwd])
+
+  const active = tabs.find((t) => t.ptyId === activeId) ?? null
+  const agentId = active?.agentId ?? null
+  // Все вкладки закрыли — селектор и «Новый сеанс» продолжают показывать машину.
+  const headerAgentId = agentId ?? wantedAgentId
   const selectedAgent = agents.find((agent) => agent.id === agentId)
   const agentOnline = selectedAgent?.online ?? false
-  const [, setSessionVersion] = useState(0)
-  const activeSessionKey = agentId ? `${agentId}:${initialCwd ?? ''}` : ''
+  // Закрытие вкладки — единственное место, где PTY убивают: размонтирование
+  // xterm (закрыли утилиту, переключили вкладку) сеанс не трогает.
+  const closeTab = (ptyId: string): void => {
+    pty.kill({ ptyId })
+    sessions.close(ptyId)
+  }
 
   return (
     <ToolFrame
@@ -145,16 +150,54 @@ export function MachineTerminal({
     >
       <MachineUtilityHeader
         agents={agents}
-        agentId={agentId}
-        onAgentChange={setAgentId}
+        agentId={headerAgentId}
+        onAgentChange={(next) => sessions.open(next)}
         kind="console"
-        dir={initialCwd}
-        onSwitch={onSwitchUtility && agentId ? (next) => onSwitchUtility(next, agentId, initialCwd) : undefined}
+        dir={active?.cwd ?? initialCwd}
+        onSwitch={onSwitchUtility && agentId ? (next) => onSwitchUtility(next, agentId, active?.cwd ?? initialCwd) : undefined}
         onOpenMachines={onOpenMachines}
       />
-      {agentId && (
+      {tabs.length > 0 && (
+        <div className="term-tabs" role="group" aria-label="Сеансы терминала">
+          {tabs.map((tab) => {
+            const label = tabLabel(tab, tabs, agents)
+            return (
+              <span
+                key={tab.ptyId}
+                className={tab.ptyId === activeId ? 'term-tab term-tab--active' : 'term-tab'}
+              >
+                <button
+                  type="button"
+                  aria-pressed={tab.ptyId === activeId}
+                  className="term-tab__name"
+                  onClick={() => sessions.activate(tab.ptyId)}
+                >
+                  {label}
+                </button>
+                <button
+                  type="button"
+                  className="term-tab__close"
+                  aria-label={`Закрыть сеанс: ${label}`}
+                  title="Закрыть вкладку — сеанс на машине будет завершён"
+                  onClick={() => closeTab(tab.ptyId)}
+                >
+                  ×
+                </button>
+              </span>
+            )
+          })}
+        </div>
+      )}
+      {headerAgentId && (
         <div className="term-actions">
-          <button type="button" onClick={() => { sessionIds.delete(activeSessionKey); setSessionVersion((n) => n + 1) }}>Новый сеанс</button>
+          <button type="button" onClick={() => sessions.create(headerAgentId, initialCwd)}>
+            Новый сеанс
+          </button>
+          {active && (
+            <button type="button" onClick={() => closeTab(active.ptyId)}>
+              Завершить сеанс
+            </button>
+          )}
         </div>
       )}
       {agentId && !agentOnline ? (
@@ -163,14 +206,19 @@ export function MachineTerminal({
           title={'Машина «' + (selectedAgent?.name ?? agentId) + '» переподключается'}
           description="Терминал станет доступен после восстановления соединения. Попробуйте снова через несколько секунд."
         />
-      ) : agentId ? (
+      ) : active && agentId ? (
         <TerminalView
-          key={`${agentId}:${initialCwd ?? ''}`}
+          key={active.ptyId}
           agentId={agentId}
-          cwd={initialCwd}
+          {...(active.cwd ? { cwd: active.cwd } : {})}
           pty={pty}
-          ptyId={sessionId(agentId, initialCwd)}
-          onTerminate={() => sessionIds.delete(`${agentId}:${initialCwd ?? ''}`)}
+          ptyId={active.ptyId}
+        />
+      ) : agents.length > 0 ? (
+        <EmptyState
+          icon="💻"
+          title="Нет открытых сеансов"
+          description="Нажмите «Новый сеанс», чтобы открыть shell на выбранной машине."
         />
       ) : (
         <EmptyState

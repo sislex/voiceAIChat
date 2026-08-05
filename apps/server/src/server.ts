@@ -262,7 +262,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     secret: mcpSecret,
     usage: kbUsage,
     db,
-    viewOf: (entry) => ({ ...kbViewOf(db, entry.userId), ...(entry.projectId ? { projectId: entry.projectId } : {}) })
+    viewOf: (entry) => ({ ...kbViewOf(db, entry.userId), ...(entry.projectId ? { projectId: entry.projectId } : {}) }),
+    agents: {
+      isOnline: (agentId) => agentRegistry.isOnline(agentId),
+      versionOf: (agentId) => agentRegistry.versionOf(agentId),
+      platformOf: (agentId) => agentRegistry.platformOf(agentId)
+    }
   })
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)

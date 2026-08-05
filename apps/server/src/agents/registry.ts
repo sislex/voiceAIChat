@@ -41,10 +41,17 @@ interface PtySession {
   emit: ((e: PtyEvent) => void) | null
   output: string[]
   outputBytes: number
+  /** Таймер простоя: тикает, пока к сеансу никто не подписан. */
+  idleTimer: NodeJS.Timeout | null
 }
 
 /** Кап кольцевого буфера PTY: достаточно для восстановления экрана, но без роста памяти. */
 const PTY_OUTPUT_CAP_BYTES = 200 * 1024
+/**
+ * Сколько сеанс живёт без подписчика: вкладку закрыли/браузер отвалился, и через
+ * это время shell убивается сам, иначе забытые PTY копились бы до перезапуска.
+ */
+const PTY_IDLE_TTL_MS = 30 * 60_000
 /** Кап буфера вывода одной команды — результат уходит в контекст модели. */
 const OUTPUT_CAP_BYTES = 200 * 1024
 /** Запас серверного страховочного таймаута сверх таймаута агента. */
@@ -191,6 +198,7 @@ export class AgentRegistry {
     for (const [ptyId, sess] of this.ptys) {
       if (sess.agentId !== agentId) continue
       this.ptys.delete(ptyId)
+      if (sess.idleTimer) clearTimeout(sess.idleTimer)
       try {
         sess.emit?.({ t: 'pty.error', ptyId, message: 'Машина отключилась' })
       } catch {
@@ -425,6 +433,10 @@ export class AgentRegistry {
       }
       // Переподписка после закрытия модалки или reconnect браузера: shell не стартуем снова.
       existing.emit = emit
+      if (existing.idleTimer) {
+        clearTimeout(existing.idleTimer)
+        existing.idleTimer = null
+      }
       for (const data of existing.output) emit({ t: 'pty.output', ptyId, data })
       this.ptyResize(ptyId, cols, rows)
       return
@@ -438,7 +450,7 @@ export class AgentRegistry {
       emit({ t: 'pty.error', ptyId, message: ve.message })
       return
     }
-    this.ptys.set(ptyId, { agentId, emit, output: [], outputBytes: 0 })
+    this.ptys.set(ptyId, { agentId, emit, output: [], outputBytes: 0, idleTimer: null })
     this.send(agentId, { t: 'pty.start', ptyId, cols, rows, ...(cwd ? { cwd } : {}) })
   }
 
@@ -454,10 +466,18 @@ export class AgentRegistry {
     if (sess) this.send(sess.agentId, { t: 'pty.resize', ptyId, cols, rows })
   }
 
-  /** Снимает только браузерскую подписку; процесс на машине и его буфер остаются живы. */
+  /**
+   * Снимает только браузерскую подписку; процесс на машине и его буфер остаются
+   * живы `PTY_IDLE_TTL_MS`, чтобы к сеансу можно было вернуться. Не вернулись —
+   * сеанс убивается по таймеру простоя.
+   */
   ptyDetach(ptyId: string): void {
     const sess = this.ptys.get(ptyId)
-    if (sess) sess.emit = null
+    if (!sess || !sess.emit) return
+    sess.emit = null
+    if (sess.idleTimer) clearTimeout(sess.idleTimer)
+    sess.idleTimer = setTimeout(() => this.ptyKill(ptyId), PTY_IDLE_TTL_MS)
+    sess.idleTimer.unref?.()
   }
 
   private appendPtyOutput(sess: PtySession, data: string): void {
@@ -469,11 +489,12 @@ export class AgentRegistry {
     }
   }
 
-  /** Закрытие PTY-сессии — только явный запрос пользователя. */
+  /** Закрытие PTY-сессии: явное действие пользователя или таймер простоя. */
   ptyKill(ptyId: string): void {
     const sess = this.ptys.get(ptyId)
     if (!sess) return
     this.ptys.delete(ptyId)
+    if (sess.idleTimer) clearTimeout(sess.idleTimer)
     this.send(sess.agentId, { t: 'pty.kill', ptyId })
   }
 
@@ -517,9 +538,11 @@ export class AgentRegistry {
         sess.emit?.({ t: 'pty.output', ptyId: msg.ptyId, data: msg.data })
       } else if (msg.t === 'pty.exit') {
         this.ptys.delete(msg.ptyId)
+        if (sess.idleTimer) clearTimeout(sess.idleTimer)
         sess.emit?.({ t: 'pty.exit', ptyId: msg.ptyId, exitCode: msg.exitCode })
       } else {
         this.ptys.delete(msg.ptyId)
+        if (sess.idleTimer) clearTimeout(sess.idleTimer)
         sess.emit?.({ t: 'pty.error', ptyId: msg.ptyId, message: msg.message })
       }
       return

@@ -122,6 +122,24 @@ describe('AgentRegistry', () => {
       expect(res.timedOut).toBe(true)
       expect(sock.sent.some((m) => m.t === 'exec.cancel')).toBe(true)
     })
+
+    it('pty: отписанный сеанс живёт полчаса, а потом убивается по простою', () => {
+      const reg = makeRegistry()
+      const sock = fakeSocket()
+      reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.9.0')
+      reg.ptyStart('a1', 'p1', 80, 24, undefined, () => {})
+      reg.ptyDetach('p1')
+      vi.advanceTimersByTime(29 * 60_000)
+      expect(sock.sent.some((m) => m.t === 'pty.kill')).toBe(false)
+      // Вернулись до срока — таймер простоя снят, сеанс остаётся жив.
+      reg.ptyStart('a1', 'p1', 80, 24, undefined, () => {})
+      vi.advanceTimersByTime(31 * 60_000)
+      expect(sock.sent.some((m) => m.t === 'pty.kill')).toBe(false)
+
+      reg.ptyDetach('p1')
+      vi.advanceTimersByTime(30 * 60_000 + 1)
+      expect(sock.sent).toContainEqual({ t: 'pty.kill', ptyId: 'p1' })
+    })
   })
 
   it('повторная регистрация того же агента вытесняет старый сокет', () => {
@@ -245,6 +263,25 @@ describe('AgentRegistry', () => {
     expect(sock.sent.filter((m) => m.t === 'pty.start')).toHaveLength(1)
     expect(second).toContainEqual({ t: 'pty.output', ptyId: 'p1', data: 'готово\\r\\n' })
     expect(sock.sent).toContainEqual({ t: 'pty.resize', ptyId: 'p1', cols: 100, rows: 30 })
+  })
+
+  it('pty: буфер сеанса ограничен — при переподписке отдаётся хвост вывода', () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.9.0')
+    reg.ptyStart('a1', 'p1', 80, 24, undefined, () => {})
+    for (let i = 0; i < 30; i++) {
+      reg.handleMessage('a1', { t: 'pty.output', ptyId: 'p1', data: `${'x'.repeat(10 * 1024)}#${i}` })
+    }
+    reg.ptyDetach('p1')
+    const replayed: string[] = []
+    reg.ptyStart('a1', 'p1', 80, 24, undefined, (e) => {
+      if (e.t === 'pty.output') replayed.push(e.data)
+    })
+    const bytes = Buffer.byteLength(replayed.join(''))
+    expect(bytes).toBeLessThanOrEqual(210 * 1024)
+    expect(replayed.join('')).toContain('#29')
+    expect(replayed.join('')).not.toContain('#0')
   })
 
   it('pty: старый агент (<0.9.0) → pty.error клиенту, без pty.start агенту', () => {
