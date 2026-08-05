@@ -418,14 +418,18 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             engineId: resolvedEngine.engine?.id ?? null,
             source: projectLlm ? 'project' : (conv?.llmProvider ? 'conversation' : 'user')
           },
+          // Снимок не содержит учётных данных: Settings хранит только безопасные
+          // UI-предпочтения. Рядом даём фактические значения чата после наследования.
           userSettings: {
-            llmEngineId: settings.llmEngineId,
-            llmProvider: settings.llmProvider,
-            claudeModel: settings.model,
-            codexModel: settings.codexModel,
-            permissionMode: settings.permissionMode,
-            kbContextMode: conv?.kbContextMode ?? 'auto',
-            defaultAgentId: settings.defaultAgentId
+            ...settings,
+            conversation: conv ? {
+              id: conv.id, execTarget: conv.execTarget, workdir: conv.workdir,
+              skillNames: conv.skillNames, llmEngineId: conv.llmEngineId ?? settings.llmEngineId,
+              llmProvider: conv.llmProvider ?? settings.llmProvider,
+              llmModel: conv.llmModel ?? (settings.llmProvider === 'claude' ? settings.model : settings.codexModel),
+              permissionMode: conv.permissionMode ?? settings.permissionMode,
+              kbContextMode: conv.kbContextMode ?? 'auto', projectId: conv.projectId ?? null
+            } : null
           }
         }
       })

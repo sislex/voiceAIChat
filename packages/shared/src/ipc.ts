@@ -243,6 +243,8 @@ export interface IpcInvokeMap {
   'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
   'admin:deleteUser': { arg: { name: string }; result: void }
   'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }
+  /** Личный расход текущей сессии; userId намеренно не передаётся. */
+  'usage:report': { arg: { unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }
   'admin:conversations': { arg: { name: string }; result: Conversation[] }
   'admin:messages': { arg: { name: string; conversationId: string }; result: Message[] }
   'admin:llmEngines': { arg: void; result: AdminLlmEngine[] }
@@ -726,6 +728,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:setBlocked',
   'admin:deleteUser',
   'admin:usage',
+  'usage:report',
   'admin:conversations',
   'admin:messages',
   'admin:llmEngines',

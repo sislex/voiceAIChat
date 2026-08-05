@@ -211,6 +211,13 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       if (conversationId) q.set('conversationId', conversationId)
       return req(`${REST.adminUserUsage(name)}?${q.toString()}`)
     },
+    'usage:report': ({ unit, from, to, conversationId }) => {
+      const q = new URLSearchParams({ unit })
+      if (from) q.set('from', String(from))
+      if (to) q.set('to', String(to))
+      if (conversationId) q.set('conversationId', conversationId)
+      return req(`${REST.usage}?${q.toString()}`)
+    },
     'admin:conversations': ({ name }) => req(REST.adminUserConversations(name)),
     'admin:messages': ({ name, conversationId }) =>
       req(`${REST.adminUserMessages(name)}?conversationId=${encodeURIComponent(conversationId)}`),

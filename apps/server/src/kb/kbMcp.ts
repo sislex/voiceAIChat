@@ -15,6 +15,7 @@ import { KB_GAPS_HINT, KB_GAP_RULE, kbToolHint, type KbDocument } from '@voicech
 import type { KbView, KnowledgeBaseService } from './types.js'
 import { PUBLIC_KB_VIEW } from './types.js'
 import type { KbUsageTracker } from './usage.js'
+import type { VoiceChatDb } from '../db/database.js'
 import { KB_CONTEXT_HEADING } from './autoContext.js'
 
 export const KB_MCP_PATH = '/mcp/kb'
@@ -148,6 +149,8 @@ export interface RegisterKbMcpOptions {
   kb: KnowledgeBaseService
   secret: string
   usage?: KbUsageTracker
+  /** БД нужна личным инструментам; доступ всё равно привязан к entry.userId. */
+  db?: VoiceChatDb
   /**
    * Вид пользователя хода: без него модель видит только общий раздел
    * «Использование» (безопасный дефолт — инструмент не должен обходить доступ).
@@ -348,6 +351,51 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
           return { content: [{ type: 'text', text: JSON.stringify(entry.runtimeContext.userSettings, null, 2) }] }
         }
       )
+
+      // Личные operational-инструменты получают идентификатор пользователя только из
+      // записи хода. Аргумент userId намеренно отсутствует, чтобы CLI не мог
+      // подменить область данных.
+      server.registerTool('usage', {
+        description: 'Личный расход моделей: итоги, динамика, модели и чаты. Показывает только владельца текущего хода.',
+        inputSchema: {
+          unit: z.enum(['hour', 'day', 'week']).default('day'),
+          from: z.number().optional().describe('Unix-время в миллисекундах'),
+          to: z.number().optional().describe('Unix-время в миллисекундах'),
+          conversationId: z.string().optional()
+        }
+      }, async ({ unit, from, to, conversationId }) => {
+        if (!entry || !opts.db) return noContext
+        if (conversationId && !opts.db.getConversation(entry.userId, conversationId)) {
+          return { content: [{ type: 'text', text: 'Этот чат недоступен владельцу текущего хода.' }], isError: true }
+        }
+        return { content: [{ type: 'text', text: JSON.stringify(opts.db.usageReport(entry.userId, unit, from, to, conversationId), null, 2) }] }
+      })
+      server.registerTool('machines', {
+        description: 'Подключённые машины владельца: статус, ОС, версия и политика команд. Токены машин не возвращаются.',
+        inputSchema: {}
+      }, async () => {
+        if (!entry || !opts.db) return noContext
+        const settings = opts.db.getSettings(entry.userId)
+        const machines = opts.db.listAgents(entry.userId).map((agent) => ({
+          id: agent.id, name: agent.name, online: agent.online, version: agent.version ?? null,
+          os: agent.telemetry?.platform.os ?? null, policy: agent.policy,
+          isDefault: settings.defaultAgentId === agent.id
+        }))
+        return { content: [{ type: 'text', text: JSON.stringify(machines, null, 2) }] }
+      })
+      server.registerTool('projects', {
+        description: 'Проекты, где владелец текущего хода участник: участники, машины, доска и безопасные настройки CI.',
+        inputSchema: {}
+      }, async () => {
+        if (!entry || !opts.db) return noContext
+        const projects = opts.db.listProjects(entry.userId).map((summary) => {
+          const project = opts.db!.getProject(entry.userId, summary.id)
+          if (!project) return null
+          const { ciExecAuthRef: _secret, ...safe } = project
+          return safe
+        }).filter(Boolean)
+        return { content: [{ type: 'text', text: JSON.stringify(projects, null, 2) }] }
+      })
 
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
       reply.hijack()
