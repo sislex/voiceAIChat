@@ -6,6 +6,7 @@ import type {
   Conversation,
   LlmProvider,
   Message,
+  MessageAttachment,
   MessageRole,
   SttSegment,
   TaskLaunchRequest,
@@ -91,6 +92,8 @@ export interface AddMessageArgs {
   meta?: TurnMeta
   /** Цель этой реплики: id машины, null — сервер, 'none' — команды запрещены. */
   execTarget?: string | null
+  /** Только метаданные вложений, без байтов. */
+  attachments?: MessageAttachment[]
 }
 
 /** Legacy-данные монолитного desktop для одноразового идемпотентного импорта. */
@@ -277,6 +280,11 @@ export interface UploadInfo {
   id: string
   /** Имя файла (для отображения). */
   name: string
+  /** Фактический путь, сохраняемый в истории только как метаданные. */
+  path: string
+  mimeType: string
+  size: number
+  agentId?: string
 }
 
 /** Содержимое файла с диска сервера (ответ GET /api/files/read). */

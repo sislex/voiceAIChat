@@ -14,6 +14,20 @@ export interface TaskLaunchRequest {
 }
 
 /** Сообщение в ленте чата. */
+/** Компактная ссылка на файл чата. Байты никогда не попадают в SQLite. */
+export interface MessageAttachment {
+  /** Непрозрачный id UploadStore, если файл был загружен через чат. */
+  uploadId?: string
+  /** Фактический абсолютный путь файла на машине или сервере. */
+  path: string
+  name: string
+  mimeType: string
+  size: number
+  /** Машина-источник; отсутствие означает сервер. */
+  agentId?: string
+  caption?: string
+}
+
 export interface Message {
   id: string
   conversationId: string
@@ -36,6 +50,8 @@ export interface Message {
   meta?: TurnMeta
   /** Снимок цели выполнения для этой реплики: id машины, null — сервер, 'none' — без выполнения. */
   execTarget?: string | null
+  /** Метаданные файлов, приложенных к этой реплике; без байтов. */
+  attachments?: MessageAttachment[]
 }
 
 /** Сегмент распознанной речи после диаризации. */

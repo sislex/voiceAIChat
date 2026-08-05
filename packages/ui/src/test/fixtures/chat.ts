@@ -220,7 +220,7 @@ export function makeTaskChatContext(over: Partial<TaskChatContext> = {}): TaskCh
 
 export function makeUpload(over: Partial<UploadInfo> = {}): UploadInfo {
   seq += 1
-  return { id: `up-${seq}`, name: `скриншот-${seq}.png`, ...over }
+  return { id: `up-${seq}`, name: `скриншот-${seq}.png`, path: `/uploads/скриншот-${seq}.png`, mimeType: 'image/png', size: 0, ...over }
 }
 
 // --- Образцы markdown -----------------------------------------------------

@@ -15,6 +15,7 @@ import {
   type DesktopMigrationResult,
   type LlmProvider,
   type Message,
+  type MessageAttachment,
   type MessageRole,
   type MessageSearchHit,
   type MessageSearchResult,
@@ -235,6 +236,19 @@ function parseMeta(raw: string): TurnMeta | undefined {
   }
 }
 
+/** Старые/битые метаданные не должны ломать восстановление ленты. */
+function parseAttachments(raw: string | null): MessageAttachment[] | undefined {
+  if (!raw) return undefined
+  try {
+    const value: unknown = JSON.parse(raw)
+    if (!Array.isArray(value)) return undefined
+    const files = value.filter((item): item is MessageAttachment => Boolean(item) && typeof item === 'object' && typeof (item as MessageAttachment).path === 'string' && typeof (item as MessageAttachment).name === 'string' && typeof (item as MessageAttachment).mimeType === 'string' && typeof (item as MessageAttachment).size === 'number')
+    return files.length ? files : undefined
+  } catch {
+    return undefined
+  }
+}
+
 interface MessageRow {
   id: string
   conversation_id: string
@@ -245,6 +259,7 @@ interface MessageRow {
   engine: string | null
   meta: string | null
   exec_target: string | null
+  attachments: string | null
 }
 
 /**
@@ -793,6 +808,9 @@ export class VoiceChatDb {
     if (!msgCols.some((c) => c.name === 'exec_target')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN exec_target TEXT`)
     }
+    if (!msgCols.some((c) => c.name === 'attachments')) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT`)
+    }
     // Ответ агента наследует цель ближайшей пользовательской реплики того же разговора.
     // Заполняет сообщения, созданные до сохранения exec_target у AI-ответов.
     this.db.exec(`
@@ -999,7 +1017,8 @@ export class VoiceChatDb {
     time: string,
     engine?: LlmProvider,
     meta?: TurnMeta,
-    execTarget?: string | null
+    execTarget?: string | null,
+    attachments?: MessageAttachment[]
   ): Message {
     if (!this.ownsConversation(userId, conversationId)) {
       throw new Error(`Разговор ${conversationId} не принадлежит пользователю`)
@@ -1007,13 +1026,13 @@ export class VoiceChatDb {
     const id = this.newId()
     const createdAt = this.now()
     const insert = this.db.prepare(
-      `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target, attachments)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     const touch = this.db.prepare(`UPDATE conversations SET updated_at = ? WHERE id = ?`)
     const metaJson = meta && Object.keys(meta).length > 0 ? JSON.stringify(meta) : null
     this.db.transaction(() => {
-      insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson, execTarget ?? null)
+      insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson, execTarget ?? null, attachments?.length ? JSON.stringify(attachments) : null)
       touch.run(createdAt, conversationId)
     })()
     return {
@@ -1025,7 +1044,8 @@ export class VoiceChatDb {
       createdAt,
       ...(engine ? { engine } : {}),
       ...(meta && Object.keys(meta).length > 0 ? { meta } : {}),
-      ...(execTarget !== undefined ? { execTarget } : {})
+      ...(execTarget !== undefined ? { execTarget } : {}),
+      ...(attachments?.length ? { attachments } : {})
     }
   }
 
@@ -1053,7 +1073,8 @@ export class VoiceChatDb {
       createdAt: r.created_at,
       ...(r.engine ? { engine: r.engine as LlmProvider } : {}),
       ...(r.meta ? { meta: parseMeta(r.meta) } : {}),
-      ...(r.exec_target !== null ? { execTarget: r.exec_target } : {})
+      ...(r.exec_target !== null ? { execTarget: r.exec_target } : {}),
+      ...(parseAttachments(r.attachments) ? { attachments: parseAttachments(r.attachments) } : {})
     }))
   }
 

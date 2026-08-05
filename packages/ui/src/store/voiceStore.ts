@@ -73,6 +73,7 @@ import type {
   Conversation,
   LlmProvider,
   Message,
+  MessageAttachment,
   MessageRole,
   MessageSearchHit,
   PermissionMode,
@@ -1524,7 +1525,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     text: string,
     engine?: LlmProvider,
     meta?: TurnMeta,
-    execTarget?: string | null
+    execTarget?: string | null,
+    attachments?: MessageAttachment[]
   ): Promise<Message | undefined> {
     const conversationId = state.activeId
     if (!conversationId) return undefined
@@ -1535,7 +1537,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       time: formatTime(now()),
       ...(engine ? { engine } : {}),
       ...(meta && Object.keys(meta).length > 0 ? { meta } : {}),
-      ...(execTarget !== undefined ? { execTarget } : {})
+      ...(execTarget !== undefined ? { execTarget } : {}),
+      ...(attachments?.length ? { attachments } : {})
     })
     setState({ messages: [...state.messages, message] })
     return message
@@ -2703,7 +2706,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ error: null })
     await ensureConversation(text || atts.map((a) => a.name).join(', '))
     const execTarget = activeConversationExecTarget()
-    await persistMessage('u1', composeUserText(text, atts), undefined, undefined, execTarget)
+    await persistMessage(
+      'u1',
+      composeUserText(text, atts),
+      undefined,
+      undefined,
+      execTarget,
+      atts.map((file) => ({ uploadId: file.id, path: file.path, name: file.name, mimeType: file.mimeType, size: file.size, ...(file.agentId ? { agentId: file.agentId } : {}) }))
+    )
     setState({ draft: '', attachments: [] })
     await refreshConversations()
     // Команда «открой консоль/проводник» → виджет прямо в ответе, без обращения к LLM.
@@ -2795,7 +2805,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       const conversation = state.conversations.find((item) => item.id === state.activeId)
       const selectedTarget = conversation?.execTarget ?? state.settings.execTarget
       const agentId = selectedTarget && selectedTarget !== 'none' ? selectedTarget : undefined
-      const info = await api['uploads:add']({ name: file.name, dataBase64, ...(agentId ? { agentId } : {}) })
+      const info = await api['uploads:add']({ name: file.name, dataBase64, ...(file.type ? { mimeType: file.type } : {}), ...(agentId ? { agentId } : {}) })
       setState({ attachments: [...state.attachments, info] })
     } catch (err) {
       setState({
