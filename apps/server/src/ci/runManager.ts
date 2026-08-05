@@ -225,13 +225,13 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (hasActiveRunForTask(taskId)) return { error: 'Для этой задачи уже выполняется ран' }
     const agentId = project.defaultAgentId
     const slots = deps.db.resolveTaskSlots(projectId, taskId)
-    const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId)
+    const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId, userId)
     const settings = deps.db.getSettings(userId)
     const role = deps.db.getUser(userId)?.role ?? 'user'
-    // Обычный запуск наследует пару из пользовательских настроек. Окно создания
+    // Обычный запуск наследует пару задачи → проекта → пользователя. Окно создания
     // задачи передаёт разовый выбор, который фиксируется только в этом ране.
-    const provider = launchOptions?.provider ?? settings.llmProvider
-    const model = launchOptions?.model ?? (provider === 'codex' ? settings.codexModel : settings.model)
+    const provider = launchOptions?.provider ?? taskCi.provider
+    const model = launchOptions?.model ?? taskCi.model
     const engineResolution = deps.db.resolveLlmEngine(settings.llmEngineId, provider, role)
     const total = slots.beforeModel.length + slots.afterModel.length + 2
     // Связанный чат нужен, чтобы дублировать туда вопросы модели. Идемпотентно:
