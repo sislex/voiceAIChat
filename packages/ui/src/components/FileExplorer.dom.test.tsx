@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FileExplorer } from './FileExplorer'
 import type { AgentInfo } from '@shared/agentProtocol'
@@ -13,6 +13,11 @@ const policy = (allowWrite: boolean) => ({
   allowPatterns: [],
   skills: []
 })
+
+const encodeBase64 = (text: string) => btoa(String.fromCharCode(...new TextEncoder().encode(text)))
+
+const decodeBase64 = (value: string) =>
+  new TextDecoder().decode(new Uint8Array(Array.from(atob(value), (char) => char.charCodeAt(0))))
 const agent = (allowWrite = true): AgentInfo => ({
   id: 'm1',
   name: 'Мак',
@@ -207,13 +212,14 @@ describe('FileExplorer (самодостаточный)', () => {
     render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={ops} variant="embedded" />)
     await userEvent.click(await screen.findByText(/a\.txt/))
     expect(await screen.findByText(/Предпросмотр недоступен/)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /Скачать/ }))
+    const preview = screen.getByLabelText('Предпросмотр файла')
+    await userEvent.click(within(preview).getByRole('button', { name: /Скачать/ }))
     expect(ops.download).toHaveBeenCalledWith('m1', '/r/a.txt', 'a.txt')
   })
 
   it('сохраняет отредактированный текст и перечитывает каталог', async () => {
     const ops = makeOps()
-    vi.mocked(ops.read).mockResolvedValue({ root: '/r', cwd: '/r', name: 'a.txt', dataBase64: btoa('до') })
+    vi.mocked(ops.read).mockResolvedValue({ root: '/r', cwd: '/r', name: 'a.txt', dataBase64: encodeBase64('до') })
     render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={ops} variant="embedded" />)
     await userEvent.click(await screen.findByText(/a\.txt/))
     await userEvent.click(await screen.findByRole('button', { name: 'Редактировать' }))
@@ -223,7 +229,7 @@ describe('FileExplorer (самодостаточный)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     await userEvent.click(screen.getByRole('button', { name: 'Подтвердить сохранение' }))
     await waitFor(() => expect(ops.write).toHaveBeenCalledWith('m1', '/r/a.txt', expect.any(String)))
-    expect(atob(vi.mocked(ops.write).mock.calls[0]?.[2] ?? '')).toBe('после')
+    expect(decodeBase64(vi.mocked(ops.write).mock.calls[0]?.[2] ?? '')).toBe('после')
     expect(ops.list).toHaveBeenCalledTimes(2)
   })
 })
