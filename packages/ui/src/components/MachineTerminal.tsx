@@ -5,7 +5,9 @@ import '@xterm/xterm/css/xterm.css'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { RendererPtyBridge } from '@shared/ipc'
 import { ToolFrame } from './ToolFrame'
-import type { UtilityVariant } from './machine'
+import { MachineUtilityHeader } from './MachineUtilityHeader'
+import { EmptyState } from './ui/EmptyState'
+import type { SwitchUtility, UtilityVariant } from './machine'
 
 export interface MachineTerminalProps {
   agents: AgentInfo[]
@@ -16,6 +18,10 @@ export interface MachineTerminalProps {
   pty: RendererPtyBridge
   variant?: UtilityVariant
   onClose?: () => void
+  /** Переключиться на проводник этой машины в её cwd (шапка утилиты). */
+  onSwitchUtility?: SwitchUtility
+  /** Ссылка в раздел «Машины» из шапки утилиты. */
+  onOpenMachines?: () => void
 }
 
 function newPtyId(): string {
@@ -101,7 +107,9 @@ export function MachineTerminal({
   initialCwd,
   pty,
   variant = 'modal',
-  onClose
+  onClose,
+  onSwitchUtility,
+  onOpenMachines
 }: MachineTerminalProps): JSX.Element {
   const [agentId, setAgentId] = useState<string | null>(
     initialAgentId ?? agents.find((a) => a.online)?.id ?? agents[0]?.id ?? null
@@ -116,34 +124,29 @@ export function MachineTerminal({
       onClose={onClose}
       testId={variant === 'modal' ? 'terminal-overlay' : 'terminal-embed'}
     >
-      <div className="fsbar">
-        {agents.length > 1 && (
-          <select
-            className="sel"
-            aria-label="Машина"
-            value={agentId ?? ''}
-            onChange={(e) => setAgentId(e.target.value)}
-          >
-            {agents.map((a) => (
-              <option key={a.id} value={a.id} disabled={!a.online}>
-                💻 {a.name}
-                {a.online ? '' : ' (офлайн)'}
-              </option>
-            ))}
-          </select>
-        )}
-        {agents.length === 0 && (
-          <span className="fspath">Нет машин. Добавьте машину в настройках.</span>
-        )}
-      </div>
+      <MachineUtilityHeader
+        agents={agents}
+        agentId={agentId}
+        onAgentChange={setAgentId}
+        kind="console"
+        dir={initialCwd}
+        onSwitch={onSwitchUtility && agentId ? (next) => onSwitchUtility(next, agentId, initialCwd) : undefined}
+        onOpenMachines={onOpenMachines}
+      />
       {agentId && !agentOnline ? (
-        <p className="cc-empty">
-          Машина «{selectedAgent?.name ?? agentId}» переподключается. Терминал станет доступен после восстановления соединения.
-        </p>
+        <EmptyState
+          icon="⏳"
+          title={'Машина «' + (selectedAgent?.name ?? agentId) + '» переподключается'}
+          description="Терминал станет доступен после восстановления соединения. Попробуйте снова через несколько секунд."
+        />
       ) : agentId ? (
         <TerminalView key={`${agentId}:${initialCwd ?? ''}`} agentId={agentId} cwd={initialCwd} pty={pty} />
       ) : (
-        <p className="cc-empty">Нет доступной машины.</p>
+        <EmptyState
+          icon="💻"
+          title="Нет машин — добавьте первую"
+          description="Машина подключается в настройках: там выдаётся команда установки агента."
+        />
       )}
     </ToolFrame>
   )

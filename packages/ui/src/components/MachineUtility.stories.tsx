@@ -4,7 +4,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { expect, fn, userEvent, within } from '@storybook/test'
 import { MachineUtility } from './MachineUtility'
-import { createFakePty, makeAgent, makeFsEntries, makeMachineOps, makeOfflineAgent } from '../test/fixtures'
+import { createFakePty, makeAgent, makeFsEntries, makeMachineOps, makeOfflineAgent, makePolicy } from '../test/fixtures'
 
 const agents = [makeAgent({ id: 'm1', name: 'MacBook' }), makeOfflineAgent({ id: 'm2', name: 'Домашний ПК' })]
 
@@ -16,7 +16,8 @@ const meta: Meta<typeof MachineUtility> = {
     agents,
     ops: makeMachineOps(),
     variant: 'embedded',
-    onOpenTerminal: fn(),
+    onSwitchUtility: fn(),
+    onOpenMachines: fn(),
     onClose: fn()
   },
   decorators: [(Story) => <div className="msg ai"><div className="bub" style={{ maxWidth: 820 }}><Story /></div></div>]
@@ -100,14 +101,50 @@ export const ConsoleHistoryAndStop: Story = {
   }
 }
 
-/** Из проводника можно открыть терминал в текущей папке — это отдельная кнопка. */
-export const OpenTerminalFromExplorer: Story = {
+/**
+ * Общая шапка при ЕДИНСТВЕННОЙ машине: селектора нет, но имя и статус машины
+ * (в сети, версия агента) всё равно видны — раньше в этом случае не было ничего.
+ */
+export const SingleMachineHeader: Story = {
+  args: { agents: [makeAgent({ id: 'm1', name: 'MacBook' })], tool: { kind: 'explorer', agentId: 'm1', path: '/home/dev', dir: true } }
+}
+
+/**
+ * Машина с запретами: бейджи «только чтение», «сеть запрещена» и «каталоги
+ * ограничены» (подсказка перечисляет `allowedDirs`), а на месте кнопок изменения
+ * файлов — пометка, почему их нет.
+ */
+export const RestrictedPolicy: Story = {
+  args: {
+    agents: [
+      makeAgent({
+        id: 'm1',
+        name: 'Сборочный сервер',
+        policy: makePolicy({ allowWrite: false, allowNetwork: false, allowedDirs: ['/srv/build', '/tmp'] })
+      })
+    ],
+    tool: { kind: 'explorer', agentId: 'm1', path: '/srv/build', dir: true }
+  }
+}
+
+/** Из проводника переключаемся в консоль/терминал — та же машина, та же папка. */
+export const SwitchExplorerToConsole: Story = {
   args: { tool: { kind: 'explorer', agentId: 'm1', path: '/home/dev/voiceAIChat', dir: true } },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
     // Имя файла в строке идёт вместе с иконкой, поэтому ждём его по кнопке действия.
     await expect(await canvas.findByLabelText(`Скачать ${makeFsEntries()[2].name}`)).toBeInTheDocument()
-    await userEvent.click(canvas.getByTitle('Открыть терминал в этой папке'))
-    await expect(args.onOpenTerminal).toHaveBeenCalledTimes(1)
+    await userEvent.click(canvas.getByRole('button', { name: /Консоль/ }))
+    await expect(args.onSwitchUtility).toHaveBeenCalledWith('console', 'm1', '/home/dev/voiceAIChat')
+  }
+}
+
+/** И обратно: из консоли — в проводник, папка утилиты сохраняется. */
+export const SwitchConsoleToExplorer: Story = {
+  args: { tool: { kind: 'console', agentId: 'm1', path: '/home/dev/voiceAIChat' } },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: /Проводник/ }))
+    await expect(args.onSwitchUtility).toHaveBeenCalledWith('explorer', 'm1', '/home/dev/voiceAIChat')
   }
 }

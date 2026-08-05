@@ -664,7 +664,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         consoleHistory={consoleHistory}
         readServerFile={actions.readServerFile}
         onOpenImageInExplorer={(agentId, path) => actions.openUtility('explorer', agentId, path)}
-        onOpenTerminal={(agentId, cwd) => actions.openUtility('console', agentId, cwd)}
+        // Переключение утилиты из шапки встроенной карточки: та же машина и папка,
+        // но окном (в сообщении карточка остаётся такой, какой её прислала модель).
+        onSwitchUtility={(kind, agentId, dir) => actions.openUtility(kind, agentId, dir, kind === 'explorer')}
+        onOpenMachines={state.authRequired ? () => navigate('/machines') : undefined}
         onOpenKbDocument={(documentId) => navigate(`/kb/${encodeURIComponent(documentId)}`)}
         error={state.error}
         onDismissError={actions.dismissError}
@@ -1017,7 +1020,17 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           ops={machineOps}
           consoleHistory={consoleHistory}
           variant="modal"
-          onOpenTerminal={(agentId, cwd) => actions.openUtility('console', agentId, cwd)}
+          onSwitchUtility={(kind, agentId, dir) => actions.openUtility(kind, agentId, dir, kind === 'explorer')}
+          // Раздел «Машины» — страница контентной колонки, поэтому окно утилиты
+          // закрываем: иначе оно осталось бы висеть поверх неё.
+          onOpenMachines={
+            state.authRequired
+              ? () => {
+                  actions.closeUtility()
+                  navigate('/machines')
+                }
+              : undefined
+          }
           onClose={actions.closeUtility}
         />
       )}

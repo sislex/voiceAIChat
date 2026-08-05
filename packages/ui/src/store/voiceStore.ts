@@ -797,8 +797,12 @@ export interface StoreActions {
   /** Проверить живость исполнителя. */
   checkAdminLlmEngineHealth(id: string): Promise<void>
   // --- Машинные утилиты (консоль/проводник) ---
-  /** Открыть утилиту из меню (машина по умолчанию — первая онлайн-своя). */
-  openUtility(kind: 'console' | 'explorer', agentId?: string | null, path?: string): void
+  /**
+   * Открыть утилиту из меню (машина по умолчанию — первая онлайн-своя). `dir`
+   * говорит, что `path` — это папка: проводник откроется ВНУТРИ неё, а не в
+   * родителе файла (так переключаются утилиты в шапке, сохраняя папку).
+   */
+  openUtility(kind: 'console' | 'explorer', agentId?: string | null, path?: string, dir?: boolean): void
   openUtilityForActiveChat(kind: 'console' | 'explorer'): void
   /** Закрыть утилиту, открытую из меню. */
   closeUtility(): void
@@ -2386,8 +2390,20 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     return state.agents.find((a) => a.online)?.id ?? state.agents[0]?.id ?? null
   }
 
-  function openUtility(kind: 'console' | 'explorer', agentId?: string | null, path?: string): void {
-    setState({ utility: { kind, agentId: agentId ?? defaultUtilityAgent(), ...(path ? { path } : {}) } })
+  function openUtility(
+    kind: 'console' | 'explorer',
+    agentId?: string | null,
+    path?: string,
+    dir?: boolean
+  ): void {
+    setState({
+      utility: {
+        kind,
+        agentId: agentId ?? defaultUtilityAgent(),
+        ...(path ? { path } : {}),
+        ...(path && dir ? { dir: true } : {})
+      }
+    })
   }
 
   // Открыть проводник/консоль на ЭФФЕКТИВНОЙ машине и папке активного чата

@@ -22,7 +22,9 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
 - `components/` — экраны и виджеты. Крупные: `ChatColumn`, `Sidebar`, `VoiceBar`,
   `SettingsModal`, `MachineConsole`/`MachineTerminal`/`MachineStatus` (+ `AgentCard`
   — редактор политики раскрытой строки машины),
-  `FileExplorer`, `CcObserver`/`CodexObserver`, `UsersAdmin`, `QuestionsForm`,
+  `FileExplorer` (+ `MachineUtilityHeader` — общая шапка всех трёх утилит машины:
+  машина со статусом, бейджи политики, переключатель консоль ↔ проводник),
+  `CcObserver`/`CodexObserver`, `UsersAdmin`, `QuestionsForm`,
   `MessageActivity`, `MessageImage`, `AgentCommands`, `Markdown`,
   `CommandPalette`/`HotkeysCheatSheet`.
 - `components/ui/` — примитивы без предметной логики: `Button`/`IconButton`

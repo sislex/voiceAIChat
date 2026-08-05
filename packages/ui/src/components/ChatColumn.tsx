@@ -7,7 +7,7 @@ import type { ServerFileInfo } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { MachineUtility } from './MachineUtility'
 import { MessageImage } from './MessageImage'
-import type { ConsoleHistoryStore, MachineOps } from './machine'
+import type { ConsoleHistoryStore, MachineOps, SwitchUtility } from './machine'
 import {
   activityStatus,
   chipClass,
@@ -156,8 +156,10 @@ export interface ChatColumnProps {
   readServerFile?: (path: string) => Promise<ServerFileInfo | null>
   /** Открыть файл картинки в проводнике нужной машины. */
   onOpenImageInExplorer?: (agentId: string, path: string) => void
-  /** Открыть терминал из встроенного проводника в сообщении. */
-  onOpenTerminal?: (agentId: string, cwd: string) => void
+  /** Переключить встроенную утилиту сообщения (консоль ↔ проводник) — шапка утилиты. */
+  onSwitchUtility?: SwitchUtility
+  /** Открыть раздел «Машины» из шапки встроенной утилиты. */
+  onOpenMachines?: () => void
   /** Открыть раздел БЗ из «Подробнее» ответа (чипсы «База знаний»). */
   onOpenKbDocument?: (documentId: string, anchor: string) => void
 }
@@ -211,7 +213,8 @@ export function ChatColumn({
   consoleHistory,
   readServerFile,
   onOpenImageInExplorer,
-  onOpenTerminal,
+  onSwitchUtility,
+  onOpenMachines,
   onOpenKbDocument
 }: ChatColumnProps): JSX.Element {
   const [exportOpen, setExportOpen] = useState(false)
@@ -579,7 +582,8 @@ export function ChatColumn({
                         ops={machineOps}
                         {...(consoleHistory ? { consoleHistory } : {})}
                         variant="embedded"
-                        onOpenTerminal={onOpenTerminal}
+                        onSwitchUtility={onSwitchUtility}
+                        onOpenMachines={onOpenMachines}
                       />
                     )}
                     {parsed &&

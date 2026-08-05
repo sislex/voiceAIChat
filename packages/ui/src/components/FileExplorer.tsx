@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentInfo, FsEntry } from '@shared/agentProtocol'
-import type { MachineOps, UtilityVariant } from './machine'
+import type { MachineOps, SwitchUtility, UtilityVariant } from './machine'
+import { MachineUtilityHeader, READ_ONLY_HINT } from './MachineUtilityHeader'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { Skeleton, RefreshIndicator } from './ui/Skeleton'
@@ -19,7 +20,12 @@ export interface FileExplorerProps {
   ops: MachineOps
   variant?: UtilityVariant
   onClose?: () => void
-  onOpenTerminal?: (agentId: string, cwd: string) => void
+  /** Переключиться на консоль/терминал этой машины в текущей папке (шапка утилиты). */
+  onSwitchUtility?: SwitchUtility
+  /** Подпись консольной кнопки переключателя: «Терминал» (есть PTY) или «Консоль». */
+  consoleLabel?: string
+  /** Ссылка в раздел «Машины» из шапки утилиты. */
+  onOpenMachines?: () => void
 }
 
 function fmtSize(n: number): string {
@@ -47,7 +53,9 @@ export function FileExplorer({
   ops,
   variant = 'modal',
   onClose,
-  onOpenTerminal
+  onSwitchUtility,
+  consoleLabel,
+  onOpenMachines
 }: FileExplorerProps): JSX.Element {
   const [agentId, setAgentId] = useState<string | null>(
     initialAgentId ?? agents.find((a) => a.online)?.id ?? agents[0]?.id ?? null
@@ -126,22 +134,19 @@ export function FileExplorer({
       onClose={onClose}
       testId={variant === 'modal' ? 'fs-overlay' : 'fs-embed'}
     >
+      <MachineUtilityHeader
+        agents={agents}
+        agentId={agentId}
+        onAgentChange={setAgentId}
+        kind="explorer"
+        consoleLabel={consoleLabel}
+        dir={cwd || undefined}
+        // Папку берём из прочитанного `cwd`, а не из аргумента открытия: агент мог
+        // нормализовать путь, да и пользователь давно ушёл в другой каталог.
+        onSwitch={onSwitchUtility && agentId ? (next) => onSwitchUtility(next, agentId, cwd || undefined) : undefined}
+        onOpenMachines={onOpenMachines}
+      />
       <div className="fsbar">
-        {agents.length > 1 && (
-          <select
-            className="sel"
-            aria-label="Машина"
-            value={agentId ?? ''}
-            onChange={(e) => setAgentId(e.target.value)}
-          >
-            {agents.map((a) => (
-              <option key={a.id} value={a.id} disabled={!a.online}>
-                💻 {a.name}
-                {a.online ? '' : ' (офлайн)'}
-              </option>
-            ))}
-          </select>
-        )}
         <IconButton size="sm" title="Вверх" aria-label="На уровень выше" disabled={!agentOnline} onClick={() => void load(parentOf(cwd))}>
           ⬆
         </IconButton>
@@ -162,10 +167,12 @@ export function FileExplorer({
             onChange={(e) => setAddress(e.target.value)}
           />
         </form>
-        {onOpenTerminal && agentOnline && agentId && cwd && (
-          <Button size="sm" title="Открыть терминал в этой папке" onClick={() => onOpenTerminal(agentId, cwd)}>
-            &gt;_ Терминал
-          </Button>
+        {/* Кнопок изменения файлов нет не «просто так»: скажем это на их месте,
+            а полное объяснение — в подсказке (тот же текст, что у бейджа шапки). */}
+        {agentOnline && !writable && (
+          <span className="fsnote" title={READ_ONLY_HINT} data-testid="fs-readonly">
+            Только чтение: изменять файлы на этой машине запрещено политикой
+          </span>
         )}
         {writable && (
           <>

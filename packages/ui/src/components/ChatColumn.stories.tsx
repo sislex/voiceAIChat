@@ -176,7 +176,10 @@ export const WithMachineWidgets: Story = {
   args: {
     messages: [makeUserMessage({ text: 'Построй график и открой консоль' }), makeImageMessage(), makeToolMessage('console')],
     machineOps: makeMachineOps(),
-    onOpenTerminal: fn(),
+    // Машина нужна самой карточке: её шапка называет, где выполняются команды.
+    agents: [makeAgent({ id: 'm1', name: 'MacBook' })],
+    onSwitchUtility: fn(),
+    onOpenMachines: fn(),
     onOpenImageInExplorer: fn()
   }
 }
