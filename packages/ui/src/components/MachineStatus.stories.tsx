@@ -11,6 +11,7 @@ import {
   makeFleet,
   makeOfflineAgent,
   makeOutdatedAgent,
+  makePolicy,
   makeTelemetry,
   makeWindowsDegradedAgent
 } from '../test/fixtures'
@@ -28,6 +29,7 @@ const meta: Meta<typeof MachineStatus> = {
     onRegenerateToken: fn(async () => 'tkn-regenerated'),
     onGetConnectionString: fn(async (token: string) => `vcagent:${token}`),
     onUpdateAgent: fn(async () => null),
+    onDeleteAgent: fn(),
     onCreateAgent: fn(async (name: string) => makeAgentCreated({ name })),
     onClose: fn()
   }
@@ -113,5 +115,32 @@ export const TogglePermission: Story = {
   play: async ({ args, canvasElement }) => {
     await userEvent.click(within(canvasElement).getByLabelText('Запись файлов'))
     await expect(args.onSetPolicy).toHaveBeenCalledTimes(1)
+  }
+}
+
+/**
+ * Второй шаг удаления: строка подтверждения под машиной объясняет цену — токен
+ * отзывается, агент на машине останется запущенным, но больше не подключится.
+ */
+export const DeleteConfirm: Story = {
+  args: { agents: [makeAgent({ id: 'm1', name: 'MacBook' })] },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByLabelText('Удалить машину «MacBook»'))
+    await expect(canvas.getByTestId('machine-delete-confirm-m1')).toBeInTheDocument()
+    await expect(args.onDeleteAgent).not.toHaveBeenCalled()
+  }
+}
+
+/**
+ * Раскрытая политика строки: единственное место в UI, где правятся разрешённые
+ * каталоги, паттерны команд и навыки машины (`AgentCard`).
+ */
+export const PolicyEditor: Story = {
+  args: { agents: [makeAgent({ id: 'm1', name: 'MacBook', policy: makePolicy() })] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByLabelText('Политика машины «MacBook»'))
+    await expect(canvas.getByText('build: npm run build')).toBeInTheDocument()
   }
 }

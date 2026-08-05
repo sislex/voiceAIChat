@@ -20,7 +20,8 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   реестр команд (`commands.ts`/`useCommands.ts`/`appCommands.ts`), нечёткий поиск
   (`fuzzy.ts`), звуковые подсказки, `view.ts` (живые сегменты транскрипта).
 - `components/` — экраны и виджеты. Крупные: `ChatColumn`, `Sidebar`, `VoiceBar`,
-  `SettingsModal`, `MachineConsole`/`MachineTerminal`/`MachineStatus`/`AgentCard`,
+  `SettingsModal`, `MachineConsole`/`MachineTerminal`/`MachineStatus` (+ `AgentCard`
+  — редактор политики раскрытой строки машины),
   `FileExplorer`, `CcObserver`/`CodexObserver`, `UsersAdmin`, `QuestionsForm`,
   `MessageActivity`, `MessageImage`, `AgentCommands`, `Markdown`,
   `CommandPalette`/`HotkeysCheatSheet`.
@@ -261,8 +262,9 @@ Storybook: сториз примитивов — `src/components/ui/{Button,Dial
 баннеры ошибки и модели, вопросы, встроенные виджеты, правка сообщения);
 `CI/*` — `RunFeed` (очередь → выполняется → упал → успех → авто-фикс → ждёт
 ответа, гейт плана, простыня лога), `CiCommands`, `CiConsole`, `CiTaskSettings`,
-`CiSlotEditor`; `Machines/*` — `AgentCard`, `MachineStatus` (парк машин: в сети,
-устаревший агент, Android с батареей, офлайн), `MachineUtility`.
+`CiSlotEditor`; `Machines/*` — `AgentCard` (редактор политики строки: каталоги,
+паттерны, навыки), `MachineStatus` (парк машин: в сети, устаревший агент, Android
+с батареей, офлайн, подтверждение удаления, раскрытая политика), `MachineUtility`.
 
 Провайдеры примитивов и переключатель темы подключены глобальным декоратором в
 `.storybook/preview.tsx`: `data-theme` ставится на контейнер и на `<html>`, фон

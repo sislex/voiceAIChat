@@ -41,6 +41,7 @@ export const CONTRAST_PAIRS: ContrastPair[] = [
   { fg: '--accent-fg', bg: '--accent', usage: 'подпись на кнопке primary' },
   { fg: '--danger-fg', bg: '--danger', usage: 'подпись на кнопке danger' },
   { fg: '--danger', bg: '--surface', usage: 'тихий danger: крестик «удалить»' },
+  { fg: '--text', bg: '--surface-danger', usage: 'предупреждение перед удалением (машина в таблице)' },
   { fg: '--ci-neutral', bg: '--ci-neutral-bg', usage: 'лозенг «в очереди» / «пропущен», 11px' },
   { fg: '--ci-progress', bg: '--ci-progress-bg', usage: 'лозенг «выполняется» / «ждёт ответа»' },
   { fg: '--ci-success', bg: '--ci-success-bg', usage: 'лозенг «успех»' },

@@ -1384,8 +1384,15 @@ export class VoiceChatDb {
     return { token }
   }
 
+  /**
+   * Удаляет машину. Связки с проектами уносит CASCADE (`project_machines`), а вот
+   * `projects.default_agent_id` — обычная колонка без внешнего ключа: не почистить
+   * её означает оставить проекту машину по умолчанию, которой больше нет (CI-ран
+   * такого проекта уходил бы в никуда). То же делает `unlinkMachine`.
+   */
   deleteAgent(userId: string, id: string): void {
     this.db.prepare(`DELETE FROM agents WHERE id = ? AND user_id = ?`).run(id, userId)
+    this.db.prepare(`UPDATE projects SET default_agent_id = NULL WHERE default_agent_id = ?`).run(id)
   }
 
   /** Обновляет last_seen (при регистрации и по pong). */

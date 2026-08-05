@@ -27,6 +27,9 @@
   --ci-removed: #ae2a19;
   --ci-removed-bg: #f7dcd7;
   --surface-warning: var(--ci-progress-bg);
+  /* Подложка предупреждения об удалении (подтверждение в таблице машин): та же
+     красная, что у лозенги «удалено», — тёмную тему она берёт через --ci-removed-bg. */
+  --surface-danger: var(--ci-removed-bg);
   --accent-fg: #fff;
   --accent-soft: #eef1fb;
   --danger: var(--ci-removed);
@@ -429,21 +432,14 @@
   border-radius: 99px;
   flex: none;
 }
-/* Карточка машины-агента в настройках. */
+/* Редактор политики машины — раскрытая строка таблицы «Машины». */
 .ac {
   border: 1px solid var(--border);
   border-radius: 10px;
-  margin-bottom: 8px;
   overflow: hidden;
-}
-.ac-head {
-  cursor: pointer;
-  padding: 8px 10px;
-  margin: 0;
 }
 .ac-body {
   padding: 4px 10px 10px;
-  border-top: 1px solid var(--border-soft);
 }
 .ac-section {
   padding: 8px 0;
@@ -2906,6 +2902,14 @@
   font-weight: 600;
   white-space: nowrap;
 }
+/* Имя машины со стрелкой раскрытия политики: кнопка и текст в одну строку. Флексом
+   выравнивается span внутри ячейки, а не сама ячейка: `display: flex` у <td> убрал
+   бы у неё table-cell, и столбцы таблицы разъехались бы. */
+.mst-nameline {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
 .mst-ver {
   margin-left: 6px;
   font-weight: 400;
@@ -3287,6 +3291,32 @@
 .mst-add .sel {
   flex: 1;
   min-width: 180px;
+}
+/* Раскрывающиеся строки таблицы машин: подтверждение удаления и редактор политики.
+   Обе занимают всю ширину (colspan), поэтому своей сетки столбцов у них нет. */
+.mst-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-danger);
+}
+.mst-confirmtext {
+  flex: 1;
+  min-width: 240px;
+  margin: 0;
+  font-size: 12px;
+}
+.mst-confirmbtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mst-policyrow > td {
+  padding: 6px 0 10px;
 }
 .mst-note {
   margin: 10px 0 0;

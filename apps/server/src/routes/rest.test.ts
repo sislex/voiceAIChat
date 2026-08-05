@@ -477,6 +477,26 @@ describe('REST: conversations/messages/settings', () => {
     expect((await inj({ method: 'GET', url: '/api/agents' })).json()).toHaveLength(0)
   })
 
+  it('агенты: удаление снимает машину и с цели выполнения, и с дефолта', async () => {
+    const created = (
+      await inj({ method: 'POST', url: '/api/agents', payload: { name: 'MacBook' } })
+    ).json()
+    const before = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({
+      method: 'PUT',
+      url: '/api/settings',
+      payload: { ...before, execTarget: created.id, defaultAgentId: created.id }
+    })
+
+    await inj({ method: 'DELETE', url: `/api/agents/${created.id}` })
+
+    const after = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    expect(after.execTarget).toBeNull()
+    // Дефолт подставляется в новые разговоры: висячий id уводил бы ход на машину,
+    // которой больше нет.
+    expect(after.defaultAgentId).toBeNull()
+  })
+
   it('агенты: POST без имени → 400', async () => {
     const res = await inj({ method: 'POST', url: '/api/agents', payload: {} })
     expect(res.statusCode).toBe(400)
