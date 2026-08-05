@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-05
-checked: 4353ee6
+checked: 99f4933
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -10,6 +10,7 @@ areas:
   - packages/shared/src/agentProtocol.ts
   - packages/shared/src/version.ts
   - packages/ui/src/components/Machine*.tsx
+  - packages/ui/src/components/FileExplorer.tsx
 ---
 
 # Машины: компаньон-агент, политика, PTY, проводник
@@ -318,7 +319,7 @@ Remote-MCP кроме `bash` предоставляет модели специ�
 выбранный порядок остаётся при переходе между каталогами.
 
 Сам список фокусируемый: ↑/↓ двигают выделение среди отфильтрованных и
-отсортированных строк, Enter открывает папку либо скачивает файл, Backspace
+отсортированных строк, Enter открывает папку либо предпросмотр файла, Backspace
 возвращает на уровень выше (не срабатывает в корне). Выделенная строка остаётся
 видимой после перерисовки и прокручивается к месту.
 
