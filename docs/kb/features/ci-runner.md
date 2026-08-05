@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-05
-checked: 97c339b
+checked: 0efd10d
 areas:
   - packages/shared/src/ci.ts
   - apps/server/src/ci
@@ -344,7 +344,7 @@ cwd/env собираются с shell-escape (пользовательский �
    `origin/$BASE_BRANCH`, для сгенерированного `docs/kb/README.md` запускают
    `npm run kb:index`, а затем коммитят merge.
 8. **Обновить прод-контейнер** — env шага: `PROD_DIR=/root/voiceAIChat`,
-   `PROD_BRANCH=main`, `PROD_REBUILD_DELAY=180`, лог
+   `PROD_BRANCH=main`, `PROD_REBUILD_DELAY=1600`, лог
    `/tmp/voicechat-prod-rebuild.log`. Git-часть (проверка на локальные изменения →
    exit `70`, затем `fetch`/`checkout`/`pull --ff-only`) идёт синхронно, чтобы
    ошибки были видны в ленте, а сам подъём `docker compose up --build -d
