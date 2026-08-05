@@ -1585,8 +1585,29 @@ describe('voiceStore — машинные утилиты', () => {
     expect(fs.list).toHaveBeenCalledWith('m1', '/x')
     expect(res.entries).toHaveLength(1)
     const exec = await store.actions.agentExec('m1', 'ls')
-    expect(fs.exec).toHaveBeenCalledWith('m1', 'ls')
+    expect(fs.exec).toHaveBeenCalledWith('m1', 'ls', undefined)
     expect(exec.output).toBe('ok')
+    // «Стоп» в консоли — тот же вызов, но с сигналом отмены.
+    const ctrl = new AbortController()
+    await store.actions.agentExec('m1', 'sleep 1', ctrl.signal)
+    expect(fs.exec).toHaveBeenLastCalledWith('m1', 'sleep 1', ctrl.signal)
+  })
+
+  it('история команд консоли: по машине, без подряд идущих дублей, с капом', () => {
+    const store = createVoiceStore({ api: createFakeApi([]), fs: makeFs() })
+    store.actions.pushConsoleCommand('m1', 'ls')
+    store.actions.pushConsoleCommand('m1', 'ls') // подряд повторённую не дублируем
+    store.actions.pushConsoleCommand('m1', ' pwd ') // хранится обрезанной
+    store.actions.pushConsoleCommand('m2', 'git status')
+    store.actions.pushConsoleCommand('m1', '') // пустую не помним
+    expect(store.getState().consoleHistory.m1).toEqual(['ls', 'pwd'])
+    expect(store.getState().consoleHistory.m2).toEqual(['git status'])
+
+    for (let i = 0; i < 120; i += 1) store.actions.pushConsoleCommand('m3', `cmd${i}`)
+    const m3 = store.getState().consoleHistory.m3 ?? []
+    expect(m3).toHaveLength(100)
+    expect(m3[0]).toBe('cmd20')
+    expect(m3.at(-1)).toBe('cmd119')
   })
 
   it('openUtility предпочитает машину активного разговора', async () => {

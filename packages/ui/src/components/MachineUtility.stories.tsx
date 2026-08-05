@@ -76,6 +76,30 @@ export const ConsoleCommand: Story = {
   }
 }
 
+/**
+ * История и отмена: ↑ достаёт набранное раньше, а пока команда идёт, рядом с ▶
+ * живёт «Стоп». Здесь `exec` висит до отмены — как настоящий долгий запрос.
+ */
+export const ConsoleHistoryAndStop: Story = {
+  args: {
+    ops: makeMachineOps({
+      exec: (_agentId, _command, signal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('Команда отменена')))
+        })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const input = canvas.getByRole('textbox')
+    await userEvent.type(input, 'sleep 100{Enter}')
+    await userEvent.click(await canvas.findByTitle('Стоп'))
+    await expect(await canvas.findByText('Отменено')).toBeInTheDocument()
+    await userEvent.type(input, '{ArrowUp}')
+    await expect(input).toHaveValue('sleep 100')
+  }
+}
+
 /** Из проводника можно открыть терминал в текущей папке — это отдельная кнопка. */
 export const OpenTerminalFromExplorer: Story = {
   args: { tool: { kind: 'explorer', agentId: 'm1', path: '/home/dev/voiceAIChat', dir: true } },

@@ -112,6 +112,9 @@ const LOGIN_STATUS_POLL_MS = 30_000
 /** Шаг дробного ранга для оптимистичного порядка на клиенте. */
 const BOARD_RANK_STEP = 1024
 
+/** Сколько команд консоли помним по одной машине (дальше вытесняются старые). */
+const CONSOLE_HISTORY_MAX = 100
+
 /** Ключ localStorage для последнего выбранного в сайдбаре проекта. */
 const SIDEBAR_PROJECT_KEY = 'vc.sidebar.project'
 function loadSidebarProject(): string | null {
@@ -390,6 +393,12 @@ export interface AppState {
   adminLlmEngineHealth: Record<string, AdminLlmEngineHealth | undefined>
   /** Открытая из меню машинная утилита (консоль/проводник) + машина; null — закрыта. */
   utility: { kind: 'console' | 'explorer'; agentId: string | null; path?: string; dir?: boolean } | null
+  /**
+   * Набранные в консоли команды по id машины (старые → новые) — то, что листают
+   * стрелками ↑/↓. Живёт в сторе, а не в самой консоли: утилиту закрывают и
+   * открывают заново десятки раз за сеанс, и локальный стейт терял бы историю.
+   */
+  consoleHistory: Record<string, string[]>
   /** id сообщения, которое сейчас озвучивается по кнопке (ручной повтор); null — нет. */
   speakingMessageId: string | null
   /** Доступна ли озвучка (кнопка ▶ на ответах). */
@@ -807,8 +816,10 @@ export interface StoreActions {
   downloadFsFile(agentId: string, path: string, name: string): Promise<void>
   /** Загрузить файл на машину в указанный каталог; возвращает обновлённый листинг. */
   uploadFsFile(agentId: string, dir: string, file: File): Promise<FsResult>
-  /** Выполнить команду на машине (консоль). */
-  agentExec(agentId: string, command: string): Promise<AgentExecResult>
+  /** Выполнить команду на машине (консоль); `signal` — «Стоп» в консоли. */
+  agentExec(agentId: string, command: string, signal?: AbortSignal): Promise<AgentExecResult>
+  /** Запомнить выполненную в консоли команду (история ↑/↓ по машине). */
+  pushConsoleCommand(agentId: string, command: string): void
   // --- Проекты + канбан ---
   /** Открыть режим «Проекты» (грузит список). */
   openProjects(): Promise<void>
@@ -1036,6 +1047,7 @@ function initialState(): AppState {
     adminLlmEnginesError: null,
     adminLlmEngineHealth: {},
     utility: null,
+    consoleHistory: {},
     speakingMessageId: null,
     ttsAvailable: false,
     error: null,
@@ -2418,8 +2430,25 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     deps.fs ? deps.fs.rename(agentId, from, to) : noFs()
   const fsMkdir = (agentId: string, path: string): Promise<FsResult> =>
     deps.fs ? deps.fs.mkdir(agentId, path) : noFs()
-  const agentExec = (agentId: string, command: string): Promise<AgentExecResult> =>
-    deps.fs ? deps.fs.exec(agentId, command) : noFs()
+  const agentExec = (
+    agentId: string,
+    command: string,
+    signal?: AbortSignal
+  ): Promise<AgentExecResult> => (deps.fs ? deps.fs.exec(agentId, command, signal) : noFs())
+
+  /**
+   * История команд консоли по машине. Подряд повторённую команду не дублируем —
+   * под ↑ она и так первая, а список от этого только длиннее.
+   */
+  function pushConsoleCommand(agentId: string, command: string): void {
+    const cmd = command.trim()
+    if (!agentId || !cmd) return
+    const prev = state.consoleHistory[agentId] ?? []
+    if (prev[prev.length - 1] === cmd) return
+    setState({
+      consoleHistory: { ...state.consoleHistory, [agentId]: [...prev, cmd].slice(-CONSOLE_HISTORY_MAX) }
+    })
+  }
 
   async function uploadFsFile(agentId: string, dir: string, file: File): Promise<FsResult> {
     if (!deps.fs) return noFs()
@@ -4062,6 +4091,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       downloadFsFile,
       uploadFsFile,
       agentExec,
+      pushConsoleCommand,
       applyVoiceProgress,
       applyVoiceDone,
       applyVoiceError,

@@ -264,11 +264,13 @@ function makeFsBridge(httpBase: string): RendererFsBridge {
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ path })
       }).then(asResult),
-    exec: async (id, command) => {
+    exec: async (id, command, signal) => {
       const res = await fetch(`${httpBase}${REST.agentExec(id)}`, {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
-        body: JSON.stringify({ command })
+        body: JSON.stringify({ command }),
+        // Отмена рвёт HTTP-запрос — по его закрытию сервер шлёт агенту exec.cancel.
+        ...(signal ? { signal } : {})
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string }
