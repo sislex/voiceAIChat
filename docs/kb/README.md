@@ -13,11 +13,11 @@
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 6 коммит(ов) в areas после сверки: 65621d2 feat(ui): режим чата в карточке сайдбара + актуальные меню моделей Claude/Codex … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: e39fa65 feat(ci): проверять только затронутые пакеты |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-04 | ⚠ 9 коммит(ов) в areas после сверки: cb4d4a0 feat(ci): наследование LLM и контекст БЗ … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-02 | ⚠ 2 коммит(ов) в areas после сверки: 6975e38 feat: показать версию и дату прод-релиза … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-05 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-05 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-03 | ⚠ 21 коммит(ов) в areas после сверки: cb4d4a0 feat(ci): наследование LLM и контекст БЗ … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 9 коммит(ов) в areas после сверки: 103017e feat(chat): persist attachment metadata and render images … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 49 коммит(ов) в areas после сверки: 97c339b CHAT-97: исправить CI-воркфлоу ChatAI … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 50 коммит(ов) в areas после сверки: 0efd10d chatai-97: работа CI-рана … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-03 | ⚠ 2 коммит(ов) в areas после сверки: e3a1439 fix(ci): validate KB update repository root … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-03 | ⚠ 16 коммит(ов) в areas после сверки: cb4d4a0 feat(ci): наследование LLM и контекст БЗ … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-02 | ⚠ 4 коммит(ов) в areas после сверки: 4db7c74 Show reconnecting state for machine utilities … |
@@ -43,8 +43,9 @@
 
 ## Журнал сессий
 
-Всего записей: 82. Последние:
+Всего записей: 83. Последние:
 
+- [2026-08-05-2470-com-ci-workflow-98.md](log/2026-08-05-2470-com-ci-workflow-98.md) — ci-workflow-98
 - [2026-08-05-2470-com-ci-test-workflow.md](log/2026-08-05-2470-com-ci-test-workflow.md) — ci-test-workflow
 - [2026-08-05-2470-com-ci-runner-workflow.md](log/2026-08-05-2470-com-ci-runner-workflow.md) — ci-runner-workflow
 - [2026-08-05-2470-com-chat-files-contract.md](log/2026-08-05-2470-com-chat-files-contract.md) — chat-files-contract
@@ -54,7 +55,6 @@
 - [2026-08-04-2470-com-ci-model-repo-workdir.md](log/2026-08-04-2470-com-ci-model-repo-workdir.md) — ci-model-repo-workdir
 - [2026-08-04-2470-com-ci-merge-conflict-resolution.md](log/2026-08-04-2470-com-ci-merge-conflict-resolution.md) — ci-merge-conflict-resolution
 - [2026-08-04-2470-com-ci-kb-root-validation.md](log/2026-08-04-2470-com-ci-kb-root-validation.md) — ci-kb-root-validation
-- [2026-08-04-2470-com-ci-affected-check-full-fallback.md](log/2026-08-04-2470-com-ci-affected-check-full-fallback.md) — ci-affected-check-full-fallback
 
 ## Исторические планы
 
