@@ -11,6 +11,7 @@ export class WsClient {
   private ws: WebSocket | null = null
   private queue: Array<string | ArrayBuffer> = []
   private listeners = new Map<string, Set<Listener>>()
+  private connectedListeners = new Set<() => void>()
   private closed = false
   // Буфер сообщений, пришедших ДО регистрации слушателей: сокет открывается на
   // загрузке модуля, а подписки — позже, в React-эффекте. Без буфера снапшот
@@ -46,6 +47,7 @@ export class WsClient {
       const pending = this.queue
       this.queue = []
       for (const m of pending) ws.send(m)
+      for (const listener of [...this.connectedListeners]) listener()
     }
     ws.onmessage = (ev) => {
       if (typeof ev.data !== 'string') return // TTS приходит base64 в JSON, бинарь не ждём
@@ -123,6 +125,12 @@ export class WsClient {
     return () => {
       set!.delete(listener)
     }
+  }
+
+  /** Подписка на каждое успешное соединение, включая reconnect. */
+  onConnected(cb: () => void): () => void {
+    this.connectedListeners.add(cb)
+    return () => this.connectedListeners.delete(cb)
   }
 
   /** Пере-дозвон с актуальным токеном (после логина/логаута). */

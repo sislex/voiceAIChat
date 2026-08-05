@@ -608,6 +608,8 @@ export interface RendererPtyBridge {
   input(params: { ptyId: string; data: string }): void
   resize(params: { ptyId: string; cols: number; rows: number }): void
   kill(params: { ptyId: string }): void
+  /** Вызывается после каждого (пере)подключения WS, чтобы живые вкладки переподписались. */
+  onConnected(cb: () => void): () => void
   onOutput(cb: (m: { ptyId: string; data: string }) => void): () => void
   onExit(cb: (m: { ptyId: string; exitCode: number | null }) => void): () => void
   onError(cb: (m: { ptyId: string; message: string }) => void): () => void

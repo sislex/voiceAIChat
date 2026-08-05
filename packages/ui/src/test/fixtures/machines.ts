@@ -223,6 +223,7 @@ export function createFakePty(): RendererPtyBridge {
     },
     resize: () => {},
     kill: () => {},
+    onConnected: () => () => {},
     onOutput: (cb) => {
       outputs.add(cb)
       return () => outputs.delete(cb)

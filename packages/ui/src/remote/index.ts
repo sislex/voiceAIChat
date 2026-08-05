@@ -289,6 +289,7 @@ function makePtyBridge(ws: WsClient): RendererPtyBridge {
     input: ({ ptyId, data }) => ws.send({ t: 'pty.input', ptyId, data }),
     resize: ({ ptyId, cols, rows }) => ws.send({ t: 'pty.resize', ptyId, cols, rows }),
     kill: ({ ptyId }) => ws.send({ t: 'pty.kill', ptyId }),
+    onConnected: (cb) => ws.onConnected(cb),
     onOutput: (cb) => ws.on('pty.output', (m) => cb({ ptyId: m.ptyId, data: m.data })),
     onExit: (cb) => ws.on('pty.exit', (m) => cb({ ptyId: m.ptyId, exitCode: m.exitCode })),
     onError: (cb) => ws.on('pty.error', (m) => cb({ ptyId: m.ptyId, message: m.message }))
