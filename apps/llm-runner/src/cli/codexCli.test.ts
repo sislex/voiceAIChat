@@ -95,6 +95,25 @@ describe('CodexCli', () => {
     expect(input).toContain('Независимые чтения и поиски объединяй')
   })
 
+  it('readOnlyRemote: план подключает remote MCP с bypass, а промпт сохраняет запрет правок', async () => {
+    const { child, stdin } = fakeChild()
+    let input = ''
+    stdin.on('data', (chunk) => (input += chunk.toString()))
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new CodexCli({ spawn }).send(
+      {
+        prompt: 'составь план', sessionId: null, model: '', permissionMode: 'default', readOnlyRemote: true,
+        remote: { mcpUrl: 'http://127.0.0.1/mcp?ro=1', agentName: 'Ноутбук' }
+      },
+      makeHandlers()
+    )
+    const args = argsOf(spawn)
+    expect(args.some((arg) => arg.startsWith('mcp_servers.remote.url=') && arg.includes('ro=1'))).toBe(true)
+    expect(args).toContain('--dangerously-bypass-approvals-and-sandbox')
+    await tick()
+    expect(input).toContain('Режим «План»: только read/grep')
+  })
+
   it('kbMcpUrl: сервер kb подключается и в режиме «План» (БЗ read-only)', async () => {
     const { child, stdin } = fakeChild()
     let input = ''
