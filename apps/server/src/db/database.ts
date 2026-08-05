@@ -726,14 +726,18 @@ export class VoiceChatDb {
     // Увеличиваем втрое только прежний полный набор дефолтных предохранителей.
     // Любая вручную изменённая настройка сохраняется без вмешательства.
     this.db.exec(`UPDATE ci_settings
-      SET max_fix_attempts = 9,
+      SET max_fix_attempts = 10,
           fix_time_limit_ms = 1800000,
           fix_token_limit = 600000,
           default_step_timeout_sec = 1800
-      WHERE max_fix_attempts = 3
+      WHERE (max_fix_attempts = 3
         AND fix_time_limit_ms = 600000
         AND fix_token_limit = 200000
-        AND default_step_timeout_sec = 600`)
+        AND default_step_timeout_sec = 600)
+        OR (max_fix_attempts = 9
+        AND fix_time_limit_ms = 1800000
+        AND fix_token_limit = 600000
+        AND default_step_timeout_sec = 1800)`)
     const toolLimitColumns: Array<[string, number]> = [
       ['bash_output_limit_chars', DEFAULT_CI_GLOBAL_SETTINGS.bashOutputLimitChars],
       ['read_output_limit_chars', DEFAULT_CI_GLOBAL_SETTINGS.readOutputLimitChars],

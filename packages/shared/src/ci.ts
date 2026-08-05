@@ -432,7 +432,7 @@ export interface CiGlobalSettings {
 }
 
 export const DEFAULT_CI_GLOBAL_SETTINGS: CiGlobalSettings = {
-  maxFixAttempts: 9,
+  maxFixAttempts: 10,
   fixTimeLimitMs: 30 * 60 * 1000,
   fixTokenLimit: 600_000,
   defaultStepTimeoutSec: 1_800,
