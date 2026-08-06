@@ -14,12 +14,12 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: e39fa65 feat(ci): проверять только затронутые пакеты |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-04 | ⚠ 12 коммит(ов) в areas после сверки: 8ee813c chatai-107: подпись чата без задачи … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-05 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-06 | ⚠ 1 коммит(ов) в areas после сверки: db01ede chatai-106: работа CI-рана |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-06 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-03 | ⚠ 24 коммит(ов) в areas после сверки: ed3821d CHAT-106: разрешить самопроверку CI-модели … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 12 коммит(ов) в areas после сверки: fc34191 feat(machine): вкладки PTY-сеансов и таймаут простоя … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 71 коммит(ов) в areas после сверки: 8ee813c chatai-107: подпись чата без задачи … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 72 коммит(ов) в areas после сверки: 24bd145 chatai-107: работа CI-рана … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-06 | ✓ |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-03 | ⚠ 17 коммит(ов) в areas после сверки: 5cad358 feat: expose personal usage and account context … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-06 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-05 | ⚠ 1 коммит(ов) в areas после сверки: fc34191 feat(machine): вкладки PTY-сеансов и таймаут простоя |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-05 | ⚠ 3 коммит(ов) в areas после сверки: ed3821d CHAT-106: разрешить самопроверку CI-модели … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-05 | ⚠ 5 коммит(ов) в areas после сверки: 20feb26 feat(machine): keep terminal sessions across reconnects … |
@@ -44,9 +44,10 @@
 
 ## Журнал сессий
 
-Всего записей: 92. Последние:
+Всего записей: 93. Последние:
 
 - [2026-08-06-2470-com-sidebar-chat-label.md](log/2026-08-06-2470-com-sidebar-chat-label.md) — sidebar-chat-label
+- [2026-08-06-2470-com-ci-run-empty-work-guard.md](log/2026-08-06-2470-com-ci-run-empty-work-guard.md) — Пустой ход модели больше не закрывает ран успехом
 - [2026-08-06-2470-com-ci-model-self-verification.md](log/2026-08-06-2470-com-ci-model-self-verification.md) — ci-model-self-verification
 - [2026-08-05-2470-com-удаление-машины-из-ui.md](log/2026-08-05-2470-com-удаление-машины-из-ui.md) — удаление-машины-из-ui
 - [2026-08-05-2470-com-user-account-usage.md](log/2026-08-05-2470-com-user-account-usage.md) — user-account-usage
@@ -55,7 +56,6 @@
 - [2026-08-05-2470-com-machine-utility-header-switch.md](log/2026-08-05-2470-com-machine-utility-header-switch.md) — machine-utility-header-switch
 - [2026-08-05-2470-com-file-explorer-preview.md](log/2026-08-05-2470-com-file-explorer-preview.md) — file-explorer-preview
 - [2026-08-05-2470-com-console-history-stop.md](log/2026-08-05-2470-com-console-history-stop.md) — console-history-stop
-- [2026-08-05-2470-com-ci-workflow-98.md](log/2026-08-05-2470-com-ci-workflow-98.md) — ci-workflow-98
 
 ## Исторические планы
 

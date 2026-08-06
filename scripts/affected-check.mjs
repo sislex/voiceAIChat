@@ -187,8 +187,15 @@ function compactOutput(output) {
 
 export function startRelatedTest(check, { maxWorkers } = {}) {
   const reportFile = vitestResultFile()
-  const args = packageArgs(check.pkg, 'test', maxWorkers, ['--related', ...check.files, '--passWithNoTests', '--reporter=json', `--outputFile=${reportFile}`, '--silent'])
-  const child = spawn('npm', args, { stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
+  // `--related` живёт только в подкоманде `vitest related`, а тестовый скрипт
+  // пакета — это `vitest run`: `vitest run --related` в vitest 2.x падает с
+  // «Unknown option `--related`», и быстрый этап валил гейт на любой правке кода
+  // (в ране это было не видно — там гейт обычно не набирал изменённых файлов).
+  // Поэтому зовём vitest напрямую в папке пакета, мимо npm-скрипта; пути в
+  // `check.files` уже относительны пакету.
+  const args = ['vitest', 'related', ...check.files, '--run', '--passWithNoTests', '--reporter=json', `--outputFile=${reportFile}`, '--silent']
+  if (maxWorkers) args.push(`--maxWorkers=${maxWorkers}`)
+  const child = spawn('npx', args, { cwd: check.pkg.path, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
   let output = ''
   let killTimer
   let settled = false
