@@ -271,7 +271,7 @@ export const CONVERSATION_STATUSES: Array<{ id: ConversationStatus; label: strin
 /**
  * Режим разговора словом — им подписана карточка чата в сайдбаре. Три подписи
  * ровно на три пункта «Режима разговора»: планирование, авто-правки и полный
- * доступ («задача» — агент делает задачу целиком, без ограничений).
+ * доступ (у связанной с канбаном беседы — «задача»).
  */
 export const CHAT_MODE_LABELS: Record<PermissionMode, string> = {
   plan: 'план',
@@ -283,20 +283,27 @@ export const CHAT_MODE_LABELS: Record<PermissionMode, string> = {
  * Подпись режима чата. `null`/`undefined` у разговора означает «как в общих
  * настройках», поэтому вызывающий передаёт вторым аргументом действующий
  * дефолт пользователя; без него берём дефолт настроек (`bypassPermissions`).
+ * Для полного доступа обычный чат называется «чат», а беседа, связанная с
+ * канбан-задачей, — «задача».
  */
 export function chatModeLabel(
   mode: PermissionMode | null | undefined,
-  fallback: PermissionMode = 'bypassPermissions'
+  fallback: PermissionMode = 'bypassPermissions',
+  linkedToTask = false
 ): string {
-  return CHAT_MODE_LABELS[mode ?? fallback]
+  const effectiveMode = mode ?? fallback
+  return effectiveMode === 'bypassPermissions' && !linkedToTask
+    ? 'чат'
+    : CHAT_MODE_LABELS[effectiveMode]
 }
 
 /** Подпись пульсирующего индикатора активного хода: «идет разработка». */
 export function activeStatusLabel(
   mode: PermissionMode | null | undefined,
-  fallback: PermissionMode = 'bypassPermissions'
+  fallback: PermissionMode = 'bypassPermissions',
+  linkedToTask = false
 ): string {
-  return `идет ${chatModeLabel(mode, fallback)}`
+  return `идет ${chatModeLabel(mode, fallback, linkedToTask)}`
 }
 
 export type WhisperModel = 'large-v3-turbo' | 'medium' | 'small'

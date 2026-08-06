@@ -621,10 +621,10 @@ export function Sidebar({
                   {workingSet.has(c.id) ? (
                     <p className="cstatus on">
                       <span className="cstatus-dot" aria-hidden />
-                      {activeStatusLabel(c.permissionMode, defaultPermissionMode)}
+                      {activeStatusLabel(c.permissionMode, defaultPermissionMode, Boolean(c.taskId))}
                     </p>
                   ) : (
-                    <p className="cstatus">{chatModeLabel(c.permissionMode, defaultPermissionMode)}</p>
+                    <p className="cstatus">{chatModeLabel(c.permissionMode, defaultPermissionMode, Boolean(c.taskId))}</p>
                   )}
                 </div>
                 {confirmingId !== c.id && renamingId !== c.id && (
