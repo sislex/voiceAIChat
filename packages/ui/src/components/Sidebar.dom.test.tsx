@@ -137,12 +137,12 @@ describe('Sidebar — инструменты в меню по клику на п
     // Отдельного нижнего ряда иконок больше нет.
     expect(document.querySelector('.foottools')).toBeNull()
     // До клика меню (и его пункты) не отрисованы.
-    expect(screen.queryByText('Агенты')).not.toBeInTheDocument()
+    expect(screen.queryByText('История LLM')).not.toBeInTheDocument()
 
     // Клик по пользователю открывает всплывающее меню с инструментами.
     fireEvent.click(screen.getByRole('button', { name: /Алекс/ }))
     const menu = screen.getByRole('menu')
-    for (const label of ['Агенты', 'База знаний', 'Проводник', 'Консоль']) {
+    for (const label of ['История LLM', 'База знаний', 'Проводник', 'Консоль']) {
       expect(within(menu).getByText(label)).toBeInTheDocument()
     }
     // Управление и настройки — там же.
@@ -150,14 +150,14 @@ describe('Sidebar — инструменты в меню по клику на п
     expect(within(menu).getByText('Настройки')).toBeInTheDocument()
 
     // Пункт-инструмент кликабелен и вызывает свой обработчик.
-    fireEvent.click(within(menu).getByText('Агенты'))
+    fireEvent.click(within(menu).getByText('История LLM'))
     expect(onOpenObserver).toHaveBeenCalledTimes(1)
   })
 
   it('в локальном режиме без учётки инструменты остаются рядом иконок', () => {
     setup({ onOpenFiles: vi.fn(), onOpenConsole: vi.fn() })
     expect(document.querySelector('.foottools')).not.toBeNull()
-    expect(screen.getByLabelText('Агенты')).toBeInTheDocument()
+    expect(screen.getByLabelText('История LLM')).toBeInTheDocument()
     expect(screen.getByLabelText('Открыть консоль')).toBeInTheDocument()
   })
 })

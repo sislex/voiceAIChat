@@ -752,7 +752,7 @@ export function Sidebar({
               <div className="acct-menu" role="menu">
                 <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenObserver)}>
                   <span className="footico">🤖</span>
-                  Агенты
+                  История LLM
                 </Button>
                 {onOpenKnowledgeBase && (
                   <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenKnowledgeBase)}>
@@ -809,7 +809,7 @@ export function Sidebar({
              инструменты остаются компактным рядом иконок + Настройки. */
           <>
             <div className="foottools">
-              <IconButton className="foottools-item" onClick={onOpenObserver} title="Агенты (Claude / Codex)" aria-label="Агенты">
+              <IconButton className="foottools-item" onClick={onOpenObserver} title="История LLM" aria-label="История LLM">
                 🤖
               </IconButton>
               {onOpenKnowledgeBase && (
