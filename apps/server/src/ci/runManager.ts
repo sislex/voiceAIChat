@@ -621,6 +621,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (status === 'success' && command.isCleanup) {
       const run = deps.db.getCiRunRaw(runId)
       if (run?.workspaceId) deps.db.releaseCiWorkspace(run.workspaceId, step.id)
+      // Клон удалён успешно: чат задачи возвращаем к безопасной папке проекта,
+      // иначе следующая команда чата уйдёт в уже несуществующий каталог.
+      if (run?.conversationId) deps.db.restoreTaskChatWorkdir(userId, run.conversationId, run.projectId)
     }
     return { status, exitCode, output: collected.join(''), stepId: step.id }
   }
@@ -1098,6 +1101,9 @@ fi`
     const posBase = resume ? (deps.db.getCiRun(userId, runId)?.steps.length ?? 0) : 0
     // Системные шаги, вставленные между командами слота, сдвигают позиции в ленте.
     let extraSteps = 0
+    // Исход встроенного KB-шага приходит в итоговое сообщение даже если после
+    // него упала команда слота: резюме выполняется до финализации рана.
+    let kbUpdateSummary: string | null = null
 
     /** Закрыть ран отменой: фаза в прогрессе, откат карточки, финальный статус. */
     const finishCancelled = (): false => {
@@ -1165,11 +1171,13 @@ fi`
           const r = await deps.kbUpdate(ctx)
           ok = r.ok
           message = r.message
+          kbUpdateSummary = message
         } catch (err) {
           ok = false
           message = `Шаг не выполнен: ${err instanceof Error ? err.message : String(err)}`
         }
       }
+      kbUpdateSummary = message
       const line = deps.db.appendCiLog(runId, step.id, 'system', `${ok ? '' : 'Ошибка: '}${message}\n`)
       broadcast({ t: 'ci.log', runId, line }, userId)
       const status: CiStatus = signal.aborted ? 'cancelled' : ok ? 'success' : 'failed'
@@ -1383,7 +1391,7 @@ fi`
       broadcast({ t: 'ci.log', runId, line }, userId)
       const upd = deps.db.updateCiRunStep(sumStep.id, { status: 'success', finishedAt: now() })!
       emitStep(upd, userId)
-      postSummaryMessage(runId, userId, project.name, task, summaryText)
+      postSummaryMessage(runId, userId, project.name, task, summaryText, kbUpdateSummary)
       done++
     }
 
@@ -1681,12 +1689,13 @@ fi`
    * обсуждают в чате, а лента рана — служебная и живёт до следующего запуска.
    * Промах (чат удалён, резюме не сложилось) ран не роняет.
    */
-  function postSummaryMessage(runId: string, userId: string, projectName: string, task: Task, summaryText: string): void {
+  function postSummaryMessage(runId: string, userId: string, projectName: string, task: Task, summaryText: string, kbUpdateSummary: string | null): void {
     if (!deps.postSummaryToChat) return
     const conversationId = deps.db.getCiRunRaw(runId)?.conversationId
     if (!conversationId) return
     const head = `Резюме по задаче ${issueKey(projectName, task)} · ${task.title}`
-    const message = deps.postSummaryToChat({ userId, conversationId, text: `${head}\n\n${summaryText}${kbSummaryLine(runId, userId)}`, runId })
+    const kbUpdateLine = kbUpdateSummary ? `\n\nБаза знаний: ${kbUpdateSummary}` : ''
+    const message = deps.postSummaryToChat({ userId, conversationId, text: `${head}\n\n${summaryText}${kbUpdateLine}${kbSummaryLine(runId, userId)}`, runId })
     // Открытый чат показывает резюме сразу; закрытый увидит его при открытии.
     if (message) broadcast({ t: 'chat.message', conversationId, message }, userId)
   }

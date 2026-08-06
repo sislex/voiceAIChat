@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from '../../test/a11y'
-import { screen, fireEvent, within, waitFor } from '@testing-library/react'
+import { act, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import { RunFeed, type RunFeedCache } from './RunFeed'
 import { listCommands, resetCommands } from '../../lib/commands'
@@ -41,6 +41,21 @@ describe('RunFeed', () => {
     // running-шаг раскрыт автоматически → виден лог
     expect(screen.getByText('installing deps…')).toBeInTheDocument()
     expect(screen.getByText('выполняется')).toBeInTheDocument()
+  })
+
+  it('двигает длительности рана и шага каждую секунду без новых логов', () => {
+    vi.useFakeTimers()
+    let current = NOW
+    const cache: RunFeedCache = { detail: { run: mkRun(), steps: [mkStep()], fixAttempts: [], interactions: [] }, log: [], conclusion: null }
+    const { rerender } = render(<RunFeed {...baseProps(cache)} now={() => current} />)
+    expect(screen.getAllByText('4с')).toHaveLength(2)
+    act(() => { current += 1_000; vi.advanceTimersByTime(1_000) })
+    expect(screen.getAllByText('5с')).toHaveLength(2)
+    rerender(<RunFeed {...baseProps({ detail: { run: mkRun({ status: 'success', durationMs: 3_000, finishedAt: 4_000 }), steps: [mkStep({ status: 'success', durationMs: 3_000, finishedAt: 4_000 })], fixAttempts: [], interactions: [] }, log: [], conclusion: null })} now={() => current} />)
+    expect(screen.getAllByText('3с')).toHaveLength(2)
+    act(() => { current += 1_000; vi.advanceTimersByTime(1_000) })
+    expect(screen.getAllByText('3с')).toHaveLength(2)
+    vi.useRealTimers()
   })
 
   it('показывает диагноз, файлы, точечный тест и полный повтор fix-loop', () => {

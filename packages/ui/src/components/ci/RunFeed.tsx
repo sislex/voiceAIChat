@@ -74,6 +74,9 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   const now = props.now ?? Date.now
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [autoscroll, setAutoscroll] = useState(true)
+  // Поток лога может молчать минутами: отдельный тик двигает длительность шага
+  // и всего рана, не дожидаясь следующего серверного кадра.
+  const [, setClockTick] = useState(0)
   const [llmEngineId, setLlmEngineId] = useState<string | null>(null)
   const [modelProvider, setModelProvider] = useState<'claude' | 'codex'>('claude')
   const [modelName, setModelName] = useState<string>(DEFAULT_CI_CLAUDE_MODEL)
@@ -118,6 +121,13 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   }, [detail])
 
   const running = run ? !isTerminalCiStatus(run.status) : false
+
+  useEffect(() => {
+    if (!running) return
+    const timer = window.setInterval(() => setClockTick((tick) => tick + 1), 1_000)
+    return () => window.clearInterval(timer)
+  }, [running])
+
   // Отчёт по БЗ читаем один раз на ран и ещё раз, когда ран завершился: пока он
   // идёт, обращения копятся, и промежуточные цифры быстро устаревают.
   const kbUsage = useRemoteReport(
@@ -312,7 +322,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
           {run ? ciStatusLabel(run.status) : 'загрузка…'}
         </span>
         {run && <span className="ci-step-dur">{run.slotProgress.phase} · {run.slotProgress.done}/{run.slotProgress.total}</span>}
-        {run && run.durationMs != null && <span className="ci-step-dur">{fmtDuration(run.durationMs)}</span>}
+        {run && <span className="ci-step-dur">{fmtDuration(run.durationMs ?? (run.startedAt ? now() - run.startedAt : null))}</span>}
         {view.refreshing && <RefreshIndicator label="Обновляем ленту…" />}
         <div className="ci-runfeed-actions">
           <label className="ci-mode-indicator"><input type="checkbox" checked={autoscroll} onChange={(e) => setAutoscroll(e.target.checked)} /> автоскролл</label>

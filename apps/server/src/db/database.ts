@@ -699,6 +699,25 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_exec_auth_ref')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_exec_auth_ref TEXT NOT NULL DEFAULT ''`)
     // Режим базы знаний в ходах модели CI-рана: настройка проекта, не чата.
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_kb_context_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_kb_context_mode TEXT NOT NULL DEFAULT 'auto'`)
+    // Старые cleanup уже удалили клоны, но связанные чаты остались в их путях.
+    // Сбрасываем только чаты задач с released workspace: активные и сохранённые
+    // после ошибки рабочие копии остаются доступными для разбора.
+    this.db.exec(`
+      UPDATE conversations AS c
+      SET exec_target = (SELECT default_agent_id FROM projects p WHERE p.id = c.project_id),
+          workdir = (
+            SELECT NULLIF(pm.path, '')
+            FROM project_machines pm
+            JOIN projects p ON p.id = c.project_id
+            WHERE pm.project_id = c.project_id AND pm.agent_id = p.default_agent_id
+          )
+      WHERE c.task_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM ci_workspaces w
+          WHERE w.project_id = c.project_id AND w.task_id = c.task_id
+            AND w.state = 'released' AND c.workdir LIKE w.path || '/%'
+        )
+    `)
     // Порог «сколько держать завершённые на доске»: существующим проектам —
     // дефолт 14 дней (DEFAULT в ALTER заполняет старые строки).
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'done_retention_days')) this.db.exec(`ALTER TABLE projects ADD COLUMN done_retention_days INTEGER DEFAULT ${DEFAULT_DONE_RETENTION_DAYS}`)
@@ -984,6 +1003,15 @@ export class VoiceChatDb {
     return this.getConversation(userId, id)
   }
 
+
+  /** Вернуть чат задачи к папке проекта после удаления изолированного клона. */
+  restoreTaskChatWorkdir(userId: string, id: string, projectId: string): Conversation | null {
+    const project = this.getProject(userId, projectId)
+    if (!project) return null
+    const agentId = project.defaultAgentId
+    const path = agentId ? project.machines.find((machine) => machine.agentId === agentId)?.path ?? '' : ''
+    return this.setConversationExecTarget(userId, id, agentId, path || null)
+  }
 
   setConversationKbContextMode(userId: string, id: string, mode: 'auto' | 'manual' | 'off'): Conversation | null {
     this.db.prepare(`UPDATE conversations SET kb_context_mode = ? WHERE id = ? AND user_id = ?`).run(mode, id, userId)
