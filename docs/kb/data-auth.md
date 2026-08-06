@@ -56,6 +56,8 @@ default-записи одного `kind`. Сам токен хранится в 
 ограничение доступа обеспечивается не схемой, а тем, что CRUD и health-check
 висят только на `requireAdmin` в `apps/server/src/routes/admin.ts`.
 
+Отчёт `usageSummary(from, to)` агрегирует всех пользователей одной SQL-выборкой: на дашборд возвращаются totals и `byModel`, включая нулевые строки пользователей. Админский `GET /api/admin/users/usage-summary` защищён `requireAdmin`; личные `GET /api/me/usage` и `/api/me/llm-access` всегда выбирают владельца из `uid(req)`, не из query или URL.
+
 Видимость статей `kb_documents` считает не БД, а слой БЗ (`apps/server/src/kb/scoped.ts`
 поверх «вида» из `kb/access.ts`): персональная статья — только владельцу, проектная —
 участникам проекта (`db.getProject(uid, projectId)`), «Использование» — всем. В таблице

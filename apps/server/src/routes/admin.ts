@@ -148,6 +148,16 @@ export function registerAdminRoutes(
     db.listUsers().map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt))
   )
 
+  // Агрегаты строятся одним запросом к БД, а не вызовом usageReport для каждого
+  // пользователя: это таблица дашборда, а не набор персональных отчётов.
+  app.get<{ Querystring: { from?: string; to?: string } }>(REST.adminUsersUsageSummary, guard, async (req, reply) => {
+    const parse = (value: string | undefined): number | undefined => value === undefined || value === '' ? undefined : Number(value)
+    const from = parse(req.query.from)
+    const to = parse(req.query.to)
+    if (!Number.isFinite(from ?? 0) && from !== undefined || !Number.isFinite(to ?? 0) && to !== undefined) return reply.code(400).send({ error: 'from and to must be timestamps' })
+    return db.usageSummary(from, to)
+  })
+
   app.post<{ Body: { name?: string; password?: string; role?: string } }>(
     REST.adminUsers,
     guard,

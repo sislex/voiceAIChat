@@ -149,8 +149,11 @@ export const REST = {
   serverFile: '/api/files/read',
   settings: '/api/settings',
   llmAccess: '/api/llm-access',
+  /** Личные данные текущей сессии; uid никогда не передаётся клиентом. */
+  meLlmAccess: '/api/me/llm-access',
   /** Личный отчёт по расходу моделей текущего пользователя. */
   usage: '/api/usage',
+  meUsage: '/api/me/usage',
   llmEngines: '/api/llm-engines',
   /** Помощник промптов: переформулировки черновика запроса (одноразовый LLM-вызов). */
   promptSuggest: '/api/prompt/suggest',
@@ -197,6 +200,7 @@ export const REST = {
   cxResume: '/api/cx/resume',
   // --- Админ-страница пользователей (только admin) ---
   adminUsers: '/api/admin/users',
+  adminUsersUsageSummary: '/api/admin/users/usage-summary',
   adminUser: (name: string) => `/api/admin/users/${encodeURIComponent(name)}`,
   adminUserBlock: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/block`,
   adminUserLlmAccess: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/llm-access`,

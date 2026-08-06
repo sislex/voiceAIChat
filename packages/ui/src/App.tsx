@@ -88,10 +88,11 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   // У базы знаний есть второй сегмент — открытый документ (#/kb/:documentId):
   // так на раздел можно дать ссылку из панели «Использование БЗ» и из «Подробнее».
   const utilitySeg =
-    segments.length >= 1 && UTILITY_PAGES.includes(segments[0]) && (segments.length === 1 || (segments[0] === 'kb' && segments.length === 2))
+    segments.length >= 1 && UTILITY_PAGES.includes(segments[0]) && (segments.length === 1 || ((segments[0] === 'kb' || segments[0] === 'users') && segments.length === 2))
       ? segments[0]
       : null
   const routeKbDocumentId = segments[0] === 'kb' ? (segments[1] ?? null) : null
+  const routeUserName = segments[0] === 'users' ? (segments[1] ?? null) : null
   const onUtilityPage = utilitySeg !== null
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
@@ -344,12 +345,17 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     else if (state.usersOpen) actions.closeUsers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg])
+  useEffect(() => {
+    if (utilitySeg !== 'users' || !routeUserName || !state.usersOpen || state.adminSelected === routeUserName) return
+    void actions.selectAdminUser(routeUserName)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [utilitySeg, routeUserName, state.usersOpen, state.adminSelected])
   // Гейты: «Пользователи» — только админ; машины/пользователи — только web.
   useEffect(() => {
-    if (utilitySeg === 'users' && state.currentUser && state.currentUser.role !== 'admin') navigate('/')
+    if (utilitySeg === 'users' && state.currentUser && state.currentUser.role !== 'admin' && routeUserName && routeUserName !== state.currentUser.name) navigate('/users')
     if ((utilitySeg === 'users' || utilitySeg === 'machines' || utilitySeg === 'ci') && !state.authRequired) navigate('/')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [utilitySeg, state.currentUser, state.authRequired])
+  }, [utilitySeg, routeUserName, state.currentUser, state.authRequired])
 
   const activeConversation = state.conversations.find((c) => c.id === state.activeId)
   const activeTitle = activeConversation?.title ?? 'Новый разговор'
@@ -869,16 +875,18 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         <UsersAdmin
           variant="page"
           users={state.adminUsers}
+          usageSummary={state.adminUsageSummary}
+          isAdmin={state.currentUser?.role === 'admin'}
           status={state.adminUsersStatus}
           error={state.adminUsersError}
           onRetry={() => void actions.openUsers()}
-          selected={state.adminSelected}
+          selected={routeUserName ?? state.adminSelected}
           usage={state.adminUsage}
           conversations={state.adminConversations}
           messages={state.adminMessages}
           conversationId={state.adminConversationId}
           currentUserName={state.currentUser?.name ?? ''}
-          onSelect={(name) => void actions.selectAdminUser(name)}
+          onSelect={(name) => { navigate(`/users/${encodeURIComponent(name)}`); void actions.selectAdminUser(name) }}
           onCreate={(name, password, role) => void actions.createUserAccount(name, password, role)}
           onSetBlocked={(name, blocked) => void actions.setUserBlocked(name, blocked)}
           onDelete={(name) => void actions.deleteUserAccount(name)}

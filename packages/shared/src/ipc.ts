@@ -239,6 +239,7 @@ export interface IpcInvokeMap {
   'cx:resume': { arg: { id: string }; result: ConversationWithMessages }
   // --- Админ-страница пользователей (только admin) ---
   'admin:users': { arg: void; result: AdminUserInfo[] }
+  'admin:usageSummary': { arg: { from?: number; to?: number } | void; result: import('./admin').UserUsageSummary[] }
   'admin:llmAccess': { arg: { name: string }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:saveLlmAccess': { arg: { name: string; access: import('./llmAccess').UserLlmAccess[] }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:createUser': { arg: { name: string; password: string; role: 'admin' | 'user' }; result: AdminUserInfo }

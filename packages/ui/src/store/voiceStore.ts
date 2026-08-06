@@ -62,7 +62,8 @@ import type {
   LlmEngineOption,
   AdminUserInfo,
   UsageReport,
-  UsageUnit
+  UsageUnit,
+  UserUsageSummary
 } from '@shared/admin'
 import type { CcProject, CcSession, CcItem } from '@shared/cc'
 import type { SessionUsage } from '@shared/types'
@@ -367,6 +368,8 @@ export interface AppState {
   machinesOpen: boolean
   /** Список пользователей для админки. */
   adminUsers: AdminUserInfo[]
+  /** Сводный расход всех пользователей для таблицы дашборда. */
+  adminUsageSummary: UserUsageSummary[]
   /** Состояние загрузки списка пользователей (админка). */
   adminUsersStatus: LoadStatus
   /** Текст ошибки загрузки списка пользователей. */
@@ -1039,6 +1042,7 @@ function initialState(): AppState {
     usersOpen: false,
     machinesOpen: false,
     adminUsers: [],
+    adminUsageSummary: [],
     adminUsersStatus: 'loading',
     adminUsersError: null,
     adminSelected: null,
@@ -2228,7 +2232,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!api['admin:users']) return
     setState({ adminUsersStatus: 'loading', adminUsersError: null })
     try {
-      setState({ adminUsers: await api['admin:users'](), adminUsersStatus: 'ready', adminUsersError: null })
+      const [adminUsers, adminUsageSummary] = await Promise.all([api['admin:users'](), api['admin:usageSummary']()])
+      setState({ adminUsers, adminUsageSummary, adminUsersStatus: 'ready', adminUsersError: null })
     } catch (err) {
       setState({
         adminUsersStatus: 'error',
@@ -2259,7 +2264,15 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function openUsers(): Promise<void> {
     setState({ usersOpen: true })
     try {
-      await Promise.all([refreshAdminUsers(), refreshAdminLlmEngines()])
+      if (state.currentUser?.role === 'admin') {
+        await Promise.all([refreshAdminUsers(), refreshAdminLlmEngines()])
+      } else if (state.currentUser) {
+        setState({
+          adminUsers: [{ name: state.currentUser.name, role: 'user', blocked: false, createdAt: 0, conversationCount: state.conversations.length, agents: [] }],
+          adminUsageSummary: []
+        })
+        await selectAdminUser(state.currentUser.name)
+      }
     } catch (err) {
       fail(err, () => void openUsers())
     }
@@ -2315,11 +2328,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       adminUserLlmAccess: []
     })
     try {
-      const [usage, conversations, access] = await Promise.all([
-        api['admin:usage']({ name, unit: 'day' }),
-        api['admin:conversations']({ name }),
-        api['admin:llmAccess']({ name })
-      ])
+      const mine = state.currentUser?.role !== 'admin'
+      if (mine && name !== state.currentUser?.name) return
+      const [usage, conversations, access] = await Promise.all(mine
+        ? [api['usage:report']({ unit: 'day' }), api['conversations:list']({ includeCompleted: true }), api['llm:access']()]
+        : [api['admin:usage']({ name, unit: 'day' }), api['admin:conversations']({ name }), api['admin:llmAccess']({ name })]
+      )
       setState({ adminUsage: usage, adminConversations: conversations, adminUserLlmAccess: access })
     } catch (err) {
       fail(err, () => void selectAdminUser(name))

@@ -146,7 +146,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'uploads:add': ({ name, dataBase64, mimeType, agentId }) =>
       req(REST.uploads, { method: 'POST', body: JSON.stringify({ name, dataBase64, ...(mimeType ? { mimeType } : {}), ...(agentId ? { agentId } : {}) }) }),
     'settings:get': () => req(REST.settings),
-    'llm:access': () => req(REST.llmAccess),
+    'llm:access': () => req(REST.meLlmAccess),
     'llm:engines': () => req(REST.llmEngines),
     'settings:save': async (settings) => {
       await req(REST.settings, { method: 'PUT', body: JSON.stringify(settings) })
@@ -197,6 +197,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`${REST.cxTranscript}?id=${encodeURIComponent(id)}${limit ? `&limit=${limit}` : ''}`),
     'cx:resume': ({ id }) => req(REST.cxResume, { method: 'POST', body: JSON.stringify({ id }) }),
     'admin:users': () => req(REST.adminUsers),
+    'admin:usageSummary': (arg) => {
+      const q = new URLSearchParams()
+      if (arg?.from) q.set('from', String(arg.from))
+      if (arg?.to) q.set('to', String(arg.to))
+      return req(`${REST.adminUsersUsageSummary}${q.size ? `?${q.toString()}` : ''}`)
+    },
     'admin:llmAccess': ({ name }) => req(REST.adminUserLlmAccess(name)),
     'admin:saveLlmAccess': ({ name, access }) => req(REST.adminUserLlmAccess(name), { method: 'PUT', body: JSON.stringify(access) }),
     'admin:createUser': (b) =>
@@ -219,7 +225,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       if (from) q.set('from', String(from))
       if (to) q.set('to', String(to))
       if (conversationId) q.set('conversationId', conversationId)
-      return req(`${REST.usage}?${q.toString()}`)
+      return req(`${REST.meUsage}?${q.toString()}`)
     },
     'admin:conversations': ({ name }) => req(REST.adminUserConversations(name)),
     'admin:messages': ({ name, conversationId }) =>

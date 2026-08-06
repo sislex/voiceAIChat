@@ -110,6 +110,9 @@ describe('REST: админ-роуты (только admin)', () => {
       headers: { authorization: `Bearer ${userTok}` }
     })
     expect(res.statusCode).toBe(403)
+    expect((await app.inject({ method: 'GET', url: '/api/admin/users/usage-summary', headers: { authorization: `Bearer ${userTok}` } })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'GET', url: '/api/me/usage', headers: { authorization: `Bearer ${userTok}` } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/me/llm-access', headers: { authorization: `Bearer ${userTok}` } })).statusCode).toBe(200)
   })
 
   it('admin: список → создание → блок → удаление', async () => {
@@ -132,6 +135,8 @@ describe('REST: админ-роуты (только admin)', () => {
     // usage-отчёт отдаётся (пустой).
     const usage = (await inj({ method: 'GET', url: '/api/admin/users/bob/usage?unit=day' })).json()
     expect(usage.totals.messages).toBe(0)
+    const summary = (await inj({ method: 'GET', url: '/api/admin/users/usage-summary' })).json()
+    expect(summary.find((item: { name: string }) => item.name === 'bob')).toMatchObject({ totals: { messages: 0 }, byModel: [] })
 
     const del = await inj({ method: 'DELETE', url: '/api/admin/users/bob' })
     expect(del.statusCode).toBe(200)
