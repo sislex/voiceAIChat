@@ -17,7 +17,7 @@
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-06 | ⚠ 2 коммит(ов) в areas после сверки: 29c84d9 chatai-112: разбить настройки проекта на табы … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-03 | ⚠ 27 коммит(ов) в areas после сверки: f60fcc9 feat: add personal LLM model access controls … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 13 коммит(ов) в areas после сверки: f60fcc9 feat: add personal LLM model access controls … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 82 коммит(ов) в areas после сверки: 29c84d9 chatai-112: разбить настройки проекта на табы … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 84 коммит(ов) в areas после сверки: 62a6b5a Переименовать виджет агентов в историю LLM … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-06 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-06 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-05 | ⚠ 2 коммит(ов) в areas после сверки: 68b9d2f CHAT-108: пустой ход модели не закрывает ран успехом … |
@@ -44,18 +44,18 @@
 
 ## Журнал сессий
 
-Всего записей: 101. Последние:
+Всего записей: 102. Последние:
 
 - [2026-08-06-2470-com-ui-llm-access.md](log/2026-08-06-2470-com-ui-llm-access.md) — ui-llm-access
 - [2026-08-06-2470-com-task-launch-message-meta.md](log/2026-08-06-2470-com-task-launch-message-meta.md) — task-launch-message-meta
 - [2026-08-06-2470-com-sidebar-chat-label.md](log/2026-08-06-2470-com-sidebar-chat-label.md) — sidebar-chat-label
+- [2026-08-06-2470-com-rename-llm-history.md](log/2026-08-06-2470-com-rename-llm-history.md) — rename-llm-history
 - [2026-08-06-2470-com-project-settings-tabs-llm.md](log/2026-08-06-2470-com-project-settings-tabs-llm.md) — project-settings-tabs-llm
 - [2026-08-06-2470-com-personal-llm-access.md](log/2026-08-06-2470-com-personal-llm-access.md) — personal-llm-access
 - [2026-08-06-2470-com-llm-access-clamp.md](log/2026-08-06-2470-com-llm-access-clamp.md) — llm-access-clamp
 - [2026-08-06-2470-com-live-run-timers-kb.md](log/2026-08-06-2470-com-live-run-timers-kb.md) — live-run-timers-kb
 - [2026-08-06-2470-com-ci-run-empty-work-guard.md](log/2026-08-06-2470-com-ci-run-empty-work-guard.md) — Пустой ход модели больше не закрывает ран успехом
 - [2026-08-06-2470-com-ci-model-self-verification.md](log/2026-08-06-2470-com-ci-model-self-verification.md) — ci-model-self-verification
-- [2026-08-06-2470-com-ci-llm-access.md](log/2026-08-06-2470-com-ci-llm-access.md) — ci-llm-access
 
 ## Исторические планы
 
