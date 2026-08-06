@@ -72,7 +72,7 @@ describe('WsClient', () => {
     c.close()
   })
 
-  it('передаёт taskLaunch из claude.done в renderer-мост', async () => {
+  it('передаёт мету сообщения из claude.done в renderer-мост', async () => {
     const c = new WsClient('ws://x/ws')
     const ws = FakeWebSocket.last!
     ws._open()
@@ -84,12 +84,12 @@ describe('WsClient', () => {
       t: 'claude.done',
       conversationId: 'c1',
       text: 'Выберите вариант.',
-      taskLaunch: { title: 'Исправить запуск', description: 'Описание', acceptanceCriteria: 'Карточка открывается' }
+      meta: { taskLaunch: { title: 'Исправить запуск', description: 'Описание', acceptanceCriteria: 'Карточка открывается' } }
     })
 
     expect(done).toHaveBeenCalledWith(expect.objectContaining({
       conversationId: 'c1',
-      taskLaunch: { title: 'Исправить запуск', description: 'Описание', acceptanceCriteria: 'Карточка открывается' }
+      meta: { taskLaunch: { title: 'Исправить запуск', description: 'Описание', acceptanceCriteria: 'Карточка открывается' } }
     }))
     c.close()
   })

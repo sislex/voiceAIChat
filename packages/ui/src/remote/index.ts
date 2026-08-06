@@ -65,8 +65,7 @@ export function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
           text: m.text,
           meta: m.meta,
           engine: m.engine,
-          message: m.message,
-          taskLaunch: m.taskLaunch
+          message: m.message
         })
       ),
     onError: (cb) =>
