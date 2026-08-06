@@ -200,7 +200,6 @@ export interface SidebarProps {
   onNew: () => void
   onPick: (id: string) => void
   onDelete: (id: string) => void
-  onRename: (id: string, title: string) => void
   /**
    * Режим из общих настроек: разговор со своим `permissionMode === null`
    * наследует его, и подпись карточки должна показывать действующий режим.
@@ -281,7 +280,6 @@ export function Sidebar({
   onNew,
   onPick,
   onDelete,
-  onRename,
   defaultPermissionMode = 'bypassPermissions',
   agents = [],
   searchQuery,
@@ -318,9 +316,6 @@ export function Sidebar({
 }: SidebarProps): JSX.Element {
   // id разговора, для которого показываем инлайн-подтверждение удаления.
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
-  // id разговора в режиме переименования + черновик названия.
-  const [renamingId, setRenamingId] = useState<string | null>(null)
-  const [renameDraft, setRenameDraft] = useState('')
   // Открыто ли меню аккаунта (Машины/Пользователи/Настройки/Выйти).
   const [acctOpen, setAcctOpen] = useState(false)
   // Инлайн-форма создания проекта в списке проектов.
@@ -350,20 +345,6 @@ export function Sidebar({
       document.removeEventListener('keydown', onKey)
     }
   }, [acctOpen])
-
-  const startRename = (c: Conversation): void => {
-    setRenamingId(c.id)
-    setRenameDraft(c.title)
-  }
-  const commitRename = (): void => {
-    if (renamingId && renameDraft.trim()) onRename(renamingId, renameDraft)
-    setRenamingId(null)
-    setRenameDraft('')
-  }
-  const cancelRename = (): void => {
-    setRenamingId(null)
-    setRenameDraft('')
-  }
 
   // Пункт меню аккаунта: закрыть меню и выполнить действие.
   const acct = (fn: () => void) => (): void => {
@@ -553,52 +534,28 @@ export function Sidebar({
               className={['convo', c.id === activeId && 'on', badge && 'convo--task', pulse && `convo--ci-${pulse}`]
                 .filter(Boolean)
                 .join(' ')}
-              onClick={() => renamingId !== c.id && onPick(c.id)}
+              onClick={() => onPick(c.id)}
             >
               <div className="crow">
                 <div className="cinfo">
-                  {renamingId === c.id ? (
-                    <input
-                      className="ctitle-edit"
-                      value={renameDraft}
-                      autoFocus
-                      aria-label="Новое название разговора"
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => setRenameDraft(e.target.value)}
-                      onBlur={commitRename}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          commitRename()
-                        } else if (e.key === 'Escape') {
-                          cancelRename()
-                        }
-                      }}
-                    />
-                  ) : (
-                    /* Название — настоящая кнопка: строку целиком открывает и
-                       клик мышью по любому её месту, но с клавиатуры выбрать
-                       беседу иначе было нельзя (div с onClick не фокусируется и
-                       не реагирует на Enter). aria-current помечает открытую;
-                       aria-selected здесь не годится — он допустим только внутри
-                       listbox/grid, а в строке живут свои кнопки и селект статуса,
-                       то есть option'ом она быть не может. */
-                    <button
-                      type="button"
-                      className="ctitle"
-                      aria-current={c.id === activeId ? 'true' : undefined}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onPick(c.id)
-                      }}
-                      onDoubleClick={(e) => {
-                        e.stopPropagation()
-                        startRename(c)
-                      }}
-                    >
-                      {c.title}
-                    </button>
-                  )}
+                  {/* Название — настоящая кнопка: строку целиком открывает и
+                     клик мышью по любому её месту, но с клавиатуры выбрать
+                     беседу иначе было нельзя (div с onClick не фокусируется и
+                     не реагирует на Enter). aria-current помечает открытую;
+                     aria-selected здесь не годится — он допустим только внутри
+                     listbox/grid, а в строке живут свои кнопки и селект статуса,
+                     то есть option'ом она быть не может. */}
+                  <button
+                    type="button"
+                    className="ctitle"
+                    aria-current={c.id === activeId ? 'true' : undefined}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onPick(c.id)
+                    }}
+                  >
+                    {c.title}
+                  </button>
                   {badge && (
                     <p className="ctask">
                       <TypeIcon type={badge.type} />
@@ -627,20 +584,8 @@ export function Sidebar({
                     <p className="cstatus">{chatModeLabel(c.permissionMode, defaultPermissionMode, Boolean(c.taskId))}</p>
                   )}
                 </div>
-                {confirmingId !== c.id && renamingId !== c.id && (
+                {confirmingId !== c.id && (
                   <span className="crow-actions">
-                    <IconButton
-                      size="sm"
-                    
-                      aria-label={`Переименовать разговор «${c.title}»`}
-                      title="Переименовать"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        startRename(c)
-                      }}
-                    >
-                      ✎
-                    </IconButton>
                     <IconButton
                       size="sm"
                       className="vc-btn--danger-quiet"
