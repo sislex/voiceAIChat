@@ -1036,19 +1036,18 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
 
     /**
      * Встроенный шаг «Актуализировать базу знаний»: `script` не исполняется,
-     * работу делает серверный хук (`kb/codeUpdate.ts`). Ошибка, неразборчивый
-     * ответ и таймаут хука ран НЕ валят — шаг закрывается со статусом `skipped`
-     * и предупреждением в ленте: работа модели к этому моменту уже сделана.
+     * работу делает серверный хук (`kb/codeUpdate.ts`). Ошибка хука обязательна:
+     * шаг и весь ран завершаются failed, последующие команды не запускаются.
      */
-    const runKbUpdateStep = async (command: CiCommand, slot: CiSlot, position: number): Promise<void> => {
+    const runKbUpdateStep = async (command: CiCommand, slot: CiSlot, position: number): Promise<boolean> => {
       const step = deps.db.addCiRunStep({
         runId, slot, position, kind: 'command', initiatedBy: 'system',
         commandId: command.id, title: command.name, status: 'running'
       })
       emitStep(step, userId)
       const started = now()
-      let ok = true
-      let message = 'Актуализация базы знаний пропущена (хук не подключён)'
+      let ok = false
+      let message = 'Актуализация базы знаний не выполнена: хук не подключён'
       if (deps.kbUpdate) {
         const ctx: CiModelContext = {
           ...makePrimitives(runId, userId, agentId, repoPath, workspacePath, env, signal),
@@ -1066,11 +1065,12 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
           message = `Шаг не выполнен: ${err instanceof Error ? err.message : String(err)}`
         }
       }
-      const line = deps.db.appendCiLog(runId, step.id, 'system', `${ok ? '' : 'Предупреждение: '}${message}\n`)
+      const line = deps.db.appendCiLog(runId, step.id, 'system', `${ok ? '' : 'Ошибка: '}${message}\n`)
       broadcast({ t: 'ci.log', runId, line }, userId)
-      const status: CiStatus = signal.aborted ? 'cancelled' : ok ? 'success' : 'skipped'
+      const status: CiStatus = signal.aborted ? 'cancelled' : ok ? 'success' : 'failed'
       const upd = deps.db.updateCiRunStep(step.id, { status, finishedAt: now(), durationMs: now() - started })
       if (upd) emitStep(upd, userId)
+      return status === 'success'
     }
 
     // Хелпер обработки одного слота команд.
@@ -1085,8 +1085,12 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
         }
         // Встроенный серверный шаг идёт мимо исполнителя команд машины.
         if (command.builtin === 'kb_update') {
-          await runKbUpdateStep(command, slot, posBase + done + 1 + extraSteps)
+          const updated = await runKbUpdateStep(command, slot, posBase + done + 1 + extraSteps)
           if (signal.aborted) return finishCancelled()
+          if (!updated) {
+            deps.db.updateCiRun(runId, { status: 'failed' })
+            return false
+          }
           done++
           continue
         }

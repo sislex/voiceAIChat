@@ -1,5 +1,5 @@
 // Шаг CI-рана «Актуализировать базу знаний»: встроенная команда слота «после
-// модели», статьи раздела проекта пишет сервер, а сбой шага ран не валит.
+// модели», статьи раздела проекта пишет сервер, а сбой шага валит ран.
 // Реальные CLI и машины не участвуют: клиент модели и исполнитель — моки.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -25,6 +25,7 @@ let prompts: string[] = []
 let kbMcpUrls: string[] = []
 let repoCheckWorkdirs: string[] = []
 let repoCheckExitCode = 0
+let scripts: string[] = []
 
 const fakeClaude: LlmClient = {
   send: (req: LlmRequest, handlers) => {
@@ -42,6 +43,7 @@ const fakeClaude: LlmClient = {
 
 const ciExecutor: CommandExecutor = {
   run: async (req, onChunk) => {
+    scripts.push(req.script)
     if (req.script === KB_REPO_ROOT_CHECK_SCRIPT) {
       repoCheckWorkdirs.push(req.workdir)
       return { exitCode: repoCheckExitCode, timedOut: false }
@@ -83,6 +85,7 @@ beforeEach(() => {
   kbMcpUrls = []
   repoCheckWorkdirs = []
   repoCheckExitCode = 0
+  scripts = []
   workReply = 'готово'
   diffBundle = BUNDLE_WITH_CHANGES
   modelReply = JSON.stringify({
@@ -226,35 +229,38 @@ describe('шаг «Актуализировать базу знаний»', () =
     const { projectId, taskId } = setup()
     const runId = await runToEnd(projectId, taskId)
 
-    expect(db.getCiRunRaw(runId)!.status).toBe('success')
+    expect(db.getCiRunRaw(runId)!.status).toBe('failed')
     const step = kbStep(runId)
-    expect(step.status).toBe('skipped')
+    expect(step.status).toBe('failed')
     expect(step.log).toContain('Корень рабочей копии KB недоступен')
     expect(prompts.some((p) => p.startsWith('Ты ведёшь базу знаний'))).toBe(false)
   })
 
-  it('неразборчивый ответ модели: предупреждение в ленте, ран продолжается', async () => {
+  it('неразборчивый ответ модели валит встроенный шаг и ран', async () => {
     await boot()
     modelReply = 'я не понял задачу'
     const { projectId, taskId } = setup()
     const runId = await runToEnd(projectId, taskId)
-    expect(db.getCiRunRaw(runId)!.status).toBe('success')
+    expect(db.getCiRunRaw(runId)!.status).toBe('failed')
     const step = kbStep(runId)
-    expect(step.status).toBe('skipped')
-    expect(step.log).toContain('Предупреждение')
+    expect(step.status).toBe('failed')
+    expect(step.log).toContain('Ошибка:')
     expect(db.kbDocuments({ scope: 'project', projectId }).some((d) => d.title === 'CI-раннер')).toBe(false)
   })
 
-  it('исключение в хуке ран не валит', async () => {
+  it('исключение в хуке валит ран и не запускает следующие команды', async () => {
     await boot(async () => {
       throw new Error('база знаний недоступна')
     })
     const { projectId, taskId } = setup()
+    const after = db.createCiCommand('admin', { scope: 'project', projectId, name: 'После БЗ', script: 'echo after' })
+    db.setCiSlotCommands('project', projectId, 'after_model', [CI_KB_UPDATE_COMMAND_ID, after.id])
     const runId = await runToEnd(projectId, taskId)
-    expect(db.getCiRunRaw(runId)!.status).toBe('success')
+    expect(db.getCiRunRaw(runId)!.status).toBe('failed')
     const step = kbStep(runId)
-    expect(step.status).toBe('skipped')
+    expect(step.status).toBe('failed')
     expect(step.log).toContain('база знаний недоступна')
+    expect(scripts).not.toContain('echo after')
   })
 })
 
