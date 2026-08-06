@@ -57,9 +57,18 @@ function renderAdmin(props: Partial<UsersAdminProps> = {}): UsersAdminProps {
 }
 
 describe('UsersAdmin', () => {
-  it('рендерит список пользователей', () => {
-    renderAdmin()
+  it('рендерит дашборд со сводкой и открывает карточку кликом', async () => {
+    const p = renderAdmin({ usageSummary: [{ name: 'bob', totals: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, costUsd: 0.02, messages: 1 }, byModel: [{ model: 'gpt', inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, costUsd: 0.02, messages: 1 }] }] })
     expect(screen.getAllByTestId('user-item')).toHaveLength(2)
+    expect(screen.getByTestId('users-dashboard')).toHaveTextContent('gpt')
+    await userEvent.click(screen.getAllByTestId('user-dashboard-row')[1]!)
+    expect(p.onSelect).toHaveBeenCalledWith('bob')
+  })
+
+  it('у обычного пользователя нет вкладки машин', () => {
+    renderAdmin({ selected: 'bob', isAdmin: false })
+    expect(screen.queryByRole('button', { name: 'Машины пользователя' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Доступ к моделям' })).toBeInTheDocument()
   })
 
   it('создание пользователя зовёт onCreate', async () => {

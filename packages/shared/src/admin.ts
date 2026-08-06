@@ -60,6 +60,13 @@ export interface UsageReport {
   byConversation: UsageByConversation[]
 }
 
+/** Строка сводки расхода пользователя для админского дашборда. */
+export interface UserUsageSummary {
+  name: string
+  totals: UsageTotals
+  byModel: UsageByModel[]
+}
+
 
 /** Kind исполнителя LLM: под какой CLI сервер адресует ход. */
 export type LlmEngineKind = LlmRunKind

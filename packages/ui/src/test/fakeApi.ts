@@ -442,6 +442,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       ]
     }),
     'admin:users': async () => adminUsers.map((u) => ({ ...u })),
+    'admin:usageSummary': async () => adminUsers.map((u) => ({ name: u.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, messages: 0 }, byModel: [] })),
     'llm:access': async () => [...(userLlmAccess.get(ME) ?? [])],
     'admin:llmAccess': async ({ name }) => [...(userLlmAccess.get(name) ?? [])],
     'admin:saveLlmAccess': async ({ name, access }) => { userLlmAccess.set(name, [...access]); return [...access] },

@@ -5,7 +5,8 @@ import type {
   AdminLlmEngineInput,
   AdminUserInfo,
   UsageReport,
-  UsageUnit
+  UsageUnit,
+  UserUsageSummary
 } from '@shared/admin'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { Conversation, Message, LlmProvider } from '@shared/types'
@@ -20,6 +21,9 @@ import { loadView, type LoadStatus } from '../lib/loadState'
 export interface UsersAdminProps {
   variant?: 'modal' | 'page'
   users: AdminUserInfo[]
+  usageSummary?: UserUsageSummary[]
+  /** Обычный пользователь видит только собственную статистику без машин и админских действий. */
+  isAdmin?: boolean
   status?: LoadStatus
   error?: string | null
   onRetry?: () => void
@@ -79,6 +83,8 @@ const EMPTY_ENGINE: AdminLlmEngineInput = {
 
 export function UsersAdmin({
   users,
+  usageSummary = [],
+  isAdmin = true,
   status = 'ready',
   error = null,
   onRetry,
@@ -118,6 +124,7 @@ export function UsersAdmin({
   const [editingEngineId, setEditingEngineId] = useState<string | null>(null)
   const [confirmEngineDelete, setConfirmEngineDelete] = useState<string | null>(null)
   const [accessDraft, setAccessDraft] = useState<UserLlmAccess[]>([])
+  const [tab, setTab] = useState<'access' | 'machines' | 'usage' | 'history'>('usage')
   useEffect(() => setAccessDraft(llmAccess), [selected, llmAccess])
   const accessDenied = (provider: LlmProvider, modelId: string): boolean => accessDraft.some((entry) => entry.provider === provider && (entry.modelId === '*' || entry.modelId === modelId))
   const providerAllowed = (provider: LlmProvider): boolean => !accessDraft.some((entry) => entry.provider === provider && entry.modelId === '*')
@@ -129,6 +136,7 @@ export function UsersAdmin({
   }
 
   const cur = users.find((u) => u.name === selected) ?? null
+  const summaryFor = (name: string): UserUsageSummary | undefined => usageSummary.find((item) => item.name === name)
   // Сервер возвращает список разговоров периода даже при активном фильтре,
   // поэтому варианты селекта не зависят от загруженной истории пользователя.
   const usageConversations = usage?.byConversation ?? conversations
@@ -192,7 +200,7 @@ export function UsersAdmin({
               <span className="cc-sub">{u.role} · {u.agents.length} маш. · {u.conversationCount} разг.</span>
             </button>
           ))}
-          <div className="ucreate">
+          {isAdmin && <div className="ucreate">
             <p className="ucreate-h">Создать пользователя</p>
             <input className="login-input" placeholder="Логин" aria-label="Логин нового пользователя" value={newName} onChange={(e) => setNewName(e.target.value)} />
             <input className="login-input" type="password" placeholder="Пароль (можно пустой)" aria-label="Пароль нового пользователя" value={newPass} onChange={(e) => setNewPass(e.target.value)} />
@@ -201,12 +209,25 @@ export function UsersAdmin({
               <option value="admin">admin</option>
             </select>
             <Button variant="primary" disabled={!newName.trim()} onClick={submitCreate}>Создать</Button>
-          </div>
+          </div>}
         </nav>
 
         <div className="cc-col uadmin-detail" data-testid="user-detail">
           {!cur && (
-            <EmptyState icon="👤" title="Пользователь не выбран" description="Выберите учётку слева — покажем её машины, расход токенов и историю разговоров." />
+            <section className="uadmin-sec" data-testid="users-dashboard">
+              <h3 className="uadmin-h">Дашборд пользователей</h3>
+              <table className="utable"><thead><tr><th>Логин</th><th>Роль</th><th>Создан</th><th>Чаты</th><th>Токены</th><th>Стоимость</th><th>Модели</th></tr></thead><tbody>
+                {users.map((user) => {
+                  const summary = summaryFor(user.name)
+                  const tokens = (summary?.totals.inputTokens ?? 0) + (summary?.totals.outputTokens ?? 0) + (summary?.totals.cacheReadTokens ?? 0)
+                  return <tr key={user.name} onClick={() => onSelect(user.name)} style={{ cursor: 'pointer' }} data-testid="user-dashboard-row">
+                    <td>{user.name}</td><td>{user.role}</td><td>{new Date(user.createdAt).toLocaleDateString()}</td><td>{user.conversationCount}</td>
+                    <td>{kilo(tokens)}</td><td>{displayedUsd(summary?.totals.costUsd ?? 0, summary?.totals.costIncomplete)}</td>
+                    <td>{summary?.byModel.map((model) => model.model).join(', ') || '—'}</td>
+                  </tr>
+                })}
+              </tbody></table>
+            </section>
           )}
           {cur && (
             <>
@@ -229,7 +250,14 @@ export function UsersAdmin({
                 </span>
               </div>
 
-              <section className="uadmin-sec">
+              <div className="useg" role="tablist" aria-label="Статистика пользователя">
+                <button className={tab === 'access' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('access')}>Доступ к моделям</button>
+                {isAdmin && <button className={tab === 'machines' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('machines')}>Машины пользователя</button>}
+                <button className={tab === 'usage' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('usage')}>Использование моделей</button>
+                <button className={tab === 'history' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('history')}>История</button>
+              </div>
+
+              {isAdmin && tab === 'machines' && <section className="uadmin-sec">
                 <h3 className="uadmin-h">Машины ({cur.agents.length})</h3>
                 {cur.agents.length === 0 && <EmptyState compact icon="💻" title="Машин нет" description="Появятся, когда пользователь установит агента командой из меню «Машины»." />}
                 {cur.agents.map((a) => (
@@ -238,19 +266,19 @@ export function UsersAdmin({
                     {a.name} — {a.online ? 'в сети' : 'офлайн'}
                   </p>
                 ))}
-              </section>
+              </section>}
 
-              <section className="uadmin-sec" data-testid="user-llm-access">
-                <div className="uusage-heading"><div><h3 className="uadmin-h">Доступ к моделям</h3><p className="uusage-note">Пустые права означают полный доступ.</p></div><Button variant="primary" size="sm" onClick={() => onSaveLlmAccess(accessDraft)}>Сохранить</Button></div>
+              {tab === 'access' && <section className="uadmin-sec" data-testid="user-llm-access">
+                <div className="uusage-heading"><div><h3 className="uadmin-h">Доступ к моделям</h3><p className="uusage-note">Пустые права означают полный доступ.</p></div>{isAdmin && <Button variant="primary" size="sm" onClick={() => onSaveLlmAccess(accessDraft)}>Сохранить</Button>}</div>
                 <table className="utable"><thead><tr><th>Движок</th><th>Модель</th><th>Доступ</th></tr></thead><tbody>
                   {([{ provider: 'claude' as const, label: 'Claude', models: CLAUDE_MODELS }, { provider: 'codex' as const, label: 'Codex', models: CODEX_MODELS }]).map((group) => <>
-                    <tr key={group.provider}><th colSpan={2}>{group.label}</th><td><label><input type="checkbox" aria-label="Доступ к движку" checked={providerAllowed(group.provider)} onChange={(e) => toggleAccess(group.provider, '*', e.target.checked)} /> доступен</label></td></tr>
-                    {group.models.map((model) => <tr key={`${group.provider}-${model.id}`}><td></td><td>{model.label}</td><td><input type="checkbox" aria-label="Доступ к модели" disabled={!providerAllowed(group.provider)} checked={!accessDenied(group.provider, model.id)} onChange={(e) => toggleAccess(group.provider, model.id, e.target.checked)} /></td></tr>)}
+                    <tr key={group.provider}><th colSpan={2}>{group.label}</th><td><label><input type="checkbox" aria-label="Доступ к движку" disabled={!isAdmin} checked={providerAllowed(group.provider)} onChange={(e) => toggleAccess(group.provider, '*', e.target.checked)} /> доступен</label></td></tr>
+                    {group.models.map((model) => <tr key={`${group.provider}-${model.id}`}><td></td><td>{model.label}</td><td><input type="checkbox" aria-label="Доступ к модели" disabled={!isAdmin || !providerAllowed(group.provider)} checked={!accessDenied(group.provider, model.id)} onChange={(e) => toggleAccess(group.provider, model.id, e.target.checked)} /></td></tr>)}
                   </>)}
                 </tbody></table>
-              </section>
+              </section>}
 
-              <section className="uadmin-sec uusage" aria-labelledby="usage-heading">
+              {tab === 'usage' && <section className="uadmin-sec uusage" aria-labelledby="usage-heading">
                 <div className="uusage-heading">
                   <div><h3 id="usage-heading" className="uadmin-h">Использование моделей</h3><p className="uusage-note">Токены и стоимость ответов за выбранный период</p></div>
                   <div className="uusage-filters">
@@ -286,9 +314,9 @@ export function UsersAdmin({
                     </div>
                   </>
                 )}
-              </section>
+              </section>}
 
-              <section className="uadmin-sec">
+              {tab === 'history' && <section className="uadmin-sec">
                 <h3 className="uadmin-h">История ({conversations.length})</h3>
                 {conversations.length === 0 && <EmptyState compact icon="💬" title="Разговоров пока нет" description="Появятся, как только пользователь начнёт первый чат." />}
                 {conversations.map((c) => (
@@ -307,11 +335,11 @@ export function UsersAdmin({
                     ))}
                   </div>
                 )}
-              </section>
+              </section>}
             </>
           )}
 
-          <section className="uadmin-sec" data-testid="llm-engines-section">
+          {isAdmin && <section className="uadmin-sec" data-testid="llm-engines-section">
             <h3 className="uadmin-h">LLM-исполнители</h3>
             {enginesView.state === 'skeleton' && <Skeleton variant="list" count={2} height={66} lines={3} />}
             {enginesView.state === 'error' && <ErrorState compact message="Не удалось загрузить исполнителей" detail={enginesError} {...(onRetryEngines ? { onRetry: onRetryEngines } : {})} />}
@@ -370,7 +398,7 @@ export function UsersAdmin({
                 {editingEngineId && <Button onClick={resetEngineForm}>Отмена</Button>}
               </div>
             </div>
-          </section>
+          </section>}
         </div>
       </div>
     </ToolFrame>
