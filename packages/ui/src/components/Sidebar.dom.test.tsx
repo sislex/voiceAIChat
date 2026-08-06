@@ -20,7 +20,6 @@ function setup(overrides: Record<string, unknown> = {}) {
     onNew: vi.fn(),
     onPick: vi.fn(),
     onDelete: vi.fn(),
-    onRename: vi.fn(),
     searchQuery: '',
     onSearch: vi.fn(),
     onOpenObserver: vi.fn(),
@@ -374,6 +373,14 @@ describe('Sidebar — состояния списка бесед', () => {
   })
 })
 
+
+describe('Sidebar — запрет переименования', () => {
+  it('не показывает кнопку или инлайн-поле переименования', () => {
+    setup()
+    expect(screen.queryByRole('button', { name: /Переименовать разговор/ })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Новое название разговора')).not.toBeInTheDocument()
+  })
+})
 
 describe('Sidebar — кнопка командной палитры', () => {
   it('рядом с поиском есть «⌘K»/«Ctrl+K», и она открывает палитру', () => {

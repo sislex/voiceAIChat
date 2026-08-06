@@ -540,7 +540,6 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           navigate(`/chat/${id}`)
         }}
         onDelete={actions.deleteConversation}
-        onRename={actions.renameConversation}
         defaultPermissionMode={state.settings.permissionMode}
         agents={state.agents}
         searchQuery={state.searchQuery}
