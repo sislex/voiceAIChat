@@ -172,7 +172,7 @@ describe('CI: модель выполняет опубликованный ге�
     expect(toolNames).not.toContain('Проверка типов')
     expect(scripts).toContain('npm ci')
     expect(scripts).toContain(GATE)
-    const commandStep = db.getCiRun('admin', runId)!.steps.find((s) => s.kind === 'model_command')
+    const commandStep = db.getCiRun('admin', runId)!.steps.find((s) => s.kind === 'model_command' && s.title === 'Запустить тестирование (npm test)')
     expect(commandStep).toMatchObject({ title: 'Запустить тестирование (npm test)', status: 'success' })
   })
 
