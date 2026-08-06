@@ -9,22 +9,22 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 29 коммит(ов) в areas после сверки: f60fcc9 feat: add personal LLM model access controls … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 30 коммит(ов) в areas после сверки: 46a9e57 feat(users): add dashboard and personal statistics … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 6 коммит(ов) в areas после сверки: 65621d2 feat(ui): режим чата в карточке сайдбара + актуальные меню моделей Claude/Codex … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: e39fa65 feat(ci): проверять только затронутые пакеты |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-05 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-06 | ⚠ 2 коммит(ов) в areas после сверки: 29c84d9 chatai-112: разбить настройки проекта на табы … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-06 | ⚠ 3 коммит(ов) в areas после сверки: 46a9e57 feat(users): add dashboard and personal statistics … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-03 | ⚠ 27 коммит(ов) в areas после сверки: f60fcc9 feat: add personal LLM model access controls … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 13 коммит(ов) в areas после сверки: f60fcc9 feat: add personal LLM model access controls … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 86 коммит(ов) в areas после сверки: a62a8f3 Запретить переименование чата в сайдбаре … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 88 коммит(ов) в areas после сверки: 46a9e57 feat(users): add dashboard and personal statistics … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-06 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-06 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-05 | ⚠ 2 коммит(ов) в areas после сверки: 68b9d2f CHAT-108: пустой ход модели не закрывает ран успехом … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-06 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-05 | ⚠ 7 коммит(ов) в areas после сверки: f60fcc9 feat: add personal LLM model access controls … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-05 | ⚠ 14 коммит(ов) в areas после сверки: 29c84d9 chatai-112: разбить настройки проекта на табы … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-06 | ⚠ 1 коммит(ов) в areas после сверки: f60fcc9 feat: add personal LLM model access controls |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-06 | ⚠ 1 коммит(ов) в areas после сверки: 46a9e57 feat(users): add dashboard and personal statistics |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-05 | ⚠ 8 коммит(ов) в areas после сверки: 46a9e57 feat(users): add dashboard and personal statistics … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-06 | ✓ |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-06 | ⚠ 2 коммит(ов) в areas после сверки: 46a9e57 feat(users): add dashboard and personal statistics … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-02 | ⚠ 14 коммит(ов) в areas после сверки: 68b9d2f CHAT-108: пустой ход модели не закрывает ран успехом … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-06 | ✓ |
@@ -44,8 +44,9 @@
 
 ## Журнал сессий
 
-Всего записей: 103. Последние:
+Всего записей: 104. Последние:
 
+- [2026-08-06-2470-com-users-dashboard.md](log/2026-08-06-2470-com-users-dashboard.md) — users-dashboard
 - [2026-08-06-2470-com-ui-llm-access.md](log/2026-08-06-2470-com-ui-llm-access.md) — ui-llm-access
 - [2026-08-06-2470-com-task-launch-message-meta.md](log/2026-08-06-2470-com-task-launch-message-meta.md) — task-launch-message-meta
 - [2026-08-06-2470-com-sidebar-rename.md](log/2026-08-06-2470-com-sidebar-rename.md) — sidebar-rename
@@ -55,7 +56,6 @@
 - [2026-08-06-2470-com-personal-llm-access.md](log/2026-08-06-2470-com-personal-llm-access.md) — personal-llm-access
 - [2026-08-06-2470-com-llm-access-clamp.md](log/2026-08-06-2470-com-llm-access-clamp.md) — llm-access-clamp
 - [2026-08-06-2470-com-live-run-timers-kb.md](log/2026-08-06-2470-com-live-run-timers-kb.md) — live-run-timers-kb
-- [2026-08-06-2470-com-ci-run-empty-work-guard.md](log/2026-08-06-2470-com-ci-run-empty-work-guard.md) — Пустой ход модели больше не закрывает ран успехом
 
 ## Исторические планы
 
