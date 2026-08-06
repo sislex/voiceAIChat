@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, REST, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -221,8 +221,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const prompt = (req.body?.prompt ?? '').trim()
     if (!prompt) return { variants: [] as Array<{ id: string; text: string }> }
     const settings = db.getSettings(uid(req))
-    const client = settings.aiAssistProvider === 'codex' ? codex : claude
-    const model = settings.aiAssistModel || (settings.aiAssistProvider === 'claude' ? 'haiku' : '')
+    const access = db.getUserLlmAccess(uid(req))
+    const provider = isProviderAllowed(access, settings.aiAssistProvider)
+      ? settings.aiAssistProvider
+      : firstAllowedProvider(access)
+    if (!provider) return reply.code(403).send({ error: 'Нет доступных моделей' }) as never
+    const requestedModel = settings.aiAssistModel || (provider === 'claude' ? 'haiku' : '')
+    const model = clampModel(access, provider, requestedModel)
+    if (!model) return reply.code(403).send({ error: 'Нет доступных моделей' }) as never
+    const client = provider === 'codex' ? codex : claude
     const modifiers = (req.body?.modifiers ?? []).filter((item) => item.enabled && item.text.trim())
     try {
       const texts = await new PromptSuggester(client, model).suggest(prompt, modifiers, uid(req))

@@ -23,6 +23,10 @@ web/desktop host → installRemoteBridges → HTTP + WebSocket → server
 
 ## Состояние приложения
 
+Админская карточка пользователя получает персональные запреты моделей через
+`GET/PUT /api/admin/users/:name/llm-access`; пустой список означает полный доступ.
+
+
 Состояние сгруппировано по областям, хотя хранится одним объектом:
 
 - сессия: `authRequired`, `currentUser`, `authError`;

@@ -126,9 +126,7 @@ FTS5 не должна валить старт (тогда `searchMessages` пр
 
 ## Пользователи и роли
 
-`UserRole = 'admin' | 'user'` (`packages/shared/src/types.ts`). Роль ограничивает
-доступные модели: `isModelAllowed` / `modelsForRole` / `clampModelForRole` —
-зажим применяется на сервере в `turns.ts`, а не только в UI. Роль также ограничивает исполнителей LLM по `llm_engines.allowed_roles`: безопасный список `/api/llm-engines`, сохранение настроек/разговора и резолв самого хода проверяют это независимо.
+`UserRole = 'admin' | 'user'` (`packages/shared/src/types.ts`) ограничивает исполнителей LLM по `llm_engines.allowed_roles`. Доступ к моделям персональный: `user_llm_access` хранит deny-list `(user_name, provider, model_id)`, где `*` запрещает весь provider; отсутствие строк означает полный доступ. `getUserLlmAccess`/`setUserLlmAccess` обслуживают админские `GET/PUT /api/admin/users/:name/llm-access`, а пользователь читает свои права через `GET /api/llm-access`.
 
 Первый запуск на пустой БД создаёт `admin`; пароль берётся из
 `VC_ADMIN_PASSWORD` (пусто — без пароля). Если БД уже существует, переменная

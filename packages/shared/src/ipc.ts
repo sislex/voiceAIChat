@@ -178,6 +178,7 @@ export interface IpcInvokeMap {
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }
   'uploads:add': { arg: { name: string; dataBase64: string; mimeType?: string; agentId?: string }; result: UploadInfo }
   'settings:get': { arg: void; result: Settings }
+  'llm:access': { arg: void; result: import('./llmAccess').UserLlmAccess[] }
   'llm:engines': { arg: void; result: LlmEngineOption[] }
   'settings:save': { arg: Settings; result: void }
   /** Возможности системы по ресурсам контейнера (блокировка STT/TTS при нехватке памяти). */
@@ -238,6 +239,8 @@ export interface IpcInvokeMap {
   'cx:resume': { arg: { id: string }; result: ConversationWithMessages }
   // --- Админ-страница пользователей (только admin) ---
   'admin:users': { arg: void; result: AdminUserInfo[] }
+  'admin:llmAccess': { arg: { name: string }; result: import('./llmAccess').UserLlmAccess[] }
+  'admin:saveLlmAccess': { arg: { name: string; access: import('./llmAccess').UserLlmAccess[] }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:createUser': { arg: { name: string; password: string; role: 'admin' | 'user' }; result: AdminUserInfo }
   'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
   'admin:deleteUser': { arg: { name: string }; result: void }
@@ -700,6 +703,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'messages:delete',
   'uploads:add',
   'settings:get',
+  'llm:access',
   'settings:save',
   'system:capabilities',
   'stt:status',
@@ -727,6 +731,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'cx:transcript',
   'cx:resume',
   'admin:users',
+  'admin:llmAccess',
+  'admin:saveLlmAccess',
   'admin:createUser',
   'admin:setBlocked',
   'admin:deleteUser',

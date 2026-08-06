@@ -3,36 +3,28 @@ import {
   activeStatusLabel,
   chatModeLabel,
   CLAUDE_MODELS,
-  clampModelForRole,
   CODEX_MODELS,
   DEFAULT_CODEX_MODEL,
-  isModelAllowed,
-  modelsForRole,
   normalizeClaudeModel
 } from './types'
+import { allowedModels, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed } from './llmAccess'
 
-describe('модели по роли', () => {
-  it('admin имеет доступ ко всем моделям', () => {
-    expect(modelsForRole('admin')).toHaveLength(CLAUDE_MODELS.length)
-    for (const m of CLAUDE_MODELS) expect(isModelAllowed(m.id, 'admin')).toBe(true)
+describe('персональный доступ к моделям', () => {
+  it('пустой deny-list оставляет все модели доступными', () => {
+    expect(allowedModels([], 'claude')).toHaveLength(CLAUDE_MODELS.length)
+    expect(allowedModels([], 'codex')).toHaveLength(CODEX_MODELS.length)
   })
 
-  it('user — без opus и fable (default/sonnet/haiku)', () => {
-    // Default остаётся всем: это выбор самого CLI, а не явно взятая дорогая модель.
-    expect(modelsForRole('user').map((m) => m.id)).toEqual(['default', 'sonnet', 'haiku'])
-    expect(isModelAllowed('opus[1m]', 'user')).toBe(false)
-    expect(isModelAllowed('fable', 'user')).toBe(false)
-    expect(isModelAllowed('default', 'user')).toBe(true)
-    expect(isModelAllowed('sonnet', 'user')).toBe(true)
-    expect(isModelAllowed('haiku', 'user')).toBe(true)
+  it('блокирует отдельную модель и клампит к первой разрешённой', () => {
+    const access = [{ provider: 'claude' as const, modelId: 'opus[1m]' }]
+    expect(isModelAllowedForUser(access, 'claude', 'opus[1m]')).toBe(false)
+    expect(clampModel(access, 'claude', 'opus[1m]')).toBe('default')
   })
 
-  it('clampModelForRole откатывает запрещённую модель к sonnet', () => {
-    expect(clampModelForRole('opus[1m]', 'user')).toBe('sonnet')
-    expect(clampModelForRole('fable', 'user')).toBe('sonnet')
-    expect(clampModelForRole('haiku', 'user')).toBe('haiku')
-    // admin не клампится.
-    expect(clampModelForRole('opus[1m]', 'admin')).toBe('opus[1m]')
+  it('запрет провайдера скрывает его и выбирает другой', () => {
+    const access = [{ provider: 'claude' as const, modelId: '*' }]
+    expect(isProviderAllowed(access, 'claude')).toBe(false)
+    expect(firstAllowedProvider(access)).toBe('codex')
   })
 })
 

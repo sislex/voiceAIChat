@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { clampModelForRole, CODEX_MODELS, modelsForRole, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
+import { CLAUDE_MODELS, CODEX_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { LlmEngineOption } from '@shared/admin'
@@ -73,7 +73,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
       ? conversation.llmModel
       : initialProvider === 'codex'
         ? settings.codexModel
-        : clampModelForRole(normalizeClaudeModel(settings.model), role)
+        : normalizeClaudeModel(settings.model)
   )
   // '' — «как в общих настройках» (в БД хранится null).
   const [permissionMode, setPermissionMode] = useState<PermissionMode | ''>(conversation.permissionMode ?? '')
@@ -182,7 +182,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
     ) return
     setSaving(true)
     try {
-      const globalModel = llmProvider === 'codex' ? settings.codexModel : clampModelForRole(normalizeClaudeModel(settings.model), role)
+      const globalModel = llmProvider === 'codex' ? settings.codexModel : normalizeClaudeModel(settings.model)
       // Пункта «по умолчанию» в списке движков нет, но наследование глобальных настроек сохраняется:
       // если выбранные движок и модель совпадают с глобальными — храним null (следовать общим настройкам).
       const inheritsGlobal = llmProvider === settings.llmProvider && llmModel === globalModel
@@ -261,7 +261,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
               onChange={(e) => {
                 const next = e.target.value as LlmProvider
                 setLlmProvider(next)
-                setLlmModel(next === 'codex' ? settings.codexModel : clampModelForRole(normalizeClaudeModel(settings.model), role))
+                setLlmModel(next === 'codex' ? settings.codexModel : normalizeClaudeModel(settings.model))
               }}
             >
               <option value="claude">Claude Code</option>
@@ -270,7 +270,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
           </label>
           {llmProvider === 'claude' && <label className="convsettings-field"><span>Модель Claude</span>
             <select aria-label="Модель разговора" value={normalizeClaudeModel(llmModel)} onChange={(e) => setLlmModel(e.target.value)}>
-              {modelsForRole(role).map((m) => <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>)}
+              {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>)}
             </select>
           </label>}
           {llmProvider === 'codex' && <label className="convsettings-field"><span>Модель Codex</span>

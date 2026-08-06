@@ -12,7 +12,7 @@ import type {
   WhisperModelInfo
 } from '@shared/types'
 import type { SystemCapabilities } from '@shared/protocol'
-import { CODEX_MODELS, modelsForRole, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
+import { CLAUDE_MODELS, CODEX_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { PermissionMode, LlmProvider, UserRole } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
@@ -100,7 +100,7 @@ export function SettingsModal({
   onDownloadVoice,
   onDeleteVoice,
   onDeleteModel,
-  role,
+  role: _role,
   onClose,
   voiceInputEnabled = true
 }: SettingsModalProps): JSX.Element {
@@ -194,7 +194,7 @@ export function SettingsModal({
                       value={normalizeClaudeModel(settings.model)}
                       onChange={(e) => onChange({ model: e.target.value as ClaudeModel })}
                     >
-                      {modelsForRole(role).map((m) => (
+                      {CLAUDE_MODELS.map((m) => (
                         <option key={m.id} value={m.id} title={m.hint}>
                           {m.label}
                         </option>
@@ -294,7 +294,7 @@ export function SettingsModal({
                 <div className="frow">
                   <div><p className="flab">Модель помощника</p><p className="fsub">Быструю модель можно выбрать независимо от основного чата</p></div>
                   {settings.aiAssistProvider === 'claude' ? <select className="sel" aria-label="Модель AI-помощника" value={settings.aiAssistModel || 'haiku'} onChange={(e) => onChange({ aiAssistModel: e.target.value })}>
-                    {modelsForRole(role).map((m) => <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>)}
+                    {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>)}
                   </select> : <select className="sel" aria-label="Модель AI-помощника" value={settings.aiAssistModel} onChange={(e) => onChange({ aiAssistModel: e.target.value })}>
                     {!CODEX_MODELS.some((m) => m.id === settings.aiAssistModel) && <option value={settings.aiAssistModel}>{settings.aiAssistModel || 'По умолчанию (из codex)'}</option>}
                     {CODEX_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
