@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-08-06
-checked: f60fcc9
+checked: 46a9e57
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -56,7 +56,9 @@ default-записи одного `kind`. Сам токен хранится в 
 ограничение доступа обеспечивается не схемой, а тем, что CRUD и health-check
 висят только на `requireAdmin` в `apps/server/src/routes/admin.ts`.
 
-Отчёт `usageSummary(from, to)` агрегирует всех пользователей одной SQL-выборкой: на дашборд возвращаются totals и `byModel`, включая нулевые строки пользователей. Админский `GET /api/admin/users/usage-summary` защищён `requireAdmin`; личные `GET /api/me/usage` и `/api/me/llm-access` всегда выбирают владельца из `uid(req)`, не из query или URL.
+Отчёт `usageSummary(from, to)` агрегирует всех пользователей одной SQL-выборкой: на дашборд возвращаются totals и `byModel`, включая нулевые строки пользователей. Админский `GET /api/admin/users/usage-summary` защищён `requireAdmin` и принимает необязательные timestamps `from`/`to`.
+
+Личные API для виджета — `GET /api/me/usage` и `GET /api/me/llm-access`: оба берут владельца только из `uid(req)`, не из query или URL. У первого те же необязательные `unit` (`hour`/`day`/`week`), `from`, `to` и `conversationId`, что у `GET /api/usage`, и он возвращает `UsageReport`; второй возвращает `UserLlmAccess[]`. Старые `GET /api/usage` и `GET /api/llm-access` остаются сессионными алиасами, но web-мост обращается к новым `/api/me/*` путям.
 
 Видимость статей `kb_documents` считает не БД, а слой БЗ (`apps/server/src/kb/scoped.ts`
 поверх «вида» из `kb/access.ts`): персональная статья — только владельцу, проектная —
