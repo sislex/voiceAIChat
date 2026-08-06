@@ -3,12 +3,14 @@
 import { useEffect, useState, type JSX } from 'react'
 import type { CiClarifyLevel, CiCommand, CiLlmConfig, CiRunMode } from '@shared/ci'
 import { CI_CLARIFY_MAX_LIMIT, DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
-import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
+import { CODEX_MODELS } from '@shared/types'
+import type { UserLlmAccess } from '@shared/llmAccess'
+import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { Button } from '../ui/Button'
 import { CiSlotEditor } from './CiSlotEditor'
 import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 
-export function CiProjectDefaults(props: { projectId: string; editable: boolean }): JSX.Element {
+export function CiProjectDefaults(props: { projectId: string; editable: boolean; llmAccess?: UserLlmAccess[] }): JSX.Element {
   const [commands, setCommands] = useState<CiCommand[]>([])
   const [before, setBefore] = useState<string[]>([])
   const [after, setAfter] = useState<string[]>([])
@@ -27,7 +29,8 @@ export function CiProjectDefaults(props: { projectId: string; editable: boolean 
   const save = (): void => {
     void window.ci?.putProjectCi(props.projectId, { beforeModel: before, afterModel: after }).then(() => setDirty(false))
   }
-  const models = llm.provider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS
+  const access = props.llmAccess ?? []
+  const models = llm.provider === 'codex' ? allowedModels(access, 'codex') : allowedModels(access, 'claude')
   const changeProvider = (provider: 'claude' | 'codex'): void => {
     setLlm({ ...llm, provider, model: provider === 'codex' ? CODEX_MODELS[0].id : DEFAULT_CI_CLAUDE_MODEL })
     setLlmDirty(true)
@@ -47,7 +50,7 @@ export function CiProjectDefaults(props: { projectId: string; editable: boolean 
           disabled={!props.editable}
           value={llm.provider}
           onChange={(e) => changeProvider(e.target.value as 'claude' | 'codex')}
-        ><option value="claude">Claude</option><option value="codex">Codex</option></select></label>
+        >{isProviderAllowed(access, 'claude') && <option value="claude">Claude</option>}{isProviderAllowed(access, 'codex') && <option value="codex">Codex</option>}{!isProviderAllowed(access, 'claude') && !isProviderAllowed(access, 'codex') && <option value="">Нет доступных движков</option>}</select></label>
         <label>Модель по умолчанию<select
           aria-label="Модель проекта"
           className="sel"

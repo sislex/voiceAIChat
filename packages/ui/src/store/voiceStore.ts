@@ -66,6 +66,7 @@ import type {
 } from '@shared/admin'
 import type { CcProject, CcSession, CcItem } from '@shared/cc'
 import type { SessionUsage } from '@shared/types'
+import type { UserLlmAccess } from '@shared/llmAccess'
 import type { CxProject, CxSession, CxItem } from '@shared/codexSessions'
 import type {
   CatalogVoice,
@@ -388,6 +389,10 @@ export interface AppState {
   adminLlmEnginesError: string | null
   /** Последний health-снимок по id исполнителя. */
   adminLlmEngineHealth: Record<string, AdminLlmEngineHealth | undefined>
+  /** Персональные запреты моделей текущего пользователя; пусто = полный доступ. */
+  llmAccess: UserLlmAccess[]
+  /** Права выбранного пользователя в админке. */
+  adminUserLlmAccess: UserLlmAccess[]
   /** Открытая из меню машинная утилита (консоль/проводник) + машина; null — закрыта. */
   utility: { kind: 'console' | 'explorer'; agentId: string | null; path?: string; dir?: boolean } | null
   /**
@@ -790,6 +795,8 @@ export interface StoreActions {
   deleteAdminLlmEngine(id: string): Promise<void>
   /** Проверить живость исполнителя. */
   checkAdminLlmEngineHealth(id: string): Promise<void>
+  loadAdminUserLlmAccess(name?: string): Promise<void>
+  saveAdminUserLlmAccess(access: UserLlmAccess[]): Promise<void>
   // --- Машинные утилиты (консоль/проводник) ---
   /**
    * Открыть утилиту из меню (машина по умолчанию — первая онлайн-своя). `dir`
@@ -1043,6 +1050,8 @@ function initialState(): AppState {
     adminLlmEnginesStatus: 'loading',
     adminLlmEnginesError: null,
     adminLlmEngineHealth: {},
+    llmAccess: [],
+    adminUserLlmAccess: [],
     utility: null,
     consoleHistory: {},
     speakingMessageId: null,
@@ -1733,13 +1742,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Тяжёлая загрузка данных пользователя (после успешной аутентификации). */
   async function bootstrap(): Promise<void> {
     setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null }) // обновление страницы: лоадер до готовности ленты
-    let settings, conversations, projects, llmEngines
+    let settings, conversations, projects, llmEngines, llmAccess
     try {
-      ;[settings, conversations, projects] = await Promise.all([
+      ;[settings, conversations, projects, llmEngines, llmAccess] = await Promise.all([
         api['settings:get'](),
         api['conversations:list']({ includeCompleted: state.showDoneTaskChats }),
         api['projects:list'](),
-        api['llm:engines']()
+        api['llm:engines'](),
+        api['llm:access']()
       ])
     } catch (err) {
       // Иначе сайдбар остался бы со скелетоном навсегда: показываем ошибку с «Повторить».
@@ -1753,7 +1763,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     // Сайдбар сразу фильтруем по восстановленному из localStorage проекту.
     const pid = state.sidebarProjectId
     const visible = conversations.filter((c) => (c.projectId ?? null) === pid)
-    setState({ settings, llmEngines, projects, projectsLoaded: true, conversations: visible, conversationsStatus: 'ready', conversationsError: null })
+    setState({ settings, llmEngines, llmAccess, projects, projectsLoaded: true, conversations: visible, conversationsStatus: 'ready', conversationsError: null })
     void loadTaskChatBadges()
     await refreshMics()
     await refreshModelStatus()
@@ -2301,17 +2311,35 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       adminUsage: null,
       adminConversations: [],
       adminMessages: [],
-      adminConversationId: null
+      adminConversationId: null,
+      adminUserLlmAccess: []
     })
     try {
-      const [usage, conversations] = await Promise.all([
+      const [usage, conversations, access] = await Promise.all([
         api['admin:usage']({ name, unit: 'day' }),
-        api['admin:conversations']({ name })
+        api['admin:conversations']({ name }),
+        api['admin:llmAccess']({ name })
       ])
-      setState({ adminUsage: usage, adminConversations: conversations })
+      setState({ adminUsage: usage, adminConversations: conversations, adminUserLlmAccess: access })
     } catch (err) {
       fail(err, () => void selectAdminUser(name))
     }
+  }
+
+  async function loadAdminUserLlmAccess(name = state.adminSelected ?? ''): Promise<void> {
+    if (!name) return
+    try {
+      setState({ adminUserLlmAccess: await api['admin:llmAccess']({ name }) })
+    } catch (err) { fail(err, () => void loadAdminUserLlmAccess(name)) }
+  }
+
+  async function saveAdminUserLlmAccess(access: UserLlmAccess[]): Promise<void> {
+    const name = state.adminSelected
+    if (!name) return
+    try {
+      setState({ adminUserLlmAccess: await api['admin:saveLlmAccess']({ name, access }) })
+      notify({ kind: 'success', text: 'Доступ к моделям сохранён' })
+    } catch (err) { fail(err, () => void saveAdminUserLlmAccess(access)) }
   }
 
   async function loadAdminUsage(unit: UsageUnit, from?: number, to?: number, conversationId?: string): Promise<void> {
@@ -4071,6 +4099,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       updateAdminLlmEngine,
       deleteAdminLlmEngine,
       checkAdminLlmEngineHealth,
+      loadAdminUserLlmAccess,
+      saveAdminUserLlmAccess,
       openUtility,
       openUtilityForActiveChat,
       closeUtility,

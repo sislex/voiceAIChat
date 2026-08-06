@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { LlmProvider, PermissionMode, TaskLaunchRequest } from '@shared/types'
+import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { TaskPriority } from '@shared/projects'
 import type { HealthResponse } from '@shared/protocol'
@@ -367,7 +368,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     : activeConversation?.permissionMode ?? state.settings.permissionMode
   const ciProvider = state.settings.llmProvider
   const ciModel = ciProvider === 'codex' ? state.settings.codexModel : state.settings.model
-  const proposalModels = taskProposal?.provider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS
+  const allowedClaudeModels = allowedModels(state.llmAccess, 'claude')
+  const allowedCodexModels = allowedModels(state.llmAccess, 'codex')
+  const allowedProviders = (['claude', 'codex'] as const).filter((provider) => isProviderAllowed(state.llmAccess, provider) && (provider === 'claude' ? allowedClaudeModels.length : allowedCodexModels.length))
+  const proposalModels = taskProposal?.provider === 'codex' ? allowedCodexModels : allowedClaudeModels
 
   const openTaskProposal = (request: TaskLaunchRequest): void => {
     if (!activeConversation?.projectId) {
@@ -381,8 +385,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       acceptanceCriteria: request.acceptanceCriteria,
       priority: 'medium',
       assignee: state.currentUser?.name ?? null,
-      provider: ciProvider,
-      model: ciModel
+      provider: allowedProviders.includes(ciProvider) ? ciProvider : (allowedProviders[0] ?? ciProvider),
+      model: (allowedProviders.includes(ciProvider) ? (ciProvider === 'codex' ? allowedCodexModels : allowedClaudeModels) : (allowedProviders[0] === 'codex' ? allowedCodexModels : allowedClaudeModels))[0]?.id ?? ciModel
     })
   }
 
@@ -880,6 +884,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onDelete={(name) => void actions.deleteUserAccount(name)}
           onLoadUsage={(unit, from, to, conversationId) => void actions.loadAdminUsage(unit, from, to, conversationId)}
           onOpenConversation={(id) => void actions.openAdminConversation(id)}
+          llmAccess={state.adminUserLlmAccess}
+          onSaveLlmAccess={(access) => void actions.saveAdminUserLlmAccess(access)}
           engines={state.adminLlmEngines}
           enginesStatus={state.adminLlmEnginesStatus}
           enginesError={state.adminLlmEnginesError}
@@ -903,6 +909,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           suggestions={state.ciSuggestions}
           workspaces={state.ciWorkspaces}
           role={state.currentUser?.role ?? 'admin'}
+          llmAccess={state.llmAccess}
           projects={state.projects.map((p) => ({ id: p.id, name: p.name }))}
           onCreate={(input) => actions.createCiCommand(input)}
           onUpdate={(id, input) => actions.updateCiCommand(id, input)}
@@ -944,13 +951,15 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
                 const provider = event.target.value as LlmProvider
                 setTaskProposal({ ...taskProposal, provider, model: provider === 'codex' ? CODEX_MODELS[0].id : CLAUDE_MODELS[0].id })
               }}>
-                <option value="claude">Claude</option>
-                <option value="codex">Codex</option>
+                {allowedProviders.includes('claude') && <option value="claude">Claude</option>}
+                {allowedProviders.includes('codex') && <option value="codex">Codex</option>}
+                {allowedProviders.length === 0 && <option value="">Нет доступных движков</option>}
               </select>
             </label>
             <label>Модель
               <select value={taskProposal.model} onChange={(event) => setTaskProposal({ ...taskProposal, model: event.target.value })}>
                 {!proposalModels.some((model) => model.id === taskProposal.model) && <option value={taskProposal.model}>{taskProposal.model || 'По умолчанию'}</option>}
+                {proposalModels.length === 0 && <option value="">Нет доступных моделей</option>}
                 {proposalModels.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
               </select>
             </label>
@@ -983,6 +992,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           role={state.currentUser?.role ?? 'admin'}
           settings={state.settings}
           engines={state.llmEngines}
+          llmAccess={state.llmAccess}
           defaultAgentId={state.settings.defaultAgentId}
           projects={state.projects}
           fetchProjectDetail={actions.fetchProjectDetail}
@@ -1061,6 +1071,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
             <RunFeed
               runId={state.ciActiveRunId}
               cache={state.ciRuns[state.ciActiveRunId]}
+              llmAccess={state.llmAccess}
               onSubscribe={actions.ciSubscribe}
               onUnsubscribe={actions.ciUnsubscribe}
               onLoad={(runId) => void actions.loadCiRun(runId)}
@@ -1110,6 +1121,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onDeleteVoice={actions.deleteVoice}
           onDeleteModel={actions.deleteModel}
           role={state.currentUser?.role ?? 'admin'}
+          llmAccess={state.llmAccess}
           voiceInputEnabled={VOICE_INPUT_ENABLED}
           onClose={actions.closeSettings}
         />

@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { CLAUDE_MODELS, CODEX_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
+import { CODEX_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { LlmEngineOption } from '@shared/admin'
 import type { ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
+import type { UserLlmAccess } from '@shared/llmAccess'
+import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import type { MachineOps } from './machine'
 import { PopupFrame } from './PopupFrame'
 import { Button } from './ui/Button'
@@ -17,6 +19,7 @@ export interface ConversationSettingsProps {
   machineOps?: MachineOps
   /** Роль пользователя — прячет модели Claude, недоступные роли user. */
   role: UserRole
+  llmAccess?: UserLlmAccess[]
   /** Общие настройки — дефолты движка/модели, когда разговор их не переопределяет. */
   settings: Pick<Settings, 'llmProvider' | 'model' | 'codexModel' | 'permissionMode'> & { llmEngineId?: string | null }
   engines?: LlmEngineOption[]
@@ -55,10 +58,13 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, settings, engines = [], defaultAgentId, projects, fetchProjectDetail, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], defaultAgentId, projects, fetchProjectDetail, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
+  const claudeModels = allowedModels(llmAccess, 'claude')
+  const codexModels = allowedModels(llmAccess, 'codex')
+  const providers = (['claude', 'codex'] as const).filter((provider) => isProviderAllowed(llmAccess, provider) && (provider === 'claude' ? claudeModels.length : codexModels.length))
   const defaultExecTarget = defaultAgentId && agents.some((a) => a.id === defaultAgentId) ? defaultAgentId : null
   const [execTarget, setExecTarget] = useState<string | null>(
     conversation.execTarget ?? (conversation.messageCount === 0 ? defaultExecTarget : null)
@@ -264,19 +270,22 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
                 setLlmModel(next === 'codex' ? settings.codexModel : normalizeClaudeModel(settings.model))
               }}
             >
-              <option value="claude">Claude Code</option>
-              <option value="codex">Codex</option>
+              {providers.includes('claude') && <option value="claude">Claude Code</option>}
+              {providers.includes('codex') && <option value="codex">Codex</option>}
+              {providers.length === 0 && <option value="">Нет доступных движков</option>}
             </select>
           </label>
           {llmProvider === 'claude' && <label className="convsettings-field"><span>Модель Claude</span>
             <select aria-label="Модель разговора" value={normalizeClaudeModel(llmModel)} onChange={(e) => setLlmModel(e.target.value)}>
-              {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>)}
+              {claudeModels.length === 0 && <option value="">Нет доступных моделей</option>}
+              {claudeModels.map((m) => <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>)}
             </select>
           </label>}
           {llmProvider === 'codex' && <label className="convsettings-field"><span>Модель Codex</span>
             <select aria-label="Модель разговора" value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>
               {!CODEX_MODELS.some((m) => m.id === llmModel) && <option value={llmModel}>{llmModel || 'По умолчанию (из codex)'}</option>}
-              {CODEX_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              {codexModels.length === 0 && <option value="">Нет доступных моделей</option>}
+              {codexModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
           </label>}
         </section>
