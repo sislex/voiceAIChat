@@ -7,6 +7,7 @@ import { CiProjectDefaults } from './ci/CiProjectDefaults'
 import { useEffect, useState } from 'react'
 import type { ProjectDetail, ProjectMachine, ProjectSummary, WorkItemDefaultSkills } from '@shared/projects'
 import type { KbContextMode } from '@shared/types'
+import type { UserLlmAccess } from '@shared/llmAccess'
 
 import type { AgentInfo } from '@shared/agentProtocol'
 import { Button } from './ui/Button'
@@ -15,6 +16,7 @@ import { IconButton } from './ui/IconButton'
 export interface ProjectSettingsProps {
   detail: ProjectDetail
   agents: AgentInfo[]
+  llmAccess?: UserLlmAccess[]
   onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null }) => void
 
   onDelete: (id: string) => void
@@ -145,6 +147,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
   const [gitUrl, setGitUrl] = useState(detail.gitUrl ?? '')
   const [newMember, setNewMember] = useState('')
   const [confirmDel, setConfirmDel] = useState(false)
+  const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'board' | 'workflow' | 'members' | 'machines'>('general')
   // Порог скрытия завершённых: черновик строкой — пустое поле это «не скрывать»
   // (null), а не 0. Синхронизируем с ответом сервера.
   const retentionOf = (v: number | null | undefined): string => (v == null ? '' : String(v))
@@ -169,6 +172,21 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
 
   return (
     <div className="proj-detail" data-testid="project-settings">
+      <div className="proj-settings-tabs" role="tablist" aria-label="Разделы настроек проекта">
+        {([
+          ['general', 'Общее'],
+          ['llm', 'LLM'],
+          ['board', 'Доска'],
+          ['workflow', 'Workflow и CI'],
+          ['members', 'Участники'],
+          ['machines', 'Машины'],
+        ] as const).map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={activeTab === id} className={activeTab === id ? 'active' : ''} onClick={() => setActiveTab(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {activeTab === 'general' && <>
       {isOwner ? (
         <div className="proj-meta-edit">
           <input className="login-input" aria-label="Название проекта" value={name} onChange={(e) => setName(e.target.value)} onBlur={saveMeta} />
@@ -184,7 +202,9 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
 
       <TagEditor label="Технологии" tags={detail.technologies} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { technologies: next })} />
       <TagEditor label="Навыки" tags={detail.skills} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { skills: next })} />
+      </>}
 
+      {activeTab === 'board' && <>
       <div className="proj-section proj-default-skills">
         <p className="proj-field-label">Навыки по умолчанию</p>
         <p className="proj-hint">Автоматически добавляются в карточку при создании элемента соответствующего типа. В самой карточке их можно убрать или дополнить.</p>
@@ -220,9 +240,36 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
           />
         </label>
       </div>
+      </>}
 
-      <div className="proj-section feature-policy">
+      {activeTab === 'llm' && (
+        <div className="proj-section">
+          <p className="proj-field-label">LLM по умолчанию</p>
+          <p className="proj-hint" data-testid="project-llm-hint">
+            Пара применяется к чатам проекта сразу, а задачи получают её через наследование.
+          </p>
+          <CiProjectDefaults projectId={detail.id} editable={isOwner} llmAccess={props.llmAccess} section="llm" />
+          <label>CI: база знаний в ране<select
+            className="sel"
+            aria-label="CI: база знаний в ране"
+            disabled={!isOwner}
+            value={detail.ciKbContextMode ?? 'auto'}
+            onChange={(e) => props.onUpdate(detail.id, { ciKbContextMode: e.target.value as KbContextMode })}
+          >
+            <option value="auto">Контекст и инструменты (авто)</option>
+            <option value="manual">Только инструменты (по запросу модели)</option>
+            <option value="off">Выключена</option>
+          </select></label>
+          <p className="proj-muted" data-testid="proj-ci-kb-hint">
+            Режим влияет на работу модели в CI-ране: в «авто» сервер подмешивает разделы базы знаний
+            по теме задачи и выдаёт модели инструменты mcp__kb__*, в «по запросу» — только инструменты.
+            На чаты проекта настройка не влияет — у каждого чата свой режим. Значение применяется
+            к следующему рану.
+          </p>
+        </div>
+      )}
 
+      {activeTab === 'workflow' && <div className="proj-section feature-policy">
         <p className="proj-field-label">Workflow фич</p>
         <label>Коммиты<select className="sel" disabled={!isOwner} value={detail.commitPolicy} onChange={(e) => props.onUpdate(detail.id, { commitPolicy: e.target.value as ProjectSummary['commitPolicy'] })}><option value="agent_commits">Агент создаёт коммиты</option><option value="final_system_commit">Итоговый системный коммит</option><option value="manual_user_confirmation">Подтверждать коммит</option></select></label>
         <label>Merge<select className="sel" disabled={!isOwner} value={detail.mergeTransport} onChange={(e) => props.onUpdate(detail.id, { mergeTransport: e.target.value as ProjectSummary['mergeTransport'] })}><option value="local">Локальный merge commit</option><option value="github_pull_request">GitHub Pull Request</option></select></label>
@@ -232,29 +279,10 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         <label>CI: базовая ветка<input className="login-input" disabled={!isOwner} value={detail.ciBaseBranch ?? ''} onChange={(e) => props.onUpdate(detail.id, { ciBaseBranch: e.target.value })} placeholder="main" /></label>
         <label>CI: шаблон ветки<input className="login-input" disabled={!isOwner} value={detail.ciBranchTemplate ?? ''} onChange={(e) => props.onUpdate(detail.id, { ciBranchTemplate: e.target.value })} placeholder="feature/{task_number}-{slug}" /></label>
         <label>CI: повтор директории<select className="sel" disabled={!isOwner} value={detail.ciReuseStrategy ?? 'fail'} onChange={(e) => props.onUpdate(detail.id, { ciReuseStrategy: e.target.value as 'reuse' | 'clean' | 'fail' })}><option value="fail">Упасть, если существует</option><option value="reuse">Переиспользовать</option><option value="clean">Очистить и заново</option></select></label>
-        {/* Режим БЗ действует на ходы МОДЕЛИ в ране (исследование задачи, fix-loop,
-            резюме), а не на чаты проекта: у чата свой переключатель в его настройках. */}
-        <label>CI: база знаний в ране<select
-          className="sel"
-          aria-label="CI: база знаний в ране"
-          disabled={!isOwner}
-          value={detail.ciKbContextMode ?? 'auto'}
-          onChange={(e) => props.onUpdate(detail.id, { ciKbContextMode: e.target.value as KbContextMode })}
-        >
-          <option value="auto">Контекст и инструменты (авто)</option>
-          <option value="manual">Только инструменты (по запросу модели)</option>
-          <option value="off">Выключена</option>
-        </select></label>
-        <p className="proj-muted" data-testid="proj-ci-kb-hint">
-          Режим влияет на работу модели в CI-ране: в «авто» сервер подмешивает разделы базы знаний
-          по теме задачи и выдаёт модели инструменты mcp__kb__*, в «по запросу» — только инструменты.
-          На чаты проекта настройка не влияет — у каждого чата свой режим. Значение применяется
-          к следующему рану.
-        </p>
-        <div className="ci-defaults-wrap"><div className="convsettings-caption">Команды воркфлоу по умолчанию</div><CiProjectDefaults projectId={detail.id} editable={isOwner} /></div>
-      </div>
+        <div className="ci-defaults-wrap"><div className="convsettings-caption">Команды воркфлоу по умолчанию</div><CiProjectDefaults projectId={detail.id} editable={isOwner} section="commands" /></div>
+      </div>}
 
-      <div className="proj-section">
+      {activeTab === 'members' && <div className="proj-section">
         <p className="proj-field-label">Участники</p>
         <ul className="proj-members">
           {detail.members.map((m) => (
@@ -287,9 +315,9 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
             />
           </div>
         )}
-      </div>
+      </div>}
 
-      <div className="proj-section">
+      {activeTab === 'machines' && <div className="proj-section">
         <p className="proj-field-label">Машины разработки (папка проекта на каждой)</p>
         {isOwner ? (
           <ul className="proj-machines">
@@ -323,9 +351,9 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
             {detail.machines.length === 0 && <span className="proj-muted">—</span>}
           </ul>
         )}
-      </div>
+      </div>}
 
-      {isOwner && (
+      {activeTab === 'general' && isOwner && (
         <div className="proj-danger">
           {confirmDel ? (
             <span className="delconfirm">

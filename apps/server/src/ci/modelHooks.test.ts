@@ -374,7 +374,7 @@ describe('инструменты БЗ в остальных ходах рана'
     expect(rec.last()!.prompt).not.toContain('Файлы читай инструментом read')
     // CHAT-106 отдал проверки самой модели: прежняя строка «сам не запускай»
     // из промпта ушла, а проверка на неё осталась и падала на main.
-    expect(rec.last()!.prompt).toContain('прогони проверки затронутых пакетов (`npm run affected-check`)')
+    expect(rec.last()!.prompt).toContain('прогони проверки затронутых пакетов штатным гейтом (`npm run affected-check`)')
   })
 })
 

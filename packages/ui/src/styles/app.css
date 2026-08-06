@@ -3656,6 +3656,10 @@ button.conscmd:hover {
 .cc-main { flex: 1; overflow: auto; padding: 12px 16px; }
 
 .proj-detail { display: flex; flex-direction: column; gap: 14px; }
+.proj-settings-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid rgba(128,128,128,0.2); padding-bottom: 8px; }
+.proj-settings-tabs button { border: 0; border-radius: 4px; background: transparent; color: var(--text-dim); cursor: pointer; font: inherit; padding: 6px 10px; }
+.proj-settings-tabs button:hover { background: var(--surface2); color: var(--text); }
+.proj-settings-tabs button.active { background: var(--surface2); color: var(--text); font-weight: 600; }
 .proj-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .proj-meta-edit { display: flex; flex-direction: column; gap: 8px; }
 .proj-meta-edit textarea { min-height: 60px; resize: vertical; }

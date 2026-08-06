@@ -31,8 +31,9 @@ const kbSelect = (): HTMLSelectElement => screen.getByLabelText('CI: база з
 describe('ProjectSettings — режим базы знаний для CI-рана', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
-  it('по умолчанию «авто» и пояснение говорит, что настройка про ран, а не про чат', () => {
+  it('по умолчанию «авто» и пояснение говорит, что настройка про ран, а не про чат', async () => {
     render(<ProjectSettings {...props()} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'LLM' }))
     expect(kbSelect().value).toBe('auto')
     const hint = screen.getByTestId('proj-ci-kb-hint').textContent ?? ''
     expect(hint).toContain('CI-ране')
@@ -40,20 +41,41 @@ describe('ProjectSettings — режим базы знаний для CI-ран�
     expect(hint).toContain('следующему рану')
   })
 
-  it('показывает сохранённое значение проекта', () => {
+  it('показывает сохранённое значение проекта', async () => {
     render(<ProjectSettings {...props({ detail: detail({ ciKbContextMode: 'manual' }) })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'LLM' }))
     expect(kbSelect().value).toBe('manual')
   })
 
   it('выбор режима уходит в onUpdate', async () => {
     const onUpdate = vi.fn()
     render(<ProjectSettings {...props({ onUpdate })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'LLM' }))
     await userEvent.selectOptions(kbSelect(), 'off')
     expect(onUpdate).toHaveBeenCalledWith('p1', { ciKbContextMode: 'off' })
   })
 
-  it('участник (не владелец) режим не меняет', () => {
+  it('участник (не владелец) режим не меняет', async () => {
     render(<ProjectSettings {...props({ detail: detail({ role: 'member' }) })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'LLM' }))
     expect(kbSelect()).toBeDisabled()
+  })
+
+  it('раскладывает настройки по вкладкам и сохраняет выбранную вкладку при обновлении detail', async () => {
+    const view = render(<ProjectSettings {...props()} />)
+    expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true')
+    await userEvent.click(screen.getByRole('tab', { name: 'LLM' }))
+    expect(screen.getByTestId('project-llm-hint')).toHaveTextContent('чатам проекта сразу')
+    expect(screen.queryByLabelText('Название проекта')).not.toBeInTheDocument()
+    view.rerender(<ProjectSettings {...props({ detail: detail({ name: 'Обновлённый проект' }) })} />)
+    expect(screen.getByRole('tab', { name: 'LLM' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('передаёт персональные права в выбор движка LLM проекта', async () => {
+    render(<ProjectSettings {...props({ llmAccess: [{ provider: 'claude', modelId: '*' }] })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'LLM' }))
+    const provider = screen.getByLabelText('Движок проекта') as HTMLSelectElement
+    expect(provider).not.toHaveTextContent('Claude')
+    expect(provider).toHaveTextContent('Codex')
   })
 })
