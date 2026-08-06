@@ -2264,14 +2264,17 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function openUsers(): Promise<void> {
     setState({ usersOpen: true })
     try {
-      if (state.currentUser?.role === 'admin') {
-        await Promise.all([refreshAdminUsers(), refreshAdminLlmEngines()])
-      } else if (state.currentUser) {
+      // Персональная страница — только для заведомо не-админа. Пока пользователь
+      // неизвестен (currentUser === null), остаётся прежнее админское поведение:
+      // иначе открытие страницы не грузило бы вообще ничего.
+      if (state.currentUser && state.currentUser.role !== 'admin') {
         setState({
           adminUsers: [{ name: state.currentUser.name, role: 'user', blocked: false, createdAt: 0, conversationCount: state.conversations.length, agents: [] }],
           adminUsageSummary: []
         })
         await selectAdminUser(state.currentUser.name)
+      } else {
+        await Promise.all([refreshAdminUsers(), refreshAdminLlmEngines()])
       }
     } catch (err) {
       fail(err, () => void openUsers())

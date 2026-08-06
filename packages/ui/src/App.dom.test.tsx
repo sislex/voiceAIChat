@@ -226,15 +226,17 @@ describe('App — интеграция UI со стором и IPC', () => {
     })
   })
 
-  it('переименование разговора: ✎ → ввод → Enter обновляет название и зовёт api', async () => {
+  it('переименование разговора: заголовок в шапке → ввод → Enter обновляет название и зовёт api', async () => {
     const api = await renderApp()
-    await userEvent.click(screen.getByLabelText('Переименовать разговор «Идеи для подарка»'))
+    // Кнопки «✎» в сайдбаре больше нет: переименование живёт только в шапке
+    // открытого чата (Sidebar.dom.test.tsx проверяет её отсутствие).
+    await userEvent.click(screen.getByRole('heading', { name: 'Поездка в Лиссабон' }))
     const input = screen.getByLabelText('Новое название разговора')
     await userEvent.clear(input)
-    await userEvent.type(input, 'Подарки на НГ{Enter}')
+    await userEvent.type(input, 'Отпуск в Лиссабоне{Enter}')
 
-    await waitFor(() => expect(screen.getByText('Подарки на НГ')).toBeInTheDocument())
-    expect(api._state.conversations.some((c) => c.title === 'Подарки на НГ')).toBe(true)
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Отпуск в Лиссабоне' })).toBeInTheDocument())
+    expect(api._state.conversations.some((c) => c.title === 'Отпуск в Лиссабоне')).toBe(true)
   })
 
   it('удаление разговора: подтверждение убирает его из списка и зовёт api', async () => {
