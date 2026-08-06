@@ -111,6 +111,14 @@ CREATE TABLE IF NOT EXISTS users (
   created_at    INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_llm_access (
+  user_name TEXT NOT NULL,
+  provider  TEXT NOT NULL,
+  model_id  TEXT NOT NULL,
+  PRIMARY KEY (user_name, provider, model_id),
+  FOREIGN KEY (user_name) REFERENCES users(name) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS llm_engines (
   id            TEXT PRIMARY KEY,
   name          TEXT NOT NULL,

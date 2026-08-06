@@ -211,29 +211,6 @@ export interface SessionUser {
 }
 
 /**
- * Модели Claude, недоступные роли `user`. У `admin` доступны все. Ограничение
- * дублируется на сервере (кламп модели хода), клиент лишь прячет их в списке.
- * `default` доступен всем: это выбор самого CLI, а не явно взятая дорогая
- * модель, и без него у роли `user` не было бы пункта по умолчанию.
- */
-const RESTRICTED_FOR_USER: ClaudeModel[] = ['opus[1m]', 'fable']
-
-/** Доступна ли модель роли (admin — все; user — без opus/fable). */
-export function isModelAllowed(model: ClaudeModel, role: UserRole): boolean {
-  return role === 'admin' || !RESTRICTED_FOR_USER.includes(model)
-}
-
-/** Список моделей, доступных роли (для селектора в настройках). */
-export function modelsForRole(role: UserRole): ClaudeModelInfo[] {
-  return CLAUDE_MODELS.filter((m) => isModelAllowed(m.id, role))
-}
-
-/** Разрешённая модель для роли: исходная, если можно, иначе безопасный fallback. */
-export function clampModelForRole(model: ClaudeModel, role: UserRole): ClaudeModel {
-  return isModelAllowed(model, role) ? model : 'sonnet'
-}
-
-/**
  * Режим прав агента (передаётся в `claude --permission-mode`). Безопасный для
  * неинтерактивного (`-p`) запуска набор: bypass (полный доступ, текущее поведение),
  * acceptEdits (авто-правки файлов), plan (только планирование, без изменений).

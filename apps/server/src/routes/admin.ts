@@ -11,7 +11,10 @@ import {
   type LlmEngineKind,
   type LlmRunnerHealth,
   type UsageUnit,
-  type UserRole
+  type UserRole,
+  type UserLlmAccess,
+  CLAUDE_MODELS,
+  CODEX_MODELS
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { AgentRegistry } from '../agents/registry.js'
@@ -21,6 +24,22 @@ const UNITS: UsageUnit[] = ['hour', 'day', 'week']
 const ENGINE_KINDS: LlmEngineKind[] = ['claude', 'codex']
 const ROLES: UserRole[] = ['admin', 'user']
 const HEALTH_TIMEOUT_MS = 5_000
+
+function validateLlmAccess(value: unknown): UserLlmAccess[] | null {
+  if (!Array.isArray(value)) return null
+  const seen = new Set<string>()
+  const out: UserLlmAccess[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') return null
+    const { provider, modelId } = entry as { provider?: unknown; modelId?: unknown }
+    if ((provider !== 'claude' && provider !== 'codex') || typeof modelId !== 'string') return null
+    const models = provider === 'claude' ? CLAUDE_MODELS : CODEX_MODELS
+    if (modelId !== '*' && !models.some((model) => model.id === modelId)) return null
+    const key = `${provider}:${modelId}`
+    if (!seen.has(key)) { seen.add(key); out.push({ provider, modelId }) }
+  }
+  return out
+}
 
 function isAbsoluteHttpUrl(value: string): boolean {
   try {
@@ -190,6 +209,19 @@ export function registerAdminRoutes(
     guard,
     async (req) => db.listMessages(req.params.name, req.query.conversationId ?? '')
   )
+
+  app.get<{ Params: { name: string } }>(REST.adminUserLlmAccess(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
+    if (!db.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
+    return db.getUserLlmAccess(req.params.name)
+  })
+
+  app.put<{ Params: { name: string }; Body: unknown }>(REST.adminUserLlmAccess(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
+    if (!db.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
+    const access = validateLlmAccess(req.body)
+    if (!access) return reply.code(400).send({ error: 'bad llm access' })
+    db.setUserLlmAccess(req.params.name, access)
+    return db.getUserLlmAccess(req.params.name)
+  })
 
   app.get(REST.adminLlmEngines, guard, async () => db.listLlmEngines())
 

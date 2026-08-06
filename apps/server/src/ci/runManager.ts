@@ -10,7 +10,7 @@ import type {
   CiRunMode, CiInteraction, CiInteractionAnswer, CiPlanDecision, QuestionSpec, Message, Task
 } from '@voicechat/shared'
 import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificationCommand } from '@voicechat/shared'
-import { isTerminalCiStatus } from '@voicechat/shared'
+import { isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook, CiRunPrimitives } from './types.js'
@@ -231,8 +231,13 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const role = deps.db.getUser(userId)?.role ?? 'user'
     // Обычный запуск наследует пару задачи → проекта → пользователя. Окно создания
     // задачи передаёт разовый выбор, который фиксируется только в этом ране.
-    const provider = launchOptions?.provider ?? userLlm.provider
-    const model = launchOptions?.model ?? userLlm.model
+    const requestedProvider = launchOptions?.provider ?? userLlm.provider
+    const requestedModel = launchOptions?.model ?? userLlm.model
+    const access = deps.db.getUserLlmAccess(userId)
+    const provider = isProviderAllowed(access, requestedProvider) ? requestedProvider : firstAllowedProvider(access)
+    if (!provider) return { error: 'Нет доступных движков и моделей' }
+    const model = clampModel(access, provider, requestedModel)
+    if (!model) return { error: 'Нет доступных моделей для движка' }
     const engineResolution = deps.db.resolveLlmEngine(settings.llmEngineId, provider, role)
     const total = slots.beforeModel.length + slots.afterModel.length + 2
     // Связанный чат нужен, чтобы дублировать туда вопросы модели. Идемпотентно:

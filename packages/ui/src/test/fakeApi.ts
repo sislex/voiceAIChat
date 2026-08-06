@@ -3,6 +3,7 @@
 
 import type { RendererApi } from '@shared/ipc'
 import type { Conversation, Message, Settings } from '@shared/types'
+import type { UserLlmAccess } from '@shared/llmAccess'
 import type { AdminLlmEngine, AdminLlmEngineHealth, AdminUserInfo } from '@shared/admin'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
@@ -40,6 +41,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const adminUsers: AdminUserInfo[] = [
     { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 0, agents: [] }
   ]
+  const userLlmAccess = new Map<string, UserLlmAccess[]>()
   const llmEngines: AdminLlmEngine[] = [
     {
       id: 'eng-claude',
@@ -440,6 +442,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       ]
     }),
     'admin:users': async () => adminUsers.map((u) => ({ ...u })),
+    'llm:access': async () => [],
+    'admin:llmAccess': async ({ name }) => [...(userLlmAccess.get(name) ?? [])],
+    'admin:saveLlmAccess': async ({ name, access }) => { userLlmAccess.set(name, [...access]); return [...access] },
     'admin:createUser': async ({ name, role }) => {
       const u: AdminUserInfo = {
         name,

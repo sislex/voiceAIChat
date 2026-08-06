@@ -14,6 +14,7 @@ import {
   type DesktopMigrationBundle,
   type DesktopMigrationResult,
   type LlmProvider,
+  type UserLlmAccess,
   type Message,
   type MessageAttachment,
   type MessageRole,
@@ -1492,6 +1493,19 @@ export class VoiceChatDb {
 
   deleteUser(name: string): void {
     this.db.prepare(`DELETE FROM users WHERE name = ?`).run(name)
+  }
+
+  /** Deny-list rows only: an empty list means every provider and model is allowed. */
+  getUserLlmAccess(userId: string): UserLlmAccess[] {
+    return this.db.prepare(`SELECT provider, model_id AS modelId FROM user_llm_access WHERE user_name = ? ORDER BY provider, model_id`).all(userId) as UserLlmAccess[]
+  }
+
+  setUserLlmAccess(userId: string, access: UserLlmAccess[]): void {
+    const insert = this.db.prepare(`INSERT INTO user_llm_access (user_name, provider, model_id) VALUES (?, ?, ?)`)
+    this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM user_llm_access WHERE user_name = ?`).run(userId)
+      for (const entry of access) insert.run(userId, entry.provider, entry.modelId)
+    })()
   }
 
   /** Удаляет пользователя и ВСЕ его данные (разговоры/сообщения/агенты/настройки). */

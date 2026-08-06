@@ -15,7 +15,9 @@ import {
   appendToolHint,
   buildConversationPrompt,
   buildPrompt,
-  clampModelForRole,
+  clampModel,
+  firstAllowedProvider,
+  isProviderAllowed,
   claudeModelAlias,
   normalizeClaudeModel,
   type ActiveTurn,
@@ -256,28 +258,39 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const projectLlm = conv?.projectId
       ? deps.db.getCiLlmConfig('project', conv.projectId) ?? deps.db.ciLlmDefaultsForUser(userId)
       : null
-    // Модель Claude клампим по роли пользователя (у роли user нет opus/fable —
-    // сервер не даст обойти фильтр).
     const wantProvider = projectLlm?.provider ?? conv?.llmProvider ?? settings.llmProvider
-    const provider = wantProvider === 'codex' && deps.codex ? 'codex' : 'claude'
+    const access = deps.db.getUserLlmAccess(userId)
+    const fallbackProvider = firstAllowedProvider(access)
+    if (!fallbackProvider) {
+      broadcast({ t: 'claude.error', conversationId, message: 'WARNING: Доступных движков и моделей для этого пользователя нет.' }, userId)
+      return
+    }
+    const permittedProvider = isProviderAllowed(access, wantProvider) ? wantProvider : fallbackProvider
+    const provider = permittedProvider === 'codex' && deps.codex ? 'codex' : 'claude'
     const role = account.role
     const wantedEngineId = conv?.llmEngineId ?? settings.llmEngineId
     const resolvedEngine = deps.db.resolveLlmEngine(wantedEngineId, provider, role)
     const client = resolvedEngine.engine && deps.engineClient
       ? deps.engineClient(resolvedEngine.engine)
       : provider === 'codex' ? deps.codex! : deps.claude
-    const engineNotice = resolvedEngine.substituted
-      ? `⚠️ Исполнитель «${wantedEngineId}» недоступен; ход выполнен через «${resolvedEngine.engine?.name ?? `default ${provider}`}».`
-      : ''
     const selectedModel = projectLlm?.provider === provider
       ? projectLlm.model
       : (conv?.llmProvider === provider ? conv.llmModel : null)
-    const model =
-      provider === 'codex'
-        ? (selectedModel ?? settings.codexModel)
-        : // Нормализуем ДО клампа: в настройках/БД лежат и старые значения
-          // (`opus`, `sonnet-4.5`), а роль клампится по актуальным пунктам меню.
-          claudeModelAlias(clampModelForRole(normalizeClaudeModel(selectedModel || settings.model), role))
+    const requestedModel = provider === 'codex'
+      ? (selectedModel ?? settings.codexModel)
+      : normalizeClaudeModel(selectedModel || settings.model)
+    const permittedModel = clampModel(access, provider, requestedModel)
+    if (!permittedModel) {
+      broadcast({ t: 'claude.error', conversationId, message: 'WARNING: Для выбранного движка нет доступных моделей.' }, userId)
+      return
+    }
+    const model = provider === 'claude' ? claudeModelAlias(permittedModel) : permittedModel
+    const notices = [
+      resolvedEngine.substituted ? `⚠️ Исполнитель «${wantedEngineId}» недоступен; ход выполнен через «${resolvedEngine.engine?.name ?? `default ${provider}`}».` : '',
+      permittedProvider !== wantProvider ? `⚠️ Движок «${wantProvider}» недоступен; выбран «${provider}».` : '',
+      permittedModel !== requestedModel ? `⚠️ Модель «${requestedModel}» недоступна; выбрана «${permittedModel}».` : ''
+    ].filter(Boolean)
+    const engineNotice = notices.join('\n')
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
     // смене движка чужой resume-id игнорируем (свежий ход).
     const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)

@@ -148,6 +148,7 @@ export const REST = {
   /** Чтение файла с диска сервера (только «своя» область) — картинки от CLI. */
   serverFile: '/api/files/read',
   settings: '/api/settings',
+  llmAccess: '/api/llm-access',
   /** Личный отчёт по расходу моделей текущего пользователя. */
   usage: '/api/usage',
   llmEngines: '/api/llm-engines',
@@ -198,6 +199,7 @@ export const REST = {
   adminUsers: '/api/admin/users',
   adminUser: (name: string) => `/api/admin/users/${encodeURIComponent(name)}`,
   adminUserBlock: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/block`,
+  adminUserLlmAccess: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/llm-access`,
   adminUserUsage: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/usage`,
   adminUserConversations: (name: string) =>
     `/api/admin/users/${encodeURIComponent(name)}/conversations`,

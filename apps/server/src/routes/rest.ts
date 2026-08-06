@@ -358,6 +358,7 @@ export async function registerRest(
   app.get(REST.llmEngines, async (req) => db.listLlmEnginesForRole(db.getUser(uid(req))?.role ?? 'user'))
 
   app.get(REST.settings, async (req) => db.getSettings(uid(req)))
+  app.get(REST.llmAccess, async (req) => db.getUserLlmAccess(uid(req)))
 
   // Личный отчёт строится всегда от uid сессии: query не содержит userId и не
   // может открыть расход другого пользователя.

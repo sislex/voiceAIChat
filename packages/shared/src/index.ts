@@ -27,6 +27,7 @@ export * from './questions'
 export * from './projects'
 export * from './ci'
 export * from './llm'
+export * from './llmAccess'
 
 export * from './kb'
 export * from './kbGaps'
