@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
+import { CI_INFRA_LABEL, classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
 
 /** Реальный хвост лога с гонки двух `npm ci` за общий ~/.npm (задача #30). */
 const CACACHE_EEXIST = `npm error code EEXIST
@@ -39,6 +39,26 @@ describe('classifyCiInfraFailure', () => {
     // EEXIST вне кэша npm — тоже задача (mkdir в скрипте шага).
     expect(classifyCiInfraFailure({ exitCode: 1, output: "mkdir: EEXIST: file already exists, mkdir '/tmp/x'" })).toBeNull()
     expect(classifyCiInfraFailure({ exitCode: 254, output: '' })).toBeNull()
+  })
+
+  // Реальный хвост шага «Удалить рабочую папку задачи» в ране CHAT-115: прод
+  // пересобрался посреди рана и пересоздал контейнер сервера.
+  it('машина отключилась посреди шага → agent_offline', () => {
+    const f = classifyCiInfraFailure({ exitCode: null, output: 'Прод-репозиторий на 105aa23\nМашина отключилась во время выполнения команды\n' })
+    expect(f?.kind).toBe('agent_offline')
+    expect(f?.hint).toContain('пересобирался')
+    expect(CI_INFRA_LABEL[f!.kind]).toBe('машина потеряла связь')
+  })
+
+  it('машина не в сети → тот же класс', () => {
+    expect(classifyCiInfraFailure({ exitCode: null, output: 'Машина не в сети' })?.kind).toBe('agent_offline')
+  })
+
+  it('тот же текст с кодом выхода или в середине вывода — ошибка задачи', () => {
+    // Скрипт шага дошёл до конца и вернул код: связь была, причина в задаче.
+    expect(classifyCiInfraFailure({ exitCode: 1, output: 'Машина не в сети' })).toBeNull()
+    // Собственные тесты проекта печатают эти строки как названия кейсов.
+    expect(classifyCiInfraFailure({ exitCode: null, output: '× remoteBashMcp > Машина не в сети\n1 test failed\n' })).toBeNull()
   })
 
   it('текст для лога объясняет, почему нет авто-фикса', () => {
