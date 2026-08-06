@@ -76,13 +76,23 @@ describe('Sidebar — статус работы чата', () => {
     expect(document.querySelectorAll('.cstatus.on .cstatus-dot')).toHaveLength(2)
   })
 
-  it('чат без своего режима берёт режим из общих настроек', () => {
+  it('чат без задачи в режиме полного доступа подписан «чат»', () => {
     setup({ conversations: [conv('c3', 'Чат 3')], workingIds: [], defaultPermissionMode: 'bypassPermissions' })
-    expect(screen.getByText('задача')).toBeInTheDocument()
+    expect(document.querySelector('.cstatus')).toHaveTextContent('чат')
   })
 
-  it('«задача» тоже пульсирует во время хода', () => {
-    setup({ conversations: [conv('c3', 'Чат 3', 'bypassPermissions')], workingIds: ['c3'] })
+  it('чат задачи в режиме полного доступа подписан «задача»', () => {
+    const taskChat = conv('c3', 'Чат 3', 'bypassPermissions')
+    taskChat.taskId = 't3'
+    setup({ conversations: [taskChat], workingIds: [] })
+    expect(document.querySelector('.cstatus')).toHaveTextContent('задача')
+  })
+
+  it('полный доступ пульсирует как «идет чат» или «идет задача» по taskId', () => {
+    const taskChat = conv('c4', 'Чат задачи', 'bypassPermissions')
+    taskChat.taskId = 't4'
+    setup({ conversations: [conv('c3', 'Чат 3', 'bypassPermissions'), taskChat], workingIds: ['c3', 'c4'] })
+    expect(screen.getByText('идет чат')).toBeInTheDocument()
     expect(screen.getByText('идет задача')).toBeInTheDocument()
   })
 })

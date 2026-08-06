@@ -57,22 +57,24 @@ describe('меню моделей Claude', () => {
 
 describe('подписи режима чата (карточка в сайдбаре)', () => {
   it('слово на каждый пункт «Режима разговора»', () => {
-    expect(chatModeLabel('plan')).toBe('план')
-    expect(chatModeLabel('acceptEdits')).toBe('разработка')
-    expect(chatModeLabel('bypassPermissions')).toBe('задача')
+    expect(chatModeLabel('plan', 'bypassPermissions', false)).toBe('план')
+    expect(chatModeLabel('acceptEdits', 'bypassPermissions', false)).toBe('разработка')
+    expect(chatModeLabel('bypassPermissions', 'bypassPermissions', true)).toBe('задача')
+    expect(chatModeLabel('bypassPermissions', 'bypassPermissions', false)).toBe('чат')
   })
 
   it('свой режим не задан — берём действующий дефолт пользователя', () => {
-    expect(chatModeLabel(null, 'plan')).toBe('план')
-    expect(chatModeLabel(undefined, 'acceptEdits')).toBe('разработка')
+    expect(chatModeLabel(null, 'plan', false)).toBe('план')
+    expect(chatModeLabel(undefined, 'acceptEdits', true)).toBe('разработка')
     // Без явного дефолта — как в DEFAULT_SETTINGS.
-    expect(chatModeLabel(null)).toBe('задача')
+    expect(chatModeLabel(null, 'bypassPermissions', false)).toBe('чат')
   })
 
   it('во время хода к тому же слову добавляется «идет»', () => {
-    expect(activeStatusLabel('plan')).toBe('идет план')
-    expect(activeStatusLabel('acceptEdits')).toBe('идет разработка')
-    expect(activeStatusLabel(null, 'bypassPermissions')).toBe('идет задача')
+    expect(activeStatusLabel('plan', 'bypassPermissions', false)).toBe('идет план')
+    expect(activeStatusLabel('acceptEdits', 'bypassPermissions', true)).toBe('идет разработка')
+    expect(activeStatusLabel(null, 'bypassPermissions', true)).toBe('идет задача')
+    expect(activeStatusLabel(null, 'bypassPermissions', false)).toBe('идет чат')
   })
 })
 
