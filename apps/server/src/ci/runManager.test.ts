@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from '../db/database.js'
-import { DEFAULT_CI_STAGE_MODELS, DEFAULT_SETTINGS, issueKey } from '@voicechat/shared'
+import { CI_KB_UPDATE_COMMAND_ID, DEFAULT_CI_STAGE_MODELS, DEFAULT_SETTINGS, issueKey } from '@voicechat/shared'
 import { signToken } from '../users/accounts.js'
 import type { CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
@@ -286,6 +286,18 @@ describe('ci run manager', () => {
     expect(db.listMessages('admin', chatId).some((m) => m.meta?.ciRunSummary?.runId === runId)).toBe(true)
   })
 
+  it('резюме сообщает исход актуализации БЗ и после её ошибки', async () => {
+    const { project, task } = setup()
+    db.setCiSlotCommands('task', task.id, 'after_model', [CI_KB_UPDATE_COMMAND_ID])
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+    expect(detail.run.status).toBe('failed')
+    const chatId = db.getCiRunRaw(runId)!.conversationId!
+    const summary = db.listMessages('admin', chatId).find((message) => message.meta?.ciRunSummary?.runId === runId)!
+    expect(summary.text).toContain('База знаний:')
+    expect(summary.text).toContain('база знаний')
+  })
+
   it('падение в слоте «до» → ран failed и откат задачи в предыдущую колонку', async () => {
     const { project, task, readyColId } = setup()
     // Двигаем задачу в development, чтобы откат был виден.
@@ -320,6 +332,8 @@ describe('ci run manager', () => {
     await waitRun(runId)
     const report = db.listCiWorkspaceReport('admin', project.id)
     expect(report.some((w) => w.state === 'released')).toBe(true)
+    const chat = db.getConversation('admin', db.getCiRunRaw(runId)!.conversationId!)!
+    expect(chat.workdir).not.toBe('/repos/p/1/t1')
   })
 
   it('перед cleanup отправляет ветку задачи в origin', async () => {
