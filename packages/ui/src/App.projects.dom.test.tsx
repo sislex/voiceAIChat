@@ -143,6 +143,8 @@ describe('App — завершённые задачи скрыты с доски
   it('порог скрытия правится в настройках проекта', async () => {
     const { api, projectId } = await withCompleted()
     window.location.hash = `#/projects/${projectId}/settings`
+    // Настройки проекта разбиты на вкладки — порог живёт на «Доске».
+    await userEvent.click(await screen.findByRole('tab', { name: 'Доска' }))
     const input = await screen.findByLabelText('Скрывать завершённые через, дней')
     await userEvent.clear(input)
     await userEvent.type(input, '30')

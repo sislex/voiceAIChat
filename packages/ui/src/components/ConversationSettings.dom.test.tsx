@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { ConversationSettings } from './ConversationSettings'
 import type { ProjectDetail, ProjectSummary } from '@shared/projects'
+import type { UserLlmAccess } from '@shared/llmAccess'
 import { makeAgent, makeConversation } from '../test/fixtures'
 
 // Машина и беседа — общие фикстуры: раньше беседа собиралась частичным литералом,
@@ -51,13 +52,23 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Старое имя', execTarget: 'm1', workdir: null, skillNames: [], llmProvider: 'codex', llmModel: 'gpt-5.5', permissionMode: null, kbContextMode: 'auto', projectId: null }))
   })
 
-  it('роль user не видит модели opus/fable в выборе модели разговора', () => {
-    render(<ConversationSettings conversation={conversation} agents={[agent]} role="user" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+  // Набор моделей задаёт персональный доступ (`llmAccess`), а не роль: запреты —
+  // это данные пользователя, и админ правит их в карточке на `#/users/:name`.
+  it('запреты доступа убирают opus/fable из выбора модели разговора', () => {
+    const denied: UserLlmAccess[] = [{ provider: 'claude', modelId: 'opus[1m]' }, { provider: 'claude', modelId: 'fable' }]
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="user" llmAccess={denied} settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Движок разговора' }), { target: { value: 'claude' } })
     const options = Array.from(screen.getByRole('combobox', { name: 'Модель разговора' }).querySelectorAll('option')).map((o) => o.value)
     expect(options).not.toContain('opus[1m]')
     expect(options).not.toContain('fable')
     expect(options).toEqual(['default', 'sonnet', 'haiku'])
+  })
+
+  it('без запретов роль user видит все модели: доступ решает llmAccess, а не роль', () => {
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="user" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Движок разговора' }), { target: { value: 'claude' } })
+    const options = Array.from(screen.getByRole('combobox', { name: 'Модель разговора' }).querySelectorAll('option')).map((o) => o.value)
+    expect(options).toEqual(['default', 'opus[1m]', 'fable', 'sonnet', 'haiku'])
   })
 
   it('модели Claude в разговоре — то же меню, что в настройках', () => {
