@@ -384,6 +384,9 @@ cwd/env собираются с shell-escape (пользовательский �
 `feature/{task_number}-{slug}`, машину `45.135.182.251` с репозиториями в
 `/root/VoiceAIChatRepos`. Гейт `npm run affected-check` имеет таймаут 30 минут,
 флаг `is_test` и `available_to_model = 1`; он не входит в слот «после модели».
+Точка входа `scripts/affected-check.mjs` сравнивает свой URL с
+`pathToFileURL(process.argv[1]).href`: это сохраняет запуск гейта из рабочей
+папки с не-ASCII символами в пути.
 Встроенная актуализация БЗ обязательна: её ошибка останавливает ран. Коммит, push,
 merge, пересборка и cleanup недоступны модели и останавливают ран при ошибке.
 Перед cleanup раннер дополнительно выполняет системный push; cleanup помечен

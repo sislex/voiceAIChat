@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { fastCheckForPackage, runFastChecks, runPackageGates, selectAffected } from './affected-check.mjs'
 
 const ids = (decision) => decision.packages.map((pkg) => pkg.id)
@@ -151,4 +156,42 @@ test('ошибка related останавливает этап до полног
     (error) => error.code === 31
   )
   assert.deepEqual(events, ['fast:stop'])
+})
+
+test('точка входа запускает гейт из пути с не-ASCII и передаёт ошибку теста пакета', () => {
+  const repository = dirname(dirname(fileURLToPath(import.meta.url)))
+  const tempRoot = mkdtempSync(join(tmpdir(), 'affected-check-тест-'))
+  const worktree = join(tempRoot, 'репозиторий')
+  const scriptDirectory = join(tempRoot, 'скрипт-с-кириллицей')
+  const script = join(scriptDirectory, 'affected-check.mjs')
+  const commandsDirectory = join(tempRoot, 'commands')
+  const failingTest = join(worktree, 'apps/llm-runner/src/entry-guard-unicode-failure.test.mjs')
+
+  try {
+    const added = spawnSync('git', ['worktree', 'add', '--detach', worktree, 'HEAD'], { cwd: repository, encoding: 'utf8' })
+    assert.equal(added.status, 0, added.stderr)
+    mkdirSync(scriptDirectory)
+    mkdirSync(commandsDirectory)
+    writeFileSync(script, readFileSync(join(repository, 'scripts/affected-check.mjs')))
+    writeFileSync(failingTest, '')
+    const npm = join(commandsDirectory, 'npm')
+    writeFileSync(npm, '#!/bin/sh\ncase "$*" in *test*) exit 1 ;; *) exit 0 ;; esac\n')
+    chmodSync(npm, 0o755)
+    const npx = join(commandsDirectory, 'npx')
+    writeFileSync(npx, '#!/bin/sh\nexit 0\n')
+    chmodSync(npx, 0o755)
+
+    const result = spawnSync(process.execPath, [script, '--jobs', '1'], {
+      cwd: worktree,
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${commandsDirectory}:${process.env.PATH}` }
+    })
+    assert.notEqual(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
+    assert.match(result.stdout, /\[affected-check\] base ref:/)
+    assert.match(result.stdout, /\[affected-check\] changed files:/)
+    assert.match(result.stdout, /\[affected-check\] selected packages: runner/)
+  } finally {
+    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: repository })
+    rmSync(tempRoot, { recursive: true, force: true })
+  }
 })
