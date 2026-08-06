@@ -360,6 +360,100 @@ describe('remoteBashMcp', () => {
     expect(written).toBe('before NEW after')
   })
 
+  it('абсолютный путь внутри cwd принимается: модель называет пути так же, как их видит', async () => {
+    let readPath = ''
+    const registry = {
+      fsRead: async (_agentId: string, path: string) => {
+        readPath = path
+        return { root: '/repos', cwd: '', dataBase64: Buffer.from('one\n').toString('base64') }
+      },
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    app = await makeApp(registry)
+    const query = `?k=${SECRET}&agent=a1&cwd=/repos/task`
+    await rpc(app, INIT_BODY, query)
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'read', arguments: { path: '/repos/task/src/a.ts' } }
+    }, query)
+    expect((call.json() as { result: { isError?: boolean } }).result.isError).toBeFalsy()
+    expect(readPath).toBe('/repos/task/src/a.ts')
+  })
+
+  it('абсолютный путь вне cwd отклоняется, и в отказе назван сам cwd', async () => {
+    let calls = 0
+    const registry = {
+      fsRead: async () => { calls++; throw new Error('unexpected') },
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    app = await makeApp(registry)
+    const query = `?k=${SECRET}&agent=a1&cwd=/repos/task`
+    await rpc(app, INIT_BODY, query)
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'read', arguments: { path: '/repos/other/a.ts' } }
+    }, query)
+    const result = (call.json() as { result: { content: Array<{ text: string }>; isError: boolean } }).result
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('за пределами')
+    expect(result.content[0].text).toContain('/repos/task')
+    expect(calls).toBe(0)
+  })
+
+  it('соседний каталог с общим префиксом за cwd не считается: /repos/taskX отклоняется', async () => {
+    let calls = 0
+    const registry = {
+      fsRead: async () => { calls++; throw new Error('unexpected') },
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    app = await makeApp(registry)
+    const query = `?k=${SECRET}&agent=a1&cwd=/repos/task`
+    await rpc(app, INIT_BODY, query)
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'read', arguments: { path: '/repos/taskX/a.ts' } }
+    }, query)
+    expect((call.json() as { result: { isError: boolean } }).result.isError).toBe(true)
+    expect(calls).toBe(0)
+  })
+
+  it('win32: абсолютный путь внутри cwd принимается без учёта регистра и слэшей', async () => {
+    let readPath = ''
+    const registry = {
+      fsRead: async (_agentId: string, path: string) => {
+        readPath = path
+        return { root: 'C:/repos', cwd: '', dataBase64: Buffer.from('one\n').toString('base64') }
+      },
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    app = await makeApp(registry)
+    const query = `?k=${SECRET}&agent=a1&cwd=${encodeURIComponent('C:/repos/task')}`
+    await rpc(app, INIT_BODY, query)
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'read', arguments: { path: 'c:\\Repos\\task\\src\\a.ts' } }
+    }, query)
+    expect((call.json() as { result: { isError?: boolean } }).result.isError).toBeFalsy()
+    expect(readPath).toBe('C:/repos/task/src/a.ts')
+  })
+
+  it('абсолютный путь с .. внутри cwd отклоняется', async () => {
+    let calls = 0
+    const registry = {
+      fsRead: async () => { calls++; throw new Error('unexpected') },
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    app = await makeApp(registry)
+    const query = `?k=${SECRET}&agent=a1&cwd=/repos/task`
+    await rpc(app, INIT_BODY, query)
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'read', arguments: { path: '/repos/task/../other/a.ts' } }
+    }, query)
+    expect((call.json() as { result: { isError: boolean } }).result.isError).toBe(true)
+    expect(calls).toBe(0)
+  })
+
   it('файловый путь за пределами cwd отклоняется до обращения к реестру', async () => {
     let calls = 0
     const registry = {

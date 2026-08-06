@@ -688,6 +688,111 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     return ok
   }
 
+  /**
+   * След работы модели в рабочей копии: коммиты сверх базовой ветки или
+   * незакоммиченные изменения. Пусто — выходим с 70, этот код и есть вердикт
+   * «модель ничего не сделала».
+   */
+  const MODEL_WORK_CHECK_SCRIPT = `set -eu
+changes=$(git status --porcelain --untracked-files=all || true)
+base=$(git rev-parse "refs/remotes/origin/$BASE_BRANCH" 2>/dev/null || echo "")
+head=$(git rev-parse HEAD)
+commits=""
+if [ -n "$base" ] && [ "$base" != "$head" ]; then
+  commits=$(git log --oneline "$base..HEAD" || true)
+fi
+if [ -n "$commits" ]; then
+  echo "Коммиты сверх $BASE_BRANCH:"
+  echo "$commits"
+fi
+if [ -n "$changes" ]; then
+  echo "Незакоммиченные изменения:"
+  git status --short
+fi
+if [ -z "$commits" ] && [ -z "$changes" ]; then
+  echo "В рабочей копии нет ни коммитов сверх $BASE_BRANCH, ни изменений" >&2
+  exit 70
+fi`
+
+  /**
+   * Модель отработала — но оставила ли она хоть что-то в рабочей копии? Без этой
+   * проверки пустой ход доезжал до успеха: шаг коммита при пустом индексе выходит
+   * с нулём («коммит не нужен»), мерж и пересборка прода отрабатывают вхолостую,
+   * cleanup сносит клон, карточка уезжает в «Готово». Так закрылся ран d2ba80bc
+   * (CHAT-108): модель 604 с читала код, не смогла записать ни одного файла и
+   * прямо написала об этом в ответе — а лента показала успех.
+   *
+   * «Модель работала» отличаем от «модель не запускалась» по счётчику вызовов
+   * инструментов рана: нет вызовов — проверять нечего, ран идёт как раньше.
+   * Возвращает `true`, если ран можно продолжать.
+   */
+  async function ensureModelProducedWork(
+    runId: string,
+    userId: string,
+    agentId: string | null,
+    repoPath: string,
+    env: Record<string, string>,
+    position: number,
+    signal: AbortSignal
+  ): Promise<boolean> {
+    // Без машины модель ничего и не могла сделать — проверять нечего.
+    if (!agentId) return true
+    const step = deps.db.addCiRunStep({
+      runId, slot: null, position, kind: 'command', initiatedBy: 'system',
+      title: 'Проверка результата модели', workdir: repoPath, status: 'running'
+    })
+    emitStep(step, userId)
+    const started = now()
+    const logLine = (stream: 'stdout' | 'system', chunk: string): void => {
+      const line = deps.db.appendCiLog(runId, step.id, stream, chunk)
+      broadcast({ t: 'ci.log', runId, line }, userId)
+    }
+    let exitCode: number | null = null
+    try {
+      const r = await deps.executor.run(
+        { agentId, script: MODEL_WORK_CHECK_SCRIPT, workdir: repoPath, env, timeoutMs: 60_000, secrets: [] },
+        (d) => logLine('stdout', d),
+        signal
+      )
+      exitCode = r.exitCode
+    } catch (err) {
+      logLine('system', (err instanceof Error ? err.message : String(err)) + '\n')
+    }
+    const finish = (status: CiStatus): void => {
+      const upd = deps.db.updateCiRunStep(step.id, { status, exitCode, finishedAt: now(), durationMs: now() - started })
+      if (upd) emitStep(upd, userId)
+    }
+    if (signal.aborted) {
+      finish('cancelled')
+      return false
+    }
+    if (exitCode === 70) {
+      const calls = deps.db.ciRunToolCalls(runId)
+      const total = calls ? Object.values(calls).reduce((sum, n) => sum + n, 0) : 0
+      if (total > 0) {
+        logLine(
+          'system',
+          `Модель сделала ${total} вызовов инструментов, но не изменила ни одного файла. ` +
+            'Дальше пайплайн прошёл бы вхолостую: коммит с пустым индексом выходит с нулём, ' +
+            'мерж и пересборка прода ничего не делают, cleanup удалил бы рабочую копию, а ран ' +
+            `закрылся бы успехом. Ран остановлен, рабочая копия ${repoPath} сохранена — ` +
+            'разберитесь с причиной: чаще всего модели нечем записать файл, и в логе хода ' +
+            'видны отказы инструментов read/edit.\n'
+        )
+        finish('failed')
+        return false
+      }
+      logLine('system', 'Модель не вносила изменений и не вызывала инструменты — проверять нечего.\n')
+      finish('success')
+      return true
+    }
+    // Сама проверка не отработала (git сломан, машина отвалилась) — это не повод
+    // рубить ран: исход решат следующие шаги, а факт виден в ленте.
+    if (exitCode !== 0) logLine('system', 'Проверку результата модели выполнить не удалось — ран продолжается.\n')
+    finish('success')
+    return true
+  }
+
   /** Отметить, что модель разбирается с упавшим шагом (карточка мигает красным медленно). */
   function setFixing(runId: string, userId: string, fixing: boolean, phase?: string): void {
     const row = deps.db.getCiRunRaw(runId)
@@ -1188,6 +1293,8 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     const prim = makePrimitives(runId, userId, agentId, repoPath, workspacePath, env, signal)
     let modelOk = true
     let modelCancelled = false
+    /** Модель работала, но рабочая копия пуста — слот «после» не запускаем. */
+    let emptyWork = false
     if (!(resume?.kind === 'command' && resume.slot === 'after_model')) {
       progress(runId, done, total, 'Модель работает', userId)
       const mwStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1 + extraSteps, kind: 'model_work', initiatedBy: 'system', title: 'Работа модели', status: 'running' })
@@ -1226,6 +1333,17 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
         return
       }
       done++
+      // Ход завершился успехом — но работа могла и не появиться. Пустую копию
+      // дальше по пайплайну не пускаем: cleanup удалил бы её, а ран отчитался бы
+      // успехом (см. `ensureModelProducedWork`).
+      if (!(await ensureModelProducedWork(runId, userId, agentId, repoPath, env, posBase + done + 1 + extraSteps++, signal))) {
+        if (signal.aborted) {
+          finishCancelled()
+          return
+        }
+        emptyWork = true
+        progress(runId, done, total, 'Модель не внесла изменений — ран остановлен', userId)
+      }
     }
 
     // 3) Слот «после» запускается только после успешной работы модели.
@@ -1234,8 +1352,10 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       finishCancelled()
       return
     }
-    const afterOk = await runSlot('after_model', slots.afterModel, 'Финальные команды', resume?.kind === 'command' && resume.slot === 'after_model' ? resume.index : 0)
-    if (!afterOk && !signal.aborted) afterFailed = true
+    if (!emptyWork) {
+      const afterOk = await runSlot('after_model', slots.afterModel, 'Финальные команды', resume?.kind === 'command' && resume.slot === 'after_model' ? resume.index : 0)
+      if (!afterOk && !signal.aborted) afterFailed = true
+    }
 
     // 4) Резюме модели.
     if (!signal.aborted) {
@@ -1251,6 +1371,14 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
           summaryText = 'Резюме недоступно.'
         }
       }
+      // Пустой ход: причина обязана доехать до чата, а не остаться в ленте —
+      // резюме модели о ней может и умолчать.
+      if (emptyWork) {
+        summaryText =
+          `${summaryText}\n\nРабота не сдана: модель не изменила ни одного файла, поэтому коммита, ` +
+          `мержа и пересборки прода не было. Рабочая копия ${repoPath} сохранена для разбора, ` +
+          'карточка осталась в работе.'
+      }
       const line = deps.db.appendCiLog(runId, sumStep.id, 'system', summaryText + '\n')
       broadcast({ t: 'ci.log', runId, line }, userId)
       const upd = deps.db.updateCiRunStep(sumStep.id, { status: 'success', finishedAt: now() })!
@@ -1263,8 +1391,10 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       finishCancelled()
       return
     }
-    if (afterFailed) {
-      rollbackTask(runId, userId, runRow.prevColumnId)
+    if (afterFailed || emptyWork) {
+      // Пустой ход карточку не возвращает: она остаётся в рабочей колонке, чтобы
+      // ран можно было повторить с упавшего шага — как при ошибке модели.
+      if (afterFailed) rollbackTask(runId, userId, runRow.prevColumnId)
       finalize(runId, userId, 'failed')
     } else {
       if (modelOk) {

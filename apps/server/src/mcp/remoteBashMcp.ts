@@ -42,12 +42,41 @@ function quoteShell(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`
 }
 
-export function remotePath(cwd: string | undefined, relativePath: string): string {
+/**
+ * Приводит абсолютный путь к пути от `cwd`. Windows-путь сравниваем без учёта
+ * регистра (там регистр не различает файлы), POSIX — как есть.
+ */
+function pathInsideCwd(base: string, absolute: string): string {
+  const slashed = (p: string): string => p.replace(/[\\/]+/g, '/').replace(/\/+$/, '')
+  const windows = /^[A-Za-z]:/.test(base) || /^[A-Za-z]:/.test(absolute)
+  const fold = (p: string): string => (windows ? p.toLowerCase() : p)
+  const b = slashed(base)
+  const a = slashed(absolute)
+  if (fold(a) === fold(b)) return ''
+  if (fold(a).startsWith(`${fold(b)}/`)) return a.slice(b.length + 1)
+  throw new Error(
+    `Путь за пределами рабочей директории запрещён: рабочая директория — ${base}, ` +
+      `передавай путь внутри неё (относительный или абсолютный)`
+  )
+}
+
+/**
+ * Абсолютный путь на машине по пути, который назвала модель. Относительный
+ * считается от `cwd`; абсолютный принимается, если лежит внутри `cwd`.
+ *
+ * Абсолютные пути разрешены намеренно: модель видит их в промпте и в выводе
+ * собственных bash-команд, а прежний глухой отказ «путь должен быть
+ * относительным» она читала как «инструменты привязаны к чужому workspace» —
+ * и уходила править файлы через shell. Так ран d2ba80bc (CHAT-108) закрылся
+ * успехом, не создав ни одной правки. Выход за пределы `cwd` по-прежнему
+ * запрещён, но теперь отказ называет сам `cwd`, и модель может исправиться.
+ */
+export function remotePath(cwd: string | undefined, inputPath: string): string {
   if (!cwd) throw new Error('Рабочая директория cwd не задана')
-  if (!relativePath || relativePath.includes('\0')) throw new Error('Путь не задан')
-  if (/^(?:[A-Za-z]:[\\/]|[\\/])/.test(relativePath)) {
-    throw new Error('Путь должен быть относительным к рабочей директории')
-  }
+  if (!inputPath || inputPath.includes('\0')) throw new Error('Путь не задан')
+  const relativePath = /^(?:[A-Za-z]:[\\/]|[\\/])/.test(inputPath)
+    ? pathInsideCwd(cwd.replace(/[\\/]+$/, ''), inputPath)
+    : inputPath
   const parts = relativePath.split(/[\\/]+/)
   if (parts.includes('..')) throw new Error('Путь за пределами рабочей директории запрещён')
   const clean = parts.filter((part) => part && part !== '.').join('/')
@@ -239,7 +268,7 @@ export function registerRemoteBashMcp(
             description:
               `Окно строк файла в рабочей директории (не весь файл): до ${toolLimits.readLines} строк и ${toolLimits.readChars} символов.`,
             inputSchema: {
-              path: z.string().describe('Путь относительно cwd рана'),
+              path: z.string().describe('Путь относительно cwd рана или абсолютный внутри него'),
               offset: z.number().int().min(1).optional().describe('Первая строка (с 1)'),
               // Кап окна — настройка: `.max()` считается на запрос, поэтому
               // заниженный лимит модель видит сразу в схеме инструмента.
@@ -270,7 +299,7 @@ export function registerRemoteBashMcp(
               `Поиск grep в рабочей директории; до (${toolLimits.grepMatches}) совпадений и ${toolLimits.grepChars} символов. При обрезке сузь шаблон или путь.`,
             inputSchema: {
               pattern: z.string().min(1).describe('Шаблон grep'),
-              path: z.string().optional().describe('Файл или каталог относительно cwd (по умолчанию cwd)'),
+              path: z.string().optional().describe('Файл или каталог относительно cwd или абсолютный внутри него (по умолчанию cwd)'),
               glob: z.string().optional().describe('Необязательная маска файлов для --include'),
               maxMatches: z.number().int().min(1).max(toolLimits.grepMatches).optional()
                 .describe(`Максимум совпадений (по умолчанию и максимум ${toolLimits.grepMatches})`)
@@ -319,7 +348,7 @@ export function registerRemoteBashMcp(
           {
             description: 'Точно заменяет строку в текстовом файле внутри рабочей директории рана.',
             inputSchema: {
-              path: z.string().describe('Путь относительно cwd рана'),
+              path: z.string().describe('Путь относительно cwd рана или абсолютный внутри него'),
               oldString: z.string().min(1).describe('Точный старый текст'),
               newString: z.string().describe('Новый текст'),
               replaceAll: z.boolean().optional().describe('Заменить все совпадения (по умолчанию false)')

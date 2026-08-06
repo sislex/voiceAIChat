@@ -372,7 +372,9 @@ describe('инструменты БЗ в остальных ходах рана'
     const { ctx } = setup('off')
     await hooksWith(rec.client).modelWork(ctx)
     expect(rec.last()!.prompt).not.toContain('Файлы читай инструментом read')
-    expect(rec.last()!.prompt).toContain('Тесты, typecheck, линтер и сборку сам не запускай')
+    // CHAT-106 отдал проверки самой модели: прежняя строка «сам не запускай»
+    // из промпта ушла, а проверка на неё осталась и падала на main.
+    expect(rec.last()!.prompt).toContain('прогони проверки затронутых пакетов (`npm run affected-check`)')
   })
 })
 

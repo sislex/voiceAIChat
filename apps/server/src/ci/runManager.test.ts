@@ -21,6 +21,8 @@ let failPush = false
 /** Управляемое падение шага TOGGLE: «сломано» → «починили» между ранами. */
 let failStep = false
 let repoMissing = false
+/** Проверка результата модели отвечает «в копии пусто» (боевой exit 70). */
+let emptyModelWork = false
 /** Локальные правки в рабочей копии: шаг CLONE отвечает на них exit 66, как боевой. */
 let dirtyWorkspace = false
 let onModelSend: (() => void) | null = null
@@ -73,6 +75,7 @@ const ciExecutor: CommandExecutor = {
     // FLAKY падает на первом прогоне и проходит на повторе (эмуляция «исправлено моделью»).
     const flakyOk = req.script.includes('FLAKY') && n >= 2
     if (req.script === 'git rev-parse --show-toplevel >/dev/null') return { exitCode: repoMissing ? 128 : 0, timedOut: false }
+    if (req.script.includes('commits=$(git log')) return { exitCode: emptyModelWork ? 70 : 0, timedOut: false }
     if (req.script === 'DIRTY') return { exitCode: 66, timedOut: false }
     // Подготовка директории приводит копию прошлого рана в чистое состояние.
     if (req.script.includes('stash push') && req.script.includes('reset --hard')) dirtyWorkspace = false
@@ -93,6 +96,7 @@ beforeEach(async () => {
   failPush = false
   failStep = false
   repoMissing = false
+  emptyModelWork = false
   dirtyWorkspace = false
   onModelSend = null
   onExec = null
@@ -351,6 +355,47 @@ describe('ci run manager', () => {
     expect(scripts).not.toContain('rm -rf')
     const report = db.listCiWorkspaceReport('admin', project.id)
     expect(report.some((w) => w.state === 'released')).toBe(false)
+  })
+
+  it('модель работала, а в рабочей копии пусто → ран failed, слот «после» пропущен, копия сохранена', async () => {
+    const { project, task } = setup()
+    emptyModelWork = true
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'cleanup', script: 'rm -rf', isCleanup: true })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    // Вызовы инструментов считает разбор потока CLI, а фейковая модель его не
+    // даёт — поднимаем счётчик рана в момент самой проверки.
+    onExec = (script) => {
+      if (!script.includes('commits=$(git log')) return
+      const runs = db.listCiRunsForTask('admin', project.id, task.id)
+      if (runs[0]) db.addCiRunToolCalls(runs[0].id, { bash: 12 })
+    }
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('failed')
+    // Ни пуша ветки, ни удаления копии: слот «после» не запускался вовсе.
+    expect(scripts).not.toContain('rm -rf')
+    expect(db.listCiWorkspaceReport('admin', project.id).some((w) => w.state === 'released')).toBe(false)
+    const steps = db.getCiRun('admin', runId)!.steps
+    expect(steps.find((s) => s.title === 'Проверка результата модели')?.status).toBe('failed')
+    expect(new Set(steps.map((s) => s.position)).size).toBe(steps.length)
+    // Карточка осталась в рабочей колонке, а не уехала в «Готово»/«Ожидает мержа».
+    const board = db.getBoard('admin', project.id)!
+    const development = board.columns.find((c) => c.semanticType === 'development')!
+    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(development.id)
+    // Причина доезжает до чата отдельной строкой резюме, а не только в ленту.
+    const chatId = db.getCiRunRaw(runId)!.conversationId!
+    const summary = db.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary?.runId === runId)!
+    expect(summary.text).toContain('Работа не сдана')
+  })
+
+  it('модель не вызывала инструменты — пустая рабочая копия ран не валит', async () => {
+    const { project, task } = setup()
+    emptyModelWork = true
+    const runId = await run(project.id, task.id)
+    const d = await waitRun(runId)
+    expect(d.run.status).toBe('success')
+    const steps = db.getCiRun('admin', runId)!.steps
+    expect(steps.find((s) => s.title === 'Проверка результата модели')?.status).toBe('success')
   })
 
   it('пока модель разбирается с упавшим шагом, в прогрессе рана поднят fixing', async () => {
