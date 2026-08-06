@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
-import type { LlmProvider, PermissionMode } from '@shared/types'
+import type { LlmProvider, PermissionMode, TaskLaunchRequest } from '@shared/types'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { TaskPriority } from '@shared/projects'
 import type { HealthResponse } from '@shared/protocol'
@@ -369,11 +369,11 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const ciModel = ciProvider === 'codex' ? state.settings.codexModel : state.settings.model
   const proposalModels = taskProposal?.provider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS
 
-  useEffect(() => {
-    const request = state.taskLaunchRequest
-    if (!request) return
-    actions.clearTaskLaunchRequest()
-    if (!activeConversation?.projectId) return
+  const openTaskProposal = (request: TaskLaunchRequest): void => {
+    if (!activeConversation?.projectId) {
+      toast.error('Невозможно создать задачу: этот чат не привязан к проекту.')
+      return
+    }
     setTaskProposal({
       projectId: activeConversation.projectId,
       title: request.title,
@@ -384,7 +384,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       provider: ciProvider,
       model: ciModel
     })
-  }, [state.taskLaunchRequest, activeConversation?.projectId, state.currentUser?.name, ciProvider, ciModel])
+  }
 
   const chooseTaskLaunch = async (mode: 'todo' | 'in-progress' | 'chat'): Promise<void> => {
     if (!taskProposal || taskLaunchPending) return
@@ -632,6 +632,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         onDeleteMessage={actions.deleteMessage}
         onEditMessage={actions.editMessage}
         onAnswerQuestions={(text) => void actions.answerQuestions(text)}
+        onCreateTask={openTaskProposal}
         onAnswerCiInteraction={(runId, interactionId, text) => void actions.answerCiInteraction(runId, interactionId, { text })}
         answeredCiInteractions={state.answeredCiInteractions}
         taskHeader={
@@ -913,7 +914,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         />
       )}
 
-      {taskProposal && (
+      {taskProposal && inChat && routeChatId === state.activeId && (
         <Dialog
           title="Как начать разработку?"
           ariaLabel="Настройки задачи разработки"

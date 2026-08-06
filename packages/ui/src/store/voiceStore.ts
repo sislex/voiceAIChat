@@ -81,7 +81,6 @@ import type {
   ConversationStatus,
   SessionUser,
   Settings,
-  TaskLaunchRequest,
   TtsVoiceInfo,
   TurnMeta,
   TurnUsage,
@@ -313,8 +312,6 @@ export interface AppState {
   liveActivity: ClaudeLogEntry[]
   /** Стримящийся ответ Claude (растёт по токенам); пусто — нет активного стрима. */
   streamingReply: string
-  /** Структурированный запрос ассистента выбрать способ начала разработки. */
-  taskLaunchRequest: TaskLaunchRequest | null
   /** Незавершённые ходы модели по разговорам: id → накопленный частичный текст. */
   activeTurns: Record<string, string>
   /** Активность незавершённых ходов по разговорам — восстановление счётчика действий. */
@@ -669,11 +666,8 @@ export interface StoreActions {
     meta?: TurnMeta,
     engine?: LlmProvider,
     message?: Message,
-    conversationId?: string,
-    taskLaunch?: TaskLaunchRequest
+    conversationId?: string
   ): void
-  /** Снять показанный запрос выбора сценария. */
-  clearTaskLaunchRequest(): void
   /** Обработать ошибку Claude (claude:error). */
   applyClaudeError(message: string, conversationId?: string): void
   /** Применить снапшот активных ходов (claude:active) — восстановление стрима. */
@@ -1011,7 +1005,6 @@ function initialState(): AppState {
     consoleOpen: true,
     liveActivity: [],
     streamingReply: '',
-    taskLaunchRequest: null,
     activeTurns: {},
     activeActivity: {},
     lastTurnMeta: null,
@@ -1144,8 +1137,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
    * задачи оставался в новом разговоре, потому что контекст чистила только
    * `loadTaskChatContext`, а её звал лишь `selectConversation`.
    */
-  function chatScopedReset(): Pick<AppState, 'messages' | 'taskChatContext' | 'taskLaunchRequest'> {
-    return { messages: [], taskChatContext: null, taskLaunchRequest: null }
+  function chatScopedReset(): Pick<AppState, 'messages' | 'taskChatContext'> {
+    return { messages: [], taskChatContext: null }
   }
 
   /**
@@ -2993,20 +2986,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     meta?: TurnMeta,
     engine?: LlmProvider,
     message?: Message,
-    conversationId?: string,
-    taskLaunch?: TaskLaunchRequest
+    conversationId?: string
   ): Promise<void> {
     // Ход завершён — убираем из активных.
     const convId = conversationId ?? state.activeId
-    if (taskLaunch) {
-      if (convId !== state.activeId) {
-        setState({ error: 'Запуск задачи запрошен в неактивном разговоре. Откройте этот разговор и повторите запрос.' })
-      } else if (!state.conversations.find((conversation) => conversation.id === convId)?.projectId) {
-        setState({ error: 'Невозможно начать разработку: активный разговор не привязан к проекту.' })
-      } else {
-        setState({ taskLaunchRequest: taskLaunch })
-      }
-    }
     let statusUpdate: Promise<void> = Promise.resolve()
     if (convId) {
       const { [convId]: _done, ...rest } = state.activeTurns
@@ -3071,11 +3054,6 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       if (state.voice === 'thinking') dispatchVoice('reset')
       else if (state.voice === 'speaking') dispatchVoice('speaking_done')
     }
-  }
-
-  /** Снимает запрос после выбора пользователем одного из сценариев. */
-  function clearTaskLaunchRequest(): void {
-    setState({ taskLaunchRequest: null })
   }
 
   /** Ошибка Claude: показываем баннер и возвращаемся в idle. */
@@ -4037,7 +4015,6 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applySttError,
       applyClaudeToken,
       applyClaudeDone,
-      clearTaskLaunchRequest,
       applyClaudeError,
       applyClaudeActive,
       applyClaudeUsage,

@@ -16,7 +16,6 @@ import type {
   SessionUser,
   SessionUsage,
   Settings,
-  TaskLaunchRequest,
   TtsVoiceCatalog,
   TtsVoiceInfo,
   TurnMeta,
@@ -464,8 +463,6 @@ export interface IpcEventMap {
     engine?: LlmProvider
     /** Сообщение, сохранённое сервером (клиент добавляет его в ленту как есть). */
     message?: Message
-    /** Явный запрос ассистента выбрать способ начала разработки. */
-    taskLaunch?: TaskLaunchRequest
   }
   /** Ошибка при запросе к Claude. */
   'claude:error': { conversationId: string; message: string }

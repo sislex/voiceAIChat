@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { ClaudeLogEntry, KbContextMode, Message, PermissionMode, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
+import type { ClaudeLogEntry, KbContextMode, Message, PermissionMode, TaskLaunchRequest, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
 import { parseImages, isImagePath } from '@shared/images'
@@ -139,6 +139,8 @@ export interface ChatColumnProps {
   aiLabel?: string
   /** Отправить собранные ответы на вопросы модели (форма под последним ответом). */
   onAnswerQuestions?: (text: string) => void
+  /** Открыть предложение создать задачу, сохранённое в метаданных ответа. */
+  onCreateTask?: (request: TaskLaunchRequest) => void
   /**
    * Ответ на вопрос CI-рана, продублированный в этот чат: уходит в ран, а не
    * запускает новый ход чата (сообщение помечено `meta.ciInteraction`).
@@ -206,6 +208,7 @@ export function ChatColumn({
   onChangeExecTarget,
   aiLabel = 'Claude',
   onAnswerQuestions,
+  onCreateTask,
   onAnswerCiInteraction,
   answeredCiInteractions,
   taskHeader,
@@ -612,6 +615,13 @@ export function ChatColumn({
                           ))}
                         </div>
                       ))}
+                    {m.meta?.taskLaunch && onCreateTask && (
+                      <div className="qstatic">
+                        <Button size="sm" onClick={() => onCreateTask(m.meta!.taskLaunch!)}>
+                          Создать задачу…
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="bub">

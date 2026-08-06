@@ -110,7 +110,7 @@ Stream-парсеры принимают строки событий CLI и но
 
 Перед изменением проекта `CHANGE_AUTHORIZATION_HINT` в `prompt.ts` предписывает модели спросить разрешение через завершающий fenced-блок `task-launch`. Чистый `parseTaskLaunchRequest` принимает только валидный JSON с непустыми `title`, `description` и `acceptanceCriteria`, отделяет его от текста ответа и возвращает `TaskLaunchRequest`; обычные слова о задаче не являются сигналом. `task-launch` входит в `SERVICE_FENCES`, поэтому служебный JSON не озвучивается.
 
-Сигнал доставляется вместе с завершением хода: поле `taskLaunch` есть и в `ServerMessage` (`protocol.ts`), и в `IpcEventMap` (`ipc.ts`). Это две границы одного события: WebSocket для web-клиента и тип renderer-моста для UI. При добавлении полей `claude.done` их нужно поддерживать в обеих формах, а затем пробросить через remote bridge/store.
+`TaskLaunchRequest` хранится в `TurnMeta.taskLaunch`: сервер добавляет его в merged meta до сохранения AI-сообщения. `claude.done` доставляет обычные `meta` и `message`, без отдельного `taskLaunch` в `ServerMessage`, `IpcEventMap` или remote-мосте. Поэтому предложение восстанавливается из истории вместе с сообщением и не зависит от того, какая сессия получила завершение хода.
 
 ## Правило изменения контракта
 

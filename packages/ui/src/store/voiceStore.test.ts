@@ -1366,40 +1366,16 @@ describe('voiceStore — ходы, переживающие обновление
     }
   }
 
-  it('принимает task-launch только для активного чата проекта и объясняет отказ без проекта', async () => {
-    const { store, api } = makeClaudeStore()
-    const project = await api['projects:create']({ name: 'Проект' })
-    const board = await api['board:get']({ id: project.id })
-    const task = await api['tasks:create']({ projectId: project.id, columnId: board.columns[0]!.id, title: 'Исходная задача' })
-    const chat = await api['tasks:openChat']({ projectId: project.id, taskId: task.id })
-    await store.actions.init()
-    await store.actions.selectConversation(chat.id)
-    const request = { title: 'Новая задача', description: 'Описание', acceptanceCriteria: 'Критерий' }
-
-    await store.actions.applyClaudeDone('Выберите вариант.', undefined, 'claude', undefined, chat.id, request)
-    expect(store.getState().taskLaunchRequest).toEqual(request)
-
-    const plainChat = await api['conversations:create']({ title: 'Обычный чат' })
-    await store.actions.selectConversation(plainChat.id)
-    await store.actions.applyClaudeDone('Выберите вариант.', undefined, 'claude', undefined, plainChat.id, request)
-    expect(store.getState().taskLaunchRequest).toBeNull()
-    expect(store.getState().error).toBe('Невозможно начать разработку: активный разговор не привязан к проекту.')
-  })
-
-  it('не теряет молча task-launch неактивного разговора', async () => {
+  it('добавляет сохранённое сообщение с task-launch метой без отдельного состояния предложения', async () => {
     const { store } = makeClaudeStore()
     await store.actions.init()
-    await store.actions.applyClaudeDone(
-      'Выберите вариант.',
-      undefined,
-      'claude',
-      undefined,
-      'другой-разговор',
-      { title: 'Задача', description: 'Описание', acceptanceCriteria: 'Критерий' }
-    )
+    const id = store.getState().activeId!
+    const message = { ...aiMessage(id, 'Выберите вариант.'), meta: { taskLaunch: { title: 'Задача', description: 'Описание', acceptanceCriteria: 'Критерий' } } }
 
-    expect(store.getState().taskLaunchRequest).toBeNull()
-    expect(store.getState().error).toBe('Запуск задачи запрошен в неактивном разговоре. Откройте этот разговор и повторите запрос.')
+    await store.actions.applyClaudeDone(message.text, message.meta, 'claude', message, id)
+
+    expect(store.getState().messages).toContainEqual(message)
+    expect(store.getState().error).toBeNull()
   })
 
   it('applyClaudeActive восстанавливает стрим активного разговора после обновления', async () => {

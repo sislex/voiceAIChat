@@ -139,7 +139,7 @@ export function useVoiceStore(deps: UseVoiceStoreDeps): UseVoiceStore {
       )
       unsubs.push(
         window.claude.onDone((m) =>
-          store.actions.applyClaudeDone(m.text, m.meta, m.engine, m.message, m.conversationId, m.taskLaunch)
+          store.actions.applyClaudeDone(m.text, m.meta, m.engine, m.message, m.conversationId)
         )
       )
       unsubs.push(
