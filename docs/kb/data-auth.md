@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-08-04
-checked: 0d5e8b1
+updated: 2026-08-06
+checked: f60fcc9
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -126,7 +126,9 @@ FTS5 не должна валить старт (тогда `searchMessages` пр
 
 ## Пользователи и роли
 
-`UserRole = 'admin' | 'user'` (`packages/shared/src/types.ts`) ограничивает исполнителей LLM по `llm_engines.allowed_roles`. Доступ к моделям персональный: `user_llm_access` хранит deny-list `(user_name, provider, model_id)`, где `*` запрещает весь provider; отсутствие строк означает полный доступ. `getUserLlmAccess`/`setUserLlmAccess` обслуживают админские `GET/PUT /api/admin/users/:name/llm-access`, а пользователь читает свои права через `GET /api/llm-access`.
+`UserRole = 'admin' | 'user'` (`packages/shared/src/types.ts`) ограничивает исполнителей LLM по `llm_engines.allowed_roles`; это не механизм доступа к моделям. Модели разрешаются персонально через `user_llm_access`: каждая строка deny-list — `(user_name, provider, model_id)`, а `model_id = '*'` запрещает весь provider. Отсутствие строк означает полный доступ, поэтому новые пользователи и модели, позднее добавленные в `CLAUDE_MODELS`/`CODEX_MODELS`, не требуют миграции прав. Внешний контракт и чистые проверки (`isProviderAllowed`, `allowedModels`, `clampModel`, `firstAllowedProvider`) находятся в `packages/shared/src/llmAccess.ts`.
+
+`getUserLlmAccess`/`setUserLlmAccess` читают и атомарно заменяют список запретов. Администратор работает через защищённые `GET/PUT /api/admin/users/:name/llm-access`; PUT принимает только `claude`/`codex`, `*` или известный id модели и убирает дубликаты. Пользователь может прочитать только собственный список через `GET /api/llm-access`. При удалении пользователя строки прав удаляются каскадным внешним ключом таблицы.
 
 Первый запуск на пустой БД создаёт `admin`; пароль берётся из
 `VC_ADMIN_PASSWORD` (пусто — без пароля). Если БД уже существует, переменная
