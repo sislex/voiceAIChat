@@ -7,7 +7,7 @@ import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../cla
 import {
   appendQuestionsHint, ciToolCallsAny, ciToolCharsTotal, ciToolOutputLimits, clarifyBudget,
   classifyCiToolCall, CI_TOOL_RESPONSES_KEEP, CI_USAGE_KIND_LABELS, EMPTY_CI_TOOL_CALLS, EMPTY_CI_TOOL_CHARS,
-  isCiToolDenial, isVerificationCommand, KB_GAPS_HINT, parseKbGaps, parseQuestions,
+  isCiToolDenial, KB_GAPS_HINT, parseKbGaps, parseQuestions,
   resolveCiStageModel, trimmedToolOutputOriginalChars, trimToolOutput, UNKNOWN_MODEL
 } from '@voicechat/shared'
 import type { CiRunMode, CiTestFailure, CiTargetedTestRun, CiToolCalls, CiToolChars, CiToolKind, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
@@ -271,21 +271,9 @@ function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmReque
   return { remote: { mcpUrl, agentName: deps.agentNameOf(ctx.agentId) ?? ctx.agentId } }
 }
 
-/**
- * Запрет самопроверки в фазе разработки. Гейт гоняет шаг воркфлоу, а не модель:
- * иначе тесты идут дважды (ход модели + шаг слота «после»), ран длится вдвое
- * дольше, а расхождение между прогонами модель чинит вслепую. Упавший шаг
- * вернётся к ней в fix-loop — уже с логом.
- */
-
 /** Чем добрать вырезанное из вывода команды справочника (лог шага в ленте). */
 const MODEL_COMMAND_TRIM_HINT =
   'полный вывод остался в ленте шага; повтори команду с фильтром, если нужна середина'
-
-const NO_SELF_VERIFICATION = [
-  'Тесты, typecheck, линтер и сборку сам не запускай — за проверку отвечает шаг воркфлоу после твоей работы.',
-  'Если он упадёт, тебя позовут чинить в этом же диалоге и покажут лог. Результат работы отдавай коммитом в ветку задачи.'
-].join(' ')
 
 function taskPrompt(ctx: CiModelContext, mode: CiRunMode): string {
   const tail = mode === 'plan'
@@ -295,7 +283,7 @@ function taskPrompt(ctx: CiModelContext, mode: CiRunMode): string {
       ]
     : [
         'Реализуй задачу в рабочей директории. Команды выполняй через доступный инструмент bash.',
-        NO_SELF_VERIFICATION,
+        'Перед завершением работы прогони проверки затронутых пакетов (`npm run affected-check`) и не отдавай работу с падающими тестами или ошибками типов.',
         `Готовую работу коммить в ветку ${ctx.env.BRANCH ?? ''} — пушить не нужно: раннер сам отправит её в origin перед очисткой рабочей директории.`
       ]
   return [
@@ -612,14 +600,13 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     // Публикуем модели команды справочника как инструмент на время шага (лимит
     // maxModelCommandCalls, is_cleanup исключены — иначе модель снесёт себе рабочую
     // директорию). Каждый вызов = вложенный шаг ленты (runCommandById).
-    // Команды-проверки (тесты/typecheck/линт) не публикуем вовсе: гейт гоняет
-    // воркфлоу, и признак берём из кода (`isVerificationCommand`), а не из того,
-    // как кто-то настроил availableToModel в справочнике. `npm ci` остаётся.
+    // В том числе команды проверки: их доступность определяется только
+    // availableToModel в справочнике проекта. Каждый вызов виден вложенным шагом.
     const token = randomUUID()
     const settings = deps.db.getCiSettings()
     const available = deps.db
       .listCiCommands(ctx.run.triggeredBy, ctx.project.id)
-      .filter((c) => c.availableToModel && !c.isCleanup && !isVerificationCommand(c))
+      .filter((c) => c.availableToModel && !c.isCleanup)
     let calls = 0
     ciToolBroker.register(token, {
       list: () => available.map((c) => ({ name: c.name, description: c.description })),
@@ -732,7 +719,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             }
             log('system', 'План одобрен — перехожу к разработке.\n')
             phase = 'development'
-            prompt = `План одобрен. Реализуй его в рабочей директории. Команды выполняй через доступный инструмент bash.\n${NO_SELF_VERIFICATION}`
+            prompt = 'План одобрен. Реализуй его в рабочей директории. Команды выполняй через доступный инструмент bash.\nПеред завершением работы прогони проверки затронутых пакетов (`npm run affected-check`) и не отдавай работу с падающими тестами или ошибками типов.'
             continue
           }
 

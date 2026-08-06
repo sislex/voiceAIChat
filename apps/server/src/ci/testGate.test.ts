@@ -1,7 +1,6 @@
-// Роли в ране разведены: модель разрабатывает и коммитит, гейт (тесты/typecheck/
-// линт) гоняет только воркфлоу. Здесь — про эту границу: запрет самопроверки в
-// промпте, отсутствие тестовой команды среди инструментов модели, цикл «правка →
-// повтор шага тестирования» до зелёного и продолжение слота «после».
+// Модель сама запускает опубликованный ей гейт; после неуспеха workflow
+// продолжает fix-loop. Здесь проверяем промпт, доступность команды как MCP-инструмента
+// и продолжение слота «после» после зелёного повтора.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { tmpdir } from 'node:os'
@@ -30,6 +29,7 @@ let gateFailures = 0
 /** Гейт падает инфраструктурным сбоем машины (повреждённый кэш npm). */
 let gateInfra = false
 let runTargeted = false
+let runModelCommand = false
 let sessionNo = 0
 const counts = new Map<string, number>()
 
@@ -45,6 +45,10 @@ const fakeClaude: LlmClient = {
         toolNames = (entry?.list() ?? []).map((c) => c.name)
         if (runTargeted && req.prompt.startsWith('Упал шаг воркфлоу')) {
           await entry?.runTargetedTests?.('npm run -w @voicechat/server test -- src/x1.test.ts -t "падает проверка 1"')
+        }
+        if (runModelCommand && !req.prompt.startsWith('Упал шаг воркфлоу')) {
+          await entry?.invoke('Установить зависимости')
+          await entry?.invoke('Запустить тестирование (npm test)')
         }
       }
       handlers.onSession(sid)
@@ -88,6 +92,7 @@ beforeEach(async () => {
   gateFailures = 0
   gateInfra = false
   runTargeted = false
+  runModelCommand = false
   sessionNo = 0
   counts.clear()
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => Date.now() })
@@ -143,27 +148,32 @@ async function waitRun(runId: string): Promise<{ run: { status: string } }> {
 /** Запросы fix-loop: у них в промпте диагноз упавшего шага. */
 const fixRequests = (): LlmRequest[] => modelRequests.filter((r) => r.prompt.startsWith('Упал шаг воркфлоу'))
 
-describe('CI: гейт гоняет воркфлоу, не модель', () => {
-  it('промпт разработки запрещает самостоятельный прогон тестов', async () => {
+describe('CI: модель выполняет опубликованный гейт', () => {
+  it('промпт разработки требует самостоятельной проверки затронутых пакетов', async () => {
     const { projectId, taskId } = setup()
     const runId = await run(projectId, taskId)
     expect((await waitRun(runId)).run.status).toBe('success')
     const work = modelRequests[0]
-    expect(work.prompt).toContain('Тесты, typecheck, линтер и сборку сам не запускай')
-    expect(work.prompt).toContain('шаг воркфлоу')
+    expect(work.prompt).toContain('npm run affected-check')
+    expect(work.prompt).toContain('не отдавай работу с падающими тестами или ошибками типов')
   })
 
-  it('тестовая команда не публикуется модели инструментом, npm ci остаётся', async () => {
+  it('доступная модели команда-проверка публикуется и запускается вложенным шагом', async () => {
     const { projectId, taskId } = setup()
-    // Обе отмечены «доступна модели» — тестовую отсекает код, а не настройка.
     db.createCiCommand('admin', { scope: 'project', projectId, name: 'Установить зависимости', script: 'npm ci', availableToModel: true })
     db.createCiCommand('admin', { scope: 'project', projectId, name: 'Запустить тестирование (npm test)', script: GATE, availableToModel: true })
-    db.createCiCommand('admin', { scope: 'project', projectId, name: 'Проверка типов', script: 'npm run typecheck', availableToModel: true })
+    db.createCiCommand('admin', { scope: 'project', projectId, name: 'Проверка типов', script: 'npm run typecheck', availableToModel: false })
+    expect(db.getCiSettings().maxModelCommandCalls).toBeGreaterThanOrEqual(2)
+    runModelCommand = true
     const runId = await run(projectId, taskId)
     expect((await waitRun(runId)).run.status).toBe('success')
     expect(toolNames).toContain('Установить зависимости')
-    expect(toolNames).not.toContain('Запустить тестирование (npm test)')
+    expect(toolNames).toContain('Запустить тестирование (npm test)')
     expect(toolNames).not.toContain('Проверка типов')
+    expect(scripts).toContain('npm ci')
+    expect(scripts).toContain(GATE)
+    const commandStep = db.getCiRun('admin', runId)!.steps.find((s) => s.kind === 'model_command')
+    expect(commandStep).toMatchObject({ title: 'Запустить тестирование (npm test)', status: 'success' })
   })
 
   it('упавший гейт: правка модели → повтор шага → зелёный, слот «после» доходит до конца', async () => {

@@ -108,7 +108,7 @@ describe('ci: справочник команд', () => {
     expect(second.getCiCommand('alice', gate.id)).toMatchObject({
       script: 'npm run affected-check',
       isTest: true,
-      availableToModel: false,
+      availableToModel: true,
       version: 2
     })
     second.close()
@@ -459,6 +459,7 @@ describe('встроенный шаг «Актуализировать базу 
     expect(cmd.builtin).toBe('kb_update')
     expect(cmd.scope).toBe('global')
     expect(cmd.availableToModel).toBe(false)
+    expect(cmd.allowFailure).toBe(false)
     // Виден всем как глобальная команда справочника.
     expect(db.listCiCommands('bob').some((c) => c.id === CI_KB_UPDATE_COMMAND_ID)).toBe(true)
   })

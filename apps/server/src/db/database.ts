@@ -738,9 +738,15 @@ export class VoiceChatDb {
     // Стандартный гейт живёт в данных справочника. Переводим только его точный
     // прежний текст, не затрагивая пользовательские команды с другим скриптом.
     this.db.prepare(`UPDATE ci_commands
-      SET script = 'npm run affected-check', is_test = 1, available_to_model = 0,
+      SET script = 'npm run affected-check', is_test = 1, available_to_model = 1,
           version = version + 1, updated_at = ?
       WHERE script = 'npm run typecheck && npm test'`).run(Date.now())
+    this.db.prepare(`UPDATE ci_commands SET available_to_model = 1
+      WHERE script = 'npm run affected-check' AND available_to_model = 0`).run()
+    this.db.prepare(`UPDATE ci_commands
+      SET allow_failure = 0,
+          description = 'Модель дописывает в базу знаний, что изменилось в этом ране: темы docs/kb/*.md в рабочей копии и статьи раздела проекта. Ошибка шага останавливает ран.'
+      WHERE id = ?`).run(CI_KB_UPDATE_COMMAND_ID)
     // Семантика входных токенов строки расхода. Старые строки остаются с NULL:
     // у codex это «вход вместе с кэшем», и отчёт приводит их на чтении.
     const ciUsageCols = this.db.prepare(`PRAGMA table_info(ci_run_usage)`).all() as Array<{ name: string }>
@@ -2676,13 +2682,13 @@ export class VoiceChatDb {
     this.db
       .prepare(
         `INSERT INTO ci_commands (id, scope, project_id, name, script, description, workdir, timeout_sec, env_json, allow_failure, is_cleanup, available_to_model, builtin, version, created_by, created_at, updated_at)
-         VALUES (?, 'global', NULL, ?, ?, ?, '', NULL, '{}', 1, 0, 0, 'kb_update', 1, 'system', ?, ?)`
+         VALUES (?, 'global', NULL, ?, ?, ?, '', NULL, '{}', 0, 0, 0, 'kb_update', 1, 'system', ?, ?)`
       )
       .run(
         CI_KB_UPDATE_COMMAND_ID,
         CI_KB_UPDATE_COMMAND_NAME,
         '# Серверный шаг: скрипт не выполняется.\n# Модель сверяет базу знаний с изменениями рабочей копии (см. kb/codeUpdate.ts).',
-        'Модель дописывает в базу знаний, что изменилось в этом ране: темы docs/kb/*.md в рабочей копии и статьи раздела проекта. Ошибка шага ран не валит.',
+        'Модель дописывает в базу знаний, что изменилось в этом ране: темы docs/kb/*.md в рабочей копии и статьи раздела проекта. Ошибка шага останавливает ран.',
         ts,
         ts
       )
