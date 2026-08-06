@@ -12,11 +12,13 @@ import type {
   WhisperModelInfo
 } from '@shared/types'
 import type { SystemCapabilities } from '@shared/protocol'
-import { CLAUDE_MODELS, CODEX_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
+import { CODEX_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { PermissionMode, LlmProvider, UserRole } from '@shared/types'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
 import type { LlmEngineOption } from '@shared/admin'
+import type { UserLlmAccess } from '@shared/llmAccess'
+import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 
 export interface MicOption {
   deviceId: string
@@ -76,6 +78,7 @@ export interface SettingsModalProps {
   onDeleteModel: (model: WhisperModel) => void
   /** Роль текущего пользователя — ограничивает список моделей Claude. */
   role: UserRole
+  llmAccess?: UserLlmAccess[]
   onClose: () => void
   /** Глобальная доступность голосового ввода. */
   voiceInputEnabled?: boolean
@@ -101,6 +104,7 @@ export function SettingsModal({
   onDeleteVoice,
   onDeleteModel,
   role: _role,
+  llmAccess = [],
   onClose,
   voiceInputEnabled = true
 }: SettingsModalProps): JSX.Element {
@@ -109,6 +113,9 @@ export function SettingsModal({
   const sttBlocked = !voiceInputEnabled || (capabilities != null && !capabilities.stt.available)
   const ttsBlocked = capabilities != null && !capabilities.tts.available
   const [section, setSection] = useState<SettingsSection>('agent')
+  const claudeModels = allowedModels(llmAccess, 'claude')
+  const codexModels = allowedModels(llmAccess, 'codex')
+  const providers = (['claude', 'codex'] as const).filter((provider) => isProviderAllowed(llmAccess, provider) && (provider === 'claude' ? claudeModels.length : codexModels.length))
 
   return (
     <Dialog title="Настройки" size="md" testId="overlay" onClose={onClose}>
@@ -137,7 +144,7 @@ export function SettingsModal({
                     onChange({ llmEngineId: id, ...(engine ? { llmProvider: engine.kind } : {}) })
                   }}>
                     <option value="">По умолчанию для роли</option>
-                    {engines.map((engine) => <option key={engine.id} value={engine.id}>{engine.name} · {engine.kind}{engine.isDefault ? ' (default)' : ''}</option>)}
+                    {engines.filter((engine) => providers.includes(engine.kind)).map((engine) => <option key={engine.id} value={engine.id}>{engine.name} · {engine.kind}{engine.isDefault ? ' (default)' : ''}</option>)}
                   </select>
                 </div>
 
@@ -152,8 +159,9 @@ export function SettingsModal({
                     value={settings.llmProvider}
                     onChange={(e) => onChange({ llmProvider: e.target.value as LlmProvider })}
                   >
-                    <option value="claude">Claude Code</option>
-                    <option value="codex">Codex</option>
+                    {providers.includes('claude') && <option value="claude">Claude Code</option>}
+                    {providers.includes('codex') && <option value="codex">Codex</option>}
+                    {providers.length === 0 && <option value="">Нет доступных движков</option>}
                   </select>
                 </div>
 
@@ -194,7 +202,8 @@ export function SettingsModal({
                       value={normalizeClaudeModel(settings.model)}
                       onChange={(e) => onChange({ model: e.target.value as ClaudeModel })}
                     >
-                      {CLAUDE_MODELS.map((m) => (
+                      {claudeModels.length === 0 && <option value="">Нет доступных моделей</option>}
+                      {claudeModels.map((m) => (
                         <option key={m.id} value={m.id} title={m.hint}>
                           {m.label}
                         </option>
@@ -221,7 +230,8 @@ export function SettingsModal({
                           {settings.codexModel || 'По умолчанию (из codex)'}
                         </option>
                       )}
-                      {CODEX_MODELS.map((m) => (
+                      {codexModels.length === 0 && <option value="">Нет доступных моделей</option>}
+                      {codexModels.map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.label}
                         </option>
@@ -288,16 +298,16 @@ export function SettingsModal({
                 <div className="frow">
                   <div><p className="flab">Движок помощника</p><p className="fsub">Отдельный CLI для генерации вариантов формулировки</p></div>
                   <select className="sel" aria-label="Движок AI-помощника" value={settings.aiAssistProvider} onChange={(e) => onChange({ aiAssistProvider: e.target.value as LlmProvider, aiAssistModel: e.target.value === 'claude' ? 'haiku' : '' })}>
-                    <option value="claude">Claude Code</option><option value="codex">Codex</option>
+                    {providers.includes('claude') && <option value="claude">Claude Code</option>}{providers.includes('codex') && <option value="codex">Codex</option>}{providers.length === 0 && <option value="">Нет доступных движков</option>}
                   </select>
                 </div>
                 <div className="frow">
                   <div><p className="flab">Модель помощника</p><p className="fsub">Быструю модель можно выбрать независимо от основного чата</p></div>
                   {settings.aiAssistProvider === 'claude' ? <select className="sel" aria-label="Модель AI-помощника" value={settings.aiAssistModel || 'haiku'} onChange={(e) => onChange({ aiAssistModel: e.target.value })}>
-                    {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>)}
+                    {claudeModels.map((m) => <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>)}
                   </select> : <select className="sel" aria-label="Модель AI-помощника" value={settings.aiAssistModel} onChange={(e) => onChange({ aiAssistModel: e.target.value })}>
                     {!CODEX_MODELS.some((m) => m.id === settings.aiAssistModel) && <option value={settings.aiAssistModel}>{settings.aiAssistModel || 'По умолчанию (из codex)'}</option>}
-                    {CODEX_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                    {codexModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                   </select>}
                 </div>
                 <div className="voicedl ai-default-prompts">

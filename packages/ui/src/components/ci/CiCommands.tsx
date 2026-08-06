@@ -13,6 +13,8 @@ import type {
   CiWorkspaceReportItem
 } from '@shared/ci'
 import { CI_USAGE_KIND_LABELS, CI_USAGE_KINDS, DEFAULT_CI_GLOBAL_SETTINGS } from '@shared/ci'
+import type { UserLlmAccess } from '@shared/llmAccess'
+import { allowedModels } from '@shared/llmAccess'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import { ToolFrame } from '../ToolFrame'
 import { Button } from '../ui/Button'
@@ -42,6 +44,7 @@ export interface CiCommandsProps {
   workspaces: CiWorkspaceReportItem[]
   /** Роль текущего пользователя — правка глобальных настроек только для admin. */
   role: 'admin' | 'user'
+  llmAccess?: UserLlmAccess[]
   /** Проекты для выбора scope='project'. */
   projects: Array<{ id: string; name: string }>
   onCreate: (input: CiCommandInput) => Promise<CiCommand | null>
@@ -341,7 +344,7 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
           <div className="ci-edit-pane">{editForm}</div>
         </div>
 
-        <CiSettingsSection open={settingsOpen} onToggle={() => setSettingsOpen((v) => !v)} settings={props.settings} editable={props.role === 'admin'} onSave={async (next) => {
+        <CiSettingsSection open={settingsOpen} onToggle={() => setSettingsOpen((v) => !v)} settings={props.settings} editable={props.role === 'admin'} llmAccess={props.llmAccess} onSave={async (next) => {
           await props.onSaveSettings(next)
           toast.success('Настройки сохранены')
         }} />
@@ -407,12 +410,13 @@ interface CiSettingsSectionProps {
   settings: CiGlobalSettings | null
   editable: boolean
   onSave: (settings: Partial<CiGlobalSettings>) => Promise<void>
+  llmAccess?: UserLlmAccess[]
 }
 
 /** Числовые поля настроек: модель по стадии редактируется списком, а не вводом. */
 type CiNumericSetting = { [K in keyof CiGlobalSettings]: CiGlobalSettings[K] extends number ? K : never }[keyof CiGlobalSettings]
 
-function CiSettingsSection({ open, onToggle, settings, editable, onSave }: CiSettingsSectionProps): JSX.Element {
+function CiSettingsSection({ open, onToggle, settings, editable, llmAccess = [], onSave }: CiSettingsSectionProps): JSX.Element {
   const current = settings ?? DEFAULT_CI_GLOBAL_SETTINGS
   const [form, setForm] = useState<CiGlobalSettings>(current)
   useEffect(() => setForm(settings ?? DEFAULT_CI_GLOBAL_SETTINGS), [settings])
@@ -425,6 +429,8 @@ function CiSettingsSection({ open, onToggle, settings, editable, onSave }: CiSet
   // Модель на стадию: пусто — «как у рана». Список общий для обоих движков, а
   // чужую модель сервер сам заменит моделью рана (resolveCiStageModel), поэтому
   // выбор здесь ран не ломает.
+  const allowedClaudeModels = allowedModels(llmAccess, 'claude')
+  const allowedCodexModels = allowedModels(llmAccess, 'codex')
   const stageField = (stage: CiUsageKind): JSX.Element => {
     const value = form.stageModels[stage] ?? ''
     // Настройка могла прийти с алиасом не из меню (правка по REST, старое
@@ -442,10 +448,10 @@ function CiSettingsSection({ open, onToggle, settings, editable, onSave }: CiSet
           <option value="">Модель рана</option>
           {!listed && <option value={value}>{value}</option>}
           <optgroup label="Claude">
-            {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            {allowedClaudeModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
           </optgroup>
           <optgroup label="Codex">
-            {CODEX_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            {allowedCodexModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
           </optgroup>
         </select>
       </label>

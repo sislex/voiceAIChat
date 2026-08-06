@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type {
   AdminLlmEngine,
   AdminLlmEngineHealth,
@@ -7,7 +7,9 @@ import type {
   UsageReport,
   UsageUnit
 } from '@shared/admin'
-import type { Conversation, Message } from '@shared/types'
+import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
+import type { Conversation, Message, LlmProvider } from '@shared/types'
+import type { UserLlmAccess } from '@shared/llmAccess'
 import { Button } from './ui/Button'
 import { ToolFrame } from './ToolFrame'
 import { Skeleton, RefreshIndicator } from './ui/Skeleton'
@@ -42,6 +44,8 @@ export interface UsersAdminProps {
   onUpdateEngine: (id: string, patch: AdminLlmEngineInput) => void
   onDeleteEngine: (id: string) => void
   onCheckEngineHealth: (id: string) => void
+  llmAccess?: UserLlmAccess[]
+  onSaveLlmAccess?: (access: UserLlmAccess[]) => void
   onClose: () => void
 }
 
@@ -99,6 +103,8 @@ export function UsersAdmin({
   onUpdateEngine,
   onDeleteEngine,
   onCheckEngineHealth,
+  llmAccess = [],
+  onSaveLlmAccess = () => undefined,
   onClose,
   variant = 'modal'
 }: UsersAdminProps): JSX.Element {
@@ -111,6 +117,16 @@ export function UsersAdmin({
   const [engineDraft, setEngineDraft] = useState<AdminLlmEngineInput>(EMPTY_ENGINE)
   const [editingEngineId, setEditingEngineId] = useState<string | null>(null)
   const [confirmEngineDelete, setConfirmEngineDelete] = useState<string | null>(null)
+  const [accessDraft, setAccessDraft] = useState<UserLlmAccess[]>([])
+  useEffect(() => setAccessDraft(llmAccess), [selected, llmAccess])
+  const accessDenied = (provider: LlmProvider, modelId: string): boolean => accessDraft.some((entry) => entry.provider === provider && (entry.modelId === '*' || entry.modelId === modelId))
+  const providerAllowed = (provider: LlmProvider): boolean => !accessDraft.some((entry) => entry.provider === provider && entry.modelId === '*')
+  const toggleAccess = (provider: LlmProvider, modelId: string, checked: boolean): void => {
+    setAccessDraft((prev) => {
+      const without = prev.filter((entry) => !(entry.provider === provider && (entry.modelId === modelId || (modelId === '*' && entry.modelId === '*'))))
+      return checked ? without : [...without, { provider, modelId }]
+    })
+  }
 
   const cur = users.find((u) => u.name === selected) ?? null
   // Сервер возвращает список разговоров периода даже при активном фильтре,
@@ -222,6 +238,16 @@ export function UsersAdmin({
                     {a.name} — {a.online ? 'в сети' : 'офлайн'}
                   </p>
                 ))}
+              </section>
+
+              <section className="uadmin-sec" data-testid="user-llm-access">
+                <div className="uusage-heading"><div><h3 className="uadmin-h">Доступ к моделям</h3><p className="uusage-note">Пустые права означают полный доступ.</p></div><Button variant="primary" size="sm" onClick={() => onSaveLlmAccess(accessDraft)}>Сохранить</Button></div>
+                <table className="utable"><thead><tr><th>Движок</th><th>Модель</th><th>Доступ</th></tr></thead><tbody>
+                  {([{ provider: 'claude' as const, label: 'Claude', models: CLAUDE_MODELS }, { provider: 'codex' as const, label: 'Codex', models: CODEX_MODELS }]).map((group) => <>
+                    <tr key={group.provider}><th colSpan={2}>{group.label}</th><td><label><input type="checkbox" aria-label="Доступ к движку" checked={providerAllowed(group.provider)} onChange={(e) => toggleAccess(group.provider, '*', e.target.checked)} /> доступен</label></td></tr>
+                    {group.models.map((model) => <tr key={`${group.provider}-${model.id}`}><td></td><td>{model.label}</td><td><input type="checkbox" aria-label="Доступ к модели" disabled={!providerAllowed(group.provider)} checked={!accessDenied(group.provider, model.id)} onChange={(e) => toggleAccess(group.provider, model.id, e.target.checked)} /></td></tr>)}
+                  </>)}
+                </tbody></table>
               </section>
 
               <section className="uadmin-sec uusage" aria-labelledby="usage-heading">

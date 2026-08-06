@@ -5,9 +5,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CiRunDetail, CiRunStep, CiLogLine, CiRunConclusion, CiInteraction, CiInteractionAnswer } from '@shared/ci'
-import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import { DEFAULT_CI_CLAUDE_MODEL, isTerminalCiStatus } from '@shared/ci'
 import type { LlmEngineOption } from '@shared/admin'
+import type { UserLlmAccess } from '@shared/llmAccess'
+import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import type { CiMetrics } from '../../remote/ciBridge'
 import { ciStatusIcon, ciStatusLabel, ciTone, fmtDuration } from './ciFormat'
 import { CiConsole } from './CiConsole'
@@ -37,6 +38,7 @@ export interface RunFeedProps {
   cache: RunFeedCache | undefined
   metrics?: CiMetrics | null
   engines?: LlmEngineOption[]
+  llmAccess?: UserLlmAccess[]
   onSubscribe: (runId: string) => void
   onUnsubscribe: (runId: string) => void
   onLoad: (runId: string) => void
@@ -187,7 +189,8 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   const interactionsOf = (stepId: string): CiInteraction[] => interactionsByStep.get(stepId) ?? []
 
   // Меню моделей для повтора работы модели — общая форма обоих списков.
-  const retryModels: Array<{ id: string; label: string }> = modelProvider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS
+  const access = props.llmAccess ?? []
+  const retryModels: Array<{ id: string; label: string }> = modelProvider === 'codex' ? allowedModels(access, 'codex') : allowedModels(access, 'claude')
 
   const renderStep = (step: CiRunStep, nested: boolean): JSX.Element => {
     const hasPending = interactionsOf(step.id).some((it) => it.status === 'pending')
@@ -252,7 +255,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
                     if (engine) { setModelProvider(engine.kind); setModelName(engine.kind === 'codex' ? '' : DEFAULT_CI_CLAUDE_MODEL) }
                   }}>
                     <option value="">По умолчанию для роли</option>
-                    {(props.engines ?? []).map((engine) => <option key={engine.id} value={engine.id}>{engine.name} · {engine.kind}</option>)}
+                    {(props.engines ?? []).filter((engine) => isProviderAllowed(access, engine.kind)).map((engine) => <option key={engine.id} value={engine.id}>{engine.name} · {engine.kind}</option>)}
                   </select>
                 </label>
                 <label>

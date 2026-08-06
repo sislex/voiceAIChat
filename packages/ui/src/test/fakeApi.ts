@@ -442,7 +442,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       ]
     }),
     'admin:users': async () => adminUsers.map((u) => ({ ...u })),
-    'llm:access': async () => [],
+    'llm:access': async () => [...(userLlmAccess.get(ME) ?? [])],
     'admin:llmAccess': async ({ name }) => [...(userLlmAccess.get(name) ?? [])],
     'admin:saveLlmAccess': async ({ name, access }) => { userLlmAccess.set(name, [...access]); return [...access] },
     'admin:createUser': async ({ name, role }) => {

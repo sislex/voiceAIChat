@@ -3,11 +3,13 @@ import { useEffect, useState, type JSX } from 'react'
 import type { CiCommand, CiClarifyLevel, CiLlmConfig, CiRunMode, CiSlotConfig } from '@shared/ci'
 import { CI_CLARIFY_MAX_LIMIT, DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
 import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
-import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
+import { CODEX_MODELS } from '@shared/types'
+import type { UserLlmAccess } from '@shared/llmAccess'
+import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { Button } from '../ui/Button'
 import { CiSlotEditor } from './CiSlotEditor'
 
-export interface CiTaskSettingsProps { projectId: string; taskId: string }
+export interface CiTaskSettingsProps { projectId: string; taskId: string; llmAccess?: UserLlmAccess[] }
 
 export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const [commands, setCommands] = useState<CiCommand[]>([])
@@ -43,7 +45,8 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     const cfg: CiSlotConfig = { beforeModel: before, afterModel: after }
     void window.ci?.putTaskCi(props.projectId, props.taskId, cfg).then(() => { setSaved(true); setOverridden(true) })
   }
-  const models = llm.provider === 'codex' ? CODEX_MODELS : CLAUDE_MODELS
+  const access = props.llmAccess ?? []
+  const models = llm.provider === 'codex' ? allowedModels(access, 'codex') : allowedModels(access, 'claude')
   const changeProvider = (provider: 'claude' | 'codex'): void => {
     setLlm({ ...llm, provider, model: provider === 'codex' ? CODEX_MODELS[0].id : DEFAULT_CI_CLAUDE_MODEL }); setLlmSaved(false)
   }
@@ -62,7 +65,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     {!saved && <Button variant="primary" className="ci-task-save" onClick={save}>Сохранить команды</Button>}
     <div className="ci-task-head ci-task-llm-head"><span className="ci-task-title">Движок модели</span><span className={`lozenge ${llmOverridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{llmOverridden ? 'переопределено' : 'унаследовано'}</span></div>
     <div className="ci-task-llm">
-      <label>Движок<select aria-label="Движок модели" className="sel" value={llm.provider} onChange={(e) => changeProvider(e.target.value as 'claude' | 'codex')}><option value="claude">Claude</option><option value="codex">Codex</option></select></label>
+      <label>Движок<select aria-label="Движок модели" className="sel" value={llm.provider} onChange={(e) => changeProvider(e.target.value as 'claude' | 'codex')}>{isProviderAllowed(access, 'claude') && <option value="claude">Claude</option>}{isProviderAllowed(access, 'codex') && <option value="codex">Codex</option>}{!isProviderAllowed(access, 'claude') && !isProviderAllowed(access, 'codex') && <option value="">Нет доступных движков</option>}</select></label>
       <label>Модель<select aria-label="Модель" className="sel" value={llm.model} onChange={(e) => { setLlm({ ...llm, model: e.target.value }); setLlmSaved(false) }}>{!models.some((m) => m.id === llm.model) && <option value={llm.model}>{llm.model}</option>}{models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
     </div>
     <div className="ci-task-llm">
