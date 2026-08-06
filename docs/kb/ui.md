@@ -36,6 +36,8 @@ web/desktop host → installRemoteBridges → HTTP + WebSocket → server
 Карточка задачи, `CiCommands`, `CiTaskSettings`, `CiProjectDefaults` и `RunFeed`
 получают тот же deny-list и скрывают запрещённые модели/движки, включая повтор
 CI-рана; при отсутствии вариантов оставляют объясняющее пустое состояние.
+`ProjectSettings` передаёт текущий deny-list в `CiProjectDefaults`, поэтому тот же
+фильтр действует и для проектной пары движок/модель.
 
 
 Состояние сгруппировано по областям, хотя хранится одним объектом:

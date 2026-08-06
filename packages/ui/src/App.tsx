@@ -742,6 +742,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               <ProjectSettings
                 detail={state.projectDetail}
                 agents={state.agents}
+                llmAccess={state.llmAccess}
                 onUpdate={(id, fields) => void actions.updateProject(id, fields)}
                 onDelete={(id) => {
                   // Удалили проект — уводим на другой доступный, а если их не

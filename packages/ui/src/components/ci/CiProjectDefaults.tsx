@@ -10,7 +10,7 @@ import { Button } from '../ui/Button'
 import { CiSlotEditor } from './CiSlotEditor'
 import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 
-export function CiProjectDefaults(props: { projectId: string; editable: boolean; llmAccess?: UserLlmAccess[] }): JSX.Element {
+export function CiProjectDefaults(props: { projectId: string; editable: boolean; llmAccess?: UserLlmAccess[]; section?: 'commands' | 'llm' }): JSX.Element {
   const [commands, setCommands] = useState<CiCommand[]>([])
   const [before, setBefore] = useState<string[]>([])
   const [after, setAfter] = useState<string[]>([])
@@ -40,9 +40,12 @@ export function CiProjectDefaults(props: { projectId: string; editable: boolean;
   }
   return (
     <div className="ci-defaults">
-      <CiSlotEditor label="До работы модели (по умолчанию)" commands={commands} value={before} disabled={!props.editable} onChange={(v) => { setBefore(v); setDirty(true) }} />
-      <CiSlotEditor label="После работы модели (по умолчанию)" commands={commands} value={after} disabled={!props.editable} onChange={(v) => { setAfter(v); setDirty(true) }} />
-      {props.editable && dirty && <Button variant="primary" onClick={save}>Сохранить команды проекта</Button>}
+      {props.section !== 'llm' && <>
+        <CiSlotEditor label="До работы модели (по умолчанию)" commands={commands} value={before} disabled={!props.editable} onChange={(v) => { setBefore(v); setDirty(true) }} />
+        <CiSlotEditor label="После работы модели (по умолчанию)" commands={commands} value={after} disabled={!props.editable} onChange={(v) => { setBefore(v); setDirty(true) }} />
+        {props.editable && dirty && <Button variant="primary" onClick={save}>Сохранить команды проекта</Button>}
+      </>}
+      {props.section !== 'commands' && <>
       <div className="ci-task-llm">
         <label>Движок по умолчанию<select
           aria-label="Движок проекта"
@@ -92,6 +95,7 @@ export function CiProjectDefaults(props: { projectId: string; editable: boolean;
         /></label>
       )}
       {props.editable && llmDirty && <Button variant="primary" onClick={saveLlm}>Сохранить режим проекта</Button>}
+      </>}
     </div>
   )
 }
