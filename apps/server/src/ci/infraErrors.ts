@@ -6,7 +6,7 @@
 /** Разобранная инфраструктурная ошибка: что случилось и что с этим делать. */
 export interface CiInfraFailure {
   /** Машиночитаемый вид сбоя (уходит в аудит `run.infra_error`). */
-  kind: 'npm_cache' | 'disk_full'
+  kind: 'npm_cache' | 'disk_full' | 'agent_offline'
   /** Короткое описание для лога шага. */
   message: string
   /** Что делать оператору. */
@@ -18,6 +18,13 @@ const NPM_CACHE_PATH = /_cacache/
 const NPM_CACHE_CODE = /\b(EEXIST|ENOENT|EINTEGRITY)\b/
 /** Кончилось место (том машины) — тоже не про задачу. */
 const DISK_FULL = /\bENOSPC\b|no space left on device/i
+/**
+ * Исполнитель команд отвалился посреди шага. Сообщение реестра машин приходит не
+ * в stdout, а системной строкой в самом хвосте вывода, и код выхода остаётся
+ * пустым — ловим только такую подпись, иначе тест проекта с этим текстом в
+ * выводе сойдёт за сбой машины.
+ */
+const AGENT_OFFLINE = /(?:^|\n)Машина (?:отключилась[^\n]*|не в сети)\s*$/
 
 /**
  * Признать падение шага инфраструктурным по хвосту вывода. Код выхода не
@@ -40,7 +47,21 @@ export function classifyCiInfraFailure(args: { exitCode: number | null; output: 
       hint: 'Освободить место на машине (рабочие копии в `$REPO_ROOT`, кэши ранов в `$REPO_ROOT/.npm-cache`, docker-образы) и повторить шаг.'
     }
   }
+  if (args.exitCode === null && AGENT_OFFLINE.test(out)) {
+    return {
+      kind: 'agent_offline',
+      message: 'Машина потеряла связь с сервером посреди шага — инфраструктурный сбой, а не ошибка задачи.',
+      hint: 'Проверить, что агент машины в сети и что прод-контейнер не пересобирался во время рана: отложенная пересборка пересоздаёт `voicechat` и рвёт соединение сразу со всеми ранами. Шаг можно повторить.'
+    }
+  }
   return null
+}
+
+/** Ярлык вида сбоя для ленты рана: короткий, без подсказки. */
+export const CI_INFRA_LABEL: Record<CiInfraFailure['kind'], string> = {
+  npm_cache: 'повреждён кэш npm',
+  disk_full: 'нет места на диске',
+  agent_offline: 'машина потеряла связь'
 }
 
 /** Готовый текст для лога шага: диагноз + подсказка + почему без fix-loop. */

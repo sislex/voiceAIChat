@@ -15,7 +15,7 @@ import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook, CiRunPrimitives } from './types.js'
 import { isReadOnlyCommand } from './console.js'
-import { classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
+import { CI_INFRA_LABEL, classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
 import type { CiConsoleExecResult } from '@voicechat/shared'
 
 /**
@@ -613,6 +613,10 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       timedOut = res.timedOut
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
+      // Сбой исполнителя (машина отключилась, нет агента) приходит исключением, а
+      // не строкой stdout: без этого он не попадёт ни в output шага, ни в
+      // классификатор инфраструктурных ошибок, ни в контекст fix-loop.
+      collected.push(msg + '\n')
       const line = deps.db.appendCiLog(runId, step.id, 'system', msg + '\n')
       broadcast({ t: 'ci.log', runId, line }, userId)
       exitCode = null
@@ -1238,7 +1242,7 @@ fi`
             const line = deps.db.appendCiLog(runId, res.stepId, 'system', formatCiInfraFailure(infra))
             broadcast({ t: 'ci.log', runId, line }, userId)
             deps.db.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.infra_error', actorType: 'system', payload: { kind: infra.kind, stepId: res.stepId, exitCode: res.exitCode } })
-            progress(runId, done, total, `Инфраструктурная ошибка машины — ${infra.kind === 'npm_cache' ? 'повреждён кэш npm' : 'нет места на диске'}`, userId)
+            progress(runId, done, total, `Инфраструктурная ошибка машины — ${CI_INFRA_LABEL[infra.kind]}`, userId)
             const infraStatus: CiStatus = res.status === 'timeout' ? 'timeout' : 'failed'
             if (slot === 'before_model') {
               rollbackAndFail(runId, userId, runRow.prevColumnId, 'infra_error', infraStatus)
