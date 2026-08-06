@@ -168,7 +168,7 @@ test('точка входа запускает гейт из пути с не-AS
   const failingTest = join(worktree, 'apps/llm-runner/src/entry-guard-unicode-failure.test.mjs')
 
   try {
-    const added = spawnSync('git', ['worktree', 'add', '--detach', worktree, 'HEAD'], { cwd: repository, encoding: 'utf8' })
+    const added = spawnSync('git', ['worktree', 'add', '--detach', worktree, 'origin/main'], { cwd: repository, encoding: 'utf8' })
     assert.equal(added.status, 0, added.stderr)
     mkdirSync(scriptDirectory)
     mkdirSync(commandsDirectory)
