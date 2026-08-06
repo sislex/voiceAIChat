@@ -34,9 +34,9 @@ describe('App — утилиты как страницы по URL', () => {
     expect(screen.queryByTestId('scroll')).not.toBeInTheDocument()
   })
 
-  it('пункт «Агенты» в сайдбаре ведёт на #/claude-code, «Закрыть» возвращает чат', async () => {
+  it('пункт «История LLM» в сайдбаре ведёт на #/claude-code, «Закрыть» возвращает чат', async () => {
     await renderApp()
-    await userEvent.click(await screen.findByRole('button', { name: 'Агенты' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'История LLM' }))
     await waitFor(() => expect(window.location.hash).toBe('#/claude-code'))
     const page = await screen.findByTestId('cc-overlay')
     await userEvent.click(screen.getByRole('button', { name: 'Закрыть' }))

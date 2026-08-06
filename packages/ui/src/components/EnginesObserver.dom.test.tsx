@@ -47,6 +47,7 @@ function base(engine: 'claude' | 'codex', onSwitchEngine = vi.fn()) {
 describe('EnginesObserver', () => {
   it('движок Claude: показывает тело CC и сводку (модель/токены/стоимость)', () => {
     render(<EnginesObserver {...base('claude')} />)
+    expect(screen.getByRole('heading', { name: 'История LLM' })).toBeInTheDocument()
     expect(screen.getByTestId('cc-transcript')).toHaveTextContent('привет из CC')
     const bar = screen.getByTestId('usage-bar')
     expect(bar).toHaveTextContent('claude-opus-4-8')

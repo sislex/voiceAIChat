@@ -23,6 +23,8 @@ export interface CodexObserverProps {
   toolbar?: ReactNode
   /** Панель над телом (сводка расхода: модель/токены/стоимость). */
   banner?: ReactNode
+  /** Заголовок рамки; объединённый наблюдатель задаёт общее имя. */
+  title?: string
 }
 
 const KIND_LABEL: Record<CxItemKind, string> = {
@@ -84,10 +86,11 @@ export function CodexObserver({
   onClose,
   toolbar,
   banner,
+  title = 'Проводник Codex',
   variant = 'modal'
 }: CodexObserverProps): JSX.Element {
   return (
-    <ToolFrame title="Проводник Codex" variant={variant} onClose={onClose} testId="cx-overlay" actions={toolbar}>
+    <ToolFrame title={title} variant={variant} onClose={onClose} testId="cx-overlay" actions={toolbar}>
       {banner}
       <div className="ccobs-body">
         <nav className="cc-col cc-projects" aria-label="Проекты">

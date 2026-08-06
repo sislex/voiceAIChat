@@ -11,7 +11,7 @@ import { CodexObserver, type CodexObserverProps } from './CodexObserver'
 export type ObserverEngine = 'claude' | 'codex'
 
 /** Данные движка без общих для рамки полей (их задаёт объединённый компонент). */
-type Bundle<P> = Omit<P, 'variant' | 'onClose' | 'toolbar' | 'banner'> & {
+type Bundle<P> = Omit<P, 'variant' | 'onClose' | 'toolbar' | 'banner' | 'title'> & {
   /** Сводка расхода активной сессии (null — сессия не выбрана). */
   usage: SessionUsage | null
 }
@@ -128,6 +128,7 @@ export function EnginesObserver({
         onClose={onClose}
         toolbar={toolbar}
         banner={<UsageBar usage={cxUsage} />}
+        title="История LLM"
       />
     )
   }
@@ -138,6 +139,7 @@ export function EnginesObserver({
       onClose={onClose}
       toolbar={toolbar}
       banner={<UsageBar usage={ccUsage} />}
+      title="История LLM"
     />
   )
 }

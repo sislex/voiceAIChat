@@ -21,6 +21,8 @@ export interface CcObserverProps {
   toolbar?: ReactNode
   /** Панель над телом (сводка расхода: модель/токены/стоимость). */
   banner?: ReactNode
+  /** Заголовок рамки; объединённый наблюдатель задаёт общее имя. */
+  title?: string
 }
 
 const KIND_LABEL: Record<CcItemKind, string> = {
@@ -82,10 +84,11 @@ export function CcObserver({
   onClose,
   toolbar,
   banner,
+  title = 'Проводник Claude Code',
   variant = 'modal'
 }: CcObserverProps): JSX.Element {
   return (
-    <ToolFrame title="Проводник Claude Code" variant={variant} onClose={onClose} testId="cc-overlay" actions={toolbar}>
+    <ToolFrame title={title} variant={variant} onClose={onClose} testId="cc-overlay" actions={toolbar}>
       {banner}
       <div className="ccobs-body">
         <nav className="cc-col cc-projects" aria-label="Проекты">
