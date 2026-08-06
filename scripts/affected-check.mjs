@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 export const PACKAGES = [
   { id: 'shared', path: 'packages/shared', workspace: '@voicechat/shared' },
@@ -189,8 +190,7 @@ export function startRelatedTest(check, { maxWorkers } = {}) {
   const reportFile = vitestResultFile()
   // `--related` живёт только в подкоманде `vitest related`, а тестовый скрипт
   // пакета — это `vitest run`: `vitest run --related` в vitest 2.x падает с
-  // «Unknown option `--related`», и быстрый этап валил гейт на любой правке кода
-  // (в ране это было не видно — там гейт обычно не набирал изменённых файлов).
+  // «Unknown option `--related`», и быстрый этап валил гейт на любой правке кода.
   // Поэтому зовём vitest напрямую в папке пакета, мимо npm-скрипта; пути в
   // `check.files` уже относительны пакету.
   const args = ['vitest', 'related', ...check.files, '--run', '--passWithNoTests', '--reporter=json', `--outputFile=${reportFile}`, '--silent']
@@ -379,7 +379,7 @@ async function main() {
   console.log(`[affected-check] full stage: completed in ${Date.now() - fullStartedAt}ms`)
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
     console.error(`[affected-check] ${error.message}`)
     process.exitCode = error.code ?? 1
