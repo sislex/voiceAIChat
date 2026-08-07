@@ -5,6 +5,7 @@ import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { SettingsModal, type SettingsModalProps } from './SettingsModal'
 import { DEFAULT_SETTINGS, type UserRole } from '@shared/types'
+import type { UserLlmAccess } from '@shared/llmAccess'
 
 /** Минимальные пропы модалки: всё пустое/no-op, кроме роли и переопределений. */
 function renderModal(role: UserRole, overrides: Partial<SettingsModalProps> = {}): void {
@@ -44,13 +45,23 @@ describe('SettingsModal — модели Claude', () => {
     ])
   })
 
-  it('user не видит opus и fable — только default/sonnet/haiku', () => {
-    renderModal('user')
+  // Меню сужает персональный доступ (`llmAccess`), а не роль: запреты — данные
+  // пользователя, их правит админ в карточке на `#/users/:name`.
+  it('запреты доступа убирают opus и fable — остаются default/sonnet/haiku', () => {
+    const denied: UserLlmAccess[] = [{ provider: 'claude', modelId: 'opus[1m]' }, { provider: 'claude', modelId: 'fable' }]
+    renderModal('user', { llmAccess: denied })
     const select = screen.getByLabelText('Модель Claude')
     const opts = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
     expect(opts).toEqual(['default', 'sonnet', 'haiku'])
     expect(opts).not.toContain('opus[1m]')
     expect(opts).not.toContain('fable')
+  })
+
+  it('без запретов у роли user меню то же, что у админа', () => {
+    renderModal('user')
+    const select = screen.getByLabelText('Модель Claude')
+    const opts = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
+    expect(opts).toEqual(['default', 'opus[1m]', 'fable', 'sonnet', 'haiku'])
   })
 
   it('сохраняет выбранный id как есть — он же уйдёт в CLI', async () => {
