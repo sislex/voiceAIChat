@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-07
-checked: 519ef04
+checked: ee966f9
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/routes/projects.ts
@@ -66,6 +66,17 @@ areas:
 `server.ts`); все под Bearer, не в `isPublic`. Клиент — каналы в
 `packages/ui/src/remote/httpApi.ts`. Перемещение задачи (`tasks:move`) принимает
 соседей `afterId`/`beforeId` (id, не индексы); сервер считает ранг в транзакции.
+
+## Порядок карточек в разработке
+
+Карточки в колонке с `semanticType: 'development'` отображаются по убыванию
+приоритета: `urgent`, `high`, `medium`, `low`. Внутри одного приоритета сохраняется
+ручной порядок `position`; при совпадении ранга устойчивый fallback — `createdAt`,
+затем `id`. Единое правило находится в `compareTasksInColumn`
+(`packages/shared/src/projects.ts`), поэтому серверный снимок доски и локальный
+показ `KanbanBoard` совпадают. Этот же отображаемый порядок использует CI-раннер,
+когда выбирает следующий ожидающий ран своего проекта после освобождения слота;
+подробности очереди — в [ci-runner.md](features/ci-runner.md#параллельные-раны).
 
 ## Завершённые задачи уходят с доски (как в Jira)
 

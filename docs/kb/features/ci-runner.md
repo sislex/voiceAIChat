@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-07
-checked: b5a7961
+checked: ee966f9
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/protocol.ts
@@ -171,7 +171,15 @@ cwd/env собираются с shell-escape (пользовательский �
 ## Параллельные раны
 
 Раны **разных задач** одного проекта выполняются одновременно в пределах
-`maxConcurrentRuns`; очередь при исчерпании лимита остаётся FIFO. Работает это
+`maxConcurrentRuns`. Когда лимит исчерпан, ожидающий ран выбирается не по FIFO,
+а по **актуальному** порядку карточек его проекта в колонке `development`: выше
+стоят `urgent`, затем `high`, `medium` и `low`; одинаковый приоритет сохраняет
+ручной порядок (`position`, с устойчивым fallback по времени создания и id).
+Поэтому смена приоритета или ручная перестановка карточки, пока её ран ждёт,
+влияет на следующий освобождённый слот. У разных проектов общей колонки нет, так
+что их относительный порядок остаётся порядком постановки. Порядок доски задаёт
+`compareTasksInColumn` в `packages/shared/src/projects.ts`, выбор ожидающего —
+`createCiRunManager` в `apps/server/src/ci/runManager.ts`. Работает это
 только потому, что раны изолированы по построению: рабочая директория —
 `{repos_root}/{project}/{task_number}`, ветка — по шаблону
 `feature/{task_number}-{slug}`, npm-кэш — `{repos_root}/.npm-cache/{project}-{task_number}`.
