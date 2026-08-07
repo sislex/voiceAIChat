@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-08-06
-checked: 46a9e57
+updated: 2026-08-08
+checked: fee416b
 areas:
   - apps/server/src
 ---
@@ -34,10 +34,28 @@ Backend — Fastify 5 на TypeScript ESM. Он не выпускает JS-ар�
 | admin | Пользователи, блокировка, просмотр данных и единая сводка usage по всем пользователям. Личные usage/access доступны через `/api/me/*`. |
 | projects | Проекты, участники, машины, default machine, канбан columns/tasks. |
 | KB | Status, topics, lexical/semantic search, context и чтение документа. |
+| preview | Same-origin прокси внешнего HTTP/HTTPS-сайта для iframe. |
 
 Канонические строки находятся в `packages/shared/src/protocol.ts`. Реализация разделена между `routes/rest.ts`, `routes/agents.ts`, `routes/admin.ts`, `routes/projects.ts`, `kb/routes.ts`, `users/auth.ts` и `anthropic/gateway.ts`.
 
 Каждый запрос к пользовательским данным получает имя через `uid(req)`. Проверки членства/владения выполняются до чтения или мутации. Admin guard использует роль из разрешённой сессии, не имя из URL.
+
+## Прокси веб-превью
+
+`registerPreviewProxy()` подключается из `server.ts` после основной REST-поверхности
+и обслуживает защищённый `GET /api/preview`. Реализация в
+`routes/previewProxy.ts` принимает только HTTP/HTTPS и не позволяет превью стать
+SSRF-мостом: до запроса и в DNS-lookup все адреса имени должны быть публичными;
+loopback, unspecified, private, link-local, multicast/reserved IPv4 и IPv6 ULA
+отвергаются. Каждое из максимум пяти перенаправлений проходит ту же проверку.
+
+Один внешний ответ ждут не дольше 10 секунд и читают максимум 5 MiB. Для HTML,
+XHTML и CSS прокси переписывает URL ресурсов, ссылок, форм, постеров и `srcset`
+обратно в `/api/preview`, сохраняя навигацию и зависимые ресурсы внутри проверяемой
+границы. Перед отправкой он снимает `X-Frame-Options`, CSP и cookies, пересчитывает
+длину изменённого тела и отдаёт исходный status; ошибки загрузки возвращаются как
+структурированный JSON. UI-поведение — в [ui.md](ui.md#веб-превью), путь контракта
+— в `packages/shared/src/protocol.ts`.
 
 ## WebSocket `/ws`
 
