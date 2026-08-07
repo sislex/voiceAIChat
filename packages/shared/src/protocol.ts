@@ -255,6 +255,8 @@ export const REST = {
   taskCiLlm: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/ci/llm`,
   taskCi: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/ci`,
   ciRunStart: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/ci/run`,
+  /** Принудительный запуск на явно указанной машине (даже из очереди). */
+  ciRunForceStart: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/ci/run-on-machine`,
   ciMetrics: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci/metrics`,
   ciRun: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}`,
   ciRunLog: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/log`,

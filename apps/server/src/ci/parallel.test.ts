@@ -299,3 +299,158 @@ describe('инвариант изоляции', () => {
     expect(await waitStatus(first)).toBe('success')
   })
 })
+
+/** Вторая машина проекта — для распределения параллельных запусков. */
+function linkSecondMachine(): string {
+  const agent = db.createAgent('admin', 'M2')
+  db.linkMachine('admin', projectId, agent.id)
+  db.setProjectMachineReposRoot('admin', projectId, agent.id, '/repos-b')
+  return agent.id
+}
+
+/** Ран, который держит шаг модели до вызова release (статус running). */
+function holdModel(): { hold: Promise<void>; release: () => void } {
+  let release: () => void = () => {}
+  const hold = new Promise<void>((res) => { release = res })
+  return { hold, release }
+}
+
+async function waitRunning(runId: string): Promise<void> {
+  for (let i = 0; i < 400 && db.getCiRunRaw(runId)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 5))
+  expect(db.getCiRunRaw(runId)?.status).toBe('running')
+}
+
+describe('параллельный запуск мимо очереди', () => {
+  it('при maxConcurrentRuns=1 параллельный ран не ждёт очередь', async () => {
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    const { hold, release } = holdModel()
+    const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
+    const first = startRun(ci, taskIds[0])
+    await waitRunning(first)
+    const res = ci.start('admin', projectId, taskIds[1], { launch: 'parallel' })
+    if ('error' in res) throw new Error(res.error)
+    // Второй ран закончился, пока первый всё ещё держит единственный слот.
+    expect(await waitStatus(res.run.id)).toBe('success')
+    expect(db.getCiRunRaw(first)!.status).toBe('running')
+    release()
+    expect(await waitStatus(first)).toBe('success')
+  })
+
+  it('свободная машина по умолчанию выбирается первой', async () => {
+    linkSecondMachine()
+    const ci = manager()
+    const res = ci.start('admin', projectId, taskIds[0], { launch: 'parallel' })
+    if ('error' in res) throw new Error(res.error)
+    expect(res.run.agentId).toBe(db.getProject('admin', projectId)!.defaultAgentId)
+    expect(await waitStatus(res.run.id)).toBe('success')
+  })
+
+  it('занятая машина по умолчанию уступает свободной, и ран выполняется на ней', async () => {
+    const second = linkSecondMachine()
+    const { hold, release } = holdModel()
+    const agents: string[] = []
+    const spy: CommandExecutor = {
+      run: async (req, onChunk, signal) => { agents.push(req.agentId); return executor.run(req, onChunk, signal) }
+    }
+    const ci = manager({ executor: spy, modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
+    const first = startRun(ci, taskIds[0])
+    await waitRunning(first)
+    const res = ci.start('admin', projectId, taskIds[1], { launch: 'parallel' })
+    if ('error' in res) throw new Error(res.error)
+    expect(res.run.agentId).toBe(second)
+    expect(await waitStatus(res.run.id)).toBe('success')
+    // Команды параллельного рана действительно ушли на выбранную машину.
+    expect(agents).toContain(second)
+    release()
+    expect(await waitStatus(first)).toBe('success')
+  })
+
+  it('свободных машин нет — берётся наименее загруженная, ран с NULL-машиной учитывается за машиной по умолчанию', async () => {
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    const second = linkSecondMachine()
+    const defaultAgent = db.getProject('admin', projectId)!.defaultAgentId!
+    const third = db.createTask('admin', projectId, { columnId: db.getBoard('admin', projectId)!.columns[0].id, title: 'T3' })!.id
+    const { hold, release } = holdModel()
+    const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
+    // Обе машины заняты: на умолчальной ран работает, вторая держит очередь
+    // задачей с закреплённой машиной; плюс ран без машины — тоже за умолчальной.
+    const first = startRun(ci, taskIds[0])
+    await waitRunning(first)
+    db.updateTask('admin', projectId, taskIds[1], { agentId: second })
+    const queuedOnSecond = startRun(ci, taskIds[1])
+    db.updateCiRun(first, { agentId: null })
+    expect(db.countActiveCiRunsByAgent()).toEqual({ [defaultAgent]: 1, [second]: 1 })
+    // Умолчальная — 1 активный ран (NULL учтён), вторая — 1: при равенстве
+    // выбирается машина по умолчанию.
+    const res = ci.start('admin', projectId, third, { launch: 'parallel' })
+    if ('error' in res) throw new Error(res.error)
+    expect(res.run.agentId).toBe(defaultAgent)
+    expect(await waitStatus(res.run.id)).toBe('success')
+    release()
+    expect(await waitStatus(first)).toBe('success')
+    expect(await waitStatus(queuedOnSecond)).toBe('success')
+  })
+
+  it('карточка с закреплённой машиной при параллельном запуске уходит на неё, а не в автоподбор', async () => {
+    const second = linkSecondMachine()
+    db.updateTask('admin', projectId, taskIds[0], { agentId: second })
+    const ci = manager()
+    const res = ci.start('admin', projectId, taskIds[0], { launch: 'parallel' })
+    if ('error' in res) throw new Error(res.error)
+    expect(res.run.agentId).toBe(second)
+    expect(await waitStatus(res.run.id)).toBe('success')
+  })
+})
+
+describe('принудительный запуск на указанной машине', () => {
+  it('простаивающая задача стартует сразу на указанной машине, мимо очереди', async () => {
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    const second = linkSecondMachine()
+    const { hold, release } = holdModel()
+    const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
+    const first = startRun(ci, taskIds[0])
+    await waitRunning(first)
+    const res = ci.forceStartOnMachine('admin', projectId, taskIds[1], second)
+    if ('error' in res) throw new Error(res.error)
+    expect(res.run.agentId).toBe(second)
+    expect(await waitStatus(res.run.id)).toBe('success')
+    release()
+    expect(await waitStatus(first)).toBe('success')
+  })
+
+  it('ран из очереди продвигается: тот же ран получает машину и уходит в работу', async () => {
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    const second = linkSecondMachine()
+    const { hold, release } = holdModel()
+    const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
+    const first = startRun(ci, taskIds[0])
+    await waitRunning(first)
+    const queued = startRun(ci, taskIds[1])
+    expect(db.getCiRunRaw(queued)!.status).toBe('queued')
+    const res = ci.forceStartOnMachine('admin', projectId, taskIds[1], second)
+    if ('error' in res) throw new Error(res.error)
+    // Продвинут именно ожидающий ран, а не создан новый.
+    expect(res.run.id).toBe(queued)
+    expect(res.run.agentId).toBe(second)
+    expect(await waitStatus(queued)).toBe('success')
+    // Первый ран всё ещё держит единственный слот — очередь не пострадала.
+    expect(db.getCiRunRaw(first)!.status).toBe('running')
+    release()
+    expect(await waitStatus(first)).toBe('success')
+    expect(ci.activeRunIds()).toEqual([])
+  })
+
+  it('уже выполняющийся ран не перезапускается, чужая машина отклоняется', async () => {
+    const second = linkSecondMachine()
+    const { hold, release } = holdModel()
+    const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
+    const first = startRun(ci, taskIds[0])
+    await waitRunning(first)
+    const busy = ci.forceStartOnMachine('admin', projectId, taskIds[0], second)
+    expect('error' in busy && busy.error).toContain('уже выполняется')
+    const foreign = ci.forceStartOnMachine('admin', projectId, taskIds[1], 'nope')
+    expect('error' in foreign && foreign.error).toContain('не привязана')
+    release()
+    expect(await waitStatus(first)).toBe('success')
+  })
+})

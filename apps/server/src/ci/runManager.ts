@@ -10,7 +10,8 @@ import type {
   CiRunMode, CiInteraction, CiInteractionAnswer, CiPlanDecision, QuestionSpec, Message, Task
 } from '@voicechat/shared'
 import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificationCommand } from '@voicechat/shared'
-import { isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed } from '@voicechat/shared'
+import { isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, pickCiRunAgent } from '@voicechat/shared'
+import type { CiRunLaunch } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook, CiRunPrimitives } from './types.js'
@@ -66,8 +67,24 @@ interface ActiveRun {
   branch?: string
 }
 
+export interface CiRunStartOptions {
+  mode?: CiRunMode
+  provider?: 'claude' | 'codex'
+  model?: string
+  /** `parallel` — сразу в работу, мимо FIFO-очереди и `maxConcurrentRuns`. */
+  launch?: CiRunLaunch
+  /** Явная машина запуска; без неё `parallel` подбирает машину сам. */
+  agentId?: string
+}
+
 export interface CiRunManager {
-  start(userId: string, projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string }): { run: CiRun } | { error: string }
+  start(userId: string, projectId: string, taskId: string, options?: CiRunMode | CiRunStartOptions): { run: CiRun } | { error: string }
+  /**
+   * Немедленный запуск на явно указанной машине (из настроек задачи). Ран этой
+   * задачи, ещё стоящий в очереди, не отменяется, а продвигается: получает
+   * указанную машину и уходит в работу мимо очереди.
+   */
+  forceStartOnMachine(userId: string, projectId: string, taskId: string, agentId: string): { run: CiRun } | { error: string }
   retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): { run: CiRun } | { error: string }
   discardChangesAndRetry(userId: string, runId: string): Promise<{ run: CiRun } | { error: string }>
   cancel(userId: string, runId: string): boolean
@@ -111,29 +128,35 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   // параллельно — изоляция держится на том, что рабочая директория и ветка у
   // каждой задачи свои (см. проверку инварианта в `execute`).
   let running = 0
-  const waiters: Array<() => void> = []
   /**
    * Слот принадлежит рану, а не вызову: на паузе (`waitForUser`) ран слот
    * отпускает и берёт заново. `abandoned` поднимается, когда ран уже закрыт
    * (в том числе сторожевым таймаутом отмены) — зомби-`execute` после этого
    * слот не занимает, иначе лимит сервера утекает по одному слоту за ран.
+   * `bypass` — ран идёт мимо очереди (параллельный или принудительный запуск):
+   * слот сервера он не занимает и не освобождает.
    */
-  interface RunSlot { held: boolean; abandoned: boolean }
+  interface RunSlot { held: boolean; abandoned: boolean; bypass: boolean }
+  /** Пробуждение из очереди: `slot` — освободился серверный слот, `promoted` — ран продвинули мимо очереди. */
+  const waiters: Array<{ slot: RunSlot; wake: (reason: 'slot' | 'promoted') => void }> = []
   const runSlots = new Map<string, RunSlot>()
   async function acquireSlot(slot: RunSlot): Promise<void> {
-    if (slot.held || slot.abandoned) return
+    if (slot.held || slot.abandoned || slot.bypass) return
     const limit = deps.db.getCiSettings().maxConcurrentRuns
     if (running < limit) {
       running++
       slot.held = true
       return
     }
-    await new Promise<void>((res) => waiters.push(res))
+    const reason = await new Promise<'slot' | 'promoted'>((res) => waiters.push({ slot, wake: res }))
+    // Продвинутый ран выдернут из очереди принудительным запуском: чужое
+    // пробуждение он не получал, счётчик не трогаем — просто идём работать.
+    if (reason === 'promoted') return
     // Пока стояли в очереди, ран могли закрыть — передаём пробуждение дальше,
     // не трогая счётчик (его уменьшил тот, кто нас разбудил).
     if (slot.abandoned) {
       const next = waiters.shift()
-      if (next) next()
+      if (next) next.wake('slot')
       return
     }
     running++
@@ -144,7 +167,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     slot.held = false
     running--
     const next = waiters.shift()
-    if (next) next()
+    if (next) next.wake('slot')
   }
 
   /**
@@ -215,9 +238,10 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     broadcast({ t: 'ci.step', runId: step.runId, step }, userId)
   }
 
-  function start(userId: string, projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string }): { run: CiRun } | { error: string } {
+  function start(userId: string, projectId: string, taskId: string, options?: CiRunMode | CiRunStartOptions): { run: CiRun } | { error: string } {
     const launchOptions = typeof options === 'string' ? { mode: options } : options
     const modeOverride = launchOptions?.mode
+    const launch: CiRunLaunch = launchOptions?.launch === 'parallel' ? 'parallel' : 'queue'
     const project = deps.db.getProject(userId, projectId)
     if (!project) return { error: 'Проект недоступен' }
     const task = deps.db.getCiTask(userId, projectId, taskId)
@@ -225,9 +249,21 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     // Параллельность — между задачами: два рана одной задачи неизбежно делили бы
     // рабочую директорию и ветку, а это и есть то, чего мы не допускаем.
     if (hasActiveRunForTask(taskId)) return { error: 'Для этой задачи уже выполняется ран' }
-    // Карточка хранит стабильный agentId; старые задачи с NULL продолжают идти
-    // на машине проекта по умолчанию.
-    const agentId = task.agentId ?? project.defaultAgentId
+    // Машина запуска: явный выбор (принудительный запуск) → закреплённая за
+    // карточкой → при параллельном запуске автоподбор по загрузке машин проекта
+    // → машина проекта по умолчанию (старые задачи с NULL идут на неё же).
+    let agentId: string | null
+    if (launchOptions?.agentId) {
+      agentId = launchOptions.agentId
+    } else if (launch === 'parallel' && !task.agentId) {
+      agentId = pickCiRunAgent(
+        project.machines.map((machine) => machine.agentId),
+        project.defaultAgentId ?? null,
+        deps.db.countActiveCiRunsByAgent()
+      )
+    } else {
+      agentId = task.agentId ?? project.defaultAgentId
+    }
     if (agentId && !project.machines.some((machine) => machine.agentId === agentId)) {
       return { error: 'Выбранная машина больше не привязана к проекту' }
     }
@@ -279,13 +315,60 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       deps.db.moveTask(userId, projectId, taskId, { columnId: developmentColumnId })
     }
     if (engineResolution.substituted) deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.llm_engine_substituted', actorType: 'system', payload: { requestedEngineId: settings.llmEngineId, resolvedEngineId: engineResolution.engine?.id ?? null, message: `Исполнитель ${settings.llmEngineId} недоступен; выбран ${engineResolution.engine?.name ?? 'default'}` } })
-    deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.started', actorType: 'user', actorId: userId, payload: { taskId } })
+    deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.started', actorType: 'user', actorId: userId, payload: { taskId, launch, agentId } })
     emitRun(run, userId)
 
     const ctl = new AbortController()
     active.set(run.id, { userId, projectId, taskId, abort: ctl })
-    enqueue(run.id, userId, ctl)
+    enqueue(run.id, userId, ctl, undefined, launch === 'parallel')
     return { run }
+  }
+
+  /**
+   * Немедленный запуск на явно указанной машине — из настроек задачи. Если ран
+   * задачи ещё стоит в общей очереди, он не отменяется, а продвигается: получает
+   * машину и уходит в работу мимо лимита. Уже выполняющийся ран не трогаем —
+   * перезапуск на другой машине означал бы потерю его работы.
+   */
+  function forceStartOnMachine(userId: string, projectId: string, taskId: string, agentId: string): { run: CiRun } | { error: string } {
+    const project = deps.db.getProject(userId, projectId)
+    if (!project) return { error: 'Проект недоступен' }
+    if (!deps.db.getCiTask(userId, projectId, taskId)) return { error: 'Задача не найдена' }
+    if (!project.machines.some((machine) => machine.agentId === agentId)) {
+      return { error: 'Выбранная машина больше не привязана к проекту' }
+    }
+    for (const [id, a] of active) {
+      if (a.taskId !== taskId || isClosingRun(id, a)) continue
+      // Проверка статуса и продвижение — синхронно, в одном ходе event loop:
+      // если execute уже стартовал (в том числе прямо сейчас на другой машине),
+      // promoteQueuedRun не найдёт ран в очереди и запуск честно откажет.
+      const row = deps.db.getCiRunRaw(id)
+      if (row && row.status === 'queued' && promoteQueuedRun(id, agentId)) {
+        deps.db.addCiEvent({ projectId, runId: id, type: 'run.forced_to_machine', actorType: 'user', actorId: userId, payload: { agentId } })
+        const promoted = deps.db.getCiRunRaw(id)!
+        emitRun(promoted, a.userId)
+        return { run: promoted }
+      }
+      return { error: 'Для этой задачи уже выполняется ран' }
+    }
+    return start(userId, projectId, taskId, { launch: 'parallel', agentId })
+  }
+
+  /**
+   * Выдернуть ожидающий ран из общей очереди и пустить в работу на указанной
+   * машине. `false` — рана в очереди уже нет (успел стартовать или закрыться).
+   */
+  function promoteQueuedRun(runId: string, agentId: string): boolean {
+    const slot = runSlots.get(runId)
+    if (!slot || slot.held || slot.abandoned || slot.bypass) return false
+    const index = waiters.findIndex((waiter) => waiter.slot === slot)
+    if (index < 0) return false
+    // Машина меняется до пробуждения: execute читает запись рана уже после него.
+    deps.db.updateCiRun(runId, { agentId })
+    slot.bypass = true
+    const [waiter] = waiters.splice(index, 1)
+    waiter.wake('promoted')
+    return true
   }
 
   /**
@@ -294,8 +377,8 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
    * в любом случае — даже если после отмены `execute` завис на процессе модели:
    * иначе слот и мьютекс держатся до перезапуска сервера.
    */
-  function enqueue(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint): void {
-    const slot: RunSlot = { held: false, abandoned: false }
+  function enqueue(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint, bypassQueue = false): void {
+    const slot: RunSlot = { held: false, abandoned: false, bypass: bypassQueue }
     runSlots.set(runId, slot)
     void acquireSlot(slot)
       .then(() => guardCancel(runId, userId, ctl, execute(runId, userId, ctl, resume)))
@@ -1046,7 +1129,9 @@ fi`
       finalize(runId, userId, 'failed')
       return
     }
-    const agentId = project.defaultAgentId
+    // Машина рана зафиксирована при запуске (выбор карточки, автоподбор или
+    // принудительный запуск); NULL остался только у ранов до появления выбора.
+    const agentId = runRow.agentId ?? project.defaultAgentId
     const machine = project.machines.find((m) => m.agentId === agentId)
     const repoRoot = machine?.reposRoot?.replace(/\/$/, '') || ''
     const projectSlug = slugify(project.name)
@@ -1823,7 +1908,7 @@ fi`
     }
   }
 
-  return { start, retryFromFailed, discardChangesAndRetry, cancel, dequeue, subscribe, snapshot, activeRunIds, consoleExec, answerInteraction }
+  return { start, forceStartOnMachine, retryFromFailed, discardChangesAndRetry, cancel, dequeue, subscribe, snapshot, activeRunIds, consoleExec, answerInteraction }
 }
 
 /**

@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
-updated: 2026-08-06
-checked: ed3821d
+updated: 2026-08-07
+checked: e9c7900
 areas:
   - scripts/kb.mjs
   - AGENTS.md
@@ -140,7 +140,7 @@ areas:                        # пути/каталоги, за которыми
 
 Подробности шага — [features/ci-runner.md](features/ci-runner.md).
 
-## Команды
+## Как обновлять
 
 ```bash
 npm run kb            # = kb:check + kb:index
