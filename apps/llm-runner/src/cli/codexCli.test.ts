@@ -95,6 +95,30 @@ describe('CodexCli', () => {
     expect(input).toContain('Независимые чтения и поиски объединяй')
   })
 
+  it('projectMachines: другие машины проекта и инструмент machines названы в промпте', async () => {
+    const { child, stdin } = fakeChild()
+    let input = ''
+    stdin.on('data', (chunk) => (input += chunk.toString()))
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new CodexCli({ spawn }).send(
+      {
+        prompt: 'сделай что-то',
+        sessionId: null,
+        model: '',
+        remote: {
+          mcpUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=s&agent=a1&project=p1',
+          agentName: 'Мак',
+          projectMachines: ['Сервер']
+        }
+      },
+      makeHandlers()
+    )
+    await tick()
+    expect(input).toContain('«Сервер»')
+    expect(input).toContain('remote:machines')
+    expect(input).toContain('параметром machine')
+  })
+
   it('readOnlyRemote: план подключает remote MCP с bypass, а промпт сохраняет запрет правок', async () => {
     const { child, stdin } = fakeChild()
     let input = ''

@@ -142,6 +142,44 @@ describe('ClaudeCli', () => {
     expect(args2).not.toContain('--disallowedTools')
   })
 
+  it('projectMachines: другие машины проекта в хинте, machines в allow-list; без них — нет', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send(
+      {
+        prompt: 'x',
+        sessionId: null,
+        model: 'opus',
+        remote: {
+          mcpUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=s&agent=a1&project=p1',
+          agentName: 'Мак',
+          projectMachines: ['Сервер', 'Ноутбук']
+        }
+      },
+      makeHandlers()
+    )
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    expect(args[args.indexOf('--allowedTools') + 1]).toContain('mcp__remote__machines')
+    const hint = args[args.indexOf('--append-system-prompt') + 1]
+    expect(hint).toContain('«Сервер», «Ноутбук»')
+    expect(hint).toContain('mcp__remote__machines')
+    expect(hint).toContain('параметром machine')
+
+    // Без других машин промпт и allow-list не упоминают адресацию.
+    const { child: c2 } = fakeChild()
+    const spawn2 = vi.fn(() => c2 as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn: spawn2 }).send(
+      {
+        prompt: 'x', sessionId: null, model: 'opus',
+        remote: { mcpUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=s&agent=a1', agentName: 'Мак' }
+      },
+      makeHandlers()
+    )
+    const args2 = (spawn2 as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    expect(args2[args2.indexOf('--allowedTools') + 1]).not.toContain('mcp__remote__machines')
+    expect(args2[args2.indexOf('--append-system-prompt') + 1]).not.toContain('другие машины проекта')
+  })
+
   it('kbMcpUrl: сервер kb в --mcp-config и хинт «БЗ в первую очередь» без машины', () => {
     const { child } = fakeChild()
     const spawn = vi.fn(() => child as never) as unknown as SpawnFn

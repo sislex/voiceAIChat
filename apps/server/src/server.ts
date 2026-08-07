@@ -266,7 +266,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     : undefined)
   // Лимиты ответов инструментов моста — из настроек CI, на каждый вызов: они
   // режут размер контекста хода, а его цена = контекст × число запросов.
-  registerRemoteBashMcp(app, agentRegistry, mcpSecret, () => ciToolOutputLimits(db.getCiSettings()))
+  registerRemoteBashMcp(
+    app,
+    agentRegistry,
+    mcpSecret,
+    () => ciToolOutputLimits(db.getCiSettings()),
+    // Машины проекта для адресации операций (query `project` дописывает
+    // отправитель хода — turns.ts у чата, modelHooks.ts у CI-рана).
+    (projectId) => db.listProjectMachines(projectId)
+  )
   registerCiCommandsMcp(app, mcpSecret)
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
   // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).

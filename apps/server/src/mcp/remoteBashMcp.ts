@@ -1,6 +1,8 @@
 // MCP-эндпоинт для спавнутого claude: команды и файловые инструменты remote
-// на выбранной машине-агенте. Stateless: на каждый POST — свежие сервер и
-// транспорт (без SSE и session-id). Доступ только по секрету процесса `k` —
+// на выбранной машине-агенте; ход с проектом (query `project`) дополнительно
+// видит машины проекта (инструмент `machines`) и может адресовать операцию
+// любой из них параметром `machine`. Stateless: на каждый POST — свежие сервер
+// и транспорт (без SSE и session-id). Доступ только по секрету процесса `k` —
 // эндпоинт выполняет команды и не должен быть открыт даже на LAN.
 
 import { z } from 'zod'
@@ -140,17 +142,34 @@ function toolError(err: unknown): { content: Array<{ type: 'text'; text: string 
   }
 }
 
+/** Машина проекта, доступная ходу помимо выбранной (из `project_machines`). */
+export interface RemoteMcpMachine {
+  agentId: string
+  name: string
+  /** Папка проекта на машине; пустая строка — папка не настроена. */
+  path: string
+}
+
 /**
  * `limits` — лимиты ответов инструментов (настройки CI, приведённые
  * `ciToolOutputLimits`). Читаются на КАЖДЫЙ запрос: эндпоинт stateless, а
  * настройку меняют без перезапуска сервера. Не передан — дефолты (тесты и
  * сборки без БД).
  */
+/**
+ * `projectMachines` — машины проекта по id из query-параметра `project`: с ним
+ * ход получает инструмент `machines` и параметр `machine` у остальных
+ * инструментов — операцию можно явно адресовать другой машине проекта.
+ * Ограничение доступа проектом держится здесь: и сам `project`, и список машин
+ * приходят не от модели, а от сервера (query собирает отправитель хода,
+ * резолвер читает `project_machines`), модель выбирает только из этого списка.
+ */
 export function registerRemoteBashMcp(
   app: FastifyInstance,
   registry: AgentRegistry,
   secret: string,
-  limits?: () => ToolOutputLimits
+  limits?: () => ToolOutputLimits,
+  projectMachines?: (projectId: string) => RemoteMcpMachine[]
 ): void {
   // Тело читает сам транспорт, поэтому маршрут живёт в своей области видимости
   // с парсером-пустышкой: Fastify отдаёт управление, не трогая поток.
@@ -166,7 +185,7 @@ export function registerRemoteBashMcp(
     scope.addContentTypeParser('*', (_req, _payload, done) => {
       done(null, undefined)
     })
-    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; ro?: string } }>(
+    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; ro?: string; project?: string } }>(
       REMOTE_BASH_MCP_PATH,
       async (req, reply) => {
         if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
@@ -174,6 +193,60 @@ export function registerRemoteBashMcp(
         // ro=1 — фаза плана CI: инструмент нужен для исследования рабочей копии,
         // но менять её нельзя (см. planMode.ts).
         const readOnly = req.query.ro === '1'
+        // Машины проекта из query `project` (его дописывает сервер при отправке
+        // хода, связанного с проектом). Сломанный резолвер не роняет ход: без
+        // списка мост работает по-старому — только выбранная машина.
+        let machines: RemoteMcpMachine[] = []
+        if (req.query.project && projectMachines) {
+          try {
+            machines = projectMachines(req.query.project)
+          } catch {
+            machines = []
+          }
+        }
+        /**
+         * Куда идёт операция: без `machine` — выбранная машина хода и её cwd
+         * (рабочая копия рана / каталог чата); с `machine` — названная машина
+         * проекта и её папка проекта. Гейты readOnly/план проверяются ДО вызова
+         * и от машины не зависят.
+         */
+        const resolveMachine = (machine?: string): { agentId: string; cwd?: string } => {
+          const wanted = machine?.trim()
+          if (!wanted) return { agentId, cwd: req.query.cwd }
+          const found = machines.filter((m) => m.agentId === wanted || m.name === wanted)
+          if (!found.length) {
+            const known = machines.map((m) => `«${m.name}»`).join(', ')
+            throw new Error(
+              `Машина «${wanted}» не найдена среди машин проекта${known ? ` (доступны: ${known})` : ''}. ` +
+                `Список — инструмент machines; без параметра machine операция идёт на выбранной машине.`
+            )
+          }
+          if (found.length > 1) {
+            throw new Error(
+              `Имя «${wanted}» неоднозначно — укажи id машины: ${found.map((m) => `${m.agentId} («${m.name}»)`).join(', ')}`
+            )
+          }
+          const m = found[0]
+          if (m.agentId === agentId) return { agentId, cwd: req.query.cwd }
+          if (!m.path) {
+            throw new Error(
+              `У машины «${m.name}» не настроена папка проекта — операции на ней недоступны. ` +
+                `Задать папку можно в настройках проекта.`
+            )
+          }
+          return { agentId: m.agentId, cwd: m.path }
+        }
+        // Параметр появляется в схемах только вместе со списком машин: ход вне
+        // проекта видит прежние схемы и не гадает про недоступную возможность.
+        // Тип — Record, а не объект с необязательным полем: `machine?: undefined`
+        // ломает совместимость с ZodRawShape (index signature не терпит undefined).
+        const machineParam: Record<string, z.ZodOptional<z.ZodString>> = {}
+        if (machines.length) {
+          machineParam.machine = z
+            .string()
+            .optional()
+            .describe('Имя или id другой машины проекта (см. инструмент machines); без него — выбранная машина')
+        }
 
         // Отмена команды именно этого запроса при обрыве (claude убит на barge-in),
         // не затрагивая параллельные команды на той же машине. Слушаем close ОТВЕТА,
@@ -206,10 +279,15 @@ export function registerRemoteBashMcp(
               timeout_ms: z
                 .number()
                 .optional()
-                .describe('Таймаут в мс (по умолчанию 120000, максимум 300000)')
+                .describe('Таймаут в мс (по умолчанию 120000, максимум 300000)'),
+              ...machineParam
             }
           },
-          async ({ command, timeout_ms }) => {
+          async (args) => {
+            const { command, timeout_ms } = args
+            // `machine` есть в схеме только у хода с проектом (условный спред не
+            // виден типу шейпа) — достаём через сужение.
+            const machine = (args as { machine?: string }).machine
             try {
               if (readOnly) {
                 const verdict = evaluatePlanModeCommand(command)
@@ -227,7 +305,8 @@ export function registerRemoteBashMcp(
                   }
                 }
               }
-              const cwd = req.query.cwd
+              const target = resolveMachine(machine)
+              const cwd = target.cwd
               // Чтение файла — работа инструмента read: он отдаёт окно строк, а
               // не файл целиком. Отказ идёт до exec и несёт готовую замену,
               // чтобы модель не гадала, чем заменить команду.
@@ -240,9 +319,9 @@ export function registerRemoteBashMcp(
               }
               const timeoutMs = Math.min(timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
               const shellCommand = cwd
-                ? `cd -- '${quoteCwd(cwd, registry.platformOf(agentId))}' && ${command}`
+                ? `cd -- '${quoteCwd(cwd, registry.platformOf(target.agentId))}' && ${command}`
                 : command
-              const res = await registry.exec(agentId, shellCommand, timeoutMs, abort.signal)
+              const res = await registry.exec(target.agentId, shellCommand, timeoutMs, abort.signal)
               const tail = `[exit code: ${res.exitCode ?? '?'}${res.timedOut ? ', таймаут' : ''}]`
               // Вывод сжимаем ДО приписки с кодом выхода: код и хвост лога —
               // самое ценное для fix-loop, и терять их из-за обрезки нельзя.
@@ -273,12 +352,16 @@ export function registerRemoteBashMcp(
               // Кап окна — настройка: `.max()` считается на запрос, поэтому
               // заниженный лимит модель видит сразу в схеме инструмента.
               limit: z.number().int().min(1).max(toolLimits.readLines).optional()
-                .describe(`Число строк (по умолчанию ${Math.min(DEFAULT_READ_LIMIT, toolLimits.readLines)}, максимум ${toolLimits.readLines})`)
+                .describe(`Число строк (по умолчанию ${Math.min(DEFAULT_READ_LIMIT, toolLimits.readLines)}, максимум ${toolLimits.readLines})`),
+              ...machineParam
             }
           },
-          async ({ path, offset, limit }) => {
+          async (args) => {
+            const { path, offset, limit } = args
+            const machine = (args as { machine?: string }).machine
             try {
-              const result = await registry.fsRead(agentId, remotePath(req.query.cwd, path))
+              const target = resolveMachine(machine)
+              const result = await registry.fsRead(target.agentId, remotePath(target.cwd, path))
               const window = Math.min(limit ?? DEFAULT_READ_LIMIT, toolLimits.readLines)
               return {
                 content: [{
@@ -302,15 +385,19 @@ export function registerRemoteBashMcp(
               path: z.string().optional().describe('Файл или каталог относительно cwd или абсолютный внутри него (по умолчанию cwd)'),
               glob: z.string().optional().describe('Необязательная маска файлов для --include'),
               maxMatches: z.number().int().min(1).max(toolLimits.grepMatches).optional()
-                .describe(`Максимум совпадений (по умолчанию и максимум ${toolLimits.grepMatches})`)
+                .describe(`Максимум совпадений (по умолчанию и максимум ${toolLimits.grepMatches})`),
+              ...machineParam
             }
           },
-          async ({ pattern, path, glob, maxMatches }) => {
+          async (args) => {
+            const { pattern, path, glob, maxMatches } = args
+            const machine = (args as { machine?: string }).machine
             try {
-              const target = remotePath(req.query.cwd, path ?? '.')
+              const machineTarget = resolveMachine(machine)
+              const target = remotePath(machineTarget.cwd, path ?? '.')
               const include = glob ? ` --include=${quoteShell(glob)}` : ''
               const command = `grep -rn --binary-files=without-match${include} -- ${quoteShell(pattern)} ${quoteShell(target)}`
-              const res = await registry.exec(agentId, command, DEFAULT_TIMEOUT_MS, abort.signal)
+              const res = await registry.exec(machineTarget.agentId, command, DEFAULT_TIMEOUT_MS, abort.signal)
               if (res.exitCode !== 0 && res.exitCode !== 1) {
                 throw new Error(res.output.trim() || `grep завершился с кодом ${res.exitCode ?? '?'}`)
               }
@@ -351,14 +438,18 @@ export function registerRemoteBashMcp(
               path: z.string().describe('Путь относительно cwd рана или абсолютный внутри него'),
               oldString: z.string().min(1).describe('Точный старый текст'),
               newString: z.string().describe('Новый текст'),
-              replaceAll: z.boolean().optional().describe('Заменить все совпадения (по умолчанию false)')
+              replaceAll: z.boolean().optional().describe('Заменить все совпадения (по умолчанию false)'),
+              ...machineParam
             }
           },
-          async ({ path, oldString, newString, replaceAll }) => {
+          async (args) => {
+            const { path, oldString, newString, replaceAll } = args
+            const machine = (args as { machine?: string }).machine
             try {
               if (readOnly) throw new Error('Отклонено: режим «План» — правки файлов запрещены')
-              const absolutePath = remotePath(req.query.cwd, path)
-              const current = fileText((await registry.fsRead(agentId, absolutePath)).dataBase64)
+              const target = resolveMachine(machine)
+              const absolutePath = remotePath(target.cwd, path)
+              const current = fileText((await registry.fsRead(target.agentId, absolutePath)).dataBase64)
               const count = current.split(oldString).length - 1
               if (count === 0) throw new Error('Текст oldString не найден')
               if (count > 1 && !replaceAll) {
@@ -367,13 +458,45 @@ export function registerRemoteBashMcp(
               const updated = replaceAll
                 ? current.split(oldString).join(newString)
                 : current.replace(oldString, newString)
-              await registry.fsWrite(agentId, absolutePath, Buffer.from(updated, 'utf8').toString('base64'))
+              await registry.fsWrite(target.agentId, absolutePath, Buffer.from(updated, 'utf8').toString('base64'))
               return { content: [{ type: 'text' as const, text: `Файл ${path} обновлён (${replaceAll ? count : 1} замен).` }] }
             } catch (err) {
               return toolError(err)
             }
           }
         )
+
+        // Список машин проекта — только у хода с проектом: вне проекта модель
+        // видит прежний набор инструментов и не гадает про недоступное.
+        if (machines.length) {
+          server.registerTool(
+            'machines',
+            {
+              description:
+                'Машины проекта: имя, онлайн-статус и папка проекта. Без параметра machine операции ' +
+                'выполняются на выбранной машине; другой машине их адресует параметр machine у bash/read/grep/edit.',
+              inputSchema: {}
+            },
+            async () => {
+              const lines = machines.map((m) => {
+                const marks = [registry.isOnline(m.agentId) ? 'в сети' : 'не в сети']
+                if (m.agentId === agentId) marks.push('выбранная машина этого хода')
+                return `- «${m.name}» (id ${m.agentId}) — ${marks.join('; ')}; папка проекта: ${m.path || 'не настроена'}`
+              })
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text:
+                      `Машины проекта:\n${lines.join('\n')}\n\n` +
+                      `Без параметра machine операции выполняются на выбранной машине` +
+                      `${req.query.cwd ? ` (рабочая директория: ${req.query.cwd})` : ''}.`
+                  }
+                ]
+              }
+            }
+          )
+        }
 
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined, // stateless: без session-id

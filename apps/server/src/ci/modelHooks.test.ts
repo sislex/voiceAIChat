@@ -175,6 +175,79 @@ describe('работа модели: VC_MCP_PUBLIC_BASE', () => {
   })
 })
 
+describe('работа модели: машины проекта', () => {
+  it('remote несёт project в mcpUrl и имена других машин проекта', async () => {
+    const mac = db.createAgent(U, 'Мак')
+    const srv = db.createAgent(U, 'Сервер')
+    const project = db.createProject(U, { name: 'P' })
+    db.linkMachine(U, project.id, mac.id)
+    db.linkMachine(U, project.id, srv.id)
+    db.setProjectMachinePath(U, project.id, srv.id, '/srv/proj')
+    const board = db.getBoard(U, project.id)!
+    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    const conv = db.createConversation(U, 'Чат задачи')
+    const run = db.createCiRun({
+      projectId: project.id, taskId: task.id, agentId: mac.id, triggeredBy: U, prevColumnId: null,
+      conversationId: conv.id, kbContextMode: 'off', slotProgress: { done: 0, total: 1, phase: 'В очереди' }
+    })
+    const ctx = {
+      runId: run.id,
+      agentId: mac.id,
+      workspacePath: '/repos/p/1',
+      env: { BRANCH: 'feature/1-x' },
+      signal: new AbortController().signal,
+      parentStepId: 'step-1',
+      log: () => {},
+      run,
+      task,
+      project: db.getProject(U, project.id)!,
+      askUser: async () => null,
+      askPlanApproval: async () => null,
+      runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
+    } as unknown as CiModelContext
+
+    const rec = recorder()
+    const r = await hooksWith(rec.client).modelWork(ctx)
+    expect(r.ok).toBe(true)
+    expect(rec.last()!.remote?.mcpUrl).toContain(`&agent=${mac.id}`)
+    expect(rec.last()!.remote?.mcpUrl).toContain(`&project=${encodeURIComponent(project.id)}`)
+    expect(rec.last()!.remote?.projectMachines).toEqual(['Сервер'])
+  })
+
+  it('единственная машина проекта — прежний remote без project и списка', async () => {
+    const mac = db.createAgent(U, 'Мак')
+    const project = db.createProject(U, { name: 'P' })
+    db.linkMachine(U, project.id, mac.id)
+    const board = db.getBoard(U, project.id)!
+    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    const conv = db.createConversation(U, 'Чат задачи')
+    const run = db.createCiRun({
+      projectId: project.id, taskId: task.id, agentId: mac.id, triggeredBy: U, prevColumnId: null,
+      conversationId: conv.id, kbContextMode: 'off', slotProgress: { done: 0, total: 1, phase: 'В очереди' }
+    })
+    const ctx = {
+      runId: run.id,
+      agentId: mac.id,
+      workspacePath: '/repos/p/1',
+      env: { BRANCH: 'feature/1-x' },
+      signal: new AbortController().signal,
+      parentStepId: 'step-1',
+      log: () => {},
+      run,
+      task,
+      project: db.getProject(U, project.id)!,
+      askUser: async () => null,
+      askPlanApproval: async () => null,
+      runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
+    } as unknown as CiModelContext
+
+    const rec = recorder()
+    await hooksWith(rec.client).modelWork(ctx)
+    expect(rec.last()!.remote?.mcpUrl).not.toContain('&project=')
+    expect(rec.last()!.remote?.projectMachines).toBeUndefined()
+  })
+})
+
 describe('работа модели: база знаний по режимам рана', () => {
   it('auto: инструменты подключены, контекст подмешан, хинт требует идти в БЗ раньше кода', async () => {
     const rec = recorder()
