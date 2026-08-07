@@ -17,7 +17,7 @@
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: 486061d fix: align vitest related worker bounds … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-03 | ⚠ 30 коммит(ов) в areas после сверки: 4284dd0 feat: support multiple task launch proposals … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 13 коммит(ов) в areas после сверки: f60fcc9 feat: add personal LLM model access controls … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 102 коммит(ов) в areas после сверки: a78219a fix(ui): keep task creation out of current chat … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 104 коммит(ов) в areas после сверки: 6189b96 docs(kb): улучшить поиск инструкции обновления прода … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-06 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-06 | ⚠ 2 коммит(ов) в areas после сверки: 4284dd0 feat: support multiple task launch proposals … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-05 | ⚠ 2 коммит(ов) в areas после сверки: 68b9d2f CHAT-108: пустой ход модели не закрывает ран успехом … |
@@ -44,18 +44,18 @@
 
 ## Журнал сессий
 
-Всего записей: 109. Последние:
+Всего записей: 110. Последние:
 
 - [2026-08-07-alexeys-macbook-air-2-multi-task-launch.md](log/2026-08-07-alexeys-macbook-air-2-multi-task-launch.md) — Несколько предложений задач и fast-stage Vitest
 - [2026-08-07-alexeys-macbook-air-2-chat-preview-split.md](log/2026-08-07-alexeys-macbook-air-2-chat-preview-split.md) — chat-preview-split
 - [2026-08-07-alexeys-macbook-air-2-chat-preview-split-kb-gaps.md](log/2026-08-07-alexeys-macbook-air-2-chat-preview-split-kb-gaps.md) — chat-preview-split-kb-gaps
 - [2026-08-07-2470-com-llm-settings-inheritance.md](log/2026-08-07-2470-com-llm-settings-inheritance.md) — llm-settings-inheritance
+- [2026-08-07-2470-com-deploy-production-search.md](log/2026-08-07-2470-com-deploy-production-search.md) — deploy-production-search
 - [2026-08-07-2470-com-admin-model-prices.md](log/2026-08-07-2470-com-admin-model-prices.md) — admin-model-prices
 - [2026-08-06-2470-com-users-dashboard.md](log/2026-08-06-2470-com-users-dashboard.md) — users-dashboard
 - [2026-08-06-2470-com-ui-llm-access.md](log/2026-08-06-2470-com-ui-llm-access.md) — ui-llm-access
 - [2026-08-06-2470-com-task-launch-message-meta.md](log/2026-08-06-2470-com-task-launch-message-meta.md) — task-launch-message-meta
 - [2026-08-06-2470-com-sidebar-rename.md](log/2026-08-06-2470-com-sidebar-rename.md) — sidebar-rename
-- [2026-08-06-2470-com-sidebar-chat-label.md](log/2026-08-06-2470-com-sidebar-chat-label.md) — sidebar-chat-label
 
 ## Исторические планы
 
