@@ -120,6 +120,8 @@ export interface KanbanBoardProps {
   onStartCi?: (taskId: string) => void
   /** Открыть ленту CI-рана. */
   onOpenCiRun?: (runId: string) => void
+  /** Убрать ожидающий ран из очереди CI. */
+  onDequeueCiRun?: (runId: string) => void
   aiAssistPrompts?: ModifierPrompt[]
   onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
   generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>
@@ -538,6 +540,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       ciSummary={props.ciSummaries?.[t.id]}
       onStartCi={props.onStartCi}
       onOpenCiRun={props.onOpenCiRun}
+      onDequeueCiRun={props.onDequeueCiRun}
       onGrab={(e, card, immediate) => grabTask(e, card, t.id, immediate)}
       onCardKeys={onCardKeys(t)}
       onCardBlur={() => {

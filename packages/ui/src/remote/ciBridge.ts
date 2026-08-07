@@ -20,6 +20,7 @@ import type {
   CiFixAttempt,
   CiRunSummary,
   CiRunConclusion,
+  CiQueueRemovalResult,
   CiLogLine,
   CiCommandMetric,
   CiModelWorkMetric,
@@ -96,6 +97,8 @@ export interface RendererCiRest {
   /** Отчёт по всем ранам задачи с итогом (раздел «Отчёт» карточки). */
   getTaskReport(projectId: string, taskId: string): Promise<CiTaskReport>
   cancelRun(runId: string): Promise<{ ok: boolean }>
+  /** Убрать только ожидающий ран; результат сообщает о гонке с его стартом. */
+  dequeueRun(runId: string): Promise<CiQueueRemovalResult>
   retryRun(runId: string): Promise<CiRun>
   retryRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<CiRun>
   discardChangesAndRetry(runId: string): Promise<CiRun>

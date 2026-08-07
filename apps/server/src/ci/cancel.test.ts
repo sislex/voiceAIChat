@@ -182,6 +182,36 @@ describe('отмена рана в фазе модели', () => {
     expect(db.getCiRun('admin', second)!.steps).toEqual([])
   })
 
+  it('ручное исключение из очереди переносит карточку в backlog и идемпотентно', async () => {
+    const { projectId, taskIds } = setup()
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    let release: () => void = () => {}
+    const hold = new Promise<void>((res) => { release = res })
+    const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
+    const first = startRun(ci, projectId, taskIds[0])
+    const queued = startRun(ci, projectId, taskIds[1])
+    for (let i = 0; i < 100 && db.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 10))
+
+    expect(ci.dequeue('admin', queued)).toMatchObject({ status: 'removed', run: { id: queued, status: 'cancelled' } })
+    const backlog = db.getBoard('admin', projectId)!.columns.find((c) => c.semanticType === 'backlog')!
+    expect(db.getBoard('admin', projectId)!.tasks.find((t) => t.id === taskIds[1])!.columnId).toBe(backlog.id)
+    // Повтор не возвращает ложную ошибку и не запускает ран снова.
+    expect(ci.dequeue('admin', queued)).toMatchObject({ status: 'removed', run: { id: queued, status: 'cancelled' } })
+    expect(db.getCiRun('admin', queued)!.steps).toEqual([])
+    release()
+    await waitStatus(first)
+  })
+
+  it('ручное исключение сообщает running, если ран уже успел стартовать', async () => {
+    const { projectId, taskIds } = setup()
+    const ci = manager({ modelWork: async () => ({ ok: true }) })
+    const runId = startRun(ci, projectId, taskIds[0])
+    // Моделируем границу между нажатием в UI и обработкой запроса: статус уже
+    // сменился в execute, поэтому dequeue не должен отменять ран как queued.
+    const live = db.updateCiRun(runId, { status: 'running' })!
+    expect(ci.dequeue('admin', runId)).toEqual({ status: 'running', run: live })
+  })
+
   it('отмена рана из очереди закрывает его как cancelled, не начиная работу', async () => {
     const { projectId, taskIds, prevColumnId } = setup()
     db.updateCiSettings({ maxConcurrentRuns: 1 })

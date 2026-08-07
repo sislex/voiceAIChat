@@ -466,6 +466,14 @@ export type CiLlmProvider = 'claude' | 'codex'
 export type CiStatus = 'queued' | 'running' | 'awaiting_input' | 'success' | 'failed' | 'cancelled' | 'timeout' | 'skipped'
 export const CI_STATUSES: CiStatus[] = ['queued', 'running', 'awaiting_input', 'success', 'failed', 'cancelled', 'timeout', 'skipped']
 
+/** Результат попытки убрать ран из очереди. Сервер возвращает фактическое состояние,
+ * чтобы клиент не сообщил об успехе, если ран успел начаться. */
+export type CiQueueRemovalResult =
+  | { status: 'removed'; run: CiRun }
+  | { status: 'running'; run: CiRun }
+  | { status: 'not_queued'; run: CiRun }
+  | { status: 'not_found' }
+
 /** Терминальные статусы рана. */
 export function isTerminalCiStatus(s: CiStatus): boolean {
   return s === 'success' || s === 'failed' || s === 'cancelled' || s === 'timeout'
