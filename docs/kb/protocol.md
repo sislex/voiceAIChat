@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-08-05
-checked: 4934f4a
+updated: 2026-08-08
+checked: fee416b
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -59,6 +59,14 @@ URL руками. Параметризованные пути — функции
 
 Владелец данных — логин пользователя (`uid(req)` = `req.user.name`); запросы к
 разговорам и машинам фильтруются по нему.
+
+`REST.preview(url)` строит `GET /api/preview?url=…` для same-origin iframe-превью
+внешнего HTTP/HTTPS-сайта. Ручка также проходит общий Bearer-гейт; некорректная
+схема возвращает `400`, недопустимый адрес — `403`, а недоступный ресурс и
+превышенные лимиты — JSON с `error: 'preview_unavailable'` и понятным `message`.
+Это транспортный маршрут, а не bridge `window.*`: `WebPreview` использует его как
+`src` iframe. Ограничения загрузки и преобразование тела описаны в
+[server-internals.md](server-internals.md).
 
 `GET /api/search` (`REST.messagesSearch`) — полнотекстовый поиск по сообщениям:
 `q` (ввод пользователя, экранируется на сервере), `projectId` (`none` или пусто —

@@ -9,26 +9,26 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 40 коммит(ов) в areas после сверки: 2676579 CHAT-133: синхронизировать с main и завершить базу знаний … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 43 коммит(ов) в areas после сверки: fee416b feat: add secure preview proxy … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 6 коммит(ов) в areas после сверки: 65621d2 feat(ui): режим чата в карточке сайдбара + актуальные меню моделей Claude/Codex … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: e39fa65 feat(ci): проверять только затронутые пакеты |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ⚠ 10 коммит(ов) в areas после сверки: 2676579 CHAT-133: синхронизировать с main и завершить базу знаний … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-07 | ⚠ 3 коммит(ов) в areas после сверки: e9c7900 CHAT-133: доступ модели ко всем машинам проекта … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-08 | ✓ |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: e9c7900 CHAT-133: доступ модели ко всем машинам проекта … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 16 коммит(ов) в areas после сверки: e9c7900 CHAT-133: доступ модели ко всем машинам проекта … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 120 коммит(ов) в areas после сверки: 2676579 CHAT-133: синхронизировать с main и завершить базу знаний … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 1 коммит(ов) в areas после сверки: e9c7900 CHAT-133: доступ модели ко всем машинам проекта |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-07 | ⚠ 6 коммит(ов) в areas после сверки: fee416b feat: add secure preview proxy … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-08 | ⚠ 5 коммит(ов) в areas после сверки: fee416b feat: add secure preview proxy … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 6 коммит(ов) в areas после сверки: fee416b feat: add secure preview proxy … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 19 коммит(ов) в areas после сверки: fee416b feat: add secure preview proxy … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 126 коммит(ов) в areas после сверки: fee416b feat: add secure preview proxy … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: aa6ac12 fix(ci): увеличить таймаут актуализации базы знаний … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-07 | ⚠ 1 коммит(ов) в areas после сверки: e9c7900 CHAT-133: доступ модели ко всем машинам проекта |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 1 коммит(ов) в areas после сверки: e9c7900 CHAT-133: доступ модели ко всем машинам проекта |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: 2676579 CHAT-133: синхронизировать с main и завершить базу знаний … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-05 | ⚠ 19 коммит(ов) в areas после сверки: 2676579 CHAT-133: синхронизировать с main и завершить базу знаний … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-06 | ⚠ 14 коммит(ов) в areas после сверки: 2676579 CHAT-133: синхронизировать с main и завершить базу знаний … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-07 | ⚠ 10 коммит(ов) в areas после сверки: 2676579 CHAT-133: синхронизировать с main и завершить базу знаний … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-07 | ⚠ 3 коммит(ов) в areas после сверки: aa6ac12 fix(ci): увеличить таймаут актуализации базы знаний … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ✓ |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ✓ |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-07 | ⚠ 13 коммит(ов) в areas после сверки: fee416b feat: add secure preview proxy … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 3 коммит(ов) в areas после сверки: 8d6061d fix(prod): keep deploy socket reachable after restart … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-07 | ⚠ 7 коммит(ов) в areas после сверки: 8f12df0 CHAT-134: параллельный запуск и распределение тасков по машинам … |
-| [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-07, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-08 | ✓ |
+| [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-08, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
 
 ## Инструкции по пакетам
@@ -44,8 +44,9 @@
 
 ## Журнал сессий
 
-Всего записей: 123. Последние:
+Всего записей: 124. Последние:
 
+- [2026-08-08-alexeys-macbook-air-2-preview-proxy.md](log/2026-08-08-alexeys-macbook-air-2-preview-proxy.md) — preview-proxy
 - [2026-08-08-alexeys-macbook-air-2-chat-133-kb-update-timeout-20m.md](log/2026-08-08-alexeys-macbook-air-2-chat-133-kb-update-timeout-20m.md) — chat-133-kb-update-timeout-20m
 - [2026-08-07-mac-parallel-run-machine-routing.md](log/2026-08-07-mac-parallel-run-machine-routing.md) — parallel-run-machine-routing
 - [2026-08-07-mac-kb-gaps-parallel-run-machine-routing.md](log/2026-08-07-mac-kb-gaps-parallel-run-machine-routing.md) — kb-gaps-parallel-run-machine-routing
@@ -55,7 +56,6 @@
 - [2026-08-07-alexeys-macbook-air-2-multi-task-launch.md](log/2026-08-07-alexeys-macbook-air-2-multi-task-launch.md) — Несколько предложений задач и fast-stage Vitest
 - [2026-08-07-alexeys-macbook-air-2-done-order.md](log/2026-08-07-alexeys-macbook-air-2-done-order.md) — done-order
 - [2026-08-07-alexeys-macbook-air-2-ci-runner-queue-order.md](log/2026-08-07-alexeys-macbook-air-2-ci-runner-queue-order.md) — ci-runner-queue-order
-- [2026-08-07-alexeys-macbook-air-2-ci-runner-production-routing.md](log/2026-08-07-alexeys-macbook-air-2-ci-runner-production-routing.md) — ci-runner-production-routing
 
 ## Исторические планы
 
