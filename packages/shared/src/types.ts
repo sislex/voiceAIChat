@@ -13,6 +13,13 @@ export interface TaskLaunchRequest {
   acceptanceCriteria: string
 }
 
+/** Одно предложение в списке задач, сохранённом вместе с ответом ассистента. */
+export interface TaskLaunchProposal extends TaskLaunchRequest {
+  id: string
+  status?: 'created' | 'declined'
+  taskId?: string
+}
+
 /** Сообщение в ленте чата. */
 /** Компактная ссылка на файл чата. Байты никогда не попадают в SQLite. */
 export interface MessageAttachment {
@@ -341,8 +348,10 @@ export interface TurnMeta extends TurnUsage {
   model?: string
   /** Что именно ушло модели этим ходом — для панели «Подробнее». */
   request?: TurnRequestInfo
-  /** Предложение ассистента создать задачу; персистится вместе с ответом. */
+  /** Legacy-предложение одной задачи; читается UI для обратной совместимости. */
   taskLaunch?: TaskLaunchRequest
+  /** Независимые предложения задач и их персистентное состояние. */
+  taskLaunches?: TaskLaunchProposal[]
   /**
    * Активность хода (команды/thinking/результаты) для подробного вида сообщения.
    * Собирается всегда и персистится в составе `meta` (JSON-колонка), поэтому

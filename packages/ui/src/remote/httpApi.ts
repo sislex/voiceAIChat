@@ -143,6 +143,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
         method: 'POST',
         body: JSON.stringify({ role, text, time, ...(engine ? { engine } : {}), ...(meta ? { meta } : {}), ...(execTarget !== undefined ? { execTarget } : {}), ...(attachments?.length ? { attachments } : {}) })
       }),
+    'messages:updateMeta': ({ conversationId, messageId, meta }) =>
+      req(REST.message(conversationId, messageId), { method: 'PATCH', body: JSON.stringify({ meta }) }),
     'messages:delete': async ({ conversationId, messageId }) => {
       await req(REST.message(conversationId, messageId), { method: 'DELETE' })
     },

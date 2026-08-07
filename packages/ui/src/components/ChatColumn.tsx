@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { ClaudeLogEntry, KbContextMode, Message, PermissionMode, TaskLaunchRequest, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
+import type { ClaudeLogEntry, KbContextMode, Message, PermissionMode, TaskLaunchProposal, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
 import { parseImages, isImagePath } from '@shared/images'
@@ -140,7 +140,7 @@ export interface ChatColumnProps {
   /** Отправить собранные ответы на вопросы модели (форма под последним ответом). */
   onAnswerQuestions?: (text: string) => void
   /** Открыть предложение создать задачу, сохранённое в метаданных ответа. */
-  onCreateTask?: (request: TaskLaunchRequest) => void
+  onCreateTask?: (request: TaskLaunchProposal, messageId: string) => void
   /**
    * Ответ на вопрос CI-рана, продублированный в этот чат: уходит в ран, а не
    * запускает новый ход чата (сообщение помечено `meta.ciInteraction`).
@@ -615,13 +615,30 @@ export function ChatColumn({
                           ))}
                         </div>
                       ))}
-                    {m.meta?.taskLaunch && onCreateTask && (
-                      <div className="qstatic">
-                        <Button size="sm" onClick={() => onCreateTask(m.meta!.taskLaunch!)}>
-                          Создать задачу…
-                        </Button>
-                      </div>
-                    )}
+                    {(m.meta?.taskLaunches?.length || m.meta?.taskLaunch) && onCreateTask && (() => {
+                      const proposals: TaskLaunchProposal[] = m.meta?.taskLaunches?.length
+                        ? m.meta.taskLaunches
+                        : [{ id: 'legacy', ...m.meta!.taskLaunch! }]
+                      return (
+                        <table className="task-launch-table">
+                          <thead><tr><th>Название задачи</th><th>Действие</th></tr></thead>
+                          <tbody>
+                            {proposals.map((proposal) => (
+                              <tr key={proposal.id}>
+                                <td>{proposal.title}</td>
+                                <td>
+                                  {proposal.status === 'created'
+                                    ? <span>Создана</span>
+                                    : proposal.status === 'declined'
+                                      ? <span>Отклонена</span>
+                                      : <Button size="sm" onClick={() => onCreateTask(proposal, m.id)}>Создать задачу</Button>}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )
+                    })()}
                   </div>
                 ) : (
                   <div className="bub">

@@ -1097,6 +1097,18 @@ export class VoiceChatDb {
     }
   }
 
+  /** Заменяет метаданные сообщения и возвращает актуальную запись. */
+  updateMessageMeta(userId: string, conversationId: string, messageId: string, meta: TurnMeta): Message {
+    if (!this.ownsConversation(userId, conversationId)) throw new Error('message not found')
+    const result = this.db
+      .prepare(`UPDATE messages SET meta = ? WHERE id = ? AND conversation_id = ?`)
+      .run(Object.keys(meta).length ? JSON.stringify(meta) : null, messageId, conversationId)
+    if (!result.changes) throw new Error('message not found')
+    const message = this.listMessages(userId, conversationId).find((item) => item.id === messageId)
+    if (!message) throw new Error('message not found')
+    return message
+  }
+
   /** Удаляет одно сообщение по id (в рамках разговора пользователя). */
   deleteMessage(userId: string, conversationId: string, messageId: string): void {
     if (!this.ownsConversation(userId, conversationId)) return

@@ -369,6 +369,12 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (conv) conv.updatedAt = msg.createdAt
       return msg
     },
+    'messages:updateMeta': async ({ messageId, meta }) => {
+      const idx = messages.findIndex((m) => m.id === messageId)
+      if (idx < 0) throw new Error('message not found')
+      messages[idx] = { ...messages[idx], meta }
+      return { ...messages[idx] }
+    },
     'messages:delete': async ({ messageId }) => {
       const idx = messages.findIndex((m) => m.id === messageId)
       if (idx >= 0) messages.splice(idx, 1)

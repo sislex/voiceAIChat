@@ -238,6 +238,18 @@ export async function registerRest(
     }
   )
 
+  app.patch<{ Params: { id: string; messageId: string }; Body: { meta?: import('@voicechat/shared').TurnMeta } }>(
+    '/api/conversations/:id/messages/:messageId',
+    async (req, reply) => {
+      if (!req.body?.meta) return reply.code(400).send({ error: 'meta required' })
+      try {
+        return db.updateMessageMeta(uid(req), req.params.id, req.params.messageId, req.body.meta)
+      } catch {
+        return reply.code(404).send({ error: 'not found' })
+      }
+    }
+  )
+
   app.delete<{ Params: { id: string; messageId: string } }>(
     '/api/conversations/:id/messages/:messageId',
     async (req) => {
