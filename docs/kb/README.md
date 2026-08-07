@@ -17,14 +17,14 @@
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-08 | ⚠ 5 коммит(ов) в areas после сверки: fee416b feat: add secure preview proxy … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 6 коммит(ов) в areas после сверки: fee416b feat: add secure preview proxy … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 19 коммит(ов) в areas после сверки: fee416b feat: add secure preview proxy … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 126 коммит(ов) в areas после сверки: fee416b feat: add secure preview proxy … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 127 коммит(ов) в areas после сверки: 65880f4 chatai-136: работа CI-рана … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: aa6ac12 fix(ci): увеличить таймаут актуализации базы знаний … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-07 | ⚠ 1 коммит(ов) в areas после сверки: e9c7900 CHAT-133: доступ модели ко всем машинам проекта |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 1 коммит(ов) в areas после сверки: e9c7900 CHAT-133: доступ модели ко всем машинам проекта |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-07 | ⚠ 3 коммит(ов) в areas после сверки: aa6ac12 fix(ci): увеличить таймаут актуализации базы знаний … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ✓ |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-07 | ⚠ 13 коммит(ов) в areas после сверки: fee416b feat: add secure preview proxy … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 1 коммит(ов) в areas после сверки: 3c7f968 feat: add element inspector to web preview |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 1 коммит(ов) в areas после сверки: 3c7f968 feat: add element inspector to web preview |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-07 | ⚠ 14 коммит(ов) в areas после сверки: 3c7f968 feat: add element inspector to web preview … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 3 коммит(ов) в areas после сверки: 8d6061d fix(prod): keep deploy socket reachable after restart … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-08 | ✓ |
@@ -44,9 +44,10 @@
 
 ## Журнал сессий
 
-Всего записей: 124. Последние:
+Всего записей: 125. Последние:
 
 - [2026-08-08-alexeys-macbook-air-2-preview-proxy.md](log/2026-08-08-alexeys-macbook-air-2-preview-proxy.md) — preview-proxy
+- [2026-08-08-alexeys-macbook-air-2-preview-inspector.md](log/2026-08-08-alexeys-macbook-air-2-preview-inspector.md) — preview-inspector
 - [2026-08-08-alexeys-macbook-air-2-chat-133-kb-update-timeout-20m.md](log/2026-08-08-alexeys-macbook-air-2-chat-133-kb-update-timeout-20m.md) — chat-133-kb-update-timeout-20m
 - [2026-08-07-mac-parallel-run-machine-routing.md](log/2026-08-07-mac-parallel-run-machine-routing.md) — parallel-run-machine-routing
 - [2026-08-07-mac-kb-gaps-parallel-run-machine-routing.md](log/2026-08-07-mac-kb-gaps-parallel-run-machine-routing.md) — kb-gaps-parallel-run-machine-routing
@@ -55,7 +56,6 @@
 - [2026-08-07-alexeys-macbook-air-2-project-machines-mcp.md](log/2026-08-07-alexeys-macbook-air-2-project-machines-mcp.md) — project-machines-mcp
 - [2026-08-07-alexeys-macbook-air-2-multi-task-launch.md](log/2026-08-07-alexeys-macbook-air-2-multi-task-launch.md) — Несколько предложений задач и fast-stage Vitest
 - [2026-08-07-alexeys-macbook-air-2-done-order.md](log/2026-08-07-alexeys-macbook-air-2-done-order.md) — done-order
-- [2026-08-07-alexeys-macbook-air-2-ci-runner-queue-order.md](log/2026-08-07-alexeys-macbook-air-2-ci-runner-queue-order.md) — ci-runner-queue-order
 
 ## Исторические планы
 
