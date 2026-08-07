@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { fastCheckForPackage, runFastChecks, runPackageGates, selectAffected } from './affected-check.mjs'
+import { fastCheckForPackage, packageArgs, runFastChecks, runPackageGates, selectAffected } from './affected-check.mjs'
 
 const ids = (decision) => decision.packages.map((pkg) => pkg.id)
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -71,6 +71,17 @@ test('selectAffected выбирает пакеты и безопасный fallb
     assert.equal(decision.full, true)
     assert.deepEqual(ids(decision), ['shared', 'server', 'runner', 'agent', 'ui', 'web'])
   })
+})
+
+test('packageArgs согласует min/max workers для Vitest', () => {
+  assert.deepEqual(
+    packageArgs({ workspace: '@voicechat/shared' }, 'test', 1, ['--reporter=json']),
+    ['run', '-w', '@voicechat/shared', 'test', '--', '--minWorkers=1', '--maxWorkers=1', '--reporter=json']
+  )
+  assert.deepEqual(
+    packageArgs({ workspace: '@voicechat/shared' }, 'typecheck', 1),
+    ['run', '-w', '@voicechat/shared', 'typecheck']
+  )
 })
 
 test('runPackageGates ограничивает два независимых гейта и замеряет ускорение', async () => {

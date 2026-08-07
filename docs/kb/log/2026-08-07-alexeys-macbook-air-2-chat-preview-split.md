@@ -17,6 +17,7 @@ author: alexeyrozhnov
 
 - Для первого рендера проектный fallback входит в `Conversation.projectPreviewUrl`, поэтому чат не зависит от предварительной загрузки списка проектов.
 - Ширина preview — локальная UI-настройка, а URL — серверное состояние проекта/разговора.
+- Параллельный `affected-check` передаёт Vitest согласованные `minWorkers` и `maxWorkers`; иначе Vitest 2.x может завершиться с нулём suites и кодом 1.
 
 ## Куда занесено
 
