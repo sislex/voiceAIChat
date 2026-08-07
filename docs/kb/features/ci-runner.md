@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-07
-checked: 406a596
+checked: 4e655d3
 areas:
   - packages/shared/src/ci.ts
   - apps/server/src/ci
@@ -344,6 +344,19 @@ cwd/env собираются с shell-escape (пользовательский �
    --single-branch`; существующая копия с локальными правками → exit `66`
    (dirty workspace, дальше решает пользователь).
 2. **Установить зависимости (npm ci)**.
+
+На MacBook, где SSH-ключ не авторизован в GitHub, сама команда клонирования не
+меняется: глобальный Git rewrite `url.https://github.com/.insteadOf git@github.com:`
+преобразует GitHub SSH URL в HTTPS. Конфигурация проверена клонированием ветки
+`main` репозитория `sislex/voiceAIChat`; это настройка машины, а не логика
+CI-раннера.
+
+MacBook-agent запускает команды через неинтерактивный `zsh` с системным `PATH`.
+Node/npm установлены в `/usr/local/bin`, поэтому путь закреплён одновременно в
+`~/.zshenv` и окружении `launchctl`. Проверка из исходного урезанного PATH
+`/usr/bin:/bin:/usr/sbin:/sbin` получает `/usr/local/bin/node` v22.19.0 и
+`/usr/local/bin/npm` 10.9.3; без машинной настройки шаг `npm ci` не должен
+полагаться на интерактивный shell profile.
 
 **Слот «после модели»**
 
