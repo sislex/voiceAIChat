@@ -7,6 +7,7 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from '../users/accounts.js'
+import { isPublicAddress, rewritePreviewBody } from './previewProxy.js'
 
 let app: FastifyInstance
 let db: VoiceChatDb
@@ -855,5 +856,22 @@ describe('REST: GET /api/search — полнотекстовый поиск по
     const res = await inj({ method: 'GET', url: '/api/search?q=миграция%20&limit=abc&cursor=%00%01' })
     expect(res.statusCode).toBe(200)
     expect(res.json().hits).toHaveLength(1)
+  })
+})
+
+describe('REST: preview proxy', () => {
+  it('блокирует loopback и приватные сети до запроса', async () => {
+    for (const address of ['127.0.0.1', '10.0.0.1', '169.254.169.254', '192.168.1.1', '::1', 'fe80::1', 'fc00::1']) expect(isPublicAddress(address)).toBe(false)
+    expect(isPublicAddress('8.8.8.8')).toBe(true)
+    expect((await inj({ method: 'GET', url: '/api/preview?url=http%3A%2F%2F127.0.0.1%2F' })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'GET', url: '/api/preview?url=https%3A%2F%2Fexample.com' })).statusCode).toBe(401)
+  })
+
+  it('переписывает HTML-ссылки и убирает frame-ancestors CSP', () => {
+    const html = '<meta http-equiv="Content-Security-Policy" content="frame-ancestors none"><a href="/next">next</a><img src="image.png"><script src="/app.js"></script>'
+    const result = rewritePreviewBody(Buffer.from(html), 'text/html', new URL('https://site.example/base/')).toString()
+    expect(result).not.toContain('Content-Security-Policy')
+    expect(result).toContain('/api/preview?url=https%3A%2F%2Fsite.example%2Fnext')
+    expect(result).toContain('/api/preview?url=https%3A%2F%2Fsite.example%2Fbase%2Fimage.png')
   })
 })

@@ -11,6 +11,7 @@ import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
+import { registerPreviewProxy } from './routes/previewProxy.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerAdminRoutes } from './routes/admin.js'
 import { registerProjectRoutes } from './routes/projects.js'
@@ -180,6 +181,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       : null
 
   await registerRest(app, db, opts.config.dataDir, { runnerFs: runnerFs ?? undefined })
+  registerPreviewProxy(app)
 
   const profileHome = (userId: string): string =>
     ensureCliProfile(opts.config.dataDir, userId).home

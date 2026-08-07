@@ -92,7 +92,7 @@ function WebPreview({ conversationUrl, projectUrl, onSave }: { conversationUrl: 
       <button className="vc-btn vc-btn--secondary" type="submit">Открыть</button>
     </form>
     {error && <p className="webpreview-error" id="webpreview-error" role="alert">{error}</p>}
-    {loaded ? <iframe className="webpreview-frame" src={loaded} title="Предпросмотр сайта" /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
+    {loaded ? <iframe className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(loaded)} title="Предпросмотр сайта" onError={() => setError('Сайт недоступен или не разрешает загрузку')} /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
   </section>
 }
 

@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-08-07
-checked: 2ca7dbd
+updated: 2026-08-08
+checked: 757806d
 areas:
   - packages/ui/src
   - apps/web/src
@@ -518,3 +518,9 @@ Storybook 8.6 на vite-билдере: `packages/ui/.storybook/main.ts` (гло
 Переиспользуемые `PromptBuilder` и `useAiAssist` живут в `packages/ui/src/components/prompt-builder/` и экспортируются из `@voicechat/ui`. Компонент транспорт-нейтрален: генератор, модификаторы, применение и персистентность приходят через props. Builder собирает результат из вариантов и сохраняет работу при переходе в настройки; закрытие сбрасывает сессию. Генерация запускается только вручную кнопкой-палочкой справа в поле промпта: сам ввод текста и изменение модификаторов сетевой запрос не выполняют. `applyNativeInputValue` использует нативный setter и bubbling `input`, поэтому интеграция совместима с управляемыми полями и библиотеками форм. Композер `VoiceBar` — первая production-интеграция.
 
 Настройки AI-помощника (`aiAssistProvider`, `aiAssistModel`, `aiAssistPrompts`) хранятся в общих per-user `Settings`. В `SettingsModal` им соответствует отдельный раздел «AI-помощник»; настройки внутри `PromptBuilder` могут временно редактироваться локально или сохраняться через `onPromptsChange`. Storybook содержит состояния builder/settings и интеграции с input/textarea; DOM-тесты дополнительно запускают axe в обоих режимах.
+
+## Веб-превью
+
+Правая панель `WebPreview` в `packages/ui/src/App.tsx` хранит URL разговора как override и берёт проектный URL как fallback. Iframe всегда открывает same-origin `GET /api/preview?url=…`, а не внешний URL напрямую; при ошибке загрузки показывает сообщение пользователю.
+
+Маршрут требует обычный Bearer-сеанс, принимает только HTTP/HTTPS и расположен в `apps/server/src/routes/previewProxy.ts`. Перед каждым запросом и непосредственно в DNS lookup он проверяет все resolved IP: loopback, unspecified, private, link-local, multicast/reserved и IPv6 ULA запрещены. Это же применяется к каждому из максимум пяти redirect. Ответ ограничен 10 секундами и 5 MiB. Для HTML/CSS прокси переписывает относительные ссылки, ресурсы, формы и srcset обратно через `/api/preview`; из ответа удаляются `X-Frame-Options`, CSP и cookies, чтобы страница могла жить в iframe.
