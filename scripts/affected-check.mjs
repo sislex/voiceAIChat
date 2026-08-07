@@ -117,7 +117,9 @@ function printVitestFailure(pkg, summary, fallback) {
 
 export function startPackageCommand(pkg, script, { maxWorkers } = {}) {
   const reportFile = script === 'test' ? vitestResultFile() : null
-  const args = packageArgs(pkg, script, maxWorkers, reportFile ? ['--reporter=json', `--outputFile=${reportFile}`, '--silent'] : [])
+  // Пакетные test-скрипты уже передают `--silent`; повтор Vitest 2.x считает
+  // конфликтом CLI-опций и завершает до запуска тестов.
+  const args = packageArgs(pkg, script, maxWorkers, reportFile ? ['--reporter=json', `--outputFile=${reportFile}`] : [])
   // Успешные проверки и предупреждения не засоряют ленту. Для Vitest берём
   // структурированный отчёт, чтобы в ошибке остались только имя теста и причина.
   const child = spawn('npm', args, { stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
