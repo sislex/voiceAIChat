@@ -1973,6 +1973,23 @@ export class VoiceChatDb {
     }
   }
 
+  /**
+   * Машины проекта с именами — для MCP-моста remote. Пользователь не проверяется
+   * намеренно: параметры query моста собирает сам сервер при отправке хода, а
+   * доступ к эндпоинту закрыт секретом процесса.
+   */
+  listProjectMachines(projectId: string): Array<{ agentId: string; name: string; path: string }> {
+    return (
+      this.db
+        .prepare(
+          `SELECT pm.agent_id, pm.path, a.name FROM project_machines pm
+           JOIN agents a ON a.id = pm.agent_id
+           WHERE pm.project_id = ? ORDER BY a.name ASC`
+        )
+        .all(projectId) as Array<{ agent_id: string; path: string | null; name: string }>
+    ).map((x) => ({ agentId: x.agent_id, name: x.name, path: x.path ?? '' }))
+  }
+
   updateProject(
     userId: string,
     id: string,

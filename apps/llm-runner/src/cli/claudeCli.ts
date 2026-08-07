@@ -91,6 +91,16 @@ export function claudeArgs(req: LlmRequest): string[] {
     // и модель возвращалась к `cat` внутри bash и правкам через heredoc, ради
     // отказа от которых их и делали.
     allowed.push('mcp__remote__bash', 'mcp__remote__read', 'mcp__remote__grep', 'mcp__remote__edit')
+    // Другие машины проекта: без упоминания в промпте модель знает только про
+    // выбранную машину, а без allow-list вызов machines застрянет неодобренным.
+    let machinesHint = ''
+    if (req.remote.projectMachines?.length) {
+      allowed.push('mcp__remote__machines')
+      machinesHint =
+        `\nДоступны и другие машины проекта: ${req.remote.projectMachines.map((n) => `«${n}»`).join(', ')}. ` +
+        `Список и онлайн-статус — инструмент mcp__remote__machines; чтобы выполнить команду или файловую ` +
+        `операцию на другой машине, передай её имя параметром machine (без него операция идёт на выбранной машине).`
+    }
     let ciHint = ''
     if (req.remote.ciMcpUrl) {
       mcpServers.ci = { type: 'http', url: req.remote.ciMcpUrl }
@@ -110,6 +120,7 @@ export function claudeArgs(req: LlmRequest): string[] {
         (req.readOnlyRemote
           ? `\nРежим «План»: только чтение (read/grep, ls и git log/diff/status); правки, установки и сборки запрещены.`
           : '') +
+        machinesHint +
         (req.remote.policySummary ? `\n${req.remote.policySummary}` : '') +
         ciHint
     )

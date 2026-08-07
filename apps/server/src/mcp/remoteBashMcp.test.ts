@@ -714,3 +714,225 @@ describe('remoteBashMcp', () => {
     expect(caught.map((e) => e.message)).toEqual([])
   })
 })
+
+describe('remoteBashMcp: машины проекта (query project)', () => {
+  let app: FastifyInstance
+  afterEach(async () => {
+    await app.close()
+  })
+
+  const INIT_BODY = {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } }
+  }
+
+  const MACHINES = [
+    { agentId: 'a1', name: 'Мак', path: '' },
+    { agentId: 'a2', name: 'Сервер', path: '/srv/proj' },
+    { agentId: 'a3', name: 'Пустая', path: '' }
+  ]
+
+  /** Реестр-шпион: помнит агента и команду/путь каждого вызова; a3 — офлайн. */
+  function spy(): {
+    registry: AgentRegistry
+    lastExec: () => { agentId: string; command: string }
+    lastFs: () => { agentId: string; path: string; written: string | null }
+  } {
+    let exec = { agentId: '', command: '' }
+    let fs = { agentId: '', path: '', written: null as string | null }
+    const registry = {
+      exec: async (agentId: string, command: string) => {
+        exec = { agentId, command }
+        return { exitCode: 0, output: 'ок', timedOut: false }
+      },
+      fsRead: async (agentId: string, path: string) => {
+        fs = { agentId, path, written: fs.written }
+        return { root: '/', cwd: '', dataBase64: Buffer.from('старый текст\n').toString('base64') }
+      },
+      fsWrite: async (agentId: string, path: string, dataBase64: string) => {
+        fs = { agentId, path, written: Buffer.from(dataBase64, 'base64').toString('utf8') }
+        return { root: '/', cwd: '' }
+      },
+      isOnline: (agentId: string) => agentId !== 'a3',
+      platformOf: () => undefined,
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    return { registry, lastExec: () => exec, lastFs: () => fs }
+  }
+
+  async function makeProjectApp(registry: AgentRegistry): Promise<FastifyInstance> {
+    const server = Fastify({ logger: false })
+    registerRemoteBashMcp(server, registry, SECRET, undefined, (projectId) =>
+      projectId === 'p1' ? MACHINES : []
+    )
+    await server.ready()
+    return server
+  }
+
+  const Q = `?k=${SECRET}&agent=a1&cwd=${encodeURIComponent('/repos/task')}&project=p1`
+
+  it('с project в query появляется инструмент machines и параметр machine; без него — нет', async () => {
+    app = await makeProjectApp(spy().registry)
+    await rpc(app, INIT_BODY, Q)
+    const withProject = await rpc(app, { jsonrpc: '2.0', id: 2, method: 'tools/list' }, Q)
+    const tools = (withProject.json() as {
+      result: { tools: Array<{ name: string; inputSchema: { properties: Record<string, unknown> } }> }
+    }).result.tools
+    expect(tools.map((t) => t.name)).toContain('machines')
+    for (const name of ['bash', 'read', 'grep', 'edit']) {
+      expect(tools.find((t) => t.name === name)?.inputSchema.properties).toHaveProperty('machine')
+    }
+
+    const bare = `?k=${SECRET}&agent=a1&cwd=${encodeURIComponent('/repos/task')}`
+    await rpc(app, INIT_BODY, bare)
+    const withoutProject = await rpc(app, { jsonrpc: '2.0', id: 3, method: 'tools/list' }, bare)
+    const bareTools = (withoutProject.json() as {
+      result: { tools: Array<{ name: string; inputSchema: { properties: Record<string, unknown> } }> }
+    }).result.tools
+    expect(bareTools.map((t) => t.name)).not.toContain('machines')
+    expect(bareTools.find((t) => t.name === 'bash')?.inputSchema.properties).not.toHaveProperty('machine')
+  })
+
+  it('machines перечисляет машины с онлайн-статусом, папкой и пометкой выбранной', async () => {
+    app = await makeProjectApp(spy().registry)
+    await rpc(app, INIT_BODY, Q)
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'machines', arguments: {} }
+    }, Q)
+    const text = (call.json() as { result: { content: Array<{ text: string }> } }).result.content[0].text
+    expect(text).toContain('«Мак» (id a1) — в сети; выбранная машина этого хода')
+    expect(text).toContain('«Сервер» (id a2) — в сети; папка проекта: /srv/proj')
+    expect(text).toContain('«Пустая» (id a3) — не в сети')
+    expect(text).toContain('папка проекта: не настроена')
+    expect(text).toContain('рабочая директория: /repos/task')
+  })
+
+  it('bash с machine выполняется на названной машине в её папке проекта', async () => {
+    const { registry, lastExec } = spy()
+    app = await makeProjectApp(registry)
+    await rpc(app, INIT_BODY, Q)
+    await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'bash', arguments: { command: 'ls', machine: 'Сервер' } }
+    }, Q)
+    expect(lastExec()).toEqual({ agentId: 'a2', command: `cd -- '/srv/proj' && ls` })
+  })
+
+  it('bash без machine идёт на выбранную машину с cwd хода (прежнее поведение)', async () => {
+    const { registry, lastExec } = spy()
+    app = await makeProjectApp(registry)
+    await rpc(app, INIT_BODY, Q)
+    await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'bash', arguments: { command: 'ls' } }
+    }, Q)
+    expect(lastExec()).toEqual({ agentId: 'a1', command: `cd -- '/repos/task' && ls` })
+  })
+
+  it('выбранная машина, названная по имени, работает в cwd хода даже без папки проекта', async () => {
+    const { registry, lastExec } = spy()
+    app = await makeProjectApp(registry)
+    await rpc(app, INIT_BODY, Q)
+    await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'bash', arguments: { command: 'ls', machine: 'Мак' } }
+    }, Q)
+    expect(lastExec()).toEqual({ agentId: 'a1', command: `cd -- '/repos/task' && ls` })
+  })
+
+  it('неизвестная машина отклоняется до exec с перечнем доступных', async () => {
+    const { registry, lastExec } = spy()
+    app = await makeProjectApp(registry)
+    await rpc(app, INIT_BODY, Q)
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'bash', arguments: { command: 'ls', machine: 'Чужая' } }
+    }, Q)
+    const body = call.json() as { result: { content: Array<{ text: string }>; isError?: boolean } }
+    expect(body.result.isError).toBe(true)
+    expect(body.result.content[0].text).toContain('«Чужая» не найдена')
+    expect(body.result.content[0].text).toContain('«Сервер»')
+    expect(lastExec().agentId).toBe('')
+  })
+
+  it('машина без настроенной папки проекта отклоняется до обращения к ней', async () => {
+    const { registry, lastExec } = spy()
+    app = await makeProjectApp(registry)
+    await rpc(app, INIT_BODY, Q)
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'bash', arguments: { command: 'ls', machine: 'Пустая' } }
+    }, Q)
+    const body = call.json() as { result: { content: Array<{ text: string }>; isError?: boolean } }
+    expect(body.result.isError).toBe(true)
+    expect(body.result.content[0].text).toContain('не настроена папка проекта')
+    expect(lastExec().agentId).toBe('')
+  })
+
+  it('read и edit с machine ходят в файлы названной машины внутри её папки проекта', async () => {
+    const { registry, lastFs } = spy()
+    app = await makeProjectApp(registry)
+    await rpc(app, INIT_BODY, Q)
+
+    await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'read', arguments: { path: 'src/a.ts', machine: 'Сервер' } }
+    }, Q)
+    expect(lastFs().agentId).toBe('a2')
+    expect(lastFs().path).toBe('/srv/proj/src/a.ts')
+
+    await rpc(app, {
+      jsonrpc: '2.0', id: 3, method: 'tools/call',
+      params: { name: 'edit', arguments: { path: 'src/a.ts', oldString: 'старый', newString: 'новый', machine: 'Сервер' } }
+    }, Q)
+    expect(lastFs().agentId).toBe('a2')
+    expect(lastFs().written).toBe('новый текст\n')
+  })
+
+  it('grep с machine ищет в папке проекта названной машины', async () => {
+    const { registry, lastExec } = spy()
+    app = await makeProjectApp(registry)
+    await rpc(app, INIT_BODY, Q)
+    await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'grep', arguments: { pattern: 'needle', machine: 'Сервер' } }
+    }, Q)
+    expect(lastExec().agentId).toBe('a2')
+    expect(lastExec().command).toContain(`'/srv/proj'`)
+  })
+
+  it('ro=1: правка отклоняется и с параметром machine', async () => {
+    const { registry, lastFs } = spy()
+    app = await makeProjectApp(registry)
+    const ro = `${Q}&ro=1`
+    await rpc(app, INIT_BODY, ro)
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'edit', arguments: { path: 'a.ts', oldString: 'x', newString: 'y', machine: 'Сервер' } }
+    }, ro)
+    const body = call.json() as { result: { content: Array<{ text: string }>; isError?: boolean } }
+    expect(body.result.isError).toBe(true)
+    expect(body.result.content[0].text).toContain('режим «План»')
+    expect(lastFs().agentId).toBe('')
+  })
+
+  it('сломанный резолвер машин не роняет ход: мост работает по-старому', async () => {
+    const { registry, lastExec } = spy()
+    const server = Fastify({ logger: false })
+    registerRemoteBashMcp(server, registry, SECRET, undefined, () => {
+      throw new Error('база недоступна')
+    })
+    await server.ready()
+    app = server
+    await rpc(app, INIT_BODY, Q)
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'bash', arguments: { command: 'ls' } }
+    }, Q)
+    expect((call.json() as { result: { isError?: boolean } }).result.isError).toBeFalsy()
+    expect(lastExec()).toEqual({ agentId: 'a1', command: `cd -- '/repos/task' && ls` })
+  })
+})

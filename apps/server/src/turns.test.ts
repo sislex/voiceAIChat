@@ -126,6 +126,59 @@ describe('turns: рабочий каталог разговора принадл
   })
 })
 
+describe('turns: машины проекта в remote MCP', () => {
+  it('чат проекта несёт project в mcpUrl и имена других машин для хинта', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    const mac = db.createAgent(U, 'Мак')
+    const srv = db.createAgent(U, 'Сервер')
+    const project = db.createProject(U, { name: 'P' })
+    db.linkMachine(U, project.id, mac.id)
+    db.linkMachine(U, project.id, srv.id)
+    db.setProjectMachinePath(U, project.id, srv.id, '/srv/proj')
+    db.setConversationProject(U, conv.id, project.id)
+    db.setConversationExecTarget(U, conv.id, mac.id, '/Users/dev/proj')
+
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+
+    expect(rec.last()?.remote?.mcpUrl).toContain(`&project=${encodeURIComponent(project.id)}`)
+    expect(rec.last()?.remote?.projectMachines).toEqual(['Сервер'])
+    db.close()
+  })
+
+  it('чат без проекта — прежний mcpUrl без project и списка машин', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    const agent = db.createAgent(U, 'Ноутбук')
+    db.setConversationExecTarget(U, conv.id, agent.id, '/root/dir-on-machine')
+
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+
+    expect(rec.last()?.remote?.mcpUrl).not.toContain('&project=')
+    expect(rec.last()?.remote?.projectMachines).toBeUndefined()
+    db.close()
+  })
+
+  it('единственная машина проекта не включает адресацию: project и список не передаются', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    const mac = db.createAgent(U, 'Мак')
+    const project = db.createProject(U, { name: 'P' })
+    db.linkMachine(U, project.id, mac.id)
+    db.setConversationProject(U, conv.id, project.id)
+    db.setConversationExecTarget(U, conv.id, mac.id, '/Users/dev/proj')
+
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+
+    expect(rec.last()?.remote?.mcpUrl).not.toContain('&project=')
+    expect(rec.last()?.remote?.projectMachines).toBeUndefined()
+    db.close()
+  })
+})
+
 describe('turns: VC_MCP_PUBLIC_BASE', () => {
   it('remote mcpUrl и kbMcpUrl строятся от публичной базы, секрет сохраняется', async () => {
     const db = freshDb()

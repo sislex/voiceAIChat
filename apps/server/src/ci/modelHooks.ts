@@ -267,8 +267,22 @@ function runTurn(
 /** remote-часть запроса: если есть машина — прокинуть remote-bash MCP на рабочую папку. */
 function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmRequest> {
   if (!ctx.agentId) return { executionDisabled: true }
-  const mcpUrl = `${deps.mcpBaseUrl}&agent=${encodeURIComponent(ctx.agentId)}&cwd=${encodeURIComponent(ctx.workspacePath)}`
-  return { remote: { mcpUrl, agentName: deps.agentNameOf(ctx.agentId) ?? ctx.agentId } }
+  // Ран видит и остальные машины проекта: query `project` включает в мосте
+  // инструмент machines и параметр machine (адресация операции другой машине),
+  // имена уходят в системный хинт CLI. Одна машина — прежнее поведение.
+  const others = deps.db
+    .listProjectMachines(ctx.project.id)
+    .filter((m) => m.agentId !== ctx.agentId)
+    .map((m) => m.name)
+  const project = others.length ? `&project=${encodeURIComponent(ctx.project.id)}` : ''
+  const mcpUrl = `${deps.mcpBaseUrl}&agent=${encodeURIComponent(ctx.agentId)}&cwd=${encodeURIComponent(ctx.workspacePath)}${project}`
+  return {
+    remote: {
+      mcpUrl,
+      agentName: deps.agentNameOf(ctx.agentId) ?? ctx.agentId,
+      ...(others.length ? { projectMachines: others } : {})
+    }
+  }
 }
 
 /** Чем добрать вырезанное из вывода команды справочника (лог шага в ленте). */
@@ -668,8 +682,17 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             ...(phase === 'plan'
               ? {
                   readOnlyRemote: true,
+                  // Без ciMcpUrl: команды CI-справочника в фазе плана выключены.
                   ...(base.remote
-                    ? { remote: { mcpUrl: `${base.remote.mcpUrl}&ro=1`, agentName: base.remote.agentName } }
+                    ? {
+                        remote: {
+                          mcpUrl: `${base.remote.mcpUrl}&ro=1`,
+                          agentName: base.remote.agentName,
+                          ...(base.remote.projectMachines
+                            ? { projectMachines: base.remote.projectMachines }
+                            : {})
+                        }
+                      }
                     : {})
                 }
               : {})

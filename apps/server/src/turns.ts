@@ -483,10 +483,19 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         // Продолжаем ход без remote MCP; модель может отвечать текстом.
       } else {
       const policy = deps.agents.policyOf(target)
+      // Чат проекта видит и остальные машины проекта: query `project` включает в
+      // мосте инструмент machines и параметр machine, а имена уходят в системный
+      // хинт CLI. Без других машин (или вне проекта) ход остаётся прежним.
+      const projectMachines = conv?.projectId ? deps.db.listProjectMachines(conv.projectId) : []
+      const otherMachines = projectMachines.filter((m) => m.agentId !== target).map((m) => m.name)
       remote = {
-        mcpUrl: `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}${conv?.workdir ? `&cwd=${encodeURIComponent(conv.workdir)}` : ''}`,
+        mcpUrl:
+          `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}` +
+          `${conv?.workdir ? `&cwd=${encodeURIComponent(conv.workdir)}` : ''}` +
+          `${conv?.projectId && otherMachines.length ? `&project=${encodeURIComponent(conv.projectId)}` : ''}`,
         agentName: deps.agents.nameOf(target) ?? target,
-        policySummary: policy ? policySummary(policy, conv?.skillNames ?? []) : undefined
+        policySummary: policy ? policySummary(policy, conv?.skillNames ?? []) : undefined,
+        ...(otherMachines.length ? { projectMachines: otherMachines } : {})
       }
       }
     }

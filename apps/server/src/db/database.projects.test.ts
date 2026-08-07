@@ -251,6 +251,25 @@ describe('projects: папка машины, дефолт, привязка ча
     expect(db.getProject('alice', p.id)!.defaultAgentId).toBeNull()
   })
 
+  it('listProjectMachines отдаёт машины проекта с именами и папками (для MCP-моста)', () => {
+    const p = db.createProject('alice', { name: 'P1' })
+    const other = db.createProject('alice', { name: 'P2' })
+    const a1 = db.createAgent('alice', 'M1')
+    const a2 = db.createAgent('alice', 'M2')
+    const foreign = db.createAgent('alice', 'X')
+    db.linkMachine('alice', p.id, a1.id)
+    db.linkMachine('alice', p.id, a2.id)
+    db.linkMachine('alice', other.id, foreign.id)
+    db.setProjectMachinePath('alice', p.id, a2.id, '/srv/proj')
+    expect(db.listProjectMachines(p.id)).toEqual([
+      { agentId: a1.id, name: 'M1', path: '' },
+      { agentId: a2.id, name: 'M2', path: '/srv/proj' }
+    ])
+    // машина другого проекта не попадает в список
+    expect(db.listProjectMachines(other.id)).toEqual([{ agentId: foreign.id, name: 'X', path: '' }])
+    expect(db.listProjectMachines('нет-такого')).toEqual([])
+  })
+
   it('setConversationProject перезаписывает машину/папку/навыки и projectId; null отвязывает', () => {
     const p = db.createProject('alice', { name: 'P1', skills: ['ts', 'sql'] })
     const a1 = db.createAgent('alice', 'M1')

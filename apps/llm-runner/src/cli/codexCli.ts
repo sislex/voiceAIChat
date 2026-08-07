@@ -95,6 +95,11 @@ export function codexInvocation(req: LlmRequest): { args: string[]; prompt: stri
       (req.readOnlyRemote
         ? `\nРежим «План»: только read/grep, ls и git log/diff/status; любые изменения запрещены.`
         : '') +
+      (req.remote.projectMachines?.length
+        ? `\nДоступны и другие машины проекта: ${req.remote.projectMachines.map((n) => `«${n}»`).join(', ')}. ` +
+          `Список и онлайн-статус — инструмент remote:machines; чтобы выполнить команду или файловую операцию ` +
+          `на другой машине, передай её имя параметром machine (без него операция идёт на выбранной машине).`
+        : '') +
       (req.remote.policySummary ? `\n${req.remote.policySummary}` : '') +
       `\n\n${prompt}`
   } else {
