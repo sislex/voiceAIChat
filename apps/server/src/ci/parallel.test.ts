@@ -141,18 +141,46 @@ describe('параллельные раны разных задач', () => {
     expect(branches.size).toBe(2)
   })
 
-  it('FIFO-очередь: при maxConcurrentRuns=1 второй ран ждёт первого', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
-    let release: () => void = () => {}
-    const hold = new Promise<void>((res) => { release = res })
-    const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
+  it('очередь берёт ожидающие раны в текущем порядке development при нескольких свободных слотах', async () => {
+    db.updateCiSettings({ maxConcurrentRuns: 2 })
+    const board = db.getBoard('admin', projectId)!
+    const ready = board.columns.find((column) => column.semanticType === 'ready')!
+    const third = db.createTask('admin', projectId, { columnId: ready.id, title: 'T3', priority: 'medium' })!
+    const fourth = db.createTask('admin', projectId, { columnId: ready.id, title: 'T4', priority: 'high' })!
+    const fifth = db.createTask('admin', projectId, { columnId: ready.id, title: 'T5', priority: 'urgent' })!
+    const releases = new Map<string, () => void>()
+    const started: string[] = []
+    const ci = manager({
+      modelWork: async (ctx) => {
+        started.push(ctx.task.title)
+        if (ctx.task.id === taskIds[0] || ctx.task.id === taskIds[1]) {
+          await new Promise<void>((resolve) => releases.set(ctx.task.id, resolve))
+        }
+        return { ok: true }
+      }
+    })
+
     const first = startRun(ci, taskIds[0])
     const second = startRun(ci, taskIds[1])
-    for (let i = 0; i < 200 && db.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 5))
-    expect(db.getCiRunRaw(second)!.status).toBe('queued')
-    release()
+    for (let i = 0; i < 200 && releases.size !== 2; i++) await new Promise((r) => setTimeout(r, 5))
+    const thirdRun = startRun(ci, third.id)
+    const fourthRun = startRun(ci, fourth.id)
+    const fifthRun = startRun(ci, fifth.id)
+    expect([thirdRun, fourthRun, fifthRun].map((id) => db.getCiRunRaw(id)!.status)).toEqual(['queued', 'queued', 'queued'])
+
+    // T5 сначала urgent, но правка ожидающей T3 поднимает её в равный приоритет;
+    // одинаковый приоритет сохраняет ручный порядок (T3 создана раньше T5).
+    db.updateTask('admin', projectId, third.id, { priority: 'urgent' })
+    releases.get(taskIds[0])!()
+    releases.get(taskIds[1])!()
+
+    for (let i = 0; i < 200 && started.length < 4; i++) await new Promise((r) => setTimeout(r, 5))
+    expect(started.slice(0, 4)).toEqual(['T1', 'T2', 'T3', 'T5'])
     expect(await waitStatus(first)).toBe('success')
     expect(await waitStatus(second)).toBe('success')
+    expect(await waitStatus(thirdRun)).toBe('success')
+    expect(await waitStatus(fourthRun)).toBe('success')
+    expect(await waitStatus(fifthRun)).toBe('success')
   })
 })
 
