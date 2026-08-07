@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-07
-checked: 486061d
+checked: 519ef04
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/routes/projects.ts
@@ -79,6 +79,16 @@ areas:
 только человек, но и CI-раннер после успешного мержа
 ([ci-runner.md](features/ci-runner.md#куда-уезжает-карточка-после-рана)), а
 карточка, исчезнувшая с доски в ту же секунду, читается как пропавшая работа.
+
+Порядок в колонке с `semanticType: 'done'` задаёт тот же момент входа:
+`compareTasksInColumn` из `packages/shared/src/projects.ts` выводит сверху
+наиболее поздний `doneAt`, поэтому последующая правка карточки (`updatedAt`) его
+не меняет. При возврате в рабочую колонку метка сбрасывается, а новый перенос в
+Done ставит её заново; перенос между done-колонками её сохраняет. Строки без
+`doneAt` (старые данные) идут после помеченных и стабильно упорядочиваются по
+`position`, затем `createdAt` и `id`; этот же fallback разрешает одинаковый
+`doneAt`. Сервер сортирует снапшот доски после фильтрации, а `KanbanBoard`
+повторяет правило при локальном показе и фильтрации.
 
 Правило одно на всех — `isCompletedHidden` в `packages/shared/src/projects.ts`.
 Фильтрует **сервер** (`getBoard(..., { includeCompleted })`), иначе payload
