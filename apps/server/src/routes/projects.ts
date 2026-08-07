@@ -104,6 +104,7 @@ export function registerProjectRoutes(
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
       productionDeployCommand?: string
+      productionAgentId?: string | null
       ciBaseBranch?: string
       ciBranchTemplate?: string
       ciReuseStrategy?: CiReuseStrategy
@@ -124,7 +125,11 @@ export function registerProjectRoutes(
       body.previewUrl = previewUrl
     }
     if (body.doneRetentionDays !== undefined) body.doneRetentionDays = normRetentionDays(body.doneRetentionDays)
-    return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)
+    try {
+      return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)
+    } catch (err) {
+      return badReq(reply, errMessage(err))
+    }
   })
 
   app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {

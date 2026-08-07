@@ -115,15 +115,23 @@ describe('projects: создание и членство', () => {
 })
 
 describe('projects: машины', () => {
-  it('linkMachine валидирует владение агентом; каскад при удалении агента', () => {
+  it('linkMachine валидирует владение агентом; production-машина должна быть привязана и очищается вместе со связью', () => {
     const p = db.createProject('alice', { name: 'P1' })
     const agent = db.createAgent('alice', 'M1')
     const foreign = db.createAgent('bob', 'M2')
     expect(() => db.linkMachine('alice', p.id, foreign.id)).toThrow() // чужой агент
+    expect(() => db.updateProject('alice', p.id, { productionAgentId: agent.id })).toThrow('не привязана')
     const detail = db.linkMachine('alice', p.id, agent.id)!
     expect(detail.machines.map((m) => m.agentId)).toEqual([agent.id])
-    db.deleteAgent('alice', agent.id) // CASCADE снимает связь
+    expect(db.updateProject('alice', p.id, { productionAgentId: agent.id })!.productionAgentId).toBe(agent.id)
+    db.unlinkMachine('alice', p.id, agent.id)
+    expect(db.getProject('alice', p.id)!.productionAgentId).toBeNull()
+
+    db.linkMachine('alice', p.id, agent.id)
+    db.updateProject('alice', p.id, { productionAgentId: agent.id })
+    db.deleteAgent('alice', agent.id) // CASCADE снимает связь и production-назначение
     expect(db.getProject('alice', p.id)!.machines).toEqual([])
+    expect(db.getProject('alice', p.id)!.productionAgentId).toBeNull()
   })
 })
 
