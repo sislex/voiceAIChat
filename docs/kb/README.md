@@ -9,27 +9,27 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 31 коммит(ов) в areas после сверки: a5b4b95 feat(admin): add editable model prices and dual usage costs … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 32 коммит(ов) в areas после сверки: aecf8a0 feat: add hierarchical LLM settings … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 6 коммит(ов) в areas после сверки: 65621d2 feat(ui): режим чата в карточке сайдбара + актуальные меню моделей Claude/Codex … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 1 коммит(ов) в areas после сверки: e39fa65 feat(ci): проверять только затронутые пакеты |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ⚠ 1 коммит(ов) в areas после сверки: a5b4b95 feat(admin): add editable model prices and dual usage costs |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ⚠ 2 коммит(ов) в areas после сверки: aecf8a0 feat: add hierarchical LLM settings … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-07 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: 722cf5c fix(ci): avoid duplicate vitest silent flag … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-03 | ⚠ 27 коммит(ов) в areas после сверки: f60fcc9 feat: add personal LLM model access controls … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-07 | ⚠ 3 коммит(ов) в areas после сверки: aecf8a0 feat: add hierarchical LLM settings … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-03 | ⚠ 28 коммит(ов) в areas после сверки: aecf8a0 feat: add hierarchical LLM settings … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 13 коммит(ов) в areas после сверки: f60fcc9 feat: add personal LLM model access controls … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 95 коммит(ов) в areas после сверки: a5b4b95 feat(admin): add editable model prices and dual usage costs … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 97 коммит(ов) в areas после сверки: aecf8a0 feat: add hierarchical LLM settings … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-06 | ✓ |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-06 | ✓ |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-06 | ⚠ 1 коммит(ов) в areas после сверки: aecf8a0 feat: add hierarchical LLM settings |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-05 | ⚠ 2 коммит(ов) в areas после сверки: 68b9d2f CHAT-108: пустой ход модели не закрывает ран успехом … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-06 | ⚠ 3 коммит(ов) в areas после сверки: a5b4b95 feat(admin): add editable model prices and dual usage costs … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-05 | ⚠ 9 коммит(ов) в areas после сверки: a5b4b95 feat(admin): add editable model prices and dual usage costs … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-06 | ⚠ 2 коммит(ов) в areas после сверки: a5b4b95 feat(admin): add editable model prices and dual usage costs … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-07 | ✓ |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-05 | ⚠ 10 коммит(ов) в areas после сверки: aecf8a0 feat: add hierarchical LLM settings … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-06 | ⚠ 3 коммит(ов) в areas после сверки: aecf8a0 feat: add hierarchical LLM settings … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-06 | ⚠ 3 коммит(ов) в areas после сверки: a5b4b95 feat(admin): add editable model prices and dual usage costs … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-02 | ⚠ 19 коммит(ов) в areas после сверки: 722cf5c fix(ci): avoid duplicate vitest silent flag … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-07 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-07 | ⚠ 1 коммит(ов) в areas после сверки: aecf8a0 feat: add hierarchical LLM settings |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-07, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
-| [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-05 | ✓ |
+| [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
 
 ## Инструкции по пакетам
 
@@ -44,8 +44,9 @@
 
 ## Журнал сессий
 
-Всего записей: 105. Последние:
+Всего записей: 106. Последние:
 
+- [2026-08-07-2470-com-llm-settings-inheritance.md](log/2026-08-07-2470-com-llm-settings-inheritance.md) — llm-settings-inheritance
 - [2026-08-07-2470-com-admin-model-prices.md](log/2026-08-07-2470-com-admin-model-prices.md) — admin-model-prices
 - [2026-08-06-2470-com-users-dashboard.md](log/2026-08-06-2470-com-users-dashboard.md) — users-dashboard
 - [2026-08-06-2470-com-ui-llm-access.md](log/2026-08-06-2470-com-ui-llm-access.md) — ui-llm-access
@@ -55,7 +56,6 @@
 - [2026-08-06-2470-com-rename-llm-history.md](log/2026-08-06-2470-com-rename-llm-history.md) — rename-llm-history
 - [2026-08-06-2470-com-project-settings-tabs-llm.md](log/2026-08-06-2470-com-project-settings-tabs-llm.md) — project-settings-tabs-llm
 - [2026-08-06-2470-com-personal-llm-access.md](log/2026-08-06-2470-com-personal-llm-access.md) — personal-llm-access
-- [2026-08-06-2470-com-llm-access-clamp.md](log/2026-08-06-2470-com-llm-access-clamp.md) — llm-access-clamp
 
 ## Исторические планы
 

@@ -2,8 +2,8 @@
 id: usage/user-account
 title: Информация о пользователе
 kind: runbook
-updated: 2026-08-05
-checked: 5cad358
+updated: 2026-08-07
+checked: aecf8a0
 tags: [usage, settings, machines, projects]
 aliases: [мои настройки, сколько я потратил, какие машины подключены, в каких проектах я участвую]
 areas: [apps/server/src/kb/kbMcp.ts, apps/server/src/routes/rest.ts, packages/shared/src/protocol.ts]
