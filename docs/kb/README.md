@@ -17,7 +17,7 @@
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-07 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-03 | ⚠ 29 коммит(ов) в areas после сверки: 406a596 feat: добавить веб-превью рядом с чатом … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 13 коммит(ов) в areas после сверки: f60fcc9 feat: add personal LLM model access controls … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 99 коммит(ов) в areas после сверки: 406a596 feat: добавить веб-превью рядом с чатом … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 100 коммит(ов) в areas после сверки: 4e655d3 fix: согласовать воркеры Vitest в affected-check … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-06 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-06 | ⚠ 1 коммит(ов) в areas после сверки: aecf8a0 feat: add hierarchical LLM settings |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-05 | ⚠ 2 коммит(ов) в areas после сверки: 68b9d2f CHAT-108: пустой ход модели не закрывает ран успехом … |
@@ -26,7 +26,7 @@
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-06 | ⚠ 4 коммит(ов) в areas после сверки: 406a596 feat: добавить веб-превью рядом с чатом … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-07 | ⚠ 1 коммит(ов) в areas после сверки: 406a596 feat: добавить веб-превью рядом с чатом |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-02 | ⚠ 19 коммит(ов) в areas после сверки: 722cf5c fix(ci): avoid duplicate vitest silent flag … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-02 | ⚠ 20 коммит(ов) в areas после сверки: 4e655d3 fix: согласовать воркеры Vitest в affected-check … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-07 | ⚠ 1 коммит(ов) в areas после сверки: 406a596 feat: добавить веб-превью рядом с чатом |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-07, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
@@ -44,9 +44,10 @@
 
 ## Журнал сессий
 
-Всего записей: 107. Последние:
+Всего записей: 108. Последние:
 
 - [2026-08-07-alexeys-macbook-air-2-chat-preview-split.md](log/2026-08-07-alexeys-macbook-air-2-chat-preview-split.md) — chat-preview-split
+- [2026-08-07-alexeys-macbook-air-2-chat-preview-split-kb-gaps.md](log/2026-08-07-alexeys-macbook-air-2-chat-preview-split-kb-gaps.md) — chat-preview-split-kb-gaps
 - [2026-08-07-2470-com-llm-settings-inheritance.md](log/2026-08-07-2470-com-llm-settings-inheritance.md) — llm-settings-inheritance
 - [2026-08-07-2470-com-admin-model-prices.md](log/2026-08-07-2470-com-admin-model-prices.md) — admin-model-prices
 - [2026-08-06-2470-com-users-dashboard.md](log/2026-08-06-2470-com-users-dashboard.md) — users-dashboard
@@ -55,7 +56,6 @@
 - [2026-08-06-2470-com-sidebar-rename.md](log/2026-08-06-2470-com-sidebar-rename.md) — sidebar-rename
 - [2026-08-06-2470-com-sidebar-chat-label.md](log/2026-08-06-2470-com-sidebar-chat-label.md) — sidebar-chat-label
 - [2026-08-06-2470-com-rename-llm-history.md](log/2026-08-06-2470-com-rename-llm-history.md) — rename-llm-history
-- [2026-08-06-2470-com-project-settings-tabs-llm.md](log/2026-08-06-2470-com-project-settings-tabs-llm.md) — project-settings-tabs-llm
 
 ## Исторические планы
 
