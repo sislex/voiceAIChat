@@ -59,6 +59,8 @@ import type {
   AdminLlmEngine,
   AdminLlmEngineHealth,
   AdminLlmEngineInput,
+  ModelPrice,
+  ModelPriceInput,
   LlmEngineOption,
   AdminUserInfo,
   UsageReport,
@@ -392,6 +394,8 @@ export interface AppState {
   adminLlmEnginesError: string | null
   /** Последний health-снимок по id исполнителя. */
   adminLlmEngineHealth: Record<string, AdminLlmEngineHealth | undefined>
+  /** Редактируемые цены моделей для админского виджета. */
+  adminModelPrices: ModelPrice[]
   /** Персональные запреты моделей текущего пользователя; пусто = полный доступ. */
   llmAccess: UserLlmAccess[]
   /** Права выбранного пользователя в админке. */
@@ -790,6 +794,9 @@ export interface StoreActions {
   openAdminConversation(conversationId: string): Promise<void>
   /** Перечитать реестр LLM-исполнителей. */
   refreshAdminLlmEngines(): Promise<void>
+  refreshAdminModelPrices(): Promise<void>
+  saveAdminModelPrice(input: ModelPriceInput): Promise<void>
+  deleteAdminModelPrice(provider: string, model: string): Promise<void>
   /** Создать запись исполнителя. */
   createAdminLlmEngine(input: AdminLlmEngineInput): Promise<void>
   /** Обновить запись исполнителя. */
@@ -1054,6 +1061,7 @@ function initialState(): AppState {
     adminLlmEnginesStatus: 'loading',
     adminLlmEnginesError: null,
     adminLlmEngineHealth: {},
+    adminModelPrices: [],
     llmAccess: [],
     adminUserLlmAccess: [],
     utility: null,
@@ -2261,6 +2269,19 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
+  async function refreshAdminModelPrices(): Promise<void> {
+    if (!api['admin:modelPrices']) return
+    try { setState({ adminModelPrices: await api['admin:modelPrices']() }) } catch (err) { fail(err, () => void refreshAdminModelPrices()) }
+  }
+
+  async function saveAdminModelPrice(input: ModelPriceInput): Promise<void> {
+    try { await api['admin:saveModelPrice'](input); await refreshAdminModelPrices() } catch (err) { fail(err) }
+  }
+
+  async function deleteAdminModelPrice(provider: string, model: string): Promise<void> {
+    try { await api['admin:deleteModelPrice']({ provider, model }); await refreshAdminModelPrices() } catch (err) { fail(err) }
+  }
+
   async function openUsers(): Promise<void> {
     setState({ usersOpen: true })
     try {
@@ -2274,7 +2295,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         })
         await selectAdminUser(state.currentUser.name)
       } else {
-        await Promise.all([refreshAdminUsers(), refreshAdminLlmEngines()])
+        await Promise.all([refreshAdminUsers(), refreshAdminLlmEngines(), refreshAdminModelPrices()])
       }
     } catch (err) {
       fail(err, () => void openUsers())
@@ -4112,6 +4133,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       loadAdminUsage,
       openAdminConversation,
       refreshAdminLlmEngines,
+      refreshAdminModelPrices,
+      saveAdminModelPrice,
+      deleteAdminModelPrice,
       createAdminLlmEngine,
       updateAdminLlmEngine,
       deleteAdminLlmEngine,

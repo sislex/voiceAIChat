@@ -3,6 +3,8 @@ import type {
   AdminLlmEngine,
   AdminLlmEngineHealth,
   AdminLlmEngineInput,
+  ModelPrice,
+  ModelPriceInput,
   AdminUserInfo,
   UsageReport,
   UsageUnit,
@@ -48,6 +50,9 @@ export interface UsersAdminProps {
   onUpdateEngine: (id: string, patch: AdminLlmEngineInput) => void
   onDeleteEngine: (id: string) => void
   onCheckEngineHealth: (id: string) => void
+  modelPrices?: ModelPrice[]
+  onSaveModelPrice?: (input: ModelPriceInput) => void
+  onDeleteModelPrice?: (provider: string, model: string) => void
   llmAccess?: UserLlmAccess[]
   onSaveLlmAccess?: (access: UserLlmAccess[]) => void
   onClose: () => void
@@ -89,6 +94,7 @@ const EMPTY_ENGINE: AdminLlmEngineInput = {
 // ui-набор, а неработающий гейт рана этого не показывал.
 const NO_LLM_ACCESS: UserLlmAccess[] = []
 const NO_USAGE_SUMMARY: UserUsageSummary[] = []
+const EMPTY_PRICE: ModelPriceInput = { provider: 'codex', model: '', inputPerMillion: 0, cachedInputPerMillion: 0, cacheWritePerMillion: 0, outputPerMillion: 0, sourceUrl: '', effectiveAt: Date.now() }
 
 export function UsersAdmin({
   users,
@@ -118,6 +124,9 @@ export function UsersAdmin({
   onUpdateEngine,
   onDeleteEngine,
   onCheckEngineHealth,
+  modelPrices = [],
+  onSaveModelPrice = () => undefined,
+  onDeleteModelPrice = () => undefined,
   llmAccess = NO_LLM_ACCESS,
   onSaveLlmAccess = () => undefined,
   onClose,
@@ -133,6 +142,8 @@ export function UsersAdmin({
   const [editingEngineId, setEditingEngineId] = useState<string | null>(null)
   const [confirmEngineDelete, setConfirmEngineDelete] = useState<string | null>(null)
   const [accessDraft, setAccessDraft] = useState<UserLlmAccess[]>([])
+  const [priceDraft, setPriceDraft] = useState<ModelPriceInput>(EMPTY_PRICE)
+  const [editingPrice, setEditingPrice] = useState<string | null>(null)
   const [tab, setTab] = useState<'access' | 'machines' | 'usage' | 'history'>('usage')
   useEffect(() => setAccessDraft(llmAccess), [selected, llmAccess])
   const accessDenied = (provider: LlmProvider, modelId: string): boolean => accessDraft.some((entry) => entry.provider === provider && (entry.modelId === '*' || entry.modelId === modelId))
@@ -314,12 +325,13 @@ export function UsersAdmin({
                       <div><span>Вход</span><strong>{kilo(usage.totals.inputTokens)}</strong></div>
                       <div><span>Выход</span><strong>{kilo(usage.totals.outputTokens)}</strong></div>
                       <div><span>Из кэша</span><strong>{kilo(usage.totals.cacheReadTokens)}</strong></div>
-                      <div><span>Стоимость</span><strong title={usage.totals.costIncomplete ? 'Есть ответы без известного тарифа' : undefined}>{displayedUsd(usage.totals.costUsd, usage.totals.costIncomplete)}</strong></div>
+                      <div><span>По данным CLI</span><strong>{displayedUsd(usage.totals.costUsd, usage.totals.costIncomplete && usage.totals.costUsd === 0)}</strong></div>
+                      <div><span>По прайсу</span><strong title={usage.totals.costIncomplete ? 'Есть ответы без цены CLI и строки прайса' : undefined}>{displayedUsd(usage.totals.costFromPrices ?? 0, usage.totals.costIncomplete && (usage.totals.costFromPrices ?? 0) === 0)}</strong></div>
                       <div><span>Ответы</span><strong>{usage.totals.messages}</strong></div>
                     </div>
                     <div className="uusage-grid">
-                      <div><h4>По моделям</h4><table className="utable"><thead><tr><th>Модель</th><th>Вход</th><th>Выход</th><th>Стоимость</th></tr></thead><tbody>{usage.byModel.map((m) => <tr key={m.model}><td>{m.model}</td><td>{kilo(m.inputTokens)}</td><td>{kilo(m.outputTokens)}</td><td>{displayedUsd(m.costUsd, m.costIncomplete)}</td></tr>)}</tbody></table></div>
-                      <div><h4>Динамика (UTC)</h4><table className="utable"><thead><tr><th>Период</th><th>Вход</th><th>Выход</th><th>Стоимость</th></tr></thead><tbody>{usage.byBucket.map((b) => <tr key={b.bucket}><td>{b.bucket}</td><td>{kilo(b.inputTokens)}</td><td>{kilo(b.outputTokens)}</td><td>{displayedUsd(b.costUsd, b.costIncomplete)}</td></tr>)}</tbody></table></div>
+                      <div><h4>По моделям</h4><table className="utable"><thead><tr><th>Модель</th><th>Вход</th><th>Выход</th><th>По данным CLI</th><th>По прайсу</th></tr></thead><tbody>{usage.byModel.map((m) => <tr key={m.model}><td>{m.model}</td><td>{kilo(m.inputTokens)}</td><td>{kilo(m.outputTokens)}</td><td>{displayedUsd(m.costUsd, m.costIncomplete && m.costUsd === 0)}</td><td>{displayedUsd(m.costFromPrices ?? 0, m.costIncomplete && (m.costFromPrices ?? 0) === 0)}</td></tr>)}</tbody></table></div>
+                      <div><h4>Динамика (UTC)</h4><table className="utable"><thead><tr><th>Период</th><th>Вход</th><th>Выход</th><th>По данным CLI</th><th>По прайсу</th></tr></thead><tbody>{usage.byBucket.map((b) => <tr key={b.bucket}><td>{b.bucket}</td><td>{kilo(b.inputTokens)}</td><td>{kilo(b.outputTokens)}</td><td>{displayedUsd(b.costUsd, b.costIncomplete && b.costUsd === 0)}</td><td>{displayedUsd(b.costFromPrices ?? 0, b.costIncomplete && (b.costFromPrices ?? 0) === 0)}</td></tr>)}</tbody></table></div>
                     </div>
                   </>
                 )}
@@ -406,6 +418,20 @@ export function UsersAdmin({
                 <Button variant="primary" disabled={!engineDraft.name.trim() || !engineDraft.baseUrl.trim() || engineDraft.allowedRoles.length === 0} onClick={submitEngine}>{editingEngineId ? 'Сохранить' : 'Добавить'}</Button>
                 {editingEngineId && <Button onClick={resetEngineForm}>Отмена</Button>}
               </div>
+            </div>
+          </section>}
+          {isAdmin && <section className="uadmin-sec" data-testid="model-prices-section">
+            <h3 className="uadmin-h">Стоимость моделей</h3>
+            <table className="utable"><thead><tr><th>Провайдер / модель</th><th>Вход</th><th>Кэш</th><th>Запись кэша</th><th>Выход</th><th>Источник / дата</th><th>Действия</th></tr></thead><tbody>
+              {modelPrices.map((price) => <tr key={price.provider + price.model}><td>{price.provider} / {price.model}</td><td>{price.inputPerMillion}</td><td>{price.cachedInputPerMillion}</td><td>{price.cacheWritePerMillion}</td><td>{price.outputPerMillion}</td><td><a href={price.sourceUrl} target="_blank" rel="noreferrer">источник</a> · {new Date(price.effectiveAt).toLocaleDateString()}</td><td><Button size="sm" onClick={() => { setEditingPrice(price.provider + price.model); setPriceDraft({ provider: price.provider, model: price.model, inputPerMillion: price.inputPerMillion, cachedInputPerMillion: price.cachedInputPerMillion, cacheWritePerMillion: price.cacheWritePerMillion, outputPerMillion: price.outputPerMillion, sourceUrl: price.sourceUrl, effectiveAt: price.effectiveAt }) }}>Править</Button><Button variant="danger" size="sm" onClick={() => onDeleteModelPrice(price.provider, price.model)}>Удалить</Button></td></tr>)}
+            </tbody></table>
+            <div className="ucreate"><p className="ucreate-h">{editingPrice ? 'Править цену' : 'Добавить цену'}</p>
+              <input className="login-input" aria-label="Провайдер цены" placeholder="claude" value={priceDraft.provider} onChange={(e) => setPriceDraft({ ...priceDraft, provider: e.target.value })} />
+              <input className="login-input" aria-label="Модель цены" placeholder="claude-opus" value={priceDraft.model} onChange={(e) => setPriceDraft({ ...priceDraft, model: e.target.value })} />
+              {([['inputPerMillion', 'Вход'], ['cachedInputPerMillion', 'Кэш'], ['cacheWritePerMillion', 'Запись кэша'], ['outputPerMillion', 'Выход']] as const).map(([field, label]) => <input key={field} className="login-input" aria-label={label + ' USD за миллион'} type="number" min="0" value={priceDraft[field]} onChange={(e) => setPriceDraft({ ...priceDraft, [field]: Number(e.target.value) })} />)}
+              <input className="login-input" aria-label="Источник цены" placeholder="https://…" value={priceDraft.sourceUrl} onChange={(e) => setPriceDraft({ ...priceDraft, sourceUrl: e.target.value })} />
+              <input className="login-input" aria-label="Дата тарифа" type="date" value={new Date(priceDraft.effectiveAt).toISOString().slice(0, 10)} onChange={(e) => setPriceDraft({ ...priceDraft, effectiveAt: new Date(e.target.value).getTime() })} />
+              <div className="uadmin-actions"><Button variant="primary" disabled={!priceDraft.provider.trim() || !priceDraft.model.trim() || !priceDraft.sourceUrl.trim()} onClick={() => { onSaveModelPrice({ ...priceDraft, provider: priceDraft.provider.trim(), model: priceDraft.model.trim(), sourceUrl: priceDraft.sourceUrl.trim() }); setPriceDraft(EMPTY_PRICE); setEditingPrice(null) }}>{editingPrice ? 'Сохранить' : 'Добавить'}</Button>{editingPrice && <Button onClick={() => { setPriceDraft(EMPTY_PRICE); setEditingPrice(null) }}>Отмена</Button>}</div>
             </div>
           </section>}
         </div>

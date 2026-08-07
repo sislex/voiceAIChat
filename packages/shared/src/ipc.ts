@@ -250,6 +250,9 @@ export interface IpcInvokeMap {
   'usage:report': { arg: { unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }
   'admin:conversations': { arg: { name: string }; result: Conversation[] }
   'admin:messages': { arg: { name: string; conversationId: string }; result: Message[] }
+  'admin:modelPrices': { arg: void; result: import('./admin').ModelPrice[] }
+  'admin:saveModelPrice': { arg: import('./admin').ModelPriceInput; result: import('./admin').ModelPrice }
+  'admin:deleteModelPrice': { arg: { provider: string; model: string }; result: void }
   'admin:llmEngines': { arg: void; result: AdminLlmEngine[] }
   'admin:createLlmEngine': { arg: AdminLlmEngineInput; result: AdminLlmEngine }
   'admin:updateLlmEngine': { arg: { id: string; patch: AdminLlmEngineInput }; result: AdminLlmEngine }

@@ -230,6 +230,11 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'admin:conversations': ({ name }) => req(REST.adminUserConversations(name)),
     'admin:messages': ({ name, conversationId }) =>
       req(`${REST.adminUserMessages(name)}?conversationId=${encodeURIComponent(conversationId)}`),
+    'admin:modelPrices': () => req(REST.adminModelPrices),
+    'admin:saveModelPrice': (body) => req(REST.adminModelPrices, { method: 'PUT', body: JSON.stringify(body) }),
+    'admin:deleteModelPrice': async ({ provider, model }) => {
+      await req(REST.adminModelPrice(provider, model), { method: 'DELETE' })
+    },
     'admin:llmEngines': () => req(REST.adminLlmEngines),
     'admin:createLlmEngine': (body) =>
       req(REST.adminLlmEngines, { method: 'POST', body: JSON.stringify(body) }),

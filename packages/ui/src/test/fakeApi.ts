@@ -4,7 +4,7 @@
 import type { RendererApi } from '@shared/ipc'
 import type { Conversation, Message, Settings } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
-import type { AdminLlmEngine, AdminLlmEngineHealth, AdminUserInfo } from '@shared/admin'
+import type { AdminLlmEngine, AdminLlmEngineHealth, AdminUserInfo, ModelPrice } from '@shared/admin'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
@@ -55,6 +55,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       createdAt: 2
     }
   ]
+  const modelPrices: ModelPrice[] = []
   const llmHealth: Record<string, AdminLlmEngineHealth> = {
     'eng-claude': {
       engineId: 'eng-claude',
@@ -484,6 +485,18 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     }),
     'admin:conversations': async () => [],
     'admin:messages': async () => [],
+    'admin:modelPrices': async () => modelPrices.map((price) => ({ ...price })),
+    'admin:saveModelPrice': async (input) => {
+      const saved: ModelPrice = { ...input, updatedAt: tick() }
+      const i = modelPrices.findIndex((price) => price.provider === input.provider && price.model === input.model)
+      if (i >= 0) modelPrices[i] = saved
+      else modelPrices.push(saved)
+      return { ...saved }
+    },
+    'admin:deleteModelPrice': async ({ provider, model }) => {
+      const i = modelPrices.findIndex((price) => price.provider === provider && price.model === model)
+      if (i >= 0) modelPrices.splice(i, 1)
+    },
     'admin:llmEngines': async () => llmEngines.map((e) => ({ ...e, allowedRoles: [...e.allowedRoles] })),
     'admin:createLlmEngine': async (input) => {
       const created: AdminLlmEngine = { ...input, id: nextId(), createdAt: tick(), allowedRoles: [...input.allowedRoles] }
