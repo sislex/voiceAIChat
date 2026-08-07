@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-08-07
-checked: 6189b96
+checked: 440c8c3
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -11,6 +11,10 @@ areas:
   - scripts/prod/deploy.sh
   - scripts/prod/install.sh
   - apps/server/src/config.ts
+  - apps/server/src/server.ts
+  - apps/server/src/kb/kbMcp.ts
+  - apps/server/src/routes/admin.ts
+  - packages/shared/src/kb.ts
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
