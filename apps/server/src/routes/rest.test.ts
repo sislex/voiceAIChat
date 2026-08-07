@@ -7,7 +7,7 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from '../users/accounts.js'
-import { isPublicAddress, rewritePreviewBody } from './previewProxy.js'
+import { isPublicAddress, previewInspectorScript, rewritePreviewBody } from './previewProxy.js'
 
 let app: FastifyInstance
 let db: VoiceChatDb
@@ -873,5 +873,19 @@ describe('REST: preview proxy', () => {
     expect(result).not.toContain('Content-Security-Policy')
     expect(result).toContain('/api/preview?url=https%3A%2F%2Fsite.example%2Fnext')
     expect(result).toContain('/api/preview?url=https%3A%2F%2Fsite.example%2Fbase%2Fimage.png')
+    expect(result).toContain('id="voicechat-preview-inspector"')
+    expect(result.indexOf('voicechat-preview-inspector')).toBeLessThan(result.indexOf('</body>') === -1 ? result.length : result.indexOf('</body>'))
+  })
+
+  it('инспектор строит уникальный selector, сериализует стили и ограничивает payload', () => {
+    const script = previewInspectorScript()
+    expect(script).toContain('document.querySelectorAll(candidate).length===1')
+    expect(script).toContain(':nth-of-type(')
+    expect(script).toContain('outerHTML:el.outerHTML.slice(0,HTML_LIMIT)')
+    expect(script).toContain("text:(el.innerText||el.textContent||'').trim().slice(0,TEXT_LIMIT)")
+    expect(script).toContain('gridTemplateColumns:s.gridTemplateColumns')
+    expect(script).toContain("document.addEventListener('click',click,true)")
+    expect(script).toContain('e.stopImmediatePropagation()')
+    expect(script).toContain('e.source!==parent||e.origin!==location.origin')
   })
 })

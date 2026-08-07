@@ -5,6 +5,7 @@ import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { TaskPriority } from '@shared/projects'
 import type { HealthResponse } from '@shared/protocol'
+import { PREVIEW_INSPECTOR_COMMAND_TYPE, isPreviewElementMessage, type PreviewElementPayload } from '@shared/previewInspector'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -70,17 +71,40 @@ function normalizeWebUrl(value: string): string | null {
   } catch { return null }
 }
 
-function WebPreview({ conversationUrl, projectUrl, onSave }: { conversationUrl: string | null; projectUrl: string | null; onSave: (url: string | null) => Promise<void> }): JSX.Element {
+export function WebPreview({ conversationUrl, projectUrl, onSave }: { conversationUrl: string | null; projectUrl: string | null; onSave: (url: string | null) => Promise<void> }): JSX.Element {
   const effective = conversationUrl ?? projectUrl
   const [draft, setDraft] = useState(effective ?? '')
   const [loaded, setLoaded] = useState(effective)
   const [error, setError] = useState<string | null>(null)
-  useEffect(() => { setDraft(effective ?? ''); setLoaded(effective); setError(null) }, [effective])
+  const [inspecting, setInspecting] = useState(false)
+  const [selected, setSelected] = useState<PreviewElementPayload | null>(null)
+  const frameRef = useRef<HTMLIFrameElement>(null)
+  const sendInspectorState = (enabled: boolean): void => {
+    frameRef.current?.contentWindow?.postMessage({ type: PREVIEW_INSPECTOR_COMMAND_TYPE, enabled }, window.location.origin)
+  }
+  useEffect(() => {
+    setDraft(effective ?? ''); setLoaded(effective); setError(null); setInspecting(false); setSelected(null)
+  }, [effective])
+  useEffect(() => {
+    const receive = (event: MessageEvent): void => {
+      if (event.origin !== window.location.origin || event.source !== frameRef.current?.contentWindow || !isPreviewElementMessage(event.data)) return
+      setSelected(event.data.payload)
+    }
+    const hotkey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && inspecting) { event.preventDefault(); setInspecting(false); return }
+      if (event.altKey && event.key.toLowerCase() === 'i') { event.preventDefault(); setInspecting((value) => !value) }
+    }
+    window.addEventListener('message', receive)
+    window.addEventListener('keydown', hotkey)
+    return () => { sendInspectorState(false); window.removeEventListener('message', receive); window.removeEventListener('keydown', hotkey) }
+  }, [inspecting])
+  useEffect(() => { sendInspectorState(inspecting) }, [inspecting])
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
     const raw = draft.trim()
     const normalized = raw ? normalizeWebUrl(raw) : null
     if (raw && !normalized) { setError('Введите адрес с протоколом http:// или https://'); return }
+    sendInspectorState(false); setInspecting(false); setSelected(null)
     await onSave(normalized)
     setDraft(normalized ?? projectUrl ?? '')
     setLoaded(normalized ?? projectUrl)
@@ -90,9 +114,11 @@ function WebPreview({ conversationUrl, projectUrl, onSave }: { conversationUrl: 
     <form className="webpreview-bar" onSubmit={(event) => void submit(event)}>
       <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="url" inputMode="url" value={draft} placeholder="https://example.com" aria-invalid={Boolean(error)} aria-describedby={error ? 'webpreview-error' : undefined} onChange={(event) => setDraft(event.target.value)} /></label>
       <button className="vc-btn vc-btn--secondary" type="submit">Открыть</button>
+      <button className="vc-btn vc-btn--secondary webpreview-inspector-toggle" type="button" aria-pressed={inspecting} title="Выбрать элемент (Alt+I)" onClick={() => setInspecting((value) => !value)}>⌖ <span>Инспектор</span></button>
     </form>
     {error && <p className="webpreview-error" id="webpreview-error" role="alert">{error}</p>}
-    {loaded ? <iframe className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(loaded)} title="Предпросмотр сайта" onError={() => setError('Сайт недоступен или не разрешает загрузку')} /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
+    {loaded ? <iframe ref={frameRef} className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(loaded)} title="Предпросмотр сайта" onLoad={() => sendInspectorState(inspecting)} onError={() => setError('Сайт недоступен или не разрешает загрузку')} /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
+    {selected && <aside className="webpreview-selection" aria-live="polite" data-testid="preview-selection"><strong>{selected.tag}{selected.id ? '#' + selected.id : selected.classes[0] ? '.' + selected.classes[0] : ''}</strong><span>{Math.round(selected.rect.width)} × {Math.round(selected.rect.height)} px</span><code title={selected.selector}>{selected.selector}</code></aside>}
   </section>
 }
 
