@@ -10,6 +10,7 @@ import type {
   CiCommandUsage,
   CiTaskConfig,
   CiTaskLlmConfig,
+  CiProjectLlmConfig,
   CiMetrics
 } from './ciBridge'
 import type {
@@ -349,8 +350,9 @@ export function createCiRest(httpBase: string): RendererCiRest {
     listWorkspaces: (projectId) => req<CiWorkspaceReportItem[]>(REST.ciWorkspaces + qs(projectId)),
     getProjectCi: (projectId) => req<CiSlotConfig>(REST.projectCi(projectId)),
     putProjectCi: (projectId, config) => req<CiSlotConfig>(REST.projectCi(projectId), { method: 'PUT', body: JSON.stringify(config) }),
-    getProjectCiLlm: (projectId) => req<CiLlmConfig>(REST.projectCiLlm(projectId)),
-    putProjectCiLlm: (projectId, config) => req<CiLlmConfig>(REST.projectCiLlm(projectId), { method: 'PUT', body: JSON.stringify(config) }),
+    getProjectCiLlm: (projectId) => req<CiProjectLlmConfig>(REST.projectCiLlm(projectId)),
+    putProjectCiLlm: (projectId, config) => req<CiProjectLlmConfig>(REST.projectCiLlm(projectId), { method: 'PUT', body: JSON.stringify(config) }),
+    resetProjectCiLlm: (projectId) => req<CiProjectLlmConfig>(REST.projectCiLlm(projectId), { method: 'DELETE' }),
     getTaskCiLlm: (projectId, taskId) => req<CiTaskLlmConfig>(REST.taskCiLlm(projectId, taskId)),
     putTaskCiLlm: (projectId, taskId, config) => req<CiLlmConfig>(REST.taskCiLlm(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
     resetTaskCiLlm: (projectId, taskId) => req<CiTaskLlmConfig>(REST.taskCiLlm(projectId, taskId), { method: 'DELETE' }),

@@ -255,10 +255,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Связанный с проектом чат всегда работает на паре проекта (или на
     // пользовательском дефолте проекта). Для непривязанного чата остаётся
     // обычное переопределение разговора → пользователь.
-    const projectLlm = conv?.projectId
+    const projectLlm = conv?.projectId && conv.llmProvider === null
       ? deps.db.getCiLlmConfig('project', conv.projectId) ?? deps.db.ciLlmDefaultsForUser(userId)
       : null
-    const wantProvider = projectLlm?.provider ?? conv?.llmProvider ?? settings.llmProvider
+    const wantProvider = conv?.llmProvider ?? projectLlm?.provider ?? settings.llmProvider
     const access = deps.db.getUserLlmAccess(userId)
     const fallbackProvider = firstAllowedProvider(access)
     if (!fallbackProvider) {
@@ -273,9 +273,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const client = resolvedEngine.engine && deps.engineClient
       ? deps.engineClient(resolvedEngine.engine)
       : provider === 'codex' ? deps.codex! : deps.claude
-    const selectedModel = projectLlm?.provider === provider
-      ? projectLlm.model
-      : (conv?.llmProvider === provider ? conv.llmModel : null)
+    const selectedModel = conv?.llmProvider === provider
+      ? conv.llmModel
+      : (projectLlm?.provider === provider ? projectLlm.model : null)
     const requestedModel = provider === 'codex'
       ? (selectedModel ?? settings.codexModel)
       : normalizeClaudeModel(selectedModel || settings.model)

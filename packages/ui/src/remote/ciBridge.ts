@@ -42,6 +42,12 @@ export interface CiTaskLlmConfig {
   projectDefault: CiLlmConfig
 }
 
+export interface CiProjectLlmConfig {
+  config: CiLlmConfig
+  inherited: CiLlmConfig
+  overridden: boolean
+}
+
 export interface CiTaskConfig {
   config: CiSlotConfig
   overridden: boolean
@@ -69,8 +75,9 @@ export interface RendererCiRest {
   listWorkspaces(projectId?: string): Promise<CiWorkspaceReportItem[]>
   getProjectCi(projectId: string): Promise<CiSlotConfig>
   putProjectCi(projectId: string, config: CiSlotConfig): Promise<CiSlotConfig>
-  getProjectCiLlm(projectId: string): Promise<CiLlmConfig>
-  putProjectCiLlm(projectId: string, config: CiLlmConfig): Promise<CiLlmConfig>
+  getProjectCiLlm(projectId: string): Promise<CiProjectLlmConfig>
+  putProjectCiLlm(projectId: string, config: CiLlmConfig): Promise<CiProjectLlmConfig>
+  resetProjectCiLlm(projectId: string): Promise<CiProjectLlmConfig>
   getTaskCiLlm(projectId: string, taskId: string): Promise<CiTaskLlmConfig>
   putTaskCiLlm(projectId: string, taskId: string, config: CiLlmConfig): Promise<CiLlmConfig>
   /** Снять переопределение задачи — вернуться к движку/модели проекта. */

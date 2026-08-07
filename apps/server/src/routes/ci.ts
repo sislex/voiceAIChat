@@ -83,13 +83,24 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   })
 
   // --- Движок/модель проекта и задачи (с наследованием) ---
+  const projectLlmView = (userId: string, projectId: string) => {
+    const inherited = db.ciLlmDefaultsForUser(userId)
+    const own = db.getCiLlmConfig('project', projectId)
+    return { config: own ?? inherited, inherited, overridden: own !== null }
+  }
   app.get<{ Params: { id: string } }>('/api/projects/:id/ci/llm', async (req, reply) => {
     if (!db.getProject(uid(req), req.params.id)) return nf(reply)
-    return db.getCiLlmConfig('project', req.params.id) ?? db.ciLlmDefaultsForUser(uid(req))
+    return projectLlmView(uid(req), req.params.id)
   })
   app.put<{ Params: { id: string }; Body: CiLlmConfig }>('/api/projects/:id/ci/llm', async (req, reply) => {
     if (!isOwner(req, req.params.id)) return forbid(reply)
-    return db.setCiLlmConfig('project', req.params.id, req.body)
+    db.setCiLlmConfig('project', req.params.id, req.body)
+    return projectLlmView(uid(req), req.params.id)
+  })
+  app.delete<{ Params: { id: string } }>('/api/projects/:id/ci/llm', async (req, reply) => {
+    if (!isOwner(req, req.params.id)) return forbid(reply)
+    db.clearCiLlmConfig('project', req.params.id)
+    return projectLlmView(uid(req), req.params.id)
   })
   const taskLlmView = (userId: string, projectId: string, taskId: string): { config: CiLlmConfig; overridden: boolean; projectDefault: CiLlmConfig } => ({
     config: db.resolveTaskLlmConfig(projectId, taskId, userId),

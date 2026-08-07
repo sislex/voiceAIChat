@@ -337,14 +337,15 @@ describe('projects: навыки по умолчанию и связанный �
     // Имя по умолчанию — «Задача <заголовок>»: чат задачи виден в общем списке.
     expect(chat.title).toBe('Задача Скролл в модалке')
     expect(chat.skillNames).toEqual(['ts'])
-    expect(chat).toMatchObject({ llmEngineId: engine.id, llmProvider: 'codex', llmModel: 'gpt-5.6-luna' })
-    // Повторное открытие синхронизирует уже созданный связанный чат с новыми
-    // настройками пользователя, не создавая второй разговор.
+    // Собственных значений нет: чат динамически наследует проект, затем пользователя.
+    expect(chat).toMatchObject({ llmEngineId: null, llmProvider: null, llmModel: null })
+    expect(db.getCiLlmConfig('project', p.id) ?? db.ciLlmDefaultsForUser('alice')).toMatchObject({ provider: 'codex', model: 'gpt-5.6-luna' })
     db.saveSettings('alice', { ...DEFAULT_SETTINGS, llmEngineId: engine.id, llmProvider: 'codex', codexModel: 'gpt-5.6-sol' })
-    expect(db.getConversation('alice', chat.id)).toMatchObject({ llmEngineId: engine.id, llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    expect(db.getConversation('alice', chat.id)).toMatchObject({ llmEngineId: null, llmProvider: null, llmModel: null })
+    expect(db.getCiLlmConfig('project', p.id) ?? db.ciLlmDefaultsForUser('alice')).toMatchObject({ provider: 'codex', model: 'gpt-5.6-sol' })
     const again = db.openOrCreateTaskChat('alice', p.id, t.id)!
     expect(again.id).toBe(chat.id) // не плодит второй чат
-    expect(again).toMatchObject({ llmEngineId: engine.id, llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    expect(again).toMatchObject({ llmEngineId: null, llmProvider: null, llmModel: null })
     expect(db.getBoard('alice', p.id)!.tasks.find((x) => x.id === t.id)!.chatId).toBe(chat.id)
   })
 

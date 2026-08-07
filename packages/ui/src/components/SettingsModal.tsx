@@ -5,7 +5,6 @@ import { IconButton } from './ui/IconButton'
 import { useConfirm } from './ui/useConfirm'
 import type {
   CatalogVoice,
-  ClaudeModel,
   Settings,
   TtsVoiceInfo,
   WhisperModel,
@@ -19,6 +18,7 @@ import type { LoginStatusMap } from '@shared/auth'
 import type { LlmEngineOption } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
+import { LlmSettingsEditor } from './LlmSettingsEditor'
 
 export interface MicOption {
   deviceId: string
@@ -33,9 +33,9 @@ function formatBytes(bytes: number): string {
 }
 
 /** Разделы меню настроек. */
-type SettingsSection = 'agent' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'ui'
+type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'ui'
 const SECTIONS: { id: SettingsSection; label: string }[] = [
-  { id: 'agent', label: 'Агент' },
+  { id: 'llm', label: 'LLM' },
   { id: 'aiAssist', label: 'AI-помощник' },
   { id: 'download', label: 'Скачать' },
   { id: 'stt', label: 'Распознавание' },
@@ -112,7 +112,7 @@ export function SettingsModal({
   // Блокировка функций при нехватке ресурсов контейнера (null — ещё не загружено, не блокируем).
   const sttBlocked = !voiceInputEnabled || (capabilities != null && !capabilities.stt.available)
   const ttsBlocked = capabilities != null && !capabilities.tts.available
-  const [section, setSection] = useState<SettingsSection>('agent')
+  const [section, setSection] = useState<SettingsSection>('llm')
   const claudeModels = allowedModels(llmAccess, 'claude')
   const codexModels = allowedModels(llmAccess, 'codex')
   const providers = (['claude', 'codex'] as const).filter((provider) => isProviderAllowed(llmAccess, provider) && (provider === 'claude' ? claudeModels.length : codexModels.length))
@@ -134,36 +134,24 @@ export function SettingsModal({
           </nav>
 
           <div className="settpane" data-testid="settings-pane">
-            {section === 'agent' && (
+            {section === 'llm' && (
               <>
-                <div className="frow">
-                  <div><p className="flab">Исполнитель</p><p className="fsub">Подписка и контейнер для выбранного CLI</p></div>
-                  <select className="sel" aria-label="Исполнитель LLM" value={settings.llmEngineId ?? ''} onChange={(e) => {
-                    const id = e.target.value || null
-                    const engine = engines.find((item) => item.id === id)
-                    onChange({ llmEngineId: id, ...(engine ? { llmProvider: engine.kind } : {}) })
-                  }}>
-                    <option value="">По умолчанию для роли</option>
-                    {engines.filter((engine) => providers.includes(engine.kind)).map((engine) => <option key={engine.id} value={engine.id}>{engine.name} · {engine.kind}{engine.isDefault ? ' (default)' : ''}</option>)}
-                  </select>
-                </div>
-
-                <div className="frow">
-                  <div>
-                    <p className="flab">Движок</p>
-                    <p className="fsub">Через какой CLI генерировать ответы</p>
-                  </div>
-                  <select
-                    className="sel"
-                    aria-label="Движок"
-                    value={settings.llmProvider}
-                    onChange={(e) => onChange({ llmProvider: e.target.value as LlmProvider })}
-                  >
-                    {providers.includes('claude') && <option value="claude">Claude Code</option>}
-                    {providers.includes('codex') && <option value="codex">Codex</option>}
-                    {providers.length === 0 && <option value="">Нет доступных движков</option>}
-                  </select>
-                </div>
+                <LlmSettingsEditor
+                  value={{ engineId: settings.llmEngineId, provider: settings.llmProvider, model: settings.llmProvider === 'codex' ? settings.codexModel : settings.model }}
+                  engines={engines}
+                  llmAccess={llmAccess}
+                  onChange={(next) => {
+                    const currentModel = settings.llmProvider === 'codex' ? settings.codexModel : settings.model
+                    const patch: Partial<Settings> = {}
+                    if ((next.engineId ?? null) !== (settings.llmEngineId ?? null)) patch.llmEngineId = next.engineId ?? null
+                    if (next.provider !== settings.llmProvider) patch.llmProvider = next.provider
+                    if (next.model !== currentModel) {
+                      if (next.provider === 'codex') patch.codexModel = next.model
+                      else patch.model = normalizeClaudeModel(next.model)
+                    }
+                    onChange(patch)
+                  }}
+                />
 
                 {loginStatus && (
                   <div className="voicedl" data-testid="login-status">
@@ -187,56 +175,6 @@ export function SettingsModal({
                         </div>
                       )
                     })}
-                  </div>
-                )}
-
-                {settings.llmProvider === 'claude' ? (
-                  <div className="frow">
-                    <div>
-                      <p className="flab">Модель Claude</p>
-                      <p className="fsub">Через Claude Console (CLI)</p>
-                    </div>
-                    <select
-                      className="sel"
-                      aria-label="Модель Claude"
-                      value={normalizeClaudeModel(settings.model)}
-                      onChange={(e) => onChange({ model: e.target.value as ClaudeModel })}
-                    >
-                      {claudeModels.length === 0 && <option value="">Нет доступных моделей</option>}
-                      {claudeModels.map((m) => (
-                        <option key={m.id} value={m.id} title={m.hint}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : (
-                  <div className="frow">
-                    <div>
-                      <p className="flab">Модель Codex</p>
-                      <p className="fsub">Через Codex CLI</p>
-                    </div>
-                    <select
-                      className="sel"
-                      aria-label="Модель Codex"
-                      value={settings.codexModel}
-                      onChange={(e) => onChange({ codexModel: e.target.value })}
-                    >
-                      {/* Сохранённая модель не из пресетов — показываем отдельным
-                          пунктом; пустая строка старых настроек означала модель
-                          из ~/.codex/config.toml, и её тоже нельзя терять. */}
-                      {!CODEX_MODELS.some((m) => m.id === settings.codexModel) && (
-                        <option value={settings.codexModel}>
-                          {settings.codexModel || 'По умолчанию (из codex)'}
-                        </option>
-                      )}
-                      {codexModels.length === 0 && <option value="">Нет доступных моделей</option>}
-                      {codexModels.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
                   </div>
                 )}
 

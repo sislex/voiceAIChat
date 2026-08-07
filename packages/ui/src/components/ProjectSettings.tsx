@@ -12,6 +12,7 @@ import type { UserLlmAccess } from '@shared/llmAccess'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
+import { SettingsPage } from './SettingsPage'
 
 export interface ProjectSettingsProps {
   detail: ProjectDetail
@@ -172,20 +173,19 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
 
   return (
     <div className="proj-detail" data-testid="project-settings">
-      <div className="proj-settings-tabs" role="tablist" aria-label="Разделы настроек проекта">
-        {([
-          ['general', 'Общее'],
-          ['llm', 'LLM'],
-          ['board', 'Доска'],
-          ['workflow', 'Workflow и CI'],
-          ['members', 'Участники'],
-          ['machines', 'Машины'],
-        ] as const).map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={activeTab === id} className={activeTab === id ? 'active' : ''} onClick={() => setActiveTab(id)}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <SettingsPage
+        ariaLabel="Разделы настроек проекта"
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={[
+          { id: 'general', label: 'Общее' },
+          { id: 'llm', label: 'LLM' },
+          { id: 'board', label: 'Доска' },
+          { id: 'workflow', label: 'Workflow и CI' },
+          { id: 'members', label: 'Участники' },
+          { id: 'machines', label: 'Машины' }
+        ]}
+      />
       {activeTab === 'general' && <>
       {isOwner ? (
         <div className="proj-meta-edit">
