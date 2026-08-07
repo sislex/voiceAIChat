@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, projectKey } from './projects'
+import { compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, projectKey } from './projects'
 
 const DAY = 24 * 60 * 60 * 1000
 const T0 = 1_700_000_000_000
@@ -33,6 +33,26 @@ describe('isCompletedHidden — когда завершённая задача �
   it('мусорный порог читается как «не скрывать»', () => {
     expect(isCompletedHidden(T0, Number.NaN, T0 + 999 * DAY)).toBe(false)
     expect(isCompletedHidden(T0, -1, T0 + 999 * DAY)).toBe(false)
+  })
+})
+
+describe('порядок задач в колонке', () => {
+  const task = (id: string, doneAt: number | null, position: number) => ({ id, doneAt, position, createdAt: 1 })
+
+  it('в done сортирует по времени входа, а fallback без метки стабилен', () => {
+    expect([
+      task('old', 10, 1024),
+      task('new', 20, 2048),
+      task('legacy-b', null, 2048),
+      task('legacy-a', null, 1024)
+    ].sort((a, b) => compareTasksInColumn(a, b, 'done')).map((item) => item.id))
+      .toEqual(['new', 'old', 'legacy-a', 'legacy-b'])
+  })
+
+  it('в остальных колонках сохраняет ручной порядок', () => {
+    expect([task('late', 20, 2048), task('early', 10, 1024)]
+      .sort((a, b) => compareTasksInColumn(a, b, 'development')).map((item) => item.id))
+      .toEqual(['early', 'late'])
   })
 })
 

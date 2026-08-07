@@ -85,6 +85,7 @@ import {
   type TaskChatCrumb,
   issueKey,
   isCompletedHidden,
+  compareTasksInColumn,
   DEFAULT_DONE_RETENTION_DAYS,
   type CiGlobalSettings,
   DEFAULT_CI_GLOBAL_SETTINGS,
@@ -2227,6 +2228,11 @@ export class VoiceChatDb {
     const retention = opts?.includeCompleted ? null : this.doneRetentionDays(projectId)
     const now = this.now()
     const visible = tasks.filter((t) => !isCompletedHidden(t.doneAt, retention, now))
+    const semanticByColumnId = new Map(columns.map((column) => [column.id, column.semanticType]))
+    visible.sort((a, b) => {
+      if (a.columnId !== b.columnId) return a.columnId.localeCompare(b.columnId)
+      return compareTasksInColumn(a, b, semanticByColumnId.get(a.columnId) ?? 'custom')
+    })
 
     return { columns, tasks: visible, ciRuns: this.latestCiRunSummaries(projectId) }
   }
