@@ -78,4 +78,18 @@ describe('ProjectSettings — режим базы знаний для CI-ран�
     expect(provider).not.toHaveTextContent('Claude')
     expect(provider).toHaveTextContent('Codex')
   })
+
+  it('сохраняет http/https URL превью и откатывает невалидный адрес', async () => {
+    const onUpdate = vi.fn()
+    render(<ProjectSettings {...props({ detail: detail({ previewUrl: 'https://old.example/' }), onUpdate })} />)
+    const input = screen.getByLabelText('URL веб-превью')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'https://new.example/app')
+    await userEvent.tab()
+    expect(onUpdate).toHaveBeenCalledWith('p1', { previewUrl: 'https://new.example/app' })
+    await userEvent.clear(input)
+    await userEvent.type(input, 'file:///tmp/app')
+    await userEvent.tab()
+    expect(input).toHaveValue('https://old.example/')
+  })
 })

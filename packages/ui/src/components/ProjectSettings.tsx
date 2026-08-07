@@ -18,7 +18,7 @@ export interface ProjectSettingsProps {
   detail: ProjectDetail
   agents: AgentInfo[]
   llmAccess?: UserLlmAccess[]
-  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null }) => void
+  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; previewUrl?: string | null; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null }) => void
 
   onDelete: (id: string) => void
   onAddMember: (id: string, username: string) => void
@@ -146,6 +146,8 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
   const [name, setName] = useState(detail.name)
   const [description, setDescription] = useState(detail.description)
   const [gitUrl, setGitUrl] = useState(detail.gitUrl ?? '')
+  const [previewUrl, setPreviewUrl] = useState(detail.previewUrl ?? '')
+  useEffect(() => setPreviewUrl(detail.previewUrl ?? ''), [detail.previewUrl])
   const [newMember, setNewMember] = useState('')
   const [confirmDel, setConfirmDel] = useState(false)
   const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'board' | 'workflow' | 'members' | 'machines'>('general')
@@ -170,6 +172,16 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
   const saveMeta = (): void => {
     props.onUpdate(detail.id, { name: name.trim() || detail.name, description, gitUrl: gitUrl.trim() || null })
   }
+  const savePreviewUrl = (): void => {
+    const raw = previewUrl.trim()
+    if (!raw) { props.onUpdate(detail.id, { previewUrl: null }); return }
+    try {
+      const url = new URL(raw)
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('protocol')
+      setPreviewUrl(url.toString())
+      props.onUpdate(detail.id, { previewUrl: url.toString() })
+    } catch { setPreviewUrl(detail.previewUrl ?? '') }
+  }
 
   return (
     <div className="proj-detail" data-testid="project-settings">
@@ -192,6 +204,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
           <input className="login-input" aria-label="Название проекта" value={name} onChange={(e) => setName(e.target.value)} onBlur={saveMeta} />
           <textarea className="login-input" aria-label="Описание" placeholder="Описание" value={description} onChange={(e) => setDescription(e.target.value)} onBlur={saveMeta} />
           <input className="login-input" aria-label="Git-репозиторий" placeholder="git@…" value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} onBlur={saveMeta} />
+          <input className="login-input" type="url" aria-label="URL веб-превью" placeholder="https://example.com" value={previewUrl} onChange={(e) => setPreviewUrl(e.target.value)} onBlur={savePreviewUrl} onKeyDown={(e) => { if (e.key === 'Enter') savePreviewUrl() }} />
         </div>
       ) : (
         <div className="proj-meta-ro">

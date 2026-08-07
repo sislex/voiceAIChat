@@ -5390,3 +5390,28 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .task-launch-fields input[readonly] { background: var(--panel); color: var(--text-dim); }
 .task-launch-fields label:first-child, .task-launch-fields label:has(textarea) { grid-column: 1 / -1; }
 @media (max-width: 520px) { .task-launch-fields { grid-template-columns: 1fr; } }
+
+/* Сплит чата и браузерного превью. Процент хранится в localStorage. */
+.chat-split { grid-column: 2; display: flex; min-width: 0; min-height: 0; height: 100vh; overflow: hidden; }
+.chat-split-chat { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.chat-split-chat > .main { height: 100%; }
+.chat-split-divider { flex: 0 0 7px; cursor: col-resize; background: var(--border-soft); touch-action: none; }
+.chat-split-divider:hover, .chat-split-divider:focus { background: var(--accent); }
+.webpreview { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--panel); }
+.webpreview-bar { display: flex; gap: 8px; padding: 9px; border-bottom: 1px solid var(--border); }
+.webpreview-address { flex: 1; min-width: 0; }
+.webpreview-address input { box-sizing: border-box; width: 100%; height: 100%; min-width: 0; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+.webpreview-error { margin: 0; padding: 6px 10px; color: var(--danger); font-size: 12px; }
+.webpreview-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: white; }
+.webpreview-empty { flex: 1; display: grid; place-items: center; padding: 24px; color: var(--text-dim); text-align: center; }
+.chat-split-tabs { display: none; }
+.chat-split-tabs > div { display: contents; }
+@media (max-width: 768px) {
+  .chat-split { grid-column: 1; height: 100dvh; flex-direction: column; }
+  .chat-split-tabs { display: grid; grid-template-columns: 1fr 1fr; flex: none; padding: 6px; gap: 4px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  .chat-split-tabs button { padding: 7px; border: 0; border-radius: 7px; background: transparent; color: var(--text-dim); font: inherit; }
+  .chat-split-tabs button[aria-selected='true'] { background: var(--surface-selected); color: var(--text); font-weight: 700; }
+  .chat-split-divider { display: none; }
+  .chat-split-chat, .webpreview { flex: 1 1 auto; width: 100%; min-height: 0; }
+  .chat-split--chat .webpreview, .chat-split--preview .chat-split-chat { display: none; }
+}

@@ -608,6 +608,7 @@ export interface StoreActions {
   /** Изменить машину только одного разговора. */
   setConversationExecTarget(id: string, execTarget: string | null, workdir?: string | null, skillNames?: string[], llmProvider?: LlmProvider | null, llmModel?: string | null, permissionMode?: PermissionMode | null, kbContextMode?: KbContextMode, llmEngineId?: string | null): Promise<void>
   setConversationProject(id: string, projectId: string | null): Promise<void>
+  setConversationPreviewUrl(id: string, previewUrl: string | null): Promise<void>
   /** Сменить статус жизненного цикла чата (дропдаун в сайдбаре). */
   setConversationStatus(id: string, status: ConversationStatus): Promise<void>
   /** Задать поисковый запрос (пусто — весь список / пустая панель поиска). */
@@ -866,6 +867,7 @@ export interface StoreActions {
       name?: string
       description?: string
       gitUrl?: string | null
+      previewUrl?: string | null
       technologies?: string[]
       skills?: string[]
       defaultSkills?: Partial<WorkItemDefaultSkills>
@@ -3348,6 +3350,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       name?: string
       description?: string
       gitUrl?: string | null
+      previewUrl?: string | null
       technologies?: string[]
       skills?: string[]
       defaultSkills?: Partial<WorkItemDefaultSkills>
@@ -3445,6 +3448,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   /** Привязать/отвязать чат к проекту; сервер перезаписывает машину/папку/навыки. */
   async function setConversationProject(id: string, projectId: string | null): Promise<void> {
     const conversation = await api['conversations:setProject']({ id, projectId })
+    setState({ conversations: state.conversations.map((c) => (c.id === id ? conversation : c)) })
+  }
+  async function setConversationPreviewUrl(id: string, previewUrl: string | null): Promise<void> {
+    const conversation = await api['conversations:setPreviewUrl']({ id, previewUrl })
     setState({ conversations: state.conversations.map((c) => (c.id === id ? conversation : c)) })
   }
   async function setConversationStatus(id: string, status: ConversationStatus): Promise<void> {
@@ -4175,6 +4182,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setProjectDefaultMachine,
       fetchProjectDetail,
       setConversationProject,
+      setConversationPreviewUrl,
       setConversationStatus,
       openBoard,
       closeBoard,

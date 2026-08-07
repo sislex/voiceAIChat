@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { LlmProvider, PermissionMode, TaskLaunchRequest } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
@@ -63,6 +63,39 @@ const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'k
 
 // Запуск задачи предлагает только явный структурированный сигнал ассистента.
 
+function normalizeWebUrl(value: string): string | null {
+  try {
+    const url = new URL(value.trim())
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
+  } catch { return null }
+}
+
+function WebPreview({ conversationUrl, projectUrl, onSave }: { conversationUrl: string | null; projectUrl: string | null; onSave: (url: string | null) => Promise<void> }): JSX.Element {
+  const effective = conversationUrl ?? projectUrl
+  const [draft, setDraft] = useState(effective ?? '')
+  const [loaded, setLoaded] = useState(effective)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => { setDraft(effective ?? ''); setLoaded(effective); setError(null) }, [effective])
+  const submit = async (event: FormEvent): Promise<void> => {
+    event.preventDefault()
+    const raw = draft.trim()
+    const normalized = raw ? normalizeWebUrl(raw) : null
+    if (raw && !normalized) { setError('Введите адрес с протоколом http:// или https://'); return }
+    await onSave(normalized)
+    setDraft(normalized ?? projectUrl ?? '')
+    setLoaded(normalized ?? projectUrl)
+    setError(null)
+  }
+  return <section className="webpreview" aria-label="Веб-превью">
+    <form className="webpreview-bar" onSubmit={(event) => void submit(event)}>
+      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="url" inputMode="url" value={draft} placeholder="https://example.com" aria-invalid={Boolean(error)} aria-describedby={error ? 'webpreview-error' : undefined} onChange={(event) => setDraft(event.target.value)} /></label>
+      <button className="vc-btn vc-btn--secondary" type="submit">Открыть</button>
+    </form>
+    {error && <p className="webpreview-error" id="webpreview-error" role="alert">{error}</p>}
+    {loaded ? <iframe className="webpreview-frame" src={loaded} title="Предпросмотр сайта" /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
+  </section>
+}
+
 /**
  * Корень приложения. Тосты и подтверждения — провайдеры вокруг всего дерева:
  * спросить подтверждение или показать ошибку может любой экран на любой глубине.
@@ -100,6 +133,32 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const inChat = !inProjects && !onUtilityPage
   const { state, actions } = useVoiceStore({ api, now, delays, initialChatId: routeChatId })
   const [release, setRelease] = useState<HealthResponse | null>(null)
+  const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
+  const [activeProjectPreviewUrl, setActiveProjectPreviewUrl] = useState<string | null>(null)
+  const [previewWidth, setPreviewWidth] = useState(() => {
+    const saved = Number(globalThis.localStorage?.getItem('voicechat.previewWidth'))
+    return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 45
+  })
+  useEffect(() => {
+    let alive = true
+    const projectId = state.conversations.find((conversation) => conversation.id === state.activeId)?.projectId
+    if (!projectId) { setActiveProjectPreviewUrl(null); return }
+    void api['projects:get']({ id: projectId }).then((project) => { if (alive) setActiveProjectPreviewUrl(project?.previewUrl ?? null) })
+    return () => { alive = false }
+  }, [api, state.activeId, state.conversations])
+  const resizePreview = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const container = event.currentTarget.parentElement
+    if (!container) return
+    const move = (pointer: PointerEvent): void => {
+      const rect = container.getBoundingClientRect()
+      const next = Math.min(75, Math.max(25, ((rect.right - pointer.clientX) / rect.width) * 100))
+      setPreviewWidth(next)
+      globalThis.localStorage?.setItem('voicechat.previewWidth', String(next))
+    }
+    const stop = (): void => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop)
+  }
   useEffect(() => {
     let active = true
     void api['app:ping']().then((value) => { if (active) setRelease(value) }).catch(() => undefined)
@@ -612,6 +671,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       )}
 
       {!inProjects && !onUtilityPage && (
+      <div className={`chat-split chat-split--${chatView}`} style={{ '--preview-width': `${previewWidth}%` } as CSSProperties}>
+      <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>Превью</button></div></nav>
+      <div className="chat-split-chat">
       <ChatColumn
         onToggleSidebar={() => {
           if (collapsed) setCollapsedPersist(false)
@@ -721,6 +783,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           />
         }
       />
+      </div>
+      <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>
+      <WebPreview conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null} onSave={async (previewUrl) => { if (activeConversation) await actions.setConversationPreviewUrl(activeConversation.id, previewUrl) }} />
+      </div>
       )}
 
       {/* Проектов нет вообще: редиректу некуда вести — показываем, что делать. */}

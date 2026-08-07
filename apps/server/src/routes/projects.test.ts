@@ -43,6 +43,20 @@ async function createProject(name = 'P1'): Promise<ProjectDetail> {
   return res.json() as ProjectDetail
 }
 
+describe('conversation preview URL REST', () => {
+  it('хранит override, очищает его и принимает только http/https', async () => {
+    const conv = db.createConversation('admin', 'Preview')
+    const url = `/api/conversations/${conv.id}/preview-url`
+    const saved = await inj(adminTok, { method: 'POST', url, payload: { previewUrl: 'http://localhost:3000/path' } })
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json().previewUrl).toBe('http://localhost:3000/path')
+    expect(db.getConversation('admin', conv.id)?.previewUrl).toBe('http://localhost:3000/path')
+    expect((await inj(adminTok, { method: 'POST', url, payload: { previewUrl: 'file:///tmp/x' } })).statusCode).toBe(400)
+    expect((await inj(adminTok, { method: 'POST', url, payload: { previewUrl: null } })).json().previewUrl).toBeNull()
+    expect((await inj(bobTok, { method: 'POST', url, payload: { previewUrl: 'https://example.com' } })).statusCode).toBe(404)
+  })
+})
+
 describe('conversation status REST', () => {
   it('хранит статус, валидирует значение и изолирует владельца', async () => {
     const conv = db.createConversation('admin', 'Статус')
@@ -102,6 +116,18 @@ describe('projects REST: доступ', () => {
   it('добавление несуществующего пользователя → 400', async () => {
     const p = await createProject()
     expect((await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'ghost' } })).statusCode).toBe(400)
+  })
+
+  it('хранит http/https URL превью проекта и отклоняет остальные протоколы', async () => {
+    const p = await createProject()
+    const saved = await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { previewUrl: 'https://example.com/app' } })
+    expect(saved.statusCode).toBe(200)
+    expect((saved.json() as ProjectDetail).previewUrl).toBe('https://example.com/app')
+    const conversation = db.createConversation('admin', 'Inherited preview')
+    db.setConversationProject('admin', conversation.id, p.id)
+    expect(db.getConversation('admin', conversation.id)?.projectPreviewUrl).toBe('https://example.com/app')
+    expect((await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { previewUrl: 'javascript:alert(1)' } })).statusCode).toBe(400)
+    expect((await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { previewUrl: null } })).json().previewUrl).toBeNull()
   })
 })
 

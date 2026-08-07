@@ -188,6 +188,26 @@ export async function registerRest(
     }
   )
 
+  app.post<{ Params: { id: string }; Body: { previewUrl?: string | null } }>(
+    '/api/conversations/:id/preview-url',
+    async (req, reply) => {
+      const raw = req.body?.previewUrl
+      let previewUrl: string | null = null
+      if (raw) {
+        try {
+          const url = new URL(raw.trim())
+          if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('protocol')
+          previewUrl = url.toString()
+        } catch {
+          return reply.code(400).send({ error: 'previewUrl must be an http/https URL' })
+        }
+      }
+      const conversation = db.setConversationPreviewUrl(uid(req), req.params.id, previewUrl)
+      if (!conversation) return reply.code(404).send({ error: 'not found' })
+      return conversation
+    }
+  )
+
   app.post<{ Params: { id: string }; Body: { status?: string } }>(
     '/api/conversations/:id/status',
     async (req, reply) => {
