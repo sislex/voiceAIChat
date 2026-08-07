@@ -375,13 +375,47 @@ describe('App — запуск задачи из чата', () => {
     render(<App api={api} delays={SLOW} />)
     await screen.findByTestId('task-chat-header')
     expect(screen.queryByRole('dialog', { name: 'Настройки задачи разработки' })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Создать задачу…' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Создать задачу' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Настройки задачи разработки' })
     expect(within(dialog).getByLabelText('Название')).toHaveValue('Исправить запуск')
     expect(within(dialog).getByRole('button', { name: 'Создать в TODO' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Создать в InProgress' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Работать в текущем чате' })).toBeInTheDocument()
+  })
+
+  it('показывает таблицу нескольких задач и после создания одной оставляет остальные', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const project = await api['projects:create']({ name: 'Проект запуска' })
+    const board = await api['board:get']({ id: project.id })
+    const source = await api['tasks:create']({ projectId: project.id, columnId: board.columns[0]!.id, title: 'Исходная' })
+    const chat = await api['tasks:openChat']({ projectId: project.id, taskId: source.id })
+    await api['messages:add']({
+      conversationId: chat.id,
+      role: 'ai',
+      text: 'Выберите задачи.',
+      time: '12:01',
+      meta: { taskLaunches: [
+        { id: 'one', title: 'Первая задача', description: 'Описание 1', acceptanceCriteria: 'Критерий 1' },
+        { id: 'two', title: 'Вторая задача', description: 'Описание 2', acceptanceCriteria: 'Критерий 2' }
+      ] }
+    })
+
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/chat/${chat.id}`)
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByTestId('task-chat-header')
+    expect(screen.getByRole('columnheader', { name: 'Название задачи' })).toBeInTheDocument()
+    const rows = screen.getAllByRole('row')
+    const second = rows.find((row) => within(row).queryByText('Вторая задача'))!
+    await userEvent.click(within(second).getByRole('button', { name: 'Создать задачу' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки задачи разработки' })
+    expect(within(dialog).getByLabelText('Название')).toHaveValue('Вторая задача')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Создать в TODO' }))
+
+    await waitFor(() => expect(within(second).getByText('Создана')).toBeInTheDocument())
+    expect(screen.getByText('Первая задача')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Создать задачу' })).toBeInTheDocument()
   })
 
   it('после создания задачи в TODO не продолжает выполнение в текущем чате', async () => {
@@ -403,7 +437,7 @@ describe('App — запуск задачи из чата', () => {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/chat/${chat.id}`)
     render(<App api={api} delays={SLOW} />)
     await screen.findByTestId('task-chat-header')
-    await userEvent.click(screen.getByRole('button', { name: 'Создать задачу…' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Создать задачу' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки задачи разработки' })
     await userEvent.click(within(dialog).getByRole('button', { name: 'Создать в TODO' }))
 

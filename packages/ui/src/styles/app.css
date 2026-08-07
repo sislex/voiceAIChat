@@ -2931,6 +2931,24 @@ button.conscmd:hover {
   color: var(--text-dim);
 }
 
+.task-launch-table {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.task-launch-table th,
+.task-launch-table td {
+  padding: 8px;
+  text-align: left;
+  border-top: 1px solid var(--border, #dddbd1);
+}
+.task-launch-table th:last-child,
+.task-launch-table td:last-child {
+  width: 1%;
+  white-space: nowrap;
+}
+
 /* ==== Мобильные панели тулов — на весь экран ====
    Окна Dialog переключает сам компонент по MOBILE_QUERY (720px), см. .vc-dialog--phone. */
 @media (max-width: 768px) {

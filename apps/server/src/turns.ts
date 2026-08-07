@@ -613,6 +613,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           // служебный: в историю и видимый ответ он не попадает.
           const taskLaunch = parseTaskLaunchRequest(rawText)
           if (taskLaunch.request) merged.taskLaunch = taskLaunch.request
+          if (taskLaunch.requests) merged.taskLaunches = taskLaunch.requests
 
           // Картинки, созданные CLI, лежат на сервере — перекладываем их на
           // машину разговора, откуда браузер возьмёт их напрямую. Шаг сетевой,

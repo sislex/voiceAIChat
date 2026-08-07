@@ -2,7 +2,7 @@
 
 import { parseImages } from './images'
 import type { SttSegmentWire } from './protocol'
-import type { MessageRole, TaskLaunchRequest } from './types'
+import type { MessageRole, TaskLaunchProposal, TaskLaunchRequest } from './types'
 import { normalizeClaudeModel } from './types'
 
 /** Добавляет к телу промпта просьбу прочитать вложенные файлы (пути абсолютные). */
@@ -21,8 +21,8 @@ function withAttachments(body: string, attachmentPaths: string[]): string {
  */
 export const CHANGE_AUTHORIZATION_HINT = [
   'Если ты собираешься исправлять, менять или добавлять что-либо в проект, сначала спроси разрешение пользователя и не начинай работу до его ответа.',
-  'В этом случае добавь в самом конце ответа отдельный блок ```task-launch с JSON вида {"title":"…","description":"…","acceptanceCriteria":"…"}.',
-  'Этот блок означает, что UI предложит пользователю ровно три варианта: создать задачу в TODO, создать задачу в InProgress или работать в текущем чате.',
+  'В этом случае добавь в самом конце ответа один или несколько отдельных блоков ```task-launch с JSON вида {"title":"…","description":"…","acceptanceCriteria":"…"}.',
+  'Каждый блок означает независимое предложение задачи; UI позволит отдельно создать её в TODO или InProgress либо отклонить предложение и работать в текущем чате.',
   'Заполняй поля блока по согласованному с пользователем плану. Не добавляй блок для вопросов, объяснений, исследований и отчётов.',
   'Если пользователь выбрал работу в текущем чате, после выполнения отдельно спроси, можно ли коммитить и пушить изменения.'
 ].join('\n')
@@ -34,21 +34,33 @@ export function appendChangeAuthorizationHint(prompt: string): string {
 }
 
 /** Отделяет машинный запрос запуска задачи от текста, который увидит пользователь. */
-export function parseTaskLaunchRequest(text: string): { text: string; request?: TaskLaunchRequest } {
-  const match = /\n?```task-launch\s*\n([\s\S]*?)\n```\s*$/u.exec(text)
-  if (!match) return { text }
-  try {
-    const value: unknown = JSON.parse(match[1])
-    if (!value || typeof value !== 'object') return { text }
-    const source = value as Record<string, unknown>
-    const title = typeof source.title === 'string' ? source.title.trim() : ''
-    const description = typeof source.description === 'string' ? source.description.trim() : ''
-    const acceptanceCriteria = typeof source.acceptanceCriteria === 'string' ? source.acceptanceCriteria.trim() : ''
-    if (!title || !description || !acceptanceCriteria) return { text }
-    return { text: text.slice(0, match.index).trimEnd(), request: { title, description, acceptanceCriteria } }
-  } catch {
-    return { text }
+export function parseTaskLaunchRequest(text: string): { text: string; request?: TaskLaunchRequest; requests?: TaskLaunchProposal[] } {
+  const suffix = /(?:\n?```task-launch\s*\n[\s\S]*?\n```\s*)+$/u.exec(text)
+  if (!suffix) return { text }
+  const requests: TaskLaunchProposal[] = []
+  const fence = /```task-launch\s*\n([\s\S]*?)\n```/gu
+  for (const match of suffix[0].matchAll(fence)) {
+    try {
+      const values: unknown[] = Array.isArray(JSON.parse(match[1])) ? JSON.parse(match[1]) as unknown[] : [JSON.parse(match[1])]
+      for (const value of values) {
+        if (!value || typeof value !== 'object') return { text }
+        const source = value as Record<string, unknown>
+        const title = typeof source.title === 'string' ? source.title.trim() : ''
+        const description = typeof source.description === 'string' ? source.description.trim() : ''
+        const acceptanceCriteria = typeof source.acceptanceCriteria === 'string' ? source.acceptanceCriteria.trim() : ''
+        if (!title || !description || !acceptanceCriteria) return { text }
+        requests.push({ id: `task-launch-${requests.length + 1}`, title, description, acceptanceCriteria })
+      }
+    } catch {
+      return { text }
+    }
   }
+  if (!requests.length) return { text }
+  if (requests.length === 1) {
+    const { id: _id, ...request } = requests[0]
+    return { text: text.slice(0, suffix.index).trimEnd(), request }
+  }
+  return { text: text.slice(0, suffix.index).trimEnd(), requests }
 }
 
 /**

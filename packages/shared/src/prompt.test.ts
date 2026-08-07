@@ -89,6 +89,15 @@ describe('parseTaskLaunchRequest', () => {
     })
   })
 
+  it('разбирает несколько последовательных предложений', () => {
+    const parsed = parseTaskLaunchRequest('Выберите задачи.\n```task-launch\n{"title":"Первая","description":"Описание 1","acceptanceCriteria":"Критерий 1"}\n```\n```task-launch\n{"title":"Вторая","description":"Описание 2","acceptanceCriteria":"Критерий 2"}\n```')
+    expect(parsed.text).toBe('Выберите задачи.')
+    expect(parsed.requests).toEqual([
+      { id: 'task-launch-1', title: 'Первая', description: 'Описание 1', acceptanceCriteria: 'Критерий 1' },
+      { id: 'task-launch-2', title: 'Вторая', description: 'Описание 2', acceptanceCriteria: 'Критерий 2' }
+    ])
+  })
+
   it('не считает обычный текст запросом запуска', () => {
     expect(parseTaskLaunchRequest('Давайте создадим задачу и исправим разработку.')).toEqual({ text: 'Давайте создадим задачу и исправим разработку.' })
   })

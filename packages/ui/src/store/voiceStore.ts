@@ -656,6 +656,8 @@ export interface StoreActions {
   deleteMessage(id: string): Promise<void>
   /** Исправить сообщение пользователя: удалить его и все последующие, переспросить. */
   editMessage(id: string, newText: string): Promise<void>
+  /** Персистентно отметить одно предложение задачи созданным или отклонённым. */
+  updateTaskLaunchStatus(messageId: string, proposalId: string, status: 'created' | 'declined'): Promise<void>
   /** Прикрепить файл к следующему сообщению (загрузка на сервер). */
   addAttachment(file: File): Promise<void>
   /** Убрать прикреплённый файл по id. */
@@ -2895,6 +2897,26 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshConversations()
   }
 
+  async function updateTaskLaunchStatus(messageId: string, proposalId: string, status: 'created' | 'declined'): Promise<void> {
+    if (!state.activeId) return
+    const message = state.messages.find((item) => item.id === messageId)
+    if (!message?.meta) return
+    const proposals = message.meta.taskLaunches?.length
+      ? message.meta.taskLaunches
+      : message.meta.taskLaunch
+        ? [{ id: 'legacy', ...message.meta.taskLaunch }]
+        : []
+    const meta = {
+      ...message.meta,
+      taskLaunches: proposals.map((proposal) => proposal.id === proposalId ? { ...proposal, status } : proposal)
+    }
+    const updated = await api['messages:updateMeta']({ conversationId: state.activeId, messageId, meta })
+    setState({ messages: state.messages.map((item) => item.id === messageId ? updated : item) })
+    try {
+      localStorage.setItem('vc:message-meta-update', JSON.stringify({ conversationId: state.activeId, message: updated, at: Date.now() }))
+    } catch { /* storage недоступен — серверная персистентность остаётся */ }
+  }
+
   async function editMessage(id: string, newText: string): Promise<void> {
     const text = newText.trim()
     if (!state.activeId || !text || state.voice !== 'idle') return
@@ -3822,7 +3844,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       scheduleConversationsRefresh()
       return
     }
-    appendPersisted(message)
+    const existing = state.messages.some((item) => item.id === message.id)
+    if (existing) setState({ messages: state.messages.map((item) => item.id === message.id ? message : item) })
+    else appendPersisted(message)
   }
   /** Ответить на паузу рана из ленты. Ошибка 409 (ответили из чата) — не фатальна. */
   async function answerCiInteraction(runId: string, interactionId: string, answer: CiInteractionAnswer): Promise<void> {
@@ -4077,6 +4101,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       cancelRequest,
       deleteMessage,
       editMessage,
+      updateTaskLaunchStatus,
       addAttachment,
       removeAttachment,
       startVoice,

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { RendererApi } from '@shared/ipc'
-import type { LlmProvider, PermissionMode, TaskLaunchRequest } from '@shared/types'
+import type { LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { TaskPriority } from '@shared/projects'
@@ -184,6 +184,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false)
   const [taskProposal, setTaskProposal] = useState<{
     projectId: string
+    messageId: string
+    proposalId: string
     title: string
     description: string
     acceptanceCriteria: string
@@ -438,13 +440,15 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const allowedProviders = (['claude', 'codex'] as const).filter((provider) => isProviderAllowed(state.llmAccess, provider) && (provider === 'claude' ? allowedClaudeModels.length : allowedCodexModels.length))
   const proposalModels = taskProposal?.provider === 'codex' ? allowedCodexModels : allowedClaudeModels
 
-  const openTaskProposal = (request: TaskLaunchRequest): void => {
+  const openTaskProposal = (request: TaskLaunchProposal, messageId: string): void => {
     if (!activeConversation?.projectId) {
       toast.error('Невозможно создать задачу: этот чат не привязан к проекту.')
       return
     }
     setTaskProposal({
       projectId: activeConversation.projectId,
+      messageId,
+      proposalId: request.id,
       title: request.title,
       description: request.description,
       acceptanceCriteria: request.acceptanceCriteria,
@@ -478,9 +482,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         if (!run) return
         toast.success('Задача создана и поставлена в CI-очередь')
       }
+      await actions.updateTaskLaunchStatus(taskProposal.messageId, taskProposal.proposalId, mode === 'chat' ? 'declined' : 'created')
       setTaskProposal(null)
       if (mode === 'chat') {
-        await actions.answerQuestions('Выбираю: выполнять работу в текущем чате.')
+        toast.success('Предложение отклонено')
       }
     } finally {
       setTaskLaunchPending(false)

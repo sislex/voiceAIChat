@@ -4,6 +4,7 @@
 import { useEffect, useRef } from 'react'
 import { useSyncExternalStore } from 'react'
 import type { SttSegmentWire } from '@shared/ipc'
+import type { Message } from '@shared/types'
 import { createVoiceStore, type AppState, type StoreActions, type StoreDeps } from './voiceStore'
 import { createBrowserAudioController } from '../audio/browserAudio'
 import { listMicrophones } from '../audio/microphones'
@@ -125,6 +126,17 @@ export function useVoiceStore(deps: UseVoiceStoreDeps): UseVoiceStore {
     void store.actions.init(initialChatId.current)
 
     const unsubs: Array<() => void> = []
+    if (typeof window !== 'undefined') {
+      const onStorage = (event: StorageEvent): void => {
+        if (event.key !== 'vc:message-meta-update' || !event.newValue) return
+        try {
+          const update = JSON.parse(event.newValue) as { conversationId: string; message: Message }
+          store.actions.applyChatMessage(update.conversationId, update.message)
+        } catch { /* чужое или повреждённое значение */ }
+      }
+      window.addEventListener('storage', onStorage)
+      unsubs.push(() => window.removeEventListener('storage', onStorage))
+    }
     if (typeof window !== 'undefined' && window.stt) {
       unsubs.push(window.stt.onPartial((u) => store.actions.applySttPartial(u)))
       unsubs.push(window.stt.onFinal((u) => store.actions.applySttFinal(u)))

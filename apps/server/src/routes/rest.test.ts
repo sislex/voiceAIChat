@@ -386,6 +386,29 @@ describe('REST: conversations/messages/settings', () => {
     expect(got.messages).toHaveLength(1)
   })
 
+  it('обновляет и сохраняет состояние списка task-launch в meta сообщения', async () => {
+    const c = (await inj({ method: 'POST', url: '/api/conversations', payload: {} })).json()
+    const m = (await inj({
+      method: 'POST',
+      url: `/api/conversations/${c.id}/messages`,
+      payload: {
+        role: 'ai',
+        text: 'Выберите.',
+        time: '10:00',
+        meta: { taskLaunches: [
+          { id: 'task-launch-1', title: 'Первая', description: 'Описание', acceptanceCriteria: 'Критерий' },
+          { id: 'task-launch-2', title: 'Вторая', description: 'Описание', acceptanceCriteria: 'Критерий' }
+        ] }
+      }
+    })).json()
+    const meta = { ...m.meta, taskLaunches: m.meta.taskLaunches.map((item: { id: string }) => item.id === 'task-launch-2' ? { ...item, status: 'created' } : item) }
+    const patched = await inj({ method: 'PATCH', url: `/api/conversations/${c.id}/messages/${m.id}`, payload: { meta } })
+    expect(patched.statusCode).toBe(200)
+    const got = (await inj({ method: 'GET', url: `/api/conversations/${c.id}` })).json()
+    expect(got.messages[0].meta.taskLaunches[1].status).toBe('created')
+    expect(got.messages[0].meta.taskLaunches[0].status).toBeUndefined()
+  })
+
   it('удаление сообщения убирает его из истории', async () => {
     const c = (await inj({ method: 'POST', url: '/api/conversations', payload: {} })).json()
     const m = (

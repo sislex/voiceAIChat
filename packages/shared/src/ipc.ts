@@ -176,6 +176,7 @@ export interface IpcInvokeMap {
   }
   'conversations:delete': { arg: { id: string }; result: void }
   'messages:add': { arg: AddMessageArgs; result: Message }
+  'messages:updateMeta': { arg: { conversationId: string; messageId: string; meta: TurnMeta }; result: Message }
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }
   'uploads:add': { arg: { name: string; dataBase64: string; mimeType?: string; agentId?: string }; result: UploadInfo }
   'settings:get': { arg: void; result: Settings }
@@ -707,6 +708,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:setExecTarget',
   'conversations:delete',
   'messages:add',
+  'messages:updateMeta',
   'messages:delete',
   'uploads:add',
   'settings:get',
