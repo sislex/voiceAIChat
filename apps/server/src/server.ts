@@ -307,7 +307,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   // Проекты + канбан-доска (членство в проекте) + живой board.update по WS.
   const boardHub = new BoardHub()
-  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled })
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
   // её выбор берём у канонического пользователя (admin), а не per-user.
   const machineWhisperModel = (): WhisperModel => db.getSettings('admin').whisperModel
@@ -515,6 +514,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     kbUpdate: opts.ciKbUpdate ?? ciModelHooks.kbUpdate
   })
   registerCiRoutes(app, db, ciRunManager)
+  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager)
 
   // Раны предыдущего процесса живут только в его памяти: после рестарта они
   // навсегда остались бы «running» и блокировали карточку задачи.
