@@ -81,9 +81,18 @@ const EMPTY_ENGINE: AdminLlmEngineInput = {
   isDefault: false
 }
 
+// Пустые значения по умолчанию — модульные константы, а не литералы в параметрах.
+// Литерал создаёт новый массив на каждый рендер: `llmAccess` стоит в зависимостях
+// эффекта, который синхронизирует черновик доступа, поэтому эффект срабатывал
+// каждый рендер, звал setAccessDraft и зацикливал компонент. Проявлялось это
+// зависанием UsersAdmin.dom.test.tsx (пропс там не передают) — файл вешал весь
+// ui-набор, а неработающий гейт рана этого не показывал.
+const NO_LLM_ACCESS: UserLlmAccess[] = []
+const NO_USAGE_SUMMARY: UserUsageSummary[] = []
+
 export function UsersAdmin({
   users,
-  usageSummary = [],
+  usageSummary = NO_USAGE_SUMMARY,
   isAdmin = true,
   status = 'ready',
   error = null,
@@ -109,7 +118,7 @@ export function UsersAdmin({
   onUpdateEngine,
   onDeleteEngine,
   onCheckEngineHealth,
-  llmAccess = [],
+  llmAccess = NO_LLM_ACCESS,
   onSaveLlmAccess = () => undefined,
   onClose,
   variant = 'modal'
@@ -251,10 +260,10 @@ export function UsersAdmin({
               </div>
 
               <div className="useg" role="tablist" aria-label="Статистика пользователя">
-                <button className={tab === 'access' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('access')}>Доступ к моделям</button>
-                {isAdmin && <button className={tab === 'machines' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('machines')}>Машины пользователя</button>}
-                <button className={tab === 'usage' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('usage')}>Использование моделей</button>
-                <button className={tab === 'history' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('history')}>История</button>
+                <button type="button" role="tab" aria-selected={tab === 'access'} className={tab === 'access' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('access')}>Доступ к моделям</button>
+                {isAdmin && <button type="button" role="tab" aria-selected={tab === 'machines'} className={tab === 'machines' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('machines')}>Машины пользователя</button>}
+                <button type="button" role="tab" aria-selected={tab === 'usage'} className={tab === 'usage' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('usage')}>Использование моделей</button>
+                <button type="button" role="tab" aria-selected={tab === 'history'} className={tab === 'history' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('history')}>История</button>
               </div>
 
               {isAdmin && tab === 'machines' && <section className="uadmin-sec">

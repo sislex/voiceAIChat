@@ -67,8 +67,10 @@ describe('UsersAdmin', () => {
 
   it('у обычного пользователя нет вкладки машин', () => {
     renderAdmin({ selected: 'bob', isAdmin: false })
-    expect(screen.queryByRole('button', { name: 'Машины пользователя' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Доступ к моделям' })).toBeInTheDocument()
+    // Вкладки — role=tab внутри role=tablist: иначе axe даёт critical
+    // aria-required-children, и запрос по button их больше не находит.
+    expect(screen.queryByRole('tab', { name: 'Машины пользователя' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Доступ к моделям' })).toBeInTheDocument()
   })
 
   it('создание пользователя зовёт onCreate', async () => {
