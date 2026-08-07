@@ -1,13 +1,15 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-08-07
-checked: ecb3aad
+checked: 6189b96
 areas:
   - Dockerfile
   - docker-compose.yml
   - docker-entrypoint.sh
   - Caddyfile
   - .dockerignore
+  - scripts/prod/deploy.sh
+  - scripts/prod/install.sh
   - apps/server/src/config.ts
 ---
 
