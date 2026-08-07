@@ -77,7 +77,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_json(202, {'status': 'accepted', 'message': message})
 
     def log_message(self, fmt, *args):
-        print('%s - %s' % (self.address_string(), fmt % args), flush=True)
+        # AF_UNIX client_address is not an (address, port) tuple, so the base
+        # address_string() raises IndexError before response headers are sent.
+        print('unix - %s' % (fmt % args), flush=True)
 
 
 class UnixServer(socketserver.UnixStreamServer):

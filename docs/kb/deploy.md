@@ -164,7 +164,10 @@ curl -fsS http://127.0.0.1:8787/api/health
 `/usr/local/bin/voicechat-deploy`. Сокет примонтирован в контейнер `voicechat`,
 поэтому контейнеру не выдаются Docker socket, каталог `/root/voiceAIChat` или
 root-доступ. Успешный запуск возвращает `202 accepted`, занятый deploy-lock —
-`409 running`, недоступный host API — `503`.
+`409 running`, другой путь — JSON `404`, недоступный host API — `503`. Обработчик
+логирует запросы как Unix-клиентов напрямую: `BaseHTTPRequestHandler.address_string()`
+для AF_UNIX вызывать нельзя, поскольку он ожидает TCP-кортеж и роняет отправку
+ответа с `IndexError`.
 
 Секреты (`VC_ADMIN_PASSWORD`, upstream-ключи) задаются в shell/`.env` на сервере и
 в репозиторий не попадают.
