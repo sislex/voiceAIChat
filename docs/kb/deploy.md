@@ -167,7 +167,12 @@ root-доступ. Успешный запуск возвращает `202 accep
 `409 running`, другой путь — JSON `404`, недоступный host API — `503`. Обработчик
 логирует запросы как Unix-клиентов напрямую: `BaseHTTPRequestHandler.address_string()`
 для AF_UNIX вызывать нельзя, поскольку он ожидает TCP-кортеж и роняет отправку
-ответа с `IndexError`.
+ответа с `IndexError`. Unit сохраняет `RuntimeDirectory` при рестарте сервиса:
+иначе systemd пересоздаёт каталог, а уже запущенный контейнер продолжает видеть
+старый inode bind-mount и получает `ENOENT` вместо нового сокета. Сам сокет принадлежит
+UID `1000` (`node` в серверном контейнере) и GID `65532`: `gosu node` сбрасывает
+supplementary groups процесса, поэтому одной настройки Compose `group_add`
+недостаточно для доступа к сокету.
 
 Секреты (`VC_ADMIN_PASSWORD`, upstream-ключи) задаются в shell/`.env` на сервере и
 в репозиторий не попадают.
@@ -206,7 +211,8 @@ root-доступ. Успешный запуск возвращает `202 accep
   деплоя не вмешивается. Лог: `/var/log/voicechat-watchdog.log`.
 
 Установка/переустановка (идемпотентна): `cd /root/voiceAIChat && bash scripts/prod/install.sh`.
-Установщик также включает `voicechat-deploy-api.service`; его журнал читается
+Установщик включает и перезапускает `voicechat-deploy-api.service`, чтобы новая
+копия обработчика сразу вступила в силу; его журнал читается
 через `journalctl -u voicechat-deploy-api.service`, а сам deploy продолжает писать
 в `/var/log/voicechat-deploy.log`. Скрипты копируются в `/usr/local/bin` намеренно — деплой делает `git pull`, и
 запускаться из файла, который этот pull перезаписывает, ему нельзя.

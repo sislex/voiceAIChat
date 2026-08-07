@@ -25,6 +25,7 @@ import socketserver
 import subprocess
 
 SOCKET = '/run/voicechat/deploy-api.sock'
+SOCKET_UID = 1000  # node in the server container
 SOCKET_GID = 65532
 LOCK = '/var/lock/voicechat-deploy.lock'
 COMMAND = '/usr/local/bin/voicechat-deploy'
@@ -90,7 +91,7 @@ if os.path.exists(SOCKET):
     os.unlink(SOCKET)
 with UnixServer(SOCKET, Handler) as server:
     os.chmod(SOCKET, 0o660)
-    os.chown(SOCKET, 0, SOCKET_GID)
+    os.chown(SOCKET, SOCKET_UID, SOCKET_GID)
     server.serve_forever()
 PY
 chmod 755 /usr/local/lib/voicechat/deploy-api.py
@@ -105,6 +106,7 @@ Requires=docker.service
 Type=simple
 RuntimeDirectory=voicechat
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=restart
 ExecStart=/usr/bin/python3 /usr/local/lib/voicechat/deploy-api.py
 Restart=on-failure
 
@@ -137,7 +139,8 @@ WantedBy=timers.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now voicechat-deploy-api.service
+systemctl enable voicechat-deploy-api.service
+systemctl restart voicechat-deploy-api.service
 systemctl enable --now voicechat-watchdog.timer
 
 echo 'установлено:'
