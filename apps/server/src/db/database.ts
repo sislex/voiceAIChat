@@ -1336,12 +1336,6 @@ export class VoiceChatDb {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`
       )
       .run(settingsKey(userId), JSON.stringify(settings))
-    // Связанные чаты — про ту же задачу, что и CI-раны, поэтому смена
-    // пользовательского дефолта должна сразу обновить и уже созданные чаты.
-    const llm = this.taskChatLlmDefaults(userId, settings)
-    this.db
-      .prepare(`UPDATE conversations SET llm_engine_id = ?, llm_provider = ?, llm_model = ?, updated_at = ? WHERE user_id = ? AND task_id IS NOT NULL`)
-      .run(llm.engineId, llm.provider, llm.model, this.now(), userId)
   }
 
   /** Идемпотентно переносит legacy-разговоры desktop, сохраняя id и даты. */
@@ -2126,13 +2120,11 @@ export class VoiceChatDb {
     const defAgent = project.defaultAgentId
     const rawPath = defAgent ? project.machines.find((m) => m.agentId === defAgent)?.path ?? '' : ''
     const workdir = rawPath !== '' ? rawPath : null
-    const userLlm = this.taskChatLlmDefaults(userId)
-    const projectLlm = this.getCiLlmConfig('project', projectId) ?? this.ciLlmDefaultsForUser(userId)
     this.db
       .prepare(
-        `UPDATE conversations SET project_id = ?, exec_target = ?, workdir = ?, skill_names = ?, llm_engine_id = ?, llm_provider = ?, llm_model = ? WHERE id = ? AND user_id = ?`
+        `UPDATE conversations SET project_id = ?, exec_target = ?, workdir = ?, skill_names = ?, llm_engine_id = NULL, llm_provider = NULL, llm_model = NULL WHERE id = ? AND user_id = ?`
       )
-      .run(projectId, defAgent, workdir, JSON.stringify(project.skills), userLlm.engineId, projectLlm.provider, projectLlm.model, convId, userId)
+      .run(projectId, defAgent, workdir, JSON.stringify(project.skills), convId, userId)
     return this.getConversation(userId, convId)
   }
 
@@ -2148,20 +2140,15 @@ export class VoiceChatDb {
     if (!this.isProjectMember(userId, projectId)) return null
     const task = this.getTask(projectId, taskId)
     if (!task) return null
-    // Связанный чат наследует ту же пару, что и CI: задача → проект → пользователь.
-    // Движок-исполнитель пока пользовательский: конфигурация CI хранит provider/model.
-    const userLlm = this.taskChatLlmDefaults(userId)
-    const ciLlm = this.resolveTaskLlmConfig(projectId, taskId, userId)
-    const engineId = userLlm.engineId
-    const provider = ciLlm.provider
-    const model = ciLlm.model
+    // Связанный чат хранит только собственное переопределение; null означает
+    // динамическое наследование эффективной настройки проекта.
     const existing = this.db
       .prepare(`SELECT id FROM conversations WHERE task_id = ? AND user_id = ? ORDER BY created_at ASC LIMIT 1`)
       .get(taskId, userId) as { id: string } | undefined
     if (existing) {
       this.db
-        .prepare(`UPDATE conversations SET llm_engine_id = ?, llm_provider = ?, llm_model = ?, updated_at = ? WHERE id = ? AND user_id = ?`)
-        .run(engineId, provider, model, this.now(), existing.id, userId)
+        .prepare(`UPDATE conversations SET updated_at = ? WHERE id = ? AND user_id = ?`)
+        .run(this.now(), existing.id, userId)
       return this.getConversation(userId, existing.id)
     }
     const project = this.getProject(userId, projectId)
@@ -2176,7 +2163,7 @@ export class VoiceChatDb {
         `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_engine_id, llm_provider, llm_model, project_id, task_id)
          VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(id, title, ts, ts, userId, defAgent, workdir, JSON.stringify(task.skills), engineId, provider, model, projectId, taskId)
+      .run(id, title, ts, ts, userId, defAgent, workdir, JSON.stringify(task.skills), null, null, null, projectId, taskId)
     return this.getConversation(userId, id)
   }
 
@@ -2838,12 +2825,6 @@ export class VoiceChatDb {
            mode=excluded.mode, clarify_level=excluded.clarify_level, clarify_max=excluded.clarify_max`
       )
       .run(ownerType, ownerId, next.provider, next.model, next.mode, next.clarifyLevel, next.clarifyMax)
-    // Обычные чаты проекта и связанные с задачами чаты немедленно получают
-    // новую пару; локальный исполнитель остаётся прежним.
-    if (ownerType === 'project') {
-      this.db.prepare(`UPDATE conversations SET llm_provider = ?, llm_model = ?, updated_at = ? WHERE project_id = ?`)
-        .run(next.provider, next.model, this.now(), ownerId)
-    }
     return next
   }
 

@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react'
-import { CODEX_MODELS, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
+import { normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { LlmEngineOption } from '@shared/admin'
 import type { ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
 import type { UserLlmAccess } from '@shared/llmAccess'
-import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import type { MachineOps } from './machine'
 import { PopupFrame } from './PopupFrame'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { useConfirm } from './ui/useConfirm'
 import { useToast } from './ui/Toast'
+import { LlmSettingsEditor } from './LlmSettingsEditor'
+import { SettingsPage } from './SettingsPage'
 
 export interface ConversationSettingsProps {
   conversation: Conversation
@@ -62,9 +63,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
-  const claudeModels = allowedModels(llmAccess, 'claude')
-  const codexModels = allowedModels(llmAccess, 'codex')
-  const providers = (['claude', 'codex'] as const).filter((provider) => isProviderAllowed(llmAccess, provider) && (provider === 'claude' ? claudeModels.length : codexModels.length))
+  const [activeTab, setActiveTab] = useState<'general' | 'llm'>('general')
   const defaultExecTarget = defaultAgentId && agents.some((a) => a.id === defaultAgentId) ? defaultAgentId : null
   const [execTarget, setExecTarget] = useState<string | null>(
     conversation.execTarget ?? (conversation.messageCount === 0 ? defaultExecTarget : null)
@@ -74,12 +73,11 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
   const [llmEngineId, setLlmEngineId] = useState<string | null>(conversation.llmEngineId ?? settings.llmEngineId ?? null)
   const initialProvider: LlmProvider = conversation.llmProvider ?? settings.llmProvider
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(initialProvider)
+  const userLlm = { engineId: settings.llmEngineId ?? null, provider: settings.llmProvider, model: settings.llmProvider === 'codex' ? settings.codexModel : normalizeClaudeModel(settings.model) }
+  const [inheritedLlm, setInheritedLlm] = useState(userLlm)
+  const [llmOverridden, setLlmOverridden] = useState(conversation.llmProvider !== null || (conversation.llmEngineId ?? null) !== null)
   const [llmModel, setLlmModel] = useState<string>(
-    conversation.llmProvider && conversation.llmModel !== null
-      ? conversation.llmModel
-      : initialProvider === 'codex'
-        ? settings.codexModel
-        : normalizeClaudeModel(settings.model)
+    conversation.llmProvider && conversation.llmModel !== null ? conversation.llmModel : userLlm.model
   )
   // '' — «как в общих настройках» (в БД хранится null).
   const [permissionMode, setPermissionMode] = useState<PermissionMode | ''>(conversation.permissionMode ?? '')
@@ -105,6 +103,12 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
       if (alive && d) {
         setProjectMachines(d.machines)
         setProjectDefaultAgentId(d.defaultAgentId)
+        void window.ci?.getProjectCiLlm(projectId).then((view) => {
+          if (!alive) return
+          const inherited = { engineId: settings.llmEngineId ?? null, provider: view.config.provider, model: view.config.model }
+          setInheritedLlm(inherited)
+          if (!llmOverridden) { setLlmEngineId(inherited.engineId); setLlmProvider(inherited.provider); setLlmModel(inherited.model) }
+        })
       }
     })
     return () => {
@@ -126,6 +130,11 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
     setSkillNames([...d.skills])
     setCwd('')
     setEntries([])
+    const view = await window.ci?.getProjectCiLlm(id)
+    if (view) {
+      const inherited = { engineId: settings.llmEngineId ?? null, provider: view.config.provider, model: view.config.model }
+      setInheritedLlm(inherited); setLlmEngineId(inherited.engineId); setLlmProvider(inherited.provider); setLlmModel(inherited.model); setLlmOverridden(false)
+    }
   }
   const [skillDescription, setSkillDescription] = useState('')
   const [saving, setSaving] = useState(false)
@@ -188,16 +197,17 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
     ) return
     setSaving(true)
     try {
-      const globalModel = llmProvider === 'codex' ? settings.codexModel : normalizeClaudeModel(settings.model)
-      // Пункта «по умолчанию» в списке движков нет, но наследование глобальных настроек сохраняется:
-      // если выбранные движок и модель совпадают с глобальными — храним null (следовать общим настройкам).
-      const inheritsGlobal = llmProvider === settings.llmProvider && llmModel === globalModel
+      const inheritsGlobal = !llmOverridden || (
+        llmProvider === inheritedLlm.provider &&
+        llmModel === inheritedLlm.model &&
+        llmEngineId === (inheritedLlm.engineId ?? null)
+      )
       await onSave({
         title: cleanTitle,
         execTarget,
         workdir: execTarget ? workdir : null,
         skillNames: execTarget ? skillNames : [],
-        ...(llmEngineId !== null || conversation.llmEngineId !== undefined || settings.llmEngineId !== undefined ? { llmEngineId: llmEngineId === (settings.llmEngineId ?? null) ? null : llmEngineId } : {}),
+        ...(conversation.llmEngineId !== undefined || settings.llmEngineId !== undefined ? { llmEngineId: inheritsGlobal ? null : llmEngineId } : {}),
         llmProvider: inheritsGlobal ? null : llmProvider,
         llmModel: inheritsGlobal ? null : llmModel,
         permissionMode: permissionMode || null,
@@ -223,7 +233,13 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
         <IconButton className="convsettings-back" onClick={onClose} aria-label="Вернуться в разговор" title="Вернуться в разговор">←</IconButton>
         <div><h1>Настройки разговора</h1><p>Параметры применяются только к этому разговору</p></div>
       </header>
-      <main className="convsettings-body">
+      <SettingsPage
+        ariaLabel="Разделы настроек чата"
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        tabs={[{ id: 'general', label: 'Общее' }, { id: 'llm', label: 'LLM' }]}
+      />
+      <main className={`convsettings-body convsettings-tab-${activeTab}`}>
         <section className="convsettings-card">
           <label className="convsettings-field"><span>Название разговора</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
           <label className="convsettings-field"><span>Проект</span>
@@ -247,47 +263,18 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
           {projectId && <p className="convsettings-muted">Машины и папка берутся из проекта; смена проекта перезапишет их.</p>}
         </section>
 
-        <section className="convsettings-card">
-          <div className="convsettings-sectionhead"><div><h2>Движок и модель</h2><p>Действуют только в этом разговоре; по умолчанию — из общих настроек.</p></div></div>
-          <label className="convsettings-field"><span>Исполнитель</span>
-            <select aria-label="Исполнитель разговора" value={llmEngineId ?? ''} onChange={(e) => {
-              const id = e.target.value || null
-              setLlmEngineId(id)
-              const engine = engines.find((item) => item.id === id)
-              if (engine) setLlmProvider(engine.kind)
-            }}>
-              <option value="">Из общих настроек</option>
-              {engines.map((engine) => <option key={engine.id} value={engine.id}>{engine.name} · {engine.kind}</option>)}
-            </select>
-          </label>
-          <label className="convsettings-field"><span>Движок</span>
-            <select
-              aria-label="Движок разговора"
-              value={llmProvider}
-              onChange={(e) => {
-                const next = e.target.value as LlmProvider
-                setLlmProvider(next)
-                setLlmModel(next === 'codex' ? settings.codexModel : normalizeClaudeModel(settings.model))
-              }}
-            >
-              {providers.includes('claude') && <option value="claude">Claude Code</option>}
-              {providers.includes('codex') && <option value="codex">Codex</option>}
-              {providers.length === 0 && <option value="">Нет доступных движков</option>}
-            </select>
-          </label>
-          {llmProvider === 'claude' && <label className="convsettings-field"><span>Модель Claude</span>
-            <select aria-label="Модель разговора" value={normalizeClaudeModel(llmModel)} onChange={(e) => setLlmModel(e.target.value)}>
-              {claudeModels.length === 0 && <option value="">Нет доступных моделей</option>}
-              {claudeModels.map((m) => <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>)}
-            </select>
-          </label>}
-          {llmProvider === 'codex' && <label className="convsettings-field"><span>Модель Codex</span>
-            <select aria-label="Модель разговора" value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>
-              {!CODEX_MODELS.some((m) => m.id === llmModel) && <option value={llmModel}>{llmModel || 'По умолчанию (из codex)'}</option>}
-              {codexModels.length === 0 && <option value="">Нет доступных моделей</option>}
-              {codexModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-            </select>
-          </label>}
+        <section className="convsettings-card convsettings-llm-card">
+          <div className="convsettings-sectionhead"><div><h2>LLM</h2><p>Чат наследует эффективные настройки проекта, а без проекта — пользователя.</p></div></div>
+          <LlmSettingsEditor
+            value={{ engineId: llmEngineId, provider: llmProvider, model: llmModel }}
+            inherited={inheritedLlm}
+            overridden={llmOverridden}
+            engines={engines}
+            llmAccess={llmAccess}
+            labels={{ engine: 'Исполнитель разговора', provider: 'Движок разговора', model: 'Модель разговора' }}
+            onChange={(next) => { setLlmEngineId(next.engineId ?? null); setLlmProvider(next.provider); setLlmModel(next.model); setLlmOverridden(true) }}
+            onReset={() => { setLlmEngineId(inheritedLlm.engineId ?? null); setLlmProvider(inheritedLlm.provider); setLlmModel(inheritedLlm.model); setLlmOverridden(false) }}
+          />
         </section>
 
         <section className="convsettings-card">
