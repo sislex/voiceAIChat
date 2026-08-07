@@ -9,13 +9,14 @@ import { loadConfig } from '../config.js'
 import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from '../db/database.js'
 import { CI_KB_UPDATE_COMMAND_ID, DEFAULT_CI_STAGE_MODELS, DEFAULT_SETTINGS, issueKey } from '@voicechat/shared'
 import { signToken } from '../users/accounts.js'
-import type { CommandExecutor } from './types.js'
+import type { CommandExecRequest, CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
 import { ciToolBroker } from './ciCommandsMcp.js'
 
 const SECRET = 'ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
 let scripts: string[] = []
+let execRequests: CommandExecRequest[] = []
 let failClaude = false
 let failPush = false
 /** Управляемое падение шага TOGGLE: «сломано» → «починили» между ранами. */
@@ -68,6 +69,7 @@ const counts = new Map<string, number>()
 const ciExecutor: CommandExecutor = {
   run: async (req, onChunk) => {
     scripts.push(req.script)
+    execRequests.push(req)
     onExec?.(req.script)
     const n = (counts.get(req.script) ?? 0) + 1
     counts.set(req.script, n)
@@ -92,6 +94,7 @@ const ciExecutor: CommandExecutor = {
 beforeEach(async () => {
   let id = 0
   scripts = []
+  execRequests = []
   failClaude = false
   failPush = false
   failStep = false
@@ -682,6 +685,22 @@ describe('ci run manager', () => {
     db.setCiSlotCommands('task', task.id, 'after_model', [merge.id, rebuild.id])
     expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
     expect(openRebuildTasks(project.id).length).toBe(0)
+  })
+
+  it('шаг пересборки прода выполняется на машине проекта, чей путь совпадает с PROD_DIR', async () => {
+    const { project, task } = setup()
+    const productionAgent = db.createAgent('admin', 'Production')
+    db.linkMachine('admin', project.id, productionAgent.id)
+    db.setProjectMachinePath('admin', project.id, productionAgent.id, '/root/voiceAIChat')
+    const rebuild = db.createCiCommand('admin', {
+      scope: 'project', projectId: project.id, name: 'Обновить прод-контейнер',
+      script: 'docker compose up --build -d', env: { PROD_DIR: '/root/voiceAIChat' }
+    })
+    db.setCiSlotCommands('task', task.id, 'after_model', [rebuild.id])
+
+    expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
+    const request = execRequests.find((item) => item.script === rebuild.script)
+    expect(request).toMatchObject({ agentId: productionAgent.id, workdir: '/root/voiceAIChat' })
   })
 
   it('ран без мержа в прод-ветку автозадачу не заводит', async () => {
