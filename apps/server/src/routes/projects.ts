@@ -312,7 +312,7 @@ export function registerProjectRoutes(
 
   app.post<{
     Params: { id: string }
-    Body: { columnId?: string; title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null }
+    Body: { columnId?: string; title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null }
   }>('/api/projects/:id/tasks', async (req, reply): Promise<Task | FastifyReply> => {
     const b = req.body ?? {}
     const title = (b.title ?? '').trim()
@@ -327,6 +327,7 @@ export function registerProjectRoutes(
         parentId: b.parentId,
         priority: b.priority,
         assignee: b.assignee ?? null,
+        agentId: b.agentId,
         labels: b.labels,
         skills: b.skills,
         storyPoints: b.storyPoints,
@@ -343,7 +344,7 @@ export function registerProjectRoutes(
 
   app.patch<{
     Params: { id: string; taskId: string }
-    Body: { title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
+    Body: { title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
   }>('/api/projects/:id/tasks/:taskId', async (req, reply): Promise<Task | FastifyReply> => {
 
     try {

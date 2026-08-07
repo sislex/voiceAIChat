@@ -343,6 +343,7 @@ interface TaskRow {
   parent_id: string | null
   priority: string
   assignee: string | null
+  agent_id: string | null
   labels: string | null
   skills: string | null
   story_points: number | null
@@ -438,6 +439,7 @@ function mapTask(r: TaskRow): Task {
     acceptanceCriteria: r.acceptance_criteria,
     priority: normPriority(r.priority),
     assignee: r.assignee,
+    agentId: r.agent_id ?? null,
     labels: parseStringArray(r.labels),
     skills: parseStringArray(r.skills),
     storyPoints: r.story_points ?? null,
@@ -628,6 +630,8 @@ export class VoiceChatDb {
     if (taskCols.length && !taskCols.some((c) => c.name === 'type')) this.db.exec(`ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'task'`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'parent_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN parent_id TEXT`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'acceptance_criteria')) this.db.exec(`ALTER TABLE tasks ADD COLUMN acceptance_criteria TEXT NOT NULL DEFAULT ''`)
+    // NULL у старых карточек сохраняет прежнее поведение: машина проекта по умолчанию.
+    if (taskCols.length && !taskCols.some((c) => c.name === 'agent_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN agent_id TEXT`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'labels')) this.db.exec(`ALTER TABLE tasks ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'skills')) this.db.exec(`ALTER TABLE tasks ADD COLUMN skills TEXT NOT NULL DEFAULT '[]'`)
 
@@ -2411,6 +2415,14 @@ export class VoiceChatDb {
     return parseStringArray(raw)
   }
 
+  /** Машину карточки можно выбирать только среди машин того же проекта. */
+  private validateTaskAgent(projectId: string, agentId: string | null | undefined): string | null {
+    if (agentId == null) return null
+    const linked = this.db.prepare(`SELECT 1 FROM project_machines WHERE project_id = ? AND agent_id = ?`).get(projectId, agentId)
+    if (!linked) throw new Error('Машина не привязана к проекту')
+    return agentId
+  }
+
   createTask(
     userId: string,
     projectId: string,
@@ -2424,6 +2436,7 @@ export class VoiceChatDb {
       parentId?: string | null
       priority?: TaskPriority
       assignee?: string | null
+      agentId?: string | null
       labels?: string[]
       skills?: string[]
       storyPoints?: number | null
@@ -2461,8 +2474,8 @@ export class VoiceChatDb {
     ).task_seq
     this.db
       .prepare(
-        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
+        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, agent_id, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -2475,6 +2488,7 @@ export class VoiceChatDb {
         args.parentId ?? null,
         normPriority(args.priority ?? 'medium'),
         args.assignee ?? null,
+        this.validateTaskAgent(projectId, args.agentId),
         JSON.stringify(args.labels ?? []),
         JSON.stringify(skills),
         args.storyPoints ?? null,
@@ -2494,7 +2508,7 @@ export class VoiceChatDb {
     userId: string,
     projectId: string,
     taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
   ): Task | null {
     if (!this.isProjectMember(userId, projectId)) return null
     const current = this.getTask(projectId, taskId)
@@ -2503,6 +2517,7 @@ export class VoiceChatDb {
     if (fields.assignee != null && !this.isProjectMember(fields.assignee, projectId)) {
       throw new Error('Исполнитель не участник проекта')
     }
+    if (fields.agentId !== undefined) this.validateTaskAgent(projectId, fields.agentId)
     const nextType = fields.type ?? current.type
     const nextParentId = fields.parentId === undefined ? current.parentId : fields.parentId
     if (nextParentId === taskId) throw new Error('Элемент не может быть своим родителем')
@@ -2545,6 +2560,10 @@ export class VoiceChatDb {
     if (fields.assignee !== undefined) {
       set.push('assignee = ?')
       vals.push(fields.assignee)
+    }
+    if (fields.agentId !== undefined) {
+      set.push('agent_id = ?')
+      vals.push(fields.agentId)
     }
     if (fields.labels !== undefined) {
       set.push('labels = ?')

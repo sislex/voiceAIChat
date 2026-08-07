@@ -17,7 +17,7 @@
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-07 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ✓ |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 15 коммит(ов) в areas после сверки: 440c8c3 feat: add session-bound production deploy tool … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 113 коммит(ов) в areas после сверки: 8d6061d fix(prod): keep deploy socket reachable after restart … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 114 коммит(ов) в areas после сверки: 8f76737 chatai-124: работа CI-рана … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-06 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-06 | ⚠ 3 коммит(ов) в areas после сверки: 440c8c3 feat: add session-bound production deploy tool … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-05 | ⚠ 3 коммит(ов) в areas после сверки: abeab22 feat(admin): add protected production deploy API … |
@@ -44,8 +44,9 @@
 
 ## Журнал сессий
 
-Всего записей: 114. Последние:
+Всего записей: 115. Последние:
 
+- [2026-08-07-alexeys-macbook-air-2-task-execution-machine.md](log/2026-08-07-alexeys-macbook-air-2-task-execution-machine.md) — task-execution-machine
 - [2026-08-07-alexeys-macbook-air-2-multi-task-launch.md](log/2026-08-07-alexeys-macbook-air-2-multi-task-launch.md) — Несколько предложений задач и fast-stage Vitest
 - [2026-08-07-alexeys-macbook-air-2-done-order.md](log/2026-08-07-alexeys-macbook-air-2-done-order.md) — done-order
 - [2026-08-07-alexeys-macbook-air-2-ci-runner-production-routing.md](log/2026-08-07-alexeys-macbook-air-2-ci-runner-production-routing.md) — ci-runner-production-routing
@@ -55,7 +56,6 @@
 - [2026-08-07-2470-com-llm-settings-inheritance.md](log/2026-08-07-2470-com-llm-settings-inheritance.md) — llm-settings-inheritance
 - [2026-08-07-2470-com-deploy-production-search.md](log/2026-08-07-2470-com-deploy-production-search.md) — deploy-production-search
 - [2026-08-07-2470-com-deploy-prod-current-session.md](log/2026-08-07-2470-com-deploy-prod-current-session.md) — deploy-prod-current-session
-- [2026-08-07-2470-com-admin-model-prices.md](log/2026-08-07-2470-com-admin-model-prices.md) — admin-model-prices
 
 ## Исторические планы
 

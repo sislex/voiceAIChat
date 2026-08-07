@@ -149,6 +149,8 @@ export interface Task {
   priority: TaskPriority
   /** Логин исполнителя (участник проекта) или null. */
   assignee: string | null
+  /** Выбранная для CI машина проекта; null — машина проекта по умолчанию. */
+  agentId?: string | null
   /** Метки (свободные строки), как labels в Jira. */
   labels: string[]
   /**

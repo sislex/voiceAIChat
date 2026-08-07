@@ -323,6 +323,7 @@ export interface IpcInvokeMap {
       parentId?: string | null
       priority?: TaskPriority
       assignee?: string | null
+      agentId?: string | null
       labels?: string[]
       skills?: string[]
       storyPoints?: number | null
@@ -342,6 +343,7 @@ export interface IpcInvokeMap {
       parentId?: string | null
       priority?: TaskPriority
       assignee?: string | null
+      agentId?: string | null
       labels?: string[]
       skills?: string[]
       storyPoints?: number | null

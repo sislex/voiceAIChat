@@ -225,7 +225,13 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     // Параллельность — между задачами: два рана одной задачи неизбежно делили бы
     // рабочую директорию и ветку, а это и есть то, чего мы не допускаем.
     if (hasActiveRunForTask(taskId)) return { error: 'Для этой задачи уже выполняется ран' }
-    const agentId = project.defaultAgentId
+    // Карточка хранит стабильный agentId; старые задачи с NULL продолжают идти
+    // на машине проекта по умолчанию.
+    const agentId = task.agentId ?? project.defaultAgentId
+    if (agentId && !project.machines.some((machine) => machine.agentId === agentId)) {
+      return { error: 'Выбранная машина больше не привязана к проекту' }
+    }
+    if (!agentId) return { error: 'Для запуска не задана машина проекта' }
     const slots = deps.db.resolveTaskSlots(projectId, taskId)
     const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId, userId)
     const settings = deps.db.getSettings(userId)
