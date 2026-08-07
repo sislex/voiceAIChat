@@ -595,7 +595,23 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       }
     }
 
-    const cwd = command.workdir ? `${workspacePath}/${command.workdir}` : workspacePath
+    // Прод может жить не на машине разработки. Для команды пересборки
+    // PROD_DIR однозначно указывает на привязанную к проекту машину: запускаем
+    // шаг там и из её проектной папки. Если соответствия нет, оставляем обычную
+    // цель — неверная конфигурация по-прежнему завершится явной ошибкой команды.
+    let executionAgentId = agentId
+    let executionWorkspacePath = workspacePath
+    const prodDir = command.env.PROD_DIR?.replace(/\/+$/, '')
+    if (prodDir && isProdRebuild(command.name, command.script)) {
+      const run = deps.db.getCiRunRaw(runId)
+      const project = run ? deps.db.getProject(userId, run.projectId) : null
+      const machine = project?.machines.find((item) => item.path.replace(/\/+$/, '') === prodDir)
+      if (machine) {
+        executionAgentId = machine.agentId
+        executionWorkspacePath = machine.path
+      }
+    }
+    const cwd = command.workdir ? `${executionWorkspacePath}/${command.workdir}` : executionWorkspacePath
     const settings = deps.db.getCiSettings()
     const timeoutMs = (command.timeoutSec ?? settings.defaultStepTimeoutSec) * 1000
     const collected: string[] = []
@@ -607,8 +623,8 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     let exitCode: number | null = null
     let timedOut = false
     try {
-      if (!agentId) throw new Error('У проекта не задана машина по умолчанию для выполнения')
-      const res = await deps.executor.run({ agentId, script: command.script, workdir: cwd, env: { ...baseEnv, ...command.env }, timeoutMs, secrets: [] }, onChunk, signal)
+      if (!executionAgentId) throw new Error('У проекта не задана машина по умолчанию для выполнения')
+      const res = await deps.executor.run({ agentId: executionAgentId, script: command.script, workdir: cwd, env: { ...baseEnv, ...command.env }, timeoutMs, secrets: [] }, onChunk, signal)
       exitCode = res.exitCode
       timedOut = res.timedOut
     } catch (err) {
