@@ -68,13 +68,15 @@ function changedFiles(baseRef) {
   }
 }
 
-function packageArgs(pkg, script, maxWorkers, extraArgs = []) {
+export function packageArgs(pkg, script, maxWorkers, extraArgs = []) {
   const args = pkg.workspace
     ? ['run', '-w', pkg.workspace, script]
     : ['--prefix', pkg.prefix, 'run', script]
   if (script === 'test' && (maxWorkers || extraArgs.length)) {
     args.push('--')
-    if (maxWorkers) args.push(`--maxWorkers=${maxWorkers}`)
+    // Vitest 2.x может оставить вычисленный по CPU minWorkers выше явного
+    // maxWorkers и завершиться с нулём найденных suites. Ограничиваем оба края.
+    if (maxWorkers) args.push(`--minWorkers=${maxWorkers}`, `--maxWorkers=${maxWorkers}`)
     args.push(...extraArgs)
   }
   return args
