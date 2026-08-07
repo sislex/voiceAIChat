@@ -145,6 +145,16 @@ curl -fsS http://127.0.0.1:8787/api/health
 Так обновляются `voicechat`, `runner-work`, `runner-personal` и `caddy`, а фоновый
 процесс переживает обрыв канала (см. ниже).
 
+Тот же запуск доступен приложению через `POST /api/admin/deploy`. Внешний маршрут
+защищён ролью `admin` и проксирует запрос в отдельный host-side systemd-сервис
+`voicechat-deploy-api.service` через Unix-сокет
+`/run/voicechat/deploy-api.sock`. Сервис принимает только фиксированный
+`POST /deploy`, не принимает команду или аргументы из запроса и запускает только
+`/usr/local/bin/voicechat-deploy`. Сокет примонтирован в контейнер `voicechat`,
+поэтому контейнеру не выдаются Docker socket, каталог `/root/voiceAIChat` или
+root-доступ. Успешный запуск возвращает `202 accepted`, занятый deploy-lock —
+`409 running`, недоступный host API — `503`.
+
 Секреты (`VC_ADMIN_PASSWORD`, upstream-ключи) задаются в shell/`.env` на сервере и
 в репозиторий не попадают.
 
@@ -182,7 +192,9 @@ curl -fsS http://127.0.0.1:8787/api/health
   деплоя не вмешивается. Лог: `/var/log/voicechat-watchdog.log`.
 
 Установка/переустановка (идемпотентна): `cd /root/voiceAIChat && bash scripts/prod/install.sh`.
-Скрипты копируются в `/usr/local/bin` намеренно — деплой делает `git pull`, и
+Установщик также включает `voicechat-deploy-api.service`; его журнал читается
+через `journalctl -u voicechat-deploy-api.service`, а сам deploy продолжает писать
+в `/var/log/voicechat-deploy.log`. Скрипты копируются в `/usr/local/bin` намеренно — деплой делает `git pull`, и
 запускаться из файла, который этот pull перезаписывает, ему нельзя.
 
 ## Прод-каталог заодно рабочая копия — коммит там пушится сразу

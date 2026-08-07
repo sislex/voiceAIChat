@@ -66,6 +66,7 @@ import { LlmKbReranker } from './kb/reranker.js'
 import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
 import { readUserFile } from './serverFiles.js'
+import { UnixDeployClient, type DeployTrigger } from './routes/admin.js'
 
 const VERSION = process.env.VC_RELEASE_VERSION?.trim() || '0.1.0'
 const RELEASED_AT = process.env.VC_RELEASED_AT?.trim() || new Date().toISOString()
@@ -97,6 +98,8 @@ export interface BuildOptions {
   ciExecutor?: CommandExecutor
   /** Хук шага «Актуализировать базу знаний» (в тестах — мок). По умолчанию — из createCiModelHooks. */
   ciKbUpdate?: CiKbUpdateHook
+  /** Запуск host-side деплоя (в тестах — мок). */
+  deployTrigger?: DeployTrigger
 }
 
 function makeTtsEngine(config: ServerConfig): TtsEngine {
@@ -296,7 +299,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   )
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
-  registerAdminRoutes(app, db, agentRegistry)
+  const deployTrigger = opts.deployTrigger ?? (opts.config.deployApiSocket
+    ? new UnixDeployClient(opts.config.deployApiSocket)
+    : undefined)
+  registerAdminRoutes(app, db, agentRegistry, deployTrigger)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.update по WS.
   const boardHub = new BoardHub()

@@ -68,6 +68,8 @@ export interface ServerConfig {
   llmRunnerToken?: string
   /** Таймаут ожидания заголовков /v1/run, мс (сам ход не ограничен). */
   llmRunnerConnectTimeoutMs?: number
+  /** Unix-сокет host-side API, запускающего voicechat-deploy. */
+  deployApiSocket?: string
 }
 
 const DEFAULT_DATA_DIR = join(homedir(), '.voicechat-server')
@@ -174,6 +176,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     llmRunnerClaudeUrl: env.VC_LLM_RUNNER_CLAUDE_URL ?? env.VC_LLM_RUNNER_URL,
     llmRunnerCodexUrl: env.VC_LLM_RUNNER_CODEX_URL ?? env.VC_LLM_RUNNER_URL,
     llmRunnerToken: env.VC_LLM_RUNNER_TOKEN,
-    llmRunnerConnectTimeoutMs: parsePositiveInt(env.VC_LLM_RUNNER_TIMEOUT_MS)
+    llmRunnerConnectTimeoutMs: parsePositiveInt(env.VC_LLM_RUNNER_TIMEOUT_MS),
+    deployApiSocket: env.VC_DEPLOY_API_SOCKET
   }
 }

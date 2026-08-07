@@ -1,10 +1,12 @@
 // Админ-роуты (только для роли admin): управление пользователями, отчёты по
 // токенам, просмотр истории и реестр LLM-исполнителей. Все под guard requireAdmin.
 
+import { request } from 'node:http'
 import type { FastifyInstance } from 'fastify'
 import {
   LLM_RUNNER,
   REST,
+  type AdminDeployResponse,
   type AdminLlmEngineHealth,
   type AdminLlmEngineInput,
   type AdminUserInfo,
@@ -25,6 +27,58 @@ const UNITS: UsageUnit[] = ['hour', 'day', 'week']
 const ENGINE_KINDS: LlmEngineKind[] = ['claude', 'codex']
 const ROLES: UserRole[] = ['admin', 'user']
 const HEALTH_TIMEOUT_MS = 5_000
+
+export interface DeployTrigger {
+  trigger(): Promise<AdminDeployResponse>
+}
+
+/** Клиент host-side API через Unix-сокет: сеть и Docker socket серверу не выдаются. */
+export class UnixDeployClient implements DeployTrigger {
+  constructor(
+    private readonly socketPath: string,
+    private readonly timeoutMs = 5_000
+  ) {}
+
+  trigger(): Promise<AdminDeployResponse> {
+    return new Promise((resolve, reject) => {
+      const req = request({
+        socketPath: this.socketPath,
+        path: '/deploy',
+        method: 'POST',
+        headers: { 'content-length': '0' }
+      }, (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (chunk: Buffer) => chunks.push(chunk))
+        res.on('end', () => {
+          const raw = Buffer.concat(chunks).toString('utf8')
+          let body: unknown
+          try {
+            body = JSON.parse(raw)
+          } catch {
+            reject(new Error(`deploy API returned invalid JSON (${res.statusCode ?? 0})`))
+            return
+          }
+          if (res.statusCode !== 202 && res.statusCode !== 409) {
+            const detail = body && typeof body === 'object' && 'error' in body
+              ? String((body as { error: unknown }).error)
+              : `HTTP ${res.statusCode ?? 0}`
+            reject(new Error(detail))
+            return
+          }
+          const candidate = body as Partial<AdminDeployResponse>
+          if ((candidate.status !== 'accepted' && candidate.status !== 'running') || typeof candidate.message !== 'string') {
+            reject(new Error('deploy API returned an invalid response'))
+            return
+          }
+          resolve({ status: candidate.status, message: candidate.message })
+        })
+      })
+      req.setTimeout(this.timeoutMs, () => req.destroy(new Error('deploy API timeout')))
+      req.on('error', reject)
+      req.end()
+    })
+  }
+}
 
 function validateLlmAccess(value: unknown): UserLlmAccess[] | null {
   if (!Array.isArray(value)) return null
@@ -143,7 +197,8 @@ async function probeEngineHealth(engine: { id: string; kind: LlmEngineKind; base
 export function registerAdminRoutes(
   app: FastifyInstance,
   db: VoiceChatDb,
-  registry: AgentRegistry
+  registry: AgentRegistry,
+  deployTrigger?: DeployTrigger
 ): void {
   const guard = { preHandler: requireAdmin }
 
@@ -159,6 +214,18 @@ export function registerAdminRoutes(
   app.get(REST.adminUsers, guard, async (): Promise<AdminUserInfo[]> =>
     db.listUsers().map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt))
   )
+
+  app.post(REST.adminDeploy, guard, async (_req, reply) => {
+    if (!deployTrigger) return reply.code(503).send({ error: 'deploy API is not configured' })
+    try {
+      const result = await deployTrigger.trigger()
+      return reply.code(result.status === 'accepted' ? 202 : 409).send(result)
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
+      app.log.error({ err }, 'host-side deploy API request failed')
+      return reply.code(503).send({ error: 'deploy API unavailable', detail })
+    }
+  })
 
   // Агрегаты строятся одним запросом к БД, а не вызовом usageReport для каждого
   // пользователя: это таблица дашборда, а не набор персональных отчётов.

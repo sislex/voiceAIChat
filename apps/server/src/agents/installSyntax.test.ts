@@ -7,13 +7,15 @@
 
 import { describe, it, expect } from 'vitest'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildAndroidInstallScript } from './androidInstall.js'
 import { buildUnixInstallScript } from './unixInstall.js'
 
 const hasBash = spawnSync('bash', ['-c', 'exit 0']).status === 0
+const hasPython = spawnSync('python3', ['-c', 'exit(0)']).status === 0
+const prodInstall = readFileSync(new URL('../../../../scripts/prod/install.sh', import.meta.url), 'utf8')
 
 /** `bash -n` над текстом скрипта: возвращает stderr, пустая строка — синтаксис ок. */
 function syntaxError(script: string, name: string): string {
@@ -88,10 +90,27 @@ describe.skipIf(!hasBash)('установщики: синтаксис bash', () 
     })
   }
 
+  it('prod install.sh разбирается bash без ошибок', () => {
+    expect(syntaxError(prodInstall, 'prod-install.sh')).toBe('')
+  })
+
   it('сам детектор рабочий: битый скрипт не проходит', () => {
     // Текст ошибки у разных bash отличается — важно лишь, что она есть.
     expect(syntaxError('if true; then\nelse\nelif false; then\nfi\n', 'broken.sh')).toContain(
       'syntax error'
     )
+  })
+})
+
+describe.skipIf(!hasPython)('prod deploy API: синтаксис Python', () => {
+  it('встроенный в install.sh host API компилируется', () => {
+    const match = /cat >\/usr\/local\/lib\/voicechat\/deploy-api\.py <<'PY'\n([\s\S]*?)\nPY\n/.exec(prodInstall)
+    expect(match, 'Python-блок deploy API не найден').not.toBeNull()
+    const result = spawnSync('python3', ['-c', 'import sys; compile(sys.stdin.read(), "deploy-api.py", "exec")'], {
+      input: match![1],
+      encoding: 'utf8'
+    })
+    expect(result.stderr).toBe('')
+    expect(result.status).toBe(0)
   })
 })
