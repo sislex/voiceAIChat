@@ -115,6 +115,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'conversations:setProject': ({ id, projectId }) =>
       req(REST.conversationProject(id), { method: 'POST', body: JSON.stringify({ projectId }) }),
+    'conversations:setPreviewUrl': ({ id, previewUrl }) =>
+      req(`/api/conversations/${encodeURIComponent(id)}/preview-url`, { method: 'POST', body: JSON.stringify({ previewUrl }) }),
     'conversations:taskContext': ({ id }) => req(REST.conversationTaskContext(id)),
     'conversations:taskChats': () => req(REST.conversationTaskChats),
     'conversations:setStatus': ({ id, status }) =>

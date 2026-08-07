@@ -148,6 +148,7 @@ export interface IpcInvokeMap {
   'conversations:rename': { arg: { id: string; title: string }; result: void }
   /** Привязать/отвязать чат к проекту; сервер применяет настройки проекта. */
   'conversations:setProject': { arg: { id: string; projectId: string | null }; result: Conversation }
+  'conversations:setPreviewUrl': { arg: { id: string; previewUrl: string | null }; result: Conversation }
   /** Контекст задачи для шапки связанного чата; null — чат не привязан к задаче. */
   'conversations:taskContext': { arg: { id: string }; result: TaskChatContext | null }
   /** Метки чатов задач для списка бесед: ключ, тип и последний ран. */
@@ -273,6 +274,7 @@ export interface IpcInvokeMap {
       name?: string
       description?: string
       gitUrl?: string | null
+      previewUrl?: string | null
       technologies?: string[]
       skills?: string[]
       defaultSkills?: Partial<WorkItemDefaultSkills>
@@ -698,6 +700,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'messages:search',
   'conversations:rename',
   'conversations:setProject',
+  'conversations:setPreviewUrl',
   'conversations:taskContext',
   'conversations:taskChats',
   'conversations:setStatus',

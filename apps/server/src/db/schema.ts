@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   llm_model         TEXT,
   kb_context_mode   TEXT NOT NULL DEFAULT 'auto',
   project_id        TEXT,
+  preview_url       TEXT,
   task_id           TEXT,
   status            TEXT NOT NULL DEFAULT 'developing'
 );
@@ -143,6 +144,7 @@ CREATE TABLE IF NOT EXISTS projects (
   name         TEXT NOT NULL,
   description  TEXT NOT NULL DEFAULT '',
   git_url      TEXT,
+  preview_url  TEXT,
   technologies TEXT NOT NULL DEFAULT '[]',
   skills       TEXT NOT NULL DEFAULT '[]',
   created_by   TEXT NOT NULL,

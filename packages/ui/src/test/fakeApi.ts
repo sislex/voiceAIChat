@@ -75,6 +75,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     name: string
     description: string
     gitUrl: string | null
+    previewUrl: string | null
     technologies: string[]
     skills: string[]
     defaultSkills: WorkItemDefaultSkills
@@ -98,6 +99,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     name: p.name,
     description: p.description,
     gitUrl: p.gitUrl,
+    previewUrl: p.previewUrl,
     technologies: p.technologies,
     skills: p.skills,
     defaultSkills: p.defaultSkills,
@@ -149,6 +151,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     const own = messages.filter((m) => m.conversationId === c.id)
     return {
       ...c,
+      projectPreviewUrl: c.projectId ? projects.find((p) => p.id === c.projectId)?.previewUrl ?? null : null,
       messageCount: own.length,
       lastExecTarget: own[own.length - 1]?.execTarget ?? null
     }
@@ -299,6 +302,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
           conv.skillNames = [...p.skills]
         }
       }
+      return withCounts(conv)
+    },
+    'conversations:setPreviewUrl': async ({ id, previewUrl }) => {
+      const conv = conversations.find((c) => c.id === id)!
+      conv.previewUrl = previewUrl
       return withCounts(conv)
     },
     'conversations:setStatus': async ({ id, status }) => {
@@ -527,6 +535,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         name: b.name,
         description: b.description ?? '',
         gitUrl: b.gitUrl ?? null,
+        previewUrl: null,
         technologies: b.technologies ?? [],
         skills: b.skills ?? [],
         defaultSkills: {
@@ -564,6 +573,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (f.name !== undefined) p.name = f.name
       if (f.description !== undefined) p.description = f.description
       if (f.gitUrl !== undefined) p.gitUrl = f.gitUrl
+      if (f.previewUrl !== undefined) p.previewUrl = f.previewUrl
       if (f.technologies !== undefined) p.technologies = f.technologies
       if (f.skills !== undefined) p.skills = f.skills
       if (f.defaultSkills !== undefined) p.defaultSkills = { ...p.defaultSkills, ...f.defaultSkills }

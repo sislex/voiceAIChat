@@ -159,6 +159,7 @@ interface ConversationRow {
   permission_mode: string | null
   kb_context_mode: string | null
   project_id: string | null
+  preview_url: string | null
   task_id: string | null
   status: string | null
   last_exec_target?: string | null
@@ -289,6 +290,7 @@ interface ProjectRow {
   name: string
   description: string
   git_url: string | null
+  preview_url: string | null
   technologies: string
   skills: string
   created_by: string
@@ -593,6 +595,9 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'project_id')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN project_id TEXT`)
     }
+    if (!convCols.some((c) => c.name === 'preview_url')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN preview_url TEXT`)
+    }
     if (!convCols.some((c) => c.name === 'task_id')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN task_id TEXT`)
     }
@@ -688,6 +693,7 @@ export class VoiceChatDb {
         WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='awaiting_merge');
     `)
     const featureProjectCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'preview_url')) this.db.exec(`ALTER TABLE projects ADD COLUMN preview_url TEXT`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'commit_policy')) this.db.exec(`ALTER TABLE projects ADD COLUMN commit_policy TEXT NOT NULL DEFAULT 'agent_commits'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'merge_transport')) this.db.exec(`ALTER TABLE projects ADD COLUMN merge_transport TEXT NOT NULL DEFAULT 'local'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'agent_plan_approval_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual'`)
@@ -1018,6 +1024,11 @@ export class VoiceChatDb {
 
   setConversationKbContextMode(userId: string, id: string, mode: 'auto' | 'manual' | 'off'): Conversation | null {
     this.db.prepare(`UPDATE conversations SET kb_context_mode = ? WHERE id = ? AND user_id = ?`).run(mode, id, userId)
+    return this.getConversation(userId, id)
+  }
+
+  setConversationPreviewUrl(userId: string, id: string, previewUrl: string | null): Conversation | null {
+    this.db.prepare(`UPDATE conversations SET preview_url = ?, updated_at = ? WHERE id = ? AND user_id = ?`).run(previewUrl, this.now(), id, userId)
     return this.getConversation(userId, id)
   }
 
@@ -1754,6 +1765,8 @@ export class VoiceChatDb {
           : null,
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
       projectId: row.project_id ?? null,
+      previewUrl: row.preview_url ?? null,
+      projectPreviewUrl: row.project_id ? ((this.db.prepare(`SELECT preview_url FROM projects WHERE id = ?`).get(row.project_id) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
       taskId: row.task_id ?? null,
       status: normStatus(row.status),
       lastExecTarget: row.last_exec_target ?? null
@@ -1813,6 +1826,7 @@ export class VoiceChatDb {
       name: r.name,
       description: r.description,
       gitUrl: r.git_url,
+      previewUrl: r.preview_url ?? null,
       technologies: parseStringArray(r.technologies),
       skills: parseStringArray(r.skills),
       defaultSkills: {
@@ -1949,6 +1963,7 @@ export class VoiceChatDb {
       name?: string
       description?: string
       gitUrl?: string | null
+      previewUrl?: string | null
       technologies?: string[]
       skills?: string[]
       defaultSkills?: Partial<WorkItemDefaultSkills>
@@ -1980,6 +1995,10 @@ export class VoiceChatDb {
     if (fields.gitUrl !== undefined) {
       set.push('git_url = ?')
       vals.push(fields.gitUrl)
+    }
+    if (fields.previewUrl !== undefined) {
+      set.push('preview_url = ?')
+      vals.push(fields.previewUrl)
     }
     if (fields.technologies !== undefined) {
       set.push('technologies = ?')

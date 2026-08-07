@@ -62,6 +62,8 @@ export interface ProjectSummary {
   name: string
   description: string
   gitUrl: string | null
+  /** Адрес веб-превью по умолчанию для чатов проекта. */
+  previewUrl?: string | null
   technologies: string[]
   skills: string[]
   /** Навыки по умолчанию для новых элементов, отдельно по типу. */

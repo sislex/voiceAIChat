@@ -37,6 +37,15 @@ function normRetentionDays(v: number | null | undefined): number | null {
 }
 
 /** Достаёт понятный текст ошибки БД (валидация assignee/участника/машины). */
+function normalizePreviewUrl(value: unknown): string | null | undefined {
+  if (value === null || value === '') return null
+  if (typeof value !== 'string') return undefined
+  try {
+    const url = new URL(value.trim())
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : undefined
+  } catch { return undefined }
+}
+
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
@@ -86,6 +95,7 @@ export function registerProjectRoutes(
       name?: string
       description?: string
       gitUrl?: string | null
+      previewUrl?: string | null
       technologies?: string[]
       skills?: string[]
       defaultSkills?: Partial<WorkItemDefaultSkills>
@@ -108,6 +118,11 @@ export function registerProjectRoutes(
     if (!p) return nf(reply)
     if (p.role !== 'owner') return forbidden(reply)
     const body = { ...(req.body ?? {}) }
+    if (body.previewUrl !== undefined) {
+      const previewUrl = normalizePreviewUrl(body.previewUrl)
+      if (previewUrl === undefined) return badReq(reply, 'previewUrl must be an http/https URL')
+      body.previewUrl = previewUrl
+    }
     if (body.doneRetentionDays !== undefined) body.doneRetentionDays = normRetentionDays(body.doneRetentionDays)
     return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)
   })
