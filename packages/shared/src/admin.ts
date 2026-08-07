@@ -23,7 +23,10 @@ export interface UsageTotals {
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
+  /** Стоимость, сообщённая CLI; у Codex обычно равна 0. */
   costUsd: number
+  /** Независимый пересчёт по редактируемой таблице model_prices. */
+  costFromPrices?: number
   /**
    * В выборке есть Codex-ответ без стоимости CLI и без строки в model_prices.
    * costUsd в этом случае — лишь известная часть суммы и не должна отображаться
@@ -61,6 +64,31 @@ export interface UsageReport {
 }
 
 /** Строка сводки расхода пользователя для админского дашборда. */
+/** Редактируемая запись прайса, USD за 1M токенов. */
+export interface ModelPrice {
+  provider: string
+  model: string
+  inputPerMillion: number
+  cachedInputPerMillion: number
+  cacheWritePerMillion: number
+  outputPerMillion: number
+  sourceUrl: string
+  effectiveAt: number
+  updatedAt: number
+}
+
+/** Данные upsert без серверной даты изменения. */
+export interface ModelPriceInput {
+  provider: string
+  model: string
+  inputPerMillion: number
+  cachedInputPerMillion: number
+  cacheWritePerMillion: number
+  outputPerMillion: number
+  sourceUrl: string
+  effectiveAt: number
+}
+
 export interface UserUsageSummary {
   name: string
   totals: UsageTotals

@@ -121,8 +121,9 @@ describe('UsersAdmin', () => {
         byConversation: []
       }
     })
-    expect(screen.getByTestId('usage-total')).toHaveTextContent('Стоимость—')
-    expect(screen.getByTitle('Есть ответы без известного тарифа')).toBeInTheDocument()
+    expect(screen.getByTestId('usage-total')).toHaveTextContent('По данным CLI—')
+    expect(screen.getByTestId('usage-total')).toHaveTextContent('По прайсу—')
+    expect(screen.getByTitle('Есть ответы без цены CLI и строки прайса')).toBeInTheDocument()
   })
 
   it('перезагружает расход при смене периода и разговора', async () => {
@@ -147,7 +148,7 @@ describe('UsersAdmin', () => {
     await userEvent.selectOptions(screen.getByLabelText('Kind исполнителя'), 'codex')
     await userEvent.type(screen.getByLabelText('URL исполнителя'), 'http://runner-codex:8080')
     await userEvent.type(screen.getByLabelText('Токен исполнителя'), 'tok')
-    await userEvent.click(screen.getByRole('button', { name: 'Добавить' }))
+    await userEvent.click(within(screen.getByTestId('llm-engines-section')).getByRole('button', { name: 'Добавить' }))
     expect(p.onCreateEngine).toHaveBeenCalledWith({
       name: 'runner codex',
       kind: 'codex',

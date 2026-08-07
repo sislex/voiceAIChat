@@ -903,6 +903,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onUpdateEngine={(id, patch) => void actions.updateAdminLlmEngine(id, patch)}
           onDeleteEngine={(id) => void actions.deleteAdminLlmEngine(id)}
           onCheckEngineHealth={(id) => void actions.checkAdminLlmEngineHealth(id)}
+          modelPrices={state.adminModelPrices}
+          onSaveModelPrice={(input) => void actions.saveAdminModelPrice(input)}
+          onDeleteModelPrice={(provider, model) => void actions.deleteAdminModelPrice(provider, model)}
           onClose={() => navigate('/')}
         />
       )}

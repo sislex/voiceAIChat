@@ -32,6 +32,8 @@ import {
   type UserRole,
   type AdminLlmEngine,
   type AdminLlmEngineInput,
+  type ModelPrice,
+  type ModelPriceInput,
   type LlmEngineKind,
   type Board,
   type KanbanColumn,
@@ -1633,6 +1635,20 @@ export class VoiceChatDb {
     this.db.prepare(`DELETE FROM llm_engines WHERE id = ?`).run(id)
   }
 
+  listModelPrices(): ModelPrice[] {
+    return this.db.prepare(`SELECT provider, model, input_per_million AS inputPerMillion, cached_input_per_million AS cachedInputPerMillion, cache_write_per_million AS cacheWritePerMillion, output_per_million AS outputPerMillion, source_url AS sourceUrl, effective_at AS effectiveAt, updated_at AS updatedAt FROM model_prices ORDER BY provider, model`).all() as ModelPrice[]
+  }
+
+  upsertModelPrice(input: ModelPriceInput): ModelPrice {
+    const updatedAt = Date.now()
+    this.db.prepare(`INSERT INTO model_prices (provider, model, input_per_million, cached_input_per_million, cache_write_per_million, output_per_million, source_url, effective_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(provider, model) DO UPDATE SET input_per_million=excluded.input_per_million, cached_input_per_million=excluded.cached_input_per_million, cache_write_per_million=excluded.cache_write_per_million, output_per_million=excluded.output_per_million, source_url=excluded.source_url, effective_at=excluded.effective_at, updated_at=excluded.updated_at`).run(input.provider, input.model, input.inputPerMillion, input.cachedInputPerMillion, input.cacheWritePerMillion, input.outputPerMillion, input.sourceUrl, input.effectiveAt, updatedAt)
+    return this.db.prepare(`SELECT provider, model, input_per_million AS inputPerMillion, cached_input_per_million AS cachedInputPerMillion, cache_write_per_million AS cacheWritePerMillion, output_per_million AS outputPerMillion, source_url AS sourceUrl, effective_at AS effectiveAt, updated_at AS updatedAt FROM model_prices WHERE provider = ? AND model = ?`).get(input.provider, input.model) as ModelPrice
+  }
+
+  deleteModelPrice(provider: string, model: string): boolean {
+    return this.db.prepare(`DELETE FROM model_prices WHERE provider = ? AND model = ?`).run(provider, model).changes > 0
+  }
+
   // ---- Отчёт по токенам (агрегация meta ai-сообщений пользователя) --------
 
   /**
@@ -1642,9 +1658,9 @@ export class VoiceChatDb {
    */
   usageReport(userId: string, unit: UsageUnit, from?: number, to?: number, conversationId?: string): UsageReport {
     const fmt = unit === 'hour' ? '%Y-%m-%d %H:00' : unit === 'week' ? '%Y-W%W' : '%Y-%m-%d'
-    // Codex CLI не сообщает costUsd. Для него берём поддерживаемый прайс из БД;
-    // input_tokens включает cached_input_tokens, поэтому обычный вход вычитаем.
-    const estimatedCost = `CASE WHEN m.engine = 'codex' AND mp.model IS NOT NULL THEN (
+    // Два независимых числа: CLI сообщает фактическую цену не для всех движков,
+    // а редактируемый прайс пересчитывает все ответы с известной строкой.
+    const estimatedCost = `CASE WHEN mp.model IS NOT NULL THEN (
       MAX(COALESCE(json_extract(m.meta,'$.inputTokens'),0) - COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0), 0) * mp.input_per_million +
       COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0) * mp.cached_input_per_million +
       COALESCE(json_extract(m.meta,'$.cacheCreationTokens'),0) * mp.cache_write_per_million +
@@ -1655,8 +1671,9 @@ export class VoiceChatDb {
       COALESCE(SUM(json_extract(m.meta,'$.inputTokens')),0) AS inputTokens,
       COALESCE(SUM(json_extract(m.meta,'$.outputTokens')),0) AS outputTokens,
       COALESCE(SUM(json_extract(m.meta,'$.cacheReadTokens')),0) AS cacheReadTokens,
-      COALESCE(SUM(COALESCE(json_extract(m.meta,'$.costUsd'), ${estimatedCost})),0) AS costUsd,
-      MAX(CASE WHEN m.engine = 'codex' AND json_extract(m.meta,'$.costUsd') IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
+      COALESCE(SUM(json_extract(m.meta,'$.costUsd')),0) AS costUsd,
+      COALESCE(SUM(${estimatedCost}),0) AS costFromPrices,
+      MAX(CASE WHEN json_extract(m.meta,'$.costUsd') IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
     const dateWhere = `${from !== undefined ? 'AND m.created_at >= @from' : ''}
       ${to !== undefined ? 'AND m.created_at <= @to' : ''}`
     const where = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere}
@@ -1685,7 +1702,7 @@ export class VoiceChatDb {
    * В отличие от вызова usageReport на каждого пользователя не создаёт N запросов.
    */
   usageSummary(from?: number, to?: number): import('@voicechat/shared').UserUsageSummary[] {
-    const estimatedCost = `CASE WHEN m.engine = 'codex' AND mp.model IS NOT NULL THEN (
+    const estimatedCost = `CASE WHEN mp.model IS NOT NULL THEN (
       MAX(COALESCE(json_extract(m.meta,'$.inputTokens'),0) - COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0), 0) * mp.input_per_million +
       COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0) * mp.cached_input_per_million +
       COALESCE(json_extract(m.meta,'$.cacheCreationTokens'),0) * mp.cache_write_per_million +
@@ -1695,18 +1712,19 @@ export class VoiceChatDb {
       COALESCE(SUM(json_extract(m.meta,'$.inputTokens')),0) AS inputTokens,
       COALESCE(SUM(json_extract(m.meta,'$.outputTokens')),0) AS outputTokens,
       COALESCE(SUM(json_extract(m.meta,'$.cacheReadTokens')),0) AS cacheReadTokens,
-      COALESCE(SUM(COALESCE(json_extract(m.meta,'$.costUsd'), ${estimatedCost})),0) AS costUsd,
-      MAX(CASE WHEN m.engine = 'codex' AND json_extract(m.meta,'$.costUsd') IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
+      COALESCE(SUM(json_extract(m.meta,'$.costUsd')),0) AS costUsd,
+      COALESCE(SUM(${estimatedCost}),0) AS costFromPrices,
+      MAX(CASE WHEN json_extract(m.meta,'$.costUsd') IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
     const where = `m.role = 'ai' AND m.meta IS NOT NULL ${from !== undefined ? 'AND m.created_at >= @from' : ''} ${to !== undefined ? 'AND m.created_at <= @to' : ''}`
     const bind = { ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}) }
     const joins = `FROM messages m JOIN conversations c ON m.conversation_id = c.id
       LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(json_extract(m.meta,'$.model'), c.llm_model)`
     type Row = UsageTotals & { name: string; model?: string; costIncomplete?: number }
-    const complete = (row: Row): UsageTotals => ({ inputTokens: row.inputTokens, outputTokens: row.outputTokens, cacheReadTokens: row.cacheReadTokens, costUsd: row.costUsd, messages: row.messages, costIncomplete: Boolean(row.costIncomplete) })
+    const complete = (row: Row): UsageTotals => ({ inputTokens: row.inputTokens, outputTokens: row.outputTokens, cacheReadTokens: row.cacheReadTokens, costUsd: row.costUsd, costFromPrices: row.costFromPrices, messages: row.messages, costIncomplete: Boolean(row.costIncomplete) })
     const totals = this.db.prepare(`SELECT c.user_id AS name, ${sums} ${joins} WHERE ${where} GROUP BY c.user_id`).all(bind) as Row[]
     const models = this.db.prepare(`SELECT c.user_id AS name, COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') AS model, ${sums} ${joins} WHERE ${where} GROUP BY c.user_id, model ORDER BY outputTokens DESC`).all(bind) as Row[]
     const byName = new Map<string, import('@voicechat/shared').UserUsageSummary>()
-    for (const user of this.listUsers()) byName.set(user.name, { name: user.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, messages: 0, costIncomplete: false }, byModel: [] })
+    for (const user of this.listUsers()) byName.set(user.name, { name: user.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, costFromPrices: 0, messages: 0, costIncomplete: false }, byModel: [] })
     for (const row of totals) byName.get(row.name)!.totals = complete(row)
     for (const row of models) byName.get(row.name)?.byModel.push({ model: row.model ?? '?', ...complete(row) })
     return [...byName.values()]

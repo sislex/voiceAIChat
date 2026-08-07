@@ -161,7 +161,7 @@ FTS5 не должна валить старт (тогда `searchMessages` пр
 (`UsageReport`/`UsageUnit`), просмотр чужих разговоров и сообщений. Отчёт принимает
 `from`, `to`, `unit` и необязательный `conversationId`, возвращает агрегаты по
 бакетам, моделям и разговорам. Для сообщений Codex без `meta.costUsd`
-`usageReport` оценивает стоимость по `model_prices`; обычный вход считается как
+`model_prices` редактируются только админом через `GET/PUT/DELETE /api/admin/model-prices`. `usageReport` всегда возвращает две независимые суммы: `costUsd` (что сообщил CLI) и `costFromPrices` (пересчёт по `model_prices`) для Claude и Codex; обычный вход считается как
 `inputTokens - cacheReadTokens`, чтобы кэш не оплачивался дважды. Таблица содержит
 USD за 1M обычных/кэшированных/записанных в кэш/выходных токенов, URL источника и
 даты тарифа/обновления; начальные строки OpenAI сидятся `INSERT OR IGNORE`, поэтому

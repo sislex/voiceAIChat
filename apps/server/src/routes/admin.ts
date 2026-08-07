@@ -8,6 +8,7 @@ import {
   type AdminLlmEngineHealth,
   type AdminLlmEngineInput,
   type AdminUserInfo,
+  type ModelPriceInput,
   type LlmEngineKind,
   type LlmRunnerHealth,
   type UsageUnit,
@@ -76,7 +77,18 @@ function validateEngineInput(body: Partial<AdminLlmEngineInput> | undefined): { 
   }
 }
 
-function healthUrl(baseUrl: string): string {
+function validateModelPrice(body: Partial<ModelPriceInput> | undefined): { ok: true; value: ModelPriceInput } | { ok: false; error: string } {
+  const provider = body?.provider?.trim() ?? ''
+  const model = body?.model?.trim() ?? ''
+  const sourceUrl = body?.sourceUrl?.trim() ?? ''
+  const values = [body?.inputPerMillion, body?.cachedInputPerMillion, body?.cacheWritePerMillion, body?.outputPerMillion, body?.effectiveAt]
+  if (!provider || !model) return { ok: false, error: 'provider and model required' }
+  if (!sourceUrl || !isAbsoluteHttpUrl(sourceUrl)) return { ok: false, error: 'bad sourceUrl' }
+  if (values.some((value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) return { ok: false, error: 'bad price values' }
+  return { ok: true, value: { provider, model, sourceUrl, inputPerMillion: body!.inputPerMillion!, cachedInputPerMillion: body!.cachedInputPerMillion!, cacheWritePerMillion: body!.cacheWritePerMillion!, outputPerMillion: body!.outputPerMillion!, effectiveAt: body!.effectiveAt! } }
+}
+
+function healthUrl(baseUrl: string) {
   return new URL(LLM_RUNNER.health, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString()
 }
 
@@ -232,6 +244,21 @@ export function registerAdminRoutes(
     db.setUserLlmAccess(req.params.name, access)
     return db.getUserLlmAccess(req.params.name)
   })
+
+  app.get(REST.adminModelPrices, guard, async () => db.listModelPrices())
+
+  app.put<{ Body: Partial<ModelPriceInput> }>(REST.adminModelPrices, guard, async (req, reply) => {
+    const parsed = validateModelPrice(req.body)
+    if (!parsed.ok) return reply.code(400).send({ error: parsed.error })
+    return db.upsertModelPrice(parsed.value)
+  })
+
+  app.delete<{ Params: { provider: string; model: string } }>(
+    '/api/admin/model-prices/:provider/:model', guard, async (req, reply) => {
+      if (!db.deleteModelPrice(req.params.provider, req.params.model)) return reply.code(404).send({ error: 'not found' })
+      return { ok: true }
+    }
+  )
 
   app.get(REST.adminLlmEngines, guard, async () => db.listLlmEngines())
 
