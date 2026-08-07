@@ -15,15 +15,15 @@
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ⚠ 8 коммит(ов) в areas после сверки: 8f12df0 CHAT-134: параллельный запуск и распределение тасков по машинам … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-07 | ⚠ 3 коммит(ов) в areas после сверки: b5a7961 fix(ci): dequeue queued run when moving task to todo … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-07 | ✓ |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: b5a7961 fix(ci): dequeue queued run when moving task to todo … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 3 коммит(ов) в areas после сверки: a6914ad fix(ci): preserve kb file updates after timeout … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 16 коммит(ов) в areas после сверки: b5a7961 fix(ci): dequeue queued run when moving task to todo … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 119 коммит(ов) в areas после сверки: 8183939 chatai-125: работа CI-рана … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-06 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 121 коммит(ов) в areas после сверки: a6914ad fix(ci): preserve kb file updates after timeout … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-06 | ⚠ 3 коммит(ов) в areas после сверки: 440c8c3 feat: add session-bound production deploy tool … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-05 | ⚠ 3 коммит(ов) в areas после сверки: abeab22 feat(admin): add protected production deploy API … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-07 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-05 | ⚠ 18 коммит(ов) в areas после сверки: b5a7961 fix(ci): dequeue queued run when moving task to todo … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-06 | ⚠ 14 коммит(ов) в areas после сверки: ee966f9 feat(ci): schedule queued runs by in-progress priority … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-06 | ⚠ 15 коммит(ов) в areas после сверки: a6914ad fix(ci): preserve kb file updates after timeout … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-07 | ⚠ 9 коммит(ов) в areas после сверки: ee966f9 feat(ci): schedule queued runs by in-progress priority … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 3 коммит(ов) в areas после сверки: 8d6061d fix(prod): keep deploy socket reachable after restart … |
@@ -44,7 +44,7 @@
 
 ## Журнал сессий
 
-Всего записей: 119. Последние:
+Всего записей: 120. Последние:
 
 - [2026-08-07-mac-parallel-run-machine-routing.md](log/2026-08-07-mac-parallel-run-machine-routing.md) — parallel-run-machine-routing
 - [2026-08-07-mac-kb-gaps-parallel-run-machine-routing.md](log/2026-08-07-mac-kb-gaps-parallel-run-machine-routing.md) — kb-gaps-parallel-run-machine-routing
@@ -55,7 +55,7 @@
 - [2026-08-07-alexeys-macbook-air-2-ci-runner-production-routing.md](log/2026-08-07-alexeys-macbook-air-2-ci-runner-production-routing.md) — ci-runner-production-routing
 - [2026-08-07-alexeys-macbook-air-2-ci-runner-move-dequeue.md](log/2026-08-07-alexeys-macbook-air-2-ci-runner-move-dequeue.md) — ci-runner-move-dequeue
 - [2026-08-07-alexeys-macbook-air-2-ci-runner-dequeue.md](log/2026-08-07-alexeys-macbook-air-2-ci-runner-dequeue.md) — ci-runner-dequeue
-- [2026-08-07-alexeys-macbook-air-2-chat-preview-split.md](log/2026-08-07-alexeys-macbook-air-2-chat-preview-split.md) — chat-preview-split
+- [2026-08-07-alexeys-macbook-air-2-ci-kb-update-timeout.md](log/2026-08-07-alexeys-macbook-air-2-ci-kb-update-timeout.md) — ci-kb-update-timeout
 
 ## Исторические планы
 
