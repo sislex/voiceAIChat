@@ -49,9 +49,21 @@ describe('порядок задач в колонке', () => {
       .toEqual(['new', 'old', 'legacy-a', 'legacy-b'])
   })
 
+  it('в development сортирует по убыванию приоритета и стабильно сохраняет ручной порядок', () => {
+    const withPriority = (id: string, priority: 'low' | 'medium' | 'high' | 'urgent', position: number) =>
+      ({ ...task(id, null, position), priority })
+    expect([
+      withPriority('low', 'low', 1024),
+      withPriority('high-late', 'high', 2048),
+      withPriority('urgent', 'urgent', 4096),
+      withPriority('high-early', 'high', 1024)
+    ].sort((a, b) => compareTasksInColumn(a, b, 'development')).map((item) => item.id))
+      .toEqual(['urgent', 'high-early', 'high-late', 'low'])
+  })
+
   it('в остальных колонках сохраняет ручной порядок', () => {
     expect([task('late', 20, 2048), task('early', 10, 1024)]
-      .sort((a, b) => compareTasksInColumn(a, b, 'development')).map((item) => item.id))
+      .sort((a, b) => compareTasksInColumn(a, b, 'testing')).map((item) => item.id))
       .toEqual(['early', 'late'])
   })
 })

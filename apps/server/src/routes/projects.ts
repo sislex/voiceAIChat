@@ -21,6 +21,7 @@ import { uid } from '../users/auth.js'
 import type { BoardHub } from '../projects/boardHub.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import { kbUsageFlags } from '../kb/routes.js'
+import type { CiRunManager } from '../ci/runManager.js'
 
 const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 'not found' })
 const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
@@ -55,7 +56,9 @@ export function registerProjectRoutes(
   db: VoiceChatDb,
   boardHub: BoardHub,
   /** Телеметрия БЗ по проекту: без неё маршрут агрегата не регистрируется. */
-  kbUsage?: { kb: KnowledgeBaseService; toolEnabled: boolean }
+  kbUsage?: { kb: KnowledgeBaseService; toolEnabled: boolean },
+  /** Нужен переносу в TODO: ожидающий CI-ран надо снять до успешного ответа. */
+  ci?: CiRunManager
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const member = (req: FastifyRequest, id: string): ProjectDetail | null => db.getProject(uid(req), id)
@@ -363,6 +366,26 @@ export function registerProjectRoutes(
   }>('/api/projects/:id/tasks/:taskId/move', async (req, reply): Promise<Task | FastifyReply> => {
     const columnId = req.body?.columnId
     if (!columnId) return badReq(reply, 'columnId required')
+    // Возврат из разработки в TODO для активного рана — не обычный перенос:
+    // queued надо синхронно исключить из очереди, а уже начавшийся ран нельзя
+    // оставить работать с карточкой в TODO. `dequeue` не содержит await, поэтому
+    // между проверкой статуса и отменой его не обгоняет исполнитель.
+    const board = db.getBoard(uid(req), req.params.id)
+    const taskBeforeMove = board?.tasks.find((task) => task.id === req.params.taskId)
+    const from = taskBeforeMove && board?.columns.find((column) => column.id === taskBeforeMove.columnId)
+    const to = board?.columns.find((column) => column.id === columnId)
+    if (ci && from?.semanticType === 'development' && to?.semanticType === 'backlog') {
+      const latestRun = db.latestCiRunSummary(req.params.taskId)
+      if (latestRun?.status === 'queued' || latestRun?.status === 'running' || latestRun?.status === 'awaiting_input') {
+        const removal = ci.dequeue(uid(req), latestRun.id)
+        if (removal.status !== 'removed') {
+          const error = removal.status === 'running'
+            ? 'Ран уже выполняется: сначала остановите его в ленте рана'
+            : 'Не удалось исключить ран из очереди: обновите доску и повторите перенос'
+          return reply.code(409).send({ error })
+        }
+      }
+    }
     const task = db.moveTask(uid(req), req.params.id, req.params.taskId, {
       columnId,
       afterId: req.body?.afterId ?? null,

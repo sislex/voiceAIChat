@@ -4,8 +4,14 @@
 
 import { describe, it, expect } from 'vitest'
 import {
-  areaMatchesFile, formatKbUpdateSummary, kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput, pickAffectedDocs
+  areaMatchesFile, formatKbUpdateSummary, KB_UPDATE_TIMEOUT_MS, kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput, pickAffectedDocs
 } from './codeUpdate.js'
+
+describe('KB_UPDATE_TIMEOUT_MS', () => {
+  it('даёт модели двадцать минут на актуализацию базы знаний', () => {
+    expect(KB_UPDATE_TIMEOUT_MS).toBe(20 * 60 * 1000)
+  })
+})
 
 const BUNDLE = `===FILES===
 apps/server/src/ci/runManager.ts
