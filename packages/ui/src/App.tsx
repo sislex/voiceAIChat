@@ -479,13 +479,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         toast.success('Задача создана и поставлена в CI-очередь')
       }
       setTaskProposal(null)
-      await actions.answerQuestions(
-        mode === 'todo'
-          ? 'Выбираю: создать задачу в TODO.'
-          : mode === 'in-progress'
-            ? 'Выбираю: создать задачу в InProgress и начать выполнение.'
-            : 'Выбираю: выполнять работу в текущем чате.'
-      )
+      if (mode === 'chat') {
+        await actions.answerQuestions('Выбираю: выполнять работу в текущем чате.')
+      }
     } finally {
       setTaskLaunchPending(false)
     }
