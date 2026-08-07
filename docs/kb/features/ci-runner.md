@@ -3,9 +3,10 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-07
-checked: 07b2b88
+checked: f4773e4
 areas:
   - packages/shared/src/ci.ts
+  - packages/shared/src/protocol.ts
   - apps/server/src/ci
   - scripts/affected-check.mjs
   - apps/server/src/kb/codeUpdate.ts
@@ -19,7 +20,9 @@ areas:
   - apps/server/src/agents/registry.ts
   - apps/agent/src/exec.ts
   - packages/ui/src/components/ci
+  - packages/ui/src/components/kanban/TaskCard.tsx
   - packages/ui/src/remote/ciBridge.ts
+  - packages/ui/src/remote/httpApi.ts
   - packages/ui/src/store/voiceStore.ts
 symbols:
   - createCiRunManager
@@ -192,6 +195,12 @@ cwd/env собираются с shell-escape (пользовательский �
 освободит другой ран»), а очередь за мьютексом — FIFO. Отмена рана снимает его
 из очереди за мьютексом, а закрытие рана (в том числе принудительное по
 сторожевому таймауту) отпускает мьютекс за зависший `execute`.
+
+## Ручное исключение ожидающего рана
+
+На карточке с `queued`-раном есть опасная кнопка «Убрать из очереди» с подтверждением; после подтверждения она вызывает `POST /api/ci/runs/:runId/dequeue` (`REST.ciRunDequeue`). `CiRunManager.dequeue` без `await` в одном ходе event loop проверяет статус, отменяет ещё активный ожидающий ран и переносит его задачу в колонку с semantic type `backlog` (TODO); ран финализируется как `cancelled`, а аудит получает `run.dequeued`. Повтор для уже отменённого рана идемпотентно возвращает `removed`; отсутствие активного локального исполнителя, например после рестарта, даёт `not_queued` и не меняет доску.
+
+Этот запрос не является общей отменой рана: его типизированный результат (`CiQueueRemovalResult` в `packages/shared/src/ci.ts`) различает `removed`, `running`, `not_queued` и `not_found`. Если к обработке запроса `execute` уже успел перевести ран в `running` или `awaiting_input`, сервер не отменяет его и возвращает `running`; store сразу применяет полученный актуальный ран и показывает подсказку открыть ленту и остановить выполнение, если задачу всё ещё надо вернуть в TODO. Поэтому интерфейс не сообщает ложный успех в гонке старта. Кнопка видна только пока сводка рана `queued` (`packages/ui/src/components/kanban/TaskCard.tsx`).
 
 ## Куда уезжает карточка после рана
 
