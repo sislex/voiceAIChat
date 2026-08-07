@@ -14,7 +14,7 @@ import { signToken } from '../users/accounts.js'
 import type { CommandExecutor, CiKbUpdateHook, CiModelContext } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
 import { createCiModelHooks } from './modelHooks.js'
-import { KB_DIFF_SCRIPT, KB_REPO_ROOT_CHECK_SCRIPT } from '../kb/codeUpdate.js'
+import { KB_DIFF_SCRIPT, KB_FILE_TOPICS_SCRIPT, KB_REPO_ROOT_CHECK_SCRIPT } from '../kb/codeUpdate.js'
 
 const SECRET = 'kb-ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
@@ -26,6 +26,7 @@ let kbMcpUrls: string[] = []
 let repoCheckWorkdirs: string[] = []
 let repoCheckExitCode = 0
 let scripts: string[] = []
+let timedOutTopicFiles = ''
 
 const fakeClaude: LlmClient = {
   send: (req: LlmRequest, handlers) => {
@@ -50,6 +51,10 @@ const ciExecutor: CommandExecutor = {
     }
     if (req.script === KB_DIFF_SCRIPT) {
       onChunk(diffBundle)
+      return { exitCode: 0, timedOut: false }
+    }
+    if (req.script === KB_FILE_TOPICS_SCRIPT) {
+      onChunk(timedOutTopicFiles)
       return { exitCode: 0, timedOut: false }
     }
     onChunk(`run\n`)
@@ -86,6 +91,7 @@ beforeEach(() => {
   repoCheckWorkdirs = []
   repoCheckExitCode = 0
   scripts = []
+  timedOutTopicFiles = ''
   workReply = 'готово'
   diffBundle = BUNDLE_WITH_CHANGES
   modelReply = JSON.stringify({
@@ -297,6 +303,37 @@ describe('таймаут хука', () => {
     const r = await hooks.kbUpdate(ctx)
     expect(r.ok).toBe(false)
     expect(r.message).toContain('не уложился')
+    expect(cancelled).toBe(true)
+    memory.close()
+  })
+
+  it('после таймаута сохраняет уже изменённые файловые темы и не ждёт финальный JSON', async () => {
+    let id = 0
+    const memory = new VoiceChatDb(':memory:', { newId: () => `t-${++id}`, now: () => Date.now() })
+    let cancelled = false
+    timedOutTopicFiles = 'docs/kb/features/ci-runner.md\ndocs/kb/README.md\n'
+    const silent: LlmClient = { send: () => ({ cancel: () => { cancelled = true } }) }
+    const hooks = createCiModelHooks({
+      db: memory,
+      claude: silent,
+      codex: silent,
+      mcpBaseUrl: 'http://127.0.0.1:1/mcp/remote-bash?k=s',
+      ciMcpBaseUrl: 'http://127.0.0.1:1/mcp/ci-commands?k=s',
+      agentNameOf: () => 'M',
+      executor: ciExecutor,
+      kbTimeoutMs: 30
+    })
+    const ctx = {
+      runId: 'r1', agentId: 'a1', workspacePath: '/repos/p/1', env: { SLUG: 'slug', BASE_BRANCH: 'main' },
+      signal: new AbortController().signal, parentStepId: 'step-1', log: () => {},
+      run: { triggeredBy: 'admin', llmProvider: 'claude', llmModel: 'opus' },
+      task: { title: 'T', description: '' }, project: { id: 'p1', name: 'P' }
+    } as unknown as CiModelContext
+
+    const r = await hooks.kbUpdate(ctx)
+    expect(r).toMatchObject({ ok: true })
+    expect(r.message).toContain('docs/kb/features/ci-runner.md')
+    expect(r.message).toContain('статьи раздела проекта не сохранены')
     expect(cancelled).toBe(true)
     memory.close()
   })

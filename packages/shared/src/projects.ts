@@ -184,16 +184,22 @@ export interface Task {
 }
 
 /**
- * Сравнивает задачи одной колонки для показа на доске. В `done` первой идёт
- * задача, которая последней попала в колонку; последующие правки карточки не
- * влияют на этот порядок. У старых строк без `doneAt` остаётся стабильный
- * fallback по ручному рангу, времени создания и id.
+ * Сравнивает задачи одной колонки для показа на доске. В `development` сверху
+ * стоят более приоритетные задачи; при одинаковом приоритете сохраняется ручной
+ * порядок. В `done` первой идёт задача, которая последней попала в колонку;
+ * последующие правки карточки не влияют на этот порядок. У старых строк без
+ * `doneAt` остаётся стабильный fallback по ручному рангу, времени создания и id.
  */
 export function compareTasksInColumn(
-  a: Pick<Task, 'doneAt' | 'position' | 'createdAt' | 'id'>,
-  b: Pick<Task, 'doneAt' | 'position' | 'createdAt' | 'id'>,
+  a: Pick<Task, 'doneAt' | 'position' | 'createdAt' | 'id'> & Partial<Pick<Task, 'priority'>>,
+  b: Pick<Task, 'doneAt' | 'position' | 'createdAt' | 'id'> & Partial<Pick<Task, 'priority'>>,
   semanticType: KanbanColumnSemanticType
 ): number {
+  if (semanticType === 'development') {
+    const priorityRank = (priority: TaskPriority | undefined): number => TASK_PRIORITIES.indexOf(priority ?? 'medium')
+    const priorityOrder = priorityRank(b.priority) - priorityRank(a.priority)
+    if (priorityOrder !== 0) return priorityOrder
+  }
   if (semanticType === 'done') {
     const aDoneAt = a.doneAt ?? null
     const bDoneAt = b.doneAt ?? null

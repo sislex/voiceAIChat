@@ -16,7 +16,7 @@ import type { KbStoredDocument } from '../db/database.js'
 import { MAX_DOCUMENTS, parseModelDocuments, type ResearchDocument } from './modelDocs.js'
 
 /** Шаг длинный (модель читает диф и правит файлы), но ран из-за него не ждёт вечно. */
-export const KB_UPDATE_TIMEOUT_MS = 10 * 60 * 1000
+export const KB_UPDATE_TIMEOUT_MS = 20 * 60 * 1000
 /** Кап патча, который уезжает в промпт (в скрипте — свой `head -c`). */
 export const MAX_PATCH_CHARS = 100_000
 /** Сколько статей раздела проекта показываем модели и принимаем обратно. */
@@ -65,6 +65,22 @@ echo "===STAT==="
 git diff --stat "$base" | tail -n 80
 echo "===PATCH==="
 { git diff "$base" -- . ':(exclude)*package-lock.json' ':(exclude)docs/kb/README.md' || true; } | head -c ${MAX_PATCH_CHARS}`
+
+/**
+ * Короткая повторная проверка после прерванного хода KB. Она намеренно смотрит
+ * только на файловые темы: статьи раздела проекта сервер может сохранить лишь
+ * из финального JSON-ответа модели, а изменения `docs/kb` уже находятся в
+ * рабочей копии и должны дойти до следующего шага коммита.
+ */
+export const KB_FILE_TOPICS_SCRIPT = `set -u
+dir="\${SLUG:-}"
+if [ -n "$dir" ] && [ -d "$dir/.git" ]; then cd -- "$dir"; fi
+if ! git rev-parse --git-dir >/dev/null 2>&1; then exit 0; fi
+base="\${KB_BASE_REF:-}"
+if [ -z "$base" ]; then base="origin/\${BASE_BRANCH:-main}"; fi
+git rev-parse --verify -q "$base" >/dev/null 2>&1 || base="\${BASE_BRANCH:-main}"
+git rev-parse --verify -q "$base" >/dev/null 2>&1 || exit 0
+{ git diff --name-only "$base" -- docs/kb; git ls-files --others --exclude-standard -- docs/kb; } | sort -u`
 
 /** Разбор вывода `KB_DIFF_SCRIPT` по маркерам секций. */
 export function parseDiffBundle(raw: string): KbCodeChanges {

@@ -451,6 +451,54 @@ describe('ci run manager', () => {
     const r2 = await run(project.id, task.id)
     expect((await waitRun(r2)).run.status).toBe('success')
   })
+  it('перенос из development в TODO снимает ожидающий ран, но не прячет уже запущенный', async () => {
+    const { project, task } = setup()
+    const board = db.getBoard('admin', project.id)!
+    const todo = board.columns.find((column) => column.semanticType === 'backlog')!
+    const ready = board.columns.find((column) => column.semanticType === 'ready')!
+    const queuedTask = db.createTask('admin', project.id, { columnId: ready.id, title: 'В очереди' })!
+    const plainTask = db.createTask('admin', project.id, { columnId: ready.id, title: 'Без рана' })!
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    let release: () => void = () => {}
+    modelGate = new Promise<void>((res) => { release = res })
+
+    const runningRun = await run(project.id, task.id)
+    for (let i = 0; i < 200 && !modelRequests.length; i++) await new Promise((res) => setTimeout(res, 5))
+    const queuedRun = await run(project.id, queuedTask.id)
+    expect(db.getCiRunRaw(queuedRun)!.status).toBe('queued')
+
+    const dequeueByMove = await inj(admin, {
+      method: 'POST',
+      url: `/api/projects/${project.id}/tasks/${queuedTask.id}/move`,
+      payload: { columnId: todo.id }
+    })
+    expect(dequeueByMove.statusCode).toBe(200)
+    expect(db.getCiRunRaw(queuedRun)!.status).toBe('cancelled')
+    expect(db.getCiRun('admin', queuedRun)!.steps).toEqual([])
+    expect(db.getBoard('admin', project.id)!.tasks.find((item) => item.id === queuedTask.id)!.columnId).toBe(todo.id)
+
+    const runningByMove = await inj(admin, {
+      method: 'POST',
+      url: `/api/projects/${project.id}/tasks/${task.id}/move`,
+      payload: { columnId: todo.id }
+    })
+    expect(runningByMove.statusCode).toBe(409)
+    expect(runningByMove.json().error).toContain('сначала остановите')
+    expect(db.getBoard('admin', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).not.toBe(todo.id)
+
+    db.moveTask('admin', project.id, plainTask.id, { columnId: board.columns.find((column) => column.semanticType === 'development')!.id })
+    const plainMove = await inj(admin, {
+      method: 'POST',
+      url: `/api/projects/${project.id}/tasks/${plainTask.id}/move`,
+      payload: { columnId: todo.id }
+    })
+    expect(plainMove.statusCode).toBe(200)
+    expect(db.getBoard('admin', project.id)!.tasks.find((item) => item.id === plainTask.id)!.columnId).toBe(todo.id)
+
+    release()
+    expect((await waitRun(runningRun)).run.status).toBe('success')
+  })
+
   it('fix-loop: модель чинит упавший шаг → ран success, зафиксирована попытка', async () => {
     const { project, task } = setup()
     const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'build', script: 'FLAKY build' })

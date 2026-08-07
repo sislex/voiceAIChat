@@ -124,9 +124,11 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   const modelSessions = new Map<string, string | null>()
 
   // Серверный лимит одновременных ранов (значение читаем при каждом захвате).
-  // Очередь FIFO: `waiters` в порядке постановки. Раны разных задач идут
-  // параллельно — изоляция держится на том, что рабочая директория и ветка у
-  // каждой задачи свои (см. проверку инварианта в `execute`).
+  // Ожидающие раны выбираем по актуальному порядку карточек в development:
+  // приоритет, затем ручной порядок. Между разными проектами относительного
+  // порядка на доске нет, поэтому сохраняем порядок постановки. Раны разных
+  // задач идут параллельно — изоляция держится на том, что рабочая директория и
+  // ветка у каждой задачи свои (см. проверку инварианта в `execute`).
   let running = 0
   /**
    * Слот принадлежит рану, а не вызову: на паузе (`waitForUser`) ран слот
@@ -136,10 +138,39 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
    * `bypass` — ран идёт мимо очереди (параллельный или принудительный запуск):
    * слот сервера он не занимает и не освобождает.
    */
-  interface RunSlot { held: boolean; abandoned: boolean; bypass: boolean }
+  interface RunSlot { runId: string; held: boolean; abandoned: boolean; bypass: boolean }
   /** Пробуждение из очереди: `slot` — освободился серверный слот, `promoted` — ран продвинули мимо очереди. */
-  const waiters: Array<{ slot: RunSlot; wake: (reason: 'slot' | 'promoted') => void }> = []
+  interface SlotWaiter { runId: string; slot: RunSlot; wake: (reason: 'slot' | 'promoted') => void }
+  const waiters: SlotWaiter[] = []
   const runSlots = new Map<string, RunSlot>()
+
+  /** Достаёт следующего ожидающего в порядке его текущей колонки development. */
+  function takeNextWaiter(): SlotWaiter | undefined {
+    if (waiters.length < 2) return waiters.shift()
+    const boardOrder = new Map<string, Map<string, number>>()
+    for (const waiter of waiters) {
+      const activeRun = active.get(waiter.runId)
+      if (!activeRun || boardOrder.has(activeRun.projectId)) continue
+      const board = deps.db.getBoard(activeRun.userId, activeRun.projectId)
+      const development = board?.columns.find((column) => column.semanticType === 'development')
+      if (!board || !development) continue
+      boardOrder.set(
+        activeRun.projectId,
+        new Map(board.tasks.filter((task) => task.columnId === development.id).map((task, index) => [task.id, index]))
+      )
+    }
+    let bestIndex = 0
+    for (let index = 1; index < waiters.length; index++) {
+      const best = active.get(waiters[bestIndex].runId)
+      const candidate = active.get(waiters[index].runId)
+      if (!best || !candidate || best.projectId !== candidate.projectId) continue
+      const order = boardOrder.get(best.projectId)
+      const bestOrder = order?.get(best.taskId) ?? Number.MAX_SAFE_INTEGER
+      const candidateOrder = order?.get(candidate.taskId) ?? Number.MAX_SAFE_INTEGER
+      if (candidateOrder < bestOrder) bestIndex = index
+    }
+    return waiters.splice(bestIndex, 1)[0]
+  }
   async function acquireSlot(slot: RunSlot): Promise<void> {
     if (slot.held || slot.abandoned || slot.bypass) return
     const limit = deps.db.getCiSettings().maxConcurrentRuns
@@ -148,14 +179,14 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       slot.held = true
       return
     }
-    const reason = await new Promise<'slot' | 'promoted'>((res) => waiters.push({ slot, wake: res }))
+    const reason = await new Promise<'slot' | 'promoted'>((res) => waiters.push({ runId: slot.runId, slot, wake: res }))
     // Продвинутый ран выдернут из очереди принудительным запуском: чужое
     // пробуждение он не получал, счётчик не трогаем — просто идём работать.
     if (reason === 'promoted') return
     // Пока стояли в очереди, ран могли закрыть — передаём пробуждение дальше,
     // не трогая счётчик (его уменьшил тот, кто нас разбудил).
     if (slot.abandoned) {
-      const next = waiters.shift()
+      const next = takeNextWaiter()
       if (next) next.wake('slot')
       return
     }
@@ -166,7 +197,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (!slot.held) return
     slot.held = false
     running--
-    const next = waiters.shift()
+    const next = takeNextWaiter()
     if (next) next.wake('slot')
   }
 
@@ -378,7 +409,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
    * иначе слот и мьютекс держатся до перезапуска сервера.
    */
   function enqueue(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint, bypassQueue = false): void {
-    const slot: RunSlot = { held: false, abandoned: false, bypass: bypassQueue }
+    const slot: RunSlot = { runId, held: false, abandoned: false, bypass: bypassQueue }
     runSlots.set(runId, slot)
     void acquireSlot(slot)
       .then(() => guardCancel(runId, userId, ctl, execute(runId, userId, ctl, resume)))
