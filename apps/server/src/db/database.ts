@@ -2999,6 +2999,24 @@ export class VoiceChatDb {
     return mapCiRun(this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(id) as CiRunRow)
   }
 
+  /**
+   * Сколько незавершённых ранов сейчас закреплено за каждой машиной — для
+   * распределения параллельных запусков. Ран с пустым `agent_id` (карточки до
+   * появления выбора машины) выполняется на машине проекта по умолчанию, поэтому
+   * учитывается за ней: без этого такая машина выглядит свободной и собирает всё.
+   */
+  countActiveCiRunsByAgent(): Record<string, number> {
+    const rows = this.db.prepare(
+      `SELECT COALESCE(r.agent_id, p.default_agent_id) AS agent_id, COUNT(*) AS n
+       FROM ci_runs r LEFT JOIN projects p ON p.id = r.project_id
+       WHERE r.status IN ('queued', 'running', 'awaiting_input')
+       GROUP BY COALESCE(r.agent_id, p.default_agent_id)`
+    ).all() as Array<{ agent_id: string | null; n: number }>
+    const counts: Record<string, number> = {}
+    for (const row of rows) if (row.agent_id) counts[row.agent_id] = row.n
+    return counts
+  }
+
   getCiRunRaw(runId: string): CiRun | null {
     const r = this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(runId) as CiRunRow | undefined
     return r ? mapCiRun(r) : null
@@ -3018,10 +3036,11 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC`).all(taskId) as CiRunRow[]).map(mapCiRun)
   }
 
-  updateCiRun(runId: string, patch: { status?: CiStatus; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null; modelSessionId?: string | null; fixContext?: CiFixDiagnosticContext | null }): CiRun | null {
+  updateCiRun(runId: string, patch: { status?: CiStatus; agentId?: string | null; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null; modelSessionId?: string | null; fixContext?: CiFixDiagnosticContext | null }): CiRun | null {
     const set: string[] = []
     const vals: unknown[] = []
     if (patch.status !== undefined) { set.push('status = ?'); vals.push(patch.status) }
+    if (patch.agentId !== undefined) { set.push('agent_id = ?'); vals.push(patch.agentId) }
     if (patch.workspaceId !== undefined) { set.push('workspace_id = ?'); vals.push(patch.workspaceId) }
     if (patch.startedAt !== undefined) { set.push('started_at = ?'); vals.push(patch.startedAt) }
     if (patch.finishedAt !== undefined) { set.push('finished_at = ?'); vals.push(patch.finishedAt) }
