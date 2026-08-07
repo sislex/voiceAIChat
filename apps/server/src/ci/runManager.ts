@@ -16,7 +16,7 @@ import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook, CiRunPrimitives } from './types.js'
 import { isReadOnlyCommand } from './console.js'
 import { CI_INFRA_LABEL, classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
-import type { CiConsoleExecResult } from '@voicechat/shared'
+import type { CiConsoleExecResult, ProjectMachine } from '@voicechat/shared'
 
 /**
  * Сколько ждём завершения `execute` после отмены, прежде чем закрыть ран
@@ -554,6 +554,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     runId: string,
     userId: string,
     agentId: string | null,
+    machines: ProjectMachine[],
     workspacePath: string,
     baseEnv: Record<string, string>,
     slot: CiSlot | null,
@@ -595,7 +596,28 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       }
     }
 
-    const cwd = command.workdir ? `${workspacePath}/${command.workdir}` : workspacePath
+    // `PROD_DIR` называет production checkout на конкретной машине проекта.
+    // Такой шаг не может исполняться в рабочей копии машины, где идёт ран.
+    const prodDir = command.env.PROD_DIR
+    let commandAgentId = agentId
+    let commandRoot = workspacePath
+    let targetError: string | null = null
+    if (prodDir !== undefined) {
+      const normalizedProdDir = prodDir.trim().replace(/\/$/, '')
+      if (!normalizedProdDir) targetError = `Неверная конфигурация команды «${command.name}»: PROD_DIR пуст`
+      const owners = normalizedProdDir ? machines.filter((machine) => machine.path.trim().replace(/\/$/, '') === normalizedProdDir) : []
+      if (!targetError && owners.length === 0) {
+        targetError = `Неверная конфигурация команды «${command.name}»: PROD_DIR=${prodDir} не совпадает с папкой ни одной машины проекта`
+      }
+      if (!targetError && owners.length > 1) {
+        targetError = `Неверная конфигурация команды «${command.name}»: PROD_DIR=${prodDir} задан у нескольких машин проекта`
+      }
+      if (!targetError) {
+        commandAgentId = owners[0].agentId
+        commandRoot = normalizedProdDir
+      }
+    }
+    const cwd = command.workdir ? `${commandRoot}/${command.workdir}` : commandRoot
     const settings = deps.db.getCiSettings()
     const timeoutMs = (command.timeoutSec ?? settings.defaultStepTimeoutSec) * 1000
     const collected: string[] = []
@@ -607,8 +629,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     let exitCode: number | null = null
     let timedOut = false
     try {
-      if (!agentId) throw new Error('У проекта не задана машина по умолчанию для выполнения')
-      const res = await deps.executor.run({ agentId, script: command.script, workdir: cwd, env: { ...baseEnv, ...command.env }, timeoutMs, secrets: [] }, onChunk, signal)
+      if (targetError) throw new Error(targetError)
+      if (!commandAgentId) throw new Error('У проекта не задана машина по умолчанию для выполнения')
+      const res = await deps.executor.run({ agentId: commandAgentId, script: command.script, workdir: cwd, env: { ...baseEnv, ...command.env }, timeoutMs, secrets: [] }, onChunk, signal)
       exitCode = res.exitCode
       timedOut = res.timedOut
     } catch (err) {
@@ -814,7 +837,7 @@ fi`
     if (run) emitRun(run, userId)
   }
 
-  function makePrimitives(runId: string, userId: string, agentId: string | null, workspacePath: string, commandWorkspacePath: string, env: Record<string, string>, signal: AbortSignal): CiRunPrimitives {
+  function makePrimitives(runId: string, userId: string, agentId: string | null, machines: ProjectMachine[], workspacePath: string, commandWorkspacePath: string, env: Record<string, string>, signal: AbortSignal): CiRunPrimitives {
     return {
       runId,
       agentId,
@@ -840,7 +863,7 @@ fi`
         const command = deps.db.getCiCommand(userId, commandId)
         if (!command) return { exitCode: null, timedOut: false, output: 'Команда не найдена' }
         const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
-        const r = await runCommandStep(runId, userId, agentId, commandWorkspacePath, env, null, steps.length, command, 'model', parentStepId, signal)
+        const r = await runCommandStep(runId, userId, agentId, machines, commandWorkspacePath, env, null, steps.length, command, 'model', parentStepId, signal)
         return { exitCode: r.exitCode, timedOut: r.status === 'timeout', output: r.output }
       },
       setModelSessionId: (sessionId) => {
@@ -1170,7 +1193,7 @@ fi`
       let message = 'Актуализация базы знаний не выполнена: хук не подключён'
       if (deps.kbUpdate) {
         const ctx: CiModelContext = {
-          ...makePrimitives(runId, userId, agentId, repoPath, workspacePath, env, signal),
+          ...makePrimitives(runId, userId, agentId, project.machines, repoPath, workspacePath, env, signal),
           run: deps.db.getCiRunRaw(runId)!,
           task,
           project,
@@ -1230,7 +1253,7 @@ fi`
             return false
           }
         }
-        const res = await runCommandStep(runId, userId, agentId, workspacePath, env, slot, posBase + done + 1 + extraSteps, command, 'user', null, signal)
+        const res = await runCommandStep(runId, userId, agentId, project.machines, workspacePath, env, slot, posBase + done + 1 + extraSteps, command, 'user', null, signal)
         // Шаг мог упасть именно из-за отмены (исполнитель отклонил команду) —
         // тогда это `cancelled`, а не `failed`, и никакого fix-loop.
         if (signal.aborted) return finishCancelled()
@@ -1307,7 +1330,7 @@ fi`
     }
 
     // 2) Работа модели (при повторе из слота «после» — уже сделана, пропускаем).
-    const prim = makePrimitives(runId, userId, agentId, repoPath, workspacePath, env, signal)
+    const prim = makePrimitives(runId, userId, agentId, project.machines, repoPath, workspacePath, env, signal)
     let modelOk = true
     let modelCancelled = false
     /** Модель работала, но рабочая копия пуста — слот «после» не запускаем. */
@@ -1452,7 +1475,7 @@ fi`
     const detail = deps.db.getCiRun(userId, runId)
     const failedStep = detail?.steps.slice().reverse().find((s) => s.status === 'failed' || s.status === 'timeout')
     if (!failedStep) return false
-    const prim = makePrimitives(runId, userId, agentId, modelWorkspacePath, commandWorkspacePath, env, signal)
+    const prim = makePrimitives(runId, userId, agentId, project.machines, modelWorkspacePath, commandWorkspacePath, env, signal)
     // Шаг гейта (тесты/typecheck/линт) отличаем от обычного: vitest печатает
     // много, и по сорока строкам хвоста упавших тестов не видно.
     const failedCommand = failedStep.commandId ? deps.db.getCiCommand(userId, failedStep.commandId) : null
@@ -1525,7 +1548,7 @@ fi`
       rerunFailedStep: async () => {
         const command = failedStep.commandId ? deps.db.getCiCommand(userId, failedStep.commandId) : null
         if (!command) return { stepId: failedStep.id, exitCode: null, timedOut: false, output: 'Команда повторного шага не найдена.' }
-        const r = await runCommandStep(runId, userId, agentId, commandWorkspacePath, env, failedStep.slot, failedStep.position, command, 'model', null, signal)
+        const r = await runCommandStep(runId, userId, agentId, project.machines, commandWorkspacePath, env, failedStep.slot, failedStep.position, command, 'model', null, signal)
         return { stepId: r.stepId, exitCode: r.exitCode, timedOut: r.status === 'timeout', output: r.output }
       }
     }
