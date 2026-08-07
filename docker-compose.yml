@@ -38,6 +38,8 @@ services:
       VC_LLM_RUNNER_CLAUDE_URL: http://runner-work:8790
       VC_LLM_RUNNER_CODEX_URL: http://runner-work:8790
       VC_LLM_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
+      # Host-side deploy API доступен только через примонтированный Unix-сокет.
+      VC_DEPLOY_API_SOCKET: /run/voicechat/deploy-api.sock
       # Адрес, по которому MCP-эндпоинты сервера (remote-bash, kb, ci-commands)
       # видны ИЗ контейнера исполнителя. Без него сервер отдаёт CLI собственный
       # loopback, а в контейнере исполнителя на 127.0.0.1:8787 никого нет —
@@ -55,6 +57,10 @@ services:
       VC_CLAUDE_MODEL_MAP: ${VC_CLAUDE_MODEL_MAP:-{}}
     volumes:
       - vc-data:/data
+      - /run/voicechat:/run/voicechat
+    # Дополнительная группа совпадает с владельцем host-side deploy-сокета.
+    group_add:
+      - "65532"
     restart: unless-stopped
 
   runner-work:

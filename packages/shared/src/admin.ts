@@ -134,6 +134,12 @@ export interface AdminLlmEngineHealth {
   status: LlmRunnerHealth | null
 }
 
+/** Результат запроса на запуск host-side деплоя. */
+export interface AdminDeployResponse {
+  status: 'accepted' | 'running'
+  message: string
+}
+
 
 /** Безопасное описание доступного пользователю исполнителя (без URL и токена). */
 export interface LlmEngineOption {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
@@ -15,6 +15,7 @@ let dataDir: string
 
 const SECRET = 'test-secret'
 const U = 'admin'
+const triggerDeploy = vi.fn<() => Promise<{ status: 'accepted' | 'running'; message: string }>>()
 
 interface InjOpts {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -38,6 +39,8 @@ beforeEach(async () => {
   dataDir = join(tmpdir(), `vc-rest-test-${Date.now()}-${id}`)
   // Явно изолируем каталоги моделей/голосов во временную папку — тесты удаления
   // не должны касаться реальных файлов репозитория.
+  triggerDeploy.mockReset()
+  triggerDeploy.mockResolvedValue({ status: 'accepted', message: 'deployment started' })
   app = await buildServer({
     config: loadConfig({
       PORT: '0',
@@ -46,7 +49,8 @@ beforeEach(async () => {
       VC_PIPER_VOICES_DIR: join(dataDir, 'voices')
     }),
     db,
-    sessionSecret: SECRET
+    sessionSecret: SECRET,
+    deployTrigger: { trigger: triggerDeploy }
   })
   token = signToken({ name: U, role: 'admin' }, SECRET)
 })
@@ -101,6 +105,36 @@ describe('REST: аутентификация', () => {
 })
 
 describe('REST: админ-роуты (только admin)', () => {
+  it('запуск деплоя доступен только admin и не принимает shell-параметры', async () => {
+    db.createUser('user', '', 'user')
+    const userTok = signToken({ name: 'user', role: 'user' }, SECRET)
+    const denied = await app.inject({
+      method: 'POST',
+      url: '/api/admin/deploy',
+      payload: { command: 'rm -rf /' },
+      headers: { authorization: `Bearer ${userTok}` }
+    })
+    expect(denied.statusCode).toBe(403)
+    expect(triggerDeploy).not.toHaveBeenCalled()
+
+    const accepted = await inj({ method: 'POST', url: '/api/admin/deploy', payload: { command: 'ignored' } })
+    expect(accepted.statusCode).toBe(202)
+    expect(accepted.json()).toEqual({ status: 'accepted', message: 'deployment started' })
+    expect(triggerDeploy).toHaveBeenCalledOnce()
+  })
+
+  it('возвращает running и структурированную ошибку host API', async () => {
+    triggerDeploy.mockResolvedValueOnce({ status: 'running', message: 'deployment already running' })
+    const running = await inj({ method: 'POST', url: '/api/admin/deploy' })
+    expect(running.statusCode).toBe(409)
+    expect(running.json()).toMatchObject({ status: 'running' })
+
+    triggerDeploy.mockRejectedValueOnce(new Error('socket unavailable'))
+    const unavailable = await inj({ method: 'POST', url: '/api/admin/deploy' })
+    expect(unavailable.statusCode).toBe(503)
+    expect(unavailable.json()).toEqual({ error: 'deploy API unavailable', detail: 'socket unavailable' })
+  })
+
   it('user → 403 на /api/admin/users', async () => {
     db.createUser('user', '', 'user')
     const userTok = signToken({ name: 'user', role: 'user' }, SECRET)
