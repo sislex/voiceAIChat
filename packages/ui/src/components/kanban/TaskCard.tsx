@@ -38,6 +38,8 @@ export interface TaskCardProps {
   onStartCi?: (taskId: string) => void
   /** Открыть ленту рана. */
   onOpenCiRun?: (runId: string) => void
+  /** Убрать ожидающий ран из очереди CI. */
+  onDequeueCiRun?: (runId: string) => void
 
   /** Захват указателем: доска решает, перенос это или клик/скролл.
       `immediate` — захват с ручки, удержание пальца не нужно. */
@@ -218,6 +220,24 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 onClick={() => props.onOpenCiRun?.(ciSummary.id)}
               >
                 {ciSummary.awaitingInput ? 'Ответить модели' : 'Лента рана'}
+              </Button>
+            )}
+            {ciSummary?.status === 'queued' && props.onDequeueCiRun && (
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => {
+                  void confirm({
+                    title: 'Убрать задачу из очереди?',
+                    message: 'Ожидающий ран будет отменён, а задача вернётся в TODO.',
+                    variant: 'danger',
+                    confirmLabel: 'Убрать из очереди'
+                  }).then((ok) => {
+                    if (ok) props.onDequeueCiRun?.(ciSummary.id)
+                  })
+                }}
+              >
+                Убрать из очереди
               </Button>
             )}
             {/* Пока ран идёт, запускать нечего — остаётся только лента. После

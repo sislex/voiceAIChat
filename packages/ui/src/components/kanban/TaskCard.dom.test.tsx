@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { useEffect, useState } from 'react'
-import { act, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../../test/uiRender'
 import type { Task } from '@shared/projects'
@@ -68,6 +68,19 @@ describe('TaskCard CI-панель', () => {
     expect(screen.getByText(/до модели 1\/4/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Лента рана' }))
     expect(onOpenCiRun).toHaveBeenCalledWith('run-1')
+  })
+
+  it('даёт убрать из очереди только queued-ран после подтверждения', async () => {
+    const onDequeueCiRun = vi.fn()
+    const { rerender } = render(<TaskCard {...props({ ciSummary: mkSummary({ status: 'queued' }), onDequeueCiRun })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Убрать из очереди' }))
+    const dialog = await screen.findByTestId('confirm-dialog')
+    expect(dialog).toHaveTextContent('Ожидающий ран будет отменён, а задача вернётся в TODO.')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Убрать из очереди' }))
+    await waitFor(() => expect(onDequeueCiRun).toHaveBeenCalledWith('run-1'))
+
+    rerender(<TaskCard {...props({ ciSummary: mkSummary({ status: 'running' }), onDequeueCiRun })} />)
+    expect(screen.queryByRole('button', { name: 'Убрать из очереди' })).not.toBeInTheDocument()
   })
 
   it('пока ран идёт, «Выполнить» недоступна — остаётся только лента', () => {

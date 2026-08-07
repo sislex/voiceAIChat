@@ -189,6 +189,11 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   )
 
   app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/cancel', async (req, reply) => ({ ok: ci.cancel(uid(req), req.params.runId) }))
+  app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/dequeue', async (req, reply) => {
+    const result = ci.dequeue(uid(req), req.params.runId)
+    if (result.status === 'not_found') return nf(reply)
+    return result
+  })
   app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/retry', async (req, reply) => {
     const detail = db.getCiRun(uid(req), req.params.runId)
     if (!detail) return nf(reply)

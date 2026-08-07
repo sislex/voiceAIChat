@@ -865,6 +865,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               ciSummaries={state.ciSummaries}
               onStartCi={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId).then((run) => { if (run) actions.openCiRun(run.id) }) }}
               onOpenCiRun={(runId) => actions.openCiRun(runId)}
+              onDequeueCiRun={(runId) => void actions.dequeueCiRun(runId)}
               aiAssistPrompts={state.settings.aiAssistPrompts}
               onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
               generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}

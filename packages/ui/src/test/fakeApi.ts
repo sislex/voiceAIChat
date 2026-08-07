@@ -778,6 +778,7 @@ import type {
   CiCommandInput,
   CiGlobalSettings,
   CiRun,
+  CiQueueRemovalResult,
   CiRunDetail,
   CiInteraction,
   CiLlmConfig,
@@ -946,6 +947,16 @@ export function createFakeCi(): FakeCi {
       return { projectId, taskId, runs: list, ...ciTaskTotals(list) } as CiTaskReport
     },
     cancelRun: async () => ({ ok: true }),
+    dequeueRun: async (rid): Promise<CiQueueRemovalResult> => {
+      const d = runs.get(rid)
+      if (!d) return { status: 'not_found' }
+      if (d.run.status === 'queued' || d.run.status === 'cancelled') {
+        d.run = { ...d.run, status: 'cancelled', finishedAt: now() }
+        emit('ci.done', { runId: rid, run: d.run })
+        return { status: 'removed', run: { ...d.run } }
+      }
+      return { status: d.run.status === 'running' || d.run.status === 'awaiting_input' ? 'running' : 'not_queued', run: { ...d.run } }
+    },
     retryRun: async (rid) => { const d = runs.get(rid)!; return await bridge.startRun(d.run.projectId, d.run.taskId) },
     retryRunFromStep: async (runId: string) => ({ id: runId } as unknown as CiRun),
     discardChangesAndRetry: async (runId: string) => ({ id: runId } as unknown as CiRun),

@@ -952,6 +952,8 @@ export interface StoreActions {
   reloadCiWorkspaces(projectId?: string): Promise<void>
   startCiRun(projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string }): Promise<CiRun | null>
   cancelCiRun(runId: string): Promise<void>
+  /** Исключить только ожидающий ран из очереди CI. */
+  dequeueCiRun(runId: string): Promise<void>
   retryCiRun(runId: string): Promise<CiRun | null>
   retryCiRunFromStep(runId: string, selection?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): Promise<CiRun | null>
   discardCiWorkspaceAndRetry(runId: string): Promise<CiRun | null>
@@ -3744,6 +3746,25 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!ciBridge) return
     try { await ciBridge.cancelRun(runId) } catch (err) { fail(err) }
   }
+  async function dequeueCiRun(runId: string): Promise<void> {
+    if (!ciBridge) return
+    try {
+      const result = await ciBridge.dequeueRun(runId)
+      if (result.status === 'removed') {
+        // Ответ HTTP уже содержит финальный ран; не ждём WS, чтобы кнопка не
+        // оставалась в старом состоянии при медленном кадре.
+        applyCiDone(runId, result.run)
+      } else if (result.status === 'running') {
+        applyCiRun(runId, result.run)
+        notify({ kind: 'error', text: 'Ран уже выполняется. Откройте ленту и остановите выполнение, если нужно вернуть задачу в TODO.' })
+      } else if (result.status === 'not_queued') {
+        applyCiRun(runId, result.run)
+        notify({ kind: 'error', text: 'Ран больше не ожидает запуска: очередь не была изменена.' })
+      } else {
+        notify({ kind: 'error', text: 'Ран не найден.' })
+      }
+    } catch (err) { fail(err) }
+  }
   async function retryCiRun(runId: string): Promise<CiRun | null> {
     if (!ciBridge) return null
     try { return await ciBridge.retryRun(runId) } catch (err) { fail(err); return null }
@@ -4229,6 +4250,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       reloadCiWorkspaces,
       startCiRun,
       cancelCiRun,
+      dequeueCiRun,
       retryCiRun,
       retryCiRunFromStep,
       discardCiWorkspaceAndRetry,

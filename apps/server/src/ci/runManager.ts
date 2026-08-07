@@ -71,6 +71,8 @@ export interface CiRunManager {
   retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): { run: CiRun } | { error: string }
   discardChangesAndRetry(userId: string, runId: string): Promise<{ run: CiRun } | { error: string }>
   cancel(userId: string, runId: string): boolean
+  /** Убрать именно ожидающий ран; не маскирует уже начавшееся выполнение. */
+  dequeue(userId: string, runId: string): import('@voicechat/shared').CiQueueRemovalResult
   subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
   snapshot(userId: string, runId: string): void | ServerMessage
   activeRunIds(): string[]
@@ -413,6 +415,34 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (result.exitCode !== 0) return { error: `Не удалось откатить изменения (exit ${result.exitCode ?? 'unknown'})` }
     deps.db.addCiEvent({ projectId: detail.run.projectId, runId, type: 'workspace.discarded', actorType: 'user', actorId: userId, payload: { path: repoPath } })
     return start(userId, detail.run.projectId, detail.run.taskId)
+  }
+
+  /**
+   * Ручное исключение из очереди. Здесь нет await, поэтому проверка queued и
+   * перевод в cancelled происходят в одном ходе event loop: если execute уже
+   * сменил статус на running, клиент получает именно running, а не ложный успех.
+   */
+  function dequeue(userId: string, runId: string): import('@voicechat/shared').CiQueueRemovalResult {
+    const detail = deps.db.getCiRun(userId, runId)
+    if (!detail) return { status: 'not_found' }
+    const row = detail.run
+    if (row.status === 'cancelled') return { status: 'removed', run: row }
+    if (row.status !== 'queued') return {
+      status: row.status === 'running' || row.status === 'awaiting_input' ? 'running' : 'not_queued',
+      run: row
+    }
+    const a = active.get(runId)
+    // После рестарта активного исполнителя нет; queued ран всё равно нельзя
+    // безопасно «отменить» этим действием, так как он уже не принадлежит очереди.
+    if (!a || a.userId !== userId) return { status: 'not_queued', run: row }
+    a.abort.abort()
+    const backlogColumnId = deps.db.getColumnIdBySemantic(row.projectId, 'backlog')
+    if (backlogColumnId) {
+      try { deps.db.moveTask(userId, row.projectId, row.taskId, { columnId: backlogColumnId }) } catch { /* колонка могла исчезнуть */ }
+    }
+    deps.db.addCiEvent({ projectId: row.projectId, runId, type: 'run.dequeued', actorType: 'user', actorId: userId, payload: { backlogColumnId } })
+    finalize(runId, userId, 'cancelled')
+    return { status: 'removed', run: deps.db.getCiRunRaw(runId)! }
   }
 
   function cancel(userId: string, runId: string): boolean {
@@ -1787,7 +1817,7 @@ fi`
     }
   }
 
-  return { start, retryFromFailed, discardChangesAndRetry, cancel, subscribe, snapshot, activeRunIds, consoleExec, answerInteraction }
+  return { start, retryFromFailed, discardChangesAndRetry, cancel, dequeue, subscribe, snapshot, activeRunIds, consoleExec, answerInteraction }
 }
 
 /**

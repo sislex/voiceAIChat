@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { CONVERSATIONS_REFRESH_DEBOUNCE_MS, createVoiceStore, type VoiceStore } from './voiceStore'
-import { createFakeApi, type FakeApi } from '../test/fakeApi'
+import { createFakeApi, createFakeCi, type FakeApi } from '../test/fakeApi'
 import { makeLogLine, makeRun, makeStep } from '../test/fixtures'
 import type { CiRunSummary, CiStatus } from '@shared/ci'
 import type { Message } from '@shared/types'
@@ -82,6 +82,25 @@ beforeEach(() => {
 afterEach(() => {
   vi.runOnlyPendingTimers()
   vi.useRealTimers()
+})
+
+describe('voiceStore — исключение ожидающего CI-рана', () => {
+  it('применяет подтверждённое сервером исключение, а начавшийся ран показывает как running', async () => {
+    const ci = createFakeCi()
+    const store = createVoiceStore({ api: createFakeApi(), ci })
+    const queued = await store.actions.startCiRun('p1', 't1')
+    expect(queued?.status).toBe('queued')
+
+    await store.actions.dequeueCiRun(queued!.id)
+    expect(store.getState().ciSummaries.t1?.status).toBe('cancelled')
+
+    const raced = await store.actions.startCiRun('p1', 't1')
+    ci.dequeueRun = async () => ({ status: 'running', run: { ...raced!, status: 'running' } })
+    await store.actions.dequeueCiRun(raced!.id)
+
+    expect(store.getState().ciSummaries.t1?.status).toBe('running')
+    expect(store.getState().notices.at(-1)?.text).toContain('Ран уже выполняется')
+  })
 })
 
 describe('voiceStore — сайдбар обновляется по событиям CI', () => {
