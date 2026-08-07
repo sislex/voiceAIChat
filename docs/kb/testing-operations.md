@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-08-02
-checked: c2d0836
+updated: 2026-08-07
+checked: 486061d
 areas:
   - package.json
   - scripts
@@ -44,6 +44,10 @@ Server запускает исходники через tsx. Web dev proxy со�
 | agent tray | `npm run typecheck:agent-tray` | `npm run test:agent-tray` | electron-vite build/dist |
 
 `npm run verify` выполняет полный набор. Для локального шага предпочтителен узкий гейт затронутых пакетов, затем полный verify перед релизом/крупным merge.
+
+### Fast-stage затронутых тестов
+
+`scripts/affected-check.mjs` запускает быстрый этап напрямую как `npx vitest related`, чтобы не передавать несовместимый `--related` подкоманде `vitest run`. При параллельных пакетных jobs ограничение worker должно задавать одновременно `--minWorkers` и `--maxWorkers` одним значением. Если передать только `--maxWorkers=1`, Vitest 2 может вычислить минимум выше максимума и завершиться ещё до запуска suites, поэтому структурированного JSON с ошибками тестов не будет; аргументы централизованы в `relatedArgs` и покрыты `scripts/affected-check.test.mjs`.
 
 ## Стратегия тестов
 
