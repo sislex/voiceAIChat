@@ -5418,6 +5418,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .webpreview { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--panel); }
 .webpreview-bar { display: flex; gap: 8px; padding: 9px; border-bottom: 1px solid var(--border); }
 .webpreview-address { flex: 1; min-width: 0; }
+.webpreview-inspector-toggle[aria-pressed='true'] { border-color: var(--accent); background: var(--surface-selected); color: var(--accent); }
+.webpreview-selection { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--border); font-size: 12px; }
+.webpreview-selection span { color: var(--text-dim); }
+.webpreview-selection code { overflow: hidden; color: var(--text-dim); text-overflow: ellipsis; white-space: nowrap; }
 .webpreview-address input { box-sizing: border-box; width: 100%; height: 100%; min-width: 0; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
 .webpreview-error { margin: 0; padding: 6px 10px; color: var(--danger); font-size: 12px; }
 .webpreview-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: white; }

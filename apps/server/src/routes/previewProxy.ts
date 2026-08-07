@@ -40,6 +40,65 @@ function proxyUrl(value: string, base: URL): string {
   } catch { return value }
 }
 
+export const PREVIEW_INSPECTOR_SCRIPT_ID = 'voicechat-preview-inspector'
+
+export function previewInspectorScript(): string {
+  return `<script id="${PREVIEW_INSPECTOR_SCRIPT_ID}">(() => {
+const COMMAND='voicechat.preview.inspector.v1', SELECTED='voicechat.preview.element-selected.v1', HTML_LIMIT=8000, TEXT_LIMIT=2000, ARRAY_LIMIT=64;
+let active=false, selected=null, box=null, label=null;
+const esc=(value)=>globalThis.CSS?.escape ? CSS.escape(value) : value.replace(/[^a-zA-Z0-9_-]/g,(c)=>'\\\\'+c.codePointAt(0).toString(16)+' ');
+const part=(el)=>{let s=el.localName;if(el.id)s+='#'+esc(el.id);else{const cs=[...el.classList].slice(0,3);if(cs.length)s+='.'+cs.map(esc).join('.');}return s};
+const uniqueSelector=(el)=>{
+  if(el.id){const s='#'+esc(el.id);if(document.querySelectorAll(s).length===1)return s}
+  const parts=[];let node=el;
+  while(node&&node.nodeType===1&&parts.length<ARRAY_LIMIT){
+    let s=part(node);
+    if(!node.id&&node.parentElement){const same=[...node.parentElement.children].filter(x=>x.localName===node.localName);if(same.length>1)s+=':nth-of-type('+(same.indexOf(node)+1)+')'}
+    parts.unshift(s);const candidate=parts.join(' > ');
+    try{if(document.querySelectorAll(candidate).length===1)return candidate}catch{}
+    node=node.parentElement
+  }
+  return parts.join(' > ')
+};
+const ancestors=(el)=>{const out=[];let n=el;while(n&&n.nodeType===1&&out.length<ARRAY_LIMIT){out.unshift(part(n));n=n.parentElement}return out};
+const ensureOverlay=()=>{
+  if(box)return;
+  box=document.createElement('div');box.setAttribute('data-voicechat-inspector','overlay');
+  Object.assign(box.style,{position:'fixed',zIndex:'2147483646',pointerEvents:'none',boxSizing:'border-box',border:'2px solid #4f8cff',background:'rgba(79,140,255,.12)'});
+  label=document.createElement('div');label.setAttribute('data-voicechat-inspector','label');
+  Object.assign(label.style,{position:'fixed',zIndex:'2147483647',pointerEvents:'none',maxWidth:'calc(100vw - 8px)',padding:'3px 6px',borderRadius:'4px',background:'#172033',color:'#fff',font:'12px/1.4 ui-monospace,monospace',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'});
+  document.documentElement.append(box,label)
+};
+const draw=(el)=>{
+  ensureOverlay();const r=el.getBoundingClientRect();const name=part(el);
+  Object.assign(box.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});
+  label.textContent=name+'  '+Math.round(r.width)+' × '+Math.round(r.height)+' px';
+  const top=r.top>=26?r.top-24:Math.min(innerHeight-24,r.bottom+2);
+  Object.assign(label.style,{left:Math.max(4,Math.min(r.left,innerWidth-label.offsetWidth-4))+'px',top:Math.max(2,top)+'px'})
+};
+const hide=()=>{box?.remove();label?.remove();box=null;label=null};
+const styles=(el)=>{const s=getComputedStyle(el);return {
+  font:s.font,color:s.color,backgroundColor:s.backgroundColor,margin:s.margin,padding:s.padding,border:s.border,
+  width:s.width,height:s.height,position:s.position,display:s.display,flex:s.flex,flexDirection:s.flexDirection,
+  flexWrap:s.flexWrap,alignItems:s.alignItems,justifyContent:s.justifyContent,gap:s.gap,grid:s.grid,
+  gridTemplateColumns:s.gridTemplateColumns,gridTemplateRows:s.gridTemplateRows,gridArea:s.gridArea
+}};
+const payload=(el)=>{const r=el.getBoundingClientRect(),data={};for(const a of [...el.attributes])if(a.name.startsWith('data-')&&Object.keys(data).length<ARRAY_LIMIT)data[a.name]=a.value.slice(0,TEXT_LIMIT);return {
+  tag:el.localName,id:el.id,classes:[...el.classList].slice(0,ARRAY_LIMIT),dataAttributes:data,selector:uniqueSelector(el),ancestors:ancestors(el),
+  rect:{x:r.x,y:r.y,top:r.top,right:r.right,bottom:r.bottom,left:r.left,width:r.width,height:r.height},
+  pageUrl:location.href,viewport:{width:innerWidth,height:innerHeight},outerHTML:el.outerHTML.slice(0,HTML_LIMIT),
+  text:(el.innerText||el.textContent||'').trim().slice(0,TEXT_LIMIT),styles:styles(el)
+}};
+const move=(e)=>{if(!active)return;const el=e.target;if(el instanceof Element&&!el.closest('[data-voicechat-inspector]'))draw(el)};
+const click=(e)=>{if(!active)return;const el=e.target;if(!(el instanceof Element)||el.closest('[data-voicechat-inspector]'))return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();selected=el;draw(el);parent.postMessage({type:SELECTED,payload:payload(el)},location.origin)};
+const key=(e)=>{if(active&&e.key==='Escape'){e.preventDefault();disable()}};
+const enable=()=>{if(active)return;active=true;document.addEventListener('pointerover',move,true);document.addEventListener('click',click,true);document.addEventListener('keydown',key,true)};
+const disable=()=>{active=false;selected=null;document.removeEventListener('pointerover',move,true);document.removeEventListener('click',click,true);document.removeEventListener('keydown',key,true);hide()};
+const message=(e)=>{if(e.source!==parent||e.origin!==location.origin||!e.data||e.data.type!==COMMAND||typeof e.data.enabled!=='boolean')return;e.data.enabled?enable():disable()};
+addEventListener('message',message);addEventListener('pagehide',()=>{disable();removeEventListener('message',message)},{once:true});
+})();<\/script>`
+}
+
 export function rewritePreviewBody(body: Buffer, type: string, base: URL): Buffer {
   let text = body.toString('utf8')
   if (/text\/html|application\/xhtml\+xml/i.test(type)) {
@@ -49,6 +108,8 @@ export function rewritePreviewBody(body: Buffer, type: string, base: URL): Buffe
         const [url, ...descriptor] = part.trim().split(/\s+/)
         return proxyUrl(url, base) + (descriptor.length ? ' ' + descriptor.join(' ') : '')
       }).join(', ') + quote)
+    const inspector = previewInspectorScript()
+    text = /<\/body\s*>/i.test(text) ? text.replace(/<\/body\s*>/i, inspector + '</body>') : text + inspector
   }
   if (/text\/css/i.test(type)) text = text.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi, (_m, quote, value) => 'url(' + quote + proxyUrl(value, base) + quote + ')')
   return Buffer.from(text)
