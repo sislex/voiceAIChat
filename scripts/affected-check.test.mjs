@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { fastCheckForPackage, packageArgs, runFastChecks, runPackageGates, selectAffected } from './affected-check.mjs'
+import { fastCheckForPackage, packageArgs, relatedArgs, runFastChecks, runPackageGates, selectAffected } from './affected-check.mjs'
 
 const ids = (decision) => decision.packages.map((pkg) => pkg.id)
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -81,6 +81,13 @@ test('packageArgs согласует min/max workers для Vitest', () => {
   assert.deepEqual(
     packageArgs({ workspace: '@voicechat/shared' }, 'typecheck', 1),
     ['run', '-w', '@voicechat/shared', 'typecheck']
+  )
+})
+
+test('relatedArgs согласует min/max workers для fast-stage Vitest', () => {
+  assert.deepEqual(
+    relatedArgs(['src/server.ts'], '/tmp/report.json', 1),
+    ['vitest', 'related', 'src/server.ts', '--run', '--passWithNoTests', '--reporter=json', '--outputFile=/tmp/report.json', '--silent', '--minWorkers=1', '--maxWorkers=1']
   )
 })
 
