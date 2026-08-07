@@ -105,17 +105,43 @@ localhost, где сервера нет, и инструменты `mcp__remote_
 
 ## Прод
 
-`ssh root@45.135.182.251`, каталог `/root/voiceAIChat`. Обновление — **только через
-`voicechat-deploy`** (ставится `bash scripts/prod/install.sh`, см. ниже):
+Этот раздел — инструкция для запросов **«обнови прод»**, **«обновить production»**,
+**«обновить контейнер»**, **«пересобрать контейнеры»**, **«задеплоить main»**,
+**«задеплоить master»** и **«перезапустить прод»**. Боевой branch этого репозитория
+называется `main`; упоминание `master` в запросе означает тот же деплой текущего
+`origin/main`, а не другую ветку.
+
+`ssh root@45.135.182.251`, каталог `/root/voiceAIChat`. Чтобы **обновить
+контейнер** на production, обновить прод целиком или пересобрать прод-контейнеры,
+всегда выполняй **только `voicechat-deploy`**: нельзя заменять его прямым
+`docker compose up`, `docker compose up --build` или ручным перезапуском.
+Если команда ещё не установлена, её ставит `bash scripts/prod/install.sh` (см.
+ниже).
+
+Перед запуском проверь, что это правильный прод-чекаут на ветке `main`, рабочее
+дерево чистое и установлен штатный скрипт:
 
 ```bash
-voicechat-deploy               # вернётся сразу, деплой идёт в фоне
-tail -f /var/log/voicechat-deploy.log
+cd /root/voiceAIChat
+git branch --show-current       # ожидается main
+git status --short              # ожидается пустой вывод
+command -v voicechat-deploy     # ожидается /usr/local/bin/voicechat-deploy
 ```
 
-Внутри `voicechat-deploy` — те же `git pull --ff-only origin main` и
-`docker compose up -d --build voicechat runner-work runner-personal caddy`, но
-переживающие обрыв канала (см. ниже).
+После проверок запусти деплой, дождись записи об успехе в логе и обязательно
+проверь итоговый health-check:
+
+```bash
+voicechat-deploy                # вернётся сразу, деплой идёт в фоне
+tail -f /var/log/voicechat-deploy.log
+curl -fsS http://127.0.0.1:8787/api/health
+```
+
+Успешный результат — в логе есть `деплой успешен`, health-check отвечает без
+ошибки. Внутри `voicechat-deploy` выполняются `git pull --ff-only` и
+`docker compose up -d --build`; затем сам скрипт ждёт `/api/health` до 5 минут.
+Так обновляются `voicechat`, `runner-work`, `runner-personal` и `caddy`, а фоновый
+процесс переживает обрыв канала (см. ниже).
 
 Секреты (`VC_ADMIN_PASSWORD`, upstream-ключи) задаются в shell/`.env` на сервере и
 в репозиторий не попадают.
