@@ -110,7 +110,7 @@ beforeEach(async () => {
 })
 afterEach(async () => { await app.close(); db.close() })
 
-const inj = (token: string, opts: { method: 'GET' | 'POST' | 'PUT' | 'DELETE'; url: string; payload?: object }) =>
+const inj = (token: string, opts: { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; url: string; payload?: object }) =>
   app.inject({ ...opts, headers: { authorization: `Bearer ${token}` } })
 
 function setup() {
@@ -892,5 +892,26 @@ describe('карточка после падения, отмены и повто
     expect(columnAtStep).toBe(columns.find((c) => c.semanticType === 'development')!.id)
     expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(columns.find((c) => c.semanticType === 'done')!.id)
     expect(db.latestCiRunSummary(task.id)!.status).toBe('success')
+  })
+
+  it('берёт для рана выбранную машиной карточки, а чужую машину REST отклоняет', async () => {
+    const { project, task } = setup()
+    const selected = db.createAgent('admin', 'Вторая машина')
+    db.linkMachine('admin', project.id, selected.id)
+    db.setProjectMachineReposRoot('admin', project.id, selected.id, '/repos-2')
+    const saved = await inj(admin, {
+      method: 'PATCH', url: `/api/projects/${project.id}/tasks/${task.id}`, payload: { agentId: selected.id }
+    })
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json().agentId).toBe(selected.id)
+
+    const runId = await run(project.id, task.id)
+    expect(db.getCiRunRaw(runId)!.agentId).toBe(selected.id)
+
+    const foreign = db.createAgent('admin', 'Не в проекте')
+    const rejected = await inj(admin, {
+      method: 'PATCH', url: `/api/projects/${project.id}/tasks/${task.id}`, payload: { agentId: foreign.id }
+    })
+    expect(rejected.statusCode).toBe(400)
   })
 })

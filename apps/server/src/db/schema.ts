@@ -213,6 +213,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   parent_id   TEXT,
   priority    TEXT NOT NULL DEFAULT 'medium',
   assignee    TEXT,
+  agent_id    TEXT,
   labels      TEXT NOT NULL DEFAULT '[]',
   skills      TEXT NOT NULL DEFAULT '[]',
 

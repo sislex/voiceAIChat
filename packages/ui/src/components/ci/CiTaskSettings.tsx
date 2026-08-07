@@ -5,6 +5,7 @@ import { CI_CLARIFY_MAX_LIMIT, DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_LLM_CONFIG } 
 import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 import { CODEX_MODELS } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
+import type { ProjectMachine } from '@shared/projects'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { Button } from '../ui/Button'
 import { CiSlotEditor } from './CiSlotEditor'
@@ -20,6 +21,8 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const [llm, setLlm] = useState<CiLlmConfig>({ ...DEFAULT_CI_LLM_CONFIG })
   const [llmOverridden, setLlmOverridden] = useState(false)
   const [llmSaved, setLlmSaved] = useState(true)
+  const [machines, setMachines] = useState<ProjectMachine[]>([])
+  const [agentId, setAgentId] = useState<string | null>(null)
 
   useEffect(() => {
     const bridge = window.ci
@@ -35,6 +38,13 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     void bridge.getTaskCiLlm(props.projectId, props.taskId).then((r) => {
       if (cancelled) return
       setLlm(r.config); setLlmOverridden(r.overridden)
+    })
+    void (window.api?.['projects:get']({ id: props.projectId }) ?? Promise.resolve(null)).then((project) => {
+      if (!cancelled && project) setMachines(project.machines)
+    })
+    void (window.api?.['board:get']({ id: props.projectId }) ?? Promise.resolve(null)).then((board) => {
+      const task = board?.tasks.find((item) => item.id === props.taskId)
+      if (!cancelled) setAgentId(task?.agentId ?? null)
     })
     return () => { cancelled = true }
   }, [props.projectId, props.taskId])
@@ -63,6 +73,15 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     <CiSlotEditor label="После работы модели" commands={commands} value={after} onChange={(v) => { setAfter(v); setSaved(false) }} />
     {cleanupWarn && <div className="ci-warn">В слоте «после» есть cleanup-команда, но в «до» нет команды, создающей рабочую директорию.</div>}
     {!saved && <Button variant="primary" className="ci-task-save" onClick={save}>Сохранить команды</Button>}
+    <div className="ci-task-head ci-task-llm-head"><span className="ci-task-title">Машина выполнения</span></div>
+    <label>Машина<select aria-label="Машина выполнения" className="sel" value={agentId ?? ''} onChange={(e) => {
+      const next = e.target.value || null
+      setAgentId(next)
+      void window.api?.['tasks:update']({ projectId: props.projectId, taskId: props.taskId, agentId: next })
+    }}>
+      <option value="">Машина проекта по умолчанию</option>
+      {machines.map((machine) => <option key={machine.agentId} value={machine.agentId}>{machine.agentId}</option>)}
+    </select></label>
     <div className="ci-task-head ci-task-llm-head"><span className="ci-task-title">Движок модели</span><span className={`lozenge ${llmOverridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{llmOverridden ? 'переопределено' : 'унаследовано'}</span></div>
     <div className="ci-task-llm">
       <label>Движок<select aria-label="Движок модели" className="sel" value={llm.provider} onChange={(e) => changeProvider(e.target.value as 'claude' | 'codex')}>{isProviderAllowed(access, 'claude') && <option value="claude">Claude</option>}{isProviderAllowed(access, 'codex') && <option value="codex">Codex</option>}{!isProviderAllowed(access, 'claude') && !isProviderAllowed(access, 'codex') && <option value="">Нет доступных движков</option>}</select></label>
