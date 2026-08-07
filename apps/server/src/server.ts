@@ -261,6 +261,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     desktopApp: opts.config.desktopAppPath
   })
   const mcpSecret = randomBytes(16).toString('hex')
+  const deployTrigger = opts.deployTrigger ?? (opts.config.deployApiSocket
+    ? new UnixDeployClient(opts.config.deployApiSocket)
+    : undefined)
   // Лимиты ответов инструментов моста — из настроек CI, на каждый вызов: они
   // режут размер контекста хода, а его цена = контекст × число запросов.
   registerRemoteBashMcp(app, agentRegistry, mcpSecret, () => ciToolOutputLimits(db.getCiSettings()))
@@ -277,7 +280,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       isOnline: (agentId) => agentRegistry.isOnline(agentId),
       versionOf: (agentId) => agentRegistry.versionOf(agentId),
       platformOf: (agentId) => agentRegistry.platformOf(agentId)
-    }
+    },
+    deployTrigger
   })
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
@@ -299,9 +303,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   )
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
-  const deployTrigger = opts.deployTrigger ?? (opts.config.deployApiSocket
-    ? new UnixDeployClient(opts.config.deployApiSocket)
-    : undefined)
   registerAdminRoutes(app, db, agentRegistry, deployTrigger)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.update по WS.

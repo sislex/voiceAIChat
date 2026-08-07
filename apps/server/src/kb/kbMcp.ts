@@ -16,6 +16,7 @@ import type { KbView, KnowledgeBaseService } from './types.js'
 import { PUBLIC_KB_VIEW } from './types.js'
 import type { KbUsageTracker } from './usage.js'
 import type { VoiceChatDb } from '../db/database.js'
+import type { DeployTrigger } from '../routes/admin.js'
 import { KB_CONTEXT_HEADING } from './autoContext.js'
 
 export const KB_MCP_PATH = '/mcp/kb'
@@ -166,6 +167,8 @@ export interface RegisterKbMcpOptions {
     versionOf(agentId: string): string | undefined
     platformOf(agentId: string): string | undefined
   }
+  /** Host-side деплой; вызывается только после живой проверки admin в БД. */
+  deployTrigger?: DeployTrigger
 }
 
 export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions): void {
@@ -393,6 +396,38 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         }))
         return { content: [{ type: 'text', text: JSON.stringify(machines, null, 2) }] }
       })
+      server.registerTool('deploy_prod', {
+        description:
+          'Запустить штатный production-деплой для запроса «обнови прод». Пользователь определяется из текущего хода; ' +
+          'инструмент доступен только актуальному незаблокированному admin и не принимает токены, команды или аргументы.',
+        inputSchema: {}
+      }, async () => {
+        if (!entry || !opts.db) return noContext
+        const user = opts.db.getUser(entry.userId)
+        if (!user || user.blocked || user.role !== 'admin') {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ error: { code: 'forbidden', message: 'Для запуска production-деплоя нужна актуальная роль admin.' } }) }],
+            isError: true
+          }
+        }
+        if (!opts.deployTrigger) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ error: { code: 'deploy_unavailable', message: 'Host-side deploy API не настроен.' } }) }],
+            isError: true
+          }
+        }
+        try {
+          const result = await opts.deployTrigger.trigger()
+          return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err)
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ error: { code: 'deploy_unavailable', message: 'Host-side deploy API недоступен.', detail } }) }],
+            isError: true
+          }
+        }
+      })
+
       server.registerTool('projects', {
         description: 'Проекты, где владелец текущего хода участник: участники, машины, доска и безопасные настройки CI.',
         inputSchema: {}
