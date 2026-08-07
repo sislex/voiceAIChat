@@ -91,7 +91,7 @@ const payload=(el)=>{const r=el.getBoundingClientRect(),data={};for(const a of [
 }};
 const move=(e)=>{if(!active)return;const el=e.target;if(el instanceof Element&&!el.closest('[data-voicechat-inspector]'))draw(el)};
 const click=(e)=>{if(!active)return;const el=e.target;if(!(el instanceof Element)||el.closest('[data-voicechat-inspector]'))return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();selected=el;draw(el);parent.postMessage({type:SELECTED,payload:payload(el)},location.origin)};
-const key=(e)=>{if(active&&e.key==='Escape'){e.preventDefault();disable()}};
+const key=(e)=>{if(active&&e.key==='Escape'){e.preventDefault();disable();parent.postMessage({type:COMMAND,enabled:false},location.origin)}};
 const enable=()=>{if(active)return;active=true;document.addEventListener('pointerover',move,true);document.addEventListener('click',click,true);document.addEventListener('keydown',key,true)};
 const disable=()=>{active=false;selected=null;document.removeEventListener('pointerover',move,true);document.removeEventListener('click',click,true);document.removeEventListener('keydown',key,true);hide()};
 const message=(e)=>{if(e.source!==parent||e.origin!==location.origin||!e.data||e.data.type!==COMMAND||typeof e.data.enabled!=='boolean')return;e.data.enabled?enable():disable()};

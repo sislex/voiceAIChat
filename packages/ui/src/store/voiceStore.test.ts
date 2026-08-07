@@ -91,6 +91,22 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().voice).toBe('idle')
   })
 
+  it('submitText сохраняет выбранную DOM-область в meta пользовательской реплики', async () => {
+    const { store, api } = makeStore()
+    const spyAdd = vi.spyOn(api, 'messages:add')
+    await store.actions.init()
+    store.actions.setDraft('Исправь блок')
+    const previewElement = { tag: 'div', id: 'hero', classes: [], dataAttributes: {}, selector: '#hero', ancestors: ['html', 'body', 'div#hero'], rect: { x: 0, y: 0, top: 0, right: 320, bottom: 120, left: 0, width: 320, height: 120 }, pageUrl: 'https://example.test', viewport: { width: 800, height: 600 }, outerHTML: '<div id="hero"></div>', text: '', styles: { font: '', color: '', backgroundColor: '', margin: '', padding: '', border: '', width: '', height: '', position: '', display: '', flex: '', flexDirection: '', flexWrap: '', alignItems: '', justifyContent: '', gap: '', grid: '', gridTemplateColumns: '', gridTemplateRows: '', gridArea: '' } }
+
+    expect(await store.actions.submitText(previewElement)).toBe(true)
+    expect(spyAdd).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'u1',
+      text: 'Исправь блок',
+      meta: { previewElement }
+    }))
+    expect(store.getState().messages[0].meta?.previewElement).toEqual(previewElement)
+  })
+
   it('applyClaudeDone запекает движок в ответ (engine)', async () => {
     const { store, api } = makeStore()
     const spyAdd = vi.spyOn(api, 'messages:add')

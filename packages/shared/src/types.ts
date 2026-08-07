@@ -1,5 +1,7 @@
 // Общие типы, разделяемые между main, preload и renderer.
 
+import type { PreviewElementPayload } from './previewInspector'
+
 /** Состояния голосового пайплайна. */
 export type VoiceState = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking'
 
@@ -338,6 +340,8 @@ export interface SessionUsage extends TurnUsage {
 
 /** Метаданные завершённого хода Claude (из result-события stream-json). */
 export interface TurnMeta extends TurnUsage {
+  /** DOM-область, выбранная пользователем в веб-превью для этой реплики. */
+  previewElement?: PreviewElementPayload
   /** Длительность хода, мс. */
   durationMs?: number
   /** Число ходов агента (num_turns). */

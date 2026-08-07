@@ -5,7 +5,7 @@ import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { TaskPriority } from '@shared/projects'
 import type { HealthResponse } from '@shared/protocol'
-import { PREVIEW_INSPECTOR_COMMAND_TYPE, isPreviewElementMessage, type PreviewElementPayload } from '@shared/previewInspector'
+import { PREVIEW_INSPECTOR_COMMAND_TYPE, isPreviewElementMessage, isPreviewInspectorCommand, type PreviewElementPayload } from '@shared/previewInspector'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -71,24 +71,32 @@ function normalizeWebUrl(value: string): string | null {
   } catch { return null }
 }
 
-export function WebPreview({ conversationUrl, projectUrl, onSave }: { conversationUrl: string | null; projectUrl: string | null; onSave: (url: string | null) => Promise<void> }): JSX.Element {
+export interface PreviewPaneProps {
+  conversationUrl: string | null
+  projectUrl: string | null
+  onSave: (url: string | null) => Promise<void>
+  onSelectElement?: (element: PreviewElementPayload) => void
+}
+
+export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectElement }: PreviewPaneProps): JSX.Element {
   const effective = conversationUrl ?? projectUrl
   const [draft, setDraft] = useState(effective ?? '')
   const [loaded, setLoaded] = useState(effective)
+  const [reloadKey, setReloadKey] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [inspecting, setInspecting] = useState(false)
-  const [selected, setSelected] = useState<PreviewElementPayload | null>(null)
   const frameRef = useRef<HTMLIFrameElement>(null)
   const sendInspectorState = (enabled: boolean): void => {
     frameRef.current?.contentWindow?.postMessage({ type: PREVIEW_INSPECTOR_COMMAND_TYPE, enabled }, window.location.origin)
   }
   useEffect(() => {
-    setDraft(effective ?? ''); setLoaded(effective); setError(null); setInspecting(false); setSelected(null)
+    setDraft(effective ?? ''); setLoaded(effective); setError(null); setInspecting(false)
   }, [effective])
   useEffect(() => {
     const receive = (event: MessageEvent): void => {
-      if (event.origin !== window.location.origin || event.source !== frameRef.current?.contentWindow || !isPreviewElementMessage(event.data)) return
-      setSelected(event.data.payload)
+      if (event.origin !== window.location.origin || event.source !== frameRef.current?.contentWindow) return
+      if (isPreviewInspectorCommand(event.data)) { setInspecting(event.data.enabled); return }
+      if (isPreviewElementMessage(event.data)) onSelectElement?.(event.data.payload)
     }
     const hotkey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape' && inspecting) { event.preventDefault(); setInspecting(false); return }
@@ -97,30 +105,38 @@ export function WebPreview({ conversationUrl, projectUrl, onSave }: { conversati
     window.addEventListener('message', receive)
     window.addEventListener('keydown', hotkey)
     return () => { sendInspectorState(false); window.removeEventListener('message', receive); window.removeEventListener('keydown', hotkey) }
-  }, [inspecting])
+  }, [inspecting, onSelectElement])
   useEffect(() => { sendInspectorState(inspecting) }, [inspecting])
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
     const raw = draft.trim()
     const normalized = raw ? normalizeWebUrl(raw) : null
     if (raw && !normalized) { setError('Введите адрес с протоколом http:// или https://'); return }
-    sendInspectorState(false); setInspecting(false); setSelected(null)
-    await onSave(normalized)
-    setDraft(normalized ?? projectUrl ?? '')
-    setLoaded(normalized ?? projectUrl)
-    setError(null)
+    try {
+      sendInspectorState(false); setInspecting(false)
+      await onSave(normalized)
+      setDraft(normalized ?? projectUrl ?? '')
+      setLoaded(normalized ?? projectUrl)
+      setError(null)
+    } catch {
+      setError('Не удалось сохранить адрес превью')
+    }
   }
   return <section className="webpreview" aria-label="Веб-превью">
     <form className="webpreview-bar" onSubmit={(event) => void submit(event)}>
       <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="url" inputMode="url" value={draft} placeholder="https://example.com" aria-invalid={Boolean(error)} aria-describedby={error ? 'webpreview-error' : undefined} onChange={(event) => setDraft(event.target.value)} /></label>
       <button className="vc-btn vc-btn--secondary" type="submit">Открыть</button>
-      <button className="vc-btn vc-btn--secondary webpreview-inspector-toggle" type="button" aria-pressed={inspecting} title="Выбрать элемент (Alt+I)" onClick={() => setInspecting((value) => !value)}>⌖ <span>Инспектор</span></button>
+      <button className="vc-btn vc-btn--secondary" type="button" disabled={!loaded} aria-label="Обновить" title="Обновить" onClick={() => setReloadKey((value) => value + 1)}>↻</button>
+      <button className="vc-btn vc-btn--secondary" type="button" disabled={!loaded} aria-label="Открыть в новой вкладке" title="Открыть в новой вкладке" onClick={() => { if (loaded) window.open(loaded, '_blank', 'noopener,noreferrer') }}>↗</button>
+      <button className="vc-btn vc-btn--secondary webpreview-inspector-toggle" type="button" aria-pressed={inspecting} disabled={!loaded} title="Выбор элемента (Alt+I)" onClick={() => setInspecting((value) => !value)}>⌖ <span>Выбор элемента</span></button>
     </form>
     {error && <p className="webpreview-error" id="webpreview-error" role="alert">{error}</p>}
-    {loaded ? <iframe ref={frameRef} className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(loaded)} title="Предпросмотр сайта" onLoad={() => sendInspectorState(inspecting)} onError={() => setError('Сайт недоступен или не разрешает загрузку')} /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
-    {selected && <aside className="webpreview-selection" aria-live="polite" data-testid="preview-selection"><strong>{selected.tag}{selected.id ? '#' + selected.id : selected.classes[0] ? '.' + selected.classes[0] : ''}</strong><span>{Math.round(selected.rect.width)} × {Math.round(selected.rect.height)} px</span><code title={selected.selector}>{selected.selector}</code></aside>}
+    {loaded ? <iframe key={reloadKey} ref={frameRef} className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(loaded)} title="Предпросмотр сайта" onLoad={() => sendInspectorState(inspecting)} onError={() => setError('Сайт недоступен или не разрешает загрузку')} /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
   </section>
 }
+
+/** Совместимый экспорт для существующих интеграций. */
+export const WebPreview = PreviewPane
 
 /**
  * Корень приложения. Тосты и подтверждения — провайдеры вокруг всего дерева:
@@ -160,11 +176,13 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const { state, actions } = useVoiceStore({ api, now, delays, initialChatId: routeChatId })
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
+  const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
   const [activeProjectPreviewUrl, setActiveProjectPreviewUrl] = useState<string | null>(null)
   const [previewWidth, setPreviewWidth] = useState(() => {
     const saved = Number(globalThis.localStorage?.getItem('voicechat.previewWidth'))
     return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 45
   })
+  useEffect(() => { setPreviewElement(null) }, [state.activeId])
   useEffect(() => {
     let alive = true
     const projectId = state.conversations.find((conversation) => conversation.id === state.activeId)?.projectId
@@ -793,14 +811,16 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
             detectedSpeakers={detectedSpeakers}
             aiLabel={(activeConversation?.llmProvider ?? state.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
             attachments={state.attachments}
+            previewElement={previewElement}
             onDraftChange={actions.setDraft}
-            onSubmitText={() => void actions.submitText()}
+            onSubmitText={() => { void actions.submitText(previewElement ?? undefined).then((sent) => { if (sent) setPreviewElement(null) }) }}
             onStartVoice={actions.startVoice}
             onStopVoice={actions.stopVoice}
             onStopSpeak={actions.stopSpeak}
             onCancelRequest={actions.cancelRequest}
             onAddFiles={(files) => files.forEach((f) => void actions.addAttachment(f))}
             onRemoveAttachment={actions.removeAttachment}
+            onRemovePreviewElement={() => setPreviewElement(null)}
             permissionMode={activePermissionMode}
             onChangePermissionMode={(mode) => void changeConversationMode(mode)}
             voiceInputEnabled={VOICE_INPUT_ENABLED}
@@ -812,7 +832,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       />
       </div>
       <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>
-      <WebPreview conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null} onSave={async (previewUrl) => { if (activeConversation) await actions.setConversationPreviewUrl(activeConversation.id, previewUrl) }} />
+      <PreviewPane conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null} onSave={async (previewUrl) => { if (activeConversation) await actions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} />
       </div>
       )}
 

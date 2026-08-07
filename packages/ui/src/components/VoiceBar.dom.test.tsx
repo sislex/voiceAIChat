@@ -34,6 +34,19 @@ function makeProps(state: Parameters<typeof VoiceBar>[0]['state'], overrides = {
   }
 }
 
+describe('VoiceBar — выбранная область', () => {
+  const previewElement = { tag: 'div', id: 'hero', classes: [], dataAttributes: {}, selector: '#hero', ancestors: ['html', 'body', 'div#hero'], rect: { x: 0, y: 0, top: 0, right: 320, bottom: 120, left: 0, width: 320, height: 120 }, pageUrl: 'https://example.test/page', viewport: { width: 800, height: 600 }, outerHTML: '<div id="hero"></div>', text: '', styles: { font: '', color: '', backgroundColor: '', margin: '', padding: '', border: '', width: '', height: '', position: '', display: '', flex: '', flexDirection: '', flexWrap: '', alignItems: '', justifyContent: '', gap: '', grid: '', gridTemplateColumns: '', gridTemplateRows: '', gridArea: '' } }
+
+  it('показывает удаляемый чип и разрешает отправку без текста', async () => {
+    const onRemovePreviewElement = vi.fn()
+    setup('idle', { previewElement, onRemovePreviewElement })
+    expect(screen.getByTestId('preview-element-chip')).toHaveTextContent('div#hero · example.test')
+    expect(screen.getByLabelText('Отправить сообщение')).toBeEnabled()
+    await userEvent.click(screen.getByLabelText('Убрать выбранную область'))
+    expect(onRemovePreviewElement).toHaveBeenCalledOnce()
+  })
+})
+
 describe('VoiceBar — состояния', () => {
   it('idle: инпут и кнопка микрофона', () => {
     setup('idle')

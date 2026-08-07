@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PREVIEW_INSPECTOR_MESSAGE_TYPE } from '@shared/previewInspector'
-import { WebPreview } from './App'
+import { PreviewPane } from './App'
 
 const payload = {
   tag: 'div', id: 'hero', classes: [], dataAttributes: {}, selector: '#hero', ancestors: ['html','body','div#hero'],
@@ -13,8 +13,8 @@ const payload = {
 
 describe('WebPreview inspector', () => {
   it('управляет режимом кнопкой и Alt+I, Esc выключает', async () => {
-    render(<WebPreview conversationUrl="https://example.test" projectUrl={null} onSave={vi.fn()} />)
-    const toggle = screen.getByRole('button', { name: /Инспектор/ })
+    render(<PreviewPane conversationUrl="https://example.test" projectUrl={null} onSave={vi.fn()} />)
+    const toggle = screen.getByRole('button', { name: /Выбор элемента/ })
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
     await userEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
@@ -25,11 +25,23 @@ describe('WebPreview inspector', () => {
   })
 
   it('принимает только валидное сообщение от своего iframe', async () => {
-    render(<WebPreview conversationUrl="https://example.test" projectUrl={null} onSave={vi.fn()} />)
+    const onSelectElement = vi.fn()
+    render(<PreviewPane conversationUrl="https://example.test" projectUrl={null} onSave={vi.fn()} onSelectElement={onSelectElement} />)
     const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
     fireEvent(window, new MessageEvent('message', { origin: window.location.origin, source: frame.contentWindow, data: { type: PREVIEW_INSPECTOR_MESSAGE_TYPE, payload } }))
-    await waitFor(() => expect(screen.getByTestId('preview-selection')).toHaveTextContent('div#hero'))
+    await waitFor(() => expect(onSelectElement).toHaveBeenCalledWith(payload))
     window.dispatchEvent(new MessageEvent('message', { origin: 'https://evil.test', source: frame.contentWindow, data: { type: PREVIEW_INSPECTOR_MESSAGE_TYPE, payload: { ...payload, id: 'evil' } } }))
-    expect(screen.getByTestId('preview-selection')).not.toHaveTextContent('evil')
+    window.dispatchEvent(new MessageEvent('message', { origin: window.location.origin, source: window, data: { type: PREVIEW_INSPECTOR_MESSAGE_TYPE, payload: { ...payload, id: 'other-frame' } } }))
+    expect(onSelectElement).toHaveBeenCalledTimes(1)
+  })
+
+  it('показывает обновление и открытие во внешней вкладке', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    render(<PreviewPane conversationUrl="https://example.test/page" projectUrl={null} onSave={vi.fn()} />)
+    const before = screen.getByTitle('Предпросмотр сайта')
+    await userEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+    expect(screen.getByTitle('Предпросмотр сайта')).not.toBe(before)
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть в новой вкладке' }))
+    expect(open).toHaveBeenCalledWith('https://example.test/page', '_blank', 'noopener,noreferrer')
   })
 })

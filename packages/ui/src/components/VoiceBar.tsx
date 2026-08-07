@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import type { ModifierPrompt, PermissionMode, VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
+import type { PreviewElementPayload } from '@shared/previewInspector'
 import { useAutoGrow } from '../lib/autoGrow'
 import { chipClass, composerPeek, speakerName, statusLine, voiceAnnouncement } from '../lib/view'
 import { WaveBars, Dots } from './animations'
@@ -26,6 +27,8 @@ export interface VoiceBarProps {
   detectedSpeakers: number[]
   /** Прикреплённые к следующему сообщению файлы. */
   attachments: UploadInfo[]
+  /** DOM-область из веб-превью, приложенная к следующей реплике. */
+  previewElement?: PreviewElementPayload | null
   onDraftChange: (value: string) => void
   onSubmitText: () => void
   onStartVoice: () => void
@@ -37,6 +40,8 @@ export interface VoiceBarProps {
   onAddFiles: (files: File[]) => void
   /** Убрать вложение по id. */
   onRemoveAttachment: (id: string) => void
+  /** Убрать выбранную DOM-область. */
+  onRemovePreviewElement?: () => void
   /** Имя движка ответа (Claude / Codex) — для подписей статуса. */
   aiLabel?: string
   /** Ответ уже начал стримиться (пошли токены) — держим поле ввода доступным для черновика. */
@@ -72,6 +77,7 @@ export function VoiceBar({
   diarization,
   detectedSpeakers,
   attachments,
+  previewElement = null,
   onDraftChange,
   onSubmitText,
   onStartVoice,
@@ -80,6 +86,7 @@ export function VoiceBar({
   onCancelRequest,
   onAddFiles,
   onRemoveAttachment,
+  onRemovePreviewElement,
   aiLabel = 'Claude',
   replyStarted = false,
   permissionMode = 'plan',
@@ -109,7 +116,7 @@ export function VoiceBar({
   // Композер начинается с двух строк и растёт с текстом до четырёх, дальше — скролл.
   const draftRef = useAutoGrow(draft, DRAFT_MIN_ROWS, DRAFT_MAX_ROWS)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
-  const canSend = draft.trim().length > 0 || attachments.length > 0
+  const canSend = draft.trim().length > 0 || attachments.length > 0 || previewElement !== null
   const canSubmit = isIdle && canSend
   const helper = promptHelper ?? { open: false, loading: false, variants: [], error: null }
   // Палочку показываем в idle, когда есть что переформулировать.
@@ -291,8 +298,14 @@ export function VoiceBar({
           </div>
         )}
 
-        {isIdle && attachments.length > 0 && (
+        {isIdle && (attachments.length > 0 || previewElement) && (
           <div className="attchips" data-testid="attachments">
+            {previewElement && (
+              <span className="attchip previewchip" data-testid="preview-element-chip" title={previewElement.selector}>
+                ⌖ {previewElement.tag}{previewElement.id ? `#${previewElement.id}` : previewElement.classes[0] ? `.${previewElement.classes[0]}` : ''} · {(() => { try { return new URL(previewElement.pageUrl).hostname } catch { return previewElement.pageUrl } })()}
+                <button className="attx" aria-label="Убрать выбранную область" title="Убрать выбранную область" onClick={onRemovePreviewElement}>✕</button>
+              </span>
+            )}
             {attachments.map((a) => (
               <span className="attchip" key={a.id}>
                 📎 {a.name}
