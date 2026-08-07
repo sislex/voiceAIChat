@@ -41,6 +41,8 @@ describe('политика базы знаний в системном пром�
     for (const mode of ['auto', 'manual'] as const) {
       expect(kbToolHint(mode)).toContain('в первую очередь')
       expect(kbToolHint(mode)).toContain(KB_GAP_RULE)
+      expect(kbToolHint(mode)).toContain('mcp__kb__deploy_prod')
+      expect(kbToolHint(mode)).toContain('не запускай деплой через shell')
     }
   })
 })

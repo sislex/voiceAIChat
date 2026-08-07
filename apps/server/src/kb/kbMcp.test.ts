@@ -2,7 +2,7 @@
 // телеметрия. `deliveredChars` обязан совпадать с длиной текста, который реально
 // ушёл модели: это единственное честное число в панели «Использование БЗ».
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
 import type { KbDocument, KbSearchResult } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
@@ -61,10 +61,11 @@ describe('kbMcp — инструменты базы знаний', () => {
   let app: FastifyInstance
   let db: VoiceChatDb
   let convId: string
+  const triggerDeploy = vi.fn<() => Promise<{ status: 'accepted' | 'running'; message: string }>>()
 
-  async function makeApp(kb: KnowledgeBaseService = stubKb()): Promise<void> {
+  async function makeApp(kb: KnowledgeBaseService = stubKb(), deployTrigger: { trigger: typeof triggerDeploy } | undefined = { trigger: triggerDeploy }): Promise<void> {
     app = Fastify({ logger: false })
-    registerKbMcp(app, { kb, secret: SECRET, usage: createKbUsageTracker({ db }) })
+    registerKbMcp(app, { kb, secret: SECRET, usage: createKbUsageTracker({ db }), db, deployTrigger })
     await app.ready()
   }
 
@@ -83,6 +84,9 @@ describe('kbMcp — инструменты базы знаний', () => {
     let id = 0
     let clock = 1_000
     db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
+    db.createUser(U, '', 'admin')
+    triggerDeploy.mockReset()
+    triggerDeploy.mockResolvedValue({ status: 'accepted', message: 'deployment started' })
     convId = db.createConversation(U, 'Чат').id
     kbToolBroker.register(TURN, { userId: U, conversationId: convId, projectId: null, turnId: 't1' })
   })
@@ -101,7 +105,52 @@ describe('kbMcp — инструменты базы знаний', () => {
     await makeApp()
     const list = await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
     const body = list.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['document', 'machines', 'projects', 'runtime_context', 'search', 'topics', 'usage', 'user_settings'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['deploy_prod', 'document', 'machines', 'projects', 'runtime_context', 'search', 'topics', 'usage', 'user_settings'])
+  })
+
+  it('deploy_prod запускает host-side DeployTrigger для актуального admin и возвращает accepted', async () => {
+    await makeApp()
+    const result = await call('deploy_prod')
+    expect(JSON.parse(result.text)).toEqual({ status: 'accepted', message: 'deployment started' })
+    expect(result.isError).not.toBe(true)
+    expect(triggerDeploy).toHaveBeenCalledOnce()
+  })
+
+  it('deploy_prod отказывает обычному пользователю без запуска', async () => {
+    db.createUser('user', '', 'user')
+    kbToolBroker.register(TURN, { userId: 'user', conversationId: convId, projectId: null, turnId: 't1' })
+    await makeApp()
+    const result = await call('deploy_prod')
+    expect(JSON.parse(result.text)).toMatchObject({ error: { code: 'forbidden' } })
+    expect(result.isError).toBe(true)
+    expect(triggerDeploy).not.toHaveBeenCalled()
+  })
+
+  it('deploy_prod перечитывает блокировку admin и отказывает без запуска', async () => {
+    db.setUserBlocked(U, true)
+    await makeApp()
+    const result = await call('deploy_prod')
+    expect(JSON.parse(result.text)).toMatchObject({ error: { code: 'forbidden' } })
+    expect(result.isError).toBe(true)
+    expect(triggerDeploy).not.toHaveBeenCalled()
+  })
+
+  it('deploy_prod возвращает running как штатный результат', async () => {
+    triggerDeploy.mockResolvedValueOnce({ status: 'running', message: 'deployment already running' })
+    await makeApp()
+    const result = await call('deploy_prod')
+    expect(JSON.parse(result.text)).toEqual({ status: 'running', message: 'deployment already running' })
+    expect(result.isError).not.toBe(true)
+  })
+
+  it('deploy_prod возвращает структурированную ошибку недоступного host API', async () => {
+    triggerDeploy.mockRejectedValueOnce(new Error('socket unavailable'))
+    await makeApp()
+    const result = await call('deploy_prod')
+    expect(JSON.parse(result.text)).toEqual({
+      error: { code: 'deploy_unavailable', message: 'Host-side deploy API недоступен.', detail: 'socket unavailable' }
+    })
+    expect(result.isError).toBe(true)
   })
 
   it('search пишет обращение с deliveredChars === длине отданного текста', async () => {
