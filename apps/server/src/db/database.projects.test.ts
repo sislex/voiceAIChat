@@ -466,6 +466,60 @@ describe('доска: завершённые задачи уходят с дос
     d.close()
   })
 
+  it('сортирует «Готово» по последнему входу, а не по updatedAt', () => {
+    const { db: d, set } = withClock()
+    const p = d.createProject('alice', { name: 'P' })
+    d.updateProject('alice', p.id, { doneRetentionDays: null })
+    const columns = d.getBoard('alice', p.id)!.columns
+    const done = columns.find((column) => column.semanticType === 'done')!
+    const dev = columns.find((column) => column.semanticType === 'development')!
+    const first = d.createTask('alice', p.id, { columnId: dev.id, title: 'Первая' })!
+    const second = d.createTask('alice', p.id, { columnId: dev.id, title: 'Вторая' })!
+
+    set(1_700_000_100_000)
+    d.moveTask('alice', p.id, first.id, { columnId: done.id })
+    set(1_700_000_200_000)
+    d.moveTask('alice', p.id, second.id, { columnId: done.id })
+    set(1_700_000_300_000)
+    d.updateTask('alice', p.id, second.id, { title: 'Вторая (исправлена)' })
+    expect(d.getBoard('alice', p.id)!.tasks.filter((task) => task.columnId === done.id).map((task) => task.id))
+      .toEqual([second.id, first.id])
+
+    set(1_700_000_400_000)
+    d.moveTask('alice', p.id, first.id, { columnId: dev.id })
+    set(1_700_000_500_000)
+    d.moveTask('alice', p.id, first.id, { columnId: done.id })
+    expect(d.getBoard('alice', p.id)!.tasks.filter((task) => task.columnId === done.id).map((task) => task.id))
+      .toEqual([first.id, second.id])
+    d.close()
+  })
+
+  it('порядок «Готово» переживает перезапуск БД', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-done-order-'))
+    const file = join(dir, 'db.sqlite')
+    let clock = 1_700_000_000_000
+    const firstDb = new VoiceChatDb(file, { newId: (() => { let id = 0; return () => `task-${++id}` })(), now: () => clock })
+    firstDb.createUser('alice', '', 'user')
+    const p = firstDb.createProject('alice', { name: 'P' })
+    firstDb.updateProject('alice', p.id, { doneRetentionDays: null })
+    const columns = firstDb.getBoard('alice', p.id)!.columns
+    const dev = columns.find((column) => column.semanticType === 'development')!
+    const done = columns.find((column) => column.semanticType === 'done')!
+    const older = firstDb.createTask('alice', p.id, { columnId: dev.id, title: 'Старая' })!
+    const newer = firstDb.createTask('alice', p.id, { columnId: dev.id, title: 'Новая' })!
+    clock += 1
+    firstDb.moveTask('alice', p.id, older.id, { columnId: done.id })
+    clock += 1
+    firstDb.moveTask('alice', p.id, newer.id, { columnId: done.id })
+    firstDb.close()
+
+    const restarted = new VoiceChatDb(file, { now: () => clock })
+    expect(restarted.getBoard('alice', p.id)!.tasks.filter((task) => task.columnId === done.id).map((task) => task.id))
+      .toEqual([newer.id, older.id])
+    restarted.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('миграция: у лежащих в «Готово» задач появляется doneAt', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-doneat-'))
     const file = join(dir, 'db.sqlite')

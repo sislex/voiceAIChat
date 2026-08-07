@@ -115,6 +115,30 @@ describe('voiceStore — проекты и доска', () => {
     expect(store.getState().board!.tasks.find((t) => t.id === taskA.id)!.columnId).toBe(doing.id)
   })
 
+  it('moveTask сохраняет порядок Done по последнему входу после обновления доски', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    await store.actions.updateProject(store.getState().projectDetail!.id, { doneRetentionDays: null })
+    await store.actions.openBoard(store.getState().projectDetail!.id)
+    const board = store.getState().board!
+    const dev = board.columns.find((column) => column.semanticType === 'development')!
+    const done = board.columns.find((column) => column.semanticType === 'done')!
+    await store.actions.createTask(dev.id, { title: 'Первая' })
+    await store.actions.createTask(dev.id, { title: 'Вторая' })
+    const [first, second] = store.getState().board!.tasks.filter((task) => task.columnId === dev.id)
+
+    await store.actions.moveTask(first!.id, done.id)
+    await store.actions.moveTask(second!.id, done.id)
+    await store.actions.updateTask(second!.id, { title: 'Вторая (исправлена)' })
+    expect(store.getState().board!.tasks.filter((task) => task.columnId === done.id).map((task) => task.id))
+      .toEqual([second!.id, first!.id])
+
+    await store.actions.moveTask(first!.id, dev.id)
+    await store.actions.moveTask(first!.id, done.id)
+    expect(store.getState().board!.tasks.filter((task) => task.columnId === done.id).map((task) => task.id))
+      .toEqual([first!.id, second!.id])
+  })
+
   it('applyBoardUpdate заменяет доску только активного проекта', async () => {
     const { store } = makeStore()
     await store.actions.createProject({ name: 'P1' })

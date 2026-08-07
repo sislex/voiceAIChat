@@ -3998,6 +3998,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     const moving = tasks.find((t) => t.id === taskId)
     if (moving) {
       moving.columnId = columnId
+      const done = prev.columns.find((column) => column.id === columnId)?.semanticType === 'done'
+      moving.doneAt = done ? moving.doneAt ?? now() : null
       const after = afterId ? tasks.find((t) => t.id === afterId) : null
       const before = beforeId ? tasks.find((t) => t.id === beforeId) : null
       moving.position =

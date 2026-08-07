@@ -62,6 +62,25 @@ describe('KanbanBoard (изолированный)', () => {
     expect(screen.getByText('Скрытая')).toBeInTheDocument()
   })
 
+  it('колонка с semanticType done показывает последний вход сверху независимо от позиции', () => {
+    renderBoard({
+      board: {
+        columns: [
+          { id: 'c1', projectId: 'p1', name: 'Работа', semanticType: 'development', position: 1024, hidden: false, wipLimit: null, createdAt: 1 },
+          { id: 'c2', projectId: 'p1', name: 'Архив', semanticType: 'done', position: 2048, hidden: false, wipLimit: null, createdAt: 1 }
+        ],
+        tasks: [
+          task({ id: 'old', columnId: 'c2', title: 'Раньше', position: 1024, doneAt: 10 }),
+          task({ id: 'new', columnId: 'c2', title: 'Позже', position: 2048, doneAt: 20 })
+        ]
+      }
+    })
+    expect(screen.getAllByTestId('task-card').map((card) => card.textContent)).toEqual([
+      expect.stringContaining('Позже'),
+      expect.stringContaining('Раньше')
+    ])
+  })
+
   it('«Показать завершённые» сообщает наружу — состав доски решает сервер', async () => {
     const onShowCompletedChange = vi.fn()
     renderBoard({ showCompleted: false, onShowCompletedChange })

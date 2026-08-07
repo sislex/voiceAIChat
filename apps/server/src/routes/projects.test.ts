@@ -339,6 +339,26 @@ describe('projects REST: скрытие завершённых задач', () =
     expect((await boardOf(p.id)).tasks.map((t) => t.id)).toContain(task.id)
   })
 
+  it('API возвращает «Готово» в порядке последнего входа, не реагируя на правку', async () => {
+    const p = await createProject('Done order')
+    await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { doneRetentionDays: null } })
+    const board = await boardOf(p.id)
+    const dev = board.columns.find((column) => column.semanticType === 'development')!
+    const done = board.columns.find((column) => column.semanticType === 'done')!
+    const first = (await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: dev.id, title: 'Первая' } })).json() as Task
+    const second = (await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: dev.id, title: 'Вторая' } })).json() as Task
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${first.id}/move`, payload: { columnId: done.id } })
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${second.id}/move`, payload: { columnId: done.id } })
+    await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}/tasks/${second.id}`, payload: { title: 'Вторая (исправлена)' } })
+    expect((await boardOf(p.id)).tasks.filter((task) => task.columnId === done.id).map((task) => task.id))
+      .toEqual([second.id, first.id])
+
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${first.id}/move`, payload: { columnId: dev.id } })
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${first.id}/move`, payload: { columnId: done.id } })
+    expect((await boardOf(p.id)).tasks.filter((task) => task.columnId === done.id).map((task) => task.id))
+      .toEqual([first.id, second.id])
+  })
+
   it('мусор в пороге читается как «не скрывать», настройка — только владельцу', async () => {
     const p = await createProject('Retention')
     const bad = await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { doneRetentionDays: -5 } })

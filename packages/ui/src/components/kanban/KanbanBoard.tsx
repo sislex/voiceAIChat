@@ -14,7 +14,7 @@
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Board, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
-import { TASK_PRIORITIES, WORK_ITEM_TYPES } from '@shared/projects'
+import { compareTasksInColumn, TASK_PRIORITIES, WORK_ITEM_TYPES } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import type { ModifierPrompt } from '@shared/types'
 import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
@@ -266,7 +266,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         }
         return (t.assignee ?? '') === lane.id
       })
-      .sort((a, b) => a.position - b.position)
+      .sort((a, b) => compareTasksInColumn(a, b, board?.columns.find((c) => c.id === columnId)?.semanticType ?? 'custom'))
 
   // Перенос колонки moving перед target.
   const reorderTo = (targetId: string, moving: string): void => {

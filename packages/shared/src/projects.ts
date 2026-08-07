@@ -181,6 +181,27 @@ export interface Task {
   chatId?: string | null
 }
 
+/**
+ * Сравнивает задачи одной колонки для показа на доске. В `done` первой идёт
+ * задача, которая последней попала в колонку; последующие правки карточки не
+ * влияют на этот порядок. У старых строк без `doneAt` остаётся стабильный
+ * fallback по ручному рангу, времени создания и id.
+ */
+export function compareTasksInColumn(
+  a: Pick<Task, 'doneAt' | 'position' | 'createdAt' | 'id'>,
+  b: Pick<Task, 'doneAt' | 'position' | 'createdAt' | 'id'>,
+  semanticType: KanbanColumnSemanticType
+): number {
+  if (semanticType === 'done') {
+    const aDoneAt = a.doneAt ?? null
+    const bDoneAt = b.doneAt ?? null
+    if (aDoneAt != null && bDoneAt != null && aDoneAt !== bDoneAt) return bDoneAt - aDoneAt
+    if (aDoneAt != null && bDoneAt == null) return -1
+    if (aDoneAt == null && bDoneAt != null) return 1
+  }
+  return a.position - b.position || a.createdAt - b.createdAt || a.id.localeCompare(b.id)
+}
+
 /** Сколько дней завершённая задача ещё висит на доске по умолчанию (как в Jira). */
 export const DEFAULT_DONE_RETENTION_DAYS = 14
 

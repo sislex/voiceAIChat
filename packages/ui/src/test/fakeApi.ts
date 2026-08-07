@@ -9,7 +9,7 @@ import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { Board, KanbanColumn, ProjectDetail, ProjectMember, ProjectSummary, Task, WorkItemDefaultSkills } from '@shared/projects'
-import { issueKey, isCompletedHidden, DEFAULT_DONE_RETENTION_DAYS } from '@shared/projects'
+import { compareTasksInColumn, issueKey, isCompletedHidden, DEFAULT_DONE_RETENTION_DAYS } from '@shared/projects'
 
 
 export interface FakeApi extends RendererApi {
@@ -126,7 +126,10 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       columns: columns.filter((c) => c.projectId === pid).sort((a, b) => a.position - b.position).map((c) => ({ ...c })),
       tasks: tasks
         .filter((t) => t.projectId === pid && !isCompletedHidden(t.doneAt, retention, nowMs))
-        .sort((a, b) => a.position - b.position)
+        .sort((a, b) => {
+          if (a.columnId !== b.columnId) return a.columnId.localeCompare(b.columnId)
+          return compareTasksInColumn(a, b, columns.find((c) => c.id === a.columnId)?.semanticType ?? 'custom')
+        })
         .map((t) => ({ ...t }))
     }
   }
@@ -716,6 +719,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       t.columnId = columnId
       // Как на сервере: попадание в «Готово» запускает отсчёт скрытия.
       const done = columns.find((c) => c.id === columnId)?.semanticType === 'done'
+      const ts = tick()
+      if (done && t.doneAt == null) nowMs += 1
       t.doneAt = done ? t.doneAt ?? nowMs : null
       const after = afterId ? tasks.find((x) => x.id === afterId) : null
       const before = beforeId ? tasks.find((x) => x.id === beforeId) : null
@@ -727,7 +732,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
             : before
               ? before.position - 1024
               : Math.max(0, ...tasks.filter((x) => x.columnId === columnId && x.id !== taskId).map((x) => x.position)) + 1024
-      t.updatedAt = tick()
+      t.updatedAt = ts
       return { ...t }
     },
     'tasks:delete': async ({ taskId }) => {
