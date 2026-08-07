@@ -36,6 +36,8 @@ export interface TaskCardProps {
   ciSummary?: CiRunSummary
   /** Запустить CI-воркфлоу для задачи. */
   onStartCi?: (taskId: string) => void
+  /** Параллельный запуск: сразу в работу, мимо очереди сервера. */
+  onStartCiParallel?: (taskId: string) => void
   /** Открыть ленту рана. */
   onOpenCiRun?: (runId: string) => void
   /** Убрать ожидающий ран из очереди CI. */
@@ -245,6 +247,9 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 всегда можно запустить задачу заново. */}
             {canStart && props.onStartCi && (
               <Button variant="primary" size="sm" onClick={() => props.onStartCi?.(task.id)}>Выполнить</Button>
+            )}
+            {canStart && props.onStartCiParallel && (
+              <Button size="sm" title="Запустить сразу, мимо очереди — машина подберётся по загрузке" onClick={() => props.onStartCiParallel?.(task.id)}>Параллельно</Button>
             )}
           </div>
         </div>

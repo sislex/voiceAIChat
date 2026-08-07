@@ -864,6 +864,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               onEnsureChat={(taskId) => void actions.ensureTaskChat(taskId)}
               ciSummaries={state.ciSummaries}
               onStartCi={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId).then((run) => { if (run) actions.openCiRun(run.id) }) }}
+              onStartCiParallel={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId, { launch: 'parallel' }).then((run) => { if (run) actions.openCiRun(run.id) }) }}
               onOpenCiRun={(runId) => actions.openCiRun(runId)}
               onDequeueCiRun={(runId) => void actions.dequeueCiRun(runId)}
               aiAssistPrompts={state.settings.aiAssistPrompts}

@@ -85,7 +85,9 @@ export interface RendererCiRest {
   resetTaskCiLlm(projectId: string, taskId: string): Promise<CiTaskLlmConfig>
   getTaskCi(projectId: string, taskId: string): Promise<CiTaskConfig>
   putTaskCi(projectId: string, taskId: string, config: CiSlotConfig): Promise<CiSlotConfig>
-  startRun(projectId: string, taskId: string, options?: { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string }): Promise<CiRun>
+  startRun(projectId: string, taskId: string, options?: { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string; launch?: 'queue' | 'parallel' }): Promise<CiRun>
+  /** Немедленный запуск на явно указанной машине; ран из очереди продвигается, а не отменяется. */
+  forceStartRun(projectId: string, taskId: string, agentId: string): Promise<CiRun>
   getRun(runId: string): Promise<CiRunDetail>
   getRunLog(runId: string): Promise<CiLogLine[]>
   /** Обращения модели к БЗ внутри рана (блок в ленте рана). */
