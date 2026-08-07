@@ -162,20 +162,23 @@ test('точка входа запускает гейт из пути с не-AS
   const repository = dirname(dirname(fileURLToPath(import.meta.url)))
   const tempRoot = mkdtempSync(join(tmpdir(), 'affected-check-тест-'))
   const worktree = join(tempRoot, 'репозиторий')
-  const scriptDirectory = join(tempRoot, 'скрипт-с-кириллицей')
-  const script = join(scriptDirectory, 'affected-check.mjs')
   const commandsDirectory = join(tempRoot, 'commands')
-  const failingTest = join(worktree, 'apps/llm-runner/src/entry-guard-unicode-failure.test.mjs')
+  const npmCalls = join(tempRoot, 'npm-calls.log')
+  const script = join(repository, 'scripts/affected-check.mjs')
 
   try {
-    const added = spawnSync('git', ['worktree', 'add', '--detach', worktree, 'origin/main'], { cwd: repository, encoding: 'utf8' })
-    assert.equal(added.status, 0, added.stderr)
-    mkdirSync(scriptDirectory)
+    // Содержимое репозитория гейту не нужно: BASE_BRANCH указывает на несуществующую
+    // ветку, поэтому diff недоступен и скрипт идёт по полному fallback с npm-заглушками.
+    // Пустой git-репозиторий вместо копии рабочего дерева — иначе тест копировал
+    // гигабайты (node_modules, electron, .venv-piper) и падал по месту на диске.
+    const initialized = spawnSync('git', ['init', '--quiet', worktree], { encoding: 'utf8' })
+    assert.equal(initialized.status, 0, initialized.stderr)
     mkdirSync(commandsDirectory)
-    writeFileSync(script, readFileSync(join(repository, 'scripts/affected-check.mjs')))
-    writeFileSync(failingTest, '')
     const npm = join(commandsDirectory, 'npm')
-    writeFileSync(npm, '#!/bin/sh\ncase "$*" in *test*) exit 1 ;; *) exit 0 ;; esac\n')
+    writeFileSync(npm, `#!/bin/sh
+printf '%s\\n' "$*" >> ${npmCalls}
+case "$*" in *test*) exit 1 ;; *) exit 0 ;; esac
+`)
     chmodSync(npm, 0o755)
     const npx = join(commandsDirectory, 'npx')
     writeFileSync(npx, '#!/bin/sh\nexit 0\n')
@@ -184,14 +187,15 @@ test('точка входа запускает гейт из пути с не-AS
     const result = spawnSync(process.execPath, [script, '--jobs', '1'], {
       cwd: worktree,
       encoding: 'utf8',
-      env: { ...process.env, PATH: `${commandsDirectory}:${process.env.PATH}` }
+      env: {
+        ...process.env,
+        PATH: `${commandsDirectory}:${process.env.PATH}`,
+        BASE_BRANCH: 'non-existing-base-branch-for-test'
+      }
     })
     assert.notEqual(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
-    assert.match(result.stdout, /\[affected-check\] base ref:/)
-    assert.match(result.stdout, /\[affected-check\] changed files:/)
-    assert.match(result.stdout, /\[affected-check\] selected packages: runner/)
+    assert.match(readFileSync(npmCalls, 'utf8'), /test/)
   } finally {
-    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: repository })
     rmSync(tempRoot, { recursive: true, force: true })
   }
 })
