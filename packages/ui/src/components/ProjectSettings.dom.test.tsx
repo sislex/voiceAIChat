@@ -79,6 +79,20 @@ describe('ProjectSettings — режим базы знаний для CI-ран�
     expect(provider).toHaveTextContent('Codex')
   })
 
+  it('выбирает production-машину из привязанных и показывает её путь', async () => {
+    const onUpdate = vi.fn()
+    const project = detail({
+      machines: [{ agentId: 'prod-1', path: '/root/voiceAIChat', reposRoot: '' }],
+      productionAgentId: null
+    })
+    render(<ProjectSettings {...props({ detail: project, agents: [{ id: 'prod-1', name: 'Production', online: true } as never], onUpdate })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Workflow и CI' }))
+    const select = screen.getByLabelText('Production-машина')
+    expect(select).toHaveTextContent('Production — /root/voiceAIChat')
+    await userEvent.selectOptions(select, 'prod-1')
+    expect(onUpdate).toHaveBeenCalledWith('p1', { productionAgentId: 'prod-1' })
+  })
+
   it('сохраняет http/https URL превью и откатывает невалидный адрес', async () => {
     const onUpdate = vi.fn()
     render(<ProjectSettings {...props({ detail: detail({ previewUrl: 'https://old.example/' }), onUpdate })} />)

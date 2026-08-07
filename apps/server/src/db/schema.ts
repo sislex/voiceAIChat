@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS projects (
   created_at   INTEGER NOT NULL,
   updated_at   INTEGER NOT NULL,
   default_agent_id TEXT,
+  production_agent_id TEXT,
   commit_policy TEXT NOT NULL DEFAULT 'agent_commits',
   merge_transport TEXT NOT NULL DEFAULT 'local',
   agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual',

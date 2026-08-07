@@ -119,6 +119,8 @@ export interface ProjectDetail extends ProjectSummary {
   machines: ProjectMachine[]
   /** Машина по умолчанию (agentId ∈ machines) или null. */
   defaultAgentId: string | null
+  /** Машина, на которой расположен production (agentId ∈ machines), или null. */
+  productionAgentId: string | null
 }
 
 /** Колонка канбан-доски. Колонка = статус задачи. */

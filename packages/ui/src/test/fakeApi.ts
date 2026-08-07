@@ -117,7 +117,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     ...summary(p),
     members: p.members.map((m) => ({ ...m })),
     machines: p.machines.map((m) => ({ ...m })),
-    defaultAgentId: p.defaultAgentId
+    defaultAgentId: p.defaultAgentId,
+    productionAgentId: null
   })
   const boardOf = (pid: string, includeCompleted?: boolean): Board => {
     // Как на сервере: давно завершённые задачи в снапшот не попадают.

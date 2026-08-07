@@ -136,7 +136,7 @@ describe('ConversationSettings', () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     const summary: ProjectSummary = { id: 'p1', name: 'Proj', description: '', gitUrl: null, technologies: [], skills: ['ts'], defaultSkills: { epic: [], story: [], task: [] }, createdBy: 'admin', createdAt: 1, updatedAt: 1, role: 'owner', commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual' }
 
-    const detail: ProjectDetail = { ...summary, members: [], machines: [{ agentId: 'm1', path: '/srv/p', reposRoot: '/srv/repos' }], defaultAgentId: 'm1' }
+    const detail: ProjectDetail = { ...summary, members: [], machines: [{ agentId: 'm1', path: '/srv/p', reposRoot: '/srv/repos' }], defaultAgentId: 'm1', productionAgentId: null }
     const fetchProjectDetail = vi.fn().mockResolvedValue(detail)
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[summary]} fetchProjectDetail={fetchProjectDetail} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Проект разговора' }), { target: { value: 'p1' } })

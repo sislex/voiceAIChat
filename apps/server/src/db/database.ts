@@ -297,6 +297,7 @@ interface ProjectRow {
   created_at: number
   updated_at: number
   default_agent_id: string | null
+  production_agent_id: string | null
   commit_policy: string
   merge_transport: string
   agent_plan_approval_mode: string
@@ -609,6 +610,9 @@ export class VoiceChatDb {
     const projCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
     if (projCols.length && !projCols.some((c) => c.name === 'default_agent_id')) {
       this.db.exec(`ALTER TABLE projects ADD COLUMN default_agent_id TEXT`)
+    }
+    if (projCols.length && !projCols.some((c) => c.name === 'production_agent_id')) {
+      this.db.exec(`ALTER TABLE projects ADD COLUMN production_agent_id TEXT`)
     }
     const pmCols = this.db.prepare(`PRAGMA table_info(project_machines)`).all() as Array<{ name: string }>
     if (pmCols.length && !pmCols.some((c) => c.name === 'path')) {
@@ -1428,13 +1432,14 @@ export class VoiceChatDb {
 
   /**
    * Удаляет машину. Связки с проектами уносит CASCADE (`project_machines`), а вот
-   * `projects.default_agent_id` — обычная колонка без внешнего ключа: не почистить
-   * её означает оставить проекту машину по умолчанию, которой больше нет (CI-ран
-   * такого проекта уходил бы в никуда). То же делает `unlinkMachine`.
+   * `projects.default_agent_id` и `projects.production_agent_id` — обычные
+   * колонки без внешних ключей: очищаем их явно, когда машина удаляется.
+   * То же делает `unlinkMachine`.
    */
   deleteAgent(userId: string, id: string): void {
     this.db.prepare(`DELETE FROM agents WHERE id = ? AND user_id = ?`).run(id, userId)
     this.db.prepare(`UPDATE projects SET default_agent_id = NULL WHERE default_agent_id = ?`).run(id)
+    this.db.prepare(`UPDATE projects SET production_agent_id = NULL WHERE production_agent_id = ?`).run(id)
   }
 
   /** Обновляет last_seen (при регистрации и по pong). */
@@ -1952,7 +1957,8 @@ export class VoiceChatDb {
       ...this.mapProjectSummary(row, row.my_role),
       members,
       machines,
-      defaultAgentId: row.default_agent_id ?? null
+      defaultAgentId: row.default_agent_id ?? null,
+      productionAgentId: row.production_agent_id ?? null
     }
   }
 
@@ -1972,6 +1978,7 @@ export class VoiceChatDb {
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
       productionDeployCommand?: string
+      productionAgentId?: string | null
       ciBaseBranch?: string
       ciBranchTemplate?: string
       ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
@@ -2022,6 +2029,14 @@ export class VoiceChatDb {
     }
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
     if (fields.productionDeployCommand !== undefined) { set.push('production_deploy_command = ?'); vals.push(fields.productionDeployCommand) }
+    if (fields.productionAgentId !== undefined) {
+      if (fields.productionAgentId !== null) {
+        const linked = this.db.prepare(`SELECT 1 FROM project_machines WHERE project_id = ? AND agent_id = ?`).get(id, fields.productionAgentId)
+        if (!linked) throw new Error('Production-машина не привязана к проекту')
+      }
+      set.push('production_agent_id = ?')
+      vals.push(fields.productionAgentId)
+    }
     if (fields.ciBaseBranch !== undefined) { set.push('ci_base_branch = ?'); vals.push(fields.ciBaseBranch) }
     if (fields.ciBranchTemplate !== undefined) { set.push('ci_branch_template = ?'); vals.push(fields.ciBranchTemplate) }
     if (fields.ciReuseStrategy !== undefined) { set.push('ci_reuse_strategy = ?'); vals.push(fields.ciReuseStrategy) }
@@ -2089,8 +2104,9 @@ export class VoiceChatDb {
     if (!this.isProjectOwner(userId, id)) return null
     this.db.transaction(() => {
       this.db.prepare(`DELETE FROM project_machines WHERE project_id = ? AND agent_id = ?`).run(id, agentId)
-      // Снятая машина не может оставаться дефолтной.
+      // Снятая машина не может оставаться дефолтной или production-машиной.
       this.db.prepare(`UPDATE projects SET default_agent_id = NULL WHERE id = ? AND default_agent_id = ?`).run(id, agentId)
+      this.db.prepare(`UPDATE projects SET production_agent_id = NULL WHERE id = ? AND production_agent_id = ?`).run(id, agentId)
     })()
     return this.getProject(userId, id)
   }
