@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import { CiTaskSettings } from './CiTaskSettings'
@@ -6,6 +6,25 @@ import { createFakeCi } from '../../test/fakeApi'
 
 describe('CiTaskSettings', () => {
   beforeEach(() => { window.ci = createFakeCi() })
+
+  it('принудительный запуск: кнопка видна только у явно выбранной машины и зовёт forceStartRun', async () => {
+    const force = vi.spyOn(window.ci!, 'forceStartRun')
+    window.api = {
+      'projects:get': async () => ({ machines: [{ agentId: 'm1' }, { agentId: 'm2' }] }),
+      'board:get': async () => ({ tasks: [{ id: 't1', agentId: null }] }),
+      'tasks:update': async () => ({})
+    } as unknown as typeof window.api
+    render(<CiTaskSettings projectId="p1" taskId="t1" />)
+    const select = await screen.findByLabelText('Машина выполнения')
+    await waitFor(() => expect(screen.getAllByRole('option', { name: /m\d/ }).length).toBe(2))
+    // Наследование машины проекта — некуда «принудительно»: кнопки нет.
+    expect(screen.queryByRole('button', { name: 'Запустить на этой машине сейчас' })).not.toBeInTheDocument()
+
+    fireEvent.change(select, { target: { value: 'm2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить на этой машине сейчас' }))
+    await waitFor(() => expect(force).toHaveBeenCalledWith('p1', 't1', 'm2'))
+    expect(await screen.findByText(/мимо очереди/)).toBeInTheDocument()
+  })
 
   it('показывает унаследованные движок и модель и сохраняет переопределение', async () => {
     render(<CiTaskSettings projectId="p1" taskId="t1" />)

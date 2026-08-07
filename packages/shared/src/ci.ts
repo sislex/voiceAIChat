@@ -498,6 +498,39 @@ export function canStartCiRun(summary: { status: CiStatus } | null | undefined):
   return summary == null || !isActiveCiStatus(summary.status)
 }
 
+// --- Способ запуска и распределение по машинам -----------------------------
+
+/**
+ * Как ран попадает в работу: `queue` — общая FIFO-очередь сервера по
+ * `maxConcurrentRuns`; `parallel` — сразу в работу, мимо очереди и лимита.
+ * Параллельный запуск не персистится: повтор упавшего рана идёт через очередь.
+ */
+export type CiRunLaunch = 'queue' | 'parallel'
+
+/**
+ * Выбор машины для параллельного запуска. Правила по порядку: машина проекта
+ * по умолчанию, если на ней нет активных ранов; иначе любая машина проекта без
+ * активных ранов; иначе машина с минимальным их числом. `activeCounts` обязан
+ * учитывать раны с пустым `agentId` за машиной по умолчанию их проекта — иначе
+ * старые раны делают её «свободной» на бумаге, и всё валится на одну машину.
+ * При равной загрузке предпочитается машина по умолчанию, затем порядок списка.
+ */
+export function pickCiRunAgent(
+  machineIds: string[],
+  defaultAgentId: string | null,
+  activeCounts: Record<string, number>
+): string | null {
+  const count = (id: string): number => activeCounts[id] ?? 0
+  if (defaultAgentId && machineIds.includes(defaultAgentId) && count(defaultAgentId) === 0) return defaultAgentId
+  const free = machineIds.find((id) => count(id) === 0)
+  if (free) return free
+  let best: string | null = null
+  for (const id of machineIds) {
+    if (best === null || count(id) < count(best) || (count(id) === count(best) && id === defaultAgentId)) best = id
+  }
+  return best
+}
+
 /**
  * Как подсветить карточку задачи по последнему рану:
  * `running` — медленно «дышит» голубым, `fixing` — модель разбирается с ошибкой

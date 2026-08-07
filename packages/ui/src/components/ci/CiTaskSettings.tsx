@@ -23,6 +23,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const [llmSaved, setLlmSaved] = useState(true)
   const [machines, setMachines] = useState<ProjectMachine[]>([])
   const [agentId, setAgentId] = useState<string | null>(null)
+  const [forceStatus, setForceStatus] = useState<{ kind: 'idle' | 'started' | 'error'; text?: string }>({ kind: 'idle' })
 
   useEffect(() => {
     const bridge = window.ci
@@ -82,6 +83,20 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
       <option value="">Машина проекта по умолчанию</option>
       {machines.map((machine) => <option key={machine.agentId} value={machine.agentId}>{machine.agentId}</option>)}
     </select></label>
+    {/* Принудительный запуск работает и для задачи, чей ран стоит в очереди:
+        сервер продвинет его на выбранную машину, а не отменит. */}
+    {agentId && (
+      <div className="ci-task-llm-actions">
+        <Button size="sm" onClick={() => {
+          setForceStatus({ kind: 'idle' })
+          void window.ci?.forceStartRun(props.projectId, props.taskId, agentId)
+            .then(() => setForceStatus({ kind: 'started' }))
+            .catch((err: unknown) => setForceStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) }))
+        }}>Запустить на этой машине сейчас</Button>
+      </div>
+    )}
+    {forceStatus.kind === 'started' && <p className="ci-task-hint">Ран запущен на выбранной машине, мимо очереди.</p>}
+    {forceStatus.kind === 'error' && <div className="ci-warn">{forceStatus.text}</div>}
     <div className="ci-task-head ci-task-llm-head"><span className="ci-task-title">Движок модели</span><span className={`lozenge ${llmOverridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{llmOverridden ? 'переопределено' : 'унаследовано'}</span></div>
     <div className="ci-task-llm">
       <label>Движок<select aria-label="Движок модели" className="sel" value={llm.provider} onChange={(e) => changeProvider(e.target.value as 'claude' | 'codex')}>{isProviderAllowed(access, 'claude') && <option value="claude">Claude</option>}{isProviderAllowed(access, 'codex') && <option value="codex">Codex</option>}{!isProviderAllowed(access, 'claude') && !isProviderAllowed(access, 'codex') && <option value="">Нет доступных движков</option>}</select></label>

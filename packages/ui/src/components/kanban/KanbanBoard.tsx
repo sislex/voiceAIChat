@@ -116,8 +116,10 @@ export interface KanbanBoardProps {
   onEnsureChat?: (taskId: string) => void
   /** Сводки CI-ранов по taskId. */
   ciSummaries?: Record<string, CiRunSummary>
-  /** Запустить CI-воркфлоу для задачи. */
+  /** Запустить CI-воркфлоу для задачи (в общую очередь). */
   onStartCi?: (taskId: string) => void
+  /** Запустить CI-воркфлоу сразу, мимо очереди (машина подбирается автоматически). */
+  onStartCiParallel?: (taskId: string) => void
   /** Открыть ленту CI-рана. */
   onOpenCiRun?: (runId: string) => void
   /** Убрать ожидающий ран из очереди CI. */
@@ -539,6 +541,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onOpenChat={props.onOpenChat}
       ciSummary={props.ciSummaries?.[t.id]}
       onStartCi={props.onStartCi}
+      onStartCiParallel={props.onStartCiParallel}
       onOpenCiRun={props.onOpenCiRun}
       onDequeueCiRun={props.onDequeueCiRun}
       onGrab={(e, card, immediate) => grabTask(e, card, t.id, immediate)}
@@ -1143,6 +1146,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onEnsureChat={props.onEnsureChat}
           ciSummary={props.ciSummaries?.[openTask.id]}
           onStartCi={props.onStartCi}
+          onStartCiParallel={props.onStartCiParallel}
           onOpenCiRun={props.onOpenCiRun}
 
           aiAssistPrompts={props.aiAssistPrompts}

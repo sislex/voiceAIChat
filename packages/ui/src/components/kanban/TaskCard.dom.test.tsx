@@ -60,6 +60,16 @@ describe('TaskCard CI-панель', () => {
     expect(onStartCi).toHaveBeenCalledWith('t1')
   })
 
+  it('кнопка «Параллельно» запускает мимо очереди и скрыта при активном ране', () => {
+    const onStartCiParallel = vi.fn()
+    const { rerender } = render(<TaskCard {...props({ onStartCi: vi.fn(), onStartCiParallel })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Параллельно' }))
+    expect(onStartCiParallel).toHaveBeenCalledWith('t1')
+
+    rerender(<TaskCard {...props({ ciSummary: mkSummary({ status: 'queued' }), onStartCi: vi.fn(), onStartCiParallel })} />)
+    expect(screen.queryByRole('button', { name: 'Параллельно' })).not.toBeInTheDocument()
+  })
+
   it('показывает сводку рана и открывает ленту', () => {
     const onOpenCiRun = vi.fn()
     const ciSummary: CiRunSummary = { id: 'run-1', taskId: 't1', status: 'running', slotProgress: { done: 1, total: 4, phase: 'до модели' }, durationMs: null, modelActive: false, awaitingInput: false }

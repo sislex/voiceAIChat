@@ -950,7 +950,7 @@ export interface StoreActions {
   saveCiSettings(settings: Partial<CiGlobalSettings>): Promise<void>
   resolveCiSuggestion(id: string, accept: boolean): Promise<void>
   reloadCiWorkspaces(projectId?: string): Promise<void>
-  startCiRun(projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string }): Promise<CiRun | null>
+  startCiRun(projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string; launch?: 'queue' | 'parallel' }): Promise<CiRun | null>
   cancelCiRun(runId: string): Promise<void>
   /** Исключить только ожидающий ран из очереди CI. */
   dequeueCiRun(runId: string): Promise<void>
@@ -3729,7 +3729,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!ciBridge) return
     setState({ ciWorkspaces: await ciBridge.listWorkspaces(projectId) })
   }
-  async function startCiRun(projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string }): Promise<CiRun | null> {
+  async function startCiRun(projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string; launch?: 'queue' | 'parallel' }): Promise<CiRun | null> {
     if (!ciBridge) return null
     try {
       const launchOptions = typeof options === 'string' ? { mode: options } : options

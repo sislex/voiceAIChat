@@ -66,6 +66,8 @@ export interface TaskModalProps {
   /** Сводка последнего CI-рана задачи и переходы в его ленту. */
   ciSummary?: CiRunSummary
   onStartCi?: (taskId: string) => void
+  /** Параллельный запуск: сразу в работу, мимо очереди сервера. */
+  onStartCiParallel?: (taskId: string) => void
   onOpenCiRun?: (runId: string) => void
 
   /** Смена статуса = перенос в конец выбранной колонки. */
@@ -639,6 +641,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                     после завершения «Выполнить» снова доступна. */}
                 {props.onStartCi && canStartCi && (
                   <Button variant="primary" size="sm" onClick={() => props.onStartCi?.(task.id)}>Выполнить</Button>
+                )}
+                {props.onStartCiParallel && canStartCi && (
+                  <Button size="sm" title="Запустить сразу, мимо очереди — машина подберётся по загрузке" onClick={() => props.onStartCiParallel?.(task.id)}>Параллельно</Button>
                 )}
               </div>
             </div>

@@ -14,6 +14,7 @@ import {
   isActiveCiStatus,
   isTerminalCiStatus,
   isVerificationCommand,
+  pickCiRunAgent,
   ciModelKnown,
   ciTaskTotals,
   ciUsageStages,
@@ -175,6 +176,35 @@ describe('ciCardPulse', () => {
   it('отменённый и пропущенный ран карточку не подсвечивают', () => {
     expect(ciCardPulse({ status: 'cancelled', slotProgress: sp() })).toBeNull()
     expect(ciCardPulse({ status: 'skipped', slotProgress: sp() })).toBeNull()
+  })
+})
+
+describe('pickCiRunAgent', () => {
+  it('свободная машина по умолчанию выбирается первой', () => {
+    expect(pickCiRunAgent(['a', 'b'], 'b', {})).toBe('b')
+    expect(pickCiRunAgent(['a', 'b'], 'b', { a: 3 })).toBe('b')
+  })
+
+  it('занятая машина по умолчанию уступает машине без активных ранов', () => {
+    expect(pickCiRunAgent(['a', 'b', 'c'], 'a', { a: 1 })).toBe('b')
+    expect(pickCiRunAgent(['a', 'b', 'c'], 'a', { a: 1, b: 2 })).toBe('c')
+  })
+
+  it('свободных нет — берётся минимально загруженная', () => {
+    expect(pickCiRunAgent(['a', 'b', 'c'], 'a', { a: 3, b: 1, c: 2 })).toBe('b')
+  })
+
+  it('при равной загрузке предпочитает машину по умолчанию, иначе порядок списка', () => {
+    expect(pickCiRunAgent(['a', 'b', 'c'], 'c', { a: 1, b: 1, c: 1 })).toBe('c')
+    expect(pickCiRunAgent(['a', 'b'], null, { a: 2, b: 2 })).toBe('a')
+  })
+
+  it('машина по умолчанию вне списка машин проекта не выбирается', () => {
+    expect(pickCiRunAgent(['a', 'b'], 'x', {})).toBe('a')
+  })
+
+  it('пустой список машин — некуда запускать', () => {
+    expect(pickCiRunAgent([], 'a', {})).toBeNull()
   })
 })
 
