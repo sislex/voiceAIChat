@@ -190,6 +190,15 @@ function compactOutput(output) {
   return output.trim().split('\n').slice(-16).join('\n')
 }
 
+export function relatedArgs(files, reportFile, maxWorkers) {
+  const args = ['vitest', 'related', ...files, '--run', '--passWithNoTests', '--reporter=json', `--outputFile=${reportFile}`, '--silent']
+  // Vitest 2 валится до запуска suites, если вычисленный minWorkers больше
+  // заданного maxWorkers. Fast-stage ограничивает worker при параллельных пакетах,
+  // поэтому обе границы обязаны задаваться вместе, как в packageArgs().
+  if (maxWorkers) args.push(`--minWorkers=${maxWorkers}`, `--maxWorkers=${maxWorkers}`)
+  return args
+}
+
 export function startRelatedTest(check, { maxWorkers } = {}) {
   const reportFile = vitestResultFile()
   // `--related` живёт только в подкоманде `vitest related`, а тестовый скрипт
@@ -197,8 +206,7 @@ export function startRelatedTest(check, { maxWorkers } = {}) {
   // «Unknown option `--related`», и быстрый этап валил гейт на любой правке кода.
   // Поэтому зовём vitest напрямую в папке пакета, мимо npm-скрипта; пути в
   // `check.files` уже относительны пакету.
-  const args = ['vitest', 'related', ...check.files, '--run', '--passWithNoTests', '--reporter=json', `--outputFile=${reportFile}`, '--silent']
-  if (maxWorkers) args.push(`--maxWorkers=${maxWorkers}`)
+  const args = relatedArgs(check.files, reportFile, maxWorkers)
   const child = spawn('npx', args, { cwd: check.pkg.path, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
   let output = ''
   let killTimer
