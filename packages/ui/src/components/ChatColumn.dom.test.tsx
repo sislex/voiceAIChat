@@ -25,6 +25,17 @@ function renderCol(props: Partial<Parameters<typeof ChatColumn>[0]> = {}): void 
   )
 }
 
+describe('ChatColumn — контекст веб-превью в истории', () => {
+  it('показывает старые сообщения без meta и раскрывает полный контекст нового', async () => {
+    const previewElement = { tag: 'section', id: 'hero', classes: ['wide'], dataAttributes: { 'data-kind': 'hero' }, selector: '#hero', ancestors: ['html', 'body', 'section#hero'], rect: { x: 0, y: 0, top: 0, right: 800, bottom: 300, left: 0, width: 800, height: 300 }, pageUrl: 'https://example.test/page', viewport: { width: 1280, height: 720 }, outerHTML: '<section id="hero">Title</section>', text: 'Title', styles: { font: '16px sans-serif', color: 'black', backgroundColor: 'white', margin: '0', padding: '8px', border: 'none', width: '800px', height: '300px', position: 'static', display: 'block', flex: '0 1 auto', flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'normal', justifyContent: 'normal', gap: 'normal', grid: 'none', gridTemplateColumns: 'none', gridTemplateRows: 'none', gridArea: 'auto' } }
+    renderCol({ messages: [{ ...messages[0], meta: { previewElement } }, messages[1]] })
+    const context = screen.getByTestId('message-preview-context')
+    expect(context).toHaveTextContent('section#hero · https://example.test/page')
+    await userEvent.click(context.querySelector('summary')!)
+    expect(context).toHaveTextContent('"selector": "#hero"')
+  })
+})
+
 describe('ChatColumn — кнопка озвучки ответа', () => {
   it('кнопка есть только у AI-сообщений при canSpeak', () => {
     renderCol({ canSpeak: true, onSpeakMessage: vi.fn() })

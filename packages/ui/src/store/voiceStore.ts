@@ -71,6 +71,8 @@ import type { CcProject, CcSession, CcItem } from '@shared/cc'
 import type { SessionUsage } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { CxProject, CxSession, CxItem } from '@shared/codexSessions'
+import type { PreviewElementPayload } from '@shared/previewInspector'
+import { withPreviewElementContext } from '@shared/prompt'
 import type {
   CatalogVoice,
   ClaudeLogEntry,
@@ -639,7 +641,8 @@ export interface StoreActions {
   closeSettings(): void
   updateSettings(patch: Partial<Settings>): Promise<void>
   setDraft(value: string): void
-  submitText(): Promise<void>
+  /** Отправить черновик; true означает успешную постановку хода. */
+  submitText(previewElement?: PreviewElementPayload): Promise<boolean>
   /** Помощник промптов: запросить переформулировки текущего черновика у LLM. */
   suggestPrompts(): Promise<void>
   /** Применить выбранный вариант: заполнить черновик и закрыть панель. */
@@ -2819,10 +2822,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ promptHelper: { open: false, loading: false, variants: [], error: null } })
   }
 
-  async function submitText(): Promise<void> {
+  async function submitText(previewElement?: PreviewElementPayload): Promise<boolean> {
     const text = state.draft.trim()
     const atts = state.attachments
-    if ((!text && atts.length === 0) || state.voice !== 'idle') return
+    if ((!text && atts.length === 0 && !previewElement) || state.voice !== 'idle') return false
     setState({ error: null })
     await ensureConversation(text || atts.map((a) => a.name).join(', '))
     const execTarget = activeConversationExecTarget()
@@ -2830,20 +2833,21 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       'u1',
       composeUserText(text, atts),
       undefined,
-      undefined,
+      previewElement ? { previewElement } : undefined,
       execTarget,
       atts.map((file) => ({ uploadId: file.id, path: file.path, name: file.name, mimeType: file.mimeType, size: file.size, ...(file.agentId ? { agentId: file.agentId } : {}) }))
     )
     setState({ draft: '', attachments: [] })
     await refreshConversations()
     // Команда «открой консоль/проводник» → виджет прямо в ответе, без обращения к LLM.
-    if (atts.length === 0 && (await maybeOpenUtility(text))) return
-    if (!dispatchVoice('submit_text')) return // idle → thinking
+    if (atts.length === 0 && !previewElement && (await maybeOpenUtility(text))) return true
+    if (!dispatchVoice('submit_text')) return false // idle → thinking
     beginReply(
-      [{ speakerId: 1, text: text || 'См. приложенные файлы.' }],
+      [{ speakerId: 1, text: withPreviewElementContext(text || 'См. приложенные файлы.', previewElement) }],
       atts.map((a) => a.id),
       execTarget
     )
+    return true
   }
 
   /** Ответы формы вопросов: обычная реплика пользователя + новый ход модели. */

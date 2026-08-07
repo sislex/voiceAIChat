@@ -643,6 +643,12 @@ export function ChatColumn({
                 ) : (
                   <div className="bub">
                     <p>{m.text}</p>
+                    {m.meta?.previewElement && (
+                      <details className="message-preview-context" data-testid="message-preview-context">
+                        <summary>⌖ {m.meta.previewElement.tag}{m.meta.previewElement.id ? `#${m.meta.previewElement.id}` : m.meta.previewElement.classes[0] ? `.${m.meta.previewElement.classes[0]}` : ''} · {m.meta.previewElement.pageUrl}</summary>
+                        <pre>{JSON.stringify(m.meta.previewElement, null, 2)}</pre>
+                      </details>
+                    )}
                     {machineOps && m.attachments?.filter((file) => file.mimeType.startsWith('image/') || isImagePath(file.path)).map((file) => (
                       <MessageImage
                         key={file.uploadId ?? file.path}

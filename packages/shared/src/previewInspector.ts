@@ -13,12 +13,26 @@ export interface PreviewElementStyles {
   flex: string; flexDirection: string; flexWrap: string; alignItems: string; justifyContent: string; gap: string
   grid: string; gridTemplateColumns: string; gridTemplateRows: string; gridArea: string
 }
+export interface PreviewElementScreenshot {
+  dataUrl?: string
+  path?: string
+  mimeType?: string
+  width?: number
+  height?: number
+}
 export interface PreviewElementPayload {
   tag: string; id: string; classes: string[]; dataAttributes: Record<string, string>
   selector: string; ancestors: string[]; rect: PreviewElementRect; pageUrl: string
   viewport: { width: number; height: number }; outerHTML: string; text: string; styles: PreviewElementStyles
+  /** Необязательные данные снимка, если инспектор умеет их сформировать. */
+  screenshot?: PreviewElementScreenshot
 }
 export interface PreviewElementMessage { type: typeof PREVIEW_INSPECTOR_MESSAGE_TYPE; payload: PreviewElementPayload }
+export interface PreviewInspectorCommand { type: typeof PREVIEW_INSPECTOR_COMMAND_TYPE; enabled: boolean }
+
+export function isPreviewInspectorCommand(value: unknown): value is PreviewInspectorCommand {
+  return record(value) && value.type === PREVIEW_INSPECTOR_COMMAND_TYPE && typeof value.enabled === 'boolean'
+}
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -41,5 +55,12 @@ export function isPreviewElementMessage(value: unknown): value is PreviewElement
   if (!record(p.viewport) || !finite(p.viewport.width) || !finite(p.viewport.height) || !record(p.styles)) return false
   const styles = p.styles
   const styleKeys = ['font','color','backgroundColor','margin','padding','border','width','height','position','display','flex','flexDirection','flexWrap','alignItems','justifyContent','gap','grid','gridTemplateColumns','gridTemplateRows','gridArea']
-  return styleKeys.every((k) => bounded(styles[k], 2_000))
+  if (!styleKeys.every((k) => bounded(styles[k], 2_000))) return false
+  if (p.screenshot === undefined) return true
+  if (!record(p.screenshot)) return false
+  const shot = p.screenshot
+  return (shot.dataUrl === undefined || bounded(shot.dataUrl, 2_000_000)) &&
+    (shot.path === undefined || bounded(shot.path, 4_096)) &&
+    (shot.mimeType === undefined || bounded(shot.mimeType, 128)) &&
+    (shot.width === undefined || finite(shot.width)) && (shot.height === undefined || finite(shot.height))
 }
