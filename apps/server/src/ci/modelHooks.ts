@@ -21,7 +21,7 @@ import type { KbUsageTracker } from '../kb/usage.js'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook } from './types.js'
 import {
-  EMPTY_CHANGES, KB_DIFF_SCRIPT, KB_REPO_ROOT_CHECK_SCRIPT, KB_UPDATE_TIMEOUT_MS, MAX_PROMPT_GAPS, affectedProjectDocs, formatKbUpdateSummary,
+  EMPTY_CHANGES, KB_DIFF_SCRIPT, KB_FILE_TOPICS_SCRIPT, KB_REPO_ROOT_CHECK_SCRIPT, KB_UPDATE_TIMEOUT_MS, MAX_PROMPT_GAPS, affectedProjectDocs, formatKbUpdateSummary,
   kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput, type KbGapForPrompt
 } from '../kb/codeUpdate.js'
 
@@ -975,7 +975,33 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       clearTimeout(timer)
       ctx.signal.removeEventListener('abort', onAbort)
     }
-    if (timedOut) return { ok: false, message: 'Шаг не уложился в отведённое время — база знаний не обновлена' }
+    if (timedOut) {
+      // CLI уже остановлен `runTurn`, но модель могла успеть записать файловые
+      // темы до того, как зависла на финальном JSON. Эти изменения безопасно
+      // оставить в копии: следующий шаг закоммитит их вместе с кодом. Статьи
+      // проекта без JSON намеренно не сохраняем и честно сообщаем об этом.
+      const topics: string[] = []
+      if (ctx.agentId && deps.executor && !ctx.signal.aborted) {
+        try {
+          await deps.executor.run(
+            { agentId: ctx.agentId, script: KB_FILE_TOPICS_SCRIPT, workdir: repoDir, env: ctx.env, timeoutMs: 30_000 },
+            (chunk) => topics.push(...chunk.split('\n').map((p) => p.trim()).filter((p) => p.startsWith('docs/kb/'))),
+            ctx.signal
+          )
+        } catch {
+          // Таймаут уже известен; ошибка диагностической проверки не должна
+          // превращать возможную файловую актуализацию в ложный успех.
+        }
+      }
+      const changedTopics = [...new Set(topics)]
+      if (changedTopics.length) {
+        return {
+          ok: true,
+          message: `Файловые темы базы знаний обновлены (${changedTopics.join(', ')}), но модель не вернула финальный ответ до таймаута; статьи раздела проекта не сохранены`
+        }
+      }
+      return { ok: false, message: 'Шаг не уложился в отведённое время — файловые темы базы знаний не изменены' }
+    }
     if (ctx.signal.aborted) return cancelled
     if (!turn.ok) return { ok: false, message: 'Модель не ответила — база знаний не обновлена' }
 
