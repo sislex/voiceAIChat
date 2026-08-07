@@ -251,6 +251,33 @@ describe('один активный ран на задачу', () => {
   })
 })
 
+describe('маршрутизация production-команд', () => {
+  it('команду с PROD_DIR запускает на машине production checkout, а обычную — на машине рана', async () => {
+    const productionAgent = db.createAgent('admin', 'Production')
+    db.linkMachine('admin', projectId, productionAgent.id)
+    db.setProjectMachinePath('admin', projectId, productionAgent.id, '/srv/voicechat')
+    const regular = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Обычная', script: 'echo regular' })
+    const production = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Прод', script: 'echo production', env: { PROD_DIR: '/srv/voicechat/' } })
+    db.setCiSlotCommands('project', projectId, 'after_model', [regular.id, production.id])
+    const requests: Array<{ script: string; agentId: string; workdir: string }> = []
+    const ci = manager({ executor: { run: async (req) => { requests.push(req); return { exitCode: 0, timedOut: false } } } })
+
+    expect(await waitStatus(startRun(ci, taskIds[0]))).toBe('success')
+    expect(requests.find((req) => req.script === 'echo regular')).toMatchObject({ agentId: db.getProject('admin', projectId)!.defaultAgentId, workdir: '/repos/p/1' })
+    expect(requests.find((req) => req.script === 'echo production')).toMatchObject({ agentId: productionAgent.id, workdir: '/srv/voicechat' })
+  })
+
+  it('останавливает production-команду с понятной ошибкой, если PROD_DIR не принадлежит машине проекта', async () => {
+    const production = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Прод', script: 'echo production', env: { PROD_DIR: '/missing/prod' } })
+    db.setCiSlotCommands('project', projectId, 'after_model', [production.id])
+    const ci = manager()
+    const runId = startRun(ci, taskIds[0])
+
+    expect(await waitStatus(runId)).toBe('failed')
+    expect(db.getCiRunLog('admin', runId).some((line) => line.chunk.includes('PROD_DIR=/missing/prod не совпадает с папкой ни одной машины проекта'))).toBe(true)
+  })
+})
+
 describe('инвариант изоляции', () => {
   it('ран на занятой папке и ветке не начинает работу', async () => {
     // Две задачи с одинаковым номером в одном проекте штатно не создать, поэтому

@@ -17,7 +17,7 @@
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-07 | ⚠ 5 коммит(ов) в areas после сверки: 519ef04 feat: sort done tasks by completion time … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ✓ |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 15 коммит(ов) в areas после сверки: 440c8c3 feat: add session-bound production deploy tool … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 108 коммит(ов) в areas после сверки: 1a035de chatai-130: работа CI-рана … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 109 коммит(ов) в areas после сверки: 2d71990 chatai-128: работа CI-рана … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-06 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-06 | ⚠ 3 коммит(ов) в areas после сверки: 440c8c3 feat: add session-bound production deploy tool … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-05 | ⚠ 3 коммит(ов) в areas после сверки: abeab22 feat(admin): add protected production deploy API … |
