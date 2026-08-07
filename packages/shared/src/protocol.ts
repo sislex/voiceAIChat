@@ -147,6 +147,8 @@ export const REST = {
   uploads: '/api/uploads',
   /** Чтение файла с диска сервера (только «своя» область) — картинки от CLI. */
   serverFile: '/api/files/read',
+  /** Same-origin прокси внешнего сайта для iframe-превью. */
+  preview: (url: string) => `/api/preview?url=${encodeURIComponent(url)}`,
   settings: '/api/settings',
   llmAccess: '/api/llm-access',
   /** Личные данные текущей сессии; uid никогда не передаётся клиентом. */

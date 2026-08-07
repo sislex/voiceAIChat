@@ -125,7 +125,7 @@ describe('App — веб-превью', () => {
     await userEvent.type(address, 'https://chat.example/app')
     await userEvent.click(screen.getByRole('button', { name: 'Открыть' }))
     const frame = await screen.findByTitle('Предпросмотр сайта')
-    expect(frame).toHaveAttribute('src', 'https://chat.example/app')
+    expect(frame).toHaveAttribute('src', '/api/preview?url=https%3A%2F%2Fchat.example%2Fapp')
 
     await userEvent.clear(address)
     await userEvent.type(address, 'file:///tmp/app')
