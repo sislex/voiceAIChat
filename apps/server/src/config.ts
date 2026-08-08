@@ -30,6 +30,8 @@ export interface ServerConfig {
    * не мешать Vite. В Docker указывает на скопированный билд.
    */
   webDir?: string
+  /** Каталог standalone Web Recorder, раздаваемый под /web-recorder/. */
+  webRecorderDir?: string
   /** Backend входящего Claude gateway: прозрачный upstream или локальный Codex CLI. */
   claudeGatewayBackend: 'upstream' | 'codex'
   /** Anthropic-compatible upstream для входящих запросов Claude Code. */
@@ -157,6 +159,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     agentAppPath: env.VC_AGENT_APP ?? (AUTODISCOVER ? findDmg(REPO.agentAppDir) : undefined),
     desktopAppPath: env.VC_DESKTOP_APP ?? (AUTODISCOVER ? findDmg(REPO.desktopAppDir) : undefined),
     webDir: env.VC_WEB_DIR,
+    webRecorderDir: env.VC_WEB_RECORDER_DIR,
     claudeGatewayBackend: env.VC_CLAUDE_GATEWAY_BACKEND === 'codex' ? 'codex' : 'upstream',
     claudeGatewayUpstreamUrl: env.VC_CLAUDE_UPSTREAM_URL,
     claudeGatewayUpstreamKey: env.VC_CLAUDE_UPSTREAM_API_KEY,

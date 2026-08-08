@@ -627,21 +627,35 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     })
   })
 
-  // Раздача собранного web-приложения тем же сервером (один порт, same-origin).
-  // Включается только если задан VC_WEB_DIR и каталог существует — в dev/тестах
-  // не активируется (там фронт крутит Vite). API/WS остаются под /api, /ws, /agent.
+  // Два независимых frontend build раздаются тем же сервером и используют общий
+  // backend. Recorder регистрируется первым под собственным prefix, чтобы его index
+  // и assets никогда не попадали в SPA-fallback основного ChatAI.
   if (opts.config.webDir && existsSync(opts.config.webDir)) {
     const webDir = opts.config.webDir
+    const recorderDir =
+      opts.config.webRecorderDir && existsSync(opts.config.webRecorderDir)
+        ? opts.config.webRecorderDir
+        : null
     const { default: fastifyStatic } = await import('@fastify/static')
+    if (recorderDir) {
+      await app.register(fastifyStatic, {
+        root: recorderDir,
+        prefix: '/web-recorder/',
+        wildcard: false,
+        decorateReply: false
+      })
+    }
     await app.register(fastifyStatic, { root: webDir, wildcard: false })
-    // SPA-fallback: неизвестный GET (не /api, не /ws, не /agent) → index.html.
+    // SPA-fallback относится только к ChatAI. Отсутствующий recorder-артефакт
+    // должен дать 404, а не маскироваться index.html другого приложения.
     app.setNotFoundHandler((req, reply) => {
       const url = req.url.split('?')[0]
       if (
         req.method === 'GET' &&
         !url.startsWith('/api') &&
         !url.startsWith('/ws') &&
-        !url.startsWith('/agent')
+        !url.startsWith('/agent') &&
+        !url.startsWith('/web-recorder')
       ) {
         return reply.type('text/html').sendFile('index.html')
       }

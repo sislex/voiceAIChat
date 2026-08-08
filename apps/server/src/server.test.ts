@@ -84,14 +84,20 @@ describe('docker-compose: сервер отдаёт исполнителю ад�
 describe('server: раздача web-статики (VC_WEB_DIR)', () => {
   let webApp: FastifyInstance
   let webDir: string
+  let webRecorderDir: string
 
   beforeAll(async () => {
     webDir = mkdtempSync(join(tmpdir(), 'vc-web-'))
     writeFileSync(join(webDir, 'index.html'), '<!doctype html><title>voiceAIChat</title>')
     mkdirSync(join(webDir, 'assets'), { recursive: true })
     writeFileSync(join(webDir, 'assets', 'app.js'), 'console.log(1)')
+    webRecorderDir = mkdtempSync(join(tmpdir(), 'vc-web-recorder-'))
+    writeFileSync(join(webRecorderDir, 'index.html'), '<!doctype html><title>Web Recorder</title>')
+    mkdirSync(join(webRecorderDir, 'assets'), { recursive: true })
+    writeFileSync(join(webRecorderDir, 'assets', 'recorder.js'), 'console.log(\'recorder\')')
+    writeFileSync(join(webRecorderDir, 'assets', 'recorder.css'), '.webpreview{display:grid}')
     webApp = await buildServer({
-      config: { ...loadConfig({ PORT: '0' }), webDir },
+      config: { ...loadConfig({ PORT: '0' }), webDir, webRecorderDir },
       createWsHandlers: () => ({ onMessage: () => {}, onBinary: () => {} })
     })
   })
@@ -99,6 +105,7 @@ describe('server: раздача web-статики (VC_WEB_DIR)', () => {
   afterAll(async () => {
     await webApp.close()
     rmSync(webDir, { recursive: true, force: true })
+    rmSync(webRecorderDir, { recursive: true, force: true })
   })
 
   it('GET / отдаёт index.html', async () => {
@@ -111,6 +118,28 @@ describe('server: раздача web-статики (VC_WEB_DIR)', () => {
     const res = await webApp.inject({ method: 'GET', url: '/assets/app.js' })
     expect(res.statusCode).toBe(200)
     expect(res.body).toContain('console.log')
+  })
+
+  it('GET /web-recorder/ отдаёт index.html Recorder, а не ChatAI', async () => {
+    const res = await webApp.inject({ method: 'GET', url: '/web-recorder/' })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('Web Recorder')
+    expect(res.body).not.toContain('voiceAIChat')
+  })
+
+  it('отдаёт JS и CSS Recorder из /web-recorder/assets/', async () => {
+    const js = await webApp.inject({ method: 'GET', url: '/web-recorder/assets/recorder.js' })
+    const css = await webApp.inject({ method: 'GET', url: '/web-recorder/assets/recorder.css' })
+    expect(js.statusCode).toBe(200)
+    expect(js.body).toContain('recorder')
+    expect(css.statusCode).toBe(200)
+    expect(css.headers['content-type']).toContain('text/css')
+  })
+
+  it('не подменяет отсутствующий Recorder asset fallback-страницей ChatAI', async () => {
+    const res = await webApp.inject({ method: 'GET', url: '/web-recorder/assets/missing.js' })
+    expect(res.statusCode).toBe(404)
+    expect(res.body).not.toContain('voiceAIChat')
   })
 
   it('SPA-fallback: неизвестный GET → index.html', async () => {
