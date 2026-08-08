@@ -9,6 +9,7 @@
     "apps/llm-runner",
     "apps/server",
     "apps/web",
+    "apps/web-recorder",
     "apps/agent"
   ],
   "scripts": {

@@ -121,16 +121,11 @@ describe('App — веб-превью', () => {
     await api['conversations:setPreviewUrl']({ id: lisbon, previewUrl: 'https://project.example/' })
     render(<App api={api} delays={SLOW} />)
 
-    const address = await screen.findByLabelText('Адрес превью')
-    await userEvent.type(address, 'https://chat.example/app')
-    await userEvent.click(screen.getByRole('button', { name: 'Открыть' }))
-    const frame = await screen.findByTitle('Предпросмотр сайта')
-    expect(frame).toHaveAttribute('src', '/api/preview?url=https%3A%2F%2Fchat.example%2Fapp')
-
-    await userEvent.clear(address)
-    await userEvent.type(address, 'file:///tmp/app')
-    await userEvent.click(screen.getByRole('button', { name: 'Открыть' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('http:// или https://')
+    // ChatAI больше не владеет полем адреса: он открывает отдельное приложение
+    // и передаёт ему URL через публичный postMessage-контракт.
+    const frame = await screen.findByTitle('Веб-рекордер')
+    expect(frame).toHaveAttribute('src', '/web-recorder/')
+    expect(api._state.conversations.find((conversation) => conversation.id === lisbon)?.previewUrl).toBe('https://project.example/')
     expect(screen.getByRole('tab', { name: 'Чат' })).toHaveAttribute('aria-selected', 'true')
     await userEvent.click(screen.getByRole('tab', { name: 'Превью' }))
     expect(screen.getByRole('tab', { name: 'Превью' })).toHaveAttribute('aria-selected', 'true')

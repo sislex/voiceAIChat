@@ -95,12 +95,9 @@ describe('App — действия модели в веб-превью (мост
     bridge.emit({ conversationId: active.id, requestId: 'r1', action: { kind: 'open', url: 'https://shop.example/' } })
     await waitFor(() => expect(bridge.results).toHaveLength(1))
     expect(bridge.results[0]).toEqual({ requestId: 'r1', ok: true, result: { url: 'https://shop.example/' } })
-    // URL сохранён за разговором и загружен в соседний виджет превью.
+    // URL сохранён за разговором; standalone-рекордер получает его публичным контрактом.
     expect(api._state.conversations.find((c) => c.id === active.id)?.previewUrl).toBe('https://shop.example/')
-    await waitFor(() => {
-      const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
-      expect(frame.getAttribute('src')).toBe('/api/preview?url=' + encodeURIComponent('https://shop.example/'))
-    })
+    expect(screen.getByTitle('Веб-рекордер')).toHaveAttribute('src', '/web-recorder/')
   })
 
   it('действие для неактивного чата отклоняется: превью ограничено активной страницей', async () => {
