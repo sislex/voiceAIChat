@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-08
-checked: d4c3baf
+checked: d6cbf22
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/routes/projects.ts
@@ -11,7 +11,11 @@ areas:
   - packages/ui/src/components/ProjectPage.tsx
   - packages/ui/src/components/ProjectBoard.tsx
   - packages/ui/src/components/ProjectSettings.tsx
+  - packages/ui/src/components/KanbanAssistant.tsx
+  - packages/ui/src/components/WidgetAssistantFrame.tsx
   - packages/ui/src/components/kanban
+  - packages/shared/src/widgetAssistant.ts
+  - packages/shared/src/ipc.ts
   - packages/ui/src/lib/dnd.ts
   - packages/ui/src/store/voiceStore.ts
   - packages/ui/src/components/ConversationSettings.tsx
