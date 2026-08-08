@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-08
-checked: 1ee40df
+checked: 17679ee
 areas:
   - packages/ui/src
   - apps/web/src
@@ -532,7 +532,7 @@ Storybook 8.6 на vite-билдере: `packages/ui/.storybook/main.ts` (гло
 
 Правая панель `WebPreview` в `packages/ui/src/App.tsx` сохраняет URL разговора как override и использует URL проекта как fallback. Iframe всегда открывает same-origin `GET /api/preview?url=…`, а не внешний URL напрямую; ошибка его загрузки выводится рядом с полем как понятное сообщение. Неподходящая схема отсекается ещё при вводе, а пустое значение возвращает проектный fallback.
 
-Маршрут требует обычный Bearer-сеанс, принимает только HTTP/HTTPS и расположен в `apps/server/src/routes/previewProxy.ts`. Перед каждым запросом и непосредственно в DNS lookup он проверяет все resolved IP: loopback, unspecified, private, link-local, multicast/reserved и IPv6 ULA запрещены. Это же применяется к каждому из максимум пяти redirect. Ответ ограничен 10 секундами и 5 MiB. Для HTML/CSS прокси переписывает относительные ссылки, ресурсы, формы и srcset обратно через `/api/preview`; из ответа удаляются `X-Frame-Options`, CSP и cookies, чтобы страница могла жить в iframe.
+Маршрут принимает только HTTP/HTTPS и расположен в `apps/server/src/routes/previewProxy.ts`; авторизация iframe — через preview-cookie, а не Bearer (`Authorization` в запрос iframe не попадает), детали — в разделе «Сплит чата с веб-превью» выше. Перед каждым запросом и непосредственно в DNS lookup он проверяет все resolved IP: loopback, unspecified, private, link-local, multicast/reserved и IPv6 ULA запрещены. Это же применяется к каждому из максимум пяти redirect. Ответ ограничен 10 секундами и 5 MiB. Для HTML/CSS прокси переписывает относительные ссылки, ресурсы, формы и srcset обратно через `/api/preview`; из ответа удаляются `X-Frame-Options`, CSP и cookies, чтобы страница могла жить в iframe.
 
 В каждый HTML-ответ прокси перед закрывающим `body` (или в конец документа, если тега нет) инъецирует автономный инспектор из `apps/server/src/routes/previewProxy.ts`. Режим включается кнопкой-тумблером в тулбаре или `Alt+I`, выключается повторным переключением либо `Esc`; родитель передаёт состояние сообщением `voicechat.preview.inspector.v1`. При наведении скрипт рисует не перехватывающий события overlay с именем элемента и его размерами. Клик в capture-фазе блокирует штатное действие страницы, фиксирует элемент и отправляет `voicechat.preview.element-selected.v1`; выключение и `pagehide` снимают capture-обработчики и удаляют overlay.
 
