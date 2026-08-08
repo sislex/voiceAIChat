@@ -144,11 +144,32 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   const waiters: SlotWaiter[] = []
   const runSlots = new Map<string, RunSlot>()
 
+  /**
+   * Перед пересборкой production текущий ран отдаёт обычный слот и дожидается
+   * всех ранов, которые уже были незавершёнными. Новые раны остаются за
+   * барьером: иначе они могли бы бесконечно вклиниваться перед пересборкой.
+   */
+  interface ProdDrain { runId: string; blockers: Set<string>; wake: () => void }
+  let prodDrain: ProdDrain | null = null
+
+  function mayRunDuringProdDrain(runId: string): boolean {
+    return !prodDrain || prodDrain.runId === runId || prodDrain.blockers.has(runId)
+  }
+
+  function wakeNextSlot(): void {
+    const next = takeNextWaiter()
+    if (next) next.wake('slot')
+  }
+
   /** Достаёт следующего ожидающего в порядке его текущей колонки development. */
   function takeNextWaiter(): SlotWaiter | undefined {
-    if (waiters.length < 2) return waiters.shift()
+    const eligible = waiters
+      .map((waiter, index) => ({ waiter, index }))
+      .filter(({ waiter }) => mayRunDuringProdDrain(waiter.runId))
+    if (eligible.length === 0) return undefined
+    if (eligible.length === 1) return waiters.splice(eligible[0].index, 1)[0]
     const boardOrder = new Map<string, Map<string, number>>()
-    for (const waiter of waiters) {
+    for (const { waiter } of eligible) {
       const activeRun = active.get(waiter.runId)
       if (!activeRun || boardOrder.has(activeRun.projectId)) continue
       const board = deps.db.getBoard(activeRun.userId, activeRun.projectId)
@@ -159,22 +180,22 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
         new Map(board.tasks.filter((task) => task.columnId === development.id).map((task, index) => [task.id, index]))
       )
     }
-    let bestIndex = 0
-    for (let index = 1; index < waiters.length; index++) {
-      const best = active.get(waiters[bestIndex].runId)
-      const candidate = active.get(waiters[index].runId)
-      if (!best || !candidate || best.projectId !== candidate.projectId) continue
-      const order = boardOrder.get(best.projectId)
-      const bestOrder = order?.get(best.taskId) ?? Number.MAX_SAFE_INTEGER
-      const candidateOrder = order?.get(candidate.taskId) ?? Number.MAX_SAFE_INTEGER
-      if (candidateOrder < bestOrder) bestIndex = index
+    let best = eligible[0]
+    for (const candidate of eligible.slice(1)) {
+      const bestRun = active.get(best.waiter.runId)
+      const candidateRun = active.get(candidate.waiter.runId)
+      if (!bestRun || !candidateRun || bestRun.projectId !== candidateRun.projectId) continue
+      const order = boardOrder.get(bestRun.projectId)
+      const bestOrder = order?.get(bestRun.taskId) ?? Number.MAX_SAFE_INTEGER
+      const candidateOrder = order?.get(candidateRun.taskId) ?? Number.MAX_SAFE_INTEGER
+      if (candidateOrder < bestOrder) best = candidate
     }
-    return waiters.splice(bestIndex, 1)[0]
+    return waiters.splice(best.index, 1)[0]
   }
   async function acquireSlot(slot: RunSlot): Promise<void> {
     if (slot.held || slot.abandoned || slot.bypass) return
     const limit = deps.db.getCiSettings().maxConcurrentRuns
-    if (running < limit) {
+    if (running < limit && mayRunDuringProdDrain(slot.runId)) {
       running++
       slot.held = true
       return
@@ -186,8 +207,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     // Пока стояли в очереди, ран могли закрыть — передаём пробуждение дальше,
     // не трогая счётчик (его уменьшил тот, кто нас разбудил).
     if (slot.abandoned) {
-      const next = takeNextWaiter()
-      if (next) next.wake('slot')
+      wakeNextSlot()
       return
     }
     running++
@@ -197,8 +217,77 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (!slot.held) return
     slot.held = false
     running--
-    const next = takeNextWaiter()
-    if (next) next.wake('slot')
+    wakeNextSlot()
+  }
+
+  /** Держит новый (в том числе bypass) ран за активным production-барьером. */
+  function waitForProdDrainBarrier(runId: string, signal: AbortSignal): Promise<void> {
+    if (mayRunDuringProdDrain(runId) || signal.aborted) return Promise.resolve()
+    return new Promise((resolve) => {
+      const timer = setInterval(() => {
+        if (mayRunDuringProdDrain(runId) || signal.aborted) {
+          clearInterval(timer)
+          resolve()
+        }
+      }, 10)
+      timer.unref?.()
+    })
+  }
+
+  /**
+   * Открывает барьер перед production-пересборкой. Обычный слот владельца
+   * освобождается, чтобы раны из снимка могли завершиться даже при лимите 1.
+   */
+  async function drainForProdRebuild(runId: string, userId: string, stepId: string, signal: AbortSignal): Promise<(() => void) | null> {
+    // Ран из уже снятого снимка сам может дойти до production-команды. Он обязан
+    // завершиться, иначе владелец барьера будет ждать его вечно; sharedLock всё
+    // равно не даст двум пересборкам исполняться одновременно.
+    if (prodDrain && prodDrain.runId !== runId) return signal.aborted ? null : () => {}
+
+    const blockers = new Set(
+      [...active.keys()].filter((id) => id !== runId && !isTerminalCiStatus(deps.db.getCiRunRaw(id)?.status ?? 'failed'))
+    )
+    let wake = (): void => {}
+    prodDrain = { runId, blockers, wake }
+    releaseSlot(runSlots.get(runId) ?? { runId, held: false, abandoned: false, bypass: true })
+    const message = blockers.size
+      ? 'Перед пересборкой production освобождаю слот и жду завершения ' + blockers.size + ' ранов очереди…\n'
+      : 'Перед пересборкой production очередь пуста; запускаю эксклюзивно.\n'
+    const line = deps.db.appendCiLog(runId, stepId, 'system', message)
+    broadcast({ t: 'ci.log', runId, line }, userId)
+
+    if (blockers.size > 0) {
+      await new Promise<void>((resolve) => {
+        const onAbort = (): void => {
+          signal.removeEventListener('abort', onAbort)
+          resolve()
+        }
+        wake = () => {
+          signal.removeEventListener('abort', onAbort)
+          resolve()
+        }
+        prodDrain!.wake = wake
+        signal.addEventListener('abort', onAbort, { once: true })
+      })
+    }
+    if (signal.aborted) {
+      if (prodDrain?.runId === runId) {
+        prodDrain = null
+        wakeNextSlot()
+      }
+      return null
+    }
+
+    return () => {
+      if (prodDrain?.runId !== runId) return
+      prodDrain = null
+      wakeNextSlot()
+    }
+  }
+
+  function notifyProdDrainFinished(runId: string): void {
+    if (!prodDrain || !prodDrain.blockers.delete(runId) || prodDrain.blockers.size > 0) return
+    prodDrain.wake()
   }
 
   /**
@@ -412,7 +501,10 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const slot: RunSlot = { runId, held: false, abandoned: false, bypass: bypassQueue }
     runSlots.set(runId, slot)
     void acquireSlot(slot)
-      .then(() => guardCancel(runId, userId, ctl, execute(runId, userId, ctl, resume)))
+      .then(async () => {
+        await waitForProdDrainBarrier(runId, ctl.signal)
+        if (!ctl.signal.aborted) await guardCancel(runId, userId, ctl, execute(runId, userId, ctl, resume))
+      })
       .catch(() => {})
       .finally(() => {
         // Зависший execute может позже дойти до своей паузы или до своего
@@ -731,6 +823,19 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     deps.db.updateCiRunStep(step.id, { startedAt: started })
     emitStep({ ...step, status: 'running', startedAt: started }, userId)
 
+    // Пересборка production не должна стартовать поверх уже идущих/ожидающих
+    // ранов. Барьер не держит обычный слот, поэтому очередь перед ним дренируется
+    // и при maxConcurrentRuns=1.
+    let releaseProdDrain: (() => void) | null = null
+    if (isProdRebuild(command.name, command.script)) {
+      releaseProdDrain = await drainForProdRebuild(runId, userId, step.id, signal)
+      if (!releaseProdDrain) {
+        const upd = deps.db.updateCiRunStep(step.id, { status: 'cancelled', finishedAt: now() })
+        if (upd) emitStep(upd, userId)
+        return { status: 'cancelled', exitCode: null, output: '', stepId: step.id }
+      }
+    }
+
     // Шаг с общим на всю машину ресурсом (прод-ветка, прод-контейнер) ждёт, пока
     // его освободит другой ран: параллельно такие шаги идти не должны.
     let releaseShared: LockRelease | null = null
@@ -740,6 +845,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
         broadcast({ t: 'ci.log', runId, line }, userId)
       })
       if (!releaseShared) {
+        releaseProdDrain?.()
         const upd = deps.db.updateCiRunStep(step.id, { status: 'cancelled', finishedAt: now() })
         if (upd) emitStep(upd, userId)
         return { status: 'cancelled', exitCode: null, output: '', stepId: step.id }
@@ -795,6 +901,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       exitCode = null
     } finally {
       releaseShared?.()
+      releaseProdDrain?.()
     }
     const finished = now()
     const status: CiStatus = timedOut ? 'timeout' : exitCode === 0 ? 'success' : 'failed'
@@ -1894,6 +2001,7 @@ fi`
     try { deps.db.calculateAndSaveCiKbHit(runId) } catch { /* метрика не роняет финализацию */ }
     const run = deps.db.updateCiRun(runId, { status, finishedAt: finished, durationMs: durationMs ?? undefined })
     if (run) {
+      notifyProdDrainFinished(runId)
       deps.db.addCiEvent({ projectId: run.projectId, runId, type: 'run.finished', actorType: 'system', payload: { status } })
       broadcast({ t: 'ci.done', runId, run }, userId)
       deps.boardChanged(run.projectId)

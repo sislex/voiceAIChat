@@ -237,6 +237,110 @@ describe('мьютекс общих ресурсов', () => {
   })
 })
 
+describe('дренирование очереди перед пересборкой production', () => {
+  function giveProdRebuildStep(): void {
+    const cmd = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Обновить прод-контейнер', script: 'npm run docker' })
+    db.setCiSlotCommands('task', taskIds[0], 'after_model', [cmd.id])
+  }
+
+  it('освобождает слот, ждёт queued ран и не пускает новый ран перед пересборкой при maxConcurrentRuns=1', async () => {
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    giveProdRebuildStep()
+    const board = db.getBoard('admin', projectId)!
+    const third = db.createTask('admin', projectId, { columnId: board.columns[0].id, title: 'T3' })!
+    let releaseSecondModel: () => void = () => {}
+    let secondModelEntered: () => void = () => {}
+    const secondModelOpen = new Promise<void>((resolve) => { releaseSecondModel = resolve })
+    const secondModelEnteredP = new Promise<void>((resolve) => { secondModelEntered = resolve })
+    const rebuild = gate('npm run docker')
+    const modelOrder: string[] = []
+    const ci = manager({
+      modelWork: async (ctx) => {
+        modelOrder.push(ctx.task.title)
+        if (ctx.task.id === taskIds[1]) {
+          secondModelEntered()
+          await secondModelOpen
+        }
+        return { ok: true }
+      }
+    })
+    const first = startRun(ci, taskIds[0])
+    const second = startRun(ci, taskIds[1])
+    await secondModelEnteredP
+    const thirdRun = startRun(ci, third.id)
+    expect(db.getCiRunRaw(thirdRun)!.status).toBe('queued')
+    releaseSecondModel()
+    await rebuild.entered
+    expect(modelOrder).toContain('T2')
+    expect(modelOrder).not.toContain('T3')
+    rebuild.release()
+    expect(await waitStatus(first)).toBe('success')
+    expect(await waitStatus(second)).toBe('success')
+    expect(await waitStatus(thirdRun)).toBe('success')
+    expect(modelOrder.indexOf('T3')).toBeGreaterThan(modelOrder.indexOf('T2'))
+    expect(db.getCiRunLog('admin', first).some((line) => line.chunk.includes('освобождаю слот и жду завершения'))).toBe(true)
+  })
+
+  it('failed ран из снимка дренирования не мешает пересборке', async () => {
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    giveProdRebuildStep()
+    const rebuild = gate('npm run docker')
+    const ci = manager({ modelWork: async (ctx) => ({ ok: ctx.task.id !== taskIds[1] }) })
+    const first = startRun(ci, taskIds[0])
+    const second = startRun(ci, taskIds[1])
+    await rebuild.entered
+    expect(await waitStatus(second)).toBe('failed')
+    rebuild.release()
+    expect(await waitStatus(first)).toBe('success')
+  })
+
+  it('awaiting_input учитывается в дренаже и отмена такого рана разблокирует пересборку', async () => {
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    giveProdRebuildStep()
+    const rebuild = gate('npm run docker')
+    const ci = manager({
+      modelWork: async (ctx) => {
+        if (ctx.task.id === taskIds[1]) await ctx.askUser(ctx.parentStepId, [{ q: 'Продолжить?', options: ['Да'] }])
+        return { ok: true }
+      }
+    })
+    const first = startRun(ci, taskIds[0])
+    const second = startRun(ci, taskIds[1])
+    for (let i = 0; i < 200 && db.getCiRunRaw(second)?.status !== 'awaiting_input'; i++) await new Promise((r) => setTimeout(r, 5))
+    expect(db.getCiRunRaw(second)?.status).toBe('awaiting_input')
+    expect(ci.cancel('admin', second)).toBe(true)
+    await rebuild.entered
+    rebuild.release()
+    expect(await waitStatus(second)).toBe('cancelled')
+    expect(await waitStatus(first)).toBe('success')
+  })
+
+  it('отмена ожидающей пересборки снимает барьер и не оставляет очередь заблокированной', async () => {
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    giveProdRebuildStep()
+    let releaseSecondModel: () => void = () => {}
+    let secondModelEntered: () => void = () => {}
+    const secondModelOpen = new Promise<void>((resolve) => { releaseSecondModel = resolve })
+    const secondModelEnteredP = new Promise<void>((resolve) => { secondModelEntered = resolve })
+    const ci = manager({
+      modelWork: async (ctx) => {
+        if (ctx.task.id === taskIds[1]) {
+          secondModelEntered()
+          await secondModelOpen
+        }
+        return { ok: true }
+      }
+    })
+    const first = startRun(ci, taskIds[0])
+    const second = startRun(ci, taskIds[1])
+    await secondModelEnteredP
+    expect(ci.cancel('admin', first)).toBe(true)
+    expect(await waitStatus(first)).toBe('cancelled')
+    releaseSecondModel()
+    expect(await waitStatus(second)).toBe('success')
+  })
+})
+
 describe('один активный ран на задачу', () => {
   it('повторный старт той же задачи отклонён, соседняя задача стартует', async () => {
     let release: () => void = () => {}
