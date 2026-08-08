@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-08-08
-checked: a499867
+checked: 345c7ef
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -25,7 +25,8 @@ areas:
 ## Образ
 
 Многостадийный `Dockerfile` теперь собирает **два runtime-target**: `server-runtime`
-(сервер + web) и `llm-runner-runtime` (внутренний HTTP-исполнитель CLI).
+(сервер + production-билды ChatAI и Web Recorder) и `llm-runner-runtime`
+(внутренний HTTP-исполнитель CLI).
 Особенности, которые легко сломать:
 
 - **Ни сервер, ни runner не компилируются в JS** — оба запускаются `tsx` прямо
@@ -35,8 +36,10 @@ areas:
   база — glibc (`bookworm`), не musl.
 - **whisper-cli** собирается отдельной стадией из whisper.cpp v1.7.5 статически
   (`BUILD_SHARED_LIBS=OFF`); он попадает только в серверный target, где нужен STT.
-- **web собирается без `VITE_SERVER_URL`** → same-origin, тот же порт, что и API
-  (`VC_WEB_DIR=/app/apps/web/dist` раздаётся сервером).
+- **Оба frontend workspace собираются отдельно и работают same-origin**: ChatAI
+  раздаётся из `VC_WEB_DIR=/app/apps/web/dist`, Web Recorder — из
+  `VC_WEB_RECORDER_DIR=/app/apps/web-recorder/dist` под `/web-recorder/`. Его Vite
+  base совпадает с prefix; recorder-маршруты исключены из SPA-fallback ChatAI.
 - Процессы работают под пользователем `node`, не root: claude CLI запрещает
   `--dangerously-skip-permissions` под root/sudo. `gosu` в entrypoint делает
   `chown` томов под root и сбрасывает привилегии.
@@ -92,7 +95,7 @@ areas:
 
 Полный разбор — `apps/server/src/config.ts` (одна функция `loadConfig`).
 Группы: `PORT`/`HOST`; данные и артефакты (`VC_DATA_DIR`, `VC_MODELS_DIR`,
-`VC_WHISPER_CLI`, `VC_PIPER_*`, `VC_WEB_DIR`); раздача сборок
+`VC_WHISPER_CLI`, `VC_PIPER_*`, `VC_WEB_DIR`, `VC_WEB_RECORDER_DIR`); раздача сборок
 (`VC_AGENT_APP`, `VC_DESKTOP_APP`); первый админ (`VC_ADMIN_PASSWORD`); пороги
 памяти (`VC_MIN_MEM_STT`, `VC_MIN_MEM_TTS`); входящий gateway
 (`VC_CLAUDE_GATEWAY_BACKEND`, `VC_CLAUDE_UPSTREAM_URL`,
