@@ -30,7 +30,8 @@ import {
   type TurnMeta,
   type TurnRequestInfo,
   type TurnUsage,
-  type LlmAttachment
+  type LlmAttachment,
+  type WidgetAssistantContext
 } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
 import { relocateImagesToMachine } from './imageRelocate.js'
@@ -131,6 +132,8 @@ export interface StartTurnRequest {
   verbose?: boolean
   /** Цель конкретного сообщения: id, null — сервер, 'none' — запрет команд. */
   execTarget?: string | null
+  /** Безопасный снимок виджета; принимается только служебным чатом ассистента. */
+  assistantContext?: WidgetAssistantContext
 }
 
 export interface TurnManager {
@@ -280,7 +283,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const permittedProvider = isProviderAllowed(access, wantProvider) ? wantProvider : fallbackProvider
     const provider = permittedProvider === 'codex' && deps.codex ? 'codex' : 'claude'
     const role = account.role
-    const wantedEngineId = conv?.llmEngineId ?? settings.llmEngineId
+    const wantedEngineId = conv?.llmEngineId ?? projectLlm?.llmEngineId ?? settings.llmEngineId
     const resolvedEngine = deps.db.resolveLlmEngine(wantedEngineId, provider, role)
     const client = resolvedEngine.engine && deps.engineClient
       ? deps.engineClient(resolvedEngine.engine)
@@ -404,6 +407,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         if (task?.acceptanceCriteria) lines.push(`Критерии приёмки: ${task.acceptanceCriteria}`)
         basePrompt = `${basePrompt}\n\n## Контекст задачи\n${lines.join('\n')}`
       }
+    }
+    if (conv?.assistantKind === 'kanban' && req.assistantContext) {
+      basePrompt = `${basePrompt}\n\n## Режим канбан-ассистента\nОтветь JSON-объектом {"text":"...","commands":[]}. Доступные команды: navigate.project-settings, navigate.task, propose.task-update, propose.rephrase, propose.acceptance-criteria, propose.settings-update. Любые изменения только propose; не утверждай, что они применены. Используй только безопасный снимок ниже.\n${JSON.stringify(req.assistantContext)}`
     }
     const prompt = appendChangeAuthorizationHint(appendImageHint(appendToolHint(appendQuestionsHint(basePrompt))))
     // Цель выполнения команд: выбранная машина-агент. Только своя машина

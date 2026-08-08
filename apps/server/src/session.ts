@@ -144,7 +144,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
             segments: msg.segments,
             attachments: msg.attachments,
             verbose: msg.verbose,
-            execTarget: msg.execTarget
+            execTarget: msg.execTarget,
+            assistantContext: msg.assistantContext
           })
           break
         case 'claude.cancel':

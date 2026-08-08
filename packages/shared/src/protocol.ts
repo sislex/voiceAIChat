@@ -339,6 +339,7 @@ export type ClientMessage =
       verbose?: boolean
       /** Цель именно этого хода: id машины, null — сервер, 'none' — без команд. */
       execTarget?: string | null
+      assistantContext?: import('./widgetAssistant').WidgetAssistantContext
     }
   | { t: 'claude.cancel'; conversationId?: string }
   | { t: 'tts.speak'; text: string; voice: string }

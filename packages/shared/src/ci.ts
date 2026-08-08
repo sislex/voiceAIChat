@@ -133,6 +133,8 @@ export const CI_CLARIFY_MAX_LIMIT = 30
  * проекта (см. `resolveTaskLlmConfig`).
  */
 export interface CiLlmConfig {
+  /** Исполнитель LLM; null — системный исполнитель выбранного provider. */
+  llmEngineId?: string | null
   provider: CiLlmProvider
   model: string
   mode: CiRunMode

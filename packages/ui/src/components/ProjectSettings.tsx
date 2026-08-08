@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import type { ProjectDetail, ProjectMachine, ProjectSummary, WorkItemDefaultSkills } from '@shared/projects'
 import type { KbContextMode } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
+import type { LlmEngineOption } from '@shared/admin'
 
 import type { AgentInfo } from '@shared/agentProtocol'
 import { Button } from './ui/Button'
@@ -18,6 +19,7 @@ export interface ProjectSettingsProps {
   detail: ProjectDetail
   agents: AgentInfo[]
   llmAccess?: UserLlmAccess[]
+  llmEngines?: LlmEngineOption[]
   onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; previewUrl?: string | null; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null }) => void
 
   onDelete: (id: string) => void
@@ -261,7 +263,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
           <p className="proj-hint" data-testid="project-llm-hint">
             Пара применяется к чатам проекта сразу, а задачи получают её через наследование.
           </p>
-          <CiProjectDefaults projectId={detail.id} editable={isOwner} llmAccess={props.llmAccess} section="llm" />
+          <CiProjectDefaults projectId={detail.id} editable={isOwner} llmAccess={props.llmAccess} llmEngines={props.llmEngines} section="llm" />
           <label>CI: база знаний в ране<select
             className="sel"
             aria-label="CI: база знаний в ране"

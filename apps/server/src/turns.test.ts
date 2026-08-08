@@ -61,6 +61,30 @@ async function runTurn(client: LlmClient, db: VoiceChatDb, conversationId: strin
   })
 }
 
+describe('turns: канбан-ассистент', () => {
+  it('инъектирует безопасный контекст виджета в обычный LLM-ход, но не в историю', async () => {
+    const db = freshDb()
+    const project = db.createProject(U, { name: 'Board' })
+    const conv = db.ensureKanbanAssistantConversation(U, project.id)!
+    db.addMessage(U, conv.id, 'u0', 'Что делать?', '10:00')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client })
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => { if (message.t === 'claude.done') { off(); resolve() } })
+      void turns.start({
+        userId: U,
+        conversationId: conv.id,
+        segments: [{ speakerId: 1, text: 'Что делать?' }],
+        assistantContext: { version: 1, widget: { kind: 'kanban', instanceId: project.id, title: 'Board' }, project: { id: project.id, name: 'Board', description: '', technologies: [], skills: [] }, selection: null, recentActions: [] }
+      })
+    })
+    expect(rec.last()?.prompt).toContain('## Режим канбан-ассистента')
+    expect(rec.last()?.prompt).toContain('"kind":"kanban"')
+    expect(db.listMessages(U, conv.id)[0]?.text).toBe('Что делать?')
+    db.close()
+  })
+})
+
 describe('turns: рабочий каталог разговора принадлежит машине, а не серверу', () => {
   it('серверный settings.workdir уходит исполнителю как желаемый cwd без локальной проверки', async () => {
     const db = new VoiceChatDb(':memory:')

@@ -4,12 +4,13 @@ import { useEffect, useState, type JSX } from 'react'
 import type { CiClarifyLevel, CiCommand, CiLlmConfig, CiRunMode } from '@shared/ci'
 import { CI_CLARIFY_MAX_LIMIT, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
 import type { UserLlmAccess } from '@shared/llmAccess'
+import type { LlmEngineOption } from '@shared/admin'
 import { Button } from '../ui/Button'
 import { LlmSettingsEditor } from '../LlmSettingsEditor'
 import { CiSlotEditor } from './CiSlotEditor'
 import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 
-export function CiProjectDefaults(props: { projectId: string; editable: boolean; llmAccess?: UserLlmAccess[]; section?: 'commands' | 'llm' }): JSX.Element {
+export function CiProjectDefaults(props: { projectId: string; editable: boolean; llmAccess?: UserLlmAccess[]; llmEngines?: LlmEngineOption[]; section?: 'commands' | 'llm' }): JSX.Element {
   const [commands, setCommands] = useState<CiCommand[]>([])
   const [before, setBefore] = useState<string[]>([])
   const [after, setAfter] = useState<string[]>([])
@@ -59,6 +60,7 @@ export function CiProjectDefaults(props: { projectId: string; editable: boolean;
         onReset={resetLlm}
       />
       <div className="ci-task-llm">
+        <label>Исполнитель проекта<select aria-label="Исполнитель проекта" className="sel" disabled={!props.editable} value={llm.llmEngineId ?? ''} onChange={(e) => { setLlm({ ...llm, llmEngineId: e.target.value || null }); setLlmDirty(true) }}><option value="">Системный исполнитель</option>{(props.llmEngines ?? []).filter((engine) => engine.kind === llm.provider).map((engine) => <option key={engine.id} value={engine.id}>{engine.name}</option>)}</select></label>
         <label>Режим запуска по умолчанию<select
           aria-label="Режим запуска по умолчанию"
           className="sel"

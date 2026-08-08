@@ -368,6 +368,18 @@ describe('projects: навыки по умолчанию и связанный �
     expect(db.getBoard('alice', p.id)!.tasks.find((x) => x.id === t.id)!.chatId).toBe(chat.id)
   })
 
+  it('создаёт один скрытый канбан-чат на пользователя и проект и сохраняет его историю', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const first = db.ensureKanbanAssistantConversation('alice', p.id)!
+    db.addMessage('alice', first.id, 'u0', 'Помоги', '10:00')
+    const again = db.ensureKanbanAssistantConversation('alice', p.id)!
+    expect(again.id).toBe(first.id)
+    expect(again).toMatchObject({ assistantKind: 'kanban', projectId: p.id, llmEngineId: null, llmProvider: null, llmModel: null })
+    expect(db.listMessages('alice', first.id)).toHaveLength(1)
+    expect(db.listConversations('alice').some((chat) => chat.id === first.id)).toBe(false)
+    expect(db.ensureKanbanAssistantConversation('bob', p.id)).toBeNull()
+  })
+
   it('openOrCreateTaskChat изолирован по пользователю и требует членства', () => {
     const p = db.createProject('alice', { name: 'P' })
     const col = db.getBoard('alice', p.id)!.columns[0]

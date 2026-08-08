@@ -162,6 +162,7 @@ interface ConversationRow {
   project_id: string | null
   preview_url: string | null
   task_id: string | null
+  assistant_kind: string | null
   status: string | null
   last_exec_target?: string | null
 }
@@ -604,7 +605,9 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'task_id')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN task_id TEXT`)
     }
-
+    if (!convCols.some((c) => c.name === 'assistant_kind')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN assistant_kind TEXT`)
+    }
     if (!convCols.some((c) => c.name === 'status')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN status TEXT NOT NULL DEFAULT 'developing'`)
     }
@@ -754,6 +757,7 @@ export class VoiceChatDb {
     // Режим базы знаний рана — снимок настройки проекта на момент старта.
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'kb_context_mode')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN kb_context_mode TEXT NOT NULL DEFAULT 'auto'`)
     const ciLlmCols = this.db.prepare(`PRAGMA table_info(ci_llm_configs)`).all() as Array<{ name: string }>
+    if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'llm_engine_id')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN llm_engine_id TEXT`)
     if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'mode')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN mode TEXT NOT NULL DEFAULT 'development'`)
     if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'clarify_level')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN clarify_level TEXT NOT NULL DEFAULT 'few'`)
     if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'clarify_max')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN clarify_max INTEGER NOT NULL DEFAULT 3`)
@@ -893,6 +897,24 @@ export class VoiceChatDb {
     return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
   }
 
+  /** Один приватный сохраняемый чат канбан-ассистента на пользователя и проект. */
+  ensureKanbanAssistantConversation(userId: string, projectId: string): Conversation | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const existing = this.db.prepare(
+      `SELECT id FROM conversations WHERE user_id = ? AND project_id = ? AND assistant_kind = 'kanban' LIMIT 1`
+    ).get(userId, projectId) as { id: string } | undefined
+    if (existing) return this.getConversation(userId, existing.id)
+    const project = this.getProject(userId, projectId)
+    if (!project) return null
+    const id = this.newId()
+    const ts = this.now()
+    this.db.prepare(
+      `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, project_id, assistant_kind)
+       VALUES (?, ?, ?, ?, NULL, ?, 'none', ?, 'kanban')`
+    ).run(id, `Ассистент · ${project.name}`, ts, ts, userId, projectId)
+    return this.getConversation(userId, id)
+  }
+
   /**
    * Список бесед пользователя. Чаты задач, лежащих в колонке с семантикой
    * `done`, из него убраны: завершённая задача забивала бы сайдбар навсегда.
@@ -909,6 +931,7 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
+           AND c.assistant_kind IS NULL
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
          ORDER BY c.updated_at DESC`
       )
@@ -958,6 +981,7 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
+           AND c.assistant_kind IS NULL
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
            AND (ulower(c.title) LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM messages m
@@ -1782,6 +1806,7 @@ export class VoiceChatDb {
           : null,
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
       projectId: row.project_id ?? null,
+      assistantKind: row.assistant_kind === 'kanban' ? 'kanban' : null,
       previewUrl: row.preview_url ?? null,
       projectPreviewUrl: row.project_id ? ((this.db.prepare(`SELECT preview_url FROM projects WHERE id = ?`).get(row.project_id) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
       taskId: row.task_id ?? null,
@@ -2867,11 +2892,12 @@ export class VoiceChatDb {
   }
 
   getCiLlmConfig(ownerType: 'project' | 'task', ownerId: string): CiLlmConfig | null {
-    const row = this.db.prepare(`SELECT provider, model, mode, clarify_level, clarify_max FROM ci_llm_configs WHERE owner_type = ? AND owner_id = ?`).get(ownerType, ownerId) as
-      | { provider: string; model: string; mode: string; clarify_level: string; clarify_max: number }
+    const row = this.db.prepare(`SELECT llm_engine_id, provider, model, mode, clarify_level, clarify_max FROM ci_llm_configs WHERE owner_type = ? AND owner_id = ?`).get(ownerType, ownerId) as
+      | { llm_engine_id: string | null; provider: string; model: string; mode: string; clarify_level: string; clarify_max: number }
       | undefined
     if (!row) return null
     return {
+      ...(row.llm_engine_id ? { llmEngineId: row.llm_engine_id } : {}),
       provider: row.provider === 'codex' ? 'codex' : 'claude',
       model: row.model,
       mode: normRunMode(row.mode),
@@ -2884,6 +2910,7 @@ export class VoiceChatDb {
     const provider = config.provider === 'codex' ? 'codex' : 'claude'
     const model = config.model.trim() || (provider === 'codex' ? 'gpt-5.4' : DEFAULT_CI_CLAUDE_MODEL)
     const next: CiLlmConfig = {
+      ...(config.llmEngineId ? { llmEngineId: config.llmEngineId } : {}),
       provider,
       model,
       mode: normRunMode(config.mode),
@@ -2892,12 +2919,12 @@ export class VoiceChatDb {
     }
     this.db
       .prepare(
-        `INSERT INTO ci_llm_configs (owner_type, owner_id, provider, model, mode, clarify_level, clarify_max)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(owner_type, owner_id) DO UPDATE SET provider=excluded.provider, model=excluded.model,
+        `INSERT INTO ci_llm_configs (owner_type, owner_id, llm_engine_id, provider, model, mode, clarify_level, clarify_max)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(owner_type, owner_id) DO UPDATE SET llm_engine_id=excluded.llm_engine_id, provider=excluded.provider, model=excluded.model,
            mode=excluded.mode, clarify_level=excluded.clarify_level, clarify_max=excluded.clarify_max`
       )
-      .run(ownerType, ownerId, next.provider, next.model, next.mode, next.clarifyLevel, next.clarifyMax)
+      .run(ownerType, ownerId, next.llmEngineId, next.provider, next.model, next.mode, next.clarifyLevel, next.clarifyMax)
     return next
   }
 
@@ -2911,6 +2938,7 @@ export class VoiceChatDb {
     const settings = this.getSettings(userId)
     return {
       ...DEFAULT_CI_LLM_CONFIG,
+      ...(settings.llmEngineId ? { llmEngineId: settings.llmEngineId } : {}),
       provider: settings.llmProvider,
       model: settings.llmProvider === 'codex' ? settings.codexModel : settings.model
     }
