@@ -1,12 +1,12 @@
 # Многостадийные образы voiceAIChat:
-#  • server-runtime — Fastify-сервер (apps/server) + web-билд (apps/web)
+#  • server-runtime — Fastify-сервер + web-билды ChatAI и Web Recorder
 #  • llm-runner-runtime — внутренний исполнитель claude/codex CLI (apps/llm-runner)
 #
 # Особенности репозитория:
 #  • server и llm-runner НЕ компилируются в JS — запускаются через tsx прямо из
 #    исходников и резолвят @voicechat/* через workspace-симлинки.
 #  • better-sqlite3 — нативный модуль → в build-стадии нужен toolchain.
-#  • web собирается БЕЗ VITE_SERVER_URL → тот же origin/порт, что и API.
+#  • оба web-приложения собираются для того же origin/порта, что и API.
 
 # ---- Стадия сборки -------------------------------------------------------
 FROM node:22-bookworm AS build
@@ -19,6 +19,7 @@ RUN apt-get update \
 COPY . .
 RUN npm ci
 RUN npm run -w @voicechat/web build
+RUN npm run -w @voicechat/web-recorder build
 
 # ---- Сборка whisper.cpp: whisper-cli для серверного распознавания речи ----
 FROM debian:bookworm-slim AS whisper
@@ -52,6 +53,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 FROM runtime-base AS server-runtime
 ENV PORT=8787 \
     VC_WEB_DIR=/app/apps/web/dist \
+    VC_WEB_RECORDER_DIR=/app/apps/web-recorder/dist \
     VC_WHISPER_CLI=/usr/local/bin/whisper-cli
 
 RUN mkdir -p /data \

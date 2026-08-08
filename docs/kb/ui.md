@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-08
-checked: 2dc97f3
+checked: 241ebfe
 areas:
   - packages/ui/src
   - apps/web/src
@@ -559,6 +559,8 @@ Storybook 8.6 на vite-билдере: `packages/ui/.storybook/main.ts` (гло
 Веб-рекордер собирается и запускается отдельно как workspace `@voicechat/web-recorder` (`apps/web-recorder`, Vite, порт dev `5274`). Его entry `src/main.tsx` монтирует собственный `Recorder`, а состояние открытого URL, записи и редактирования сценария остаётся внутри этого приложения. Для общих токенов и классов рекордер подключает `@voicechat/ui/app.css`; компоненты и store ChatAI он не импортирует.
 
 ChatAI показывает только iframe-host `WebRecorderHost` в `packages/ui/src/App.tsx`; адрес standalone build — `/web-recorder/`. Единственный публичный контракт интеграции — `packages/shared/src/webRecorder.ts`: envelopes `voicechat.web-recorder.v1` `set-url`, `run-action` от хоста и `ready`, `save-url`, `element`, `action-result` от рекордера. URL сохраняет ChatAI, выбранный элемент и результат DOM-действия возвращаются host-у, поэтому ChatAI не импортирует внутренние компоненты или состояние рекордера.
+
+Production-сборка Vite задаёт `base: '/web-recorder/'`, поэтому ссылки из `apps/web-recorder/dist/index.html` ведут в `/web-recorder/assets/`. Docker build отдельно выполняет build workspaces `@voicechat/web` и `@voicechat/web-recorder`; runtime передаёт Fastify каталоги через `VC_WEB_DIR` и `VC_WEB_RECORDER_DIR`. Сервер сначала регистрирует recorder static-root с prefix `/web-recorder/`, затем корень ChatAI; основной SPA-fallback исключает весь recorder prefix. Поэтому `/web-recorder/` и его assets не могут получить `index.html` ChatAI, а отсутствующий recorder asset отвечает 404. Оба frontend-приложения остаются на одном origin и используют общие `/api/*`, `/ws` и `/api/preview` без отдельного backend или контейнера.
 
 ### Действия модели в превью (mcp__browser__*)
 
