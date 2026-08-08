@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-08
-checked: 17679ee
+checked: a62f5ad
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -87,11 +87,19 @@ URL руками. Параметризованные пути — функции
 
 Клиент→сервер: `audio.start/stop`, `claude.send/cancel`, `tts.speak/cancel`,
 `tts.downloadVoice`, `stt.download`, `cc.tail.start/stop`, `cx.tail.start/stop`,
-`pty.start/input/resize/kill`.
+`pty.start/input/resize/kill`, `preview.result`.
 
 Сервер→клиент: `stt.partial/final/error`, `claude.token/done/error/log/active`,
 `tts.audio/error`, прогресс скачивания голоса и модели, `cc.tail`, `cx.tail`,
-`agents` (живой список машин), `pty.output/exit/error`, `kb.usage`.
+`agents` (живой список машин), `pty.output/exit/error`, `kb.usage`, `preview.action`.
+
+`preview.action`/`preview.result` — управление панелью веб-превью из хода модели
+(инструменты `mcp__browser__*`): сервер рассылает действие кадром `preview.action`
+всем сокетам пользователя, клиент с активным чатом исполняет его и отвечает
+`preview.result`; мост — `RendererPreviewBridge` (`window.preview`, только web,
+в desktop отсутствует). Подписки нет — рассылка по `userId`, как у `kb.usage`.
+Детали протокола действий, лимиты и relay — [ui.md](ui.md#действия-модели-в-превью-mcp__browser__)
+и [llm.md](llm.md).
 
 `kb.usage` — обращение к базе знаний (авто-инъекция контекста сервером или вызов
 `mcp__kb__*` моделью). **Подписки нет**: кадр рассылается по `userId`, как
