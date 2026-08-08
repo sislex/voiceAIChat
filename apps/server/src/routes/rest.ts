@@ -85,6 +85,28 @@ export async function registerRest(
     db.createConversation(uid(req), req.body?.title)
   )
 
+  app.get<{ Params: { projectId: string } }>('/api/projects/:projectId/kanban-assistant', async (req, reply) => {
+    const userId = uid(req)
+    const conversation = db.ensureKanbanAssistantConversation(userId, req.params.projectId)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    const project = db.getCiLlmConfig('project', req.params.projectId) ?? db.ciLlmDefaultsForUser(userId)
+    const settings = db.getSettings(userId)
+    const provider = conversation.llmProvider ?? project.provider
+    const model = conversation.llmProvider
+      ? (conversation.llmModel ?? (provider === 'codex' ? settings.codexModel : settings.model))
+      : project.model
+    return {
+      conversation,
+      messages: db.listMessages(userId, conversation.id),
+      effectiveLlm: {
+        llmEngineId: conversation.llmEngineId ?? project.llmEngineId ?? settings.llmEngineId,
+        provider,
+        model,
+        inherited: conversation.llmProvider === null && conversation.llmEngineId === null
+      }
+    }
+  })
+
   app.get<{ Querystring: { q?: string; includeCompleted?: string } }>(REST.conversationsSearch, async (req) =>
     db.searchConversations(uid(req), req.query.q ?? '', { includeCompleted: queryFlag(req.query.includeCompleted) })
   )

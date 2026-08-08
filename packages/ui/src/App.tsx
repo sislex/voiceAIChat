@@ -5,7 +5,6 @@ import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { TaskPriority } from '@shared/projects'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
-import { parseWidgetAssistantReply } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, isPreviewElementMessage, isPreviewInspectorCommand, type PreviewElementPayload } from '@shared/previewInspector'
 import { PREVIEW_ACTION_COMMAND_TYPE, isPreviewActionResultMessage, type PreviewActionResult, type PreviewDomAction } from '@shared/previewActions'
@@ -1055,6 +1054,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
                 detail={state.projectDetail}
                 agents={state.agents}
                 llmAccess={state.llmAccess}
+                llmEngines={state.llmEngines}
                 onUpdate={(id, fields) => void actions.updateProject(id, fields)}
                 onDelete={(id) => {
                   // Удалили проект — уводим на другой доступный, а если их не
@@ -1121,12 +1121,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               }}
             />}
               assistant={<KanbanAssistant
+                projectId={routeProjectId!}
                 context={kanbanAssistantContext}
-                request={async (text, context) => {
-                  const prompt = `Ты ассистент виджета канбана. Ответь JSON-объектом {"text":"...","commands":[]}. Доступные команды: navigate.project-settings, navigate.task, propose.task-update, propose.rephrase, propose.acceptance-criteria, propose.settings-update. Любые изменения только propose; не утверждай, что они применены. Контекст не содержит секретов.\nКонтекст: ${JSON.stringify(context)}\nЗапрос: ${text}`
-                  const result = await api['prompt:suggest']({ prompt, modifiers: [] })
-                  return parseWidgetAssistantReply(result.variants[0]?.text ?? 'Нет предложения')
-                }}
+                api={api}
+                llmEngines={state.llmEngines}
                 onCommand={async (command: WidgetAssistantCommand) => {
                   rememberWidgetAction('assistant.command', command.type, 'taskId' in command ? command.taskId : undefined)
                   if (command.type === 'navigate.project-settings') { navigate(`/projects/${command.projectId}/settings`); return }

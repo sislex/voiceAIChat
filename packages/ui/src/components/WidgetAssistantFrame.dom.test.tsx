@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { WidgetAssistantContext } from '@shared/widgetAssistant'
 import { WidgetAssistantFrame, WidgetProposalCard } from './WidgetAssistantFrame'
 import { KanbanAssistant } from './KanbanAssistant'
+import { createFakeApi } from '../test/fakeApi'
 
 const context: WidgetAssistantContext<any> = {
   version: 1,
@@ -30,17 +31,21 @@ describe('WidgetAssistantFrame', () => {
     expect(screen.getByTestId('widget-assistant-frame')).toHaveClass('widget-assistant--page')
   })
 
-  it('sends the latest synchronized widget context with each message', async () => {
-    const request = vi.fn(async (_text: string, _context: any) => ({ text: 'ok' }))
+  it('persists a message and sends the latest safe context through the normal LLM transport', async () => {
+    const api = createFakeApi()
+    const send = vi.fn()
+    const transport = { send, onToken: vi.fn(() => () => {}), onDone: vi.fn(() => () => {}), onError: vi.fn(() => () => {}) } as any
     const onCommand = vi.fn()
-    const view = render(<KanbanAssistant context={context as any} request={request} onCommand={onCommand} />)
+    const view = render(<KanbanAssistant projectId="p1" context={context as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
     const next = { ...context, selection: { board: { projectId: 'p1', columns: [] }, openTask: { id: 't2', title: 'Current' }, selectedField: 'description' } }
-    view.rerender(<KanbanAssistant context={next as any} request={request} onCommand={onCommand} />)
+    view.rerender(<KanbanAssistant projectId="p1" context={next as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
+    await vi.waitFor(() => expect(screen.getByRole('textbox', { name: 'Сообщение ассистенту' })).toBeEnabled())
     await userEvent.type(screen.getByRole('textbox', { name: 'Сообщение ассистенту' }), 'help')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
-    await vi.waitFor(() => expect(request).toHaveBeenCalled())
-    expect(request.mock.calls[0]?.[1].selection.openTask.id).toBe('t2')
-    expect(request.mock.calls[0]?.[1].selection.selectedField).toBe('description')
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+    expect(send.mock.calls[0]?.[0].assistantContext.selection.openTask.id).toBe('t2')
+    expect(send.mock.calls[0]?.[0].assistantContext.selection.selectedField).toBe('description')
+    expect(await api['kanbanAssistant:get']({ projectId: 'p1' })).toMatchObject({ messages: [{ role: 'u0', text: 'help' }] })
   })
 
   it('never applies a proposal until confirmation and cancellation is inert', async () => {

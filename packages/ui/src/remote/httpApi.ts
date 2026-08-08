@@ -86,6 +86,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`${REST.conversations}${includeCompleted ? '?includeCompleted=1' : ''}`),
     'conversations:create': ({ title }) =>
       req(REST.conversations, { method: 'POST', body: JSON.stringify({ title }) }),
+    'kanbanAssistant:get': ({ projectId }) => req(`/api/projects/${encodeURIComponent(projectId)}/kanban-assistant`),
     'conversations:get': async ({ id }) => {
       const token = getToken()
       const res = await fetch(httpBase + REST.conversation(id), {

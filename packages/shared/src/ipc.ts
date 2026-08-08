@@ -125,6 +125,11 @@ export interface IpcInvokeMap {
    */
   'conversations:list': { arg: { includeCompleted?: boolean }; result: Conversation[] }
   'conversations:create': { arg: { title?: string }; result: Conversation }
+  /** Создать или получить приватный проектный чат канбан-ассистента. */
+  'kanbanAssistant:get': {
+    arg: { projectId: string }
+    result: ConversationWithMessages & { effectiveLlm: { llmEngineId: string | null; provider: LlmProvider; model: string; inherited: boolean } }
+  }
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
   /**
    * Поиск разговоров по названию и содержимому сообщений (регистронезависимо).
@@ -395,6 +400,8 @@ export interface IpcSendMap {
     verbose?: boolean
     /** Цель именно этого хода: id машины, null — сервер, 'none' — без команд. */
     execTarget?: string | null
+    /** Неперсистентный безопасный контекст служебного ассистента виджета. */
+    assistantContext?: import('./widgetAssistant').WidgetAssistantContext
   }
   /** Прервать запрос к Claude (conversationId — какой ход; без него — все). */
   'claude:cancel': { conversationId?: string } | undefined
