@@ -1,4 +1,5 @@
 import { lookup } from 'node:dns/promises'
+import type { LookupAddress } from 'node:dns'
 import { isIP } from 'node:net'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
@@ -21,6 +22,16 @@ export function isPublicAddress(address: string): boolean {
   }
   if (isIP(v) === 6) return !(v === '::1' || v === '::' || v.startsWith('fe80:') || /^(fc|fd)[0-9a-f]{2}:/.test(v))
   return false
+}
+
+type ResolvedAddress = LookupAddress
+
+export function publicLookupResult(addresses: ResolvedAddress[], all: boolean): ResolvedAddress | ResolvedAddress[] {
+  const address = addresses[0]
+  if (!address || addresses.some((candidate) => !isPublicAddress(candidate.address))) {
+    throw new PreviewProxyError(403, 'Адрес сайта недоступен для превью')
+  }
+  return all ? addresses : address
 }
 
 async function assertPublicHost(hostname: string): Promise<void> {
@@ -230,12 +241,17 @@ async function get(url: URL): Promise<{ response: IncomingMessage; finalUrl: URL
     const request = transport(url, {
       headers: { 'user-agent': 'voiceAIChat-preview/1.0', accept: '*/*' },
       timeout: TIMEOUT_MS,
-      lookup(hostname, _opts, callback) {
+      lookup(hostname, options, callback) {
         void lookup(hostname, { all: true, verbatim: true }).then((addresses) => {
-          const address = addresses.find((candidate) => isPublicAddress(candidate.address))
-          if (!address || addresses.some((candidate) => !isPublicAddress(candidate.address))) return callback(new Error('blocked address'), '', 4)
-          callback(null, address.address, address.family)
-        }, (err) => callback(err, '', 4))
+          let result: ResolvedAddress | ResolvedAddress[]
+          try {
+            result = publicLookupResult(addresses, options.all === true)
+          } catch (err) {
+            return callback(err as Error, options.all ? [] : '', 4)
+          }
+          if (Array.isArray(result)) return callback(null, result)
+          callback(null, result.address, result.family)
+        }, (err) => callback(err, options.all ? [] : '', 4))
       }
     }, (response) => resolve({ response, finalUrl: url }))
     request.once('timeout', () => request.destroy(new PreviewProxyError(504, 'Сайт не ответил вовремя')))

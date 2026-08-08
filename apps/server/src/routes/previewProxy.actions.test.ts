@@ -12,7 +12,7 @@ import {
   type PreviewActionResultMessage,
   type PreviewDomAction
 } from '@voicechat/shared'
-import { previewInspectorScript } from './previewProxy.js'
+import { PreviewProxyError, previewInspectorScript, publicLookupResult } from './previewProxy.js'
 
 let counter = 0
 
@@ -58,6 +58,26 @@ beforeEach(() => {
       <form id="search-form"><input id="q" name="q" placeholder="Поиск"><button type="submit">Найти</button></form>
       <input type="password" id="secret" value="тайна">
     </main>`
+})
+
+describe('DNS lookup веб-превью', () => {
+  const publicAddresses = [
+    { address: '93.184.216.34', family: 4 as const },
+    { address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 as const }
+  ]
+
+  it('возвращает весь массив, когда HTTP-клиент запрашивает all: true', () => {
+    expect(publicLookupResult(publicAddresses, true)).toEqual(publicAddresses)
+  })
+
+  it('возвращает один адрес в обычном режиме lookup', () => {
+    expect(publicLookupResult(publicAddresses, false)).toEqual(publicAddresses[0])
+  })
+
+  it('отвергает ответ DNS, если хотя бы один адрес непубличный', () => {
+    expect(() => publicLookupResult([...publicAddresses, { address: '127.0.0.1', family: 4 }], true))
+      .toThrow(PreviewProxyError)
+  })
 })
 
 describe('скрипт превью: DOM-действия', () => {
