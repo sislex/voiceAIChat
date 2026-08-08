@@ -1,7 +1,7 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import App from './App'
+import App, { openWebReaderWorkspace } from './App'
 import { createFakeApi, type FakeApi } from './test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
 
@@ -113,6 +113,20 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
 })
 
 describe('App — отдельная страница Web Reader', () => {
+  it('открывает workspace в новой вкладке и сохраняет исходный чат', () => {
+    window.location.hash = '#/chat/chat-42'
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    openWebReaderWorkspace()
+
+    expect(open).toHaveBeenCalledWith(
+      `${window.location.origin}${window.location.pathname}#/web-reader`,
+      '_blank',
+      'noopener,noreferrer'
+    )
+    expect(window.location.hash).toBe('#/chat/chat-42')
+  })
+
   it('показывает Web Reader на собственном маршруте', async () => {
     const { api } = await seededApi()
     window.location.hash = '#/web-reader'

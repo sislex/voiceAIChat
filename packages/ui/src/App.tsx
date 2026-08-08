@@ -298,6 +298,13 @@ export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectEleme
 /** Совместимый экспорт для существующих интеграций. */
 export const WebPreview = PreviewPane
 
+/** Открывает независимое рабочее пространство, не меняя маршрут исходного чата. */
+export function openWebReaderWorkspace(): void {
+  const url = new URL(window.location.href)
+  url.hash = '#/web-reader'
+  window.open(url.toString(), '_blank', 'noopener,noreferrer')
+}
+
 /**
  * Host-side integration only. The recorder is a separately built application;
  * ChatAI communicates exclusively through @shared/webRecorder postMessage events.
@@ -957,7 +964,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         onOpenSettings={menu(actions.openSettings)}
         onOpenFiles={state.authRequired ? menu(() => actions.openUtilityForActiveChat('explorer')) : undefined}
         onOpenConsole={state.authRequired ? menu(() => actions.openUtilityForActiveChat('console')) : undefined}
-        onOpenWebReader={state.authRequired ? menu(() => navigate('/web-reader')) : undefined}
+        onOpenWebReader={state.authRequired ? menu(openWebReaderWorkspace) : undefined}
         onOpenUsers={state.authRequired ? menu(() => navigate('/users')) : undefined}
         onOpenMachines={state.authRequired ? menu(() => navigate('/machines')) : undefined}
         onOpenCi={state.authRequired ? menu(() => navigate('/ci')) : undefined}
