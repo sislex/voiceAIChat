@@ -108,6 +108,17 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     }
   )
 
+  // Выпускает preview-cookie из действующего Bearer-токена. Login покрывает только
+  // свежий вход; сессии из localStorage (и после перезапуска браузера — cookie
+  // сессионная) без этого роута остаются без cookie, и iframe получает 401.
+  // Путь публичный (префикс /api/session/), поэтому Bearer проверяется здесь.
+  app.post(REST.sessionPreview, async (req, reply) => {
+    const user = resolveUser(db, bearer(req), secret)
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    reply.header('set-cookie', previewCookie(signToken(user, secret)))
+    return { ok: true }
+  })
+
   app.get(REST.sessionMe, async (req) => {
     const user = resolveUser(db, bearer(req), secret)
     return user ? { user } : { user: null }

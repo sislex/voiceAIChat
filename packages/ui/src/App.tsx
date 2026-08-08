@@ -85,6 +85,11 @@ export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectEleme
   const [reloadKey, setReloadKey] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [inspecting, setInspecting] = useState(false)
+  // Без HttpOnly-cookie превью same-origin /api/preview отвечает 401, поэтому iframe
+  // ждёт ensurePreview session-моста; в desktop моста нет — там гейт не нужен.
+  const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>(
+    () => (window.session?.ensurePreview ? 'pending' : 'ready')
+  )
   const frameRef = useRef<HTMLIFrameElement>(null)
   const sendInspectorState = (enabled: boolean): void => {
     frameRef.current?.contentWindow?.postMessage({ type: PREVIEW_INSPECTOR_COMMAND_TYPE, enabled }, window.location.origin)
@@ -107,6 +112,18 @@ export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectEleme
     return () => { sendInspectorState(false); window.removeEventListener('message', receive); window.removeEventListener('keydown', hotkey) }
   }, [inspecting, onSelectElement])
   useEffect(() => { sendInspectorState(inspecting) }, [inspecting])
+  useEffect(() => {
+    const ensure = window.session?.ensurePreview
+    if (!ensure) { setPreviewSession('ready'); return }
+    if (!loaded) return
+    let alive = true
+    setPreviewSession('pending')
+    void ensure().then(
+      (ok) => { if (alive) setPreviewSession(ok ? 'ready' : 'failed') },
+      () => { if (alive) setPreviewSession('failed') }
+    )
+    return () => { alive = false }
+  }, [loaded, reloadKey])
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
     const raw = draft.trim()
@@ -131,7 +148,10 @@ export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectEleme
       <button className="vc-btn vc-btn--secondary webpreview-inspector-toggle" type="button" aria-pressed={inspecting} disabled={!loaded} title="Выбор элемента (Alt+I)" onClick={() => setInspecting((value) => !value)}>⌖ <span>Выбор элемента</span></button>
     </form>
     {error && <p className="webpreview-error" id="webpreview-error" role="alert">{error}</p>}
-    {loaded ? <iframe key={reloadKey} ref={frameRef} className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(loaded)} title="Предпросмотр сайта" onLoad={() => sendInspectorState(inspecting)} onError={() => setError('Сайт недоступен или не разрешает загрузку')} /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
+    {loaded && previewSession === 'ready' && <iframe key={reloadKey} ref={frameRef} className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(loaded)} title="Предпросмотр сайта" onLoad={() => sendInspectorState(inspecting)} onError={() => setError('Сайт недоступен или не разрешает загрузку')} />}
+    {loaded && previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение превью…</div>}
+    {loaded && previewSession === 'failed' && <div className="webpreview-empty" role="alert">Превью недоступно: войдите в приложение заново и обновите превью</div>}
+    {!loaded && <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
   </section>
 }
 

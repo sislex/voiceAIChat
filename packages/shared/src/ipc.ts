@@ -576,6 +576,12 @@ export interface RendererSessionBridge {
   login(creds: { name: string; password: string }): Promise<SessionUser | null>
   me(): Promise<SessionUser | null>
   logout(): Promise<void>
+  /**
+   * Выпускает HttpOnly-cookie превью из действующего Bearer-токена. Нужен сессиям,
+   * восстановленным без повторного login (токен из localStorage, перезапуск браузера):
+   * без cookie same-origin iframe /api/preview получает 401. Нет в desktop-мосте.
+   */
+  ensurePreview?(): Promise<boolean>
 }
 
 /**
