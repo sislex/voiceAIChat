@@ -47,6 +47,12 @@ log 'git pull --ff-only'
 git pull --ff-only
 log "HEAD после pull: $(git rev-parse --short HEAD)"
 
+# Метаданные именно того коммита, из которого сейчас собирается приложение.
+export VC_RELEASE_COMMIT=$(git rev-parse --short=12 HEAD)
+task_ref=$(git log -1 --pretty=%s | grep -Eio 'chat(ai)?[-[:space:]]*[0-9]+' | grep -Eo '[0-9]+' | head -1 || true)
+export VC_RELEASE_TASK=${task_ref:+chat-$task_ref}
+log "метаданные релиза: commit=$VC_RELEASE_COMMIT task=${VC_RELEASE_TASK:-нет}"
+
 log 'docker compose up -d --build'
 docker compose up -d --build
 

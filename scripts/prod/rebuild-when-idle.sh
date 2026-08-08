@@ -50,6 +50,12 @@ fi
 cd "$REPO"
 log "=== пересборка прода начата, HEAD $(git rev-parse --short HEAD) ==="
 
+# Передаём серверу Git-метаданные ровно той ревизии, из которой строятся образы.
+export VC_RELEASE_COMMIT=$(git rev-parse --short=12 HEAD)
+task_ref=$(git log -1 --pretty=%s | grep -Eio 'chat(ai)?[-[:space:]]*[0-9]+' | grep -Eo '[0-9]+' | head -1 || true)
+export VC_RELEASE_TASK=${task_ref:+chat-$task_ref}
+log "метаданные релиза: commit=$VC_RELEASE_COMMIT task=${VC_RELEASE_TASK:-нет}"
+
 # Этап 1. Сборка образов: контейнеры остаются старыми, раны не задеты.
 log "docker compose build $BUILD_SERVICES"
 # shellcheck disable=SC2086

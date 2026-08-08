@@ -863,15 +863,22 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       ].filter(Boolean).join(' ')}
       data-theme={state.settings.theme}
     >
-      {release && (
-        <footer
-          className="release-version"
-          title={new Date(release.releasedAt).toLocaleString()}
-          aria-label={`Версия ${release.version}; выпущена ${new Date(release.releasedAt).toLocaleString()}`}
-        >
-          v{release.version}
-        </footer>
-      )}
+      {release && (() => {
+        const details = [
+          `выпущена: ${new Date(release.releasedAt).toLocaleString()}`,
+          ...(release.commit ? [`Коммит: ${release.commit}`] : []),
+          ...(release.task ? [`Задача: ${release.task}`] : [])
+        ]
+        return (
+          <footer
+            className="release-version"
+            title={details.join('\n')}
+            aria-label={`Версия ${release.version}; ${details.join('; ')}`}
+          >
+            v{release.version}
+          </footer>
+        )
+      })()}
       <Sidebar
         open={sidebarOpen}
         onToggleCollapse={() => setCollapsedPersist(true)}

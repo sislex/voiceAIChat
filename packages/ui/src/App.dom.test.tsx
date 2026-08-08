@@ -44,6 +44,33 @@ async function renderApp(): Promise<FakeApi> {
 }
 
 /** Открыть настройки и перейти в раздел меню (Агент — по умолчанию). */
+describe('App — версия релиза', () => {
+  it('сохраняет номер версии и показывает коммит с задачей в подсказке', async () => {
+    await renderApp()
+
+    const version = await screen.findByLabelText(/Версия 0\.1\.0/)
+    expect(version).toHaveTextContent('v0.1.0')
+    expect(version).toHaveAttribute('title', expect.stringContaining('Коммит: 7492fde'))
+    expect(version).toHaveAttribute('title', expect.stringContaining('Задача: chat-149'))
+  })
+
+  it('не добавляет задачу в подсказку, когда она не определена', async () => {
+    const api = await seededApi()
+    api['app:ping'] = async () => ({
+      ok: true,
+      version: '0.1.0',
+      releasedAt: '2026-08-03T00:00:00.000Z',
+      commit: 'a1858af',
+      task: null
+    })
+    render(<App api={api} delays={SLOW} />)
+
+    const version = await screen.findByLabelText(/Версия 0\.1\.0/)
+    expect(version).toHaveAttribute('title', expect.stringContaining('Коммит: a1858af'))
+    expect(version.getAttribute('title')).not.toContain('Задача:')
+  })
+})
+
 async function openSettings(section?: string): Promise<void> {
   await userEvent.click(screen.getByText('Настройки'))
   if (section) await userEvent.click(screen.getByRole('button', { name: section }))

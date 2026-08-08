@@ -35,6 +35,8 @@ services:
       # VC_RELEASED_AT фиксируется сервером при старте нового контейнера.
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-0.1.0}
       VC_RELEASED_AT: ${VC_RELEASED_AT:-}
+      VC_RELEASE_COMMIT: ${VC_RELEASE_COMMIT:-}
+      VC_RELEASE_TASK: ${VC_RELEASE_TASK:-}
       VC_LLM_RUNNER_CLAUDE_URL: http://runner-work:8790
       VC_LLM_RUNNER_CODEX_URL: http://runner-work:8790
       VC_LLM_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
