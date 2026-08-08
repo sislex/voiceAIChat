@@ -352,6 +352,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const routeSettings = inProjects && segments[2] === 'settings'
   // «Открыть задачу» из шапки связанного чата: #/projects/:id/task/:taskId.
   const routeTaskId = inProjects && segments[2] === 'task' ? (segments[3] ?? null) : null
+  // Связанный чат карточки — самостоятельная страница, но сохраняет проектный URL.
+  const routeTaskChatId = inProjects && segments[2] === 'task' && segments[4] === 'chat' ? (segments[5] ?? null) : null
   // Утилиты-страницы: один сегмент из белого списка (#/machines, #/kb, …).
   // У базы знаний есть второй сегмент — открытый документ (#/kb/:documentId):
   // так на раздел можно дать ссылку из панели «Использование БЗ» и из «Подробнее».
@@ -364,11 +366,12 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const onUtilityPage = utilitySeg !== null
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
-  const routeChatId = segments[0] === 'chat' ? (segments[1] ?? null) : null
+  const routeChatId = segments[0] === 'chat' ? (segments[1] ?? null) : routeTaskChatId
   const legacyReaderRoute = segments[0] === 'web-recorder'
   const inReader = segments[0] === 'web-reader' || legacyReaderRoute
   const routeReaderChatId = inReader ? (segments[1] ?? null) : null
-  const inChat = !inProjects && !onUtilityPage && !inReader
+  const inTaskChat = routeTaskChatId !== null
+  const inChat = (!inProjects && !onUtilityPage && !inReader) || inTaskChat
   const { state, actions } = useVoiceStore({ api, now, delays, initialChatId: routeChatId ?? routeReaderChatId })
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
@@ -994,7 +997,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         <div className="side-backdrop" aria-hidden onClick={() => setSidebarOpen(false)} />
       )}
 
-      {!inProjects && !onUtilityPage && (inChat || inReader) && (
+      {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inReader) && (
       <div className={inReader ? `chat-split chat-split--${chatView}` : 'chat-page'} style={inReader ? { '--preview-width': `${previewWidth}%` } as CSSProperties : undefined}>
       {inReader && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>Сайт</button></div></nav>}
       <div className="chat-split-chat">
@@ -1123,7 +1126,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
 
       {/* Одна страница проекта на все три маршрута: шапка с именем и вкладками
           общая, меняется только содержимое. */}
-      {inProjects && routeProjectId && !projectMissing && (
+      {inProjects && !inTaskChat && routeProjectId && !projectMissing && (
         <ProjectPage
           projectName={routeProjectName}
           section={routeSettings ? 'settings' : 'board'}
@@ -1195,7 +1198,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               onUpdateTask={(taskId, fields) => void actions.updateTask(taskId, fields)}
               onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
               onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
-              onOpenChat={(taskId) => void actions.openTaskChat(taskId).then((id) => navigate(id ? `/chat/${id}` : '/'))}
+              onOpenChat={(taskId) => void actions.openTaskChat(taskId).then((id) => navigate(id ? `/projects/${routeProjectId}/task/${taskId}/chat/${id}` : '/'))}
               onEnsureChat={(taskId) => void actions.ensureTaskChat(taskId)}
               ciSummaries={state.ciSummaries}
               onStartCi={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId).then((run) => { if (run) actions.openCiRun(run.id) }) }}
@@ -1212,11 +1215,14 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
                 context={kanbanAssistantContext}
                 api={api}
                 llmEngines={state.llmEngines}
+                onOpenProjectChat={(id) => navigate(`/chat/${id}`)}
+                onNewProjectChat={() => { void api['conversations:create']({ title: 'Новый разговор' }).then((chat) => api['conversations:setProject']({ id: chat.id, projectId: routeProjectId! })).then((chat) => navigate(`/chat/${chat.id}`)) }}
                 onCommand={async (command: WidgetAssistantCommand) => {
                   rememberWidgetAction('assistant.command', command.type, 'taskId' in command ? command.taskId : undefined)
                   if (command.type === 'navigate.project-settings') { navigate(`/projects/${command.projectId}/settings`); return }
                   if (command.type === 'navigate.task') { navigate(`/projects/${command.projectId}/task/${command.taskId}`); return }
                   if (command.type === 'propose.settings-update') { await actions.updateSettings(command.patch); return }
+                  if (command.type === 'propose.task-create') { await actions.createTask(command.input.columnId, command.input); return }
                   const patch: SupportedTaskPatch = command.type === 'propose.task-update'
                     ? command.patch
                     : command.type === 'propose.acceptance-criteria'
