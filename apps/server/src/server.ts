@@ -66,6 +66,7 @@ import type { KnowledgeBaseService } from './kb/types.js'
 import { LlmKbReranker } from './kb/reranker.js'
 import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
+import { registerPreviewMcp, previewToolBroker, PreviewActionRelay, PREVIEW_MCP_PATH } from './mcp/previewMcp.js'
 import { readUserFile } from './serverFiles.js'
 import { UnixDeployClient, type DeployTrigger } from './routes/admin.js'
 
@@ -101,6 +102,8 @@ export interface BuildOptions {
   ciKbUpdate?: CiKbUpdateHook
   /** Запуск host-side деплоя (в тестах — мок). */
   deployTrigger?: DeployTrigger
+  /** Relay действий веб-превью (в тестах — свой, чтобы дёргать request напрямую). */
+  previewRelay?: PreviewActionRelay
 }
 
 function makeTtsEngine(config: ServerConfig): TtsEngine {
@@ -293,9 +296,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     deployTrigger
   })
+  // Действия веб-превью (mcp__browser__*): relay «сервер → клиенты пользователя»,
+  // сессии WS подписываются на подключении, ход адресуется токеном ?turn=.
+  const previewRelay = opts.previewRelay ?? new PreviewActionRelay()
+  registerPreviewMcp(app, { secret: mcpSecret, relay: previewRelay })
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
   const ciCommandsMcpBaseUrl = buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)
+  const previewMcpBaseUrl = buildPublicMcpUrl(opts.config, PREVIEW_MCP_PATH, mcpSecret)
 
   // «Исследовать проект»: модель на машине проекта сверяет статьи раздела
   // «Разработка проекта» с кодом. Живёт рядом с MCP-мостом — ей нужен тот же
@@ -459,7 +467,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     // MCP для исполнителя должен смотреть либо на loopback dev-сервера, либо на публичную базу из VC_MCP_PUBLIC_BASE.
     mcpBaseUrl: remoteBashMcpBaseUrl,
-    kbMcpBaseUrl
+    kbMcpBaseUrl,
+    previewMcpBaseUrl,
+    previewTool: previewToolBroker
   })
 
   // CI-раннер (Авто-подготовка окружения для таска): процесс-глобальный менеджер
@@ -585,7 +595,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         subscribe: (cb) => boardHub.onChange(cb)
       },
       ci: ciRunManager,
-      kbUsage
+      kbUsage,
+      preview: {
+        subscribe: (userId, sink) => previewRelay.subscribe(userId, sink),
+        resolve: (userId, requestId, outcome) => previewRelay.resolve(userId, requestId, outcome)
+      }
     })
 
   await app.register(async (scoped) => {

@@ -5,7 +5,7 @@
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { kbToolHint, parseCodexActivity, parseCodexLine } from '@voicechat/shared'
+import { kbToolHint, parseCodexActivity, parseCodexLine, previewToolHint } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '@voicechat/shared'
 import { cliProfileEnv } from './cliProfiles.js'
 import { killCliChild } from './childKill.js'
@@ -76,6 +76,13 @@ export function codexInvocation(req: LlmRequest): { args: string[]; prompt: stri
   if (req.kbMcpUrl) {
     args.push('-c', `mcp_servers.kb.url="${req.kbMcpUrl}"`)
     prompt = `${kbToolHint(req.kbMode ?? 'auto')}\n\n${prompt}`
+  }
+
+  // Панель веб-превью пользователя: действия выполняет браузер клиента, машина
+  // и sandbox не при чём — подключается до ветвления plan/remote, как БЗ.
+  if (req.previewMcpUrl) {
+    args.push('-c', `mcp_servers.browser.url="${req.previewMcpUrl}"`)
+    prompt = `${previewToolHint()}\n\n${prompt}`
   }
 
   if (req.remote && req.permissionMode !== 'plan') {

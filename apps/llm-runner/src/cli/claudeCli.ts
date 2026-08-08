@@ -8,7 +8,8 @@ import {
   createUsageAccumulator,
   kbToolHint,
   parseStreamJsonActivity,
-  parseStreamJsonLine
+  parseStreamJsonLine,
+  previewToolHint
 } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '@voicechat/shared'
 import { cliProfileEnv } from './cliProfiles.js'
@@ -138,6 +139,17 @@ export function claudeArgs(req: LlmRequest): string[] {
       allowed.push('mcp__kb__search', 'mcp__kb__document', 'mcp__kb__topics')
     }
     systemHints.push(kbToolHint(req.kbMode ?? 'auto'))
+  }
+  if (req.previewMcpUrl) {
+    // Панель веб-превью пользователя: открыть URL, найти/кликнуть элемент,
+    // ввести текст, прочитать DOM. Действия выполняет браузер клиента, поэтому
+    // сервер `browser` подключается независимо от машины. Ограничение
+    // allow-list — то же, что у БЗ выше: без remote флаг не передаётся вовсе.
+    mcpServers.browser = { type: 'http', url: req.previewMcpUrl }
+    if (req.remote || process.env.VC_KB_TOOL_ALLOWLIST === '1') {
+      allowed.push('mcp__browser__open', 'mcp__browser__read', 'mcp__browser__find', 'mcp__browser__click', 'mcp__browser__type')
+    }
+    systemHints.push(previewToolHint())
   }
   if (Object.keys(mcpServers).length) args.push('--mcp-config', JSON.stringify({ mcpServers }))
   if (allowed.length) args.push('--allowedTools', allowed.join(','))

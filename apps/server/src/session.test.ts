@@ -8,6 +8,7 @@ import { VoiceChatDb } from './db/database.js'
 import { signToken } from './users/accounts.js'
 import type { LlmClient } from './claude/types.js'
 import { createKbUsageTracker } from './kb/usage.js'
+import { PreviewActionRelay } from './mcp/previewMcp.js'
 
 const SECRET = 'test-secret'
 const U = 'admin'
@@ -479,6 +480,35 @@ describe('WS: ходы переживают обрыв соединения (Tur
     ws.close()
     await sapp.close()
     sdb.close()
+  })
+})
+
+describe('WS: relay действий веб-превью', () => {
+  it('preview.action доходит только своему пользователю, preview.result закрывает запрос', async () => {
+    await app.close()
+    const relay = new PreviewActionRelay()
+    app = await buildServer({ config: loadConfig({ PORT: '0' }), db, claude: mockClaude, sessionSecret: SECRET, previewRelay: relay })
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const p2 = (app.server.address() as AddressInfo).port
+    db.createUser('bob', '', 'user')
+
+    const mine = await connect(p2)
+    const other = await connect(p2, signToken({ name: 'bob', role: 'user' }, SECRET))
+    const otherFrames: Array<{ t: string }> = []
+    other.on('message', (d) => otherFrames.push(JSON.parse(d.toString())))
+    // Клиент-автоответчик: получил preview.action — вернул результат чтения.
+    mine.on('message', (d) => {
+      const frame = JSON.parse(d.toString()) as { t: string; requestId?: string }
+      if (frame.t !== 'preview.action') return
+      mine.send(JSON.stringify({ t: 'preview.result', requestId: frame.requestId, ok: true, result: { url: 'https://shop.example' } }))
+    })
+
+    const outcome = await relay.request(U, 'conv-1', { kind: 'open', url: 'https://shop.example' }, 3_000)
+    expect(outcome).toEqual({ ok: true, result: { url: 'https://shop.example' } })
+    await new Promise((r) => setTimeout(r, 100))
+    expect(otherFrames.some((f) => f.t === 'preview.action')).toBe(false)
+    mine.close()
+    other.close()
   })
 })
 

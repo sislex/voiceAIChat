@@ -19,6 +19,7 @@ import type { AgentInfo } from './agentProtocol'
 import type { Board } from './projects'
 import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary, CiInteraction } from './ci'
 import type { KbUsageQuery } from './kb'
+import type { PreviewAction, PreviewActionResult } from './previewActions'
 
 // --- Общие ---------------------------------------------------------------
 
@@ -356,6 +357,11 @@ export type ClientMessage =
   | { t: 'board.unsubscribe' }
   | { t: 'ci.subscribe'; runId: string }
   | { t: 'ci.unsubscribe'; runId: string }
+  /**
+   * Ответ клиента на preview.action: результат действия в панели превью.
+   * `requestId` — из запроса; `result` уходит модели сериализованным JSON.
+   */
+  | { t: 'preview.result'; requestId: string; ok: boolean; result?: PreviewActionResult; error?: string }
 
 /** server → client. */
 export type ServerMessage =
@@ -413,6 +419,12 @@ export type ServerMessage =
    * закрывает монотонным `query.seq`.
    */
   | { t: 'kb.usage'; conversationId: string; projectId: string | null; query: KbUsageQuery }
+  /**
+   * Действие модели в панели веб-превью (инструменты mcp__browser__*).
+   * Выполняет его только клиент, у которого чат `conversationId` активен;
+   * остальные отвечают preview.result с ok:false — сервер ждёт первый успех.
+   */
+  | { t: 'preview.action'; conversationId: string; requestId: string; action: PreviewAction }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']
@@ -438,7 +450,8 @@ export const CLIENT_MESSAGE_TYPES: ClientMessageType[] = [
   'board.subscribe',
   'board.unsubscribe',
   'ci.subscribe',
-  'ci.unsubscribe'
+  'ci.unsubscribe',
+  'preview.result'
 ]
 
 export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
@@ -475,5 +488,6 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'ci.summary',
   'ci.interaction',
   'chat.message',
-  'kb.usage'
+  'kb.usage',
+  'preview.action'
 ]

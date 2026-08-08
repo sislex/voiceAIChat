@@ -12,6 +12,7 @@ import type {
   RendererCodexBridge,
   RendererFilesBridge,
   RendererFsBridge,
+  RendererPreviewBridge,
   RendererPtyBridge,
   RendererSessionBridge,
   RendererSttBridge,
@@ -109,6 +110,22 @@ function makeCodexBridge(ws: WsClient): RendererCodexBridge {
 
 function makeAgentsBridge(ws: WsClient): RendererAgentsBridge {
   return { onChange: (cb) => ws.on('agents', (m) => cb(m.agents)) }
+}
+
+/** Мост действий веб-превью: приём preview.action, ответ preview.result. */
+export function makePreviewBridge(ws: WsClient): RendererPreviewBridge {
+  return {
+    onAction: (cb) =>
+      ws.on('preview.action', (m) => cb({ conversationId: m.conversationId, requestId: m.requestId, action: m.action })),
+    result: (m) =>
+      ws.send({
+        t: 'preview.result',
+        requestId: m.requestId,
+        ok: m.ok,
+        ...(m.result !== undefined ? { result: m.result } : {}),
+        ...(m.error !== undefined ? { error: m.error } : {})
+      })
+  }
 }
 
 function makeBoardBridge(ws: WsClient): RendererBoardBridge {
@@ -340,4 +357,5 @@ export function installRemoteBridges(serverHttp: string): void {
   window.fs = makeFsBridge(httpBase)
   window.files = makeFilesBridge(httpBase)
   window.pty = makePtyBridge(ws)
+  window.preview = makePreviewBridge(ws)
 }

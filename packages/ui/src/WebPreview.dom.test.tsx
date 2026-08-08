@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PREVIEW_INSPECTOR_MESSAGE_TYPE } from '@shared/previewInspector'
-import { PreviewPane } from './App'
+import { PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE } from '@shared/previewActions'
+import { PreviewPane, type PreviewActionRunner } from './App'
 
 const payload = {
   tag: 'div', id: 'hero', classes: [], dataAttributes: {}, selector: '#hero', ancestors: ['html','body','div#hero'],
@@ -84,6 +85,44 @@ describe('WebPreview inspector', () => {
     window.dispatchEvent(new MessageEvent('message', { origin: 'https://evil.test', source: frame.contentWindow, data: { type: PREVIEW_INSPECTOR_MESSAGE_TYPE, payload: { ...payload, id: 'evil' } } }))
     window.dispatchEvent(new MessageEvent('message', { origin: window.location.origin, source: window, data: { type: PREVIEW_INSPECTOR_MESSAGE_TYPE, payload: { ...payload, id: 'other-frame' } } }))
     expect(onSelectElement).toHaveBeenCalledTimes(1)
+  })
+
+  it('DOM-действие модели уходит в iframe и резолвится ответом только от него', async () => {
+    const register = vi.fn<(runner: PreviewActionRunner | null) => void>()
+    render(<PreviewPane conversationUrl="https://shop.example" projectUrl={null} onSave={vi.fn()} onRegisterActionRunner={register} />)
+    const runner = register.mock.calls.at(-1)?.[0]
+    expect(runner).toBeTruthy()
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    const promise = runner!({ kind: 'read' })
+    const command = post.mock.calls.at(-1)?.[0] as { type: string; requestId: string; action: unknown }
+    expect(command).toMatchObject({ type: PREVIEW_ACTION_COMMAND_TYPE, action: { kind: 'read' } })
+    const result = { page: { url: 'https://shop.example', title: 'Магазин' }, headings: [], links: [], buttons: [], inputs: [], text: '' }
+    // Ответ с чужим origin игнорируется — ждём ответ собственного iframe.
+    window.dispatchEvent(new MessageEvent('message', { origin: 'https://evil.test', source: frame.contentWindow, data: { type: PREVIEW_ACTION_RESULT_TYPE, requestId: command.requestId, ok: false, error: 'подделка' } }))
+    fireEvent(window, new MessageEvent('message', { origin: window.location.origin, source: frame.contentWindow, data: { type: PREVIEW_ACTION_RESULT_TYPE, requestId: command.requestId, ok: true, result } }))
+    await expect(promise).resolves.toEqual({ ok: true, result })
+  })
+
+  it('без загруженной страницы действие отвечает ошибкой, а не виснет', async () => {
+    const register = vi.fn<(runner: PreviewActionRunner | null) => void>()
+    render(<PreviewPane conversationUrl={null} projectUrl={null} onSave={vi.fn()} onRegisterActionRunner={register} />)
+    const runner = register.mock.calls.at(-1)?.[0]
+    const outcome = await runner!({ kind: 'click', text: 'Электроника' })
+    expect(outcome.ok).toBe(false)
+    expect(outcome.error).toContain('нет загруженной страницы')
+  })
+
+  it('размонтирование панели закрывает ожидающие действия ошибкой', async () => {
+    const register = vi.fn<(runner: PreviewActionRunner | null) => void>()
+    const view = render(<PreviewPane conversationUrl="https://shop.example" projectUrl={null} onSave={vi.fn()} onRegisterActionRunner={register} />)
+    const runner = register.mock.calls.at(-1)?.[0]
+    const promise = runner!({ kind: 'read' })
+    view.unmount()
+    const outcome = await promise
+    expect(outcome.ok).toBe(false)
+    expect(outcome.error).toContain('закрыта')
+    expect(register.mock.calls.at(-1)?.[0]).toBeNull()
   })
 
   it('показывает обновление и открытие во внешней вкладке', async () => {

@@ -74,6 +74,16 @@ export interface TurnManagerDeps {
     }): void
     unregister(token: string): void
   }
+  /**
+   * База URL MCP-эндпоинта действий веб-превью (с секретом k). Только для хода
+   * разговора: действия транслируются подключённым клиентам пользователя.
+   */
+  previewMcpBaseUrl?: string
+  /** Брокер токенов инструментов превью: токен живёт ровно один ход. */
+  previewTool?: {
+    register(token: string, entry: { userId: string; conversationId: string }): void
+    unregister(token: string): void
+  }
   /** Резолв id вложения → локальный путь либо уже прочитанные байты с машины. */
   resolveUpload?: (id: string) => string | LlmAttachment | null | undefined | Promise<string | LlmAttachment | null | undefined>
   /** Онлайн-статус и политика машин-агентов (для проброса Bash на клиента). */
@@ -213,6 +223,8 @@ interface TurnState {
   turnId: string
   /** Токен MCP-инструмента БЗ этого хода (снимается при завершении/отмене). */
   kbToolToken: string | null
+  /** Токен MCP-инструментов превью (mcp__browser__*) этого хода. */
+  previewToolToken: string | null
 }
 
 /** Кэп на число записей активности, хранимых у одного хода. */
@@ -447,6 +459,16 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         }
       })
     }
+    // Инструменты веб-превью (mcp__browser__*) — вне ветки `remote`: действия
+    // выполняет браузер пользователя, машина-агент для них не нужна. Токен, как
+    // и у БЗ, живёт ровно один ход.
+    let previewToolToken: string | null = null
+    let previewMcpUrl: string | undefined
+    if (conv && deps.previewMcpBaseUrl && deps.previewTool) {
+      previewToolToken = randomUUID()
+      previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(previewToolToken)}`
+      deps.previewTool.register(previewToolToken, { userId, conversationId })
+    }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     if (target && deps.agents && deps.mcpBaseUrl) {
       if (!deps.agents.isOnline(target)) {
@@ -541,12 +563,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       requestInfo,
       execTarget: requestedTarget,
       turnId,
-      kbToolToken
+      kbToolToken,
+      previewToolToken
     }
     turns.set(conversationId, turn)
     const finish = (): void => {
       turn.done = true
-      releaseKbTool(turn)
+      releaseTurnTools(turn)
       if (turns.get(conversationId) === turn) turns.delete(conversationId)
     }
     // Нативный CLI-режим plan глушит MCP-инструменты. Если есть машина,
@@ -562,7 +585,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         userId, prompt, sessionId, model, permissionMode: executionPermissionMode, cwd,
         remote: executionRemote, readOnlyRemote, executionDisabled,
         ...(attachments.length ? { attachments } : {}),
-        ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {})
+        ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {}),
+        ...(previewMcpUrl ? { previewMcpUrl } : {})
       },
       {
         onSession: (sid) => deps.db.setClaudeSession(userId, conversationId, `${provider}:${sid}`),
@@ -730,14 +754,20 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   }
 
   /**
-   * Снять токен инструмента БЗ. Обязателен во всех выходах хода (готово, ошибка,
-   * отмена, остановка сервера) — иначе каждый отменённый ход оставляет живой
-   * токен, по которому можно читать БЗ от его имени.
+   * Снять токены инструментов хода (БЗ и превью). Обязателен во всех выходах
+   * хода (готово, ошибка, отмена, остановка сервера) — иначе каждый отменённый
+   * ход оставляет живые токены, по которым можно действовать от его имени.
    */
-  function releaseKbTool(turn: TurnState): void {
-    if (!turn.kbToolToken) return
-    deps.kbTool?.unregister(turn.kbToolToken)
-    turn.kbToolToken = null
+  function releaseTurnTools(turn: TurnState): void {
+    if (turn.kbToolToken) {
+      deps.kbTool?.unregister(turn.kbToolToken)
+      turn.kbToolToken = null
+    }
+    // Токен превью живёт по тем же правилам: снимается вместе с ходом.
+    if (turn.previewToolToken) {
+      deps.previewTool?.unregister(turn.previewToolToken)
+      turn.previewToolToken = null
+    }
   }
 
   /** Отмена одного хода; notify — рассылать ли пустой done (сброс UI вкладок). */
@@ -745,7 +775,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const turn = turns.get(conversationId)
     if (!turn) return
     turns.delete(conversationId)
-    releaseKbTool(turn)
+    releaseTurnTools(turn)
     turn.handle.cancel()
     // Пустой done без message: клиенты сбрасывают «думает…», в БД ничего нет.
     if (notify) broadcast({ t: 'claude.done', conversationId, text: '' }, turn.userId)
@@ -771,7 +801,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     for (const [conversationId, turn] of [...turns]) {
       turns.delete(conversationId)
       turn.done = true
-      releaseKbTool(turn)
+      releaseTurnTools(turn)
       turn.handle.cancel()
       if (!turn.partial.trim()) continue
       const meta: TurnMeta = {

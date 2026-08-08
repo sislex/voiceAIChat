@@ -94,7 +94,108 @@ const click=(e)=>{if(!active)return;const el=e.target;if(!(el instanceof Element
 const key=(e)=>{if(active&&e.key==='Escape'){e.preventDefault();disable();parent.postMessage({type:COMMAND,enabled:false},location.origin)}};
 const enable=()=>{if(active)return;active=true;document.addEventListener('pointerover',move,true);document.addEventListener('click',click,true);document.addEventListener('keydown',key,true)};
 const disable=()=>{active=false;selected=null;document.removeEventListener('pointerover',move,true);document.removeEventListener('click',click,true);document.removeEventListener('keydown',key,true);hide()};
-const message=(e)=>{if(e.source!==parent||e.origin!==location.origin||!e.data||e.data.type!==COMMAND||typeof e.data.enabled!=='boolean')return;e.data.enabled?enable():disable()};
+const ACTION='voicechat.preview.action.v1', RESULT='voicechat.preview.action-result.v1';
+const EL_TEXT=200, SNIPPET=4000, FIND_MAX=30, HEADINGS=64, LINKS=100, BUTTONS=50, INPUTS=50;
+const CLICKABLE='a,button,[role=button],[role=link],[role=tab],[role=menuitem],input,select,textarea,label,summary,[onclick]';
+const unproxy=(value)=>{try{const u=new URL(value,location.href);if(u.pathname==='/api/preview'){const t=u.searchParams.get('url');if(t)return t}return u.toString()}catch{return value}};
+const pageInfo=()=>({url:unproxy(location.href),title:document.title||''});
+const textOf=(el)=>(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();
+const describe=(el)=>{
+  const d={selector:uniqueSelector(el),tag:el.localName,text:textOf(el).slice(0,EL_TEXT)};
+  const href=el.localName==='a'&&el.getAttribute('href');if(href)d.href=unproxy(href);
+  const role=el.getAttribute('role')||(el.localName==='input'?(el.type||'text'):'');if(role)d.role=role;
+  if(el.disabled===true)d.disabled=true;
+  return d
+};
+const bySelector=(selector)=>{let list;try{list=document.querySelectorAll(selector)}catch{throw new Error('Некорректный CSS-селектор: '+selector)}return [...list].filter(el=>!el.closest('[data-voicechat-inspector]'))};
+const byText=(text)=>{
+  const q=text.replace(/\\s+/g,' ').trim().toLowerCase();
+  if(!q)return[];
+  const all=[];
+  for(const el of document.querySelectorAll('body *')){
+    if(el.closest('[data-voicechat-inspector]')||el.id==='${PREVIEW_INSPECTOR_SCRIPT_ID}')continue;
+    const t=textOf(el);
+    if(!t||t.length>300||!t.toLowerCase().includes(q))continue;
+    all.push(el)
+  }
+  const deepest=all.filter(el=>!all.some(other=>other!==el&&el.contains(other)));
+  const exact=(el)=>textOf(el).toLowerCase()===q?0:1;
+  const clickable=(el)=>el.matches(CLICKABLE)||el.closest(CLICKABLE)?0:1;
+  return deepest.sort((a,b)=>(exact(a)-exact(b))||(clickable(a)-clickable(b)))
+};
+const findTargets=(action)=>action.selector?bySelector(action.selector):byText(action.text||'');
+const clickTarget=(el)=>{const host=el.matches(CLICKABLE)?el:(el.closest(CLICKABLE)||el);return host};
+const setNativeValue=(el,value)=>{
+  const proto=el.localName==='textarea'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+  const desc=Object.getOwnPropertyDescriptor(proto,'value');
+  if(desc&&desc.set)desc.set.call(el,value);else el.value=value
+};
+const run=(action)=>{
+  if(action.kind==='find'){
+    const found=findTargets(action);
+    const limit=Math.max(1,Math.min(FIND_MAX,typeof action.limit==='number'?Math.floor(action.limit):10));
+    return {page:pageInfo(),elements:found.slice(0,limit).map(describe),total:found.length}
+  }
+  if(action.kind==='click'){
+    const found=findTargets(action);
+    if(!found.length)throw new Error('Элемент не найден: '+(action.selector||action.text));
+    const el=clickTarget(found[0]);
+    el.scrollIntoView&&el.scrollIntoView({block:'center'});
+    const info=describe(el);
+    typeof el.click==='function'?el.click():el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+    return {page:pageInfo(),clicked:info}
+  }
+  if(action.kind==='type'){
+    const found=bySelector(action.selector);
+    if(!found.length)throw new Error('Поле не найдено: '+action.selector);
+    const el=found[0];
+    const editable=el.isContentEditable;
+    if(!editable&&el.localName!=='input'&&el.localName!=='textarea'&&el.localName!=='select')throw new Error('Элемент не является полем ввода: '+action.selector);
+    el.focus&&el.focus();
+    if(editable){el.textContent=action.text}
+    else if(el.localName==='select'){el.value=action.text}
+    else setNativeValue(el,action.text);
+    el.dispatchEvent(new Event('input',{bubbles:true}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    let submitted=false;
+    if(action.submit){
+      const form=el.form||el.closest('form');
+      if(form){form.requestSubmit?form.requestSubmit():form.submit();submitted=true}
+      else{el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));el.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',bubbles:true}))}
+    }
+    return {page:pageInfo(),typed:describe(el),submitted}
+  }
+  if(action.kind==='read'){
+    let scope=document.body||document.documentElement;
+    if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);scope=found[0]}
+    const headings=[...scope.querySelectorAll('h1,h2,h3,h4,h5,h6')].slice(0,HEADINGS).map(h=>({level:Number(h.localName[1]),text:textOf(h).slice(0,EL_TEXT)}));
+    const links=[];const seen=new Set();
+    for(const a of scope.querySelectorAll('a[href]')){
+      if(links.length>=LINKS)break;
+      const t=textOf(a).slice(0,EL_TEXT);const href=unproxy(a.getAttribute('href'));
+      if(!t||seen.has(t+'|'+href))continue;seen.add(t+'|'+href);links.push({text:t,href})
+    }
+    const buttons=[...scope.querySelectorAll('button,[role=button],input[type=submit],input[type=button]')].map(b=>textOf(b).slice(0,EL_TEXT)||(b.value||'').slice(0,EL_TEXT)).filter(Boolean).slice(0,BUTTONS);
+    const inputs=[...scope.querySelectorAll('input,textarea,select')].slice(0,INPUTS).map(i=>({
+      selector:uniqueSelector(i),
+      type:i.localName==='input'?(i.type||'text'):i.localName,
+      name:i.name||'',
+      placeholder:i.getAttribute('placeholder')||'',
+      value:i.type==='password'?'':String(i.value||'').slice(0,EL_TEXT)
+    }));
+    return {page:pageInfo(),headings,links,buttons,inputs,text:textOf(scope).slice(0,SNIPPET)}
+  }
+  throw new Error('Неизвестное действие')
+};
+const reply=(requestId,ok,payload)=>parent.postMessage(ok?{type:RESULT,requestId,ok:true,result:payload}:{type:RESULT,requestId,ok:false,error:String(payload).slice(0,2000)},location.origin);
+const message=(e)=>{
+  if(e.source!==parent||e.origin!==location.origin||!e.data)return;
+  if(e.data.type===COMMAND&&typeof e.data.enabled==='boolean'){e.data.enabled?enable():disable();return}
+  if(e.data.type===ACTION&&typeof e.data.requestId==='string'&&e.data.action&&typeof e.data.action.kind==='string'){
+    try{reply(e.data.requestId,true,run(e.data.action))}
+    catch(err){reply(e.data.requestId,false,err&&err.message||err)}
+  }
+};
 addEventListener('message',message);addEventListener('pagehide',()=>{disable();removeEventListener('message',message)},{once:true});
 })();<\/script>`
 }
