@@ -1,11 +1,12 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-08
-checked: afd9eb4
+checked: 1ee40df
 areas:
   - packages/ui/src
   - apps/web/src
   - apps/server/src/routes/previewProxy.ts
+  - apps/server/src/users/auth.ts
   - packages/shared/src/previewInspector.ts
 ---
 
@@ -259,6 +260,8 @@ accent-полоска (`.convo--task`), а рамка подсвечиваетс
 `SettingsModal` управляет STT/TTS, моделями/голосами, аудиоустройством и поведением. Недоступные по памяти capabilities не просто скрываются: сервер всё равно является последним gate.
 
 Экран чата обёрнут в `.chat-split`: слева остаётся `ChatColumn`, справа `WebPreview` с адресной строкой и `iframe`. Разделитель меняет долю preview в пределах 25–75%, значение `voicechat.previewWidth` хранится в `localStorage`. На ширине до 768 px обе панели заменяются переключателем «Чат»/«Превью». Адрес допускает только `http:`/`https:` и сохраняется как override разговора через `conversations:setPreviewUrl`; пустая строка снимает override. Проектный `previewUrl` загружается как fallback, а `Conversation.projectPreviewUrl` позволяет показать его сразу вместе со снапшотом чата.
+
+В браузере iframe открывает same-origin URL `/api/preview?url=<encoded external URL>` без Bearer-токена в query string. Успешный `POST /api/session/login` устанавливает отдельную HttpOnly-cookie `vc_preview_session` с `Path=/api/preview` и `SameSite=Strict`; глобальный auth preHandler использует её только для точного пути `/api/preview`. На остальных защищённых API эта cookie не действует, и там по-прежнему нужен `Authorization: Bearer`. `POST /api/session/logout` удаляет preview-cookie через `Max-Age=0`. Источник серверного контракта — `apps/server/src/users/auth.ts`, форма iframe URL проверяется в `packages/ui/src/WebPreview.dom.test.tsx`.
 
 `PreviewPane` дополняет адресную строку обновлением iframe, открытием исходного URL во внешней вкладке и тумблером «Выбор элемента». Инспектор общается только с текущим `iframe.contentWindow` и только на origin приложения: родитель отправляет `{ type: 'voicechat.preview.inspector.v1', enabled }`, iframe возвращает `{ type: 'voicechat.preview.element-selected.v1', payload }`; обе формы проходят runtime-проверку. Esc в родителе или iframe выключает режим, причём iframe сообщает выключенное состояние назад тем же command-сообщением. Payload содержит tag/id/classes/data-атрибуты, selector и ancestry, rect/viewport/pageUrl, ограниченные text/outerHTML, computed styles и необязательные данные screenshot.
 
