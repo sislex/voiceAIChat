@@ -7,6 +7,13 @@ import { REST, type SessionUser } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { signToken, verifyTokenName } from './accounts.js'
 
+const PREVIEW_SESSION_COOKIE = 'vc_preview_session'
+const PREVIEW_COOKIE_PATH = '/api/preview'
+
+function previewCookie(token: string, maxAge?: number): string {
+  return `${PREVIEW_SESSION_COOKIE}=${token}; Path=${PREVIEW_COOKIE_PATH}; HttpOnly; SameSite=Strict${maxAge === undefined ? '' : `; Max-Age=${maxAge}`}`
+}
+
 declare module 'fastify' {
   interface FastifyRequest {
     /** Пользователь сессии (устанавливается preHandler для защищённых путей). */
@@ -33,6 +40,18 @@ function bearer(req: FastifyRequest): string | undefined {
   if (typeof h !== 'string') return undefined
   const m = /^Bearer\s+(.+)$/i.exec(h)
   return m ? m[1] : undefined
+}
+
+/** Отдельная HttpOnly-cookie для same-origin iframe; на прочих API не действует. */
+function previewSession(req: FastifyRequest, url: string): string | undefined {
+  if (url !== PREVIEW_COOKIE_PATH) return undefined
+  const header = req.headers.cookie
+  if (typeof header !== 'string') return undefined
+  for (const item of header.split(';')) {
+    const [name, ...value] = item.trim().split('=')
+    if (name === PREVIEW_SESSION_COOKIE) return value.join('=') || undefined
+  }
+  return undefined
 }
 
 /** Публичные пути (без токена): health, сессия, скачивание бинарей/установщиков агента. */
@@ -67,7 +86,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const url = req.url.split('?')[0]
     if (!url.startsWith('/api/')) return // статика/SPA/ws — не трогаем
     if (isPublic(url)) return
-    const user = resolveUser(db, bearer(req), secret)
+    const user = resolveUser(db, bearer(req) ?? previewSession(req, url), secret)
     if (!user) {
       await reply.code(401).send({ error: 'unauthorized' })
       return reply
@@ -83,7 +102,9 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       if (!u) return reply.code(401).send({ error: 'неверный логин или пароль' })
       if (u.blocked) return reply.code(403).send({ error: 'учётная запись заблокирована' })
       const user: SessionUser = { name: u.name, role: u.role }
-      return { token: signToken(user, secret), user }
+      const token = signToken(user, secret)
+      reply.header('set-cookie', previewCookie(token))
+      return { token, user }
     }
   )
 
@@ -92,5 +113,8 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     return user ? { user } : { user: null }
   })
 
-  app.post(REST.sessionLogout, async () => ({ ok: true }))
+  app.post(REST.sessionLogout, async (_req, reply) => {
+    reply.header('set-cookie', previewCookie('', 0))
+    return { ok: true }
+  })
 }
