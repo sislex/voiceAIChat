@@ -78,6 +78,8 @@ export interface TaskModalProps {
   /** Открыть другую задачу в этой же модалке (подзадача/родитель). */
   onOpenTask: (taskId: string) => void
   onClose: () => void
+  /** Focused editable field, for synchronized assistant context. */
+  onSelectedFieldChange?: (field: keyof TaskUpdateFields | null) => void
 }
 
 function toDateInput(ms: number | null): string {
@@ -361,7 +363,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       className="jmodal-frame"
       actions={headActions}
     >
-      <div className="jmodal">
+      <div className="jmodal" onFocusCapture={(event) => {
+        const label = (event.target as HTMLElement).getAttribute('aria-label') ?? ''
+        const field: keyof TaskUpdateFields | null = label.includes('Заголовок') ? 'title' : label.includes('Описание') ? 'description' : label.includes('Критерии') ? 'acceptanceCriteria' : label.includes('Приоритет') ? 'priority' : label.includes('Исполнитель') ? 'assignee' : label.includes('Стори') ? 'storyPoints' : label.includes('Срок') ? 'dueDate' : null
+        props.onSelectedFieldChange?.(field)
+      }}>
         <div className="jmodal-main">
           {parent && (
             <button className="jmodal-breadcrumb" onClick={() => props.onOpenTask(parent.id)}>

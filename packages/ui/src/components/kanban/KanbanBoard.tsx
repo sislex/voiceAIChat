@@ -85,6 +85,7 @@ export interface KanbanBoardProps {
       не задано — состояние внутреннее (Storybook, встраивание). */
   openTaskId?: string | null
   onOpenTaskChange?: (taskId: string | null) => void
+  onSelectedFieldChange?: (field: keyof TaskUpdateFields | null) => void
   /** Стартовое значение селекта «Свимлейны». */
   defaultSwimlane?: Swimlane
   /**
@@ -1153,7 +1154,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onAiAssistPromptsChange={props.onAiAssistPromptsChange}
           generateAiAssist={props.generateAiAssist}
           onOpenTask={setOpenTaskId}
-          onClose={() => setOpenTaskId(null)}
+          onSelectedFieldChange={props.onSelectedFieldChange}
+          onClose={() => { props.onSelectedFieldChange?.(null); setOpenTaskId(null) }}
         />
       )}
     </>
