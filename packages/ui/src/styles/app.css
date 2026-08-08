@@ -5425,6 +5425,14 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .message-preview-context pre { max-height: 280px; margin: 0; padding: 9px; overflow: auto; border-top: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
 .webpreview-address input { box-sizing: border-box; width: 100%; height: 100%; min-width: 0; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
 .webpreview-error { margin: 0; padding: 6px 10px; color: var(--danger); font-size: 12px; }
+.webpreview-scenario { max-height: 180px; overflow: auto; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 12px; }
+.webpreview-scenario-header { display: flex; align-items: center; gap: 6px; }
+.webpreview-scenario ol { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; }
+.webpreview-scenario li { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.webpreview-scenario li[data-status='passed'] { color: var(--success, #22863a); }
+.webpreview-scenario li[data-status='failed'] { color: var(--danger); }
+.webpreview-scenario input { min-width: 0; flex: 1; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); font: inherit; padding: 3px 5px; }
+.webpreview-scenario em { white-space: nowrap; color: var(--text-dim); }
 .webpreview-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: white; }
 .webpreview-empty { flex: 1; display: grid; place-items: center; padding: 24px; color: var(--text-dim); text-align: center; }
 .chat-split-tabs { display: none; }

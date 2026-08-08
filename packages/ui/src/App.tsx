@@ -82,6 +82,13 @@ export interface PreviewActionOutcome {
 /** Исполнитель DOM-действий модели на странице превью (регистрирует PreviewPane). */
 export type PreviewActionRunner = (action: PreviewDomAction) => Promise<PreviewActionOutcome>
 
+/** Сценарий автотеста хранит устойчивый CSS-селектор; секреты не содержат значение. */
+export type WebScenarioStep =
+  | { kind: 'click'; selector: string; text: string; sensitive?: false }
+  | { kind: 'type'; selector: string; text: string; sensitive: boolean }
+export type WebScenarioStepStatus = 'idle' | 'running' | 'passed' | 'failed'
+const PREVIEW_RECORD_TYPE = 'voicechat.preview.record.v1'
+
 /** Сколько ждём ответ страницы на действие: дольше — значит она ещё грузится. */
 const PREVIEW_ACTION_UI_TIMEOUT_MS = 10_000
 
@@ -104,6 +111,9 @@ export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectEleme
   const [reloadKey, setReloadKey] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [inspecting, setInspecting] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [scenario, setScenario] = useState<WebScenarioStep[]>([])
+  const [scenarioStatus, setScenarioStatus] = useState<WebScenarioStepStatus[]>([])
   // Без HttpOnly-cookie превью same-origin /api/preview отвечает 401, поэтому iframe
   // ждёт ensurePreview session-моста; в desktop моста нет — там гейт не нужен.
   const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>(
@@ -122,6 +132,15 @@ export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectEleme
   useEffect(() => {
     const receive = (event: MessageEvent): void => {
       if (event.origin !== window.location.origin || event.source !== frameRef.current?.contentWindow) return
+      if (event.data?.type === PREVIEW_RECORD_TYPE && event.data.step && (event.data.step.kind === 'click' || event.data.step.kind === 'type') && typeof event.data.step.selector === 'string') {
+        const raw = event.data.step as { kind: 'click' | 'type'; selector: string; text?: unknown; sensitive?: unknown }
+        const step: WebScenarioStep = raw.kind === 'click'
+          ? { kind: 'click', selector: raw.selector, text: typeof raw.text === 'string' ? raw.text : '' }
+          : { kind: 'type', selector: raw.selector, text: typeof raw.text === 'string' ? raw.text : '', sensitive: raw.sensitive === true }
+        setScenario((previous) => [...previous, step])
+        setScenarioStatus((previous) => [...previous, 'idle'])
+        return
+      }
       if (isPreviewInspectorCommand(event.data)) { setInspecting(event.data.enabled); return }
       if (isPreviewActionResultMessage(event.data)) {
         const pending = pendingActions.current.get(event.data.requestId)
@@ -146,6 +165,36 @@ export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectEleme
     return () => { sendInspectorState(false); window.removeEventListener('message', receive); window.removeEventListener('keydown', hotkey) }
   }, [inspecting, onSelectElement])
   useEffect(() => { sendInspectorState(inspecting) }, [inspecting])
+  useEffect(() => {
+    frameRef.current?.contentWindow?.postMessage({ type: PREVIEW_RECORD_TYPE, enabled: recording }, window.location.origin)
+  }, [recording, reloadKey, loaded])
+  const runScenario = async (): Promise<void> => {
+    const runner = frameRef.current?.contentWindow
+    if (!loaded || !runner) { setError('Сначала откройте страницу для запуска сценария'); return }
+    setScenarioStatus(scenario.map(() => 'idle'))
+    for (let index = 0; index < scenario.length; index++) {
+      const step = scenario[index]
+      setScenarioStatus((current) => current.map((status, position) => position === index ? 'running' : status))
+      if (step.kind === 'type' && step.sensitive) {
+        setScenarioStatus((current) => current.map((status, position) => position === index ? 'failed' : status))
+        setError(`Шаг ${index + 1}: чувствительное значение не записано; заполните его вручную и запустите снова.`)
+        return
+      }
+      const outcome = await new Promise<PreviewActionOutcome>((resolve) => {
+        const requestId = `scenario-${++actionSeq.current}`
+        const timer = setTimeout(() => { pendingActions.current.delete(requestId); resolve({ ok: false, error: 'Страница не ответила' }) }, PREVIEW_ACTION_UI_TIMEOUT_MS)
+        pendingActions.current.set(requestId, { resolve, timer })
+        runner.postMessage({ type: PREVIEW_ACTION_COMMAND_TYPE, requestId, action: step }, window.location.origin)
+      })
+      if (!outcome.ok) {
+        setScenarioStatus((current) => current.map((status, position) => position === index ? 'failed' : status))
+        setError(`Шаг ${index + 1}: ${outcome.error ?? 'не выполнен'}`)
+        return
+      }
+      setScenarioStatus((current) => current.map((status, position) => position === index ? 'passed' : status))
+    }
+    setError(null)
+  }
   // Исполнитель DOM-действий модели: постит команду в iframe и ждёт ответ.
   // Пока страница не загружена (или грузится после open) — честная ошибка,
   // модель повторит чтение позже.
@@ -211,8 +260,13 @@ export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectEleme
       <button className="vc-btn vc-btn--secondary" type="button" disabled={!loaded} aria-label="Обновить" title="Обновить" onClick={() => setReloadKey((value) => value + 1)}>↻</button>
       <button className="vc-btn vc-btn--secondary" type="button" disabled={!loaded} aria-label="Открыть в новой вкладке" title="Открыть в новой вкладке" onClick={() => { if (loaded) window.open(loaded, '_blank', 'noopener,noreferrer') }}>↗</button>
       <button className="vc-btn vc-btn--secondary webpreview-inspector-toggle" type="button" aria-pressed={inspecting} disabled={!loaded} title="Выбор элемента (Alt+I)" onClick={() => setInspecting((value) => !value)}>⌖ <span>Выбор элемента</span></button>
+      <button className="vc-btn vc-btn--secondary" type="button" aria-pressed={recording} disabled={!loaded} onClick={() => setRecording((value) => !value)}>{recording ? 'Остановить запись' : 'Записать сценарий'}</button>
     </form>
     {error && <p className="webpreview-error" id="webpreview-error" role="alert">{error}</p>}
+    {scenario.length > 0 && <section className="webpreview-scenario" aria-label="Сценарий автотеста">
+      <div className="webpreview-scenario-header"><strong>Сценарий: {scenario.length} шаг.</strong><button className="vc-btn vc-btn--secondary" type="button" onClick={() => void runScenario()}>Запустить</button><button className="vc-btn vc-btn--secondary" type="button" onClick={() => { setScenario([]); setScenarioStatus([]) }}>Очистить</button></div>
+      <ol>{scenario.map((step, index) => <li key={`${step.selector}-${index}`} data-status={scenarioStatus[index] ?? 'idle'}><span>{scenarioStatus[index] === 'passed' ? '✓' : scenarioStatus[index] === 'failed' ? '✕' : `${index + 1}.`}</span> <code>{step.kind}</code> <input aria-label={`Селектор шага ${index + 1}`} value={step.selector} onChange={(event) => setScenario((items) => items.map((item, position) => position === index ? { ...item, selector: event.target.value } as WebScenarioStep : item))} />{step.kind === 'type' && <input aria-label={`Значение шага ${index + 1}`} value={step.sensitive ? '••••••' : step.text} readOnly={step.sensitive} onChange={(event) => setScenario((items) => items.map((item, position) => position === index ? { ...item, text: event.target.value } as WebScenarioStep : item))} />}{step.kind === 'type' && step.sensitive && <em>секрет не сохранён</em>}</li>)}</ol>
+    </section>}
     {loaded && previewSession === 'ready' && <iframe key={reloadKey} ref={frameRef} className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(loaded)} title="Предпросмотр сайта" onLoad={() => sendInspectorState(inspecting)} onError={() => setError('Сайт недоступен или не разрешает загрузку')} />}
     {loaded && previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение превью…</div>}
     {loaded && previewSession === 'failed' && <div className="webpreview-empty" role="alert">Превью недоступно: войдите в приложение заново и обновите превью</div>}

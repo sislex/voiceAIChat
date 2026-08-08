@@ -134,4 +134,15 @@ describe('WebPreview inspector', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Открыть в новой вкладке' }))
     expect(open).toHaveBeenCalledWith('https://example.test/page', '_blank', 'noopener,noreferrer')
   })
+
+  it('записывает редактируемые шаги и не показывает чувствительное значение', async () => {
+    render(<PreviewPane conversationUrl="https://shop.example" projectUrl={null} onSave={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    fireEvent(window, new MessageEvent('message', { origin: window.location.origin, source: frame.contentWindow, data: { type: 'voicechat.preview.record.v1', step: { kind: 'click', selector: '#buy', text: 'Купить' } } }))
+    fireEvent(window, new MessageEvent('message', { origin: window.location.origin, source: frame.contentWindow, data: { type: 'voicechat.preview.record.v1', step: { kind: 'type', selector: '#password', text: '', sensitive: true } } }))
+    expect(screen.getByLabelText('Селектор шага 1')).toHaveValue('#buy')
+    expect(screen.getByLabelText('Значение шага 2')).toHaveValue('••••••')
+    expect(screen.getByText('секрет не сохранён')).toBeInTheDocument()
+  })
 })
