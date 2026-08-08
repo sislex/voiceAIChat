@@ -17,6 +17,7 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 | `apps/server` | `@voicechat/server` | Fastify: REST + WS, SQLite, Whisper, Piper, claude/codex CLI, реестр машин | [AGENTS](apps/server/AGENTS.md) |
 | `apps/llm-runner` | `@voicechat/llm-runner` | Исполнитель LLM: единственный, кто делает spawn claude/codex; HTTP `/v1/run` | [AGENTS](apps/llm-runner/AGENTS.md) |
 | `apps/web` | `@voicechat/web` | Тонкий браузерный клиент: `@voicechat/ui` + мосты поверх REST/WS | [AGENTS](apps/web/AGENTS.md) |
+| `apps/web-recorder` | `@voicechat/web-recorder` | Независимый Vite-веб-рекордер; интеграция с ChatAI только через `postMessage`-контракт | [UI KB](docs/kb/ui.md#независимый-веб-рекордер-и-контракт-хоста) |
 | `apps/agent` | `@voicechat/agent` | Компаньон-агент на машине пользователя (exec/fs/pty/телеметрия) | [AGENTS](apps/agent/AGENTS.md) |
 | `apps/agent-tray` | `@voicechat/agent-tray` | Electron-трей вокруг агента (установка, лог, разрешения) | [AGENTS](apps/agent-tray/AGENTS.md) |
 | `apps/desktop` | `@voicechat/desktop` | Тонкая Electron-оболочка web/server + legacy-импорт БД (вне workspaces) | [AGENTS](apps/desktop/AGENTS.md) |
