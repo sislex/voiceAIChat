@@ -118,8 +118,8 @@ export interface Conversation {
   kbContextMode?: KbContextMode
   /** Проект, к которому привязан чат (null/undefined — не привязан). */
   projectId?: string | null
-  /** Служебный приватный чат виджета; отсутствует у обычных разговоров. */
-  assistantKind?: 'kanban' | 'web-recorder' | null
+  /** Служебный приватный чат виджета; его строковое имя становится лейблом источника в селекторах. */
+  assistantKind?: string | null
   /** URL веб-превью только этого разговора; null — наследовать у проекта. */
   previewUrl?: string | null
   /** URL проекта для превью; сервер отдаёт рядом, чтобы чат не зависел от загрузки списка проектов. */

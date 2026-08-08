@@ -5464,6 +5464,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .widget-assistant-panel { flex: 0 0 var(--widget-assistant-width); min-width: 280px; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--surface); }
 .widget-assistant-panel > header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .widget-assistant-panel > header button { border: 0; background: transparent; color: var(--text-dim); font-size: 22px; cursor: pointer; }
+.project-assistant-chat-selector { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.project-assistant-chat-selector label { flex: 1; min-width: 0; }
+.project-assistant-chat-selector select { width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; padding: 4px 7px; }
+.project-assistant-chat-selector button { flex: none; font-size: 13px; white-space: nowrap; }
 .widget-assistant-tabs { display: none; }
 .kanban-assistant { display: flex; flex: 1; min-height: 0; flex-direction: column; }
 .kanban-assistant-context { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 10px; border-bottom: 1px solid var(--border-soft); }

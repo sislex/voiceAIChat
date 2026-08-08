@@ -24,7 +24,7 @@ import { ProjectSettings } from './components/ProjectSettings'
 import { ProjectBoard } from './components/ProjectBoard'
 import { ProjectPage, ProjectsEmptyPage, ProjectNotFoundPage } from './components/ProjectPage'
 import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
-import { KanbanAssistant } from './components/KanbanAssistant'
+import { KanbanAssistant, ProjectAssistantChatSelector } from './components/KanbanAssistant'
 import { MachineStatus } from './components/MachineStatus'
 import { MachineUtility } from './components/MachineUtility'
 import { CiCommands } from './components/ci/CiCommands'
@@ -1183,6 +1183,12 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               onOpenChange={(open) => { if (!open && segments[2] === 'assistant') navigate(`/projects/${routeProjectId}`); setKanbanAssistantOpen(open) }}
               mode={segments[2] === 'assistant' ? 'page' : 'embedded'}
               storageKey="voicechat.kanbanAssistantWidth"
+              assistantHeader={<ProjectAssistantChatSelector
+                projectId={routeProjectId!}
+                api={api}
+                onOpenChat={(id) => navigate(`/chat/${id}`)}
+                onNewChat={() => { void api['conversations:create']({ title: 'Новый разговор' }).then((chat) => api['conversations:setProject']({ id: chat.id, projectId: routeProjectId! })).then((chat) => navigate(`/chat/${chat.id}`)) }}
+              />}
               widget={<ProjectBoard
               initialOpenTaskId={routeTaskId}
               projectName={routeProjectName}
@@ -1222,8 +1228,6 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
                 context={kanbanAssistantContext}
                 api={api}
                 llmEngines={state.llmEngines}
-                onOpenProjectChat={(id) => navigate(`/chat/${id}`)}
-                onNewProjectChat={() => { void api['conversations:create']({ title: 'Новый разговор' }).then((chat) => api['conversations:setProject']({ id: chat.id, projectId: routeProjectId! })).then((chat) => navigate(`/chat/${chat.id}`)) }}
                 onCommand={async (command: WidgetAssistantCommand) => {
                   rememberWidgetAction('assistant.command', command.type, 'taskId' in command ? command.taskId : undefined)
                   if (command.type === 'navigate.project-settings') { navigate(`/projects/${command.projectId}/settings`); return }

@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { WidgetAssistantContext } from '@shared/widgetAssistant'
 import { WidgetAssistantFrame, WidgetProposalCard } from './WidgetAssistantFrame'
-import { KanbanAssistant } from './KanbanAssistant'
+import { KanbanAssistant, ProjectAssistantChatSelector, projectAssistantChatSource } from './KanbanAssistant'
 import { createFakeApi } from '../test/fakeApi'
 
 const context: WidgetAssistantContext<any> = {
@@ -47,6 +47,23 @@ describe('WidgetAssistantFrame', () => {
     expect(send.mock.calls[0]?.[0].assistantContext.selection.selectedField).toBe('description')
     expect(send.mock.calls[0]?.[0].assistantContext.toolResults.query).toMatchObject({ source: 'ui', revision: '9', items: [{ id: 't2', kind: 'epic', title: 'UI' }] })
     expect(await api['kanbanAssistant:get']({ projectId: 'p1' })).toMatchObject({ messages: [{ role: 'u0', text: 'UI' }] })
+  })
+
+  it('shows project chats in the shell header with their source labels and persists the selection', async () => {
+    const api = createFakeApi()
+    const regular = await api['conversations:create']({ title: 'Обычный чат' })
+    await api['conversations:setProject']({ id: regular.id, projectId: 'p1' })
+    await api['kanbanAssistant:get']({ projectId: 'p1' })
+    const open = vi.fn()
+    render(<ProjectAssistantChatSelector projectId="p1" api={api} onOpenChat={open} />)
+
+    const selector = await screen.findByRole('combobox', { name: 'Чат ассистента' })
+    expect(await screen.findByRole('option', { name: 'Обычный чат · chat' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /Ассистент · p1 · kanban/ })).toBeInTheDocument()
+    await userEvent.selectOptions(selector, regular.id)
+    expect(open).toHaveBeenCalledWith(regular.id)
+    expect(localStorage.getItem('voicechat.projectAssistantChat.p1')).toBe(regular.id)
+    expect(projectAssistantChatSource({ assistantKind: 'browser' } as any)).toBe('browser')
   })
 
   it('never applies a proposal until confirmation and cancellation is inert', async () => {
