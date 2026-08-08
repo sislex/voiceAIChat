@@ -12,6 +12,15 @@ const payload = {
 }
 
 describe('WebPreview inspector', () => {
+  it('открывает same-origin proxy без Bearer-токена в URL', () => {
+    localStorage.setItem('vc.session.token', 'main-bearer-secret')
+    render(<PreviewPane conversationUrl="https://tehniks.by/" projectUrl={null} onSave={vi.fn()} />)
+    const src = (screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).getAttribute('src')
+    expect(src).toBe('/api/preview?url=https%3A%2F%2Ftehniks.by%2F')
+    expect(src).not.toContain('main-bearer-secret')
+    localStorage.removeItem('vc.session.token')
+  })
+
   it('управляет режимом кнопкой и Alt+I, Esc выключает', async () => {
     render(<PreviewPane conversationUrl="https://example.test" projectUrl={null} onSave={vi.fn()} />)
     const toggle = screen.getByRole('button', { name: /Выбор элемента/ })

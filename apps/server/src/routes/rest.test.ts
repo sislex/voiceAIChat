@@ -75,12 +75,39 @@ describe('REST: аутентификация', () => {
     expect(ok.statusCode).toBe(200)
     expect(ok.json().user).toEqual({ name: 'user', role: 'user' })
     expect(typeof ok.json().token).toBe('string')
+    expect(ok.headers['set-cookie']).toContain('vc_preview_session=')
+    expect(ok.headers['set-cookie']).toContain('Path=/api/preview')
+    expect(ok.headers['set-cookie']).toContain('HttpOnly')
+    expect(ok.headers['set-cookie']).toContain('SameSite=Strict')
     const bad = await app.inject({
       method: 'POST',
       url: '/api/session/login',
       payload: { name: 'user', password: 'x' }
     })
     expect(bad.statusCode).toBe(401)
+  })
+
+  it('same-origin cookie авторизует только iframe-превью и удаляется при logout', async () => {
+    db.createUser('user', '', 'user')
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      payload: { name: 'user', password: '' }
+    })
+    const cookie = String(login.headers['set-cookie']).split(';', 1)[0]
+
+    const preview = await app.inject({ method: 'GET', url: '/api/preview?url=invalid', headers: { cookie } })
+    expect(preview.statusCode).toBe(400)
+    expect(preview.json().error).toBe('invalid_url')
+
+    const otherApi = await app.inject({ method: 'GET', url: '/api/conversations', headers: { cookie } })
+    expect(otherApi.statusCode).toBe(401)
+    const anonymous = await app.inject({ method: 'GET', url: '/api/preview?url=invalid' })
+    expect(anonymous.statusCode).toBe(401)
+
+    const logout = await app.inject({ method: 'POST', url: '/api/session/logout' })
+    expect(logout.headers['set-cookie']).toContain('vc_preview_session=;')
+    expect(logout.headers['set-cookie']).toContain('Max-Age=0')
   })
 
   it('данные пользователей изолированы (user не видит разговоры admin)', async () => {
