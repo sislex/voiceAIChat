@@ -39,9 +39,9 @@ describe('WidgetAssistantFrame', () => {
     const view = render(<KanbanAssistant projectId="p1" context={context as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
     const next = { ...context, selection: { board: { projectId: 'p1', columns: [] }, openTask: { id: 't2', title: 'Current' }, selectedField: 'description' } }
     view.rerender(<KanbanAssistant projectId="p1" context={next as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
-    await vi.waitFor(() => expect(screen.getByRole('textbox', { name: 'Сообщение ассистенту' })).toBeEnabled())
-    await userEvent.type(screen.getByRole('textbox', { name: 'Сообщение ассистенту' }), 'help')
-    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    await vi.waitFor(() => expect(screen.getByRole('textbox', { name: 'Поле ввода сообщения' })).toBeEnabled())
+    await userEvent.type(screen.getByRole('textbox', { name: 'Поле ввода сообщения' }), 'help')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить сообщение' }))
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send.mock.calls[0]?.[0].assistantContext.selection.openTask.id).toBe('t2')
     expect(send.mock.calls[0]?.[0].assistantContext.selection.selectedField).toBe('description')
