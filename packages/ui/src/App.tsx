@@ -256,7 +256,7 @@ export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectEleme
       setError('Не удалось сохранить адрес превью')
     }
   }
-  return <section className="webpreview" aria-label="Веб-превью">
+  return <section className="webpreview" aria-label="Веб-рекордер">
     <form className="webpreview-bar" onSubmit={(event) => void submit(event)}>
       <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="url" inputMode="url" value={draft} placeholder="https://example.com" aria-invalid={Boolean(error)} aria-describedby={error ? 'webpreview-error' : undefined} onChange={(event) => setDraft(event.target.value)} /></label>
       <button className="vc-btn vc-btn--secondary" type="submit">Открыть</button>
