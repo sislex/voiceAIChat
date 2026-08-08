@@ -216,7 +216,7 @@ describe('App — чаты завершённых задач в сайдбаре
     window.location.hash = `#/projects/${projectId}/task/${taskId}`
     const modal = await screen.findByTestId('task-modal')
     await userEvent.click(within(modal).getAllByRole('button', { name: /Открыть чат/ })[0]!)
-    await waitFor(() => expect(window.location.hash).toBe(`#/chat/${chatId}`))
+    await waitFor(() => expect(window.location.hash).toBe(`#/projects/${projectId}/task/${taskId}/chat/${chatId}`))
   })
 
   it('возврат задачи из «Готово» возвращает чат в список', async () => {

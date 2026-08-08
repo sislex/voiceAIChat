@@ -28,7 +28,13 @@ export interface WidgetAssistantAdapter<TSelection = unknown> {
 
 export type SupportedTaskPatch = Partial<Pick<Task,
   'title' | 'description' | 'acceptanceCriteria' | 'type' | 'parentId' | 'priority' |
-  'assignee' | 'labels' | 'skills' | 'storyPoints' | 'dueDate' | 'flagged' | 'columnId'
+  'assignee' | 'agentId' | 'labels' | 'skills' | 'storyPoints' | 'dueDate' | 'flagged' | 'columnId'
+>>
+
+/** Поля создания ровно соответствуют форме новой карточки канбана. */
+export type WidgetTaskCreate = Pick<Task, 'columnId' | 'title'> & Partial<Pick<Task,
+  'description' | 'acceptanceCriteria' | 'type' | 'parentId' | 'priority' | 'assignee' |
+  'agentId' | 'labels' | 'skills' | 'storyPoints' | 'dueDate'
 >>
 
 export type SupportedSettingPatch = Partial<Pick<Settings,
@@ -39,6 +45,7 @@ export type SupportedSettingPatch = Partial<Pick<Settings,
 export type WidgetAssistantCommand =
   | { type: 'navigate.project-settings'; projectId: string }
   | { type: 'navigate.task'; projectId: string; taskId: string }
+  | { type: 'propose.task-create'; projectId: string; input: WidgetTaskCreate; reason?: string }
   | { type: 'propose.task-update'; projectId: string; taskId: string; patch: SupportedTaskPatch; reason?: string }
   | { type: 'propose.rephrase'; projectId: string; taskId: string; field: 'title' | 'description' | 'acceptanceCriteria'; value: string; reason?: string }
   | { type: 'propose.acceptance-criteria'; projectId: string; taskId: string; value: string; reason?: string }
@@ -95,7 +102,9 @@ export interface WidgetToolQueryResult {
 export interface WidgetToolGetRequest extends WidgetToolScope { itemId: string }
 export interface WidgetToolGetResult { revision: string; item: WidgetToolItem }
 
-export type WidgetToolAction = { name: 'kanban.task.update'; taskId: string; expectedVersion: string; patch: SupportedTaskPatch }
+export type WidgetToolAction =
+  | { name: 'kanban.task.update'; taskId: string; expectedVersion: string; patch: SupportedTaskPatch }
+  | { name: 'kanban.task.create'; input: WidgetTaskCreate }
 
 export interface WidgetToolActionRequest extends WidgetToolScope {
   action: WidgetToolAction
@@ -121,7 +130,7 @@ export function queryWidgetItems(items: WidgetToolItem[], text = '', kinds: stri
 }
 
 export type WidgetAssistantProposal = Extract<WidgetAssistantCommand, { type:
-  'propose.task-update' | 'propose.rephrase' | 'propose.acceptance-criteria' | 'propose.settings-update'
+  'propose.task-create' | 'propose.task-update' | 'propose.rephrase' | 'propose.acceptance-criteria' | 'propose.settings-update'
 }>
 
 export function isWidgetAssistantProposal(command: WidgetAssistantCommand): command is WidgetAssistantProposal {
@@ -133,6 +142,9 @@ export function widgetProposalDiff(command: WidgetAssistantProposal, context: Wi
   if (command.type === 'propose.settings-update') {
     return Object.entries(command.patch).map(([field, after]) => ({ field, before: undefined, after }))
   }
+  if (command.type === 'propose.task-create') {
+    return Object.entries(command.input).map(([field, after]) => ({ field, before: undefined, after }))
+  }
   const task = context.selection?.openTask?.id === command.taskId ? context.selection.openTask : null
   const patch: SupportedTaskPatch =
     command.type === 'propose.task-update' ? command.patch :
@@ -141,7 +153,8 @@ export function widgetProposalDiff(command: WidgetAssistantProposal, context: Wi
   return Object.entries(patch).map(([field, after]) => ({ field, before: task?.[field as keyof Task], after }))
 }
 
-const TASK_PATCH_KEYS = new Set<keyof SupportedTaskPatch>(['title', 'description', 'acceptanceCriteria', 'type', 'parentId', 'priority', 'assignee', 'labels', 'skills', 'storyPoints', 'dueDate', 'flagged', 'columnId'])
+const TASK_PATCH_KEYS = new Set<keyof SupportedTaskPatch>(['title', 'description', 'acceptanceCriteria', 'type', 'parentId', 'priority', 'assignee', 'agentId', 'labels', 'skills', 'storyPoints', 'dueDate', 'flagged', 'columnId'])
+const TASK_CREATE_KEYS = new Set<keyof WidgetTaskCreate>(['columnId', 'title', 'description', 'acceptanceCriteria', 'type', 'parentId', 'priority', 'assignee', 'agentId', 'labels', 'skills', 'storyPoints', 'dueDate'])
 const SETTING_PATCH_KEYS = new Set<keyof SupportedSettingPatch>(['model', 'llmProvider', 'codexModel', 'llmEngineId', 'aiAssistProvider', 'aiAssistModel', 'permissionMode', 'theme', 'autoSpeak', 'showConsole'])
 
 function safePatch(value: unknown, allowed: ReadonlySet<string>): Record<string, unknown> | null {
@@ -168,7 +181,10 @@ export function parseWidgetAssistantReply(raw: string): { text: string; commands
       const reason = typeof command.reason === 'string' ? command.reason : undefined
       if (type === 'navigate.project-settings' && projectId) commands.push({ type, projectId })
       else if (type === 'navigate.task' && projectId && taskId) commands.push({ type, projectId, taskId })
-      else if (type === 'propose.task-update' && projectId && taskId) {
+      else if (type === 'propose.task-create' && projectId) {
+        const input = safePatch(command.input, TASK_CREATE_KEYS)
+        if (input && typeof input.columnId === 'string' && typeof input.title === 'string' && input.title.trim()) commands.push({ type, projectId, input: input as WidgetTaskCreate, ...(reason ? { reason } : {}) })
+      } else if (type === 'propose.task-update' && projectId && taskId) {
         const patch = safePatch(command.patch, TASK_PATCH_KEYS)
         if (patch) commands.push({ type, projectId, taskId, patch: patch as SupportedTaskPatch, ...(reason ? { reason } : {}) })
       } else if (type === 'propose.rephrase' && projectId && taskId && (command.field === 'title' || command.field === 'description' || command.field === 'acceptanceCriteria') && typeof command.value === 'string') {
