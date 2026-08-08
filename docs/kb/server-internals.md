@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-08
-checked: 5c73253
+checked: 6f827c7
 areas:
   - apps/server/src
 ---
@@ -35,6 +35,12 @@ Backend — Fastify 5 на TypeScript ESM. Он не выпускает JS-ар�
 | projects | Проекты, участники, машины, default machine, канбан columns/tasks. |
 | KB | Status, topics, lexical/semantic search, context и чтение документа. |
 | preview | Same-origin прокси внешнего HTTP/HTTPS-сайта для iframe. |
+
+## Граница отдельного Make-подобного продукта
+
+На 2026-08-08 в рабочем коде нет реализации Figma Make: ни `make_*`-таблиц в SQLite, ни Fastify-маршрутов, ни UI-маршрута для Make. Добавленный `plans/figma-make-analog.md` — исследовательский план, а не источник текущего поведения. Для будущей подсистемы уже существуют только общие границы: `packages/ui` использует hash-маршрутизацию для web и Electron, сервер выбирает реализацию общего `LlmClient`, а проекты проверяют доступ через `uid(req)` и `VoiceChatDb.getProject()` в `routes/projects.ts`.
+
+Текущий `/api/preview` нельзя считать файловым или artifact-preview сервером: это аутентифицированный same-origin прокси внешнего HTTP/HTTPS. Его SSRF-ограничения и механизм iframe описаны ниже; отдельному продукту понадобятся собственные storage, ревизии, builder и изолированный runtime, которых сейчас в сервере нет.
 
 Канонические строки находятся в `packages/shared/src/protocol.ts`. Реализация разделена между `routes/rest.ts`, `routes/agents.ts`, `routes/admin.ts`, `routes/projects.ts`, `kb/routes.ts`, `users/auth.ts` и `anthropic/gateway.ts`.
 

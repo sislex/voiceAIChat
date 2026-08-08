@@ -17,13 +17,13 @@
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-08 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 10 коммит(ов) в areas после сверки: a499867 chatai-150: показывать коммит и задачу в версии … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 21 коммит(ов) в areas после сверки: a499867 chatai-150: показывать коммит и задачу в версии … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 153 коммит(ов) в areas после сверки: 59f9312 feat(ci): drain runs before prod rebuild … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 154 коммит(ов) в areas после сверки: 80a9e19 chatai-154: работа CI-рана … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 3 коммит(ов) в areas после сверки: 2517d1c chatai-147: работа CI-рана … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 2 коммит(ов) в areas после сверки: a1858af feat: add universal widget tool gateway … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: 508f449 feat(ui): rename web recorder to web reader … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 7 коммит(ов) в areas после сверки: 71e983e feat(ui): вынести веб-рекордер на отдельную страницу … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 7 коммит(ов) в areas после сверки: 59f9312 feat(ci): drain runs before prod rebuild … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-08 | ⚠ 7 коммит(ов) в areas после сверки: 71e983e feat(ui): вынести веб-рекордер на отдельную страницу … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 5 коммит(ов) в areas после сверки: a499867 chatai-150: показывать коммит и задачу в версии … |
@@ -44,7 +44,7 @@
 
 ## Журнал сессий
 
-Всего записей: 142. Последние:
+Всего записей: 143. Последние:
 
 - [2026-08-08-alexeys-macbook-air-2-widget-tool-gateway.md](log/2026-08-08-alexeys-macbook-air-2-widget-tool-gateway.md) — widget-tool-gateway
 - [2026-08-08-alexeys-macbook-air-2-widget-tool-gateway-kb.md](log/2026-08-08-alexeys-macbook-air-2-widget-tool-gateway-kb.md) — widget-tool-gateway-kb
