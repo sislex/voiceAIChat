@@ -540,6 +540,12 @@ Storybook 8.6 на vite-билдере: `packages/ui/.storybook/main.ts` (гло
 
 Протокол и runtime-валидатор находятся в `packages/shared/src/previewInspector.ts`. Инспектор принимает команды только от `parent` с тем же origin, а UI принимает результат только с origin приложения и от `contentWindow` собственного iframe, после чего проверяет всю структуру через `isPreviewElementMessage`. Payload содержит уникализируемый CSS selector, цепочку предков, tag/id/classes/data-атрибуты, геометрию и viewport, URL страницы, HTML и текст элемента и ограниченный срез computed styles; `outerHTML` ограничен 8000 символами, текст — 2000, массивы и набор data-атрибутов — 64 элементами. Выбранный элемент показывается под iframe как имя, размеры и selector.
 
+### Независимый Веб-рекордер и контракт хоста
+
+Веб-рекордер собирается и запускается отдельно как workspace `@voicechat/web-recorder` (`apps/web-recorder`, Vite, порт dev `5274`). Его entry `src/main.tsx` монтирует собственный `Recorder`, а состояние открытого URL, записи и редактирования сценария остаётся внутри этого приложения. Для общих токенов и классов рекордер подключает `@voicechat/ui/app.css`; компоненты и store ChatAI он не импортирует.
+
+ChatAI показывает только iframe-host `WebRecorderHost` в `packages/ui/src/App.tsx`; адрес standalone build — `/web-recorder/`. Единственный публичный контракт интеграции — `packages/shared/src/webRecorder.ts`: envelopes `voicechat.web-recorder.v1` `set-url`, `run-action` от хоста и `ready`, `save-url`, `element`, `action-result` от рекордера. URL сохраняет ChatAI, выбранный элемент и результат DOM-действия возвращаются host-у, поэтому ChatAI не импортирует внутренние компоненты или состояние рекордера.
+
 ### Действия модели в превью (mcp__browser__*)
 
 Ход разговора получает MCP-сервер `browser` (эндпоинт `/mcp/preview`, `apps/server/src/mcp/previewMcp.ts`) с инструментами `open`, `read`, `find`, `click`, `type`: открыть URL в панели превью, прочитать структурированное содержимое страницы (заголовки/ссылки/кнопки/поля + текстовая выжимка), найти элементы по видимому тексту или CSS-селектору, кликнуть, ввести текст (`submit: true` отправляет форму). Протокол, лимиты и валидаторы — `packages/shared/src/previewActions.ts`; хинт модели — `previewToolHint()` (подключают `apps/llm-runner/src/cli/claudeCli.ts` и `codexCli.ts` вместе с `LlmRequest.previewMcpUrl`).

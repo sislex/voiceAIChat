@@ -8,6 +8,7 @@ import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantComma
 import type { HealthResponse } from '@shared/protocol'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, isPreviewElementMessage, isPreviewInspectorCommand, type PreviewElementPayload } from '@shared/previewInspector'
 import { PREVIEW_ACTION_COMMAND_TYPE, isPreviewActionResultMessage, type PreviewActionResult, type PreviewDomAction } from '@shared/previewActions'
+import { WEB_RECORDER_MESSAGE_TYPE, type WebRecorderClientMessage } from '@shared/webRecorder'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -296,6 +297,39 @@ export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectEleme
 
 /** Совместимый экспорт для существующих интеграций. */
 export const WebPreview = PreviewPane
+
+/**
+ * Host-side integration only. The recorder is a separately built application;
+ * ChatAI communicates exclusively through @shared/webRecorder postMessage events.
+ */
+function WebRecorderHost({ conversationUrl, projectUrl, onSave, onSelectElement, onRegisterActionRunner }: PreviewPaneProps): JSX.Element {
+  const frameRef = useRef<HTMLIFrameElement>(null)
+  const pending = useRef(new Map<string, (outcome: PreviewActionOutcome) => void>())
+  const ready = useRef(false)
+  const url = conversationUrl ?? projectUrl
+  const send = (message: object): void => frameRef.current?.contentWindow?.postMessage({ type: WEB_RECORDER_MESSAGE_TYPE, ...message }, '*')
+  useEffect(() => { send({ kind: 'set-url', url }) }, [url])
+  useEffect(() => {
+    const receive = (event: MessageEvent): void => {
+      if (event.source !== frameRef.current?.contentWindow || event.data?.type !== WEB_RECORDER_MESSAGE_TYPE) return
+      const message = event.data as WebRecorderClientMessage
+      if (message.kind === 'ready') { ready.current = true; send({ kind: 'set-url', url }); return }
+      if (message.kind === 'save-url') { void onSave(message.url); return }
+      if (message.kind === 'element') { onSelectElement?.(message.element); return }
+      if (message.kind === 'action-result') { const resolve = pending.current.get(message.requestId); if (resolve) { pending.current.delete(message.requestId); resolve({ ok: message.ok, result: message.result, error: message.error }) } }
+    }
+    window.addEventListener('message', receive); return () => window.removeEventListener('message', receive)
+  }, [onSave, onSelectElement, url])
+  useEffect(() => {
+    if (!onRegisterActionRunner) return
+    onRegisterActionRunner((action) => {
+      if (!ready.current) return Promise.resolve({ ok: false, error: 'Веб-рекордер ещё не готов.' })
+      return new Promise((resolve) => { const requestId = 'wr-' + crypto.randomUUID(); pending.current.set(requestId, resolve); send({ kind: 'run-action', requestId, action }) })
+    })
+    return () => { onRegisterActionRunner(null); for (const resolve of pending.current.values()) resolve({ ok: false, error: 'Веб-рекордер закрыт.' }); pending.current.clear() }
+  }, [onRegisterActionRunner])
+  return <section className="webpreview" aria-label="Веб-рекордер"><iframe ref={frameRef} className="webpreview-frame" src="/web-recorder/" title="Веб-рекордер" aria-hidden="true" /></section>
+}
 
 /**
  * Корень приложения. Тосты и подтверждения — провайдеры вокруг всего дерева:
@@ -1046,7 +1080,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       />
       </div>
       <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>
-      <PreviewPane conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null} onSave={async (previewUrl) => { if (activeConversation) await actions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterActionRunner={registerPreviewRunner} />
+      <WebRecorderHost conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null} onSave={async (previewUrl) => { if (activeConversation) await actions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterActionRunner={registerPreviewRunner} />
       </div>
       )}
 
