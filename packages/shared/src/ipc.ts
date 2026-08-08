@@ -24,6 +24,7 @@ import type {
   WhisperModelInfo
 } from './types'
 import type { HealthResponse, ServerFileInfo, SystemCapabilities } from './protocol'
+import type { PreviewAction, PreviewActionResult } from './previewActions'
 import type {
   AdminLlmEngine,
   AdminLlmEngineHealth,
@@ -566,6 +567,18 @@ export interface RendererBoardBridge {
   unsubscribe(): void
   /** Подписка на снапшоты доски. */
   onUpdate(cb: (m: { projectId: string; board: Board }) => void): () => void
+}
+
+/**
+ * Мост действий веб-превью (web, поверх WS): сервер транслирует вызовы
+ * инструментов mcp__browser__* хода модели, клиент выполняет их в панели
+ * превью и возвращает результат. В desktop отсутствует — действия недоступны.
+ */
+export interface RendererPreviewBridge {
+  /** Подписка на действия сервера (preview.action). */
+  onAction(cb: (m: { conversationId: string; requestId: string; action: PreviewAction }) => void): () => void
+  /** Ответ на действие (preview.result). */
+  result(m: { requestId: string; ok: boolean; result?: PreviewActionResult; error?: string }): void
 }
 
 /**

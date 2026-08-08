@@ -1,0 +1,195 @@
+// MCP «browser» и relay действий превью: доступ по секрету, трансляция действия
+// клиентам пользователя, ожидание первого успеха/всех отказов/таймаута и
+// сериализация результата для модели.
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import Fastify, { type FastifyInstance } from 'fastify'
+import type { ServerMessage } from '@voicechat/shared'
+import {
+  PREVIEW_MCP_PATH,
+  PreviewActionRelay,
+  previewToolBroker,
+  registerPreviewMcp
+} from './previewMcp.js'
+
+const SECRET = 'test-secret'
+const TURN = 'turn-token'
+const U = 'admin'
+const CONV = 'conv-1'
+
+const MCP_HEADERS = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }
+
+describe('PreviewActionRelay', () => {
+  it('без подключённых клиентов сразу отвечает ошибкой', async () => {
+    const relay = new PreviewActionRelay()
+    const outcome = await relay.request(U, CONV, { kind: 'read' })
+    expect(outcome.ok).toBe(false)
+    expect(outcome.error).toContain('не подключён')
+  })
+
+  it('первый успешный ответ выигрывает, отказ другого клиента не мешает', async () => {
+    const relay = new PreviewActionRelay()
+    const got: ServerMessage[] = []
+    relay.subscribe(U, (m) => got.push(m))
+    relay.subscribe(U, (m) => got.push(m))
+    const promise = relay.request(U, CONV, { kind: 'read' }, 1_000)
+    expect(got).toHaveLength(2)
+    const [first] = got
+    if (first.t !== 'preview.action') throw new Error('ожидался preview.action')
+    expect(first.conversationId).toBe(CONV)
+    relay.resolve(U, first.requestId, { ok: false, error: 'чат не активен' })
+    relay.resolve(U, first.requestId, { ok: true, result: { url: 'https://a.b' } })
+    const outcome = await promise
+    expect(outcome).toEqual({ ok: true, result: { url: 'https://a.b' } })
+    expect(relay.pendingCount()).toBe(0)
+  })
+
+  it('все клиенты отказали → первая ошибка; чужой userId игнорируется', async () => {
+    const relay = new PreviewActionRelay()
+    let request: ServerMessage | undefined
+    relay.subscribe(U, (m) => { request = m })
+    const promise = relay.request(U, CONV, { kind: 'read' }, 1_000)
+    if (request?.t !== 'preview.action') throw new Error('ожидался preview.action')
+    relay.resolve('другой', request.requestId, { ok: true, result: { url: 'https://evil' } })
+    relay.resolve(U, request.requestId, { ok: false, error: 'превью не открыто' })
+    const outcome = await promise
+    expect(outcome).toEqual({ ok: false, error: 'превью не открыто' })
+  })
+
+  it('молчание клиента закрывается таймаутом', async () => {
+    const relay = new PreviewActionRelay()
+    relay.subscribe(U, () => {})
+    const outcome = await relay.request(U, CONV, { kind: 'read' }, 10)
+    expect(outcome.ok).toBe(false)
+    expect(outcome.error).toContain('не ответил')
+    expect(relay.pendingCount()).toBe(0)
+  })
+
+  it('отписка убирает клиента из рассылки', async () => {
+    const relay = new PreviewActionRelay()
+    const off = relay.subscribe(U, () => { throw new Error('не должен получить') })
+    off()
+    const outcome = await relay.request(U, CONV, { kind: 'read' })
+    expect(outcome.ok).toBe(false)
+  })
+})
+
+describe('previewMcp — инструменты browser', () => {
+  let app: FastifyInstance
+  let relay: PreviewActionRelay
+  /** Автоответчик «клиента»: получает preview.action и отвечает через relay. */
+  let client: (m: Extract<ServerMessage, { t: 'preview.action' }>) => void
+
+  async function makeApp(): Promise<void> {
+    app = Fastify({ logger: false })
+    relay = new PreviewActionRelay()
+    relay.subscribe(U, (m) => {
+      if (m.t === 'preview.action') client(m)
+    })
+    registerPreviewMcp(app, { secret: SECRET, relay, timeoutMs: 500 })
+    await app.ready()
+  }
+
+  async function call(name: string, args: Record<string, unknown> = {}, query = `?k=${SECRET}&turn=${TURN}`): Promise<{ text: string; isError?: boolean }> {
+    const res = await app.inject({
+      method: 'POST',
+      url: `${PREVIEW_MCP_PATH}${query}`,
+      headers: MCP_HEADERS,
+      payload: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }
+    })
+    const body = res.json() as { result: { content: Array<{ text: string }>; isError?: boolean } }
+    return { text: body.result.content.map((c) => c.text).join('\n'), isError: body.result.isError }
+  }
+
+  beforeEach(() => {
+    client = (m) => relay.resolve(U, m.requestId, { ok: true, result: { url: 'https://a.b' } })
+    previewToolBroker.register(TURN, { userId: U, conversationId: CONV })
+  })
+  afterEach(async () => {
+    previewToolBroker.unregister(TURN)
+    await app.close()
+    expect(previewToolBroker.size()).toBe(0)
+  })
+
+  it('неверный секрет → 403', async () => {
+    await makeApp()
+    const res = await app.inject({
+      method: 'POST',
+      url: `${PREVIEW_MCP_PATH}?k=wrong&turn=${TURN}`,
+      headers: MCP_HEADERS,
+      payload: { jsonrpc: '2.0', id: 1, method: 'initialize' }
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('tools/list показывает open, read, find, click, type', async () => {
+    await makeApp()
+    const res = await app.inject({
+      method: 'POST',
+      url: `${PREVIEW_MCP_PATH}?k=${SECRET}&turn=${TURN}`,
+      headers: MCP_HEADERS,
+      payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
+    })
+    const body = res.json() as { result: { tools: Array<{ name: string }> } }
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['click', 'find', 'open', 'read', 'type'])
+  })
+
+  it('open транслирует действие клиенту и возвращает его результат', async () => {
+    await makeApp()
+    let seen: unknown
+    client = (m) => {
+      seen = m.action
+      relay.resolve(U, m.requestId, { ok: true, result: { url: 'https://shop.example' } })
+    }
+    const result = await call('open', { url: 'https://shop.example' })
+    expect(seen).toEqual({ kind: 'open', url: 'https://shop.example' })
+    expect(JSON.parse(result.text)).toEqual({ url: 'https://shop.example' })
+    expect(result.isError).not.toBe(true)
+  })
+
+  it('open отклоняет не-HTTP схему без похода к клиенту', async () => {
+    await makeApp()
+    let called = false
+    client = () => { called = true }
+    const result = await call('open', { url: 'javascript:alert(1)' })
+    expect(result.isError).toBe(true)
+    expect(called).toBe(false)
+  })
+
+  it('find без text и selector — ошибка аргументов', async () => {
+    await makeApp()
+    const result = await call('find', {})
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('text или selector')
+  })
+
+  it('click передаёт text, ошибка клиента доходит до модели', async () => {
+    await makeApp()
+    client = (m) => relay.resolve(U, m.requestId, { ok: false, error: 'Элемент не найден: Электроника' })
+    const result = await call('click', { text: 'Электроника' })
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('Элемент не найден')
+  })
+
+  it('без токена хода инструменты не работают', async () => {
+    await makeApp()
+    const result = await call('read', {}, `?k=${SECRET}&turn=чужой`)
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('Контекст хода недоступен')
+  })
+
+  it('type с submit доходит до клиента как действие type', async () => {
+    await makeApp()
+    let seen: unknown
+    client = (m) => {
+      seen = m.action
+      relay.resolve(U, m.requestId, {
+        ok: true,
+        result: { page: { url: 'https://a.b', title: '' }, typed: { selector: '#q', tag: 'input', text: '' }, submitted: true }
+      })
+    }
+    const result = await call('type', { selector: '#q', text: 'ноутбук', submit: true })
+    expect(seen).toEqual({ kind: 'type', selector: '#q', text: 'ноутбук', submit: true })
+    expect(JSON.parse(result.text).submitted).toBe(true)
+  })
+})

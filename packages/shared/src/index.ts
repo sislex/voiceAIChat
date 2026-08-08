@@ -29,6 +29,7 @@ export * from './ci'
 export * from './llm'
 export * from './llmAccess'
 export * from './previewInspector'
+export * from './previewActions'
 
 export * from './kb'
 export * from './kbGaps'

@@ -3,7 +3,7 @@
 // Сами ходы LLM живут в процесс-глобальном TurnManager и переживают обрыв
 // соединения: обновление страницы не отменяет генерацию ответа.
 
-import type { AgentInfo, Board, SessionUser, SystemCapabilities, CcItem, CxItem } from '@voicechat/shared'
+import type { AgentInfo, Board, PreviewActionResult, ServerMessage, SessionUser, SystemCapabilities, CcItem, CxItem } from '@voicechat/shared'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'
 import type { TurnManager } from './turns.js'
@@ -59,6 +59,14 @@ export interface SessionDeps {
   ci?: CiRunManager
   /** Телеметрия обращений к базе знаний (кадры kb.usage своему пользователю). */
   kbUsage?: KbUsageTracker
+  /**
+   * Relay действий веб-превью (mcp__browser__*): подписка доставляет клиенту
+   * кадры preview.action его пользователя, resolve возвращает preview.result.
+   */
+  preview?: {
+    subscribe(userId: string, sink: (m: ServerMessage) => void): () => void
+    resolve(userId: string, requestId: string, outcome: { ok: boolean; result?: PreviewActionResult; error?: string }): void
+  }
 }
 
 /** Минимальный релей PTY для сессии (реализует AgentRegistry). */
@@ -83,6 +91,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubTurns: (() => void) | null = null
   let unsubCi: (() => void) | null = null
   let unsubKbUsage: (() => void) | null = null
+  let unsubPreview: (() => void) | null = null
   let ccTailStop: (() => void) | null = null
   let cxTailStop: (() => void) | null = null
   const ptyIds = new Set<string>()
@@ -108,6 +117,9 @@ export function createSession(deps: SessionDeps): WsHandlers {
         unsubKbUsage = deps.kbUsage.subscribe((m, ownerUserId) => {
           if (ownerUserId === deps.user.name) ctx.send(m)
         })
+      }
+      if (deps.preview) {
+        unsubPreview = deps.preview.subscribe(deps.user.name, (m) => ctx.send(m))
       }
       if (deps.agentsFeed) {
         ctx.send({ t: 'agents', agents: deps.agentsFeed.list() })
@@ -265,6 +277,14 @@ export function createSession(deps: SessionDeps): WsHandlers {
         }
         case 'ci.unsubscribe':
           break
+        case 'preview.result':
+          // Ответ на действие превью: relay сам сверит пользователя и requestId.
+          deps.preview?.resolve(deps.user.name, msg.requestId, {
+            ok: msg.ok === true,
+            ...(msg.result !== undefined ? { result: msg.result } : {}),
+            ...(typeof msg.error === 'string' ? { error: msg.error } : {})
+          })
+          break
 
         default:
           break
@@ -292,6 +312,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubCi = null
       unsubKbUsage?.()
       unsubKbUsage = null
+      unsubPreview?.()
+      unsubPreview = null
       ccTailStop?.()
       ccTailStop = null
       cxTailStop?.()

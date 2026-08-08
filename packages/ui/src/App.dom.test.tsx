@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -68,6 +68,59 @@ describe('App — онбординг первого запуска', () => {
   it('не показывается для вернувшегося пользователя', async () => {
     await renderApp() // seededApi ставит onboarded=true
     expect(screen.queryByRole('dialog', { name: 'Добро пожаловать' })).not.toBeInTheDocument()
+  })
+})
+
+describe('App — действия модели в веб-превью (мост window.preview)', () => {
+  interface BridgeAction { conversationId: string; requestId: string; action: { kind: string; url?: string } }
+  interface BridgeResult { requestId: string; ok: boolean; result?: unknown; error?: string }
+
+  /** Ставит фейковый мост и возвращает способ отправить действие + ответы. */
+  function installPreviewBridge(): { emit: (m: BridgeAction) => void; results: BridgeResult[] } {
+    let onAction: ((m: BridgeAction) => void) | undefined
+    const results: BridgeResult[] = []
+    ;(window as { preview?: unknown }).preview = {
+      onAction: (cb: (m: BridgeAction) => void) => { onAction = cb; return () => { onAction = undefined } },
+      result: (m: BridgeResult) => results.push(m)
+    }
+    return { emit: (m) => onAction?.(m), results }
+  }
+
+  afterEach(() => { delete (window as { preview?: unknown }).preview })
+
+  it('«открой сайт»: open сохраняет URL чата, грузит его в панель и отвечает ok', async () => {
+    const bridge = installPreviewBridge()
+    const api = await renderApp()
+    const active = api._state.conversations.find((c) => c.title === 'Поездка в Лиссабон')!
+    bridge.emit({ conversationId: active.id, requestId: 'r1', action: { kind: 'open', url: 'https://shop.example/' } })
+    await waitFor(() => expect(bridge.results).toHaveLength(1))
+    expect(bridge.results[0]).toEqual({ requestId: 'r1', ok: true, result: { url: 'https://shop.example/' } })
+    // URL сохранён за разговором и загружен в соседний виджет превью.
+    expect(api._state.conversations.find((c) => c.id === active.id)?.previewUrl).toBe('https://shop.example/')
+    await waitFor(() => {
+      const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+      expect(frame.getAttribute('src')).toBe('/api/preview?url=' + encodeURIComponent('https://shop.example/'))
+    })
+  })
+
+  it('действие для неактивного чата отклоняется: превью ограничено активной страницей', async () => {
+    const bridge = installPreviewBridge()
+    const api = await renderApp()
+    const inactive = api._state.conversations.find((c) => c.title === 'Идеи для подарка')!
+    bridge.emit({ conversationId: inactive.id, requestId: 'r2', action: { kind: 'open', url: 'https://shop.example/' } })
+    await waitFor(() => expect(bridge.results).toHaveLength(1))
+    expect(bridge.results[0].ok).toBe(false)
+    expect(bridge.results[0].error).toContain('не открыт')
+    expect(api._state.conversations.find((c) => c.id === inactive.id)?.previewUrl ?? null).toBeNull()
+  })
+
+  it('DOM-действие без загруженной страницы превью отвечает ошибкой', async () => {
+    const bridge = installPreviewBridge()
+    const api = await renderApp()
+    const active = api._state.conversations.find((c) => c.title === 'Поездка в Лиссабон')!
+    bridge.emit({ conversationId: active.id, requestId: 'r3', action: { kind: 'read' } })
+    await waitFor(() => expect(bridge.results).toHaveLength(1))
+    expect(bridge.results[0].ok).toBe(false)
   })
 })
 

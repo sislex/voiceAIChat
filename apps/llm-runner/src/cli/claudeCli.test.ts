@@ -220,6 +220,40 @@ describe('ClaudeCli', () => {
     expect(hint).toContain('mcp__kb__search')
   })
 
+  it('previewMcpUrl: сервер browser в --mcp-config и хинт про панель превью без машины', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send(
+      { prompt: 'x', sessionId: null, model: 'opus', previewMcpUrl: 'http://127.0.0.1:8787/mcp/preview?k=s&turn=t1' },
+      makeHandlers()
+    )
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const config = JSON.parse(args[args.indexOf('--mcp-config') + 1]) as { mcpServers: Record<string, { url: string }> }
+    expect(config.mcpServers.browser.url).toContain('turn=t1')
+    const hint = args[args.indexOf('--append-system-prompt') + 1]
+    expect(hint).toContain('mcp__browser__')
+    expect(hint).toContain('веб-превью')
+    // Без remote allow-list не передаём: он выключил бы автоодобрение Read/Grep.
+    expect(args).not.toContain('--allowedTools')
+  })
+
+  it('previewMcpUrl + remote: инструменты browser попадают в allow-list', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send(
+      {
+        prompt: 'x', sessionId: null, model: 'opus', previewMcpUrl: 'http://127.0.0.1:8787/mcp/preview?k=s&turn=t1',
+        remote: { mcpUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=s&agent=a1', agentName: 'Мак' }
+      },
+      makeHandlers()
+    )
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const config = JSON.parse(args[args.indexOf('--mcp-config') + 1]) as { mcpServers: Record<string, unknown> }
+    expect(Object.keys(config.mcpServers).sort()).toEqual(['browser', 'remote'])
+    const allowed = args[args.indexOf('--allowedTools') + 1]
+    for (const tool of ['open', 'read', 'find', 'click', 'type']) expect(allowed).toContain(`mcp__browser__${tool}`)
+  })
+
   it('передаёт cwd в spawn, когда задан; иначе третий аргумент undefined', () => {
     const { child } = fakeChild()
     const spawn = vi.fn(() => child as never) as unknown as SpawnFn

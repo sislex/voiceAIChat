@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WsClient } from './wsClient'
 import { createHttpApi } from './httpApi'
 import { base64ToArrayBuffer } from './decode'
-import { makeClaudeBridge, migrateDesktopLegacy } from './index'
+import { makeClaudeBridge, makePreviewBridge, migrateDesktopLegacy } from './index'
 
 class FakeWebSocket {
   static OPEN = 1
@@ -91,6 +91,23 @@ describe('WsClient', () => {
       conversationId: 'c1',
       meta: { taskLaunch: { title: 'Исправить запуск', description: 'Описание', acceptanceCriteria: 'Карточка открывается' } }
     }))
+    c.close()
+  })
+
+  it('мост превью: preview.action доходит подписчику, result уходит кадром preview.result', async () => {
+    const c = new WsClient('ws://x/ws')
+    const ws = FakeWebSocket.last!
+    ws._open()
+    const bridge = makePreviewBridge(c)
+    const actions: unknown[] = []
+    bridge.onAction((m) => actions.push(m))
+    await Promise.resolve()
+    ws._emit({ t: 'preview.action', conversationId: 'c1', requestId: 'r1', action: { kind: 'open', url: 'https://a.b' } })
+    expect(actions).toEqual([{ conversationId: 'c1', requestId: 'r1', action: { kind: 'open', url: 'https://a.b' } }])
+    bridge.result({ requestId: 'r1', ok: true, result: { url: 'https://a.b' } })
+    expect(ws.sent).toContain(JSON.stringify({ t: 'preview.result', requestId: 'r1', ok: true, result: { url: 'https://a.b' } }))
+    bridge.result({ requestId: 'r2', ok: false, error: 'превью не открыто' })
+    expect(ws.sent).toContain(JSON.stringify({ t: 'preview.result', requestId: 'r2', ok: false, error: 'превью не открыто' }))
     c.close()
   })
 

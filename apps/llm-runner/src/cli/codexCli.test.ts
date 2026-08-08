@@ -155,6 +155,22 @@ describe('CodexCli', () => {
     expect(input).toContain('mcp__kb__search')
   })
 
+  it('previewMcpUrl: сервер browser подключается, хинт про превью уходит в промпт', async () => {
+    const { child, stdin } = fakeChild()
+    let input = ''
+    stdin.on('data', (chunk) => (input += chunk.toString()))
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new CodexCli({ spawn }).send(
+      { prompt: 'x', sessionId: null, model: '', previewMcpUrl: 'http://127.0.0.1:8787/mcp/preview?k=s&turn=t1' },
+      makeHandlers()
+    )
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    expect(args.some((a) => a.startsWith('mcp_servers.browser.url=') && a.includes('turn=t1'))).toBe(true)
+    await tick()
+    expect(input).toContain('mcp__browser__')
+    expect(input).toContain('веб-превью')
+  })
+
   it('remote + plan → без MCP и bypass, только read-only sandbox', async () => {
     const { child, stdin } = fakeChild()
     let input = ''

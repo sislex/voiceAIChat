@@ -11,6 +11,7 @@ import type {
   RendererCodexBridge,
   RendererFilesBridge,
   RendererFsBridge,
+  RendererPreviewBridge,
   RendererPtyBridge,
   RendererSessionBridge,
   RendererSttBridge,
@@ -36,6 +37,8 @@ declare global {
     ci?: RendererCiBridge
     /** Телеметрия использования базы знаний (web). */
     kb?: RendererKbBridge
+    /** Действия модели в панели веб-превью (web). */
+    preview?: RendererPreviewBridge
   }
 }
 

@@ -615,6 +615,50 @@ describe('turns: MCP-инструменты базы знаний и режим�
   })
 })
 
+describe('turns: MCP-инструменты веб-превью (mcp__browser__*)', () => {
+  const PREVIEW_MCP = 'http://127.0.0.1:8787/mcp/preview?k=secret'
+
+  function broker(): { register: (t: string, e: { userId: string; conversationId: string }) => void; unregister: (t: string) => void; live: () => string[]; entries: Array<{ userId: string; conversationId: string }> } {
+    const live = new Set<string>()
+    const entries: Array<{ userId: string; conversationId: string }> = []
+    return {
+      register: (t, e) => { live.add(t); entries.push(e) },
+      unregister: (t) => live.delete(t),
+      live: () => [...live],
+      entries
+    }
+  }
+
+  it('ход разговора получает previewMcpUrl, токен привязан к чату и снят после завершения', async () => {
+    const db = freshDb(); const conv = db.createConversation(U, 'Чат'); const rec = recorder(); const tool = broker()
+    const turns = createTurnManager({ db, claude: rec.client, previewMcpBaseUrl: PREVIEW_MCP, previewTool: tool })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'открой сайт' }] })
+    expect(rec.last()?.previewMcpUrl).toContain('/mcp/preview?k=secret&turn=')
+    expect(tool.entries).toEqual([{ userId: U, conversationId: conv.id }])
+    expect(tool.live()).toEqual([]) // ход завершился — токен снят
+    db.close()
+  })
+
+  it('без previewMcpBaseUrl инструменты превью не подключаются', async () => {
+    const db = freshDb(); const conv = db.createConversation(U, 'Чат'); const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, previewTool: broker() })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'открой сайт' }] })
+    expect(rec.last()?.previewMcpUrl).toBeUndefined()
+    db.close()
+  })
+
+  it('отмена хода освобождает токен превью (иначе утечка на каждый cancel)', async () => {
+    const db = freshDb(); const conv = db.createConversation(U, 'Чат'); const tool = broker()
+    const client = { send: () => ({ cancel: () => {} }) }
+    const turns = createTurnManager({ db, claude: client, previewMcpBaseUrl: PREVIEW_MCP, previewTool: tool })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'открой сайт' }] })
+    expect(tool.live()).toHaveLength(1)
+    turns.cancel(conv.id)
+    expect(tool.live()).toEqual([])
+    db.close()
+  })
+})
+
 describe('turns: контекст проекта в промпте', () => {
   it('привязанный к проекту чат получает блок «Контекст проекта» с git/технологиями', async () => {
     const db = new VoiceChatDb(':memory:')

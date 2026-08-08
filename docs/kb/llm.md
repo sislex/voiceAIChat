@@ -286,6 +286,15 @@ MCP-эндпоинт `/mcp/kb` stateless, ход адресуется токен
 чтобы не сломать автоодобрение Read/Grep (escape hatch `VC_KB_TOOL_ALLOWLIST=1`).
 Codex получает `-c mcp_servers.kb.url=…` до ветвления plan/remote. Базовый URL для `remote-bash` и `kb` сервер строит одной функцией `buildPublicMcpUrl` (`apps/server/src/mcp/publicBase.ts`): если задан `VC_MCP_PUBLIC_BASE`, исполнитель получает адрес вида `http://voicechat:8787/...`; без env остаётся dev/test-фолбэк `http://127.0.0.1:<PORT>`. Это важно именно для контейнера-исполнителя: его собственный loopback — не loopback Fastify-сервера. Пока CLI жил в контейнере `voicechat`, loopback совпадал и env был необязателен; с переездом на `runner-work`/`runner-personal` его отсутствие стало тихой поломкой — MCP-серверы не стартуют, `mcp__remote__*` и `mcp__kb__*` пропадают из хода, а сообщения об ошибке нет ни в ленте, ни в логе. Поэтому дефолт прописан в compose (`VC_MCP_PUBLIC_BASE: ${VC_MCP_PUBLIC_BASE:-http://voicechat:8787}`), а сервер печатает предупреждение на старте, если исполнитель настроен, а база — нет (`mcpBaseMisconfigured`).
 
+По той же схеме к ходу разговора подключается MCP-сервер `browser`
+(`/mcp/preview`, `apps/server/src/mcp/previewMcp.ts`): инструменты
+`mcp__browser__open|read|find|click|type` управляют панелью веб-превью
+пользователя и читают DOM открытой страницы. URL с токеном хода уходит полем
+`LlmRequest.previewMcpUrl`, хинт — `previewToolHint()`
+(`packages/shared/src/previewActions.ts`); сервер лишь транслирует действие
+клиентам по WS (`preview.action`/`preview.result`) и ждёт ответ, исполняет его
+браузер с активным чатом хода. Детали — [ui.md](ui.md#веб-превью).
+
 Сборка блока контекста (порог `autoInjectAllowed`, формат разделов, точные
 символы каждого) живёт в `kb/autoContext.ts` — ОДНА на ход чата и на ход модели
 в CI-ране. Ран берёт режим не у чата, а у проекта (`ci_kb_context_mode`) и

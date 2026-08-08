@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
@@ -6,6 +6,7 @@ import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { TaskPriority } from '@shared/projects'
 import type { HealthResponse } from '@shared/protocol'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, isPreviewElementMessage, isPreviewInspectorCommand, type PreviewElementPayload } from '@shared/previewInspector'
+import { PREVIEW_ACTION_COMMAND_TYPE, isPreviewActionResultMessage, type PreviewActionResult, type PreviewDomAction } from '@shared/previewActions'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -71,14 +72,32 @@ function normalizeWebUrl(value: string): string | null {
   } catch { return null }
 }
 
+/** Итог DOM-действия модели в превью (форма ответа preview.result). */
+export interface PreviewActionOutcome {
+  ok: boolean
+  result?: PreviewActionResult
+  error?: string
+}
+
+/** Исполнитель DOM-действий модели на странице превью (регистрирует PreviewPane). */
+export type PreviewActionRunner = (action: PreviewDomAction) => Promise<PreviewActionOutcome>
+
+/** Сколько ждём ответ страницы на действие: дольше — значит она ещё грузится. */
+const PREVIEW_ACTION_UI_TIMEOUT_MS = 10_000
+
 export interface PreviewPaneProps {
   conversationUrl: string | null
   projectUrl: string | null
   onSave: (url: string | null) => Promise<void>
   onSelectElement?: (element: PreviewElementPayload) => void
+  /**
+   * Регистрация исполнителя DOM-действий модели (mcp__browser__*): пока панель
+   * смонтирована и страница загружена, действия уходят в iframe; null — снятие.
+   */
+  onRegisterActionRunner?: (runner: PreviewActionRunner | null) => void
 }
 
-export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectElement }: PreviewPaneProps): JSX.Element {
+export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectElement, onRegisterActionRunner }: PreviewPaneProps): JSX.Element {
   const effective = conversationUrl ?? projectUrl
   const [draft, setDraft] = useState(effective ?? '')
   const [loaded, setLoaded] = useState(effective)
@@ -91,6 +110,9 @@ export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectEleme
     () => (window.session?.ensurePreview ? 'pending' : 'ready')
   )
   const frameRef = useRef<HTMLIFrameElement>(null)
+  // Ожидающие ответа DOM-действия модели: requestId → resolve с таймером.
+  const pendingActions = useRef(new Map<string, { resolve: (outcome: PreviewActionOutcome) => void; timer: ReturnType<typeof setTimeout> }>())
+  const actionSeq = useRef(0)
   const sendInspectorState = (enabled: boolean): void => {
     frameRef.current?.contentWindow?.postMessage({ type: PREVIEW_INSPECTOR_COMMAND_TYPE, enabled }, window.location.origin)
   }
@@ -101,6 +123,18 @@ export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectEleme
     const receive = (event: MessageEvent): void => {
       if (event.origin !== window.location.origin || event.source !== frameRef.current?.contentWindow) return
       if (isPreviewInspectorCommand(event.data)) { setInspecting(event.data.enabled); return }
+      if (isPreviewActionResultMessage(event.data)) {
+        const pending = pendingActions.current.get(event.data.requestId)
+        if (!pending) return
+        clearTimeout(pending.timer)
+        pendingActions.current.delete(event.data.requestId)
+        pending.resolve(
+          event.data.ok
+            ? { ok: true, ...(event.data.result !== undefined ? { result: event.data.result } : {}) }
+            : { ok: false, error: event.data.error ?? 'Действие в превью не выполнено' }
+        )
+        return
+      }
       if (isPreviewElementMessage(event.data)) onSelectElement?.(event.data.payload)
     }
     const hotkey = (event: KeyboardEvent): void => {
@@ -112,6 +146,37 @@ export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectEleme
     return () => { sendInspectorState(false); window.removeEventListener('message', receive); window.removeEventListener('keydown', hotkey) }
   }, [inspecting, onSelectElement])
   useEffect(() => { sendInspectorState(inspecting) }, [inspecting])
+  // Исполнитель DOM-действий модели: постит команду в iframe и ждёт ответ.
+  // Пока страница не загружена (или грузится после open) — честная ошибка,
+  // модель повторит чтение позже.
+  useEffect(() => {
+    if (!onRegisterActionRunner) return
+    const runner: PreviewActionRunner = (action) => {
+      const frame = frameRef.current?.contentWindow
+      if (!loaded || !frame) {
+        return Promise.resolve({ ok: false, error: 'В панели превью нет загруженной страницы — сначала open.' })
+      }
+      const requestId = `pa-${++actionSeq.current}`
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          pendingActions.current.delete(requestId)
+          resolve({ ok: false, error: 'Страница превью не ответила — возможно, ещё загружается. Повтори действие.' })
+        }, PREVIEW_ACTION_UI_TIMEOUT_MS)
+        pendingActions.current.set(requestId, { resolve, timer })
+        frame.postMessage({ type: PREVIEW_ACTION_COMMAND_TYPE, requestId, action }, window.location.origin)
+      })
+    }
+    onRegisterActionRunner(runner)
+    return () => {
+      onRegisterActionRunner(null)
+      // Снятые ожидания закрываем ошибкой, чтобы ход модели не ждал таймаута сервера.
+      for (const [requestId, pending] of pendingActions.current) {
+        clearTimeout(pending.timer)
+        pendingActions.current.delete(requestId)
+        pending.resolve({ ok: false, error: 'Панель превью закрыта.' })
+      }
+    }
+  }, [onRegisterActionRunner, loaded, reloadKey])
   useEffect(() => {
     const ensure = window.session?.ensurePreview
     if (!ensure) { setPreviewSession('ready'); return }
@@ -203,6 +268,36 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 45
   })
   useEffect(() => { setPreviewElement(null) }, [state.activeId])
+  // Действия модели в превью (mcp__browser__*): исполнителя DOM-действий даёт
+  // смонтированная PreviewPane, `open` выполняем сохранением адреса превью чата.
+  const previewRunnerRef = useRef<PreviewActionRunner | null>(null)
+  const registerPreviewRunner = useCallback((runner: PreviewActionRunner | null) => {
+    previewRunnerRef.current = runner
+  }, [])
+  useEffect(() => {
+    const bridge = window.preview
+    if (!bridge) return
+    return bridge.onAction(({ conversationId, requestId, action }) => {
+      void (async (): Promise<PreviewActionOutcome> => {
+        // Действия ограничены активной страницей: чужой или свёрнутый чат не трогаем.
+        if (state.activeId !== conversationId) {
+          return { ok: false, error: 'Этот чат сейчас не открыт у пользователя — превью недоступно.' }
+        }
+        if (action.kind === 'open') {
+          try {
+            await actions.setConversationPreviewUrl(conversationId, action.url)
+            setPreviewElement(null)
+            return { ok: true, result: { url: action.url } }
+          } catch {
+            return { ok: false, error: 'Не удалось сохранить адрес превью.' }
+          }
+        }
+        const runner = previewRunnerRef.current
+        if (!runner) return { ok: false, error: 'Панель превью не открыта у пользователя.' }
+        return runner(action)
+      })().then((outcome) => bridge.result({ requestId, ...outcome }))
+    })
+  }, [state.activeId, actions])
   useEffect(() => {
     let alive = true
     const projectId = state.conversations.find((conversation) => conversation.id === state.activeId)?.projectId
@@ -852,7 +947,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       />
       </div>
       <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>
-      <PreviewPane conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null} onSave={async (previewUrl) => { if (activeConversation) await actions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} />
+      <PreviewPane conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null} onSave={async (previewUrl) => { if (activeConversation) await actions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterActionRunner={registerPreviewRunner} />
       </div>
       )}
 
