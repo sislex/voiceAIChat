@@ -17,7 +17,7 @@
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-08 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 8 коммит(ов) в areas после сверки: d6cbf22 feat: persist kanban assistant chat with LLM inheritance … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 20 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 140 коммит(ов) в areas после сверки: 6af80f2 chatai-144: работа CI-рана … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 142 коммит(ов) в areas после сверки: 5757505 fix(ui): deduplicate kanban field selections … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: aa6ac12 fix(ci): увеличить таймаут актуализации базы знаний … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 1 коммит(ов) в areas после сверки: d6cbf22 feat: persist kanban assistant chat with LLM inheritance |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
@@ -27,7 +27,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: d6cbf22 feat: persist kanban assistant chat with LLM inheritance … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 3 коммит(ов) в areas после сверки: 8d6061d fix(prod): keep deploy socket reachable after restart … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-08 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-08 | ⚠ 1 коммит(ов) в areas после сверки: 5757505 fix(ui): deduplicate kanban field selections |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-08, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
 
@@ -44,7 +44,7 @@
 
 ## Журнал сессий
 
-Всего записей: 133. Последние:
+Всего записей: 134. Последние:
 
 - [2026-08-08-alexeys-macbook-air-2-widget-assistant-kanban.md](log/2026-08-08-alexeys-macbook-air-2-widget-assistant-kanban.md) — widget-assistant-kanban
 - [2026-08-08-alexeys-macbook-air-2-web-recorder-dns.md](log/2026-08-08-alexeys-macbook-air-2-web-recorder-dns.md) — web-recorder-dns
@@ -55,7 +55,7 @@
 - [2026-08-08-alexeys-macbook-air-2-preview-cookie-ensure.md](log/2026-08-08-alexeys-macbook-air-2-preview-cookie-ensure.md) — preview-cookie-ensure
 - [2026-08-08-alexeys-macbook-air-2-preview-cookie-auth.md](log/2026-08-08-alexeys-macbook-air-2-preview-cookie-auth.md) — preview-cookie-auth
 - [2026-08-08-alexeys-macbook-air-2-preview-browser-actions.md](log/2026-08-08-alexeys-macbook-air-2-preview-browser-actions.md) — preview-browser-actions
-- [2026-08-08-alexeys-macbook-air-2-kanban-assistant-chat.md](log/2026-08-08-alexeys-macbook-air-2-kanban-assistant-chat.md) — kanban-assistant-chat
+- [2026-08-08-alexeys-macbook-air-2-kanban-assistant-selection-dedup.md](log/2026-08-08-alexeys-macbook-air-2-kanban-assistant-selection-dedup.md) — kanban-assistant-selection-dedup
 
 ## Исторические планы
 

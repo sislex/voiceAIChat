@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-08
-checked: d6cbf22
+checked: 5757505
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/routes/projects.ts
@@ -24,6 +24,7 @@ areas:
   - packages/shared/src/prompt.ts
   - packages/shared/src/types.ts
   - packages/ui/src/components/ChatColumn.tsx
+  - packages/ui/src/App.tsx
   - packages/ui/src/store/useVoiceStore.ts
 ---
 
