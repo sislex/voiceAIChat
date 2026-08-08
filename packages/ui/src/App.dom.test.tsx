@@ -123,7 +123,7 @@ describe('App — действия модели в веб-превью (мост
     await waitFor(() => expect(bridge.results).toHaveLength(1))
     expect(bridge.results[0].ok).toBe(false)
     expect(api._state.conversations.find((c) => c.id === active.id)?.previewUrl ?? null).toBeNull()
-    expect(screen.queryByTitle('Веб-рекордер')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Web Reader')).not.toBeInTheDocument()
   })
 
   it('действие для неактивного чата отклоняется: превью ограничено активной страницей', async () => {

@@ -112,15 +112,52 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
   })
 })
 
-describe('App — отдельная страница веб-рекордера', () => {
-  it('показывает рекордер только на отдельном маршруте', async () => {
+describe('App — отдельная страница Web Reader', () => {
+  it('показывает Web Reader на собственном маршруте', async () => {
     const { api } = await seededApi()
-    window.location.hash = '#/web-recorder'
+    window.location.hash = '#/web-reader'
     render(<App api={api} delays={SLOW} />)
 
-    const frame = await screen.findByTitle('Веб-рекордер')
+    const frame = await screen.findByTitle('Web Reader')
     expect(frame).toHaveAttribute('src', '/web-recorder/')
-    expect(window.location.hash).toMatch(/^#\/web-recorder\/.+/)
+    expect(window.location.hash).toMatch(/^#\/web-reader\/.+/)
     expect(screen.getByRole('tab', { name: 'Сайт' })).toBeInTheDocument()
+  })
+
+  it('перенаправляет старый URL на Web Reader без открытия второго чата', async () => {
+    const { api } = await seededApi()
+    const reader = await api['conversations:create']({ title: 'Reader', assistantKind: 'web-recorder' })
+    window.location.hash = `#/web-recorder/${reader.id}`
+    render(<App api={api} delays={SLOW} />)
+
+    await screen.findByTitle('Web Reader')
+    await waitFor(() => expect(window.location.hash).toBe(`#/web-reader/${reader.id}`))
+  })
+
+  it('не открывает обычный чат как Web Reader и не создаёт лишний разговор', async () => {
+    const { api, gifts } = await seededApi()
+    const reader = await api['conversations:create']({ title: 'Reader', assistantKind: 'web-recorder' })
+    const count = api._state.conversations.length
+    window.location.hash = `#/web-reader/${gifts}`
+    render(<App api={api} delays={SLOW} />)
+
+    await screen.findByTitle('Web Reader')
+    await waitFor(() => expect(window.location.hash).toBe(`#/web-reader/${reader.id}`))
+    expect(api._state.conversations).toHaveLength(count)
+    expect(screen.queryByText('Что подарить?')).not.toBeInTheDocument()
+  })
+
+  it('переключает Reader по URL при навигации назад и вперёд', async () => {
+    const { api } = await seededApi()
+    const first = await api['conversations:create']({ title: 'Reader 1', assistantKind: 'web-recorder' })
+    const second = await api['conversations:create']({ title: 'Reader 2', assistantKind: 'web-recorder' })
+    window.location.hash = `#/web-reader/${first.id}`
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByTitle('Web Reader')
+
+    window.location.hash = `#/web-reader/${second.id}`
+    await waitFor(() => expect(screen.getByLabelText('Разговор Web Reader')).toHaveValue(second.id))
+    window.location.hash = `#/web-reader/${first.id}`
+    await waitFor(() => expect(screen.getByLabelText('Разговор Web Reader')).toHaveValue(first.id))
   })
 })

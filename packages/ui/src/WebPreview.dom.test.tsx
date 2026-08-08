@@ -13,9 +13,9 @@ const payload = {
 }
 
 describe('WebPreview session', () => {
-  it('называет виджет «Веб-рекордер»', () => {
+  it('называет виджет «Web Reader»', () => {
     render(<PreviewPane conversationUrl={null} projectUrl={null} onSave={vi.fn()} />)
-    expect(screen.getByRole('region', { name: 'Веб-рекордер' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Web Reader' })).toBeInTheDocument()
   })
 
   const withSessionBridge = (ensurePreview: () => Promise<boolean>): void => {

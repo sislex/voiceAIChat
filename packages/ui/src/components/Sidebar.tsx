@@ -239,8 +239,8 @@ export interface SidebarProps {
   onOpenFiles?: () => void
   /** Открыть консоль по машине-агенту (web). */
   onOpenConsole?: () => void
-  /** Открыть отдельную страницу веб-рекордера. */
-  onOpenWebRecorder?: () => void
+  /** Открыть отдельную страницу Web Reader. */
+  onOpenWebReader?: () => void
   /** Открыть админ-страницу пользователей (только admin). */
   onOpenUsers?: () => void
   /** Открыть меню «Машины» (статус агентских машин; web). */
@@ -302,7 +302,7 @@ export function Sidebar({
   onOpenSettings,
   onOpenFiles,
   onOpenConsole,
-  onOpenWebRecorder,
+  onOpenWebReader,
   onOpenUsers,
   onOpenMachines,
   onOpenCi,
@@ -720,10 +720,10 @@ export function Sidebar({
                     Консоль
                   </Button>
                 )}
-                {onOpenWebRecorder && (
-                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenWebRecorder)}>
+                {onOpenWebReader && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenWebReader)}>
                     <span className="footico">🌐</span>
-                    Веб-рекордер
+                    Web Reader
                   </Button>
                 )}
                 <div className="acct-sep" aria-hidden />
@@ -781,8 +781,8 @@ export function Sidebar({
                   ⌨️
                 </IconButton>
               )}
-              {onOpenWebRecorder && (
-                <IconButton className="foottools-item" onClick={onOpenWebRecorder} title="Веб-рекордер" aria-label="Веб-рекордер">
+              {onOpenWebReader && (
+                <IconButton className="foottools-item" onClick={onOpenWebReader} title="Web Reader" aria-label="Web Reader">
                   🌐
                 </IconButton>
               )}
