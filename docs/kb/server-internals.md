@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-08
-checked: fee416b
+checked: 17679ee
 areas:
   - apps/server/src
 ---
@@ -56,6 +56,25 @@ XHTML и CSS прокси переписывает URL ресурсов, ссы�
 длину изменённого тела и отдаёт исходный status; ошибки загрузки возвращаются как
 структурированный JSON. UI-поведение — в [ui.md](ui.md#веб-превью), путь контракта
 — в `packages/shared/src/protocol.ts`.
+
+`GET /api/preview` защищён, но не Bearer-токеном в query (тот попал бы в лог/историю
+браузера) — авторизация идёт через отдельную HttpOnly-cookie `vc_preview_session`
+(`Path=/api/preview`, `SameSite=Strict`, ставится без `Max-Age` — то есть session-cookie,
+не переживает закрытие браузера). В `apps/server/src/users/auth.ts` функция
+`previewSession()` читает эту cookie, но только когда путь запроса точно равен
+`/api/preview`; глобальный auth `preHandler` пробует Bearer, а при его отсутствии —
+эту cookie, так что на любом другом защищённом REST-пути cookie не работает и нужен
+`Authorization: Bearer`. Cookie выпускают два роута: `POST /api/session/login` при
+входе и `POST /api/session/preview`, который переиздаёт её из уже действующего
+Bearer-токена без пароля — он покрывает сессии, восстановленные из `localStorage`
+без повторного login, и повторные визиты после перезапуска браузера, когда
+session-cookie от предыдущего входа уже пропала; без этого второго роута такие
+сессии получали 401 на любом сайте в превью. Оба пути лежат под публичным префиксом
+`/api/session/` (`isPublic()`), поэтому `/api/session/preview` проверяет Bearer сам и
+без него отвечает 401 без cookie. `POST /api/session/logout` снимает cookie через
+`Max-Age=0`. На клиенте `PreviewPane` вызывает мостовой `session.ensurePreview()` и
+не монтирует iframe, пока cookie не подтверждена — подробности флоу в
+[ui.md](ui.md#веб-превью).
 
 ## WebSocket `/ws`
 
