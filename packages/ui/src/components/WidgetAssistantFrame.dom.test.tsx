@@ -37,15 +37,16 @@ describe('WidgetAssistantFrame', () => {
     const transport = { send, onToken: vi.fn(() => () => {}), onDone: vi.fn(() => () => {}), onError: vi.fn(() => () => {}) } as any
     const onCommand = vi.fn()
     const view = render(<KanbanAssistant projectId="p1" context={context as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
-    const next = { ...context, selection: { board: { projectId: 'p1', columns: [] }, openTask: { id: 't2', title: 'Current' }, selectedField: 'description' } }
+    const next = { ...context, selection: { board: { projectId: 'p1', columns: [], revision: '9', tasks: [{ id: 't2', type: 'epic', title: 'UI', updatedAt: 9 }] }, openTask: { id: 't2', title: 'Current' }, selectedField: 'description' } }
     view.rerender(<KanbanAssistant projectId="p1" context={next as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
     await vi.waitFor(() => expect(screen.getByRole('textbox', { name: 'Поле ввода сообщения' })).toBeEnabled())
-    await userEvent.type(screen.getByRole('textbox', { name: 'Поле ввода сообщения' }), 'help')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Поле ввода сообщения' }), 'UI')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить сообщение' }))
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send.mock.calls[0]?.[0].assistantContext.selection.openTask.id).toBe('t2')
     expect(send.mock.calls[0]?.[0].assistantContext.selection.selectedField).toBe('description')
-    expect(await api['kanbanAssistant:get']({ projectId: 'p1' })).toMatchObject({ messages: [{ role: 'u0', text: 'help' }] })
+    expect(send.mock.calls[0]?.[0].assistantContext.toolResults.query).toMatchObject({ source: 'ui', revision: '9', items: [{ id: 't2', kind: 'epic', title: 'UI' }] })
+    expect(await api['kanbanAssistant:get']({ projectId: 'p1' })).toMatchObject({ messages: [{ role: 'u0', text: 'UI' }] })
   })
 
   it('never applies a proposal until confirmation and cancellation is inert', async () => {

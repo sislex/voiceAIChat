@@ -409,7 +409,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       }
     }
     if (conv?.assistantKind === 'kanban' && req.assistantContext) {
-      basePrompt = `${basePrompt}\n\n## Режим канбан-ассистента\nОтветь JSON-объектом {"text":"...","commands":[]}. Доступные команды: navigate.project-settings, navigate.task, propose.task-update, propose.rephrase, propose.acceptance-criteria, propose.settings-update. Любые изменения только propose; не утверждай, что они применены. Используй только безопасный снимок ниже.\n${JSON.stringify(req.assistantContext)}`
+      basePrompt = `${basePrompt}\n\n## Режим канбан-ассистента\nОтветь JSON-объектом {"text":"...","commands":[]}. Доступные команды: navigate.project-settings, navigate.task, propose.task-update, propose.rephrase, propose.acceptance-criteria, propose.settings-update. Для поиска карточек используй toolResults.query: шлюз предпочитает семантический UI-снимок, а без него делает API-fallback. Любые изменения только propose; они проходят общий action-шлюз после подтверждения — не утверждай, что они применены. Используй только безопасный снимок ниже.\n${JSON.stringify(req.assistantContext)}`
     }
     const prompt = appendChangeAuthorizationHint(appendImageHint(appendToolHint(appendQuestionsHint(basePrompt))))
     // Цель выполнения команд: выбранная машина-агент. Только своя машина

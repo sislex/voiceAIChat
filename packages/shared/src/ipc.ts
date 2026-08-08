@@ -130,6 +130,10 @@ export interface IpcInvokeMap {
     arg: { projectId: string }
     result: ConversationWithMessages & { effectiveLlm: { llmEngineId: string | null; provider: LlmProvider; model: string; inherited: boolean } }
   }
+  'widget:describe': { arg: import('./widgetAssistant').WidgetToolScope; result: import('./widgetAssistant').WidgetToolDescription }
+  'widget:query': { arg: import('./widgetAssistant').WidgetToolQueryRequest; result: import('./widgetAssistant').WidgetToolQueryResult }
+  'widget:get': { arg: import('./widgetAssistant').WidgetToolGetRequest; result: import('./widgetAssistant').WidgetToolGetResult }
+  'widget:action': { arg: import('./widgetAssistant').WidgetToolActionRequest; result: import('./widgetAssistant').WidgetToolActionResult }
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
   /**
    * Поиск разговоров по названию и содержимому сообщений (регистронезависимо).
