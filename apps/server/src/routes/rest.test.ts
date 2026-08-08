@@ -110,6 +110,40 @@ describe('REST: аутентификация', () => {
     expect(logout.headers['set-cookie']).toContain('Max-Age=0')
   })
 
+  it('POST /api/session/preview выпускает preview-cookie из Bearer, без токена — 401', async () => {
+    db.createUser('user', '', 'user')
+    const userTok = signToken({ name: 'user', role: 'user' }, SECRET)
+
+    // Сессия, восстановленная из localStorage без повторного login, получает cookie здесь.
+    const minted = await app.inject({
+      method: 'POST',
+      url: '/api/session/preview',
+      headers: { authorization: `Bearer ${userTok}` }
+    })
+    expect(minted.statusCode).toBe(200)
+    const setCookie = String(minted.headers['set-cookie'])
+    expect(setCookie).toContain('vc_preview_session=')
+    expect(setCookie).toContain('Path=/api/preview')
+    expect(setCookie).toContain('HttpOnly')
+    expect(setCookie).toContain('SameSite=Strict')
+
+    // Выпущенная cookie авторизует iframe-превью (400 invalid_url — уже за preHandler).
+    const cookie = setCookie.split(';', 1)[0]
+    const preview = await app.inject({ method: 'GET', url: '/api/preview?url=invalid', headers: { cookie } })
+    expect(preview.statusCode).toBe(400)
+
+    const anonymous = await app.inject({ method: 'POST', url: '/api/session/preview' })
+    expect(anonymous.statusCode).toBe(401)
+    expect(anonymous.headers['set-cookie']).toBeUndefined()
+
+    const badToken = await app.inject({
+      method: 'POST',
+      url: '/api/session/preview',
+      headers: { authorization: 'Bearer forged.token' }
+    })
+    expect(badToken.statusCode).toBe(401)
+  })
+
   it('данные пользователей изолированы (user не видит разговоры admin)', async () => {
     db.createUser('user', '', 'user')
     const adminTok = signToken({ name: 'admin', role: 'admin' }, SECRET)

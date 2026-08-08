@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PREVIEW_INSPECTOR_MESSAGE_TYPE } from '@shared/previewInspector'
@@ -10,6 +10,48 @@ const payload = {
   pageUrl: 'https://example.test', viewport: { width: 800, height: 600 }, outerHTML: '<div id="hero"></div>', text: '',
   styles: { font:'',color:'',backgroundColor:'',margin:'',padding:'',border:'',width:'',height:'',position:'',display:'',flex:'',flexDirection:'',flexWrap:'',alignItems:'',justifyContent:'',gap:'',grid:'',gridTemplateColumns:'',gridTemplateRows:'',gridArea:'' }
 }
+
+describe('WebPreview session', () => {
+  const withSessionBridge = (ensurePreview: () => Promise<boolean>): void => {
+    ;(window as { session?: unknown }).session = {
+      login: vi.fn(), me: vi.fn(), logout: vi.fn(), ensurePreview
+    }
+  }
+
+  afterEach(() => { delete (window as { session?: unknown }).session })
+
+  it('ждёт выпуска preview-cookie session-мостом и лишь потом грузит iframe', async () => {
+    let release: (ok: boolean) => void = () => undefined
+    const ensurePreview = vi.fn(() => new Promise<boolean>((resolve) => { release = resolve }))
+    withSessionBridge(ensurePreview)
+    render(<PreviewPane conversationUrl="https://www.onliner.by/" projectUrl={null} onSave={vi.fn()} />)
+    expect(screen.queryByTitle('Предпросмотр сайта')).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent('Подключение превью…')
+    release(true)
+    await waitFor(() => expect(screen.getByTitle('Предпросмотр сайта')).toBeInTheDocument())
+    expect(ensurePreview).toHaveBeenCalled()
+    const src = (screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).getAttribute('src')
+    expect(src).toBe('/api/preview?url=https%3A%2F%2Fwww.onliner.by%2F')
+  })
+
+  it('при отказе session-моста iframe не грузится, виден понятный статус', async () => {
+    withSessionBridge(async () => false)
+    render(<PreviewPane conversationUrl="https://www.onliner.by/" projectUrl={null} onSave={vi.fn()} />)
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('войдите в приложение заново'))
+    expect(screen.queryByTitle('Предпросмотр сайта')).toBeNull()
+  })
+
+  it('«Обновить» после отказа повторяет выпуск preview-cookie', async () => {
+    const answers = [false, true]
+    const ensurePreview = vi.fn(async () => answers.shift() ?? true)
+    withSessionBridge(ensurePreview)
+    render(<PreviewPane conversationUrl="https://www.onliner.by/" projectUrl={null} onSave={vi.fn()} />)
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    await userEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+    await waitFor(() => expect(screen.getByTitle('Предпросмотр сайта')).toBeInTheDocument())
+    expect(ensurePreview).toHaveBeenCalledTimes(2)
+  })
+})
 
 describe('WebPreview inspector', () => {
   it('открывает same-origin proxy без Bearer-токена в URL', () => {

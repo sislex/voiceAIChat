@@ -197,6 +197,17 @@ function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessionBridg
     logout: async () => {
       setToken(null)
       ws.reconnect() // рвём авторизованное соединение
+    },
+    // Выпускает preview-cookie из текущего Bearer-токена: восстановленная из
+    // localStorage сессия иначе остаётся без cookie и iframe превью ловит 401.
+    ensurePreview: async () => {
+      if (!getToken()) return false
+      try {
+        const res = await fetch(httpBase + REST.sessionPreview, { method: 'POST', headers: authHeaders() })
+        return res.ok
+      } catch {
+        return false
+      }
     }
   }
 }
