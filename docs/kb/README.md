@@ -17,13 +17,13 @@
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-08 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 8 коммит(ов) в areas после сверки: d6cbf22 feat: persist kanban assistant chat with LLM inheritance … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 20 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 144 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: aa6ac12 fix(ci): увеличить таймаут актуализации базы знаний … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 146 коммит(ов) в areas после сверки: 1609d9f feat(preview): isolate web recorder browser context … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 3 коммит(ов) в areas после сверки: 2517d1c chatai-147: работа CI-рана … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 1 коммит(ов) в areas после сверки: d6cbf22 feat: persist kanban assistant chat with LLM inheritance |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-08 | ⚠ 1 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: 9614b83 fix: restore web recorder preview loading … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 2 коммит(ов) в areas после сверки: 9614b83 fix: restore web recorder preview loading … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 4 коммит(ов) в areas после сверки: 1609d9f feat(preview): isolate web recorder browser context … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: 1609d9f feat(preview): isolate web recorder browser context … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-08 | ⚠ 4 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 4 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
@@ -44,7 +44,7 @@
 
 ## Журнал сессий
 
-Всего записей: 135. Последние:
+Всего записей: 136. Последние:
 
 - [2026-08-08-alexeys-macbook-air-2-widget-assistant-kanban.md](log/2026-08-08-alexeys-macbook-air-2-widget-assistant-kanban.md) — widget-assistant-kanban
 - [2026-08-08-alexeys-macbook-air-2-web-recorder-standalone.md](log/2026-08-08-alexeys-macbook-air-2-web-recorder-standalone.md) — web-recorder-standalone
@@ -55,7 +55,7 @@
 - [2026-08-08-alexeys-macbook-air-2-preview-inspector.md](log/2026-08-08-alexeys-macbook-air-2-preview-inspector.md) — preview-inspector
 - [2026-08-08-alexeys-macbook-air-2-preview-cookie-ensure.md](log/2026-08-08-alexeys-macbook-air-2-preview-cookie-ensure.md) — preview-cookie-ensure
 - [2026-08-08-alexeys-macbook-air-2-preview-cookie-auth.md](log/2026-08-08-alexeys-macbook-air-2-preview-cookie-auth.md) — preview-cookie-auth
-- [2026-08-08-alexeys-macbook-air-2-preview-browser-actions.md](log/2026-08-08-alexeys-macbook-air-2-preview-browser-actions.md) — preview-browser-actions
+- [2026-08-08-alexeys-macbook-air-2-preview-browser-context.md](log/2026-08-08-alexeys-macbook-air-2-preview-browser-context.md) — preview-browser-context
 
 ## Исторические планы
 
