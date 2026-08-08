@@ -32,9 +32,12 @@ export interface ProjectPageProps {
   onToggleSidebar?: () => void
   /** Содержимое активного раздела. */
   children: ReactNode
+  assistantOpen?: boolean
+  onAssistantOpenChange?: (open: boolean) => void
+  onOpenAssistantPage?: () => void
 }
 
-export function ProjectPage({ projectName, section, onSectionChange, onToggleSidebar, children }: ProjectPageProps): JSX.Element {
+export function ProjectPage({ projectName, section, onSectionChange, onToggleSidebar, children, assistantOpen = false, onAssistantOpenChange, onOpenAssistantPage }: ProjectPageProps): JSX.Element {
   const tabsRef = useRef<HTMLDivElement>(null)
   // Стрелки переключают вкладку сразу (automatic activation в терминах ARIA).
   // Фокус переносим руками: активная вкладка единственная в tab-порядке
@@ -64,6 +67,8 @@ export function ProjectPage({ projectName, section, onSectionChange, onToggleSid
           {onToggleSidebar && (
             <button className="proj-sidebar-toggle" aria-label="Открыть меню" onClick={onToggleSidebar}>☰</button>
           )}
+          {section === 'board' && onAssistantOpenChange && <button type="button" className="vc-btn vc-btn--secondary project-assistant-toggle" aria-pressed={assistantOpen} onClick={() => onAssistantOpenChange(!assistantOpen)}>✦ Ассистент</button>}
+          {section === 'board' && assistantOpen && onOpenAssistantPage && <button type="button" className="vc-btn vc-btn--secondary" aria-label="Открыть виджет с ассистентом отдельной страницей" onClick={onOpenAssistantPage}>↗</button>}
           <div
           className="sideswitch projtabs"
           role="tablist"

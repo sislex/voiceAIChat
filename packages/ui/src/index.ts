@@ -14,3 +14,5 @@ export type { RendererKbBridge } from './remote/kbBridge'
 
 export * from './components/prompt-builder/PromptBuilder'
 export * from './components/prompt-builder/useAiAssist'
+export * from './components/WidgetAssistantFrame'
+export * from './components/KanbanAssistant'

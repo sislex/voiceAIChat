@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { TaskPriority } from '@shared/projects'
+import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
+import { parseWidgetAssistantReply } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, isPreviewElementMessage, isPreviewInspectorCommand, type PreviewElementPayload } from '@shared/previewInspector'
 import { PREVIEW_ACTION_COMMAND_TYPE, isPreviewActionResultMessage, type PreviewActionResult, type PreviewDomAction } from '@shared/previewActions'
@@ -21,6 +23,8 @@ import { UsersAdmin } from './components/UsersAdmin'
 import { ProjectSettings } from './components/ProjectSettings'
 import { ProjectBoard } from './components/ProjectBoard'
 import { ProjectPage, ProjectsEmptyPage, ProjectNotFoundPage } from './components/ProjectPage'
+import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
+import { KanbanAssistant } from './components/KanbanAssistant'
 import { MachineStatus } from './components/MachineStatus'
 import { MachineUtility } from './components/MachineUtility'
 import { CiCommands } from './components/ci/CiCommands'
@@ -317,6 +321,12 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
   const [activeProjectPreviewUrl, setActiveProjectPreviewUrl] = useState<string | null>(null)
+  const [assistantOpen, setAssistantOpen] = useState(() => globalThis.localStorage?.getItem('voicechat.kanbanAssistantOpen') === '1')
+  const [assistantTaskId, setAssistantTaskId] = useState<string | null>(null)
+  const [assistantField, setAssistantField] = useState<keyof SupportedTaskPatch | null>(null)
+  const [widgetActions, setWidgetActions] = useState<WidgetUserAction[]>([])
+  const setKanbanAssistantOpen = (open: boolean): void => { setAssistantOpen(open); globalThis.localStorage?.setItem('voicechat.kanbanAssistantOpen', open ? '1' : '0') }
+  const rememberWidgetAction = (kind: string, label: string, targetId?: string): void => setWidgetActions((items) => [...items.slice(-19), { id: `${Date.now()}-${items.length}`, kind, label, at: Date.now(), ...(targetId ? { targetId } : {}) }])
   const [previewWidth, setPreviewWidth] = useState(() => {
     const saved = Number(globalThis.localStorage?.getItem('voicechat.previewWidth'))
     return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 45
@@ -478,6 +488,18 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     (state.projectDetail?.id === routeProjectId ? state.projectDetail.name : null) ??
     state.projects.find((p) => p.id === routeProjectId)?.name ??
     'Проект'
+  const kanbanAssistantContext = useMemo<WidgetAssistantContext<KanbanAssistantSelection>>(() => {
+    const project = state.projects.find((item) => item.id === routeProjectId) ?? null
+    const board = state.activeProjectId === routeProjectId ? state.board : null
+    const openTask = board?.tasks.find((task) => task.id === assistantTaskId) ?? null
+    return {
+      version: 1,
+      widget: { kind: 'kanban', instanceId: routeProjectId ?? 'none', title: routeProjectName },
+      project: project ? { id: project.id, name: project.name, description: project.description, technologies: project.technologies, skills: project.skills } : null,
+      selection: board && routeProjectId ? { board: { projectId: routeProjectId, columns: board.columns }, openTask, selectedField: assistantField } : null,
+      recentActions: widgetActions
+    }
+  }, [state.projects, state.board, state.activeProjectId, routeProjectId, routeProjectName, assistantTaskId, assistantField, widgetActions])
   // Список загружен, а проекта из адреса в нём нет: удалён или нет доступа.
   const projectMissing =
     routeProjectId !== null && state.projectsLoaded && !state.projects.some((p) => p.id === routeProjectId)
@@ -1023,6 +1045,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
             if (collapsed) setCollapsedPersist(false)
             setSidebarOpen((v) => !v)
           }}
+          assistantOpen={assistantOpen || segments[2] === 'assistant'}
+          onAssistantOpenChange={(open) => { if (!open && segments[2] === 'assistant') navigate(`/projects/${routeProjectId}`); setKanbanAssistantOpen(open) }}
+          onOpenAssistantPage={() => navigate(`/projects/${routeProjectId}/assistant`) }
         >
           {routeSettings ? (
             state.projectDetail?.id === routeProjectId ? (
@@ -1053,7 +1078,12 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               </div>
             )
           ) : (
-            <ProjectBoard
+            <WidgetAssistantFrame
+              open={assistantOpen || segments[2] === 'assistant'}
+              onOpenChange={(open) => { if (!open && segments[2] === 'assistant') navigate(`/projects/${routeProjectId}`); setKanbanAssistantOpen(open) }}
+              mode={segments[2] === 'assistant' ? 'page' : 'embedded'}
+              storageKey="voicechat.kanbanAssistantWidth"
+              widget={<ProjectBoard
               initialOpenTaskId={routeTaskId}
               projectName={routeProjectName}
               board={state.board}
@@ -1085,6 +1115,33 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               aiAssistPrompts={state.settings.aiAssistPrompts}
               onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
               generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
+              onAssistantSelectionChange={(taskId, field) => {
+                setAssistantTaskId(taskId); setAssistantField(field)
+                if (taskId) rememberWidgetAction(field ? 'field.select' : 'task.open', field ? `Выбрано поле ${field}` : 'Открыта карточка', taskId)
+              }}
+            />}
+              assistant={<KanbanAssistant
+                context={kanbanAssistantContext}
+                request={async (text, context) => {
+                  const prompt = `Ты ассистент виджета канбана. Ответь JSON-объектом {"text":"...","commands":[]}. Доступные команды: navigate.project-settings, navigate.task, propose.task-update, propose.rephrase, propose.acceptance-criteria, propose.settings-update. Любые изменения только propose; не утверждай, что они применены. Контекст не содержит секретов.\nКонтекст: ${JSON.stringify(context)}\nЗапрос: ${text}`
+                  const result = await api['prompt:suggest']({ prompt, modifiers: [] })
+                  return parseWidgetAssistantReply(result.variants[0]?.text ?? 'Нет предложения')
+                }}
+                onCommand={async (command: WidgetAssistantCommand) => {
+                  rememberWidgetAction('assistant.command', command.type, 'taskId' in command ? command.taskId : undefined)
+                  if (command.type === 'navigate.project-settings') { navigate(`/projects/${command.projectId}/settings`); return }
+                  if (command.type === 'navigate.task') { navigate(`/projects/${command.projectId}/task/${command.taskId}`); return }
+                  if (command.type === 'propose.settings-update') { await actions.updateSettings(command.patch); return }
+                  const patch: SupportedTaskPatch = command.type === 'propose.task-update'
+                    ? command.patch
+                    : command.type === 'propose.acceptance-criteria'
+                      ? { acceptanceCriteria: command.value }
+                      : { [command.field]: command.value }
+                  const { columnId, ...fields } = patch
+                  if (columnId) await actions.moveTask(command.taskId, columnId, null, null)
+                  if (Object.keys(fields).length > 0) await actions.updateTask(command.taskId, fields)
+                }}
+              />}
             />
           )}
         </ProjectPage>
