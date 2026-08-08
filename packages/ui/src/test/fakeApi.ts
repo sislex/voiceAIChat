@@ -161,7 +161,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   }
 
   const api: FakeApi = {
-    'app:ping': async () => ({ ok: true, version: '0.1.0', releasedAt: '2026-08-03T00:00:00.000Z' }),
+    'app:ping': async () => ({ ok: true, version: '0.1.0', releasedAt: '2026-08-03T00:00:00.000Z', commit: '7492fde', task: 'chat-149' }),
     'kb:status': async () => ({ available: true, mode: 'source', searchMode: 'lexical', version: 'test', createdAt: new Date(0).toISOString(), documents: 0, chunks: 0, staleDocuments: 0 }),
     'kb:topics': async () => [],
     'kb:search': async () => [],

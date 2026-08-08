@@ -115,6 +115,10 @@ export interface HealthResponse {
   version: string
   /** ISO-время сборки/выпуска релиза. */
   releasedAt: string
+  /** Короткий Git SHA собранного релиза; null вне Git-сборки. */
+  commit: string | null
+  /** Номер связанной задачи в формате chat-149; null, если определить нельзя. */
+  task: string | null
 }
 
 /** Пути REST (единый источник для сервера и клиентов). */
