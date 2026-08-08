@@ -94,7 +94,7 @@ const click=(e)=>{if(!active)return;const el=e.target;if(!(el instanceof Element
 const key=(e)=>{if(active&&e.key==='Escape'){e.preventDefault();disable();parent.postMessage({type:COMMAND,enabled:false},location.origin)}};
 const enable=()=>{if(active)return;active=true;document.addEventListener('pointerover',move,true);document.addEventListener('click',click,true);document.addEventListener('keydown',key,true)};
 const disable=()=>{active=false;selected=null;document.removeEventListener('pointerover',move,true);document.removeEventListener('click',click,true);document.removeEventListener('keydown',key,true);hide()};
-const ACTION='voicechat.preview.action.v1', RESULT='voicechat.preview.action-result.v1';
+const ACTION='voicechat.preview.action.v1', RESULT='voicechat.preview.action-result.v1', RECORD='voicechat.preview.record.v1';
 const EL_TEXT=200, SNIPPET=4000, FIND_MAX=30, HEADINGS=64, LINKS=100, BUTTONS=50, INPUTS=50;
 const CLICKABLE='a,button,[role=button],[role=link],[role=tab],[role=menuitem],input,select,textarea,label,summary,[onclick]';
 const unproxy=(value)=>{try{const u=new URL(value,location.href);if(u.pathname==='/api/preview'){const t=u.searchParams.get('url');if(t)return t}return u.toString()}catch{return value}};
@@ -188,15 +188,22 @@ const run=(action)=>{
   throw new Error('Неизвестное действие')
 };
 const reply=(requestId,ok,payload)=>parent.postMessage(ok?{type:RESULT,requestId,ok:true,result:payload}:{type:RESULT,requestId,ok:false,error:String(payload).slice(0,2000)},location.origin);
+let recording=false;
+const sensitive=(el)=>el.localName==='input'&&(el.type==='password'||el.autocomplete==='current-password'||el.autocomplete==='new-password'||/pass|secret|token|card|cvv/i.test((el.name||'')+' '+(el.id||'')));
+const record=(step)=>{if(recording)parent.postMessage({type:RECORD,step},location.origin)};
+const recordClick=(e)=>{const el=e.target instanceof Element?clickTarget(e.target):null;if(el&&!el.closest('[data-voicechat-inspector]'))record({kind:'click',selector:uniqueSelector(el),text:textOf(el).slice(0,EL_TEXT)})};
+const recordInput=(e)=>{const el=e.target instanceof Element?e.target:null;if(!el||!el.matches('input,textarea,select,[contenteditable=true]'))return;record({kind:'type',selector:uniqueSelector(el),text:sensitive(el)?'':String(el.value===undefined?el.textContent||'':el.value).slice(0,2000),sensitive:sensitive(el)})};
+const setRecording=(enabled)=>{if(recording===enabled)return;recording=enabled;if(enabled){document.addEventListener('click',recordClick,true);document.addEventListener('input',recordInput,true)}else{document.removeEventListener('click',recordClick,true);document.removeEventListener('input',recordInput,true)}};
 const message=(e)=>{
   if(e.source!==parent||e.origin!==location.origin||!e.data)return;
   if(e.data.type===COMMAND&&typeof e.data.enabled==='boolean'){e.data.enabled?enable():disable();return}
+  if(e.data.type===RECORD&&typeof e.data.enabled==='boolean'){setRecording(e.data.enabled);return}
   if(e.data.type===ACTION&&typeof e.data.requestId==='string'&&e.data.action&&typeof e.data.action.kind==='string'){
     try{reply(e.data.requestId,true,run(e.data.action))}
     catch(err){reply(e.data.requestId,false,err&&err.message||err)}
   }
 };
-addEventListener('message',message);addEventListener('pagehide',()=>{disable();removeEventListener('message',message)},{once:true});
+addEventListener('message',message);addEventListener('pagehide',()=>{disable();setRecording(false);removeEventListener('message',message)},{once:true});
 })();<\/script>`
 }
 
