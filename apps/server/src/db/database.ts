@@ -885,16 +885,16 @@ export class VoiceChatDb {
 
   // ---- Conversations ----------------------------------------------------
 
-  createConversation(userId: string, title = 'Новый разговор'): Conversation {
+  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | null = null): Conversation {
     const id = this.newId()
     const ts = this.now()
     this.db
       .prepare(
-        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target)
-         VALUES (?, ?, ?, ?, NULL, ?, NULL)`
+        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, assistant_kind)
+         VALUES (?, ?, ?, ?, NULL, ?, NULL, ?)`
       )
-      .run(id, title, ts, ts, userId)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
+      .run(id, title, ts, ts, userId, assistantKind)
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, assistantKind, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
   }
 
   /** Один приватный сохраняемый чат канбан-ассистента на пользователя и проект. */
@@ -931,7 +931,7 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
-           AND c.assistant_kind IS NULL
+           AND (c.assistant_kind IS NULL OR c.assistant_kind = 'web-recorder')
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
          ORDER BY c.updated_at DESC`
       )
@@ -981,7 +981,7 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
-           AND c.assistant_kind IS NULL
+           AND (c.assistant_kind IS NULL OR c.assistant_kind = 'web-recorder')
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
            AND (ulower(c.title) LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM messages m
@@ -1806,7 +1806,7 @@ export class VoiceChatDb {
           : null,
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
       projectId: row.project_id ?? null,
-      assistantKind: row.assistant_kind === 'kanban' ? 'kanban' : null,
+      assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' ? row.assistant_kind : null,
       previewUrl: row.preview_url ?? null,
       projectPreviewUrl: row.project_id ? ((this.db.prepare(`SELECT preview_url FROM projects WHERE id = ?`).get(row.project_id) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
       taskId: row.task_id ?? null,

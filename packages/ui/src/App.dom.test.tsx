@@ -115,16 +115,15 @@ describe('App — действия модели в веб-превью (мост
 
   afterEach(() => { delete (window as { preview?: unknown }).preview })
 
-  it('«открой сайт»: open сохраняет URL чата, грузит его в панель и отвечает ok', async () => {
+  it('браузерное действие из обычного чата отклоняется: рекордер доступен только на отдельной странице', async () => {
     const bridge = installPreviewBridge()
     const api = await renderApp()
     const active = api._state.conversations.find((c) => c.title === 'Поездка в Лиссабон')!
     bridge.emit({ conversationId: active.id, requestId: 'r1', action: { kind: 'open', url: 'https://shop.example/' } })
     await waitFor(() => expect(bridge.results).toHaveLength(1))
-    expect(bridge.results[0]).toEqual({ requestId: 'r1', ok: true, result: { url: 'https://shop.example/' } })
-    // URL сохранён за разговором; standalone-рекордер получает его публичным контрактом.
-    expect(api._state.conversations.find((c) => c.id === active.id)?.previewUrl).toBe('https://shop.example/')
-    expect(screen.getByTitle('Веб-рекордер')).toHaveAttribute('src', '/web-recorder/')
+    expect(bridge.results[0].ok).toBe(false)
+    expect(api._state.conversations.find((c) => c.id === active.id)?.previewUrl ?? null).toBeNull()
+    expect(screen.queryByTitle('Веб-рекордер')).not.toBeInTheDocument()
   })
 
   it('действие для неактивного чата отклоняется: превью ограничено активной страницей', async () => {

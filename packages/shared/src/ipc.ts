@@ -124,7 +124,7 @@ export interface IpcInvokeMap {
    * завершённых задач»).
    */
   'conversations:list': { arg: { includeCompleted?: boolean }; result: Conversation[] }
-  'conversations:create': { arg: { title?: string }; result: Conversation }
+  'conversations:create': { arg: { title?: string; assistantKind?: 'web-recorder' }; result: Conversation }
   /** Создать или получить приватный проектный чат канбан-ассистента. */
   'kanbanAssistant:get': {
     arg: { projectId: string }

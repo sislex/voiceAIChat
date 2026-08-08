@@ -112,22 +112,15 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
   })
 })
 
-describe('App — веб-превью', () => {
-  it('загружает сохранённый URL разговора, сохраняет override и валидирует адрес', async () => {
-    const { api, lisbon } = await seededApi()
-    const project = await api['projects:create']({ name: 'Web' })
-    await api['projects:update']({ id: project.id, previewUrl: 'https://project.example/' })
-    await api['conversations:setProject']({ id: lisbon, projectId: project.id })
-    await api['conversations:setPreviewUrl']({ id: lisbon, previewUrl: 'https://project.example/' })
+describe('App — отдельная страница веб-рекордера', () => {
+  it('показывает рекордер только на отдельном маршруте', async () => {
+    const { api } = await seededApi()
+    window.location.hash = '#/web-recorder'
     render(<App api={api} delays={SLOW} />)
 
-    // ChatAI больше не владеет полем адреса: он открывает отдельное приложение
-    // и передаёт ему URL через публичный postMessage-контракт.
     const frame = await screen.findByTitle('Веб-рекордер')
     expect(frame).toHaveAttribute('src', '/web-recorder/')
-    expect(api._state.conversations.find((conversation) => conversation.id === lisbon)?.previewUrl).toBe('https://project.example/')
-    expect(screen.getByRole('tab', { name: 'Чат' })).toHaveAttribute('aria-selected', 'true')
-    await userEvent.click(screen.getByRole('tab', { name: 'Превью' }))
-    expect(screen.getByRole('tab', { name: 'Превью' })).toHaveAttribute('aria-selected', 'true')
+    expect(window.location.hash).toMatch(/^#\/web-recorder\/.+/)
+    expect(screen.getByRole('tab', { name: 'Сайт' })).toBeInTheDocument()
   })
 })

@@ -239,6 +239,8 @@ export interface SidebarProps {
   onOpenFiles?: () => void
   /** Открыть консоль по машине-агенту (web). */
   onOpenConsole?: () => void
+  /** Открыть отдельную страницу веб-рекордера. */
+  onOpenWebRecorder?: () => void
   /** Открыть админ-страницу пользователей (только admin). */
   onOpenUsers?: () => void
   /** Открыть меню «Машины» (статус агентских машин; web). */
@@ -300,6 +302,7 @@ export function Sidebar({
   onOpenSettings,
   onOpenFiles,
   onOpenConsole,
+  onOpenWebRecorder,
   onOpenUsers,
   onOpenMachines,
   onOpenCi,
@@ -717,6 +720,12 @@ export function Sidebar({
                     Консоль
                   </Button>
                 )}
+                {onOpenWebRecorder && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenWebRecorder)}>
+                    <span className="footico">🌐</span>
+                    Веб-рекордер
+                  </Button>
+                )}
                 <div className="acct-sep" aria-hidden />
                 {onOpenMachines && (
                   <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenMachines)}>
@@ -770,6 +779,11 @@ export function Sidebar({
               {onOpenConsole && (
                 <IconButton className="foottools-item" onClick={onOpenConsole} title="Открыть консоль" aria-label="Открыть консоль">
                   ⌨️
+                </IconButton>
+              )}
+              {onOpenWebRecorder && (
+                <IconButton className="foottools-item" onClick={onOpenWebRecorder} title="Веб-рекордер" aria-label="Веб-рекордер">
+                  🌐
                 </IconButton>
               )}
             </div>

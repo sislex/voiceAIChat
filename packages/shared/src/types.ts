@@ -119,7 +119,7 @@ export interface Conversation {
   /** Проект, к которому привязан чат (null/undefined — не привязан). */
   projectId?: string | null
   /** Служебный приватный чат виджета; отсутствует у обычных разговоров. */
-  assistantKind?: 'kanban' | null
+  assistantKind?: 'kanban' | 'web-recorder' | null
   /** URL веб-превью только этого разговора; null — наследовать у проекта. */
   previewUrl?: string | null
   /** URL проекта для превью; сервер отдаёт рядом, чтобы чат не зависел от загрузки списка проектов. */
