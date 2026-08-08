@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import App from './App'
+import App, { appendWidgetAction } from './App'
 import { createFakeApi, type FakeApi } from './test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
 
@@ -42,6 +42,21 @@ function installSession(): void {
     logout: async () => {}
   }
 }
+
+describe('widget assistant recent actions', () => {
+  it('deduplicates repeated field notifications but records the same selection after another user action', () => {
+    const selectTitle = { kind: 'field.select', label: 'Выбрано поле title', targetId: 'task-1' }
+    let actions = appendWidgetAction([], selectTitle, 1)
+    for (let i = 0; i < 20; i += 1) actions = appendWidgetAction(actions, selectTitle, i + 2)
+
+    expect(actions).toHaveLength(1)
+    expect(actions[0]).toMatchObject(selectTitle)
+
+    actions = appendWidgetAction(actions, { kind: 'task.open', label: 'Открыта карточка', targetId: 'task-2' }, 30)
+    actions = appendWidgetAction(actions, selectTitle, 31)
+    expect(actions.map((action) => action.kind)).toEqual(['field.select', 'task.open', 'field.select'])
+  })
+})
 
 describe('App — страница проекта по URL', () => {
   it('#/projects/:id — страница с общей шапкой, вкладками и канбаном, без крестика', async () => {

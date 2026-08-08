@@ -63,6 +63,23 @@ export interface AppProps {
   delays?: Parameters<typeof useVoiceStore>[0]['delays']
 }
 
+export interface WidgetActionInput {
+  kind: string
+  label: string
+  targetId?: string
+}
+
+/** Keep the bounded action journal free of repeated notifications for one user action. */
+export function appendWidgetAction(items: WidgetUserAction[], action: WidgetActionInput, at = Date.now()): WidgetUserAction[] {
+  const previous = items[items.length - 1]
+  if (previous?.kind === action.kind && previous.label === action.label && previous.targetId === action.targetId) return items
+  return [...items.slice(-19), {
+    id: `${at}-${items.length}`,
+    ...action,
+    at
+  }]
+}
+
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
 const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users', 'ci']
 
@@ -325,7 +342,14 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const [assistantField, setAssistantField] = useState<keyof SupportedTaskPatch | null>(null)
   const [widgetActions, setWidgetActions] = useState<WidgetUserAction[]>([])
   const setKanbanAssistantOpen = (open: boolean): void => { setAssistantOpen(open); globalThis.localStorage?.setItem('voicechat.kanbanAssistantOpen', open ? '1' : '0') }
-  const rememberWidgetAction = (kind: string, label: string, targetId?: string): void => setWidgetActions((items) => [...items.slice(-19), { id: `${Date.now()}-${items.length}`, kind, label, at: Date.now(), ...(targetId ? { targetId } : {}) }])
+  const rememberWidgetAction = useCallback((kind: string, label: string, targetId?: string): void => {
+    setWidgetActions((items) => appendWidgetAction(items, { kind, label, ...(targetId ? { targetId } : {}) }))
+  }, [])
+  const handleAssistantSelectionChange = useCallback((taskId: string | null, field: keyof SupportedTaskPatch | null): void => {
+    setAssistantTaskId(taskId)
+    setAssistantField(field)
+    if (taskId) rememberWidgetAction(field ? 'field.select' : 'task.open', field ? `Выбрано поле ${field}` : 'Открыта карточка', taskId)
+  }, [rememberWidgetAction])
   const [previewWidth, setPreviewWidth] = useState(() => {
     const saved = Number(globalThis.localStorage?.getItem('voicechat.previewWidth'))
     return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 45
@@ -1115,10 +1139,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               aiAssistPrompts={state.settings.aiAssistPrompts}
               onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
               generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
-              onAssistantSelectionChange={(taskId, field) => {
-                setAssistantTaskId(taskId); setAssistantField(field)
-                if (taskId) rememberWidgetAction(field ? 'field.select' : 'task.open', field ? `Выбрано поле ${field}` : 'Открыта карточка', taskId)
-              }}
+              onAssistantSelectionChange={handleAssistantSelectionChange}
             />}
               assistant={<KanbanAssistant
                 projectId={routeProjectId!}
