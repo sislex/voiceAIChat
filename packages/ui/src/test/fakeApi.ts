@@ -197,8 +197,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         .filter((c) => includeCompleted || !doneTaskChat(c))
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map(withCounts),
-    'conversations:create': async ({ title } = {}) => {
-      const conv = makeConversation(title ?? 'Новый разговор')
+    'conversations:create': async ({ title, assistantKind } = {}) => {
+      const conv = { ...makeConversation(title ?? 'Новый разговор'), ...(assistantKind ? { assistantKind } : {}) }
       conversations.push(conv)
       return conv
     },

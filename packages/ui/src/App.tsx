@@ -365,8 +365,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
   const routeChatId = segments[0] === 'chat' ? (segments[1] ?? null) : null
-  const inChat = !inProjects && !onUtilityPage
-  const { state, actions } = useVoiceStore({ api, now, delays, initialChatId: routeChatId })
+  const inRecorder = segments[0] === 'web-recorder'
+  const routeRecorderChatId = inRecorder ? (segments[1] ?? null) : null
+  const inChat = !inProjects && !onUtilityPage && !inRecorder
+  const { state, actions } = useVoiceStore({ api, now, delays, initialChatId: routeChatId ?? routeRecorderChatId })
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
@@ -401,8 +403,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     return bridge.onAction(({ conversationId, requestId, action }) => {
       void (async (): Promise<PreviewActionOutcome> => {
         // Действия ограничены активной страницей: чужой или свёрнутый чат не трогаем.
-        if (state.activeId !== conversationId) {
-          return { ok: false, error: 'Этот чат сейчас не открыт у пользователя — превью недоступно.' }
+        if (state.activeId !== conversationId || !inRecorder) {
+          return { ok: false, error: 'Этот чат сейчас не открыт на странице веб-рекордера — превью недоступно.' }
         }
         if (action.kind === 'open') {
           try {
@@ -418,7 +420,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         return runner(action)
       })().then((outcome) => bridge.result({ requestId, ...outcome }))
     })
-  }, [state.activeId, actions])
+  }, [state.activeId, actions, inRecorder])
   useEffect(() => {
     let alive = true
     const projectId = state.conversations.find((conversation) => conversation.id === state.activeId)?.projectId
@@ -602,7 +604,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   // адрес (клик по чату, «Назад», ссылка извне) — грузим чат из адреса;
   // изменился активный чат в сторе (создание, удаление, resume, автосоздание
   // первой репликой) — переписываем адрес без новой записи в истории.
-  const syncedChatId = useRef<string | null>(routeChatId)
+  const syncedChatId = useRef<string | null>(routeChatId ?? routeRecorderChatId)
   useEffect(() => {
     if (!authed || !inChat) return
     if (routeChatId && routeChatId !== syncedChatId.current) {
@@ -628,6 +630,20 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inChat, routeChatId, state.activeId])
+
+  // Отдельный экран рекордера держит только типизированные чаты; старые разговоры
+  // с сохранённым URL совместимы с ним и остаются доступны после переноса.
+  useEffect(() => {
+    if (!authed || !inRecorder) return
+    const recorderChats = state.conversations.filter((item) => item.assistantKind === 'web-recorder' || Boolean(item.previewUrl))
+    if (routeRecorderChatId) {
+      if (routeRecorderChatId !== state.activeId) void actions.selectConversation(routeRecorderChatId)
+      return
+    }
+    const target = recorderChats[0]
+    if (target) { navigate(`/web-recorder/${target.id}`, { replace: true }); return }
+    void actions.newConversation('web-recorder').then((id) => navigate(`/web-recorder/${id}`, { replace: true }))
+  }, [authed, inRecorder, routeRecorderChatId, state.activeId, state.conversations, actions, navigate])
 
   // URL → данные стора: вход/выход в раздел «Проекты», загрузка доски и
   // оверлея настроек. Навигацию делают клики (navigate), данные грузятся тут.
@@ -882,7 +898,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       <Sidebar
         open={sidebarOpen}
         onToggleCollapse={() => setCollapsedPersist(true)}
-        conversations={state.conversations}
+        conversations={state.conversations.filter((conversation) => conversation.assistantKind !== 'web-recorder' && !conversation.previewUrl)}
         conversationsStatus={state.conversationsStatus}
         conversationsError={state.conversationsError}
         onRetryConversations={() => void actions.retryConversations()}
@@ -931,6 +947,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         onOpenSettings={menu(actions.openSettings)}
         onOpenFiles={state.authRequired ? menu(() => actions.openUtilityForActiveChat('explorer')) : undefined}
         onOpenConsole={state.authRequired ? menu(() => actions.openUtilityForActiveChat('console')) : undefined}
+        onOpenWebRecorder={state.authRequired ? menu(() => navigate('/web-recorder')) : undefined}
         onOpenUsers={state.authRequired ? menu(() => navigate('/users')) : undefined}
         onOpenMachines={state.authRequired ? menu(() => navigate('/machines')) : undefined}
         onOpenCi={state.authRequired ? menu(() => navigate('/ci')) : undefined}
@@ -970,10 +987,11 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         <div className="side-backdrop" aria-hidden onClick={() => setSidebarOpen(false)} />
       )}
 
-      {!inProjects && !onUtilityPage && (
-      <div className={`chat-split chat-split--${chatView}`} style={{ '--preview-width': `${previewWidth}%` } as CSSProperties}>
-      <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>Превью</button></div></nav>
+      {!inProjects && !onUtilityPage && (inChat || inRecorder) && (
+      <div className={inRecorder ? `chat-split chat-split--${chatView}` : 'chat-page'} style={inRecorder ? { '--preview-width': `${previewWidth}%` } as CSSProperties : undefined}>
+      {inRecorder && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>Сайт</button></div></nav>}
       <div className="chat-split-chat">
+      {inRecorder && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор веб-рекордера</span><select aria-label="Разговор веб-рекордера" value={state.activeId ?? ''} onChange={(event) => navigate(`/web-recorder/${event.target.value}`)}>{state.conversations.filter((conversation) => conversation.assistantKind === 'web-recorder' || Boolean(conversation.previewUrl)).map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => void actions.newConversation('web-recorder').then((id) => navigate(`/web-recorder/${id}`))}>+ Новый</button></header>}
       <ChatColumn
         onToggleSidebar={() => {
           if (collapsed) setCollapsedPersist(false)
@@ -1086,8 +1104,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         }
       />
       </div>
-      <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>
-      <WebRecorderHost conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null} onSave={async (previewUrl) => { if (activeConversation) await actions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterActionRunner={registerPreviewRunner} />
+      {inRecorder && <><div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>
+      <WebRecorderHost conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null} onSave={async (previewUrl) => { if (activeConversation) await actions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterActionRunner={registerPreviewRunner} /></>}
       </div>
       )}
 

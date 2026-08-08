@@ -601,7 +601,7 @@ export interface StoreActions {
   /** Выйти: очистить сессию и данные, показать экран логина (web). */
   logout(): Promise<void>
   /** Создать разговор и переключиться на него. Возвращает id созданного. */
-  newConversation(): Promise<string>
+  newConversation(assistantKind?: 'web-recorder'): Promise<string>
   /** Открыть разговор. `false` — такого разговора нет (удалён/чужой). */
   selectConversation(id: string): Promise<boolean>
   deleteConversation(id: string): Promise<void>
@@ -2638,12 +2638,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     void audio.stop().catch((err) => console.warn('[audio] остановка захвата не удалась', err))
   }
 
-  async function newConversation(): Promise<string> {
+  async function newConversation(assistantKind?: 'web-recorder'): Promise<string> {
     cancelTimers()
     stopCapture()
     resetTts() // ход текущего разговора не отменяем — он доиграет на сервере
     dispatchVoice('reset')
-    const created = await api['conversations:create']({ title: 'Новый разговор' })
+    const created = await api['conversations:create']({ title: 'Новый разговор', ...(assistantKind ? { assistantKind } : {}) })
     // «Новый» создаёт чат сразу в выбранном проекте (сервер применит машину/папку/навыки).
     const conversation = state.sidebarProjectId
       ? await api['conversations:setProject']({ id: created.id, projectId: state.sidebarProjectId })

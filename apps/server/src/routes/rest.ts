@@ -81,8 +81,8 @@ export async function registerRest(
     return db.importDesktopData(uid(req), req.body)
   })
 
-  app.post<{ Body: { title?: string } }>(REST.conversations, async (req) =>
-    db.createConversation(uid(req), req.body?.title)
+  app.post<{ Body: { title?: string; assistantKind?: 'web-recorder' } }>(REST.conversations, async (req) =>
+    db.createConversation(uid(req), req.body?.title, req.body?.assistantKind === 'web-recorder' ? 'web-recorder' : null)
   )
 
   app.get<{ Params: { projectId: string } }>('/api/projects/:projectId/kanban-assistant', async (req, reply) => {
