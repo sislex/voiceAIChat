@@ -5409,7 +5409,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .task-launch-fields label:first-child, .task-launch-fields label:has(textarea) { grid-column: 1 / -1; }
 @media (max-width: 520px) { .task-launch-fields { grid-template-columns: 1fr; } }
 
-/* Отдельная страница веб-рекордера: на обычном чате браузерной панели нет. */
+/* Отдельная страница Web Reader: на обычном чате браузерной панели нет. */
 .chat-page { grid-column: 2; min-width: 0; min-height: 0; height: 100vh; }
 .chat-page > .chat-split-chat, .chat-page > .chat-split-chat > .main { height: 100%; }
 .web-recorder-selector { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--panel); }

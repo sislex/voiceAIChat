@@ -29,7 +29,7 @@ export function Recorder(): JSX.Element {
   }; window.addEventListener('message', receive); return () => window.removeEventListener('message', receive) }, [])
   const open = (): void => { const next = validUrl(draft); if (draft && !next) { setError('Введите адрес с протоколом http:// или https://'); return }; setUrl(next); reply({ kind:'save-url', url:next }); setError(null) }
   const run = async (): Promise<void> => { if (!frame.current?.contentWindow || !url) return; for (const step of steps) { if (step.sensitive) { setError('Чувствительное значение не сохранено'); return }; frame.current.contentWindow.postMessage({type:PREVIEW_ACTION_COMMAND_TYPE,requestId:'scenario-'+crypto.randomUUID(),action:step as PreviewDomAction},sameOrigin) } }
-  return <section className="webpreview" aria-label="Веб-рекордер">
+  return <section className="webpreview" aria-label="Web Reader">
     <form className="webpreview-bar" onSubmit={(event) => { event.preventDefault(); open() }}>
       <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="url" value={draft} placeholder="https://example.com" onChange={(event) => setDraft(event.target.value)} /></label>
       <button className="vc-btn vc-btn--secondary">Открыть</button>
