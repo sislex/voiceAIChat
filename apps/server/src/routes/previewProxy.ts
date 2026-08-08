@@ -5,10 +5,59 @@ import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { IncomingMessage } from 'node:http'
 import type { FastifyInstance } from 'fastify'
+import { uid } from '../users/auth.js'
 
 const MAX_REDIRECTS = 5
 const MAX_BYTES = 5 * 1024 * 1024
 const TIMEOUT_MS = 10_000
+
+type StoredCookie = { name: string; value: string; domain: string; path: string; secure: boolean; expires?: number }
+const cookiesByUser = new Map<string, StoredCookie[]>()
+
+function parseCookie(line: string, url: URL): StoredCookie | null {
+  const [pair, ...attributes] = line.split(';').map((part) => part.trim())
+  const split = pair.indexOf('=')
+  if (split < 1) return null
+  const cookie: StoredCookie = { name: pair.slice(0, split), value: pair.slice(split + 1), domain: url.hostname, path: url.pathname.replace(/\/[^/]*$/, '/') || '/', secure: false }
+  for (const attribute of attributes) {
+    const [key, ...rest] = attribute.split('=')
+    const value = rest.join('=').trim()
+    switch (key.toLowerCase()) {
+      case 'domain': if (value) cookie.domain = value.replace(/^\./, '').toLowerCase(); break
+      case 'path': if (value.startsWith('/')) cookie.path = value; break
+      case 'secure': cookie.secure = true; break
+      case 'max-age': { const seconds = Number(value); if (Number.isFinite(seconds)) cookie.expires = Date.now() + seconds * 1000; break }
+      case 'expires': { const expires = Date.parse(value); if (!Number.isNaN(expires)) cookie.expires = expires; break }
+    }
+  }
+  if (url.hostname !== cookie.domain && !url.hostname.endsWith('.' + cookie.domain)) return null
+  return cookie
+}
+
+export function storeResponseCookies(userId: string, url: URL, setCookie: string | string[] | undefined): void {
+  const lines = setCookie === undefined ? [] : Array.isArray(setCookie) ? setCookie : [setCookie]
+  const cookies = (cookiesByUser.get(userId) ?? []).filter((cookie) => !cookie.expires || cookie.expires > Date.now())
+  for (const line of lines) {
+    const cookie = parseCookie(line, url)
+    if (!cookie) continue
+    const index = cookies.findIndex((item) => item.name === cookie.name && item.domain === cookie.domain && item.path === cookie.path)
+    if (cookie.expires !== undefined && cookie.expires <= Date.now()) { if (index >= 0) cookies.splice(index, 1) }
+    else if (index >= 0) cookies[index] = cookie
+    else cookies.push(cookie)
+  }
+  cookiesByUser.set(userId, cookies)
+}
+
+export function requestCookieHeader(userId: string, url: URL): string | undefined {
+  const cookies = (cookiesByUser.get(userId) ?? []).filter((cookie) => !cookie.expires || cookie.expires > Date.now())
+  cookiesByUser.set(userId, cookies)
+  const value = cookies.filter((cookie) =>
+    (url.protocol === 'https:' || !cookie.secure) &&
+    (url.hostname === cookie.domain || url.hostname.endsWith('.' + cookie.domain)) &&
+    url.pathname.startsWith(cookie.path)
+  ).sort((a, b) => b.path.length - a.path.length).map((cookie) => `${cookie.name}=${cookie.value}`).join('; ')
+  return value || undefined
+}
 
 export class PreviewProxyError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
@@ -52,6 +101,16 @@ function proxyUrl(value: string, base: URL): string {
 }
 
 export const PREVIEW_INSPECTOR_SCRIPT_ID = 'voicechat-preview-inspector'
+
+/** Emulates a browser origin while the rendered document safely stays on ChatAI origin. */
+export function previewContextScript(origin: string): string {
+  const key = JSON.stringify(`voicechat.preview.context.v1:${origin}:`)
+  return `<script>(()=>{const p=${key},nativeLocal=window.localStorage,nativeSession=window.sessionStorage;
+const storage=(native)=>({get length(){return Object.keys(native).filter(k=>k.startsWith(p)).length},key(i){return Object.keys(native).filter(k=>k.startsWith(p))[i]?.slice(p.length)??null},getItem(k){return native.getItem(p+String(k))},setItem(k,v){native.setItem(p+String(k),String(v))},removeItem(k){native.removeItem(p+String(k))},clear(){Object.keys(native).filter(k=>k.startsWith(p)).forEach(k=>native.removeItem(k))}});
+for(const [name,native] of [['localStorage',nativeLocal],['sessionStorage',nativeSession]])try{Object.defineProperty(window,name,{configurable:true,value:storage(native)})}catch{}
+const nativeIdb=window.indexedDB;if(nativeIdb)try{Object.defineProperty(window,'indexedDB',{configurable:true,value:new Proxy(nativeIdb,{get(target,key){const value=Reflect.get(target,key,target);if(key==='open'||key==='deleteDatabase')return (name,...args)=>value.call(target,p+String(name),...args);return typeof value==='function'?value.bind(target):value}})})}catch{}
+})();<\/script>`
+}
 
 export function previewInspectorScript(): string {
   return `<script id="${PREVIEW_INSPECTOR_SCRIPT_ID}">(() => {
@@ -227,19 +286,22 @@ export function rewritePreviewBody(body: Buffer, type: string, base: URL): Buffe
         const [url, ...descriptor] = part.trim().split(/\s+/)
         return proxyUrl(url, base) + (descriptor.length ? ' ' + descriptor.join(' ') : '')
       }).join(', ') + quote)
+    const context = previewContextScript(base.origin)
     const inspector = previewInspectorScript()
+    text = /<head\b[^>]*>/i.test(text) ? text.replace(/<head\b[^>]*>/i, (head) => head + context) : context + text
     text = /<\/body\s*>/i.test(text) ? text.replace(/<\/body\s*>/i, inspector + '</body>') : text + inspector
   }
   if (/text\/css/i.test(type)) text = text.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi, (_m, quote, value) => 'url(' + quote + proxyUrl(value, base) + quote + ')')
   return Buffer.from(text)
 }
 
-async function get(url: URL): Promise<{ response: IncomingMessage; finalUrl: URL }> {
+async function get(url: URL, userId: string, method = 'GET', body?: string, contentType?: string): Promise<{ response: IncomingMessage; finalUrl: URL }> {
   await assertPublicHost(url.hostname)
   return new Promise((resolve, reject) => {
     const transport = url.protocol === 'https:' ? httpsRequest : httpRequest
     const request = transport(url, {
-      headers: { 'user-agent': 'voiceAIChat-preview/1.0', accept: '*/*' },
+      method,
+      headers: { 'user-agent': 'voiceAIChat-preview/1.0', accept: '*/*', ...(requestCookieHeader(userId, url) ? { cookie: requestCookieHeader(userId, url) } : {}), ...(body === undefined ? {} : { 'content-length': String(Buffer.byteLength(body)), ...(contentType ? { 'content-type': contentType } : {}) }) },
       timeout: TIMEOUT_MS,
       lookup(hostname, options, callback) {
         void lookup(hostname, { all: true, verbatim: true }).then((addresses) => {
@@ -256,18 +318,21 @@ async function get(url: URL): Promise<{ response: IncomingMessage; finalUrl: URL
     }, (response) => resolve({ response, finalUrl: url }))
     request.once('timeout', () => request.destroy(new PreviewProxyError(504, 'Сайт не ответил вовремя')))
     request.once('error', reject)
-    request.end()
+    request.end(body)
   })
 }
 
-async function load(url: URL): Promise<{ response: IncomingMessage; finalUrl: URL }> {
+async function load(url: URL, userId: string, method = 'GET', body?: string, contentType?: string): Promise<{ response: IncomingMessage; finalUrl: URL }> {
   let current = url
+  let currentMethod = method
+  let currentBody = body
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
-    const result = await get(current)
+    const result = await get(current, userId, currentMethod, currentBody, contentType)
     const location = result.response.headers.location
     if (!location || ![301, 302, 303, 307, 308].includes(result.response.statusCode ?? 0)) return result
     result.response.resume()
     if (redirects === MAX_REDIRECTS) throw new PreviewProxyError(502, 'Слишком много перенаправлений')
+    if ([301, 302, 303].includes(result.response.statusCode ?? 0) && currentMethod !== 'GET' && currentMethod !== 'HEAD') { currentMethod = 'GET'; currentBody = undefined }
     current = new URL(location, current)
     if (current.protocol !== 'http:' && current.protocol !== 'https:') throw new PreviewProxyError(400, 'Разрешены только HTTP и HTTPS')
   }
@@ -290,7 +355,8 @@ async function readLimited(response: IncomingMessage): Promise<Buffer> {
 }
 
 export function registerPreviewProxy(app: FastifyInstance): void {
-  app.get<{ Querystring: { url?: string } }>('/api/preview', async (req, reply) => {
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => done(null, body))
+  app.all<{ Querystring: { url?: string }; Body: string }>('/api/preview', async (req, reply) => {
     let url: URL
     try {
       url = new URL(req.query.url ?? '')
@@ -299,16 +365,20 @@ export function registerPreviewProxy(app: FastifyInstance): void {
       return reply.code(400).send({ error: 'invalid_url', message: 'Разрешены только HTTP и HTTPS адреса' })
     }
     try {
-      const { response, finalUrl } = await load(url)
-      const contentType = response.headers['content-type'] ?? 'application/octet-stream'
-      const body = await readLimited(response)
-      const rewritten = /text\/(html|css)|application\/xhtml\+xml/i.test(contentType) ? rewritePreviewBody(body, contentType, finalUrl) : body
+      const userId = uid(req)
+      const body = typeof req.body === 'string' && req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined
+      const contentType = typeof req.headers['content-type'] === 'string' ? req.headers['content-type'] : undefined
+      const { response, finalUrl } = await load(url, userId, req.method, body, contentType)
+      storeResponseCookies(userId, finalUrl, response.headers['set-cookie'])
+      const responseType = response.headers['content-type'] ?? 'application/octet-stream'
+      const responseBody = await readLimited(response)
+      const rewritten = /text\/(html|css)|application\/xhtml\+xml/i.test(responseType) ? rewritePreviewBody(responseBody, responseType, finalUrl) : responseBody
       reply.code(response.statusCode ?? 502)
       for (const [name, value] of Object.entries(response.headers)) {
         if (value === undefined || ['x-frame-options', 'content-security-policy', 'set-cookie', 'content-length', 'connection', 'transfer-encoding'].includes(name.toLowerCase())) continue
         reply.header(name, value)
       }
-      reply.header('content-type', contentType)
+      reply.header('content-type', responseType)
       reply.header('content-length', String(rewritten.length))
       return reply.send(rewritten)
     } catch (err) {

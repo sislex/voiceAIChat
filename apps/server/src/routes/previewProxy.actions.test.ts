@@ -12,7 +12,7 @@ import {
   type PreviewActionResultMessage,
   type PreviewDomAction
 } from '@voicechat/shared'
-import { PreviewProxyError, previewInspectorScript, publicLookupResult } from './previewProxy.js'
+import { PreviewProxyError, previewContextScript, previewInspectorScript, publicLookupResult, requestCookieHeader, storeResponseCookies } from './previewProxy.js'
 
 let counter = 0
 
@@ -77,6 +77,24 @@ describe('DNS lookup веб-превью', () => {
   it('отвергает ответ DNS, если хотя бы один адрес непубличный', () => {
     expect(() => publicLookupResult([...publicAddresses, { address: '127.0.0.1', family: 4 }], true))
       .toThrow(PreviewProxyError)
+  })
+})
+
+describe('контекст браузера веб-превью', () => {
+  it('передаёт cookie только тому же пользователю, домену, пути и HTTPS', () => {
+    storeResponseCookies('alice', new URL('https://shop.example/login'), ['sid=one; Path=/; Secure; HttpOnly', 'only-cart=yes; Path=/cart'])
+    expect(requestCookieHeader('alice', new URL('https://shop.example/cart/1'))).toBe('only-cart=yes; sid=one')
+    expect(requestCookieHeader('alice', new URL('http://shop.example/cart/1'))).toBe('only-cart=yes')
+    expect(requestCookieHeader('alice', new URL('https://other.example/cart/1'))).toBeUndefined()
+    expect(requestCookieHeader('bob', new URL('https://shop.example/cart/1'))).toBeUndefined()
+  })
+
+  it('изолирует local/sessionStorage и имена IndexedDB внешнего origin', () => {
+    const body = previewContextScript('https://shop.example')
+    expect(body).toContain('voicechat.preview.context.v1:https://shop.example:')
+    expect(body).toContain("'indexedDB'")
+    expect(body).toContain("'localStorage'")
+    expect(body).toContain("'sessionStorage'")
   })
 })
 
