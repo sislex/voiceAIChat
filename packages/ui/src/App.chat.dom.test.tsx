@@ -136,6 +136,9 @@ describe('App — отдельная страница Web Reader', () => {
     expect(frame).toHaveAttribute('src', '/web-recorder/')
     expect(window.location.hash).toMatch(/^#\/web-reader\/.+/)
     expect(screen.getByRole('tab', { name: 'Сайт' })).toBeInTheDocument()
+    expect(document.querySelector('aside.side')).not.toBeInTheDocument()
+    expect(document.querySelector('.app')).toHaveClass('app--web-reader')
+    expect(document.querySelector('section.webpreview[aria-label="Web Reader"]')).toBeInTheDocument()
   })
 
   it('перенаправляет старый URL на Web Reader без открытия второго чата', async () => {

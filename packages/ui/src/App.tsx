@@ -892,7 +892,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       className={[
         'app',
         showConsole && 'app--console',
-        collapsed && 'app--sidebar-collapsed'
+        collapsed && 'app--sidebar-collapsed',
+        inReader && 'app--web-reader'
       ].filter(Boolean).join(' ')}
       data-theme={state.settings.theme}
     >
@@ -912,6 +913,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           </footer>
         )
       })()}
+      {!inReader && <>
       <Sidebar
         open={sidebarOpen}
         onToggleCollapse={() => setCollapsedPersist(true)}
@@ -1003,6 +1005,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       {sidebarOpen && (
         <div className="side-backdrop" aria-hidden onClick={() => setSidebarOpen(false)} />
       )}
+      </>}
 
       {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inReader) && (
       <div className={inReader ? `chat-split chat-split--${chatView}` : 'chat-page'} style={inReader ? { '--preview-width': `${previewWidth}%` } as CSSProperties : undefined}>
@@ -1010,7 +1013,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       <div className="chat-split-chat">
       {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={state.activeId ?? ''} onChange={(event) => navigate(`/web-reader/${event.target.value}`)}>{state.conversations.filter((conversation) => conversation.assistantKind === 'web-recorder' || Boolean(conversation.previewUrl)).map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => void actions.newConversation('web-recorder').then((id) => navigate(`/web-reader/${id}`))}>+ Новый</button></header>}
       <ChatColumn
-        onToggleSidebar={() => {
+        onToggleSidebar={inReader ? undefined : () => {
           if (collapsed) setCollapsedPersist(false)
           else setSidebarOpen((v) => !v)
         }}
