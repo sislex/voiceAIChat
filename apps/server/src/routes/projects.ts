@@ -439,6 +439,7 @@ export function registerProjectRoutes(
       capabilities: [
         { operation: 'query', name: 'kanban.items.query', confirmation: 'never' },
         { operation: 'get', name: 'kanban.item.get', confirmation: 'never' },
+        { operation: 'action', name: 'kanban.task.create', confirmation: 'required' },
         { operation: 'action', name: 'kanban.task.update', confirmation: 'required' }
       ]
     }
@@ -469,23 +470,30 @@ export function registerProjectRoutes(
     const idemKey = [userId, body.projectId, body.conversationId, body.idempotencyKey].join(':')
     const replay = widgetIdempotency.get(idemKey)
     if (replay) return { ...(replay as object), replayed: true }
-    if (body.action.name !== 'kanban.task.update') return badReq(reply, 'unsupported action')
     const action = body.action
-    const board = db.getBoard(userId, body.projectId)!
-    const current = board.tasks.find((task) => task.id === action.taskId)
-    if (!current) return nf(reply)
-    if (String(current.updatedAt) !== action.expectedVersion) return reply.code(409).send({ error: 'stale item version' })
     try {
-      const patch = { ...action.patch }
-      const columnId = patch.columnId
-      delete patch.columnId
-      if (columnId && columnId !== current.columnId && !db.moveTask(userId, body.projectId, current.id, { columnId, afterId: null, beforeId: null })) return badReq(reply, 'invalid column')
-      if (Object.keys(patch).length && !db.updateTask(userId, body.projectId, current.id, patch)) return nf(reply)
+      let item: Task
+      if (action.name === 'kanban.task.create') {
+        const created = db.createTask(userId, body.projectId, action.input)
+        if (!created) return nf(reply)
+        item = created
+      } else if (action.name === 'kanban.task.update') {
+        const board = db.getBoard(userId, body.projectId)!
+        const current = board.tasks.find((task) => task.id === action.taskId)
+        if (!current) return nf(reply)
+        if (String(current.updatedAt) !== action.expectedVersion) return reply.code(409).send({ error: 'stale item version' })
+        const patch = { ...action.patch }
+        const columnId = patch.columnId
+        delete patch.columnId
+        if (columnId && columnId !== current.columnId && !db.moveTask(userId, body.projectId, current.id, { columnId, afterId: null, beforeId: null })) return badReq(reply, 'invalid column')
+        if (Object.keys(patch).length && !db.updateTask(userId, body.projectId, current.id, patch)) return nf(reply)
+        item = db.getBoard(userId, body.projectId)!.tasks.find((task) => task.id === current.id)!
+      } else return badReq(reply, 'unsupported action')
       boardHub.emit(body.projectId)
       const nextBoard = db.getBoard(userId, body.projectId)!
-      const result = { applied: true, replayed: false, revision: revision(nextBoard.tasks), item: taskWidgetItem(nextBoard.tasks.find((task) => task.id === current.id)!) }
+      const result = { applied: true, replayed: false, revision: revision(nextBoard.tasks), item: taskWidgetItem(item) }
       widgetIdempotency.set(idemKey, result)
-      req.log.info({ event: 'widget.action', userId, projectId: body.projectId, conversationId: body.conversationId, widgetInstanceId: body.widgetInstanceId, proposalId: body.confirmation.proposalId, idempotencyKey: body.idempotencyKey, action: action.name, taskId: current.id }, 'widget action applied')
+      req.log.info({ event: 'widget.action', userId, projectId: body.projectId, conversationId: body.conversationId, widgetInstanceId: body.widgetInstanceId, proposalId: body.confirmation.proposalId, idempotencyKey: body.idempotencyKey, action: action.name, taskId: item.id }, 'widget action applied')
       return result
     } catch (error) {
       return badReq(reply, error instanceof Error ? error.message : 'invalid action')
