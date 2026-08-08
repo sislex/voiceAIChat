@@ -7,6 +7,8 @@ export interface WidgetAssistantContext<TSelection = unknown> {
   widget: { kind: string; instanceId: string; title: string }
   project: Pick<ProjectSummary, 'id' | 'name' | 'description' | 'technologies' | 'skills'> | null
   selection: TSelection | null
+  /** Результат read-only шлюза для текущей реплики; не сохраняется в истории. */
+  toolResults?: { query?: WidgetToolQueryResult }
   recentActions: WidgetUserAction[]
 }
 
@@ -43,9 +45,79 @@ export type WidgetAssistantCommand =
   | { type: 'propose.settings-update'; patch: SupportedSettingPatch; reason?: string }
 
 export interface KanbanAssistantSelection {
-  board: { projectId: string; columns: KanbanColumn[] }
+  /** Семантический UI-снимок: шлюз использует его раньше серверного fallback. */
+  board: { projectId: string; columns: KanbanColumn[]; tasks: Task[]; revision: string }
   openTask: Task | null
   selectedField: keyof SupportedTaskPatch | null
+}
+
+export const WIDGET_TOOL_CONTRACT_VERSION = 1 as const
+export type WidgetToolOperation = 'describe' | 'query' | 'get' | 'action'
+
+export interface WidgetToolScope {
+  version: typeof WIDGET_TOOL_CONTRACT_VERSION
+  widgetKind: string
+  widgetInstanceId: string
+  projectId: string
+  conversationId: string
+  /** id сообщения текущего хода; сервер проверяет принадлежность разговору. */
+  turnId: string
+}
+
+export interface WidgetToolItem {
+  id: string
+  kind: string
+  title: string
+  version: string
+  data: Record<string, unknown>
+}
+
+export interface WidgetToolDescription {
+  version: typeof WIDGET_TOOL_CONTRACT_VERSION
+  widgetKind: string
+  capabilities: Array<{ operation: WidgetToolOperation; name: string; confirmation: 'never' | 'required' }>
+}
+
+export interface WidgetToolQueryRequest extends WidgetToolScope {
+  text?: string
+  kinds?: string[]
+  limit?: number
+  /** Доверенный UI передаёт только семантические элементы текущего экземпляра. */
+  ui?: { revision: string; items: WidgetToolItem[] }
+}
+
+export interface WidgetToolQueryResult {
+  source: 'ui' | 'api'
+  revision: string
+  items: WidgetToolItem[]
+}
+
+export interface WidgetToolGetRequest extends WidgetToolScope { itemId: string }
+export interface WidgetToolGetResult { revision: string; item: WidgetToolItem }
+
+export type WidgetToolAction = { name: 'kanban.task.update'; taskId: string; expectedVersion: string; patch: SupportedTaskPatch }
+
+export interface WidgetToolActionRequest extends WidgetToolScope {
+  action: WidgetToolAction
+  confirmation: { confirmed: true; proposalId: string }
+  idempotencyKey: string
+}
+
+export interface WidgetToolActionResult {
+  applied: boolean
+  replayed: boolean
+  revision: string
+  item?: WidgetToolItem
+}
+
+export function taskWidgetItem(task: Task): WidgetToolItem {
+  return { id: task.id, kind: task.type, title: task.title, version: String(task.updatedAt), data: { ...task } }
+}
+
+/** UI-first выбор одинаков для клиента и сервера; пустой UI означает API fallback. */
+export function queryWidgetItems(items: WidgetToolItem[], text = '', kinds: string[] = [], limit = 50): WidgetToolItem[] {
+  const needle = text.trim().toLocaleLowerCase()
+  return items.filter((item) => (!kinds.length || kinds.includes(item.kind)) && (!needle || item.title.toLocaleLowerCase().includes(needle) || JSON.stringify(item.data).toLocaleLowerCase().includes(needle))).slice(0, Math.max(1, Math.min(limit, 100)))
 }
 
 export type WidgetAssistantProposal = Extract<WidgetAssistantCommand, { type:

@@ -553,7 +553,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       version: 1,
       widget: { kind: 'kanban', instanceId: routeProjectId ?? 'none', title: routeProjectName },
       project: project ? { id: project.id, name: project.name, description: project.description, technologies: project.technologies, skills: project.skills } : null,
-      selection: board && routeProjectId ? { board: { projectId: routeProjectId, columns: board.columns }, openTask, selectedField: assistantField } : null,
+      selection: board && routeProjectId ? { board: { projectId: routeProjectId, columns: board.columns, tasks: board.tasks, revision: String(Math.max(0, ...board.tasks.map((task) => task.updatedAt)) ) }, openTask, selectedField: assistantField } : null,
       recentActions: widgetActions
     }
   }, [state.projects, state.board, state.activeProjectId, routeProjectId, routeProjectName, assistantTaskId, assistantField, widgetActions])

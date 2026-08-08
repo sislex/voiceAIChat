@@ -13,7 +13,13 @@ import {
   type TaskPriority,
   type WorkItemDefaultSkills,
   type CiReuseStrategy,
-  type KbContextMode
+  type KbContextMode,
+  WIDGET_TOOL_CONTRACT_VERSION,
+  queryWidgetItems,
+  taskWidgetItem,
+  type WidgetToolActionRequest,
+  type WidgetToolGetRequest,
+  type WidgetToolQueryRequest
 } from '@voicechat/shared'
 
 import type { VoiceChatDb } from '../db/database.js'
@@ -413,5 +419,78 @@ export function registerProjectRoutes(
       return conv ?? nf(reply)
     }
   )
+
+  // --- Универсальный инструментальный шлюз виджетов --------------------
+  // Адаптеры перечислены кодом: запрос не может подставить URL или произвольный backend.
+  const widgetIdempotency = new Map<string, unknown>()
+  const widgetScope = (userId: string, body: WidgetToolQueryRequest): boolean => {
+    if (body.version !== WIDGET_TOOL_CONTRACT_VERSION || body.widgetKind !== 'kanban' || body.widgetInstanceId !== body.projectId) return false
+    const conversation = db.getConversation(userId, body.conversationId)
+    const turnOwned = db.listMessages(userId, body.conversationId).some((message) => message.id === body.turnId)
+    return Boolean(conversation?.assistantKind === 'kanban' && conversation.projectId === body.projectId && turnOwned && db.getBoard(userId, body.projectId))
+  }
+  const revision = (tasks: Task[]): string => String(Math.max(0, ...tasks.map((task) => task.updatedAt)))
+
+  app.post<{ Body: WidgetToolQueryRequest }>('/api/widget-tools/describe', async (req, reply) => {
+    if (!widgetScope(uid(req), req.body)) return nf(reply)
+    return {
+      version: WIDGET_TOOL_CONTRACT_VERSION,
+      widgetKind: 'kanban',
+      capabilities: [
+        { operation: 'query', name: 'kanban.items.query', confirmation: 'never' },
+        { operation: 'get', name: 'kanban.item.get', confirmation: 'never' },
+        { operation: 'action', name: 'kanban.task.update', confirmation: 'required' }
+      ]
+    }
+  })
+
+  app.post<{ Body: WidgetToolQueryRequest }>('/api/widget-tools/query', async (req, reply) => {
+    const userId = uid(req)
+    if (!widgetScope(userId, req.body)) return nf(reply)
+    if (req.body.ui?.items.length) {
+      return { source: 'ui', revision: req.body.ui.revision, items: queryWidgetItems(req.body.ui.items, req.body.text, req.body.kinds, req.body.limit) }
+    }
+    const board = db.getBoard(userId, req.body.projectId)!
+    return { source: 'api', revision: revision(board.tasks), items: queryWidgetItems(board.tasks.map(taskWidgetItem), req.body.text, req.body.kinds, req.body.limit) }
+  })
+
+  app.post<{ Body: WidgetToolGetRequest }>('/api/widget-tools/get', async (req, reply) => {
+    if (!widgetScope(uid(req), req.body)) return nf(reply)
+    const board = db.getBoard(uid(req), req.body.projectId)!
+    const task = board.tasks.find((item) => item.id === req.body.itemId)
+    return task ? { revision: revision(board.tasks), item: taskWidgetItem(task) } : nf(reply)
+  })
+
+  app.post<{ Body: WidgetToolActionRequest }>('/api/widget-tools/action', async (req, reply) => {
+    const body = req.body
+    const userId = uid(req)
+    if (!widgetScope(userId, body)) return nf(reply)
+    if (!body.confirmation?.confirmed || body.confirmation.proposalId !== body.turnId || !body.idempotencyKey) return badReq(reply, 'confirmation for current turn and idempotencyKey required')
+    const idemKey = [userId, body.projectId, body.conversationId, body.idempotencyKey].join(':')
+    const replay = widgetIdempotency.get(idemKey)
+    if (replay) return { ...(replay as object), replayed: true }
+    if (body.action.name !== 'kanban.task.update') return badReq(reply, 'unsupported action')
+    const action = body.action
+    const board = db.getBoard(userId, body.projectId)!
+    const current = board.tasks.find((task) => task.id === action.taskId)
+    if (!current) return nf(reply)
+    if (String(current.updatedAt) !== action.expectedVersion) return reply.code(409).send({ error: 'stale item version' })
+    try {
+      const patch = { ...action.patch }
+      const columnId = patch.columnId
+      delete patch.columnId
+      if (columnId && columnId !== current.columnId && !db.moveTask(userId, body.projectId, current.id, { columnId, afterId: null, beforeId: null })) return badReq(reply, 'invalid column')
+      if (Object.keys(patch).length && !db.updateTask(userId, body.projectId, current.id, patch)) return nf(reply)
+      boardHub.emit(body.projectId)
+      const nextBoard = db.getBoard(userId, body.projectId)!
+      const result = { applied: true, replayed: false, revision: revision(nextBoard.tasks), item: taskWidgetItem(nextBoard.tasks.find((task) => task.id === current.id)!) }
+      widgetIdempotency.set(idemKey, result)
+      req.log.info({ event: 'widget.action', userId, projectId: body.projectId, conversationId: body.conversationId, widgetInstanceId: body.widgetInstanceId, proposalId: body.confirmation.proposalId, idempotencyKey: body.idempotencyKey, action: action.name, taskId: current.id }, 'widget action applied')
+      return result
+    } catch (error) {
+      return badReq(reply, error instanceof Error ? error.message : 'invalid action')
+    }
+  })
+
 }
 

@@ -367,3 +367,28 @@ describe('projects REST: скрытие завершённых задач', () =
     expect((await inj(bobTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { doneRetentionDays: 3 } })).statusCode).toBe(403)
   })
 })
+
+describe('widget tool gateway', () => {
+  it('предпочитает UI, делает API-fallback и применяет подтверждённый action идемпотентно', async () => {
+    const p = await createProject('Widgets')
+    const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    const task = (await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: board.columns[0].id, title: 'API card' } })).json() as Task
+    const conversation = db.ensureKanbanAssistantConversation('admin', p.id)!
+    const userTurn = db.addMessage('admin', conversation.id, 'u0', 'Найди UI', '12:00')
+    const proposalTurn = db.addMessage('admin', conversation.id, 'ai', 'proposal', '12:01')
+    const scope = { version: 1, widgetKind: 'kanban', widgetInstanceId: p.id, projectId: p.id, conversationId: conversation.id, turnId: userTurn.id }
+
+    const fromUi = await inj(adminTok, { method: 'POST', url: '/api/widget-tools/query', payload: { ...scope, text: 'UI', ui: { revision: 'ui-7', items: [{ id: 'ui-epic', kind: 'epic', title: 'UI', version: '7', data: { title: 'UI' } }] } } })
+    expect(fromUi.json()).toMatchObject({ source: 'ui', revision: 'ui-7', items: [{ id: 'ui-epic', kind: 'epic' }] })
+    const fallback = await inj(adminTok, { method: 'POST', url: '/api/widget-tools/query', payload: { ...scope, text: 'API' } })
+    expect(fallback.json()).toMatchObject({ source: 'api', items: [{ id: task.id }] })
+    expect((await inj(bobTok, { method: 'POST', url: '/api/widget-tools/query', payload: scope })).statusCode).toBe(404)
+
+    const unconfirmed = await inj(adminTok, { method: 'POST', url: '/api/widget-tools/action', payload: { ...scope, action: { name: 'kanban.task.update', taskId: task.id, expectedVersion: String(task.updatedAt), patch: { title: 'Changed' } }, idempotencyKey: 'one' } })
+    expect(unconfirmed.statusCode).toBe(400)
+    const payload = { ...scope, turnId: proposalTurn.id, action: { name: 'kanban.task.update', taskId: task.id, expectedVersion: String(task.updatedAt), patch: { title: 'Changed' } }, confirmation: { confirmed: true, proposalId: proposalTurn.id }, idempotencyKey: 'one' }
+    expect((await inj(adminTok, { method: 'POST', url: '/api/widget-tools/action', payload })).json()).toMatchObject({ applied: true, replayed: false, item: { title: 'Changed' } })
+    expect((await inj(adminTok, { method: 'POST', url: '/api/widget-tools/action', payload })).json()).toMatchObject({ applied: true, replayed: true })
+    expect((await inj(adminTok, { method: 'POST', url: '/api/widget-tools/action', payload: { ...payload, idempotencyKey: 'stale' } })).statusCode).toBe(409)
+  })
+})

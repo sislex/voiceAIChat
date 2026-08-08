@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, projectKey } from './projects'
+import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
 const T0 = 1_700_000_000_000
@@ -72,5 +73,16 @@ describe('ключ задачи', () => {
   it('строится из имени проекта и номера', () => {
     expect(projectKey('Voice Chat')).toBe('VC')
     expect(issueKey('Voice Chat', { seq: 42 })).toBe('VC-42')
+  })
+})
+
+describe('widget query contract', () => {
+  it('ищет семантические элементы, фильтрует kind и ограничивает выдачу', () => {
+    const items = [
+      { id: 'e1', kind: 'epic', title: 'UI', version: '1', data: { description: 'Интерфейс' } },
+      { id: 't1', kind: 'task', title: 'API', version: '2', data: { labels: ['ui'] } }
+    ]
+    expect(queryWidgetItems(items, 'ui', ['epic'], 10).map((item) => item.id)).toEqual(['e1'])
+    expect(queryWidgetItems(items, 'интерфейс', [], 1).map((item) => item.id)).toEqual(['e1'])
   })
 })

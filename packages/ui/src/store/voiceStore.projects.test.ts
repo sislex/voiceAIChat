@@ -139,15 +139,20 @@ describe('voiceStore — проекты и доска', () => {
       .toEqual([first!.id, second!.id])
   })
 
-  it('applyBoardUpdate заменяет доску только активного проекта', async () => {
+  it('applyBoardUpdate синхронизирует UI после action только для активного проекта', async () => {
     const { store } = makeStore()
     await store.actions.createProject({ name: 'P1' })
     const id = store.getState().projectDetail!.id
     await store.actions.openBoard(id)
-    store.actions.applyBoardUpdate('other', { columns: [], tasks: [] })
-    expect(store.getState().board!.columns.length).toBeGreaterThan(0) // чужой — игнор
-    store.actions.applyBoardUpdate(id, { columns: [], tasks: [] })
-    expect(store.getState().board!.columns).toEqual([])
+    const initial = store.getState().board!
+    const column = initial.columns[0]!
+    await store.actions.createTask(column.id, { title: 'До action' })
+    const current = store.getState().board!
+    const changed = { ...current, tasks: current.tasks.map((task) => ({ ...task, title: 'После action', updatedAt: task.updatedAt + 1 })) }
+    store.actions.applyBoardUpdate('other', changed)
+    expect(store.getState().board!.tasks[0]?.title).toBe('До action')
+    store.actions.applyBoardUpdate(id, changed)
+    expect(store.getState().board!.tasks[0]?.title).toBe('После action')
   })
 
   it('closeProjects сбрасывает состояние проектов и доски', async () => {

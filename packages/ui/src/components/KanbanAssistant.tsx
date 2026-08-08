@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { KanbanAssistantSelection, WidgetAssistantCommand, WidgetAssistantContext, WidgetAssistantProposal } from '@shared/widgetAssistant'
-import { isWidgetAssistantProposal, parseWidgetAssistantReply } from '@shared/widgetAssistant'
+import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetAssistantProposal, WidgetToolScope } from '@shared/widgetAssistant'
+import { isWidgetAssistantProposal, parseWidgetAssistantReply, taskWidgetItem } from '@shared/widgetAssistant'
 import type { Conversation, Message } from '@shared/types'
 import type { LlmEngineOption } from '@shared/admin'
 import type { RendererApi } from '@shared/ipc'
@@ -28,7 +28,7 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
   const [messages, setMessages] = useState<Message[]>([])
   const [conversation, setConversation] = useState<Conversation | null>(null)
   const [effective, setEffective] = useState<{ llmEngineId: string | null; provider: 'claude' | 'codex'; model: string; inherited: boolean } | null>(null)
-  const [proposal, setProposal] = useState<WidgetAssistantProposal | null>(null)
+  const [proposal, setProposal] = useState<{ command: WidgetAssistantProposal; turnId: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [partial, setPartial] = useState('')
   const liveContext = useRef(context)
@@ -49,15 +49,41 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
       setBusy(false); setPartial('')
       if (event.message) setMessages((items) => [...items.filter((item) => item.id !== event.message!.id), event.message!])
       const parsed = parseWidgetAssistantReply(event.text)
-      for (const command of parsed.commands) void runCommand(command)
+      for (const command of parsed.commands) void runCommand(command, event.message?.id)
     })
     const error = transport.onError((event) => { if (event.conversationId === conversation.id) { setBusy(false); setPartial(''); void reload() } })
     return () => { done(); error() }
   }, [transport, conversation?.id])
 
-  const runCommand = async (command: WidgetAssistantCommand): Promise<void> => {
-    if (isWidgetAssistantProposal(command)) { setProposal(command); return }
+  const runCommand = async (command: WidgetAssistantCommand, turnId?: string): Promise<void> => {
+    if (isWidgetAssistantProposal(command)) { if (turnId) setProposal({ command, turnId }); return }
     await onCommand(command)
+  }
+  const toolScope = (turnId: string): WidgetToolScope | null => conversation ? {
+    version: 1,
+    widgetKind: liveContext.current.widget.kind,
+    widgetInstanceId: liveContext.current.widget.instanceId,
+    projectId,
+    conversationId: conversation.id,
+    turnId
+  } : null
+  const confirmProposal = async (command: WidgetAssistantProposal, turnId: string): Promise<void> => {
+    if (command.type === 'propose.settings-update') { await onCommand(command); return }
+    const scope = toolScope(turnId)
+    const task = liveContext.current.selection?.board.tasks.find((item) => item.id === command.taskId)
+    if (!scope || !task) throw new Error('Карточка отсутствует в актуальном снимке')
+    const patch: SupportedTaskPatch = command.type === 'propose.task-update'
+      ? command.patch
+      : command.type === 'propose.acceptance-criteria'
+        ? { acceptanceCriteria: command.value }
+        : { [command.field]: command.value }
+    const idempotencyKey = crypto.randomUUID()
+    await api['widget:action']({
+      ...scope,
+      action: { name: 'kanban.task.update', taskId: task.id, expectedVersion: String(task.updatedAt), patch },
+      confirmation: { confirmed: true, proposalId: turnId },
+      idempotencyKey
+    })
   }
   const submit = async (): Promise<void> => {
     const text = draft.trim()
@@ -67,8 +93,16 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
     setBusy(true)
     try {
       const message = await api['messages:add']({ conversationId: conversation.id, role: 'u0', text, time: new Date().toTimeString().slice(0, 5) })
+      const scope = toolScope(message.id)!
+      const semantic = liveContext.current.selection?.board
+      const query = await api['widget:query']({
+        ...scope,
+        text,
+        limit: 100,
+        ...(semantic ? { ui: { revision: semantic.revision, items: semantic.tasks.map(taskWidgetItem) } } : {})
+      })
       setMessages((items) => [...items, message])
-      transport.send({ conversationId: conversation.id, segments: [{ speakerId: 0, text, start: 0, end: 0 }], verbose: true, execTarget: 'none', assistantContext: liveContext.current })
+      transport.send({ conversationId: conversation.id, segments: [{ speakerId: 0, text, start: 0, end: 0 }], verbose: true, execTarget: 'none', assistantContext: { ...liveContext.current, toolResults: { query } } })
     } catch {
       setBusy(false)
     }
@@ -83,7 +117,7 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
       <span>{context.selection?.openTask?.title ?? 'Доска'}</span>
       {context.selection?.selectedField && <span>{context.selection.selectedField}</span>}
     </div>
-    {proposal && <WidgetProposalCard proposal={proposal} context={context} onConfirm={() => { const next = proposal; setProposal(null); void onCommand(next) }} onCancel={() => setProposal(null)} />}
+    {proposal && <WidgetProposalCard proposal={proposal.command} context={context} onConfirm={() => { const next = proposal; setProposal(null); void confirmProposal(next.command, next.turnId) }} onCancel={() => setProposal(null)} />}
     {conversation && effective && <details className="kanban-assistant-settings"><summary>LLM: {effective.provider} · {effective.model}{effective.inherited ? ' (из проекта)' : ''}</summary><div><label>Исполнитель<select value={conversation.llmEngineId ?? ''} onChange={(event) => void api['conversations:setExecTarget']({ id: conversation.id, execTarget: 'none', llmEngineId: event.target.value || null }).then(reload)}><option value="">Из проекта</option>{llmEngines.map((engine) => <option key={engine.id} value={engine.id}>{engine.name}</option>)}</select></label><label>Provider<select value={conversation.llmProvider ?? ''} onChange={(event) => { const provider = event.target.value as 'claude' | 'codex' | ''; void api['conversations:setExecTarget']({ id: conversation.id, execTarget: 'none', llmProvider: provider || null, llmModel: provider ? effective.model : null }).then(reload) }}><option value="">Из проекта</option><option value="claude">Claude</option><option value="codex">Codex</option></select></label><label>Модель<input value={conversation.llmModel ?? ''} disabled={!conversation.llmProvider} onChange={(event) => setConversation({ ...conversation, llmModel: event.target.value })} onBlur={() => void api['conversations:setExecTarget']({ id: conversation.id, execTarget: 'none', llmModel: conversation.llmModel }).then(reload)} /></label><button type="button" onClick={() => void api['conversations:setExecTarget']({ id: conversation.id, execTarget: 'none', llmEngineId: null, llmProvider: null, llmModel: null }).then(reload)}>Сбросить к проекту</button></div></details>}
   </div>
   return <div className="kanban-assistant">

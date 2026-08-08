@@ -87,6 +87,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:create': ({ title }) =>
       req(REST.conversations, { method: 'POST', body: JSON.stringify({ title }) }),
     'kanbanAssistant:get': ({ projectId }) => req(`/api/projects/${encodeURIComponent(projectId)}/kanban-assistant`),
+    'widget:describe': (body) => req('/api/widget-tools/describe', { method: 'POST', body: JSON.stringify(body) }),
+    'widget:query': (body) => req('/api/widget-tools/query', { method: 'POST', body: JSON.stringify(body) }),
+    'widget:get': (body) => req('/api/widget-tools/get', { method: 'POST', body: JSON.stringify(body) }),
+    'widget:action': (body) => req('/api/widget-tools/action', { method: 'POST', body: JSON.stringify(body) }),
     'conversations:get': async ({ id }) => {
       const token = getToken()
       const res = await fetch(httpBase + REST.conversation(id), {

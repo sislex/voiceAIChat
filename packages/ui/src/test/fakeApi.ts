@@ -185,6 +185,13 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       }
       return { conversation: withCounts(conversation), messages: messages.filter((item) => item.conversationId === conversation!.id), effectiveLlm: { llmEngineId: null, provider: 'claude', model: 'opus', inherited: true } }
     },
+    'widget:describe': async () => ({ version: 1, widgetKind: 'kanban', capabilities: [{ operation: 'query', name: 'kanban.items.query', confirmation: 'never' }, { operation: 'get', name: 'kanban.item.get', confirmation: 'never' }, { operation: 'action', name: 'kanban.task.update', confirmation: 'required' }] }),
+    'widget:query': async ({ ui, text, kinds, limit }) => {
+      const { queryWidgetItems } = await import('@shared/widgetAssistant')
+      return { source: ui?.items.length ? 'ui' : 'api', revision: ui?.revision ?? '0', items: queryWidgetItems(ui?.items ?? [], text, kinds, limit) }
+    },
+    'widget:get': async ({ itemId }) => { throw new Error(`fake widget item not found: ${itemId}`) },
+    'widget:action': async () => ({ applied: true, replayed: false, revision: String(Date.now()) }),
     'conversations:list': async ({ includeCompleted } = {}) =>
       [...conversations]
         .filter((c) => includeCompleted || !doneTaskChat(c))
