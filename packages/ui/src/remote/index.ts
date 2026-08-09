@@ -26,6 +26,7 @@ import { createHttpApi, createCiRest, createKbUsageRest } from './httpApi'
 import type { RendererCiBridge } from './ciBridge'
 import type { RendererKbBridge } from './kbBridge'
 import { createFeaturePreviewRest } from './featurePreviewBridge'
+import { createQaRest } from './qaBridge'
 import { getToken, setToken } from './session'
 import { base64ToArrayBuffer } from './decode'
 
@@ -360,4 +361,5 @@ export function installRemoteBridges(serverHttp: string): void {
   window.pty = makePtyBridge(ws)
   window.preview = makePreviewBridge(ws)
   window.featurePreview = createFeaturePreviewRest(httpBase)
+  window.qa = createQaRest(httpBase)
 }

@@ -17,7 +17,7 @@ import type {
   RendererSttBridge,
   RendererTtsBridge
 } from '@shared/ipc'
-import type { RendererCiBridge, RendererFeaturePreviewBridge, RendererKbBridge } from '@voicechat/ui'
+import type { RendererCiBridge, RendererFeaturePreviewBridge, RendererKbBridge, RendererQaBridge } from '@voicechat/ui'
 
 declare global {
   interface Window {
@@ -40,6 +40,7 @@ declare global {
     /** Действия модели в панели веб-превью (web). */
     preview?: RendererPreviewBridge
     featurePreview?: RendererFeaturePreviewBridge
+    qa?: RendererQaBridge
   }
 }
 

@@ -1890,7 +1890,7 @@ fi`
     if (!row) return
     const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
     const merged = steps.some((st) => isMergeToBaseStep(st) && st.status === 'success')
-    const columnId = deps.db.getColumnIdBySemantic(row.projectId, merged ? 'done' : 'awaiting_merge')
+    const columnId = deps.db.getColumnIdBySemantic(row.projectId, merged ? 'done' : 'manual_qa')
     if (!columnId) return
     const task = deps.db.getCiTask(userId, row.projectId, row.taskId)
     if (!task || task.columnId === columnId) return
@@ -1899,14 +1899,14 @@ fi`
     } catch {
       return /* колонка могла исчезнуть между запросом и переносом */
     }
-    deps.db.addCiEvent({ projectId: row.projectId, runId, type: merged ? 'run.task_done' : 'run.awaiting_merge', actorType: 'system', payload: { columnId } })
+    deps.db.addCiEvent({ projectId: row.projectId, runId, type: merged ? 'run.task_done' : 'run.manual_qa', actorType: 'system', payload: { columnId } })
     const last = steps[steps.length - 1]
     if (last) {
       const line = deps.db.appendCiLog(
         runId, last.id, 'system',
         merged
           ? 'Ветка задачи влита в прод-ветку — карточка переехала в «Готово»\n'
-          : 'Ветка задачи в прод-ветку не влита — карточка ждёт мержа\n'
+          : 'Обязательные автопроверки завершены — карточка ждёт ручного QA\n'
       )
       broadcast({ t: 'ci.log', runId, line }, userId)
     }
