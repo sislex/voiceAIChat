@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-09
-checked: 9655738
+checked: 5a5bb84
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/protocol.ts
@@ -1276,22 +1276,29 @@ UI — `typecheck` + `@voicechat/web build`.
 
 ## Группированный fail-fast test pipeline
 
-Полный test run отделён от development-run и всегда фиксирует проект, задачу,
-feature-ветку, точный commit SHA, workspace/машину, preview, модель анализа,
-инициатора, номер попытки и ссылку на предыдущую попытку. Контракты находятся в
-`packages/shared/src/ci.ts` (`TestRun`, `TestGroupRun`,
-`TestGroupConfig`). Проектный порядок — данные; `BASE_TEST_PIPELINE` задаёт
-только поставляемый профиль из восьми видов проверок.
+До этой задачи CI использовал общий `CiRun` с потоковыми шагами, fix-loop и
+частичным разбором тестов; отдельной модели полного группированного прогона не
+было. Теперь полный `TestRun` отделён от development-run и фиксирует проект,
+задачу, feature-ветку, точный commit SHA, workspace/машину, preview, модель
+анализа, инициатора, номер попытки и ссылку на предыдущую попытку. Контракты
+находятся в `packages/shared/src/ci.ts` (`TestRun`, `TestGroupRun`,
+`TestGroupConfig`). Проектный порядок хранится в конфигурации, а
+`BASE_TEST_PIPELINE` задаёт поставляемый профиль: typecheck, shared/contract,
+server, UI unit/DOM, build, Storybook build/smoke, Playwright smoke и Playwright
+regression.
 
-Группа проходит `queued → running → passed|failed|cancelled` либо до старта
+Статусы полного рана и группы определены отдельно в shared-контракте. Группа
+проходит `queued → running → passed|failed|cancelled` либо до старта
 `queued → skipped|not_applicable`. `createTestPipelineCoordinator` в
-`apps/server/src/ci/types.ts` перед каждым сохранением проверяет, что running-
-группа не более одной. После первого обязательного падения
-`blockedGroupsAfterFailure` помечает оставшийся queued-хвост
-`skipped/blocked_by_failure`; завершённые и N/A группы не меняются. Команда,
-её версия, SHA, времена, exit code, counters, текущие suite/test, raw log,
-распознанные failures и artifacts входят в снимок группы. Ошибка parser
-добавляется рядом с исходным логом, а не подменяет результат команды.
+`apps/server/src/ci/types.ts` запускает группы по `position` строго по одной
+и перед каждым сохранением проверяет этот инвариант. После первого обязательного
+падения `blockedGroupsAfterFailure` помечает оставшийся queued-хвост
+`skipped/blocked_by_failure`; завершённые и N/A группы не меняются.
+Необязательное падение не обрывает цикл, но итоговый run всё равно становится
+`failed`. Команда, её версия, SHA, времена, exit code, counters, текущие
+suite/test, процент, raw log, распознанные failures и artifacts входят в снимок
+группы. Ошибка parser добавляется рядом с исходным логом, а не подменяет
+результат команды.
 
 Перед Playwright preview-guard сверяет preview SHA с SHA рана, выполняя
 подготовку/health-check в своём адаптере. Ошибка guard классифицируется как
@@ -1301,18 +1308,22 @@ screenshots/video передаются как `TestArtifact` и связываю
 причину и альтернативный способ проверки; решение фиксирует пользователя,
 время и SHA. Обязательные группы нельзя сделать N/A.
 
-Точечный повтор выполняется отдельным `executeTargeted`, записывает аудит и не
-мутирует статус полного pipeline. Полный повтор создаёт новый `TestRun` с
-новым SHA и `previousRunId`; `sameTestRunRevision` не позволяет считать
-результаты разных SHA одним прогоном. Отмена посылает AbortSignal активному
-исполнителю, текущую группу закрывает cancelled, queued-хвост —
-skipped/cancelled, сохраняя завершённые результаты.
+Повторы разделены контрактом coordinator. Точечный повтор выполняется отдельным
+`executeTargeted`, записывает аудит с командой, exit code и SHA и не мутирует
+статус полного pipeline и не запускает следующие группы. Полный повтор — новый
+`TestRun` с новым SHA и `previousRunId`; `sameTestRunRevision` не позволяет
+считать результаты разных SHA одним прогоном. Отмена посылает AbortSignal
+активному исполнителю, текущую группу закрывает `cancelled`, queued-хвост —
+`skipped/cancelled`, сохраняя завершённые результаты.
 
-Персистентная схема: `ci_test_group_configs`, `ci_test_runs`,
-`ci_test_group_runs`, `ci_test_events`, `ci_test_targeted_runs`. Снимки
-сохраняются через `TestPipelineStore`; подписчик координатора получает полный
-снимок для существующего WS-механизма, а REST/reconnect читает те же сохранённые
-строки. Потоковый и сохранённый лог проходит инъектируемую функцию redaction.
-Чистые переходы и права покрыты таблицей в `shared/src/ci.test.ts`; серверные
-сценарии success, fail-fast, preview infrastructure failure, N/A и targeted
-retry — в `ci/infraErrors.test.ts`.
+В `apps/server/src/db/schema.ts` подготовлена персистентная схема:
+`ci_test_group_configs`, `ci_test_runs`, `ci_test_group_runs`,
+`ci_test_events`, `ci_test_targeted_runs`. Сам coordinator пока хранит
+активные раны в памяти и делегирует сохранение/аудит интерфейсу
+`TestPipelineStore`, исполнение — `TestPipelineExecutor`, preview —
+`TestPreviewGuard`; конкретные DB, HTTP/WS, UI и runner-адаптеры этой задачей
+в код не подключены. `subscribe` отдаёт полный снимок при каждом publish, а
+потоковый и сохранённый лог проходит инъектируемую redaction-функцию. Чистые
+переходы и права покрыты в `packages/shared/src/ci.test.ts`; серверные сценарии
+success, fail-fast, preview infrastructure failure, N/A и targeted retry — в
+`apps/server/src/ci/infraErrors.test.ts`.
