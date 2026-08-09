@@ -30,6 +30,7 @@ export * from './llm'
 export * from './llmAccess'
 export * from './previewInspector'
 export * from './previewActions'
+export * from './preview'
 export * from './webRecorder'
 export * from './widgetAssistant'
 

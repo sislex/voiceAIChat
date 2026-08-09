@@ -19,6 +19,7 @@ import type {
 } from '@shared/ipc'
 import type { RendererCiBridge } from './remote/ciBridge'
 import type { RendererKbBridge } from './remote/kbBridge'
+import type { RendererFeaturePreviewBridge } from './remote/featurePreviewBridge'
 
 declare global {
   interface Window {
@@ -47,6 +48,8 @@ declare global {
     kb?: RendererKbBridge
     /** Действия модели в панели веб-превью (web); в desktop отсутствует. */
     preview?: RendererPreviewBridge
+    /** Управляемое окружение feature-ветки задачи. */
+    featurePreview?: RendererFeaturePreviewBridge
   }
 }
 

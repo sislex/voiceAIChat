@@ -63,6 +63,15 @@ EXPOSE 8787
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/index.ts"]
 
+# ---- Статический Storybook для feature-preview --------------------------
+# Отдельная ветка build-графа: production target не выполняет эту сборку.
+FROM build AS storybook-build
+RUN npm run build:storybook
+
+FROM nginx:1.27-alpine AS storybook-runtime
+COPY --from=storybook-build /app/packages/ui/storybook-static /usr/share/nginx/html
+EXPOSE 80
+
 # ---- Runtime исполнителя LLM --------------------------------------------
 FROM runtime-base AS llm-runner-runtime
 ARG INSTALL_CLAUDE_CLI=1

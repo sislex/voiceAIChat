@@ -9,25 +9,26 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 50 коммит(ов) в areas после сверки: 345c7ef feat: serve web recorder in production … |
-| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 7 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 51 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
+| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 8 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ⚠ 19 коммит(ов) в areas после сверки: a4fc8e0 feat(ci): добавить ограниченный цикл исправления тестов … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-08 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-09 | ✓ |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 14 коммит(ов) в areas после сверки: a4fc8e0 feat(ci): добавить ограниченный цикл исправления тестов … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 22 коммит(ов) в areas после сверки: 345c7ef feat: serve web recorder in production … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 166 коммит(ов) в areas после сверки: b71ce4e chatai-161: работа CI-рана … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-08 | ⚠ 1 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-10 | ✓ |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-10 | ✓ |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 15 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 23 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 168 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 4 коммит(ов) в areas после сверки: 9655738 feat: add workflow stages and per-stage LLM selection … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 2 коммит(ов) в areas после сверки: a1858af feat: add universal widget tool gateway … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-09 | ⚠ 2 коммит(ов) в areas после сверки: a4fc8e0 feat(ci): добавить ограниченный цикл исправления тестов … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 10 коммит(ов) в areas после сверки: a4fc8e0 feat(ci): добавить ограниченный цикл исправления тестов … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 5 коммит(ов) в areas после сверки: a4fc8e0 feat(ci): добавить ограниченный цикл исправления тестов … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-08 | ⚠ 12 коммит(ов) в areas после сверки: a4fc8e0 feat(ci): добавить ограниченный цикл исправления тестов … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-09 | ⚠ 3 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 11 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 6 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-08 | ⚠ 13 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 6 коммит(ов) в areas после сверки: 345c7ef feat: serve web recorder in production … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-09 | ⚠ 1 коммит(ов) в areas после сверки: 9655738 feat: add workflow stages and per-stage LLM selection |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 7 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-09 | ⚠ 2 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-09, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
 
@@ -44,8 +45,9 @@
 
 ## Журнал сессий
 
-Всего записей: 151. Последние:
+Всего записей: 152. Последние:
 
+- [2026-08-10-mac-feature-preview.md](log/2026-08-10-mac-feature-preview.md) — feature-preview
 - [2026-08-09-mac-test-fix-cycle.md](log/2026-08-09-mac-test-fix-cycle.md) — test-fix-cycle
 - [2026-08-09-mac-grouped-fail-fast-pipeline.md](log/2026-08-09-mac-grouped-fail-fast-pipeline.md) — grouped-fail-fast-pipeline
 - [2026-08-09-alexeys-macbook-air-2-web-reader-fullscreen.md](log/2026-08-09-alexeys-macbook-air-2-web-reader-fullscreen.md) — web-reader-fullscreen
@@ -55,7 +57,6 @@
 - [2026-08-08-alexeys-macbook-air-2-widget-assistant-kanban.md](log/2026-08-08-alexeys-macbook-air-2-widget-assistant-kanban.md) — widget-assistant-kanban
 - [2026-08-08-alexeys-macbook-air-2-web-recorder-standalone.md](log/2026-08-08-alexeys-macbook-air-2-web-recorder-standalone.md) — web-recorder-standalone
 - [2026-08-08-alexeys-macbook-air-2-web-recorder-page.md](log/2026-08-08-alexeys-macbook-air-2-web-recorder-page.md) — web-recorder-page
-- [2026-08-08-alexeys-macbook-air-2-web-recorder-dns.md](log/2026-08-08-alexeys-macbook-air-2-web-recorder-dns.md) — web-recorder-dns
 
 ## Исторические планы
 
