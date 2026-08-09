@@ -3,9 +3,10 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-09
-checked: 5a5bb84
+checked: a4fc8e0
 areas:
   - packages/shared/src/ci.ts
+  - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
   - apps/server/src/ci
   - scripts/affected-check.mjs
@@ -14,6 +15,7 @@ areas:
   - apps/server/src/kb/kbMcp.ts
   - packages/shared/src/kbGaps.ts
   - apps/server/src/routes/ci.ts
+  - apps/server/src/routes/projects.ts
   - apps/server/src/server.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
@@ -1316,14 +1318,49 @@ screenshots/video передаются как `TestArtifact` и связываю
 активному исполнителю, текущую группу закрывает `cancelled`, queued-хвост —
 `skipped/cancelled`, сохраняя завершённые результаты.
 
-В `apps/server/src/db/schema.ts` подготовлена персистентная схема:
+В `apps/server/src/db/schema.ts` подготовлена персистентная схема grouped pipeline:
 `ci_test_group_configs`, `ci_test_runs`, `ci_test_group_runs`,
 `ci_test_events`, `ci_test_targeted_runs`. Сам coordinator пока хранит
 активные раны в памяти и делегирует сохранение/аудит интерфейсу
 `TestPipelineStore`, исполнение — `TestPipelineExecutor`, preview —
-`TestPreviewGuard`; конкретные DB, HTTP/WS, UI и runner-адаптеры этой задачей
+`TestPreviewGuard`; конкретные DB, HTTP/WS, UI и runner-адаптеры grouped pipeline
 в код не подключены. `subscribe` отдаёт полный снимок при каждом publish, а
 потоковый и сохранённый лог проходит инъектируемую redaction-функцию. Чистые
 переходы и права покрыты в `packages/shared/src/ci.test.ts`; серверные сценарии
 success, fail-fast, preview infrastructure failure, N/A и targeted retry — в
 `apps/server/src/ci/infraErrors.test.ts`.
+
+## Межстадийный fix cycle автотестов
+
+Shared-домен в `packages/shared/src/ci.ts` описывает состояние задачи, цикл,
+структурированную диагностику и дочерние точечные запуски. Там же находятся
+консервативная классификация падения, стабильный fingerprint с нормализацией
+динамических частей сообщения, сравнение повторной и новой ошибки, нормализация
+лимита и серверная проверка узкой test-команды. Только `product_failure` допускает
+автоматическое исправление; infrastructure/configuration/cancelled/unknown не
+расходуют попытку. Полный перечень полей и статусов следует читать из shared-
+контракта, а не восстанавливать из текста лога.
+
+`createTestFixCycleCoordinator` в `apps/server/src/ci/types.ts` атомарно работает
+через инъектируемый `TestFixCycleStore`. Идемпотентный ключ — пара test run и
+failed group. Для продуктового падения coordinator проверяет effective limit,
+фиксирует снимок выбранной fix-модели и исходный commit SHA, создаёт queued-цикл,
+ровно один раз увеличивает `usedAttempts`, переносит карточку в `development` и
+пишет аудит. При исчерпанном лимите цикл не создаётся, карточка переносится в
+`decision_required`; наличие активного цикла запрещает второй старт.
+
+Персистентная форма подготовлена таблицами `ci_test_fix_task_state`,
+`ci_test_fix_cycles`, `ci_test_fix_targeted_runs` и `ci_test_fix_decisions` в
+`apps/server/src/db/schema.ts`. Проектный `ciTestFixCycleLimit` имеет дефолт 10,
+принимает только целое число не меньше нуля, возвращается в `ProjectSummary` и
+меняется владельцем через общий `PATCH /api/projects/:id`; миграция добавляет
+колонку существующим проектам. Task override представлен в домене и схеме, но
+отдельного API для него пока нет.
+
+Граница текущей реализации принципиальна: таблицы fix-cycle ещё не имеют методов
+чтения/записи в `VoiceChatDb`, а coordinator не собран с DB-store и не вызван из
+завершения grouped pipeline. Запуск fix-модели, построение её исторического
+контекста, выполнение и сохранение точечных проверок, повтор полного pipeline,
+восстановление после рестарта, HTTP/WS-события и UI истории/решений пока не
+подключены. Поэтому наличие контрактов и схемы само по себе не меняет фактический
+runtime-поток карточки.

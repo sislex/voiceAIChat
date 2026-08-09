@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CI_INFRA_LABEL, classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
-import { createTestPipelineCoordinator } from './types.js'
+import { createTestFixCycleCoordinator, createTestPipelineCoordinator } from './types.js'
 import type { TestGroupConfig, TestRun } from '@voicechat/shared'
 
 /** Реальный хвост лога с гонки двух `npm ci` за общий ~/.npm (задача #30). */
@@ -169,5 +169,82 @@ describe('grouped test pipeline coordinator', () => {
     const before = coordinator.get('test-1')
     expect((await coordinator.targeted('test-1', 'server', 'vitest one.test.ts')).exitCode).toBe(0)
     expect(coordinator.get('test-1')?.status).toBe(before?.status)
+  })
+})
+
+describe('test fix cycle coordinator', () => {
+  const make = (kind: 'product' | 'infrastructure' = 'product') => {
+    const run: TestRun = {
+      id: 'run-1', projectId: 'p1', taskId: 't1', branch: 'feature/t1', commitSha: 'abcdef1',
+      workspace: '/work/t1', agentId: 'mac', previewId: null, previewCommitSha: null,
+      analysisModel: 'gpt', triggeredBy: 'owner', attempt: 1, previousRunId: null,
+      status: 'failed', startedAt: 1, finishedAt: 2, durationMs: 1, currentGroupId: null,
+      groups: []
+    }
+    const group = {
+      id: 'group-1', testRunId: run.id, configId: 'server', name: 'Server', kind: 'server' as const,
+      command: 'npx vitest src/a.test.ts', commandVersion: 1, position: 1, required: true,
+      status: 'failed' as const, commitSha: run.commitSha, startedAt: 1, finishedAt: 2,
+      durationMs: 1, exitCode: kind === 'product' ? 1 : null,
+      counters: { suites: 1, tests: 1, passed: 0, failed: 1, skipped: 0 },
+      currentSuite: 'suite', currentTest: 'test', progress: 100, log: kind === 'product' ? '1 test failed Expected 1 to be 2' : 'ENOSPC no space left',
+      failures: [{
+        kind, packageName: 'server', runner: 'vitest', file: 'src/a.test.ts', suite: 'suite',
+        testName: 'test', message: kind === 'product' ? 'Expected 1 to be 2' : 'ENOSPC',
+        stack: null, expected: '2', actual: '1', logExcerpt: null, tracePath: null,
+        screenshotPath: null, retryCommand: 'npx vitest src/a.test.ts'
+      }],
+      artifacts: [], skipReason: null, notApplicable: null, browserProject: null,
+      baseUrl: null, testData: null
+    }
+    run.groups = [group]
+    return { run, failedGroup: group }
+  }
+
+  it('атомарно создаёт ровно один цикл и один раз расходует попытку', () => {
+    let state: import('@voicechat/shared').TestFixTaskState | null = null
+    let cycle: import('@voicechat/shared').TestFixCycle | null = null
+    const moves: string[] = []
+    const coordinator = createTestFixCycleCoordinator({ store: {
+      transaction: (_taskId, callback) => callback(),
+      getTaskState: () => state,
+      getByFailure: (runId, groupId) => cycle?.testRunId === runId && cycle.failedGroupId === groupId ? cycle : null,
+      saveTaskState: (value) => { state = value },
+      saveCycle: (value) => { cycle = value },
+      moveTask: (_taskId, semantic) => { moves.push(semantic) },
+      audit: () => undefined
+    }})
+    const input = { id: 'fix-1', ...make(), projectLimit: 10, llm: { llmEngineId: 'e1', provider: 'codex' as const, model: 'gpt-5.4' } }
+    const created = coordinator.begin(input)
+    expect(created.kind).toBe('created')
+    expect(coordinator.begin(input).kind).toBe('duplicate')
+    expect(created.kind === 'created' ? created.cycle.attemptNo : 0).toBe(1)
+    expect(moves).toEqual(['development'])
+    expect(cycle).toMatchObject({ attemptNo: 1, effectiveLimit: 10, sourceCommitSha: 'abcdef1' })
+  })
+
+  it('лимит 0 сразу переводит в decision_required без fix-run', () => {
+    const moves: string[] = []
+    const coordinator = createTestFixCycleCoordinator({ store: {
+      transaction: (_taskId, callback) => callback(), getTaskState: () => null,
+      getByFailure: () => null, saveTaskState: () => undefined, saveCycle: () => { throw new Error('не должен создаваться') },
+      moveTask: (_taskId, semantic) => { moves.push(semantic) }, audit: () => undefined
+    }})
+    expect(coordinator.begin({ id: 'fix-1', ...make(), projectLimit: 0, llm: { llmEngineId: null, provider: 'claude', model: 'opus' } })).toEqual({
+      kind: 'limit_exhausted', usedAttempts: 0, effectiveLimit: 0
+    })
+    expect(moves).toEqual(['decision_required'])
+  })
+
+  it('инфраструктура не расходует попытку и не двигает карточку', () => {
+    let writes = 0
+    const coordinator = createTestFixCycleCoordinator({ store: {
+      transaction: (_taskId, callback) => callback(), getTaskState: () => null, getByFailure: () => null,
+      saveTaskState: () => { writes++ }, saveCycle: () => { writes++ }, moveTask: () => { writes++ }, audit: () => undefined
+    }})
+    expect(coordinator.begin({ id: 'fix-1', ...make('infrastructure'), projectLimit: 10, llm: { llmEngineId: null, provider: 'claude', model: 'opus' } })).toEqual({
+      kind: 'not_product', classification: 'infrastructure_failure'
+    })
+    expect(writes).toBe(0)
   })
 })
