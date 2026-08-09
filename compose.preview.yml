@@ -1,0 +1,46 @@
+# Изолированное окружение feature-задачи. Запускается только FeaturePreviewManager
+# с уникальным Compose project; production compose и его volumes не используются.
+services:
+  app:
+    build:
+      context: .
+      target: server-runtime
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8787"
+      VC_DATA_DIR: /preview-data
+      VC_KB_RERANK_PROVIDER: disabled
+      VC_ADMIN_PASSWORD: preview
+      VC_CLAUDE_BIN: /bin/false
+      VC_CODEX_BIN: /bin/false
+      VC_MCP_PUBLIC_BASE: http://app:8787
+    ports:
+      - "127.0.0.1:${VC_PREVIEW_APP_PORT:-18000}:8787"
+    volumes:
+      - preview-data:/preview-data
+    mem_limit: 1g
+    cpus: 1.0
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  storybook:
+    build:
+      context: .
+      target: storybook-runtime
+    ports:
+      - "127.0.0.1:${VC_PREVIEW_STORYBOOK_PORT:-18001}:80"
+    mem_limit: 256m
+    cpus: 0.5
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+volumes:
+  preview-data:

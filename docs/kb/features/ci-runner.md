@@ -1364,3 +1364,54 @@ failed group. Для продуктового падения coordinator про�
 восстановление после рестарта, HTTP/WS-события и UI истории/решений пока не
 подключены. Поэтому наличие контрактов и схемы само по себе не меняет фактический
 runtime-поток карточки.
+
+## Feature-preview задачи
+
+Управляемое тестовое окружение реализовано отдельным доменом, а не командой
+production deploy и не автоматическим продолжением development-run. Shared-
+контракт находится в `packages/shared/src/preview.ts`: там перечислены все
+персистентные состояния, операции, формы environment/service/run и строгий
+Playwright-гейт по running, healthy, commit SHA и подготовленным данным.
+Табличные тесты переходов находятся рядом.
+
+`FeaturePreviewManager` (`apps/server/src/preview/manager.ts`) хранит снимок
+окружений и операций в `feature-previews.json` каталога данных сервера атомарной
+заменой файла. На пару project/task существует не более одной записи; повтор с
+тем же idempotency key возвращает её же. Перед операцией менеджер проверяет
+членство, task, активный `ci_workspaces`, совпадение машины и нахождение пути
+внутри `project_machines.repos_root`. Compose project строится только из
+очищенных server id. Изменяющие операции сериализованы, поддерживают AbortSignal,
+ограниченный потоковый лог и классифицированную ошибку. После рестарта
+`reconcile()` закрывает промежуточные состояния и отмечает недоступную машину,
+не удаляя неизвестные Docker-ресурсы.
+
+REST зарегистрирован в `routes/featurePreview.ts` под
+`/api/projects/:projectId/tasks/:taskId/preview`: чтение состояния, запуск
+операции, отмена, read-only лог и Playwright target. Реальный запуск выполняется
+через тот же безопасный `CommandExecutor` машины, что CI: cwd и env
+shell-экранируются, а compose-файл фиксирован как `compose.preview.yml`.
+Первый build происходит только после POST operation=start. Stop сохраняет
+volumes/workspace, remove использует Compose down с preview project и volumes,
+seed/reset принимают только безопасный идентификатор сценария.
+
+Карточка задачи показывает `FeaturePreviewSection`: server state, branch,
+built/current SHA, machine, health, seed, stale-предупреждение, действия и
+read-only лог. Опасные reset/remove используют общий ConfirmDialog. Web-мост
+находится в `remote/featurePreviewBridge.ts`; UI не создаёт окружение при
+mount, а только читает состояние. Storybook-сценарии покрывают not-created,
+building, running, stale, ошибку Storybook, seed и cleanup; DOM-тесты фиксируют
+восстановление состояний и явный первый клик.
+
+Проектный `compose.preview.yml` запускает только app и статический Storybook:
+отдельный named volume хранит preview-БД, сервисы связаны только с loopback-
+портами и не получают volumes/ключи LLM-runner или production data. Storybook
+собирается отдельной веткой `storybook-runtime` Dockerfile из того же workspace.
+Manager проверяет фактическую доступность порта на машине через bind и исключает
+порты остальных сохранённых environment; Compose `--wait` ждёт healthcheck
+обоих обязательных сервисов.
+
+Текущая граница среза: проектная форма PreviewConfig, reverse proxy с ACL для
+удалённого открытия loopback URL, автоматический cleanup workspace при Done,
+idle auto-stop и события аудита/WS ещё не подключены. Состояние и ограниченный
+лог уже переживают reload/restart через серверный store, но UI обновляет активную
+операцию polling, а не push-событиями.
