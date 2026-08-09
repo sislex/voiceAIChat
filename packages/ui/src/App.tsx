@@ -23,6 +23,7 @@ import { UsersAdmin } from './components/UsersAdmin'
 import { ProjectSettings } from './components/ProjectSettings'
 import { ProjectBoard } from './components/ProjectBoard'
 import { ProjectPage, ProjectsEmptyPage, ProjectNotFoundPage } from './components/ProjectPage'
+import { ReleaseCenter } from './components/releases/ReleaseCenter'
 import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
 import { KanbanAssistant, ProjectAssistantChatSelector } from './components/KanbanAssistant'
 import { MachineStatus } from './components/MachineStatus'
@@ -357,6 +358,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const inProjects = segments[0] === 'projects'
   const routeProjectId = inProjects ? (segments[1] ?? null) : null
   const routeSettings = inProjects && segments[2] === 'settings'
+  const routeReleases = inProjects && segments[2] === 'releases'
   // «Открыть задачу» из шапки связанного чата: #/projects/:id/task/:taskId.
   const routeTaskId = inProjects && segments[2] === 'task' ? (segments[3] ?? null) : null
   // Связанный чат карточки — самостоятельная страница, но сохраняет проектный URL.
@@ -697,10 +699,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   }, [authed, inProjects, routeProjectId, firstProjectId])
   useEffect(() => {
     if (!authed) return
-    if (routeSettings) { if (!state.projectSettingsOpen) actions.openProjectSettings() }
+    if (routeSettings || routeReleases) { if (!state.projectSettingsOpen) actions.openProjectSettings() }
     else if (state.projectSettingsOpen) actions.closeProjectSettings()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, routeSettings])
+  }, [authed, routeSettings, routeReleases])
   // URL → данные стора: утилиты-страницы. Вход на маршрут грузит данные, уход
   // зовёт close* — store-экшены прежние, поменялся только триггер (URL).
   useEffect(() => {
@@ -1139,9 +1141,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       {inProjects && !inTaskChat && routeProjectId && !projectMissing && (
         <ProjectPage
           projectName={routeProjectName}
-          section={routeSettings ? 'settings' : 'board'}
+          section={routeSettings ? 'settings' : routeReleases ? 'releases' : 'board'}
           onSectionChange={(section) =>
-            navigate(section === 'settings' ? `/projects/${routeProjectId}/settings` : `/projects/${routeProjectId}`)
+            navigate(section === 'settings' ? `/projects/${routeProjectId}/settings` : section === 'releases' ? `/projects/${routeProjectId}/releases` : `/projects/${routeProjectId}`)
           }
           onToggleSidebar={() => {
             if (collapsed) setCollapsedPersist(false)
@@ -1151,7 +1153,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onAssistantOpenChange={(open) => { if (!open && segments[2] === 'assistant') navigate(`/projects/${routeProjectId}`); setKanbanAssistantOpen(open) }}
           onOpenAssistantPage={() => navigate(`/projects/${routeProjectId}/assistant`) }
         >
-          {routeSettings ? (
+          {routeReleases ? (
+            state.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={state.projectDetail.ciBaseBranch ?? 'main'} owner={state.projectDetail.role === 'owner'} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
+          ) : routeSettings ? (
             state.projectDetail?.id === routeProjectId ? (
               <ProjectSettings
                 detail={state.projectDetail}

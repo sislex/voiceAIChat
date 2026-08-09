@@ -18,11 +18,11 @@ function renderPage(section: ProjectSection = 'board'): { onSectionChange: (s: P
 const tabs = (): HTMLElement => screen.getByRole('tablist', { name: 'Разделы проекта' })
 
 describe('ProjectPage — общая шапка страницы проекта', () => {
-  it('в шапке имя проекта и две вкладки; активная помечена aria-selected', () => {
+  it('в шапке имя проекта и три вкладки; активная помечена aria-selected', () => {
     renderPage('board')
     expect(screen.getByRole('heading', { name: 'Голос Чат' })).toBeInTheDocument()
     const items = within(tabs()).getAllByRole('tab')
-    expect(items.map((t) => t.textContent)).toEqual(['Канбан', 'Настройки'])
+    expect(items.map((t) => t.textContent)).toEqual(['Канбан', 'Релизы', 'Настройки'])
     expect(items[0]).toHaveAttribute('aria-selected', 'true')
     expect(items[1]).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByText('содержимое раздела')).toBeInTheDocument()
@@ -46,8 +46,8 @@ describe('ProjectPage — общая шапка страницы проекта'
   it('активная вкладка отмечена в разметке при входе в настройки', () => {
     renderPage('settings')
     const items = within(tabs()).getAllByRole('tab')
-    expect(items[1]).toHaveAttribute('aria-selected', 'true')
-    expect(items[1]?.className).toContain('on')
+    expect(items[2]).toHaveAttribute('aria-selected', 'true')
+    expect(items[2]?.className).toContain('on')
   })
 
   // Обещание роли tablist: раздел переключается стрелками, а не только мышью.
@@ -55,14 +55,14 @@ describe('ProjectPage — общая шапка страницы проекта'
     const { onSectionChange } = renderPage('board')
     within(tabs()).getByRole('tab', { name: 'Канбан' }).focus()
     await userEvent.keyboard('{ArrowRight}')
-    expect(onSectionChange).toHaveBeenLastCalledWith('settings')
+    expect(onSectionChange).toHaveBeenLastCalledWith('releases')
   })
 
   it('стрелка влево из настроек возвращает на канбан', async () => {
     const { onSectionChange } = renderPage('settings')
     within(tabs()).getByRole('tab', { name: 'Настройки' }).focus()
     await userEvent.keyboard('{ArrowLeft}')
-    expect(onSectionChange).toHaveBeenLastCalledWith('board')
+    expect(onSectionChange).toHaveBeenLastCalledWith('releases')
   })
 
   it('без нарушений axe', async () => {

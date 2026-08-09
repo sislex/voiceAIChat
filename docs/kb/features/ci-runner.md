@@ -292,6 +292,27 @@ queued» и продвижение выполняются синхронно в 
 перевод в `done` должны происходить самостоятельными стадиями workflow, а не
 финализацией разработки.
 
+## Версионные release-ветки и центр публикации
+
+Вкладка проекта «Релизы» получает актуальные ветки только после `git fetch
+--prune origin` и показывает исключительно refs `origin/release/*`, которые
+проходят строгий формат `release/x.y.z`. Создание ветки разрешено владельцу
+проекта от настроенной `ciBaseBranch` либо уже существующей release-ветки;
+произвольное имя или база отклоняются до git-команды.
+
+`ReleaseManager` фиксирует SHA выбранной remote-ветки до запуска и создаёт
+персистентную попытку в `project_releases`; модели и лента обязательных шагов
+лежат в `project_release_steps`, аудит — в `project_release_events`.
+Последовательность неизменна: regression (`npm run affected-check`), проверка
+актуальности БЗ, merge зафиксированного SHA в основную ветку, push, штатный
+host-side production deploy, health-check и очистка preview/workspace
+завершённых задач. Первое обязательное падение закрывает попытку как `failed`,
+оставляет последующие шаги queued и никогда не ставит `released`. Повтор —
+новая попытка со ссылкой на предыдущую; старые SHA и лента не переписываются.
+REST живёт в `apps/server/src/routes/releases.ts`, оркестратор — в
+`apps/server/src/releases/releaseManager.ts`, общий контракт — в
+`packages/shared/src/release.ts`.
+
 ## Отмена рана
 
 `POST /api/ci/runs/:runId/cancel` → `CiRunManager.cancel`: строка в ленте
