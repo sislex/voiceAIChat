@@ -918,6 +918,34 @@ CREATE TABLE IF NOT EXISTS qa_audit (
 );
 CREATE INDEX IF NOT EXISTS idx_qa_audit_task ON qa_audit(task_id, created_at);
 
+-- Версионные релизы: release фиксирует выбранную origin/release/* ревизию,
+-- steps дают ленту обязательных ворот, events — неизменяемый аудит повторов.
+CREATE TABLE IF NOT EXISTS project_releases (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, version TEXT NOT NULL, branch TEXT NOT NULL,
+  commit_sha TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', triggered_by TEXT NOT NULL,
+  attempt INTEGER NOT NULL DEFAULT 1, previous_release_id TEXT, created_at INTEGER NOT NULL,
+  released_at INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (previous_release_id) REFERENCES project_releases(id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_project_release_attempt ON project_releases(project_id, branch, attempt);
+CREATE INDEX IF NOT EXISTS idx_project_releases_project ON project_releases(project_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS project_release_steps (
+  id TEXT PRIMARY KEY, release_id TEXT NOT NULL, kind TEXT NOT NULL, position INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued', model TEXT, attempt INTEGER NOT NULL,
+  log TEXT NOT NULL DEFAULT '', started_at INTEGER, finished_at INTEGER,
+  FOREIGN KEY (release_id) REFERENCES project_releases(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_project_release_step ON project_release_steps(release_id, position);
+
+CREATE TABLE IF NOT EXISTS project_release_events (
+  id TEXT PRIMARY KEY, release_id TEXT NOT NULL, type TEXT NOT NULL, actor TEXT,
+  payload_json TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL,
+  FOREIGN KEY (release_id) REFERENCES project_releases(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_project_release_events ON project_release_events(release_id, created_at);
+
 `
 
 /**
