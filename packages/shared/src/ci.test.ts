@@ -2,6 +2,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   canStartCiRun,
+  canTransitionTestGroup,
+  blockedGroupsAfterFailure,
+  mayMarkGroupNotApplicable,
+  sameTestRunRevision,
   ciCardPulse,
   ciSummaryForTask,
   clarifyBudget,
@@ -641,5 +645,51 @@ describe('sumCiUsageTotals и ciTaskTotals', () => {
       run({ runId: 'r3', toolCalls: { ...EMPTY_CI_TOOL_CALLS, read: 5, edit: 2 } })
     ])
     expect(r.toolCalls).toEqual({ ...EMPTY_CI_TOOL_CALLS, read: 15, bash: 4, edit: 2 })
+  })
+})
+
+describe('test pipeline transitions', () => {
+  const group = (id: string, position: number, status: import('./ci').TestGroupStatus = 'queued'): import('./ci').TestGroupRun => ({
+    id, testRunId: 'run-1', configId: id, name: id, kind: 'custom', command: 'npm test',
+    commandVersion: 1, position, required: true, status, commitSha: 'abc', startedAt: null,
+    finishedAt: null, durationMs: null, exitCode: null, counters: { suites: null, tests: null, passed: 0, failed: 0, skipped: 0 },
+    currentSuite: null, currentTest: null, progress: null, log: '', failures: [], artifacts: [],
+    skipReason: null, notApplicable: null, browserProject: null, baseUrl: null, testData: null
+  })
+
+  it.each([
+    ['queued', 'running', true],
+    ['queued', 'not_applicable', true],
+    ['running', 'passed', true],
+    ['running', 'failed', true],
+    ['passed', 'running', false],
+    ['failed', 'running', false]
+  ] as const)('%s → %s = %s', (from, to, allowed) => {
+    expect(canTransitionTestGroup(from, to)).toBe(allowed)
+  })
+
+  it('fail-fast пропускает только не начатые последующие группы', () => {
+    const result = blockedGroupsAfterFailure([
+      group('done', 1, 'passed'), group('failed', 2, 'failed'), group('later', 3), group('na', 4, 'not_applicable')
+    ], 'failed')
+    expect(result.map((item) => [item.status, item.skipReason])).toEqual([
+      ['passed', null], ['failed', null], ['skipped', 'blocked_by_failure'], ['not_applicable', null]
+    ])
+  })
+
+  it('Playwright N/A разрешён только владельцу/тестировщику и с полным обоснованием', () => {
+    const playwright = { kind: 'playwright_smoke', required: false } as const
+    const decision = { reason: 'нет UI', alternativeVerification: 'contract test' }
+    expect(mayMarkGroupNotApplicable(playwright, 'owner', decision)).toBe(true)
+    expect(mayMarkGroupNotApplicable(playwright, 'tester', decision)).toBe(true)
+    expect(mayMarkGroupNotApplicable(playwright, 'member', decision)).toBe(false)
+    expect(mayMarkGroupNotApplicable(playwright, 'model', decision)).toBe(false)
+    expect(mayMarkGroupNotApplicable(playwright, 'owner', { ...decision, reason: '' })).toBe(false)
+    expect(mayMarkGroupNotApplicable({ kind: 'build', required: true }, 'owner', decision)).toBe(false)
+  })
+
+  it('результаты разных SHA нельзя объединить', () => {
+    expect(sameTestRunRevision({ commitSha: 'abc' }, { commitSha: 'abc' })).toBe(true)
+    expect(sameTestRunRevision({ commitSha: 'abc' }, { commitSha: 'def' })).toBe(false)
   })
 })

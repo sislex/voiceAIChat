@@ -1273,3 +1273,46 @@ fix-loop и исчерпание попыток, вызов команды мо�
 (+ сториз `CiRunning`/`CiFixing`/`CiAwaitingInput`/`CiFailed`/`CiSuccess`) и
 `TaskModal.dom.test.tsx`; хелперы — `shared/src/ci.test.ts`. Гейт: `npm run -w @voicechat/server typecheck && test`;
 UI — `typecheck` + `@voicechat/web build`.
+
+## Группированный fail-fast test pipeline
+
+Полный test run отделён от development-run и всегда фиксирует проект, задачу,
+feature-ветку, точный commit SHA, workspace/машину, preview, модель анализа,
+инициатора, номер попытки и ссылку на предыдущую попытку. Контракты находятся в
+`packages/shared/src/ci.ts` (`TestRun`, `TestGroupRun`,
+`TestGroupConfig`). Проектный порядок — данные; `BASE_TEST_PIPELINE` задаёт
+только поставляемый профиль из восьми видов проверок.
+
+Группа проходит `queued → running → passed|failed|cancelled` либо до старта
+`queued → skipped|not_applicable`. `createTestPipelineCoordinator` в
+`apps/server/src/ci/types.ts` перед каждым сохранением проверяет, что running-
+группа не более одной. После первого обязательного падения
+`blockedGroupsAfterFailure` помечает оставшийся queued-хвост
+`skipped/blocked_by_failure`; завершённые и N/A группы не меняются. Команда,
+её версия, SHA, времена, exit code, counters, текущие suite/test, raw log,
+распознанные failures и artifacts входят в снимок группы. Ошибка parser
+добавляется рядом с исходным логом, а не подменяет результат команды.
+
+Перед Playwright preview-guard сверяет preview SHA с SHA рана, выполняя
+подготовку/health-check в своём адаптере. Ошибка guard классифицируется как
+`infrastructure`; product failure хранится отдельно. HTML report, trace,
+screenshots/video передаются как `TestArtifact` и связываются с группой.
+Ручной Playwright N/A сервер разрешает только ролям owner/tester и требует
+причину и альтернативный способ проверки; решение фиксирует пользователя,
+время и SHA. Обязательные группы нельзя сделать N/A.
+
+Точечный повтор выполняется отдельным `executeTargeted`, записывает аудит и не
+мутирует статус полного pipeline. Полный повтор создаёт новый `TestRun` с
+новым SHA и `previousRunId`; `sameTestRunRevision` не позволяет считать
+результаты разных SHA одним прогоном. Отмена посылает AbortSignal активному
+исполнителю, текущую группу закрывает cancelled, queued-хвост —
+skipped/cancelled, сохраняя завершённые результаты.
+
+Персистентная схема: `ci_test_group_configs`, `ci_test_runs`,
+`ci_test_group_runs`, `ci_test_events`, `ci_test_targeted_runs`. Снимки
+сохраняются через `TestPipelineStore`; подписчик координатора получает полный
+снимок для существующего WS-механизма, а REST/reconnect читает те же сохранённые
+строки. Потоковый и сохранённый лог проходит инъектируемую функцию redaction.
+Чистые переходы и права покрыты таблицей в `shared/src/ci.test.ts`; серверные
+сценарии success, fail-fast, preview infrastructure failure, N/A и targeted
+retry — в `ci/infraErrors.test.ts`.

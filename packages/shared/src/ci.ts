@@ -1497,3 +1497,180 @@ export function ciTaskTotals(runs: CiRunReport[]): {
     toolResponses: topCiToolResponses(runs.flatMap((r) => r.toolResponses))
   }
 }
+
+/** Отдельный полный прогон проверок, неизменно привязанный к одному commit SHA. */
+export type TestRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'cancelled' | 'skipped' | 'awaiting_input'
+export type TestGroupStatus = 'queued' | 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled' | 'not_applicable'
+export type TestGroupKind = 'typecheck' | 'contract' | 'server' | 'ui' | 'build' | 'storybook' | 'playwright_smoke' | 'playwright_regression' | 'custom'
+export type TestSkipReason = 'blocked_by_failure' | 'cancelled' | 'not_applicable'
+export type TestFailureKind = 'product' | 'infrastructure' | 'parser'
+
+export interface TestGroupConfig {
+  id: string
+  name: string
+  kind: TestGroupKind
+  command: string
+  commandVersion: number
+  position: number
+  required: boolean
+  applicability?: 'always' | 'ui_changes' | 'browser_verifiable'
+}
+
+export interface TestArtifact {
+  id: string
+  kind: 'html_report' | 'trace' | 'screenshot' | 'video' | 'log' | 'other'
+  name: string
+  url: string
+}
+
+export interface TestFailure {
+  kind: TestFailureKind
+  packageName: string | null
+  runner: string | null
+  file: string | null
+  suite: string | null
+  testName: string | null
+  message: string
+  stack: string | null
+  expected: string | null
+  actual: string | null
+  logExcerpt: string | null
+  tracePath: string | null
+  screenshotPath: string | null
+  retryCommand: string | null
+}
+
+export interface TestCounters {
+  suites: number | null
+  tests: number | null
+  passed: number
+  failed: number
+  skipped: number
+}
+
+export const EMPTY_TEST_COUNTERS: TestCounters = { suites: null, tests: null, passed: 0, failed: 0, skipped: 0 }
+
+export interface TestNotApplicableDecision {
+  reason: string
+  decidedBy: string
+  decidedAt: number
+  commitSha: string
+  alternativeVerification: string
+  automatic: boolean
+}
+
+export interface TestGroupRun {
+  id: string
+  testRunId: string
+  configId: string
+  name: string
+  kind: TestGroupKind
+  command: string
+  commandVersion: number
+  position: number
+  required: boolean
+  status: TestGroupStatus
+  commitSha: string
+  startedAt: number | null
+  finishedAt: number | null
+  durationMs: number | null
+  exitCode: number | null
+  counters: TestCounters
+  currentSuite: string | null
+  currentTest: string | null
+  progress: number | null
+  log: string
+  failures: TestFailure[]
+  artifacts: TestArtifact[]
+  skipReason: TestSkipReason | null
+  notApplicable: TestNotApplicableDecision | null
+  browserProject: string | null
+  baseUrl: string | null
+  testData: string | null
+}
+
+export interface TestRun {
+  id: string
+  projectId: string
+  taskId: string
+  branch: string
+  commitSha: string
+  workspace: string
+  agentId: string | null
+  previewId: string | null
+  previewCommitSha: string | null
+  analysisModel: string
+  triggeredBy: string
+  attempt: number
+  previousRunId: string | null
+  status: TestRunStatus
+  startedAt: number | null
+  finishedAt: number | null
+  durationMs: number | null
+  currentGroupId: string | null
+  groups: TestGroupRun[]
+}
+
+export interface TestGroupResult {
+  exitCode: number | null
+  counters?: Partial<TestCounters>
+  failures?: TestFailure[]
+  artifacts?: TestArtifact[]
+  parserError?: string | null
+  infrastructureFailure?: TestFailure | null
+}
+
+export interface TestProgressPatch {
+  currentSuite?: string | null
+  currentTest?: string | null
+  progress?: number | null
+  counters?: Partial<TestCounters>
+}
+
+export const BASE_TEST_PIPELINE: readonly Omit<TestGroupConfig, 'command' | 'commandVersion'>[] = [
+  { id: 'typecheck', name: 'Typecheck', kind: 'typecheck', position: 10, required: true, applicability: 'always' },
+  { id: 'shared-contract', name: 'Shared и contract tests', kind: 'contract', position: 20, required: true, applicability: 'always' },
+  { id: 'server', name: 'Server tests', kind: 'server', position: 30, required: true, applicability: 'always' },
+  { id: 'ui', name: 'UI unit и DOM tests', kind: 'ui', position: 40, required: true, applicability: 'ui_changes' },
+  { id: 'build', name: 'Build затронутых приложений', kind: 'build', position: 50, required: true, applicability: 'always' },
+  { id: 'storybook', name: 'Storybook build и smoke', kind: 'storybook', position: 60, required: false, applicability: 'ui_changes' },
+  { id: 'playwright-smoke', name: 'Playwright smoke', kind: 'playwright_smoke', position: 70, required: false, applicability: 'browser_verifiable' },
+  { id: 'playwright-regression', name: 'Playwright regression', kind: 'playwright_regression', position: 80, required: false, applicability: 'browser_verifiable' }
+]
+
+const TEST_GROUP_TRANSITIONS: Record<TestGroupStatus, readonly TestGroupStatus[]> = {
+  queued: ['running', 'skipped', 'cancelled', 'not_applicable'],
+  running: ['passed', 'failed', 'cancelled'],
+  passed: [], failed: [], skipped: [], cancelled: [], not_applicable: []
+}
+
+export function canTransitionTestGroup(from: TestGroupStatus, to: TestGroupStatus): boolean {
+  return TEST_GROUP_TRANSITIONS[from].includes(to)
+}
+export function isTerminalTestRun(status: TestRunStatus): boolean {
+  return status === 'passed' || status === 'failed' || status === 'cancelled' || status === 'skipped'
+}
+export function assertSingleRunningGroup(groups: readonly Pick<TestGroupRun, 'status'>[]): void {
+  if (groups.filter((group) => group.status === 'running').length > 1) throw new Error('Одновременно может выполняться только одна группа')
+}
+export function blockedGroupsAfterFailure(groups: readonly TestGroupRun[], failedGroupId: string): TestGroupRun[] {
+  let after = false
+  return groups.map((group) => {
+    if (group.id === failedGroupId) after = true
+    return after && group.id !== failedGroupId && group.status === 'queued'
+      ? { ...group, status: 'skipped', skipReason: 'blocked_by_failure' }
+      : group
+  })
+}
+export function mayMarkGroupNotApplicable(
+  group: Pick<TestGroupConfig, 'kind' | 'required'>,
+  role: 'owner' | 'tester' | 'member' | 'model',
+  decision: Pick<TestNotApplicableDecision, 'reason' | 'alternativeVerification'>
+): boolean {
+  if (group.required || !decision.reason.trim() || !decision.alternativeVerification.trim()) return false
+  const playwright = group.kind === 'playwright_smoke' || group.kind === 'playwright_regression'
+  return !playwright || role === 'owner' || role === 'tester'
+}
+export function sameTestRunRevision(a: Pick<TestRun, 'commitSha'>, b: Pick<TestRun, 'commitSha'>): boolean {
+  return a.commitSha === b.commitSha
+}

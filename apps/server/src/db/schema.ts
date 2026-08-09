@@ -553,6 +553,107 @@ CREATE TABLE IF NOT EXISTS ci_command_suggestions (
 );
 CREATE INDEX IF NOT EXISTS idx_ci_suggestions_command ON ci_command_suggestions(command_id, status);
 
+-- Группированный fail-fast pipeline. Конфигурация принадлежит проекту, а каждый
+-- run/group хранит неизменяемый commit SHA; результаты разных ревизий не смешиваются.
+CREATE TABLE IF NOT EXISTS ci_test_group_configs (
+  id              TEXT PRIMARY KEY,
+  project_id      TEXT NOT NULL,
+  name            TEXT NOT NULL,
+  kind            TEXT NOT NULL,
+  command         TEXT NOT NULL,
+  command_version INTEGER NOT NULL DEFAULT 1,
+  position        INTEGER NOT NULL,
+  required        INTEGER NOT NULL DEFAULT 1,
+  applicability   TEXT NOT NULL DEFAULT 'always',
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ci_test_group_config_position ON ci_test_group_configs(project_id, position);
+
+CREATE TABLE IF NOT EXISTS ci_test_runs (
+  id                 TEXT PRIMARY KEY,
+  project_id         TEXT NOT NULL,
+  task_id            TEXT NOT NULL,
+  branch             TEXT NOT NULL,
+  commit_sha         TEXT NOT NULL,
+  workspace          TEXT NOT NULL,
+  agent_id           TEXT,
+  preview_id         TEXT,
+  preview_commit_sha TEXT,
+  analysis_model     TEXT NOT NULL,
+  triggered_by       TEXT NOT NULL,
+  attempt            INTEGER NOT NULL,
+  previous_run_id    TEXT,
+  status             TEXT NOT NULL,
+  current_group_id   TEXT,
+  started_at         INTEGER,
+  finished_at        INTEGER,
+  duration_ms        INTEGER,
+  created_at         INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (previous_run_id) REFERENCES ci_test_runs(id)
+);
+CREATE INDEX IF NOT EXISTS idx_ci_test_runs_task ON ci_test_runs(task_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ci_test_group_runs (
+  id                   TEXT PRIMARY KEY,
+  test_run_id          TEXT NOT NULL,
+  config_id            TEXT NOT NULL,
+  name                 TEXT NOT NULL,
+  kind                 TEXT NOT NULL,
+  command              TEXT NOT NULL,
+  command_version      INTEGER NOT NULL,
+  position             INTEGER NOT NULL,
+  required             INTEGER NOT NULL,
+  status               TEXT NOT NULL,
+  commit_sha           TEXT NOT NULL,
+  started_at           INTEGER,
+  finished_at          INTEGER,
+  duration_ms          INTEGER,
+  exit_code            INTEGER,
+  counters_json        TEXT NOT NULL DEFAULT '{}',
+  current_suite        TEXT,
+  current_test         TEXT,
+  progress             REAL,
+  log                  TEXT NOT NULL DEFAULT '',
+  failures_json        TEXT NOT NULL DEFAULT '[]',
+  artifacts_json       TEXT NOT NULL DEFAULT '[]',
+  skip_reason          TEXT,
+  not_applicable_json  TEXT,
+  browser_project      TEXT,
+  base_url             TEXT,
+  test_data            TEXT,
+  FOREIGN KEY (test_run_id) REFERENCES ci_test_runs(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ci_test_group_runs_position ON ci_test_group_runs(test_run_id, position);
+
+CREATE TABLE IF NOT EXISTS ci_test_events (
+  id         TEXT PRIMARY KEY,
+  run_id     TEXT NOT NULL,
+  group_id   TEXT,
+  type       TEXT NOT NULL,
+  user_id    TEXT,
+  payload    TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES ci_test_runs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_test_events_run ON ci_test_events(run_id, created_at);
+
+CREATE TABLE IF NOT EXISTS ci_test_targeted_runs (
+  id          TEXT PRIMARY KEY,
+  run_id      TEXT NOT NULL,
+  group_id    TEXT NOT NULL,
+  command     TEXT NOT NULL,
+  exit_code   INTEGER,
+  result_json TEXT NOT NULL DEFAULT '{}',
+  created_at  INTEGER NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES ci_test_runs(id) ON DELETE CASCADE,
+  FOREIGN KEY (group_id) REFERENCES ci_test_group_runs(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS ci_events (
   id         TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
