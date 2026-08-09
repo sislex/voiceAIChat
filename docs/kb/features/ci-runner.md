@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-10
-checked: 3899375
+checked: 4130539
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/projects.ts
@@ -1364,3 +1364,36 @@ failed group. Для продуктового падения coordinator про�
 восстановление после рестарта, HTTP/WS-события и UI истории/решений пока не
 подключены. Поэтому наличие контрактов и схемы само по себе не меняет фактический
 runtime-поток карточки.
+
+## Структурированное ручное QA
+
+Ручная приёмка хранится отдельным доменом, а не вычисляется из текстового поля
+задачи. Контракт packages/shared/src/qa.ts задаёт критерии, неизменяемые снимки
+версий, QA session на один commit SHA, результаты по критериям, структурированные
+issues и вложения. canCompleteQa — единая серверная проверка: все обязательные
+критерии текущего snapshot должны иметь passed либо обоснованный not_applicable;
+любой failed, blocked, not_tested, in_progress, stale, расхождение commit/preview
+SHA или устаревшая session блокируют merge.
+
+SQLite-история находится в acceptance_criteria,
+acceptance_criterion_versions, qa_sessions, qa_criterion_results,
+qa_issues, qa_attachments и qa_audit. Смысловая правка создаёт новую версию,
+помечает активную session устаревшей и не переносит pass. Результаты используют
+revision для optimistic concurrency. Для failed обязательны expected/actual,
+reproduction, severity, frequency и classification; implementation defect
+маршрутизирует задачу в development, requirement change — в ready,
+needs decision — в decision_required. Blocked и N/A требуют структурированного
+обоснования.
+
+REST живёт под /api/projects/:projectId/tasks/:taskId/qa; все операции сверяют
+проект, задачу, session, criterion/result и QA-права. Скриншот сначала попадает в
+постоянный UploadStore, затем связывается с результатом непрозрачным upload id.
+QA-route допускает до 10 PNG/JPEG/WebP по 10 MiB, сверяет MIME, расширение и
+magic bytes, нормализует имя и отдаёт файл только участнику проекта через
+/api/qa/attachments/:attachmentId. Путь файлов наружу не публикуется.
+
+Карточка задачи показывает ManualQaPanel: progress и SHA, preview/Storybook,
+раскрываемую форму каждого критерия, draft, Pass/Fail/Blocked/N/A, скриншоты и
+причину stale. Успешный development CI без legacy merge теперь заканчивается в
+manual_qa; только явное серверное completeQaSession переводит карточку в
+awaiting_merge.

@@ -15,6 +15,7 @@ import { registerPreviewProxy } from './routes/previewProxy.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerAdminRoutes } from './routes/admin.js'
 import { registerProjectRoutes } from './routes/projects.js'
+import { registerQaRoutes } from './routes/qa.js'
 import { registerCiRoutes } from './routes/ci.js'
 import { registerFeaturePreviewRoutes } from './routes/featurePreview.js'
 import { FeaturePreviewManager } from './preview/manager.js'
@@ -549,6 +550,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerFeaturePreviewRoutes(app, featurePreviews)
   void featurePreviews.reconcile()
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager)
+  registerQaRoutes(app, db, uploads)
 
   // Раны предыдущего процесса живут только в его памяти: после рестарта они
   // навсегда остались бы «running» и блокировали карточку задачи.

@@ -133,7 +133,21 @@ import {
   ciUsageStages,
   ciUsageTotals,
   normCiStageModels,
-  isVerificationCommand
+  isVerificationCommand,
+  canCompleteQa,
+  validateQaResult,
+  type AcceptanceCriterion,
+  type AcceptanceCriterionSnapshot,
+  type AcceptanceCriterionVersion,
+  type QaTaskState,
+  type QaSession,
+  type QaCriterionResult,
+  type QaAttachment,
+  type QaIssue,
+  type QaResultStatus,
+  type QaIssueClassification,
+  type QaSeverity,
+  type QaFrequency
 } from '@voicechat/shared'
 import { hashPassword, verifyPassword } from '../users/passwords.js'
 
@@ -621,6 +635,10 @@ export class VoiceChatDb {
     const projCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
     if (projCols.length && !projCols.some((c) => c.name === 'default_agent_id')) {
       this.db.exec(`ALTER TABLE projects ADD COLUMN default_agent_id TEXT`)
+    }
+    const memberCols = this.db.prepare(`PRAGMA table_info(project_members)`).all() as Array<{ name: string }>
+    if (memberCols.length && !memberCols.some((c) => c.name === 'qa_permission')) {
+      this.db.exec(`ALTER TABLE project_members ADD COLUMN qa_permission INTEGER NOT NULL DEFAULT 0`)
     }
     const pmCols = this.db.prepare(`PRAGMA table_info(project_machines)`).all() as Array<{ name: string }>
     if (pmCols.length && !pmCols.some((c) => c.name === 'path')) {
@@ -4183,9 +4201,217 @@ export class VoiceChatDb {
     return this.kbDocumentById(id) as KbStoredDocument
   }
 
+  // ============== Структурированное ручное QA =================
+  private canQa(userId: string, projectId: string): boolean {
+    const row = this.db.prepare(`SELECT role, qa_permission FROM project_members WHERE project_id = ? AND username = ?`).get(projectId, userId) as { role: string; qa_permission: number } | undefined
+    return !!row && (row.role === 'owner' || !!row.qa_permission)
+  }
+
+  getQaTaskState(userId: string, projectId: string, taskId: string): QaTaskState | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const task = this.db.prepare(`SELECT 1 FROM tasks WHERE id = ? AND project_id = ?`).get(taskId, projectId)
+    if (!task) return null
+    const criteria = (this.db.prepare(`SELECT * FROM acceptance_criteria WHERE task_id = ? ORDER BY position`).all(taskId) as QaCriterionRow[]).map(mapQaCriterion)
+    const versions = criteria.flatMap((criterion) =>
+      (this.db.prepare(`SELECT * FROM acceptance_criterion_versions WHERE criterion_id = ? ORDER BY version DESC`).all(criterion.id) as QaCriterionVersionRow[]).map(mapQaCriterionVersion)
+    )
+    const sessions = (this.db.prepare(`SELECT * FROM qa_sessions WHERE task_id = ? ORDER BY started_at DESC`).all(taskId) as QaSessionRow[]).map((row) => this.mapQaSession(row))
+    return { criteria, versions, sessions, activeSession: sessions.find((session) => session.status === 'active') ?? null }
+  }
+
+  createAcceptanceCriterion(userId: string, projectId: string, taskId: string, input: AcceptanceCriterionSnapshot & { order?: number }): AcceptanceCriterion | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.db.prepare(`SELECT 1 FROM tasks WHERE id = ? AND project_id = ?`).get(taskId, projectId)) return null
+    const now = this.now(), id = this.newId()
+    const order = input.order ?? ((this.db.prepare(`SELECT COALESCE(MAX(position), 0) + 1 AS n FROM acceptance_criteria WHERE task_id = ?`).get(taskId) as { n: number }).n)
+    const snapshot = qaSnapshot(input)
+    this.db.transaction(() => {
+      this.db.prepare(`INSERT INTO acceptance_criteria
+        (id, task_id, position, title, description, preconditions, steps, test_data, expected_result, required, test_type, current_version, active, author, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?)`).run(
+          id, taskId, order, snapshot.title, snapshot.description, snapshot.preconditions, snapshot.steps,
+          snapshot.testData, snapshot.expectedResult, snapshot.required ? 1 : 0, snapshot.testType, userId, now, now
+        )
+      this.db.prepare(`INSERT INTO acceptance_criterion_versions (criterion_id, version, snapshot_json, author, reason, created_at) VALUES (?, 1, ?, ?, 'initial', ?)`)
+        .run(id, JSON.stringify(snapshot), userId, now)
+      this.addQaAudit(projectId, taskId, userId, 'criterion.created', { criterionId: id, version: 1 })
+    })()
+    return mapQaCriterion(this.db.prepare(`SELECT * FROM acceptance_criteria WHERE id = ?`).get(id) as QaCriterionRow)
+  }
+
+  reviseAcceptanceCriterion(userId: string, projectId: string, taskId: string, criterionId: string, input: AcceptanceCriterionSnapshot & { reason: string; semanticChange?: boolean }): AcceptanceCriterion | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const current = this.db.prepare(`SELECT * FROM acceptance_criteria WHERE id = ? AND task_id = ?`).get(criterionId, taskId) as QaCriterionRow | undefined
+    if (!current) return null
+    const now = this.now(), snapshot = qaSnapshot(input)
+    const version = current.current_version + (input.semanticChange === false ? 0 : 1)
+    this.db.transaction(() => {
+      if (version !== current.current_version) {
+        this.db.prepare(`UPDATE acceptance_criterion_versions SET superseded_by = ? WHERE criterion_id = ? AND version = ?`).run(version, criterionId, current.current_version)
+        this.db.prepare(`INSERT INTO acceptance_criterion_versions (criterion_id, version, snapshot_json, author, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+          .run(criterionId, version, JSON.stringify(snapshot), userId, input.reason.trim(), now)
+      }
+      this.db.prepare(`UPDATE acceptance_criteria SET title=?, description=?, preconditions=?, steps=?, test_data=?, expected_result=?, required=?, test_type=?, current_version=?, updated_at=? WHERE id=?`)
+        .run(snapshot.title, snapshot.description, snapshot.preconditions, snapshot.steps, snapshot.testData, snapshot.expectedResult, snapshot.required ? 1 : 0, snapshot.testType, version, now, criterionId)
+      if (version !== current.current_version) {
+        this.db.prepare(`UPDATE qa_sessions SET status='stale', stale_reason='criteria_snapshot_changed', finished_at=? WHERE task_id=? AND status='active'`).run(now, taskId)
+      }
+      this.addQaAudit(projectId, taskId, userId, version === current.current_version ? 'criterion.edited' : 'criterion.versioned', { criterionId, version, reason: input.reason })
+    })()
+    return mapQaCriterion(this.db.prepare(`SELECT * FROM acceptance_criteria WHERE id = ?`).get(criterionId) as QaCriterionRow)
+  }
+
+  startQaSession(userId: string, args: { projectId: string; taskId: string; branch: string; commitSha: string; testRunId: string; previewId?: string | null; previewSha?: string | null; appUrl?: string | null; storybookUrl?: string | null; testDataScenario?: string; testerId?: string | null }): QaSession | null {
+    if (!this.canQa(userId, args.projectId)) throw new Error('QA permission required')
+    if (!this.db.prepare(`SELECT 1 FROM tasks WHERE id=? AND project_id=?`).get(args.taskId, args.projectId)) return null
+    if (this.db.prepare(`SELECT 1 FROM qa_sessions WHERE task_id=? AND status='active'`).get(args.taskId)) throw new Error('active QA session already exists')
+    if (args.previewId && args.previewSha !== args.commitSha) throw new Error('preview SHA does not match commit SHA')
+    const criteria = (this.db.prepare(`SELECT * FROM acceptance_criteria WHERE task_id=? AND active=1 ORDER BY position`).all(args.taskId) as QaCriterionRow[]).map(mapQaCriterion)
+    if (!criteria.length) throw new Error('acceptance criteria required')
+    const snapshot = criteria.map((criterion) => ({ criterionId: criterion.id, version: criterion.currentVersion, required: criterion.required }))
+    const now = this.now(), sessionId = this.newId()
+    this.db.transaction(() => {
+      this.db.prepare(`INSERT INTO qa_sessions
+        (id,task_id,project_id,branch,commit_sha,test_run_id,preview_id,preview_sha,app_url,storybook_url,test_data_scenario,criteria_snapshot_json,status,tester_id,initiated_by,started_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'active',?,?,?)`).run(
+          sessionId,args.taskId,args.projectId,args.branch,args.commitSha,args.testRunId,args.previewId??null,args.previewSha??null,args.appUrl??null,args.storybookUrl??null,args.testDataScenario??'',JSON.stringify(snapshot),args.testerId??userId,userId,now
+        )
+      const insert = this.db.prepare(`INSERT INTO qa_criterion_results
+        (id,session_id,criterion_id,criterion_version,status,draft,branch,commit_sha,preview_id,preview_sha,app_url,storybook_url,test_data_scenario,expected_result,revision,updated_at)
+        VALUES (?,?,?,?,'not_tested',0,?,?,?,?,?,?,?,?,1,?)`)
+      for (const criterion of criteria) insert.run(this.newId(),sessionId,criterion.id,criterion.currentVersion,args.branch,args.commitSha,args.previewId??null,args.previewSha??null,args.appUrl??null,args.storybookUrl??null,args.testDataScenario??'',criterion.expectedResult,now)
+      const column = this.getColumnIdBySemantic(args.projectId, 'manual_qa')
+      if (column) this.moveTask(userId, args.projectId, args.taskId, { columnId: column })
+      this.addQaAudit(args.projectId,args.taskId,userId,'session.started',{sessionId,commitSha:args.commitSha})
+    })()
+    return this.mapQaSession(this.db.prepare(`SELECT * FROM qa_sessions WHERE id=?`).get(sessionId) as QaSessionRow)
+  }
+
+  saveQaResult(userId: string, projectId: string, taskId: string, resultId: string, expectedRevision: number, patch: Partial<Pick<QaCriterionResult, 'status'|'draft'|'executedSteps'|'actualResult'|'comment'|'environment'|'blockerReason'|'blockerType'|'blockerOwner'|'notApplicableReason'|'assigneeId'>> & { classification?: QaIssueClassification; severity?: QaSeverity; frequency?: QaFrequency; reproduction?: string; requirementProposal?: string }): QaCriterionResult {
+    if (!this.canQa(userId, projectId)) throw new Error('QA permission required')
+    const current = this.db.prepare(`SELECT r.*, s.project_id, s.task_id, s.status AS session_status, s.stale_reason FROM qa_criterion_results r JOIN qa_sessions s ON s.id=r.session_id WHERE r.id=? AND s.project_id=? AND s.task_id=?`).get(resultId,projectId,taskId) as (QaResultRow & { session_status:string; stale_reason:string|null }) | undefined
+    if (!current) throw new Error('QA result not found')
+    if (current.revision !== expectedRevision) throw new Error('QA result revision conflict')
+    if (current.session_status !== 'active' || current.stale_reason) throw new Error('QA session is stale or closed')
+    const next = { ...mapQaResult(current, [], null), ...patch }
+    const status = patch.status ?? next.status
+    if (!patch.draft) {
+      const missing = validateQaResult(status, next)
+      if (missing.length) throw new Error(`missing QA fields: ${missing.join(', ')}`)
+    }
+    if ((status === 'passed' || status === 'not_applicable') && !this.canQa(userId, projectId)) throw new Error('QA permission required')
+    const now=this.now(), finished = !patch.draft && ['passed','failed','blocked','not_applicable'].includes(status) ? now : null
+    this.db.transaction(() => {
+      const changed=this.db.prepare(`UPDATE qa_criterion_results SET status=?,draft=?,tester_id=?,started_at=COALESCE(started_at,?),finished_at=?,executed_steps=?,actual_result=?,comment=?,environment=?,blocker_reason=?,blocker_type=?,blocker_owner=?,not_applicable_reason=?,assignee_id=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?`).run(
+        status,patch.draft?1:0,userId,now,finished,next.executedSteps,next.actualResult,next.comment,next.environment,next.blockerReason,next.blockerType,next.blockerOwner,next.notApplicableReason,next.assigneeId,now,resultId,expectedRevision
+      )
+      if (!changed.changes) throw new Error('QA result revision conflict')
+      if (status === 'failed') {
+        if (!patch.classification || !patch.severity || !patch.frequency || !patch.reproduction?.trim()) throw new Error('structured QA issue required')
+        const route = patch.classification === 'implementation_defect' ? 'development' : patch.classification === 'requirement_change' ? 'ready' : patch.classification === 'needs_decision' ? 'decision_required' : 'manual_qa'
+        this.db.prepare(`INSERT INTO qa_issues (id,result_id,classification,severity,frequency,reproduction,proposed_route,requirement_proposal,created_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(result_id) DO UPDATE SET classification=excluded.classification,severity=excluded.severity,frequency=excluded.frequency,reproduction=excluded.reproduction,proposed_route=excluded.proposed_route,requirement_proposal=excluded.requirement_proposal`)
+          .run(this.newId(),resultId,patch.classification,patch.severity,patch.frequency,patch.reproduction,route,patch.requirementProposal??'',now)
+        if (route !== 'manual_qa') {
+          const column=this.getColumnIdBySemantic(projectId, route)
+          if (column) this.moveTask(userId,projectId,taskId,{columnId:column})
+          this.db.prepare(`UPDATE qa_sessions SET status='failed',finished_at=? WHERE id=?`).run(now,current.session_id)
+        }
+      }
+      this.addQaAudit(projectId,taskId,userId,patch.draft?'result.draft_saved':'result.updated',{resultId,status,revision:expectedRevision+1})
+    })()
+    return this.qaResultById(resultId) as QaCriterionResult
+  }
+
+  completeQaSession(userId: string, projectId: string, taskId: string, sessionId: string, summary: string): QaSession {
+    if (!this.canQa(userId,projectId)) throw new Error('QA permission required')
+    const row=this.db.prepare(`SELECT * FROM qa_sessions WHERE id=? AND project_id=? AND task_id=?`).get(sessionId,projectId,taskId) as QaSessionRow|undefined
+    if (!row) throw new Error('QA session not found')
+    const session=this.mapQaSession(row), gate=canCompleteQa(session)
+    if (!gate.allowed) throw new Error(`QA is incomplete: ${gate.reasons.join(', ')}`)
+    const now=this.now()
+    this.db.transaction(()=>{
+      this.db.prepare(`UPDATE qa_sessions SET status='passed',finished_at=?,summary=? WHERE id=? AND status='active'`).run(now,summary.trim(),sessionId)
+      const column=this.getColumnIdBySemantic(projectId,'awaiting_merge')
+      if (!column) throw new Error('awaiting_merge column not found')
+      this.moveTask(userId,projectId,taskId,{columnId:column})
+      this.addQaAudit(projectId,taskId,userId,'session.completed',{sessionId,summary})
+    })()
+    return this.mapQaSession(this.db.prepare(`SELECT * FROM qa_sessions WHERE id=?`).get(sessionId) as QaSessionRow)
+  }
+
+  markQaSessionStale(projectId: string, taskId: string, reason: string): void {
+    const now=this.now()
+    this.db.prepare(`UPDATE qa_sessions SET status='stale',stale_reason=?,finished_at=? WHERE project_id=? AND task_id=? AND status='active'`).run(reason,now,projectId,taskId)
+    this.db.prepare(`UPDATE qa_criterion_results SET status='stale',revision=revision+1,updated_at=? WHERE session_id IN (SELECT id FROM qa_sessions WHERE project_id=? AND task_id=? AND status='stale' AND stale_reason=?) AND status IN ('not_tested','in_progress')`).run(now,projectId,taskId,reason)
+  }
+
+  addQaAttachment(userId:string,projectId:string,taskId:string,resultId:string,input:{uploadId:string;name:string;mimeType:'image/png'|'image/jpeg'|'image/webp';size:number;width?:number|null;height?:number|null;caption?:string}):QaAttachment {
+    if (!this.canQa(userId,projectId)) throw new Error('QA permission required')
+    const result=this.db.prepare(`SELECT r.commit_sha FROM qa_criterion_results r JOIN qa_sessions s ON s.id=r.session_id WHERE r.id=? AND s.project_id=? AND s.task_id=?`).get(resultId,projectId,taskId) as {commit_sha:string}|undefined
+    if (!result) throw new Error('QA result not found')
+    const count=(this.db.prepare(`SELECT COUNT(*) AS n FROM qa_attachments WHERE result_id=?`).get(resultId) as {n:number}).n
+    if (count>=10) throw new Error('QA attachment limit reached')
+    const id=this.newId(),now=this.now(),safeName=input.name.split(/[\\/]/).pop() || 'screenshot'
+    this.db.prepare(`INSERT INTO qa_attachments (id,result_id,upload_id,name,mime_type,size,width,height,caption,author,created_at,commit_sha) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,resultId,input.uploadId,safeName,input.mimeType,input.size,input.width??null,input.height??null,input.caption?.trim()??'',userId,now,result.commit_sha)
+    this.addQaAudit(projectId,taskId,userId,'attachment.added',{attachmentId:id,resultId,uploadId:input.uploadId})
+    return {id,resultId,uploadId:input.uploadId,name:safeName,mimeType:input.mimeType,size:input.size,width:input.width??null,height:input.height??null,caption:input.caption?.trim()??'',author:userId,createdAt:now,commitSha:result.commit_sha}
+  }
+
+  getQaAttachment(userId:string,attachmentId:string):(QaAttachment&{projectId:string;taskId:string})|null {
+    const row=this.db.prepare(`SELECT a.*,s.project_id,s.task_id FROM qa_attachments a JOIN qa_criterion_results r ON r.id=a.result_id JOIN qa_sessions s ON s.id=r.session_id WHERE a.id=?`).get(attachmentId) as (QaAttachmentRow&{project_id:string;task_id:string})|undefined
+    if (!row||!this.isProjectMember(userId,row.project_id)) return null
+    return {id:row.id,resultId:row.result_id,uploadId:row.upload_id,name:row.name,mimeType:row.mime_type as QaAttachment['mimeType'],size:row.size,width:row.width,height:row.height,caption:row.caption,author:row.author,createdAt:row.created_at,commitSha:row.commit_sha,projectId:row.project_id,taskId:row.task_id}
+  }
+
+  private qaResultById(id: string): QaCriterionResult | null {
+    const row=this.db.prepare(`SELECT * FROM qa_criterion_results WHERE id=?`).get(id) as QaResultRow|undefined
+    if (!row) return null
+    const issue=this.db.prepare(`SELECT * FROM qa_issues WHERE result_id=?`).get(id) as QaIssueRow|undefined
+    const attachments=this.db.prepare(`SELECT * FROM qa_attachments WHERE result_id=? ORDER BY created_at`).all(id) as QaAttachmentRow[]
+    return mapQaResult(row,attachments,issue??null)
+  }
+
+  private mapQaSession(row: QaSessionRow): QaSession {
+    const results=(this.db.prepare(`SELECT * FROM qa_criterion_results WHERE session_id=? ORDER BY rowid`).all(row.id) as QaResultRow[]).map((result)=>this.qaResultById(result.id) as QaCriterionResult)
+    return mapQaSession(row,results)
+  }
+
+  private addQaAudit(projectId:string,taskId:string,actor:string,action:string,payload:unknown):void {
+    this.db.prepare(`INSERT INTO qa_audit (id,project_id,task_id,action,actor,payload_json,created_at) VALUES (?,?,?,?,?,?,?)`).run(this.newId(),projectId,taskId,action,actor,JSON.stringify(payload),this.now())
+  }
+
   deleteKbDocument(id: string): boolean {
     return this.db.prepare(`DELETE FROM kb_documents WHERE id = ?`).run(id).changes > 0
   }
+}
+
+// ============== Ручное QA: строки БД и мапперы ==================
+interface QaCriterionRow { id:string;task_id:string;position:number;title:string;description:string;preconditions:string;steps:string;test_data:string;expected_result:string;required:number;test_type:string;current_version:number;active:number;author:string;created_at:number;updated_at:number }
+interface QaCriterionVersionRow { criterion_id:string;version:number;snapshot_json:string;author:string;reason:string;created_at:number;superseded_by:number|null }
+interface QaSessionRow { id:string;task_id:string;project_id:string;branch:string;commit_sha:string;test_run_id:string;preview_id:string|null;preview_sha:string|null;app_url:string|null;storybook_url:string|null;test_data_scenario:string;criteria_snapshot_json:string;status:string;tester_id:string|null;initiated_by:string;started_at:number;finished_at:number|null;stale_reason:string|null;summary:string }
+interface QaResultRow { id:string;session_id:string;criterion_id:string;criterion_version:number;status:string;draft:number;tester_id:string|null;assignee_id:string|null;started_at:number|null;finished_at:number|null;branch:string;commit_sha:string;preview_id:string|null;preview_sha:string|null;app_url:string|null;storybook_url:string|null;test_data_scenario:string;executed_steps:string;expected_result:string;actual_result:string;comment:string;environment:string;blocker_reason:string;blocker_type:string|null;blocker_owner:string|null;not_applicable_reason:string;revision:number;updated_at:number }
+interface QaIssueRow { id:string;result_id:string;classification:string;severity:string;frequency:string;reproduction:string;proposed_route:string;requirement_proposal:string;resolution:string;linked_fix_run_id:string|null;created_at:number }
+interface QaAttachmentRow { id:string;result_id:string;upload_id:string;name:string;mime_type:string;size:number;width:number|null;height:number|null;caption:string;author:string;created_at:number;commit_sha:string }
+
+function qaSnapshot(value:AcceptanceCriterionSnapshot):AcceptanceCriterionSnapshot {
+  const testType=value.testType==='automated'||value.testType==='mixed'||value.testType==='not_testable_in_app'?value.testType:'manual'
+  return {title:value.title.trim(),description:value.description.trim(),preconditions:value.preconditions.trim(),steps:value.steps.trim(),testData:value.testData.trim(),expectedResult:value.expectedResult.trim(),required:value.required!==false,testType}
+}
+function mapQaCriterion(r:QaCriterionRow):AcceptanceCriterion {
+  return {id:r.id,taskId:r.task_id,order:r.position,title:r.title,description:r.description,preconditions:r.preconditions,steps:r.steps,testData:r.test_data,expectedResult:r.expected_result,required:!!r.required,testType:(r.test_type as AcceptanceCriterion['testType']),currentVersion:r.current_version,active:!!r.active,author:r.author,createdAt:r.created_at,updatedAt:r.updated_at}
+}
+function mapQaCriterionVersion(r:QaCriterionVersionRow):AcceptanceCriterionVersion {
+  const snapshot=parseJsonValue<AcceptanceCriterionSnapshot>(r.snapshot_json,{title:'',description:'',preconditions:'',steps:'',testData:'',expectedResult:'',required:true,testType:'manual'})
+  return {...snapshot,criterionId:r.criterion_id,version:r.version,author:r.author,reason:r.reason,createdAt:r.created_at,supersededBy:r.superseded_by}
+}
+function qaStatus(value:string):QaResultStatus {
+  return value==='in_progress'||value==='passed'||value==='failed'||value==='blocked'||value==='not_applicable'||value==='stale'?value:'not_tested'
+}
+function mapQaResult(r:QaResultRow,attachments:QaAttachmentRow[],issue:QaIssueRow|null):QaCriterionResult {
+  return {id:r.id,sessionId:r.session_id,criterionId:r.criterion_id,criterionVersion:r.criterion_version,status:qaStatus(r.status),draft:!!r.draft,testerId:r.tester_id,assigneeId:r.assignee_id,startedAt:r.started_at,finishedAt:r.finished_at,branch:r.branch,commitSha:r.commit_sha,previewId:r.preview_id,previewSha:r.preview_sha,appUrl:r.app_url,storybookUrl:r.storybook_url,testDataScenario:r.test_data_scenario,executedSteps:r.executed_steps,expectedResult:r.expected_result,actualResult:r.actual_result,comment:r.comment,environment:r.environment,blockerReason:r.blocker_reason,blockerType:r.blocker_type as QaCriterionResult['blockerType'],blockerOwner:r.blocker_owner,notApplicableReason:r.not_applicable_reason,revision:r.revision,updatedAt:r.updated_at,attachments:attachments.map(a=>({id:a.id,resultId:a.result_id,uploadId:a.upload_id,name:a.name,mimeType:a.mime_type as 'image/png'|'image/jpeg'|'image/webp',size:a.size,width:a.width,height:a.height,caption:a.caption,author:a.author,createdAt:a.created_at,commitSha:a.commit_sha})),issue:issue?{id:issue.id,resultId:issue.result_id,classification:issue.classification as QaIssueClassification,severity:issue.severity as QaSeverity,frequency:issue.frequency as QaFrequency,reproduction:issue.reproduction,proposedRoute:issue.proposed_route as QaIssue['proposedRoute'],requirementProposal:issue.requirement_proposal,resolution:issue.resolution,linkedFixRunId:issue.linked_fix_run_id,createdAt:issue.created_at}:null}
+}
+function mapQaSession(r:QaSessionRow,results:QaCriterionResult[]):QaSession {
+  return {id:r.id,taskId:r.task_id,projectId:r.project_id,branch:r.branch,commitSha:r.commit_sha,testRunId:r.test_run_id,previewId:r.preview_id,previewSha:r.preview_sha,appUrl:r.app_url,storybookUrl:r.storybook_url,testDataScenario:r.test_data_scenario,criteriaSnapshot:parseJsonValue(r.criteria_snapshot_json,[]),status:(r.status==='passed'||r.status==='failed'||r.status==='blocked'||r.status==='stale'?r.status:'active'),testerId:r.tester_id,initiatedBy:r.initiated_by,startedAt:r.started_at,finishedAt:r.finished_at,staleReason:r.stale_reason,summary:r.summary,results}
 }
 
 // ============== Использование базы знаний: строки БД и мапперы =======
