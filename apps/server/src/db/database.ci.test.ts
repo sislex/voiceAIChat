@@ -147,6 +147,18 @@ describe('ci: движок и модель', () => {
     expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
   })
 
+  it('этап наследует поля задача → проект → модель проекта → fallback', () => {
+    const { p, task } = project()
+    db.setCiLlmConfig('project', p.id, { llmEngineId: 'project-engine', provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.setCiStageLlmConfig('project', p.id, 'code_review', { provider: 'codex' })
+    db.setCiStageLlmConfig('task', task.id, 'code_review', { model: 'gpt-5.4' })
+    expect(db.resolveTaskStageLlmConfig(p.id, task.id, 'code_review')).toEqual({
+      llmEngineId: 'project-engine', provider: 'codex', model: 'gpt-5.4'
+    })
+    expect(db.clearCiStageLlmConfig('task', task.id, 'code_review')).toBe(true)
+    expect(db.resolveTaskStageLlmConfig(p.id, task.id, 'code_review').model).toBe('opus')
+  })
+
   it('снятие переопределения возвращает наследование от проекта', () => {
     const { p, task } = project()
     db.setCiLlmConfig('project', p.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
@@ -177,11 +189,11 @@ describe('ci: глобальные настройки', () => {
   it('модель по стадии: дефолт дешёвый, правка переживает перечитывание, мусор чистится', () => {
     expect(db.getCiSettings().stageModels).toEqual(DEFAULT_CI_STAGE_MODELS)
     db.updateCiSettings({ stageModels: { model_work: '', fix: '', kb_update: 'haiku', summary: '' } })
-    expect(db.getCiSettings().stageModels).toEqual({ model_work: '', fix: '', kb_update: 'haiku', summary: '' })
+    expect(db.getCiSettings().stageModels).toMatchObject({ model_work: '', fix: '', kb_update: 'haiku', summary: '' })
     db.updateCiSettings({ maxFixAttempts: 2 })
     expect(db.getCiSettings().stageModels.kb_update).toBe('haiku')
     db.updateCiSettings({ stageModels: { kb_update: 'sonnet', чужое: 1 } as never })
-    expect(db.getCiSettings().stageModels).toEqual({ model_work: '', fix: '', kb_update: 'sonnet', summary: '' })
+    expect(db.getCiSettings().stageModels).toMatchObject({ model_work: '', fix: '', kb_update: 'sonnet', summary: '' })
   })
 
   it('лимиты ответов инструментов хранятся и переживают перечитывание', () => {

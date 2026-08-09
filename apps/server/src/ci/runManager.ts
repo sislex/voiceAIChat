@@ -7,10 +7,10 @@
 
 import type {
   ServerMessage, CiRun, CiRunStep, CiStatus, CiSlot, CiSlotProgress, CiCommand,
-  CiRunMode, CiInteraction, CiInteractionAnswer, CiPlanDecision, QuestionSpec, Message, Task
+  CiRunMode, CiInteraction, CiInteractionAnswer, CiPlanDecision, QuestionSpec, Message, Task, CiUsageKind, CiStageLlmSnapshot
 } from '@voicechat/shared'
 import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificationCommand } from '@voicechat/shared'
-import { isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, pickCiRunAgent } from '@voicechat/shared'
+import { isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, pickCiRunAgent, resolveCiStageModel } from '@voicechat/shared'
 import type { CiRunLaunch } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
@@ -1267,6 +1267,14 @@ fi`
       finalize(runId, userId, 'failed')
       return
     }
+    const stageLlm = (stage: CiUsageKind): CiStageLlmSnapshot => {
+      const base: CiStageLlmSnapshot = {
+        llmEngineId: runRow.llmEngineId ?? null,
+        provider: runRow.llmProvider,
+        model: resolveCiStageModel(stage, deps.db.getCiSettings().stageModels, runRow)
+      }
+      return deps.db.resolveTaskStageLlmConfig(runRow.projectId, runRow.taskId, stage, base)
+    }
     // Машина рана зафиксирована при запуске (выбор карточки, автоподбор или
     // принудительный запуск); NULL остался только у ранов до появления выбора.
     const agentId = runRow.agentId ?? project.defaultAgentId
@@ -1448,12 +1456,15 @@ fi`
       })
       emitStep(step, userId)
       const started = now()
+      const kbLlm = stageLlm('kb_update')
+      const kbStage = deps.db.createCiStageRun({ runId, taskId: runRow.taskId, stage: 'kb_update', llm: kbLlm })
+      deps.db.updateCiStageRun(kbStage.id, { status: 'running', startedAt: started })
       let ok = false
       let message = 'Актуализация базы знаний не выполнена: хук не подключён'
       if (deps.kbUpdate) {
         const ctx: CiModelContext = {
           ...makePrimitives(runId, userId, agentId, project.machines, repoPath, workspacePath, env, signal),
-          run: deps.db.getCiRunRaw(runId)!,
+          run: { ...deps.db.getCiRunRaw(runId)!, llmEngineId: kbLlm.llmEngineId, llmProvider: kbLlm.provider, llmModel: kbLlm.model },
           task,
           project,
           parentStepId: step.id
@@ -1472,7 +1483,9 @@ fi`
       const line = deps.db.appendCiLog(runId, step.id, 'system', `${ok ? '' : 'Ошибка: '}${message}\n`)
       broadcast({ t: 'ci.log', runId, line }, userId)
       const status: CiStatus = signal.aborted ? 'cancelled' : ok ? 'success' : 'failed'
-      const upd = deps.db.updateCiRunStep(step.id, { status, finishedAt: now(), durationMs: now() - started })
+      const finished = now()
+      const upd = deps.db.updateCiRunStep(step.id, { status, finishedAt: finished, durationMs: finished - started })
+      deps.db.updateCiStageRun(kbStage.id, { status, outcome: message, finishedAt: finished, durationMs: finished - started })
       if (upd) emitStep(upd, userId)
       return status === 'success'
     }
@@ -1484,6 +1497,19 @@ fi`
         progress(runId, done, total, `${phaseLabel} (${i + 1}/${commandIds.length})`, userId)
         const command = deps.db.getCiCommand(userId, commandIds[i])
         if (!command) {
+          done++
+          continue
+        }
+        // Разработка заканчивается подготовленной веткой. Merge и production deploy
+        // являются отдельными workflow-этапами и не исполняются тем же раном.
+        if (slot === 'after_model' && (isMergeToBase(command.name, command.script) || isProdRebuild(command.name, command.script))) {
+          const skipped = deps.db.addCiRunStep({
+            runId, slot, position: posBase + done + 1 + extraSteps, kind: 'command', initiatedBy: 'system',
+            commandId: command.id, commandSnapshot: command.script, title: command.name, status: 'skipped'
+          })
+          emitStep(skipped, userId)
+          const line = deps.db.appendCiLog(runId, skipped.id, 'system', 'Отложено: merge и production deploy выполняются отдельными стадиями workflow.\n')
+          broadcast({ t: 'ci.log', runId, line }, userId)
           done++
           continue
         }
@@ -1599,8 +1625,11 @@ fi`
       const mwStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1 + extraSteps, kind: 'model_work', initiatedBy: 'system', title: 'Работа модели', status: 'running' })
       emitStep(mwStep, userId)
       const mwStart = now()
+      const mwLlm = stageLlm('model_work')
+      const mwStage = deps.db.createCiStageRun({ runId, taskId: runRow.taskId, stage: 'model_work', llm: mwLlm })
+      deps.db.updateCiStageRun(mwStage.id, { status: 'running', startedAt: mwStart })
       if (deps.modelWork) {
-        const ctx: CiModelContext = { ...prim, run: deps.db.getCiRunRaw(runId)!, task, project, parentStepId: mwStep.id }
+        const ctx: CiModelContext = { ...prim, run: { ...deps.db.getCiRunRaw(runId)!, llmEngineId: mwLlm.llmEngineId, llmProvider: mwLlm.provider, llmModel: mwLlm.model }, task, project, parentStepId: mwStep.id }
         try {
           const r = await deps.modelWork(ctx)
           modelOk = r.ok
@@ -1613,7 +1642,9 @@ fi`
         broadcast({ t: 'ci.log', runId, line }, userId)
       }
       const stepStatus: CiStatus = modelOk ? 'success' : modelCancelled || signal.aborted ? 'cancelled' : 'failed'
-      const upd = deps.db.updateCiRunStep(mwStep.id, { status: stepStatus, finishedAt: now(), durationMs: now() - mwStart })!
+      const mwFinished = now()
+      const upd = deps.db.updateCiRunStep(mwStep.id, { status: stepStatus, finishedAt: mwFinished, durationMs: mwFinished - mwStart })!
+      deps.db.updateCiStageRun(mwStage.id, { status: stepStatus, outcome: modelOk ? 'Разработка завершена' : modelCancelled ? 'Этап отменён' : 'Ошибка модели', finishedAt: mwFinished, durationMs: mwFinished - mwStart })
       emitStep(upd, userId)
       // Отмена пользователем: слот «после» и резюме не запускаем, карточку возвращаем.
       if (signal.aborted) {
@@ -1661,9 +1692,13 @@ fi`
       progress(runId, done, total, 'Резюме', userId)
       const sumStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1 + extraSteps, kind: 'model_summary', initiatedBy: 'system', title: 'Резюме модели', status: 'running' })
       emitStep(sumStep, userId)
+      const summaryStarted = now()
+      const summaryLlm = stageLlm('summary')
+      const summaryStage = deps.db.createCiStageRun({ runId, taskId: runRow.taskId, stage: 'summary', llm: summaryLlm })
+      deps.db.updateCiStageRun(summaryStage.id, { status: 'running', startedAt: summaryStarted })
       let summaryText = 'Ран завершён.'
       if (deps.modelSummary) {
-        const ctx: CiModelContext = { ...prim, run: deps.db.getCiRunRaw(runId)!, task, project, parentStepId: sumStep.id }
+        const ctx: CiModelContext = { ...prim, run: { ...deps.db.getCiRunRaw(runId)!, llmEngineId: summaryLlm.llmEngineId, llmProvider: summaryLlm.provider, llmModel: summaryLlm.model }, task, project, parentStepId: sumStep.id }
         try {
           summaryText = await deps.modelSummary(ctx)
         } catch {
@@ -1680,7 +1715,9 @@ fi`
       }
       const line = deps.db.appendCiLog(runId, sumStep.id, 'system', summaryText + '\n')
       broadcast({ t: 'ci.log', runId, line }, userId)
-      const upd = deps.db.updateCiRunStep(sumStep.id, { status: 'success', finishedAt: now() })!
+      const summaryFinished = now()
+      const upd = deps.db.updateCiRunStep(sumStep.id, { status: 'success', finishedAt: summaryFinished, durationMs: summaryFinished - summaryStarted })!
+      deps.db.updateCiStageRun(summaryStage.id, { status: 'success', outcome: summaryText, finishedAt: summaryFinished, durationMs: summaryFinished - summaryStarted })
       emitStep(upd, userId)
       postSummaryMessage(runId, userId, project.name, task, summaryText, kbUpdateSummary)
       done++
@@ -1745,9 +1782,15 @@ fi`
       .slice(isTestStep ? -400 : -40)
       .map((l) => l.chunk)
       .join('')
+    const fixBase = deps.db.getCiRunRaw(runId)!
+    const fixLlm = deps.db.resolveTaskStageLlmConfig(project.id, task.id, 'fix', {
+      llmEngineId: fixBase.llmEngineId ?? null,
+      provider: fixBase.llmProvider,
+      model: resolveCiStageModel('fix', deps.db.getCiSettings().stageModels, fixBase)
+    })
     const ctx: CiFixContext = {
       ...prim,
-      run: deps.db.getCiRunRaw(runId)!,
+      run: { ...deps.db.getCiRunRaw(runId)!, llmEngineId: fixLlm.llmEngineId, llmProvider: fixLlm.provider, llmModel: fixLlm.model },
       task,
       project,
       parentStepId: failedStep.id,

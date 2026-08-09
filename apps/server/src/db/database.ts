@@ -91,6 +91,7 @@ import {
   DEFAULT_CI_GLOBAL_SETTINGS,
   type CiRun,
   type CiRunDetail,
+  type CiStageRun,
   type CiRunStep,
   type CiStatus,
   type CiStepKind,
@@ -110,6 +111,10 @@ import {
   type CiEventActor,
   type CiRunUsage,
   type CiUsageKind,
+  CI_USAGE_KINDS,
+  type CiStageLlmSelection,
+  type CiStageLlmSnapshot,
+  resolveCiStageLlm,
   type CiInputSemantics,
   type CiToolCalls,
   type CiToolChars,
@@ -408,7 +413,7 @@ function normPriority(raw: string): TaskPriority {
 }
 
 function normColumnSemantic(raw: string): KanbanColumnSemanticType {
-  return raw === 'backlog' || raw === 'ready' || raw === 'development' || raw === 'testing' || raw === 'awaiting_merge' || raw === 'done' ? raw : 'custom'
+  return raw === 'backlog' || raw === 'ready' || raw === 'development' || raw === 'testing' || raw === 'manual_qa' || raw === 'awaiting_merge' || raw === 'decision_required' || raw === 'done' ? raw : 'custom'
 }
 
 function normWorkItemType(raw: string): WorkItemType {
@@ -697,8 +702,14 @@ export class VoiceChatDb {
         SELECT lower(hex(randomblob(16))), p.id, 'Тестирование', 'testing', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
         WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='testing');
       INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
+        SELECT lower(hex(randomblob(16))), p.id, 'Ручное QA', 'manual_qa', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
+        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='manual_qa');
+      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
         SELECT lower(hex(randomblob(16))), p.id, 'Ожидает мержа', 'awaiting_merge', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
         WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='awaiting_merge');
+      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
+        SELECT lower(hex(randomblob(16))), p.id, 'Требуется решение', 'decision_required', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
+        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='decision_required');
     `)
     const featureProjectCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'preview_url')) this.db.exec(`ALTER TABLE projects ADD COLUMN preview_url TEXT`)
@@ -1934,8 +1945,10 @@ export class VoiceChatDb {
         ['Бэклог', 'backlog'],
         ['Готово к разработке', 'ready'],
         ['В разработке', 'development'],
-        ['Тестирование', 'testing'],
+        ['Автотестирование', 'testing'],
+        ['Ручное QA', 'manual_qa'],
         ['Ожидает мержа', 'awaiting_merge'],
+        ['Требуется решение', 'decision_required'],
         ['Готово', 'done']
       ].forEach(([name, semantic], i) =>
         this.db.prepare(`INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`).run(this.newId(), id, name, semantic, (i + 1) * RANK_STEP, ts)
@@ -2933,6 +2946,48 @@ export class VoiceChatDb {
     return this.db.prepare(`DELETE FROM ci_llm_configs WHERE owner_type = ? AND owner_id = ?`).run(ownerType, ownerId).changes > 0
   }
 
+  /** Переопределение executor/provider/model одного автоматического этапа. */
+  getCiStageLlmConfig(ownerType: 'project' | 'task', ownerId: string, stage: CiUsageKind): CiStageLlmSelection | null {
+    const row = this.db.prepare(`SELECT llm_engine_id, provider, model FROM ci_stage_llm_configs WHERE owner_type = ? AND owner_id = ? AND stage = ?`).get(ownerType, ownerId, stage) as
+      | { llm_engine_id: string | null; provider: string | null; model: string | null }
+      | undefined
+    if (!row) return null
+    return {
+      ...(row.llm_engine_id !== null ? { llmEngineId: row.llm_engine_id } : {}),
+      ...(row.provider ? { provider: row.provider === 'codex' ? 'codex' : 'claude' } : {}),
+      ...(row.model !== null ? { model: row.model } : {})
+    }
+  }
+
+  setCiStageLlmConfig(ownerType: 'project' | 'task', ownerId: string, stage: CiUsageKind, config: CiStageLlmSelection): CiStageLlmSelection {
+    if (!CI_USAGE_KINDS.includes(stage)) throw new Error(`Неизвестный этап workflow: ${stage}`)
+    const next: CiStageLlmSelection = {
+      ...(config.llmEngineId !== undefined ? { llmEngineId: config.llmEngineId } : {}),
+      ...(config.provider ? { provider: config.provider === 'codex' ? 'codex' : 'claude' } : {}),
+      ...(typeof config.model === 'string' ? { model: config.model.trim() } : {})
+    }
+    this.db.prepare(`INSERT INTO ci_stage_llm_configs (owner_type, owner_id, stage, llm_engine_id, provider, model)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(owner_type, owner_id, stage) DO UPDATE SET llm_engine_id=excluded.llm_engine_id, provider=excluded.provider, model=excluded.model`)
+      .run(ownerType, ownerId, stage, next.llmEngineId ?? null, next.provider ?? null, next.model ?? null)
+    return next
+  }
+
+  clearCiStageLlmConfig(ownerType: 'project' | 'task', ownerId: string, stage: CiUsageKind): boolean {
+    return this.db.prepare(`DELETE FROM ci_stage_llm_configs WHERE owner_type = ? AND owner_id = ? AND stage = ?`).run(ownerType, ownerId, stage).changes > 0
+  }
+
+  /** Эффективная тройка: стадия задачи → стадия проекта → модель проекта → системный fallback. */
+  resolveTaskStageLlmConfig(projectId: string, taskId: string, stage: CiUsageKind, fallback?: CiStageLlmSnapshot): CiStageLlmSnapshot {
+    const project = this.getCiLlmConfig('project', projectId)
+    return resolveCiStageLlm({
+      taskStage: this.getCiStageLlmConfig('task', taskId, stage),
+      projectStage: this.getCiStageLlmConfig('project', projectId, stage),
+      projectModel: project ? { llmEngineId: project.llmEngineId ?? null, provider: project.provider, model: project.model } : fallback ?? null,
+      systemFallback: fallback ?? { llmEngineId: null, provider: DEFAULT_CI_LLM_CONFIG.provider, model: DEFAULT_CI_LLM_CONFIG.model }
+    })
+  }
+
   /** Пользовательские LLM-настройки — последний уровень наследования CI. */
   ciLlmDefaultsForUser(userId: string): CiLlmConfig {
     const settings = this.getSettings(userId)
@@ -3073,7 +3128,7 @@ export class VoiceChatDb {
     const run = mapCiRun(r)
     const steps = (this.db.prepare(`SELECT * FROM ci_run_steps WHERE run_id = ? ORDER BY position ASC, id ASC`).all(runId) as CiRunStepRow[]).map(mapCiRunStep)
     const fixAttempts = (this.db.prepare(`SELECT f.* FROM ci_fix_attempts f JOIN ci_run_steps s ON s.id = f.run_step_id WHERE s.run_id = ? ORDER BY f.created_at ASC`).all(runId) as CiFixRow[]).map(mapCiFix)
-    return { run, steps, fixAttempts, interactions: this.listCiInteractions(runId) }
+    return { run, stageRuns: this.listCiStageRuns(runId), steps, fixAttempts, interactions: this.listCiInteractions(runId) }
   }
 
   listCiRunsForTask(userId: string, projectId: string, taskId: string): CiRun[] {
@@ -3101,6 +3156,51 @@ export class VoiceChatDb {
     if (!set.length) return this.getCiRunRaw(runId)
     this.db.prepare(`UPDATE ci_runs SET ${set.join(', ')} WHERE id = ?`).run(...vals, runId)
     return this.getCiRunRaw(runId)
+  }
+
+  createCiStageRun(args: { runId: string; taskId: string; stage: CiUsageKind; llm: CiStageLlmSnapshot }): CiStageRun {
+    const id = this.newId()
+    const ts = this.now()
+    this.db.prepare(`INSERT INTO ci_stage_runs (id, run_id, task_id, stage, status, llm_engine_id, llm_provider, llm_model, created_at)
+      VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`)
+      .run(id, args.runId, args.taskId, args.stage, args.llm.llmEngineId, args.llm.provider, args.llm.model, ts)
+    return this.listCiStageRuns(args.runId).find((stage) => stage.id === id)!
+  }
+
+  updateCiStageRun(id: string, patch: { status?: CiStatus; outcome?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number }): CiStageRun | null {
+    const set: string[] = []
+    const values: unknown[] = []
+    if (patch.status !== undefined) { set.push('status = ?'); values.push(patch.status) }
+    if (patch.outcome !== undefined) { set.push('outcome = ?'); values.push(patch.outcome) }
+    if (patch.startedAt !== undefined) { set.push('started_at = ?'); values.push(patch.startedAt) }
+    if (patch.finishedAt !== undefined) { set.push('finished_at = ?'); values.push(patch.finishedAt) }
+    if (patch.durationMs !== undefined) { set.push('duration_ms = ?'); values.push(patch.durationMs) }
+    if (!set.length) return null
+    this.db.prepare(`UPDATE ci_stage_runs SET ${set.join(', ')} WHERE id = ?`).run(...values, id)
+    const row = this.db.prepare(`SELECT run_id FROM ci_stage_runs WHERE id = ?`).get(id) as { run_id: string } | undefined
+    return row ? this.listCiStageRuns(row.run_id).find((stage) => stage.id === id) ?? null : null
+  }
+
+  listCiStageRuns(runId: string): CiStageRun[] {
+    const rows = this.db.prepare(`SELECT * FROM ci_stage_runs WHERE run_id = ? ORDER BY created_at, rowid`).all(runId) as Array<Record<string, string | number | null>>
+    const usage = this.listCiRunUsage(runId)
+    return rows.map((row) => {
+      const startedAt = row.started_at as number | null
+      const finishedAt = row.finished_at as number | null
+      return {
+        id: row.id as string,
+        runId: row.run_id as string,
+        taskId: row.task_id as string,
+        stage: row.stage as CiUsageKind,
+        status: normCiStatus(row.status as string),
+        llm: { llmEngineId: row.llm_engine_id as string | null, provider: row.llm_provider === 'codex' ? 'codex' : 'claude', model: row.llm_model as string },
+        startedAt,
+        finishedAt,
+        durationMs: row.duration_ms as number | null,
+        usage: ciUsageTotals(usage.filter((item) => item.kind === row.stage && (startedAt === null || item.at >= startedAt) && (finishedAt === null || item.at <= finishedAt))),
+        outcome: row.outcome as string | null
+      }
+    })
   }
 
   /**
