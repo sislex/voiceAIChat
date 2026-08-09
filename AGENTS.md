@@ -87,6 +87,7 @@ npm run kb:check             # что в базе знаний устарело 
 | [projects.md](docs/kb/projects.md) | проекты + канбан: членство, доска, порядок задач, живой board.update |
 | [deploy.md](docs/kb/deploy.md) | Docker, Caddy/HTTPS, прод-сервер, переменные окружения |
 | [conventions.md](docs/kb/conventions.md) | стиль кода, тесты, как устроены гейты и коммиты |
+| [features/feature-preview.md](docs/kb/features/feature-preview.md) | feature-preview задачи: состояния, Docker/Storybook, seed, UI и Playwright-гейт |
 | [kb-workflow.md](docs/kb/kb-workflow.md) | правила ведения самой базы знаний |
 
 Историю решений по фичам — только если нужен контекст «почему так»: `docs/plans/`
