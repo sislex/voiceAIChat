@@ -1,0 +1,38 @@
+import type { Meta, StoryObj } from '@storybook/react'
+import type { PreviewEnvironment, PreviewState } from '@shared/preview'
+import { FeaturePreviewSection } from './FeaturePreviewSection'
+
+const makeEnvironment = (state: PreviewState, patch: Partial<PreviewEnvironment> = {}): PreviewEnvironment => ({
+  id: 'preview-163', projectId: 'p1', taskId: 't1', agentId: 'MacBook',
+  workspacePath: '/repos/chat/163', branch: 'feature/163-preview', builtCommitSha: 'a1b2c3d4e5f6',
+  currentCommitSha: 'a1b2c3d4e5f6', state, staleReason: null, composeProject: 'vc-preview-p1-t1',
+  appUrl: 'https://preview.example.test/app', storybookUrl: 'https://preview.example.test/storybook/',
+  storybookStatus: 'ready', storybookCommitSha: 'a1b2c3d4e5f6', selectedSeedScenario: 'basic-user',
+  seedVersion: 'v1', dataReady: true, healthStatus: state === 'running' || state === 'stale' ? 'healthy' : 'unknown',
+  services: [], runs: [{ id: 'run1', environmentId: 'preview-163', operation: 'start', status: 'success',
+    initiator: 'alexey', commitSha: 'a1b2c3d4e5f6', startedAt: Date.now() - 30_000, finishedAt: Date.now(),
+    errorType: null, errorMessage: null, log: 'build complete\nhealth check passed\n' }],
+  createdBy: 'alexey', createdAt: Date.now() - 60_000, updatedAt: Date.now(), startedAt: Date.now(),
+  stoppedAt: null, lastError: null, ...patch
+})
+
+function PreviewStory({ environment }: { environment: PreviewEnvironment | null }): JSX.Element {
+  window.featurePreview = {
+    get: async () => environment,
+    operate: async () => environment ?? makeEnvironment('building'),
+    cancel: async () => true
+  }
+  return <div style={{ width: 420 }}><FeaturePreviewSection projectId="p1" taskId="t1" /></div>
+}
+
+const meta = { title: 'Kanban/FeaturePreview', component: PreviewStory } satisfies Meta<typeof PreviewStory>
+export default meta
+type Story = StoryObj<typeof meta>
+
+export const NotCreated: Story = { args: { environment: null } }
+export const Building: Story = { args: { environment: makeEnvironment('building') } }
+export const Running: Story = { args: { environment: makeEnvironment('running') } }
+export const Stale: Story = { args: { environment: makeEnvironment('stale', { currentCommitSha: 'ffffffffffff', staleReason: 'commit_changed' }) } }
+export const StorybookError: Story = { args: { environment: makeEnvironment('failed', { storybookStatus: 'failed', lastError: { type: 'storybook', message: 'Storybook build failed' } }) } }
+export const Seed: Story = { args: { environment: makeEnvironment('seeding', { selectedSeedScenario: 'project-with-tasks' }) } }
+export const Cleanup: Story = { args: { environment: makeEnvironment('cleaning') } }

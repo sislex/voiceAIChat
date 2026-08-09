@@ -25,6 +25,7 @@ import { PromptBuilder, type GenerateParams, type Suggestion } from '../prompt-b
 import { applyNativeInputValue, useAiAssist } from '../prompt-builder/useAiAssist'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanbanMeta'
 import { CiTaskSettings } from '../ci/CiTaskSettings'
+import { FeaturePreviewSection } from '../preview/FeaturePreviewSection'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { CiReport } from '../ci/CiReport'
 import { useRemoteReport } from '../../lib/useRemoteReport'
@@ -674,6 +675,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               testId="task-modal-kb-usage"
             />
           )}
+          {task.type === 'task' && <FeaturePreviewSection projectId={task.projectId} taskId={task.id} />}
           <CiTaskSettings projectId={task.projectId} taskId={task.id} />
         </aside>
       </div>

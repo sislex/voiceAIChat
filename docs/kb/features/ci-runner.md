@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-08-09
-checked: a4fc8e0
+updated: 2026-08-10
+checked: 3899375
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/projects.ts
