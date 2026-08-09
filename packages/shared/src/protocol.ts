@@ -249,6 +249,18 @@ export const REST = {
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/move`,
   projectTaskChat: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/chat`,
+  taskQa: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa`,
+  taskQaCriteria: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/criteria`,
+  taskQaCriterion: (id: string, taskId: string, criterionId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/criteria/${encodeURIComponent(criterionId)}`,
+  taskQaSessions: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/sessions`,
+  taskQaResult: (id: string, taskId: string, resultId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/results/${encodeURIComponent(resultId)}`,
+  taskQaComplete: (id: string, taskId: string, sessionId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/sessions/${encodeURIComponent(sessionId)}/complete`,
 
   // --- CI-раннер (Авто-подготовка окружения для таска) ---
   ciCommands: '/api/ci/commands',

@@ -26,6 +26,7 @@ import { applyNativeInputValue, useAiAssist } from '../prompt-builder/useAiAssis
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanbanMeta'
 import { CiTaskSettings } from '../ci/CiTaskSettings'
 import { FeaturePreviewSection } from '../preview/FeaturePreviewSection'
+import { ManualQaPanel } from '../qa/ManualQaPanel'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { CiReport } from '../ci/CiReport'
 import { useRemoteReport } from '../../lib/useRemoteReport'
@@ -462,6 +463,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               if (criteria !== task.acceptanceCriteria) props.onUpdate(task.id, { acceptanceCriteria: criteria })
             }}
           />
+          {task.type === 'task' && <ManualQaPanel projectId={task.projectId} taskId={task.id} />}
           {children.length > 0 && (
             <>
               <h3 className="jmodal-h">Подзадачи</h3>

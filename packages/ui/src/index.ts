@@ -9,6 +9,7 @@ export { installRemoteBridges } from './remote'
 // Тип живого моста CI: нужен хостам, чтобы объявить window.ci в своём global.d.ts.
 export type { RendererCiBridge } from './remote/ciBridge'
 export type { RendererFeaturePreviewBridge } from './remote/featurePreviewBridge'
+export type { RendererQaBridge } from './remote/qaBridge'
 export type { RendererKbBridge } from './remote/kbBridge'
 
 // Стили подключаются приложениями через '@voicechat/ui/styles.css' либо напрямую.

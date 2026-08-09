@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS project_members (
   project_id TEXT NOT NULL,
   username   TEXT NOT NULL,
   role       TEXT NOT NULL DEFAULT 'member',
+  qa_permission INTEGER NOT NULL DEFAULT 0,
   added_at   INTEGER NOT NULL,
   PRIMARY KEY (project_id, username),
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -844,6 +845,78 @@ CREATE TABLE IF NOT EXISTS kb_documents (
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_kb_documents_scope ON kb_documents(scope, project_id, owner_id);
+
+-- ============================ Ручное QA ============================
+CREATE TABLE IF NOT EXISTS acceptance_criteria (
+  id TEXT PRIMARY KEY, task_id TEXT NOT NULL, position INTEGER NOT NULL,
+  title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', preconditions TEXT NOT NULL DEFAULT '',
+  steps TEXT NOT NULL DEFAULT '', test_data TEXT NOT NULL DEFAULT '', expected_result TEXT NOT NULL DEFAULT '',
+  required INTEGER NOT NULL DEFAULT 1, test_type TEXT NOT NULL DEFAULT 'manual',
+  current_version INTEGER NOT NULL DEFAULT 1, active INTEGER NOT NULL DEFAULT 1,
+  author TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_acceptance_criteria_position ON acceptance_criteria(task_id, position) WHERE active = 1;
+
+CREATE TABLE IF NOT EXISTS acceptance_criterion_versions (
+  criterion_id TEXT NOT NULL, version INTEGER NOT NULL, snapshot_json TEXT NOT NULL,
+  author TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, superseded_by INTEGER,
+  PRIMARY KEY (criterion_id, version),
+  FOREIGN KEY (criterion_id) REFERENCES acceptance_criteria(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_sessions (
+  id TEXT PRIMARY KEY, task_id TEXT NOT NULL, project_id TEXT NOT NULL, branch TEXT NOT NULL,
+  commit_sha TEXT NOT NULL, test_run_id TEXT NOT NULL, preview_id TEXT, preview_sha TEXT,
+  app_url TEXT, storybook_url TEXT, test_data_scenario TEXT NOT NULL DEFAULT '',
+  criteria_snapshot_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
+  tester_id TEXT, initiated_by TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER,
+  stale_reason TEXT, summary TEXT NOT NULL DEFAULT '',
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_qa_sessions_one_active ON qa_sessions(task_id) WHERE status = 'active';
+
+CREATE TABLE IF NOT EXISTS qa_criterion_results (
+  id TEXT PRIMARY KEY, session_id TEXT NOT NULL, criterion_id TEXT NOT NULL, criterion_version INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'not_tested', draft INTEGER NOT NULL DEFAULT 0,
+  tester_id TEXT, assignee_id TEXT, started_at INTEGER, finished_at INTEGER,
+  branch TEXT NOT NULL, commit_sha TEXT NOT NULL, preview_id TEXT, preview_sha TEXT,
+  app_url TEXT, storybook_url TEXT, test_data_scenario TEXT NOT NULL DEFAULT '',
+  executed_steps TEXT NOT NULL DEFAULT '', expected_result TEXT NOT NULL DEFAULT '',
+  actual_result TEXT NOT NULL DEFAULT '', comment TEXT NOT NULL DEFAULT '', environment TEXT NOT NULL DEFAULT '',
+  blocker_reason TEXT NOT NULL DEFAULT '', blocker_type TEXT, blocker_owner TEXT,
+  not_applicable_reason TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES qa_sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (criterion_id, criterion_version) REFERENCES acceptance_criterion_versions(criterion_id, version)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_qa_result_per_snapshot ON qa_criterion_results(session_id, criterion_id, criterion_version);
+
+CREATE TABLE IF NOT EXISTS qa_issues (
+  id TEXT PRIMARY KEY, result_id TEXT NOT NULL UNIQUE, classification TEXT NOT NULL,
+  severity TEXT NOT NULL, frequency TEXT NOT NULL, reproduction TEXT NOT NULL,
+  proposed_route TEXT NOT NULL, requirement_proposal TEXT NOT NULL DEFAULT '',
+  resolution TEXT NOT NULL DEFAULT '', linked_fix_run_id TEXT, created_at INTEGER NOT NULL,
+  FOREIGN KEY (result_id) REFERENCES qa_criterion_results(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_attachments (
+  id TEXT PRIMARY KEY, result_id TEXT NOT NULL, upload_id TEXT NOT NULL,
+  name TEXT NOT NULL, mime_type TEXT NOT NULL, size INTEGER NOT NULL,
+  width INTEGER, height INTEGER, caption TEXT NOT NULL DEFAULT '',
+  author TEXT NOT NULL, created_at INTEGER NOT NULL, commit_sha TEXT NOT NULL,
+  FOREIGN KEY (result_id) REFERENCES qa_criterion_results(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_qa_attachments_result ON qa_attachments(result_id);
+
+CREATE TABLE IF NOT EXISTS qa_audit (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, task_id TEXT NOT NULL, session_id TEXT,
+  criterion_id TEXT, result_id TEXT, action TEXT NOT NULL, actor TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_qa_audit_task ON qa_audit(task_id, created_at);
 
 `
 

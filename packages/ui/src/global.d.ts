@@ -20,6 +20,7 @@ import type {
 import type { RendererCiBridge } from './remote/ciBridge'
 import type { RendererKbBridge } from './remote/kbBridge'
 import type { RendererFeaturePreviewBridge } from './remote/featurePreviewBridge'
+import type { RendererQaBridge } from './remote/qaBridge'
 
 declare global {
   interface Window {
@@ -50,6 +51,8 @@ declare global {
     preview?: RendererPreviewBridge
     /** Управляемое окружение feature-ветки задачи. */
     featurePreview?: RendererFeaturePreviewBridge
+    /** Структурированные критерии и результаты ручного QA. */
+    qa?: RendererQaBridge
   }
 }
 
