@@ -188,9 +188,7 @@ describe('CI: модель выполняет опубликованный ге�
     expect(scripts.slice(scripts.lastIndexOf(GATE) + 1)).toEqual([
       'node scripts/kb.mjs index',
       'git commit -am wip',
-      'git push origin HEAD',
-      'git merge --no-edit "$BRANCH"',
-      'npm run docker'
+      'git push origin HEAD'
     ])
     const detail = db.getCiRun('admin', runId)!
     expect(detail.fixAttempts).toHaveLength(1)

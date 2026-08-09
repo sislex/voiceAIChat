@@ -142,10 +142,10 @@ async function waitRun(runId: string): Promise<{ run: { status: string; taskId: 
 }
 
 describe('ci run manager', () => {
-  it('при запуске переносит карточку в development и берёт модель пользователя, а не CI-конфига', async () => {
+  it('при запуске переносит карточку в development и наследует модель проекта', async () => {
     const { project, task } = setup()
     db.saveSettings('admin', { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.6-luna' })
-    // Сохранённый CI-конфиг не должен переопределять настройку пользователя.
+    // Модель проекта — третий уровень после настроек этапа задачи и проекта.
     db.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     // Колонку снимаем в момент запроса к модели: к концу успешного рана карточка
     // уходит в «Ожидает мержа», и проверка после `waitRun` ловила бы уже её.
@@ -156,7 +156,7 @@ describe('ci run manager', () => {
     const development = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
     expect(columnAtModel).toBe(development.id)
     expect(detail.run.status).toBe('success')
-    expect(codexModel).toBe('gpt-5.6-luna')
+    expect(modelRequests[0]?.model).toBe('opus')
   })
 
   it('разовый выбор окна запуска фиксирует пару модели только в новом ране', async () => {
@@ -539,7 +539,7 @@ describe('ci run manager', () => {
     expect(log.some((l) => l.chunk.includes('не влита'))).toBe(true)
   })
 
-  it('успешный шаг мержа переносит карточку в «Готово»', async () => {
+  it.skip('legacy: merge выполнялся внутри разработки', async () => {
     const { project, task } = setup()
     const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
     db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
@@ -558,7 +558,7 @@ describe('ci run manager', () => {
     expect(db.listMessages('admin', chatId).some((m) => m.meta?.ciRunSummary)).toBe(true)
   })
 
-  it('нет колонки done в проекте — успешный мерж карточку не двигает', async () => {
+  it.skip('legacy: отсутствие done при merge внутри разработки', async () => {
     const { project, task } = setup()
     const devCol = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
     const real = db.getColumnIdBySemantic.bind(db)
@@ -571,7 +571,7 @@ describe('ci run manager', () => {
     spy.mockRestore()
   })
 
-  it('упавший шаг мержа: карточка возвращается в исходную колонку, а не ждёт мержа', async () => {
+  it.skip('legacy: падение merge внутри разработки', async () => {
     const { project, task, readyColId } = setup()
     db.updateCiSettings({ maxFixAttempts: 1 })
     const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'FAIL git merge --no-edit' })
@@ -688,7 +688,7 @@ describe('ci run manager', () => {
     return board.tasks.filter((t) => t.title === PROD_REBUILD_TASK_TITLE && t.columnId !== done.id)
   }
 
-  it('мерж без пересборки прода: два рана — одна открытая задача «Пересборка прода» с двумя строками', async () => {
+  it.skip('legacy: разработка сама заводила задачу пересборки прода', async () => {
     const { project, task, readyColId } = setup()
     const merge = mergeCommand(project.id)
     db.setCiSlotCommands('project', project.id, 'after_model', [merge.id])
@@ -712,7 +712,7 @@ describe('ci run manager', () => {
     expect(log.some((l) => l.chunk.includes(PROD_REBUILD_TASK_TITLE))).toBe(true)
   })
 
-  it('повторный ран той же задачи не дублирует строку в «Пересборке прода»', async () => {
+  it.skip('legacy: повтор разработки после встроенного merge', async () => {
     const { project, task } = setup()
     const merge = mergeCommand(project.id)
     db.setCiSlotCommands('task', task.id, 'after_model', [merge.id])
@@ -738,7 +738,7 @@ describe('ci run manager', () => {
     expect(openRebuildTasks(project.id).length).toBe(0)
   })
 
-  it('«Пересборка прода» уехала в done — следующий мерж заводит новую карточку', async () => {
+  it.skip('legacy: новая автозадача после встроенного merge', async () => {
     const { project, task, readyColId } = setup()
     const merge = mergeCommand(project.id)
     db.setCiSlotCommands('project', project.id, 'after_model', [merge.id])
@@ -884,7 +884,7 @@ describe('карточка после падения, отмены и повто
     const second = await run(project.id, task.id)
     expect((await waitRun(second)).run.status).toBe('success')
     const board = db.getBoard('admin', project.id)!
-    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(board.columns.find((c) => c.semanticType === 'done')!.id)
+    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(board.columns.find((c) => c.semanticType === 'awaiting_merge')!.id)
     // Сводка на доске — про новый ран, а не про упавший.
     const summary = db.latestCiRunSummary(task.id)!
     expect(summary.id).toBe(second)
@@ -938,7 +938,7 @@ describe('карточка после падения, отмены и повто
     expect(done.run.status).toBe('success')
     // Повтор — это работа, а не простой: карточка вернулась в разработку на время рана.
     expect(columnAtStep).toBe(columns.find((c) => c.semanticType === 'development')!.id)
-    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(columns.find((c) => c.semanticType === 'done')!.id)
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(columns.find((c) => c.semanticType === 'awaiting_merge')!.id)
     expect(db.latestCiRunSummary(task.id)!.status).toBe('success')
   })
 

@@ -330,6 +330,39 @@ CREATE TABLE IF NOT EXISTS ci_runs (
 CREATE INDEX IF NOT EXISTS idx_ci_runs_project ON ci_runs(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ci_runs_task ON ci_runs(task_id, created_at DESC);
 
+-- Наследуемая конфигурация автоматического этапа: owner = project|task.
+-- NULL в поле означает наследование этого поля со следующего уровня.
+CREATE TABLE IF NOT EXISTS ci_stage_llm_configs (
+  owner_type    TEXT NOT NULL,
+  owner_id      TEXT NOT NULL,
+  stage         TEXT NOT NULL,
+  llm_engine_id TEXT,
+  provider      TEXT,
+  model         TEXT,
+  PRIMARY KEY (owner_type, owner_id, stage)
+);
+
+-- Самостоятельное выполнение этапа. Тройка LLM здесь — снимок на старте:
+-- последующее изменение настроек не переписывает историю и стоимость.
+CREATE TABLE IF NOT EXISTS ci_stage_runs (
+  id            TEXT PRIMARY KEY,
+  run_id        TEXT NOT NULL,
+  task_id       TEXT NOT NULL,
+  stage         TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'queued',
+  llm_engine_id TEXT,
+  llm_provider  TEXT NOT NULL,
+  llm_model     TEXT NOT NULL,
+  outcome       TEXT,
+  started_at    INTEGER,
+  finished_at   INTEGER,
+  duration_ms   INTEGER,
+  created_at    INTEGER NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_stage_runs_run ON ci_stage_runs(run_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_ci_stage_runs_task ON ci_stage_runs(task_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS ci_run_steps (
   id              TEXT PRIMARY KEY,
   run_id          TEXT NOT NULL,

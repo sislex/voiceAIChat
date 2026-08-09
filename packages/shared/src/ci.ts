@@ -143,6 +143,55 @@ export interface CiLlmConfig {
   clarifyMax: number
 }
 
+/** Настройка LLM для самостоятельного автоматического этапа workflow. */
+export interface CiStageLlmSelection {
+  /** null/undefined — наследовать исполнитель. */
+  llmEngineId?: string | null
+  /** undefined — наследовать provider. */
+  provider?: CiLlmProvider
+  /** undefined — наследовать модель; пустая строка допустима для Codex. */
+  model?: string
+}
+
+/** Переопределения всех автоматических этапов; отсутствующий ключ наследуется. */
+export type CiWorkflowStageLlmConfig = Partial<Record<CiUsageKind, CiStageLlmSelection>>
+
+/** Уровни цепочки выбора модели этапа. */
+export interface CiStageLlmInheritance {
+  taskStage?: CiStageLlmSelection | null
+  projectStage?: CiStageLlmSelection | null
+  projectModel?: CiStageLlmSelection | null
+  systemFallback: Required<Pick<CiStageLlmSelection, 'provider' | 'model'>> & Pick<CiStageLlmSelection, 'llmEngineId'>
+}
+
+/** Зафиксированный на старте снимок исполнителя и модели этапа. */
+export interface CiStageLlmSnapshot {
+  llmEngineId: string | null
+  provider: CiLlmProvider
+  model: string
+}
+
+/**
+ * Резолвит каждое поле независимо: этап задачи → этап проекта → модель проекта
+ * → системный fallback. Это позволяет, например, сменить только модель этапа,
+ * продолжая наследовать provider и executor.
+ */
+export function resolveCiStageLlm(input: CiStageLlmInheritance): CiStageLlmSnapshot {
+  const levels = [input.taskStage, input.projectStage, input.projectModel, input.systemFallback]
+  const first = <K extends keyof CiStageLlmSelection>(key: K): CiStageLlmSelection[K] | undefined => {
+    for (const level of levels) {
+      if (!level || level[key] === undefined) continue
+      return level[key]
+    }
+    return undefined
+  }
+  return {
+    llmEngineId: first('llmEngineId') ?? null,
+    provider: first('provider') ?? input.systemFallback.provider,
+    model: first('model') ?? input.systemFallback.model
+  }
+}
+
 /**
  * Модель Claude по умолчанию для шага разработки CI (алиас `claude --model`).
  * Единая точка правды: на неё же опираются фолбэки сервера (пустое поле в БД,
@@ -182,7 +231,7 @@ export function clarifyBudget(c: Pick<CiLlmConfig, 'clarifyLevel' | 'clarifyMax'
  * назначили считать, тем в отчёте она и посчитана. Пустая строка — «модель
  * рана».
  */
-export type CiStageModels = Record<CiUsageKind, string>
+export type CiStageModels = Partial<Record<CiUsageKind, string>>
 
 /**
  * Дефолт: вспомогательные стадии — на дешёвой модели, разработка и fix-loop — на
@@ -192,9 +241,14 @@ export type CiStageModels = Record<CiUsageKind, string>
  * нельзя: там она означает худший код, а он дороже сэкономленного.
  */
 export const DEFAULT_CI_STAGE_MODELS: CiStageModels = {
+  planning: '',
   model_work: '',
   fix: '',
+  qa_analysis: '',
+  data_preparation: '',
+  code_review: '',
   kb_update: 'sonnet',
+  release_analysis: '',
   summary: 'haiku'
 }
 
@@ -583,6 +637,24 @@ export type CiStepKind = 'command' | 'model_work' | 'model_command' | 'model_sum
 /** Кто инициировал шаг. */
 export type CiInitiatedBy = 'user' | 'system' | 'model'
 
+/** Самостоятельное наблюдаемое выполнение автоматического этапа workflow. */
+export interface CiStageRun {
+  id: string
+  runId: string
+  taskId: string
+  stage: CiUsageKind
+  status: CiStatus
+  /** Неизменяемый снимок выбора на момент запуска этапа. */
+  llm: CiStageLlmSnapshot
+  startedAt: number | null
+  finishedAt: number | null
+  durationMs: number | null
+  /** Агрегированный расход этапа; подробные строки остаются в ci_run_usage. */
+  usage: CiUsageTotals
+  /** Машиночитаемый/текстовый итог этапа. */
+  outcome: string | null
+}
+
 /** Один запуск воркфлоу для конкретной задачи. */
 export interface CiRun {
   id: string
@@ -721,6 +793,8 @@ export interface CiInteractionAnswer {
 /** Полный снимок рана с шагами (ответ GET деталь рана). */
 export interface CiRunDetail {
   run: CiRun
+  /** Отдельные выполнения автоматических этапов; отсутствует у legacy API/ранов. */
+  stageRuns?: CiStageRun[]
   steps: CiRunStep[]
   fixAttempts: CiFixAttempt[]
   /** Паузы рана — без них после reload pending-вопрос не восстановить. */
@@ -918,16 +992,33 @@ export interface CiRunConclusion {
  * модели (включая продолжения одной сессии), резюме рана, попытка fix-loop и
  * шаг актуализации базы знаний идут через один и тот же `runTurn`.
  */
-export type CiUsageKind = 'model_work' | 'summary' | 'fix' | 'kb_update'
+export type CiUsageKind =
+  | 'planning'
+  | 'model_work'
+  | 'fix'
+  | 'qa_analysis'
+  | 'data_preparation'
+  | 'code_review'
+  | 'kb_update'
+  | 'release_analysis'
+  | 'summary'
 
-export const CI_USAGE_KINDS: CiUsageKind[] = ['model_work', 'summary', 'fix', 'kb_update']
+export const CI_USAGE_KINDS: CiUsageKind[] = [
+  'planning', 'model_work', 'fix', 'qa_analysis', 'data_preparation',
+  'code_review', 'kb_update', 'release_analysis', 'summary'
+]
 
 /** Подписи стадий: одни и те же в настройках моделей и в отчёте по рану. */
 export const CI_USAGE_KIND_LABELS: Record<CiUsageKind, string> = {
-  model_work: 'Работа модели',
-  summary: 'Резюме',
-  fix: 'Правки после падения',
-  kb_update: 'Актуализация базы знаний'
+  planning: 'Планирование',
+  model_work: 'Разработка',
+  fix: 'Исправление тестов',
+  qa_analysis: 'Анализ ручного QA',
+  data_preparation: 'Подготовка данных',
+  code_review: 'Code review',
+  kb_update: 'Актуализация базы знаний',
+  release_analysis: 'Релизный анализ',
+  summary: 'Резюме'
 }
 
 /**

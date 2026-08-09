@@ -22,6 +22,7 @@ import {
   ciUsageInputTokens,
   normCiStageModels,
   resolveCiStageModel,
+  resolveCiStageLlm,
   DEFAULT_CI_GLOBAL_SETTINGS,
   DEFAULT_CI_STAGE_MODELS,
   sumCiUsageTotals,
@@ -505,11 +506,11 @@ describe('ciUsageStages', () => {
       row({ id: 'u4', kind: 'summary', model: 'haiku', costUsd: 0.01 })
     ])
     expect(stages.map((s) => [s.kind, s.model])).toEqual([
-      ['model_work', 'opus'], ['summary', 'haiku'], ['kb_update', 'sonnet']
+      ['model_work', 'opus'], ['kb_update', 'sonnet'], ['summary', 'haiku']
     ])
     expect(stages[0].totals.requests).toBe(2)
     expect(stages[0].totals.costUsd).toBe(3)
-    expect(stages[2].totals.modelActiveMs).toBe(500)
+    expect(stages[1].totals.modelActiveMs).toBe(500)
   })
 
   it('одна стадия на двух моделях — две строки: цену от разных моделей не смешиваем', () => {
@@ -616,6 +617,15 @@ describe('sumCiUsageTotals и ciTaskTotals', () => {
     expect(r.totals.costUsd).toBe(1)
     // Счётчика вызовов нет ни у одного рана — в итоге тоже null.
     expect(r.toolCalls).toBeNull()
+  })
+
+  it('выбирает executor/provider/model этапа по независимой цепочке наследования', () => {
+    expect(resolveCiStageLlm({
+      taskStage: { model: 'gpt-5.4' },
+      projectStage: { provider: 'codex' },
+      projectModel: { llmEngineId: 'engine-project', provider: 'claude', model: 'opus' },
+      systemFallback: { llmEngineId: null, provider: 'claude', model: 'sonnet' }
+    })).toEqual({ llmEngineId: 'engine-project', provider: 'codex', model: 'gpt-5.4' })
   })
 
   it('итог по задаче складывает вызовы инструментов тех ранов, где счётчик есть', () => {

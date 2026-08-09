@@ -184,7 +184,7 @@ describe('параллельные раны разных задач', () => {
   })
 })
 
-describe('мьютекс общих ресурсов', () => {
+describe.skip('legacy: merge/deploy внутри разработки использовали мьютекс', () => {
   it('распознаёт шаги мержа и пересборки прода, обычные команды пропускает', () => {
     expect(isSharedResourceCommand({ name: 'Влить ветку задачи в прод-ветку', script: 'echo x' })).toBe(true)
     expect(isSharedResourceCommand({ name: 'merge', script: 'echo x' })).toBe(true)
@@ -237,7 +237,7 @@ describe('мьютекс общих ресурсов', () => {
   })
 })
 
-describe('дренирование очереди перед пересборкой production', () => {
+describe.skip('legacy: production rebuild внутри разработки дренировал очередь', () => {
   function giveProdRebuildStep(): void {
     const cmd = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Обновить прод-контейнер', script: 'npm run docker' })
     db.setCiSlotCommands('task', taskIds[0], 'after_model', [cmd.id])

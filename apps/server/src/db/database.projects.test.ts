@@ -60,7 +60,7 @@ describe('projects: создание и членство', () => {
     expect(p.members.map((m) => m.username)).toEqual(['alice'])
     expect(p.members[0].role).toBe('owner')
     const board = db.getBoard('alice', p.id)!
-    expect(board.columns.map((c) => c.name)).toEqual(['Бэклог', 'Готово к разработке', 'В разработке', 'Тестирование', 'Ожидает мержа', 'Готово'])
+    expect(board.columns.map((c) => c.name)).toEqual(['Бэклог', 'Готово к разработке', 'В разработке', 'Автотестирование', 'Ручное QA', 'Ожидает мержа', 'Требуется решение', 'Готово'])
     expect(board.tasks).toEqual([])
   })
 
@@ -132,7 +132,7 @@ describe('board: колонки и порядок', () => {
     const p = db.createProject('alice', { name: 'P1' })
     const c4 = db.createColumn('alice', p.id, 'Review')!
     let cols = db.getBoard('alice', p.id)!.columns
-    expect(cols.map((c) => c.name)).toEqual(['Бэклог', 'Готово к разработке', 'В разработке', 'Тестирование', 'Ожидает мержа', 'Готово', 'Review'])
+    expect(cols.map((c) => c.name)).toEqual(['Бэклог', 'Готово к разработке', 'В разработке', 'Автотестирование', 'Ручное QA', 'Ожидает мержа', 'Требуется решение', 'Готово', 'Review'])
     const reversed = cols.map((c) => c.id).reverse()
     expect(db.reorderColumns('alice', p.id, reversed)).toBe(true)
     cols = db.getBoard('alice', p.id)!.columns

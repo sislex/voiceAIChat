@@ -4,8 +4,8 @@
 // команды и глобальные настройки — глобальный admin; запуск — любой участник проекта.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import type { CiCommandInput, CiGlobalSettings, CiLlmConfig, CiSlot, CiRunMode, CiPlanDecision } from '@voicechat/shared'
-import { DEFAULT_CI_LLM_CONFIG } from '@voicechat/shared'
+import type { CiCommandInput, CiGlobalSettings, CiLlmConfig, CiSlot, CiRunMode, CiPlanDecision, CiUsageKind, CiStageLlmSelection } from '@voicechat/shared'
+import { CI_USAGE_KINDS, DEFAULT_CI_LLM_CONFIG } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CiRunManager } from '../ci/runManager.js'
 import { uid } from '../users/auth.js'
@@ -120,6 +120,52 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     db.clearCiLlmConfig('task', req.params.taskId)
     return taskLlmView(uid(req), req.params.id, req.params.taskId)
+  })
+
+  // --- Выбор LLM по самостоятельным этапам workflow ---
+  const validStage = (value: string): value is CiUsageKind => CI_USAGE_KINDS.includes(value as CiUsageKind)
+
+  app.get<{ Params: { id: string; stage: string } }>('/api/projects/:id/ci/stages/:stage/llm', async (req, reply) => {
+    if (!db.getProject(uid(req), req.params.id)) return nf(reply)
+    if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
+    return {
+      override: db.getCiStageLlmConfig('project', req.params.id, req.params.stage),
+      effective: db.resolveTaskStageLlmConfig(req.params.id, '', req.params.stage)
+    }
+  })
+  app.put<{ Params: { id: string; stage: string }; Body: CiStageLlmSelection }>('/api/projects/:id/ci/stages/:stage/llm', async (req, reply) => {
+    if (!isOwner(req, req.params.id)) return forbid(reply)
+    if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
+    return db.setCiStageLlmConfig('project', req.params.id, req.params.stage, req.body ?? {})
+  })
+  app.delete<{ Params: { id: string; stage: string } }>('/api/projects/:id/ci/stages/:stage/llm', async (req, reply) => {
+    if (!isOwner(req, req.params.id)) return forbid(reply)
+    if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
+    db.clearCiStageLlmConfig('project', req.params.id, req.params.stage)
+    return { effective: db.resolveTaskStageLlmConfig(req.params.id, '', req.params.stage) }
+  })
+
+  app.get<{ Params: { id: string; taskId: string; stage: string } }>('/api/projects/:id/tasks/:taskId/ci/stages/:stage/llm', async (req, reply) => {
+    if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
+    if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
+    return {
+      override: db.getCiStageLlmConfig('task', req.params.taskId, req.params.stage),
+      projectDefault: db.getCiStageLlmConfig('project', req.params.id, req.params.stage),
+      effective: db.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage)
+    }
+  })
+  app.put<{ Params: { id: string; taskId: string; stage: string }; Body: CiStageLlmSelection }>('/api/projects/:id/tasks/:taskId/ci/stages/:stage/llm', async (req, reply) => {
+    if (!isOwner(req, req.params.id)) return forbid(reply)
+    if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
+    if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
+    db.setCiStageLlmConfig('task', req.params.taskId, req.params.stage, req.body ?? {})
+    return { effective: db.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage) }
+  })
+  app.delete<{ Params: { id: string; taskId: string; stage: string } }>('/api/projects/:id/tasks/:taskId/ci/stages/:stage/llm', async (req, reply) => {
+    if (!isOwner(req, req.params.id)) return forbid(reply)
+    if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
+    db.clearCiStageLlmConfig('task', req.params.taskId, req.params.stage)
+    return { effective: db.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage) }
   })
 
   // --- Слот-конфиг задачи (переопределение + метка наследования) ---

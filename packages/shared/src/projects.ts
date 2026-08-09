@@ -34,12 +34,14 @@ export type KanbanColumnSemanticType =
   | 'ready'
   | 'development'
   | 'testing'
+  | 'manual_qa'
   | 'awaiting_merge'
+  | 'decision_required'
   | 'done'
   | 'custom'
 
 export const KANBAN_COLUMN_SEMANTIC_TYPES: KanbanColumnSemanticType[] = [
-  'backlog', 'ready', 'development', 'testing', 'awaiting_merge', 'done', 'custom'
+  'backlog', 'ready', 'development', 'testing', 'manual_qa', 'awaiting_merge', 'decision_required', 'done', 'custom'
 ]
 
 /** Роль пользователя в проекте. */

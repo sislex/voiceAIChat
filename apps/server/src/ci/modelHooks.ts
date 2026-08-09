@@ -333,17 +333,15 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     return resolved.engine && deps.engineClient ? deps.engineClient(resolved.engine) : ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
   }
   /**
-   * Модель стадии: одна модель на весь ран означала, что сверка дифа с текстом
-   * статей и пересказ шагов считаются тем же тяжёлым движком, что и разработка.
-   * Назначение живёт в глобальных настройках CI (`stageModels`), а модель, о
-   * которой движок рана не знает, `resolveCiStageModel` сам превращает в модель
-   * рана.
+   * RunManager передаёт в контексте неизменяемый снимок executor/provider/model
+   * конкретного этапа. Здесь нельзя перечитывать настройки: идущий этап не должен
+   * менять модель посреди выполнения.
    */
-  const modelFor = (ctx: CiModelContext, stage: CiUsageKind): string =>
-    resolveCiStageModel(stage, deps.db.getCiSettings().stageModels, ctx.run)
+  const modelFor = (ctx: CiModelContext, _stage: CiUsageKind): string => ctx.run.llmModel
 
-  /** Модель самого рана — к ней стадия откатывается, если своя не отработала. */
-  const runModelOf = (ctx: CiModelContext): string => resolveCiStageModel('model_work', null, ctx.run)
+  /** Модель разработки — безопасный fallback, если модель вспомогательного этапа не стартовала. */
+  const runModelOf = (ctx: CiModelContext): string =>
+    deps.db.resolveTaskStageLlmConfig(ctx.project.id, ctx.task.id, 'model_work').model
 
   /**
    * Ходы одной стадии в одном вызове хука. Модель стадии берётся один раз, и

@@ -572,7 +572,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     const stages = await screen.findByTestId('task-modal-report-stages')
     const row = within(stages).getByRole('rowheader', { name: 'Актуализация базы знаний' }).closest('tr')!
     expect(text(row)).toContain('sonnet')
-    expect(text(within(stages).getByRole('rowheader', { name: 'Работа модели' }).closest('tr')!)).toContain('opus')
+    expect(text(within(stages).getByRole('rowheader', { name: 'Разработка' }).closest('tr')!)).toContain('opus')
   })
 
   it('у задачи с активным раном отчёта нет — там лента', async () => {
