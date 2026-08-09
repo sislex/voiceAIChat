@@ -12,19 +12,19 @@
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 50 коммит(ов) в areas после сверки: 345c7ef feat: serve web recorder in production … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 7 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ⚠ 18 коммит(ов) в areas после сверки: 5a5bb84 feat(ci): add grouped fail-fast test pipeline domain … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ⚠ 19 коммит(ов) в areas после сверки: a4fc8e0 feat(ci): добавить ограниченный цикл исправления тестов … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-08 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-09 | ✓ |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 13 коммит(ов) в areas после сверки: 5a5bb84 feat(ci): add grouped fail-fast test pipeline domain … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 14 коммит(ов) в areas после сверки: a4fc8e0 feat(ci): добавить ограниченный цикл исправления тестов … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 22 коммит(ов) в areas после сверки: 345c7ef feat: serve web recorder in production … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 165 коммит(ов) в areas после сверки: 5a5bb84 feat(ci): add grouped fail-fast test pipeline domain … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 166 коммит(ов) в areas после сверки: b71ce4e chatai-161: работа CI-рана … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 4 коммит(ов) в areas после сверки: 9655738 feat: add workflow stages and per-stage LLM selection … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 2 коммит(ов) в areas после сверки: a1858af feat: add universal widget tool gateway … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-09 | ⚠ 1 коммит(ов) в areas после сверки: 5a5bb84 feat(ci): add grouped fail-fast test pipeline domain |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 9 коммит(ов) в areas после сверки: 9655738 feat: add workflow stages and per-stage LLM selection … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 4 коммит(ов) в areas после сверки: 5a5bb84 feat(ci): add grouped fail-fast test pipeline domain … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-08 | ⚠ 11 коммит(ов) в areas после сверки: 5a5bb84 feat(ci): add grouped fail-fast test pipeline domain … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-09 | ⚠ 2 коммит(ов) в areas после сверки: a4fc8e0 feat(ci): добавить ограниченный цикл исправления тестов … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 10 коммит(ов) в areas после сверки: a4fc8e0 feat(ci): добавить ограниченный цикл исправления тестов … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 5 коммит(ов) в areas после сверки: a4fc8e0 feat(ci): добавить ограниченный цикл исправления тестов … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-08 | ⚠ 12 коммит(ов) в areas после сверки: a4fc8e0 feat(ci): добавить ограниченный цикл исправления тестов … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 6 коммит(ов) в areas после сверки: 345c7ef feat: serve web recorder in production … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-09 | ⚠ 1 коммит(ов) в areas после сверки: 9655738 feat: add workflow stages and per-stage LLM selection |
@@ -44,8 +44,9 @@
 
 ## Журнал сессий
 
-Всего записей: 150. Последние:
+Всего записей: 151. Последние:
 
+- [2026-08-09-mac-test-fix-cycle.md](log/2026-08-09-mac-test-fix-cycle.md) — test-fix-cycle
 - [2026-08-09-mac-grouped-fail-fast-pipeline.md](log/2026-08-09-mac-grouped-fail-fast-pipeline.md) — grouped-fail-fast-pipeline
 - [2026-08-09-alexeys-macbook-air-2-web-reader-fullscreen.md](log/2026-08-09-alexeys-macbook-air-2-web-reader-fullscreen.md) — web-reader-fullscreen
 - [2026-08-09-2470-com-workflow-stage-llm.md](log/2026-08-09-2470-com-workflow-stage-llm.md) — workflow-stage-llm
@@ -55,7 +56,6 @@
 - [2026-08-08-alexeys-macbook-air-2-web-recorder-standalone.md](log/2026-08-08-alexeys-macbook-air-2-web-recorder-standalone.md) — web-recorder-standalone
 - [2026-08-08-alexeys-macbook-air-2-web-recorder-page.md](log/2026-08-08-alexeys-macbook-air-2-web-recorder-page.md) — web-recorder-page
 - [2026-08-08-alexeys-macbook-air-2-web-recorder-dns.md](log/2026-08-08-alexeys-macbook-air-2-web-recorder-dns.md) — web-recorder-dns
-- [2026-08-08-alexeys-macbook-air-2-web-reader-routing.md](log/2026-08-08-alexeys-macbook-air-2-web-reader-routing.md) — web-reader-routing
 
 ## Исторические планы
 
