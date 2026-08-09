@@ -16,6 +16,8 @@ import { registerAgentRoutes } from './routes/agents.js'
 import { registerAdminRoutes } from './routes/admin.js'
 import { registerProjectRoutes } from './routes/projects.js'
 import { registerCiRoutes } from './routes/ci.js'
+import { registerFeaturePreviewRoutes } from './routes/featurePreview.js'
+import { FeaturePreviewManager } from './preview/manager.js'
 import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
 import { createCiModelHooks } from './ci/modelHooks.js'
@@ -538,6 +540,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     kbUpdate: opts.ciKbUpdate ?? ciModelHooks.kbUpdate
   })
   registerCiRoutes(app, db, ciRunManager)
+  const featurePreviews = new FeaturePreviewManager({
+    db,
+    executor: ciExecutor,
+    storePath: join(opts.config.dataDir, 'feature-previews.json'),
+    isOnline: (agentId) => agentRegistry.isOnline(agentId)
+  })
+  registerFeaturePreviewRoutes(app, featurePreviews)
+  void featurePreviews.reconcile()
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager)
 
   // Раны предыдущего процесса живут только в его памяти: после рестарта они
