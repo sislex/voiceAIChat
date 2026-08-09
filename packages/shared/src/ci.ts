@@ -1674,3 +1674,145 @@ export function mayMarkGroupNotApplicable(
 export function sameTestRunRevision(a: Pick<TestRun, 'commitSha'>, b: Pick<TestRun, 'commitSha'>): boolean {
   return a.commitSha === b.commitSha
 }
+
+// --- Межстадийный цикл исправления продуктовых падений ---------------------
+
+export const DEFAULT_TEST_FIX_CYCLE_LIMIT = 10
+export type TestFailureClassification =
+  | 'product_failure' | 'infrastructure_failure' | 'configuration_failure' | 'cancelled' | 'unknown'
+export type TestFixCycleStatus =
+  | 'queued' | 'running' | 'target_failed' | 'target_passed' | 'awaiting_full_test'
+  | 'resolved' | 'same_failure' | 'new_failure' | 'model_failed' | 'blocked'
+  | 'cancelled' | 'limit_exhausted'
+
+export interface TestFailureDiagnostic extends TestFailure {
+  fingerprint: string
+  groupId: string
+  groupName: string
+  command: string
+  exitCode: number | null
+  commitSha: string
+  artifacts: TestArtifact[]
+}
+
+export interface TestFixTargetedRun {
+  id: string
+  command: string
+  status: 'running' | 'passed' | 'failed' | 'cancelled'
+  exitCode: number | null
+  log: string
+  startedAt: number
+  finishedAt: number | null
+}
+
+export interface TestFixCycle {
+  id: string
+  projectId: string
+  taskId: string
+  testRunId: string
+  failedGroupId: string
+  sourceCommitSha: string
+  attemptNo: number
+  effectiveLimit: number
+  status: TestFixCycleStatus
+  classification: TestFailureClassification
+  failures: TestFailureDiagnostic[]
+  llm: CiStageLlmSnapshot
+  sessionId: string | null
+  diagnosis: string
+  action: string
+  changedFiles: string[]
+  fixCommitSha: string | null
+  targetedRuns: TestFixTargetedRun[]
+  nextTestRunId: string | null
+  fullTestResult: 'passed' | 'same_failure' | 'new_failure' | 'infrastructure_failure' | null
+  createdAt: number
+  startedAt: number | null
+  finishedAt: number | null
+  blockedReason: string | null
+}
+
+export interface TestFixTaskState {
+  taskId: string
+  usedAttempts: number
+  overrideLimit: number | null
+  activeCycleId: string | null
+}
+
+/** Настройка проекта: целое число >= 0; отсутствие значения означает дефолт 10. */
+export function normalizeTestFixCycleLimit(value: unknown): number {
+  if (value == null || value === '') return DEFAULT_TEST_FIX_CYCLE_LIMIT
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error('Лимит возвратов должен быть целым числом не меньше 0')
+  }
+  return value
+}
+
+/** Убирает нестабильные части сообщения, сохраняя смысл ошибки. */
+export function normalizeTestFailureMessage(message: string): string {
+  return message
+    .toLowerCase()
+    .replace(/(?:[a-z]:)?[\\/](?:[^\s:'"()]+[\\/])*tmp[\\/][^\s:'"()]+/gi, '<tmp>')
+    .replace(/\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}\b/g, '<host>:<port>')
+    .replace(/\bport\s+\d{2,5}\b/g, 'port <port>')
+    .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/gi, '<uuid>')
+    .replace(/\b(?:0x)?[0-9a-f]{12,}\b/gi, '<id>')
+    .replace(/\b\d{4}-\d\d-\d\d[t ]\d\d:\d\d:\d\d(?:\.\d+)?z?\b/gi, '<time>')
+    .replace(/\b\d+(?:\.\d+)?\s?ms\b/g, '<duration>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function stableHash(input: string): string {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+export function testFailureFingerprint(failure: Pick<TestFailure, 'runner' | 'packageName' | 'file' | 'suite' | 'testName' | 'message'>): string {
+  const stable = [
+    failure.runner, failure.packageName, failure.file?.replace(/\\/g, '/'),
+    failure.suite, failure.testName, normalizeTestFailureMessage(failure.message)
+  ].map((value) => (value ?? '').trim().toLowerCase()).join('\n')
+  return `tf-${stableHash(stable)}`
+}
+
+const INFRA_FAILURE_RE = /machine (?:is )?offline|машин[аы].*(?:не в сети|отключ)|connection (?:lost|reset)|econnreset|enospc|no space left|docker (?:is )?unavailable|cannot connect to the docker|address already in use|eaddrinuse|external timeout|timed out before (?:test|runner)|npm.*_cacache/i
+const CONFIG_FAILURE_RE = /configuration (?:error|invalid)|invalid config|unknown option|missing (?:environment|env) variable|command not found|no test files found/i
+const PRODUCT_FAILURE_RE = /(?:test|tests|suite|assertion).*(?:fail|failed)|expected .+ (?:to|but)|typecheck|type error|ts\d{4}|build failed|storybook|playwright|contract/i
+
+/** Консервативная классификация: unknown никогда не превращается в авто-фикс. */
+export function classifyTestFailure(input: {
+  exitCode: number | null
+  message?: string | null
+  log?: string | null
+  cancelled?: boolean
+  infrastructure?: boolean
+}): TestFailureClassification {
+  if (input.cancelled) return 'cancelled'
+  if (input.infrastructure) return 'infrastructure_failure'
+  const text = `${input.message ?? ''}\n${input.log ?? ''}`
+  if (INFRA_FAILURE_RE.test(text) || input.exitCode == null && /timeout|runner.*(?:did not|failed to) start/i.test(text)) return 'infrastructure_failure'
+  if (CONFIG_FAILURE_RE.test(text)) return 'configuration_failure'
+  if (input.exitCode !== 0 && PRODUCT_FAILURE_RE.test(text)) return 'product_failure'
+  return 'unknown'
+}
+
+export function compareFixFailureFingerprints(
+  previous: readonly Pick<TestFailureDiagnostic, 'fingerprint'>[],
+  current: readonly Pick<TestFailureDiagnostic, 'fingerprint'>[]
+): 'same_failure' | 'new_failure' {
+  const old = new Set(previous.map((failure) => failure.fingerprint))
+  return current.some((failure) => old.has(failure.fingerprint)) ? 'same_failure' : 'new_failure'
+}
+
+/** Серверно проверяемая точечная команда; shell-операторы и repository gate запрещены. */
+export function isSafeTargetedTestCommand(command: string): boolean {
+  const value = command.trim()
+  if (!value || /[;&|><`\n\r]|\$\(|\b(?:merge|deploy|rm\s+-rf|git\s+(?:clean|reset))\b/i.test(value)) return false
+  if (/affected-check|\bnpm\s+(?:run\s+)?(?:test|build|typecheck)\s*$/i.test(value)) return false
+  return /(?:\.test\.[a-z0-9]+|\.spec\.[a-z0-9]+|--testnamepattern|--test-name-pattern|-t\s+\S|typecheck\b.*(?:-w|--workspace|--project))/i.test(value)
+}

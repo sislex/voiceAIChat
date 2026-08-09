@@ -6,6 +6,12 @@ import {
   blockedGroupsAfterFailure,
   mayMarkGroupNotApplicable,
   sameTestRunRevision,
+  classifyTestFailure,
+  compareFixFailureFingerprints,
+  isSafeTargetedTestCommand,
+  normalizeTestFailureMessage,
+  normalizeTestFixCycleLimit,
+  testFailureFingerprint,
   ciCardPulse,
   ciSummaryForTask,
   clarifyBudget,
@@ -691,5 +697,53 @@ describe('test pipeline transitions', () => {
   it('результаты разных SHA нельзя объединить', () => {
     expect(sameTestRunRevision({ commitSha: 'abc' }, { commitSha: 'abc' })).toBe(true)
     expect(sameTestRunRevision({ commitSha: 'abc' }, { commitSha: 'def' })).toBe(false)
+  })
+})
+
+describe('test fix cycle domain', () => {
+  const failure = (message: string) => ({
+    runner: 'vitest', packageName: '@voicechat/shared', file: 'src/a.test.ts',
+    suite: 'fingerprint', testName: 'is stable', message
+  })
+
+  it.each([[undefined, 10], [null, 10], [0, 0], [10, 10], [25, 25]])(
+    'нормализует лимит %s', (input, expected) => expect(normalizeTestFixCycleLimit(input)).toBe(expected)
+  )
+  it.each([-1, 1.5, Number.NaN, '10'])('отклоняет невалидный лимит %s', (input) => {
+    expect(() => normalizeTestFixCycleLimit(input)).toThrow('целым числом')
+  })
+
+  it('fingerprint устойчив к temp path, UUID, port, времени и duration', () => {
+    const a = testFailureFingerprint(failure('Expected /private/tmp/run-a/file at localhost:4312 id 123e4567-e89b-12d3-a456-426614174000 after 2026-08-09T12:01:02Z (123ms)'))
+    const b = testFailureFingerprint(failure('Expected /private/tmp/run-b/file at localhost:9876 id 923e4567-e89b-12d3-a456-426614174999 after 2026-08-10T13:02:03Z (999ms)'))
+    expect(a).toBe(b)
+    expect(normalizeTestFailureMessage('port 4312')).toBe('port <port>')
+  })
+
+  it('различает повтор и новую ошибку', () => {
+    expect(compareFixFailureFingerprints([{ fingerprint: 'tf-old' }], [{ fingerprint: 'tf-old' }])).toBe('same_failure')
+    expect(compareFixFailureFingerprints([{ fingerprint: 'tf-old' }], [{ fingerprint: 'tf-new' }])).toBe('new_failure')
+  })
+
+  it.each([
+    [{ exitCode: 1, log: '1 test failed Expected 2 to be 3' }, 'product_failure'],
+    [{ exitCode: 1, log: 'ENOSPC: no space left on device' }, 'infrastructure_failure'],
+    [{ exitCode: 1, log: 'Invalid config: missing environment variable' }, 'configuration_failure'],
+    [{ exitCode: null, cancelled: true }, 'cancelled'],
+    [{ exitCode: 1, log: 'something unusual happened' }, 'unknown']
+  ] as const)('консервативно классифицирует %j', (input, expected) => {
+    expect(classifyTestFailure(input)).toBe(expected)
+  })
+
+  it.each([
+    ['npx vitest src/a.test.ts', true],
+    ['npx vitest src/a.test.ts -t stable', true],
+    ['npm run typecheck -w @voicechat/shared', true],
+    ['npm run affected-check', false],
+    ['npm test', false],
+    ['npx vitest src/a.test.ts && npm run deploy', false],
+    ['rm -rf workspace', false]
+  ])('валидирует точечную команду %s', (command, expected) => {
+    expect(isSafeTargetedTestCommand(command)).toBe(expected)
   })
 })

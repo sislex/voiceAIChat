@@ -317,6 +317,7 @@ interface ProjectRow {
   ci_reuse_strategy: string
   ci_exec_auth_ref: string
   ci_kb_context_mode: string
+  ci_test_fix_cycle_limit: number
   done_retention_days: number | null
 }
 
@@ -749,6 +750,7 @@ export class VoiceChatDb {
     // Порог «сколько держать завершённые на доске»: существующим проектам —
     // дефолт 14 дней (DEFAULT в ALTER заполняет старые строки).
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'done_retention_days')) this.db.exec(`ALTER TABLE projects ADD COLUMN done_retention_days INTEGER DEFAULT ${DEFAULT_DONE_RETENTION_DAYS}`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_test_fix_cycle_limit')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_test_fix_cycle_limit INTEGER NOT NULL DEFAULT 10`)
     const ciRunCols = this.db.prepare(`PRAGMA table_info(ci_runs)`).all() as Array<{ name: string }>
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_engine_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_engine_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_provider')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_provider TEXT NOT NULL DEFAULT 'claude'`)
@@ -1902,6 +1904,7 @@ export class VoiceChatDb {
       ciReuseStrategy: r.ci_reuse_strategy === 'reuse' || r.ci_reuse_strategy === 'clean' ? r.ci_reuse_strategy : 'fail',
       ciExecAuthRef: r.ci_exec_auth_ref,
       ciKbContextMode: normKbContextMode(r.ci_kb_context_mode),
+      ciTestFixCycleLimit: Number.isInteger(r.ci_test_fix_cycle_limit) && r.ci_test_fix_cycle_limit >= 0 ? r.ci_test_fix_cycle_limit : 10,
       doneRetentionDays: r.done_retention_days
     }
   }
@@ -2049,6 +2052,7 @@ export class VoiceChatDb {
       ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
       ciExecAuthRef?: string
       ciKbContextMode?: KbContextMode
+      ciTestFixCycleLimit?: number
       doneRetentionDays?: number | null
     }
   ): ProjectDetail | null {
@@ -2099,6 +2103,10 @@ export class VoiceChatDb {
     if (fields.ciReuseStrategy !== undefined) { set.push('ci_reuse_strategy = ?'); vals.push(fields.ciReuseStrategy) }
     if (fields.ciExecAuthRef !== undefined) { set.push('ci_exec_auth_ref = ?'); vals.push(fields.ciExecAuthRef) }
     if (fields.ciKbContextMode !== undefined) { set.push('ci_kb_context_mode = ?'); vals.push(normKbContextMode(fields.ciKbContextMode)) }
+    if (fields.ciTestFixCycleLimit !== undefined) {
+      if (!Number.isInteger(fields.ciTestFixCycleLimit) || fields.ciTestFixCycleLimit < 0) throw new Error('ciTestFixCycleLimit must be a non-negative integer')
+      set.push('ci_test_fix_cycle_limit = ?'); vals.push(fields.ciTestFixCycleLimit)
+    }
     if (fields.doneRetentionDays !== undefined) { set.push('done_retention_days = ?'); vals.push(fields.doneRetentionDays) }
     if (fields.defaultSkills?.epic !== undefined) { set.push('default_skills_epic = ?'); vals.push(JSON.stringify(fields.defaultSkills.epic)) }
     if (fields.defaultSkills?.story !== undefined) { set.push('default_skills_story = ?'); vals.push(JSON.stringify(fields.defaultSkills.story)) }
