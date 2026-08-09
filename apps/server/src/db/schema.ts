@@ -162,7 +162,9 @@ CREATE TABLE IF NOT EXISTS projects (
   default_skills_task  TEXT NOT NULL DEFAULT '[]',
   task_seq INTEGER NOT NULL DEFAULT 0,
   -- Через сколько дней завершённая задача уходит с доски (NULL — не скрывать).
-  done_retention_days INTEGER DEFAULT 14
+  done_retention_days INTEGER DEFAULT 14,
+  -- Максимум автоматических возвратов testing → development; 0 запрещает auto-fix.
+  ci_test_fix_cycle_limit INTEGER NOT NULL DEFAULT 10
 );
 
 
@@ -652,6 +654,79 @@ CREATE TABLE IF NOT EXISTS ci_test_targeted_runs (
   created_at  INTEGER NOT NULL,
   FOREIGN KEY (run_id) REFERENCES ci_test_runs(id) ON DELETE CASCADE,
   FOREIGN KEY (group_id) REFERENCES ci_test_group_runs(id) ON DELETE CASCADE
+);
+
+-- Межстадийные циклы исправления полного grouped pipeline.
+CREATE TABLE IF NOT EXISTS ci_test_fix_task_state (
+  task_id          TEXT PRIMARY KEY,
+  used_attempts    INTEGER NOT NULL DEFAULT 0 CHECK (used_attempts >= 0),
+  override_limit   INTEGER CHECK (override_limit IS NULL OR override_limit >= 0),
+  active_cycle_id  TEXT,
+  updated_at       INTEGER NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ci_test_fix_cycles (
+  id                 TEXT PRIMARY KEY,
+  project_id         TEXT NOT NULL,
+  task_id            TEXT NOT NULL,
+  test_run_id        TEXT NOT NULL,
+  failed_group_id    TEXT NOT NULL,
+  source_commit_sha  TEXT NOT NULL,
+  attempt_no         INTEGER NOT NULL,
+  effective_limit    INTEGER NOT NULL,
+  status             TEXT NOT NULL DEFAULT 'queued',
+  classification     TEXT NOT NULL,
+  failures_json      TEXT NOT NULL DEFAULT '[]',
+  llm_engine_id      TEXT,
+  llm_provider       TEXT NOT NULL,
+  llm_model          TEXT NOT NULL,
+  model_session_id   TEXT,
+  diagnosis          TEXT NOT NULL DEFAULT '',
+  action             TEXT NOT NULL DEFAULT '',
+  changed_files_json TEXT NOT NULL DEFAULT '[]',
+  fix_commit_sha     TEXT,
+  next_test_run_id   TEXT,
+  full_test_result   TEXT,
+  blocked_reason     TEXT,
+  created_at         INTEGER NOT NULL,
+  started_at         INTEGER,
+  finished_at        INTEGER,
+  UNIQUE (test_run_id, failed_group_id),
+  UNIQUE (task_id, attempt_no),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (test_run_id) REFERENCES ci_test_runs(id) ON DELETE CASCADE,
+  FOREIGN KEY (failed_group_id) REFERENCES ci_test_group_runs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_test_fix_cycles_task ON ci_test_fix_cycles(task_id, attempt_no DESC);
+
+CREATE TABLE IF NOT EXISTS ci_test_fix_targeted_runs (
+  id            TEXT PRIMARY KEY,
+  fix_cycle_id  TEXT NOT NULL,
+  command       TEXT NOT NULL,
+  status        TEXT NOT NULL,
+  exit_code     INTEGER,
+  log           TEXT NOT NULL DEFAULT '',
+  started_at    INTEGER NOT NULL,
+  finished_at   INTEGER,
+  FOREIGN KEY (fix_cycle_id) REFERENCES ci_test_fix_cycles(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ci_test_fix_targeted_cycle ON ci_test_fix_targeted_runs(fix_cycle_id, started_at);
+
+CREATE TABLE IF NOT EXISTS ci_test_fix_decisions (
+  id          TEXT PRIMARY KEY,
+  project_id  TEXT NOT NULL,
+  task_id     TEXT NOT NULL,
+  cycle_id    TEXT,
+  kind        TEXT NOT NULL,
+  reason      TEXT NOT NULL,
+  user_id     TEXT NOT NULL,
+  old_value   INTEGER,
+  new_value   INTEGER,
+  created_at  INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS ci_events (

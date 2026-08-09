@@ -119,6 +119,7 @@ export function registerProjectRoutes(
       ciExecAuthRef?: string
       /** Режим базы знаний в ходах модели CI-рана (auto|manual|off). */
       ciKbContextMode?: KbContextMode
+      ciTestFixCycleLimit?: number
       doneRetentionDays?: number | null
     }
   }>('/api/projects/:id', async (req, reply) => {
@@ -133,6 +134,7 @@ export function registerProjectRoutes(
       body.previewUrl = previewUrl
     }
     if (body.doneRetentionDays !== undefined) body.doneRetentionDays = normRetentionDays(body.doneRetentionDays)
+    if (body.ciTestFixCycleLimit !== undefined && (!Number.isInteger(body.ciTestFixCycleLimit) || body.ciTestFixCycleLimit < 0)) return badReq(reply, 'ciTestFixCycleLimit must be a non-negative integer')
     return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)
   })
 

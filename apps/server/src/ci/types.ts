@@ -407,3 +407,121 @@ export function createTestPipelineCoordinator(deps: {
     }
   }
 }
+
+// --- Координатор межстадийного fix cycle -----------------------------------
+
+import type {
+  CiStageLlmSnapshot, TestFailureClassification, TestFailureDiagnostic,
+  TestFixCycle, TestFixTaskState
+} from '@voicechat/shared'
+import {
+  classifyTestFailure, normalizeTestFixCycleLimit, testFailureFingerprint
+} from '@voicechat/shared'
+
+export interface TestFixCycleStore {
+  /** Реализация обязана выполнить callback транзакционно/под task lock. */
+  transaction<T>(taskId: string, callback: () => T): T
+  getTaskState(taskId: string): TestFixTaskState | null
+  getByFailure(testRunId: string, failedGroupId: string): TestFixCycle | null
+  saveTaskState(state: TestFixTaskState): void
+  saveCycle(cycle: TestFixCycle): void
+  moveTask(taskId: string, semanticType: 'development' | 'testing' | 'decision_required'): void
+  audit(type: string, payload: Record<string, unknown>): void
+}
+
+export interface TestFixCycleStart {
+  id: string
+  run: TestRun
+  failedGroup: TestGroupRun
+  projectLimit: number
+  taskOverrideLimit?: number | null
+  llm: CiStageLlmSnapshot
+}
+
+export type TestFixCycleStartResult =
+  | { kind: 'created'; cycle: TestFixCycle }
+  | { kind: 'duplicate'; cycle: TestFixCycle }
+  | { kind: 'not_product'; classification: Exclude<TestFailureClassification, 'product_failure'> }
+  | { kind: 'limit_exhausted'; usedAttempts: number; effectiveLimit: number }
+
+/**
+ * Атомарно принимает завершённое падение полного pipeline. Идемпотентный ключ —
+ * (testRunId, failedGroupId); только product_failure создаёт и расходует цикл.
+ */
+export function createTestFixCycleCoordinator(deps: {
+  store: TestFixCycleStore
+  now?: () => number
+}): { begin(input: TestFixCycleStart): TestFixCycleStartResult } {
+  const now = deps.now ?? Date.now
+  return {
+    begin(input) {
+      return deps.store.transaction(input.run.taskId, () => {
+        const duplicate = deps.store.getByFailure(input.run.id, input.failedGroup.id)
+        if (duplicate) return { kind: 'duplicate', cycle: structuredClone(duplicate) }
+
+        const firstFailure = input.failedGroup.failures[0]
+        const classification = classifyTestFailure({
+          exitCode: input.failedGroup.exitCode,
+          message: firstFailure?.message,
+          log: input.failedGroup.log,
+          infrastructure: input.failedGroup.failures.some((failure) => failure.kind === 'infrastructure')
+        })
+        deps.store.audit('test_failure.classified', {
+          taskId: input.run.taskId, testRunId: input.run.id,
+          failedGroupId: input.failedGroup.id, classification
+        })
+        if (classification !== 'product_failure') return { kind: 'not_product', classification }
+
+        const state = deps.store.getTaskState(input.run.taskId) ?? {
+          taskId: input.run.taskId, usedAttempts: 0,
+          overrideLimit: input.taskOverrideLimit ?? null, activeCycleId: null
+        }
+        const effectiveLimit = normalizeTestFixCycleLimit(
+          input.taskOverrideLimit ?? state.overrideLimit ?? input.projectLimit
+        )
+        if (state.usedAttempts >= effectiveLimit) {
+          deps.store.moveTask(input.run.taskId, 'decision_required')
+          deps.store.audit('test_fix.limit_exhausted', {
+            taskId: input.run.taskId, testRunId: input.run.id,
+            usedAttempts: state.usedAttempts, effectiveLimit
+          })
+          return { kind: 'limit_exhausted', usedAttempts: state.usedAttempts, effectiveLimit }
+        }
+        if (state.activeCycleId) throw new Error('Для задачи уже существует активный fix cycle')
+
+        const failures: TestFailureDiagnostic[] = input.failedGroup.failures.map((failure) => ({
+          ...failure,
+          fingerprint: testFailureFingerprint(failure),
+          groupId: input.failedGroup.id,
+          groupName: input.failedGroup.name,
+          command: input.failedGroup.command,
+          exitCode: input.failedGroup.exitCode,
+          commitSha: input.run.commitSha,
+          artifacts: structuredClone(input.failedGroup.artifacts)
+        }))
+        const cycle: TestFixCycle = {
+          id: input.id, projectId: input.run.projectId, taskId: input.run.taskId,
+          testRunId: input.run.id, failedGroupId: input.failedGroup.id,
+          sourceCommitSha: input.run.commitSha, attemptNo: state.usedAttempts + 1,
+          effectiveLimit, status: 'queued', classification, failures,
+          llm: structuredClone(input.llm), sessionId: null, diagnosis: '', action: '',
+          changedFiles: [], fixCommitSha: null, targetedRuns: [], nextTestRunId: null,
+          fullTestResult: null, createdAt: now(), startedAt: null, finishedAt: null,
+          blockedReason: null
+        }
+        deps.store.saveCycle(cycle)
+        deps.store.saveTaskState({
+          ...state, usedAttempts: cycle.attemptNo, activeCycleId: cycle.id
+        })
+        deps.store.moveTask(input.run.taskId, 'development')
+        deps.store.audit('test_fix.created', {
+          cycleId: cycle.id, taskId: cycle.taskId, testRunId: cycle.testRunId,
+          failedGroupId: cycle.failedGroupId, attemptNo: cycle.attemptNo,
+          effectiveLimit, commitSha: cycle.sourceCommitSha,
+          llmEngineId: cycle.llm.llmEngineId, provider: cycle.llm.provider, model: cycle.llm.model
+        })
+        return { kind: 'created', cycle: structuredClone(cycle) }
+      })
+    }
+  }
+}
