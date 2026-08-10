@@ -18,7 +18,7 @@ export class ReleaseManager {
   constructor(private readonly db:VoiceChatDb,private readonly runtime:ReleaseRuntime){}
 
   async listBranches(target:ReleaseProjectTarget):Promise<ReleaseBranch[]> {
-    const result=await this.runtime.exec(target,git(target,`fetch --prune origin '+refs/heads/release/*:refs/remotes/origin/release/*' && for-each-ref --format='%(refname:short) %(objectname)' refs/remotes/origin/release/`),120_000)
+    const result=await this.runtime.exec(target,git(target,`fetch --prune origin '+refs/heads/release/*:refs/remotes/origin/release/*' && git for-each-ref --format='%(refname:short) %(objectname)' refs/remotes/origin/release/`),120_000)
     if (result.exitCode!==0) throw new Error(result.output||'Не удалось обновить release-ветки')
     return result.output.split(/\r?\n/).map(line=>line.trim().split(/\s+/)).filter(parts=>parts.length===2).flatMap(([remote,sha])=>{
       const branch=remote!.replace(/^origin\//,'')
