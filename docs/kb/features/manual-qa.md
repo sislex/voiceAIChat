@@ -1,7 +1,7 @@
 ---
 title: Структурированное ручное QA
 updated: 2026-08-10
-checked: 21cb073
+checked: 6f55583
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/protocol.ts

@@ -1,7 +1,7 @@
 ---
 title: Feature-preview окружения задач
 updated: 2026-08-10
-checked: 21cb073
+checked: 6f55583
 areas:
   - packages/shared/src/preview.ts
   - apps/server/src/preview
