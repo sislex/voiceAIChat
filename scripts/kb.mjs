@@ -13,12 +13,13 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { hostname } from 'node:os'
 import { join, relative } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const KB_DIR = join(ROOT, 'docs/kb')
 const LOG_DIR = join(KB_DIR, 'log')
 const INDEX_FILE = join(KB_DIR, 'README.md')
+const GENERATED_INDEX_GIT_PATH = 'docs/kb/README.md'
 /** Пакеты, у каждого из которых должен быть свой AGENTS.md. */
 const PKG_GLOB_DIRS = ['apps', 'packages']
 
@@ -100,10 +101,15 @@ function topicFiles() {
   })
 }
 
+/** Git pathspec областей без генерируемого индекса: его commit не должен устаревать БЗ сам по себе. */
+export function gitHistoryPaths(paths) {
+  return [...paths, `:(exclude)${GENERATED_INDEX_GIT_PATH}`]
+}
+
 /** Дата последнего коммита, затронувшего указанные пути (YYYY-MM-DD) или ''. */
 function lastCommitDate(paths) {
   if (paths.length === 0) return ''
-  return git(['log', '-1', '--format=%cs', '--', ...paths])
+  return git(['log', '-1', '--format=%cs', '--', ...gitHistoryPaths(paths)])
 }
 
 /** Существует ли объект с таким sha (после rebase старый sha исчезает). */
@@ -120,7 +126,7 @@ function shaExists(sha) {
 /** Коммиты, затронувшие areas после сверки (`checked`). */
 function commitsSinceChecked(sha, paths) {
   if (paths.length === 0) return []
-  const out = git(['log', '--format=%h %s', `${sha}..HEAD`, '--', ...paths])
+  const out = git(['log', '--format=%h %s', `${sha}..HEAD`, '--', ...gitHistoryPaths(paths)])
   return out ? out.split('\n') : []
 }
 
@@ -390,26 +396,28 @@ function cmdTouch(args) {
   }
 }
 
-const [cmd, ...rest] = process.argv.slice(2)
-switch (cmd) {
-  case undefined:
-    cmdCheck(false)
-    console.log('')
-    cmdIndex()
-    break
-  case 'check':
-    cmdCheck(rest.includes('--strict'))
-    break
-  case 'index':
-    cmdIndex()
-    break
-  case 'log':
-    cmdLog(rest)
-    break
-  case 'touch':
-    cmdTouch(rest)
-    break
-  default:
-    console.error(`Неизвестная команда: ${cmd}. Доступно: check, index, log, touch.`)
-    process.exitCode = 1
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  const [cmd, ...rest] = process.argv.slice(2)
+  switch (cmd) {
+    case undefined:
+      cmdCheck(false)
+      console.log('')
+      cmdIndex()
+      break
+    case 'check':
+      cmdCheck(rest.includes('--strict'))
+      break
+    case 'index':
+      cmdIndex()
+      break
+    case 'log':
+      cmdLog(rest)
+      break
+    case 'touch':
+      cmdTouch(rest)
+      break
+    default:
+      console.error(`Неизвестная команда: ${cmd}. Доступно: check, index, log, touch.`)
+      process.exitCode = 1
+  }
 }
