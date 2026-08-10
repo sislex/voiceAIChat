@@ -375,6 +375,7 @@ interface TaskRow {
   due_date: number | null
   flagged: number
   done_at: number | null
+  preview_ready: number
   seq: number | null
   position: number
   created_at: number
@@ -432,7 +433,7 @@ function normPriority(raw: string): TaskPriority {
 }
 
 function normColumnSemantic(raw: string): KanbanColumnSemanticType {
-  return raw === 'backlog' || raw === 'ready' || raw === 'development' || raw === 'testing' || raw === 'manual_qa' || raw === 'awaiting_merge' || raw === 'decision_required' || raw === 'done' ? raw : 'custom'
+  return raw === 'backlog' || raw === 'ready' || raw === 'development' || raw === 'testing' || raw === 'qa_preparation' || raw === 'manual_qa' || raw === 'awaiting_merge' || raw === 'decision_required' || raw === 'done' ? raw : 'custom'
 }
 
 function normWorkItemType(raw: string): WorkItemType {
@@ -472,6 +473,7 @@ function mapTask(r: TaskRow): Task {
     dueDate: r.due_date ?? null,
     flagged: r.flagged !== 0,
     doneAt: r.done_at ?? null,
+    previewReady: r.preview_ready !== 0,
     seq: r.seq ?? 0,
     position: r.position,
     createdAt: r.created_at,
@@ -679,6 +681,7 @@ export class VoiceChatDb {
         WHERE column_id IN (SELECT id FROM kanban_columns WHERE semantic_type = 'done')
       `)
     }
+    if (taskCols.length && !taskCols.some((c) => c.name === 'preview_ready')) this.db.exec(`ALTER TABLE tasks ADD COLUMN preview_ready INTEGER NOT NULL DEFAULT 0`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'seq')) {
       this.db.exec(`ALTER TABLE tasks ADD COLUMN seq INTEGER`)
       // Номер по порядку создания в проекте — как ключи PRJ-1, PRJ-2 в Jira.
@@ -724,6 +727,9 @@ export class VoiceChatDb {
       INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
         SELECT lower(hex(randomblob(16))), p.id, 'Тестирование', 'testing', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
         WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='testing');
+      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
+        SELECT lower(hex(randomblob(16))), p.id, 'Создание сценариев ручного QA', 'qa_preparation', COALESCE((SELECT position - 512 FROM kanban_columns WHERE project_id=p.id AND semantic_type='manual_qa' LIMIT 1), (SELECT MAX(position) + 1024 FROM kanban_columns WHERE project_id=p.id), 1024), 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
+        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='qa_preparation');
       INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
         SELECT lower(hex(randomblob(16))), p.id, 'Ручное QA', 'manual_qa', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
         WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='manual_qa');
@@ -1971,6 +1977,7 @@ export class VoiceChatDb {
         ['Готово к разработке', 'ready'],
         ['В разработке', 'development'],
         ['Автотестирование', 'testing'],
+        ['Создание сценариев ручного QA', 'qa_preparation'],
         ['Ручное QA', 'manual_qa'],
         ['Ожидает мержа', 'awaiting_merge'],
         ['Требуется решение', 'decision_required'],
@@ -4205,6 +4212,10 @@ export class VoiceChatDb {
     return this.kbDocumentById(id) as KbStoredDocument
   }
 
+  setTaskPreviewReady(projectId: string, taskId: string, ready: boolean): void {
+    this.db.prepare(`UPDATE tasks SET preview_ready=?, updated_at=? WHERE id=? AND project_id=?`).run(ready ? 1 : 0, this.now(), taskId, projectId)
+  }
+
   // ============== Структурированное ручное QA =================
   private canQa(userId: string, projectId: string): boolean {
     const row = this.db.prepare(`SELECT role, qa_permission FROM project_members WHERE project_id = ? AND username = ?`).get(projectId, userId) as { role: string; qa_permission: number } | undefined
@@ -4263,6 +4274,23 @@ export class VoiceChatDb {
       this.addQaAudit(projectId, taskId, userId, version === current.current_version ? 'criterion.edited' : 'criterion.versioned', { criterionId, version, reason: input.reason })
     })()
     return mapQaCriterion(this.db.prepare(`SELECT * FROM acceptance_criteria WHERE id = ?`).get(criterionId) as QaCriterionRow)
+  }
+
+  completeQaPreparation(userId: string, projectId: string, taskId: string): QaTaskState | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const task = this.db.prepare(`SELECT 1 FROM tasks WHERE id=? AND project_id=?`).get(taskId, projectId)
+    if (!task) return null
+    const criteria = (this.db.prepare(`SELECT * FROM acceptance_criteria WHERE task_id=? AND active=1 ORDER BY position`).all(taskId) as QaCriterionRow[]).map(mapQaCriterion)
+    if (!criteria.length) throw new Error('Добавьте хотя бы один сценарий ручного QA')
+    const incomplete = criteria.filter((criterion) => !criterion.title.trim() || !criterion.steps.trim() || !criterion.expectedResult.trim())
+    if (incomplete.length) throw new Error('Каждый сценарий должен содержать название, подробные шаги и ожидаемый результат')
+    const column = this.getColumnIdBySemantic(projectId, 'manual_qa')
+    if (!column) throw new Error('manual_qa column not found')
+    this.db.transaction(() => {
+      this.moveTask(userId, projectId, taskId, { columnId: column })
+      this.addQaAudit(projectId, taskId, userId, 'preparation.completed', { criteria: criteria.map((criterion) => criterion.id) })
+    })()
+    return this.getQaTaskState(userId, projectId, taskId)
   }
 
   startQaSession(userId: string, args: { projectId: string; taskId: string; branch: string; commitSha: string; testRunId: string; previewId?: string | null; previewSha?: string | null; appUrl?: string | null; storybookUrl?: string | null; testDataScenario?: string; testerId?: string | null }): QaSession | null {

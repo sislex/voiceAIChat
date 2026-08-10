@@ -3,7 +3,7 @@ import { getToken } from './session'
 
 export interface RendererFeaturePreviewBridge {
   get(projectId: string, taskId: string): Promise<PreviewEnvironment | null>
-  operate(projectId: string, taskId: string, operation: PreviewOperation, args?: { idempotencyKey?: string; scenario?: string }): Promise<PreviewEnvironment>
+  operate(projectId: string, taskId: string, operation: PreviewOperation, args?: { idempotencyKey?: string; scenario?: string; agentId?: string }): Promise<PreviewEnvironment>
   cancel(projectId: string, taskId: string): Promise<boolean>
 }
 

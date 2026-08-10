@@ -11,16 +11,17 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
   })
   app.post<{
     Params: { projectId: string; taskId: string }
-    Body: { operation?: PreviewOperation; idempotencyKey?: string; scenario?: string }
+    Body: { operation?: PreviewOperation; idempotencyKey?: string; scenario?: string; agentId?: string }
   }>(`${base}/operations`, async (req, reply) => {
     const operation = req.body?.operation
-    if (!operation || !['start','rebuild','stop','seed','reset','health_check','remove'].includes(operation)) {
+    if (!operation || !['start','rebuild','stop','seed','reset','health_check','remove','docker_start','docker_install'].includes(operation)) {
       return reply.code(400).send({ error: 'invalid preview operation' })
     }
     try {
       return await previews.operate(uid(req), req.params.projectId, req.params.taskId, operation, {
         idempotencyKey: req.body?.idempotencyKey,
-        scenario: req.body?.scenario
+        scenario: req.body?.scenario,
+        agentId: req.body?.agentId
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

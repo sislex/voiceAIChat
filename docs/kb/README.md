@@ -18,13 +18,13 @@
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-10 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 17 коммит(ов) в areas после сверки: 1d2008b CHAT-165: добавить версионные release-ветки и центр деплоя … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 25 коммит(ов) в areas после сверки: 1d2008b CHAT-165: добавить версионные release-ветки и центр деплоя … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 1 коммит(ов) в areas после сверки: 1d2008b CHAT-165: добавить версионные release-ветки и центр деплоя |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 173 коммит(ов) в areas после сверки: 647043a chatai-165: работа CI-рана … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 174 коммит(ов) в areas после сверки: 21cb073 chatai-166: работа CI-рана … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ✓ |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 7 коммит(ов) в areas после сверки: 647043a chatai-165: работа CI-рана … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: d9b71af fix: preserve task launch proposal fields … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-09 | ⚠ 6 коммит(ов) в areas после сверки: d9b71af fix: preserve task launch proposal fields … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-10 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 13 коммит(ов) в areas после сверки: 1d2008b CHAT-165: добавить версионные release-ветки и центр деплоя … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 8 коммит(ов) в areas после сверки: 1d2008b CHAT-165: добавить версионные release-ветки и центр деплоя … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ✓ |
@@ -47,18 +47,18 @@
 
 ## Журнал сессий
 
-Всего записей: 155. Последние:
+Всего записей: 156. Последние:
 
 - [2026-08-10-mac-versioned-release-deploy.md](log/2026-08-10-mac-versioned-release-deploy.md) — versioned-release-deploy
 - [2026-08-10-mac-task-launch-fields.md](log/2026-08-10-mac-task-launch-fields.md) — task-launch-fields
 - [2026-08-10-mac-manual-qa.md](log/2026-08-10-mac-manual-qa.md) — manual-qa
 - [2026-08-10-mac-feature-preview.md](log/2026-08-10-mac-feature-preview.md) — feature-preview
+- [2026-08-10-mac-feature-preview-docker-preflight.md](log/2026-08-10-mac-feature-preview-docker-preflight.md) — feature-preview-docker-preflight
 - [2026-08-09-mac-test-fix-cycle.md](log/2026-08-09-mac-test-fix-cycle.md) — test-fix-cycle
 - [2026-08-09-mac-grouped-fail-fast-pipeline.md](log/2026-08-09-mac-grouped-fail-fast-pipeline.md) — grouped-fail-fast-pipeline
 - [2026-08-09-alexeys-macbook-air-2-web-reader-fullscreen.md](log/2026-08-09-alexeys-macbook-air-2-web-reader-fullscreen.md) — web-reader-fullscreen
 - [2026-08-09-2470-com-workflow-stage-llm.md](log/2026-08-09-2470-com-workflow-stage-llm.md) — workflow-stage-llm
 - [2026-08-08-alexeys-macbook-air-2-widget-tool-gateway.md](log/2026-08-08-alexeys-macbook-air-2-widget-tool-gateway.md) — widget-tool-gateway
-- [2026-08-08-alexeys-macbook-air-2-widget-tool-gateway-kb.md](log/2026-08-08-alexeys-macbook-air-2-widget-tool-gateway-kb.md) — widget-tool-gateway-kb
 
 ## Исторические планы
 
