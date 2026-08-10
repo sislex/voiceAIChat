@@ -11,7 +11,7 @@
 // стрелки — выбрать место, Enter — положить, Esc — отмена; каждый шаг
 // проговаривается в aria-live. Колонка = статус.
 
-import { Fragment, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Board, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { compareTasksInColumn, TASK_PRIORITIES, WORK_ITEM_TYPES } from '@shared/projects'
@@ -189,7 +189,24 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const setOpenTaskId = props.onOpenTaskChange ?? setInternalOpenTask
   const composerRef = useRef<HTMLInputElement | null>(null)
   const boardRef = useRef<HTMLDivElement | null>(null)
+  const colMenuRef = useRef<HTMLSpanElement | null>(null)
   const drag = usePointerDrag()
+
+  useEffect(() => {
+    if (!colMenu) return
+    const closeOnOutsidePress = (event: PointerEvent): void => {
+      if (!colMenuRef.current?.contains(event.target as Node)) setColMenu(null)
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setColMenu(null)
+    }
+    document.addEventListener('pointerdown', closeOnOutsidePress)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [colMenu])
   // Esc клавиатурного переноса нужно поймать раньше Esc страницы-обёртки
   // (useDialogStack слушает тот же window в фазе перехвата): иначе доска
   // закрывалась бы вместо отмены переноса. Поэтому именно useLayoutEffect —
@@ -612,7 +629,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             {col.hidden && <span className="jcol-hidden-mark" title="Колонка скрыта">🙈</span>}
           </span>
         )}
-        <span className="jcard-menuwrap">
+        <span className="jcard-menuwrap" ref={colMenu === col.id ? colMenuRef : undefined}>
           <IconButton
             className="jcard-reveal"
             size="sm"
@@ -624,7 +641,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             ⋯
           </IconButton>
           {colMenu === col.id && (
-            <div className="jcard-menu">
+            <div className="jcard-menu" data-testid="column-menu">
               <button
                 onClick={() => {
                   setColMenu(null)
