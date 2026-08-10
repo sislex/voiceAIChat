@@ -10,6 +10,17 @@ afterEach(()=>db.close())
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0))
 
 describe('ReleaseManager',()=>{
+  it('runs for-each-ref through git after updating release refs',async()=>{
+    let command=''
+    const runtime:ReleaseRuntime={
+      exec:async(_target,value)=>{command=value;return {exitCode:0,output:'origin/release/1.2.3 abcdef1234567890\n'}},
+      updateKnowledgeBase:async()=>{},deployProduction:async()=>{},healthCheck:async()=>{},cleanup:async()=>{}
+    }
+    const branches=await new ReleaseManager(db,runtime).listBranches(target())
+    expect(command).toContain('&& git for-each-ref')
+    expect(branches).toEqual([{branch:'release/1.2.3',version:'1.2.3',sha:'abcdef1234567890'}])
+  })
+
   it('fixes origin SHA and stops on a failed mandatory gate',async()=>{
     const runtime:ReleaseRuntime={
       exec:async(_target,command)=>command.includes('for-each-ref')?{exitCode:0,output:'origin/release/1.2.3 abcdef1234567890\n'}:{exitCode:1,output:'regression failed'},
