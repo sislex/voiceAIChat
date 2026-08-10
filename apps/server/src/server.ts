@@ -540,7 +540,46 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     modelWork: ciModelHooks.modelWork,
     modelSummary: ciModelHooks.modelSummary,
     attemptFix: ciModelHooks.attemptFix,
-    kbUpdate: opts.ciKbUpdate ?? ciModelHooks.kbUpdate
+    kbUpdate: opts.ciKbUpdate ?? ciModelHooks.kbUpdate,
+    qaPreparation: ({ userId, projectId, taskId, branch, commitSha, runId }) => {
+      const preparation = db.startQaPreparationRun(projectId, taskId, branch, commitSha)
+      if (!preparation) return // UNIQUE(task, SHA): ровно один ран, в том числе после рестарта.
+      const task = db.getCiTask(userId, projectId, taskId)
+      const existing = db.getQaTaskState(userId, projectId, taskId)?.criteria.filter((criterion) => criterion.active) ?? []
+      const development = db.getCiRun(userId, runId)
+      const prompt = `Создай сценарии ручного QA для задачи. Верни ТОЛЬКО JSON-массив объектов с полями title, description, preconditions, steps, testData, expectedResult, required, testType (manual|mixed|not_testable_in_app).\n\nЗадача: ${task?.title ?? ''}\nОписание: ${task?.description ?? ''}\nAcceptance criteria: ${task?.acceptanceCriteria ?? ''}\nFeature branch: ${branch}\nCommit SHA: ${commitSha}\nАвтотесты: ${(development?.steps ?? []).map((step) => `${step.title}: ${step.status}`).join('; ')}\nУже активные сценарии (не дублировать): ${existing.map((criterion) => criterion.title).join('; ')}`
+      claude.send({ userId, prompt, sessionId: null, model: 'sonnet', executionDisabled: true }, {
+        onDelta: (chunk) => db.appendQaPreparationLog(preparation.id, chunk),
+        onSession: () => {},
+        onDone: (text) => {
+          try {
+            const raw = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? text
+            const scenarios = JSON.parse(raw.trim()) as Array<Record<string, unknown>>
+            if (!Array.isArray(scenarios) || !scenarios.length) throw new Error('Модель не вернула сценарии')
+            const existingTitles = new Set(existing.map((criterion) => criterion.title.trim().toLocaleLowerCase()))
+            for (const scenario of scenarios) {
+              const title = String(scenario.title ?? '').trim()
+              if (!title || existingTitles.has(title.toLocaleLowerCase())) continue
+              db.createAcceptanceCriterion(userId, projectId, taskId, {
+              title, description: String(scenario.description ?? '').trim(),
+              preconditions: String(scenario.preconditions ?? '').trim(), steps: String(scenario.steps ?? '').trim(),
+              testData: String(scenario.testData ?? '').trim(), expectedResult: String(scenario.expectedResult ?? '').trim(),
+              required: scenario.required !== false,
+              testType: scenario.testType === 'mixed' || scenario.testType === 'not_testable_in_app' ? scenario.testType : 'manual'
+              })
+              existingTitles.add(title.toLocaleLowerCase())
+            }
+            db.completeQaPreparation(userId, projectId, taskId)
+            db.finishQaPreparationRun(preparation.id, 'success')
+            boardHub.emit(projectId)
+          } catch (error) {
+            db.finishQaPreparationRun(preparation.id, 'failed', error instanceof Error ? error.message : String(error))
+            boardHub.emit(projectId)
+          }
+        },
+        onError: (message) => { db.finishQaPreparationRun(preparation.id, 'failed', message); boardHub.emit(projectId) }
+      })
+    }
   })
   registerCiRoutes(app, db, ciRunManager)
   const featurePreviews = new FeaturePreviewManager({

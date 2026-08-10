@@ -395,7 +395,7 @@ describe('маршрутизация production-команд', () => {
     const ci = manager({ executor: { run: async (req) => { requests.push(req); return { exitCode: 0, timedOut: false } } } })
 
     expect(await waitStatus(startRun(ci, taskIds[0]))).toBe('success')
-    expect(requests.find((req) => req.script === 'echo regular')).toMatchObject({ agentId: db.getProject('admin', projectId)!.defaultAgentId, workdir: '/repos/p/1' })
+    expect(requests.find((req) => req.script === 'echo regular')).toMatchObject({ agentId: db.getProject('admin', projectId)!.defaultAgentId, workdir: '/repos/p' })
     expect(requests.find((req) => req.script === 'echo production')).toMatchObject({ agentId: productionAgent.id, workdir: '/srv/voicechat' })
   })
 

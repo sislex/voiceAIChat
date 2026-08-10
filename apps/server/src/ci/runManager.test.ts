@@ -213,10 +213,10 @@ describe('ci run manager', () => {
     expect(d.steps.map((s) => s.kind)).toContain('model_summary')
     const workRequest = modelRequests.find((req) => req.permissionMode === 'acceptEdits')!
     expect(workRequest.cwd).toBeUndefined()
-    expect(workRequest.remote?.mcpUrl).toContain('cwd=%2Frepos%2Fp%2F1%2Ft1')
+    expect(workRequest.remote?.mcpUrl).toContain('cwd=%2Frepos%2Fp%2F1')
     const chat = db.getConversation('admin', db.getCiRunRaw(runId)!.conversationId!)!
     expect(chat.execTarget).toBeTruthy()
-    expect(chat.workdir).toBe('/repos/p/1/t1')
+    expect(chat.workdir).toBe('/repos/p/1')
     // Лог рана содержит строки.
     const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json()
     expect(Array.isArray(log)).toBe(true)

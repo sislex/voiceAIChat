@@ -96,4 +96,13 @@ describe('manual QA persistence and workflow', () => {
     const { project, task } = fixture()
     expect(() => db.startQaSession('developer', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })).toThrow(/permission/)
   })
+
+  it('deduplicates QA preparation by task and SHA and stales a session for a new SHA', () => {
+    const { project, task } = fixture()
+    const session = db.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
+    expect(db.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc')).not.toBeNull()
+    expect(db.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc')).toBeNull()
+    expect(db.startQaPreparationRun(project.id, task.id, 'feature/1', 'def')).not.toBeNull()
+    expect(db.getQaTaskState('owner', project.id, task.id)?.sessions.find((item) => item.id === session.id)?.status).toBe('stale')
+  })
 })

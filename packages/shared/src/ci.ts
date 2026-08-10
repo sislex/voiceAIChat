@@ -507,7 +507,7 @@ export const CI_REUSE_STRATEGIES: CiReuseStrategy[] = ['reuse', 'clean', 'fail']
 /** CI-поля настроек проекта. */
 export interface CiProjectSettings {
   baseBranch: string
-  /** Шаблон ветки, напр. `feature/{task_number}-{slug}`. */
+  /** Шаблон ветки, по умолчанию `feature/{task_number}`; legacy `{slug}` поддерживается. */
   branchTemplate: string
   reuseStrategy: CiReuseStrategy
   /** Ссылка на секрет для авторизации выполнения (или ''). */
@@ -875,6 +875,10 @@ export interface CiWorkspace {
   taskId: string
   agentId: string | null
   path: string
+  /** Фактическая ветка и проверенный SHA результата разработки. */
+  branch: string | null
+  commitSha: string | null
+  pushed: boolean
   state: 'active' | 'released'
   /** Занимаемый объём в байтах (для отчёта по месту; null — не измерялся). */
   sizeBytes: number | null

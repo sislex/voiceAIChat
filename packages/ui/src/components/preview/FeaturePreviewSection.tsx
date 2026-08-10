@@ -79,7 +79,8 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }
   const run = environment?.runs.at(-1)
-  const current = environment?.builtCommitSha && environment.currentCommitSha === environment.builtCommitSha
+  const current = environment?.expectedCommitSha && environment.expectedCommitSha === environment.currentCommitSha && environment.currentCommitSha === environment.builtCommitSha
+  const externallyReachable = (url: string | null): boolean => !!url && !/^https?:\/\/(?:127\.0\.0\.1|localhost)(?::|\/|$)/i.test(url)
   return <section className={`feature-preview feature-preview--${state}`} data-testid="feature-preview">
     <div className="feature-preview__head">
       <div>
@@ -97,13 +98,17 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
     {environment && <>
       <dl className="feature-preview__meta">
         <div><dt>Ветка</dt><dd>{environment.branch || '—'}</dd></div>
-        <div><dt>SHA preview</dt><dd><code>{environment.builtCommitSha?.slice(0, 10) ?? '—'}</code></dd></div>
-        <div><dt>SHA workspace</dt><dd><code>{environment.currentCommitSha?.slice(0, 10) ?? '—'}</code></dd></div>
+        <div><dt>Workspace</dt><dd><code>{environment.workspacePath}</code></dd></div>
+        <div><dt>Ожидаемый SHA</dt><dd><code>{environment.expectedCommitSha?.slice(0, 10) ?? '—'}</code></dd></div>
+        <div><dt>Текущий SHA</dt><dd><code>{environment.currentCommitSha?.slice(0, 10) ?? '—'}</code></dd></div>
+        <div><dt>Собранный SHA</dt><dd><code>{environment.builtCommitSha?.slice(0, 10) ?? '—'}</code></dd></div>
+        <div><dt>Git</dt><dd>{environment.gitStatus}</dd></div>
         <div><dt>Машина</dt><dd>{environment.agentId}</dd></div>
         <div><dt>Health</dt><dd>{environment.healthStatus}</dd></div>
         <div><dt>Данные</dt><dd>{environment.selectedSeedScenario ?? 'не подготовлены'}</dd></div>
       </dl>
-      {state === 'stale' || (environment.builtCommitSha && !current) ? <p className="feature-preview__warning">Окружение устарело. Оно остаётся доступным, но Playwright требует пересборку.</p> : null}
+      {state === 'stale' || (environment.builtCommitSha && !current) ? <p className="feature-preview__warning">Окружение не соответствует зафиксированному SHA. Для QA требуется пересборка.</p> : null}
+      {environment.appUrl && !externallyReachable(environment.appUrl) && <p className="feature-preview__warning">Приложение доступно только на loopback выбранной машины; открыть его из этого клиента нельзя.</p>}
       {environment.lastError && <p className="feature-preview__error">{environment.lastError.type}: {environment.lastError.message}</p>}
       <label className="feature-preview__scenario">Сценарий данных
         <select value={scenario} onChange={(event) => setScenario(event.target.value)}>
@@ -117,8 +122,8 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
       {actions.includes('start') && <Button variant="primary" size="sm" onClick={() => void operate('start')}>{state === 'stopped' ? 'Запустить снова' : 'Запустить тестовый контейнер'}</Button>}
       {actions.includes('rebuild') && <Button size="sm" onClick={() => void operate('rebuild')}>Пересобрать</Button>}
       {actions.includes('stop') && <Button size="sm" onClick={() => void operate('stop')}>Остановить</Button>}
-      {environment?.appUrl && <a className="btn btn--sm" href={environment.appUrl} target="_blank" rel="noreferrer">Открыть приложение</a>}
-      {environment?.storybookUrl && <a className="btn btn--sm" href={environment.storybookUrl} target="_blank" rel="noreferrer">Открыть Storybook</a>}
+      {environment?.appUrl && externallyReachable(environment.appUrl) && <a className="btn btn--sm" href={environment.appUrl} target="_blank" rel="noreferrer">Открыть приложение</a>}
+      {environment?.storybookUrl && externallyReachable(environment.storybookUrl) && <a className="btn btn--sm" href={environment.storybookUrl} target="_blank" rel="noreferrer">Открыть Storybook</a>}
       {actions.includes('seed') && <Button size="sm" onClick={() => void operate('seed')}>Подготовить тестовые данные</Button>}
       {actions.includes('reset') && <Button size="sm" onClick={() => void operate('reset')}>Сбросить тестовые данные</Button>}
       {actions.includes('health_check') && <Button size="sm" onClick={() => void operate('health_check')}>Проверить состояние</Button>}
