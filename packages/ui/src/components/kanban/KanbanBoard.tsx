@@ -320,16 +320,13 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     return hit?.dataset.columnId ?? null
   }
 
-  // У края экрана доска доскролливается сама: иначе на телефоне до дальней
-  // колонки карточку не дотащить, а в длинной колонке — не доехать до конца.
+  // У края экрана единая поверхность доски доскролливается по обеим осям:
+  // горизонтально — до дальней колонки, вертикально — до конца длинной колонки.
   const autoScrollTo = (p: DragPoint): void => {
     const root = boardRef.current
     if (!root) return
     autoScroll(root, p, 'x')
-    const body = Array.from(root.querySelectorAll<HTMLElement>('[data-drop-body]')).find((b) =>
-      pointInRect(b.getBoundingClientRect(), p)
-    )
-    if (body) autoScroll(body, p, 'y')
+    autoScroll(root, p, 'y')
   }
 
   /** Положить задачу в выбранное место. Обратно на своё — молча, без запроса. */

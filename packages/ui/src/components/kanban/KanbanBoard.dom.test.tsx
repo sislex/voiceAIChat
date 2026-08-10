@@ -53,6 +53,14 @@ describe('KanbanBoard (изолированный)', () => {
     expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument()
   })
 
+  it('общая поверхность колонок не включает панель фильтров', () => {
+    renderBoard()
+    const surface = screen.getByTestId('kanban-board')
+    const filters = screen.getByTestId('board-filters')
+    expect(surface).not.toContainElement(filters)
+    expect(surface).toContainElement(screen.getByTestId('kanban-column'))
+  })
+
   it('чекбокс «скрытые» в панели фильтров показывает скрытые колонки', async () => {
     renderBoard()
     expect(screen.getAllByTestId('kanban-column')).toHaveLength(1)
