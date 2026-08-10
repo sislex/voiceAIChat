@@ -19,7 +19,7 @@ import { registerQaRoutes } from './routes/qa.js'
 import { registerCiRoutes } from './routes/ci.js'
 import { registerFeaturePreviewRoutes } from './routes/featurePreview.js'
 import { registerReleaseRoutes } from './routes/releases.js'
-import { ReleaseManager } from './releases/releaseManager.js'
+import { ReleaseManager, waitForReleaseHealth } from './releases/releaseManager.js'
 import { FeaturePreviewManager } from './preview/manager.js'
 import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
@@ -569,11 +569,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const result = await deployTrigger.trigger()
       if (result.status !== 'accepted') throw new Error('Production deploy уже выполняется')
     },
-    healthCheck: async () => {
-      const response = await fetch(`http://127.0.0.1:${opts.config.port}/api/health`, { signal: AbortSignal.timeout(30_000) })
-      if (!response.ok) throw new Error(`Production health-check вернул HTTP ${response.status}`)
-      const health = await response.json() as { ok?: boolean }
-      if (health.ok !== true) throw new Error('Production health-check вернул ok != true')
+    healthCheck: async (release) => {
+      await waitForReleaseHealth(release.version, async () => {
+        const response = await fetch(`http://127.0.0.1:${opts.config.port}/api/health`, { signal: AbortSignal.timeout(10_000) })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return response.json() as Promise<{ ok?: boolean; version?: string }>
+      })
     },
     cleanup: async (release) => {
       const board = db.getBoard(release.triggeredBy, release.projectId)
