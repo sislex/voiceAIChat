@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
-import { ReleaseManager, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
+import { ReleaseManager, waitForReleaseHealth, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
 
 let db:VoiceChatDb
 let projectId:string
@@ -8,6 +8,20 @@ const target=():ReleaseProjectTarget=>({projectId,agentId:'mac',path:'/repo',bas
 beforeEach(()=>{let id=0;db=new VoiceChatDb(':memory:',{newId:()=>`id-${++id}`,now:()=>1000+id});db.createUser('owner','','user');db.createUser('member','','user');const project=db.createProject('owner',{name:'P'});projectId=project.id;db.addMember('owner',projectId,'member')})
 afterEach(()=>db.close())
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0))
+
+describe('waitForReleaseHealth',()=>{
+  it('waits until production reports the exact release version',async()=>{
+    const probes=[{ok:true,version:'0.1.3'},{ok:true,version:'0.1.4'}]
+    let sleeps=0
+    await waitForReleaseHealth('0.1.4',async()=>probes.shift()!,{attempts:2,intervalMs:1,sleep:async()=>{sleeps+=1}})
+    expect(sleeps).toBe(1)
+  })
+
+  it('rejects a healthy container that keeps the previous version',async()=>{
+    await expect(waitForReleaseHealth('0.1.4',async()=>({ok:true,version:'0.1.3'}),{attempts:2,intervalMs:1,sleep:async()=>{}}))
+      .rejects.toThrow('version=0.1.3')
+  })
+})
 
 describe('ReleaseManager',()=>{
   it('runs for-each-ref through git after updating release refs',async()=>{
@@ -59,7 +73,7 @@ describe('ReleaseManager',()=>{
     expect(merge).toContain("&& git checkout -B 'main'")
     expect(merge).toContain("&& git merge --no-ff --no-edit 'abcdef1234567890'")
     const push=commands.find(command=>command.includes('push --atomic'))!
-    expect(push).toContain("git tag -f 'v1.2.3' 'abcdef1234567890'")
+    expect(push).toContain("git tag -f 'v1.2.3' HEAD")
     expect(push).toContain("HEAD:refs/heads/'main'")
     expect(push).toContain("refs/tags/'v1.2.3'")
   })
