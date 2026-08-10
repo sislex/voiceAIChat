@@ -562,9 +562,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const result = await deployTrigger.trigger()
       if (result.status !== 'accepted') throw new Error('Production deploy уже выполняется')
     },
-    healthCheck: async (_release, target) => {
-      const result = await agentRegistry.exec(target.agentId, 'curl -fsS http://127.0.0.1:8787/api/health', 300_000)
-      if (result.exitCode !== 0) throw new Error(result.output || 'Production health-check не пройден')
+    healthCheck: async () => {
+      const response = await fetch(`http://127.0.0.1:${opts.config.port}/api/health`, { signal: AbortSignal.timeout(30_000) })
+      if (!response.ok) throw new Error(`Production health-check вернул HTTP ${response.status}`)
+      const health = await response.json() as { ok?: boolean }
+      if (health.ok !== true) throw new Error('Production health-check вернул ok != true')
     },
     cleanup: async (release) => {
       const board = db.getBoard(release.triggeredBy, release.projectId)

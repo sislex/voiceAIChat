@@ -31,7 +31,7 @@ areas:
 
 Порядок ворот задан `RELEASE_STEP_ORDER` в `packages/shared/src/release.ts`: regression через `npm run affected-check`, проверка актуальности файловой базы знаний, merge зафиксированного SHA в основную ветку, push основной ветки, штатный host-side production deploy, health-check и очистка feature-preview/workspace завершённых задач. Первый сбой переводит текущий шаг и попытку в `failed`; последующие шаги остаются `queued`. `released` ставится только после всех ворот.
 
-Merge строится от свежей `origin/<ciBaseBranch>` и использует сохранённый SHA, поэтому движение release-ветки после старта не меняет публикуемый код. Production deploy вызывается через штатный `deployTrigger`, health-check проверяет `/api/health`, а cleanup удаляет preview задач из `done` и переводит их активные CI workspace в `released`. Инфраструктурная привязка находится в `apps/server/src/server.ts`.
+Merge строится от свежей `origin/<ciBaseBranch>` и использует сохранённый SHA, поэтому движение release-ветки после старта не меняет публикуемый код. Production deploy вызывается через штатный `deployTrigger`. Release health-check обращается к `/api/health` по loopback самого сервера, а не через default-машину проекта: default-машина обслуживает Git release-веток и может быть MacBook без production на `127.0.0.1:8787`. Host-side deploy независимо ждёт реальный health после сборки. Cleanup удаляет preview задач из `done` и переводит их активные CI workspace в `released`. Инфраструктурная привязка находится в `apps/server/src/server.ts`.
 
 ## История и повторы
 
