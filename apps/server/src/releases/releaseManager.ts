@@ -73,9 +73,17 @@ export class ReleaseManager {
     return release
   }
 
+  resume(actor:string,target:ReleaseProjectTarget,release:ProjectRelease):void {
+    if(release.status!=='running'||this.running.has(target.projectId))return
+    this.running.add(target.projectId)
+    void this.execute(actor,target,release).finally(()=>this.running.delete(target.projectId))
+  }
+
   private async execute(actor:string,target:ReleaseProjectTarget,release:ProjectRelease):Promise<void> {
     this.db.setProjectReleaseStatus(release.id,'running',actor)
+    const passed=new Set(release.steps.filter(step=>step.status==='passed').map(step=>step.kind))
     for (const kind of RELEASE_STEP_ORDER) {
+      if(passed.has(kind))continue
       this.db.setProjectReleaseStep(release.id,kind,'running','',actor)
       try {
         const log=await this.runStep(kind,release,target)

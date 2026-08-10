@@ -588,6 +588,19 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       db.releaseDoneWorkspaces(release.projectId, [...tasks])
     }
   })
+  for (const release of db.listRunningProjectReleases()) {
+    const project = db.getProject(release.triggeredBy, release.projectId)
+    const agentId = project?.defaultAgentId
+    const machine = agentId ? project.machines.find(item => item.agentId === agentId) : undefined
+    if (project && agentId && machine?.path) {
+      releaseManager.resume(release.triggeredBy, {
+        projectId: release.projectId,
+        agentId,
+        path: machine.path,
+        baseBranch: project.ciBaseBranch || 'main'
+      }, release)
+    }
+  }
   registerReleaseRoutes(app, db, releaseManager)
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager)
   registerQaRoutes(app, db, uploads)

@@ -105,6 +105,29 @@ describe('ReleaseManager',()=>{
     expect(db.listProjectReleases('owner',projectId)).toEqual([])
   })
 
+  it('resumes an interrupted release from the first step without passed status',async()=>{
+    const release=db.createProjectRelease('owner',projectId,{branch:'release/1.2.3',version:'1.2.3',sha:'abcdef'})
+    db.setProjectReleaseStatus(release.id,'running','owner')
+    for(const kind of ['regression','knowledge_base','merge_main','push_main','production_deploy'] as const){
+      db.setProjectReleaseStep(release.id,kind,'passed',`${kind} done`,'owner')
+    }
+    db.setProjectReleaseStep(release.id,'health_check','running','','owner')
+    const interrupted=db.getProjectRelease('owner',projectId,release.id)!
+    const calls:string[]=[]
+    const runtime:ReleaseRuntime={
+      prepareKnowledgeBase:async()=>{},
+      exec:async()=>{calls.push('exec');return {exitCode:0,output:''}},
+      updateKnowledgeBase:async()=>{calls.push('knowledge_base')},
+      deployProduction:async()=>{calls.push('production_deploy')},
+      healthCheck:async()=>{calls.push('health_check')},
+      cleanup:async()=>{calls.push('cleanup')}
+    }
+    new ReleaseManager(db,runtime).resume('owner',target(),interrupted)
+    await tick()
+    expect(calls).toEqual(['health_check','cleanup'])
+    expect(db.getProjectRelease('owner',projectId,release.id)).toMatchObject({status:'released'})
+  })
+
   it('rejects arbitrary or missing remote branches before creating history',async()=>{
     const runtime:ReleaseRuntime={exec:async()=>({exitCode:0,output:''}),prepareKnowledgeBase:async()=>{},updateKnowledgeBase:async()=>{},deployProduction:async()=>{},healthCheck:async()=>{},cleanup:async()=>{}}
     const manager=new ReleaseManager(db,runtime)
