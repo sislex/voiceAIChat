@@ -5,6 +5,7 @@ export interface ReleaseProjectTarget { projectId:string; agentId:string; path:s
 export interface ReleaseCommandResult { exitCode:number|null; output:string; timedOut?:boolean }
 export interface ReleaseRuntime {
   exec(target:ReleaseProjectTarget, command:string, timeoutMs:number):Promise<ReleaseCommandResult>
+  prepareKnowledgeBase(branch:string,target:ReleaseProjectTarget):Promise<void>
   updateKnowledgeBase(release:ProjectRelease,target:ReleaseProjectTarget):Promise<void>
   deployProduction():Promise<void>
   healthCheck(release:ProjectRelease,target:ReleaseProjectTarget):Promise<void>
@@ -13,12 +14,34 @@ export interface ReleaseRuntime {
 const quote=(value:string):string=>`'${value.replace(/'/g, `'"'"'`)}'`
 const git=(target:ReleaseProjectTarget,args:string):string=>`cd ${quote(target.path)} && git ${args}`
 
+export async function waitForReleaseHealth(
+  expectedVersion:string,
+  probe:()=>Promise<{ok?:boolean;version?:string}>,
+  options:{attempts?:number;intervalMs?:number;sleep?:(ms:number)=>Promise<void>}={}
+):Promise<void> {
+  const attempts=options.attempts??150
+  const intervalMs=options.intervalMs??2_000
+  const sleep=options.sleep??(ms=>new Promise(resolve=>setTimeout(resolve,ms)))
+  let last='production ещё не ответил'
+  for(let attempt=0;attempt<attempts;attempt+=1){
+    try{
+      const health=await probe()
+      if(health.ok===true&&health.version===expectedVersion)return
+      last=`ok=${String(health.ok)}, version=${health.version??'не указана'}`
+    }catch(error){
+      last=error instanceof Error?error.message:String(error)
+    }
+    if(attempt+1<attempts)await sleep(intervalMs)
+  }
+  throw new Error(`Production не перешёл на версию ${expectedVersion} за ${Math.ceil(attempts*intervalMs/1000)} секунд: ${last}`)
+}
+
 export class ReleaseManager {
   private readonly running=new Set<string>()
   constructor(private readonly db:VoiceChatDb,private readonly runtime:ReleaseRuntime){}
 
   async listBranches(target:ReleaseProjectTarget):Promise<ReleaseBranch[]> {
-    const result=await this.runtime.exec(target,git(target,`fetch --prune origin '+refs/heads/release/*:refs/remotes/origin/release/*' && for-each-ref --format='%(refname:short) %(objectname)' refs/remotes/origin/release/`),120_000)
+    const result=await this.runtime.exec(target,git(target,`fetch --prune origin '+refs/heads/release/*:refs/remotes/origin/release/*' && git for-each-ref --format='%(refname:short) %(objectname)' refs/remotes/origin/release/`),120_000)
     if (result.exitCode!==0) throw new Error(result.output||'Не удалось обновить release-ветки')
     return result.output.split(/\r?\n/).map(line=>line.trim().split(/\s+/)).filter(parts=>parts.length===2).flatMap(([remote,sha])=>{
       const branch=remote!.replace(/^origin\//,'')
@@ -31,7 +54,7 @@ export class ReleaseManager {
     if (baseBranch!==target.baseBranch && !assertReleaseBranch(baseBranch)) throw new Error('Недопустимая базовая ветка')
     const existing=await this.listBranches(target)
     if (existing.some(item=>item.branch===branch)) throw new Error('Release-ветка уже существует')
-    const result=await this.runtime.exec(target,git(target,`fetch origin ${quote(baseBranch)} && branch ${quote(branch)} FETCH_HEAD && push origin ${quote(branch)}:refs/heads/${quote(branch)}`),120_000)
+    const result=await this.runtime.exec(target,git(target,`fetch origin ${quote(baseBranch)} && git branch ${quote(branch)} FETCH_HEAD && git push origin ${quote(branch)}:refs/heads/${quote(branch)}`),120_000)
     if (result.exitCode!==0) throw new Error(result.output||'Не удалось создать release-ветку')
     const resolved=await this.runtime.exec(target,git(target,`rev-parse refs/heads/${quote(branch)}`),30_000)
     if (resolved.exitCode!==0) throw new Error(resolved.output||'Не удалось определить SHA релиза')
@@ -41,6 +64,7 @@ export class ReleaseManager {
   async start(userId:string,target:ReleaseProjectTarget,branch:string,models:Partial<Record<ReleaseStepKind,string>>={},previousReleaseId?:string):Promise<ProjectRelease> {
     assertReleaseBranch(branch)
     if (this.running.has(target.projectId)) throw new Error('Публикация релиза уже выполняется')
+    await this.runtime.prepareKnowledgeBase(branch,target)
     const found=(await this.listBranches(target)).find(item=>item.branch===branch)
     if (!found) throw new Error('Выбранная release-ветка отсутствует в origin')
     const release=this.db.createProjectRelease(userId,target.projectId,{...found,models,previousReleaseId})
@@ -49,9 +73,17 @@ export class ReleaseManager {
     return release
   }
 
+  resume(actor:string,target:ReleaseProjectTarget,release:ProjectRelease):void {
+    if(release.status!=='running'||this.running.has(target.projectId))return
+    this.running.add(target.projectId)
+    void this.execute(actor,target,release).finally(()=>this.running.delete(target.projectId))
+  }
+
   private async execute(actor:string,target:ReleaseProjectTarget,release:ProjectRelease):Promise<void> {
     this.db.setProjectReleaseStatus(release.id,'running',actor)
+    const passed=new Set(release.steps.filter(step=>step.status==='passed').map(step=>step.kind))
     for (const kind of RELEASE_STEP_ORDER) {
+      if(passed.has(kind))continue
       this.db.setProjectReleaseStep(release.id,kind,'running','',actor)
       try {
         const log=await this.runStep(kind,release,target)
@@ -73,8 +105,8 @@ export class ReleaseManager {
     if(kind==='cleanup'){await this.runtime.cleanup(release,target);return 'Feature preview и workspace удалены'}
     const commands:Record<'regression'|'merge_main'|'push_main',string>={
       regression:`checkout --detach ${quote(release.sha)} && npm run affected-check`,
-      merge_main:`fetch origin ${quote(target.baseBranch)} ${quote(release.branch)} && checkout -B ${quote(target.baseBranch)} origin/${quote(target.baseBranch)} && merge --no-ff --no-edit ${quote(release.sha)}`,
-      push_main:`push origin HEAD:refs/heads/${quote(target.baseBranch)}`
+      merge_main:`fetch origin ${quote(target.baseBranch)} ${quote(release.branch)} && git checkout -B ${quote(target.baseBranch)} origin/${quote(target.baseBranch)} && git merge --no-ff --no-edit ${quote(release.sha)}`,
+      push_main:`tag -f ${quote(`v${release.version}`)} HEAD && git push --atomic origin HEAD:refs/heads/${quote(target.baseBranch)} refs/tags/${quote(`v${release.version}`)}`
     }
     const result=await this.runtime.exec(target,git(target,commands[kind]),kind==='regression'?300_000:120_000)
     if(result.exitCode!==0||result.timedOut) throw new Error(result.output||`${kind} завершился с ошибкой`)

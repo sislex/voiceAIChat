@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { fastCheckForPackage, packageArgs, relatedArgs, runFastChecks, runPackageGates, selectAffected } from './affected-check.mjs'
+import { gitHistoryPaths } from './kb.mjs'
 
 const ids = (decision) => decision.packages.map((pkg) => pkg.id)
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -71,6 +72,14 @@ test('selectAffected выбирает пакеты и безопасный fallb
     assert.equal(decision.full, true)
     assert.deepEqual(ids(decision), ['shared', 'server', 'runner', 'agent', 'ui', 'web'])
   })
+})
+
+test('gitHistoryPaths исключает генерируемый индекс БЗ из широких areas', () => {
+  assert.deepEqual(gitHistoryPaths(['docs/kb', 'apps/server/src/kb']), [
+    'docs/kb',
+    'apps/server/src/kb',
+    ':(exclude)docs/kb/README.md'
+  ])
 })
 
 test('packageArgs согласует min/max workers для Vitest', () => {
