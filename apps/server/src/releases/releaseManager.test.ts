@@ -58,6 +58,10 @@ describe('ReleaseManager',()=>{
     const merge=commands.find(command=>command.includes('checkout -B'))!
     expect(merge).toContain("&& git checkout -B 'main'")
     expect(merge).toContain("&& git merge --no-ff --no-edit 'abcdef1234567890'")
+    const push=commands.find(command=>command.includes('push --atomic'))!
+    expect(push).toContain("git tag -f 'v1.2.3' 'abcdef1234567890'")
+    expect(push).toContain("HEAD:refs/heads/'main'")
+    expect(push).toContain("refs/tags/'v1.2.3'")
   })
 
   it('rejects arbitrary or missing remote branches before creating history',async()=>{
