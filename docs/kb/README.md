@@ -9,28 +9,28 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 61 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 62 коммит(ов) в areas после сверки: ac537e7 feat: add managed ticket merge workflow entrypoint … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 9 коммит(ов) в areas после сверки: 183a5f6 feat: add structured manual QA workflow … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ⚠ 25 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ⚠ 26 коммит(ов) в areas после сверки: ac537e7 feat: add managed ticket merge workflow entrypoint … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-08 | ⚠ 11 коммит(ов) в areas после сверки: 9daab6d fix(docker): make whisper build portable on arm64 … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-10 | ⚠ 5 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-10 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-10 | ⚠ 1 коммит(ов) в areas после сверки: 9daab6d fix(docker): make whisper build portable on arm64 |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 24 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 25 коммит(ов) в areas после сверки: ac537e7 feat: add managed ticket merge workflow entrypoint … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 31 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 3 коммит(ов) в areas после сверки: ac537e7 feat: add managed ticket merge workflow entrypoint … |
 | [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 193 коммит(ов) в areas после сверки: 5335713 Merge remote-tracking branch 'origin/feature/169-закрывать-меню-колонки-канбан-доски-по-к' … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ⚠ 11 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ⚠ 12 коммит(ов) в areas после сверки: ac537e7 feat: add managed ticket merge workflow entrypoint … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 8 коммит(ов) в areas после сверки: bcb8716 fix: исключить индекс из свежести базы знаний … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: d9b71af fix: preserve task launch proposal fields … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-11 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 15 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 20 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 5 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-11 | ⚠ 1 коммит(ов) в areas после сверки: ac537e7 feat: add managed ticket merge workflow entrypoint |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 16 коммит(ов) в areas после сверки: ac537e7 feat: add managed ticket merge workflow entrypoint … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 21 коммит(ов) в areas после сверки: ac537e7 feat: add managed ticket merge workflow entrypoint … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 6 коммит(ов) в areas после сверки: ac537e7 feat: add managed ticket merge workflow entrypoint … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 10 коммит(ов) в areas после сверки: 9daab6d fix(docker): make whisper build portable on arm64 … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-10 | ⚠ 6 коммит(ов) в areas после сверки: f469214 fix(ui): close kanban column menu outside … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-10 | ⚠ 7 коммит(ов) в areas после сверки: ac537e7 feat: add managed ticket merge workflow entrypoint … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-10, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
 
@@ -47,7 +47,7 @@
 
 ## Журнал сессий
 
-Всего записей: 160. Последние:
+Всего записей: 161. Последние:
 
 - [2026-08-11-alexeys-macbook-air-2-kanban-column-menu.md](log/2026-08-11-alexeys-macbook-air-2-kanban-column-menu.md) — kanban-column-menu
 - [2026-08-10-mac-versioned-release-deploy.md](log/2026-08-10-mac-versioned-release-deploy.md) — versioned-release-deploy
@@ -56,9 +56,9 @@
 - [2026-08-10-mac-feature-preview.md](log/2026-08-10-mac-feature-preview.md) — feature-preview
 - [2026-08-10-mac-feature-preview-docker-preflight.md](log/2026-08-10-mac-feature-preview-docker-preflight.md) — feature-preview-docker-preflight
 - [2026-08-10-2470-com-stable-feature-preview-qa-preparation.md](log/2026-08-10-2470-com-stable-feature-preview-qa-preparation.md) — stable-feature-preview-qa-preparation
+- [2026-08-10-2470-com-merge-run-tabs.md](log/2026-08-10-2470-com-merge-run-tabs.md) — merge-run-tabs
 - [2026-08-10-2470-com-kanban-board-scroll.md](log/2026-08-10-2470-com-kanban-board-scroll.md) — kanban-board-scroll
 - [2026-08-10-2470-com-kanban-assistant-conversation-selector.md](log/2026-08-10-2470-com-kanban-assistant-conversation-selector.md) — kanban-assistant-conversation-selector
-- [2026-08-09-mac-test-fix-cycle.md](log/2026-08-09-mac-test-fix-cycle.md) — test-fix-cycle
 
 ## Исторические планы
 
