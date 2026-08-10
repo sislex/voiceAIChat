@@ -20,6 +20,7 @@ export interface KanbanAssistantProps {
   llmEngines: LlmEngineOption[]
   transport?: Pick<NonNullable<typeof window.claude>, 'send' | 'onToken' | 'onDone' | 'onError'>
   onCommand: (command: WidgetAssistantCommand) => void | Promise<void>
+  conversationId?: string | null
 }
 
 /** A selector option keeps its source independent from the UI, so new widget kinds need no selector changes. */
@@ -36,47 +37,55 @@ export function projectAssistantChatSource(conversation: Conversation): string {
 export interface ProjectAssistantChatSelectorProps {
   projectId: string
   api: RendererApi
-  onOpenChat: (conversationId: string) => void
-  onNewChat?: () => void
+  selectedId: string | null
+  onSelect: (conversationId: string) => void
 }
 
 /** Project chats live in the assistant shell header; its source label is the widget kind or `chat`. */
-export function ProjectAssistantChatSelector({ projectId, api, onOpenChat, onNewChat }: ProjectAssistantChatSelectorProps): JSX.Element {
+export function ProjectAssistantChatSelector({ projectId, api, selectedId, onSelect }: ProjectAssistantChatSelectorProps): JSX.Element {
   const [chats, setChats] = useState<ProjectAssistantChat[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(() => globalThis.localStorage?.getItem(`voicechat.projectAssistantChat.${projectId}`) ?? null)
 
+  const select = (id: string): void => {
+    globalThis.localStorage?.setItem(`voicechat.projectAssistantChat.${projectId}`, id)
+    onSelect(id)
+  }
   useEffect(() => {
-    setSelectedId(globalThis.localStorage?.getItem(`voicechat.projectAssistantChat.${projectId}`) ?? null)
+    let current = true
     void Promise.all([api['conversations:list']({}), api['kanbanAssistant:get']({ projectId })]).then(([items, assistant]) => {
+      if (!current) return
       const projectChats = items
         .filter((item) => item.projectId === projectId)
         .concat(assistant.conversation)
         .filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index)
         .map((item) => ({ id: item.id, title: item.title, source: projectAssistantChatSource(item) }))
       setChats(projectChats)
+      const saved = globalThis.localStorage?.getItem(`voicechat.projectAssistantChat.${projectId}`) ?? null
+      select(projectChats.some((chat) => chat.id === saved) ? saved! : assistant.conversation.id)
     })
+    return () => { current = false }
   }, [api, projectId])
+
+  const createChat = async (): Promise<void> => {
+    const created = await api['conversations:create']({ title: 'Новый разговор' })
+    const chat = await api['conversations:setProject']({ id: created.id, projectId })
+    setChats((items) => [...items, { id: chat.id, title: chat.title, source: projectAssistantChatSource(chat) }])
+    select(chat.id)
+  }
 
   return <div className="project-assistant-chat-selector">
     <label>
       <span className="vc-sr-only">Чат ассистента</span>
-      <select aria-label="Чат ассистента" value={selectedId ?? ''} onChange={(event) => {
-        const id = event.target.value
-        if (!id) return
-        setSelectedId(id)
-        globalThis.localStorage?.setItem(`voicechat.projectAssistantChat.${projectId}`, id)
-        onOpenChat(id)
-      }}>
+      <select aria-label="Чат ассистента" value={selectedId ?? ''} onChange={(event) => { if (event.target.value) select(event.target.value) }}>
         <option value="" disabled>Выберите чат</option>
         {chats.map((chat) => <option key={chat.id} value={chat.id}>{chat.title} · {chat.source}</option>)}
       </select>
     </label>
-    {onNewChat && <button type="button" onClick={onNewChat}>Новый чат</button>}
+    <button type="button" onClick={() => { void createChat() }}>Новый чат</button>
   </div>
 }
 
 /** Kanban adapter chat. Context is read again for every request, so card/field/action changes cannot go stale. */
-export function KanbanAssistant({ projectId, context, api, llmEngines, transport = window.claude, onCommand }: KanbanAssistantProps): JSX.Element {
+export function KanbanAssistant({ projectId, context, api, llmEngines, transport = window.claude, onCommand, conversationId }: KanbanAssistantProps): JSX.Element {
   const [draft, setDraft] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
   const [conversation, setConversation] = useState<Conversation | null>(null)
@@ -87,12 +96,18 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
   const liveContext = useRef(context)
   useEffect(() => { liveContext.current = context }, [context])
   const reload = async (): Promise<void> => {
-    const data = await api['kanbanAssistant:get']({ projectId })
+    const data = await api['kanbanAssistant:get']({ projectId, ...(conversationId ? { conversationId } : {}) })
     setConversation(data.conversation); setMessages(data.messages); setEffective(data.effectiveLlm)
   }
   useEffect(() => {
-    void reload()
-  }, [projectId])
+    let current = true
+    setConversation(null); setMessages([]); setPartial(''); setBusy(false); setProposal(null)
+    void api['kanbanAssistant:get']({ projectId, ...(conversationId ? { conversationId } : {}) }).then((data) => {
+      if (!current) return
+      setConversation(data.conversation); setMessages(data.messages); setEffective(data.effectiveLlm)
+    })
+    return () => { current = false }
+  }, [api, projectId, conversationId])
   useEffect(() => {
     if (!transport || !conversation) return
     return transport.onToken((event) => { if (event.conversationId === conversation.id) setPartial((value) => value + event.delta) })
@@ -187,7 +202,7 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
   </div>
   return <div className="kanban-assistant">
     <ChatColumn
-      title="Канбан-ассистент"
+      title={conversation?.title ?? 'Канбан-ассистент'}
       state={busy ? 'thinking' : 'idle'}
       messages={visibleMessages}
       liveSegments={[]}

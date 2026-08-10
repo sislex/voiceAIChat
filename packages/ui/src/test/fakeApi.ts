@@ -177,8 +177,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'kb:research': async ({ projectId }) => ({ projectId, state: 'running', startedBy: 'admin', startedAt: 0, finishedAt: null, documents: [], note: '', error: null }),
     'kb:researchStatus': async () => null,
     'kb:context': async ({ query }) => ({ query, confidence: 'low', autoInjectAllowed: false, sections: [], relatedFiles: [], relatedDocuments: [], staleWarnings: [], estimatedTokens: 0 }),
-    'kanbanAssistant:get': async ({ projectId }) => {
-      let conversation = conversations.find((item) => item.projectId === projectId && item.assistantKind === 'kanban')
+    'kanbanAssistant:get': async ({ projectId, conversationId }) => {
+      let conversation = conversations.find((item) => item.id === conversationId && item.projectId === projectId && (item.assistantKind === undefined || item.assistantKind === 'kanban'))
+        ?? conversations.find((item) => item.projectId === projectId && item.assistantKind === 'kanban')
       if (!conversation) {
         conversation = { ...makeConversation(`Ассистент · ${projectId}`), projectId, assistantKind: 'kanban', execTarget: 'none' }
         conversations.push(conversation)

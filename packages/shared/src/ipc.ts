@@ -127,7 +127,7 @@ export interface IpcInvokeMap {
   'conversations:create': { arg: { title?: string; assistantKind?: 'web-recorder' }; result: Conversation }
   /** Создать или получить приватный проектный чат канбан-ассистента. */
   'kanbanAssistant:get': {
-    arg: { projectId: string }
+    arg: { projectId: string; conversationId?: string }
     result: ConversationWithMessages & { effectiveLlm: { llmEngineId: string | null; provider: LlmProvider; model: string; inherited: boolean } }
   }
   'widget:describe': { arg: import('./widgetAssistant').WidgetToolScope; result: import('./widgetAssistant').WidgetToolDescription }

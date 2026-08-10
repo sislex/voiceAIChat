@@ -387,6 +387,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
   const [activeProjectPreviewUrl, setActiveProjectPreviewUrl] = useState<string | null>(null)
   const [assistantOpen, setAssistantOpen] = useState(() => globalThis.localStorage?.getItem('voicechat.kanbanAssistantOpen') === '1')
+  const [assistantConversationId, setAssistantConversationId] = useState<string | null>(null)
   const [assistantTaskId, setAssistantTaskId] = useState<string | null>(null)
   const [assistantField, setAssistantField] = useState<keyof SupportedTaskPatch | null>(null)
   const [widgetActions, setWidgetActions] = useState<WidgetUserAction[]>([])
@@ -1193,8 +1194,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               assistantHeader={<ProjectAssistantChatSelector
                 projectId={routeProjectId!}
                 api={api}
-                onOpenChat={(id) => navigate(`/chat/${id}`)}
-                onNewChat={() => { void api['conversations:create']({ title: 'Новый разговор' }).then((chat) => api['conversations:setProject']({ id: chat.id, projectId: routeProjectId! })).then((chat) => navigate(`/chat/${chat.id}`)) }}
+                selectedId={assistantConversationId}
+                onSelect={setAssistantConversationId}
               />}
               widget={<ProjectBoard
               initialOpenTaskId={routeTaskId}
@@ -1235,6 +1236,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
                 context={kanbanAssistantContext}
                 api={api}
                 llmEngines={state.llmEngines}
+                conversationId={assistantConversationId}
                 onCommand={async (command: WidgetAssistantCommand) => {
                   rememberWidgetAction('assistant.command', command.type, 'taskId' in command ? command.taskId : undefined)
                   if (command.type === 'navigate.project-settings') { navigate(`/projects/${command.projectId}/settings`); return }
