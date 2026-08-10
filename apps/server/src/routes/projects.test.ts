@@ -135,7 +135,7 @@ describe('projects REST: доска', () => {
   it('колонки: reorder не перехватывается :columnId; hidden; delete', async () => {
     const p = await createProject()
     let board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
-    expect(board.columns.map((c) => c.name)).toEqual(['Бэклог', 'Готово к разработке', 'В разработке', 'Автотестирование', 'Создание сценариев ручного QA', 'Ручное QA', 'Ожидает мержа', 'Требуется решение', 'Готово'])
+    expect(board.columns.map((c) => c.name)).toEqual(['Бэклог', 'Готово к разработке', 'В разработке', 'Автотестирование', 'Создание сценариев ручного QA', 'Ручное QA', 'Ожидает мержа', 'Мерж', 'Требуется решение', 'Готово'])
 
     const reversed = board.columns.map((c) => c.id).reverse()
     const reo = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/columns/reorder`, payload: { order: reversed } })
@@ -365,6 +365,34 @@ describe('projects REST: скрытие завершённых задач', () =
     expect((bad.json() as ProjectSummary).doneRetentionDays).toBeNull()
     await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'bob' } })
     expect((await inj(bobTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { doneRetentionDays: 3 } })).statusCode).toBe(403)
+  })
+})
+
+describe('projects REST: merge run', () => {
+  it('проверяет статус, права и машину; старт атомарен и идемпотентен', async () => {
+    const p = await createProject('Merge')
+    const agent = db.createAgent('admin', 'Merge machine')
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/machines`, payload: { agentId: agent.id } })
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/default-machine`, payload: { agentId: agent.id } })
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'bob' } })
+    const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
+    const awaiting = board.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const merge = board.columns.find((column) => column.semanticType === 'merge')!
+    const task = (await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: backlog.id, title: 'Ready' } })).json() as Task
+    const url = `/api/projects/${p.id}/tasks/${task.id}/merge`
+    expect((await inj(adminTok, { method: 'POST', url, payload: {} })).statusCode).toBe(409)
+    const workspace = db.createCiWorkspace({ projectId: p.id, taskId: task.id, agentId: agent.id, path: '/work/task' })
+    db.recordCiWorkspaceRevision(workspace.id, 'feature/task', 'abc123')
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${task.id}/move`, payload: { columnId: awaiting.id } })
+    expect((await inj(bobTok, { method: 'POST', url, payload: {} })).statusCode).toBe(403)
+    const first = await inj(adminTok, { method: 'POST', url, payload: {} })
+    expect(first.statusCode).toBe(200)
+    const second = await inj(adminTok, { method: 'POST', url, payload: {} })
+    expect(second.statusCode).toBe(200)
+    expect(second.json().id).toBe(first.json().id)
+    const refreshed = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    expect(refreshed.tasks.find((item) => item.id === task.id)?.columnId).toBe(merge.id)
   })
 })
 

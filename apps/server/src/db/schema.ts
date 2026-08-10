@@ -337,6 +337,41 @@ CREATE TABLE IF NOT EXISTS ci_runs (
 CREATE INDEX IF NOT EXISTS idx_ci_runs_project ON ci_runs(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ci_runs_task ON ci_runs(task_id, created_at DESC);
 
+-- Merge — отдельный от development жизненный цикл. Снимок параметров и журнал
+-- остаются после рестарта; partial unique index запрещает два активных рана.
+CREATE TABLE IF NOT EXISTS merge_runs (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  triggered_by TEXT NOT NULL,
+  source_branch TEXT NOT NULL,
+  target_branch TEXT NOT NULL DEFAULT 'main',
+  source_sha TEXT,
+  target_sha TEXT,
+  merge_sha TEXT,
+  revert_sha TEXT,
+  agent_id TEXT NOT NULL,
+  llm_engine_id TEXT,
+  llm_provider TEXT NOT NULL DEFAULT 'claude',
+  llm_model TEXT NOT NULL DEFAULT '',
+  stage TEXT NOT NULL DEFAULT 'queued',
+  conflicts_json TEXT NOT NULL DEFAULT '[]',
+  deploy_id TEXT,
+  deploy_version TEXT,
+  production_status TEXT,
+  error TEXT,
+  log TEXT NOT NULL DEFAULT '',
+  started_at INTEGER,
+  finished_at INTEGER,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_merge_runs_task ON merge_runs(task_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_merge_runs_one_active_task ON merge_runs(task_id)
+  WHERE status IN ('queued','checking','resolving_conflicts','testing','pushing','deploying','production_checks','rolling_back');
+
 -- Наследуемая конфигурация автоматического этапа: owner = project|task.
 -- NULL в поле означает наследование этого поля со следующего уровня.
 CREATE TABLE IF NOT EXISTS ci_stage_llm_configs (

@@ -90,6 +90,7 @@ import {
   type CiGlobalSettings,
   DEFAULT_CI_GLOBAL_SETTINGS,
   type CiRun,
+  type MergeRun,
   type CiRunDetail,
   type CiStageRun,
   type CiRunStep,
@@ -381,6 +382,13 @@ interface TaskRow {
   created_at: number
   updated_at: number
   chat_id?: string | null
+  merge_source_branch?: string | null
+  merge_source_sha?: string | null
+  active_merge_run_id?: string | null
+  active_merge_status?: string | null
+  merge_permitted?: number
+  merge_machine_bound?: number
+  merged_sha?: string | null
 }
 
 
@@ -433,7 +441,7 @@ function normPriority(raw: string): TaskPriority {
 }
 
 function normColumnSemantic(raw: string): KanbanColumnSemanticType {
-  return raw === 'backlog' || raw === 'ready' || raw === 'development' || raw === 'testing' || raw === 'qa_preparation' || raw === 'manual_qa' || raw === 'awaiting_merge' || raw === 'decision_required' || raw === 'done' ? raw : 'custom'
+  return raw === 'backlog' || raw === 'ready' || raw === 'development' || raw === 'testing' || raw === 'qa_preparation' || raw === 'manual_qa' || raw === 'awaiting_merge' || raw === 'merge' || raw === 'decision_required' || raw === 'done' ? raw : 'custom'
 }
 
 function normWorkItemType(raw: string): WorkItemType {
@@ -478,7 +486,14 @@ function mapTask(r: TaskRow): Task {
     position: r.position,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
-    chatId: r.chat_id ?? null
+    chatId: r.chat_id ?? null,
+    mergeSourceBranch: r.merge_source_branch ?? null,
+    mergeSourceSha: r.merge_source_sha ?? null,
+    activeMergeRunId: r.active_merge_run_id ?? null,
+    activeMergeStatus: r.active_merge_status ?? null,
+    mergePermitted: r.merge_permitted !== 0,
+    mergeMachineBound: r.merge_machine_bound !== 0,
+    mergedSha: r.merged_sha ?? null
   }
 }
 
@@ -736,6 +751,9 @@ export class VoiceChatDb {
       INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
         SELECT lower(hex(randomblob(16))), p.id, 'Ожидает мержа', 'awaiting_merge', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
         WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='awaiting_merge');
+      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
+        SELECT lower(hex(randomblob(16))), p.id, 'Мерж', 'merge', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
+        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='merge');
       INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
         SELECT lower(hex(randomblob(16))), p.id, 'Требуется решение', 'decision_required', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
         WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='decision_required');
@@ -1984,6 +2002,7 @@ export class VoiceChatDb {
         ['Создание сценариев ручного QA', 'qa_preparation'],
         ['Ручное QA', 'manual_qa'],
         ['Ожидает мержа', 'awaiting_merge'],
+        ['Мерж', 'merge'],
         ['Требуется решение', 'decision_required'],
         ['Готово', 'done']
       ].forEach(([name, semantic], i) =>
@@ -2318,10 +2337,17 @@ export class VoiceChatDb {
       this.db
         .prepare(
           `SELECT t.*, (SELECT c.id FROM conversations c WHERE c.task_id = t.id AND c.user_id = ?
-                        ORDER BY c.created_at ASC LIMIT 1) AS chat_id
+                        ORDER BY c.created_at ASC LIMIT 1) AS chat_id,
+             (SELECT w.branch FROM ci_workspaces w WHERE w.task_id=t.id AND w.pushed=1 ORDER BY w.created_at DESC LIMIT 1) AS merge_source_branch,
+             (SELECT w.commit_sha FROM ci_workspaces w WHERE w.task_id=t.id AND w.pushed=1 ORDER BY w.created_at DESC LIMIT 1) AS merge_source_sha,
+             (SELECT r.id FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','resolving_conflicts','testing','pushing','deploying','production_checks','rolling_back') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_run_id,
+             (SELECT r.status FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','resolving_conflicts','testing','pushing','deploying','production_checks','rolling_back') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_status,
+             EXISTS(SELECT 1 FROM project_members pm WHERE pm.project_id=t.project_id AND pm.username=? AND pm.role='owner') AS merge_permitted,
+             EXISTS(SELECT 1 FROM project_machines pm WHERE pm.project_id=t.project_id AND pm.agent_id=COALESCE(t.agent_id,(SELECT default_agent_id FROM projects WHERE id=t.project_id))) AS merge_machine_bound,
+             (SELECT r.merge_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_sha
            FROM tasks t WHERE t.project_id = ? ORDER BY t.column_id ASC, t.position ASC`
         )
-        .all(userId, projectId) as TaskRow[]
+        .all(userId, userId, projectId) as TaskRow[]
     ).map(mapTask)
     // Фильтруем на сервере: иначе payload доски рос бы бесконечно вместе с
     // колонкой «Готово». includeCompleted → порог null, скрывать нечего.
@@ -4233,6 +4259,57 @@ export class VoiceChatDb {
   private canQa(userId: string, projectId: string): boolean {
     const row = this.db.prepare(`SELECT role, qa_permission FROM project_members WHERE project_id = ? AND username = ?`).get(projectId, userId) as { role: string; qa_permission: number } | undefined
     return !!row && (row.role === 'owner' || !!row.qa_permission)
+  }
+
+  /**
+   * Идемпотентно создаёт отдельный merge-ран и в той же SQLite-транзакции
+   * переводит карточку в системную колонку merge. Все значения ветки/машины
+   * берутся из серверных записей, а не из тела HTTP-запроса.
+   */
+  startMergeRun(userId: string, projectId: string, taskId: string): MergeRun {
+    return this.db.transaction(() => {
+      const existing = this.db.prepare(`SELECT * FROM merge_runs WHERE task_id=? AND status IN ('queued','checking','resolving_conflicts','testing','pushing','deploying','production_checks','rolling_back') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string, unknown> | undefined
+      if (existing) return this.mapMergeRun(existing)
+
+      const row = this.db.prepare(`SELECT t.*, c.semantic_type, p.ci_base_branch, p.default_agent_id, pm.role
+        FROM tasks t JOIN kanban_columns c ON c.id=t.column_id JOIN projects p ON p.id=t.project_id
+        JOIN project_members pm ON pm.project_id=p.id AND pm.username=?
+        WHERE t.id=? AND t.project_id=?`).get(userId, taskId, projectId) as (TaskRow & { semantic_type: string; ci_base_branch: string; default_agent_id: string | null; role: string }) | undefined
+      if (!row) throw new Error('task not found')
+      if (row.role !== 'owner') throw new Error('merge permission required')
+      if (row.semantic_type !== 'awaiting_merge') throw new Error('task must be in awaiting_merge')
+      if ((row.ci_base_branch || 'main') !== 'main') throw new Error('merge target must be main')
+
+      const workspace = this.db.prepare(`SELECT branch,commit_sha FROM ci_workspaces WHERE task_id=? AND project_id=? AND pushed=1 AND branch IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId, projectId) as { branch: string; commit_sha: string | null } | undefined
+      if (!workspace?.branch || !/^(?!-)(?!.*\.\.)(?!.*[~^:?*\\[\\]\\\\])[A-Za-z0-9._/-]+$/.test(workspace.branch)) throw new Error('prepared task branch not found')
+      const agentId = row.agent_id ?? row.default_agent_id
+      if (!agentId || !this.db.prepare(`SELECT 1 FROM project_machines WHERE project_id=? AND agent_id=?`).get(projectId, agentId)) throw new Error('task machine is not bound to project')
+      if (!this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type='merge'`).get(projectId)) throw new Error('merge column not found')
+
+      const id = this.newId(), now = this.now()
+      this.db.prepare(`INSERT INTO merge_runs (id,project_id,task_id,status,triggered_by,source_branch,target_branch,source_sha,agent_id,llm_provider,llm_model,stage,started_at,created_at,log)
+        VALUES (?,?,?,'queued',?,?,'main',?,?,'claude','','queued',?,?,?)`).run(id, projectId, taskId, userId, workspace.branch, workspace.commit_sha, agentId, now, now, `[${new Date(now).toISOString()}] merge requested by ${userId}\\n`)
+      this.db.prepare(`UPDATE tasks SET column_id=(SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type='merge'), updated_at=? WHERE id=?`).run(projectId, now, taskId)
+      return this.mapMergeRun(this.db.prepare(`SELECT * FROM merge_runs WHERE id=?`).get(id) as Record<string, unknown>)
+    })()
+  }
+
+  getMergeRun(userId: string, runId: string): MergeRun | null {
+    const row = this.db.prepare(`SELECT r.* FROM merge_runs r JOIN project_members m ON m.project_id=r.project_id AND m.username=? WHERE r.id=?`).get(userId, runId) as Record<string, unknown> | undefined
+    return row ? this.mapMergeRun(row) : null
+  }
+
+  private mapMergeRun(r: Record<string, unknown>): MergeRun {
+    return {
+      id: String(r.id), projectId: String(r.project_id), taskId: String(r.task_id), status: r.status as MergeRun['status'],
+      triggeredBy: String(r.triggered_by), sourceBranch: String(r.source_branch), targetBranch: String(r.target_branch),
+      sourceSha: r.source_sha as string | null, targetSha: r.target_sha as string | null, mergeSha: r.merge_sha as string | null,
+      revertSha: r.revert_sha as string | null, agentId: String(r.agent_id), llmEngineId: r.llm_engine_id as string | null,
+      llmProvider: r.llm_provider as MergeRun['llmProvider'], llmModel: String(r.llm_model ?? ''), stage: String(r.stage),
+      conflicts: parseStringArray(r.conflicts_json as string), deployId: r.deploy_id as string | null, deployVersion: r.deploy_version as string | null,
+      productionStatus: r.production_status as string | null, error: r.error as string | null, log: String(r.log ?? ''),
+      startedAt: r.started_at as number | null, finishedAt: r.finished_at as number | null, createdAt: Number(r.created_at)
+    }
   }
 
   getQaTaskState(userId: string, projectId: string, taskId: string): QaTaskState | null {

@@ -954,6 +954,8 @@ export interface StoreActions {
   resolveCiSuggestion(id: string, accept: boolean): Promise<void>
   reloadCiWorkspaces(projectId?: string): Promise<void>
   startCiRun(projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string; launch?: 'queue' | 'parallel' }): Promise<CiRun | null>
+  /** Запустить отдельный merge workflow; сервер повторно валидирует все условия. */
+  startMergeRun(projectId: string, taskId: string): Promise<boolean>
   cancelCiRun(runId: string): Promise<void>
   /** Исключить только ожидающий ран из очереди CI. */
   dequeueCiRun(runId: string): Promise<void>
@@ -3746,6 +3748,19 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       return null
     }
   }
+  async function startMergeRun(projectId: string, taskId: string): Promise<boolean> {
+    if (!ciBridge) return false
+    try {
+      await ciBridge.startMerge(projectId, taskId)
+      await openBoard(projectId)
+      notify({ kind: 'info', text: 'Merge-ран запущен' })
+      return true
+    } catch (err) {
+      fail(err)
+      return false
+    }
+  }
+
   async function cancelCiRun(runId: string): Promise<void> {
     if (!ciBridge) return
     try { await ciBridge.cancelRun(runId) } catch (err) { fail(err) }
@@ -4253,6 +4268,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       resolveCiSuggestion,
       reloadCiWorkspaces,
       startCiRun,
+      startMergeRun,
       cancelCiRun,
       dequeueCiRun,
       retryCiRun,
