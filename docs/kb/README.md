@@ -19,14 +19,14 @@
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 18 коммит(ов) в areas после сверки: ab6b78d feat: extend preview environments and manual QA workflow … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 25 коммит(ов) в areas после сверки: 1d2008b CHAT-165: добавить версионные release-ветки и центр деплоя … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 1 коммит(ов) в areas после сверки: ab6b78d feat: extend preview environments and manual QA workflow |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 178 коммит(ов) в areas после сверки: 5fc6ecc Merge CHAT-168: единый вертикальный скролл канбана … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 179 коммит(ов) в areas после сверки: 4db0795 fix: исправить загрузку release-веток … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ⚠ 3 коммит(ов) в areas после сверки: 4db0795 fix: исправить загрузку release-веток … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 7 коммит(ов) в areas после сверки: 647043a chatai-165: работа CI-рана … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: d9b71af fix: preserve task launch proposal fields … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: 5fc6ecc Merge CHAT-168: единый вертикальный скролл канбана … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 15 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 10 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 11 коммит(ов) в areas после сверки: 4db0795 fix: исправить загрузку release-веток … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 7 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
