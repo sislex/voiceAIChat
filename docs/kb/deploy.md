@@ -35,7 +35,12 @@ areas:
 - **better-sqlite3 нативный** → в build-стадии нужен toolchain (python3/make/g++),
   база — glibc (`bookworm`), не musl.
 - **whisper-cli** собирается отдельной стадией из whisper.cpp v1.7.5 статически
-  (`BUILD_SHARED_LIBS=OFF`); он попадает только в серверный target, где нужен STT.
+  (`BUILD_SHARED_LIBS=OFF`) и с `GGML_NATIVE=OFF`. Последнее обязательно для
+  переносимой ARM64-сборки: под Docker Desktop автоопределение CPU включало
+  неподдерживаемые `i8mm`/`dotprod`/FP16-инструкции и GCC падал с
+  `target specific option mismatch`. Стадия и запуск `whisper-cli --help`
+  проверены на образе `linux/arm64`; бинарник попадает только в серверный target,
+  где нужен STT.
 - **Оба frontend workspace собираются отдельно и работают same-origin**: ChatAI
   раздаётся из `VC_WEB_DIR=/app/apps/web/dist`, Web Recorder — из
   `VC_WEB_RECORDER_DIR=/app/apps/web-recorder/dist` под `/web-recorder/`. Его Vite
