@@ -217,7 +217,7 @@ describe('шаг «Актуализировать базу знаний»', () =
     expect(prompts.some((p) => p.startsWith('Ты ведёшь базу знаний'))).toBe(false)
   })
 
-  it('использует проверенный корень клона, а не несуществующий вложенный путь с повторным SLUG', async () => {
+  it('использует стабильный корень клона задачи без повторного сегмента task number', async () => {
     await boot()
     const { projectId, taskId } = setup()
     const runId = await runToEnd(projectId, taskId)
@@ -225,8 +225,8 @@ describe('шаг «Актуализировать базу знаний»', () =
     expect(kbStep(runId).status).toBe('success')
     const cwd = new URL(kbMcpUrls[0]).searchParams.get('cwd')!
     expect(repoCheckWorkdirs).toEqual([cwd])
-    expect(cwd).toMatch(/\/t1$/)
-    expect(cwd).not.toMatch(/\/t1\/t1$/)
+    expect(cwd).toMatch(/\/1$/)
+    expect(cwd).not.toMatch(/\/1\/1$/)
   })
 
   it('не запускает модель и явно пропускает шаг, если корень рабочей копии недоступен', async () => {
