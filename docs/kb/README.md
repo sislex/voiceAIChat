@@ -9,24 +9,24 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 57 коммит(ов) в areas после сверки: 544315f fix: стабилизировать публикацию релизов … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 58 коммит(ов) в areas после сверки: b4d8ffa fix: дожидаться версии production при релизе … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 9 коммит(ов) в areas после сверки: 183a5f6 feat: add structured manual QA workflow … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ⚠ 22 коммит(ов) в areas после сверки: ab6b78d feat: extend preview environments and manual QA workflow … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-08 | ⚠ 6 коммит(ов) в areas после сверки: 544315f fix: стабилизировать публикацию релизов … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-10 | ⚠ 4 коммит(ов) в areas после сверки: 544315f fix: стабилизировать публикацию релизов … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-08 | ⚠ 7 коммит(ов) в areas после сверки: b4d8ffa fix: дожидаться версии production при релизе … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-10 | ⚠ 5 коммит(ов) в areas после сверки: b4d8ffa fix: дожидаться версии production при релизе … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-10 | ⚠ 1 коммит(ов) в areas после сверки: ab6b78d feat: extend preview environments and manual QA workflow |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 20 коммит(ов) в areas после сверки: 544315f fix: стабилизировать публикацию релизов … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 27 коммит(ов) в areas после сверки: 544315f fix: стабилизировать публикацию релизов … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 21 коммит(ов) в areas после сверки: b4d8ffa fix: дожидаться версии production при релизе … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 28 коммит(ов) в areas после сверки: b4d8ffa fix: дожидаться версии production при релизе … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 1 коммит(ов) в areas после сверки: ab6b78d feat: extend preview environments and manual QA workflow |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 184 коммит(ов) в areas после сверки: 544315f fix: стабилизировать публикацию релизов … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ⚠ 7 коммит(ов) в areas после сверки: 544315f fix: стабилизировать публикацию релизов … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 185 коммит(ов) в areas после сверки: b4d8ffa fix: дожидаться версии production при релизе … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ⚠ 8 коммит(ов) в areas после сверки: b4d8ffa fix: дожидаться версии production при релизе … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 8 коммит(ов) в areas после сверки: bcb8716 fix: исключить индекс из свежести базы знаний … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: d9b71af fix: preserve task launch proposal fields … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: 5fc6ecc Merge CHAT-168: единый вертикальный скролл канбана … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 15 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 15 коммит(ов) в areas после сверки: 544315f fix: стабилизировать публикацию релизов … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 16 коммит(ов) в areas после сверки: b4d8ffa fix: дожидаться версии production при релизе … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 3 коммит(ов) в areas после сверки: 544315f fix: стабилизировать публикацию релизов … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 9 коммит(ов) в areas после сверки: ddd5aa7 fix: publish release version metadata … |
