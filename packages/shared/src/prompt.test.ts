@@ -90,12 +90,14 @@ describe('parseTaskLaunchRequest', () => {
     })
   })
 
-  it('разбирает несколько последовательных предложений', () => {
-    const parsed = parseTaskLaunchRequest('Выберите задачи.\n```task-launch\n{"title":"Первая","description":"Описание 1","acceptanceCriteria":"Критерий 1"}\n```\n```task-launch\n{"title":"Вторая","description":"Описание 2","acceptanceCriteria":"Критерий 2"}\n```')
+  it('разбирает несколько последовательных предложений и сохраняет форматирование полей', () => {
+    const description = '\n## Описание 2\n\n- пункт\n\n\`\`\`ts\n  const value = "два"\n\`\`\`\n'
+    const acceptanceCriteria = '\n1. Первый критерий\n2. "Второй" критерий\n'
+    const parsed = parseTaskLaunchRequest(`Выберите задачи.\n\`\`\`task-launch\n{"title":"Первая","description":"Описание 1","acceptanceCriteria":"Критерий 1"}\n\`\`\`\n\`\`\`task-launch\n${JSON.stringify({ title: 'Вторая', description, acceptanceCriteria })}\n\`\`\``)
     expect(parsed.text).toBe('Выберите задачи.')
     expect(parsed.requests).toEqual([
       { id: 'task-launch-1', title: 'Первая', description: 'Описание 1', acceptanceCriteria: 'Критерий 1' },
-      { id: 'task-launch-2', title: 'Вторая', description: 'Описание 2', acceptanceCriteria: 'Критерий 2' }
+      { id: 'task-launch-2', title: 'Вторая', description, acceptanceCriteria }
     ])
   })
 
