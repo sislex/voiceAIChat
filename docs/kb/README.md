@@ -9,24 +9,24 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 55 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 56 коммит(ов) в areas после сверки: 32139b8 fix: проверять health релиза на production-сервере … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 9 коммит(ов) в areas после сверки: 183a5f6 feat: add structured manual QA workflow … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ⚠ 22 коммит(ов) в areas после сверки: ab6b78d feat: extend preview environments and manual QA workflow … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: 1d2008b CHAT-165: добавить версионные release-ветки и центр деплоя … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-08 | ⚠ 4 коммит(ов) в areas после сверки: 32139b8 fix: проверять health релиза на production-сервере … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-10 | ⚠ 3 коммит(ов) в areas после сверки: 32139b8 fix: проверять health релиза на production-сервере … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-10 | ⚠ 1 коммит(ов) в areas после сверки: ab6b78d feat: extend preview environments and manual QA workflow |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 18 коммит(ов) в areas после сверки: ab6b78d feat: extend preview environments and manual QA workflow … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 25 коммит(ов) в areas после сверки: 1d2008b CHAT-165: добавить версионные release-ветки и центр деплоя … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 19 коммит(ов) в areas после сверки: 32139b8 fix: проверять health релиза на production-сервере … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 26 коммит(ов) в areas после сверки: 32139b8 fix: проверять health релиза на production-сервере … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 1 коммит(ов) в areas после сверки: ab6b78d feat: extend preview environments and manual QA workflow |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 181 коммит(ов) в areas после сверки: a6dc0e0 fix: исправить составные git-команды релиза … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ⚠ 4 коммит(ов) в areas после сверки: a6dc0e0 fix: исправить составные git-команды релиза … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 182 коммит(ов) в areas после сверки: 32139b8 fix: проверять health релиза на production-сервере … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ⚠ 5 коммит(ов) в areas после сверки: 32139b8 fix: проверять health релиза на production-сервере … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 8 коммит(ов) в areas после сверки: bcb8716 fix: исключить индекс из свежести базы знаний … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: d9b71af fix: preserve task launch proposal fields … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: 5fc6ecc Merge CHAT-168: единый вертикальный скролл канбана … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 15 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 12 коммит(ов) в areas после сверки: a6dc0e0 fix: исправить составные git-команды релиза … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 13 коммит(ов) в areas после сверки: 32139b8 fix: проверять health релиза на production-сервере … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 8 коммит(ов) в areas после сверки: bcb8716 fix: исключить индекс из свежести базы знаний … |
