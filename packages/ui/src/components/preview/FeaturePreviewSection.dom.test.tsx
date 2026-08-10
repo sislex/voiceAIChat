@@ -38,6 +38,30 @@ describe('FeaturePreviewSection', () => {
     await waitFor(() => expect(operate).toHaveBeenCalledWith('p1', 't1', 'start', expect.objectContaining({ idempotencyKey: expect.any(String) })))
   })
 
+  it('starts when Web Crypto has no randomUUID', async () => {
+    const original = globalThis.crypto
+    vi.stubGlobal('crypto', {
+      getRandomValues: (bytes: Uint8Array) => { bytes.fill(7); return bytes }
+    })
+    const operate = vi.fn().mockResolvedValue(environment('building'))
+    window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate, cancel: vi.fn() }
+    render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Запустить тестовый контейнер' }))
+    await waitFor(() => expect(operate).toHaveBeenCalledWith('p1', 't1', 'start', {
+      idempotencyKey: '07070707-0707-4707-8707-070707070707'
+    }))
+    vi.stubGlobal('crypto', original)
+  })
+
+  it('offers to start Docker when the server reports a stopped Engine', async () => {
+    const failed = { ...environment('failed'), lastError: { type: 'docker' as const, message: 'Docker установлен, но не запущен' } }
+    const operate = vi.fn().mockResolvedValue(environment('starting'))
+    window.featurePreview = { get: vi.fn().mockResolvedValue(failed), operate, cancel: vi.fn() }
+    render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Запустить Docker' }))
+    await waitFor(() => expect(operate).toHaveBeenCalledWith('p1', 't1', 'docker_start', expect.objectContaining({ idempotencyKey: expect.any(String) })))
+  })
+
   it('warns about stale SHA and offers rebuild', async () => {
     window.featurePreview = { get: vi.fn().mockResolvedValue(environment('stale')), operate: vi.fn().mockResolvedValue(environment('rebuilding')), cancel: vi.fn() }
     render(<FeaturePreviewSection projectId="p1" taskId="t1" />)

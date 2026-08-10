@@ -4297,12 +4297,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    модель разбирается с ошибкой — медленное красное мигание, ждёт ответа
    пользователя — частое жёлтое, упал окончательно — частое красное, успех
    (разработка закончена, ждёт пересборки прода) — статичная зелёная рамка. */
+.jcard--preview-running { animation: jcard-preview-green 1.8s ease-in-out infinite; }
 .jcard--ci-running { animation: jcard-ci-blue 2.6s ease-in-out infinite; }
 .jcard--ci-fixing { animation: jcard-ci-red 2.2s ease-in-out infinite; }
 .jcard--ci-awaiting { animation: jcard-ci-yellow 0.9s ease-in-out infinite; }
 .jcard--ci-failed { animation: jcard-ci-red 0.7s ease-in-out infinite; }
 .jcard--ci-done { box-shadow: 0 0 0 2px var(--ci-success), 0 1px 2px rgba(9, 30, 66, 0.25); }
 
+@keyframes jcard-preview-green {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(54, 179, 126, 0.35), 0 1px 2px rgba(9, 30, 66, 0.25); }
+  50% { box-shadow: 0 0 0 3px rgba(54, 179, 126, 1), 0 0 14px rgba(54, 179, 126, 0.6); }
+}
 @keyframes jcard-ci-blue {
   0%, 100% { box-shadow: 0 0 0 2px rgba(76, 154, 255, 0.3), 0 1px 2px rgba(9, 30, 66, 0.25); }
   50% { box-shadow: 0 0 0 3px rgba(76, 154, 255, 0.95), 0 0 12px rgba(76, 154, 255, 0.55); }
@@ -4342,7 +4347,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .convo--ci-running, .taskchat--ci-running { box-shadow: 0 0 0 2px #4c9aff; }
   .convo--ci-fixing, .taskchat--ci-fixing { box-shadow: 0 0 0 2px var(--ci-removed); }
   .convo--ci-awaiting, .taskchat--ci-awaiting { box-shadow: 0 0 0 2px #ffab00; }
-  .jcard--ci-running, .jcard--ci-fixing, .jcard--ci-awaiting, .jcard--ci-failed { animation: none; }
+  .jcard--preview-running, .jcard--ci-running, .jcard--ci-fixing, .jcard--ci-awaiting, .jcard--ci-failed { animation: none; }
+  .jcard--preview-running { box-shadow: 0 0 0 2px var(--ci-success), 0 1px 2px rgba(9, 30, 66, 0.25); }
   .jcard--ci-running { box-shadow: 0 0 0 2px #4c9aff, 0 1px 2px rgba(9, 30, 66, 0.25); }
   .jcard--ci-fixing, .jcard--ci-failed { box-shadow: 0 0 0 2px var(--ci-removed), 0 1px 2px rgba(9, 30, 66, 0.25); }
   .jcard--ci-awaiting { box-shadow: 0 0 0 2px #ffab00, 0 1px 2px rgba(9, 30, 66, 0.25); }
@@ -5520,6 +5526,12 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 .manual-qa { display: grid; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 .manual-qa-summary { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 10px; border-radius: 8px; background: var(--panel); font-size: 12px; }
+.manual-qa-create { padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.manual-qa-create summary { cursor: pointer; font-weight: 600; }
+.manual-qa-create__form { display: grid; gap: 8px; margin-top: 10px; }
+.manual-qa-create__form label { display: grid; gap: 4px; font-size: 12px; }
+.manual-qa-create__form input:not([type='checkbox']), .manual-qa-create__form textarea { width: 100%; border: 1px solid var(--border); border-radius: 7px; padding: 7px; background: var(--bg); color: var(--text); font: inherit; }
+.manual-qa-create__form textarea { min-height: 64px; resize: vertical; }
 .manual-qa-list { display: grid; gap: 8px; }
 .manual-qa-card { overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .manual-qa-card__head { width: 100%; display: flex; justify-content: space-between; gap: 12px; padding: 10px; border: 0; background: transparent; color: var(--text); text-align: left; }

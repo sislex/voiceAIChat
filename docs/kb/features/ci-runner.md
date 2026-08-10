@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-10
-checked: 1d2008b
+checked: 21cb073
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/projects.ts
@@ -1368,8 +1368,8 @@ runtime-поток карточки.
 ## Переход к ручному QA
 
 Успешный development-ран без выполненного legacy-шага мержа теперь переносит
-карточку в системную колонку `manual_qa`, а не в `awaiting_merge`, и пишет
-системное событие `run.manual_qa`. Если нужной колонки нет, ран остаётся
+карточку в системную колонку `qa_preparation`, а не в `manual_qa` или
+`awaiting_merge`, и пишет системное событие `run.qa_preparation`. Если нужной колонки нет, ран остаётся
 успешным, но карточка не двигается. Допуск из ручной проверки к merge выполняет
 отдельная серверная операция QA. Домен критериев, sessions, результатов и
 скриншотов описан в [manual-qa.md](manual-qa.md).
