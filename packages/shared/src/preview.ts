@@ -4,7 +4,7 @@ export const PREVIEW_STATES = [
 ] as const
 
 export type PreviewState = (typeof PREVIEW_STATES)[number]
-export type PreviewOperation = 'start' | 'rebuild' | 'stop' | 'seed' | 'reset' | 'health_check' | 'remove' | 'reconcile'
+export type PreviewOperation = 'start' | 'rebuild' | 'stop' | 'seed' | 'reset' | 'health_check' | 'remove' | 'reconcile' | 'docker_start' | 'docker_install'
 export type PreviewRunStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
 export type PreviewErrorType =
   | 'configuration' | 'build' | 'docker' | 'port_allocation' | 'startup'

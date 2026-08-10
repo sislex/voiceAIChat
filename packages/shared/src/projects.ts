@@ -34,6 +34,7 @@ export type KanbanColumnSemanticType =
   | 'ready'
   | 'development'
   | 'testing'
+  | 'qa_preparation'
   | 'manual_qa'
   | 'awaiting_merge'
   | 'decision_required'
@@ -41,7 +42,7 @@ export type KanbanColumnSemanticType =
   | 'custom'
 
 export const KANBAN_COLUMN_SEMANTIC_TYPES: KanbanColumnSemanticType[] = [
-  'backlog', 'ready', 'development', 'testing', 'manual_qa', 'awaiting_merge', 'decision_required', 'done', 'custom'
+  'backlog', 'ready', 'development', 'testing', 'qa_preparation', 'manual_qa', 'awaiting_merge', 'decision_required', 'done', 'custom'
 ]
 
 /** Роль пользователя в проекте. */
@@ -174,6 +175,8 @@ export interface Task {
    * задача не завершена. Отсчёт срока, после которого карточка уходит с доски.
    */
   doneAt?: number | null
+  /** Сервер подтвердил healthy feature-preview для текущей задачи. */
+  previewReady?: boolean
   /** Порядковый номер задачи в проекте — основа ключа «PRJ-42». */
   seq: number
   /** Дробный ранг для порядка внутри колонки. */
