@@ -16,6 +16,28 @@ export interface ReleaseStep {
   startedAt: number | null
   finishedAt: number | null
 }
+const RELEASE_FAILURE_FALLBACK: Record<ReleaseStepKind, string> = {
+  regression: 'Регрессионные проверки не прошли',
+  knowledge_base: 'База знаний не синхронизирована с кодом',
+  merge_main: 'Не удалось объединить релиз с основной веткой',
+  push_main: 'Не удалось отправить основную ветку и тег релиза',
+  production_deploy: 'Production deploy не был принят',
+  health_check: 'Production не прошёл health-check',
+  cleanup: 'Не удалось очистить preview или workspace'
+}
+
+export function releaseFailureSummary(kind: ReleaseStepKind, log: string): string {
+  const lines = log.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  if (kind === 'knowledge_base' && log.includes('docs/kb/README.md')) {
+    return 'Индекс базы знаний устарел; release-preflight должен обновить его до запуска'
+  }
+  const explicit = lines.find(line =>
+    /^(error|fatal|ошибка|не удалось|production|health-check|база знаний)/i.test(line)
+    && !/^error: Your local changes/i.test(line)
+  )
+  return (explicit ?? RELEASE_FAILURE_FALLBACK[kind]).replace(/^error:\s*/i, '').slice(0, 240)
+}
+
 export interface ProjectRelease {
   id: string
   projectId: string

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { ProjectRelease, ReleaseBranch } from '@voicechat/shared'
+import { releaseFailureSummary, type ProjectRelease, type ReleaseBranch } from '@voicechat/shared'
 import type { RendererApi } from '@shared/ipc'
 
 interface Props { projectId:string; baseBranch:string; owner:boolean; api?:RendererApi }
@@ -34,7 +34,7 @@ export function ReleaseCenter({projectId,baseBranch,owner,api=window.api}:Props)
     {releases.length===0?<p>Публикаций ещё нет.</p>:releases.map(release=><article key={release.id} className="release-card">
       <h3>{release.branch} <small>{release.status}</small></h3>
       <p>SHA {release.sha} · инициатор {release.triggeredBy} · попытка {release.attempt}</p>
-      <ol>{release.steps.map(step=><li key={step.id} data-status={step.status}>{labels[step.kind]??step.kind}: {step.status}{step.model?` · ${step.model}`:''}{step.log?<details><summary>Лог</summary><pre>{step.log}</pre></details>:null}</li>)}</ol>
+      <ol>{release.steps.map(step=><li key={step.id} data-status={step.status}>{labels[step.kind]??step.kind}: {step.status}{step.model?` · ${step.model}`:''}{step.status==='failed'?<p className="release-step-summary">{releaseFailureSummary(step.kind,step.log)}</p>:null}{step.log?<details><summary>Расшифровка</summary><pre>{step.log}</pre></details>:null}</li>)}</ol>
     </article>)}
   </section>
 }
