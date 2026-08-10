@@ -10,7 +10,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
-import type { Task } from '@shared/projects'
+import type { KanbanColumnSemanticType, Task } from '@shared/projects'
+import { canStartMerge } from '@shared/merge'
 import { canStartCiRun, ciCardPulse, ciSummaryForTask, type CiRunSummary } from '@shared/ci'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
@@ -25,6 +26,7 @@ export interface TaskCardProps {
   allTasks: Task[]
   /** Колонки со смыслом «done» — для прогресса и зачёркивания ключа. */
   doneColumnIds: ReadonlySet<string>
+  columnSemanticType?: KanbanColumnSemanticType
   onOpen: (taskId: string) => void
   onUpdate: (taskId: string, fields: { flagged?: boolean }) => void
   onDelete: (taskId: string) => void
@@ -42,6 +44,8 @@ export interface TaskCardProps {
   onOpenCiRun?: (runId: string) => void
   /** Убрать ожидающий ран из очереди CI. */
   onDequeueCiRun?: (runId: string) => void
+  /** Доступна исключительно в awaiting_merge при серверно подтверждённых условиях. */
+  onStartMerge?: (taskId: string) => void
 
   /** Захват указателем: доска решает, перенос это или клик/скролл.
       `immediate` — захват с ручки, удержание пальца не нужно. */
@@ -190,6 +194,19 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
             <span className="jcard-progress-fill" style={{ width: `${Math.round((doneChildren.length / children.length) * 100)}%` }} />
           </span>
           <span className="jcard-progress-text">{doneChildren.length}/{children.length}</span>
+        </div>
+      )}
+
+      {task.type === 'task' && props.onStartMerge && canStartMerge({
+        semanticType: props.columnSemanticType ?? 'custom',
+        sourceBranch: task.mergeSourceBranch,
+        alreadyMerged: Boolean(task.mergedSha),
+        hasActiveRun: Boolean(task.activeMergeRunId),
+        permitted: task.mergePermitted,
+        machineBound: task.mergeMachineBound
+      }) && (
+        <div className="jcard-ci" data-testid="task-merge-panel" onClick={(e) => e.stopPropagation()}>
+          <Button variant="primary" size="sm" onClick={() => props.onStartMerge?.(task.id)}>Мерж в main</Button>
         </div>
       )}
 

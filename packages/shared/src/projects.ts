@@ -37,12 +37,13 @@ export type KanbanColumnSemanticType =
   | 'qa_preparation'
   | 'manual_qa'
   | 'awaiting_merge'
+  | 'merge'
   | 'decision_required'
   | 'done'
   | 'custom'
 
 export const KANBAN_COLUMN_SEMANTIC_TYPES: KanbanColumnSemanticType[] = [
-  'backlog', 'ready', 'development', 'testing', 'qa_preparation', 'manual_qa', 'awaiting_merge', 'decision_required', 'done', 'custom'
+  'backlog', 'ready', 'development', 'testing', 'qa_preparation', 'manual_qa', 'awaiting_merge', 'merge', 'decision_required', 'done', 'custom'
 ]
 
 /** Роль пользователя в проекте. */
@@ -188,6 +189,16 @@ export interface Task {
    * не создан). Заполняется только в снапшоте доски; в ответах create/update — null.
    */
   chatId?: string | null
+  /** Последняя подготовленная и отправленная ветка development-рана. */
+  mergeSourceBranch?: string | null
+  mergeSourceSha?: string | null
+  /** Активный merge-ран восстанавливается вместе со снапшотом доски. */
+  activeMergeRunId?: string | null
+  activeMergeStatus?: string | null
+  /** Серверный снимок прав и привязки машины; UI не заменяет им API-проверку. */
+  mergePermitted?: boolean
+  mergeMachineBound?: boolean
+  mergedSha?: string | null
 }
 
 /**
