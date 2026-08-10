@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RELEASE_STEP_ORDER, assertReleaseBranch, releaseVersion } from './release'
+import { RELEASE_STEP_ORDER, assertReleaseBranch, releaseFailureSummary, releaseVersion } from './release'
 
 describe('release branch contract', () => {
   it.each([
@@ -21,5 +21,14 @@ describe('release branch contract', () => {
       'regression', 'knowledge_base', 'merge_main', 'push_main',
       'production_deploy', 'health_check', 'cleanup'
     ])
+  })
+
+  it('summarizes a failed gate while preserving the diagnostic log separately', () => {
+    const log = '> npm run kb:index\ndiff --git a/docs/kb/README.md b/docs/kb/README.md'
+    expect(releaseFailureSummary('knowledge_base', log)).toBe(
+      'Индекс базы знаний устарел; release-preflight должен обновить его до запуска'
+    )
+    expect(releaseFailureSummary('health_check', 'error: connection refused\nstack trace')).toBe('connection refused')
+    expect(releaseFailureSummary('merge_main', '')).toBe('Не удалось объединить релиз с основной веткой')
   })
 })

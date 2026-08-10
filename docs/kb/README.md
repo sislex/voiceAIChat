@@ -19,7 +19,7 @@
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 19 коммит(ов) в areas после сверки: 376b00b feat: stabilize task branches and automate QA preparation … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 26 коммит(ов) в areas после сверки: 376b00b feat: stabilize task branches and automate QA preparation … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 180 коммит(ов) в areas после сверки: 6f55583 test: align KB workspace expectation … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 181 коммит(ов) в areas после сверки: dfe0898 chatai-170: работа CI-рана … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ⚠ 3 коммит(ов) в areas после сверки: 376b00b feat: stabilize task branches and automate QA preparation … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 7 коммит(ов) в areas после сверки: 647043a chatai-165: работа CI-рана … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: d9b71af fix: preserve task launch proposal fields … |
