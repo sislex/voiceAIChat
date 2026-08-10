@@ -553,6 +553,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   void featurePreviews.reconcile()
   const releaseManager = new ReleaseManager(db, {
     exec: (target, command, timeoutMs) => agentRegistry.exec(target.agentId, command, timeoutMs),
+    prepareKnowledgeBase: async (releaseBranch, target) => {
+      const path = target.path.replace(/'/g, `'"'"'`)
+      const branch = releaseBranch.replace(/'/g, `'"'"'`)
+      const command = `cd '${path}' && unexpected="$(git status --porcelain --untracked-files=no | grep -v 'docs/kb/README.md' || true)" && if [ -n "$unexpected" ]; then echo "Release-preflight остановлен: рабочая копия содержит изменения помимо docs/kb/README.md"; echo "$unexpected"; exit 1; fi && git restore -- docs/kb/README.md && git fetch origin '${branch}' && git checkout -B '${branch}' FETCH_HEAD && npm run kb:index && changed="$(git status --porcelain --untracked-files=no)" && if [ -n "$changed" ]; then if [ "$changed" != " M docs/kb/README.md" ]; then echo "Release-preflight остановлен: kb:index изменил неожиданные файлы"; echo "$changed"; exit 1; fi; git add docs/kb/README.md && git commit -m 'docs: обновить индекс БЗ перед релизом' && git push origin HEAD:refs/heads/'${branch}'; fi`
+      const result = await agentRegistry.exec(target.agentId, command, 120_000)
+      if (result.exitCode !== 0) throw new Error(result.output || 'Release-preflight базы знаний завершился с ошибкой')
+    },
     updateKnowledgeBase: async (_release, target) => {
       const result = await agentRegistry.exec(target.agentId, `cd '${target.path.replace(/'/g, `'"'"'`)}' && npm run kb:index && git diff --exit-code -- docs/kb`, 120_000)
       if (result.exitCode !== 0) throw new Error(result.output || 'Актуализация базы знаний завершилась с ошибкой')

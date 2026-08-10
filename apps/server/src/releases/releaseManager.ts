@@ -5,6 +5,7 @@ export interface ReleaseProjectTarget { projectId:string; agentId:string; path:s
 export interface ReleaseCommandResult { exitCode:number|null; output:string; timedOut?:boolean }
 export interface ReleaseRuntime {
   exec(target:ReleaseProjectTarget, command:string, timeoutMs:number):Promise<ReleaseCommandResult>
+  prepareKnowledgeBase(branch:string,target:ReleaseProjectTarget):Promise<void>
   updateKnowledgeBase(release:ProjectRelease,target:ReleaseProjectTarget):Promise<void>
   deployProduction():Promise<void>
   healthCheck(release:ProjectRelease,target:ReleaseProjectTarget):Promise<void>
@@ -41,6 +42,7 @@ export class ReleaseManager {
   async start(userId:string,target:ReleaseProjectTarget,branch:string,models:Partial<Record<ReleaseStepKind,string>>={},previousReleaseId?:string):Promise<ProjectRelease> {
     assertReleaseBranch(branch)
     if (this.running.has(target.projectId)) throw new Error('Публикация релиза уже выполняется')
+    await this.runtime.prepareKnowledgeBase(branch,target)
     const found=(await this.listBranches(target)).find(item=>item.branch===branch)
     if (!found) throw new Error('Выбранная release-ветка отсутствует в origin')
     const release=this.db.createProjectRelease(userId,target.projectId,{...found,models,previousReleaseId})
