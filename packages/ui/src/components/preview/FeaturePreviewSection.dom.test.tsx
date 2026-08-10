@@ -7,7 +7,7 @@ import { FeaturePreviewSection } from './FeaturePreviewSection'
 function environment(state: PreviewState): PreviewEnvironment {
   return {
     id: 'e1', projectId: 'p1', taskId: 't1', agentId: 'a1', workspacePath: '/repos/p1/t1',
-    branch: 'feature/1', builtCommitSha: 'abc123456789', currentCommitSha: state === 'stale' ? 'def123456789' : 'abc123456789',
+    branch: 'feature/1', expectedCommitSha: 'abc123456789', builtCommitSha: 'abc123456789', currentCommitSha: state === 'stale' ? 'def123456789' : 'abc123456789', gitStatus: state === 'stale' ? 'sha_mismatch' : 'verified',
     state, staleReason: state === 'stale' ? 'commit_changed' : null, composeProject: 'vc-preview-p1-t1',
     appUrl: state === 'running' || state === 'stale' ? '/preview/e1/app' : null, storybookUrl: null,
     storybookStatus: 'not_applicable', storybookCommitSha: null, selectedSeedScenario: null,
@@ -65,7 +65,7 @@ describe('FeaturePreviewSection', () => {
   it('warns about stale SHA and offers rebuild', async () => {
     window.featurePreview = { get: vi.fn().mockResolvedValue(environment('stale')), operate: vi.fn().mockResolvedValue(environment('rebuilding')), cancel: vi.fn() }
     render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
-    expect(await screen.findByText(/Playwright требует пересборку/)).toBeInTheDocument()
+    expect(await screen.findByText(/Для QA требуется пересборка/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Пересобрать' })).toBeEnabled()
   })
 })

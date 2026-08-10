@@ -91,25 +91,39 @@ export class FeaturePreviewManager {
     let env = this.data.environments.find((item) => item.projectId === projectId && item.taskId === taskId)
     if (env && isPreviewBusy(env.state)) throw new Error('Для preview уже выполняется изменяющая операция')
     const activeWorkspace = this.deps.db.findActiveCiWorkspace(projectId, taskId)
+    const sourceWorkspace = activeWorkspace ?? this.deps.db.findLatestCiWorkspace(projectId, taskId)
     const targetAgentId = args.agentId ?? activeWorkspace?.agentId ?? task.agentId ?? project.defaultAgentId
     if (!targetAgentId) throw new Error('Выберите машину для тестового окружения')
     const machine = project.machines.find((item) => item.agentId === targetAgentId)
     if (!machine?.reposRoot) throw new Error('Для выбранной машины не настроен repos_root')
     if (!this.deps.isOnline(targetAgentId)) throw new Error('Машина не в сети')
     let workspacePath = activeWorkspace?.agentId === targetAgentId ? activeWorkspace.path : ''
+    const expectedBranch = sourceWorkspace?.branch ?? null
+    const expectedSha = sourceWorkspace?.commitSha ?? null
+    if (workspacePath && (operation === 'start' || operation === 'rebuild') && expectedBranch && expectedSha) {
+      let verificationOutput = ''
+      const verified = await this.deps.executor.run({
+        agentId: targetAgentId, workdir: workspacePath,
+        script: '[ -z "$(git status --porcelain --untracked-files=all)" ] || { echo "Workspace содержит незакоммиченные изменения"; exit 76; }; [ "$(git branch --show-current)" = "$VC_PREVIEW_BRANCH" ] || { echo "Workspace находится не на ожидаемой ветке"; exit 77; }; [ "$(git rev-parse HEAD)" = "$VC_PREVIEW_SHA" ] || { echo "Локальный SHA не совпадает с ожидаемым"; exit 75; }; remote=$(git ls-remote --heads origin "refs/heads/$VC_PREVIEW_BRANCH" | awk "{print \\$1}"); [ -n "$remote" ] || { echo "Ветка отсутствует в origin"; exit 74; }; [ "$remote" = "$VC_PREVIEW_SHA" ] || { echo "Ожидаемый SHA не отправлен в origin"; exit 78; }',
+        timeoutMs: 30_000, env: { VC_PREVIEW_BRANCH: expectedBranch, VC_PREVIEW_SHA: expectedSha }
+      }, (chunk) => { verificationOutput += chunk })
+      if (verified.exitCode !== 0 || verified.timedOut) throw new Error(verificationOutput.trim().split(/\r?\n/).filter(Boolean).at(-1) || `Не удалось проверить workspace ${workspacePath} на машине ${targetAgentId}`)
+    }
     if (!workspacePath) {
       if (!project.gitUrl) throw new Error('Для проекта не настроен Git-репозиторий')
       const slug = (value: string): string => value.toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-|-$/g, '').slice(0, 48)
-      const branch = (project.ciBranchTemplate || 'feature/{task_number}-{slug}')
+      const branch = expectedBranch ?? (project.ciBranchTemplate || 'feature/{task_number}')
         .replace('{task_number}', String(task.seq)).replace('{slug}', slug(task.title))
-      workspacePath = `${machine.reposRoot.replace(/\/$/, '')}/preview/${safePreviewResourceName(projectId, taskId)}`
+      if (!expectedSha || !sourceWorkspace?.pushed) throw new Error(`Нельзя подготовить preview на машине ${targetAgentId}: результат разработки не зафиксирован и не подтверждён в origin`)
+      const projectKey = slug(project.name || project.id) || project.id.replace(/[^a-z0-9]/gi, '').slice(0, 24)
+      workspacePath = `${machine.reposRoot.replace(/\/$/, '')}/${projectKey}/${task.seq}`
       let output = ''
       const prepared = await this.deps.executor.run({
         agentId: targetAgentId,
         workdir: machine.path || machine.reposRoot,
-        script: 'mkdir -p "$VC_PREVIEW_ROOT/preview"; if [ ! -d "$VC_PREVIEW_WORKSPACE/.git" ]; then git clone --single-branch --branch "$VC_PREVIEW_BRANCH" "$VC_PREVIEW_REPO_URL" "$VC_PREVIEW_WORKSPACE"; else git -C "$VC_PREVIEW_WORKSPACE" fetch origin "$VC_PREVIEW_BRANCH" && git -C "$VC_PREVIEW_WORKSPACE" checkout "$VC_PREVIEW_BRANCH" && git -C "$VC_PREVIEW_WORKSPACE" reset --hard "origin/$VC_PREVIEW_BRANCH"; fi',
+        script: 'mkdir -p "$(dirname "$VC_PREVIEW_WORKSPACE")"; remote=$(git ls-remote --heads "$VC_PREVIEW_REPO_URL" "refs/heads/$VC_PREVIEW_BRANCH" | awk "{print \\$1}"); [ -n "$remote" ] || { echo "Ветка $VC_PREVIEW_BRANCH отсутствует в origin"; exit 74; }; [ "$remote" = "$VC_PREVIEW_SHA" ] || { echo "SHA origin/$VC_PREVIEW_BRANCH ($remote) не совпадает с ожидаемым $VC_PREVIEW_SHA"; exit 75; }; if [ ! -d "$VC_PREVIEW_WORKSPACE/.git" ]; then git clone --single-branch --branch "$VC_PREVIEW_BRANCH" "$VC_PREVIEW_REPO_URL" "$VC_PREVIEW_WORKSPACE"; else [ -z "$(git -C "$VC_PREVIEW_WORKSPACE" status --porcelain --untracked-files=all)" ] || { echo "Preview workspace содержит незакоммиченные изменения"; exit 76; }; git -C "$VC_PREVIEW_WORKSPACE" fetch origin "$VC_PREVIEW_BRANCH" && git -C "$VC_PREVIEW_WORKSPACE" checkout "$VC_PREVIEW_BRANCH" && git -C "$VC_PREVIEW_WORKSPACE" reset --hard "$VC_PREVIEW_SHA"; fi; [ "$(git -C "$VC_PREVIEW_WORKSPACE" rev-parse HEAD)" = "$VC_PREVIEW_SHA" ] || exit 75',
         timeoutMs: DEFAULT_PREVIEW_CONFIG.buildTimeoutMs,
-        env: { VC_PREVIEW_ROOT: machine.reposRoot, VC_PREVIEW_WORKSPACE: workspacePath, VC_PREVIEW_BRANCH: branch, VC_PREVIEW_REPO_URL: project.gitUrl }
+        env: { VC_PREVIEW_ROOT: machine.reposRoot, VC_PREVIEW_WORKSPACE: workspacePath, VC_PREVIEW_BRANCH: branch, VC_PREVIEW_SHA: expectedSha, VC_PREVIEW_REPO_URL: project.gitUrl }
       }, (chunk) => { output += chunk })
       if (prepared.timedOut) throw new Error('Подготовка рабочей копии на выбранной машине превысила таймаут')
       if (prepared.exitCode !== 0) throw new Error(output.trim().split(/\r?\n/).filter(Boolean).at(-1) || 'Не удалось подготовить рабочую копию на выбранной машине')
@@ -118,13 +132,14 @@ export class FeaturePreviewManager {
     if (env && env.agentId !== targetAgentId) {
       if (env.state === 'running') throw new Error('Сначала остановите окружение перед сменой машины')
       env.agentId = targetAgentId; env.workspacePath = workspacePath; env.services = []; env.appUrl = null; env.storybookUrl = null
+      env.branch = expectedBranch ?? env.branch; env.expectedCommitSha = expectedSha; env.gitStatus = expectedSha ? 'verified' : 'unknown'
       env.builtCommitSha = null; env.currentCommitSha = null; env.state = 'not_created'
     }
     const now = this.now()
     if (!env || env.state === 'removed') {
       env = {
         id: this.newId(), projectId, taskId, agentId: targetAgentId, workspacePath,
-        branch: '', builtCommitSha: null, currentCommitSha: null, state: 'not_created', staleReason: null,
+        branch: expectedBranch ?? '', expectedCommitSha: expectedSha, builtCommitSha: null, currentCommitSha: null, gitStatus: expectedSha ? 'verified' : 'unknown', state: 'not_created', staleReason: null,
         composeProject: safePreviewResourceName(projectId, taskId), appUrl: null, storybookUrl: null,
         storybookStatus: 'pending', storybookCommitSha: null, selectedSeedScenario: null, seedVersion: null,
         dataReady: false, healthStatus: 'unknown', services: [], runs: [], createdBy: userId,
@@ -202,7 +217,14 @@ export class FeaturePreviewManager {
       const branch = metadata.match(/VC_BRANCH=([^\r\n]+)/)?.[1]?.trim()
       const sha = metadata.match(/VC_SHA=([0-9a-f]{7,64})/)?.[1]
       if (!branch || !sha) throw new Error('Не удалось определить branch и commit SHA')
+      const expectedBranch = env.branch || null
       env.branch = branch; env.currentCommitSha = sha; run.commitSha = sha
+      env.expectedCommitSha = env.expectedCommitSha ?? sha
+      if (env.expectedCommitSha !== sha || (expectedBranch && expectedBranch !== branch)) {
+        env.gitStatus = 'sha_mismatch'
+        throw new Error(`Workspace ${env.workspacePath} на машине ${env.agentId} не совпадает с зафиксированным результатом разработки`)
+      }
+      env.gitStatus = 'verified'
       if (operation === 'start' || operation === 'rebuild') {
         await this.command(env, run, 'if ! command -v docker >/dev/null 2>&1; then echo "Docker не установлен"; exit 69; fi; if ! docker info >/dev/null 2>&1; then echo "Docker установлен, но не запущен"; exit 70; fi', 30_000, signal)
         if (!env.services.length) {

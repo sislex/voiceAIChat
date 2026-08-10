@@ -751,7 +751,7 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_story')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_story TEXT NOT NULL DEFAULT '[]'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_task')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_task TEXT NOT NULL DEFAULT '[]'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_base_branch')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_base_branch TEXT NOT NULL DEFAULT 'main'`)
-    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_branch_template')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_branch_template TEXT NOT NULL DEFAULT 'feature/{task_number}-{slug}'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_branch_template')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_branch_template TEXT NOT NULL DEFAULT 'feature/{task_number}'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_reuse_strategy')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_reuse_strategy TEXT NOT NULL DEFAULT 'fail'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_exec_auth_ref')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_exec_auth_ref TEXT NOT NULL DEFAULT ''`)
     // Режим базы знаний в ходах модели CI-рана: настройка проекта, не чата.
@@ -779,6 +779,10 @@ export class VoiceChatDb {
     // дефолт 14 дней (DEFAULT в ALTER заполняет старые строки).
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'done_retention_days')) this.db.exec(`ALTER TABLE projects ADD COLUMN done_retention_days INTEGER DEFAULT ${DEFAULT_DONE_RETENTION_DAYS}`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_test_fix_cycle_limit')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_test_fix_cycle_limit INTEGER NOT NULL DEFAULT 10`)
+    const ciWorkspaceCols = this.db.prepare(`PRAGMA table_info(ci_workspaces)`).all() as Array<{ name: string }>
+    if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'branch')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN branch TEXT`)
+    if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'commit_sha')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN commit_sha TEXT`)
+    if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'pushed')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN pushed INTEGER NOT NULL DEFAULT 0`)
     const ciRunCols = this.db.prepare(`PRAGMA table_info(ci_runs)`).all() as Array<{ name: string }>
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_engine_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_engine_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_provider')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_provider TEXT NOT NULL DEFAULT 'claude'`)
@@ -3661,6 +3665,15 @@ export class VoiceChatDb {
     return r ? mapCiWorkspace(r) : null
   }
 
+  findLatestCiWorkspace(projectId: string, taskId: string): CiWorkspace | null {
+    const r = this.db.prepare(`SELECT * FROM ci_workspaces WHERE project_id = ? AND task_id = ? ORDER BY created_at DESC LIMIT 1`).get(projectId, taskId) as CiWorkspaceRow | undefined
+    return r ? mapCiWorkspace(r) : null
+  }
+
+  recordCiWorkspaceRevision(workspaceId: string, branch: string, commitSha: string): void {
+    this.db.prepare(`UPDATE ci_workspaces SET branch=?, commit_sha=?, pushed=1 WHERE id=?`).run(branch, commitSha, workspaceId)
+  }
+
   releaseCiWorkspace(workspaceId: string, releasedByStepId: string | null): void {
     this.db.prepare(`UPDATE ci_workspaces SET state = 'released', released_by_step_id = ? WHERE id = ?`).run(releasedByStepId, workspaceId)
   }
@@ -4276,6 +4289,24 @@ export class VoiceChatDb {
     return mapQaCriterion(this.db.prepare(`SELECT * FROM acceptance_criteria WHERE id = ?`).get(criterionId) as QaCriterionRow)
   }
 
+  startQaPreparationRun(projectId: string, taskId: string, branch: string, commitSha: string): { id: string; status: string } | null {
+    const existing = this.db.prepare(`SELECT id,status FROM qa_preparation_runs WHERE task_id=? AND commit_sha=?`).get(taskId, commitSha) as { id:string; status:string } | undefined
+    if (existing) return null
+    const id = this.newId()
+    this.db.prepare(`INSERT INTO qa_preparation_runs (id,project_id,task_id,branch,commit_sha,status,created_at) VALUES (?,?,?,?,?,'running',?)`).run(id,projectId,taskId,branch,commitSha,this.now())
+    const active = this.db.prepare(`SELECT commit_sha FROM qa_sessions WHERE project_id=? AND task_id=? AND status='active' LIMIT 1`).get(projectId,taskId) as { commit_sha:string } | undefined
+    if (active && active.commit_sha !== commitSha) this.markQaSessionStale(projectId, taskId, `Новый commit SHA: ${commitSha}`)
+    return { id, status: 'running' }
+  }
+
+  appendQaPreparationLog(id: string, chunk: string): void {
+    this.db.prepare(`UPDATE qa_preparation_runs SET log=substr(log || ?, -500000) WHERE id=? AND status='running'`).run(chunk,id)
+  }
+
+  finishQaPreparationRun(id: string, status: 'success'|'failed', error: string | null = null): void {
+    this.db.prepare(`UPDATE qa_preparation_runs SET status=?,error=?,finished_at=? WHERE id=?`).run(status,error,this.now(),id)
+  }
+
   completeQaPreparation(userId: string, projectId: string, taskId: string): QaTaskState | null {
     if (!this.isProjectMember(userId, projectId)) return null
     const task = this.db.prepare(`SELECT 1 FROM tasks WHERE id=? AND project_id=?`).get(taskId, projectId)
@@ -4794,11 +4825,13 @@ function mapCiFix(r: CiFixRow): CiFixAttempt {
 
 interface CiWorkspaceRow {
   id: string; project_id: string; task_id: string; agent_id: string | null; path: string
+  branch: string | null; commit_sha: string | null; pushed: number
   state: string; size_bytes: number | null; created_at: number; released_by_step_id: string | null
 }
 function mapCiWorkspace(r: CiWorkspaceRow): CiWorkspace {
   return {
     id: r.id, projectId: r.project_id, taskId: r.task_id, agentId: r.agent_id, path: r.path,
+    branch: r.branch ?? null, commitSha: r.commit_sha ?? null, pushed: r.pushed === 1,
     state: r.state === 'released' ? 'released' : 'active', sizeBytes: r.size_bytes,
     createdAt: r.created_at, releasedByStepId: r.released_by_step_id
   }

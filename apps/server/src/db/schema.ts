@@ -295,6 +295,9 @@ CREATE TABLE IF NOT EXISTS ci_workspaces (
   task_id            TEXT NOT NULL,
   agent_id           TEXT,
   path               TEXT NOT NULL,
+  branch             TEXT,
+  commit_sha         TEXT,
+  pushed             INTEGER NOT NULL DEFAULT 0,
   state              TEXT NOT NULL DEFAULT 'active',
   size_bytes         INTEGER,
   created_at         INTEGER NOT NULL,
@@ -865,6 +868,23 @@ CREATE TABLE IF NOT EXISTS acceptance_criterion_versions (
   PRIMARY KEY (criterion_id, version),
   FOREIGN KEY (criterion_id) REFERENCES acceptance_criteria(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS qa_preparation_runs (
+  id          TEXT PRIMARY KEY,
+  project_id  TEXT NOT NULL,
+  task_id     TEXT NOT NULL,
+  branch      TEXT NOT NULL,
+  commit_sha  TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'running',
+  log         TEXT NOT NULL DEFAULT '',
+  error       TEXT,
+  created_at  INTEGER NOT NULL,
+  finished_at INTEGER,
+  UNIQUE(task_id, commit_sha),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_qa_preparation_task ON qa_preparation_runs(task_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS qa_sessions (
   id TEXT PRIMARY KEY, task_id TEXT NOT NULL, project_id TEXT NOT NULL, branch TEXT NOT NULL,

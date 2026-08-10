@@ -53,6 +53,8 @@ export interface CiRunManagerDeps {
   attemptFix?: CiFixHook
   /** Встроенный шаг «Актуализировать базу знаний» (`CiCommand.builtin === 'kb_update'`). */
   kbUpdate?: CiKbUpdateHook
+  /** Автоматическая подготовка структурированных сценариев при входе в qa_preparation. */
+  qaPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string; runId: string }) => void
 }
 
 type ResumePoint = { kind: 'command'; slot: CiSlot; index: number } | { kind: 'model' }
@@ -934,9 +936,9 @@ if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
   exit 69
 fi
 head=$(git rev-parse HEAD)
-base=$(git rev-parse "refs/remotes/origin/$BASE_BRANCH" 2>/dev/null || echo "")
-if [ "$head" = "$base" ]; then echo "Новых коммитов нет — отправлять нечего"; exit 0; fi
-git push origin "HEAD:refs/heads/$BRANCH" || git push --force-with-lease origin "HEAD:refs/heads/$BRANCH"
+git push origin "HEAD:refs/heads/$BRANCH"
+remote=$(git ls-remote --heads origin "refs/heads/$BRANCH" | awk '{print $1}')
+if [ "$remote" != "$head" ]; then echo "SHA origin/$BRANCH не совпадает с локальным HEAD" >&2; exit 70; fi
 echo "Ветка $BRANCH отправлена в origin ($head)"`
 
   /** Системный шаг «сохранить работу модели»: пуш ветки перед cleanup. */
@@ -963,10 +965,11 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       broadcast({ t: 'ci.log', runId, line }, userId)
     }
     let exitCode: number | null = null
+    let output = ''
     try {
       const r = await deps.executor.run(
         { agentId, script: PUSH_BRANCH_SCRIPT, workdir: workspacePath, env, timeoutMs: 300_000, secrets: [] },
-        (d) => logLine('stdout', d),
+        (d) => { output += d; logLine('stdout', d) },
         signal
       )
       exitCode = r.exitCode
@@ -974,6 +977,11 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       logLine('system', (err instanceof Error ? err.message : String(err)) + '\n')
     }
     const ok = exitCode === 0
+    if (ok) {
+      const sha = output.match(/\(([0-9a-f]{7,64})\)/)?.[1]
+      const workspaceId = deps.db.getCiRunRaw(runId)?.workspaceId
+      if (sha && workspaceId) deps.db.recordCiWorkspaceRevision(workspaceId, env.BRANCH ?? '', sha)
+    }
     if (!ok) logLine('system', 'Ветка не отправлена — рабочая директория сохранена, работа модели не потеряна\n')
     const upd = deps.db.updateCiRunStep(step.id, { status: ok ? 'success' : 'failed', exitCode, finishedAt: now(), durationMs: now() - started })
     if (upd) emitStep(upd, userId)
@@ -1282,9 +1290,13 @@ fi`
     const repoRoot = machine?.reposRoot?.replace(/\/$/, '') || ''
     const projectSlug = slugify(project.name)
     const taskNumber = String(task.seq ?? 0)
-    const slug = slugify(task.title)
-    const branch = (project.ciBranchTemplate || 'feature/{task_number}-{slug}').replace('{task_number}', taskNumber).replace('{slug}', slug)
-    const workspacePath = `${repoRoot}/${projectSlug}/${taskNumber}`
+    // The task number is the stable identity. Explicit legacy templates remain
+    // supported, but new/default branches and checkout directories never depend
+    // on the mutable task title.
+    const slug = taskNumber
+    const branch = (project.ciBranchTemplate || 'feature/{task_number}').replace('{task_number}', taskNumber).replace('{slug}', slugify(task.title))
+    const commandWorkspacePath = `${repoRoot}/${projectSlug}`
+    const workspacePath = `${commandWorkspacePath}/${taskNumber}`
     const taskKey = `${projectSlug}-${taskNumber}`
     // Изолированный кэш npm на задачу. Общий `~/.npm` ломался, когда два `npm ci`
     // на машине шли одновременно: EEXIST/ENOENT в `_cacache`, шаг падал с 254 и
@@ -1363,7 +1375,7 @@ fi`
     // («в репозитории есть локальные изменения»), и повторный запуск после
     // падения требовал ручного «Откатить изменения и повторить». Незакоммиченное
     // не пропадает: сначала `git stash`, и его всегда можно достать из копии.
-    const repoPath = `${workspacePath}/${slug}`
+    const repoPath = workspacePath
     // Связанный чат задачи должен выполнять команды там же, где модель CI: внутри
     // клонированного репозитория, а не в каталоге-контейнере workspace.
     if (runRow.conversationId) {
@@ -1376,13 +1388,13 @@ fi`
       `  git -C ${shq(repoPath)} clean -fd >/dev/null 2>&1 || true`
     ].join('\n')
     const guardExisting = strategy === 'fail'
-      ? `if [ -d ${shq(workspacePath)} ] && [ -n "$(ls -A ${shq(workspacePath)} 2>/dev/null)" ]; then echo "Рабочая директория уже существует (стратегия fail)" >&2; exit 65; fi; mkdir -p ${shq(workspacePath)}`
-      : `mkdir -p ${shq(workspacePath)}`
+      ? `if [ -d ${shq(workspacePath)} ] && [ -n "$(ls -A ${shq(workspacePath)} 2>/dev/null)" ]; then echo "Рабочая директория уже существует (стратегия fail)" >&2; exit 65; fi; mkdir -p ${shq(commandWorkspacePath)}`
+      : `mkdir -p ${shq(commandWorkspacePath)}`
     // Стратегия `clean` сносит папку целиком — чистить там нечего; `fail`
     // защищает от ЧУЖОГО содержимого, но своя копия задачи под запрет не
     // попадает, иначе повтор после падения был бы невозможен в принципе.
     const workspacePrep = strategy === 'clean'
-      ? `rm -rf ${shq(workspacePath)}; mkdir -p ${shq(workspacePath)}`
+      ? `rm -rf ${shq(workspacePath)}; mkdir -p ${shq(commandWorkspacePath)}`
       : `if [ -d ${shq(`${repoPath}/.git`)} ]; then\n${reclaim}\nelse\n${guardExisting}\nfi`
     const prep = `${cachePrep}\n${workspacePrep}`
     if (!resume) {
@@ -1463,7 +1475,7 @@ fi`
       let message = 'Актуализация базы знаний не выполнена: хук не подключён'
       if (deps.kbUpdate) {
         const ctx: CiModelContext = {
-          ...makePrimitives(runId, userId, agentId, project.machines, repoPath, workspacePath, env, signal),
+          ...makePrimitives(runId, userId, agentId, project.machines, repoPath, commandWorkspacePath, env, signal),
           run: { ...deps.db.getCiRunRaw(runId)!, llmEngineId: kbLlm.llmEngineId, llmProvider: kbLlm.provider, llmModel: kbLlm.model },
           task,
           project,
@@ -1527,7 +1539,7 @@ fi`
         // Cleanup сносит рабочую директорию вместе с коммитами модели — сначала
         // отправляем ветку в origin; не получилось — не удаляем и падаем.
         if (command.isCleanup) {
-          const pushed = await pushTaskBranch(runId, userId, agentId, workspacePath, env, slot, posBase + done + 1 + extraSteps, signal)
+          const pushed = await pushTaskBranch(runId, userId, agentId, commandWorkspacePath, env, slot, posBase + done + 1 + extraSteps, signal)
           extraSteps++
           if (!pushed) {
             if (slot === 'before_model') {
@@ -1538,7 +1550,7 @@ fi`
             return false
           }
         }
-        const res = await runCommandStep(runId, userId, agentId, project.machines, workspacePath, env, slot, posBase + done + 1 + extraSteps, command, 'user', null, signal)
+        const res = await runCommandStep(runId, userId, agentId, project.machines, commandWorkspacePath, env, slot, posBase + done + 1 + extraSteps, command, 'user', null, signal)
         // Шаг мог упасть именно из-за отмены (исполнитель отклонил команду) —
         // тогда это `cancelled`, а не `failed`, и никакого fix-loop.
         if (signal.aborted) return finishCancelled()
@@ -1560,7 +1572,7 @@ fi`
             return false
           }
           // fix-loop (если подключён) на упавший шаг.
-          const fixed = await tryFix(runId, userId, agentId, repoPath, workspacePath, env, project, task, signal)
+          const fixed = await tryFix(runId, userId, agentId, repoPath, commandWorkspacePath, env, project, task, signal)
           if (!fixed) {
             const failStatus = res.status === 'timeout' ? 'timeout' : 'failed'
             if (slot === 'before_model') {
@@ -1615,7 +1627,7 @@ fi`
     }
 
     // 2) Работа модели (при повторе из слота «после» — уже сделана, пропускаем).
-    const prim = makePrimitives(runId, userId, agentId, project.machines, repoPath, workspacePath, env, signal)
+    const prim = makePrimitives(runId, userId, agentId, project.machines, repoPath, commandWorkspacePath, env, signal)
     let modelOk = true
     let modelCancelled = false
     /** Модель работала, но рабочая копия пуста — слот «после» не запускаем. */
@@ -1900,6 +1912,12 @@ fi`
       return /* колонка могла исчезнуть между запросом и переносом */
     }
     deps.db.addCiEvent({ projectId: row.projectId, runId, type: merged ? 'run.task_done' : 'run.qa_preparation', actorType: 'system', payload: { columnId } })
+    if (!merged) {
+      const workspace = deps.db.findLatestCiWorkspace(row.projectId, row.taskId)
+      if (workspace?.branch && workspace.commitSha && workspace.pushed) {
+        deps.qaPreparation?.({ userId, projectId: row.projectId, taskId: row.taskId, branch: workspace.branch, commitSha: workspace.commitSha, runId })
+      }
+    }
     const last = steps[steps.length - 1]
     if (last) {
       const line = deps.db.appendCiLog(

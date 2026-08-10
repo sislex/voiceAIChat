@@ -62,8 +62,10 @@ export interface PreviewEnvironment {
   agentId: string
   workspacePath: string
   branch: string
+  expectedCommitSha: string | null
   builtCommitSha: string | null
   currentCommitSha: string | null
+  gitStatus: 'unknown' | 'verified' | 'uncommitted' | 'not_pushed' | 'remote_branch_missing' | 'sha_mismatch'
   state: PreviewState
   staleReason: string | null
   composeProject: string

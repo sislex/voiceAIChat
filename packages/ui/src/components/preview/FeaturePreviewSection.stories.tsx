@@ -4,8 +4,8 @@ import { FeaturePreviewSection } from './FeaturePreviewSection'
 
 const makeEnvironment = (state: PreviewState, patch: Partial<PreviewEnvironment> = {}): PreviewEnvironment => ({
   id: 'preview-163', projectId: 'p1', taskId: 't1', agentId: 'MacBook',
-  workspacePath: '/repos/chat/163', branch: 'feature/163-preview', builtCommitSha: 'a1b2c3d4e5f6',
-  currentCommitSha: 'a1b2c3d4e5f6', state, staleReason: null, composeProject: 'vc-preview-p1-t1',
+  workspacePath: '/repos/chat/163', branch: 'feature/163', expectedCommitSha: 'a1b2c3d4e5f6', builtCommitSha: 'a1b2c3d4e5f6',
+  currentCommitSha: 'a1b2c3d4e5f6', gitStatus: 'verified', state, staleReason: null, composeProject: 'vc-preview-p1-t1',
   appUrl: 'https://preview.example.test/app', storybookUrl: 'https://preview.example.test/storybook/',
   storybookStatus: 'ready', storybookCommitSha: 'a1b2c3d4e5f6', selectedSeedScenario: 'basic-user',
   seedVersion: 'v1', dataReady: true, healthStatus: state === 'running' || state === 'stale' ? 'healthy' : 'unknown',

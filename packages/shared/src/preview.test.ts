@@ -4,8 +4,8 @@ import { PREVIEW_STATES, canRunPlaywright, previewActions, safePreviewResourceNa
 function env(patch: Partial<PreviewEnvironment> = {}): PreviewEnvironment {
   return {
     id: 'e1', projectId: 'Project / PROD', taskId: 'Task; rm -rf', agentId: 'a1',
-    workspacePath: '/repos/p/1', branch: 'feature/1', builtCommitSha: 'abc',
-    currentCommitSha: 'abc', state: 'running', staleReason: null,
+    workspacePath: '/repos/p/1', branch: 'feature/1', expectedCommitSha: 'abc', builtCommitSha: 'abc',
+    currentCommitSha: 'abc', gitStatus: 'verified', state: 'running', staleReason: null,
     composeProject: 'vc-preview-projectprod-taskrmrf', appUrl: 'https://preview/app',
     storybookUrl: null, storybookStatus: 'not_applicable', storybookCommitSha: null,
     selectedSeedScenario: 'basic', seedVersion: 'v1', dataReady: true,
