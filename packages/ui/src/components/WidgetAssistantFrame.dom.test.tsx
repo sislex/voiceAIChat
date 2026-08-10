@@ -33,12 +33,16 @@ describe('WidgetAssistantFrame', () => {
 
   it('persists a message and sends the latest safe context through the normal LLM transport', async () => {
     const api = createFakeApi()
+    const selected = await api['conversations:create']({ title: 'Выбранный' })
+    await api['conversations:setProject']({ id: selected.id, projectId: 'p1' })
+    await api['messages:add']({ conversationId: selected.id, role: 'ai', text: 'История выбранного', time: '10:00' })
     const send = vi.fn()
     const transport = { send, onToken: vi.fn(() => () => {}), onDone: vi.fn(() => () => {}), onError: vi.fn(() => () => {}) } as any
     const onCommand = vi.fn()
-    const view = render(<KanbanAssistant projectId="p1" context={context as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
+    const view = render(<KanbanAssistant projectId="p1" conversationId={selected.id} context={context as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
     const next = { ...context, selection: { board: { projectId: 'p1', columns: [], revision: '9', tasks: [{ id: 't2', type: 'epic', title: 'UI', updatedAt: 9 }] }, openTask: { id: 't2', title: 'Current' }, selectedField: 'description' } }
-    view.rerender(<KanbanAssistant projectId="p1" context={next as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
+    view.rerender(<KanbanAssistant projectId="p1" conversationId={selected.id} context={next as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
+    expect(await screen.findByText('История выбранного')).toBeInTheDocument()
     await vi.waitFor(() => expect(screen.getByRole('textbox', { name: 'Поле ввода сообщения' })).toBeEnabled())
     await userEvent.type(screen.getByRole('textbox', { name: 'Поле ввода сообщения' }), 'UI')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить сообщение' }))
@@ -46,7 +50,8 @@ describe('WidgetAssistantFrame', () => {
     expect(send.mock.calls[0]?.[0].assistantContext.selection.openTask.id).toBe('t2')
     expect(send.mock.calls[0]?.[0].assistantContext.selection.selectedField).toBe('description')
     expect(send.mock.calls[0]?.[0].assistantContext.toolResults.query).toMatchObject({ source: 'ui', revision: '9', items: [{ id: 't2', kind: 'epic', title: 'UI' }] })
-    expect(await api['kanbanAssistant:get']({ projectId: 'p1' })).toMatchObject({ messages: [{ role: 'u0', text: 'UI' }] })
+    expect(send.mock.calls[0]?.[0].conversationId).toBe(selected.id)
+    expect(await api['kanbanAssistant:get']({ projectId: 'p1', conversationId: selected.id })).toMatchObject({ messages: [{ text: 'История выбранного' }, { role: 'u0', text: 'UI' }] })
   })
 
   it('shows project chats in the shell header with their source labels and persists the selection', async () => {
@@ -54,15 +59,21 @@ describe('WidgetAssistantFrame', () => {
     const regular = await api['conversations:create']({ title: 'Обычный чат' })
     await api['conversations:setProject']({ id: regular.id, projectId: 'p1' })
     await api['kanbanAssistant:get']({ projectId: 'p1' })
-    const open = vi.fn()
-    render(<ProjectAssistantChatSelector projectId="p1" api={api} onOpenChat={open} />)
+    localStorage.setItem('voicechat.projectAssistantChat.p1', regular.id)
+    const select = vi.fn()
+    const view = render(<ProjectAssistantChatSelector projectId="p1" api={api} selectedId={null} onSelect={select} />)
 
     const selector = await screen.findByRole('combobox', { name: 'Чат ассистента' })
     expect(await screen.findByRole('option', { name: 'Обычный чат · chat' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /Ассистент · p1 · kanban/ })).toBeInTheDocument()
     await userEvent.selectOptions(selector, regular.id)
-    expect(open).toHaveBeenCalledWith(regular.id)
+    expect(select).toHaveBeenCalledWith(regular.id)
     expect(localStorage.getItem('voicechat.projectAssistantChat.p1')).toBe(regular.id)
+    view.rerender(<ProjectAssistantChatSelector projectId="p1" api={api} selectedId={regular.id} onSelect={select} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
+    await vi.waitFor(() => expect(select).toHaveBeenCalledTimes(3))
+    const createdId = select.mock.calls[2]?.[0]
+    expect((await api['conversations:get']({ id: createdId }))?.conversation.projectId).toBe('p1')
     expect(projectAssistantChatSource({ assistantKind: 'browser' } as any)).toBe('browser')
   })
 

@@ -85,9 +85,13 @@ export async function registerRest(
     db.createConversation(uid(req), req.body?.title, req.body?.assistantKind === 'web-recorder' ? 'web-recorder' : null)
   )
 
-  app.get<{ Params: { projectId: string } }>('/api/projects/:projectId/kanban-assistant', async (req, reply) => {
+  app.get<{ Params: { projectId: string }; Querystring: { conversationId?: string } }>('/api/projects/:projectId/kanban-assistant', async (req, reply) => {
     const userId = uid(req)
-    const conversation = db.ensureKanbanAssistantConversation(userId, req.params.projectId)
+    const privateConversation = db.ensureKanbanAssistantConversation(userId, req.params.projectId)
+    const requested = req.query.conversationId ? db.getConversation(userId, req.query.conversationId) : null
+    const conversation = requested?.projectId === req.params.projectId && (requested.assistantKind === null || requested.assistantKind === 'kanban')
+      ? requested
+      : privateConversation
     if (!conversation) return reply.code(404).send({ error: 'not found' })
     const project = db.getCiLlmConfig('project', req.params.projectId) ?? db.ciLlmDefaultsForUser(userId)
     const settings = db.getSettings(userId)

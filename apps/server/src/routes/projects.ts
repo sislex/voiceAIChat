@@ -429,7 +429,7 @@ export function registerProjectRoutes(
     if (body.version !== WIDGET_TOOL_CONTRACT_VERSION || body.widgetKind !== 'kanban' || body.widgetInstanceId !== body.projectId) return false
     const conversation = db.getConversation(userId, body.conversationId)
     const turnOwned = db.listMessages(userId, body.conversationId).some((message) => message.id === body.turnId)
-    return Boolean(conversation?.assistantKind === 'kanban' && conversation.projectId === body.projectId && turnOwned && db.getBoard(userId, body.projectId))
+    return Boolean(conversation?.projectId === body.projectId && (conversation.assistantKind === null || conversation.assistantKind === 'kanban') && turnOwned && db.getBoard(userId, body.projectId))
   }
   const revision = (tasks: Task[]): string => String(Math.max(0, ...tasks.map((task) => task.updatedAt)))
 
