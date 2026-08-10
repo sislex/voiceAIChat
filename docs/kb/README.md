@@ -9,28 +9,28 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 56 коммит(ов) в areas после сверки: 376b00b feat: stabilize task branches and automate QA preparation … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 61 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 9 коммит(ов) в areas после сверки: 183a5f6 feat: add structured manual QA workflow … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ⚠ 23 коммит(ов) в areas после сверки: 376b00b feat: stabilize task branches and automate QA preparation … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-08 | ⚠ 4 коммит(ов) в areas после сверки: 376b00b feat: stabilize task branches and automate QA preparation … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-10 | ✓ |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-06 | ⚠ 25 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-08 | ⚠ 10 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-10 | ⚠ 5 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-10 | ✓ |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 19 коммит(ов) в areas после сверки: 376b00b feat: stabilize task branches and automate QA preparation … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 26 коммит(ов) в areas после сверки: 376b00b feat: stabilize task branches and automate QA preparation … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 181 коммит(ов) в areas после сверки: dfe0898 chatai-170: работа CI-рана … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ⚠ 3 коммит(ов) в areas после сверки: 376b00b feat: stabilize task branches and automate QA preparation … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 7 коммит(ов) в areas после сверки: 647043a chatai-165: работа CI-рана … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 24 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 31 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 190 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ⚠ 11 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 8 коммит(ов) в areas после сверки: bcb8716 fix: исключить индекс из свежести базы знаний … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: d9b71af fix: preserve task launch proposal fields … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-10 | ⚠ 3 коммит(ов) в areas после сверки: 376b00b feat: stabilize task branches and automate QA preparation … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-10 | ⚠ 5 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 15 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 12 коммит(ов) в areas после сверки: 6f55583 test: align KB workspace expectation … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 3 коммит(ов) в areas после сверки: 376b00b feat: stabilize task branches and automate QA preparation … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 20 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 5 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 7 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-10 | ⚠ 3 коммит(ов) в areas после сверки: 376b00b feat: stabilize task branches and automate QA preparation … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 9 коммит(ов) в areas после сверки: ddd5aa7 fix: publish release version metadata … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-10 | ⚠ 5 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-10, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
 
