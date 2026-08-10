@@ -24,13 +24,13 @@
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 8 коммит(ов) в areas после сверки: bcb8716 fix: исключить индекс из свежести базы знаний … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: d9b71af fix: preserve task launch proposal fields … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-07 | ⚠ 2 коммит(ов) в areas после сверки: a62f5ad chatai-141: управление открытым сайтом и чтение DOM из чата … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-10 | ⚠ 5 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-11 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 15 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 20 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 5 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 9 коммит(ов) в areas после сверки: ddd5aa7 fix: publish release version metadata … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-10 | ⚠ 5 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-10 | ⚠ 6 коммит(ов) в areas после сверки: f469214 fix(ui): close kanban column menu outside … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-10, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
 
@@ -47,8 +47,9 @@
 
 ## Журнал сессий
 
-Всего записей: 159. Последние:
+Всего записей: 160. Последние:
 
+- [2026-08-11-alexeys-macbook-air-2-kanban-column-menu.md](log/2026-08-11-alexeys-macbook-air-2-kanban-column-menu.md) — kanban-column-menu
 - [2026-08-10-mac-versioned-release-deploy.md](log/2026-08-10-mac-versioned-release-deploy.md) — versioned-release-deploy
 - [2026-08-10-mac-task-launch-fields.md](log/2026-08-10-mac-task-launch-fields.md) — task-launch-fields
 - [2026-08-10-mac-manual-qa.md](log/2026-08-10-mac-manual-qa.md) — manual-qa
@@ -58,7 +59,6 @@
 - [2026-08-10-2470-com-kanban-board-scroll.md](log/2026-08-10-2470-com-kanban-board-scroll.md) — kanban-board-scroll
 - [2026-08-10-2470-com-kanban-assistant-conversation-selector.md](log/2026-08-10-2470-com-kanban-assistant-conversation-selector.md) — kanban-assistant-conversation-selector
 - [2026-08-09-mac-test-fix-cycle.md](log/2026-08-09-mac-test-fix-cycle.md) — test-fix-cycle
-- [2026-08-09-mac-grouped-fail-fast-pipeline.md](log/2026-08-09-mac-grouped-fail-fast-pipeline.md) — grouped-fail-fast-pipeline
 
 ## Исторические планы
 
