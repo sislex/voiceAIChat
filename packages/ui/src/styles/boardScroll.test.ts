@@ -1,5 +1,5 @@
-// Цепочка скролла доски: длинная колонка обязана скроллиться внутри себя, а не
-// тянуть по высоте документ.
+// Цепочка скролла доски: длинная колонка обязана увеличивать общую поверхность
+// доски, не создавая собственного скролла и не растягивая документ.
 //
 // Проверяем по тексту app.css, а не через getComputedStyle: в jsdom нет
 // раскладки — там у всего нулевая высота, и «скроллится ли колонка» измерить
@@ -45,18 +45,19 @@ describe('app.css — скролл длинной колонки доски', ()
       expect(decl(selector, 'flex'), selector).toBe('1')
       expect(decl(selector, 'min-height'), selector).toBe('0')
     }
+    // Единственный общий контейнер сохраняет вертикальную и горизонтальную оси.
     expect(decl('.jboard', 'overflow')).toBe('auto')
-    expect(decl('.jcol', 'max-height')).toBe('100%')
+    expect(decl('.jcol', 'max-height')).toBeNull()
     expect(decl('.jcol', 'min-height')).toBe('0')
   })
 
-  it('скроллится именно список карточек колонки', () => {
-    // Автоскролл при переносе (lib/dnd.ts) тоже ждёт скролл именно здесь.
-    expect(decl('.jcol-body', 'overflow-y')).toBe('auto')
+  it('списки карточек растут внутри общего scroll-контейнера без своего скролла', () => {
+    expect(decl('.jcol-body', 'overflow')).toBe('visible')
+    expect(decl('.jcol-body', 'overflow-y')).toBeNull()
     expect(decl('.jcol-body', 'flex')).toBe('1')
   })
 
-  it('шапки и композер не сжимаются вместо списка', () => {
+  it('фильтры остаются вне общей прокрутки, а шапки и композер не сжимаются', () => {
     for (const selector of ['.jboard-filters', '.jcol-head', '.jcompose', '.jcompose-open']) {
       expect(decl(selector, 'flex'), selector).toBe('none')
     }
