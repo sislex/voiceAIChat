@@ -31,7 +31,7 @@ export class ReleaseManager {
     if (baseBranch!==target.baseBranch && !assertReleaseBranch(baseBranch)) throw new Error('Недопустимая базовая ветка')
     const existing=await this.listBranches(target)
     if (existing.some(item=>item.branch===branch)) throw new Error('Release-ветка уже существует')
-    const result=await this.runtime.exec(target,git(target,`fetch origin ${quote(baseBranch)} && branch ${quote(branch)} FETCH_HEAD && push origin ${quote(branch)}:refs/heads/${quote(branch)}`),120_000)
+    const result=await this.runtime.exec(target,git(target,`fetch origin ${quote(baseBranch)} && git branch ${quote(branch)} FETCH_HEAD && git push origin ${quote(branch)}:refs/heads/${quote(branch)}`),120_000)
     if (result.exitCode!==0) throw new Error(result.output||'Не удалось создать release-ветку')
     const resolved=await this.runtime.exec(target,git(target,`rev-parse refs/heads/${quote(branch)}`),30_000)
     if (resolved.exitCode!==0) throw new Error(resolved.output||'Не удалось определить SHA релиза')
@@ -73,7 +73,7 @@ export class ReleaseManager {
     if(kind==='cleanup'){await this.runtime.cleanup(release,target);return 'Feature preview и workspace удалены'}
     const commands:Record<'regression'|'merge_main'|'push_main',string>={
       regression:`checkout --detach ${quote(release.sha)} && npm run affected-check`,
-      merge_main:`fetch origin ${quote(target.baseBranch)} ${quote(release.branch)} && checkout -B ${quote(target.baseBranch)} origin/${quote(target.baseBranch)} && merge --no-ff --no-edit ${quote(release.sha)}`,
+      merge_main:`fetch origin ${quote(target.baseBranch)} ${quote(release.branch)} && git checkout -B ${quote(target.baseBranch)} origin/${quote(target.baseBranch)} && git merge --no-ff --no-edit ${quote(release.sha)}`,
       push_main:`push origin HEAD:refs/heads/${quote(target.baseBranch)}`
     }
     const result=await this.runtime.exec(target,git(target,commands[kind]),kind==='regression'?300_000:120_000)

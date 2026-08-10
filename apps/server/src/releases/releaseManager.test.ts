@@ -36,6 +36,30 @@ describe('ReleaseManager',()=>{
     expect(failed.steps.slice(1).every(step=>step.status==='queued')).toBe(true)
   })
 
+  it('prefixes every chained branch and merge operation with git',async()=>{
+    const commands:string[]=[]
+    const runtime:ReleaseRuntime={
+      exec:async(_target,command)=>{
+        commands.push(command)
+        if(command.includes('for-each-ref'))return {exitCode:0,output:'origin/release/1.2.3 abcdef1234567890\n'}
+        if(command.includes('rev-parse'))return {exitCode:0,output:'fedcba0987654321\n'}
+        return {exitCode:0,output:''}
+      },
+      updateKnowledgeBase:async()=>{},deployProduction:async()=>{},healthCheck:async()=>{},cleanup:async()=>{}
+    }
+    const manager=new ReleaseManager(db,runtime)
+    await manager.createBranch(target(),'release/2.0.0','main')
+    await manager.start('owner',target(),'release/1.2.3')
+    await tick()
+
+    const create=commands.find(command=>command.includes("branch 'release/2.0.0'"))!
+    expect(create).toContain("&& git branch 'release/2.0.0'")
+    expect(create).toContain("&& git push origin 'release/2.0.0'")
+    const merge=commands.find(command=>command.includes('checkout -B'))!
+    expect(merge).toContain("&& git checkout -B 'main'")
+    expect(merge).toContain("&& git merge --no-ff --no-edit 'abcdef1234567890'")
+  })
+
   it('rejects arbitrary or missing remote branches before creating history',async()=>{
     const runtime:ReleaseRuntime={exec:async()=>({exitCode:0,output:''}),updateKnowledgeBase:async()=>{},deployProduction:async()=>{},healthCheck:async()=>{},cleanup:async()=>{}}
     const manager=new ReleaseManager(db,runtime)
