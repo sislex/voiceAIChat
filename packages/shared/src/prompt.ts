@@ -62,10 +62,12 @@ export function parseTaskLaunchRequest(text: string): { text: string; request?: 
       for (const value of values) {
         if (!value || typeof value !== 'object') return { text }
         const source = value as Record<string, unknown>
-        const title = typeof source.title === 'string' ? source.title.trim() : ''
-        const description = typeof source.description === 'string' ? source.description.trim() : ''
-        const acceptanceCriteria = typeof source.acceptanceCriteria === 'string' ? source.acceptanceCriteria.trim() : ''
-        if (!title || !description || !acceptanceCriteria) return { text }
+        const title = typeof source.title === 'string' ? source.title : ''
+        const description = typeof source.description === 'string' ? source.description : ''
+        const acceptanceCriteria = typeof source.acceptanceCriteria === 'string' ? source.acceptanceCriteria : ''
+        // trim нужен только для проверки непустоты. Сохраняем исходные строки:
+        // отступы и крайние переводы строк могут быть частью Markdown/блока кода.
+        if (!title.trim() || !description.trim() || !acceptanceCriteria.trim()) return { text }
         requests.push({ id: `task-launch-${requests.length + 1}`, title, description, acceptanceCriteria })
       }
     } catch {

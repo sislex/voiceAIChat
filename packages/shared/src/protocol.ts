@@ -255,6 +255,8 @@ export const REST = {
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/criteria`,
   taskQaCriterion: (id: string, taskId: string, criterionId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/criteria/${encodeURIComponent(criterionId)}`,
+  taskQaPreparationComplete: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/preparation/complete`,
   taskQaSessions: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/sessions`,
   taskQaResult: (id: string, taskId: string, resultId: string) =>

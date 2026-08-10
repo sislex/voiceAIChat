@@ -532,7 +532,7 @@ describe('ci run manager', () => {
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')
     const board = db.getBoard('admin', project.id)!
-    const manualQa = board.columns.find((c) => c.semanticType === 'manual_qa')!
+    const manualQa = board.columns.find((c) => c.semanticType === 'qa_preparation')!
     expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(manualQa.id)
     // Причина переноса видна в ленте рана.
     const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json() as Array<{ chunk: string }>
@@ -582,10 +582,10 @@ describe('ci run manager', () => {
     expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
   })
 
-  it('нет колонки manual_qa в проекте — ран success и карточка не двигается', async () => {
+  it('нет колонки qa_preparation в проекте — ран success и карточка не двигается', async () => {
     const { project, task } = setup()
     const real = db.getColumnIdBySemantic.bind(db)
-    const spy = vi.spyOn(db, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'manual_qa' ? null : real(pid, semantic)))
+    const spy = vi.spyOn(db, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'qa_preparation' ? null : real(pid, semantic)))
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')
@@ -884,7 +884,7 @@ describe('карточка после падения, отмены и повто
     const second = await run(project.id, task.id)
     expect((await waitRun(second)).run.status).toBe('success')
     const board = db.getBoard('admin', project.id)!
-    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(board.columns.find((c) => c.semanticType === 'manual_qa')!.id)
+    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(board.columns.find((c) => c.semanticType === 'qa_preparation')!.id)
     // Сводка на доске — про новый ран, а не про упавший.
     const summary = db.latestCiRunSummary(task.id)!
     expect(summary.id).toBe(second)
@@ -938,7 +938,7 @@ describe('карточка после падения, отмены и повто
     expect(done.run.status).toBe('success')
     // Повтор — это работа, а не простой: карточка вернулась в разработку на время рана.
     expect(columnAtStep).toBe(columns.find((c) => c.semanticType === 'development')!.id)
-    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(columns.find((c) => c.semanticType === 'manual_qa')!.id)
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(columns.find((c) => c.semanticType === 'qa_preparation')!.id)
     expect(db.latestCiRunSummary(task.id)!.status).toBe('success')
   })
 

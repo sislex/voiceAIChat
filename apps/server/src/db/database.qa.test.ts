@@ -26,6 +26,22 @@ function fixture() {
 }
 
 describe('manual QA persistence and workflow', () => {
+  it('requires detailed scenarios before moving from preparation to manual QA', () => {
+    const project = db.createProject('owner', { name: 'QA preparation' })
+    const preparation = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'qa_preparation')!
+    const task = db.createTask('owner', project.id, { columnId: preparation.id, title: 'Feature' })!
+    expect(() => db.completeQaPreparation('owner', project.id, task.id)).toThrow(/хотя бы один сценарий/)
+    db.createAcceptanceCriterion('owner', project.id, task.id, {
+      title: 'Happy path', description: 'Проверка формы', preconditions: 'Открыть https://preview.test/form',
+      steps: '1. Заполнить поле\n2. Нажать Сохранить', testData: 'Название: QA', expectedResult: 'Форма сохранена без ошибки',
+      required: true, testType: 'manual'
+    })
+    db.completeQaPreparation('owner', project.id, task.id)
+    const board = db.getBoard('owner', project.id)!
+    const column = board.columns.find((item) => item.id === board.tasks.find((item) => item.id === task.id)!.columnId)
+    expect(column?.semanticType).toBe('manual_qa')
+  })
+
   it('versions semantic changes and stales active session without inheriting pass', () => {
     const { project, task, criterion, base } = fixture()
     const session = db.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1', previewId: 'p', previewSha: 'abc' })!

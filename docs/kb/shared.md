@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-08-08
-checked: 17679ee
+updated: 2026-08-10
+checked: d9b71af
 areas:
   - packages/shared/src
 ---
@@ -108,9 +108,11 @@ Stream-парсеры принимают строки событий CLI и но
 
 ### Запрос запуска разработки
 
-Перед изменением проекта `CHANGE_AUTHORIZATION_HINT` в `prompt.ts` предписывает модели спросить разрешение через завершающий fenced-блок `task-launch`. Чистый `parseTaskLaunchRequest` принимает только валидный JSON с непустыми `title`, `description` и `acceptanceCriteria`, отделяет его от текста ответа и возвращает `TaskLaunchRequest`; обычные слова о задаче не являются сигналом. `task-launch` входит в `SERVICE_FENCES`, поэтому служебный JSON не озвучивается.
+Перед изменением проекта `CHANGE_AUTHORIZATION_HINT` в `prompt.ts` предписывает модели спросить разрешение через завершающий fenced-блок `task-launch`. Чистый `parseTaskLaunchRequest` принимает только валидный JSON с непустыми `title`, `description` и `acceptanceCriteria`, отделяет его от текста ответа и возвращает одиночный `TaskLaunchRequest` либо несколько `TaskLaunchProposal` со стабильными в пределах ответа идентификаторами. Обычные слова о задаче не являются сигналом. `task-launch` входит в `SERVICE_FENCES`, поэтому служебный JSON не озвучивается.
 
-`TaskLaunchRequest` хранится в `TurnMeta.taskLaunch`: сервер добавляет его в merged meta до сохранения AI-сообщения. `claude.done` доставляет обычные `meta` и `message`, без отдельного `taskLaunch` в `ServerMessage`, `IpcEventMap` или remote-мосте. Поэтому предложение восстанавливается из истории вместе с сообщением и не зависит от того, какая сессия получила завершение хода.
+Непустота каждого текстового поля проверяется через `trim()`, но возвращаемое значение не обрезается. Поэтому `title`, `description` и `acceptanceCriteria` переходят из JSON дословно, включая крайние переводы строк, Markdown-отступы, списки, заголовки, кавычки и блоки кода; источник поведения и регрессия находятся в `packages/shared/src/prompt.ts` и `packages/shared/src/prompt.test.ts`.
+
+Одиночный `TaskLaunchRequest` хранится в `TurnMeta.taskLaunch`, несколько предложений — в `TurnMeta.taskLaunches`: сервер добавляет их в merged meta до сохранения AI-сообщения. `claude.done` доставляет обычные `meta` и `message`, без отдельного поля предложения в `ServerMessage`, `IpcEventMap` или remote-мосте. Поэтому карточки восстанавливаются из истории вместе с сообщением, а UI связывает действие создания с конкретным предложением, а не с общим или последним состоянием сообщения.
 
 ## Правило изменения контракта
 

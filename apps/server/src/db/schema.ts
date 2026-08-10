@@ -226,6 +226,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   flagged     INTEGER NOT NULL DEFAULT 0,
   -- Момент попадания в колонку с семантикой done (NULL — задача не завершена).
   done_at     INTEGER,
+  preview_ready INTEGER NOT NULL DEFAULT 0,
   seq         INTEGER,
   position    REAL NOT NULL,
   created_at  INTEGER NOT NULL,

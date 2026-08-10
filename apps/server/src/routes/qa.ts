@@ -37,6 +37,12 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
       } catch (error) { return qaError(reply, error) }
     }
   )
+  app.post<{ Params: TaskParams }>(`${base}/preparation/complete`, async (req, reply) => {
+    try {
+      return db.completeQaPreparation(uid(req), req.params.projectId, req.params.taskId)
+        ?? reply.code(404).send({ error: 'task not found' })
+    } catch (error) { return qaError(reply, error) }
+  })
   app.post<{ Params: TaskParams; Body: { branch: string; commitSha: string; testRunId: string; previewId?: string | null; previewSha?: string | null; appUrl?: string | null; storybookUrl?: string | null; testDataScenario?: string; testerId?: string | null } }>(
     `${base}/sessions`,
     async (req, reply) => {

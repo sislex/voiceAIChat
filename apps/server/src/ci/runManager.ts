@@ -1890,7 +1890,7 @@ fi`
     if (!row) return
     const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
     const merged = steps.some((st) => isMergeToBaseStep(st) && st.status === 'success')
-    const columnId = deps.db.getColumnIdBySemantic(row.projectId, merged ? 'done' : 'manual_qa')
+    const columnId = deps.db.getColumnIdBySemantic(row.projectId, merged ? 'done' : 'qa_preparation')
     if (!columnId) return
     const task = deps.db.getCiTask(userId, row.projectId, row.taskId)
     if (!task || task.columnId === columnId) return
@@ -1899,7 +1899,7 @@ fi`
     } catch {
       return /* колонка могла исчезнуть между запросом и переносом */
     }
-    deps.db.addCiEvent({ projectId: row.projectId, runId, type: merged ? 'run.task_done' : 'run.manual_qa', actorType: 'system', payload: { columnId } })
+    deps.db.addCiEvent({ projectId: row.projectId, runId, type: merged ? 'run.task_done' : 'run.qa_preparation', actorType: 'system', payload: { columnId } })
     const last = steps[steps.length - 1]
     if (last) {
       const line = deps.db.appendCiLog(

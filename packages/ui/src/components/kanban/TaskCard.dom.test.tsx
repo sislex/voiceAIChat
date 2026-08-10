@@ -52,6 +52,15 @@ describe('TaskCard связанный чат', () => {
   })
 })
 
+describe('TaskCard feature-preview', () => {
+  it('пульсирует только при серверном признаке готового окружения', () => {
+    const { rerender } = render(<TaskCard {...props({ task: mkTask({ previewReady: true }) })} />)
+    expect(screen.getByTestId('task-card').className).toContain('jcard--preview-running')
+    rerender(<TaskCard {...props({ task: mkTask({ previewReady: false }) })} />)
+    expect(screen.getByTestId('task-card').className).not.toContain('jcard--preview-running')
+  })
+})
+
 describe('TaskCard CI-панель', () => {
   it('кнопка «Выполнить» вызывает onStartCi', () => {
     const onStartCi = vi.fn()

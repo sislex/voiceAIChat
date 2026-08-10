@@ -100,7 +100,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   return (
     <div
       ref={cardRef}
-      className={`jcard${task.flagged ? ' jcard--flagged' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
+      className={`jcard${task.flagged ? ' jcard--flagged' : ''}${task.previewReady ? ' jcard--preview-running' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
       data-testid="task-card"
       data-task-id={task.id}
       tabIndex={0}

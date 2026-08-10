@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { AcceptanceCriterion, QaCriterionResult, QaResultStatus, QaTaskState } from '@shared/qa'
+import type { AcceptanceCriterion, AcceptanceCriterionSnapshot, QaCriterionResult, QaResultStatus, QaTaskState } from '@shared/qa'
 import { canCompleteQa, qaProgress } from '@shared/qa'
 import { Button } from '../ui/Button'
 
@@ -8,6 +8,9 @@ export function ManualQaPanel(props: { projectId: string; taskId: string }): JSX
   const [open, setOpen] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [draft, setDraft] = useState<AcceptanceCriterionSnapshot>({
+    title: '', description: '', preconditions: '', steps: '', testData: '', expectedResult: '', required: true, testType: 'manual'
+  })
   const load = async (): Promise<void> => {
     if (!window.qa) return
     try { setState(await window.qa.get(props.projectId, props.taskId)); setError('') }
@@ -40,6 +43,28 @@ export function ManualQaPanel(props: { projectId: string; taskId: string }): JSX
         {session.storybookUrl && <a href={session.storybookUrl} target="_blank" rel="noreferrer">Открыть Storybook</a>}
         <span>Passed {progress.passed} · Failed {progress.failed} · Blocked {progress.blocked} · N/A {progress.notApplicable} · Не проверено {progress.notTested}</span>
       </div>}
+      <details className="manual-qa-create">
+        <summary>Добавить сценарий ручного QA</summary>
+        <div className="manual-qa-create__form">
+          <label>Название сценария<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
+          <label>Цель и описание<textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
+          <label>Предусловия и URL<textarea value={draft.preconditions} onChange={(event) => setDraft({ ...draft, preconditions: event.target.value })} placeholder="Открыть https://…; войти тестовым пользователем" /></label>
+          <label>Подробные действия<textarea value={draft.steps} onChange={(event) => setDraft({ ...draft, steps: event.target.value })} placeholder={'1. Открыть URL\n2. Нажать кнопку…\n3. Заполнить форму…'} /></label>
+          <label>Данные для заполнения<textarea value={draft.testData} onChange={(event) => setDraft({ ...draft, testData: event.target.value })} /></label>
+          <label>Ожидаемый результат<textarea value={draft.expectedResult} onChange={(event) => setDraft({ ...draft, expectedResult: event.target.value })} /></label>
+          <label><input type="checkbox" checked={draft.required} onChange={(event) => setDraft({ ...draft, required: event.target.checked })} /> Обязательный сценарий</label>
+          <Button variant="primary" size="sm" disabled={busy || !draft.title.trim() || !draft.steps.trim() || !draft.expectedResult.trim()} onClick={async () => {
+            if (!window.qa) return
+            setBusy(true)
+            try {
+              await window.qa.createCriterion(props.projectId, props.taskId, draft)
+              setDraft({ title: '', description: '', preconditions: '', steps: '', testData: '', expectedResult: '', required: true, testType: 'manual' })
+              await load()
+            } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+            finally { setBusy(false) }
+          }}>Сохранить сценарий</Button>
+        </div>
+      </details>
       {!state.criteria.length ? <p className="muted">Структурированные критерии ещё не добавлены.</p> :
         <div className="manual-qa-list" role="list">
           {state.criteria.filter((criterion) => criterion.active).map((criterion) =>
@@ -58,6 +83,13 @@ export function ManualQaPanel(props: { projectId: string; taskId: string }): JSX
               }} disabled={busy || session?.status !== 'active'} />
           )}
         </div>}
+      {!state.activeSession && state.criteria.some((criterion) => criterion.active) && <Button disabled={busy} onClick={async () => {
+        if (!window.qa) return
+        setBusy(true)
+        try { setState(await window.qa.completePreparation(props.projectId, props.taskId)); setError('') }
+        catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+        finally { setBusy(false) }
+      }}>Сценарии готовы — перейти в ручное QA</Button>}
       {state.activeSession && canCompleteQa(state.activeSession).allowed && <Button variant="primary" disabled={busy} onClick={async () => {
         if (!window.qa) return
         setBusy(true)
