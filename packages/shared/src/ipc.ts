@@ -279,6 +279,10 @@ export interface IpcInvokeMap {
   }
 
   'projects:get': { arg: { id: string }; result: ProjectDetail | null }
+  'releases:branches': { arg: { projectId: string }; result: import('./release').ReleaseBranch[] }
+  'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string }; result: import('./release').ReleaseBranch }
+  'releases:list': { arg: { projectId: string }; result: import('./release').ProjectRelease[] }
+  'releases:deploy': { arg: { projectId: string; branch: string; previousReleaseId?: string; models?: Partial<Record<import('./release').ReleaseStepKind, string>> }; result: import('./release').ProjectRelease }
   'projects:update': {
     arg: {
       id: string
@@ -789,6 +793,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:list',
   'projects:create',
   'projects:get',
+  'releases:branches',
+  'releases:createBranch',
+  'releases:list',
+  'releases:deploy',
   'projects:update',
   'projects:delete',
   'projects:addMember',
