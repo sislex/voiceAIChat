@@ -19,7 +19,7 @@
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 18 коммит(ов) в areas после сверки: ab6b78d feat: extend preview environments and manual QA workflow … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 25 коммит(ов) в areas после сверки: 1d2008b CHAT-165: добавить версионные release-ветки и центр деплоя … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 1 коммит(ов) в areas после сверки: ab6b78d feat: extend preview environments and manual QA workflow |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 175 коммит(ов) в areas после сверки: ab6b78d feat: extend preview environments and manual QA workflow … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 176 коммит(ов) в areas после сверки: 1b3440b chatai-167: работа CI-рана … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 7 коммит(ов) в areas после сверки: 647043a chatai-165: работа CI-рана … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: d9b71af fix: preserve task launch proposal fields … |
@@ -30,7 +30,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 7 коммит(ов) в areas после сверки: 3899375 feat: add task feature preview environments … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-09 | ⚠ 7 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-10 | ⚠ 1 коммит(ов) в areas после сверки: 55b196e fix: keep kanban assistant chat selection embedded |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-10, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
 
@@ -47,18 +47,18 @@
 
 ## Журнал сессий
 
-Всего записей: 157. Последние:
+Всего записей: 158. Последние:
 
 - [2026-08-10-mac-versioned-release-deploy.md](log/2026-08-10-mac-versioned-release-deploy.md) — versioned-release-deploy
 - [2026-08-10-mac-task-launch-fields.md](log/2026-08-10-mac-task-launch-fields.md) — task-launch-fields
 - [2026-08-10-mac-manual-qa.md](log/2026-08-10-mac-manual-qa.md) — manual-qa
 - [2026-08-10-mac-feature-preview.md](log/2026-08-10-mac-feature-preview.md) — feature-preview
 - [2026-08-10-mac-feature-preview-docker-preflight.md](log/2026-08-10-mac-feature-preview-docker-preflight.md) — feature-preview-docker-preflight
+- [2026-08-10-2470-com-kanban-board-scroll.md](log/2026-08-10-2470-com-kanban-board-scroll.md) — kanban-board-scroll
 - [2026-08-10-2470-com-kanban-assistant-conversation-selector.md](log/2026-08-10-2470-com-kanban-assistant-conversation-selector.md) — kanban-assistant-conversation-selector
 - [2026-08-09-mac-test-fix-cycle.md](log/2026-08-09-mac-test-fix-cycle.md) — test-fix-cycle
 - [2026-08-09-mac-grouped-fail-fast-pipeline.md](log/2026-08-09-mac-grouped-fail-fast-pipeline.md) — grouped-fail-fast-pipeline
 - [2026-08-09-alexeys-macbook-air-2-web-reader-fullscreen.md](log/2026-08-09-alexeys-macbook-air-2-web-reader-fullscreen.md) — web-reader-fullscreen
-- [2026-08-09-2470-com-workflow-stage-llm.md](log/2026-08-09-2470-com-workflow-stage-llm.md) — workflow-stage-llm
 
 ## Исторические планы
 
