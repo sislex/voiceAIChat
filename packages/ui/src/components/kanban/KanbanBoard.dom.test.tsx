@@ -70,6 +70,47 @@ describe('KanbanBoard (изолированный)', () => {
     expect(screen.getByText('Скрытая')).toBeInTheDocument()
   })
 
+  it('меню колонки закрывается при клике вне него, не блокируя целевой элемент', async () => {
+    renderBoard()
+    await userEvent.click(screen.getByRole('button', { name: 'Меню колонки «To Do»' }))
+    expect(screen.getByTestId('column-menu')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('A'))
+
+    expect(screen.queryByTestId('column-menu')).not.toBeInTheDocument()
+    expect(await screen.findByTestId('task-modal')).toBeInTheDocument()
+  })
+
+  it('нажатие внутри меню колонки не закрывает его преждевременно', async () => {
+    renderBoard()
+    await userEvent.click(screen.getByRole('button', { name: 'Меню колонки «To Do»' }))
+    const menu = screen.getByTestId('column-menu')
+
+    fireEvent.pointerDown(menu)
+
+    expect(menu).toBeInTheDocument()
+  })
+
+  it('Escape закрывает меню колонки', async () => {
+    renderBoard()
+    await userEvent.click(screen.getByRole('button', { name: 'Меню колонки «To Do»' }))
+
+    await userEvent.keyboard('{Escape}')
+
+    expect(screen.queryByTestId('column-menu')).not.toBeInTheDocument()
+  })
+
+  it('повторное нажатие на триггер закрывает меню колонки', async () => {
+    renderBoard()
+    const trigger = screen.getByRole('button', { name: 'Меню колонки «To Do»' })
+    await userEvent.click(trigger)
+    expect(screen.getByTestId('column-menu')).toBeInTheDocument()
+
+    await userEvent.click(trigger)
+
+    expect(screen.queryByTestId('column-menu')).not.toBeInTheDocument()
+  })
+
   it('колонка с semanticType done показывает последний вход сверху независимо от позиции', () => {
     renderBoard({
       board: {
