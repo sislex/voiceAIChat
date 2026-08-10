@@ -267,6 +267,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       if (!res.ok) throw new Error(`GET ${REST.project(id)} → ${res.status}`)
       return res.json()
     },
+    'releases:branches': ({ projectId }) => req(REST.projectReleaseBranches(projectId)),
+    'releases:createBranch': ({ projectId, branch, baseBranch }) =>
+      req(REST.projectReleaseBranches(projectId), { method: 'POST', body: JSON.stringify({ branch, baseBranch }) }),
+    'releases:list': ({ projectId }) => req(REST.projectReleases(projectId)),
+    'releases:deploy': ({ projectId, ...body }) =>
+      req(REST.projectReleaseDeploy(projectId), { method: 'POST', body: JSON.stringify(body) }),
     'projects:update': ({ id, ...fields }) =>
       req(REST.project(id), { method: 'PATCH', body: JSON.stringify(fields) }),
     'projects:delete': async ({ id }) => {

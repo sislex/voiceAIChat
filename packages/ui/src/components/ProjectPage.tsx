@@ -14,10 +14,11 @@ import { EmptyState } from './ui/EmptyState'
 import { ToolFrame } from './ToolFrame'
 
 /** Раздел страницы проекта — он же вкладка в шапке. */
-export type ProjectSection = 'board' | 'settings'
+export type ProjectSection = 'board' | 'releases' | 'settings'
 
 const SECTIONS: readonly { id: ProjectSection; label: string }[] = [
   { id: 'board', label: 'Канбан' },
+  { id: 'releases', label: 'Релизы' },
   { id: 'settings', label: 'Настройки' }
 ]
 

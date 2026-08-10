@@ -89,6 +89,7 @@ npm run kb:check             # что в базе знаний устарело 
 | [conventions.md](docs/kb/conventions.md) | стиль кода, тесты, как устроены гейты и коммиты |
 | [features/feature-preview.md](docs/kb/features/feature-preview.md) | feature-preview задачи: состояния, Docker/Storybook, seed, UI и Playwright-гейт |
 | [features/manual-qa.md](docs/kb/features/manual-qa.md) | критерии, версии, QA sessions, результаты, скриншоты и допуск к merge |
+| [features/releases.md](docs/kb/features/releases.md) | release/x.y.z, фиксация SHA, обязательные ворота и публикация в production |
 | [kb-workflow.md](docs/kb/kb-workflow.md) | правила ведения самой базы знаний |
 
 Историю решений по фичам — только если нужен контекст «почему так»: `docs/plans/`
