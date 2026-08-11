@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { PreviewConfig, PreviewEnvironment, PreviewErrorType, PreviewOperation, PreviewRun } from '@voicechat/shared'
-import { isPreviewBusy, safePreviewResourceName } from '@voicechat/shared'
+import { isPreviewBusy, issueKey, safePreviewResourceName } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor } from '../ci/types.js'
 
@@ -112,11 +112,12 @@ export class FeaturePreviewManager {
     if (!workspacePath) {
       if (!project.gitUrl) throw new Error('Для проекта не настроен Git-репозиторий')
       const slug = (value: string): string => value.toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-|-$/g, '').slice(0, 48)
-      const branch = expectedBranch ?? (project.ciBranchTemplate || 'feature/{task_number}')
-        .replace('{task_number}', String(task.seq)).replace('{slug}', slug(task.title))
+      const taskNumber = issueKey(project.name, task)
+      const branch = expectedBranch ?? (project.ciBranchTemplate || '{task_number}')
+        .replace('{task_number}', taskNumber).replace('{slug}', slug(task.title))
       if (!expectedSha || !sourceWorkspace?.pushed) throw new Error(`Нельзя подготовить preview на машине ${targetAgentId}: результат разработки не зафиксирован и не подтверждён в origin`)
       const projectKey = slug(project.name || project.id) || project.id.replace(/[^a-z0-9]/gi, '').slice(0, 24)
-      workspacePath = `${machine.reposRoot.replace(/\/$/, '')}/${projectKey}/${task.seq}`
+      workspacePath = `${machine.reposRoot.replace(/\/$/, '')}/${projectKey}/${taskNumber}`
       let output = ''
       const prepared = await this.deps.executor.run({
         agentId: targetAgentId,

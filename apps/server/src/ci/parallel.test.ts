@@ -137,8 +137,8 @@ describe('параллельные раны разных задач', () => {
     expect(await waitStatus(second)).toBe('success')
     const paths = new Set(envs.map((e) => e.WORKSPACE))
     const branches = new Set(envs.map((e) => e.BRANCH))
-    expect(paths).toEqual(new Set(['/repos/p/1', '/repos/p/2']))
-    expect(branches.size).toBe(2)
+    expect(paths).toEqual(new Set(['/repos/p/P-1', '/repos/p/P-2']))
+    expect(branches).toEqual(new Set(['P-1', 'P-2']))
   })
 
   it('очередь берёт ожидающие раны в текущем порядке development при нескольких свободных слотах', async () => {

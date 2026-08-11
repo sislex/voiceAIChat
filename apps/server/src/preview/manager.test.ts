@@ -12,7 +12,7 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 function setup(result: { exitCode: number | null; timedOut: boolean } = { exitCode: 0, timedOut: false }) {
   const dir = mkdtempSync(join(tmpdir(), 'preview-test-')); dirs.push(dir)
   const db = {
-    getProject: () => ({ id: 'p1', name: 'Project', gitUrl: 'https://example.test/repo.git', ciBranchTemplate: 'feature/{task_number}', defaultAgentId: 'a1', machines: [{ agentId: 'a1', reposRoot: '/repos', path: '/repos/project' }, { agentId: 'a2', reposRoot: '/other', path: '/other/project' }] }),
+    getProject: () => ({ id: 'p1', name: 'Project', gitUrl: 'https://example.test/repo.git', ciBranchTemplate: '{task_number}', defaultAgentId: 'a1', machines: [{ agentId: 'a1', reposRoot: '/repos', path: '/repos/project' }, { agentId: 'a2', reposRoot: '/other', path: '/other/project' }] }),
     getBoard: () => ({ tasks: [{ id: 't1', type: 'task', seq: 1, title: 'Task one', agentId: 'a1' }, { id: 't2', type: 'task', seq: 2, title: 'Task two', agentId: 'a1' }] }),
     findActiveCiWorkspace: (_projectId: string, taskId: string) => ({ id: `ws-${taskId}`, agentId: 'a1', path: `/repos/project/${taskId}`, branch: `feature/${taskId === 't1' ? 1 : 2}`, commitSha: taskId === 't1' ? 'aaaaaaaa' : 'bbbbbbbb', pushed: true }),
     findLatestCiWorkspace: (_projectId: string, taskId: string) => ({ id: `ws-${taskId}`, agentId: 'a1', path: `/repos/project/${taskId}`, branch: `feature/${taskId === 't1' ? 1 : 2}`, commitSha: taskId === 't1' ? 'aaaaaaaa' : 'bbbbbbbb', pushed: true }),
@@ -57,7 +57,7 @@ describe('FeaturePreviewManager', () => {
     const { manager, executor } = setup()
     const env = await manager.operate('u1', 'p1', 't1', 'start', { agentId: 'a2' })
     expect(env.agentId).toBe('a2')
-    expect(env.workspacePath).toBe('/other/project/1')
+    expect(env.workspacePath).toBe('/other/project/PROJ-1')
     expect(executor.run).toHaveBeenCalledWith(expect.objectContaining({
       agentId: 'a2', workdir: '/other/project', env: expect.objectContaining({ VC_PREVIEW_BRANCH: 'feature/1', VC_PREVIEW_SHA: 'aaaaaaaa' })
     }), expect.any(Function))

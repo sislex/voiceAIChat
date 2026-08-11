@@ -1289,15 +1289,15 @@ fi`
     const machine = project.machines.find((m) => m.agentId === agentId)
     const repoRoot = machine?.reposRoot?.replace(/\/$/, '') || ''
     const projectSlug = slugify(project.name)
-    const taskNumber = String(task.seq ?? 0)
-    // The task number is the stable identity. Explicit legacy templates remain
-    // supported, but new/default branches and checkout directories never depend
-    // on the mutable task title.
+    const taskNumber = issueKey(project.name, task)
+    // The issue key (for example CHAT-172) is the stable, human-readable task
+    // identity. Explicit custom templates remain supported, while defaults and
+    // checkout directories never depend on the mutable task title.
     const slug = taskNumber
-    const branch = (project.ciBranchTemplate || 'feature/{task_number}').replace('{task_number}', taskNumber).replace('{slug}', slugify(task.title))
+    const branch = (project.ciBranchTemplate || '{task_number}').replace('{task_number}', taskNumber).replace('{slug}', slugify(task.title))
     const commandWorkspacePath = `${repoRoot}/${projectSlug}`
     const workspacePath = `${commandWorkspacePath}/${taskNumber}`
-    const taskKey = `${projectSlug}-${taskNumber}`
+    const taskKey = `${projectSlug}-${task.seq ?? 0}`
     // Изолированный кэш npm на задачу. Общий `~/.npm` ломался, когда два `npm ci`
     // на машине шли одновременно: EEXIST/ENOENT в `_cacache`, шаг падал с 254 и
     // ретраи не помогали, пока кэш не чистили руками. Кэш лежит РЯДОМ с рабочими
