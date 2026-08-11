@@ -4,7 +4,7 @@ import { ReleaseManager, releaseKnowledgeBaseCommand, releaseSwitchCommand, type
 
 let db:VoiceChatDb
 let projectId:string
-const ci=():ReleaseProjectTarget=>({projectId,agentId:'ci',path:'/ci',baseBranch:'main'})
+const ci=():ReleaseProjectTarget=>({projectId,agentId:'ci',path:'/ci',baseBranch:'main',testCommand:'npm run verify:release'})
 const prod=():ProductionTarget=>({...ci(),agentId:'prod',path:'/prod',deployCommand:'npm run deploy:prod',healthCheckCommand:'npm run health:prod',expectedRepository:'git@example/repo.git'})
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0))
 beforeEach(()=>{let id=0;db=new VoiceChatDb(':memory:',{newId:()=>`id-${++id}`,now:()=>1000+id});db.createUser('owner','','user');projectId=db.createProject('owner',{name:'P'}).id})
@@ -39,7 +39,8 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const release=await manager.createBranch('owner',ci(),'release/1.2.3','main')
     await tick();await tick()
     expect(runtime.prepareKnowledgeBase).toHaveBeenCalledWith('release/1.2.3',ci())
-    expect(commands.some(command=>command.includes('npm run affected-check'))).toBe(true)
+    expect(commands.some(command=>command.includes('npm run verify:release'))).toBe(true)
+    expect(commands.some(command=>command.includes('affected-check'))).toBe(false)
     expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('ready')
   })
 
@@ -53,7 +54,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
 
   it('does not repeat checks, merge main or create tags during deploy',async()=>{
     const commands:string[]=[]
-    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return command.includes('for-each-ref')?{exitCode:0,output:'origin/release/1.0.0 fixed-sha\n'}:{exitCode:0,output:'ok'}}}
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return command.includes('for-each-ref')?{exitCode:0,output:'origin/release/1.0.0 fixed-sha\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}}
     const prepared=db.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'ready'})
     const manager=new ReleaseManager(db,runtime)
     const attempt=await manager.start('owner',ci(),prod(),'release/1.0.0')
@@ -63,6 +64,16 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(commands).toContain("cd '/prod' && npm run deploy:prod")
     expect(db.getProjectRelease('owner',projectId,attempt.id)?.status).toBe('released')
     expect(prepared.status).toBe('ready')
+  })
+
+  it('resumes an active health check after server restart and verifies the expected commit',async()=>{
+    const release=db.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'health_check'})
+    db.setProjectReleaseStep(release.id,'health_check','running','waiting','owner')
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async()=>({exitCode:0,output:'{"ok":true,"commit":"fixed-sha"}'})}
+    const manager=new ReleaseManager(db,runtime)
+    manager.reconcile(()=>prod())
+    await tick();await tick()
+    expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('released')
   })
 
   it('blocks changed SHA, offline production and concurrent deploy',async()=>{

@@ -13,14 +13,14 @@ export function registerReleaseRoutes(app:FastifyInstance,db:VoiceChatDb,release
     const value=project(req,projectId)
     const agentId=value?.defaultAgentId
     const machine=agentId?value?.machines.find(item=>item.agentId===agentId):undefined
-    return value&&agentId&&machine?.path?{projectId,agentId,path:machine.path,baseBranch:value.ciBaseBranch||'main'}:null
+    return value&&agentId&&machine?.path?{projectId,agentId,path:machine.path,baseBranch:value.ciBaseBranch||'main',testCommand:value.testCommand?.trim()||'npm run typecheck && npm run test'}:null
   }
   const productionTarget=(req:FastifyRequest,projectId:string):ProductionTarget|null=>{
     const value=project(req,projectId)
     const agentId=value?.productionAgentId
     const linked=agentId?value?.machines.some(item=>item.agentId===agentId):false
     if(!value||!agentId||!linked||!value.productionCheckoutPath||!value.productionDeployCommand||!value.productionHealthCheckCommand||!value.gitUrl)return null
-    return {projectId,agentId,path:value.productionCheckoutPath,baseBranch:value.ciBaseBranch||'main',deployCommand:value.productionDeployCommand,healthCheckCommand:value.productionHealthCheckCommand,expectedRepository:value.gitUrl}
+    return {projectId,agentId,path:value.productionCheckoutPath,baseBranch:value.ciBaseBranch||'main',testCommand:value.testCommand?.trim()||'npm run typecheck && npm run test',deployCommand:value.productionDeployCommand,healthCheckCommand:value.productionHealthCheckCommand,expectedRepository:value.gitUrl}
   }
   const owner=(req:FastifyRequest,projectId:string):boolean=>project(req,projectId)?.role==='owner'
 

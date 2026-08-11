@@ -1,7 +1,7 @@
 import { assertReleaseBranch, type ProjectRelease, type ReleaseBranch, type ReleaseStepKind } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 
-export interface ReleaseProjectTarget { projectId:string; agentId:string; path:string; baseBranch:string }
+export interface ReleaseProjectTarget { projectId:string; agentId:string; path:string; baseBranch:string; testCommand:string }
 export interface ProductionTarget extends ReleaseProjectTarget { deployCommand:string; healthCheckCommand:string; expectedRepository:string }
 export interface ReleaseCommandResult { exitCode:number|null; output:string; timedOut?:boolean }
 export interface ReleaseRuntime {
@@ -47,6 +47,15 @@ export async function waitForReleaseHealth(
   }
   throw new Error(`Production не перешёл на версию ${expectedVersion}: ${last}`)
 }
+
+function healthCommit(output:string):string|null {
+  for(const line of output.split(/\r?\n/).reverse()){
+    try{const value=JSON.parse(line) as {ok?:boolean;commit?:string};if(value.ok===true&&typeof value.commit==='string')return value.commit}catch{}
+  }
+  return null
+}
+const sameCommit=(actual:string,expected:string):boolean=>actual===expected||actual.startsWith(expected)||expected.startsWith(actual)
+const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
 
 export class ReleaseManager {
   private readonly preparing=new Set<string>()
@@ -102,7 +111,7 @@ export class ReleaseManager {
       this.db.setProjectReleaseSha(release.id,found.sha)
       this.db.setProjectReleaseStep(release.id,'knowledge_base','passed','Индекс БЗ проверен и зафиксирован',actor)
       this.db.setProjectReleaseStep(release.id,'regression','running','',actor)
-      const regression=await this.runtime.exec(target,git(target,`checkout --detach ${quote(found.sha)} && npm run affected-check`),300_000)
+      const regression=await this.runtime.exec(target,at(target,`git checkout --detach ${quote(found.sha)} && ${target.testCommand}`),300_000)
       if(regression.exitCode!==0||regression.timedOut)throw new Error(regression.output||'Regression завершился с ошибкой')
       this.db.setProjectReleaseStep(release.id,'regression','passed',regression.output,actor)
       for(const kind of ['switching','building','health_check'] as const)this.db.setProjectReleaseStep(release.id,kind,'skipped','Выполняется только при deploy',actor)
@@ -114,6 +123,48 @@ export class ReleaseManager {
       this.db.setProjectReleaseStep(release.id,kind,'failed',log,actor)
       this.db.setProjectReleaseStatus(release.id,'failed',actor)
     }
+  }
+
+  reconcile(resolveTarget:(release:ProjectRelease)=>ProductionTarget|null):void {
+    for(const release of this.db.listActiveProjectReleases()){
+      const actor=release.triggeredBy
+      const target=resolveTarget(release)
+      if(!target){
+        const kind=release.steps.find(step=>step.status==='running')?.kind
+        if(kind)this.db.setProjectReleaseStep(release.id,kind,'failed','Production-конфигурация недоступна после рестарта',actor)
+        this.db.setProjectReleaseStatus(release.id,'failed',actor)
+        continue
+      }
+      if(release.status==='switching'){
+        this.db.setProjectReleaseStep(release.id,'switching','failed','Перезапуск во время переключения checkout',actor)
+        this.db.setProjectReleaseStatus(release.id,'failed',actor)
+        continue
+      }
+      if(release.status==='building')this.db.setProjectReleaseStep(release.id,'building','passed','Production deploy продолжен после рестарта',actor)
+      this.db.setProjectReleaseStatus(release.id,'health_check',actor)
+      this.db.setProjectReleaseStep(release.id,'health_check','running','Ожидание production с ожидаемым SHA после рестарта',actor)
+      this.deploying.add(release.projectId)
+      void this.monitorHealth(actor,target,release).finally(()=>this.deploying.delete(release.projectId))
+    }
+  }
+
+  private async monitorHealth(actor:string,target:ProductionTarget,release:ProjectRelease):Promise<void> {
+    let last='Production ещё не ответил'
+    for(let attempt=0;attempt<150;attempt+=1){
+      try{
+        const result=await this.runtime.exec(target,at(target,target.healthCheckCommand),15_000)
+        const commit=result.exitCode===0&&!result.timedOut?healthCommit(result.output):null
+        if(commit&&sameCommit(commit,release.sha)){
+          this.db.setProjectReleaseStep(release.id,'health_check','passed',result.output,actor)
+          this.db.setProjectReleaseStatus(release.id,'released',actor)
+          return
+        }
+        last=commit?`Production отвечает SHA ${commit}, ожидается ${release.sha}`:(result.output||'Health-check не вернул commit')
+      }catch(error){last=error instanceof Error?error.message:String(error)}
+      if(attempt<149)await sleep(2_000)
+    }
+    this.db.setProjectReleaseStep(release.id,'health_check','failed',last,actor)
+    this.db.setProjectReleaseStatus(release.id,'failed',actor)
   }
 
   private async deploy(actor:string,target:ProductionTarget,release:ProjectRelease):Promise<void> {
@@ -132,11 +183,8 @@ export class ReleaseManager {
       this.db.setProjectReleaseStep(release.id,'building','passed',built.output,actor)
 
       this.db.setProjectReleaseStatus(release.id,'health_check',actor)
-      this.db.setProjectReleaseStep(release.id,'health_check','running','',actor)
-      const health=await this.runtime.exec(target,at(target,target.healthCheckCommand),120_000)
-      if(health.exitCode!==0||health.timedOut)throw new Error(health.output||'Health-check завершился с ошибкой')
-      this.db.setProjectReleaseStep(release.id,'health_check','passed',health.output,actor)
-      this.db.setProjectReleaseStatus(release.id,'released',actor)
+      this.db.setProjectReleaseStep(release.id,'health_check','running','Ожидание production с ожидаемым SHA',actor)
+      await this.monitorHealth(actor,target,release)
     }catch(error){
       const log=error instanceof Error?error.message:String(error)
       const current=this.db.getProjectRelease(actor,target.projectId,release.id)
