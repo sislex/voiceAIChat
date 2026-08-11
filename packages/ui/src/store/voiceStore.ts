@@ -1714,6 +1714,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     return state.conversations.find((c) => c.id === state.activeId)?.workdir ?? null
   }
 
+  function activeConversationProjectId(): string | undefined {
+    return state.conversations.find((c) => c.id === state.activeId)?.projectId ?? undefined
+  }
+
   /** Роутинг ответа: реальный Claude (стрим событиями) или мок-пайплайн. */
   function beginReply(segments: SttSegmentWire[], attachments: string[] = [], execTarget: string | null = activeConversationExecTarget()): void {
     if (claudeEnabled && deps.sendClaudePrompt && state.activeId) {
@@ -2490,7 +2494,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         kind,
         agentId,
         ...(path ? { path } : {}),
-        ...(path && kind === 'explorer' ? { dir: true } : {})
+        ...(path && kind === 'explorer' ? { dir: true } : {}),
+        ...(activeConversationProjectId() ? { projectId: activeConversationProjectId() } : {})
       }
     })
   }
@@ -2501,26 +2506,36 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   const noFs = (): never => {
     throw new Error('Файловые операции недоступны')
   }
-  const fsList = (agentId: string, path: string): Promise<FsResult> =>
-    deps.fs ? deps.fs.list(agentId, path) : noFs()
-  const fsRead = (agentId: string, path: string): Promise<FsResult> =>
-    deps.fs ? deps.fs.read(agentId, path) : noFs()
+  const fsList = (agentId: string, path: string): Promise<FsResult> => {
+    if (!deps.fs) return noFs()
+    const projectId = activeConversationProjectId()
+    return projectId ? deps.fs.list(agentId, path, projectId) : deps.fs.list(agentId, path)
+  }
+  const fsRead = (agentId: string, path: string): Promise<FsResult> => {
+    if (!deps.fs) return noFs()
+    const projectId = activeConversationProjectId()
+    return projectId ? deps.fs.read(agentId, path, projectId) : deps.fs.read(agentId, path)
+  }
   /** Файл с диска сервера; null — сервер такого у себя не знает. */
   const readServerFile = (path: string): Promise<ServerFileInfo | null> =>
     deps.files ? deps.files.read(path) : Promise.resolve(null)
   const fsWrite = (agentId: string, path: string, dataBase64: string): Promise<FsResult> =>
-    deps.fs ? deps.fs.write(agentId, path, dataBase64) : noFs()
+    deps.fs ? deps.fs.write(agentId, path, dataBase64, activeConversationProjectId()) : noFs()
   const fsRemove = (agentId: string, path: string): Promise<FsResult> =>
-    deps.fs ? deps.fs.remove(agentId, path) : noFs()
+    deps.fs ? deps.fs.remove(agentId, path, activeConversationProjectId()) : noFs()
   const fsRename = (agentId: string, from: string, to: string): Promise<FsResult> =>
-    deps.fs ? deps.fs.rename(agentId, from, to) : noFs()
+    deps.fs ? deps.fs.rename(agentId, from, to, activeConversationProjectId()) : noFs()
   const fsMkdir = (agentId: string, path: string): Promise<FsResult> =>
-    deps.fs ? deps.fs.mkdir(agentId, path) : noFs()
+    deps.fs ? deps.fs.mkdir(agentId, path, activeConversationProjectId()) : noFs()
   const agentExec = (
     agentId: string,
     command: string,
     signal?: AbortSignal
-  ): Promise<AgentExecResult> => (deps.fs ? deps.fs.exec(agentId, command, signal) : noFs())
+  ): Promise<AgentExecResult> => {
+    if (!deps.fs) return noFs()
+    const projectId = activeConversationProjectId()
+    return projectId ? deps.fs.exec(agentId, command, signal, projectId) : deps.fs.exec(agentId, command, signal)
+  }
 
   /**
    * История команд консоли по машине. Подряд повторённую команду не дублируем —
@@ -2540,12 +2555,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!deps.fs) return noFs()
     const dataBase64 = await fileToBase64(file)
     const path = `${dir.replace(/\/$/, '')}/${file.name}`
-    return deps.fs.write(agentId, path, dataBase64)
+    return deps.fs.write(agentId, path, dataBase64, activeConversationProjectId())
   }
 
   async function downloadFsFile(agentId: string, path: string, name: string): Promise<void> {
     if (!deps.fs) return
-    const res = await deps.fs.read(agentId, path)
+    const res = await deps.fs.read(agentId, path, activeConversationProjectId())
     const bytes = Uint8Array.from(atob(res.dataBase64 ?? ''), (c) => c.charCodeAt(0))
     const blob = new Blob([bytes], { type: 'application/octet-stream' })
     const url = URL.createObjectURL(blob)

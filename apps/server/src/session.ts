@@ -239,8 +239,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
           break
 
         case 'pty.start': {
-          const owns = deps.agentsFeed?.list().some((a) => a.id === msg.agentId) ?? false
-          if (!owns) {
+          const allowed = deps.db.canUseAgent(deps.user.name, msg.agentId, msg.projectId)
+          if (!allowed) {
             ctx.send({ t: 'pty.error', ptyId: msg.ptyId, message: 'Машина не найдена' })
             break
           }

@@ -358,7 +358,9 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
           <ul className="proj-machines">
             {detail.machines.map((m) => (
               <li key={m.agentId}>
-                {agents.find((a) => a.id === m.agentId)?.name ?? m.agentId}
+                {m.name ?? agents.find((a) => a.id === m.agentId)?.name ?? m.agentId}
+                <span className={m.online ? 'proj-online' : 'proj-offline'}> · {m.online ? 'в сети' : 'офлайн'}</span>
+                {m.owner && <span className="proj-muted"> · владелец: {m.owner}</span>}
                 {m.path && <span className="proj-muted"> · {m.path}</span>}
                 {detail.defaultAgentId === m.agentId && <span className="proj-online"> · по умолчанию</span>}
               </li>

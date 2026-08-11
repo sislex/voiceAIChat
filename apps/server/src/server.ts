@@ -641,7 +641,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
   }
   registerReleaseRoutes(app, db, releaseManager)
-  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager)
+  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry)
   registerQaRoutes(app, db, uploads)
 
   // Раны предыдущего процесса живут только в его памяти: после рестарта они
