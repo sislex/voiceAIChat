@@ -3,6 +3,7 @@ import type { VoiceChatDb } from '../db/database.js'
 
 export interface ReleaseProjectTarget { projectId:string; agentId:string; path:string; baseBranch:string; testCommand:string }
 export interface ProductionTarget extends ReleaseProjectTarget { deployCommand:string; healthCheckCommand:string; expectedRepository:string }
+export const RELEASE_TEST_TIMEOUT_MS=600_000
 export interface ReleaseCommandResult { exitCode:number|null; output:string; timedOut?:boolean }
 export interface ReleaseRuntime {
   exec(target:ReleaseProjectTarget, command:string, timeoutMs:number):Promise<ReleaseCommandResult>
@@ -123,9 +124,9 @@ export class ReleaseManager {
       const commands=releaseTestCommands(target.testCommand)
       for(let index=0;index<commands.length;index+=1){
         const command=index===0?`git checkout --detach ${quote(found.sha)} && ${commands[index]}`:commands[index]!
-        const regression=await this.runtime.exec(target,at(target,command),300_000)
+        const regression=await this.runtime.exec(target,at(target,command),RELEASE_TEST_TIMEOUT_MS)
         logs.push(`$ ${commands[index]}\n${regression.output}`)
-        if(regression.timedOut)throw new Error(`Regression-команда ${index+1}/${commands.length} превысила 300 секунд\n${regression.output}`)
+        if(regression.timedOut)throw new Error(`Regression-команда ${index+1}/${commands.length} превысила 600 секунд\n${regression.output}`)
         if(regression.exitCode!==0)throw new Error(regression.output||`Regression-команда ${index+1}/${commands.length} завершилась с ошибкой`)
       }
       this.db.setProjectReleaseStep(release.id,'regression','passed',logs.join('\n\n'),actor)

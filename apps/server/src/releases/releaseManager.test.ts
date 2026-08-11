@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
-import { ReleaseManager, releaseKnowledgeBaseCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
+import { RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseKnowledgeBaseCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
 
 let db:VoiceChatDb
 let projectId:string
@@ -14,6 +14,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
   it('supports staged release test commands while keeping strings backward compatible',()=>{
     expect(releaseTestCommands('["npm run typecheck","npm run test"]')).toEqual(['npm run typecheck','npm run test'])
     expect(releaseTestCommands('npm run verify')).toEqual(['npm run verify'])
+    expect(RELEASE_TEST_TIMEOUT_MS).toBe(600_000)
   })
 
   it('prepares the knowledge base in an isolated worktree with a guarded push',()=>{
