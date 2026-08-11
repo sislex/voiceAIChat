@@ -20,9 +20,10 @@ const git=(target:ReleaseProjectTarget,args:string):string=>at(target,`git ${arg
 
 /** Изолирует kb:index от общего checkout и не перезаписывает конкурентно сдвинутую release-ветку. */
 export function releaseKnowledgeBaseCommand(target:ReleaseProjectTarget,releaseBranch:string):string {
-  const branch=quote(releaseBranch)
-  const ref=quote(`refs/heads/${releaseBranch}`)
-  return at(target,`tmp="$(mktemp -d)" && cleanup(){ git worktree remove --force "$tmp" >/dev/null 2>&1 || rmdir "$tmp" >/dev/null 2>&1 || true; } && trap cleanup EXIT && git fetch origin ${branch} && expected="$(git rev-parse FETCH_HEAD)" && git worktree add --detach "$tmp" "$expected" && cd "$tmp" && npm run kb:index && changed="$(git status --porcelain --untracked-files=no)" && if [ -n "$changed" ]; then if [ "$changed" != " M docs/kb/README.md" ]; then echo "Release-preflight остановлен: kb:index изменил неожиданные файлы"; echo "$changed"; exit 1; fi; git add docs/kb/README.md && git commit -m 'docs: обновить индекс БЗ перед релизом' && git push --force-with-lease=${ref}:$expected origin HEAD:${ref}; fi`)
+  const branchRef=quote(`refs/heads/${releaseBranch}`)
+  const fetchedRef=quote(`refs/voicechat/preflight/${releaseBranch}`)
+  const refspec=quote(`+refs/heads/${releaseBranch}:refs/voicechat/preflight/${releaseBranch}`)
+  return at(target,`tmp="$(mktemp -d)" && cleanup(){ git update-ref -d ${fetchedRef} >/dev/null 2>&1 || true; git worktree remove --force "$tmp" >/dev/null 2>&1 || rmdir "$tmp" >/dev/null 2>&1 || true; } && trap cleanup EXIT && git fetch origin ${refspec} && expected="$(git rev-parse ${fetchedRef})" && git worktree add --detach "$tmp" "$expected" && cd "$tmp" && npm run kb:index && changed="$(git status --porcelain --untracked-files=no)" && if [ -n "$changed" ]; then if [ "$changed" != " M docs/kb/README.md" ]; then echo "Release-preflight остановлен: kb:index изменил неожиданные файлы"; echo "$changed"; exit 1; fi; git add docs/kb/README.md && git commit -m 'docs: обновить индекс БЗ перед релизом' && git push --force-with-lease=${branchRef}:$expected origin HEAD:${branchRef}; fi`)
 }
 
 /** Использует уникальный ref попытки: глобальный FETCH_HEAD меняется любым параллельным fetch. */
