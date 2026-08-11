@@ -19,18 +19,18 @@
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 27 коммит(ов) в areas после сверки: 946dac1 feat: deploy production from prepared release branch … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 33 коммит(ов) в areas после сверки: 946dac1 feat: deploy production from prepared release branch … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 6 коммит(ов) в areas после сверки: 946dac1 feat: deploy production from prepared release branch … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 199 коммит(ов) в areas после сверки: af320d4 chatai-173: работа CI-рана … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-11 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 201 коммит(ов) в areas после сверки: bbe7cc7 fix: distinguish release upgrades from rollbacks … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-11 | ⚠ 2 коммит(ов) в areas после сверки: bbe7cc7 fix: distinguish release upgrades from rollbacks … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 8 коммит(ов) в areas после сверки: bcb8716 fix: исключить индекс из свежести базы знаний … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 4 коммит(ов) в areas после сверки: f105bc7 feat: share project machines with members … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-11 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-11 | ⚠ 2 коммит(ов) в areas после сверки: 946dac1 feat: deploy production from prepared release branch … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-08 | ⚠ 18 коммит(ов) в areas после сверки: 946dac1 feat: deploy production from prepared release branch … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 24 коммит(ов) в areas после сверки: 946dac1 feat: deploy production from prepared release branch … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 9 коммит(ов) в areas после сверки: 946dac1 feat: deploy production from prepared release branch … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 11 коммит(ов) в areas после сверки: bbe7cc7 fix: distinguish release upgrades from rollbacks … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 10 коммит(ов) в areas после сверки: 9daab6d fix(docker): make whisper build portable on arm64 … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-10 | ⚠ 10 коммит(ов) в areas после сверки: 946dac1 feat: deploy production from prepared release branch … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-10 | ⚠ 11 коммит(ов) в areas после сверки: bbe7cc7 fix: distinguish release upgrades from rollbacks … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-10, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
 
