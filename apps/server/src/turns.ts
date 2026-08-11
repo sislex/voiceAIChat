@@ -418,7 +418,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       req.execTarget === undefined ? (conv ? conv.execTarget : settings.execTarget) : req.execTarget
     let executionDisabled = requestedTarget === 'none'
     let target =
-      !executionDisabled && requestedTarget && deps.db.listAgents(userId).some((a) => a.id === requestedTarget)
+      !executionDisabled && requestedTarget && deps.db.canUseAgent(userId, requestedTarget, conv?.projectId)
         ? requestedTarget
         : null
     // Инструменты БЗ — ВНЕ ветки `remote`: база знаний read-only и нужна модели

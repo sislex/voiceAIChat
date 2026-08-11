@@ -15,6 +15,8 @@ export interface MachineTerminalProps {
   initialAgentId?: string | null
   /** Начальный рабочий каталог PTY. */
   initialCwd?: string
+  /** Явный проектный контекст для делегированной машины. */
+  projectId?: string
   /** Мост живого PTY (web). */
   pty: RendererPtyBridge
   variant?: UtilityVariant
@@ -37,7 +39,7 @@ function tabLabel(tab: PtySessionTab, tabs: PtySessionTab[], agents: AgentInfo[]
 }
 
 /** Представление одного присоединённого PTY-сеанса. */
-function TerminalView({ agentId, cwd, pty, ptyId }: { agentId: string; cwd?: string; pty: RendererPtyBridge; ptyId: string }): JSX.Element {
+function TerminalView({ agentId, cwd, projectId, pty, ptyId }: { agentId: string; cwd?: string; projectId?: string; pty: RendererPtyBridge; ptyId: string }): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'live' | 'exited' | 'error'>('live')
   const [statusMsg, setStatusMsg] = useState('')
@@ -64,7 +66,7 @@ function TerminalView({ agentId, cwd, pty, ptyId }: { agentId: string; cwd?: str
       }
     }
     doFit()
-    const attach = (): void => pty.start({ agentId, ptyId, cols: term.cols, rows: term.rows, ...(cwd ? { cwd } : {}) })
+    const attach = (): void => pty.start({ agentId, ptyId, cols: term.cols, rows: term.rows, ...(cwd ? { cwd } : {}), ...(projectId ? { projectId } : {}) })
     const onData = term.onData((data) => pty.input({ ptyId, data }))
     const offOut = pty.onOutput((m) => {
       if (m.ptyId === ptyId) term.write(m.data)
@@ -97,7 +99,7 @@ function TerminalView({ agentId, cwd, pty, ptyId }: { agentId: string; cwd?: str
       // PTY остаётся на сервере: при новом монтировании attach() вернёт его с буфером.
       term.dispose()
     }
-  }, [agentId, cwd, pty, ptyId])
+  }, [agentId, cwd, projectId, pty, ptyId])
 
   return (
     <div className="term-wrap">
@@ -114,6 +116,7 @@ export function MachineTerminal({
   agents,
   initialAgentId,
   initialCwd,
+  projectId,
   pty,
   variant = 'modal',
   onClose,
@@ -211,6 +214,7 @@ export function MachineTerminal({
           key={active.ptyId}
           agentId={agentId}
           {...(active.cwd ? { cwd: active.cwd } : {})}
+          {...(projectId ? { projectId } : {})}
           pty={pty}
           ptyId={active.ptyId}
         />

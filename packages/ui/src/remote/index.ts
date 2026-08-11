@@ -265,36 +265,38 @@ function makeFsBridge(httpBase: string): RendererFsBridge {
     }
     return res.json() as Promise<FsResult>
   }
-  const q = (agentId: string, path: string): string =>
-    `${httpBase}${REST.agentFs(agentId)}?path=${encodeURIComponent(path)}`
+  const projectQuery = (projectId?: string): string => projectId ? `&projectId=${encodeURIComponent(projectId)}` : ''
+  const projectOnlyQuery = (projectId?: string): string => projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''
+  const q = (agentId: string, path: string, projectId?: string): string =>
+    `${httpBase}${REST.agentFs(agentId)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`
   return {
-    list: (id, path) => fetch(q(id, path), { headers: authHeaders() }).then(asResult),
-    read: (id, path) =>
-      fetch(`${httpBase}${REST.agentFsFile(id)}?path=${encodeURIComponent(path)}`, {
+    list: (id, path, projectId) => fetch(q(id, path, projectId), { headers: authHeaders() }).then(asResult),
+    read: (id, path, projectId) =>
+      fetch(`${httpBase}${REST.agentFsFile(id)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`, {
         headers: authHeaders()
       }).then(asResult),
-    write: (id, path, dataBase64) =>
-      fetch(`${httpBase}${REST.agentFsFile(id)}`, {
+    write: (id, path, dataBase64, projectId) =>
+      fetch(`${httpBase}${REST.agentFsFile(id)}${projectOnlyQuery(projectId)}`, {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ path, dataBase64 })
       }).then(asResult),
-    remove: (id, path) =>
-      fetch(q(id, path), { method: 'DELETE', headers: authHeaders() }).then(asResult),
-    rename: (id, from, to) =>
-      fetch(`${httpBase}${REST.agentFsRename(id)}`, {
+    remove: (id, path, projectId) =>
+      fetch(q(id, path, projectId), { method: 'DELETE', headers: authHeaders() }).then(asResult),
+    rename: (id, from, to, projectId) =>
+      fetch(`${httpBase}${REST.agentFsRename(id)}${projectOnlyQuery(projectId)}`, {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ from, to })
       }).then(asResult),
-    mkdir: (id, path) =>
-      fetch(`${httpBase}${REST.agentFsMkdir(id)}`, {
+    mkdir: (id, path, projectId) =>
+      fetch(`${httpBase}${REST.agentFsMkdir(id)}${projectOnlyQuery(projectId)}`, {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ path })
       }).then(asResult),
-    exec: async (id, command, signal) => {
-      const res = await fetch(`${httpBase}${REST.agentExec(id)}`, {
+    exec: async (id, command, signal, projectId) => {
+      const res = await fetch(`${httpBase}${REST.agentExec(id)}${projectOnlyQuery(projectId)}`, {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ command }),
@@ -313,8 +315,8 @@ function makeFsBridge(httpBase: string): RendererFsBridge {
 /** Мост живого PTY-терминала поверх клиентского WS. */
 function makePtyBridge(ws: WsClient): RendererPtyBridge {
   return {
-    start: ({ agentId, ptyId, cols, rows, cwd }) =>
-      ws.send({ t: 'pty.start', agentId, ptyId, cols, rows, ...(cwd ? { cwd } : {}) }),
+    start: ({ agentId, ptyId, cols, rows, cwd, projectId }) =>
+      ws.send({ t: 'pty.start', agentId, ptyId, cols, rows, ...(cwd ? { cwd } : {}), ...(projectId ? { projectId } : {}) }),
     input: ({ ptyId, data }) => ws.send({ t: 'pty.input', ptyId, data }),
     resize: ({ ptyId, cols, rows }) => ws.send({ t: 'pty.resize', ptyId, cols, rows }),
     kill: ({ ptyId }) => ws.send({ t: 'pty.kill', ptyId }),

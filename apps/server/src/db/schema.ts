@@ -186,6 +186,8 @@ CREATE TABLE IF NOT EXISTS project_machines (
   agent_id   TEXT NOT NULL,
   path       TEXT NOT NULL DEFAULT '',
   repos_root TEXT NOT NULL DEFAULT '',
+  added_at  INTEGER NOT NULL,
+  added_by  TEXT NOT NULL,
   PRIMARY KEY (project_id, agent_id),
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
   FOREIGN KEY (agent_id)   REFERENCES agents(id)   ON DELETE CASCADE
