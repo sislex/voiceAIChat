@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
-import { ReleaseManager, releaseKnowledgeBaseCommand, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
+import { ReleaseManager, releaseKnowledgeBaseCommand, releaseSwitchCommand, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
 
 let db:VoiceChatDb
 let projectId:string
@@ -37,6 +37,14 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(runtime.prepareKnowledgeBase).toHaveBeenCalledWith('release/1.2.3',ci())
     expect(commands.some(command=>command.includes('npm run affected-check'))).toBe(true)
     expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('ready')
+  })
+
+  it('switches production through an attempt-specific ref instead of FETCH_HEAD',()=>{
+    const command=releaseSwitchCommand(prod(),{id:'attempt-7',branch:'release/1.2.3',sha:'fixed-sha'})
+    expect(command).toContain("+refs/heads/release/1.2.3:refs/voicechat/releases/attempt-7")
+    expect(command).toContain("git rev-parse 'refs/voicechat/releases/attempt-7'")
+    expect(command).toContain("git update-ref -d 'refs/voicechat/releases/attempt-7'")
+    expect(command).not.toContain('FETCH_HEAD')
   })
 
   it('does not repeat checks, merge main or create tags during deploy',async()=>{

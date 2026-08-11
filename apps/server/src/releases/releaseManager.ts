@@ -25,6 +25,13 @@ export function releaseKnowledgeBaseCommand(target:ReleaseProjectTarget,releaseB
   return at(target,`tmp="$(mktemp -d)" && cleanup(){ git worktree remove --force "$tmp" >/dev/null 2>&1 || rmdir "$tmp" >/dev/null 2>&1 || true; } && trap cleanup EXIT && git fetch origin ${branch} && expected="$(git rev-parse FETCH_HEAD)" && git worktree add --detach "$tmp" "$expected" && cd "$tmp" && npm run kb:index && changed="$(git status --porcelain --untracked-files=no)" && if [ -n "$changed" ]; then if [ "$changed" != " M docs/kb/README.md" ]; then echo "Release-preflight остановлен: kb:index изменил неожиданные файлы"; echo "$changed"; exit 1; fi; git add docs/kb/README.md && git commit -m 'docs: обновить индекс БЗ перед релизом' && git push --force-with-lease=${ref}:$expected origin HEAD:${ref}; fi`)
 }
 
+/** Использует уникальный ref попытки: глобальный FETCH_HEAD меняется любым параллельным fetch. */
+export function releaseSwitchCommand(target:ProductionTarget,release:Pick<ProjectRelease,'id'|'branch'|'sha'>):string {
+  const fetchedRef=`refs/voicechat/releases/${release.id}`
+  const refspec=quote(`+refs/heads/${release.branch}:${fetchedRef}`)
+  return at(target,`test -z "$(git status --porcelain)" && test "$(git config --get remote.origin.url)" = ${quote(target.expectedRepository)} && git fetch origin ${refspec} && test "$(git rev-parse ${quote(fetchedRef)})" = ${quote(release.sha)} && git cat-file -e ${quote(`${release.sha}^{commit}`)} && git checkout -B ${quote(release.branch)} ${quote(release.sha)} && git reset --hard ${quote(release.sha)} && git update-ref -d ${quote(fetchedRef)}`)
+}
+
 export async function waitForReleaseHealth(
   expectedVersion:string,
   probe:()=>Promise<{ok?:boolean;version?:string}>,
@@ -112,7 +119,7 @@ export class ReleaseManager {
     try{
       this.db.setProjectReleaseStatus(release.id,'switching',actor)
       this.db.setProjectReleaseStep(release.id,'switching','running','',actor)
-      const switchCommand=at(target,`test -z "$(git status --porcelain)" && test "$(git config --get remote.origin.url)" = ${quote(target.expectedRepository)} && git fetch origin ${quote(release.branch)} && test "$(git rev-parse FETCH_HEAD)" = ${quote(release.sha)} && git cat-file -e ${quote(`${release.sha}^{commit}`)} && git checkout -B ${quote(release.branch)} ${quote(release.sha)} && git reset --hard ${quote(release.sha)}`)
+      const switchCommand=releaseSwitchCommand(target,release)
       const switched=await this.runtime.exec(target,switchCommand,120_000)
       if(switched.exitCode!==0||switched.timedOut)throw new Error(switched.output||'Не удалось синхронизировать production checkout')
       this.db.setProjectReleaseStep(release.id,'switching','passed',switched.output,actor)
