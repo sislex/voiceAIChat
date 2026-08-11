@@ -49,6 +49,19 @@ export interface ProjectRelease {
 export function releaseVersion(branch: string): string | null {
   return RELEASE_BRANCH_RE.test(branch) ? branch.slice('release/'.length) : null
 }
+
+/** Сравнивает только строгие release/x.y.z; null означает невалидную ветку. */
+export function compareReleaseBranches(left: string, right: string): number | null {
+  const leftVersion = releaseVersion(left)
+  const rightVersion = releaseVersion(right)
+  if (!leftVersion || !rightVersion) return null
+  const leftParts = leftVersion.split('.').map(Number)
+  const rightParts = rightVersion.split('.').map(Number)
+  for (let index = 0; index < 3; index += 1) {
+    if (leftParts[index] !== rightParts[index]) return leftParts[index] - rightParts[index]
+  }
+  return 0
+}
 export function assertReleaseBranch(branch: string): string {
   const version = releaseVersion(branch)
   if (!version) throw new Error('Разрешены только ветки release/x.y.z')

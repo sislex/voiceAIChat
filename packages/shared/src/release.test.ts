@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RELEASE_STEP_ORDER, assertReleaseBranch, releaseFailureSummary, releaseVersion } from './release'
+import { RELEASE_STEP_ORDER, assertReleaseBranch, compareReleaseBranches, releaseFailureSummary, releaseVersion } from './release'
 
 describe('release branch contract', () => {
   it.each([
@@ -14,6 +14,13 @@ describe('release branch contract', () => {
 
   it('rejects an arbitrary deploy branch', () => {
     expect(() => assertReleaseBranch('main')).toThrow('release/x.y.z')
+  })
+
+  it('compares release branches numerically', () => {
+    expect(compareReleaseBranches('release/0.1.15', 'release/0.1.10')).toBeGreaterThan(0)
+    expect(compareReleaseBranches('release/2.0.0', 'release/10.0.0')).toBeLessThan(0)
+    expect(compareReleaseBranches('release/1.2.3', 'release/1.2.3')).toBe(0)
+    expect(compareReleaseBranches('main', 'release/1.2.3')).toBeNull()
   })
 
   it('keeps all release gates ordered and mandatory', () => {
