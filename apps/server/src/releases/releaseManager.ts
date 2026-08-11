@@ -57,6 +57,14 @@ function healthCommit(output:string):string|null {
 const sameCommit=(actual:string,expected:string):boolean=>actual===expected||actual.startsWith(expected)||expected.startsWith(actual)
 const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
 
+export function releaseTestCommands(value:string):string[] {
+  try {
+    const parsed=JSON.parse(value) as unknown
+    if(Array.isArray(parsed)&&parsed.length>0&&parsed.every(item=>typeof item==='string'&&item.trim())) return parsed.map(item=>item.trim())
+  } catch {}
+  return [value]
+}
+
 export class ReleaseManager {
   private readonly preparing=new Set<string>()
   private readonly deploying=new Set<string>()
@@ -111,9 +119,16 @@ export class ReleaseManager {
       this.db.setProjectReleaseSha(release.id,found.sha)
       this.db.setProjectReleaseStep(release.id,'knowledge_base','passed','Индекс БЗ проверен и зафиксирован',actor)
       this.db.setProjectReleaseStep(release.id,'regression','running','',actor)
-      const regression=await this.runtime.exec(target,at(target,`git checkout --detach ${quote(found.sha)} && ${target.testCommand}`),300_000)
-      if(regression.exitCode!==0||regression.timedOut)throw new Error(regression.output||'Regression завершился с ошибкой')
-      this.db.setProjectReleaseStep(release.id,'regression','passed',regression.output,actor)
+      const logs:string[]=[]
+      const commands=releaseTestCommands(target.testCommand)
+      for(let index=0;index<commands.length;index+=1){
+        const command=index===0?`git checkout --detach ${quote(found.sha)} && ${commands[index]}`:commands[index]!
+        const regression=await this.runtime.exec(target,at(target,command),300_000)
+        logs.push(`$ ${commands[index]}\n${regression.output}`)
+        if(regression.timedOut)throw new Error(`Regression-команда ${index+1}/${commands.length} превысила 300 секунд\n${regression.output}`)
+        if(regression.exitCode!==0)throw new Error(regression.output||`Regression-команда ${index+1}/${commands.length} завершилась с ошибкой`)
+      }
+      this.db.setProjectReleaseStep(release.id,'regression','passed',logs.join('\n\n'),actor)
       for(const kind of ['switching','building','health_check'] as const)this.db.setProjectReleaseStep(release.id,kind,'skipped','Выполняется только при deploy',actor)
       this.db.setProjectReleaseStatus(release.id,'ready',actor)
     }catch(error){

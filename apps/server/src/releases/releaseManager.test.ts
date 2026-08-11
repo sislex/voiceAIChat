@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
-import { ReleaseManager, releaseKnowledgeBaseCommand, releaseSwitchCommand, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
+import { ReleaseManager, releaseKnowledgeBaseCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
 
 let db:VoiceChatDb
 let projectId:string
@@ -11,6 +11,11 @@ beforeEach(()=>{let id=0;db=new VoiceChatDb(':memory:',{newId:()=>`id-${++id}`,n
 afterEach(()=>db.close())
 
 describe('ReleaseManager separated preparation and deploy',()=>{
+  it('supports staged release test commands while keeping strings backward compatible',()=>{
+    expect(releaseTestCommands('["npm run typecheck","npm run test"]')).toEqual(['npm run typecheck','npm run test'])
+    expect(releaseTestCommands('npm run verify')).toEqual(['npm run verify'])
+  })
+
   it('prepares the knowledge base in an isolated worktree with a guarded push',()=>{
     const command=releaseKnowledgeBaseCommand(ci(),'release/1.2.3')
     expect(command).toContain('mktemp -d')
