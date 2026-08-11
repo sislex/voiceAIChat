@@ -19,7 +19,7 @@
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 27 коммит(ов) в areas после сверки: 946dac1 feat: deploy production from prepared release branch … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 33 коммит(ов) в areas после сверки: 946dac1 feat: deploy production from prepared release branch … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 6 коммит(ов) в areas после сверки: 946dac1 feat: deploy production from prepared release branch … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 198 коммит(ов) в areas после сверки: 946dac1 feat: deploy production from prepared release branch … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 199 коммит(ов) в areas после сверки: af320d4 chatai-173: работа CI-рана … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-11 | ✓ |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 8 коммит(ов) в areas после сверки: bcb8716 fix: исключить индекс из свежести базы знаний … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 4 коммит(ов) в areas после сверки: f105bc7 feat: share project machines with members … |
