@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
-import { ReleaseManager, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
+import { ReleaseManager, releaseKnowledgeBaseCommand, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
 
 let db:VoiceChatDb
 let projectId:string
@@ -11,6 +11,14 @@ beforeEach(()=>{let id=0;db=new VoiceChatDb(':memory:',{newId:()=>`id-${++id}`,n
 afterEach(()=>db.close())
 
 describe('ReleaseManager separated preparation and deploy',()=>{
+  it('prepares the knowledge base in an isolated worktree with a guarded push',()=>{
+    const command=releaseKnowledgeBaseCommand(ci(),'release/1.2.3')
+    expect(command).toContain('mktemp -d')
+    expect(command).toContain('git worktree add --detach')
+    expect(command).toContain("--force-with-lease='refs/heads/release/1.2.3':$expected")
+    expect(command).not.toContain('git checkout -B')
+  })
+
   it('prepares KB and runs regression while creating the branch',async()=>{
     const commands:string[]=[]
     const runtime:ReleaseRuntime={
