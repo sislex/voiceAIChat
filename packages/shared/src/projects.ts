@@ -86,7 +86,7 @@ export interface ProjectSummary {
   productionDeployCommand?: string
   /** CI-раннер: базовая ветка воркфлоу. */
   ciBaseBranch?: string
-  /** CI-раннер: шаблон ветки, по умолчанию `feature/{task_number}`; legacy `{slug}` поддерживается. */
+  /** CI-раннер: шаблон ветки, по умолчанию `{task_number}` (`CHAT-172`); legacy `{slug}` поддерживается. */
   ciBranchTemplate?: string
   /** CI-раннер: стратегия повтора при существующей рабочей директории. */
   ciReuseStrategy?: CiReuseStrategy

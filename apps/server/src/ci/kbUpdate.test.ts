@@ -225,8 +225,8 @@ describe('шаг «Актуализировать базу знаний»', () =
     expect(kbStep(runId).status).toBe('success')
     const cwd = new URL(kbMcpUrls[0]).searchParams.get('cwd')!
     expect(repoCheckWorkdirs).toEqual([cwd])
-    expect(cwd).toMatch(/\/1$/)
-    expect(cwd).not.toMatch(/\/1\/1$/)
+    expect(cwd).toMatch(/\/P-1$/)
+    expect(cwd).not.toMatch(/\/P-1\/P-1$/)
   })
 
   it('не запускает модель и явно пропускает шаг, если корень рабочей копии недоступен', async () => {

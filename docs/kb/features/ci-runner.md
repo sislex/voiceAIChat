@@ -214,8 +214,12 @@ cwd/env собираются с shell-escape (пользовательский �
 `compareTasksInColumn` в `packages/shared/src/projects.ts`, выбор ожидающего —
 `createCiRunManager` в `apps/server/src/ci/runManager.ts`. Работает это
 только потому, что раны изолированы по построению: рабочая директория —
-`{repos_root}/{project}/{task_number}`, ветка — по шаблону
-`feature/{task_number}`, npm-кэш — `{repos_root}/.npm-cache/{project}-{task_number}`. Заголовок задачи не участвует в идентичности новой ветки или workspace; явно сохранённые legacy-шаблоны с `{slug}` продолжают работать.
+`{repos_root}/{project}/{issue_key}`, ветка — по шаблону
+`{task_number}`, где `{task_number}` — полный ключ вида `CHAT-172`; npm-кэш —
+`{repos_root}/.npm-cache/{project}-{task_seq}`. Заголовок задачи не участвует в
+идентичности новой ветки или workspace. Два прежних стандартных шаблона
+`feature/{task_number}` и `feature/{task_number}-{slug}` при старте мигрируются
+на новый; явно сохранённые нестандартные шаблоны с `{slug}` продолжают работать.
 Инвариант закреплён проверкой на старте `execute`: если папку или ветку уже занял
 другой активный ран (сломанный шаблон ветки, совпавший номер задачи), ран не
 начинает работу — в ленте появляется шаг «Проверка изоляции рабочей директории»
