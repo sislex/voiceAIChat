@@ -19,7 +19,7 @@ import { registerQaRoutes } from './routes/qa.js'
 import { registerCiRoutes } from './routes/ci.js'
 import { registerFeaturePreviewRoutes } from './routes/featurePreview.js'
 import { registerReleaseRoutes } from './routes/releases.js'
-import { ReleaseManager, waitForReleaseHealth } from './releases/releaseManager.js'
+import { ReleaseManager } from './releases/releaseManager.js'
 import { FeaturePreviewManager } from './preview/manager.js'
 import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
@@ -592,54 +592,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   void featurePreviews.reconcile()
   const releaseManager = new ReleaseManager(db, {
     exec: (target, command, timeoutMs) => agentRegistry.exec(target.agentId, command, timeoutMs),
+    isOnline: (agentId) => agentRegistry.isOnline(agentId),
     prepareKnowledgeBase: async (releaseBranch, target) => {
       const path = target.path.replace(/'/g, `'"'"'`)
       const branch = releaseBranch.replace(/'/g, `'"'"'`)
       const command = `cd '${path}' && unexpected="$(git status --porcelain --untracked-files=no | grep -v 'docs/kb/README.md' || true)" && if [ -n "$unexpected" ]; then echo "Release-preflight остановлен: рабочая копия содержит изменения помимо docs/kb/README.md"; echo "$unexpected"; exit 1; fi && git restore -- docs/kb/README.md && git fetch origin '${branch}' && git checkout -B '${branch}' FETCH_HEAD && npm run kb:index && changed="$(git status --porcelain --untracked-files=no)" && if [ -n "$changed" ]; then if [ "$changed" != " M docs/kb/README.md" ]; then echo "Release-preflight остановлен: kb:index изменил неожиданные файлы"; echo "$changed"; exit 1; fi; git add docs/kb/README.md && git commit -m 'docs: обновить индекс БЗ перед релизом' && git push origin HEAD:refs/heads/'${branch}'; fi`
       const result = await agentRegistry.exec(target.agentId, command, 120_000)
       if (result.exitCode !== 0) throw new Error(result.output || 'Release-preflight базы знаний завершился с ошибкой')
-    },
-    updateKnowledgeBase: async (_release, target) => {
-      const result = await agentRegistry.exec(target.agentId, `cd '${target.path.replace(/'/g, `'"'"'`)}' && npm run kb:index && git diff --exit-code -- docs/kb`, 120_000)
-      if (result.exitCode !== 0) throw new Error(result.output || 'Актуализация базы знаний завершилась с ошибкой')
-    },
-    deployProduction: async () => {
-      if (!deployTrigger) throw new Error('Штатный production deploy не настроен')
-      const result = await deployTrigger.trigger()
-      if (result.status !== 'accepted') throw new Error('Production deploy уже выполняется')
-    },
-    healthCheck: async (release) => {
-      await waitForReleaseHealth(release.version, async () => {
-        const response = await fetch(`http://127.0.0.1:${opts.config.port}/api/health`, { signal: AbortSignal.timeout(10_000) })
-        if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        return response.json() as Promise<{ ok?: boolean; version?: string }>
-      })
-    },
-    cleanup: async (release) => {
-      const board = db.getBoard(release.triggeredBy, release.projectId)
-      const done = new Set(board?.columns.filter(column => column.semanticType === 'done').map(column => column.id) ?? [])
-      const tasks = new Set(board?.tasks.filter(task => done.has(task.columnId)).map(task => task.id) ?? [])
-      for (const env of featurePreviews.list()) {
-        if (env.projectId === release.projectId && tasks.has(env.taskId) && env.state !== 'removed') {
-          await featurePreviews.operate(release.triggeredBy, release.projectId, env.taskId, 'remove')
-        }
-      }
-      db.releaseDoneWorkspaces(release.projectId, [...tasks])
     }
   })
-  for (const release of db.listRunningProjectReleases()) {
-    const project = db.getProject(release.triggeredBy, release.projectId)
-    const agentId = project?.defaultAgentId
-    const machine = agentId ? project.machines.find(item => item.agentId === agentId) : undefined
-    if (project && agentId && machine?.path) {
-      releaseManager.resume(release.triggeredBy, {
-        projectId: release.projectId,
-        agentId,
-        path: machine.path,
-        baseBranch: project.ciBaseBranch || 'main'
-      }, release)
-    }
-  }
   registerReleaseRoutes(app, db, releaseManager)
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry)
   registerQaRoutes(app, db, uploads)

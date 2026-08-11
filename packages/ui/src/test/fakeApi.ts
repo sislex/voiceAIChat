@@ -552,9 +552,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'admin:checkLlmEngineHealth': async ({ id }) => ({ ...(llmHealth[id] ?? { engineId: id, kind: 'claude', checkedAt: tick(), available: false, detail: 'offline', status: null }) }),
     'releases:branches': async () => [],
-    'releases:createBranch': async ({ branch }) => ({ branch, version: branch.slice('release/'.length), sha: 'a'.repeat(40) }),
+    'releases:createBranch': async ({ projectId, branch }) => ({ id: 'prepare-1', projectId, branch, version: branch.slice('release/'.length), sha: 'a'.repeat(40), status: 'preparing', triggeredBy: 'admin', attempt: 1, previousReleaseId: null, createdAt: Date.now(), releasedAt: null, steps: [] }),
     'releases:list': async () => [],
-    'releases:deploy': async ({ projectId, branch }) => ({ id: 'release-1', projectId, branch, version: branch.slice('release/'.length), sha: 'a'.repeat(40), status: 'draft', triggeredBy: 'admin', attempt: 1, previousReleaseId: null, createdAt: Date.now(), releasedAt: null, steps: [] }),
+    'releases:deploy': async ({ projectId, branch }) => ({ id: 'release-1', projectId, branch, version: branch.slice('release/'.length), sha: 'a'.repeat(40), status: 'queued', triggeredBy: 'admin', attempt: 1, previousReleaseId: null, createdAt: Date.now(), releasedAt: null, steps: [] }),
     'projects:list': async () => projects.map(summary),
     'projects:create': async (b) => {
       const ts = tick()

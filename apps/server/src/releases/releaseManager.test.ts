@@ -1,143 +1,65 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
-import { ReleaseManager, waitForReleaseHealth, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
+import { ReleaseManager, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
 
 let db:VoiceChatDb
 let projectId:string
-const target=():ReleaseProjectTarget=>({projectId,agentId:'mac',path:'/repo',baseBranch:'main'})
-beforeEach(()=>{let id=0;db=new VoiceChatDb(':memory:',{newId:()=>`id-${++id}`,now:()=>1000+id});db.createUser('owner','','user');db.createUser('member','','user');const project=db.createProject('owner',{name:'P'});projectId=project.id;db.addMember('owner',projectId,'member')})
-afterEach(()=>db.close())
+const ci=():ReleaseProjectTarget=>({projectId,agentId:'ci',path:'/ci',baseBranch:'main'})
+const prod=():ProductionTarget=>({...ci(),agentId:'prod',path:'/prod',deployCommand:'npm run deploy:prod',healthCheckCommand:'npm run health:prod',expectedRepository:'git@example/repo.git'})
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0))
+beforeEach(()=>{let id=0;db=new VoiceChatDb(':memory:',{newId:()=>`id-${++id}`,now:()=>1000+id});db.createUser('owner','','user');projectId=db.createProject('owner',{name:'P'}).id})
+afterEach(()=>db.close())
 
-describe('waitForReleaseHealth',()=>{
-  it('waits until production reports the exact release version',async()=>{
-    const probes=[{ok:true,version:'0.1.3'},{ok:true,version:'0.1.4'}]
-    let sleeps=0
-    await waitForReleaseHealth('0.1.4',async()=>probes.shift()!,{attempts:2,intervalMs:1,sleep:async()=>{sleeps+=1}})
-    expect(sleeps).toBe(1)
-  })
-
-  it('rejects a healthy container that keeps the previous version',async()=>{
-    await expect(waitForReleaseHealth('0.1.4',async()=>({ok:true,version:'0.1.3'}),{attempts:2,intervalMs:1,sleep:async()=>{}}))
-      .rejects.toThrow('version=0.1.3')
-  })
-})
-
-describe('ReleaseManager',()=>{
-  it('runs for-each-ref through git after updating release refs',async()=>{
-    let command=''
-    const runtime:ReleaseRuntime={
-      exec:async(_target,value)=>{command=value;return {exitCode:0,output:'origin/release/1.2.3 abcdef1234567890\n'}},
-      prepareKnowledgeBase:async()=>{},updateKnowledgeBase:async()=>{},deployProduction:async()=>{},healthCheck:async()=>{},cleanup:async()=>{}
-    }
-    const branches=await new ReleaseManager(db,runtime).listBranches(target())
-    expect(command).toContain('&& git for-each-ref')
-    expect(branches).toEqual([{branch:'release/1.2.3',version:'1.2.3',sha:'abcdef1234567890'}])
-  })
-
-  it('fixes origin SHA and stops on a failed mandatory gate',async()=>{
-    const runtime:ReleaseRuntime={
-      exec:async(_target,command)=>command.includes('for-each-ref')?{exitCode:0,output:'origin/release/1.2.3 abcdef1234567890\n'}:{exitCode:1,output:'regression failed'},
-      prepareKnowledgeBase:async()=>{},updateKnowledgeBase:async()=>{},deployProduction:async()=>{},healthCheck:async()=>{},cleanup:async()=>{}
-    }
-    const manager=new ReleaseManager(db,runtime)
-    const created=await manager.start('owner',target(),'release/1.2.3')
-    expect(created.sha).toBe('abcdef1234567890')
-    await tick()
-    const failed=db.getProjectRelease('owner',projectId,created.id)!
-    expect(failed.status).toBe('failed')
-    expect(failed.steps[0]).toMatchObject({kind:'regression',status:'failed',log:'regression failed'})
-    expect(failed.steps.slice(1).every(step=>step.status==='queued')).toBe(true)
-  })
-
-  it('prefixes every chained branch and merge operation with git',async()=>{
+describe('ReleaseManager separated preparation and deploy',()=>{
+  it('prepares KB and runs regression while creating the branch',async()=>{
     const commands:string[]=[]
     const runtime:ReleaseRuntime={
+      isOnline:()=>true,
+      prepareKnowledgeBase:vi.fn(async()=>{}),
       exec:async(_target,command)=>{
         commands.push(command)
-        if(command.includes('for-each-ref'))return {exitCode:0,output:'origin/release/1.2.3 abcdef1234567890\n'}
-        if(command.includes('rev-parse'))return {exitCode:0,output:'fedcba0987654321\n'}
-        return {exitCode:0,output:''}
-      },
-      prepareKnowledgeBase:async()=>{},updateKnowledgeBase:async()=>{},deployProduction:async()=>{},healthCheck:async()=>{},cleanup:async()=>{}
+        if(command.includes('for-each-ref'))return {exitCode:0,output:commands.some(x=>x.includes('git branch'))?'origin/release/1.2.3 prepared-sha\n':''}
+        if(command.includes('git branch'))return {exitCode:0,output:'prepared-sha\n'}
+        return {exitCode:0,output:'ok'}
+      }
     }
     const manager=new ReleaseManager(db,runtime)
-    await manager.createBranch(target(),'release/2.0.0','main')
-    await manager.start('owner',target(),'release/1.2.3')
-    await tick()
-
-    const create=commands.find(command=>command.includes("branch 'release/2.0.0'"))!
-    expect(create).toContain("&& git branch 'release/2.0.0'")
-    expect(create).toContain("&& git push origin 'release/2.0.0'")
-    const merge=commands.find(command=>command.includes('checkout -B'))!
-    expect(merge).toContain("&& git checkout -B 'main'")
-    expect(merge).toContain("&& git merge --no-ff --no-edit 'abcdef1234567890'")
-    const push=commands.find(command=>command.includes('push --atomic'))!
-    expect(push).toContain("git tag -f 'v1.2.3' HEAD")
-    expect(push).toContain("HEAD:refs/heads/'main'")
-    expect(push).toContain("refs/tags/'v1.2.3'")
+    const release=await manager.createBranch('owner',ci(),'release/1.2.3','main')
+    await tick();await tick()
+    expect(runtime.prepareKnowledgeBase).toHaveBeenCalledWith('release/1.2.3',ci())
+    expect(commands.some(command=>command.includes('npm run affected-check'))).toBe(true)
+    expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('ready')
   })
 
-  it('prepares the knowledge-base index before fixing the release SHA',async()=>{
-    const order:string[]=[]
-    let prepared=false
-    const runtime:ReleaseRuntime={
-      prepareKnowledgeBase:async(branch)=>{order.push(`prepare:${branch}`);prepared=true},
-      exec:async(_target,command)=>{
-        if(command.includes('for-each-ref')){order.push('list');return {exitCode:0,output:`origin/release/1.2.3 ${prepared?'new-sha':'old-sha'}\n`}}
-        return {exitCode:0,output:''}
-      },
-      updateKnowledgeBase:async()=>{},deployProduction:async()=>{},healthCheck:async()=>{},cleanup:async()=>{}
-    }
-    const created=await new ReleaseManager(db,runtime).start('owner',target(),'release/1.2.3')
-    expect(order.slice(0,2)).toEqual(['prepare:release/1.2.3','list'])
-    expect(created.sha).toBe('new-sha')
-    await tick()
-  })
-
-  it('does not create a release attempt when knowledge-base preflight fails',async()=>{
-    const runtime:ReleaseRuntime={
-      prepareKnowledgeBase:async()=>{throw new Error('неожиданные изменения')},
-      exec:async()=>({exitCode:0,output:'origin/release/1.2.3 abcdef\n'}),
-      updateKnowledgeBase:async()=>{},deployProduction:async()=>{},healthCheck:async()=>{},cleanup:async()=>{}
-    }
-    await expect(new ReleaseManager(db,runtime).start('owner',target(),'release/1.2.3')).rejects.toThrow('неожиданные изменения')
-    expect(db.listProjectReleases('owner',projectId)).toEqual([])
-  })
-
-  it('resumes an interrupted release from the first step without passed status',async()=>{
-    const release=db.createProjectRelease('owner',projectId,{branch:'release/1.2.3',version:'1.2.3',sha:'abcdef'})
-    db.setProjectReleaseStatus(release.id,'running','owner')
-    for(const kind of ['regression','knowledge_base','merge_main','push_main','production_deploy'] as const){
-      db.setProjectReleaseStep(release.id,kind,'passed',`${kind} done`,'owner')
-    }
-    db.setProjectReleaseStep(release.id,'health_check','running','','owner')
-    const interrupted=db.getProjectRelease('owner',projectId,release.id)!
-    const calls:string[]=[]
-    const runtime:ReleaseRuntime={
-      prepareKnowledgeBase:async()=>{},
-      exec:async()=>{calls.push('exec');return {exitCode:0,output:''}},
-      updateKnowledgeBase:async()=>{calls.push('knowledge_base')},
-      deployProduction:async()=>{calls.push('production_deploy')},
-      healthCheck:async()=>{calls.push('health_check')},
-      cleanup:async()=>{calls.push('cleanup')}
-    }
-    new ReleaseManager(db,runtime).resume('owner',target(),interrupted)
-    await tick()
-    expect(calls).toEqual(['health_check','cleanup'])
-    expect(db.getProjectRelease('owner',projectId,release.id)).toMatchObject({status:'released'})
-  })
-
-  it('rejects arbitrary or missing remote branches before creating history',async()=>{
-    const runtime:ReleaseRuntime={exec:async()=>({exitCode:0,output:''}),prepareKnowledgeBase:async()=>{},updateKnowledgeBase:async()=>{},deployProduction:async()=>{},healthCheck:async()=>{},cleanup:async()=>{}}
+  it('does not repeat checks, merge main or create tags during deploy',async()=>{
+    const commands:string[]=[]
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return command.includes('for-each-ref')?{exitCode:0,output:'origin/release/1.0.0 fixed-sha\n'}:{exitCode:0,output:'ok'}}}
+    const prepared=db.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'ready'})
     const manager=new ReleaseManager(db,runtime)
-    await expect(manager.start('owner',target(),'main')).rejects.toThrow('release/x.y.z')
-    await expect(manager.start('owner',target(),'release/9.9.9')).rejects.toThrow('отсутствует в origin')
-    expect(db.listProjectReleases('owner',projectId)).toEqual([])
+    const attempt=await manager.start('owner',ci(),prod(),'release/1.0.0')
+    await tick();await tick()
+    expect(commands.join('\n')).not.toMatch(/affected-check|merge |tag |push .*main/)
+    expect(commands.some(command=>command.includes("checkout -B 'release/1.0.0' 'fixed-sha'"))).toBe(true)
+    expect(commands).toContain("cd '/prod' && npm run deploy:prod")
+    expect(db.getProjectRelease('owner',projectId,attempt.id)?.status).toBe('released')
+    expect(prepared.status).toBe('ready')
   })
 
-  it('allows publication only to a project owner',async()=>{
-    const runtime:ReleaseRuntime={exec:async()=>({exitCode:0,output:'origin/release/1.0.0 abcdef\n'}),prepareKnowledgeBase:async()=>{},updateKnowledgeBase:async()=>{},deployProduction:async()=>{},healthCheck:async()=>{},cleanup:async()=>{}}
-    await expect(new ReleaseManager(db,runtime).start('member',target(),'release/1.0.0')).rejects.toThrow('permission')
+  it('blocks changed SHA, offline production and concurrent deploy',async()=>{
+    const runtime:ReleaseRuntime={isOnline:()=>false,prepareKnowledgeBase:async()=>{},exec:async()=>({exitCode:0,output:'origin/release/1.0.0 moved-sha\n'})}
+    db.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'ready'})
+    await expect(new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/1.0.0')).rejects.toThrow('offline')
+    runtime.isOnline=()=>true
+    await expect(new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/1.0.0')).rejects.toThrow('SHA')
+  })
+
+  it('fails before build when production checkout validation fails',async()=>{
+    const commands:string[]=[]
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>{commands.push(command);if(target.agentId==='ci')return {exitCode:0,output:'origin/release/1.0.0 fixed-sha\n'};return {exitCode:1,output:'dirty checkout'}}}
+    db.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'ready'})
+    const attempt=await new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/1.0.0')
+    await tick();await tick()
+    expect(db.getProjectRelease('owner',projectId,attempt.id)?.status).toBe('failed')
+    expect(commands).not.toContain("cd '/prod' && npm run deploy:prod")
   })
 })

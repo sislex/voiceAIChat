@@ -122,6 +122,9 @@ export function registerProjectRoutes(
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
       productionDeployCommand?: string
+      productionAgentId?: string | null
+      productionCheckoutPath?: string
+      productionHealthCheckCommand?: string
       ciBaseBranch?: string
       ciBranchTemplate?: string
       ciReuseStrategy?: CiReuseStrategy

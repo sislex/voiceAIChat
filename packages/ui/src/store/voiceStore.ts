@@ -864,6 +864,9 @@ export interface StoreActions {
     agentPlanApprovalMode?: 'manual' | 'automatic'
     testCommand?: string
     productionDeployCommand?: string
+    productionAgentId?: string | null
+    productionCheckoutPath?: string
+    productionHealthCheckCommand?: string
   }): Promise<ProjectDetail | null>
   /** Обновить поля проекта (только владелец). */
   updateProject(
@@ -882,6 +885,9 @@ export interface StoreActions {
     agentPlanApprovalMode?: 'manual' | 'automatic'
     testCommand?: string
     productionDeployCommand?: string
+    productionAgentId?: string | null
+    productionCheckoutPath?: string
+    productionHealthCheckCommand?: string
     ciBaseBranch?: string
     ciBranchTemplate?: string
     ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
@@ -3378,6 +3384,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     agentPlanApprovalMode?: 'manual' | 'automatic'
     testCommand?: string
     productionDeployCommand?: string
+    productionAgentId?: string | null
+    productionCheckoutPath?: string
+    productionHealthCheckCommand?: string
   }): Promise<ProjectDetail | null> {
     try {
       const detail = await api['projects:create'](input)
@@ -3405,6 +3414,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     agentPlanApprovalMode?: 'manual' | 'automatic'
     testCommand?: string
     productionDeployCommand?: string
+    productionAgentId?: string | null
+    productionCheckoutPath?: string
+    productionHealthCheckCommand?: string
     ciBaseBranch?: string
     ciBranchTemplate?: string
     ciReuseStrategy?: 'reuse' | 'clean' | 'fail'

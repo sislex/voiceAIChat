@@ -328,6 +328,9 @@ interface ProjectRow {
   agent_plan_approval_mode: string
   test_command: string
   production_deploy_command: string
+  production_agent_id: string | null
+  production_checkout_path: string
+  production_health_check_command: string
   default_skills_epic: string
   default_skills_story: string
   default_skills_task: string
@@ -771,6 +774,9 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'agent_plan_approval_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'test_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN test_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_deploy_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_deploy_command TEXT NOT NULL DEFAULT ''`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_agent_id')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_agent_id TEXT`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_checkout_path')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_checkout_path TEXT NOT NULL DEFAULT ''`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_health_check_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_health_check_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_epic')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_epic TEXT NOT NULL DEFAULT '[]'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_story')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_story TEXT NOT NULL DEFAULT '[]'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_task')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_task TEXT NOT NULL DEFAULT '[]'`)
@@ -1972,6 +1978,9 @@ export class VoiceChatDb {
       agentPlanApprovalMode: r.agent_plan_approval_mode === 'automatic' ? 'automatic' : 'manual',
       testCommand: r.test_command || undefined,
       productionDeployCommand: r.production_deploy_command || undefined,
+      productionAgentId: r.production_agent_id,
+      productionCheckoutPath: r.production_checkout_path || undefined,
+      productionHealthCheckCommand: r.production_health_check_command || undefined,
       ciBaseBranch: r.ci_base_branch,
       ciBranchTemplate: r.ci_branch_template,
       ciReuseStrategy: r.ci_reuse_strategy === 'reuse' || r.ci_reuse_strategy === 'clean' ? r.ci_reuse_strategy : 'fail',
@@ -2137,6 +2146,9 @@ export class VoiceChatDb {
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
       productionDeployCommand?: string
+      productionAgentId?: string | null
+      productionCheckoutPath?: string
+      productionHealthCheckCommand?: string
       ciBaseBranch?: string
       ciBranchTemplate?: string
       ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
@@ -2188,6 +2200,9 @@ export class VoiceChatDb {
     }
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
     if (fields.productionDeployCommand !== undefined) { set.push('production_deploy_command = ?'); vals.push(fields.productionDeployCommand) }
+    if (fields.productionAgentId !== undefined) { set.push('production_agent_id = ?'); vals.push(fields.productionAgentId) }
+    if (fields.productionCheckoutPath !== undefined) { set.push('production_checkout_path = ?'); vals.push(fields.productionCheckoutPath) }
+    if (fields.productionHealthCheckCommand !== undefined) { set.push('production_health_check_command = ?'); vals.push(fields.productionHealthCheckCommand) }
     if (fields.ciBaseBranch !== undefined) { set.push('ci_base_branch = ?'); vals.push(fields.ciBaseBranch) }
     if (fields.ciBranchTemplate !== undefined) { set.push('ci_branch_template = ?'); vals.push(fields.ciBranchTemplate) }
     if (fields.ciReuseStrategy !== undefined) { set.push('ci_reuse_strategy = ?'); vals.push(fields.ciReuseStrategy) }
@@ -4564,15 +4579,15 @@ export class VoiceChatDb {
     this.db.prepare(`UPDATE ci_workspaces SET state='released' WHERE project_id=? AND state='active' AND task_id IN (${placeholders})`).run(projectId,...taskIds)
   }
 
-  createProjectRelease(userId: string, projectId: string, input: { branch: string; version: string; sha: string; models?: Partial<Record<ReleaseStepKind, string>>; previousReleaseId?: string | null }): ProjectRelease {
+  createProjectRelease(userId: string, projectId: string, input: { branch: string; version: string; sha: string; status?: ProjectRelease['status']; models?: Partial<Record<ReleaseStepKind, string>>; previousReleaseId?: string | null }): ProjectRelease {
     if (!this.isProjectOwner(userId, projectId)) throw new Error('release permission required')
     const previous = input.previousReleaseId ? this.releaseRow(input.previousReleaseId) : null
     if (input.previousReleaseId && (!previous || previous.project_id !== projectId || previous.branch !== input.branch)) throw new Error('invalid previous release')
     const attempt = previous ? previous.attempt + 1 : ((this.db.prepare(`SELECT MAX(attempt) AS n FROM project_releases WHERE project_id=? AND branch=?`).get(projectId,input.branch) as {n:number|null}).n ?? 0) + 1
     const id=this.newId(), now=this.now()
     this.db.transaction(()=>{
-      this.db.prepare(`INSERT INTO project_releases (id,project_id,version,branch,commit_sha,status,triggered_by,attempt,previous_release_id,created_at) VALUES (?,?,?,?,?,'draft',?,?,?,?)`)
-        .run(id,projectId,input.version,input.branch,input.sha,userId,attempt,input.previousReleaseId??null,now)
+      this.db.prepare(`INSERT INTO project_releases (id,project_id,version,branch,commit_sha,status,triggered_by,attempt,previous_release_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+        .run(id,projectId,input.version,input.branch,input.sha,input.status??'preparing',userId,attempt,input.previousReleaseId??null,now)
       RELEASE_STEP_ORDER.forEach((kind,position)=>this.db.prepare(`INSERT INTO project_release_steps (id,release_id,kind,position,status,model,attempt) VALUES (?,?,?,?,?,?,?)`).run(this.newId(),id,kind,position,'queued',input.models?.[kind]??null,attempt))
       this.addReleaseEvent(id,'release.created',userId,{branch:input.branch,version:input.version,sha:input.sha,attempt})
     })()
@@ -4593,6 +4608,10 @@ export class VoiceChatDb {
     if (!this.isProjectMember(userId,projectId)) return null
     const row=this.releaseRow(id)
     return row?.project_id===projectId?this.mapProjectRelease(row):null
+  }
+
+  setProjectReleaseSha(id:string,sha:string):void {
+    this.db.prepare(`UPDATE project_releases SET commit_sha=? WHERE id=?`).run(sha,id)
   }
 
   setProjectReleaseStatus(id:string,status:ProjectRelease['status'],actor:string):void {

@@ -280,9 +280,9 @@ export interface IpcInvokeMap {
 
   'projects:get': { arg: { id: string }; result: ProjectDetail | null }
   'releases:branches': { arg: { projectId: string }; result: import('./release').ReleaseBranch[] }
-  'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string }; result: import('./release').ReleaseBranch }
+  'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string }; result: import('./release').ProjectRelease }
   'releases:list': { arg: { projectId: string }; result: import('./release').ProjectRelease[] }
-  'releases:deploy': { arg: { projectId: string; branch: string; previousReleaseId?: string; models?: Partial<Record<import('./release').ReleaseStepKind, string>> }; result: import('./release').ProjectRelease }
+  'releases:deploy': { arg: { projectId: string; branch: string }; result: import('./release').ProjectRelease }
   'projects:update': {
     arg: {
       id: string
@@ -298,6 +298,9 @@ export interface IpcInvokeMap {
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
       productionDeployCommand?: string
+      productionAgentId?: string | null
+      productionCheckoutPath?: string
+      productionHealthCheckCommand?: string
       ciBaseBranch?: string
       ciBranchTemplate?: string
       ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
