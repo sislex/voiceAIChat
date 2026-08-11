@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { releaseFailureSummary, type ProjectRelease, type ReleaseBranch } from '@voicechat/shared'
+import { compareReleaseBranches, releaseFailureSummary, type ProjectRelease, type ReleaseBranch } from '@voicechat/shared'
 import type { RendererApi } from '@shared/ipc'
 
 interface Props { projectId:string; baseBranch:string; owner:boolean; api?:RendererApi }
@@ -21,7 +21,11 @@ export function ReleaseCenter({projectId,baseBranch,owner,api=window.api}:Props)
   useEffect(()=>{void refresh()},[refresh])
   const prepared=useMemo(()=>releases.find(item=>item.branch===selected&&item.status==='ready'),[releases,selected])
   const current=releases.find(item=>item.status==='released')
-  const rollback=current&&selected&&current.branch!==selected?`Будет выполнен откат production с ${current.branch} на ${selected}.`:''
+  const transition=current&&selected&&current.branch!==selected
+    ? compareReleaseBranches(selected,current.branch) === -1
+      ? `Будет выполнен откат production с ${current.branch} на ${selected}.`
+      : `Будет выполнено обновление production с ${current.branch} на ${selected}.`
+    : ''
   const run=async(action:()=>Promise<unknown>):Promise<void>=>{setBusy(true);setError('');try{await action();await refresh()}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
   return <section className="release-center" aria-label="Центр деплоя релиза">
     <header><h2>Релизы</h2><button className="vc-btn vc-btn--secondary" disabled={busy} onClick={()=>void refresh()}>Обновить origin</button></header>
@@ -33,7 +37,7 @@ export function ReleaseCenter({projectId,baseBranch,owner,api=window.api}:Props)
     </div>
     <div className="release-deploy">
       <label>Подготовленный релиз <select value={selected} onChange={event=>setSelected(event.target.value)}>{branches.map(branch=><option key={branch.branch} value={branch.branch}>{branch.branch} · {branch.sha.slice(0,12)}</option>)}</select></label>
-      {rollback&&<p role="status">{rollback}</p>}
+      {transition&&<p role="status">{transition}</p>}
       <button className="vc-btn vc-btn--primary" disabled={!owner||busy||!prepared} onClick={()=>void run(()=>api['releases:deploy']({projectId,branch:selected}))}>Задеплоить</button>
     </div>
     {releases.length===0?<p>Подготовленных релизов и публикаций ещё нет.</p>:releases.map(release=><article key={release.id} className="release-card">
