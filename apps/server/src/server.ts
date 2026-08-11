@@ -598,6 +598,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       if (result.exitCode !== 0) throw new Error(result.output || 'Release-preflight базы знаний завершился с ошибкой')
     }
   })
+  releaseManager.reconcile((release) => {
+    const project = db.getProject(release.triggeredBy, release.projectId)
+    const agentId = project?.productionAgentId
+    const linked = agentId ? project?.machines.some(machine => machine.agentId === agentId) : false
+    if (!project || !agentId || !linked || !project.productionCheckoutPath || !project.productionDeployCommand || !project.productionHealthCheckCommand || !project.gitUrl) return null
+    return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl }
+  })
   registerReleaseRoutes(app, db, releaseManager)
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry)
   registerQaRoutes(app, db, uploads)

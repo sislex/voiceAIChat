@@ -4599,8 +4599,8 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT id FROM project_releases WHERE project_id=? ORDER BY created_at DESC`).all(projectId) as Array<{id:string}>).map(({id})=>this.mapProjectRelease(this.releaseRow(id)!))
   }
 
-  listRunningProjectReleases():ProjectRelease[] {
-    return (this.db.prepare(`SELECT * FROM project_releases WHERE status='running' ORDER BY created_at`).all() as ReleaseRow[])
+  listActiveProjectReleases():ProjectRelease[] {
+    return (this.db.prepare(`SELECT * FROM project_releases WHERE status IN ('switching','building','health_check') ORDER BY created_at`).all() as ReleaseRow[])
       .map(row=>this.mapProjectRelease(row))
   }
 
