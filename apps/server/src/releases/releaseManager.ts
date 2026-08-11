@@ -18,6 +18,13 @@ const quote=(value:string):string=>`'${value.replace(/'/g, `'"'"'`)}'`
 const at=(target:ReleaseProjectTarget,command:string):string=>`cd ${quote(target.path)} && ${command}`
 const git=(target:ReleaseProjectTarget,args:string):string=>at(target,`git ${args}`)
 
+/** Изолирует kb:index от общего checkout и не перезаписывает конкурентно сдвинутую release-ветку. */
+export function releaseKnowledgeBaseCommand(target:ReleaseProjectTarget,releaseBranch:string):string {
+  const branch=quote(releaseBranch)
+  const ref=quote(`refs/heads/${releaseBranch}`)
+  return at(target,`tmp="$(mktemp -d)" && cleanup(){ git worktree remove --force "$tmp" >/dev/null 2>&1 || rmdir "$tmp" >/dev/null 2>&1 || true; } && trap cleanup EXIT && git fetch origin ${branch} && expected="$(git rev-parse FETCH_HEAD)" && git worktree add --detach "$tmp" "$expected" && cd "$tmp" && npm run kb:index && changed="$(git status --porcelain --untracked-files=no)" && if [ -n "$changed" ]; then if [ "$changed" != " M docs/kb/README.md" ]; then echo "Release-preflight остановлен: kb:index изменил неожиданные файлы"; echo "$changed"; exit 1; fi; git add docs/kb/README.md && git commit -m 'docs: обновить индекс БЗ перед релизом' && git push --force-with-lease=${ref}:$expected origin HEAD:${ref}; fi`)
+}
+
 export async function waitForReleaseHealth(
   expectedVersion:string,
   probe:()=>Promise<{ok?:boolean;version?:string}>,
