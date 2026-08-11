@@ -84,6 +84,10 @@ export interface ProjectSummary {
   agentPlanApprovalMode: 'manual' | 'automatic'
   testCommand?: string
   productionDeployCommand?: string
+  /** Отдельная машина, с которой разрешён только production deploy. */
+  productionAgentId?: string | null
+  productionCheckoutPath?: string
+  productionHealthCheckCommand?: string
   /** CI-раннер: базовая ветка воркфлоу. */
   ciBaseBranch?: string
   /** CI-раннер: шаблон ветки, по умолчанию `{task_number}` (`CHAT-172`); legacy `{slug}` поддерживается. */

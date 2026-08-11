@@ -18,17 +18,14 @@ describe('release branch contract', () => {
 
   it('keeps all release gates ordered and mandatory', () => {
     expect(RELEASE_STEP_ORDER).toEqual([
-      'regression', 'knowledge_base', 'merge_main', 'push_main',
-      'production_deploy', 'health_check', 'cleanup'
+      'regression', 'knowledge_base', 'switching', 'building', 'health_check'
     ])
   })
 
   it('summarizes a failed gate while preserving the diagnostic log separately', () => {
     const log = '> npm run kb:index\ndiff --git a/docs/kb/README.md b/docs/kb/README.md'
-    expect(releaseFailureSummary('knowledge_base', log)).toBe(
-      'Индекс базы знаний устарел; release-preflight должен обновить его до запуска'
-    )
+    expect(releaseFailureSummary('knowledge_base', log)).toBe('База знаний не синхронизирована с кодом')
     expect(releaseFailureSummary('health_check', 'error: connection refused\nstack trace')).toBe('connection refused')
-    expect(releaseFailureSummary('merge_main', '')).toBe('Не удалось объединить релиз с основной веткой')
+    expect(releaseFailureSummary('switching', '')).toBe('Не удалось переключить production checkout')
   })
 })
