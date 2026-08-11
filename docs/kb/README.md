@@ -19,7 +19,7 @@
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 25 коммит(ов) в areas после сверки: ac537e7 feat: add managed ticket merge workflow entrypoint … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 31 коммит(ов) в areas после сверки: 60193f3 Merge remote-tracking branch 'origin/main' into feature/170-унифицировать-feature-ветки-и-автоматизи … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 3 коммит(ов) в areas после сверки: ac537e7 feat: add managed ticket merge workflow entrypoint … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 193 коммит(ов) в areas после сверки: 5335713 Merge remote-tracking branch 'origin/feature/169-закрывать-меню-колонки-канбан-доски-по-к' … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 194 коммит(ов) в areas после сверки: e79b618 chatai-171: работа CI-рана … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-10 | ⚠ 12 коммит(ов) в areas после сверки: ac537e7 feat: add managed ticket merge workflow entrypoint … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 8 коммит(ов) в areas после сверки: bcb8716 fix: исключить индекс из свежести базы знаний … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 3 коммит(ов) в areas после сверки: d9b71af fix: preserve task launch proposal fields … |
