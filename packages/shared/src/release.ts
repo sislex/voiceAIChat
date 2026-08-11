@@ -24,10 +24,11 @@ const RELEASE_FAILURE_FALLBACK: Record<ReleaseStepKind, string> = {
   health_check: 'Production не прошёл health-check'
 }
 
-export function releaseFailureSummary(kind: ReleaseStepKind, log: string): string {
+export function releaseFailureSummary(kind: string, log: string): string {
   const lines = log.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
   const explicit = lines.find(line => /^(error|fatal|ошибка|не удалось|production|health-check|база знаний)/i.test(line))
-  return (explicit ?? RELEASE_FAILURE_FALLBACK[kind]).replace(/^error:\s*/i, '').slice(0, 240)
+  const fallback = RELEASE_FAILURE_FALLBACK[kind as ReleaseStepKind] ?? lines[0] ?? 'Шаг релиза завершился ошибкой'
+  return (explicit ?? fallback).replace(/^error:\s*/i, '').slice(0, 240)
 }
 
 export interface ProjectRelease {

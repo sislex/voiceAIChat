@@ -28,4 +28,10 @@ describe('release branch contract', () => {
     expect(releaseFailureSummary('health_check', 'error: connection refused\nstack trace')).toBe('connection refused')
     expect(releaseFailureSummary('switching', '')).toBe('Не удалось переключить production checkout')
   })
+
+  it('summarizes historical release steps unknown to the current contract', () => {
+    expect(releaseFailureSummary('cleanup', 'Машина не в сети')).toBe('Машина не в сети')
+    expect(releaseFailureSummary('push_main', 'Updated tag\nerror: tag already exists')).toBe('tag already exists')
+    expect(releaseFailureSummary('legacy_step', '')).toBe('Шаг релиза завершился ошибкой')
+  })
 })
