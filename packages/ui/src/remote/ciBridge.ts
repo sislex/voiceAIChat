@@ -28,6 +28,7 @@ import type {
   CiTaskReport
 } from '@shared/ci'
 import type { Message } from '@shared/types'
+import type { MergeRun } from '@shared/merge'
 import type { KbRunUsageReport, KbTaskUsageReport } from '@shared/kb'
 
 /** Ответ GET usage: где команда используется (проекты/задачи). */
@@ -86,6 +87,7 @@ export interface RendererCiRest {
   getTaskCi(projectId: string, taskId: string): Promise<CiTaskConfig>
   putTaskCi(projectId: string, taskId: string, config: CiSlotConfig): Promise<CiSlotConfig>
   startRun(projectId: string, taskId: string, options?: { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string; launch?: 'queue' | 'parallel' }): Promise<CiRun>
+  startMerge(projectId: string, taskId: string): Promise<MergeRun>
   /** Немедленный запуск на явно указанной машине; ран из очереди продвигается, а не отменяется. */
   forceStartRun(projectId: string, taskId: string, agentId: string): Promise<CiRun>
   getRun(runId: string): Promise<CiRunDetail>

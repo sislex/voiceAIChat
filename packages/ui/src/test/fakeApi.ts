@@ -938,6 +938,7 @@ export function createFakeCi(): FakeCi {
     getTaskCi: async () => ({ config: { beforeModel: [], afterModel: [] }, overridden: false, projectDefault: { beforeModel: [], afterModel: [] } }),
     putTaskCi: async (_pid, _tid, config) => config,
     startRun: async (projectId, taskId, options) => { const run = { ...mkRun(projectId, taskId), mode: options?.mode ?? projectLlm.mode }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
+    startMerge: async (projectId, taskId) => ({ id: `merge-${taskId}`, projectId, taskId, status: 'queued', triggeredBy: 'admin', sourceBranch: `feature/${taskId}`, targetBranch: 'main', sourceSha: null, targetSha: null, mergeSha: null, revertSha: null, agentId: 'a1', llmEngineId: null, llmProvider: 'claude', llmModel: '', stage: 'queued', conflicts: [], deployId: null, deployVersion: null, productionStatus: null, error: null, log: '', startedAt: now(), finishedAt: null, createdAt: now() }),
     forceStartRun: async (projectId, taskId, agentId) => { const run = { ...mkRun(projectId, taskId), agentId }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
     getRun: async (rid) => runs.get(rid) ?? { run: mkRun('p', 't'), steps: [], fixAttempts: [], interactions: [] },
     getRunLog: async (rid) => logs.get(rid) ?? [],

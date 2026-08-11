@@ -125,6 +125,7 @@ export interface KanbanBoardProps {
   onOpenCiRun?: (runId: string) => void
   /** Убрать ожидающий ран из очереди CI. */
   onDequeueCiRun?: (runId: string) => void
+  onStartMerge?: (taskId: string) => void
   aiAssistPrompts?: ModifierPrompt[]
   onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
   generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>
@@ -548,6 +549,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       projectName={props.projectName}
       allTasks={allTasks}
       doneColumnIds={doneColumnIds}
+      columnSemanticType={board?.columns.find((column) => column.id === t.columnId)?.semanticType}
       onOpen={setOpenTaskId}
       onUpdate={props.onUpdateTask}
       onDelete={props.onDeleteTask}
@@ -559,6 +561,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onStartCiParallel={props.onStartCiParallel}
       onOpenCiRun={props.onOpenCiRun}
       onDequeueCiRun={props.onDequeueCiRun}
+      onStartMerge={props.onStartMerge}
       onGrab={(e, card, immediate) => grabTask(e, card, t.id, immediate)}
       onCardKeys={onCardKeys(t)}
       onCardBlur={() => {
@@ -1163,6 +1166,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onStartCi={props.onStartCi}
           onStartCiParallel={props.onStartCiParallel}
           onOpenCiRun={props.onOpenCiRun}
+          onStartMerge={props.onStartMerge}
 
           aiAssistPrompts={props.aiAssistPrompts}
           onAiAssistPromptsChange={props.onAiAssistPromptsChange}

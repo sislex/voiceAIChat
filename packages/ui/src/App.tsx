@@ -1226,6 +1226,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               onStartCiParallel={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId, { launch: 'parallel' }).then((run) => { if (run) actions.openCiRun(run.id) }) }}
               onOpenCiRun={(runId) => actions.openCiRun(runId)}
               onDequeueCiRun={(runId) => void actions.dequeueCiRun(runId)}
+              onStartMerge={(taskId) => { if (routeProjectId) void actions.startMergeRun(routeProjectId, taskId) }}
               aiAssistPrompts={state.settings.aiAssistPrompts}
               onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
               generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}

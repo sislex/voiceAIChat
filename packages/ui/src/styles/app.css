@@ -5547,3 +5547,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .manual-qa-card__body label { display: grid; gap: 4px; font-size: 12px; }
 .manual-qa-card__body textarea { min-height: 58px; resize: vertical; border: 1px solid var(--border); border-radius: 7px; padding: 7px; background: var(--bg); color: var(--text); font: inherit; }
 .manual-qa-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.task-tabs, .task-subtabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; padding: 0 0 10px; }
+.task-tab { flex: 0 0 auto; border: 0; border-bottom: 2px solid transparent; padding: 8px 10px; background: transparent; color: var(--text-dim); cursor: pointer; font: inherit; }
+.task-tab--active { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
+.jmodal:not(.jmodal--tab-general) > .jmodal-main,
+.jmodal:not(.jmodal--tab-general) > .jmodal-side { display: none; }
+.task-tab-panel { grid-column: 1 / -1; min-width: 0; overflow: auto; padding: 4px; }
+.task-tab-empty { padding: 18px; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-dim); }
+.task-tab-warning { padding: 10px; border-radius: 8px; background: var(--warning-soft); }
+@media (max-width: 720px) {
+  .task-tabs { margin-inline: -8px; padding-inline: 8px; }
+  .task-tab { padding-inline: 8px; white-space: nowrap; }
+  .task-tab-panel { width: 100%; }
+}

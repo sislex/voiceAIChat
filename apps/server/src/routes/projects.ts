@@ -413,6 +413,29 @@ export function registerProjectRoutes(
     }
   )
 
+  // Отдельный merge-ран: сервер сам берёт подготовленную ветку, main и машину.
+  app.post<{ Params: { id: string; taskId: string } }>(
+    '/api/projects/:id/tasks/:taskId/merge',
+    async (req, reply) => {
+      const project = member(req, req.params.id)
+      if (!project) return nf(reply)
+      if (project.role !== 'owner') return forbidden(reply)
+      try {
+        const run = db.startMergeRun(uid(req), req.params.id, req.params.taskId)
+        boardHub.emit(req.params.id)
+        return run
+      } catch (err) {
+        const message = errMessage(err)
+        const conflict = message.includes('awaiting_merge') || message.includes('active')
+        return reply.code(conflict ? 409 : 400).send({ error: message })
+      }
+    }
+  )
+
+  app.get<{ Params: { runId: string } }>('/api/merge/runs/:runId', async (req, reply) =>
+    db.getMergeRun(uid(req), req.params.runId) ?? nf(reply)
+  )
+
   // Открыть/создать связанный с задачей чат текущего пользователя.
   app.post<{ Params: { id: string; taskId: string } }>(
     '/api/projects/:id/tasks/:taskId/chat',
