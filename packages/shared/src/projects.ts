@@ -112,6 +112,11 @@ export interface ProjectSummary {
 /** Машина проекта: агент + рабочая папка проекта на этой машине. */
 export interface ProjectMachine {
   agentId: string
+  /** Безопасные данные машины для участников проекта. */
+  name?: string
+  owner?: string
+  online?: boolean
+  addedAt?: number
   /** Папка проекта на этой машине (рабочий каталог). '' — не задана. */
   path: string
   /** Корень пула рабочих копий CI на этой машине. */

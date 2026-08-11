@@ -258,6 +258,22 @@ describe('projects REST: машины проекта (папка, дефолт) 
     expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/default-machine`, payload: { agentId: agent.id } })).statusCode).toBe(403)
   })
 
+  it('список доступен участнику, повторная привязка конфликтует, а управление запрещено', async () => {
+    const p = await createProject()
+    const agent = db.createAgent('admin', 'Shared Mac')
+    expect((await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/machines/available` })).json()).toEqual([
+      { id: agent.id, name: 'Shared Mac' }
+    ])
+    expect((await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/machines`, payload: { agentId: agent.id } })).statusCode).toBe(200)
+    expect((await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/machines`, payload: { agentId: agent.id } })).statusCode).toBe(409)
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'bob' } })
+    const list = await inj(bobTok, { method: 'GET', url: `/api/projects/${p.id}/machines` })
+    expect(list.statusCode).toBe(200)
+    expect(list.json()[0]).toMatchObject({ agentId: agent.id, name: 'Shared Mac', owner: 'admin' })
+    expect((await inj(bobTok, { method: 'GET', url: `/api/projects/${p.id}/machines/available` })).statusCode).toBe(403)
+    expect((await inj(bobTok, { method: 'DELETE', url: `/api/projects/${p.id}/machines/${agent.id}` })).statusCode).toBe(403)
+  })
+
   it('привязка чата к проекту применяет машину/папку/навыки; не-участник → 404', async () => {
     const create = await inj(adminTok, { method: 'POST', url: '/api/projects', payload: { name: 'P', skills: ['ts'] } })
     const p = create.json() as ProjectDetail

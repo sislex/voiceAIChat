@@ -45,6 +45,7 @@ export function MachineUtility({
           agents={agents}
           initialAgentId={tool.agentId ?? null}
           initialCwd={tool.path}
+          projectId={tool.projectId}
           pty={pty}
           variant={variant}
           onClose={onClose}

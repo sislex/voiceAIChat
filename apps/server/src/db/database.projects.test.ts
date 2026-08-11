@@ -270,6 +270,24 @@ describe('projects: папка машины, дефолт, привязка ча
     expect(db.listProjectMachines('нет-такого')).toEqual([])
   })
 
+  it('canUseAgent даёт проектный доступ только участнику в явном контексте и отзывает его сразу', () => {
+    const p = db.createProject('alice', { name: 'Shared' })
+    const machine = db.createAgent('alice', 'Mac')
+    db.linkMachine('alice', p.id, machine.id)
+    db.addMember('alice', p.id, 'bob')
+
+    expect(db.canUseAgent('alice', machine.id)).toBe(true)
+    expect(db.canUseAgent('bob', machine.id)).toBe(false)
+    expect(db.canUseAgent('bob', machine.id, p.id)).toBe(true)
+    expect(db.canUseAgent('charlie', machine.id, p.id)).toBe(false)
+
+    db.removeMember('alice', p.id, 'bob')
+    expect(db.canUseAgent('bob', machine.id, p.id)).toBe(false)
+    db.addMember('alice', p.id, 'bob')
+    db.unlinkMachine('alice', p.id, machine.id)
+    expect(db.canUseAgent('bob', machine.id, p.id)).toBe(false)
+  })
+
   it('setConversationProject перезаписывает машину/папку/навыки и projectId; null отвязывает', () => {
     const p = db.createProject('alice', { name: 'P1', skills: ['ts', 'sql'] })
     const a1 = db.createAgent('alice', 'M1')

@@ -28,6 +28,7 @@ import type { BoardHub } from '../projects/boardHub.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import { kbUsageFlags } from '../kb/routes.js'
 import type { CiRunManager } from '../ci/runManager.js'
+import type { AgentRegistry } from '../agents/registry.js'
 
 const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 'not found' })
 const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
@@ -64,10 +65,18 @@ export function registerProjectRoutes(
   /** Телеметрия БЗ по проекту: без неё маршрут агрегата не регистрируется. */
   kbUsage?: { kb: KnowledgeBaseService; toolEnabled: boolean },
   /** Нужен переносу в TODO: ожидающий CI-ран надо снять до успешного ответа. */
-  ci?: CiRunManager
+  ci?: CiRunManager,
+  agents?: AgentRegistry
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
-  const member = (req: FastifyRequest, id: string): ProjectDetail | null => db.getProject(uid(req), id)
+  const withMachineStatus = (project: ProjectDetail | null): ProjectDetail | null => {
+    if (project && agents) {
+      project.machines = project.machines.map((machine) => ({ ...machine, online: agents.isOnline(machine.agentId) }))
+    }
+    return project
+  }
+  const member = (req: FastifyRequest, id: string): ProjectDetail | null =>
+    withMachineStatus(db.getProject(uid(req), id))
 
   // --- Проекты ---------------------------------------------------------
 
@@ -176,7 +185,22 @@ export function registerProjectRoutes(
     }
   )
 
-  // --- Машины проекта (только владелец) --------------------------------
+  // --- Машины проекта ----------------------------------------------------
+
+  app.get<{ Params: { id: string } }>('/api/projects/:id/machines', async (req, reply) => {
+    const p = member(req, req.params.id)
+    return p ? p.machines : nf(reply)
+  })
+
+  app.get<{ Params: { id: string } }>('/api/projects/:id/machines/available', async (req, reply) => {
+    const p = member(req, req.params.id)
+    if (!p) return nf(reply)
+    if (p.role !== 'owner') return forbidden(reply)
+    const linked = new Set(p.machines.map((machine) => machine.agentId))
+    return db.listAgents(uid(req))
+      .filter((agent) => !linked.has(agent.id))
+      .map((agent) => ({ id: agent.id, name: agent.name }))
+  })
 
   app.post<{ Params: { id: string }; Body: { agentId?: string } }>(
     '/api/projects/:id/machines',
@@ -186,8 +210,11 @@ export function registerProjectRoutes(
       if (p.role !== 'owner') return forbidden(reply)
       const agentId = (req.body?.agentId ?? '').trim()
       if (!agentId) return badReq(reply, 'agentId required')
+      if (p.machines.some((machine) => machine.agentId === agentId)) {
+        return reply.code(409).send({ error: 'machine already linked' })
+      }
       try {
-        return db.linkMachine(uid(req), req.params.id, agentId) ?? nf(reply)
+        return withMachineStatus(db.linkMachine(uid(req), req.params.id, agentId)) ?? nf(reply)
       } catch (err) {
         return badReq(reply, errMessage(err))
       }
@@ -200,7 +227,7 @@ export function registerProjectRoutes(
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
       if (p.role !== 'owner') return forbidden(reply)
-      return db.unlinkMachine(uid(req), req.params.id, req.params.agentId) ?? nf(reply)
+      return withMachineStatus(db.unlinkMachine(uid(req), req.params.id, req.params.agentId)) ?? nf(reply)
     }
   )
 
@@ -212,8 +239,8 @@ export function registerProjectRoutes(
       if (!p) return nf(reply)
       if (p.role !== 'owner') return forbidden(reply)
       return req.body?.reposRoot !== undefined
-        ? db.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot) ?? nf(reply)
-        : db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? '') ?? nf(reply)
+        ? withMachineStatus(db.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot)) ?? nf(reply)
+        : withMachineStatus(db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? '')) ?? nf(reply)
     }
   )
 
@@ -227,7 +254,7 @@ export function registerProjectRoutes(
       const agentId = (req.body?.agentId ?? '').trim()
       if (!agentId) return badReq(reply, 'agentId required')
       try {
-        return db.setProjectDefaultMachine(uid(req), req.params.id, agentId) ?? nf(reply)
+        return withMachineStatus(db.setProjectDefaultMachine(uid(req), req.params.id, agentId)) ?? nf(reply)
       } catch (err) {
         return badReq(reply, errMessage(err))
       }
