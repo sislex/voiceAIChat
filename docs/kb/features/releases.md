@@ -1,17 +1,19 @@
 ---
 title: Версионные release-ветки и публикация в production
 updated: 2026-08-11
-checked: 1d2008b
+checked: 946dac1
 areas:
   - packages/shared/src/release.ts
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
+  - packages/shared/src/projects.ts
   - apps/server/src/releases
   - apps/server/src/routes/releases.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - apps/server/src/server.ts
   - packages/ui/src/components/releases
+  - packages/ui/src/components/ProjectSettings.tsx
   - packages/ui/src/components/ProjectPage.tsx
   - packages/ui/src/App.tsx
   - packages/ui/src/remote/httpApi.ts
