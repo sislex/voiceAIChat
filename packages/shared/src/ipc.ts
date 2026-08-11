@@ -617,18 +617,18 @@ export interface RendererSessionBridge {
  * request/response поверх REST; возвращают FsResult (листинг/содержимое файла).
  */
 export interface RendererFsBridge {
-  list(agentId: string, path: string): Promise<FsResult>
-  read(agentId: string, path: string): Promise<FsResult>
-  write(agentId: string, path: string, dataBase64: string): Promise<FsResult>
-  remove(agentId: string, path: string): Promise<FsResult>
-  rename(agentId: string, from: string, to: string): Promise<FsResult>
-  mkdir(agentId: string, path: string): Promise<FsResult>
+  list(agentId: string, path: string, projectId?: string): Promise<FsResult>
+  read(agentId: string, path: string, projectId?: string): Promise<FsResult>
+  write(agentId: string, path: string, dataBase64: string, projectId?: string): Promise<FsResult>
+  remove(agentId: string, path: string, projectId?: string): Promise<FsResult>
+  rename(agentId: string, from: string, to: string, projectId?: string): Promise<FsResult>
+  mkdir(agentId: string, path: string, projectId?: string): Promise<FsResult>
   /**
    * Выполнить команду на машине (утилита «Консоль»). `signal` — «Стоп» в консоли:
    * обрыв запроса доходит до сервера, тот шлёт агенту `exec.cancel`, и команда
    * на машине снимается вместе с деревом процессов.
    */
-  exec(agentId: string, command: string, signal?: AbortSignal): Promise<AgentExecResult>
+  exec(agentId: string, command: string, signal?: AbortSignal, projectId?: string): Promise<AgentExecResult>
 }
 
 /**
@@ -647,7 +647,7 @@ export interface RendererFilesBridge {
  * деградирует до однострочной консоли.
  */
 export interface RendererPtyBridge {
-  start(params: { agentId: string; ptyId: string; cols: number; rows: number; cwd?: string }): void
+  start(params: { agentId: string; ptyId: string; cols: number; rows: number; cwd?: string; projectId?: string }): void
   input(params: { ptyId: string; data: string }): void
   resize(params: { ptyId: string; cols: number; rows: number }): void
   kill(params: { ptyId: string }): void

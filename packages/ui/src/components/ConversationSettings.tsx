@@ -257,7 +257,15 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
               setCwd(''); setEntries([])
             }}>
               {!projectId && <option value="">Сервер</option>}
-              {(projectId ? agents.filter((a) => projectMachines.some((m) => m.agentId === a.id)) : agents).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}{agent.id === (projectId ? projectDefaultAgentId : defaultAgentId) ? ' — по умолчанию' : ''}{agent.online ? '' : ' (офлайн)'}</option>)}
+              {!projectId && <optgroup label="Мои машины">
+                {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}{agent.id === defaultAgentId ? ' — по умолчанию' : ''}{agent.online ? '' : ' (офлайн)'}</option>)}
+              </optgroup>}
+              {projectId && agents.some((a) => projectMachines.some((m) => m.agentId === a.id)) && <optgroup label="Мои машины">
+                {agents.filter((a) => projectMachines.some((m) => m.agentId === a.id)).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}{agent.id === projectDefaultAgentId ? ' — по умолчанию' : ''}{agent.online ? '' : ' (офлайн)'}</option>)}
+              </optgroup>}
+              {projectId && projectMachines.some((m) => !agents.some((a) => a.id === m.agentId)) && <optgroup label="Машины проекта">
+                {projectMachines.filter((m) => !agents.some((a) => a.id === m.agentId)).map((machine) => <option key={machine.agentId} value={machine.agentId}>{machine.name ?? machine.agentId}{machine.agentId === projectDefaultAgentId ? ' — по умолчанию' : ''}{machine.online ? '' : ' (офлайн)'}</option>)}
+              </optgroup>}
             </select>
           </label>
           {projectId && <p className="convsettings-muted">Машины и папка берутся из проекта; смена проекта перезапишет их.</p>}

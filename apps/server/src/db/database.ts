@@ -671,6 +671,12 @@ export class VoiceChatDb {
     } else if (pmCols.length && !pmCols.some((c) => c.name === 'repos_root')) {
       this.db.exec(`ALTER TABLE project_machines ADD COLUMN repos_root TEXT NOT NULL DEFAULT ''`)
     }
+    if (pmCols.length && !pmCols.some((c) => c.name === 'added_at')) {
+      this.db.exec(`ALTER TABLE project_machines ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0`)
+    }
+    if (pmCols.length && !pmCols.some((c) => c.name === 'added_by')) {
+      this.db.exec(`ALTER TABLE project_machines ADD COLUMN added_by TEXT NOT NULL DEFAULT ''`)
+    }
     for (const t of ['agent_tasks', 'feature_deployments', 'feature_events', 'features', 'repository_slots']) {
       this.db.exec(`DROP TABLE IF EXISTS ${t}`)
     }
@@ -1506,6 +1512,21 @@ export class VoiceChatDb {
     return rows.map((r) => this.mapAgent(r))
   }
 
+  /**
+   * Единый гейт использования машины. Проектный доступ существует только при
+   * явно переданном контексте проекта и действующем членстве пользователя.
+   */
+  canUseAgent(userId: string, agentId: string, projectId?: string | null): boolean {
+    if (this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(agentId, userId)) return true
+    if (!projectId) return false
+    return Boolean(this.db.prepare(
+      `SELECT 1 FROM project_machines pm
+       JOIN project_members member ON member.project_id = pm.project_id
+       JOIN users u ON u.name = member.username
+       WHERE pm.project_id = ? AND pm.agent_id = ? AND member.username = ? AND u.blocked = 0`
+    ).get(projectId, agentId, userId))
+  }
+
   /** Ищет агента по хэшу токена (авторизация WS-подключения). Глобально по токену. */
   findAgentByTokenHash(tokenHash: string): AgentRecord | null {
     const row = this.db
@@ -2052,12 +2073,27 @@ export class VoiceChatDb {
       })
     )
     const machines = (
-      this.db.prepare(`SELECT agent_id, path, repos_root FROM project_machines WHERE project_id = ? ORDER BY agent_id ASC`).all(id) as Array<{
+      this.db.prepare(
+        `SELECT pm.agent_id, pm.path, pm.repos_root, pm.added_at, a.name, a.user_id
+         FROM project_machines pm JOIN agents a ON a.id = pm.agent_id
+         WHERE pm.project_id = ? ORDER BY a.name ASC`
+      ).all(id) as Array<{
         agent_id: string
         path: string | null
         repos_root: string | null
+        added_at: number
+        name: string
+        user_id: string
       }>
-    ).map((x) => ({ agentId: x.agent_id, path: x.path ?? '', reposRoot: x.repos_root ?? '' }))
+    ).map((x) => ({
+      agentId: x.agent_id,
+      name: x.name,
+      owner: x.user_id,
+      online: false,
+      addedAt: x.added_at,
+      path: x.path ?? '',
+      reposRoot: x.repos_root ?? ''
+    }))
     return {
       ...this.mapProjectSummary(row, row.my_role),
       members,
@@ -2212,8 +2248,8 @@ export class VoiceChatDb {
       throw new Error(`Машина ${agentId} не найдена`)
     }
     this.db
-      .prepare(`INSERT OR IGNORE INTO project_machines (project_id, agent_id, path) VALUES (?, ?, '')`)
-      .run(id, agentId)
+      .prepare(`INSERT INTO project_machines (project_id, agent_id, path, added_at, added_by) VALUES (?, ?, '', ?, ?)`)
+      .run(id, agentId, this.now(), userId)
     return this.getProject(userId, id)
   }
 

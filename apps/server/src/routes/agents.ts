@@ -67,9 +67,12 @@ export async function registerAgentRoutes(
     }))
   })
 
-  // Владеет ли текущий пользователь машиной id (для операций над ней).
+  // Управление машиной — только владелец; использование может быть делегировано
+  // проектом, но лишь при явном projectId в конкретной операции.
   const ownsAgent = (userId: string, id: string): boolean =>
     db.listAgents(userId).some((a) => a.id === id)
+  const canUseAgent = (userId: string, id: string, projectId?: string): boolean =>
+    db.canUseAgent(userId, id, projectId)
 
   // Последняя доступная версия агента (публично — трей проверяет обновления).
   app.get(REST.agentLatestVersion, async () => ({ version: AGENT_VERSION }))
@@ -258,12 +261,12 @@ export async function registerAgentRoutes(
   // --- Файловый проводник по машине (все под проверкой владения) ---
   /** Проверка владения + читаемый ответ на ошибки агента (офлайн/политика). */
   const withFs = async (
-    req: { params: { id: string } },
+    req: { params: { id: string }; query?: { projectId?: string } },
     reply: FastifyReply,
     run: (id: string) => Promise<unknown>
   ): Promise<unknown> => {
     const u = uid(req as never)
-    if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
+    if (!canUseAgent(u, req.params.id, req.query?.projectId)) return reply.code(404).send({ error: 'not found' })
     try {
       return await run(req.params.id)
     } catch (err) {
@@ -271,36 +274,36 @@ export async function registerAgentRoutes(
     }
   }
 
-  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { path?: string; projectId?: string } }>(
     '/api/agents/:id/fs',
     async (req, reply) => withFs(req, reply, (id) => registry.fsList(id, req.query.path ?? ''))
   )
-  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { path?: string; projectId?: string } }>(
     '/api/agents/:id/fs/file',
     async (req, reply) => withFs(req, reply, (id) => registry.fsRead(id, req.query.path ?? ''))
   )
-  app.post<{ Params: { id: string }; Body: { path?: string; dataBase64?: string } }>(
+  app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string; dataBase64?: string } }>(
     '/api/agents/:id/fs/file',
     { bodyLimit: 48 * 1024 * 1024 }, // ~32 МБ файла + запас base64
     async (req, reply) =>
       withFs(req, reply, (id) => registry.fsWrite(id, req.body?.path ?? '', req.body?.dataBase64 ?? ''))
   )
-  app.delete<{ Params: { id: string }; Querystring: { path?: string } }>(
+  app.delete<{ Params: { id: string }; Querystring: { path?: string; projectId?: string } }>(
     '/api/agents/:id/fs',
     async (req, reply) => withFs(req, reply, (id) => registry.fsDelete(id, req.query.path ?? ''))
   )
-  app.post<{ Params: { id: string }; Body: { from?: string; to?: string } }>(
+  app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { from?: string; to?: string } }>(
     '/api/agents/:id/fs/rename',
     async (req, reply) =>
       withFs(req, reply, (id) => registry.fsRename(id, req.body?.from ?? '', req.body?.to ?? ''))
   )
-  app.post<{ Params: { id: string }; Body: { path?: string } }>(
+  app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string } }>(
     '/api/agents/:id/fs/mkdir',
     async (req, reply) => withFs(req, reply, (id) => registry.fsMkdir(id, req.body?.path ?? ''))
   )
 
   // Утилита «Консоль»: выполнить команду на своей машине (проверка политики — в registry.exec).
-  app.post<{ Params: { id: string }; Body: { command?: string } }>(
+  app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { command?: string } }>(
     '/api/agents/:id/exec',
     async (req, reply) => {
       // Кнопка «Стоп» в консоли = обрыв этого запроса: сигнал доходит до

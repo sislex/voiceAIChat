@@ -375,7 +375,7 @@ export type ClientMessage =
   | { t: 'cc.tail.stop' }
   | { t: 'cx.tail.start'; id: string }
   | { t: 'cx.tail.stop' }
-  | { t: 'pty.start'; agentId: string; ptyId: string; cols: number; rows: number; cwd?: string }
+  | { t: 'pty.start'; agentId: string; ptyId: string; cols: number; rows: number; cwd?: string; projectId?: string }
   | { t: 'pty.input'; ptyId: string; data: string }
   | { t: 'pty.resize'; ptyId: string; cols: number; rows: number }
   | { t: 'pty.kill'; ptyId: string }
