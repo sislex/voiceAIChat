@@ -15,7 +15,11 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const command=releaseKnowledgeBaseCommand(ci(),'release/1.2.3')
     expect(command).toContain('mktemp -d')
     expect(command).toContain('git worktree add --detach')
+    expect(command).toContain("+refs/heads/release/1.2.3:refs/voicechat/preflight/release/1.2.3")
+    expect(command).toContain("git rev-parse 'refs/voicechat/preflight/release/1.2.3'")
+    expect(command).toContain("git update-ref -d 'refs/voicechat/preflight/release/1.2.3'")
     expect(command).toContain("--force-with-lease='refs/heads/release/1.2.3':$expected")
+    expect(command).not.toContain('FETCH_HEAD')
     expect(command).not.toContain('git checkout -B')
   })
 
