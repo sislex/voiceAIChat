@@ -447,15 +447,16 @@ export function registerProjectRoutes(
     }
   )
 
-  // Отдельный merge-ран: сервер сам берёт подготовленную ветку, main и машину.
-  app.post<{ Params: { id: string; taskId: string } }>(
+  // Отдельный merge-ран: сервер сам берёт подготовленную ветку и main; машина —
+  // по умолчанию машина workspace, agentId в теле выбирает другую машину проекта.
+  app.post<{ Params: { id: string; taskId: string }; Body: { agentId?: string } }>(
     '/api/projects/:id/tasks/:taskId/merge',
     async (req, reply) => {
       const project = member(req, req.params.id)
       if (!project) return nf(reply)
       if (project.role !== 'owner') return forbidden(reply)
       try {
-        const run = db.startMergeRun(uid(req), req.params.id, req.params.taskId)
+        const run = db.startMergeRun(uid(req), req.params.id, req.params.taskId, req.body?.agentId ?? null)
         merge?.start(run)
         boardHub.emit(req.params.id)
         return run
@@ -482,9 +483,9 @@ export function registerProjectRoutes(
     }
   })
 
-  app.post<{ Params: { runId: string } }>('/api/merge/runs/:runId/retry', async (req, reply) => {
+  app.post<{ Params: { runId: string }; Body: { agentId?: string } }>('/api/merge/runs/:runId/retry', async (req, reply) => {
     try {
-      const run = db.retryMergeRun(uid(req), req.params.runId)
+      const run = db.retryMergeRun(uid(req), req.params.runId, req.body?.agentId ?? null)
       merge?.start(run)
       boardHub.emit(run.projectId)
       return run
@@ -492,6 +493,15 @@ export function registerProjectRoutes(
       return reply.code(409).send({ error: errMessage(error) })
     }
   })
+
+  // Копии репозиториев задачи по машинам (dev-workspace и merge-клоны).
+  app.get<{ Params: { id: string; taskId: string } }>(
+    '/api/projects/:id/tasks/:taskId/repositories',
+    async (req, reply) => {
+      if (!member(req, req.params.id)) return nf(reply)
+      return db.listTaskRepositories(uid(req), req.params.id, req.params.taskId)
+    }
+  )
 
   // Открыть/создать связанный с задачей чат текущего пользователя.
   app.post<{ Params: { id: string; taskId: string } }>(

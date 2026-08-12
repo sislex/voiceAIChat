@@ -78,3 +78,18 @@ export function canStartMerge(input: MergeAvailability): boolean {
 export function isActiveMergeStatus(status: MergeRunStatus): boolean {
   return ACTIVE_MERGE_STATUSES.includes(status)
 }
+
+/** Копия репозитория задачи на машине: dev-workspace или merge-клон.
+ *  Запись живёт до подтверждённого удаления каталога (state='deleted'). */
+export interface TaskRepository {
+  id: string
+  projectId: string
+  taskId: string
+  agentId: string
+  machineName: string | null
+  path: string
+  kind: 'dev-workspace' | 'merge-clone'
+  state: 'active' | 'deleted'
+  createdAt: number
+  deletedAt: number | null
+}

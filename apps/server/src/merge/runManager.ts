@@ -7,6 +7,11 @@ export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecuto
 const terminal = new Set(['success','failed','cancelled','decision_required'])
 const validSha = /^[0-9a-f]{40}$/i
 const validBranch = /^(?!-)(?!.*\.\.)(?!.*[~^:?*\[\]\\])[A-Za-z0-9._/-]+$/
+/** Канонизирует Git URL до host/owner/repo: SSH- и HTTPS-формы одного
+ *  репозитория совпадают (машинный insteadOf-rewrite меняет протокол). */
+function canonicalGitUrl(value:string):string {
+  return value.trim().toLowerCase().replace(/^[a-z+]+:\/\//,'').replace(/^[^@/]+@/,'').replace(':','/').replace(/\.git$/,'').replace(/\/+$/,'')
+}
 function testStages(value:string):string[] {
   const trimmed=value.trim()
   if(!trimmed)return ['npm run affected-check']
@@ -55,13 +60,25 @@ export class MergeRunManager {
     return normalized.slice(0,split)
   }
   private mergeRepoPath(path:string,id:string):string { return `${path.replace(/[\\/]+$/,'')}.merge-${id}` }
+  /** База merge-клона. На машине workspace — путь workspace; на другой машине
+   *  проекта — {repos_root}/{project}/{issue} по схеме CI-раннера. workdir —
+   *  существующий каталог для запуска клонирования (mkdir -p создаст parent). */
+  private mergeBase(run:MergeRun,ws:{path:string;agentId:string|null}):{base:string;parent:string;workdir:string} {
+    if(!ws.agentId||ws.agentId===run.agentId){ const base=ws.path; const parent=this.workspaceParent(base); return {base,parent,workdir:parent} }
+    const machine=this.deps.db.getProjectMachine(run.projectId,run.agentId)
+    const root=machine?.reposRoot?.replace(/[\\/]+$/,'')
+    if(!root)throw new Error('У выбранной машины нет каталога репозиториев (repos_root)')
+    const segments=ws.path.replace(/[\\/]+$/,'').split(/[\\/]+/), issue=segments.pop(), projectDir=segments.pop()
+    if(!issue||!projectDir)throw new Error('Некорректный путь подготовленного CI-workspace')
+    return {base:`${root}/${projectDir}/${issue}`,parent:`${root}/${projectDir}`,workdir:root}
+  }
   private async execute(id:string,ctl:AbortController):Promise<void> {
     let run=this.deps.db.getMergeRunRaw(id); if(!run)return
     try {
       if(run.pushStartedAt&&run.mergeSha){
         const project=this.deps.db.getProject(run.triggeredBy,run.projectId), ws=this.deps.db.findLatestCiWorkspace(run.projectId,run.taskId)
         if(!project?.gitUrl||!ws?.path)throw new Error('Push начат, но данные проекта недоступны; требуется reconcile')
-        const remote=await this.cmd(run,`git ls-remote ${shellQuote(project.gitUrl)} refs/heads/main`,this.workspaceParent(ws.path),30000)
+        const remote=await this.cmd(run,`git ls-remote ${shellQuote(project.gitUrl)} refs/heads/main`,this.mergeBase(run,ws).workdir,30000)
         if(remote.output.toLowerCase().startsWith(run.mergeSha.toLowerCase())){
           this.finish(id,'success',null,null,'done'); return
         }
@@ -69,15 +86,18 @@ export class MergeRunManager {
       }
       this.stage(id,'checking','running','Проверяю задачу, проект, workspace и машину')
       const project=this.deps.db.getProject(run.triggeredBy,run.projectId), ws=this.deps.db.findLatestCiWorkspace(run.projectId,run.taskId)
-      if(!project||!project.gitUrl||!ws?.pushed||!ws.path||ws.agentId!==run.agentId)throw new Error('Подготовленный CI-workspace или Git origin недоступен')
+      if(!project||!project.gitUrl||!ws?.pushed||!ws.path)throw new Error('Подготовленный CI-workspace или Git origin недоступен')
+      if(ws.agentId!==run.agentId&&!this.deps.db.getProjectMachine(run.projectId,run.agentId))throw new Error('Выбранная машина не привязана к проекту')
       if(!this.deps.isOnline(run.agentId))throw new Error('Выбранная машина не в сети')
       if(run.targetBranch!=='main'||!validBranch.test(run.sourceBranch)||(run.sourceSha!==null&&!validSha.test(run.sourceSha)))throw new Error('Некорректный серверный снимок ветки')
-      const parent=this.workspaceParent(ws.path), repo=this.mergeRepoPath(ws.path,id)
-      const cloned=await this.cmd(run,`git clone --no-checkout --origin origin ${shellQuote(project.gitUrl)} ${shellQuote(repo)}`,parent)
+      const {base,parent,workdir}=this.mergeBase(run,ws), repo=this.mergeRepoPath(base,id)
+      const cloned=await this.cmd(run,`mkdir -p ${shellQuote(parent)}\ngit clone --no-checkout --origin origin ${shellQuote(project.gitUrl)} ${shellQuote(repo)}`,workdir)
       if(cloned.exitCode)throw new Error('Не удалось создать временный Git-клон для merge')
+      this.deps.db.upsertTaskRepository(run.projectId,run.taskId,run.agentId,repo,'merge-clone')
+      if(ws.agentId)this.deps.db.upsertTaskRepository(run.projectId,run.taskId,ws.agentId,ws.path,'dev-workspace')
       const origin=await this.cmd(run,'git remote get-url origin && git rev-parse --is-inside-work-tree',repo,30000)
-      const actual=origin.output.split(/\r?\n/).map(v=>v.trim()).find(Boolean), norm=(v:string)=>v.replace(/\.git$/,'').replace(/\/$/,'')
-      if(origin.exitCode||!actual||norm(actual)!==norm(project.gitUrl))throw new Error('URL origin временного merge-клона не совпадает с проектом')
+      const actual=origin.output.split(/\r?\n/).map(v=>v.trim()).find(Boolean)
+      if(origin.exitCode||!actual||canonicalGitUrl(actual)!==canonicalGitUrl(project.gitUrl))throw new Error('URL origin временного merge-клона не совпадает с проектом')
       this.stage(id,'checking','passed','Серверные проверки пройдены')
 
       const sourceRef=`refs/merge-runs/${id}/source`, targetRef=`refs/merge-runs/${id}/target`
@@ -126,6 +146,7 @@ export class MergeRunManager {
       const verified=await this.cmd(run,'git ls-remote origin refs/heads/main',repo,30000)
       if(!verified.output.toLowerCase().startsWith(mergeSha.toLowerCase()))throw new Error('Неопределённый результат push; требуется reconcile')
       this.stage(id,'pushing','passed','origin/main подтверждён'); this.finish(id,'success',null,null,'done')
+      await this.releaseTaskRepositories(run)
     } catch(error) {
       if(ctl.signal.aborted)return
       const message=error instanceof Error?error.message:String(error), decision=/stale source|конкурентно|reconcile|Неопределённый/i.test(message)
@@ -138,7 +159,22 @@ export class MergeRunManager {
   }
   private cleanup(run:MergeRun):void {
     const ws=this.deps.db.findLatestCiWorkspace(run.projectId,run.taskId); if(!ws?.path)return
-    const repo=this.mergeRepoPath(ws.path,run.id), parent=this.workspaceParent(ws.path)
-    void this.deps.executor.run({agentId:run.agentId,script:`rm -rf -- ${shellQuote(repo)}`,workdir:parent,env:{},timeoutMs:60000,secrets:[]},()=>{}).catch(()=>{})
+    try {
+      const {base,workdir}=this.mergeBase(run,ws), repo=this.mergeRepoPath(base,run.id)
+      void this.deps.executor.run({agentId:run.agentId,script:`rm -rf -- ${shellQuote(repo)}`,workdir,env:{},timeoutMs:60000,secrets:[]},()=>{})
+        .then(result=>{ if(!result.exitCode)this.deps.db.markTaskRepositoryDeleted(run.taskId,run.agentId,repo) })
+        .catch(()=>{})
+    } catch { /* нет привязки машины — запись остаётся до очистки при закрытии задачи */ }
+  }
+  /** Закрытие задачи: удаляет все активные копии её репозиториев на доступных
+   *  машинах; недоступная машина оставляет запись до следующей очистки. */
+  private async releaseTaskRepositories(run:MergeRun):Promise<void> {
+    for(const repo of this.deps.db.listActiveTaskRepositories(run.taskId)){
+      if(!this.deps.isOnline(repo.agentId))continue
+      try {
+        const result=await this.deps.executor.run({agentId:repo.agentId,script:`rm -rf -- ${shellQuote(repo.path)}`,workdir:this.workspaceParent(repo.path),env:{},timeoutMs:60000,secrets:[]},()=>{})
+        if(!result.exitCode)this.deps.db.markTaskRepositoryDeleted(repo.taskId,repo.agentId,repo.path)
+      } catch { /* машина отвалилась в момент очистки — запись остаётся */ }
+    }
   }
 }

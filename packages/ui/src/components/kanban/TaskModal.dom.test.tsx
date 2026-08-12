@@ -357,10 +357,10 @@ describe('TaskModal — описание: маркдаун в просмотре
 describe('TaskModal — вкладки и merge', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
-  it('переключает восемь вкладок без закрытия и сохраняет черновик', async () => {
+  it('переключает девять вкладок без закрытия и сохраняет черновик', async () => {
     const onClose = vi.fn()
     render(<TaskModal {...props({ onClose })} />)
-    expect(screen.getAllByRole('tab')).toHaveLength(8)
+    expect(screen.getAllByRole('tab')).toHaveLength(9)
     fireEvent.change(screen.getByLabelText('Критерии приёмки'), { target: { value: 'черновик' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Ручное QA' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))

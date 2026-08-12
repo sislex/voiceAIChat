@@ -395,6 +395,25 @@ CREATE INDEX IF NOT EXISTS idx_merge_runs_task ON merge_runs(task_id, created_at
 CREATE UNIQUE INDEX IF NOT EXISTS idx_merge_runs_one_active_task ON merge_runs(task_id)
   WHERE status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing');
 
+-- Учёт репозиториев задачи по машинам: dev-workspace и merge-клоны. Запись
+-- создаётся при клонировании, помечается deleted после подтверждённого rm -rf;
+-- при закрытии задачи все активные копии удаляются на всех доступных машинах.
+CREATE TABLE IF NOT EXISTS task_repositories (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'active',
+  created_at INTEGER NOT NULL,
+  deleted_at INTEGER,
+  UNIQUE (task_id, agent_id, path),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_repositories_task ON task_repositories(task_id, state);
+
 -- Наследуемая конфигурация автоматического этапа: owner = project|task.
 -- NULL в поле означает наследование этого поля со следующего уровня.
 CREATE TABLE IF NOT EXISTS ci_stage_llm_configs (

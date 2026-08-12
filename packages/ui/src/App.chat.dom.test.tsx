@@ -74,7 +74,7 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
     await waitFor(() => expect(window.location.hash).toBe('#/'))
     expect(api._state.conversations).toHaveLength(2)
 
-    await userEvent.click(screen.getByTestId('composer-expand'))
+    // Десктопный композер развёрнут по умолчанию (CHAT-180) — кнопки разворота нет.
     const composer = screen.getByPlaceholderText(/Напишите|Расшифровка|Сообщение/i)
     await userEvent.type(composer, 'Первая реплика{Enter}')
     await waitFor(() => expect(window.location.hash).toMatch(/^#\/chat\/.+/))
