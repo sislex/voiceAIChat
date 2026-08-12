@@ -50,8 +50,6 @@ describe('App — командная палитра', () => {
 
   it('⌘K работает и из композера — поле ввода не глотает комбинацию', async () => {
     await renderApp()
-    // Композер открывается свёрнутым — до фокуса в поле его надо развернуть.
-    await userEvent.click(screen.getByTestId('composer-expand'))
     const composer = screen.getByPlaceholderText(/Напишите|Расшифровка|Сообщение/i)
     composer.focus()
     pressPalette()
@@ -109,8 +107,6 @@ describe('App — командная палитра', () => {
 
   it('«?» в поле ввода печатается, а не открывает шпаргалку', async () => {
     await renderApp()
-    // Композер открывается свёрнутым — до фокуса в поле его надо развернуть.
-    await userEvent.click(screen.getByTestId('composer-expand'))
     const composer = screen.getByPlaceholderText(/Напишите|Расшифровка|Сообщение/i)
     composer.focus()
     fireEvent.keyDown(window, { key: '?' })

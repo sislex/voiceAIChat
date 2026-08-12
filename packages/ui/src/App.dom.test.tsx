@@ -43,6 +43,21 @@ async function renderApp(): Promise<FakeApi> {
   return api
 }
 
+function setChatViewport(mobile: boolean): () => void {
+  const original = window.matchMedia
+  window.matchMedia = ((query: string) => ({
+    matches: query === '(max-width: 768px)' ? mobile : false,
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => true
+  })) as typeof window.matchMedia
+  return () => { window.matchMedia = original }
+}
+
 /** Открыть настройки и перейти в раздел меню (Агент — по умолчанию). */
 describe('App — версия релиза', () => {
   it('сохраняет номер версии и показывает коммит с задачей в подсказке', async () => {
@@ -148,6 +163,24 @@ describe('App — действия модели в веб-превью (мост
 })
 
 describe('App — интеграция UI со стором и IPC', () => {
+  it('на десктопе сразу показывает поле, а на мобильном разворачивает его с фокусом', async () => {
+    await renderApp()
+    expect(screen.getByLabelText('Поле ввода сообщения')).toBeInTheDocument()
+    expect(screen.getByLabelText('Поле ввода сообщения')).not.toHaveFocus()
+  })
+
+  it('на viewport 768px и уже открывает свёрнутый композер', async () => {
+    const restore = setChatViewport(true)
+    try {
+      await renderApp()
+      expect(screen.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
+      await userEvent.click(screen.getByTestId('composer-expand'))
+      expect(screen.getByLabelText('Поле ввода сообщения')).toHaveFocus()
+    } finally {
+      restore()
+    }
+  })
+
   it('показывает версию релиза на любой странице и дату в подсказке', async () => {
     await renderApp()
     const version = await screen.findByText('v0.1.0')
@@ -181,8 +214,6 @@ describe('App — интеграция UI со стором и IPC', () => {
 
   it('отправка текста Enter создаёт сообщение и переводит в «Claude думает»', async () => {
     await renderApp()
-    // Композер открывается свёрнутым — до набора текста его надо развернуть.
-    await userEvent.click(screen.getByTestId('composer-expand'))
     const input = screen.getByLabelText('Поле ввода сообщения')
     await userEvent.type(input, 'Привет!{Enter}')
     expect(await screen.findByText('Claude думает', {}, { timeout: 10_000 })).toBeInTheDocument()
