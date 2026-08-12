@@ -88,6 +88,8 @@ export interface ProjectSummary {
   productionAgentId?: string | null
   productionCheckoutPath?: string
   productionHealthCheckCommand?: string
+  /** Настраиваемые owner-only лимиты; новый ран копирует их в шаги. */
+  releaseTimeouts?: import('./release').ReleaseTimeouts
   /** CI-раннер: базовая ветка воркфлоу. */
   ciBaseBranch?: string
   /** CI-раннер: шаблон ветки, по умолчанию `{task_number}` (`CHAT-172`); legacy `{slug}` поддерживается. */
