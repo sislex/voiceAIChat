@@ -12,22 +12,23 @@ describe('CiTaskSettings', () => {
     window.api = {
       'projects:get': async () => ({ machines: [{ agentId: 'm1' }, { agentId: 'm2' }] }),
       'board:get': async () => ({ tasks: [{ id: 't1', agentId: null }] }),
-      'tasks:update': async () => ({})
+      'tasks:update': vi.fn(async () => ({}))
     } as unknown as typeof window.api
-    render(<CiTaskSettings projectId="p1" taskId="t1" />)
+    render(<CiTaskSettings section="machine" projectId="p1" taskId="t1" />)
     const select = await screen.findByLabelText('Машина выполнения')
     await waitFor(() => expect(screen.getAllByRole('option', { name: /m\d/ }).length).toBe(2))
     // Наследование машины проекта — некуда «принудительно»: кнопки нет.
     expect(screen.queryByRole('button', { name: 'Запустить на этой машине сейчас' })).not.toBeInTheDocument()
 
     fireEvent.change(select, { target: { value: 'm2' } })
+    expect(window.api?.['tasks:update']).toHaveBeenCalledWith({ projectId: 'p1', taskId: 't1', agentId: 'm2' })
     fireEvent.click(screen.getByRole('button', { name: 'Запустить на этой машине сейчас' }))
     await waitFor(() => expect(force).toHaveBeenCalledWith('p1', 't1', 'm2'))
     expect(await screen.findByText(/мимо очереди/)).toBeInTheDocument()
   })
 
   it('показывает унаследованные движок и модель и сохраняет переопределение', async () => {
-    render(<CiTaskSettings projectId="p1" taskId="t1" />)
+    render(<CiTaskSettings section="model" projectId="p1" taskId="t1" />)
     await waitFor(() => expect(screen.getByLabelText('Движок модели')).toHaveValue('claude'))
     expect(screen.getAllByText('унаследовано').length).toBeGreaterThan(0)
     fireEvent.change(screen.getByLabelText('Движок модели'), { target: { value: 'codex' } })
@@ -36,7 +37,7 @@ describe('CiTaskSettings', () => {
   })
 
   it('режим и глубина уточнений сохраняются вместе с моделью', async () => {
-    render(<CiTaskSettings projectId="p1" taskId="t1" />)
+    render(<CiTaskSettings section="model" projectId="p1" taskId="t1" />)
     await waitFor(() => expect(screen.getByLabelText('Режим запуска')).toHaveValue('development'))
     // Число вопросов появляется только у «детального уточнения».
     expect(screen.queryByLabelText('Число вопросов')).not.toBeInTheDocument()
@@ -53,7 +54,7 @@ describe('CiTaskSettings', () => {
   })
 
   it('число вопросов зажимается в 1..30', async () => {
-    render(<CiTaskSettings projectId="p1" taskId="t1" />)
+    render(<CiTaskSettings section="model" projectId="p1" taskId="t1" />)
     await waitFor(() => expect(screen.getByLabelText('Степень уточнения')).toHaveValue('few'))
     fireEvent.change(screen.getByLabelText('Степень уточнения'), { target: { value: 'detailed' } })
     const input = await screen.findByLabelText('Число вопросов')
@@ -64,7 +65,7 @@ describe('CiTaskSettings', () => {
   })
 
   it('возвращает настройку проекта: кнопка сброса видна только при переопределении', async () => {
-    render(<CiTaskSettings projectId="p1" taskId="t1" />)
+    render(<CiTaskSettings section="model" projectId="p1" taskId="t1" />)
     await waitFor(() => expect(screen.getByLabelText('Движок модели')).toHaveValue('claude'))
     expect(screen.queryByRole('button', { name: 'Вернуть настройку проекта' })).not.toBeInTheDocument()
 
