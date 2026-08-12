@@ -595,7 +595,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           ? { id: state.activeProjectId, name: boardProjectName }
           : null,
       machines: state.authRequired ? state.agents : [],
-      newChat: () => void actions.newConversation().then((id) => navigate(`/chat/${id}`)),
+      newChat: () => void actions.newConversation().then((id) => navigate(id ? `/chat/${id}` : '/')),
       toggleMic: () => (state.voice === 'listening' ? actions.stopVoice() : actions.startVoice()),
       stopOrCancel,
       toggleAutoSpeak: () => void actions.updateSettings({ autoSpeak: !state.settings.autoSpeak }),
@@ -664,7 +664,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     }
     const target = readerChats[0]
     if (target) { navigate(`/web-reader/${target.id}`, { replace: true }); return }
-    void actions.newConversation('web-recorder').then((id) => navigate(`/web-reader/${id}`, { replace: true }))
+    void actions.newConversation('web-recorder').then((id) => { if (id) navigate(`/web-reader/${id}`, { replace: true }) })
   }, [authed, inReader, legacyReaderRoute, routeReaderChatId, state.activeId, state.conversations, state.conversationsStatus, actions, navigate])
 
   // URL → данные стора: вход/выход в раздел «Проекты», загрузка доски и
@@ -938,7 +938,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         now={now ? now() : Date.now()}
         onNew={() => {
           setSidebarOpen(false)
-          void actions.newConversation().then((id) => navigate(`/chat/${id}`))
+          void actions.newConversation().then((id) => navigate(id ? `/chat/${id}` : '/'))
         }}
         onPick={(id) => {
           setSidebarOpen(false)
@@ -1016,7 +1016,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       <div className={inReader ? `chat-split chat-split--${chatView}` : 'chat-page'} style={inReader ? { '--preview-width': `${previewWidth}%` } as CSSProperties : undefined}>
       {inReader && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>Сайт</button></div></nav>}
       <div className="chat-split-chat">
-      {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={state.activeId ?? ''} onChange={(event) => navigate(`/web-reader/${event.target.value}`)}>{state.conversations.filter((conversation) => conversation.assistantKind === 'web-recorder' || Boolean(conversation.previewUrl)).map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => void actions.newConversation('web-recorder').then((id) => navigate(`/web-reader/${id}`))}>+ Новый</button></header>}
+      {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={state.activeId ?? ''} onChange={(event) => navigate(`/web-reader/${event.target.value}`)}>{state.conversations.filter((conversation) => conversation.assistantKind === 'web-recorder' || Boolean(conversation.previewUrl)).map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => void actions.newConversation('web-recorder').then((id) => { if (id) navigate(`/web-reader/${id}`) })}>+ Новый</button></header>}
       <ChatColumn
         onToggleSidebar={inReader ? undefined : () => {
           if (collapsed) setCollapsedPersist(false)
