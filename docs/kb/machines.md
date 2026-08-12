@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-12
-checked: e7c8311
+checked: d812a98
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -426,6 +426,39 @@ Windows/Android недостоверен. Телеметрия и версия �
 cmd.exe). `MachineStatus.tsx` показывает имя shell-файла в столбце «ОС» и значок
 «⚠ нет bash», когда `shellDegraded`. Поля опциональны: старый агент их не шлёт,
 столбец просто не показывает вторую строку.
+
+## macOS — грабли
+
+**Сломанные Xcode Command Line Tools ломают сборку нативных npm-модулей.**
+Симптом: `npm ci` падает на пакете с нативным аддоном (например,
+`better-sqlite3`) с ошибкой node-gyp `fatal error: 'climits' file not found` —
+компилятор не находит стандартные C++-заголовки, хотя каталог
+`/Library/Developer/CommandLineTools` существует и `xcode-select -p` на него
+указывает. Такое случается после обновления macOS: CLT остаются от старой
+версии системы без заголовков под новый SDK.
+
+Диагностика одной командой (должна завершиться без ошибок):
+
+```bash
+echo '#include <climits>' | c++ -x c++ -c - -o /dev/null
+```
+
+Починка — переустановить CLT (нужен GUI-диалог macOS, из агента не выполнить):
+
+```bash
+sudo rm -rf /Library/Developer/CommandLineTools && xcode-select --install
+```
+
+Обычно проблема маскируется: у популярных аддонов `prebuild-install` скачивает
+готовый бинарник с GitHub Releases и компилятор не нужен. Но скачивание может
+сорваться (наблюдался `socket hang up` при живой сети — флаки GitHub), и тогда
+npm тихо падает в сборку из исходников, которая на такой машине невозможна.
+Разовый обход без починки CLT — подложить скачанный тарболл в npm-кэш,
+prebuild-install сначала смотрит туда:
+`{npm_cache}/_prebuilds/<hash>-<pkg>-v<ver>-node-v<abi>-darwin-arm64.tar.gz`
+(так был разблокирован merge-ран CHAT-181 на MacBook: кэш merge-клона —
+`{repos_root}/{project}/.merge-npm-cache`). Новая версия пакета или Node меняет
+имя тарболла — кэш перестанет спасать, нужен рабочий компилятор.
 
 ## Windows — грабли
 
