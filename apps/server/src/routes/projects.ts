@@ -125,6 +125,7 @@ export function registerProjectRoutes(
       productionAgentId?: string | null
       productionCheckoutPath?: string
       productionHealthCheckCommand?: string
+      releaseTimeouts?: import('@voicechat/shared').ReleaseTimeouts
       ciBaseBranch?: string
       ciBranchTemplate?: string
       ciReuseStrategy?: CiReuseStrategy
@@ -147,6 +148,7 @@ export function registerProjectRoutes(
     }
     if (body.doneRetentionDays !== undefined) body.doneRetentionDays = normRetentionDays(body.doneRetentionDays)
     if (body.ciTestFixCycleLimit !== undefined && (!Number.isInteger(body.ciTestFixCycleLimit) || body.ciTestFixCycleLimit < 0)) return badReq(reply, 'ciTestFixCycleLimit must be a non-negative integer')
+    if (body.releaseTimeouts !== undefined) { try { const { validateReleaseTimeouts } = await import('@voicechat/shared'); validateReleaseTimeouts(body.releaseTimeouts) } catch(error) { return badReq(reply,errMessage(error)) } }
     return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)
   })
 

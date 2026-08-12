@@ -152,7 +152,11 @@ import {
   RELEASE_STEP_ORDER,
   type ProjectRelease,
   type ReleaseStepKind,
-  type ReleaseStepStatus
+  type ReleaseStepStatus,
+  type ReleaseTimeouts,
+  DEFAULT_RELEASE_TIMEOUTS,
+  validateReleaseTimeouts,
+  releaseStepLimit
 } from '@voicechat/shared'
 import { hashPassword, verifyPassword } from '../users/passwords.js'
 
@@ -331,6 +335,7 @@ interface ProjectRow {
   production_agent_id: string | null
   production_checkout_path: string
   production_health_check_command: string
+  release_timeouts_json: string
   default_skills_epic: string
   default_skills_story: string
   default_skills_task: string
@@ -777,6 +782,13 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_agent_id')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_agent_id TEXT`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_checkout_path')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_checkout_path TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_health_check_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_health_check_command TEXT NOT NULL DEFAULT ''`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'release_timeouts_json')) this.db.exec(`ALTER TABLE projects ADD COLUMN release_timeouts_json TEXT NOT NULL DEFAULT '{}'`)
+    const releaseCols = this.db.prepare(`PRAGMA table_info(project_releases)`).all() as Array<{ name: string }>
+    if (releaseCols.length && !releaseCols.some(c=>c.name==='agent_id')) this.db.exec(`ALTER TABLE project_releases ADD COLUMN agent_id TEXT`)
+    if (releaseCols.length && !releaseCols.some(c=>c.name==='checkout_path')) this.db.exec(`ALTER TABLE project_releases ADD COLUMN checkout_path TEXT`)
+    if (releaseCols.length && !releaseCols.some(c=>c.name==='deleted_at')) this.db.exec(`ALTER TABLE project_releases ADD COLUMN deleted_at INTEGER`)
+    const releaseStepCols = this.db.prepare(`PRAGMA table_info(project_release_steps)`).all() as Array<{ name: string }>
+    if (releaseStepCols.length && !releaseStepCols.some(c=>c.name==='limit_ms')) this.db.exec(`ALTER TABLE project_release_steps ADD COLUMN limit_ms INTEGER`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_epic')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_epic TEXT NOT NULL DEFAULT '[]'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_story')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_story TEXT NOT NULL DEFAULT '[]'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_task')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_task TEXT NOT NULL DEFAULT '[]'`)
@@ -1981,6 +1993,7 @@ export class VoiceChatDb {
       productionAgentId: r.production_agent_id,
       productionCheckoutPath: r.production_checkout_path || undefined,
       productionHealthCheckCommand: r.production_health_check_command || undefined,
+      releaseTimeouts: {...DEFAULT_RELEASE_TIMEOUTS,...parseJsonValue<Partial<ReleaseTimeouts>>(r.release_timeouts_json,{})},
       ciBaseBranch: r.ci_base_branch,
       ciBranchTemplate: r.ci_branch_template,
       ciReuseStrategy: r.ci_reuse_strategy === 'reuse' || r.ci_reuse_strategy === 'clean' ? r.ci_reuse_strategy : 'fail',
@@ -2149,6 +2162,7 @@ export class VoiceChatDb {
       productionAgentId?: string | null
       productionCheckoutPath?: string
       productionHealthCheckCommand?: string
+      releaseTimeouts?: ReleaseTimeouts
       ciBaseBranch?: string
       ciBranchTemplate?: string
       ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
@@ -2203,6 +2217,7 @@ export class VoiceChatDb {
     if (fields.productionAgentId !== undefined) { set.push('production_agent_id = ?'); vals.push(fields.productionAgentId) }
     if (fields.productionCheckoutPath !== undefined) { set.push('production_checkout_path = ?'); vals.push(fields.productionCheckoutPath) }
     if (fields.productionHealthCheckCommand !== undefined) { set.push('production_health_check_command = ?'); vals.push(fields.productionHealthCheckCommand) }
+    if (fields.releaseTimeouts !== undefined) { set.push('release_timeouts_json = ?'); vals.push(JSON.stringify(validateReleaseTimeouts(fields.releaseTimeouts))) }
     if (fields.ciBaseBranch !== undefined) { set.push('ci_base_branch = ?'); vals.push(fields.ciBaseBranch) }
     if (fields.ciBranchTemplate !== undefined) { set.push('ci_branch_template = ?'); vals.push(fields.ciBranchTemplate) }
     if (fields.ciReuseStrategy !== undefined) { set.push('ci_reuse_strategy = ?'); vals.push(fields.ciReuseStrategy) }
@@ -4579,16 +4594,17 @@ export class VoiceChatDb {
     this.db.prepare(`UPDATE ci_workspaces SET state='released' WHERE project_id=? AND state='active' AND task_id IN (${placeholders})`).run(projectId,...taskIds)
   }
 
-  createProjectRelease(userId: string, projectId: string, input: { branch: string; version: string; sha: string; status?: ProjectRelease['status']; models?: Partial<Record<ReleaseStepKind, string>>; previousReleaseId?: string | null }): ProjectRelease {
+  createProjectRelease(userId: string, projectId: string, input: { branch: string; version: string; sha: string; status?: ProjectRelease['status']; models?: Partial<Record<ReleaseStepKind, string>>; previousReleaseId?: string | null; agentId?: string; checkoutPath?: string; limits?: ReleaseTimeouts }): ProjectRelease {
     if (!this.isProjectOwner(userId, projectId)) throw new Error('release permission required')
     const previous = input.previousReleaseId ? this.releaseRow(input.previousReleaseId) : null
     if (input.previousReleaseId && (!previous || previous.project_id !== projectId || previous.branch !== input.branch)) throw new Error('invalid previous release')
     const attempt = previous ? previous.attempt + 1 : ((this.db.prepare(`SELECT MAX(attempt) AS n FROM project_releases WHERE project_id=? AND branch=?`).get(projectId,input.branch) as {n:number|null}).n ?? 0) + 1
     const id=this.newId(), now=this.now()
     this.db.transaction(()=>{
-      this.db.prepare(`INSERT INTO project_releases (id,project_id,version,branch,commit_sha,status,triggered_by,attempt,previous_release_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
-        .run(id,projectId,input.version,input.branch,input.sha,input.status??'preparing',userId,attempt,input.previousReleaseId??null,now)
-      RELEASE_STEP_ORDER.forEach((kind,position)=>this.db.prepare(`INSERT INTO project_release_steps (id,release_id,kind,position,status,model,attempt) VALUES (?,?,?,?,?,?,?)`).run(this.newId(),id,kind,position,'queued',input.models?.[kind]??null,attempt))
+      const limits=validateReleaseTimeouts(input.limits??DEFAULT_RELEASE_TIMEOUTS)
+      this.db.prepare(`INSERT INTO project_releases (id,project_id,version,branch,commit_sha,status,triggered_by,attempt,previous_release_id,created_at,agent_id,checkout_path) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(id,projectId,input.version,input.branch,input.sha,input.status??'preparing',userId,attempt,input.previousReleaseId??null,now,input.agentId??null,input.checkoutPath??null)
+      RELEASE_STEP_ORDER.forEach((kind,position)=>this.db.prepare(`INSERT INTO project_release_steps (id,release_id,kind,position,status,model,attempt,limit_ms) VALUES (?,?,?,?,?,?,?,?)`).run(this.newId(),id,kind,position,'queued',input.models?.[kind]??null,attempt,releaseStepLimit(kind,limits)))
       this.addReleaseEvent(id,'release.created',userId,{branch:input.branch,version:input.version,sha:input.sha,attempt})
     })()
     return this.getProjectRelease(userId,projectId,id) as ProjectRelease
@@ -4596,7 +4612,7 @@ export class VoiceChatDb {
 
   listProjectReleases(userId:string,projectId:string):ProjectRelease[] {
     if (!this.isProjectMember(userId,projectId)) return []
-    return (this.db.prepare(`SELECT id FROM project_releases WHERE project_id=? ORDER BY created_at DESC`).all(projectId) as Array<{id:string}>).map(({id})=>this.mapProjectRelease(this.releaseRow(id)!))
+    return (this.db.prepare(`SELECT id FROM project_releases WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at DESC`).all(projectId) as Array<{id:string}>).map(({id})=>this.mapProjectRelease(this.releaseRow(id)!))
   }
 
   listActiveProjectReleases():ProjectRelease[] {
@@ -4627,12 +4643,25 @@ export class VoiceChatDb {
     this.addReleaseEvent(id,`step.${status}`,actor,{kind,log})
   }
 
+  softDeleteProjectRelease(userId:string,projectId:string,id:string):boolean {
+    if(!this.isProjectOwner(userId,projectId))throw new Error('release permission required')
+    const row=this.releaseRow(id)
+    if(!row||row.project_id!==projectId||row.previous_release_id||!['ready','failed'].includes(row.status))throw new Error('Этот релиз нельзя удалить')
+    const active=this.db.prepare(`SELECT 1 FROM project_releases WHERE project_id=? AND previous_release_id=? AND status IN ('queued','switching','building','health_check')`).get(projectId,id)
+    const current=this.db.prepare(`SELECT previous_release_id FROM project_releases WHERE project_id=? AND status='released' ORDER BY released_at DESC LIMIT 1`).get(projectId) as {previous_release_id:string|null}|undefined
+    if(active)throw new Error('У релиза есть активный deploy')
+    if(current?.previous_release_id===id)throw new Error('Текущий production-релиз удалить нельзя')
+    this.db.prepare(`UPDATE project_releases SET deleted_at=? WHERE id=?`).run(this.now(),id)
+    this.addReleaseEvent(id,'release.deleted',userId,{branch:row.branch})
+    return true
+  }
+
   private releaseRow(id:string):ReleaseRow|undefined {
     return this.db.prepare(`SELECT * FROM project_releases WHERE id=?`).get(id) as ReleaseRow|undefined
   }
   private mapProjectRelease(row:ReleaseRow):ProjectRelease {
-    const steps=(this.db.prepare(`SELECT * FROM project_release_steps WHERE release_id=? ORDER BY position`).all(row.id) as ReleaseStepRow[]).map(s=>({id:s.id,kind:s.kind as ReleaseStepKind,status:s.status as ReleaseStepStatus,model:s.model,attempt:s.attempt,log:s.log,startedAt:s.started_at,finishedAt:s.finished_at}))
-    return {id:row.id,projectId:row.project_id,version:row.version,branch:row.branch,sha:row.commit_sha,status:row.status as ProjectRelease['status'],triggeredBy:row.triggered_by,attempt:row.attempt,previousReleaseId:row.previous_release_id,createdAt:row.created_at,releasedAt:row.released_at,steps}
+    const steps=(this.db.prepare(`SELECT * FROM project_release_steps WHERE release_id=? ORDER BY position`).all(row.id) as ReleaseStepRow[]).map(s=>({id:s.id,kind:s.kind as ReleaseStepKind,status:s.status as ReleaseStepStatus,model:s.model,attempt:s.attempt,log:s.log,startedAt:s.started_at,finishedAt:s.finished_at,limitMs:s.limit_ms??null}))
+    return {id:row.id,projectId:row.project_id,version:row.version,branch:row.branch,sha:row.commit_sha,status:row.status as ProjectRelease['status'],triggeredBy:row.triggered_by,attempt:row.attempt,previousReleaseId:row.previous_release_id,createdAt:row.created_at,releasedAt:row.released_at,agentId:row.agent_id??null,checkoutPath:row.checkout_path??null,deletedAt:row.deleted_at??null,steps}
   }
   private addReleaseEvent(releaseId:string,type:string,actor:string,payload:unknown):void {
     this.db.prepare(`INSERT INTO project_release_events (id,release_id,type,actor,payload_json,created_at) VALUES (?,?,?,?,?,?)`).run(this.newId(),releaseId,type,actor,JSON.stringify(payload),this.now())
@@ -4644,8 +4673,8 @@ export class VoiceChatDb {
 }
 
 // ============== Релизы: строки БД ==================
-interface ReleaseRow { id:string;project_id:string;version:string;branch:string;commit_sha:string;status:string;triggered_by:string;attempt:number;previous_release_id:string|null;created_at:number;released_at:number|null }
-interface ReleaseStepRow { id:string;release_id:string;kind:string;position:number;status:string;model:string|null;attempt:number;log:string;started_at:number|null;finished_at:number|null }
+interface ReleaseRow { id:string;project_id:string;version:string;branch:string;commit_sha:string;status:string;triggered_by:string;attempt:number;previous_release_id:string|null;created_at:number;released_at:number|null;agent_id:string|null;checkout_path:string|null;deleted_at:number|null }
+interface ReleaseStepRow { id:string;release_id:string;kind:string;position:number;status:string;model:string|null;attempt:number;log:string;started_at:number|null;finished_at:number|null;limit_ms:number|null }
 
 // ============== Ручное QA: строки БД и мапперы ==================
 interface QaCriterionRow { id:string;task_id:string;position:number;title:string;description:string;preconditions:string;steps:string;test_data:string;expected_result:string;required:number;test_type:string;current_version:number;active:number;author:string;created_at:number;updated_at:number }
