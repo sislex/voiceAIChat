@@ -29,7 +29,7 @@ import { FeaturePreviewSection } from '../preview/FeaturePreviewSection'
 import { ManualQaPanel } from '../qa/ManualQaPanel'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { CiReport } from '../ci/CiReport'
-import { MergeRunFeed } from '../ci/MergeRunFeed'
+import { MergePanel } from '../ci/MergePanel'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { canStartCiRun, isActiveCiStatus, type CiRunSummary, type CiTaskReport } from '@shared/ci'
@@ -73,7 +73,7 @@ export interface TaskModalProps {
   /** Параллельный запуск: сразу в работу, мимо очереди сервера. */
   onStartCiParallel?: (taskId: string) => void
   onOpenCiRun?: (runId: string) => void
-  onStartMerge?: (taskId: string) => void
+  onStartMerge?: (taskId: string, agentId?: string | null) => void
 
   /** Смена статуса = перенос в конец выбранной колонки. */
   onMoveToColumn: (taskId: string, columnId: string) => void
@@ -108,7 +108,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [criteria, setCriteria] = useState(task.acceptanceCriteria)
   const [labelDraft, setLabelDraft] = useState('')
   const [skillDraft, setSkillDraft] = useState('')
-  const [activeTab, setActiveTab] = useState<'general' | 'qa' | 'auto' | 'settings' | 'preview' | 'machine' | 'model' | 'chat'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'qa' | 'auto' | 'merge' | 'settings' | 'preview' | 'machine' | 'model' | 'chat'>('general')
   const [autoTab, setAutoTab] = useState<'development' | 'testing' | 'qa_create' | 'summary' | 'report' | 'kb_usage' | 'kb_updates'>('development')
   // Описание: просмотр (маркдаун) ↔ правка (textarea на 10 строк по кнопке).
   const [descEditing, setDescEditing] = useState(false)
@@ -372,7 +372,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       actions={headActions}
     >
       <nav className="task-tabs" role="tablist" aria-label="Разделы карточки">
-        {([['general','Общее'],['qa','Ручное QA'],['auto','Автошаги'],['settings','Настройки'],['preview','Тестовое окружение'],['machine','Машина выполнения'],['model','Движок модели'],['chat','Чат']] as const).map(([id, label]) => (
+        {([['general','Общее'],['qa','Ручное QA'],['auto','Автошаги'],['merge','Merge'],['settings','Настройки'],['preview','Тестовое окружение'],['machine','Машина выполнения'],['model','Движок модели'],['chat','Чат']] as const).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={activeTab === id} className={activeTab === id ? 'task-tab task-tab--active' : 'task-tab'} onClick={() => setActiveTab(id)}>{label}</button>
         ))}
       </nav>
@@ -382,10 +382,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         props.onSelectedFieldChange?.(field)
       }}>
         <div className="jmodal-main">
-          {props.onStartMerge && canStartMerge({ semanticType: board.columns.find((column) => column.id === task.columnId)?.semanticType ?? 'custom', sourceBranch: task.mergeSourceBranch, alreadyMerged: Boolean(task.mergedSha), hasActiveRun: Boolean(task.activeMergeRunId), permitted: task.mergePermitted, machineBound: task.mergeMachineBound }) && (
-            <Button variant="primary" onClick={() => props.onStartMerge?.(task.id)}>Мерж в main</Button>
-          )}
-          {(task.activeMergeRunId ?? task.latestMergeRunId) && <MergeRunFeed runId={(task.activeMergeRunId ?? task.latestMergeRunId)!} />}
+          {task.activeMergeRunId && <p className="task-merge-hint">Идёт merge-ран — прогресс во вкладке «Merge».</p>}
           {parent && (
             <button className="jmodal-breadcrumb" onClick={() => props.onOpenTask(parent.id)}>
               <TypeIcon type={parent.type} /> {issueKey(props.projectName, parent)} · {parent.title}
@@ -681,6 +678,15 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           <div hidden={autoTab !== 'kb_usage'}>{kbUsage.report && <KbUsageBrief title="Использование БЗ" note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'} totals={kbUsage.report.totals} sections={kbUsage.report.sections} loading={kbUsage.loading} error={kbUsage.error} testId="task-modal-kb-usage" />}</div>
           {autoTab === 'kb_updates' && <p className="task-tab-empty">Обновлённые разделы БЗ появятся после завершения рана.</p>}
           {!['report','kb_usage','kb_updates'].includes(autoTab) && <p className="task-tab-empty">Выберите исторический ран в ленте, чтобы увидеть статус, время, модель, результат, ошибки и журнал этапа «{autoTab}».</p>}
+        </section>
+        <section className="task-tab-panel" data-testid="task-merge-tab" hidden={activeTab !== 'merge'}>
+          <MergePanel
+            projectId={task.projectId}
+            taskId={task.id}
+            runId={(task.activeMergeRunId ?? task.latestMergeRunId) ?? null}
+            canStart={Boolean(props.onStartMerge) && canStartMerge({ semanticType: board.columns.find((column) => column.id === task.columnId)?.semanticType ?? 'custom', sourceBranch: task.mergeSourceBranch, alreadyMerged: Boolean(task.mergedSha), hasActiveRun: Boolean(task.activeMergeRunId), permitted: task.mergePermitted, machineBound: task.mergeMachineBound })}
+            onStartMerge={(agentId) => props.onStartMerge?.(task.id, agentId)}
+          />
         </section>
         <section className="task-tab-panel" data-testid="task-settings-panel" hidden={activeTab !== 'settings'}><CiTaskSettings section="commands" projectId={task.projectId} taskId={task.id} /></section>
         <section className="task-tab-panel" data-testid="task-preview-panel" hidden={activeTab !== 'preview'}><FeaturePreviewSection projectId={task.projectId} taskId={task.id} /></section>

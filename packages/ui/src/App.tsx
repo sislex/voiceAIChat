@@ -14,6 +14,7 @@ import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
 import { VoiceBar } from './components/VoiceBar'
 import { VOICE_INPUT_ENABLED } from './lib/featureFlags'
+import { CHAT_COMPOSER_QUERY, useMediaQuery } from './lib/mediaQuery'
 import { SettingsModal } from './components/SettingsModal'
 import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
@@ -381,6 +382,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const routeReaderChatId = inReader ? (segments[1] ?? null) : null
   const inTaskChat = routeTaskChatId !== null
   const inChat = (!inProjects && !onUtilityPage && !inReader) || inTaskChat
+  const compactChat = useMediaQuery(CHAT_COMPOSER_QUERY)
   const { state, actions } = useVoiceStore({ api, now, delays, initialChatId: routeChatId ?? routeReaderChatId })
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
@@ -1100,6 +1102,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         aiLabel={(activeConversation?.llmProvider ?? state.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar
+            defaultCollapsed={compactChat}
             state={state.voice}
             replyStarted={state.streamingReply.length > 0}
             draft={state.draft}
@@ -1226,7 +1229,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               onStartCiParallel={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId, { launch: 'parallel' }).then((run) => { if (run) actions.openCiRun(run.id) }) }}
               onOpenCiRun={(runId) => actions.openCiRun(runId)}
               onDequeueCiRun={(runId) => void actions.dequeueCiRun(runId)}
-              onStartMerge={(taskId) => { if (routeProjectId) void actions.startMergeRun(routeProjectId, taskId) }}
+              onStartMerge={(taskId, agentId) => { if (routeProjectId) void actions.startMergeRun(routeProjectId, taskId, agentId) }}
               aiAssistPrompts={state.settings.aiAssistPrompts}
               onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
               generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}

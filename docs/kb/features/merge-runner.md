@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
 updated: 2026-08-12
-checked: 513c6d5
+checked: a1e651b
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
@@ -55,6 +55,24 @@ CI-workspace после успешного push может быть `released` �
 `git diff --name-only --diff-filter=U` сохраняются в снимке, ран и карточка
 переходят в `decision_required`; автоматическое LLM-разрешение в текущей
 реализации не запускается.
+
+Машину рана можно выбрать: `POST …/merge` и `…/retry` принимают `agentId` любой
+машины проекта (`startMergeRun` проверяет привязку через `project_machines`);
+без него ран идёт на машине workspace, retry наследует машину предыдущей
+попытки. На машине, отличной от машины разработки, workspace-каталог не нужен:
+клон создаётся в `{repos_root}/{project}/{issue}.merge-<runId>` по схеме
+CI-раннера (`mergeBase` в runManager; `mkdir -p` создаёт родителя). Origin
+клона сверяется канонично (`canonicalGitUrl`: host/owner/repo без протокола,
+`git@`, `.git`), поэтому машинный rewrite SSH→HTTPS (`insteadOf`, MacBook) не
+валит проверку, а посторонний репозиторий по-прежнему отклоняется.
+
+Копии репозиториев задачи учитываются в `task_repositories` (машина, путь,
+`dev-workspace` | `merge-clone`, `active` | `deleted`): merge-клон и workspace
+регистрируются при клонировании, запись помечается `deleted` только после
+подтверждённого `rm -rf`. Успешный merge (закрытие задачи) удаляет все активные
+копии на доступных машинах (`releaseTaskRepositories`); запись недоступной
+машины остаётся до следующей очистки. Список отдаёт
+`GET …/tasks/:taskId/repositories`, в UI он виден во вкладке «Merge» задачи.
 
 Перед проверками менеджер устанавливает зависимости в merge-клоне командой
 `npm ci --no-audit --no-fund` (лимит 15 минут): клон создаётся пустым, без
