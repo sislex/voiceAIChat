@@ -4383,10 +4383,10 @@ export class VoiceChatDb {
       if (row.semantic_type !== 'awaiting_merge') throw new Error('task must be in awaiting_merge')
       if ((row.ci_base_branch || 'main') !== 'main') throw new Error('merge target must be main')
 
-      const workspace = this.db.prepare(`SELECT branch,commit_sha FROM ci_workspaces WHERE task_id=? AND project_id=? AND pushed=1 AND branch IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId, projectId) as { branch: string; commit_sha: string | null } | undefined
+      const workspace = this.db.prepare(`SELECT branch,commit_sha,agent_id FROM ci_workspaces WHERE task_id=? AND project_id=? AND pushed=1 AND branch IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId, projectId) as { branch: string; commit_sha: string | null; agent_id: string | null } | undefined
       if (!workspace?.branch || !workspace.commit_sha || !/^(?!-)(?!.*\.\.)(?!.*[~^:?*\\[\\]\\\\])[A-Za-z0-9._/-]+$/.test(workspace.branch)) throw new Error('prepared task branch or pushed source SHA not found')
-      const agentId = row.agent_id ?? row.default_agent_id
-      if (!agentId || !this.db.prepare(`SELECT 1 FROM project_machines WHERE project_id=? AND agent_id=?`).get(projectId, agentId)) throw new Error('task machine is not bound to project')
+      const agentId = workspace.agent_id
+      if (!agentId || !this.db.prepare(`SELECT 1 FROM project_machines WHERE project_id=? AND agent_id=?`).get(projectId, agentId)) throw new Error('prepared workspace machine is not bound to project')
       if (!this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type='merge'`).get(projectId)) throw new Error('merge column not found')
 
       const id = this.newId(), now = this.now()
