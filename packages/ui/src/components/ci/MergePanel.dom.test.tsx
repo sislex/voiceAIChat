@@ -33,8 +33,12 @@ describe('MergePanel', () => {
     render(<MergePanel projectId="p1" taskId="t1" runId={null} canStart={false} />)
     expect(await screen.findByText('/repos/chatai/CHAT-1')).toBeInTheDocument()
     expect(screen.getByText(/workspace разработки/)).toBeInTheDocument()
+    // Удалённые копии скрыты по умолчанию и появляются за переключателем.
+    expect(screen.queryByText('/repos2/chatai/CHAT-1.merge-x')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText(/показывать удалённые/))
+    expect(screen.getByText('/repos2/chatai/CHAT-1.merge-x')).toBeInTheDocument()
     expect(screen.getByText(/merge-клон/)).toBeInTheDocument()
-    expect(screen.getByText(/удалён/)).toBeInTheDocument()
+    expect(screen.getByText('удалён', { exact: true })).toBeInTheDocument()
     expect(screen.getByText('Merge-ранов у задачи ещё не было.')).toBeInTheDocument()
   })
 })

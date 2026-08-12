@@ -155,7 +155,14 @@ describe('manual QA persistence and workflow', () => {
 
     const failed = db.startMergeRun('owner', project.id, task.id)
     db.updateMergeRun(failed.id, { status: 'failed', stage: 'failed', error: 'Проверки упали (exit 1)' })
-    expect(db.retryMergeRun('owner', failed.id).sourceSha).toBe('1'.repeat(40))
+    const pinned = db.retryMergeRun('owner', failed.id)
+    expect(pinned.sourceSha).toBe('1'.repeat(40))
+
+    db.updateMergeRun(pinned.id, { status: 'failed', stage: 'failed', error: 'Проверки упали (exit 1)' })
+    db.moveMergeTask(project.id, task.id, 'awaiting_merge')
+    expect(db.retryMergeRun('owner', pinned.id, null, true).sourceSha).toBeNull()
+    expect(db.listMergeRuns('owner', project.id, task.id).length).toBeGreaterThanOrEqual(4)
+    expect(db.listMergeRuns('stranger', project.id, task.id)).toHaveLength(0)
   })
 
   it('starts a merge run on an explicitly chosen project machine and rejects unbound ones', () => {
