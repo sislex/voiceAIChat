@@ -119,6 +119,18 @@ describe('VoiceChatDb — разговоры', () => {
     expect(db.getConversation(U, 'нет-такого')).toBeNull()
   })
 
+  it('атомарно создаёт черновик с первой репликой и идемпотентно повторяет его', () => {
+    const args = { role: 'u1' as const, text: 'Первая реплика', time: '10:00' }
+    const first = db.createConversationDraft(U, 'request-1', 'Первая реплика', null, args)
+    const replay = db.createConversationDraft(U, 'request-1', 'Другое название', null, args)
+
+    expect(replay.conversation.id).toBe(first.conversation.id)
+    expect(db.listConversations(U)).toHaveLength(1)
+    expect(first.conversation.title).toBe('Первая реплика')
+    expect(first.messages).toHaveLength(1)
+    expect(first.messages[0].text).toBe('Первая реплика')
+  })
+
   it('поиск находит по названию и по тексту сообщения (регистронезависимо)', () => {
     const a = db.createConversation(U, 'Поездка в Лиссабон')
     const b = db.createConversation(U, 'Рецепты')
@@ -259,6 +271,30 @@ describe('VoiceChatDb — сообщения', () => {
 })
 
 describe('VoiceChatDb — миграция и очистка legacy', () => {
+  it('одноразовая очистка удаляет только однозначный пустой ручной черновик', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-empty-drafts-'))
+    const file = join(dir, 'data.db')
+    const seed = new VoiceChatDb(file)
+    const abandoned = seed.createConversation(U)
+    const renamed = seed.createConversation(U, 'Переименованный')
+    const webReader = seed.createConversation(U, 'Новый разговор', 'web-recorder')
+    const resumed = seed.createConversation(U)
+    seed.setClaudeSession(U, resumed.id, 'session-1')
+    seed.close()
+
+    const raw = new Database(file)
+    raw.prepare(`DELETE FROM schema_migrations WHERE name = 'cleanup-empty-manual-drafts-v1'`).run()
+    raw.close()
+
+    const migrated = new VoiceChatDb(file)
+    expect(migrated.getConversation(U, abandoned.id)).toBeNull()
+    expect(migrated.getConversation(U, renamed.id)).not.toBeNull()
+    expect(migrated.getConversation(U, webReader.id)).not.toBeNull()
+    expect(migrated.getConversation(U, resumed.id)).not.toBeNull()
+    migrated.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('ALTER добавляет engine/user_id и удаляет строки без владельца', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-mig-'))
     const file = join(dir, 'legacy.db')

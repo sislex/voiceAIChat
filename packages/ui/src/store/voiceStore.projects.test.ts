@@ -76,7 +76,10 @@ describe('voiceStore — проекты и доска', () => {
     await store.actions.createProject({ name: 'P1' })
     const p1 = store.getState().projectDetail!.id
     await store.actions.setSidebarProject(p1)
-    const inP1 = await store.actions.newConversation() // чат создаётся в выбранном проекте
+    store.actions.setDraft('Чат P1')
+    await store.actions.submitText()
+    const inP1 = store.getState().activeId!
+    store.actions.cancelRequest()
     await store.actions.setSidebarProject(null)
     expect(store.getState().conversations.some((c) => c.id === inP1)).toBe(false)
 
@@ -177,7 +180,9 @@ describe('voiceStore — связка проекта с чатом', () => {
     await store.actions.linkProjectMachine(pid, ag.id)
     await store.actions.setProjectMachinePath(pid, ag.id, '/srv/p')
     await store.actions.setProjectDefaultMachine(pid, ag.id)
-    await store.actions.newConversation()
+    store.actions.setDraft('Обычный чат')
+    await store.actions.submitText()
+    store.actions.cancelRequest()
     const cid = store.getState().activeId!
     await store.actions.setConversationProject(cid, pid)
     const conv = store.getState().conversations.find((c) => c.id === cid)!
@@ -189,7 +194,9 @@ describe('voiceStore — связка проекта с чатом', () => {
 
   it('openUtilityForActiveChat открывает на машине+папке активного чата; explorer — как папку', async () => {
     const { store } = makeStore()
-    await store.actions.newConversation()
+    store.actions.setDraft('Обычный чат')
+    await store.actions.submitText()
+    store.actions.cancelRequest()
     const cid = store.getState().activeId!
     await store.actions.setConversationExecTarget(cid, 'm1', '/srv/p')
     store.actions.applyAgents([
@@ -207,7 +214,9 @@ describe('voiceStore — связка проекта с чатом', () => {
 
   it('openUtilityForActiveChat сохраняет целевую офлайн-машину, чтобы показать её переподключение', async () => {
     const { store } = makeStore()
-    await store.actions.newConversation()
+    store.actions.setDraft('Обычный чат')
+    await store.actions.submitText()
+    store.actions.cancelRequest()
     const cid = store.getState().activeId!
     await store.actions.setConversationExecTarget(cid, 'm1', '/srv/p')
     store.actions.applyAgents([
@@ -226,10 +235,15 @@ describe('voiceStore — выбор проекта в сайдбаре', () => {
     const { store } = makeStore()
     await store.actions.createProject({ name: 'P' })
     const pid = store.getState().projectDetail!.id
-    await store.actions.newConversation()
+    store.actions.setDraft('Проектный')
+    await store.actions.submitText()
+    store.actions.cancelRequest()
     const inProj = store.getState().activeId!
     await store.actions.setConversationProject(inProj, pid)
     await store.actions.newConversation()
+    store.actions.setDraft('Без проекта')
+    await store.actions.submitText()
+    store.actions.cancelRequest()
     const noProj = store.getState().activeId!
 
     await store.actions.setSidebarProject(pid)
@@ -240,15 +254,18 @@ describe('voiceStore — выбор проекта в сайдбаре', () => {
     expect(store.getState().conversations.map((c) => c.id)).toEqual([noProj])
   })
 
-  it('newConversation при выбранном проекте создаёт чат сразу в нём', async () => {
+  it('проектный черновик сохраняется в проекте только при первой отправке', async () => {
     const { store, api } = makeStore()
     await store.actions.createProject({ name: 'P' })
     const pid = store.getState().projectDetail!.id
-    const spy = vi.spyOn(api, 'conversations:setProject')
+    const spy = vi.spyOn(api, 'conversations:createDraft')
     await store.actions.setSidebarProject(pid)
     await store.actions.newConversation()
+    expect(api._state.conversations).toHaveLength(0)
+    store.actions.setDraft('Первая реплика')
+    await store.actions.submitText()
     const cid = store.getState().activeId!
-    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ id: cid, projectId: pid }))
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ projectId: pid }))
     expect(store.getState().conversations.find((c) => c.id === cid)!.projectId).toBe(pid)
   })
 
