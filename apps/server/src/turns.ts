@@ -236,6 +236,9 @@ const ACTIVITY_CAP = 500
 export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   const listeners = new Set<(m: ServerMessage, ownerUserId: string) => void>()
   const turns = new Map<string, TurnState>()
+  // Новые реплики активного разговора ждут завершения текущего хода. Очереди
+  // разных разговоров независимы; один event loop сериализует переходы FIFO.
+  const queued = new Map<string, StartTurnRequest[]>()
   // Завершённые ходы, чьё сохранение в БД ещё в полёте (перекладка картинок —
   // сетевой шаг). Держим их отдельно от активных `turns`, чтобы flushInterrupted
   // при остановке сервера успел сохранить готовый ответ, если async-запись не
@@ -262,8 +265,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       broadcast({ t: 'claude.error', conversationId, message: 'Учётная запись недоступна.' }, userId)
       return
     }
-    // Новый ход в том же разговоре отменяет прежний (повторная отправка).
-    cancelTurn(conversationId, false)
+    // Второй параллельный ход запрещён: сохраняем запрос FIFO. Пользовательская
+    // реплика уже записана клиентом в историю, поэтому здесь хранится payload хода.
+    if (turns.has(conversationId)) {
+      queued.set(conversationId, [...(queued.get(conversationId) ?? []), req])
+      return
+    }
 
     const conv = deps.db.getConversation(userId, conversationId)
     const settings = deps.db.getSettings(userId)
@@ -734,12 +741,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           void prepared.then((finalText) => {
             if (saved) return // flushInterrupted уже сохранил (сервер останавливается)
             emitDone(finalText, persist(finalText))
+            dispatchNext(conversationId)
           })
         },
         onError: (message) => {
           if (turn.done) return
           finish()
           broadcast({ t: 'claude.error', conversationId, message }, userId)
+          dispatchNext(conversationId)
         },
         // Активность собираем всегда (для подробного вида сообщения); в глобальную
         // консоль (событие claude.log) шлём только если ход запрошен с verbose.
@@ -776,6 +785,18 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
   }
 
+  function dispatchNext(conversationId: string): void {
+    const list = queued.get(conversationId)
+    const next = list?.shift()
+    if (!next) {
+      queued.delete(conversationId)
+      return
+    }
+    if (list?.length) queued.set(conversationId, list)
+    else queued.delete(conversationId)
+    queueMicrotask(() => void start(next))
+  }
+
   /** Отмена одного хода; notify — рассылать ли пустой done (сброс UI вкладок). */
   function cancelTurn(conversationId: string, notify: boolean): void {
     const turn = turns.get(conversationId)
@@ -785,6 +806,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     turn.handle.cancel()
     // Пустой done без message: клиенты сбрасывают «думает…», в БД ничего нет.
     if (notify) broadcast({ t: 'claude.done', conversationId, text: '' }, turn.userId)
+    dispatchNext(conversationId)
   }
 
   function cancel(conversationId?: string): void {
