@@ -345,6 +345,24 @@ describe('REST: conversations/messages/settings', () => {
     expect((await inj({ method: 'POST', url: '/api/migrations/desktop', payload })).json()).toEqual({ conversationsImported: 0, messagesImported: 0 })
   })
 
+  it('draft endpoint атомарно создаёт проектный чат с первой репликой и повторяет ответ', async () => {
+    const project = db.createProject(U, { name: 'Draft project', skills: ['ts'] })
+    const payload = {
+      idempotencyKey: 'draft-request-1',
+      title: 'Файл README.md',
+      projectId: project.id,
+      message: { role: 'u1', text: '📎 README.md', time: '10:00', attachments: [{ path: '/tmp/README.md', name: 'README.md', mimeType: 'text/markdown', size: 10 }] }
+    }
+    const first = await inj({ method: 'POST', url: '/api/conversations/draft', payload })
+    const replay = await inj({ method: 'POST', url: '/api/conversations/draft', payload })
+
+    expect(first.statusCode).toBe(200)
+    expect(replay.json().conversation.id).toBe(first.json().conversation.id)
+    expect(first.json().conversation).toMatchObject({ title: 'Файл README.md', projectId: project.id, skillNames: ['ts'], messageCount: 1 })
+    expect(first.json().messages).toHaveLength(1)
+    expect((await inj({ method: 'GET', url: '/api/conversations' })).json()).toHaveLength(1)
+  })
+
   it('create → list → get', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Тест' } })).json()
     expect(created.title).toBe('Тест')

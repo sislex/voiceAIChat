@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-08-08
-checked: a62f5ad
+updated: 2026-08-12
+checked: 0465712
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -59,6 +59,15 @@ URL руками. Параметризованные пути — функции
 
 Владелец данных — логин пользователя (`uid(req)` = `req.user.name`); запросы к
 разговорам и машинам фильтруются по нему.
+
+Первое сохранение обычного локального черновика идёт через
+`POST /api/conversations/draft` (`REST.conversationDraft`, bridge
+`conversations:createDraft`). Запрос несёт ключ идемпотентности, заголовок,
+необязательный проект и первую реплику; сервер в одной транзакции создаёт разговор,
+применяет проектные настройки и сохраняет сообщение. Повтор с тем же ключом у того
+же пользователя возвращает ранее созданные разговор и сообщения. Формы контракта
+находятся в `packages/shared/src/ipc.ts`, маршрут — в
+`apps/server/src/routes/rest.ts`.
 
 `REST.preview(url)` строит `GET /api/preview?url=…` для same-origin iframe-превью
 внешнего HTTP/HTTPS-сайта. Ручка также проходит общий Bearer-гейт; некорректная

@@ -111,6 +111,20 @@ export async function registerRest(
     }
   })
 
+  app.post<{
+    Body: { idempotencyKey?: string; title?: string; projectId?: string | null; message?: Omit<AddMessageArgs, 'conversationId'> }
+  }>(REST.conversationDraft, async (req, reply) => {
+    const { idempotencyKey, title, projectId, message } = req.body ?? {}
+    if (!idempotencyKey?.trim() || !title?.trim() || !message) {
+      return reply.code(400).send({ error: 'idempotencyKey, title and message are required' })
+    }
+    try {
+      return db.createConversationDraft(uid(req), idempotencyKey, title, projectId ?? null, message)
+    } catch (err) {
+      return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
   app.get<{ Querystring: { q?: string; includeCompleted?: string } }>(REST.conversationsSearch, async (req) =>
     db.searchConversations(uid(req), req.query.q ?? '', { includeCompleted: queryFlag(req.query.includeCompleted) })
   )
