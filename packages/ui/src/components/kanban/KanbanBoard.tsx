@@ -125,7 +125,7 @@ export interface KanbanBoardProps {
   onOpenCiRun?: (runId: string) => void
   /** Убрать ожидающий ран из очереди CI. */
   onDequeueCiRun?: (runId: string) => void
-  onStartMerge?: (taskId: string) => void
+  onStartMerge?: (taskId: string, agentId?: string | null) => void
   aiAssistPrompts?: ModifierPrompt[]
   onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
   generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>

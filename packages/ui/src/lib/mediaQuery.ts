@@ -10,6 +10,9 @@ import { useEffect, useState } from 'react'
 /** Телефонная ширина: та же граница, что у мобильных правил карточки в app.css. */
 export const MOBILE_QUERY = '(max-width: 720px)'
 
+/** Компактная колонка чата: совпадает с мобильными правилами VoiceBar в app.css. */
+export const CHAT_COMPOSER_QUERY = '(max-width: 768px)'
+
 function read(query: string): boolean {
   // jsdom не реализует matchMedia: без него считаем, что условие не выполнено,
   // то есть тесты по умолчанию «десктопные», пока сами не подставят мок.

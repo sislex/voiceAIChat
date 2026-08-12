@@ -1,8 +1,8 @@
 // Композер чата: поле ввода, вложения, микрофон, режим и статус голосового
 // цикла. Панель сворачивается в одну строку: вместе с виджетом задачи она
 // занимала половину экрана телефона и не оставляла ленте сообщений места.
-// Открывается свёрнутой и состояние нигде не хранит — каждая загрузка страницы
-// начинается с максимума места под переписку.
+// На мобильной ширине открывается свёрнутой, на десктопе — развёрнутой.
+// Состояние нигде не хранится и ручной выбор не меняется при resize.
 
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import type { ModifierPrompt, PermissionMode, VoiceState } from '@shared/types'
@@ -64,9 +64,8 @@ export interface VoiceBarProps {
   /** Закрыть панель помощника, ничего не меняя. */
   onClosePromptSuggestions?: () => void
   /**
-   * С какого состояния открыть панель. В приложении дефолт и есть поведение
-   * («свёрнута»), проп существует ради витрины и тестов: состояния композера
-   * иначе не показать, а в каждой сториз кликать по развороту — шум.
+   * С какого состояния открыть панель. Приложение передаёт адаптивное значение,
+   * а проп также позволяет витрине и изолированным тестам выбрать нужный вид.
    */
   defaultCollapsed?: boolean
 }
@@ -110,7 +109,12 @@ export function VoiceBar({
   const composerMode = isIdle || isSpeaking || replyStarted
 
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
-  const toggleCollapsed = (): void => setCollapsed((prev) => !prev)
+  const focusAfterExpandRef = useRef(false)
+  const collapse = (): void => setCollapsed(true)
+  const expand = (): void => {
+    focusAfterExpandRef.current = true
+    setCollapsed(false)
+  }
 
   const fileRef = useRef<HTMLInputElement>(null)
   // Композер начинается с двух строк и растёт с текстом до четырёх, дальше — скролл.
@@ -198,7 +202,7 @@ export function VoiceBar({
               data-testid="composer-expand"
               aria-expanded={false}
               title="Развернуть поле ввода"
-              onClick={toggleCollapsed}
+              onClick={expand}
             >
               <span className="vcollapsed-chevron" aria-hidden>⌃</span>
               <span className="vcollapsed-text">{composerPeek(draft, attachments.length, state, aiLabel)}</span>
@@ -237,7 +241,7 @@ export function VoiceBar({
             aria-label="Свернуть поле ввода"
             title="Свернуть поле ввода"
             data-testid="composer-collapse"
-            onClick={toggleCollapsed}
+            onClick={collapse}
           >
             ⌄
           </IconButton>
@@ -325,7 +329,14 @@ export function VoiceBar({
           {composerMode && (
             <>
               <textarea
-                ref={(element) => { inputRef.current = element; draftRef(element) }}
+                ref={(element) => {
+                  inputRef.current = element
+                  draftRef(element)
+                  if (element && focusAfterExpandRef.current) {
+                    focusAfterExpandRef.current = false
+                    element.focus()
+                  }
+                }}
                 className="tin"
                 placeholder="Напишите сообщение (Shift+Enter — новая строка)…"
                 value={draft}

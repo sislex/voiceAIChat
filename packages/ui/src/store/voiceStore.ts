@@ -962,7 +962,7 @@ export interface StoreActions {
   reloadCiWorkspaces(projectId?: string): Promise<void>
   startCiRun(projectId: string, taskId: string, options?: CiRunMode | { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string; launch?: 'queue' | 'parallel' }): Promise<CiRun | null>
   /** Запустить отдельный merge workflow; сервер повторно валидирует все условия. */
-  startMergeRun(projectId: string, taskId: string): Promise<boolean>
+  startMergeRun(projectId: string, taskId: string, agentId?: string | null): Promise<boolean>
   cancelCiRun(runId: string): Promise<void>
   /** Исключить только ожидающий ран из очереди CI. */
   dequeueCiRun(runId: string): Promise<void>
@@ -3806,10 +3806,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       return null
     }
   }
-  async function startMergeRun(projectId: string, taskId: string): Promise<boolean> {
+  async function startMergeRun(projectId: string, taskId: string, agentId?: string | null): Promise<boolean> {
     if (!ciBridge) return false
     try {
-      await ciBridge.startMerge(projectId, taskId)
+      await ciBridge.startMerge(projectId, taskId, agentId)
       await openBoard(projectId)
       notify({ kind: 'info', text: 'Merge-ран запущен' })
       return true

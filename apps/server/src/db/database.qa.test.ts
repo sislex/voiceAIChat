@@ -157,4 +157,44 @@ describe('manual QA persistence and workflow', () => {
     db.updateMergeRun(failed.id, { status: 'failed', stage: 'failed', error: 'Проверки упали (exit 1)' })
     expect(db.retryMergeRun('owner', failed.id).sourceSha).toBe('1'.repeat(40))
   })
+
+  it('starts a merge run on an explicitly chosen project machine and rejects unbound ones', () => {
+    const project = db.createProject('owner', { name: 'Merge machine choice' })
+    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
+    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at) VALUES (?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1)
+    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at) VALUES (?,?,?,?)`).run('other-agent', 'Other', 'x', 1)
+    raw.prepare(`INSERT INTO project_machines (project_id,agent_id,path,repos_root,added_at,added_by) VALUES (?,?,?,?,?,?)`).run(project.id, 'workspace-agent', '/workspace', '/repos', 1, 'owner')
+    raw.prepare(`INSERT INTO project_machines (project_id,agent_id,path,repos_root,added_at,added_by) VALUES (?,?,?,?,?,?)`).run(project.id, 'other-agent', '/other', '/other-repos', 1, 'owner')
+    raw.prepare(`UPDATE projects SET git_url=? WHERE id=?`).run('git@example/repo.git', project.id)
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace', project.id, task.id, 'workspace-agent', '/repos/task', 'CHAT-180', '1'.repeat(40), 1, 'released', 2)
+
+    expect(() => db.startMergeRun('owner', project.id, task.id, 'ghost-agent')).toThrow('merge machine is not bound to project')
+    const run = db.startMergeRun('owner', project.id, task.id, 'other-agent')
+    expect(run.agentId).toBe('other-agent')
+    expect(db.getProjectMachine(project.id, 'other-agent')).toMatchObject({ reposRoot: '/other-repos' })
+    db.updateMergeRun(run.id, { status: 'failed', stage: 'failed', error: 'Проверки упали (exit 1)' })
+    db.moveMergeTask(project.id, task.id, 'awaiting_merge')
+    expect(db.retryMergeRun('owner', run.id).agentId).toBe('other-agent')
+  })
+
+  it('tracks task repositories per machine until confirmed deletion', () => {
+    const project = db.createProject('owner', { name: 'Task repos' })
+    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    db.upsertTaskRepository(project.id, task.id, 'agent-x', '/repos/chatai/CHAT-1', 'dev-workspace')
+    db.upsertTaskRepository(project.id, task.id, 'agent-y', '/repos2/chatai/CHAT-1.merge-r1', 'merge-clone')
+    expect(db.listActiveTaskRepositories(task.id)).toHaveLength(2)
+
+    db.markTaskRepositoryDeleted(task.id, 'agent-y', '/repos2/chatai/CHAT-1.merge-r1')
+    expect(db.listActiveTaskRepositories(task.id)).toHaveLength(1)
+    const all = db.listTaskRepositories('owner', project.id, task.id)
+    expect(all).toHaveLength(2)
+    expect(all.find((repo) => repo.agentId === 'agent-y')?.state).toBe('deleted')
+    expect(db.listTaskRepositories('stranger', project.id, task.id)).toHaveLength(0)
+
+    db.upsertTaskRepository(project.id, task.id, 'agent-y', '/repos2/chatai/CHAT-1.merge-r1', 'merge-clone')
+    expect(db.listActiveTaskRepositories(task.id)).toHaveLength(2)
+  })
 })
