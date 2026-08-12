@@ -19,8 +19,8 @@
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 36 коммит(ов) в areas после сверки: d812a98 Merge task 49099a4e-9275-4f8c-a21a-6d21a3bdbf67 … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 36 коммит(ов) в areas после сверки: 31c5e8b feat: execute merge runs with realtime feed … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 21 коммит(ов) в areas после сверки: d812a98 Merge task 49099a4e-9275-4f8c-a21a-6d21a3bdbf67 … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-13 | ⚠ 3 коммит(ов) в areas после сверки: d812a98 Merge task 49099a4e-9275-4f8c-a21a-6d21a3bdbf67 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 242 коммит(ов) в areas после сверки: d812a98 Merge task 49099a4e-9275-4f8c-a21a-6d21a3bdbf67 … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-12 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 243 коммит(ов) в areas после сверки: 8dd0fca docs(kb): macOS-грабли — сломанные Xcode CLT и сборка нативных npm-модулей … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ⚠ 13 коммит(ов) в areas после сверки: d812a98 Merge task 49099a4e-9275-4f8c-a21a-6d21a3bdbf67 … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 9 коммит(ов) в areas после сверки: abc8bc6 chatai-178: работа CI-рана … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 4 коммит(ов) в areas после сверки: f105bc7 feat: share project machines with members … |

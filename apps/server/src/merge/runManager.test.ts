@@ -67,6 +67,23 @@ describe('MergeRunManager',()=>{
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
     expect(scripts.some(v=>v.includes('kb.mjs index'))).toBe(true)
   })
+  it('resolves multi-file KB conflicts by normalizing topic metadata and regenerating the index',async()=>{
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','',{output:'CONFLICT\n',exitCode:1},'docs/kb/README.md\ndocs/kb/ui.md\n','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''])
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('success'))
+    expect(s.run.conflicts).toEqual([])
+    const resolve=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script).find(v=>v.includes('kb.mjs touch'))
+    expect(resolve).toContain("'docs/kb/ui.md'")
+    expect(resolve).toContain('kb.mjs index')
+    expect(resolve).toContain('kb.mjs check')
+  })
+  it('stops for a decision when KB topics diverge in content',async()=>{
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','',{output:'CONFLICT\n',exitCode:1},'docs/kb/README.md\ndocs/kb/ui.md\n',{output:'',exitCode:65}])
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('decision_required'))
+    expect(s.run.conflicts).toEqual(['docs/kb/README.md','docs/kb/ui.md'])
+    expect(s.run.stages.find(stage=>stage.stage==='resolving_conflicts')?.message).toContain('содержательное расхождение')
+  })
   it('stops for a decision when conflicts touch anything beyond the KB index',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','',{output:'CONFLICT\n',exitCode:1},'docs/kb/README.md\napps/server/src/index.ts\n'])
     s.manager.start(s.run)
