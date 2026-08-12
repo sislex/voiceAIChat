@@ -144,6 +144,7 @@ function makeCiBridge(httpBase: string, ws: WsClient): RendererCiBridge {
     ...createCiRest(httpBase),
     subscribe: (runId) => ws.send({ t: 'ci.subscribe', runId }),
     unsubscribe: (runId) => ws.send({ t: 'ci.unsubscribe', runId }),
+    onMerge: (cb) => ws.on('merge.snapshot', (m) => cb({ runId: m.runId, run: m.run })),
     onSnapshot: (cb) => ws.on('ci.snapshot', (m) => cb({ runId: m.runId, detail: m.detail, log: m.log })),
     onRun: (cb) => ws.on('ci.run', (m) => cb({ runId: m.runId, run: m.run })),
     onStep: (cb) => ws.on('ci.step', (m) => cb({ runId: m.runId, step: m.step })),

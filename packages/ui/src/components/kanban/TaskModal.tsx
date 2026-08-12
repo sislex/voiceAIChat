@@ -29,6 +29,7 @@ import { FeaturePreviewSection } from '../preview/FeaturePreviewSection'
 import { ManualQaPanel } from '../qa/ManualQaPanel'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { CiReport } from '../ci/CiReport'
+import { MergeRunFeed } from '../ci/MergeRunFeed'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { canStartCiRun, isActiveCiStatus, type CiRunSummary, type CiTaskReport } from '@shared/ci'
@@ -384,6 +385,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           {props.onStartMerge && canStartMerge({ semanticType: board.columns.find((column) => column.id === task.columnId)?.semanticType ?? 'custom', sourceBranch: task.mergeSourceBranch, alreadyMerged: Boolean(task.mergedSha), hasActiveRun: Boolean(task.activeMergeRunId), permitted: task.mergePermitted, machineBound: task.mergeMachineBound }) && (
             <Button variant="primary" onClick={() => props.onStartMerge?.(task.id)}>Мерж в main</Button>
           )}
+          {(task.activeMergeRunId ?? task.latestMergeRunId) && <MergeRunFeed runId={(task.activeMergeRunId ?? task.latestMergeRunId)!} />}
           {parent && (
             <button className="jmodal-breadcrumb" onClick={() => props.onOpenTask(parent.id)}>
               <TypeIcon type={parent.type} /> {issueKey(props.projectName, parent)} · {parent.title}
