@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
 updated: 2026-08-12
-checked: 946dac1
+checked: 62d8bfc
 areas:
   - packages/shared/src/release.ts
   - packages/shared/src/protocol.ts
@@ -33,7 +33,7 @@ Deploy доступен только владельцу и только для �
 
 Перед созданием попытки сервер обновляет origin на CI/Git-машине и требует, чтобы текущий SHA ветки совпадал с SHA подготовки. Попытка хранит этот SHA неизменно. На production-машине этап `switching` проверяет чистое рабочее дерево и точное совпадение URL origin, fetch-ит выбранную ветку в уникальный ref `refs/voicechat/releases/<attempt-id>`, сверяет этот стабильный ref и доступность commit object, затем переключает checkout на `release/x.y.z`, приводит его к сохранённому SHA через `reset --hard` и удаляет временный ref. Глобальный `FETCH_HEAD` намеренно не читается: его может перезаписать параллельное обновление списка release-веток.
 
-Этап `building` запускает только сохранённую production-команду проекта; для ChatAI это фоновый host-side deploy, который возвращает управление до пересоздания контейнеров. Затем `health_check` повторяет сохранённую команду проверки и принимает публикацию только когда JSON health содержит ожидаемый commit SHA. Состояние `building`/`health_check` хранится в БД: после рестарта сервер восстанавливает активную попытку и продолжает health-check, поэтому пересоздание `runner-work` или server не даёт ложный `failed`. Deploy не повторяет regression/`kb:index`, не делает merge или push основной ветки, не создаёт теги и не очищает CI/preview workspace.
+Этап `building` запускает сохранённую production-команду проекта, предварительно экспортируя в её окружение проверенную версию release-ветки как `VC_RELEASE_VERSION`; поэтому версия в production health и футере не зависит от наличия Git-тега на сохранённом SHA. Для ChatAI production-команда — это фоновый host-side deploy, который возвращает управление до пересоздания контейнеров. Затем `health_check` повторяет сохранённую команду проверки и принимает публикацию только когда JSON health содержит ожидаемый commit SHA. Состояние `building`/`health_check` хранится в БД: после рестарта сервер восстанавливает активную попытку и продолжает health-check, поэтому пересоздание `runner-work` или server не даёт ложный `failed`. Deploy не повторяет regression/`kb:index`, не делает merge или push основной ветки, не создаёт теги и не очищает CI/preview workspace.
 
 Статусы подготовки — `preparing`, `checking`, `ready`, `failed`; статусы deploy — `queued`, `switching`, `building`, `health_check`, `released`, `failed`. История в `project_releases`, шагах и событиях сохраняет каждую попытку и её связь с подготовленной записью. Повторный deploy старой подготовленной ветки использует тот же механизм и тот же сохранённый SHA, без merge, тегов или git revert.
 
