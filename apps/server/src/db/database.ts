@@ -4508,7 +4508,9 @@ export class VoiceChatDb {
     if (!previous) throw new Error('merge run not found')
     if (ACTIVE_MERGE_STATUSES.includes(previous.status)) return previous
     this.moveMergeTask(previous.projectId, previous.taskId, 'awaiting_merge')
-    return this.startMergeRun(userId, previous.projectId, previous.taskId)
+    const next = this.startMergeRun(userId, previous.projectId, previous.taskId)
+    if (previous.conflicts.length > 0) return this.updateMergeRun(next.id, { sourceSha: null }) ?? next
+    return next
   }
 
   private mapMergeRun(r: Record<string, unknown>): MergeRun {
