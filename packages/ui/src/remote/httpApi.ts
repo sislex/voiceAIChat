@@ -50,8 +50,16 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     const token = getToken()
     if (token) headers['authorization'] = `Bearer ${token}`
     const res = await fetch(httpBase + path, { ...init, headers })
-    if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
     const text = await res.text()
+    if (!res.ok) {
+      let detail = ''
+      try {
+        const body = text ? JSON.parse(text) as { error?: unknown; message?: unknown } : null
+        const value = body?.error ?? body?.message
+        if (typeof value === 'string') detail = value
+      } catch {}
+      throw new Error(detail || `${init?.method ?? 'GET'} ${path} → ${res.status}`)
+    }
     return (text ? JSON.parse(text) : undefined) as T
   }
 
@@ -102,6 +110,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       if (!res.ok) throw new Error(`GET ${REST.conversation(id)} → ${res.status}`)
       return res.json()
     },
+    'conversations:listMachines': ({ id, projectId }) =>
+      req(`${REST.conversationMachines(id)}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
     'conversations:search': ({ query, includeCompleted }) =>
       req(`${REST.conversationsSearch}?q=${encodeURIComponent(query)}${includeCompleted ? '&includeCompleted=1' : ''}`),
     'messages:search': ({ query, projectId, conversationId, limit, cursor }) => {
@@ -381,6 +391,9 @@ export function createCiRest(httpBase: string): RendererCiRest {
     putTaskCi: (projectId, taskId, config) => req<CiSlotConfig>(REST.taskCi(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
     startRun: (projectId, taskId, options) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST', body: JSON.stringify(options ?? {}) }),
     startMerge: (projectId, taskId) => req<import('@shared/merge').MergeRun>(REST.taskMergeStart(projectId, taskId), { method: 'POST', body: '{}' }),
+    getMerge: (runId) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}`),
+    cancelMerge: (runId) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' }),
+    retryMerge: (runId) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST' }),
     forceStartRun: (projectId, taskId, agentId) => req<CiRun>(REST.ciRunForceStart(projectId, taskId), { method: 'POST', body: JSON.stringify({ agentId }) }),
     getRun: (runId) => req<CiRunDetail>(REST.ciRun(runId)),
     getRunLog: (runId) => req<CiLogLine[]>(REST.ciRunLog(runId)),

@@ -610,6 +610,7 @@ export interface StoreActions {
   /** Изменить машину только одного разговора. */
   setConversationExecTarget(id: string, execTarget: string | null, workdir?: string | null, skillNames?: string[], llmProvider?: LlmProvider | null, llmModel?: string | null, permissionMode?: PermissionMode | null, kbContextMode?: KbContextMode, llmEngineId?: string | null): Promise<void>
   setConversationProject(id: string, projectId: string | null): Promise<void>
+  fetchConversationMachines(id: string, projectId?: string | null): Promise<AgentInfo[]>
   setConversationPreviewUrl(id: string, previewUrl: string | null): Promise<void>
   /** Сменить статус жизненного цикла чата (дропдаун в сайдбаре). */
   setConversationStatus(id: string, status: ConversationStatus): Promise<void>
@@ -3529,6 +3530,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       return null
     }
   }
+  async function fetchConversationMachines(id: string, projectId?: string | null): Promise<AgentInfo[]> {
+    return api['conversations:listMachines']({ id, projectId })
+  }
   /** Привязать/отвязать чат к проекту; сервер перезаписывает машину/папку/навыки. */
   async function setConversationProject(id: string, projectId: string | null): Promise<void> {
     const conversation = await api['conversations:setProject']({ id, projectId })
@@ -4302,6 +4306,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setProjectReposRoot,
       setProjectDefaultMachine,
       fetchProjectDetail,
+      fetchConversationMachines,
       setConversationProject,
       setConversationPreviewUrl,
       setConversationStatus,

@@ -140,6 +140,8 @@ export interface IpcInvokeMap {
   'widget:get': { arg: import('./widgetAssistant').WidgetToolGetRequest; result: import('./widgetAssistant').WidgetToolGetResult }
   'widget:action': { arg: import('./widgetAssistant').WidgetToolActionRequest; result: import('./widgetAssistant').WidgetToolActionResult }
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
+  /** Доступные текущему пользователю машины в контексте разговора/проекта. */
+  'conversations:listMachines': { arg: { id: string; projectId?: string | null }; result: import('./agentProtocol').AgentInfo[] }
   /**
    * Поиск разговоров по названию и содержимому сообщений (регистронезависимо).
    * Состав тот же, что у `conversations:list`, включая `includeCompleted`.
@@ -745,6 +747,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:create',
   'conversations:createDraft',
   'conversations:get',
+  'conversations:listMachines',
   'conversations:search',
   'messages:search',
   'conversations:rename',

@@ -355,6 +355,8 @@ describe('TaskModal — описание: маркдаун в просмотре
 })
 
 describe('TaskModal — вкладки и merge', () => {
+  beforeEach(() => { window.ci = createFakeCi() })
+
   it('переключает восемь вкладок без закрытия и сохраняет черновик', async () => {
     const onClose = vi.fn()
     render(<TaskModal {...props({ onClose })} />)
@@ -364,6 +366,32 @@ describe('TaskModal — вкладки и merge', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
     expect(screen.getByLabelText('Критерии приёмки')).toHaveValue('черновик')
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('правая панель «Общего» не содержит тематические секции', () => {
+    render(<TaskModal {...props()} />)
+    const details = screen.getByTestId('task-modal-details')
+    for (const title of ['Использование БЗ', 'Тестовое окружение', 'Команды воркфлоу', 'Машина выполнения', 'Движок модели']) {
+      expect(within(details).queryByText(title)).not.toBeInTheDocument()
+    }
+  })
+
+  it('машина и LLM размещены в разных вкладках, черновик LLM переживает переключение', async () => {
+    render(<TaskModal {...props()} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Движок модели' }))
+    const modelPanel = screen.getByTestId('task-model-panel')
+    await waitFor(() => expect(within(modelPanel).getByLabelText('Движок модели')).toHaveValue('claude'))
+    expect(within(modelPanel).queryByLabelText('Машина выполнения')).not.toBeInTheDocument()
+    fireEvent.change(within(modelPanel).getByLabelText('Движок модели'), { target: { value: 'codex' } })
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Машина выполнения' }))
+    const machinePanel = screen.getByTestId('task-machine-panel')
+    expect(within(machinePanel).getByLabelText('Машина выполнения')).toBeInTheDocument()
+    expect(within(machinePanel).queryByLabelText('Движок модели')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Движок модели' }))
+    expect(within(modelPanel).getByLabelText('Движок модели')).toHaveValue('codex')
   })
 })
 
@@ -397,7 +425,7 @@ describe('TaskModal — использование базы знаний по р
     const block = await screen.findByTestId('task-modal-kb-usage')
     expect(within(block).getByText('по 2 ранам задачи')).toBeInTheDocument()
     expect(within(block).getByTestId('task-modal-kb-usage-nums').textContent).toContain('5 обращений')
-    expect(within(block).getByRole('link', { name: /CI-раннер/ })).toHaveAttribute('href', '#/kb/ci-runner')
+    expect(within(block).getByRole('link', { name: /CI-раннер/, hidden: true })).toHaveAttribute('href', '#/kb/ci-runner')
   })
 
   it('у эпика блока нет: раны бывают только у задач', () => {
@@ -436,9 +464,9 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     expect(text(within(block).getByTestId('task-modal-report-model-time'))).toContain('10м 40с')
     // Шаги — со статусом и временем, вложенный вызов команды моделью тоже.
     const steps = within(block).getByTestId('task-modal-report-steps')
-    expect(within(steps).getByRole('rowheader', { name: /npm ci/ })).toBeInTheDocument()
-    expect(within(steps).getByRole('rowheader', { name: /Установить зависимости/ })).toBeInTheDocument()
-    expect(within(steps).getByRole('rowheader', { name: /Работа модели/ })).toBeInTheDocument()
+    expect(within(steps).getByRole('rowheader', { name: /npm ci/, hidden: true })).toBeInTheDocument()
+    expect(within(steps).getByRole('rowheader', { name: /Установить зависимости/, hidden: true })).toBeInTheDocument()
+    expect(within(steps).getByRole('rowheader', { name: /Работа модели/, hidden: true })).toBeInTheDocument()
     expect(within(steps).getAllByText('9м 00с').length).toBeGreaterThan(0)
   })
 
@@ -563,7 +591,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     const block = await screen.findByTestId('task-modal-report')
     // По умолчанию — свежий ран со своими шагами.
     expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('$0.50')
-    await userEvent.click(within(block).getByRole('button', { name: 'Итог по задаче' }))
+    await userEvent.click(within(block).getByRole('button', { name: 'Итог по задаче', hidden: true }))
     expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('$2.34')
     expect(within(block).getByTestId('task-modal-report-runs')).toBeInTheDocument()
   })
@@ -574,7 +602,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
 
     const block = await screen.findByTestId('task-modal-report')
     expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('—')
-    expect(within(block).getByRole('rowheader', { name: /npm ci/ })).toBeInTheDocument()
+    expect(within(block).getByRole('rowheader', { name: /npm ci/, hidden: true })).toBeInTheDocument()
     // Стадий у рана до фичи расхода нет — таблицы тоже нет, а не пустая шапка.
     expect(within(block).queryByTestId('task-modal-report-stages')).not.toBeInTheDocument()
   })
@@ -583,9 +611,9 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
     const stages = await screen.findByTestId('task-modal-report-stages')
-    const row = within(stages).getByRole('rowheader', { name: 'Актуализация базы знаний' }).closest('tr')!
+    const row = within(stages).getByRole('rowheader', { name: 'Актуализация базы знаний', hidden: true }).closest('tr')!
     expect(text(row)).toContain('sonnet')
-    expect(text(within(stages).getByRole('rowheader', { name: 'Разработка' }).closest('tr')!)).toContain('opus')
+    expect(text(within(stages).getByRole('rowheader', { name: 'Разработка', hidden: true }).closest('tr')!)).toContain('opus')
   })
 
   it('у задачи с активным раном отчёта нет — там лента', async () => {

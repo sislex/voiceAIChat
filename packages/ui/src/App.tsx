@@ -1460,6 +1460,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           defaultAgentId={state.settings.defaultAgentId}
           projects={state.projects}
           fetchProjectDetail={actions.fetchProjectDetail}
+          fetchMachines={actions.fetchConversationMachines}
           onSave={async ({ title, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
             await actions.renameConversation(activeConversation.id, title)
             await actions.setConversationProject(activeConversation.id, projectId)

@@ -381,6 +381,10 @@ CREATE TABLE IF NOT EXISTS merge_runs (
   production_status TEXT,
   error TEXT,
   log TEXT NOT NULL DEFAULT '',
+  stages_json TEXT NOT NULL DEFAULT '[]',
+  checks_json TEXT NOT NULL DEFAULT '[]',
+  recommended_action TEXT,
+  push_started_at INTEGER,
   started_at INTEGER,
   finished_at INTEGER,
   created_at INTEGER NOT NULL,
@@ -389,7 +393,7 @@ CREATE TABLE IF NOT EXISTS merge_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_merge_runs_task ON merge_runs(task_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_merge_runs_one_active_task ON merge_runs(task_id)
-  WHERE status IN ('queued','checking','resolving_conflicts','testing','pushing','deploying','production_checks','rolling_back');
+  WHERE status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing');
 
 -- Наследуемая конфигурация автоматического этапа: owner = project|task.
 -- NULL в поле означает наследование этого поля со следующего уровня.
