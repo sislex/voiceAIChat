@@ -58,4 +58,22 @@ export function registerReleaseRoutes(app:FastifyInstance,db:VoiceChatDb,release
   app.get<{Params:{id:string;releaseId:string}}>('/api/projects/:id/releases/:releaseId',async(req,reply)=>
     db.getProjectRelease(uid(req),req.params.id,req.params.releaseId)??nf(reply)
   )
+
+  // Деплой из ленты merge-рана: штатный release-механизм по ветке main,
+  // идентификатор и статус выпуска сохраняются в снимке рана.
+  app.post<{Params:{runId:string}}>('/api/merge/runs/:runId/deploy',async(req,reply)=>{
+    const run=db.getMergeRun(uid(req),req.params.runId)
+    if(!run)return nf(reply)
+    if(!owner(req,run.projectId))return forbidden(reply)
+    if(run.status!=='success')return bad(reply,'Деплой доступен только после успешного merge')
+    const ci=ciTarget(req,run.projectId)
+    const production=productionTarget(req,run.projectId)
+    if(!ci)return nf(reply)
+    if(!production)return bad(reply,'Production-машина, checkout, deploy-команда или health-check не настроены')
+    try{
+      const release=await releases.start(uid(req),ci,production,run.targetBranch)
+      db.updateMergeRun(run.id,{deployId:release.id,deployVersion:release.version||release.branch,productionStatus:release.status})
+      return reply.code(202).send(db.getMergeRun(uid(req),run.id))
+    }catch(error){return bad(reply,error)}
+  })
 }

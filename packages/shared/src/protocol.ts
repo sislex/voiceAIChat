@@ -256,6 +256,9 @@ export const REST = {
   mergeRun: (runId: string) => `/api/merge/runs/${encodeURIComponent(runId)}`,
   taskRepositories: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/repositories`,
+  taskMergeRuns: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/merge/runs`,
+  mergeRunDeploy: (runId: string) => `/api/merge/runs/${encodeURIComponent(runId)}/deploy`,
   taskQa: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa`,
   taskQaCriteria: (id: string, taskId: string) =>

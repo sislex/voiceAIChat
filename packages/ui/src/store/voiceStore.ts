@@ -3268,6 +3268,18 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ notices: state.notices.filter((item) => item.id !== id) })
   }
 
+  // Merge — длинная операция: терминальный исход показываем тостом, где бы
+  // пользователь ни находился. Дедуп по (ран, статус) — снимки приходят повторно.
+  const mergeNoticeSeen = new Map<string, string>()
+  ciBridge?.onMerge?.(({ run }) => {
+    if (!['success', 'failed', 'cancelled', 'decision_required'].includes(run.status)) { mergeNoticeSeen.set(run.id, run.status); return }
+    if (mergeNoticeSeen.get(run.id) === run.status) return
+    mergeNoticeSeen.set(run.id, run.status)
+    if (run.status === 'success') notify({ kind: 'success', text: `Merge ${run.sourceBranch} → main завершён успешно` })
+    else if (run.status === 'decision_required') notify({ kind: 'error', text: `Merge ${run.sourceBranch}: нужно решение — ${run.error ?? 'см. вкладку Merge задачи'}` })
+    else if (run.status === 'failed') notify({ kind: 'error', text: `Merge ${run.sourceBranch} завершился с ошибкой: ${run.error ?? 'см. вкладку Merge задачи'}` })
+  })
+
   /** Показать ошибку упавшего вызова моста; retry — если повтор безопасен. */
   function fail(err: unknown, retry?: () => void): void {
     notify({ kind: 'error', text: err instanceof Error ? err.message : String(err), ...(retry ? { retry } : {}) })

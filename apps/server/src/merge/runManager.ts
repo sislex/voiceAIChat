@@ -59,18 +59,22 @@ export class MergeRunManager {
     if(split<=0)throw new Error('Некорректный путь подготовленного CI-workspace')
     return normalized.slice(0,split)
   }
-  private mergeRepoPath(path:string,id:string):string { return `${path.replace(/[\\/]+$/,'')}.merge-${id}` }
-  /** База merge-клона. На машине workspace — путь workspace; на другой машине
-   *  проекта — {repos_root}/{project}/{issue} по схеме CI-раннера. workdir —
-   *  существующий каталог для запуска клонирования (mkdir -p создаст parent). */
-  private mergeBase(run:MergeRun,ws:{path:string;agentId:string|null}):{base:string;parent:string;workdir:string} {
-    if(!ws.agentId||ws.agentId===run.agentId){ const base=ws.path; const parent=this.workspaceParent(base); return {base,parent,workdir:parent} }
-    const machine=this.deps.db.getProjectMachine(run.projectId,run.agentId)
-    const root=machine?.reposRoot?.replace(/[\\/]+$/,'')
-    if(!root)throw new Error('У выбранной машины нет каталога репозиториев (repos_root)')
-    const segments=ws.path.replace(/[\\/]+$/,'').split(/[\\/]+/), issue=segments.pop(), projectDir=segments.pop()
-    if(!issue||!projectDir)throw new Error('Некорректный путь подготовленного CI-workspace')
-    return {base:`${root}/${projectDir}/${issue}`,parent:`${root}/${projectDir}`,workdir:root}
+  /** Постоянный merge-клон проекта на машине рана: {repos_root}/{project}/.merge.
+   *  На машине workspace каталог проекта берётся из пути workspace, на другой
+   *  машине — из её repos_root; клон переживает раны, дерево вычищается перед
+   *  каждым merge, node_modules сохраняется между ранами. */
+  private mergeBase(run:MergeRun,ws:{path:string;agentId:string|null}):{repo:string;parent:string;workdir:string;cacheDir:string} {
+    const parent=(():string=>{
+      if(!ws.agentId||ws.agentId===run.agentId)return this.workspaceParent(ws.path)
+      const machine=this.deps.db.getProjectMachine(run.projectId,run.agentId)
+      const root=machine?.reposRoot?.replace(/[\\/]+$/,'')
+      if(!root)throw new Error('У выбранной машины нет каталога репозиториев (repos_root)')
+      const segments=ws.path.replace(/[\\/]+$/,'').split(/[\\/]+/); segments.pop(); const projectDir=segments.pop()
+      if(!projectDir)throw new Error('Некорректный путь подготовленного CI-workspace')
+      return `${root}/${projectDir}`
+    })()
+    const workdir=(!ws.agentId||ws.agentId===run.agentId)?parent:this.workspaceParent(parent)
+    return {repo:`${parent}/.merge`,parent,workdir,cacheDir:`${parent}/.merge-npm-cache`}
   }
   private async execute(id:string,ctl:AbortController):Promise<void> {
     let run=this.deps.db.getMergeRunRaw(id); if(!run)return
@@ -90,10 +94,9 @@ export class MergeRunManager {
       if(ws.agentId!==run.agentId&&!this.deps.db.getProjectMachine(run.projectId,run.agentId))throw new Error('Выбранная машина не привязана к проекту')
       if(!this.deps.isOnline(run.agentId))throw new Error('Выбранная машина не в сети')
       if(run.targetBranch!=='main'||!validBranch.test(run.sourceBranch)||(run.sourceSha!==null&&!validSha.test(run.sourceSha)))throw new Error('Некорректный серверный снимок ветки')
-      const {base,parent,workdir}=this.mergeBase(run,ws), repo=this.mergeRepoPath(base,id)
-      const cloned=await this.cmd(run,`mkdir -p ${shellQuote(parent)}\ngit clone --no-checkout --origin origin ${shellQuote(project.gitUrl)} ${shellQuote(repo)}`,workdir)
-      if(cloned.exitCode)throw new Error('Не удалось создать временный Git-клон для merge')
-      this.deps.db.upsertTaskRepository(run.projectId,run.taskId,run.agentId,repo,'merge-clone')
+      const {repo,parent,workdir,cacheDir}=this.mergeBase(run,ws)
+      const cloned=await this.cmd(run,`mkdir -p ${shellQuote(parent)}\nif [ -d ${shellQuote(`${repo}/.git`)} ]; then echo "постоянный merge-клон уже создан"; else git clone --no-checkout --origin origin ${shellQuote(project.gitUrl)} ${shellQuote(repo)}; fi`,workdir)
+      if(cloned.exitCode)throw new Error('Не удалось подготовить постоянный merge-клон')
       if(ws.agentId)this.deps.db.upsertTaskRepository(run.projectId,run.taskId,ws.agentId,ws.path,'dev-workspace')
       const origin=await this.cmd(run,'git remote get-url origin && git rev-parse --is-inside-work-tree',repo,30000)
       const actual=origin.output.split(/\r?\n/).map(v=>v.trim()).find(Boolean)
@@ -105,26 +108,49 @@ export class MergeRunManager {
       const fetched=await this.cmd(run,`git fetch --no-tags origin +${shellQuote(run.sourceBranch)}:${shellQuote(sourceRef)} +refs/heads/main:${shellQuote(targetRef)}\nprintf 'SOURCE=%s\\nTARGET=%s\\n' "$(git rev-parse ${shellQuote(sourceRef)})" "$(git rev-parse ${shellQuote(targetRef)})"`,repo)
       const source=fetched.output.match(/SOURCE=([0-9a-f]{40})/i)?.[1],target=fetched.output.match(/TARGET=([0-9a-f]{40})/i)?.[1]
       if(fetched.exitCode||!source||!target)throw new Error('Не удалось получить ветки из origin')
-      if(run.sourceSha&&source.toLowerCase()!==run.sourceSha.toLowerCase())throw new Error('stale source: ветка изменилась после development-рана')
       this.deps.db.updateMergeRun(id,{sourceSha:source,targetSha:target}); this.stage(id,'fetching','passed',`Source ${source.slice(0,8)}, main ${target.slice(0,8)}`)
 
-      this.stage(id,'merging','running','Подготавливаю изолированный Git-клон')
-      const prep=await this.cmd(run,`git checkout --detach ${shellQuote(targetRef)}`,repo)
-      if(prep.exitCode)throw new Error('Не удалось подготовить временный merge-клон')
+      // Уже влитая ветка — мгновенный успех до stale-сверки: закрытие задачи,
+      // а не полный гейт с холостым push.
+      const contained=await this.cmd(run,`git merge-base --is-ancestor ${shellQuote(sourceRef)} ${shellQuote(targetRef)} && echo MERGED || echo PENDING`,repo,30000)
+      if(/(^|\n)MERGED/.test(contained.output)){
+        this.deps.db.updateMergeRun(id,{mergeSha:target})
+        this.stage(id,'merging','passed','Ветка уже вмержена в main')
+        this.finish(id,'success',null,null,'done')
+        await this.releaseTaskRepositories(run)
+        return
+      }
+      if(run.sourceSha&&source.toLowerCase()!==run.sourceSha.toLowerCase())throw new Error('stale source: ветка изменилась после development-рана')
+
+      this.stage(id,'merging','running','Вычищаю дерево постоянного merge-клона')
+      const prep=await this.cmd(run,`git merge --abort 2>/dev/null || true\ngit checkout -f --detach ${shellQuote(targetRef)}\ngit reset --hard\ngit clean -fd`,repo)
+      if(prep.exitCode)throw new Error('Не удалось подготовить постоянный merge-клон')
       const merged=await this.cmd(run,`git -c user.name=voiceAIChat -c user.email=merge@voicechat.local merge --no-ff ${shellQuote(sourceRef)} -m ${shellQuote(`Merge task ${run.taskId}`)}`,repo)
       if(merged.exitCode){
         const found=await this.cmd(run,'git diff --name-only --diff-filter=U',repo,30000), files=found.output.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)
-        this.deps.db.updateMergeRun(id,{conflicts:files}); this.stage(id,'resolving_conflicts','failed',`Конфликты: ${files.join(', ')||'не удалось определить'}`)
-        this.finish(id,'decision_required','Конфликты требуют решения пользователя','Разрешите файлы в ветке задачи и повторите merge.','decision_required'); return
+        this.deps.db.updateMergeRun(id,{conflicts:files})
+        if(files.length===1&&files[0]==='docs/kb/README.md'){
+          // Перегенерируемый индекс БЗ — единственный машинно-разрешимый конфликт.
+          this.stage(id,'resolving_conflicts','running','Конфликт только в docs/kb/README.md — перегенерирую индекс')
+          const resolved=await this.cmd(run,`node scripts/kb.mjs index && git add docs/kb/README.md && git -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --no-edit`,repo,120000)
+          if(resolved.exitCode||resolved.timedOut)throw new Error('Не удалось автоматически разрешить конфликт индекса БЗ')
+          this.deps.db.updateMergeRun(id,{conflicts:[]})
+          this.stage(id,'resolving_conflicts','passed','Индекс БЗ перегенерирован, merge продолжен')
+        } else {
+          this.stage(id,'resolving_conflicts','failed',`Конфликты: ${files.join(', ')||'не удалось определить'}`)
+          this.finish(id,'decision_required','Конфликты требуют решения пользователя','Разрешите файлы в ветке задачи и повторите merge.','decision_required'); return
+        }
       }
       const rev=await this.cmd(run,'git rev-parse HEAD',repo,30000), mergeSha=rev.output.match(/[0-9a-f]{40}/i)?.[0]
       if(!mergeSha)throw new Error('Merge-коммит не создан')
       this.deps.db.updateMergeRun(id,{mergeSha}); this.stage(id,'merging','passed',`Создан merge ${mergeSha.slice(0,8)}`)
 
-      this.stage(id,'testing','running','Устанавливаю зависимости merge-клона')
-      const installed=await this.cmd(run,'npm ci --no-audit --no-fund',repo,900000)
+      this.stage(id,'testing','running','Проверяю зависимости merge-клона')
+      // node_modules переживает раны: установка нужна только при изменении
+      // package-lock.json; маркер живёт внутри node_modules (git clean его не трёт).
+      const installed=await this.cmd(run,`LOCK=$(git hash-object package-lock.json)\nif [ -f node_modules/.merge-lock-sha ] && [ "$(cat node_modules/.merge-lock-sha)" = "$LOCK" ]; then echo DEPS_UP_TO_DATE; else npm_config_cache=${shellQuote(cacheDir)} npm ci --no-audit --no-fund && printf %s "$LOCK" > node_modules/.merge-lock-sha; fi`,repo,900000)
       if(installed.exitCode||installed.timedOut)throw new Error('Не удалось установить зависимости merge-клона')
-      this.stage(id,'testing','running','Запускаю обязательные проверки до push')
+      this.stage(id,'testing','running',installed.output.includes('DEPS_UP_TO_DATE')?'Зависимости актуальны (npm ci пропущен), запускаю проверки':'Запускаю обязательные проверки до push')
       const commands=testStages(project.testCommand??''), began=this.now()
       let tested:{exitCode:number|null;timedOut:boolean;output:string}={exitCode:0,timedOut:false,output:''}
       for(const command of commands){
@@ -151,24 +177,17 @@ export class MergeRunManager {
       if(ctl.signal.aborted)return
       const message=error instanceof Error?error.message:String(error), decision=/stale source|конкурентно|reconcile|Неопределённый/i.test(message)
       this.finish(id,decision?'decision_required':'failed',message,decision?'Обновите ветку или main и повторите merge.':'Исправьте причину и повторите merge.',decision?'decision_required':'awaiting_merge')
-    } finally { const last=this.deps.db.getMergeRunRaw(id); if(last)this.cleanup(last) }
+    }
   }
   private finish(id:string,status:'success'|'failed'|'cancelled'|'decision_required',error:string|null,action:string|null,column:'done'|'awaiting_merge'|'decision_required'):void {
     const run=this.deps.db.getMergeRunRaw(id); if(!run||terminal.has(run.status))return
     this.deps.db.updateMergeRun(id,{status,stage:status,finishedAt:this.now(),error,recommendedAction:action}); this.deps.db.moveMergeTask(run.projectId,run.taskId,column); this.emit(id); this.deps.boardChanged(run.projectId)
   }
-  private cleanup(run:MergeRun):void {
-    const ws=this.deps.db.findLatestCiWorkspace(run.projectId,run.taskId); if(!ws?.path)return
-    try {
-      const {base,workdir}=this.mergeBase(run,ws), repo=this.mergeRepoPath(base,run.id)
-      void this.deps.executor.run({agentId:run.agentId,script:`rm -rf -- ${shellQuote(repo)}`,workdir,env:{},timeoutMs:60000,secrets:[]},()=>{})
-        .then(result=>{ if(!result.exitCode)this.deps.db.markTaskRepositoryDeleted(run.taskId,run.agentId,repo) })
-        .catch(()=>{})
-    } catch { /* нет привязки машины — запись остаётся до очистки при закрытии задачи */ }
-  }
   /** Закрытие задачи: удаляет все активные копии её репозиториев на доступных
-   *  машинах; недоступная машина оставляет запись до следующей очистки. */
-  private async releaseTaskRepositories(run:MergeRun):Promise<void> {
+   *  машинах; недоступная машина оставляет запись до следующей очистки.
+   *  Постоянный merge-клон проекта в учёте задач не значится и не трогается.
+   *  Публичный: вызывается и при ручном переносе карточки в Done. */
+  async releaseTaskRepositories(run:{taskId:string}):Promise<void> {
     for(const repo of this.deps.db.listActiveTaskRepositories(run.taskId)){
       if(!this.deps.isOnline(repo.agentId))continue
       try {

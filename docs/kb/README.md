@@ -9,29 +9,29 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 74 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 75 коммит(ов) в areas после сверки: bfec9ba CHAT-180: вкладка merge-рана с выбором машины, учёт репозиториев задачи, канонизация origin URL … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 9 коммит(ов) в areas после сверки: 183a5f6 feat: add structured manual QA workflow … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-12 | ⚠ 8 коммит(ов) в areas после сверки: ec3020c fix: unpin source SHA when retrying a stale-source merge run … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-12 | ⚠ 9 коммит(ов) в areas после сверки: bfec9ba CHAT-180: вкладка merge-рана с выбором машины, учёт репозиториев задачи, канонизация origin URL … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-12 | ⚠ 1 коммит(ов) в areas после сверки: 31c5e8b feat: execute merge runs with realtime feed |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-12 | ⚠ 11 коммит(ов) в areas после сверки: ec3020c fix: unpin source SHA when retrying a stale-source merge run … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-12 | ⚠ 12 коммит(ов) в areas после сверки: bfec9ba CHAT-180: вкладка merge-рана с выбором машины, учёт репозиториев задачи, канонизация origin URL … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: f2b5d60 fix(ci): name task branches and workspaces by issue key … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 33 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 34 коммит(ов) в areas после сверки: bfec9ba CHAT-180: вкладка merge-рана с выбором машины, учёт репозиториев задачи, канонизация origin URL … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 36 коммит(ов) в areas после сверки: 31c5e8b feat: execute merge runs with realtime feed … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 17 коммит(ов) в areas после сверки: ec3020c fix: unpin source SHA when retrying a stale-source merge run … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-12 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 237 коммит(ов) в areas после сверки: a1e651b Merge main into CHAT-180: regenerate KB index … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ⚠ 9 коммит(ов) в areas после сверки: a1e651b Merge main into CHAT-180: regenerate KB index … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 18 коммит(ов) в areas после сверки: bfec9ba CHAT-180: вкладка merge-рана с выбором машины, учёт репозиториев задачи, канонизация origin URL … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-13 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 238 коммит(ов) в areas после сверки: bfec9ba CHAT-180: вкладка merge-рана с выбором машины, учёт репозиториев задачи, канонизация origin URL … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ⚠ 10 коммит(ов) в areas после сверки: bfec9ba CHAT-180: вкладка merge-рана с выбором машины, учёт репозиториев задачи, канонизация origin URL … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 9 коммит(ов) в areas после сверки: abc8bc6 chatai-178: работа CI-рана … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 4 коммит(ов) в areas после сверки: f105bc7 feat: share project machines with members … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 9 коммит(ов) в areas после сверки: ec3020c fix: unpin source SHA when retrying a stale-source merge run … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-11 | ⚠ 18 коммит(ов) в areas после сверки: a1e651b Merge main into CHAT-180: regenerate KB index … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-12 | ⚠ 5 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 50 коммит(ов) в areas после сверки: ec3020c fix: unpin source SHA when retrying a stale-source merge run … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 19 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 10 коммит(ов) в areas после сверки: bfec9ba CHAT-180: вкладка merge-рана с выбором машины, учёт репозиториев задачи, канонизация origin URL … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-11 | ⚠ 19 коммит(ов) в areas после сверки: bfec9ba CHAT-180: вкладка merge-рана с выбором машины, учёт репозиториев задачи, канонизация origin URL … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-12 | ⚠ 6 коммит(ов) в areas после сверки: bfec9ba CHAT-180: вкладка merge-рана с выбором машины, учёт репозиториев задачи, канонизация origin URL … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 51 коммит(ов) в areas после сверки: bfec9ba CHAT-180: вкладка merge-рана с выбором машины, учёт репозиториев задачи, канонизация origin URL … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 20 коммит(ов) в areas после сверки: bfec9ba CHAT-180: вкладка merge-рана с выбором машины, учёт репозиториев задачи, канонизация origin URL … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 10 коммит(ов) в areas после сверки: 9daab6d fix(docker): make whisper build portable on arm64 … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-12 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-13 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-12, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
 
