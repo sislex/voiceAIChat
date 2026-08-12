@@ -56,16 +56,31 @@ export async function registerAgentRoutes(
   registry: AgentRegistry,
   artifacts: AppArtifacts = {}
 ): Promise<void> {
-  app.get(REST.agents, async (req): Promise<AgentInfo[]> => {
+  const withLiveStatus = (agents: ReturnType<VoiceChatDb['listAgents']>): AgentInfo[] => {
     const online = registry.onlineIds()
-    return db.listAgents(uid(req)).map((a) => ({
+    return agents.map((a) => ({
       ...a,
       online: online.has(a.id),
       version: registry.versionOf(a.id),
       telemetry: registry.telemetryOf(a.id),
       imageHost: registry.imageHostOf(a.id)
     }))
-  })
+  }
+
+  app.get(REST.agents, async (req): Promise<AgentInfo[]> =>
+    withLiveStatus(db.listAgents(uid(req)))
+  )
+
+  app.get<{ Params: { id: string }; Querystring: { projectId?: string } }>(
+    '/api/conversations/:id/machines',
+    async (req, reply) => {
+      const userId = uid(req)
+      const conversation = db.getConversation(userId, req.params.id)
+      if (!conversation) return reply.code(404).send({ error: 'not found' })
+      const projectId = req.query.projectId ?? conversation.projectId
+      return withLiveStatus(db.listUsableAgents(userId, projectId))
+    }
+  )
 
   // Управление машиной — только владелец; использование может быть делегировано
   // проектом, но лишь при явном projectId в конкретной операции.

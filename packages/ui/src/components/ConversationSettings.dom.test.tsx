@@ -146,6 +146,30 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'p1', execTarget: 'm1', workdir: '/srv/p' })))
   })
 
+  it('проектный чат объединяет личные и проектные машины без дублей', async () => {
+    const projectAgent = makeAgent({ id: 'p-machine', name: 'Проектная машина' })
+    const conv = { ...conversation, projectId: 'p1' }
+    const fetchMachines = vi.fn().mockResolvedValue([agent, agent, projectAgent])
+    render(<ConversationSettings conversation={conv} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} fetchMachines={fetchMachines} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+
+    const select = await screen.findByRole('combobox', { name: 'Машина разговора' })
+    await waitFor(() => expect(select.querySelectorAll('option[value="m1"]')).toHaveLength(1))
+    expect(select.querySelector('option[value="p-machine"]')).toHaveTextContent('Проектная машина')
+    expect(fetchMachines).toHaveBeenCalledWith('c1', 'p1')
+  })
+
+  it('сбрасывает ранее выбранную недоступную машину и сообщает о потере доступа', async () => {
+    const unavailable = makeAgent({ id: 'gone', name: 'Бывшая машина' })
+    const conv = { ...conversation, execTarget: unavailable.id }
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(<ConversationSettings conversation={conv} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} fetchMachines={vi.fn().mockResolvedValue([agent])} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+
+    expect(await screen.findByRole('status')).toHaveTextContent('больше недоступна')
+    expect(screen.getByRole('combobox', { name: 'Машина разговора' })).toHaveValue('')
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ execTarget: null })))
+  })
+
   it('подписи режимов БЗ соответствуют семантике «инструменты модели», а не «вручную»', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)

@@ -238,6 +238,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       draftRequests.set(idempotencyKey, conv.id)
       return { conversation: withCounts(conv), messages: [persisted] }
     },
+    'conversations:listMachines': async () => agents.map((a) => ({ ...a })),
     'conversations:get': async ({ id }) => {
       const conv = conversations.find((c) => c.id === id)
       if (!conv) return null
@@ -975,7 +976,10 @@ export function createFakeCi(): FakeCi {
     getTaskCi: async () => ({ config: { beforeModel: [], afterModel: [] }, overridden: false, projectDefault: { beforeModel: [], afterModel: [] } }),
     putTaskCi: async (_pid, _tid, config) => config,
     startRun: async (projectId, taskId, options) => { const run = { ...mkRun(projectId, taskId), mode: options?.mode ?? projectLlm.mode }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
-    startMerge: async (projectId, taskId) => ({ id: `merge-${taskId}`, projectId, taskId, status: 'queued', triggeredBy: 'admin', sourceBranch: `feature/${taskId}`, targetBranch: 'main', sourceSha: null, targetSha: null, mergeSha: null, revertSha: null, agentId: 'a1', llmEngineId: null, llmProvider: 'claude', llmModel: '', stage: 'queued', conflicts: [], deployId: null, deployVersion: null, productionStatus: null, error: null, log: '', startedAt: now(), finishedAt: null, createdAt: now() }),
+    startMerge: async (projectId, taskId) => ({ id: `merge-${taskId}`, projectId, taskId, status: 'queued', triggeredBy: 'admin', sourceBranch: `feature/${taskId}`, targetBranch: 'main', sourceSha: null, targetSha: null, mergeSha: null, revertSha: null, agentId: 'a1', llmEngineId: null, llmProvider: 'claude', llmModel: '', stage: 'queued', stages: [], conflicts: [], conflictDetails: [], checks: [], deployId: null, deployVersion: null, productionStatus: null, error: null, recommendedAction: null, log: '', canCancel: true, canRetry: false, pushStartedAt: null, startedAt: now(), finishedAt: null, createdAt: now() }),
+    getMerge: async () => { throw new Error('merge run not found') },
+    cancelMerge: async () => { throw new Error('merge run not found') },
+    retryMerge: async () => { throw new Error('merge run not found') },
     forceStartRun: async (projectId, taskId, agentId) => { const run = { ...mkRun(projectId, taskId), agentId }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
     getRun: async (rid) => runs.get(rid) ?? { run: mkRun('p', 't'), steps: [], fixAttempts: [], interactions: [] },
     getRunLog: async (rid) => logs.get(rid) ?? [],
@@ -1033,6 +1037,7 @@ export function createFakeCi(): FakeCi {
     },
     subscribe: (runId) => { const d = runs.get(runId); if (d) emit('ci.snapshot', { runId, detail: d, log: logs.get(runId) ?? [] }) },
     unsubscribe: () => {},
+    onMerge: (cb) => on('merge.snapshot', cb as L),
     onSnapshot: (cb) => on('ci.snapshot', cb as L),
     onRun: (cb) => on('ci.run', cb as L),
     onStep: (cb) => on('ci.step', cb as L),

@@ -29,6 +29,7 @@ import { FeaturePreviewSection } from '../preview/FeaturePreviewSection'
 import { ManualQaPanel } from '../qa/ManualQaPanel'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { CiReport } from '../ci/CiReport'
+import { MergeRunFeed } from '../ci/MergeRunFeed'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { canStartCiRun, isActiveCiStatus, type CiRunSummary, type CiTaskReport } from '@shared/ci'
@@ -384,6 +385,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           {props.onStartMerge && canStartMerge({ semanticType: board.columns.find((column) => column.id === task.columnId)?.semanticType ?? 'custom', sourceBranch: task.mergeSourceBranch, alreadyMerged: Boolean(task.mergedSha), hasActiveRun: Boolean(task.activeMergeRunId), permitted: task.mergePermitted, machineBound: task.mergeMachineBound }) && (
             <Button variant="primary" onClick={() => props.onStartMerge?.(task.id)}>Мерж в main</Button>
           )}
+          {(task.activeMergeRunId ?? task.latestMergeRunId) && <MergeRunFeed runId={(task.activeMergeRunId ?? task.latestMergeRunId)!} />}
           {parent && (
             <button className="jmodal-breadcrumb" onClick={() => props.onOpenTask(parent.id)}>
               <TypeIcon type={parent.type} /> {issueKey(props.projectName, parent)} · {parent.title}
@@ -476,7 +478,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               if (criteria !== task.acceptanceCriteria) props.onUpdate(task.id, { acceptanceCriteria: criteria })
             }}
           />
-          {task.type === 'task' && <ManualQaPanel projectId={task.projectId} taskId={task.id} />}
           {children.length > 0 && (
             <>
               <h3 className="jmodal-h">Подзадачи</h3>
@@ -670,44 +671,22 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               </div>
             </div>
           )}
-          {task.type === 'task' && ciFinished && (
-            <CiReport
-              report={ciReport.report}
-              loading={ciReport.loading}
-              error={ciReport.error}
-              onOpenRun={props.onOpenCiRun}
-              testId="task-modal-report"
-            />
-          )}
-          {task.type === 'task' && kbUsage.report && (
-            <KbUsageBrief
-              title="Использование БЗ"
-              note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'}
-              totals={kbUsage.report.totals}
-              sections={kbUsage.report.sections}
-              loading={kbUsage.loading}
-              error={kbUsage.error}
-              testId="task-modal-kb-usage"
-            />
-          )}
-          {task.type === 'task' && <FeaturePreviewSection projectId={task.projectId} taskId={task.id} />}
-          <CiTaskSettings projectId={task.projectId} taskId={task.id} />
         </aside>
-        {activeTab === 'qa' && <section className="task-tab-panel"><ManualQaPanel projectId={task.projectId} taskId={task.id} /></section>}
-        {activeTab === 'auto' && <section className="task-tab-panel">
+        <section className="task-tab-panel" hidden={activeTab !== 'qa'}><ManualQaPanel projectId={task.projectId} taskId={task.id} /></section>
+        <section className="task-tab-panel" hidden={activeTab !== 'auto'}>
           <nav className="task-subtabs" role="tablist" aria-label="Автоматические этапы">
             {([['development','Разработка'],['testing','Тестирование'],['qa_create','Создание ручного QA'],['summary','Резюме'],['report','Отчёт'],['kb_usage','Использование БЗ'],['kb_updates','Обновлённые разделы БЗ']] as const).map(([id,label]) => <button key={id} role="tab" aria-selected={autoTab === id} className={autoTab === id ? 'task-tab task-tab--active' : 'task-tab'} onClick={() => setAutoTab(id)}>{label}</button>)}
           </nav>
-          {autoTab === 'report' && <CiReport report={ciReport.report} loading={ciReport.loading} error={ciReport.error} onOpenRun={props.onOpenCiRun} />}
-          {autoTab === 'kb_usage' && kbUsage.report && <KbUsageBrief title="Использование БЗ" totals={kbUsage.report.totals} sections={kbUsage.report.sections} loading={kbUsage.loading} error={kbUsage.error} />}
+          <div hidden={autoTab !== 'report'}><CiReport report={ciReport.report} loading={ciReport.loading} error={ciReport.error} onOpenRun={props.onOpenCiRun} testId="task-modal-report" /></div>
+          <div hidden={autoTab !== 'kb_usage'}>{kbUsage.report && <KbUsageBrief title="Использование БЗ" note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'} totals={kbUsage.report.totals} sections={kbUsage.report.sections} loading={kbUsage.loading} error={kbUsage.error} testId="task-modal-kb-usage" />}</div>
           {autoTab === 'kb_updates' && <p className="task-tab-empty">Обновлённые разделы БЗ появятся после завершения рана.</p>}
           {!['report','kb_usage','kb_updates'].includes(autoTab) && <p className="task-tab-empty">Выберите исторический ран в ленте, чтобы увидеть статус, время, модель, результат, ошибки и журнал этапа «{autoTab}».</p>}
-        </section>}
-        {activeTab === 'settings' && <section className="task-tab-panel"><CiTaskSettings projectId={task.projectId} taskId={task.id} /></section>}
-        {activeTab === 'preview' && <section className="task-tab-panel"><FeaturePreviewSection projectId={task.projectId} taskId={task.id} /></section>}
-        {activeTab === 'machine' && <section className="task-tab-panel"><h3>Машина выполнения</h3><p>{task.agentId ? `Выбрана машина ${task.agentId}` : 'Машина проекта по умолчанию'}</p>{task.mergeMachineBound === false && <p className="task-tab-warning">Машина не привязана к проекту. Запуск merge заблокирован.</p>}</section>}
-        {activeTab === 'model' && <section className="task-tab-panel"><h3>Движок модели</h3><p>Эффективная конфигурация и override задачи задаются ниже.</p><CiTaskSettings projectId={task.projectId} taskId={task.id} /></section>}
-        {activeTab === 'chat' && <section className="task-tab-panel"><h3>Чат задачи</h3><p>Открывается существующий связанный разговор; повторное открытие не создаёт дубликат.</p><Button variant="primary" onClick={() => props.onOpenChat?.(task.id)}>Открыть чат</Button>{task.activeMergeStatus && <p>Merge-ран: {task.activeMergeStatus}</p>}</section>}
+        </section>
+        <section className="task-tab-panel" data-testid="task-settings-panel" hidden={activeTab !== 'settings'}><CiTaskSettings section="commands" projectId={task.projectId} taskId={task.id} /></section>
+        <section className="task-tab-panel" data-testid="task-preview-panel" hidden={activeTab !== 'preview'}><FeaturePreviewSection projectId={task.projectId} taskId={task.id} /></section>
+        <section className="task-tab-panel" data-testid="task-machine-panel" hidden={activeTab !== 'machine'}><CiTaskSettings section="machine" projectId={task.projectId} taskId={task.id} mergeMachineBound={task.mergeMachineBound} /></section>
+        <section className="task-tab-panel" data-testid="task-model-panel" hidden={activeTab !== 'model'}><CiTaskSettings section="model" projectId={task.projectId} taskId={task.id} /></section>
+        <section className="task-tab-panel" hidden={activeTab !== 'chat'}><h3>Чат задачи</h3><p>Открывается существующий связанный разговор; повторное открытие не создаёт дубликат.</p><Button variant="primary" onClick={() => props.onOpenChat?.(task.id)}>Открыть чат</Button>{task.activeMergeStatus && <p>Merge-ран: {task.activeMergeStatus}</p>}</section>
       </div>
     </Dialog>
     <PromptBuilder {...aiAssist.popupProps} />

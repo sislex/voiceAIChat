@@ -12,7 +12,7 @@ export interface ReleaseTimeouts {
   buildingMs: number
   healthCheckMs: number
 }
-export const DEFAULT_RELEASE_TIMEOUTS: ReleaseTimeouts = { knowledgeBaseMs: 600_000, regressionMs: 600_000, switchingMs: 120_000, buildingMs: 600_000, healthCheckMs: 300_000 }
+export const DEFAULT_RELEASE_TIMEOUTS: ReleaseTimeouts = { knowledgeBaseMs: 600_000, regressionMs: 600_000, switchingMs: 120_000, buildingMs: 600_000, healthCheckMs: 1_800_000 }
 export const RELEASE_TIMEOUT_MIN_MS = 1_000
 export const RELEASE_TIMEOUT_MAX_MS = 86_400_000
 export function validateReleaseTimeouts(value: ReleaseTimeouts): ReleaseTimeouts {

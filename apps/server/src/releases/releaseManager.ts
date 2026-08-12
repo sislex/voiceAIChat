@@ -181,7 +181,7 @@ export class ReleaseManager {
 
   private async monitorHealth(actor:string,target:ProductionTarget,release:ProjectRelease):Promise<void> {
     let last='Production ещё не ответил'
-    const limit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='health_check')?.limitMs??300_000
+    const limit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='health_check')?.limitMs??DEFAULT_RELEASE_TIMEOUTS.healthCheckMs
     const started=Date.now()
     for(let attempt=0;Date.now()-started<limit;attempt+=1){
       try{

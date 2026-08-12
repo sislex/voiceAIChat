@@ -1,0 +1,102 @@
+---
+title: Merge-ран задачи: безопасное слияние в main
+updated: 2026-08-12
+checked: 31c5e8b
+areas:
+  - packages/shared/src/merge.ts
+  - packages/shared/src/projects.ts
+  - packages/shared/src/protocol.ts
+  - apps/server/src/merge
+  - apps/server/src/db/database.ts
+  - apps/server/src/db/schema.ts
+  - apps/server/src/routes/projects.ts
+  - apps/server/src/server.ts
+  - packages/ui/src/components/ci/MergeRunFeed.tsx
+  - packages/ui/src/components/kanban/TaskModal.tsx
+  - packages/ui/src/remote
+---
+
+# Merge-ран задачи: безопасное слияние в main
+
+## Граница подсистемы
+
+Merge выполняет отдельный `MergeRunManager` из
+`apps/server/src/merge/runManager.ts`; development CI заканчивается подготовкой и
+push ветки задачи в `origin`, после чего карточка находится в
+`awaiting_merge`. Merge-ран не запускает production deploy и не смешивает своё
+состояние или ленту с CI-раном разработки.
+
+Клиент запускает процесс через
+`POST /api/projects/:id/tasks/:taskId/merge`, не передавая ветку, target, Git URL,
+checkout или машину. `VoiceChatDb.startMergeRun` определяет их из задачи,
+проекта и последнего успешно отправленного `ci_workspaces`, требует owner-доступ,
+target `main`, сохранённый source SHA и привязанную машину. Машина merge-рана
+всегда берётся из этой записи workspace, а не из текущей default-машины проекта
+или настройки карточки: именно на ней гарантированно существует родительский
+каталог для временного merge-клона. Создание идемпотентно:
+partial unique index и транзакционная проверка оставляют не больше одного активного
+merge-рана задачи, а повторное нажатие возвращает его.
+
+## Исполнение и защита main
+
+Менеджер использует один процесс-глобальный слот и ведёт ран по стадиям
+`checking → fetching → merging → testing → pushing`. Fetch сохраняет source и
+актуальный `origin/main` в refs `refs/merge-runs/<runId>/source|target`, поэтому
+не зависит от общего `FETCH_HEAD`, и повторно сравнивает remote source с
+зафиксированным SHA. Изменившаяся после CI ветка завершается как stale source до
+checkout target.
+
+CI-workspace после успешного push может быть `released` и уже удалён cleanup-командой.
+Поэтому менеджер использует из его записи только сохранённые ветку, SHA, машину и
+путь для выбора существующего родительского каталога, а Git-операции выполняет в
+собственном временном клоне `<workspace>.merge-<runId>`, созданном напрямую из
+проектного Git URL. Merge строится от полученного target SHA и создаёт merge-коммит
+с идентификатором задачи, не переключая и не загрязняя рабочую копию CI. При конфликте пути из
+`git diff --name-only --diff-filter=U` сохраняются в снимке, ран и карточка
+переходят в `decision_required`; автоматическое LLM-разрешение в текущей
+реализации не запускается.
+
+Настроенная `project.testCommand` либо fallback `npm run affected-check`
+выполняется во временном merge-клоне до push. Результат проверки хранит времена,
+длительность, exit code, timeout и полный вывод. Любая неуспешная обязательная
+проверка оставляет `origin/main` неизменным и возвращает карточку в
+`awaiting_merge`.
+
+Перед push менеджер заново fetch-ит main и требует прежний target SHA. Push
+выполняется явным refspec через
+`--force-with-lease=refs/heads/main:<targetSha>`; безусловного force нет.
+Успех фиксируется лишь после того, как `git ls-remote` подтверждает merge SHA,
+затем задача переходит в `done`. Конкурентное изменение main и неопределённый
+результат push переводят процесс в `decision_required` с рекомендуемым
+действием.
+
+## Состояние, восстановление и управление
+
+Контракт снимка находится в `packages/shared/src/merge.ts`: он отделяет общий
+статус от записей стадий, проверок и конфликтов и содержит SHA, времена, журнал,
+рекомендованное действие, `canCancel`, `canRetry` и `pushStartedAt`. SQLite
+хранит эти данные в `merge_runs`; snapshot доски дополнительно отдаёт
+`activeMergeRunId` и `latestMergeRunId`, поэтому активная или последняя лента
+восстанавливается после reload.
+
+`DELETE /api/merge/runs/:runId` отменяет дочернюю команду и возвращает карточку
+в `awaiting_merge`, но только пока push не отмечен начатым.
+`POST /api/merge/runs/:runId/retry` создаёт новую попытку через повторные
+серверные проверки. После любого терминального исхода менеджер асинхронно удаляет
+временный merge-клон.
+
+При старте сервера `reconcile()` подбирает незавершённые записи. Для рана с
+`pushStartedAt` и `mergeSha` он не повторяет merge или push: только читает
+remote main, завершает success при совпадении либо требует ручного решения при
+расхождении. Остальные активные записи безопасно запускаются через обычный
+исполнитель.
+
+## Realtime-лента
+
+Сервер публикует отдельное WS-сообщение `merge.snapshot` через подписчиков
+CI-транспорта; контракт сообщения зарегистрирован в
+`packages/shared/src/protocol.ts`. `MergeRunFeed` принимает snapshots через
+remote-мост и параллельно опрашивает REST раз в три секунды как fallback. В
+карточке показываются статус, стадия, SHA, машина, инициатор, длительность,
+ошибка, конфликты, проверки и сохранённый лог; доступны копирование, скачивание
+`.txt`, управление автоскроллом, отмена и повтор.
