@@ -4807,7 +4807,10 @@ export class VoiceChatDb {
     if (!this.isProjectOwner(userId, projectId)) throw new Error('release permission required')
     const previous = input.previousReleaseId ? this.releaseRow(input.previousReleaseId) : null
     if (input.previousReleaseId && (!previous || previous.project_id !== projectId || previous.branch !== input.branch)) throw new Error('invalid previous release')
-    const attempt = previous ? previous.attempt + 1 : ((this.db.prepare(`SELECT MAX(attempt) AS n FROM project_releases WHERE project_id=? AND branch=?`).get(projectId,input.branch) as {n:number|null}).n ?? 0) + 1
+    // Номер попытки — всегда max+1 по ветке: после неудачного deploy повторная
+    // попытка от того же подготовленного релиза не должна падать в UNIQUE.
+    const nextByBranch = ((this.db.prepare(`SELECT MAX(attempt) AS n FROM project_releases WHERE project_id=? AND branch=?`).get(projectId,input.branch) as {n:number|null}).n ?? 0) + 1
+    const attempt = previous ? Math.max(previous.attempt + 1, nextByBranch) : nextByBranch
     const id=this.newId(), now=this.now()
     this.db.transaction(()=>{
       const limits=validateReleaseTimeouts(input.limits??DEFAULT_RELEASE_TIMEOUTS)
