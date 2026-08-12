@@ -29,6 +29,25 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(command).not.toContain('git checkout -B')
   })
 
+  it('keeps a compound regression stage inside the project checkout',async()=>{
+    const commands:string[]=[]
+    const target={...ci(),testCommand:'npm run shared & p1=$!; npm run ui & p2=$!; wait $p1; wait $p2'}
+    const runtime:ReleaseRuntime={
+      isOnline:()=>true,
+      prepareKnowledgeBase:async()=>{},
+      exec:async(_target,command)=>{
+        commands.push(command)
+        if(command.includes('for-each-ref'))return {exitCode:0,output:commands.some(x=>x.includes('git branch'))?'origin/release/1.2.3 prepared-sha\n':''}
+        if(command.includes('git branch'))return {exitCode:0,output:'prepared-sha\n'}
+        return {exitCode:0,output:'ok'}
+      }
+    }
+    const release=await new ReleaseManager(db,runtime).createBranch('owner',target,'release/1.2.3','main')
+    await tick();await tick()
+    expect(commands).toContain("cd '/ci' && git checkout --detach 'prepared-sha' && (npm run shared & p1=$!; npm run ui & p2=$!; wait $p1; wait $p2)")
+    expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('ready')
+  })
+
   it('prepares KB and runs regression while creating the branch',async()=>{
     const commands:string[]=[]
     const runtime:ReleaseRuntime={

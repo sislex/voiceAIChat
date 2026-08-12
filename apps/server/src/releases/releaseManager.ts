@@ -123,7 +123,9 @@ export class ReleaseManager {
       const logs:string[]=[]
       const commands=releaseTestCommands(target.testCommand)
       for(let index=0;index<commands.length;index+=1){
-        const command=index===0?`git checkout --detach ${quote(found.sha)} && ${commands[index]}`:commands[index]!
+        // Группировка удерживает всю составную shell-стадию (включая `&`/`wait`) после `cd` в checkout.
+        const stage=`(${commands[index]})`
+        const command=index===0?`git checkout --detach ${quote(found.sha)} && ${stage}`:stage
         const regression=await this.runtime.exec(target,at(target,command),RELEASE_TEST_TIMEOUT_MS)
         logs.push(`$ ${commands[index]}\n${regression.output}`)
         if(regression.timedOut)throw new Error(`Regression-команда ${index+1}/${commands.length} превысила 600 секунд\n${regression.output}`)
