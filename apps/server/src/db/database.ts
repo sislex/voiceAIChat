@@ -1533,6 +1533,28 @@ export class VoiceChatDb {
   }
 
   /**
+   * Машины, доступные в контексте чата: все личные и, только для действующего
+   * участника проекта, связанные с ним машины. DISTINCT убирает личную машину,
+   * которая одновременно добавлена в проект.
+   */
+  listUsableAgents(userId: string, projectId?: string | null): AgentRecord[] {
+    const rows = this.db.prepare(
+      `SELECT DISTINCT a.*
+       FROM agents a
+       WHERE a.user_id = ?
+          OR (? IS NOT NULL AND EXISTS (
+            SELECT 1 FROM project_machines pm
+            JOIN project_members member ON member.project_id = pm.project_id
+            JOIN users u ON u.name = member.username
+            WHERE pm.project_id = ? AND pm.agent_id = a.id
+              AND member.username = ? AND u.blocked = 0
+          ))
+       ORDER BY a.created_at ASC`
+    ).all(userId, projectId ?? null, projectId ?? null, userId) as AgentRow[]
+    return rows.map((r) => this.mapAgent(r))
+  }
+
+  /**
    * Единый гейт использования машины. Проектный доступ существует только при
    * явно переданном контексте проекта и действующем членстве пользователя.
    */

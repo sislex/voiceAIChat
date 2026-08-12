@@ -100,6 +100,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       if (!res.ok) throw new Error(`GET ${REST.conversation(id)} → ${res.status}`)
       return res.json()
     },
+    'conversations:listMachines': ({ id, projectId }) =>
+      req(`${REST.conversationMachines(id)}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
     'conversations:search': ({ query, includeCompleted }) =>
       req(`${REST.conversationsSearch}?q=${encodeURIComponent(query)}${includeCompleted ? '&includeCompleted=1' : ''}`),
     'messages:search': ({ query, projectId, conversationId, limit, cursor }) => {
