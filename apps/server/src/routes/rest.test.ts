@@ -920,6 +920,47 @@ describe('REST: GET /api/search — полнотекстовый поиск по
   })
 })
 
+describe('REST: машины настроек разговора', () => {
+  it('обычный чат видит только личные машины, проектный — личные и проектные без дублей', async () => {
+    db.createUser('owner', '', 'user')
+    db.createUser('outsider', '', 'user')
+    const own = db.createAgent(U, 'Личная')
+    const shared = db.createAgent('owner', 'Проектная')
+    const hidden = db.createAgent('outsider', 'Чужая')
+    const project = db.createProject('owner', { name: 'Shared' })
+    db.linkMachine('owner', project.id, shared.id)
+    db.addMember('owner', project.id, U)
+    const plain = db.createConversation(U, 'Обычный')
+
+    const plainMachines = (await inj({ method: 'GET', url: `/api/conversations/${plain.id}/machines` })).json()
+    expect(plainMachines.map((a: { id: string }) => a.id)).toEqual([own.id])
+
+    const projectMachines = (await inj({ method: 'GET', url: `/api/conversations/${plain.id}/machines?projectId=${project.id}` })).json()
+    expect(projectMachines.map((a: { id: string }) => a.id).sort()).toEqual([own.id, shared.id].sort())
+    expect(projectMachines.filter((a: { id: string }) => a.id === own.id)).toHaveLength(1)
+    expect(projectMachines.some((a: { id: string }) => a.id === hidden.id)).toBe(false)
+  })
+
+  it('не даёт неучастнику увидеть проектную машину или сохранить недоступную', async () => {
+    db.createUser('owner', '', 'user')
+    const foreign = db.createAgent('owner', 'Серверная')
+    const project = db.createProject('owner', { name: 'Private' })
+    db.linkMachine('owner', project.id, foreign.id)
+    const conversation = db.createConversation(U, 'Чат')
+
+    const list = (await inj({ method: 'GET', url: `/api/conversations/${conversation.id}/machines?projectId=${project.id}` })).json()
+    expect(list.some((a: { id: string }) => a.id === foreign.id)).toBe(false)
+
+    const denied = await inj({
+      method: 'PATCH',
+      url: `/api/conversations/${conversation.id}`,
+      payload: { execTarget: foreign.id }
+    })
+    expect(denied.statusCode).toBe(403)
+    expect(db.getConversation(U, conversation.id)?.execTarget).toBeNull()
+  })
+})
+
 describe('REST: preview proxy', () => {
   it('блокирует loopback и приватные сети до запроса', async () => {
     for (const address of ['127.0.0.1', '10.0.0.1', '169.254.169.254', '192.168.1.1', '::1', 'fe80::1', 'fc00::1']) expect(isPublicAddress(address)).toBe(false)

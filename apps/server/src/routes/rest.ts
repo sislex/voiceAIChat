@@ -155,7 +155,18 @@ export async function registerRest(
   }>(
     '/api/conversations/:id',
     async (req, reply) => {
-      if (typeof req.body.title === 'string') db.renameConversation(uid(req), req.params.id, req.body.title)
+      const userId = uid(req)
+      const current = db.getConversation(userId, req.params.id)
+      if (!current) return reply.code(404).send({ error: 'not found' })
+      if (
+        req.body.execTarget !== undefined &&
+        req.body.execTarget !== null &&
+        req.body.execTarget !== 'none' &&
+        !db.canUseAgent(userId, req.body.execTarget, current.projectId)
+      ) {
+        return reply.code(403).send({ error: 'machine is not available for this conversation' })
+      }
+      if (typeof req.body.title === 'string') db.renameConversation(userId, req.params.id, req.body.title)
       if (req.body.kbContextMode === 'auto' || req.body.kbContextMode === 'manual' || req.body.kbContextMode === 'off') db.setConversationKbContextMode(uid(req), req.params.id, req.body.kbContextMode)
       if (req.body.execTarget !== undefined) {
         const role = db.getUser(uid(req))?.role ?? 'user'

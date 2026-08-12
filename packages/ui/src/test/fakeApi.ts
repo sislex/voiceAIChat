@@ -203,6 +203,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       conversations.push(conv)
       return conv
     },
+    'conversations:listMachines': async () => agents.map((a) => ({ ...a })),
     'conversations:get': async ({ id }) => {
       const conv = conversations.find((c) => c.id === id)
       if (!conv) return null
