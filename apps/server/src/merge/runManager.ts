@@ -7,6 +7,13 @@ export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecuto
 const terminal = new Set(['success','failed','cancelled','decision_required'])
 const validSha = /^[0-9a-f]{40}$/i
 const validBranch = /^(?!-)(?!.*\.\.)(?!.*[~^:?*\[\]\\])[A-Za-z0-9._/-]+$/
+function testStages(value:string):string[] {
+  const trimmed=value.trim()
+  if(!trimmed)return ['npm run affected-check']
+  if(!trimmed.startsWith('['))return [trimmed]
+  try { const parsed=JSON.parse(trimmed); if(Array.isArray(parsed)){ const stages=parsed.filter((item):item is string=>typeof item==='string'&&item.trim().length>0).map(item=>item.trim()); if(stages.length)return stages } } catch { /* execute malformed value as a plain command for an explicit failure */ }
+  return [trimmed]
+}
 
 export class MergeRunManager {
   private active = new Map<string,AbortController>()
@@ -95,8 +102,14 @@ export class MergeRunManager {
       this.deps.db.updateMergeRun(id,{mergeSha}); this.stage(id,'merging','passed',`Создан merge ${mergeSha.slice(0,8)}`)
 
       this.stage(id,'testing','running','Запускаю обязательные проверки до push')
-      const testCommand=project.testCommand?.trim()||'npm run affected-check', began=this.now(), tested=await this.cmd(run,testCommand,repo)
-      const check:MergeCheck={name:'Проверки проекта',command:testCommand,status:tested.exitCode===0&&!tested.timedOut?'passed':'failed',startedAt:began,finishedAt:this.now(),durationMs:this.now()-began,exitCode:tested.exitCode,timedOut:tested.timedOut,output:tested.output}
+      const commands=testStages(project.testCommand??''), began=this.now()
+      let tested:{exitCode:number|null;timedOut:boolean;output:string}={exitCode:0,timedOut:false,output:''}
+      for(const command of commands){
+        const result=await this.cmd(run,command,repo)
+        tested={...result,output:tested.output+result.output}
+        if(result.exitCode||result.timedOut)break
+      }
+      const check:MergeCheck={name:'Проверки проекта',command:commands.join('\n'),status:tested.exitCode===0&&!tested.timedOut?'passed':'failed',startedAt:began,finishedAt:this.now(),durationMs:this.now()-began,exitCode:tested.exitCode,timedOut:tested.timedOut,output:tested.output}
       this.deps.db.updateMergeRun(id,{checks:[check]})
       if(tested.exitCode||tested.timedOut)throw new Error(tested.timedOut?'Проверки превысили timeout':`Проверки упали (exit ${tested.exitCode})`)
       this.stage(id,'testing','passed','Все обязательные проверки прошли')
