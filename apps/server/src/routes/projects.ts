@@ -29,6 +29,7 @@ import type { KnowledgeBaseService } from '../kb/types.js'
 import { kbUsageFlags } from '../kb/routes.js'
 import type { CiRunManager } from '../ci/runManager.js'
 import type { AgentRegistry } from '../agents/registry.js'
+import type { MergeRunManager } from '../merge/runManager.js'
 
 const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 'not found' })
 const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
@@ -66,7 +67,8 @@ export function registerProjectRoutes(
   kbUsage?: { kb: KnowledgeBaseService; toolEnabled: boolean },
   /** Нужен переносу в TODO: ожидающий CI-ран надо снять до успешного ответа. */
   ci?: CiRunManager,
-  agents?: AgentRegistry
+  agents?: AgentRegistry,
+  merge?: MergeRunManager
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const withMachineStatus = (project: ProjectDetail | null): ProjectDetail | null => {
@@ -454,6 +456,7 @@ export function registerProjectRoutes(
       if (project.role !== 'owner') return forbidden(reply)
       try {
         const run = db.startMergeRun(uid(req), req.params.id, req.params.taskId)
+        merge?.start(run)
         boardHub.emit(req.params.id)
         return run
       } catch (err) {
@@ -467,6 +470,28 @@ export function registerProjectRoutes(
   app.get<{ Params: { runId: string } }>('/api/merge/runs/:runId', async (req, reply) =>
     db.getMergeRun(uid(req), req.params.runId) ?? nf(reply)
   )
+
+  app.delete<{ Params: { runId: string } }>('/api/merge/runs/:runId', async (req, reply) => {
+    try {
+      const run = merge?.cancel(req.params.runId, uid(req))
+      if (!run) return nf(reply)
+      boardHub.emit(run.projectId)
+      return run
+    } catch (error) {
+      return reply.code(409).send({ error: errMessage(error) })
+    }
+  })
+
+  app.post<{ Params: { runId: string } }>('/api/merge/runs/:runId/retry', async (req, reply) => {
+    try {
+      const run = db.retryMergeRun(uid(req), req.params.runId)
+      merge?.start(run)
+      boardHub.emit(run.projectId)
+      return run
+    } catch (error) {
+      return reply.code(409).send({ error: errMessage(error) })
+    }
+  })
 
   // Открыть/создать связанный с задачей чат текущего пользователя.
   app.post<{ Params: { id: string; taskId: string } }>(

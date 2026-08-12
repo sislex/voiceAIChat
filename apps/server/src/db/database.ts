@@ -91,6 +91,7 @@ import {
   DEFAULT_CI_GLOBAL_SETTINGS,
   type CiRun,
   type MergeRun,
+  ACTIVE_MERGE_STATUSES,
   type CiRunDetail,
   type CiStageRun,
   type CiRunStep,
@@ -393,6 +394,7 @@ interface TaskRow {
   merge_source_branch?: string | null
   merge_source_sha?: string | null
   active_merge_run_id?: string | null
+  latest_merge_run_id?: string | null
   active_merge_status?: string | null
   merge_permitted?: number
   merge_machine_bound?: number
@@ -498,6 +500,7 @@ function mapTask(r: TaskRow): Task {
     mergeSourceBranch: r.merge_source_branch ?? null,
     mergeSourceSha: r.merge_source_sha ?? null,
     activeMergeRunId: r.active_merge_run_id ?? null,
+    latestMergeRunId: r.latest_merge_run_id ?? null,
     activeMergeStatus: r.active_merge_status ?? null,
     mergePermitted: r.merge_permitted !== 0,
     mergeMachineBound: r.merge_machine_bound !== 0,
@@ -827,6 +830,15 @@ export class VoiceChatDb {
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'branch')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN branch TEXT`)
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'commit_sha')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN commit_sha TEXT`)
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'pushed')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN pushed INTEGER NOT NULL DEFAULT 0`)
+    const mergeRunCols = this.db.prepare(`PRAGMA table_info(merge_runs)`).all() as Array<{ name: string }>
+    if (mergeRunCols.length) {
+      this.db.exec(`DROP INDEX IF EXISTS idx_merge_runs_one_active_task`)
+      this.db.exec(`CREATE UNIQUE INDEX idx_merge_runs_one_active_task ON merge_runs(task_id) WHERE status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing')`)
+    }
+    if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'stages_json')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN stages_json TEXT NOT NULL DEFAULT '[]'`)
+    if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'checks_json')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN checks_json TEXT NOT NULL DEFAULT '[]'`)
+    if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'recommended_action')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN recommended_action TEXT`)
+    if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'push_started_at')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN push_started_at INTEGER`)
     const ciRunCols = this.db.prepare(`PRAGMA table_info(ci_runs)`).all() as Array<{ name: string }>
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_engine_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_engine_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_provider')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_provider TEXT NOT NULL DEFAULT 'claude'`)
@@ -2430,8 +2442,9 @@ export class VoiceChatDb {
                         ORDER BY c.created_at ASC LIMIT 1) AS chat_id,
              (SELECT w.branch FROM ci_workspaces w WHERE w.task_id=t.id AND w.pushed=1 ORDER BY w.created_at DESC LIMIT 1) AS merge_source_branch,
              (SELECT w.commit_sha FROM ci_workspaces w WHERE w.task_id=t.id AND w.pushed=1 ORDER BY w.created_at DESC LIMIT 1) AS merge_source_sha,
-             (SELECT r.id FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','resolving_conflicts','testing','pushing','deploying','production_checks','rolling_back') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_run_id,
-             (SELECT r.status FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','resolving_conflicts','testing','pushing','deploying','production_checks','rolling_back') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_status,
+             (SELECT r.id FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_run_id,
+             (SELECT r.id FROM merge_runs r WHERE r.task_id=t.id ORDER BY r.created_at DESC LIMIT 1) AS latest_merge_run_id,
+             (SELECT r.status FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_status,
              EXISTS(SELECT 1 FROM project_members pm WHERE pm.project_id=t.project_id AND pm.username=? AND pm.role='owner') AS merge_permitted,
              EXISTS(SELECT 1 FROM project_machines pm WHERE pm.project_id=t.project_id AND pm.agent_id=COALESCE(t.agent_id,(SELECT default_agent_id FROM projects WHERE id=t.project_id))) AS merge_machine_bound,
              (SELECT r.merge_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_sha
@@ -4358,7 +4371,7 @@ export class VoiceChatDb {
    */
   startMergeRun(userId: string, projectId: string, taskId: string): MergeRun {
     return this.db.transaction(() => {
-      const existing = this.db.prepare(`SELECT * FROM merge_runs WHERE task_id=? AND status IN ('queued','checking','resolving_conflicts','testing','pushing','deploying','production_checks','rolling_back') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string, unknown> | undefined
+      const existing = this.db.prepare(`SELECT * FROM merge_runs WHERE task_id=? AND status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string, unknown> | undefined
       if (existing) return this.mapMergeRun(existing)
 
       const row = this.db.prepare(`SELECT t.*, c.semantic_type, p.ci_base_branch, p.default_agent_id, pm.role
@@ -4371,7 +4384,7 @@ export class VoiceChatDb {
       if ((row.ci_base_branch || 'main') !== 'main') throw new Error('merge target must be main')
 
       const workspace = this.db.prepare(`SELECT branch,commit_sha FROM ci_workspaces WHERE task_id=? AND project_id=? AND pushed=1 AND branch IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId, projectId) as { branch: string; commit_sha: string | null } | undefined
-      if (!workspace?.branch || !/^(?!-)(?!.*\.\.)(?!.*[~^:?*\\[\\]\\\\])[A-Za-z0-9._/-]+$/.test(workspace.branch)) throw new Error('prepared task branch not found')
+      if (!workspace?.branch || !workspace.commit_sha || !/^(?!-)(?!.*\.\.)(?!.*[~^:?*\\[\\]\\\\])[A-Za-z0-9._/-]+$/.test(workspace.branch)) throw new Error('prepared task branch or pushed source SHA not found')
       const agentId = row.agent_id ?? row.default_agent_id
       if (!agentId || !this.db.prepare(`SELECT 1 FROM project_machines WHERE project_id=? AND agent_id=?`).get(projectId, agentId)) throw new Error('task machine is not bound to project')
       if (!this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type='merge'`).get(projectId)) throw new Error('merge column not found')
@@ -4389,16 +4402,60 @@ export class VoiceChatDb {
     return row ? this.mapMergeRun(row) : null
   }
 
+  getMergeRunRaw(runId: string): MergeRun | null {
+    const row = this.db.prepare(`SELECT * FROM merge_runs WHERE id=?`).get(runId) as Record<string, unknown> | undefined
+    return row ? this.mapMergeRun(row) : null
+  }
+
+  listActiveMergeRuns(): MergeRun[] {
+    return (this.db.prepare(`SELECT * FROM merge_runs WHERE status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing') ORDER BY created_at`).all() as Record<string, unknown>[]).map((row) => this.mapMergeRun(row))
+  }
+
+  updateMergeRun(runId: string, fields: Partial<Pick<MergeRun, 'status' | 'stage' | 'sourceSha' | 'targetSha' | 'mergeSha' | 'conflicts' | 'stages' | 'checks' | 'error' | 'recommendedAction' | 'log' | 'pushStartedAt' | 'startedAt' | 'finishedAt'>>): MergeRun | null {
+    const names: Record<string, string> = { sourceSha:'source_sha', targetSha:'target_sha', mergeSha:'merge_sha', conflicts:'conflicts_json', stages:'stages_json', checks:'checks_json', recommendedAction:'recommended_action', pushStartedAt:'push_started_at', startedAt:'started_at', finishedAt:'finished_at' }
+    const set: string[] = [], values: unknown[] = []
+    for (const [key, value] of Object.entries(fields)) {
+      set.push(`${names[key] ?? key}=?`)
+      values.push(key === 'conflicts' || key === 'stages' || key === 'checks' ? JSON.stringify(value) : value)
+    }
+    if (!set.length) return this.getMergeRunRaw(runId)
+    this.db.prepare(`UPDATE merge_runs SET ${set.join(',')} WHERE id=?`).run(...values, runId)
+    return this.getMergeRunRaw(runId)
+  }
+
+  appendMergeLog(runId: string, chunk: string): MergeRun | null {
+    this.db.prepare(`UPDATE merge_runs SET log=log || ? WHERE id=?`).run(chunk, runId)
+    return this.getMergeRunRaw(runId)
+  }
+
+  moveMergeTask(projectId: string, taskId: string, semanticType: 'done' | 'awaiting_merge' | 'decision_required'): void {
+    const now = this.now()
+    this.db.prepare(`UPDATE tasks SET column_id=(SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type=?), done_at=?, updated_at=? WHERE id=? AND project_id=?`)
+      .run(projectId, semanticType, semanticType === 'done' ? now : null, now, taskId, projectId)
+  }
+
+  retryMergeRun(userId: string, runId: string): MergeRun {
+    const previous = this.getMergeRun(userId, runId)
+    if (!previous) throw new Error('merge run not found')
+    if (ACTIVE_MERGE_STATUSES.includes(previous.status)) return previous
+    this.moveMergeTask(previous.projectId, previous.taskId, 'awaiting_merge')
+    return this.startMergeRun(userId, previous.projectId, previous.taskId)
+  }
+
   private mapMergeRun(r: Record<string, unknown>): MergeRun {
     return {
       id: String(r.id), projectId: String(r.project_id), taskId: String(r.task_id), status: r.status as MergeRun['status'],
-      triggeredBy: String(r.triggered_by), sourceBranch: String(r.source_branch), targetBranch: String(r.target_branch),
+      triggeredBy: String(r.triggered_by), sourceBranch: String(r.source_branch), targetBranch: 'main',
       sourceSha: r.source_sha as string | null, targetSha: r.target_sha as string | null, mergeSha: r.merge_sha as string | null,
       revertSha: r.revert_sha as string | null, agentId: String(r.agent_id), llmEngineId: r.llm_engine_id as string | null,
-      llmProvider: r.llm_provider as MergeRun['llmProvider'], llmModel: String(r.llm_model ?? ''), stage: String(r.stage),
-      conflicts: parseStringArray(r.conflicts_json as string), deployId: r.deploy_id as string | null, deployVersion: r.deploy_version as string | null,
-      productionStatus: r.production_status as string | null, error: r.error as string | null, log: String(r.log ?? ''),
-      startedAt: r.started_at as number | null, finishedAt: r.finished_at as number | null, createdAt: Number(r.created_at)
+      llmProvider: r.llm_provider as MergeRun['llmProvider'], llmModel: String(r.llm_model ?? ''), stage: String(r.stage) as MergeRun['stage'],
+      stages: parseJsonValue(r.stages_json as string, []), conflicts: parseStringArray(r.conflicts_json as string),
+      conflictDetails: parseStringArray(r.conflicts_json as string).map((path) => ({ path })), checks: parseJsonValue(r.checks_json as string, []),
+      deployId: r.deploy_id as string | null, deployVersion: r.deploy_version as string | null,
+      productionStatus: r.production_status as string | null, error: r.error as string | null, recommendedAction: r.recommended_action as string | null,
+      log: String(r.log ?? ''), canCancel: !r.push_started_at && ACTIVE_MERGE_STATUSES.includes(r.status as MergeRun['status']),
+      canRetry: !ACTIVE_MERGE_STATUSES.includes(r.status as MergeRun['status']) && r.status !== 'success', pushStartedAt: r.push_started_at as number | null,
+      startedAt: r.started_at as number | null, finishedAt: r.finished_at as number | null, createdAt: Number(r.created_at), machineName: null
     }
   }
 

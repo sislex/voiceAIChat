@@ -93,6 +93,7 @@ export interface CiRunManager {
   /** Убрать именно ожидающий ран; не маскирует уже начавшееся выполнение. */
   dequeue(userId: string, runId: string): import('@voicechat/shared').CiQueueRemovalResult
   subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
+  publish(message: ServerMessage, ownerUserId: string): void
   snapshot(userId: string, runId: string): void | ServerMessage
   activeRunIds(): string[]
   consoleExec(userId: string, runId: string, command: string, editMode: boolean): Promise<CiConsoleExecResult>
@@ -2073,6 +2074,7 @@ fi`
     listeners.add(listener)
     return () => listeners.delete(listener)
   }
+  function publish(message: ServerMessage, ownerUserId: string): void { broadcast(message, ownerUserId) }
 
   function snapshot(userId: string, runId: string): void | ServerMessage {
     const detail = deps.db.getCiRun(userId, runId)
@@ -2108,7 +2110,7 @@ fi`
     }
   }
 
-  return { start, forceStartOnMachine, retryFromFailed, discardChangesAndRetry, cancel, dequeue, subscribe, snapshot, activeRunIds, consoleExec, answerInteraction }
+  return { start, forceStartOnMachine, retryFromFailed, discardChangesAndRetry, cancel, dequeue, subscribe, publish, snapshot, activeRunIds, consoleExec, answerInteraction }
 }
 
 /**
