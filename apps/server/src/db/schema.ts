@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS projects (
   production_agent_id TEXT,
   production_checkout_path TEXT NOT NULL DEFAULT '',
   production_health_check_command TEXT NOT NULL DEFAULT '',
+  release_timeouts_json TEXT NOT NULL DEFAULT '{}',
   default_skills_epic  TEXT NOT NULL DEFAULT '[]',
   default_skills_story TEXT NOT NULL DEFAULT '[]',
   default_skills_task  TEXT NOT NULL DEFAULT '[]',
@@ -985,7 +986,7 @@ CREATE TABLE IF NOT EXISTS project_releases (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, version TEXT NOT NULL, branch TEXT NOT NULL,
   commit_sha TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', triggered_by TEXT NOT NULL,
   attempt INTEGER NOT NULL DEFAULT 1, previous_release_id TEXT, created_at INTEGER NOT NULL,
-  released_at INTEGER,
+  released_at INTEGER, agent_id TEXT, checkout_path TEXT, deleted_at INTEGER,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
   FOREIGN KEY (previous_release_id) REFERENCES project_releases(id)
 );
@@ -995,7 +996,7 @@ CREATE INDEX IF NOT EXISTS idx_project_releases_project ON project_releases(proj
 CREATE TABLE IF NOT EXISTS project_release_steps (
   id TEXT PRIMARY KEY, release_id TEXT NOT NULL, kind TEXT NOT NULL, position INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'queued', model TEXT, attempt INTEGER NOT NULL,
-  log TEXT NOT NULL DEFAULT '', started_at INTEGER, finished_at INTEGER,
+  log TEXT NOT NULL DEFAULT '', started_at INTEGER, finished_at INTEGER, limit_ms INTEGER,
   FOREIGN KEY (release_id) REFERENCES project_releases(id) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_project_release_step ON project_release_steps(release_id, position);

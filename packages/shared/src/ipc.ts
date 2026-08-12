@@ -280,10 +280,11 @@ export interface IpcInvokeMap {
 
   'projects:get': { arg: { id: string }; result: ProjectDetail | null }
   'releases:branches': { arg: { projectId: string }; result: import('./release').ReleaseBranch[] }
-  'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string }; result: import('./release').ProjectRelease }
+  'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string; agentId?: string }; result: import('./release').ProjectRelease }
   'releases:list': { arg: { projectId: string }; result: import('./release').ProjectRelease[] }
   'releases:get': { arg: { projectId: string; releaseId: string }; result: import('./release').ProjectRelease | null }
   'releases:deploy': { arg: { projectId: string; branch: string }; result: import('./release').ProjectRelease }
+  'releases:delete': { arg: { projectId: string; releaseId: string; branch: string }; result: { deleted: true } }
   'projects:update': {
     arg: {
       id: string
@@ -302,6 +303,7 @@ export interface IpcInvokeMap {
       productionAgentId?: string | null
       productionCheckoutPath?: string
       productionHealthCheckCommand?: string
+      releaseTimeouts?: import('./release').ReleaseTimeouts
       ciBaseBranch?: string
       ciBranchTemplate?: string
       ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
@@ -802,6 +804,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'releases:list',
   'releases:get',
   'releases:deploy',
+  'releases:delete',
   'projects:update',
   'projects:delete',
   'projects:addMember',

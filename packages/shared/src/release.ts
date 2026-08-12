@@ -5,6 +5,22 @@ export type ReleaseStatus = 'preparing' | 'checking' | 'ready' | 'queued' | 'swi
 export type ReleaseStepKind = 'regression' | 'knowledge_base' | 'switching' | 'building' | 'health_check'
 export type ReleaseStepStatus = 'queued' | 'running' | 'passed' | 'failed' | 'skipped'
 
+export interface ReleaseTimeouts {
+  knowledgeBaseMs: number
+  regressionMs: number
+  switchingMs: number
+  buildingMs: number
+  healthCheckMs: number
+}
+export const DEFAULT_RELEASE_TIMEOUTS: ReleaseTimeouts = { knowledgeBaseMs: 600_000, regressionMs: 600_000, switchingMs: 120_000, buildingMs: 600_000, healthCheckMs: 300_000 }
+export const RELEASE_TIMEOUT_MIN_MS = 1_000
+export const RELEASE_TIMEOUT_MAX_MS = 86_400_000
+export function validateReleaseTimeouts(value: ReleaseTimeouts): ReleaseTimeouts {
+  for (const [name, timeout] of Object.entries(value)) if (!Number.isInteger(timeout) || timeout < RELEASE_TIMEOUT_MIN_MS || timeout > RELEASE_TIMEOUT_MAX_MS) throw new Error(`${name}: лимит должен быть от 1 секунды до 24 часов`)
+  return value
+}
+export const releaseStepLimit = (kind: ReleaseStepKind, limits: ReleaseTimeouts): number => ({knowledge_base:limits.knowledgeBaseMs,regression:limits.regressionMs,switching:limits.switchingMs,building:limits.buildingMs,health_check:limits.healthCheckMs})[kind]
+
 export interface ReleaseBranch { branch: string; version: string; sha: string }
 export interface ReleaseStep {
   id: string
@@ -15,6 +31,8 @@ export interface ReleaseStep {
   log: string
   startedAt: number | null
   finishedAt: number | null
+  /** Неизменяемый снимок лимита шага; null только у legacy-записей. */
+  limitMs?: number | null
 }
 const RELEASE_FAILURE_FALLBACK: Record<ReleaseStepKind, string> = {
   regression: 'Регрессионные проверки не прошли',
@@ -44,6 +62,10 @@ export interface ProjectRelease {
   previousReleaseId: string | null
   createdAt: number
   releasedAt: number | null
+  /** Снимок машины и checkout на момент создания рана. */
+  agentId?: string | null
+  checkoutPath?: string | null
+  deletedAt?: number | null
   steps: ReleaseStep[]
 }
 export function releaseVersion(branch: string): string | null {
