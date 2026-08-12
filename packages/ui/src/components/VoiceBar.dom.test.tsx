@@ -267,13 +267,16 @@ describe('VoiceBar — сворачивание композера', () => {
     expect(screen.getByTestId('composer-expand')).toHaveTextContent('Показать поле ввода')
   })
 
-  it('разворачивается и сворачивается обратно', async () => {
-    setup('idle')
+  it('разворачивается с фокусом и сворачивается обратно без потери содержимого', async () => {
+    setup('idle', { draft: 'черновик', attachments: [{ id: 'a1', name: 'лог.txt' }] })
     await userEvent.click(screen.getByLabelText('Свернуть поле ввода'))
     expect(screen.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
+    expect(screen.getByTestId('composer-expand')).toHaveTextContent('черновик')
 
     await userEvent.click(screen.getByTestId('composer-expand'))
-    expect(screen.getByLabelText('Поле ввода сообщения')).toBeInTheDocument()
+    expect(screen.getByLabelText('Поле ввода сообщения')).toHaveFocus()
+    expect(screen.getByLabelText('Поле ввода сообщения')).toHaveValue('черновик')
+    expect(screen.getByTestId('attachments')).toHaveTextContent('лог.txt')
   })
 
   it('в строке видно, что осталось в композере: черновик, иначе вложения', async () => {
@@ -299,6 +302,13 @@ describe('VoiceBar — сворачивание композера', () => {
     render(<VoiceBar {...listening} />)
     await userEvent.click(screen.getByLabelText('Остановить запись'))
     expect(listening.onStopVoice).toHaveBeenCalledOnce()
+  })
+
+  it('изменение defaultCollapsed после ручного выбора не перезаписывает состояние', async () => {
+    const { rerender } = render(<VoiceBar {...makeProps('idle', { defaultCollapsed: false })} />)
+    await userEvent.click(screen.getByLabelText('Свернуть поле ввода'))
+    rerender(<VoiceBar {...makeProps('idle', { defaultCollapsed: false })} />)
+    expect(screen.getByTestId('composer-expand')).toBeInTheDocument()
   })
 
   it('развёрнутое состояние не запоминается: следующее монтирование снова свёрнуто', async () => {
