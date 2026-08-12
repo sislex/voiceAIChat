@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
 updated: 2026-08-12
-checked: 8dd0fca
+checked: 63f89aa
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
@@ -45,6 +45,11 @@ merge-рана задачи, а повторное нажатие возвращ
 не зависит от общего `FETCH_HEAD`, и повторно сравнивает remote source с
 зафиксированным SHA. Изменившаяся после CI ветка завершается как stale source до
 checkout target.
+
+Источник правды — **последний отправленный** workspace
+(`findLatestPushedCiWorkspace`, `pushed=1`): более новая неотправленная запись
+(начатый dev-ран) его не заслоняет — иначе merge падал бы «workspace недоступен»
+сразу после старта нового dev-рана.
 
 CI-workspace после успешного push может быть `released` и уже удалён cleanup-командой.
 Поэтому менеджер использует из его записи только сохранённые ветку, SHA, машину и

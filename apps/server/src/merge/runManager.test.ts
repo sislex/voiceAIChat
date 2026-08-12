@@ -20,7 +20,7 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
     appendMergeLog:(_id:string,chunk:string)=>(run={...run,log:run.log+chunk}),
     moveMergeTask:(_p:string,_t:string,column:string)=>moves.push(column),
     getProject:()=>({gitUrl,testCommand}),
-    findLatestCiWorkspace:()=>({path:'/repo/task',pushed:true,agentId:'a1'}),
+    findLatestPushedCiWorkspace:()=>({path:'/repo/task',pushed:true,agentId:'a1'}),
     getProjectMachine:(_p:string,agentId:string)=>agentId==='a2'?{agentId,path:'/other/project',reposRoot:'/other-repos'}:null,
     upsertTaskRepository:(_p:string,_t:string,agentId:string,path:string,kind:string)=>{repositories.push({agentId,path,kind,state:'active'})},
     markTaskRepositoryDeleted:(_t:string,agentId:string,path:string)=>{const item=repositories.find(r=>r.agentId===agentId&&r.path===path);if(item)item.state='deleted'},

@@ -80,7 +80,7 @@ export class MergeRunManager {
     let run=this.deps.db.getMergeRunRaw(id); if(!run)return
     try {
       if(run.pushStartedAt&&run.mergeSha){
-        const project=this.deps.db.getProject(run.triggeredBy,run.projectId), ws=this.deps.db.findLatestCiWorkspace(run.projectId,run.taskId)
+        const project=this.deps.db.getProject(run.triggeredBy,run.projectId), ws=this.deps.db.findLatestPushedCiWorkspace(run.projectId,run.taskId)
         if(!project?.gitUrl||!ws?.path)throw new Error('Push начат, но данные проекта недоступны; требуется reconcile')
         const remote=await this.cmd(run,`git ls-remote ${shellQuote(project.gitUrl)} refs/heads/main`,this.mergeBase(run,ws).workdir,30000)
         if(remote.output.toLowerCase().startsWith(run.mergeSha.toLowerCase())){
@@ -89,7 +89,7 @@ export class MergeRunManager {
         this.finish(id,'decision_required','Push был начат, но origin/main не совпадает с merge SHA','Проверьте удалённый main вручную; автоматический повтор push запрещён.','decision_required'); return
       }
       this.stage(id,'checking','running','Проверяю задачу, проект, workspace и машину')
-      const project=this.deps.db.getProject(run.triggeredBy,run.projectId), ws=this.deps.db.findLatestCiWorkspace(run.projectId,run.taskId)
+      const project=this.deps.db.getProject(run.triggeredBy,run.projectId), ws=this.deps.db.findLatestPushedCiWorkspace(run.projectId,run.taskId)
       if(!project||!project.gitUrl||!ws?.pushed||!ws.path)throw new Error('Подготовленный CI-workspace или Git origin недоступен')
       if(ws.agentId!==run.agentId&&!this.deps.db.getProjectMachine(run.projectId,run.agentId))throw new Error('Выбранная машина не привязана к проекту')
       if(!this.deps.isOnline(run.agentId))throw new Error('Выбранная машина не в сети')
