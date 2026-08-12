@@ -4509,7 +4509,7 @@ export class VoiceChatDb {
     if (ACTIVE_MERGE_STATUSES.includes(previous.status)) return previous
     this.moveMergeTask(previous.projectId, previous.taskId, 'awaiting_merge')
     const next = this.startMergeRun(userId, previous.projectId, previous.taskId)
-    if (previous.conflicts.length > 0) return this.updateMergeRun(next.id, { sourceSha: null }) ?? next
+    if (previous.conflicts.length > 0 || /stale source/i.test(previous.error ?? '')) return this.updateMergeRun(next.id, { sourceSha: null }) ?? next
     return next
   }
 
