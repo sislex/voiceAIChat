@@ -10,7 +10,13 @@ import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { Button } from '../ui/Button'
 import { CiSlotEditor } from './CiSlotEditor'
 
-export interface CiTaskSettingsProps { projectId: string; taskId: string; llmAccess?: UserLlmAccess[] }
+export interface CiTaskSettingsProps {
+  projectId: string
+  taskId: string
+  llmAccess?: UserLlmAccess[]
+  section: 'commands' | 'machine' | 'model'
+  mergeMachineBound?: boolean
+}
 
 export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const [commands, setCommands] = useState<CiCommand[]>([])
@@ -69,20 +75,26 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   }
 
   return <section className="ci-task">
+    {props.section === 'commands' && <>
     <div className="ci-task-head"><span className="ci-task-title">Команды воркфлоу</span><span className={`lozenge ${overridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{overridden ? 'переопределено' : 'унаследовано'}</span></div>
     <CiSlotEditor label="До работы модели" commands={commands} value={before} onChange={(v) => { setBefore(v); setSaved(false) }} />
     <CiSlotEditor label="После работы модели" commands={commands} value={after} onChange={(v) => { setAfter(v); setSaved(false) }} />
     {cleanupWarn && <div className="ci-warn">В слоте «после» есть cleanup-команда, но в «до» нет команды, создающей рабочую директорию.</div>}
     {!saved && <Button variant="primary" className="ci-task-save" onClick={save}>Сохранить команды</Button>}
-    <div className="ci-task-head ci-task-llm-head"><span className="ci-task-title">Машина выполнения</span></div>
+    </>}
+    {props.section === 'machine' && <>
+    <div className="ci-task-head"><span className="ci-task-title">Машина выполнения</span></div>
     <label>Машина<select aria-label="Машина выполнения" className="sel" value={agentId ?? ''} onChange={(e) => {
       const next = e.target.value || null
       setAgentId(next)
       void window.api?.['tasks:update']({ projectId: props.projectId, taskId: props.taskId, agentId: next })
     }}>
       <option value="">Машина проекта по умолчанию</option>
+      {agentId && !machines.some((machine) => machine.agentId === agentId) && <option value={agentId}>{agentId} (не привязана)</option>}
       {machines.map((machine) => <option key={machine.agentId} value={machine.agentId}>{machine.agentId}</option>)}
     </select></label>
+    {agentId && !machines.some((machine) => machine.agentId === agentId) && <div className="ci-warn">Выбранная машина больше не привязана к проекту. Запуск merge заблокирован.</div>}
+    {props.mergeMachineBound === false && !agentId && <div className="ci-warn">Машина проекта по умолчанию не привязана. Запуск merge заблокирован.</div>}
     {/* Принудительный запуск работает и для задачи, чей ран стоит в очереди:
         сервер продвинет его на выбранную машину, а не отменит. */}
     {agentId && (
@@ -97,7 +109,9 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     )}
     {forceStatus.kind === 'started' && <p className="ci-task-hint">Ран запущен на выбранной машине, мимо очереди.</p>}
     {forceStatus.kind === 'error' && <div className="ci-warn">{forceStatus.text}</div>}
-    <div className="ci-task-head ci-task-llm-head"><span className="ci-task-title">Движок модели</span><span className={`lozenge ${llmOverridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{llmOverridden ? 'переопределено' : 'унаследовано'}</span></div>
+    </>}
+    {props.section === 'model' && <>
+    <div className="ci-task-head"><span className="ci-task-title">Движок модели</span><span className={`lozenge ${llmOverridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{llmOverridden ? 'переопределено' : 'унаследовано'}</span></div>
     <div className="ci-task-llm">
       <label>Движок<select aria-label="Движок модели" className="sel" value={llm.provider} onChange={(e) => changeProvider(e.target.value as 'claude' | 'codex')}>{isProviderAllowed(access, 'claude') && <option value="claude">Claude</option>}{isProviderAllowed(access, 'codex') && <option value="codex">Codex</option>}{!isProviderAllowed(access, 'claude') && !isProviderAllowed(access, 'codex') && <option value="">Нет доступных движков</option>}</select></label>
       <label>Модель<select aria-label="Модель" className="sel" value={llm.model} onChange={(e) => { setLlm({ ...llm, model: e.target.value }); setLlmSaved(false) }}>{!models.some((m) => m.id === llm.model) && <option value={llm.model}>{llm.model}</option>}{models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
@@ -140,5 +154,6 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
       {!llmSaved && <Button variant="primary" className="ci-task-save" onClick={saveLlm}>Сохранить движок и модель</Button>}
       {llmOverridden && <button type="button" className="ci-task-reset" onClick={resetLlm}>Вернуть настройку проекта</button>}
     </div>
+    </>}
   </section>
 }

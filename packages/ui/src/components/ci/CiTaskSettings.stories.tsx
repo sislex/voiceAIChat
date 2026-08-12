@@ -15,7 +15,7 @@ const seedCommands: BridgeSetup = ({ ci }) => {
 const meta: Meta<typeof CiTaskSettings> = {
   title: 'CI/CiTaskSettings',
   component: CiTaskSettings,
-  args: { projectId: 'p1', taskId: 't1' },
+  args: { projectId: 'p1', taskId: 't1', section: 'model' },
   decorators: [(Story) => <div style={{ maxWidth: 640 }}><Story /></div>]
 }
 export default meta
@@ -64,6 +64,7 @@ export const CodexEngine: Story = {
  * нечего (или не то).
  */
 export const CleanupWarning: Story = {
+  args: { section: 'commands' },
   decorators: [
     withBridges((bridges) => {
       seedCommands(bridges)
