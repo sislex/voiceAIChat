@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-08-10
-checked: ac537e7
+updated: 2026-08-12
+checked: 31c5e8b
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -271,45 +271,13 @@ queued» и продвижение выполняются синхронно в 
 пересборкой production; эти механизмы относятся к legacy-пути выполнения таких
 команд внутри разработки.
 
-## Отдельный merge-ран: реализованный срез
+## Отдельный merge-ран
 
-`MergeRunManager` — отдельный от development CI процесс-глобальный исполнитель.
-После идемпотентного `POST /api/projects/:id/tasks/:taskId/merge` он забирает
-`queued`-ран в единственный merge-слот и проходит `checking → fetching →
-merging → testing → pushing`. Ветка, SHA, машина, Git URL, workspace и target
-`main` определяются только сервером; исходный SHA обязан быть сохранён как
-отправленный в последнем `ci_workspaces`.
-
-Fetch пишет source и main в уникальные `refs/merge-runs/<runId>/*`, повторно
-сверяет source SHA и останавливает stale source. Merge строится от актуального
-origin/main в соседнем временном worktree, не переключая пользовательский
-checkout. Конфликтующие пути сохраняются структурированно, ран становится
-`decision_required`, карточка переходит в одноимённую колонку. Настроенный
-`project.testCommand` (fallback — `npm run affected-check`) выполняется до
-push с сохранением времени, exit code, timeout и вывода.
-
-Перед push origin/main fetch-ится повторно. Изменившийся main не
-перезаписывается; push использует явный refspec и
-`--force-with-lease=refs/heads/main:<targetSha>`, после чего remote SHA
-проверяется через `ls-remote`. Только подтверждённый SHA завершает ран как
-`success` и переносит карточку в `done`. Ошибки до push возвращают карточку
-в `awaiting_merge`; конфликт, stale/concurrent source и неопределённый push
-требуют решения. Временные refs/worktree очищаются после любого исхода.
-Отмена разрешена только до записи `push_started_at`; retry создаёт новый ран
-после повторных серверных проверок.
-
-При старте сервера менеджер выполняет reconcile незавершённых ранов. Если push
-уже начинался и сохранён merge SHA, менеджер только читает origin/main:
-совпадение финализирует success, несовпадение требует ручного решения; merge и
-push вслепую не повторяются.
-
-Снимок хранит стадии, проверки, конфликты, полные логи, рекомендуемое действие
-и признаки cancel/retry. События `merge.snapshot` идут по WebSocket отдельно
-от CI; `MergeRunFeed` также перечитывает REST раз в три секунды как fallback.
-Доска содержит active и latest merge run id, поэтому лента автоматически
-появляется после запуска и сохраняется после reload/завершения. В ней доступны
-копирование, скачивание .txt, управляемый автоскролл, cancel и retry.
-Production deploy этим процессом не запускается.
+Development CI только готовит и отправляет ветку задачи; безопасное слияние в
+`main`, проверки до push, восстановление после рестарта и отдельная realtime-
+лента принадлежат самостоятельному `MergeRunManager`. Полное фактическое
+описание контракта, стадий, защиты main и UI — в
+[merge-runner.md](merge-runner.md).
 
 ## Вкладки карточки задачи
 
