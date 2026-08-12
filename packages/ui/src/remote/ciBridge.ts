@@ -91,7 +91,12 @@ export interface RendererCiRest {
   startMerge(projectId: string, taskId: string, agentId?: string | null): Promise<MergeRun>
   getMerge(runId: string): Promise<MergeRun>
   cancelMerge(runId: string): Promise<MergeRun>
-  retryMerge(runId: string): Promise<MergeRun>
+  /** unpin=true — «мержить текущий head»: новая попытка без закреплённого SHA. */
+  retryMerge(runId: string, unpin?: boolean): Promise<MergeRun>
+  /** История merge-попыток задачи, свежие первыми. */
+  listMergeRuns(projectId: string, taskId: string): Promise<MergeRun[]>
+  /** Штатный production-деплой из успешного merge-рана. */
+  deployMergeRun(runId: string): Promise<MergeRun>
   /** Копии репозиториев задачи по машинам (dev-workspace и merge-клоны). */
   getTaskRepositories(projectId: string, taskId: string): Promise<TaskRepository[]>
   /** Немедленный запуск на явно указанной машине; ран из очереди продвигается, а не отменяется. */

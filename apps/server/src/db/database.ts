@@ -4481,8 +4481,8 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM merge_runs WHERE status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing') ORDER BY created_at`).all() as Record<string, unknown>[]).map((row) => this.mapMergeRun(row))
   }
 
-  updateMergeRun(runId: string, fields: Partial<Pick<MergeRun, 'status' | 'stage' | 'sourceSha' | 'targetSha' | 'mergeSha' | 'conflicts' | 'stages' | 'checks' | 'error' | 'recommendedAction' | 'log' | 'pushStartedAt' | 'startedAt' | 'finishedAt'>>): MergeRun | null {
-    const names: Record<string, string> = { sourceSha:'source_sha', targetSha:'target_sha', mergeSha:'merge_sha', conflicts:'conflicts_json', stages:'stages_json', checks:'checks_json', recommendedAction:'recommended_action', pushStartedAt:'push_started_at', startedAt:'started_at', finishedAt:'finished_at' }
+  updateMergeRun(runId: string, fields: Partial<Pick<MergeRun, 'status' | 'stage' | 'sourceSha' | 'targetSha' | 'mergeSha' | 'conflicts' | 'stages' | 'checks' | 'error' | 'recommendedAction' | 'log' | 'pushStartedAt' | 'startedAt' | 'finishedAt' | 'deployId' | 'deployVersion' | 'productionStatus'>>): MergeRun | null {
+    const names: Record<string, string> = { sourceSha:'source_sha', targetSha:'target_sha', mergeSha:'merge_sha', conflicts:'conflicts_json', stages:'stages_json', checks:'checks_json', recommendedAction:'recommended_action', pushStartedAt:'push_started_at', startedAt:'started_at', finishedAt:'finished_at', deployId:'deploy_id', deployVersion:'deploy_version', productionStatus:'production_status' }
     const set: string[] = [], values: unknown[] = []
     for (const [key, value] of Object.entries(fields)) {
       set.push(`${names[key] ?? key}=?`)
@@ -4504,14 +4504,19 @@ export class VoiceChatDb {
       .run(projectId, semanticType, semanticType === 'done' ? now : null, now, taskId, projectId)
   }
 
-  retryMergeRun(userId: string, runId: string, agentIdOverride?: string | null): MergeRun {
+  retryMergeRun(userId: string, runId: string, agentIdOverride?: string | null, unpin?: boolean): MergeRun {
     const previous = this.getMergeRun(userId, runId)
     if (!previous) throw new Error('merge run not found')
     if (ACTIVE_MERGE_STATUSES.includes(previous.status)) return previous
     this.moveMergeTask(previous.projectId, previous.taskId, 'awaiting_merge')
     const next = this.startMergeRun(userId, previous.projectId, previous.taskId, agentIdOverride ?? previous.agentId)
-    if (previous.conflicts.length > 0 || /stale source/i.test(previous.error ?? '')) return this.updateMergeRun(next.id, { sourceSha: null }) ?? next
+    if (unpin || previous.conflicts.length > 0 || /stale source/i.test(previous.error ?? '')) return this.updateMergeRun(next.id, { sourceSha: null }) ?? next
     return next
+  }
+
+  listMergeRuns(userId: string, projectId: string, taskId: string, limit = 20): MergeRun[] {
+    if (!this.isProjectMember(userId, projectId)) return []
+    return (this.db.prepare(`SELECT * FROM merge_runs WHERE task_id=? AND project_id=? ORDER BY created_at DESC LIMIT ?`).all(taskId, projectId, limit) as Record<string, unknown>[]).map((row) => this.mapMergeRun(row))
   }
 
   getProjectMachine(projectId: string, agentId: string): { agentId: string; path: string; reposRoot: string | null } | null {
