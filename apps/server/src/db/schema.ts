@@ -321,6 +321,8 @@ CREATE TABLE IF NOT EXISTS ci_runs (
   workspace_id   TEXT,
   triggered_by   TEXT NOT NULL,
   prev_column_id TEXT,
+  run_column_id TEXT,
+  terminal_column_id TEXT,
   llm_engine_id  TEXT,
   llm_provider   TEXT NOT NULL DEFAULT 'claude',
   llm_model      TEXT NOT NULL DEFAULT 'opus',
