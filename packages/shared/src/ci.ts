@@ -666,8 +666,12 @@ export interface CiRun {
   workspaceId: string | null
   /** Логин запустившего. */
   triggeredBy: string
-  /** Колонка задачи до рана — для отката при Исходе B. */
+  /** Колонка задачи до рана — возможная цель условного отката. */
   prevColumnId: string | null
+  /** Колонка, занятая раннером; rollback допустим, только пока задача остаётся в ней. */
+  runColumnId?: string | null
+  /** Снимок этапа задачи в момент терминальной финализации. */
+  terminalColumnId?: string | null
   /** Снимок выбранного исполнителя; null — legacy/default для провайдера. */
   llmEngineId?: string | null
   /** Провайдер и модель шага разработки; можно сменить при повторе упавшего model_work. */
@@ -812,6 +816,10 @@ export interface CiRunSummary {
   modelActive: boolean
   /** Ран стоит и ждёт ответа пользователя. */
   awaitingInput: boolean
+  /** Этап задачи, на котором был зафиксирован терминальный результат. */
+  terminalColumnId?: string | null
+  /** Более новая отменённая/пропущенная попытка, не заменяющая основной результат. */
+  latestAttempt?: CiRunSummary | null
 }
 
 // --- fix-loop ------------------------------------------------------------

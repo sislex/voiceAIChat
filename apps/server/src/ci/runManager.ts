@@ -10,7 +10,7 @@ import type {
   CiRunMode, CiInteraction, CiInteractionAnswer, CiPlanDecision, QuestionSpec, Message, Task, CiUsageKind, CiStageLlmSnapshot
 } from '@voicechat/shared'
 import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificationCommand } from '@voicechat/shared'
-import { isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, pickCiRunAgent, resolveCiStageModel } from '@voicechat/shared'
+import { isActiveCiStatus, isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, pickCiRunAgent, resolveCiStageModel } from '@voicechat/shared'
 import type { CiRunLaunch } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
@@ -415,12 +415,15 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     } catch {
       conversationId = null
     }
+    const developmentColumnId = deps.db.getColumnIdBySemantic(projectId, 'development')
+    const runColumnId = developmentColumnId ?? task.columnId
     const run = deps.db.createCiRun({
       projectId,
       taskId,
       agentId,
       triggeredBy: userId,
       prevColumnId: task.columnId,
+      runColumnId,
       llmEngineId: engineResolution.engine?.id ?? null,
       llmProvider: provider,
       llmModel: model,
@@ -433,7 +436,6 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       kbContextMode: project.ciKbContextMode ?? 'auto',
       slotProgress: { done: 0, total, phase: 'В очереди' }
     })
-    const developmentColumnId = deps.db.getColumnIdBySemantic(projectId, 'development')
     if (developmentColumnId && developmentColumnId !== task.columnId) {
       deps.db.moveTask(userId, projectId, taskId, { columnId: developmentColumnId })
     }
@@ -1974,7 +1976,12 @@ fi`
 
   function rollbackTask(runId: string, userId: string, prevColumnId: string | null): void {
     const run = deps.db.getCiRunRaw(runId)
-    if (!run || !prevColumnId) return
+    if (!run || !prevColumnId || !run.runColumnId) return
+    const task = deps.db.getCiTask(userId, run.projectId, run.taskId)
+    // Пользовательский перенос сильнее автоматического rollback этого рана.
+    if (!task || task.columnId !== run.runColumnId) return
+    const newerActive = deps.db.latestCiRunSummary(run.taskId)
+    if (newerActive && newerActive.id !== runId && isActiveCiStatus(newerActive.status)) return
     try {
       deps.db.moveTask(userId, run.projectId, run.taskId, { columnId: prevColumnId })
     } catch {
@@ -2061,7 +2068,8 @@ fi`
     const finished = now()
     const durationMs = run0?.startedAt ? finished - run0.startedAt : null
     try { deps.db.calculateAndSaveCiKbHit(runId) } catch { /* метрика не роняет финализацию */ }
-    const run = deps.db.updateCiRun(runId, { status, finishedAt: finished, durationMs: durationMs ?? undefined })
+    const terminalColumnId = run0 ? deps.db.getCiTask(userId, run0.projectId, run0.taskId)?.columnId ?? null : null
+    const run = deps.db.updateCiRun(runId, { status, terminalColumnId, finishedAt: finished, durationMs: durationMs ?? undefined })
     if (run) {
       notifyProdDrainFinished(runId)
       deps.db.addCiEvent({ projectId: run.projectId, runId, type: 'run.finished', actorType: 'system', payload: { status } })
