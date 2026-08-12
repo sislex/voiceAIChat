@@ -434,6 +434,8 @@ export function registerProjectRoutes(
       beforeId: req.body?.beforeId ?? null
     })
     if (!task) return nf(reply)
+    // Ручное закрытие задачи чистит её копии репозиториев так же, как успешный merge.
+    if (to?.semanticType === 'done') void merge?.releaseTaskRepositories({ taskId: req.params.taskId }).catch(() => {})
     boardHub.emit(req.params.id)
     return task
   })
@@ -483,9 +485,9 @@ export function registerProjectRoutes(
     }
   })
 
-  app.post<{ Params: { runId: string }; Body: { agentId?: string } }>('/api/merge/runs/:runId/retry', async (req, reply) => {
+  app.post<{ Params: { runId: string }; Body: { agentId?: string; unpin?: boolean } }>('/api/merge/runs/:runId/retry', async (req, reply) => {
     try {
-      const run = db.retryMergeRun(uid(req), req.params.runId, req.body?.agentId ?? null)
+      const run = db.retryMergeRun(uid(req), req.params.runId, req.body?.agentId ?? null, req.body?.unpin === true)
       merge?.start(run)
       boardHub.emit(run.projectId)
       return run
@@ -493,6 +495,15 @@ export function registerProjectRoutes(
       return reply.code(409).send({ error: errMessage(error) })
     }
   })
+
+  // История merge-попыток задачи (для вкладки Merge).
+  app.get<{ Params: { id: string; taskId: string } }>(
+    '/api/projects/:id/tasks/:taskId/merge/runs',
+    async (req, reply) => {
+      if (!member(req, req.params.id)) return nf(reply)
+      return db.listMergeRuns(uid(req), req.params.id, req.params.taskId)
+    }
+  )
 
   // Копии репозиториев задачи по машинам (dev-workspace и merge-клоны).
   app.get<{ Params: { id: string; taskId: string } }>(
