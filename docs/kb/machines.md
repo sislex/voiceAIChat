@@ -1,16 +1,24 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-08-11
-checked: f105bc7
+updated: 2026-08-12
+checked: e7c8311
 areas:
   - apps/agent/src
   - apps/agent-tray/src
   - apps/server/src/agents
+  - apps/server/src/db/database.ts
   - apps/server/src/mcp
+  - apps/server/src/routes/agents.ts
+  - apps/server/src/routes/rest.ts
   - packages/shared/src/agentProtocol.ts
+  - packages/shared/src/ipc.ts
+  - packages/shared/src/protocol.ts
   - packages/shared/src/version.ts
+  - packages/ui/src/components/ConversationSettings.tsx
   - packages/ui/src/components/Machine*.tsx
   - packages/ui/src/components/FileExplorer.tsx
+  - packages/ui/src/remote/httpApi.ts
+  - packages/ui/src/store/voiceStore.ts
 ---
 
 # Машины: компаньон-агент, политика, PTY, проводник
