@@ -3877,7 +3877,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   function applyCiDone(runId: string, run: CiRun, conclusion?: CiRunConclusion): void {
     patchCiRun(runId, (c) => ({ ...c, conclusion: conclusion ?? c.conclusion, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [], interactions: [] } }))
-    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false, awaitingInput: false } } })
+    const previous = state.ciSummaries[run.taskId]
+    const terminal = { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: false, awaitingInput: false, terminalColumnId: run.terminalColumnId }
+    const display = (run.status === 'cancelled' || run.status === 'skipped') && previous?.status === 'success'
+      ? { ...previous, latestAttempt: terminal }
+      : terminal
+    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: display } })
     // Финализация рана увозит карточку по колонкам (успех с мержем — в «Готово»),
     // а с ней меняется и видимость чата задачи в сайдбаре.
     scheduleConversationsRefresh()

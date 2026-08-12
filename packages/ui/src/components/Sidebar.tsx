@@ -564,10 +564,11 @@ export function Sidebar({
                       <TypeIcon type={badge.type} />
                       <span className="ctask-key">{badge.key}</span>
                       {visibleRun && (
-                        <span className={`ci-lozenge ci-lozenge--${ciTone(visibleRun.status)}`} title="Последний ран задачи">
+                        <span className={`ci-lozenge ci-lozenge--${ciTone(visibleRun.status)}`} title="Результат задачи">
                           {ciStatusLabel(visibleRun.status)}
                         </span>
                       )}
+                      {visibleRun?.latestAttempt?.status === 'cancelled' && <span className="ctask-key">Последняя попытка отменена</span>}
                     </p>
                   )}
                   <p className="cmeta">{formatMeta(c, now)}</p>

@@ -88,8 +88,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   }, [menuOpen])
 
   const done = props.doneColumnIds.has(task.columnId)
-  // Ручное завершение закрывает старую ошибку на поверхности задачи, сохраняя
-  // сам ран в истории и ленте.
+  // Сервер выбирает состояние; helper сохраняет совместимость со stale payload.
   const visibleCiSummary = ciSummaryForTask(ciSummary, done)
   const pulse = ciCardPulse(visibleCiSummary)
   // В «Готово» запуск нового CI-рана запрещён: завершённая карточка остаётся
@@ -225,6 +224,11 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                   <span className="jcard-ci-phase">{ciSummary.slotProgress.phase} {ciSummary.slotProgress.done}/{ciSummary.slotProgress.total}</span>
                   {ciSummary.durationMs != null && <span className="jcard-ci-phase">{fmtDuration(ciSummary.durationMs)}</span>}
                 </div>
+                {ciSummary.latestAttempt?.status === 'cancelled' && (
+                  <div className="jcard-ci-row">
+                    <button className="jcard-ci-phase" onClick={() => props.onOpenCiRun?.(ciSummary.latestAttempt!.id)}>Последняя попытка отменена</button>
+                  </div>
+                )}
                 <div className="jcard-ci-row">
                   <span className="jcard-ci-bar"><span className={`jcard-ci-fill${fillMod}`} style={{ width: `${pct}%` }} /></span>
                 </div>

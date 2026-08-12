@@ -237,6 +237,30 @@ describe('ci: раны, шаги, лог, метрики', () => {
     expect(db.getCiRunLog('bob', run.id)).toEqual([])
   })
 
+  it('success → cancelled сохраняет успех основным результатом и отмену отдельной попыткой', () => {
+    const { p, col, task } = project()
+    const success = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
+    db.updateCiRun(success.id, { status: 'success', terminalColumnId: col.id })
+    const cancelled = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 0, total: 1, phase: 'Отменён' } })
+    db.updateCiRun(cancelled.id, { status: 'cancelled', terminalColumnId: col.id })
+
+    const summary = db.latestCiRunSummary(task.id)!
+    expect(summary.id).toBe(success.id)
+    expect(summary.status).toBe('success')
+    expect(summary.latestAttempt).toMatchObject({ id: cancelled.id, status: 'cancelled' })
+    expect(db.listCiRunsForTask('alice', p.id, task.id).map((run) => run.id)).toContain(cancelled.id)
+  })
+
+  it('отмена перестаёт быть актуальной после ручного переноса на другой этап', () => {
+    const { p, col, task } = project()
+    const cancelled = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 0, total: 1, phase: 'Отменён' } })
+    db.updateCiRun(cancelled.id, { status: 'cancelled', terminalColumnId: col.id })
+    expect(db.latestCiRunSummary(task.id)?.status).toBe('cancelled')
+    const other = db.createColumn('alice', p.id, 'Другой этап')!
+    db.moveTask('alice', p.id, task.id, { columnId: other.id })
+    expect(db.latestCiRunSummary(task.id)).toBeNull()
+  })
+
   it('fix-loop: попытки и метрика работы модели', () => {
     const { p, col, task } = project()
     const run = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, slotProgress: { done: 0, total: 0, phase: '' } })
