@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
 updated: 2026-08-12
-checked: 946dac1
+checked: 9540f6f
 areas:
   - packages/shared/src/release.ts
   - packages/shared/src/protocol.ts
@@ -9,6 +9,7 @@ areas:
   - packages/shared/src/projects.ts
   - apps/server/src/releases
   - apps/server/src/routes/releases.ts
+  - apps/server/src/routes/projects.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - apps/server/src/server.ts
@@ -17,13 +18,14 @@ areas:
   - packages/ui/src/components/ProjectPage.tsx
   - packages/ui/src/App.tsx
   - packages/ui/src/remote/httpApi.ts
+  - packages/ui/src/styles/app.css
 ---
 
 # Версионные release-ветки и публикация в production
 
 ## Release-ветки
 
-Центр релизов работает только с удалёнными ветками строгого вида `release/x.y.z` без ведущих нулей. Общая валидация находится в `packages/shared/src/release.ts`. Создать ветку может только владелец; Git-операции подготовки выполняются на default CI/Git-машине проекта, а не на production-машине.
+Центр релизов работает только с удалёнными ветками строгого вида `release/x.y.z` без ведущих нулей. Общая валидация находится в `packages/shared/src/release.ts`. Создать ветку может только владелец; перед запуском он выбирает online-машину из собственных или подключённых к проекту машин, а backend повторно проверяет доступ к ней в контексте проекта. Git-операции подготовки выполняются на выбранной машине и её checkout, снимок которых сохраняется в записи рана; production-машина настраивается и используется отдельно.
 
 Создание ветки сразу запускает самостоятельную подготовку. `ReleaseManager` переводит запись через `preparing` и `checking`, запускает release-preflight базы знаний, повторно читает origin и сохраняет получившийся точный SHA. Preflight fetch-ит ветку в собственный ref `refs/voicechat/preflight/<release-branch>` и выполняет `kb:index` в отдельном временном Git worktree на его SHA, поэтому параллельный fetch, подготовка или production checkout не могут изменить исходную ревизию либо переключить рабочее дерево. Если изменился только `docs/kb/README.md`, индекс коммитится и отправляется в release-ветку с `--force-with-lease` на исходный SHA: конкурентное изменение remote останавливает шаг, но не перезаписывается. Временные worktree и ref удаляются при выходе; глобальный `FETCH_HEAD` preflight не читает. Затем на зафиксированном SHA целиком выполняется настроенный `project.testCommand` (fallback — `npm run typecheck && npm run test`). Обычная строка — одна команда; JSON-массив непустых строк — последовательные стадии с отдельным 600-секундным лимитом и общим fail-fast результатом. Каждая стадия целиком группируется после `cd` в checkout: фоновые операторы `&` и последующие `wait` не могут вернуть часть составной команды в исходный каталог агента. Это позволяет крупным полным наборам не упираться в лимит одной агентской команды. `affected-check` для release-gate не используется: даже docs-only индекс обязан пройти фактические проектные проверки. Только успешные результаты обоих шагов дают статус `ready`; ошибки БЗ и regression дают `failed`.
 
