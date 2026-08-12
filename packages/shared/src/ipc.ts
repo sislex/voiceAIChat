@@ -125,6 +125,11 @@ export interface IpcInvokeMap {
    */
   'conversations:list': { arg: { includeCompleted?: boolean }; result: Conversation[] }
   'conversations:create': { arg: { title?: string; assistantKind?: 'web-recorder' }; result: Conversation }
+  /** Атомарно сохраняет новый обычный разговор и его первую пользовательскую реплику. */
+  'conversations:createDraft': {
+    arg: { idempotencyKey: string; title: string; projectId?: string | null; message: Omit<AddMessageArgs, 'conversationId'> }
+    result: ConversationWithMessages
+  }
   /** Создать или получить приватный проектный чат канбан-ассистента. */
   'kanbanAssistant:get': {
     arg: { projectId: string; conversationId?: string }
@@ -738,6 +743,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'prompt:suggest',
   'conversations:list',
   'conversations:create',
+  'conversations:createDraft',
   'conversations:get',
   'conversations:search',
   'messages:search',

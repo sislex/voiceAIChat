@@ -37,6 +37,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
   const conversations: Conversation[] = []
   const messages: Message[] = []
+  const draftRequests = new Map<string, string>()
   const agents: AgentInfo[] = []
   const adminUsers: AdminUserInfo[] = [
     { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 0, agents: [] }
@@ -202,6 +203,40 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const conv = { ...makeConversation(title ?? 'Новый разговор'), ...(assistantKind ? { assistantKind } : {}) }
       conversations.push(conv)
       return conv
+    },
+    'conversations:createDraft': async ({ idempotencyKey, title, projectId, message }) => {
+      const replayId = draftRequests.get(idempotencyKey)
+      if (replayId) {
+        const replay = conversations.find((item) => item.id === replayId)!
+        return { conversation: withCounts(replay), messages: messages.filter((item) => item.conversationId === replayId) }
+      }
+      const conv = makeConversation(title)
+      conversations.push(conv)
+      if (projectId) {
+        conv.projectId = projectId
+        const project = projects.find((item) => item.id === projectId)
+        if (!project) throw new Error('project not found')
+        conv.execTarget = project.defaultAgentId
+        const machine = project.defaultAgentId ? project.machines.find((item) => item.agentId === project.defaultAgentId) : null
+        conv.workdir = machine?.path || null
+        conv.skillNames = [...project.skills]
+      }
+      const persisted: Message = {
+        id: nextId(),
+        conversationId: conv.id,
+        role: message.role,
+        text: message.text,
+        time: message.time,
+        createdAt: tick(),
+        ...(message.engine ? { engine: message.engine } : {}),
+        ...(message.meta ? { meta: message.meta } : {}),
+        execTarget: conv.execTarget,
+        ...(message.attachments?.length ? { attachments: message.attachments } : {})
+      }
+      messages.push(persisted)
+      conv.updatedAt = persisted.createdAt
+      draftRequests.set(idempotencyKey, conv.id)
+      return { conversation: withCounts(conv), messages: [persisted] }
     },
     'conversations:get': async ({ id }) => {
       const conv = conversations.find((c) => c.id === id)
