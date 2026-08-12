@@ -101,6 +101,9 @@ export class MergeRunManager {
       if(!mergeSha)throw new Error('Merge-коммит не создан')
       this.deps.db.updateMergeRun(id,{mergeSha}); this.stage(id,'merging','passed',`Создан merge ${mergeSha.slice(0,8)}`)
 
+      this.stage(id,'testing','running','Устанавливаю зависимости merge-клона')
+      const installed=await this.cmd(run,'npm ci --no-audit --no-fund',repo,900000)
+      if(installed.exitCode||installed.timedOut)throw new Error('Не удалось установить зависимости merge-клона')
       this.stage(id,'testing','running','Запускаю обязательные проверки до push')
       const commands=testStages(project.testCommand??''), began=this.now()
       let tested:{exitCode:number|null;timedOut:boolean;output:string}={exitCode:0,timedOut:false,output:''}
