@@ -74,6 +74,7 @@ describe('MergeRunManager',()=>{
     expect(s.run.conflicts).toEqual([])
     const resolve=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script).find(v=>v.includes('kb.mjs touch'))
     expect(resolve).toContain("'docs/kb/ui.md'")
+    expect(resolve).toContain('git merge-file --stdout')
     expect(resolve).toContain('kb.mjs index')
     expect(resolve).toContain('kb.mjs check')
   })
