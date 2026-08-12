@@ -3874,6 +3874,13 @@ export class VoiceChatDb {
     return r ? mapCiWorkspace(r) : null
   }
 
+  /** Последний workspace с отправленной веткой — источник правды merge-рана.
+   *  Более новая неотправленная запись (начатый dev-ран) его не заслоняет. */
+  findLatestPushedCiWorkspace(projectId: string, taskId: string): CiWorkspace | null {
+    const r = this.db.prepare(`SELECT * FROM ci_workspaces WHERE project_id = ? AND task_id = ? AND pushed = 1 ORDER BY created_at DESC LIMIT 1`).get(projectId, taskId) as CiWorkspaceRow | undefined
+    return r ? mapCiWorkspace(r) : null
+  }
+
   recordCiWorkspaceRevision(workspaceId: string, branch: string, commitSha: string): void {
     this.db.prepare(`UPDATE ci_workspaces SET branch=?, commit_sha=?, pushed=1 WHERE id=?`).run(branch, commitSha, workspaceId)
   }
