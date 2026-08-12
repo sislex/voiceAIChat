@@ -600,8 +600,8 @@ export interface StoreActions {
   login(name: string, password: string): Promise<void>
   /** Выйти: очистить сессию и данные, показать экран логина (web). */
   logout(): Promise<void>
-  /** Создать разговор и переключиться на него. Возвращает id созданного. */
-  newConversation(assistantKind?: 'web-recorder'): Promise<string>
+  /** Открыть локальный черновик; специальные web-recorder создаются сразу. */
+  newConversation(assistantKind?: 'web-recorder'): Promise<string | null>
   /** Открыть разговор. `false` — такого разговора нет (удалён/чужой). */
   selectConversation(id: string): Promise<boolean>
   deleteConversation(id: string): Promise<void>
@@ -1334,6 +1334,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   let conversationsRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  // Стабилен между повторами одной первой отправки: потерянный HTTP-ответ не
+  // создаст второй разговор. Сбрасывается новым черновиком или после успеха.
+  let pendingDraftKey: string | null = null
 
   /**
    * Перечитать список бесед из-за события, а не действия пользователя. Раньше
@@ -1547,23 +1550,28 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
   }
 
-  /** Создаёт разговор, если активного нет; заголовок — из первой реплики. */
-  async function ensureConversation(titleSeed: string): Promise<string | null> {
-    if (state.activeId) {
-      const current = state.conversations.find((c) => c.id === state.activeId)
-      if (current && current.messageCount === 0 && current.title === 'Новый разговор') {
-        await api['conversations:rename']({ id: current.id, title: titleFromText(titleSeed) })
-        await refreshConversations()
-      }
-      return state.activeId
-    }
-    const created = await api['conversations:create']({ title: titleFromText(titleSeed) })
-    const conv = state.sidebarProjectId
-      ? await api['conversations:setProject']({ id: created.id, projectId: state.sidebarProjectId })
-      : created
-    setState({ activeId: conv.id, ...chatScopedReset() })
+  /** Атомарно сохраняет локальный черновик вместе с первой репликой. */
+  async function ensureConversation(
+    titleSeed: string,
+    firstMessage: Parameters<RendererApi['conversations:createDraft']>[0]['message']
+  ): Promise<boolean> {
+    if (state.activeId) return false
+    pendingDraftKey ??= globalThis.crypto?.randomUUID?.() ?? `draft-${Date.now()}-${Math.random()}`
+    const result = await api['conversations:createDraft']({
+      idempotencyKey: pendingDraftKey,
+      title: titleFromText(titleSeed),
+      projectId: state.sidebarProjectId,
+      message: firstMessage
+    })
+    pendingDraftKey = null
+    setState({
+      activeId: result.conversation.id,
+      ...chatScopedReset(),
+      messages: result.messages,
+      conversations: withConversation(state.conversations, result.conversation)
+    })
     await refreshConversations()
-    return conv.id
+    return true
   }
 
   /** Персист сообщения в БД и добавление в ленту. */
@@ -2661,16 +2669,24 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     void audio.stop().catch((err) => console.warn('[audio] остановка захвата не удалась', err))
   }
 
-  async function newConversation(assistantKind?: 'web-recorder'): Promise<string> {
+  async function newConversation(assistantKind?: 'web-recorder'): Promise<string | null> {
     cancelTimers()
     stopCapture()
     resetTts() // ход текущего разговора не отменяем — он доиграет на сервере
     dispatchVoice('reset')
-    const created = await api['conversations:create']({ title: 'Новый разговор', ...(assistantKind ? { assistantKind } : {}) })
-    // «Новый» создаёт чат сразу в выбранном проекте (сервер применит машину/папку/навыки).
-    const conversation = state.sidebarProjectId
-      ? await api['conversations:setProject']({ id: created.id, projectId: state.sidebarProjectId })
-      : created
+    pendingDraftKey = null
+    if (!assistantKind) {
+      setState({
+        activeId: null,
+        ...chatSwitchReset(),
+        draft: '',
+        promptHelper: { open: false, loading: false, variants: [], error: null },
+        attachments: []
+      })
+      return null
+    }
+    // Web Reader — специальный сохраняемый lifecycle, он не является ручным черновиком.
+    const conversation = await api['conversations:create']({ title: 'Новый разговор', assistantKind })
     setState({
       activeId: conversation.id,
       ...chatSwitchReset(),
@@ -2850,16 +2866,20 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     const atts = state.attachments
     if ((!text && atts.length === 0 && !previewElement) || state.voice !== 'idle') return false
     setState({ error: null })
-    await ensureConversation(text || atts.map((a) => a.name).join(', '))
+    const messageAttachments = atts.map((file) => ({ uploadId: file.id, path: file.path, name: file.name, mimeType: file.mimeType, size: file.size, ...(file.agentId ? { agentId: file.agentId } : {}) }))
+    const messageText = composeUserText(text, atts)
+    const messageMeta = previewElement ? { previewElement } : undefined
+    const created = await ensureConversation(text || atts.map((a) => a.name).join(', '), {
+      role: 'u1',
+      text: messageText,
+      time: formatTime(now()),
+      ...(messageMeta ? { meta: messageMeta } : {}),
+      ...(messageAttachments.length ? { attachments: messageAttachments } : {})
+    })
     const execTarget = activeConversationExecTarget()
-    await persistMessage(
-      'u1',
-      composeUserText(text, atts),
-      undefined,
-      previewElement ? { previewElement } : undefined,
-      execTarget,
-      atts.map((file) => ({ uploadId: file.id, path: file.path, name: file.name, mimeType: file.mimeType, size: file.size, ...(file.agentId ? { agentId: file.agentId } : {}) }))
-    )
+    if (!created) {
+      await persistMessage('u1', messageText, undefined, messageMeta, execTarget, messageAttachments)
+    }
     setState({ draft: '', attachments: [] })
     await refreshConversations()
     // Команда «открой консоль/проводник» → виджет прямо в ответе, без обращения к LLM.
@@ -3273,8 +3293,15 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   /** Персист распознанных сегментов как реплик пользователя, затем ответ. */
   async function finalizeAndReply(segments: LiveSegment[]): Promise<void> {
-    await ensureConversation(segments[0]?.text ?? '')
-    for (const seg of segments) {
+    const first = segments[0]
+    if (!first) return
+    const firstRole = `u${state.settings.diarization ? first.speakerId : 1}` as MessageRole
+    const created = await ensureConversation(first.text, {
+      role: firstRole,
+      text: first.text,
+      time: formatTime(now())
+    })
+    for (const seg of created ? segments.slice(1) : segments) {
       const role = `u${state.settings.diarization ? seg.speakerId : 1}` as MessageRole
       await persistMessage(role, seg.text)
     }

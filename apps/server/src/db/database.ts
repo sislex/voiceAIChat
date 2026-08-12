@@ -962,6 +962,24 @@ export class VoiceChatDb {
     // данных) удаляем — чистый старт. Идемпотентно: после первого прогона NULL нет.
     this.db.exec(`DELETE FROM conversations WHERE user_id IS NULL`) // messages/speakers — по CASCADE
     this.db.exec(`DELETE FROM agents WHERE user_id IS NULL`)
+    // Одноразово удаляем только старые ручные черновики с полностью дефолтными
+    // полями. Любая настройка, проект, служебный тип, задача или CLI-сессия
+    // делает строку неоднозначной и сохраняет её.
+    const cleanup = this.db.prepare(
+      `INSERT OR IGNORE INTO schema_migrations (name, applied_at) VALUES ('cleanup-empty-manual-drafts-v1', ?)`
+    ).run(Date.now())
+    if (cleanup.changes) {
+      this.db.exec(`
+        DELETE FROM conversations
+        WHERE title = 'Новый разговор'
+          AND task_id IS NULL AND assistant_kind IS NULL AND project_id IS NULL
+          AND claude_session_id IS NULL AND exec_target IS NULL AND workdir IS NULL
+          AND skill_names = '[]' AND llm_engine_id IS NULL
+          AND llm_provider IS NULL AND llm_model IS NULL AND permission_mode IS NULL
+          AND kb_context_mode = 'auto' AND preview_url IS NULL AND status = 'developing'
+          AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id)
+      `)
+    }
   }
 
   close(): void {
@@ -984,6 +1002,57 @@ export class VoiceChatDb {
       )
       .run(id, title, ts, ts, userId, assistantKind)
     return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, assistantKind, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
+  }
+
+  /**
+   * Единственная точка персистенции нового обычного чата: разговор, проектные
+   * настройки и первая реплика фиксируются одной SQLite-транзакцией.
+   */
+  createConversationDraft(
+    userId: string,
+    idempotencyKey: string,
+    title: string,
+    projectId: string | null,
+    message: {
+      role: MessageRole
+      text: string
+      time: string
+      engine?: LlmProvider
+      meta?: TurnMeta
+      execTarget?: string | null
+      attachments?: MessageAttachment[]
+    }
+  ): { conversation: Conversation; messages: Message[] } {
+    const run = this.db.transaction(() => {
+      const replay = this.db.prepare(
+        `SELECT conversation_id FROM conversation_draft_requests WHERE user_id = ? AND idempotency_key = ?`
+      ).get(userId, idempotencyKey) as { conversation_id: string } | undefined
+      if (replay) {
+        const conversation = this.getConversation(userId, replay.conversation_id)
+        if (!conversation) throw new Error('idempotent conversation not found')
+        return { conversation, messages: this.listMessages(userId, conversation.id) }
+      }
+
+      const created = this.createConversation(userId, title)
+      const conversation = projectId ? this.setConversationProject(userId, created.id, projectId) : created
+      if (!conversation) throw new Error('project not found')
+      this.addMessage(
+        userId,
+        conversation.id,
+        message.role,
+        message.text,
+        message.time,
+        message.engine,
+        message.meta,
+        conversation.execTarget,
+        message.attachments
+      )
+      this.db.prepare(
+        `INSERT INTO conversation_draft_requests (user_id, idempotency_key, conversation_id) VALUES (?, ?, ?)`
+      ).run(userId, idempotencyKey, conversation.id)
+      return { conversation: this.getConversation(userId, conversation.id)!, messages: this.listMessages(userId, conversation.id) }
+    })
+    return run()
   }
 
   /** Один приватный сохраняемый чат канбан-ассистента на пользователя и проект. */

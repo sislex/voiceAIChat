@@ -25,6 +25,19 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 
 
+CREATE TABLE IF NOT EXISTS conversation_draft_requests (
+  user_id        TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  PRIMARY KEY (user_id, idempotency_key),
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  name       TEXT PRIMARY KEY,
+  applied_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS messages (
   id              TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL,

@@ -60,16 +60,47 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().activeId).toBe(before)
   })
 
-  it('newConversation возвращает id созданного разговора', async () => {
-    const { store } = makeStore()
+  it('newConversation открывает локальный черновик без серверной записи', async () => {
+    const { store, api } = makeStore()
     await store.actions.init()
+    const create = vi.spyOn(api, 'conversations:create')
     const id = await store.actions.newConversation()
-    expect(id).toBe(store.getState().activeId)
+    expect(id).toBeNull()
+    expect(store.getState().activeId).toBeNull()
+    expect(store.getState().conversations).toHaveLength(0)
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('повторные новые чаты не персистятся, а потерянный ответ повторяется идемпотентно', async () => {
+    const { store, api } = makeStore()
+    await store.actions.init()
+    await store.actions.newConversation()
+    await store.actions.newConversation()
+    expect(api._state.conversations).toHaveLength(0)
+
+    const original = api['conversations:createDraft']
+    let loseResponse = true
+    vi.spyOn(api, 'conversations:createDraft').mockImplementation(async (args) => {
+      const result = await original(args)
+      if (loseResponse) {
+        loseResponse = false
+        throw new Error('network lost')
+      }
+      return result
+    })
+    store.actions.setDraft('Не потеряй меня')
+    await expect(store.actions.submitText()).rejects.toThrow('network lost')
+    expect(store.getState().draft).toBe('Не потеряй меня')
+    expect(api._state.conversations).toHaveLength(1)
+
+    await expect(store.actions.submitText()).resolves.toBe(true)
+    expect(api._state.conversations).toHaveLength(1)
+    expect(api._state.messages.filter((message) => message.role === 'u1')).toHaveLength(1)
   })
 
   it('submitText: создаёт разговор, персистит реплику и проходит thinking → speaking → idle', async () => {
     const { store, api } = makeStore()
-    const spyAdd = vi.spyOn(api, 'messages:add')
+    const spyAdd = vi.spyOn(api, 'conversations:createDraft')
     await store.actions.init()
 
     store.actions.setDraft('Привет, Claude')
@@ -78,7 +109,7 @@ describe('voiceStore — интеграция стора с api-моком и м
     // Разговор создан, реплика пользователя записана, черновик очищен, состояние — thinking.
     expect(store.getState().activeId).not.toBeNull()
     expect(spyAdd).toHaveBeenCalledWith(
-      expect.objectContaining({ role: 'u1', text: 'Привет, Claude' })
+      expect.objectContaining({ message: expect.objectContaining({ role: 'u1', text: 'Привет, Claude' }) })
     )
     expect(store.getState().draft).toBe('')
     expect(store.getState().voice).toBe('thinking')
@@ -93,16 +124,18 @@ describe('voiceStore — интеграция стора с api-моком и м
 
   it('submitText сохраняет выбранную DOM-область в meta пользовательской реплики', async () => {
     const { store, api } = makeStore()
-    const spyAdd = vi.spyOn(api, 'messages:add')
+    const spyAdd = vi.spyOn(api, 'conversations:createDraft')
     await store.actions.init()
     store.actions.setDraft('Исправь блок')
     const previewElement = { tag: 'div', id: 'hero', classes: [], dataAttributes: {}, selector: '#hero', ancestors: ['html', 'body', 'div#hero'], rect: { x: 0, y: 0, top: 0, right: 320, bottom: 120, left: 0, width: 320, height: 120 }, pageUrl: 'https://example.test', viewport: { width: 800, height: 600 }, outerHTML: '<div id="hero"></div>', text: '', styles: { font: '', color: '', backgroundColor: '', margin: '', padding: '', border: '', width: '', height: '', position: '', display: '', flex: '', flexDirection: '', flexWrap: '', alignItems: '', justifyContent: '', gap: '', grid: '', gridTemplateColumns: '', gridTemplateRows: '', gridArea: '' } }
 
     expect(await store.actions.submitText(previewElement)).toBe(true)
     expect(spyAdd).toHaveBeenCalledWith(expect.objectContaining({
-      role: 'u1',
-      text: 'Исправь блок',
-      meta: { previewElement }
+      message: expect.objectContaining({
+        role: 'u1',
+        text: 'Исправь блок',
+        meta: { previewElement }
+      })
     }))
     expect(store.getState().messages[0].meta?.previewElement).toEqual(previewElement)
   })
@@ -238,8 +271,8 @@ describe('voiceStore — интеграция стора с api-моком и м
 
     await store.actions.newConversation()
 
-    expect(store.getState().activeId).not.toBeNull()
-    expect(store.getState().conversations).toHaveLength(2)
+    expect(store.getState().activeId).toBeNull()
+    expect(store.getState().conversations).toHaveLength(1)
     expect(store.getState().messages).toHaveLength(0)
     expect(store.getState().voice).toBe('idle')
   })

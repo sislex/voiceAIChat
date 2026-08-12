@@ -64,18 +64,22 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
     expect(await screen.findByText('Погода в июле?')).toBeInTheDocument()
   })
 
-  it('новый разговор получает свой адрес', async () => {
-    const { api, lisbon } = await seededApi()
+  it('новый разговор остаётся локальным до первой отправки и получает адрес после неё', async () => {
+    const { api } = await seededApi()
     render(<App api={api} delays={SLOW} />)
     await screen.findByText('Погода в июле?')
 
     await userEvent.click(screen.getByRole('button', { name: '+ Новый' }))
-    await waitFor(() => {
-      expect(window.location.hash).toMatch(/^#\/chat\/.+/)
-      expect(window.location.hash).not.toBe(`#/chat/${lisbon}`)
-    })
-    const created = api._state.conversations.find((c) => c.title === 'Новый разговор')
-    expect(window.location.hash).toBe(`#/chat/${created?.id}`)
+    await userEvent.click(screen.getByRole('button', { name: '+ Новый' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/'))
+    expect(api._state.conversations).toHaveLength(2)
+
+    await userEvent.click(screen.getByTestId('composer-expand'))
+    const composer = screen.getByPlaceholderText(/Напишите|Расшифровка|Сообщение/i)
+    await userEvent.type(composer, 'Первая реплика{Enter}')
+    await waitFor(() => expect(window.location.hash).toMatch(/^#\/chat\/.+/))
+    expect(api._state.conversations).toHaveLength(3)
+    expect(api._state.conversations.filter((conversation) => conversation.title === 'Первая реплика')).toHaveLength(1)
   })
 
   it('удаление открытого чата уводит на адрес следующего', async () => {
