@@ -137,18 +137,22 @@ export class MergeRunManager {
         if(files.length>0&&files.every(f=>/^docs\/kb\/.+\.md$/.test(f))){
           this.stage(id,'resolving_conflicts','running','Конфликты только в docs/kb — разрешаю по правилам БЗ')
           const topics=files.filter(f=>f!=='docs/kb/README.md')
+          // Метаданные updated:/checked: нормализуются плейсхолдером во всех трёх
+          // стадиях, затем честный трёхсторонний merge-file: чистый результат
+          // значит, что конфликтовали только метаданные (несовпадающие правки
+          // тела с обеих сторон сохраняются), а kb.mjs touch ставит свежие
+          // значения. Конфликт после нормализации — содержательное расхождение.
           const perFile=topics.map(f=>[
             `f=${shellQuote(f)}`,
+            'git show ":1:$f" > .merge-kb-base 2>/dev/null || printf "" > .merge-kb-base',
             'git show ":2:$f" > .merge-kb-ours',
             'git show ":3:$f" > .merge-kb-theirs',
-            `grep -vE '^(updated|checked):' .merge-kb-ours > .merge-kb-ours-body`,
-            `grep -vE '^(updated|checked):' .merge-kb-theirs > .merge-kb-theirs-body`,
-            'diff -q .merge-kb-ours-body .merge-kb-theirs-body >/dev/null || exit 65',
-            'git checkout --ours -- "$f"',
+            `for v in base ours theirs; do sed -E 's/^(updated:).*/\\1 @@KB@@/; s/^(checked:).*/\\1 @@KB@@/' ".merge-kb-$v" > ".merge-kb-$v.n"; done`,
+            'git merge-file --stdout .merge-kb-ours.n .merge-kb-base.n .merge-kb-theirs.n > "$f" || exit 65',
             'node scripts/kb.mjs touch "$f"',
             'git add -- "$f"'
           ].join('\n')).join('\n')
-          const resolved=await this.cmd(run,`set -e\n${perFile}\nrm -f .merge-kb-ours .merge-kb-theirs .merge-kb-ours-body .merge-kb-theirs-body\nnode scripts/kb.mjs index\ngit add docs/kb/README.md\nnode scripts/kb.mjs check\ngit -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --no-edit`,repo,300000)
+          const resolved=await this.cmd(run,`set -e\n${perFile}\nrm -f .merge-kb-base .merge-kb-ours .merge-kb-theirs .merge-kb-base.n .merge-kb-ours.n .merge-kb-theirs.n\nnode scripts/kb.mjs index\ngit add docs/kb/README.md\nnode scripts/kb.mjs check\ngit -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --no-edit`,repo,300000)
           if(resolved.exitCode||resolved.timedOut){
             this.stage(id,'resolving_conflicts','failed',`Конфликты: ${files.join(', ')} — содержательное расхождение тем БЗ`)
             this.finish(id,'decision_required','Конфликты требуют решения пользователя','Разрешите файлы в ветке задачи и повторите merge.','decision_required'); return
