@@ -26,20 +26,23 @@ function setup(outputs:string[]){
 }
 
 describe('MergeRunManager',()=>{
-  it('fetches, tests and pushes with lease before moving to done',async()=>{
-    const s=setup(['git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'','',merged+'\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''])
+  it('merges from a temporary clone when the released CI workspace no longer exists',async()=>{
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'','',merged+'\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''])
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('success'))
     expect(s.moves).toContain('done')
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
     expect(scripts.find(v=>v.includes('git push'))).toContain(`--force-with-lease=refs/heads/main:${target}`)
     expect(scripts.findIndex(v=>v.includes('affected-check'))).toBeLessThan(scripts.findIndex(v=>v.includes('git push')))
+    const calls=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls
+    expect(calls[0][0]).toMatchObject({workdir:'/repo',script:expect.stringContaining("git clone --no-checkout")})
+    expect(calls.some(call=>call[0].workdir==='/repo/task.merge-r1')).toBe(true)
   })
   it('stops stale source before creating a worktree',async()=>{
-    const changed='4'.repeat(40), s=setup(['git@example/repo.git\ntrue\n',`SOURCE=${changed}\nTARGET=${target}\n`,''])
+    const changed='4'.repeat(40), s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${changed}\nTARGET=${target}\n`,''])
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('decision_required'))
     expect(s.run.error).toContain('stale source')
-    expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.some(call=>call[0].script.includes('worktree add'))).toBe(false)
+    expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.some(call=>call[0].script.includes('git checkout --detach'))).toBe(false)
   })
 })
