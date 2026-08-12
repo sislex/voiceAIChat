@@ -2849,7 +2849,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   async function submitText(previewElement?: PreviewElementPayload): Promise<boolean> {
     const text = state.draft.trim()
     const atts = state.attachments
-    if ((!text && atts.length === 0 && !previewElement) || state.voice !== 'idle') return false
+    if (!text && atts.length === 0 && !previewElement) return false
+    const queueOnly = state.voice === 'thinking' || state.voice === 'speaking' || state.voice === 'transcribing'
     setState({ error: null })
     await ensureConversation(text || atts.map((a) => a.name).join(', '))
     const execTarget = activeConversationExecTarget()
@@ -2864,13 +2865,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ draft: '', attachments: [] })
     await refreshConversations()
     // Команда «открой консоль/проводник» → виджет прямо в ответе, без обращения к LLM.
-    if (atts.length === 0 && !previewElement && (await maybeOpenUtility(text))) return true
-    if (!dispatchVoice('submit_text')) return false // idle → thinking
-    beginReply(
-      [{ speakerId: 1, text: withPreviewElementContext(text || 'См. приложенные файлы.', previewElement) }],
-      atts.map((a) => a.id),
-      execTarget
-    )
+    if (!queueOnly && atts.length === 0 && !previewElement && (await maybeOpenUtility(text))) return true
+    if (!queueOnly && !dispatchVoice('submit_text')) return false // idle → thinking
+    const segments = [{ speakerId: 1, text: withPreviewElementContext(text || 'См. приложенные файлы.', previewElement) }]
+    if (queueOnly && claudeEnabled && deps.sendClaudePrompt && state.activeId) {
+      deps.sendClaudePrompt(state.activeId, segments, atts.map((a) => a.id), true, execTarget)
+    } else {
+      beginReply(segments, atts.map((a) => a.id), execTarget)
+    }
     return true
   }
 

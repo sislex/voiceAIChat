@@ -105,9 +105,9 @@ export function VoiceBar({
   const isListening = state === 'listening'
   const isThinking = state === 'thinking' || state === 'transcribing'
   const isSpeaking = state === 'speaking'
-  // Композер доступен в idle, во время озвучки и как только пошёл стриминг ответа —
-  // можно печатать следующий вопрос черновиком. Отправка заблокирована до idle.
-  const composerMode = isIdle || isSpeaking || replyStarted
+  // Композер остаётся доступным во время ожидания и стриминга: сервер сам
+  // сериализует новые реплики в очередь разговора.
+  const composerMode = !isListening
 
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
   const toggleCollapsed = (): void => setCollapsed((prev) => !prev)
@@ -117,7 +117,7 @@ export function VoiceBar({
   const draftRef = useAutoGrow(draft, DRAFT_MIN_ROWS, DRAFT_MAX_ROWS)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const canSend = draft.trim().length > 0 || attachments.length > 0 || previewElement !== null
-  const canSubmit = isIdle && canSend
+  const canSubmit = canSend
   const helper = promptHelper ?? { open: false, loading: false, variants: [], error: null }
   // Палочку показываем в idle, когда есть что переформулировать.
   const canSuggest = isIdle && draft.trim().length > 0 && !!onSuggestPrompts
@@ -298,7 +298,7 @@ export function VoiceBar({
           </div>
         )}
 
-        {isIdle && (attachments.length > 0 || previewElement) && (
+        {(attachments.length > 0 || previewElement) && (
           <div className="attchips" data-testid="attachments">
             {previewElement && (
               <span className="attchip previewchip" data-testid="preview-element-chip" title={previewElement.selector}>
@@ -370,18 +370,17 @@ export function VoiceBar({
               >
                 📎
               </IconButton>
-              {isIdle ? (
-                canSend ? (
+              {canSend ? (
                   <IconButton
                     className="vc-btn--circle"
                     variant="primary"
                     onClick={onSubmitText}
-                    title="Отправить сообщение"
-                    aria-label="Отправить сообщение"
+                    title={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
+                    aria-label={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
                   >
                     <SendIcon />
                   </IconButton>
-                ) : voiceInputEnabled ? (
+                ) : isIdle && voiceInputEnabled ? (
                   <IconButton
                     className="vc-btn--circle"
                     variant="primary"
@@ -391,28 +390,17 @@ export function VoiceBar({
                   >
                     <MicIcon />
                   </IconButton>
-                ) : null
-              ) : (
-                <>
-                  <IconButton
-                    className="vc-btn--circle"
-                    variant="primary"
-                    disabled
-                    title="Дождитесь завершения ответа, затем отправьте"
-                    aria-label="Отправить сообщение"
-                  >
-                    <SendIcon />
-                  </IconButton>
-                  <IconButton
-                    className="vc-btn--circle"
-                    variant="danger"
-                    onClick={isSpeaking ? onStopSpeak : onCancelRequest}
-                    title={isSpeaking ? 'Остановить озвучку' : 'Остановить запрос'}
-                    aria-label={isSpeaking ? 'Остановить озвучку' : 'Остановить запрос'}
-                  >
-                    <StopIcon />
-                  </IconButton>
-                </>
+                ) : null}
+              {!isIdle && (
+                <IconButton
+                  className="vc-btn--circle"
+                  variant="danger"
+                  onClick={isSpeaking ? onStopSpeak : onCancelRequest}
+                  title={isSpeaking ? 'Остановить озвучку' : 'Остановить запрос'}
+                  aria-label={isSpeaking ? 'Остановить озвучку' : 'Остановить запрос'}
+                >
+                  <StopIcon />
+                </IconButton>
               )}
             </>
           )}
