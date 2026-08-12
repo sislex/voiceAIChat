@@ -109,6 +109,18 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     await expect(new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/1.0.0')).rejects.toThrow('SHA')
   })
 
+  it('numbers a retry deploy after a failed attempt without hitting the unique constraint',async()=>{
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>{if(target.agentId==='ci')return {exitCode:0,output:'origin/release/2.0.0 fixed-sha\n'};return command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"2.0.0","commit":"fixed-sha"}'}:{exitCode:1,output:'dirty checkout'}}}
+    db.createProjectRelease('owner',projectId,{branch:'release/2.0.0',version:'2.0.0',sha:'fixed-sha',status:'ready'})
+    const manager=new ReleaseManager(db,runtime)
+    const failed=await manager.start('owner',ci(),prod(),'release/2.0.0')
+    await tick();await tick()
+    expect(db.getProjectRelease('owner',projectId,failed.id)?.status).toBe('failed')
+    expect(failed.attempt).toBe(2)
+    const retry=await manager.start('owner',ci(),prod(),'release/2.0.0')
+    expect(retry.attempt).toBe(3)
+  })
+
   it('fails before build when production checkout validation fails',async()=>{
     const commands:string[]=[]
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>{commands.push(command);if(target.agentId==='ci')return {exitCode:0,output:'origin/release/1.0.0 fixed-sha\n'};return {exitCode:1,output:'dirty checkout'}}}
