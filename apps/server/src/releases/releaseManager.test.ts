@@ -77,16 +77,16 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(command).not.toContain('FETCH_HEAD')
   })
 
-  it('does not repeat checks, merge main or create tags during deploy',async()=>{
+  it('passes the release branch version to production without merging main or creating a tag',async()=>{
     const commands:string[]=[]
-    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return command.includes('for-each-ref')?{exitCode:0,output:'origin/release/1.0.0 fixed-sha\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}}
-    const prepared=db.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'ready'})
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return command.includes('for-each-ref')?{exitCode:0,output:'origin/release/0.1.27 fixed-sha\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.27","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}}
+    const prepared=db.createProjectRelease('owner',projectId,{branch:'release/0.1.27',version:'0.1.27',sha:'fixed-sha',status:'ready'})
     const manager=new ReleaseManager(db,runtime)
-    const attempt=await manager.start('owner',ci(),prod(),'release/1.0.0')
+    const attempt=await manager.start('owner',ci(),prod(),'release/0.1.27')
     await tick();await tick()
     expect(commands.join('\n')).not.toMatch(/affected-check|merge |tag |push .*main/)
-    expect(commands.some(command=>command.includes("checkout -B 'release/1.0.0' 'fixed-sha'"))).toBe(true)
-    expect(commands).toContain("cd '/prod' && npm run deploy:prod")
+    expect(commands.some(command=>command.includes("checkout -B 'release/0.1.27' 'fixed-sha'"))).toBe(true)
+    expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.27' && npm run deploy:prod")
     expect(db.getProjectRelease('owner',projectId,attempt.id)?.status).toBe('released')
     expect(prepared.status).toBe('ready')
   })
@@ -116,6 +116,6 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const attempt=await new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/1.0.0')
     await tick();await tick()
     expect(db.getProjectRelease('owner',projectId,attempt.id)?.status).toBe('failed')
-    expect(commands).not.toContain("cd '/prod' && npm run deploy:prod")
+    expect(commands.some(command=>command.includes('npm run deploy:prod'))).toBe(false)
   })
 })
