@@ -91,6 +91,7 @@ import {
   DEFAULT_CI_GLOBAL_SETTINGS,
   type CiRun,
   type MergeRun,
+  type TaskRepository,
   ACTIVE_MERGE_STATUSES,
   type CiRunDetail,
   type CiStageRun,
@@ -4438,7 +4439,7 @@ export class VoiceChatDb {
    * переводит карточку в системную колонку merge. Все значения ветки/машины
    * берутся из серверных записей, а не из тела HTTP-запроса.
    */
-  startMergeRun(userId: string, projectId: string, taskId: string): MergeRun {
+  startMergeRun(userId: string, projectId: string, taskId: string, agentIdOverride?: string | null): MergeRun {
     return this.db.transaction(() => {
       const existing = this.db.prepare(`SELECT * FROM merge_runs WHERE task_id=? AND status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string, unknown> | undefined
       if (existing) return this.mapMergeRun(existing)
@@ -4454,8 +4455,8 @@ export class VoiceChatDb {
 
       const workspace = this.db.prepare(`SELECT branch,commit_sha,agent_id FROM ci_workspaces WHERE task_id=? AND project_id=? AND pushed=1 AND branch IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId, projectId) as { branch: string; commit_sha: string | null; agent_id: string | null } | undefined
       if (!workspace?.branch || !workspace.commit_sha || !/^(?!-)(?!.*\.\.)(?!.*[~^:?*\\[\\]\\\\])[A-Za-z0-9._/-]+$/.test(workspace.branch)) throw new Error('prepared task branch or pushed source SHA not found')
-      const agentId = workspace.agent_id
-      if (!agentId || !this.db.prepare(`SELECT 1 FROM project_machines WHERE project_id=? AND agent_id=?`).get(projectId, agentId)) throw new Error('prepared workspace machine is not bound to project')
+      const agentId = agentIdOverride ?? workspace.agent_id
+      if (!agentId || !this.db.prepare(`SELECT 1 FROM project_machines WHERE project_id=? AND agent_id=?`).get(projectId, agentId)) throw new Error(agentIdOverride ? 'merge machine is not bound to project' : 'prepared workspace machine is not bound to project')
       if (!this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type='merge'`).get(projectId)) throw new Error('merge column not found')
 
       const id = this.newId(), now = this.now()
@@ -4503,14 +4504,37 @@ export class VoiceChatDb {
       .run(projectId, semanticType, semanticType === 'done' ? now : null, now, taskId, projectId)
   }
 
-  retryMergeRun(userId: string, runId: string): MergeRun {
+  retryMergeRun(userId: string, runId: string, agentIdOverride?: string | null): MergeRun {
     const previous = this.getMergeRun(userId, runId)
     if (!previous) throw new Error('merge run not found')
     if (ACTIVE_MERGE_STATUSES.includes(previous.status)) return previous
     this.moveMergeTask(previous.projectId, previous.taskId, 'awaiting_merge')
-    const next = this.startMergeRun(userId, previous.projectId, previous.taskId)
+    const next = this.startMergeRun(userId, previous.projectId, previous.taskId, agentIdOverride ?? previous.agentId)
     if (previous.conflicts.length > 0 || /stale source/i.test(previous.error ?? '')) return this.updateMergeRun(next.id, { sourceSha: null }) ?? next
     return next
+  }
+
+  getProjectMachine(projectId: string, agentId: string): { agentId: string; path: string; reposRoot: string | null } | null {
+    const row = this.db.prepare(`SELECT agent_id, path, repos_root FROM project_machines WHERE project_id=? AND agent_id=?`).get(projectId, agentId) as { agent_id: string; path: string; repos_root: string | null } | undefined
+    return row ? { agentId: row.agent_id, path: row.path, reposRoot: row.repos_root } : null
+  }
+
+  upsertTaskRepository(projectId: string, taskId: string, agentId: string, path: string, kind: TaskRepository['kind']): void {
+    this.db.prepare(`INSERT INTO task_repositories (id,project_id,task_id,agent_id,path,kind,state,created_at) VALUES (?,?,?,?,?,?,'active',?)
+      ON CONFLICT(task_id,agent_id,path) DO UPDATE SET state='active', deleted_at=NULL, kind=excluded.kind`).run(this.newId(), projectId, taskId, agentId, path, kind, this.now())
+  }
+
+  markTaskRepositoryDeleted(taskId: string, agentId: string, path: string): void {
+    this.db.prepare(`UPDATE task_repositories SET state='deleted', deleted_at=? WHERE task_id=? AND agent_id=? AND path=? AND state='active'`).run(this.now(), taskId, agentId, path)
+  }
+
+  listActiveTaskRepositories(taskId: string): TaskRepository[] {
+    return (this.db.prepare(`SELECT r.*, a.name AS machine_name FROM task_repositories r LEFT JOIN agents a ON a.id=r.agent_id WHERE r.task_id=? AND r.state='active' ORDER BY r.created_at`).all(taskId) as Record<string, unknown>[]).map(mapTaskRepository)
+  }
+
+  listTaskRepositories(userId: string, projectId: string, taskId: string): TaskRepository[] {
+    if (!this.isProjectMember(userId, projectId)) return []
+    return (this.db.prepare(`SELECT r.*, a.name AS machine_name FROM task_repositories r LEFT JOIN agents a ON a.id=r.agent_id WHERE r.task_id=? AND r.project_id=? ORDER BY r.created_at`).all(taskId, projectId) as Record<string, unknown>[]).map(mapTaskRepository)
   }
 
   private mapMergeRun(r: Record<string, unknown>): MergeRun {
@@ -4838,6 +4862,14 @@ function qaSnapshot(value:AcceptanceCriterionSnapshot):AcceptanceCriterionSnapsh
   const testType=value.testType==='automated'||value.testType==='mixed'||value.testType==='not_testable_in_app'?value.testType:'manual'
   return {title:value.title.trim(),description:value.description.trim(),preconditions:value.preconditions.trim(),steps:value.steps.trim(),testData:value.testData.trim(),expectedResult:value.expectedResult.trim(),required:value.required!==false,testType}
 }
+function mapTaskRepository(r: Record<string, unknown>): TaskRepository {
+  return {
+    id: String(r.id), projectId: String(r.project_id), taskId: String(r.task_id), agentId: String(r.agent_id),
+    machineName: (r.machine_name as string | null) ?? null, path: String(r.path), kind: r.kind as TaskRepository['kind'],
+    state: r.state as TaskRepository['state'], createdAt: Number(r.created_at), deletedAt: r.deleted_at as number | null
+  }
+}
+
 function mapQaCriterion(r:QaCriterionRow):AcceptanceCriterion {
   return {id:r.id,taskId:r.task_id,order:r.position,title:r.title,description:r.description,preconditions:r.preconditions,steps:r.steps,testData:r.test_data,expectedResult:r.expected_result,required:!!r.required,testType:(r.test_type as AcceptanceCriterion['testType']),currentVersion:r.current_version,active:!!r.active,author:r.author,createdAt:r.created_at,updatedAt:r.updated_at}
 }
