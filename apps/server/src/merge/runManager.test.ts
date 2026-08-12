@@ -7,7 +7,7 @@ import type { CommandExecutor } from '../ci/types.js'
 const source='1'.repeat(40), target='2'.repeat(40), merged='3'.repeat(40)
 const base=():MergeRun=>({id:'r1',projectId:'p1',taskId:'t1',status:'queued',triggeredBy:'admin',sourceBranch:'CHAT-178',targetBranch:'main',sourceSha:source,targetSha:null,mergeSha:null,revertSha:null,agentId:'a1',machineName:'Mac',llmEngineId:null,llmProvider:'claude',llmModel:'',stage:'queued',stages:[],conflicts:[],conflictDetails:[],checks:[],deployId:null,deployVersion:null,productionStatus:null,error:null,recommendedAction:null,log:'',canCancel:true,canRetry:false,pushStartedAt:null,startedAt:null,finishedAt:null,createdAt:1})
 
-function setup(outputs:string[], initial:MergeRun=base()){
+function setup(outputs:string[], initial:MergeRun=base(), testCommand='npm run affected-check'){
   let run=initial
   const moves:string[]=[]
   const db={
@@ -17,7 +17,7 @@ function setup(outputs:string[], initial:MergeRun=base()){
     updateMergeRun:(_id:string,fields:Partial<MergeRun>)=>(run={...run,...fields}),
     appendMergeLog:(_id:string,chunk:string)=>(run={...run,log:run.log+chunk}),
     moveMergeTask:(_p:string,_t:string,column:string)=>moves.push(column),
-    getProject:()=>({gitUrl:'git@example/repo.git',testCommand:'npm run affected-check'}),
+    getProject:()=>({gitUrl:'git@example/repo.git',testCommand}),
     findLatestCiWorkspace:()=>({path:'/repo/task',pushed:true,agentId:'a1'})
   }
   const executor:CommandExecutor={run:vi.fn(async (_req,onChunk)=>{const output=outputs.shift()??'';onChunk(output);return{exitCode:0,timedOut:false}})}
@@ -50,5 +50,13 @@ describe('MergeRunManager',()=>{
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('success'))
     expect(s.run.sourceSha).toBe(resolved)
+  })
+  it('runs a JSON test pipeline sequentially',async()=>{
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'','',merged+'\n','one ok\n','two ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''],base(),JSON.stringify(['npm run one','npm run two']))
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('success'))
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    expect(scripts.indexOf('npm run one')).toBeLessThan(scripts.indexOf('npm run two'))
+    expect(s.run.checks[0].command).toBe('npm run one\nnpm run two')
   })
 })
