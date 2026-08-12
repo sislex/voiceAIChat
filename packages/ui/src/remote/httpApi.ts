@@ -50,8 +50,16 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     const token = getToken()
     if (token) headers['authorization'] = `Bearer ${token}`
     const res = await fetch(httpBase + path, { ...init, headers })
-    if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
     const text = await res.text()
+    if (!res.ok) {
+      let detail = ''
+      try {
+        const body = text ? JSON.parse(text) as { error?: unknown; message?: unknown } : null
+        const value = body?.error ?? body?.message
+        if (typeof value === 'string') detail = value
+      } catch {}
+      throw new Error(detail || `${init?.method ?? 'GET'} ${path} → ${res.status}`)
+    }
     return (text ? JSON.parse(text) : undefined) as T
   }
 

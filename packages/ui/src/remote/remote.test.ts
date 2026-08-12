@@ -177,6 +177,12 @@ describe('createHttpApi', () => {
     expect(calls[0].url).toBe('/api/conversations/nope')
   })
 
+  it('показывает серверную причину HTTP-ошибки', async () => {
+    mockFetch(() => ({ ok: false, status: 400, _text: JSON.stringify({ error: 'Другой production deploy уже выполняется' }) }))
+    const api = createHttpApi('', 'ws://x/agent')
+    await expect(api['releases:deploy']({ projectId: 'p1', branch: 'release/1.2.3' })).rejects.toThrow('Другой production deploy уже выполняется')
+  })
+
   it('agents:connectionString использует agentWsUrl', async () => {
     mockFetch(() => ({ _text: '' }))
     const api = createHttpApi('http://srv:8787', 'ws://srv:8787/agent')
