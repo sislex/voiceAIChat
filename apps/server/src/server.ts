@@ -23,6 +23,7 @@ import { ReleaseManager, releaseKnowledgeBaseCommand } from './releases/releaseM
 import { FeaturePreviewManager } from './preview/manager.js'
 import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
+import { MergeRunManager } from './merge/runManager.js'
 import { createCiModelHooks } from './ci/modelHooks.js'
 import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
@@ -606,7 +607,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl }
   })
   registerReleaseRoutes(app, db, releaseManager)
-  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry)
+  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, isOnline: (id) => agentRegistry.isOnline(id), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
+  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager)
+  mergeRunManager.reconcile()
   registerQaRoutes(app, db, uploads)
 
   // Раны предыдущего процесса живут только в его памяти: после рестарта они

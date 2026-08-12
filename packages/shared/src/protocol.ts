@@ -431,6 +431,7 @@ export type ServerMessage =
   | { t: 'ci.done'; runId: string; run: CiRun; conclusion?: CiRunConclusion }
   | { t: 'ci.summary'; projectId: string; summary: CiRunSummary }
   | { t: 'ci.interaction'; runId: string; interaction: CiInteraction }
+  | { t: 'merge.snapshot'; runId: string; run: import('./merge').MergeRun }
   /**
    * Сообщение, которое сервер сам дописал в чат (резюме CI-рана): открытый чат
    * должен показать его сразу, а не после переоткрытия. Ход модели здесь не при
@@ -513,6 +514,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'ci.done',
   'ci.summary',
   'ci.interaction',
+  'merge.snapshot',
   'chat.message',
   'kb.usage',
   'preview.action'

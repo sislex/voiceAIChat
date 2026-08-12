@@ -88,6 +88,9 @@ export interface RendererCiRest {
   putTaskCi(projectId: string, taskId: string, config: CiSlotConfig): Promise<CiSlotConfig>
   startRun(projectId: string, taskId: string, options?: { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string; launch?: 'queue' | 'parallel' }): Promise<CiRun>
   startMerge(projectId: string, taskId: string): Promise<MergeRun>
+  getMerge(runId: string): Promise<MergeRun>
+  cancelMerge(runId: string): Promise<MergeRun>
+  retryMerge(runId: string): Promise<MergeRun>
   /** Немедленный запуск на явно указанной машине; ран из очереди продвигается, а не отменяется. */
   forceStartRun(projectId: string, taskId: string, agentId: string): Promise<CiRun>
   getRun(runId: string): Promise<CiRunDetail>
@@ -116,6 +119,7 @@ export interface RendererCiRest {
 export interface RendererCiBridge extends RendererCiRest {
   subscribe(runId: string): void
   unsubscribe(runId: string): void
+  onMerge(cb: (m: { runId: string; run: MergeRun }) => void): () => void
   onSnapshot(cb: (m: { runId: string; detail: CiRunDetail; log: CiLogLine[] }) => void): () => void
   onRun(cb: (m: { runId: string; run: CiRun }) => void): () => void
   onStep(cb: (m: { runId: string; step: CiRunStep }) => void): () => void
