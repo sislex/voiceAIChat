@@ -120,4 +120,19 @@ describe('manual QA persistence and workflow', () => {
 
     expect(db.startMergeRun('owner', project.id, task.id).agentId).toBe('workspace-agent')
   })
+
+  it('lets a conflict retry pin the resolved branch SHA during fetch', () => {
+    const project = db.createProject('owner', { name: 'Merge retry' })
+    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
+    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at) VALUES (?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1)
+    raw.prepare(`INSERT INTO project_machines (project_id,agent_id,path,repos_root,added_at,added_by) VALUES (?,?,?,?,?,?)`).run(project.id, 'workspace-agent', '/workspace', '/repos', 1, 'owner')
+    raw.prepare(`UPDATE projects SET git_url=? WHERE id=?`).run('git@example/repo.git', project.id)
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace', project.id, task.id, 'workspace-agent', '/repos/task', 'CHAT-179', '1'.repeat(40), 1, 'released', 2)
+    const failed = db.startMergeRun('owner', project.id, task.id)
+    db.updateMergeRun(failed.id, { status: 'decision_required', stage: 'decision_required', conflicts: ['file.ts'] })
+
+    expect(db.retryMergeRun('owner', failed.id).sourceSha).toBeNull()
+  })
 })
