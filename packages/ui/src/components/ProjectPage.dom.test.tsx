@@ -130,7 +130,7 @@ describe('ReleaseCenter — список, деплой и лента', () => {
 
   it('в деплое скрывает подготовительные skipped-шаги', async () => {
     render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Деплой' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Деплой' }))
     await userEvent.click(await screen.findByText('Последний деплой'))
     expect(screen.queryByText('Regression')).not.toBeInTheDocument()
     expect(screen.getByText('Переключение checkout')).toBeInTheDocument()
