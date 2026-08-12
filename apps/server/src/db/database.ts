@@ -841,6 +841,8 @@ export class VoiceChatDb {
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'recommended_action')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN recommended_action TEXT`)
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'push_started_at')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN push_started_at INTEGER`)
     const ciRunCols = this.db.prepare(`PRAGMA table_info(ci_runs)`).all() as Array<{ name: string }>
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'run_column_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN run_column_id TEXT`)
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'terminal_column_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN terminal_column_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_engine_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_engine_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_provider')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_provider TEXT NOT NULL DEFAULT 'claude'`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_model')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_model TEXT NOT NULL DEFAULT '${DEFAULT_CI_CLAUDE_MODEL}'`)
@@ -2561,7 +2563,8 @@ export class VoiceChatDb {
       | undefined
     const agentId = conv.execTarget && conv.execTarget !== 'none' ? conv.execTarget : project.defaultAgentId
     const machine = agentId ? project.machines.find((m) => m.agentId === agentId) : undefined
-    const runRow = this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(task.id) as CiRunRow | undefined
+    const displaySummary = this.latestCiRunSummary(task.id)
+    const runRow = displaySummary ? this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(displaySummary.id) as CiRunRow | undefined : undefined
     const run = runRow ? mapCiRun(runRow) : null
 
     return {
@@ -3332,10 +3335,10 @@ export class VoiceChatDb {
 
   // --- Раны и шаги ---
 
-  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; triggeredBy: string; prevColumnId: string | null; slotProgress: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
+  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; triggeredBy: string; prevColumnId: string | null; runColumnId?: string | null; slotProgress: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
     const id = this.newId()
     const ts = this.now()
-    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, status, triggered_by, prev_column_id, llm_engine_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.triggeredBy, args.prevColumnId, args.llmEngineId ?? null, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts)
+    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, status, triggered_by, prev_column_id, run_column_id, llm_engine_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.triggeredBy, args.prevColumnId, args.runColumnId ?? null, args.llmEngineId ?? null, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts)
     return mapCiRun(this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(id) as CiRunRow)
   }
 
@@ -3376,10 +3379,12 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC`).all(taskId) as CiRunRow[]).map(mapCiRun)
   }
 
-  updateCiRun(runId: string, patch: { status?: CiStatus; agentId?: string | null; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null; modelSessionId?: string | null; fixContext?: CiFixDiagnosticContext | null }): CiRun | null {
+  updateCiRun(runId: string, patch: { status?: CiStatus; runColumnId?: string | null; terminalColumnId?: string | null; agentId?: string | null; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null; modelSessionId?: string | null; fixContext?: CiFixDiagnosticContext | null }): CiRun | null {
     const set: string[] = []
     const vals: unknown[] = []
     if (patch.status !== undefined) { set.push('status = ?'); vals.push(patch.status) }
+    if (patch.runColumnId !== undefined) { set.push('run_column_id = ?'); vals.push(patch.runColumnId) }
+    if (patch.terminalColumnId !== undefined) { set.push('terminal_column_id = ?'); vals.push(patch.terminalColumnId) }
     if (patch.agentId !== undefined) { set.push('agent_id = ?'); vals.push(patch.agentId) }
     if (patch.workspaceId !== undefined) { set.push('workspace_id = ?'); vals.push(patch.workspaceId) }
     if (patch.startedAt !== undefined) { set.push('started_at = ?'); vals.push(patch.startedAt) }
@@ -3972,33 +3977,51 @@ export class VoiceChatDb {
   }
 
   /**
-   * Сводки последних ранов по задачам проекта (для доски/карточки) — по одной
-   * на задачу. Тай-брейк по `rowid` обязателен: два рана одной задачи могут лечь
-   * в одну миллисекунду (повтор сразу после отмены), и без него доска показывала
-   * бы статус прошлого рана.
+   * Единый серверный селектор состояния задачи. Активный ран всегда главный.
+   * Отмена/skip остаются последней попыткой, но не вытесняют предыдущий успех.
+   * Терминальные ошибки и отмены актуальны лишь в колонке, зафиксированной при
+   * завершении; ручной перенос немедленно убирает их с поверхностей задачи.
    */
   latestCiRunSummaries(projectId: string): CiRunSummary[] {
     const rows = this.db.prepare(`SELECT * FROM ci_runs WHERE project_id = ? ORDER BY created_at DESC, rowid DESC`).all(projectId) as CiRunRow[]
-    const seen = new Set<string>()
+    const columns = new Map((this.db.prepare(`SELECT id, column_id FROM tasks WHERE project_id = ?`).all(projectId) as Array<{ id: string; column_id: string }>).map((r) => [r.id, r.column_id]))
+    const grouped = new Map<string, CiRunRow[]>()
+    for (const row of rows) grouped.set(row.task_id, [...(grouped.get(row.task_id) ?? []), row])
     const out: CiRunSummary[] = []
-    for (const r of rows) {
-      if (seen.has(r.task_id)) continue
-      seen.add(r.task_id)
-      out.push(this.ciRunSummary(r))
+    for (const [taskId, taskRows] of grouped) {
+      const summary = this.taskCiDisplaySummary(taskRows, columns.get(taskId) ?? null)
+      if (summary) out.push(summary)
     }
     return out
   }
 
-  /** Сводка последнего рана одной задачи; null — ранов не было. */
+  /** Единая отображаемая сводка одной задачи; null — значимого результата нет. */
   latestCiRunSummary(taskId: string): CiRunSummary | null {
-    const row = this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(taskId) as CiRunRow | undefined
-    return row ? this.ciRunSummary(row) : null
+    const rows = this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC, rowid DESC`).all(taskId) as CiRunRow[]
+    const task = this.db.prepare(`SELECT column_id FROM tasks WHERE id = ?`).get(taskId) as { column_id: string } | undefined
+    return this.taskCiDisplaySummary(rows, task?.column_id ?? null)
+  }
+
+  private taskCiDisplaySummary(rows: CiRunRow[], currentColumnId: string | null): CiRunSummary | null {
+    const active = rows.find((row) => ['queued', 'running', 'awaiting_input'].includes(row.status))
+    if (active) return this.ciRunSummary(active)
+    const latest = rows[0]
+    const relevant = (row: CiRunRow): boolean =>
+      row.status === 'success' || (row.terminal_column_id != null && row.terminal_column_id === currentColumnId)
+    let primary = rows.find((row) => relevant(row) && row.status !== 'cancelled' && row.status !== 'skipped')
+    if (!primary && latest && relevant(latest)) primary = latest
+    if (!primary) return null
+    const summary = this.ciRunSummary(primary)
+    if (latest && relevant(latest) && latest.id !== primary.id && (latest.status === 'cancelled' || latest.status === 'skipped')) {
+      summary.latestAttempt = this.ciRunSummary(latest)
+    }
+    return summary
   }
 
   private ciRunSummary(row: CiRunRow): CiRunSummary {
     const run = mapCiRun(row)
     const modelActive = run.status === 'running' && this.db.prepare(`SELECT 1 FROM ci_run_steps WHERE run_id = ? AND kind = 'model_work' AND status = 'running' LIMIT 1`).get(row.id) !== undefined
-    return { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive, awaitingInput: run.status === 'awaiting_input' }
+    return { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive, awaitingInput: run.status === 'awaiting_input', terminalColumnId: run.terminalColumnId }
   }
 
   // ---- Использование базы знаний (телеметрия обращений модели) -----------
@@ -5079,7 +5102,7 @@ function parseSlotProgress(j: string): CiSlotProgress {
 
 interface CiRunRow {
   id: string; project_id: string; task_id: string; agent_id: string | null; status: string
-  workspace_id: string | null; triggered_by: string; prev_column_id: string | null
+  workspace_id: string | null; triggered_by: string; prev_column_id: string | null; run_column_id: string | null; terminal_column_id: string | null
   llm_engine_id: string | null; llm_provider: string; llm_model: string
   mode: string | null; clarify_level: string | null; clarify_max: number | null
   conversation_id: string | null; model_session_id: string | null; fix_context_json: string | null; kb_context_mode: string | null
@@ -5090,7 +5113,7 @@ function mapCiRun(r: CiRunRow): CiRun {
   return {
     id: r.id, projectId: r.project_id, taskId: r.task_id, agentId: r.agent_id,
     status: normCiStatus(r.status), workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
-    prevColumnId: r.prev_column_id, llmEngineId: r.llm_engine_id ?? null, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || DEFAULT_CI_CLAUDE_MODEL),
+    prevColumnId: r.prev_column_id, runColumnId: r.run_column_id ?? null, terminalColumnId: r.terminal_column_id ?? null, llmEngineId: r.llm_engine_id ?? null, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || DEFAULT_CI_CLAUDE_MODEL),
     mode: normRunMode(r.mode), clarifyLevel: normClarifyLevel(r.clarify_level), clarifyMax: clampClarifyMax(r.clarify_max),
     conversationId: r.conversation_id, modelSessionId: r.model_session_id ?? null,
     fixContext: parseJsonValue<CiFixDiagnosticContext | null>(r.fix_context_json, null), kbContextMode: normKbContextMode(r.kb_context_mode),
