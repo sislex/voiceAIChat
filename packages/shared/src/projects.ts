@@ -205,6 +205,7 @@ export interface Task {
   mergeSourceSha?: string | null
   /** Активный merge-ран восстанавливается вместе со снапшотом доски. */
   activeMergeRunId?: string | null
+  latestMergeRunId?: string | null
   activeMergeStatus?: string | null
   /** Серверный снимок прав и привязки машины; UI не заменяет им API-проверку. */
   mergePermitted?: boolean
