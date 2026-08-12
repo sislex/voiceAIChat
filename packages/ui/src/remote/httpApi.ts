@@ -268,12 +268,14 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       return res.json()
     },
     'releases:branches': ({ projectId }) => req(REST.projectReleaseBranches(projectId)),
-    'releases:createBranch': ({ projectId, branch, baseBranch }) =>
-      req(REST.projectReleaseBranches(projectId), { method: 'POST', body: JSON.stringify({ branch, baseBranch }) }),
+    'releases:createBranch': ({ projectId, branch, baseBranch, agentId }) =>
+      req(REST.projectReleaseBranches(projectId), { method: 'POST', body: JSON.stringify({ branch, baseBranch, agentId }) }),
     'releases:list': ({ projectId }) => req(REST.projectReleases(projectId)),
     'releases:get': ({ projectId, releaseId }) => req(REST.projectRelease(projectId, releaseId)),
     'releases:deploy': ({ projectId, ...body }) =>
       req(REST.projectReleaseDeploy(projectId), { method: 'POST', body: JSON.stringify(body) }),
+    'releases:delete': ({ projectId, releaseId, branch }) =>
+      req(REST.projectRelease(projectId, releaseId), { method: 'DELETE', body: JSON.stringify({ branch }) }),
     'projects:update': ({ id, ...fields }) =>
       req(REST.project(id), { method: 'PATCH', body: JSON.stringify(fields) }),
     'projects:delete': async ({ id }) => {

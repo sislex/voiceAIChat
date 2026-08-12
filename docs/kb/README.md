@@ -19,8 +19,8 @@
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 29 коммит(ов) в areas после сверки: d3821f2 fix: make release gates and deploy restart-safe … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 35 коммит(ов) в areas после сверки: d3821f2 fix: make release gates and deploy restart-safe … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 7 коммит(ов) в areas после сверки: d3821f2 fix: make release gates and deploy restart-safe … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 210 коммит(ов) в areas после сверки: 62d8bfc fix: pass release version to production deploy … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 211 коммит(ов) в areas после сверки: 9e291ec chatai-174: работа CI-рана … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ⚠ 1 коммит(ов) в areas после сверки: 62d8bfc fix: pass release version to production deploy |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 8 коммит(ов) в areas после сверки: bcb8716 fix: исключить индекс из свежести базы знаний … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 4 коммит(ов) в areas после сверки: f105bc7 feat: share project machines with members … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-11 | ✓ |
@@ -47,9 +47,10 @@
 
 ## Журнал сессий
 
-Всего записей: 164. Последние:
+Всего записей: 165. Последние:
 
 - [2026-08-12-2470-com-release-version-production.md](log/2026-08-12-2470-com-release-version-production.md) — release-version-production
+- [2026-08-12-2470-com-release-run-management.md](log/2026-08-12-2470-com-release-run-management.md) — release-run-management
 - [2026-08-11-alexeys-macbook-air-2-shared-project-machines.md](log/2026-08-11-alexeys-macbook-air-2-shared-project-machines.md) — shared-project-machines
 - [2026-08-11-alexeys-macbook-air-2-kanban-column-menu.md](log/2026-08-11-alexeys-macbook-air-2-kanban-column-menu.md) — kanban-column-menu
 - [2026-08-11-2470-com-production-release-branch-deploy.md](log/2026-08-11-2470-com-production-release-branch-deploy.md) — production-release-branch-deploy
@@ -58,7 +59,6 @@
 - [2026-08-10-mac-manual-qa.md](log/2026-08-10-mac-manual-qa.md) — manual-qa
 - [2026-08-10-mac-feature-preview.md](log/2026-08-10-mac-feature-preview.md) — feature-preview
 - [2026-08-10-mac-feature-preview-docker-preflight.md](log/2026-08-10-mac-feature-preview-docker-preflight.md) — feature-preview-docker-preflight
-- [2026-08-10-2470-com-stable-feature-preview-qa-preparation.md](log/2026-08-10-2470-com-stable-feature-preview-qa-preparation.md) — stable-feature-preview-qa-preparation
 
 ## Исторические планы
 

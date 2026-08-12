@@ -555,6 +555,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'releases:createBranch': async ({ projectId, branch }) => ({ id: 'prepare-1', projectId, branch, version: branch.slice('release/'.length), sha: 'a'.repeat(40), status: 'preparing', triggeredBy: 'admin', attempt: 1, previousReleaseId: null, createdAt: Date.now(), releasedAt: null, steps: [] }),
     'releases:list': async () => [],
     'releases:get': async () => null,
+    'releases:delete': async () => ({ deleted: true as const }),
     'releases:deploy': async ({ projectId, branch }) => ({ id: 'release-1', projectId, branch, version: branch.slice('release/'.length), sha: 'a'.repeat(40), status: 'queued', triggeredBy: 'admin', attempt: 1, previousReleaseId: null, createdAt: Date.now(), releasedAt: null, steps: [] }),
     'projects:list': async () => projects.map(summary),
     'projects:create': async (b) => {

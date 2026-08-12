@@ -1,7 +1,7 @@
-import { assertReleaseBranch, type ProjectRelease, type ReleaseBranch, type ReleaseStepKind } from '@voicechat/shared'
+import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, type ProjectRelease, type ReleaseBranch, type ReleaseStepKind, type ReleaseTimeouts } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 
-export interface ReleaseProjectTarget { projectId:string; agentId:string; path:string; baseBranch:string; testCommand:string }
+export interface ReleaseProjectTarget { projectId:string; agentId:string; path:string; baseBranch:string; testCommand:string; limits?:ReleaseTimeouts }
 export interface ProductionTarget extends ReleaseProjectTarget { deployCommand:string; healthCheckCommand:string; expectedRepository:string }
 export const RELEASE_TEST_TIMEOUT_MS=600_000
 export interface ReleaseCommandResult { exitCode:number|null; output:string; timedOut?:boolean }
@@ -71,6 +71,8 @@ export class ReleaseManager {
   private readonly deploying=new Set<string>()
   constructor(private readonly db:VoiceChatDb,private readonly runtime:ReleaseRuntime){}
 
+  isOnline(agentId:string):boolean{return this.runtime.isOnline?.(agentId)!==false}
+
   async listBranches(target:ReleaseProjectTarget):Promise<ReleaseBranch[]> {
     const result=await this.runtime.exec(target,git(target,`fetch --prune origin '+refs/heads/release/*:refs/remotes/origin/release/*' && git for-each-ref --format='%(refname:short) %(objectname)' refs/remotes/origin/release/`),120_000)
     if(result.exitCode!==0)throw new Error(result.output||'Не удалось обновить release-ветки')
@@ -80,6 +82,16 @@ export class ReleaseManager {
     }).sort((a,b)=>b.version.localeCompare(a.version,undefined,{numeric:true}))
   }
 
+  async deleteBranch(userId:string,target:ReleaseProjectTarget,releaseId:string,branch:string):Promise<void> {
+    assertReleaseBranch(branch)
+    const release=this.db.getProjectRelease(userId,target.projectId,releaseId)
+    if(!release||release.branch!==branch||release.previousReleaseId)throw new Error('Release не найден')
+    if(!['ready','failed'].includes(release.status))throw new Error('Активный релиз удалить нельзя')
+    const deleted=await this.runtime.exec(target,git(target,`push origin --delete ${quote(branch)}`),120_000)
+    if(deleted.exitCode!==0||deleted.timedOut)throw new Error(deleted.output||'Не удалось удалить release-ветку из origin')
+    this.db.softDeleteProjectRelease(userId,target.projectId,releaseId)
+  }
+
   async createBranch(userId:string,target:ReleaseProjectTarget,branch:string,baseBranch:string):Promise<ProjectRelease> {
     const version=assertReleaseBranch(branch)
     if(this.preparing.has(target.projectId))throw new Error('Подготовка release-ветки уже выполняется')
@@ -87,7 +99,7 @@ export class ReleaseManager {
     if((await this.listBranches(target)).some(item=>item.branch===branch))throw new Error('Release-ветка уже существует')
     const created=await this.runtime.exec(target,git(target,`fetch origin ${quote(baseBranch)} && git branch ${quote(branch)} FETCH_HEAD && git push origin ${quote(branch)}:refs/heads/${quote(branch)} && git rev-parse ${quote(branch)}`),120_000)
     if(created.exitCode!==0)throw new Error(created.output||'Не удалось создать release-ветку')
-    const release=this.db.createProjectRelease(userId,target.projectId,{branch,version,sha:created.output.trim().split(/\r?\n/).at(-1)!,status:'preparing'})
+    const release=this.db.createProjectRelease(userId,target.projectId,{branch,version,sha:created.output.trim().split(/\r?\n/).at(-1)!,status:'preparing',agentId:target.agentId,checkoutPath:target.path,limits:target.limits??DEFAULT_RELEASE_TIMEOUTS})
     this.preparing.add(target.projectId)
     void this.prepare(userId,target,release).finally(()=>this.preparing.delete(target.projectId))
     return release
@@ -102,7 +114,7 @@ export class ReleaseManager {
     const remote=(await this.listBranches(ciTarget)).find(item=>item.branch===branch)
     if(!remote)throw new Error('Выбранная release-ветка отсутствует в origin')
     if(remote.sha!==prepared.sha)throw new Error('SHA release-ветки изменился после подготовки')
-    const attempt=this.db.createProjectRelease(userId,ciTarget.projectId,{branch,version:prepared.version,sha:prepared.sha,previousReleaseId:prepared.id,status:'queued'})
+    const attempt=this.db.createProjectRelease(userId,ciTarget.projectId,{branch,version:prepared.version,sha:prepared.sha,previousReleaseId:prepared.id,status:'queued',agentId:production.agentId,checkoutPath:production.path,limits:production.limits??DEFAULT_RELEASE_TIMEOUTS})
     this.db.setProjectReleaseStep(attempt.id,'regression','skipped','Проверка пройдена при подготовке ветки',userId)
     this.db.setProjectReleaseStep(attempt.id,'knowledge_base','skipped','Проверка пройдена при подготовке ветки',userId)
     this.deploying.add(ciTarget.projectId)
@@ -126,9 +138,10 @@ export class ReleaseManager {
         // Группировка удерживает всю составную shell-стадию (включая `&`/`wait`) после `cd` в checkout.
         const stage=`(${commands[index]})`
         const command=index===0?`git checkout --detach ${quote(found.sha)} && ${stage}`:stage
-        const regression=await this.runtime.exec(target,at(target,command),RELEASE_TEST_TIMEOUT_MS)
+        const limit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='regression')?.limitMs??RELEASE_TEST_TIMEOUT_MS
+        const regression=await this.runtime.exec(target,at(target,command),limit)
         logs.push(`$ ${commands[index]}\n${regression.output}`)
-        if(regression.timedOut)throw new Error(`Regression-команда ${index+1}/${commands.length} превысила 600 секунд\n${regression.output}`)
+        if(regression.timedOut)throw new Error(`Regression, стадия ${index+1}/${commands.length}: фактическая длительность превысила лимит ${Math.round(limit/1000)} с\n${regression.output}`)
         if(regression.exitCode!==0)throw new Error(regression.output||`Regression-команда ${index+1}/${commands.length} завершилась с ошибкой`)
       }
       this.db.setProjectReleaseStep(release.id,'regression','passed',logs.join('\n\n'),actor)
@@ -168,7 +181,9 @@ export class ReleaseManager {
 
   private async monitorHealth(actor:string,target:ProductionTarget,release:ProjectRelease):Promise<void> {
     let last='Production ещё не ответил'
-    for(let attempt=0;attempt<150;attempt+=1){
+    const limit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='health_check')?.limitMs??300_000
+    const started=Date.now()
+    for(let attempt=0;Date.now()-started<limit;attempt+=1){
       try{
         const result=await this.runtime.exec(target,at(target,target.healthCheckCommand),15_000)
         const commit=result.exitCode===0&&!result.timedOut?healthCommit(result.output):null
@@ -179,9 +194,9 @@ export class ReleaseManager {
         }
         last=commit?`Production отвечает SHA ${commit}, ожидается ${release.sha}`:(result.output||'Health-check не вернул commit')
       }catch(error){last=error instanceof Error?error.message:String(error)}
-      if(attempt<149)await sleep(2_000)
+      if(Date.now()-started<limit)await sleep(Math.min(2_000,Math.max(0,limit-(Date.now()-started))))
     }
-    this.db.setProjectReleaseStep(release.id,'health_check','failed',last,actor)
+    this.db.setProjectReleaseStep(release.id,'health_check','failed',`Health-check: фактическая длительность ${Math.round((Date.now()-started)/1000)} с, лимит ${Math.round(limit/1000)} с. ${last}`,actor)
     this.db.setProjectReleaseStatus(release.id,'failed',actor)
   }
 
@@ -190,14 +205,18 @@ export class ReleaseManager {
       this.db.setProjectReleaseStatus(release.id,'switching',actor)
       this.db.setProjectReleaseStep(release.id,'switching','running','',actor)
       const switchCommand=releaseSwitchCommand(target,release)
-      const switched=await this.runtime.exec(target,switchCommand,120_000)
-      if(switched.exitCode!==0||switched.timedOut)throw new Error(switched.output||'Не удалось синхронизировать production checkout')
+      const switchLimit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='switching')?.limitMs??120_000
+      const switched=await this.runtime.exec(target,switchCommand,switchLimit)
+      if(switched.timedOut)throw new Error(`Переключение checkout: фактическая длительность превысила лимит ${Math.round(switchLimit/1000)} с\n${switched.output}`)
+      if(switched.exitCode!==0)throw new Error(switched.output||'Не удалось синхронизировать production checkout')
       this.db.setProjectReleaseStep(release.id,'switching','passed',switched.output,actor)
 
       this.db.setProjectReleaseStatus(release.id,'building',actor)
       this.db.setProjectReleaseStep(release.id,'building','running','',actor)
-      const built=await this.runtime.exec(target,at(target,`export VC_RELEASE_VERSION=${quote(release.version)} && ${target.deployCommand}`),300_000)
-      if(built.exitCode!==0||built.timedOut)throw new Error(built.output||'Production build завершился с ошибкой')
+      const buildLimit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='building')?.limitMs??300_000
+      const built=await this.runtime.exec(target,at(target,`export VC_RELEASE_VERSION=${quote(release.version)} && ${target.deployCommand}`),buildLimit)
+      if(built.timedOut)throw new Error(`Сборка и обновление контейнеров: фактическая длительность превысила лимит ${Math.round(buildLimit/1000)} с\n${built.output}`)
+      if(built.exitCode!==0)throw new Error(built.output||'Production build завершился с ошибкой')
       this.db.setProjectReleaseStep(release.id,'building','passed',built.output,actor)
 
       this.db.setProjectReleaseStatus(release.id,'health_check',actor)
