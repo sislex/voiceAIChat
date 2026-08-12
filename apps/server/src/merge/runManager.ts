@@ -108,7 +108,7 @@ export class MergeRunManager {
       const commands=testStages(project.testCommand??''), began=this.now()
       let tested:{exitCode:number|null;timedOut:boolean;output:string}={exitCode:0,timedOut:false,output:''}
       for(const command of commands){
-        const result=await this.cmd(run,command,repo)
+        const result=await this.cmd(run,command,repo,1800000)
         tested={...result,output:tested.output+result.output}
         if(result.exitCode||result.timedOut)break
       }
