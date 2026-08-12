@@ -186,6 +186,18 @@ describe('manual QA persistence and workflow', () => {
     expect(db.retryMergeRun('owner', run.id).agentId).toBe('other-agent')
   })
 
+  it('prefers the latest pushed workspace even when a newer unpushed one exists', () => {
+    const project = db.createProject('owner', { name: 'Pushed workspace wins' })
+    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('pushed', project.id, task.id, 'agent-a', '/repos/task', 'CHAT-182', '1'.repeat(40), 1, 'released', 1)
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('fresh', project.id, task.id, 'agent-a', '/repos/task', null, null, 0, 'active', 2)
+
+    expect(db.findLatestCiWorkspace(project.id, task.id)?.id).toBe('fresh')
+    expect(db.findLatestPushedCiWorkspace(project.id, task.id)?.id).toBe('pushed')
+  })
+
   it('tracks task repositories per machine until confirmed deletion', () => {
     const project = db.createProject('owner', { name: 'Task repos' })
     const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
