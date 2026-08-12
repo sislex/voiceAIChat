@@ -59,5 +59,6 @@ describe('MergeRunManager',()=>{
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
     expect(scripts.indexOf('npm run one')).toBeLessThan(scripts.indexOf('npm run two'))
     expect(s.run.checks[0].command).toBe('npm run one\nnpm run two')
+    expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.find(call=>call[0].script==='npm run one')?.[0].timeoutMs).toBe(1800000)
   })
 })
