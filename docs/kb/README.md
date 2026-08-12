@@ -12,22 +12,22 @@
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 74 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 9 коммит(ов) в areas после сверки: 183a5f6 feat: add structured manual QA workflow … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-12 | ⚠ 5 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-12 | ⚠ 7 коммит(ов) в areas после сверки: b624cf8 Merge latest main into CHAT-179 … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-12 | ⚠ 1 коммит(ов) в areas после сверки: 31c5e8b feat: execute merge runs with realtime feed |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-12 | ⚠ 8 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-12 | ⚠ 10 коммит(ов) в areas после сверки: b624cf8 Merge latest main into CHAT-179 … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: f2b5d60 fix(ci): name task branches and workspaces by issue key … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 33 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 36 коммит(ов) в areas после сверки: 31c5e8b feat: execute merge runs with realtime feed … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 14 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-12 | ⚠ 9 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 228 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ⚠ 4 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 16 коммит(ов) в areas после сверки: b624cf8 Merge latest main into CHAT-179 … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-12 | ⚠ 11 коммит(ов) в areas после сверки: b624cf8 Merge latest main into CHAT-179 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 230 коммит(ов) в areas после сверки: b624cf8 Merge latest main into CHAT-179 … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ⚠ 6 коммит(ов) в areas после сверки: b624cf8 Merge latest main into CHAT-179 … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 9 коммит(ов) в areas после сверки: abc8bc6 chatai-178: работа CI-рана … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 4 коммит(ов) в areas после сверки: f105bc7 feat: share project machines with members … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 6 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-11 | ⚠ 13 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 8 коммит(ов) в areas после сверки: b624cf8 Merge latest main into CHAT-179 … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-11 | ⚠ 15 коммит(ов) в areas после сверки: b624cf8 Merge latest main into CHAT-179 … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-12 | ⚠ 5 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 42 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 44 коммит(ов) в areas после сверки: b624cf8 Merge latest main into CHAT-179 … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 19 коммит(ов) в areas после сверки: d026916 Merge main into CHAT-179 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-07 | ⚠ 10 коммит(ов) в areas после сверки: 9daab6d fix(docker): make whisper build portable on arm64 … |
