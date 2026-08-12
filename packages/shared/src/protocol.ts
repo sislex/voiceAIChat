@@ -141,6 +141,7 @@ export const REST = {
   sessionLogout: '/api/session/logout',
   sessionPreview: '/api/session/preview',
   conversations: '/api/conversations',
+  conversationDraft: '/api/conversations/draft',
   conversationsSearch: '/api/conversations/search',
   /** Полнотекстовый поиск по сообщениям пользователя (FTS5). */
   messagesSearch: '/api/search',
