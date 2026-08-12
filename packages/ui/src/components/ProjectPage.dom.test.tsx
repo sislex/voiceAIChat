@@ -4,6 +4,9 @@ import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
 import { ProjectNotFoundPage, ProjectPage, ProjectsEmptyPage, type ProjectSection } from './ProjectPage'
+import { ReleaseCenter } from './releases/ReleaseCenter'
+import { createFakeApi } from '../test/fakeApi'
+import type { ProjectRelease } from '@voicechat/shared'
 
 function renderPage(section: ProjectSection = 'board'): { onSectionChange: (s: ProjectSection) => void } {
   const onSectionChange = vi.fn()
@@ -87,5 +90,51 @@ describe('ProjectPage — крайние случаи раздела', () => {
     expect(within(page).getByRole('alert')).toHaveTextContent('Проект не найден')
     expect(within(page).queryByTestId('kanban-board')).not.toBeInTheDocument()
     await expectNoViolations()
+  })
+})
+
+
+describe('ReleaseCenter — список, деплой и лента', () => {
+  const prepared: ProjectRelease = {
+    id: 'prepare-1', projectId: 'p1', version: '1.2.3', branch: 'release/1.2.3', sha: 'a'.repeat(40), status: 'ready', triggeredBy: 'admin', attempt: 1, previousReleaseId: null, createdAt: 1_700_000_000_000, releasedAt: null,
+    steps: [
+      { id: 'kb', kind: 'knowledge_base', status: 'passed', model: null, attempt: 1, log: 'kb ok', startedAt: 1000, finishedAt: 2000 },
+      { id: 'test', kind: 'regression', status: 'passed', model: null, attempt: 1, log: 'tests ok', startedAt: 2000, finishedAt: 5000 }
+    ]
+  }
+  const deployment: ProjectRelease = {
+    ...prepared, id: 'deploy-1', status: 'released', previousReleaseId: prepared.id, releasedAt: 1_700_000_010_000,
+    steps: [
+      { id: 'skip', kind: 'regression', status: 'skipped', model: null, attempt: 2, log: 'done before', startedAt: null, finishedAt: 1000 },
+      { id: 'switch', kind: 'switching', status: 'passed', model: null, attempt: 2, log: 'switched', startedAt: 1000, finishedAt: 2000 },
+      { id: 'build', kind: 'building', status: 'passed', model: null, attempt: 2, log: 'built', startedAt: 2000, finishedAt: 6000 },
+      { id: 'health', kind: 'health_check', status: 'passed', model: null, attempt: 2, log: 'healthy', startedAt: 6000, finishedAt: 7000 }
+    ]
+  }
+  const api = () => {
+    const value = createFakeApi()
+    value['releases:branches'] = vi.fn(async () => [{ branch: prepared.branch, version: prepared.version, sha: prepared.sha }])
+    value['releases:list'] = vi.fn(async () => [deployment, prepared])
+    value['releases:get'] = vi.fn(async ({ releaseId }) => releaseId === deployment.id ? deployment : prepared)
+    return value
+  }
+
+  it('показывает таблицу релизов и открывает подробную ленту', async () => {
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} />)
+    expect(await screen.findByRole('columnheader', { name: 'Время сборки' })).toBeInTheDocument()
+    await userEvent.click(screen.getByText('release/1.2.3'))
+    expect(screen.getByText('База знаний')).toBeInTheDocument()
+    expect(screen.getByText('Regression')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Скачать лог' })).toBeInTheDocument()
+  })
+
+  it('в деплое скрывает подготовительные skipped-шаги', async () => {
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Деплой' }))
+    await userEvent.click(await screen.findByText('Последний деплой'))
+    expect(screen.queryByText('Regression')).not.toBeInTheDocument()
+    expect(screen.getByText('Переключение checkout')).toBeInTheDocument()
+    expect(screen.getByText('Сборка и обновление контейнеров')).toBeInTheDocument()
+    expect(screen.getByText('Health-check')).toBeInTheDocument()
   })
 })
