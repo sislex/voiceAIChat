@@ -7,8 +7,8 @@ import type { CommandExecutor } from '../ci/types.js'
 const source='1'.repeat(40), target='2'.repeat(40), merged='3'.repeat(40)
 const base=():MergeRun=>({id:'r1',projectId:'p1',taskId:'t1',status:'queued',triggeredBy:'admin',sourceBranch:'CHAT-178',targetBranch:'main',sourceSha:source,targetSha:null,mergeSha:null,revertSha:null,agentId:'a1',machineName:'Mac',llmEngineId:null,llmProvider:'claude',llmModel:'',stage:'queued',stages:[],conflicts:[],conflictDetails:[],checks:[],deployId:null,deployVersion:null,productionStatus:null,error:null,recommendedAction:null,log:'',canCancel:true,canRetry:false,pushStartedAt:null,startedAt:null,finishedAt:null,createdAt:1})
 
-function setup(outputs:string[]){
-  let run=base()
+function setup(outputs:string[], initial:MergeRun=base()){
+  let run=initial
   const moves:string[]=[]
   const db={
     getMergeRunRaw:()=>run,
@@ -44,5 +44,11 @@ describe('MergeRunManager',()=>{
     await vi.waitFor(()=>expect(s.run.status).toBe('decision_required'))
     expect(s.run.error).toContain('stale source')
     expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.some(call=>call[0].script.includes('git checkout --detach'))).toBe(false)
+  })
+  it('pins the fetched source SHA for a retry after conflicts',async()=>{
+    const resolved='4'.repeat(40), s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${resolved}\nTARGET=${target}\n`,'','',merged+'\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''],{...base(),sourceSha:null})
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('success'))
+    expect(s.run.sourceSha).toBe(resolved)
   })
 })

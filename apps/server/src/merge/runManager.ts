@@ -64,7 +64,7 @@ export class MergeRunManager {
       const project=this.deps.db.getProject(run.triggeredBy,run.projectId), ws=this.deps.db.findLatestCiWorkspace(run.projectId,run.taskId)
       if(!project||!project.gitUrl||!ws?.pushed||!ws.path||ws.agentId!==run.agentId)throw new Error('Подготовленный CI-workspace или Git origin недоступен')
       if(!this.deps.isOnline(run.agentId))throw new Error('Выбранная машина не в сети')
-      if(run.targetBranch!=='main'||!validBranch.test(run.sourceBranch)||!validSha.test(run.sourceSha??''))throw new Error('Некорректный серверный снимок ветки')
+      if(run.targetBranch!=='main'||!validBranch.test(run.sourceBranch)||(run.sourceSha!==null&&!validSha.test(run.sourceSha)))throw new Error('Некорректный серверный снимок ветки')
       const parent=this.workspaceParent(ws.path), repo=this.mergeRepoPath(ws.path,id)
       const cloned=await this.cmd(run,`git clone --no-checkout --origin origin ${shellQuote(project.gitUrl)} ${shellQuote(repo)}`,parent)
       if(cloned.exitCode)throw new Error('Не удалось создать временный Git-клон для merge')
@@ -78,8 +78,8 @@ export class MergeRunManager {
       const fetched=await this.cmd(run,`git fetch --no-tags origin +${shellQuote(run.sourceBranch)}:${shellQuote(sourceRef)} +refs/heads/main:${shellQuote(targetRef)}\nprintf 'SOURCE=%s\\nTARGET=%s\\n' "$(git rev-parse ${shellQuote(sourceRef)})" "$(git rev-parse ${shellQuote(targetRef)})"`,repo)
       const source=fetched.output.match(/SOURCE=([0-9a-f]{40})/i)?.[1],target=fetched.output.match(/TARGET=([0-9a-f]{40})/i)?.[1]
       if(fetched.exitCode||!source||!target)throw new Error('Не удалось получить ветки из origin')
-      if(source.toLowerCase()!==run.sourceSha!.toLowerCase())throw new Error('stale source: ветка изменилась после development-рана')
-      this.deps.db.updateMergeRun(id,{targetSha:target}); this.stage(id,'fetching','passed',`Source ${source.slice(0,8)}, main ${target.slice(0,8)}`)
+      if(run.sourceSha&&source.toLowerCase()!==run.sourceSha.toLowerCase())throw new Error('stale source: ветка изменилась после development-рана')
+      this.deps.db.updateMergeRun(id,{sourceSha:source,targetSha:target}); this.stage(id,'fetching','passed',`Source ${source.slice(0,8)}, main ${target.slice(0,8)}`)
 
       this.stage(id,'merging','running','Подготавливаю изолированный Git-клон')
       const prep=await this.cmd(run,`git checkout --detach ${shellQuote(targetRef)}`,repo)
