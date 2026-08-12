@@ -145,6 +145,7 @@ export const REST = {
   /** Полнотекстовый поиск по сообщениям пользователя (FTS5). */
   messagesSearch: '/api/search',
   conversation: (id: string) => `/api/conversations/${id}`,
+  conversationMachines: (id: string) => `/api/conversations/${encodeURIComponent(id)}/machines`,
   conversationProject: (id: string) => `/api/conversations/${encodeURIComponent(id)}/project`,
   conversationStatus: (id: string) => `/api/conversations/${encodeURIComponent(id)}/status`,
   messages: (id: string) => `/api/conversations/${id}/messages`,
