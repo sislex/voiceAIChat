@@ -196,7 +196,7 @@ export class ReleaseManager {
 
       this.db.setProjectReleaseStatus(release.id,'building',actor)
       this.db.setProjectReleaseStep(release.id,'building','running','',actor)
-      const built=await this.runtime.exec(target,at(target,target.deployCommand),300_000)
+      const built=await this.runtime.exec(target,at(target,`export VC_RELEASE_VERSION=${quote(release.version)} && ${target.deployCommand}`),300_000)
       if(built.exitCode!==0||built.timedOut)throw new Error(built.output||'Production build завершился с ошибкой')
       this.db.setProjectReleaseStep(release.id,'building','passed',built.output,actor)
 
