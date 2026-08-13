@@ -310,14 +310,18 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const neighbours = (taskId: string, columnId: string, laneId: string | null): Task[] =>
     tasksOf(columnId, laneOf(laneId)).filter((t) => t.id !== taskId)
 
-  // Цель по точке указателя: сначала ячейка (колонка × дорожка), внутри неё —
-  // ближайшая по вертикали зона вставки. Указатель мог уйти и за пределы доски
-  // (палец у кромки экрана), поэтому при промахе берём ближайшую ячейку.
-  const findDropAt = (p: DragPoint): DropAt | null => {
+  // Ячейка (колонка × дорожка) под указателем. Указатель может уйти за пределы
+  // доски (палец у кромки экрана), поэтому при промахе берём ближайшую ячейку.
+  const bodyAt = (p: DragPoint): HTMLElement | null => {
     const root = boardRef.current
     if (!root) return null
     const bodies = Array.from(root.querySelectorAll<HTMLElement>('[data-drop-body]'))
-    const body = bodies.find((b) => pointInRect(b.getBoundingClientRect(), p)) ?? nearestElement(bodies, p)
+    return bodies.find((body) => pointInRect(body.getBoundingClientRect(), p)) ?? nearestElement(bodies, p)
+  }
+
+  // Цель по точке указателя: внутри ячейки ближайшая по вертикали зона вставки.
+  const findDropAt = (p: DragPoint): DropAt | null => {
+    const body = bodyAt(p)
     if (!body) return null
     const zone = nearestByCenterY(Array.from(body.querySelectorAll<HTMLElement>('[data-dropzone]')), p.y)
     if (!zone) return null
@@ -338,13 +342,15 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     return hit?.dataset.columnId ?? null
   }
 
-  // У края экрана единая поверхность доски доскролливается по обеим осям:
-  // горизонтально — до дальней колонки, вертикально — до конца длинной колонки.
+  // Горизонтальная ось принадлежит общей поверхности, вертикальная — списку
+  // карточек активной колонки. Так перенос у кромки не двигает соседние колонки
+  // и их заголовки.
   const autoScrollTo = (p: DragPoint): void => {
     const root = boardRef.current
     if (!root) return
     autoScroll(root, p, 'x')
-    autoScroll(root, p, 'y')
+    const body = bodyAt(p)
+    if (body) autoScroll(body, p, 'y')
   }
 
   /** Положить задачу в выбранное место. Обратно на своё — молча, без запроса. */
