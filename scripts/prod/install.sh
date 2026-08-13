@@ -2,14 +2,26 @@
 # Ставит на прод-хост деплой-скрипт и сторожа. Идемпотентно, запускать под root:
 #   cd /root/voiceAIChat && bash scripts/prod/install.sh
 #
-# Скрипты копируются в /usr/local/bin намеренно: деплой делает `git pull`, и запускать
-# его из файла, который этот же pull перезаписывает, — плохая идея.
+# Установленный launcher остаётся стабильным, а при каждом запуске делает неизменяемую
+# content-addressed копию актуального deploy.sh из checkout. Так исправления метаданных
+# не застревают в старой /usr/local/bin-копии, а git pull не меняет исполняемый файл.
 
 set -Eeuo pipefail
 
 SRC=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-install -m 755 "$SRC/deploy.sh" /usr/local/bin/voicechat-deploy
+install -d -m 755 /usr/local/lib/voicechat
+cat >/usr/local/bin/voicechat-deploy <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+REPO=${VC_REPO_DIR:-/root/voiceAIChat}
+source="$REPO/scripts/prod/deploy.sh"
+digest=$(sha256sum "$source" | awk '{print $1}')
+runtime="/usr/local/lib/voicechat/deploy-$digest.sh"
+if [[ ! -x $runtime ]]; then install -m 755 "$source" "$runtime"; fi
+exec "$runtime" "$@"
+EOF
+chmod 755 /usr/local/bin/voicechat-deploy
 install -m 755 "$SRC/watchdog.sh" /usr/local/bin/voicechat-watchdog
 install -d -m 755 /usr/local/lib/voicechat
 
