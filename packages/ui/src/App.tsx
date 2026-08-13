@@ -781,7 +781,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     if (authed && state.activeId) void actions.loadKbUsage(state.activeId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, state.activeId, state.messages.length])
-  const forcedPlan = state.currentUser?.role === 'user' && (!activeExecTarget || activeExecTarget === 'none')
+  const forcedPlan = state.currentUser?.role !== 'admin' && (!activeExecTarget || activeExecTarget === 'none')
   const activePermissionMode: PermissionMode = forcedPlan
     ? 'plan'
     : activeConversation?.permissionMode ?? state.settings.permissionMode
@@ -1177,7 +1177,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onOpenAssistantPage={() => navigate(`/projects/${routeProjectId}/assistant`) }
         >
           {routeReleases ? (
-            state.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={state.projectDetail.ciBaseBranch ?? 'main'} owner={state.projectDetail.role === 'owner'} machines={state.projectDetail.machines} releaseTimeouts={state.projectDetail.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
+            state.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={state.projectDetail.ciBaseBranch ?? 'main'} owner={state.currentUser?.role === 'admin'} machines={state.projectDetail.machines} releaseTimeouts={state.projectDetail.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
           ) : routeSettings ? (
             state.projectDetail?.id === routeProjectId ? (
               <ProjectSettings

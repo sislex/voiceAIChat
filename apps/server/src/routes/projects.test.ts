@@ -22,15 +22,15 @@ beforeEach(async () => {
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.createUser('bob', '', 'user')
-  db.createUser('carol', '', 'user')
+  db.createUser('bob', '', 'developer')
+  db.createUser('carol', '', 'developer')
   app = await buildServer({
     config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-proj-${Date.now()}-${id}`) }),
     db,
     sessionSecret: SECRET
   })
   adminTok = signToken({ name: 'admin', role: 'admin' }, SECRET)
-  bobTok = signToken({ name: 'bob', role: 'user' }, SECRET)
+  bobTok = signToken({ name: 'bob', role: 'developer' }, SECRET)
 })
 afterEach(async () => {
   await app.close()
@@ -83,6 +83,19 @@ describe('conversation status REST', () => {
 describe('projects REST: доступ', () => {
   it('без токена → 401', async () => {
     expect((await app.inject({ method: 'GET', url: '/api/projects' })).statusCode).toBe(401)
+  })
+
+  it('developer создаёт и редактирует задачу, но получает 403 для настроек и release/deploy', async () => {
+    const p = await createProject('RBAC')
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'bob' } })
+    const board = (await inj(bobTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    const created = await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: board.columns[0].id, title: 'Developer task' } })
+    expect(created.statusCode).toBe(200)
+    const task = created.json() as Task
+    expect((await inj(bobTok, { method: 'PATCH', url: `/api/projects/${p.id}/tasks/${task.id}`, payload: { description: 'updated' } })).statusCode).toBe(200)
+    expect((await inj(bobTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { description: 'forbidden' } })).statusCode).toBe(403)
+    expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/releases/branches`, payload: { branch: 'release/1.0.0' } })).statusCode).toBe(403)
+    expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/releases/deploy`, payload: { branch: 'release/1.0.0' } })).statusCode).toBe(403)
   })
 
   it('создание, список, изоляция по членству', async () => {
@@ -401,7 +414,7 @@ describe('projects REST: merge run', () => {
     const workspace = db.createCiWorkspace({ projectId: p.id, taskId: task.id, agentId: agent.id, path: '/work/task' })
     db.recordCiWorkspaceRevision(workspace.id, 'feature/task', 'abc123')
     await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${task.id}/move`, payload: { columnId: awaiting.id } })
-    expect((await inj(bobTok, { method: 'POST', url, payload: {} })).statusCode).toBe(403)
+    expect((await inj(bobTok, { method: 'POST', url, payload: {} })).statusCode).toBe(200)
     const first = await inj(adminTok, { method: 'POST', url, payload: {} })
     expect(first.statusCode).toBe(200)
     const second = await inj(adminTok, { method: 'POST', url, payload: {} })

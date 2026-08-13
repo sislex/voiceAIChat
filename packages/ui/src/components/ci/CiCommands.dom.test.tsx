@@ -103,7 +103,7 @@ describe('CiCommands', () => {
   })
 
   it('глобальные настройки только для чтения у обычного пользователя', () => {
-    render(<CiCommands {...props({ role: 'user' })} />)
+    render(<CiCommands {...props({ role: 'developer' })} />)
     fireEvent.click(screen.getByRole('button', { name: /Глобальные настройки CI/ }))
     expect(screen.getByText('только чтение')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Сохранить настройки' })).toBeNull()

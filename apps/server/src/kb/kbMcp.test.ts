@@ -117,7 +117,7 @@ describe('kbMcp — инструменты базы знаний', () => {
   })
 
   it('deploy_prod отказывает обычному пользователю без запуска', async () => {
-    db.createUser('user', '', 'user')
+    db.createUser('user', '', 'developer')
     kbToolBroker.register(TURN, { userId: 'user', conversationId: convId, projectId: null, turnId: 't1' })
     await makeApp()
     const result = await call('deploy_prod')
