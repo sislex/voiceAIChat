@@ -76,7 +76,7 @@ import { registerPreviewMcp, previewToolBroker, PreviewActionRelay, PREVIEW_MCP_
 import { readUserFile } from './serverFiles.js'
 import { UnixDeployClient, type DeployTrigger } from './routes/admin.js'
 
-const VERSION = process.env.VC_RELEASE_VERSION?.trim() || '0.1.0'
+const VERSION = process.env.VC_RELEASE_VERSION?.trim() || null
 const RELEASED_AT = process.env.VC_RELEASED_AT?.trim() || new Date().toISOString()
 const RELEASE_COMMIT = process.env.VC_RELEASE_COMMIT?.trim() || null
 const RELEASE_TASK = process.env.VC_RELEASE_TASK?.trim() || null

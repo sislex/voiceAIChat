@@ -69,6 +69,21 @@ describe('App — версия релиза', () => {
     expect(version).toHaveAttribute('title', expect.stringContaining('Задача: chat-149'))
   })
 
+  it('скрывает версию, когда release-метаданные не переданы', async () => {
+    const api = await seededApi()
+    api['app:ping'] = async () => ({
+      ok: true,
+      version: null,
+      releasedAt: '2026-08-03T00:00:00.000Z',
+      commit: null,
+      task: null
+    })
+    render(<App api={api} delays={SLOW} />)
+
+    await screen.findByText('Поездка в Лиссабон')
+    expect(screen.queryByLabelText(/Версия/)).not.toBeInTheDocument()
+  })
+
   it('не добавляет задачу в подсказку, когда она не определена', async () => {
     const api = await seededApi()
     api['app:ping'] = async () => ({

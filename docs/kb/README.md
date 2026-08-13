@@ -9,29 +9,29 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 78 коммит(ов) в areas после сверки: 9863f81 Merge task 441335e0-b9c2-40f8-ae2c-453d6e9b859d … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 80 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 9 коммит(ов) в areas после сверки: 183a5f6 feat: add structured manual QA workflow … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-12 | ⚠ 14 коммит(ов) в areas после сверки: 6066439 fix: number release deploy retries from the branch max attempt … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-12 | ⚠ 1 коммит(ов) в areas после сверки: 31c5e8b feat: execute merge runs with realtime feed |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-13 | ⚠ 3 коммит(ов) в areas после сверки: ec407ee Merge task d34b39f5-e5ef-4fec-85c9-e98d6e1548ef … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-12 | ⚠ 15 коммит(ов) в areas после сверки: 4963872 feat(ci): show accessible task machines … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-13 | ✓ |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-13 | ⚠ 5 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: f2b5d60 fix(ci): name task branches and workspaces by issue key … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 38 коммит(ов) в areas после сверки: 9863f81 Merge task 441335e0-b9c2-40f8-ae2c-453d6e9b859d … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 36 коммит(ов) в areas после сверки: 31c5e8b feat: execute merge runs with realtime feed … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 23 коммит(ов) в areas после сверки: 6066439 fix: number release deploy retries from the branch max attempt … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-12 | ⚠ 2 коммит(ов) в areas после сверки: 6066439 fix: number release deploy retries from the branch max attempt … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 254 коммит(ов) в areas после сверки: ec407ee Merge task d34b39f5-e5ef-4fec-85c9-e98d6e1548ef … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ⚠ 18 коммит(ов) в areas после сверки: ec407ee Merge task d34b39f5-e5ef-4fec-85c9-e98d6e1548ef … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 40 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 38 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 25 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-12 | ⚠ 4 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 257 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ⚠ 21 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 9 коммит(ов) в areas после сверки: abc8bc6 chatai-178: работа CI-рана … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 5 коммит(ов) в areas после сверки: de5164a chatai-182: работа CI-рана … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 4 коммит(ов) в areas после сверки: 6066439 fix: number release deploy retries from the branch max attempt … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-13 | ⚠ 2 коммит(ов) в areas после сверки: ec407ee Merge task d34b39f5-e5ef-4fec-85c9-e98d6e1548ef … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-12 | ⚠ 7 коммит(ов) в areas после сверки: 69df56c CHAT-180: merge-ран v2 — постоянный клон, умный поток, редизайн вкладки Merge … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 61 коммит(ов) в areas после сверки: a7c1902 test(server): remove websocket reconnect timing race … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 23 коммит(ов) в areas после сверки: d812a98 Merge task 49099a4e-9275-4f8c-a21a-6d21a3bdbf67 … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 6 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-13 | ⚠ 5 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-12 | ⚠ 9 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 64 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 25 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-13 | ⚠ 1 коммит(ов) в areas после сверки: 7cf3522 test(server): allow ten minutes per test |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-13 | ⚠ 2 коммит(ов) в areas после сверки: ec407ee Merge task d34b39f5-e5ef-4fec-85c9-e98d6e1548ef … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-13 | ⚠ 2 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-13 | ⚠ 5 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-13, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
 
@@ -48,10 +48,11 @@
 
 ## Журнал сессий
 
-Всего записей: 175. Последние:
+Всего записей: 176. Последние:
 
 - [2026-08-13-mac-task-launch-dialog.md](log/2026-08-13-mac-task-launch-dialog.md) — task-launch-dialog
 - [2026-08-13-mac-sidebar-toggle-kanban.md](log/2026-08-13-mac-sidebar-toggle-kanban.md) — sidebar-toggle-kanban
+- [2026-08-13-mac-release-version-footer.md](log/2026-08-13-mac-release-version-footer.md) — release-version-footer
 - [2026-08-13-2470-com-task-machine-access.md](log/2026-08-13-2470-com-task-machine-access.md) — task-machine-access
 - [2026-08-12-alexeys-macbook-air-2-merge-runner.md](log/2026-08-12-alexeys-macbook-air-2-merge-runner.md) — merge-runner
 - [2026-08-12-alexeys-macbook-air-2-ci-display-summary.md](log/2026-08-12-alexeys-macbook-air-2-ci-display-summary.md) — ci-display-summary
@@ -59,7 +60,6 @@
 - [2026-08-12-alexeys-macbook-air-2-chat-composer-responsive-default.md](log/2026-08-12-alexeys-macbook-air-2-chat-composer-responsive-default.md) — chat-composer-responsive-default
 - [2026-08-12-2470-com-release-version-production.md](log/2026-08-12-2470-com-release-version-production.md) — release-version-production
 - [2026-08-12-2470-com-release-run-management.md](log/2026-08-12-2470-com-release-run-management.md) — release-run-management
-- [2026-08-12-2470-com-conversation-drafts.md](log/2026-08-12-2470-com-conversation-drafts.md) — conversation-drafts
 
 ## Исторические планы
 
