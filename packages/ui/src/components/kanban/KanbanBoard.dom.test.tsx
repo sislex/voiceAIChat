@@ -61,6 +61,20 @@ describe('KanbanBoard (изолированный)', () => {
     expect(surface).toContainElement(screen.getByTestId('kanban-column'))
   })
 
+  it('открытие и закрытие карточки сохраняет вертикальную позицию доски', async () => {
+    renderBoard()
+    const surface = screen.getByTestId('kanban-board')
+    surface.scrollTop = 240
+
+    await userEvent.click(screen.getByText('A'))
+    expect(await screen.findByTestId('task-modal')).toBeInTheDocument()
+    expect(surface.scrollTop).toBe(240)
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('task-modal')).not.toBeInTheDocument())
+    expect(surface.scrollTop).toBe(240)
+  })
+
   it('чекбокс «скрытые» в панели фильтров показывает скрытые колонки', async () => {
     renderBoard()
     expect(screen.getAllByTestId('kanban-column')).toHaveLength(1)
@@ -362,6 +376,27 @@ describe('KanbanBoard — перенос указателем', () => {
     expect(props.onMoveTask).toHaveBeenCalledWith('t1', 'c2', 't3', null)
     expect(document.querySelector('.vc-draglayer')).toBeNull()
     expect(screen.queryByTestId('drop-placeholder')).not.toBeInTheDocument()
+  })
+
+  it('мышь: у нижнего края вертикально прокручивается общая поверхность доски', () => {
+    vi.useFakeTimers()
+    try {
+      renderBoard({ board: dndBoard })
+      layout()
+      const surface = screen.getByTestId('kanban-board')
+      surface.scrollTop = 100
+      const card = screen.getAllByTestId('task-card')[0]!
+
+      down(card, 40, 130)
+      move(40, 590)
+      act(() => vi.advanceTimersByTime(20))
+
+      expect(surface.scrollTop).toBeGreaterThan(100)
+      expect(document.querySelector<HTMLElement>('[data-drop-body]')?.scrollTop).toBe(0)
+      up(40, 590)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('мышь: перенос внутрь своей колонки считает afterId/beforeId по зоне', () => {
