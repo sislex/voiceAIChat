@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-08-11
-checked: f105bc7
+updated: 2026-08-13
+checked: 907445a
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/routes/projects.ts
@@ -25,6 +25,7 @@ areas:
   - packages/shared/src/types.ts
   - packages/ui/src/components/ChatColumn.tsx
   - packages/ui/src/App.tsx
+  - packages/ui/src/styles/app.css
   - packages/ui/src/store/useVoiceStore.ts
 ---
 
@@ -178,6 +179,8 @@ Done ставит её заново; перенос между done-колонк
 Состояние списка является частью метаданных сообщения. `voiceStore.ts` при создании или отклонении ставит выбранному элементу `status: 'created' | 'declined'`, отправляет целиком обновлённые метаданные через `messages:updateMeta` / `PATCH /api/conversations/:id/messages/:messageId`, после чего сервер сохраняет JSON в SQLite. Другие окна получают возвращённое сообщение через `localStorage`-ключ `vc:message-meta-update` и событие `storage`; после перезагрузки список восстанавливается из БД. Старый `meta.taskLaunch` UI читает как предложение с `id: 'legacy'` и при первом изменении метаданных преобразует его в `taskLaunches`.
 
 При выборе TODO UI получает доску и ищет колонку по стабильному `semanticType === 'backlog'` (с запасным вариантом — первая колонка), а не по отображаемому имени «TODO». Выбор InProgress создаёт задачу и запускает CI через существующее действие; выбор «Работать в текущем чате» теперь отклоняет только выбранное предложение и не отправляет модели новый ход. Набор допустимых семантик колонки определён в `packages/shared/src/projects.ts`: `backlog`, `ready`, `development`, `testing`, `manual_qa`, `awaiting_merge`, `decision_required`, `done`, `custom`.
+
+Форма предложения остаётся внутри общего `Dialog` и использует специализированный класс `.task-launch-dialog`. На десктопе окно ограничено `80vw × 80dvh` и безопасным отступом 16 px от viewport; на ширине до 720 px занимает `100vw × 100dvh` с `env(safe-area-inset-*)`. Единственный вертикальный scroll-контейнер — само окно целиком, включая шапку, форму и действия; горизонтальный overflow скрыт, все поля и группы имеют `min-width: 0` / `max-width: 100%`. Порядок формы: название, пояснение и компактная адаптивная сетка дополнительных настроек, затем строго друг под другом полноширинные описание и критерии приёмки. Оба Markdown-поля имеют увеличенную адаптивную высоту; на мобильном ручной resize отключён, настройки и кнопки переходят в одну колонку.
 
 ## Реалтайм (BoardHub)
 
