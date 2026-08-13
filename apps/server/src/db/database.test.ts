@@ -702,3 +702,44 @@ describe('VoiceChatDb — миграции', () => {
   })
 })
 
+describe('VoiceChatDb — персистентная очередь ходов', () => {
+  it('дедуплицирует повторную доставку, сохраняет порядок и переживает restart', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'voicechat-queue-'))
+    const file = join(dir, 'db.sqlite')
+    let db = new VoiceChatDb(file)
+    db.createUser(U, '', 'admin')
+    const conversation = db.createConversation(U, 'queue')
+    const first = db.addMessage(U, conversation.id, 'u1', 'Первый', '10:00')
+    const second = db.addMessage(U, conversation.id, 'u1', 'Второй', '10:01')
+    db.enqueueTurn(U, conversation.id, first.id, { segments: [{ speakerId: 1, text: 'Первый' }], attachments: ['a1'] })
+    db.enqueueTurn(U, conversation.id, first.id, { segments: [{ speakerId: 1, text: 'ДУБЛЬ' }] })
+    db.enqueueTurn(U, conversation.id, second.id, { segments: [{ speakerId: 1, text: 'Второй' }] })
+    expect(db.listQueuedTurns(U, conversation.id).map((item) => item.text)).toEqual(['Первый', 'Второй'])
+    db.close()
+
+    db = new VoiceChatDb(file)
+    expect(db.listQueuedTurns(U, conversation.id)).toMatchObject([
+      { messageId: first.id, position: 1, attachments: ['a1'] },
+      { messageId: second.id, position: 2 }
+    ])
+    db.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('редактирует на месте, удаляет без возможности последующего запуска и хранит паузу', () => {
+    const db = makeDb()
+    db.createUser(U, '', 'admin')
+    const conversation = db.createConversation(U, 'queue')
+    const message = db.addMessage(U, conversation.id, 'u1', 'Старый', '10:00')
+    const [queued] = db.enqueueTurn(U, conversation.id, message.id, { segments: [{ speakerId: 1, text: 'Старый' }] })
+    db.updateQueuedTurn(U, conversation.id, queued.id, 'Новый', { segments: [{ speakerId: 1, text: 'Новый' }] })
+    expect(db.listQueuedTurns(U, conversation.id)).toMatchObject([{ id: queued.id, text: 'Новый', position: 1 }])
+    db.setTurnQueuePaused(U, conversation.id, true)
+    expect(db.isTurnQueuePaused(U, conversation.id)).toBe(true)
+    db.deleteQueuedTurn(U, conversation.id, queued.id)
+    expect(db.takeQueuedTurn(U, conversation.id)).toBeNull()
+    expect(db.listMessages(U, conversation.id)).toEqual([])
+    db.close()
+  })
+})
+

@@ -347,6 +347,27 @@ export interface ServerFileInfo {
   dataBase64: string
 }
 
+/** Серверная запись очереди следующего хода. Payload хранится в SQLite, поэтому
+ * карточка и вложения восстанавливаются после reconnect/restart. */
+export interface QueueTurnPayload {
+  segments: SttSegmentWire[]
+  attachments?: string[]
+  verbose?: boolean
+  execTarget?: string | null
+  assistantContext?: import('./widgetAssistant').WidgetAssistantContext
+}
+
+export interface QueuedTurn {
+  id: string
+  conversationId: string
+  messageId: string
+  text: string
+  attachments: string[]
+  position: number
+  status: 'queued' | 'failed'
+  createdAt: number
+}
+
 /** Активный (незавершённый) ход модели — для восстановления стрима после reconnect. */
 export interface ActiveTurn {
   conversationId: string
@@ -365,6 +386,8 @@ export type ClientMessage =
   | {
       t: 'claude.send'
       conversationId: string
+      /** Сохранённая пользовательская реплика; служит идемпотентным ключом очереди. */
+      messageId?: string
       segments: SttSegmentWire[]
       /** id вложений (из POST /api/uploads), которые Claude должен учесть. */
       attachments?: string[]
@@ -375,6 +398,9 @@ export type ClientMessage =
       assistantContext?: import('./widgetAssistant').WidgetAssistantContext
     }
   | { t: 'claude.cancel'; conversationId?: string }
+  | { t: 'claude.queue.edit'; conversationId: string; id: string; text: string; segments: SttSegmentWire[] }
+  | { t: 'claude.queue.delete'; conversationId: string; id: string }
+  | { t: 'claude.queue.now'; conversationId: string; id: string }
   | { t: 'tts.speak'; text: string; voice: string }
   | { t: 'tts.cancel' }
   | { t: 'tts.downloadVoice'; id: string }
@@ -416,6 +442,7 @@ export type ServerMessage =
   | { t: 'claude.log'; conversationId: string; entry: ClaudeLogEntry }
   | { t: 'claude.usage'; conversationId: string; usage: TurnUsage }
   | { t: 'claude.active'; turns: ActiveTurn[] }
+  | { t: 'claude.queue'; conversationId: string; items: QueuedTurn[]; paused: boolean }
   | { t: 'tts.audio'; audio: string } // base64 WAV (или бинарный кадр — см. реализацию)
   | { t: 'tts.error'; message: string }
   | { t: 'tts.voiceProgress'; id: string; percent: number }
@@ -470,6 +497,9 @@ export const CLIENT_MESSAGE_TYPES: ClientMessageType[] = [
   'audio.stop',
   'claude.send',
   'claude.cancel',
+  'claude.queue.edit',
+  'claude.queue.delete',
+  'claude.queue.now',
   'tts.speak',
   'tts.cancel',
   'tts.downloadVoice',
@@ -499,6 +529,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'claude.log',
   'claude.usage',
   'claude.active',
+  'claude.queue',
   'tts.audio',
   'tts.error',
   'tts.voiceProgress',

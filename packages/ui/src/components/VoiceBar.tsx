@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type 
 import type { ModifierPrompt, PermissionMode, VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import type { PreviewElementPayload } from '@shared/previewInspector'
+import type { QueuedTurn } from '@shared/protocol'
 import { useAutoGrow } from '../lib/autoGrow'
 import { chipClass, composerPeek, speakerName, statusLine, voiceAnnouncement } from '../lib/view'
 import { WaveBars, Dots } from './animations'
@@ -29,6 +30,11 @@ export interface VoiceBarProps {
   attachments: UploadInfo[]
   /** DOM-область из веб-превью, приложенная к следующей реплике. */
   previewElement?: PreviewElementPayload | null
+  queuedTurns?: QueuedTurn[]
+  queuePaused?: boolean
+  onEditQueued?: (id: string, text: string) => void
+  onDeleteQueued?: (id: string) => void
+  onSendQueuedNow?: (id: string) => void
   onDraftChange: (value: string) => void
   onSubmitText: () => void
   onStartVoice: () => void
@@ -77,6 +83,11 @@ export function VoiceBar({
   detectedSpeakers,
   attachments,
   previewElement = null,
+  queuedTurns = [],
+  queuePaused = false,
+  onEditQueued,
+  onDeleteQueued,
+  onSendQueuedNow,
   onDraftChange,
   onSubmitText,
   onStartVoice,
@@ -323,6 +334,32 @@ export function VoiceBar({
               </span>
             ))}
           </div>
+        )}
+
+        {queuedTurns.length > 0 && (
+          <section className="turn-queue" aria-label="В очереди" data-testid="turn-queue">
+            <div className="turn-queue__header">
+              <strong>В очереди</strong>
+              {queuePaused && <span className="turn-queue__paused">Пауза после остановки</span>}
+            </div>
+            <ol>
+              {queuedTurns.map((item) => (
+                <li key={item.id} data-testid="turn-queue-item">
+                  <div className="turn-queue__meta">№ {item.position} · {item.status === 'failed' ? 'Ошибка отправки' : 'Ожидает'}</div>
+                  <p>{item.text}</p>
+                  {item.attachments.length > 0 && <div className="turn-queue__attachments">📎 {item.attachments.length} влож.</div>}
+                  <div className="turn-queue__actions">
+                    <button type="button" onClick={() => {
+                      const next = window.prompt('Изменить вопрос', item.text)
+                      if (next?.trim()) onEditQueued?.(item.id, next)
+                    }}>Редактировать</button>
+                    <button type="button" onClick={() => onDeleteQueued?.(item.id)}>Удалить</button>
+                    <button type="button" onClick={() => onSendQueuedNow?.(item.id)}>Отправить сейчас</button>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
         )}
 
         <div className="vrow" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>

@@ -343,6 +343,37 @@ describe('VoiceBar — доступность', () => {
   })
 })
 
+describe('VoiceBar — серверная очередь', () => {
+  const item = { id: 'q1', conversationId: 'c1', messageId: 'm2', text: 'Следующий вопрос', attachments: ['f1'], position: 1, status: 'queued' as const, createdAt: 1 }
+
+  it('показывает текст, позицию, статус, вложения и явную паузу', () => {
+    setup('thinking', { queuedTurns: [item], queuePaused: true })
+    expect(screen.getByTestId('turn-queue')).toHaveTextContent('В очереди')
+    expect(screen.getByTestId('turn-queue-item')).toHaveTextContent('№ 1 · Ожидает')
+    expect(screen.getByTestId('turn-queue-item')).toHaveTextContent('Следующий вопрос')
+    expect(screen.getByTestId('turn-queue-item')).toHaveTextContent('1 влож.')
+    expect(screen.getByText('Пауза после остановки')).toBeInTheDocument()
+  })
+
+  it('вызывает удаление и принудительную отправку выбранного элемента', async () => {
+    const onDeleteQueued = vi.fn()
+    const onSendQueuedNow = vi.fn()
+    setup('thinking', { queuedTurns: [item], onDeleteQueued, onSendQueuedNow })
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить сейчас' }))
+    expect(onDeleteQueued).toHaveBeenCalledWith('q1')
+    expect(onSendQueuedNow).toHaveBeenCalledWith('q1')
+  })
+
+  it('редактирует вопрос без создания второй карточки', async () => {
+    const onEditQueued = vi.fn()
+    vi.spyOn(window, 'prompt').mockReturnValueOnce('Новая формулировка')
+    setup('thinking', { queuedTurns: [item], onEditQueued })
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать' }))
+    expect(onEditQueued).toHaveBeenCalledWith('q1', 'Новая формулировка')
+  })
+})
+
 describe('VoiceBar — объявления для скринридера', () => {
   it('запись и ход модели объявляются, простой — молчит', () => {
     setup('listening')

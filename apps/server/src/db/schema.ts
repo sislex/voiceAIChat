@@ -55,6 +55,32 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_conversation
   ON messages(conversation_id, created_at);
 
+-- Персистентная FIFO-очередь ходов. message_id одновременно является ключом
+-- идемпотентности: повторная доставка claude.send не создаёт второй элемент.
+CREATE TABLE IF NOT EXISTS conversation_turn_queue (
+  id              TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  user_id         TEXT NOT NULL,
+  message_id      TEXT NOT NULL UNIQUE,
+  payload         TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'queued',
+  position        INTEGER NOT NULL,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_turn_queue_position
+  ON conversation_turn_queue(conversation_id, position);
+CREATE INDEX IF NOT EXISTS idx_turn_queue_owner
+  ON conversation_turn_queue(user_id, conversation_id, status, position);
+
+CREATE TABLE IF NOT EXISTS conversation_turn_control (
+  conversation_id TEXT PRIMARY KEY,
+  paused           INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
 -- Редактируемый прайс моделей: USD за 1M токенов. Начальные строки Codex/OpenAI
 -- зафиксированы по developers.openai.com/api/docs/pricing (Standard, short context,
 -- 04.08.2026); INSERT OR IGNORE сохраняет будущие ручные обновления.

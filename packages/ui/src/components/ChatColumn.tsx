@@ -269,7 +269,9 @@ export function ChatColumn({
     })
   }
 
-  const canEdit = state === 'idle'
+  // Пользовательский вопрос можно исправить и во время ответа: store сначала
+  // адресно остановит текущий CLI-ход, затем отправит новую формулировку.
+  const canEdit = state !== 'listening' && state !== 'transcribing'
   const startEdit = (m: Message): void => {
     setEditingId(m.id)
     setEditDraft(m.text)
