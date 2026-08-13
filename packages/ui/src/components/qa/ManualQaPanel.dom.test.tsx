@@ -13,7 +13,7 @@ function qaState(status: 'not_tested'|'passed'|'failed'|'blocked'|'not_applicabl
 afterEach(() => { delete window.qa })
 describe('ManualQaPanel', () => {
   it('renders progress, criterion details, preview and history version', async () => {
-    window.qa = { get: vi.fn().mockResolvedValue(qaState()), saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn() }
+    window.qa = { get: vi.fn().mockResolvedValue(qaState()), saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn() }
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
     expect(await screen.findByText(/Прогресс 0\/1/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name:/Критерий 1/ }))
@@ -24,7 +24,7 @@ describe('ManualQaPanel', () => {
   })
   it('saves a draft with optimistic revision', async () => {
     const saveResult=vi.fn().mockResolvedValue({})
-    window.qa={get:vi.fn().mockResolvedValue(qaState()),saveResult,addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn()}
+    window.qa={get:vi.fn().mockResolvedValue(qaState()),saveResult,addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
     fireEvent.click(await screen.findByRole('button',{name:/Критерий 1/}))
     fireEvent.change(screen.getByLabelText(/Фактически выполненные шаги/),{target:{value:'Нажал Отмена'}})
@@ -33,7 +33,7 @@ describe('ManualQaPanel', () => {
   })
   it('creates a detailed manual QA scenario', async () => {
     const createCriterion = vi.fn().mockResolvedValue({})
-    window.qa={get:vi.fn().mockResolvedValue({criteria:[],versions:[],sessions:[],activeSession:null}),saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion,reviseCriterion:vi.fn(),startSession:vi.fn()}
+    window.qa={get:vi.fn().mockResolvedValue({criteria:[],versions:[],sessions:[],activeSession:null}),saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion,reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
     fireEvent.click(await screen.findByText('Добавить сценарий ручного QA'))
     fireEvent.change(screen.getByLabelText('Название сценария'), { target: { value: 'Создание задачи B' } })
@@ -50,17 +50,17 @@ describe('ManualQaPanel', () => {
   it('moves prepared scenarios through the server gate', async () => {
     const prepared = qaState(); prepared.sessions = []; prepared.activeSession = null
     const completePreparation = vi.fn().mockResolvedValue(prepared)
-    window.qa={get:vi.fn().mockResolvedValue(prepared),saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation,createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn()}
+    window.qa={get:vi.fn().mockResolvedValue(prepared),saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation,createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
     fireEvent.click(await screen.findByRole('button', { name: 'Сценарии готовы — перейти в ручное QA' }))
     await waitFor(() => expect(completePreparation).toHaveBeenCalledWith('p1', 't1'))
   })
 
   it('shows stale reason and disables result actions', async () => {
-    window.qa={get:vi.fn().mockResolvedValue(qaState('stale')),saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn()}
+    window.qa={get:vi.fn().mockResolvedValue(qaState('stale')),saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
     expect(await screen.findByText('commit_sha_changed')).toBeTruthy()
     fireEvent.click(screen.getByRole('button',{name:/Критерий 1/}))
-    expect(screen.getByRole('button',{name:'Пройден'})).toBeDisabled()
+    expect(screen.getByRole('button',{name:'Работает'})).toBeDisabled()
   })
 })

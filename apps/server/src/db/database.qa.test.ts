@@ -73,13 +73,13 @@ describe('manual QA persistence and workflow', () => {
     const id = session.results[0].id
     expect(() => db.saveQaResult('owner', project.id, task.id, id, 1, { status: 'failed', draft: false })).toThrow(/missing QA fields/)
     db.saveQaResult('owner', project.id, task.id, id, 1, {
-      status: 'failed', draft: false, executedSteps: 'click Cancel', actualResult: 'still running',
+      status: 'failed', draft: false, executedSteps: 'click Cancel', actualResult: 'still running', comment: 'Cancel does not stop the run',
       classification: 'implementation_defect', severity: 'major', frequency: 'always', reproduction: 'start then cancel'
     })
     const state = db.getQaTaskState('owner', project.id, task.id)!
     expect(state.sessions[0].results[0].issue?.classification).toBe('implementation_defect')
     const taskColumn = db.getBoard('owner', project.id)!.columns.find((c) => c.id === db.getBoard('owner', project.id)!.tasks[0].columnId)
-    expect(taskColumn?.semanticType).toBe('development')
+    expect(taskColumn?.semanticType).toBe('manual_qa')
   })
 
   it('binds screenshot metadata to project/result and denies outsiders', () => {
