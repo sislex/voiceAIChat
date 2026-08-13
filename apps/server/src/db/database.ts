@@ -1556,7 +1556,8 @@ export class VoiceChatDb {
     if (!row) return { ...DEFAULT_SETTINGS }
     try {
       // Мержим с дефолтами, чтобы новые поля не ломали старый конфиг.
-      return { ...DEFAULT_SETTINGS, ...(JSON.parse(row.value) as Partial<Settings>) }
+      const parsed = JSON.parse(row.value) as Partial<Settings>
+      return { ...DEFAULT_SETTINGS, ...parsed, personalization: { ...DEFAULT_SETTINGS.personalization, ...parsed.personalization } }
     } catch {
       return { ...DEFAULT_SETTINGS }
     }

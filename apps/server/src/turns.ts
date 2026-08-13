@@ -418,6 +418,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     if (conv?.assistantKind === 'kanban' && req.assistantContext) {
       basePrompt = `${basePrompt}\n\n## Режим канбан-ассистента\nОтветь JSON-объектом {"text":"...","commands":[]}. Доступные команды: navigate.project-settings, navigate.task, propose.task-update, propose.rephrase, propose.acceptance-criteria, propose.settings-update. Для поиска карточек используй toolResults.query: шлюз предпочитает семантический UI-снимок, а без него делает API-fallback. Любые изменения только propose; они проходят общий action-шлюз после подтверждения — не утверждай, что они применены. Используй только безопасный снимок ниже.\n${JSON.stringify(req.assistantContext)}`
     }
+    const personalization = settings.personalization
+    const personalizationLines = [
+      personalization.preferredName ? `Обращение к пользователю: ${personalization.preferredName}.` : '',
+      personalization.responseLanguage ? `Обычный язык ответа: ${personalization.responseLanguage}; явная просьба в текущем сообщении имеет приоритет.` : '',
+      personalization.responseStyle !== 'normal' ? `Стиль ответа: ${{ brief: 'кратко', detailed: 'подробно', 'step-by-step': 'пошагово', normal: 'обычно' }[personalization.responseStyle]}.` : '',
+      personalization.tone !== 'neutral' ? `Тон общения: ${{ friendly: 'дружелюбный', business: 'деловой', plain: 'простой, без сложных терминов', neutral: 'нейтральный' }[personalization.tone]}.` : '',
+      personalization.birthYear ? `Возраст пользователя: ${Math.max(0, new Date().getUTCFullYear() - personalization.birthYear - ((personalization.birthMonth ?? 1) > new Date().getUTCMonth() + 1 || ((personalization.birthMonth ?? 1) === new Date().getUTCMonth() + 1 && (personalization.birthDay ?? 1) > new Date().getUTCDate()) ? 1 : 0))} лет; адаптируй сложность только когда это уместно.` : ''
+    ].filter(Boolean)
+    if (personalizationLines.length) basePrompt = `${basePrompt}\n\n## Персонализация пользователя\n${personalizationLines.join('\n')}\nЭти предпочтения уступают явной инструкции текущего сообщения и настройкам разговора/проекта.`
     const prompt = appendChangeAuthorizationHint(appendImageHint(appendToolHint(appendQuestionsHint(basePrompt))))
     // Цель выполнения команд: выбранная машина-агент. Только своя машина
     // (чужую игнорируем → выполняем на сервере). Офлайн своей — сразу ошибка.
