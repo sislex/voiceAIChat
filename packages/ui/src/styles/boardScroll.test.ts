@@ -1,5 +1,5 @@
-// Цепочка скролла доски: длинная колонка обязана увеличивать общую поверхность
-// доски, не создавая собственного скролла и не растягивая документ.
+// Цепочка скролла доски: рабочая область ограничена viewport, общая поверхность
+// прокручивается только горизонтально, а списки карточек — вертикально и независимо.
 //
 // Проверяем по тексту app.css, а не через getComputedStyle: в jsdom нет
 // раскладки — там у всего нулевая высота, и «скроллится ли колонка» измерить
@@ -40,21 +40,27 @@ describe('app.css — скролл длинной колонки доски', ()
     expect(decl('.toolpage', 'min-height')).toBe('0')
   })
 
-  it('flex-цепочка от рамки до списка карточек не теряет min-height: 0', () => {
+  it('flex-цепочка от рамки до списков карточек не теряет ограничения размеров', () => {
     for (const selector of ['.toolpage > .jboard-wrap', '.jboard']) {
       expect(decl(selector, 'flex'), selector).toBe('1')
       expect(decl(selector, 'min-height'), selector).toBe('0')
+      expect(decl(selector, 'min-width'), selector).toBe('0')
     }
-    // Единственный общий контейнер сохраняет вертикальную и горизонтальную оси.
-    expect(decl('.jboard', 'overflow')).toBe('auto')
-    expect(decl('.jcol', 'max-height')).toBeNull()
+    expect(decl('.toolpage > .jboard-wrap', 'overflow')).toBe('hidden')
+    expect(decl('.jboard', 'overflow-x')).toBe('auto')
+    expect(decl('.jboard', 'overflow-y')).toBe('hidden')
+    expect(decl('.jcol', 'height')).toBe('100%')
+    expect(decl('.jcol', 'max-height')).toBe('100%')
     expect(decl('.jcol', 'min-height')).toBe('0')
+    expect(decl('.jcol', 'overflow')).toBe('hidden')
   })
 
-  it('списки карточек растут внутри общего scroll-контейнера без своего скролла', () => {
-    expect(decl('.jcol-body', 'overflow')).toBe('visible')
-    expect(decl('.jcol-body', 'overflow-y')).toBeNull()
+  it('только списки карточек прокручиваются вертикально и независимо', () => {
+    expect(decl('.jcol-body', 'overflow-x')).toBe('hidden')
+    expect(decl('.jcol-body', 'overflow-y')).toBe('auto')
     expect(decl('.jcol-body', 'flex')).toBe('1')
+    expect(decl('.jcol-body', 'min-height')).toBe('0')
+    expect(decl('.jcol-head', 'flex')).toBe('none')
   })
 
   it('фильтры остаются вне общей прокрутки, а шапки и композер не сжимаются', () => {
