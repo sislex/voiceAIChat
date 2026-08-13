@@ -20,8 +20,8 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 42 коммит(ов) в areas после сверки: de5a825 feat: prepare release checkout automatically … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-13 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-13 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 293 коммит(ов) в areas после сверки: 7783ae9 Merge task a6c710e5-42eb-49de-8ac1-bde7558ac718 … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-13 | ⚠ 3 коммит(ов) в areas после сверки: 7783ae9 Merge task a6c710e5-42eb-49de-8ac1-bde7558ac718 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 293 коммит(ов) в areas после сверки: 234cf72 Merge task a6c710e5-42eb-49de-8ac1-bde7558ac718 … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-13 | ✓ |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-13 | ⚠ 2 коммит(ов) в areas после сверки: c6a4a95 feat(CHAT-198): redesign task workflow card … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 11 коммит(ов) в areas после сверки: 9c8c654 CHAT-199 reset knowledge usage badge on view … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 20 коммит(ов) в areas после сверки: da0cd12 Merge task a752dbf4-7431-4740-8ed3-14257b87de28 … |
