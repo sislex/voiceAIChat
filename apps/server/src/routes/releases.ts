@@ -12,9 +12,16 @@ export function registerReleaseRoutes(app:FastifyInstance,db:VoiceChatDb,release
   const project=(req:FastifyRequest,projectId:string)=>db.getProject(uid(req),projectId)
   const ciTarget=(req:FastifyRequest,projectId:string,selectedAgentId?:string):ReleaseProjectTarget|null=>{
     const value=project(req,projectId)
-    const agentId=selectedAgentId??value?.defaultAgentId
-    const machine=agentId?value?.machines.find(item=>item.agentId===agentId):undefined
-    return value&&agentId&&machine?.path&&db.canUseAgent(uid(req),agentId,projectId)?{projectId,agentId,path:machine.path,baseBranch:value.ciBaseBranch||'main',testCommand:value.testCommand?.trim()||'npm run typecheck && npm run test',limits:value.releaseTimeouts??DEFAULT_RELEASE_TIMEOUTS}:null
+    if(!value)return null
+    // Старые и частично обновлённые проекты могут не иметь defaultAgentId. Для
+    // read-only списка release-веток и deploy выбираем первую настроенную
+    // привязанную машину вместо ложного 404 «маршрут не найден».
+    const preferred=selectedAgentId
+      ? value.machines.find(item=>item.agentId===selectedAgentId)
+      : value.machines.find(item=>item.agentId===value.defaultAgentId&&Boolean(item.path)&&db.canUseAgent(uid(req),item.agentId,projectId))
+        ??value.machines.find(item=>Boolean(item.path)&&db.canUseAgent(uid(req),item.agentId,projectId))
+    const agentId=preferred?.agentId
+    return agentId&&preferred.path&&db.canUseAgent(uid(req),agentId,projectId)?{projectId,agentId,path:preferred.path,baseBranch:value.ciBaseBranch||'main',testCommand:value.testCommand?.trim()||'npm run typecheck && npm run test',limits:value.releaseTimeouts??DEFAULT_RELEASE_TIMEOUTS}:null
   }
   const productionTarget=(req:FastifyRequest,projectId:string):ProductionTarget|null=>{
     const value=project(req,projectId)
@@ -28,8 +35,9 @@ export function registerReleaseRoutes(app:FastifyInstance,db:VoiceChatDb,release
   const deployGuard={preHandler:requireProjectPermission('production:deploy')}
 
   app.get<{Params:{id:string}}>('/api/projects/:id/releases/branches',async(req,reply)=>{
+    if(!project(req,req.params.id))return nf(reply)
     const value=ciTarget(req,req.params.id)
-    if(!value)return nf(reply)
+    if(!value)return bad(reply,'Для проекта не настроена доступная машина с checkout path. Откройте настройки проекта и выберите машину по умолчанию.')
     try{return await releases.listBranches(value)}catch(error){return bad(reply,error)}
   })
   app.post<{Params:{id:string};Body:{branch?:string;baseBranch?:string;agentId?:string}}>('/api/projects/:id/releases/branches',prepareGuard,async(req,reply)=>{

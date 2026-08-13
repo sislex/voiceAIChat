@@ -98,6 +98,15 @@ describe('projects REST: доступ', () => {
     expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/releases/deploy`, payload: { branch: 'release/1.0.0' } })).statusCode).toBe(403)
   })
 
+  it('release branches объясняет неполную конфигурацию машины вместо ложного 404', async () => {
+    const p = await createProject('Release target')
+    const response = await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/releases/branches` })
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toEqual({
+      error: 'Для проекта не настроена доступная машина с checkout path. Откройте настройки проекта и выберите машину по умолчанию.'
+    })
+  })
+
   it('создание, список, изоляция по членству', async () => {
     const p = await createProject()
     expect(p.role).toBe('owner')
