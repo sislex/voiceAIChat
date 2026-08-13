@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-08-13
-checked: abf3b37
+checked: 589da4c
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -223,8 +223,12 @@ supplementary groups процесса, поэтому одной настрой�
 Установщик включает и перезапускает `voicechat-deploy-api.service`, чтобы новая
 копия обработчика сразу вступила в силу; его журнал читается
 через `journalctl -u voicechat-deploy-api.service`, а сам deploy продолжает писать
-в `/var/log/voicechat-deploy.log`. Скрипты копируются в `/usr/local/bin` намеренно — деплой делает `git pull`, и
-запускаться из файла, который этот pull перезаписывает, ему нельзя.
+в `/var/log/voicechat-deploy.log`. `/usr/local/bin/voicechat-deploy` — стабильный
+launcher: при каждом запуске он берёт актуальный `scripts/prod/deploy.sh` из
+production checkout, сохраняет его как content-addressed неизменяемую копию в
+`/usr/local/lib/voicechat` и запускает её. Поэтому обновление checkout не меняет
+исполняемый файл посреди `git pull`, а исправления передачи release metadata не
+застревают в старой установленной копии.
 
 ## Прод-каталог заодно рабочая копия — коммит там пушится сразу
 
