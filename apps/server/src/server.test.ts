@@ -104,9 +104,20 @@ describe('docker-compose: runtime-метаданные и адрес испол�
   it('prod-скрипты сохраняют версию защищённой публикации и используют Git-тег как fallback', () => {
     for (const script of ['deploy.sh', 'rebuild-when-idle.sh']) {
       const source = readFileSync(new URL(`../../../scripts/prod/${script}`, import.meta.url), 'utf8')
-      expect(source).toContain('export VC_RELEASE_VERSION=${VC_RELEASE_VERSION:-${release_tag:+${release_tag#v}}}')
+      expect(source).toContain('export VC_RELEASE_VERSION=${release_tag:+${release_tag#v}}')
+      expect(source).toContain('release_version_source=${VC_RELEASE_VERSION_SOURCE:-explicit}')
       expect(source).not.toContain('export VC_RELEASE_VERSION=${VC_RELEASE_VERSION:-0.1.0}')
     }
+  })
+
+  it('launcher и detached-процесс явно переносят release metadata', () => {
+    const install = readFileSync(new URL('../../../scripts/prod/install.sh', import.meta.url), 'utf8')
+    const deploy = readFileSync(new URL('../../../scripts/prod/deploy.sh', import.meta.url), 'utf8')
+    expect(install).toContain('exec env VC_RELEASE_VERSION="${VC_RELEASE_VERSION-}" VC_RELEASE_VERSION_SOURCE="${VC_RELEASE_VERSION_SOURCE-}" "$runtime" "$@"')
+    expect(deploy).toContain('--release-version "$release_version"')
+    expect(deploy).toContain('--release-version-source "$release_version_source"')
+    expect(deploy).toContain('export VC_RELEASE_VERSION=$2')
+    expect(deploy).toContain('source=$release_version_source')
   })
 })
 

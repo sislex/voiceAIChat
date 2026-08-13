@@ -193,7 +193,7 @@ export class ReleaseManager {
       }
       if(release.status==='building')this.db.setProjectReleaseStep(release.id,'building','passed','Production deploy продолжен после рестарта',actor)
       this.db.setProjectReleaseStatus(release.id,'health_check',actor)
-      this.db.setProjectReleaseStep(release.id,'health_check','running','Ожидание production с ожидаемым SHA после рестарта',actor)
+      this.db.setProjectReleaseStep(release.id,'health_check','running',`Ожидание production после рестарта: version=${release.version}, commit=${release.sha}`,actor)
       this.deploying.add(release.projectId)
       void this.monitorHealth(actor,target,release).finally(()=>this.deploying.delete(release.projectId))
     }
@@ -234,13 +234,15 @@ export class ReleaseManager {
       this.db.setProjectReleaseStatus(release.id,'building',actor)
       this.db.setProjectReleaseStep(release.id,'building','running','',actor)
       const buildLimit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='building')?.limitMs??300_000
-      const built=await this.runtime.exec(target,at(target,`export VC_RELEASE_VERSION=${quote(release.version)} && ${target.deployCommand}`),buildLimit)
+      const expectedMetadata=`Ожидаемые production metadata: version=${release.version} commit=${release.sha} source=release-manager`
+      this.db.setProjectReleaseStep(release.id,'building','running',expectedMetadata,actor)
+      const built=await this.runtime.exec(target,at(target,`export VC_RELEASE_VERSION=${quote(release.version)} VC_RELEASE_VERSION_SOURCE='release-manager' && echo ${quote(expectedMetadata)} && ${target.deployCommand}`),buildLimit)
       if(built.timedOut)throw new Error(`Сборка и обновление контейнеров: фактическая длительность превысила лимит ${Math.round(buildLimit/1000)} с\n${built.output}`)
       if(built.exitCode!==0)throw new Error(built.output||'Production build завершился с ошибкой')
       this.db.setProjectReleaseStep(release.id,'building','passed',built.output,actor)
 
       this.db.setProjectReleaseStatus(release.id,'health_check',actor)
-      this.db.setProjectReleaseStep(release.id,'health_check','running','Ожидание production с ожидаемым SHA',actor)
+      this.db.setProjectReleaseStep(release.id,'health_check','running',`Ожидание production: version=${release.version}, commit=${release.sha}`,actor)
       await this.monitorHealth(actor,target,release)
     }catch(error){
       const log=error instanceof Error?error.message:String(error)
