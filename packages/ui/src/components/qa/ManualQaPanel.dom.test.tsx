@@ -15,21 +15,21 @@ describe('ManualQaPanel', () => {
   it('renders progress, criterion details, preview and history version', async () => {
     window.qa = { get: vi.fn().mockResolvedValue(qaState()), saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn() }
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
-    expect(await screen.findByText(/Прогресс 0\/1/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name:/Критерий 1/ }))
+    expect(await screen.findByText(/Проверено 0\/1/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name:/Тест 1/ }))
     expect(screen.getByText('Ран запущен')).toBeTruthy()
-    expect(screen.getByText(/not_tested · v2/)).toBeTruthy()
+    expect(screen.getByText(/Без результата · v2/)).toBeTruthy()
     expect(screen.getByRole('link', { name:'Открыть preview' })).toHaveAttribute('href','https://preview')
     expect(screen.getByLabelText('Скриншоты')).toHaveAttribute('multiple')
   })
-  it('saves a draft with optimistic revision', async () => {
+  it('saves a mutually exclusive result with optimistic revision', async () => {
     const saveResult=vi.fn().mockResolvedValue({})
     window.qa={get:vi.fn().mockResolvedValue(qaState()),saveResult,addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
-    fireEvent.click(await screen.findByRole('button',{name:/Критерий 1/}))
-    fireEvent.change(screen.getByLabelText(/Фактически выполненные шаги/),{target:{value:'Нажал Отмена'}})
-    fireEvent.click(screen.getByRole('button',{name:'Сохранить черновик'}))
-    await waitFor(()=>expect(saveResult).toHaveBeenCalledWith('p1','t1','r1',1,expect.objectContaining({draft:true,status:'in_progress',executedSteps:'Нажал Отмена'})))
+    fireEvent.click(await screen.findByRole('button',{name:/Тест 1/}))
+    fireEvent.click(screen.getByRole('button',{name:'Успешно'}))
+    await waitFor(()=>expect(saveResult).toHaveBeenCalledWith('p1','t1','r1',1,expect.objectContaining({draft:false,status:'passed'})))
+    expect(screen.getByRole('button',{name:'Пропустить'})).toBeDisabled()
   })
   it('creates a detailed manual QA scenario', async () => {
     const createCriterion = vi.fn().mockResolvedValue({})
@@ -72,7 +72,7 @@ describe('ManualQaPanel', () => {
     window.qa={get:vi.fn().mockResolvedValue(qaState('stale')),saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
     expect(await screen.findByText('commit_sha_changed')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button',{name:/Критерий 1/}))
-    expect(screen.getByRole('button',{name:'Работает'})).toBeDisabled()
+    fireEvent.click(screen.getByRole('button',{name:/Тест 1/}))
+    expect(screen.getByRole('button',{name:'Успешно'})).toBeDisabled()
   })
 })

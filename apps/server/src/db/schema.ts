@@ -1011,7 +1011,7 @@ CREATE TABLE IF NOT EXISTS qa_sessions (
   app_url TEXT, storybook_url TEXT, test_data_scenario TEXT NOT NULL DEFAULT '',
   criteria_snapshot_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
   tester_id TEXT, initiated_by TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER,
-  stale_reason TEXT, summary TEXT NOT NULL DEFAULT '',
+  stale_reason TEXT, summary TEXT NOT NULL DEFAULT '', additional_issues TEXT NOT NULL DEFAULT '', linked_fix_run_id TEXT,
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
