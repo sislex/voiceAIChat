@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
 updated: 2026-08-13
-checked: 8f948a5
+checked: e92c367
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
@@ -24,7 +24,10 @@ Merge выполняет отдельный `MergeRunManager` из
 `apps/server/src/merge/runManager.ts`; development CI заканчивается подготовкой и
 push ветки задачи в `origin`, после чего карточка находится в
 `awaiting_merge`. Merge-ран не запускает production deploy и не смешивает своё
-состояние или ленту с CI-раном разработки.
+состояние или ленту с CI-раном разработки. В `TaskModal` Merge остаётся отдельной
+верхней вкладкой между «Ходом выполнения» и «Лентой рана»; при активном merge
+карточка впервые открывается на технической ленте, где рендерится
+`MergeRunFeed`, а development-сводка не выдаётся за результат merge.
 
 Клиент запускает процесс через
 `POST /api/projects/:id/tasks/:taskId/merge`, не передавая ветку, target, Git URL,
