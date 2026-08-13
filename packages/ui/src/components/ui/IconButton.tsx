@@ -27,3 +27,29 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   // подписи и сам добавляет квадратную геометрию (.vc-btn--icon).
   return <Button {...rest} ref={ref} variant={variant} iconLeft={children} />
 })
+
+export interface SidebarToggleProps {
+  expanded: boolean
+  onToggle: () => void
+  className?: string
+}
+
+/** Единый переключатель общего Sidebar для шапок чата и страниц проекта. */
+export const SidebarToggle = forwardRef<HTMLButtonElement, SidebarToggleProps>(function SidebarToggle(
+  { expanded, onToggle, className = '' },
+  ref
+): JSX.Element {
+  const label = expanded ? 'Закрыть боковую панель' : 'Открыть боковую панель'
+  return (
+    <IconButton
+      ref={ref}
+      className={`sidebar-toggle ${className}`.trim()}
+      aria-label={label}
+      aria-expanded={expanded}
+      title={label}
+      onClick={onToggle}
+    >
+      <span aria-hidden>☰</span>
+    </IconButton>
+  )
+})

@@ -24,6 +24,8 @@ export interface ToolFrameProps {
   onClose?: () => void
   /** data-testid корня: оверлей в modal, карточка в embedded, регион в page. */
   testId?: string
+  /** Элемент перед заголовком — для общей навигации страницы. */
+  leading?: ReactNode
   /** Свои кнопки в шапке слева от «на весь экран»; функция — если нужен разворот. */
   actions?: ReactNode | ((ctl: ToolFrameControl) => ReactNode)
   /**
@@ -45,6 +47,7 @@ export function ToolFrame({
   variant = 'modal',
   onClose,
   testId,
+  leading,
   actions,
   className,
   onEscape,
@@ -72,6 +75,7 @@ export function ToolFrame({
 
   const head = (
     <div className="mdhead">
+      {leading}
       <h2 className="mdh">{title}</h2>
       <span className="util-head-btns">
         {typeof actions === 'function' ? actions(ctl) : actions}

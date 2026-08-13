@@ -356,7 +356,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className={open ? 'side side--open' : 'side'}>
+    <aside id="app-sidebar" className={open ? 'side side--open' : 'side'}>
       <div className="sidehead">
         <span className="logo">
           <span className="logodot" style={{ background: ACCENT }} />

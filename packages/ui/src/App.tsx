@@ -479,6 +479,28 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     setCollapsed(v)
     try { localStorage.setItem('vc:sidebarCollapsed', v ? '1' : '0') } catch { /* приватный режим */ }
   }
+  const sidebarExpanded = compactChat ? sidebarOpen : !collapsed
+  const focusSidebarToggle = (): void => {
+    document.querySelector<HTMLButtonElement>('.sidebar-toggle')?.focus()
+  }
+  const closeMobileSidebar = (restoreFocus = true): void => {
+    setSidebarOpen(false)
+    if (restoreFocus) focusSidebarToggle()
+  }
+  const toggleSidebar = (): void => {
+    if (compactChat) setSidebarOpen((value) => !value)
+    else setCollapsedPersist(!collapsed)
+  }
+  useEffect(() => {
+    if (!compactChat || !sidebarOpen) return
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      closeMobileSidebar()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [compactChat, sidebarOpen])
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false)
   const [taskProposal, setTaskProposal] = useState<{
     projectId: string
@@ -1008,7 +1030,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         }}
       />
       {sidebarOpen && (
-        <div className="side-backdrop" aria-hidden onClick={() => setSidebarOpen(false)} />
+        <div className="side-backdrop" aria-hidden onClick={() => closeMobileSidebar()} />
       )}
       </>}
 
@@ -1018,10 +1040,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       <div className="chat-split-chat">
       {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={state.activeId ?? ''} onChange={(event) => navigate(`/web-reader/${event.target.value}`)}>{state.conversations.filter((conversation) => conversation.assistantKind === 'web-recorder' || Boolean(conversation.previewUrl)).map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => void actions.newConversation('web-recorder').then((id) => { if (id) navigate(`/web-reader/${id}`) })}>+ Новый</button></header>}
       <ChatColumn
-        onToggleSidebar={inReader ? undefined : () => {
-          if (collapsed) setCollapsedPersist(false)
-          else setSidebarOpen((v) => !v)
-        }}
+        onToggleSidebar={inReader ? undefined : toggleSidebar}
+        sidebarExpanded={sidebarExpanded}
         title={activeTitle}
         onRenameTitle={(t) => {
           if (state.activeId) void actions.renameConversation(state.activeId, t)
@@ -1149,10 +1169,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onSectionChange={(section) =>
             navigate(section === 'settings' ? `/projects/${routeProjectId}/settings` : section === 'releases' ? `/projects/${routeProjectId}/releases` : `/projects/${routeProjectId}`)
           }
-          onToggleSidebar={() => {
-            if (collapsed) setCollapsedPersist(false)
-            setSidebarOpen((v) => !v)
-          }}
+          onToggleSidebar={toggleSidebar}
+          sidebarExpanded={sidebarExpanded}
+          onSidebarEscape={compactChat && sidebarOpen ? () => { closeMobileSidebar(); return true } : undefined}
           assistantOpen={assistantOpen || segments[2] === 'assistant'}
           onAssistantOpenChange={(open) => { if (!open && segments[2] === 'assistant') navigate(`/projects/${routeProjectId}`); setKanbanAssistantOpen(open) }}
           onOpenAssistantPage={() => navigate(`/projects/${routeProjectId}/assistant`) }
