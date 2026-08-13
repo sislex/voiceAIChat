@@ -1,11 +1,11 @@
 import type { KanbanColumnSemanticType } from './projects'
 
-export type MergeStage = 'queued' | 'checking' | 'fetching' | 'merging' | 'resolving_conflicts' | 'testing' | 'pushing' | 'success' | 'failed' | 'cancelled' | 'decision_required'
+export type MergeStage = 'queued' | 'checking' | 'fetching' | 'merging' | 'resolving_conflicts' | 'kb_update' | 'testing' | 'pushing' | 'success' | 'failed' | 'cancelled' | 'decision_required'
 export type MergeRunStatus = MergeStage | 'deploying' | 'production_checks' | 'rolling_back' | 'timeout'
 export type MergeStageStatus = 'queued' | 'running' | 'passed' | 'failed' | 'skipped'
 
 export const ACTIVE_MERGE_STATUSES: readonly MergeRunStatus[] = [
-  'queued', 'checking', 'fetching', 'merging', 'resolving_conflicts', 'testing', 'pushing', 'deploying', 'production_checks', 'rolling_back'
+  'queued', 'checking', 'fetching', 'merging', 'resolving_conflicts', 'kb_update', 'testing', 'pushing', 'deploying', 'production_checks', 'rolling_back'
 ]
 
 export interface MergeConflict { path: string; kind?: string }

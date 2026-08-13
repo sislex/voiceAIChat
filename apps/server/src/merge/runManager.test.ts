@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MergeRun } from '@voicechat/shared'
-import { MergeRunManager } from './runManager.js'
+import { MergeRunManager, type MergeKbUpdateContext } from './runManager.js'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor } from '../ci/types.js'
 
@@ -8,7 +8,7 @@ const source='1'.repeat(40), target='2'.repeat(40), merged='3'.repeat(40)
 const base=():MergeRun=>({id:'r1',projectId:'p1',taskId:'t1',status:'queued',triggeredBy:'admin',sourceBranch:'CHAT-178',targetBranch:'main',sourceSha:source,targetSha:null,mergeSha:null,revertSha:null,agentId:'a1',machineName:'Mac',llmEngineId:null,llmProvider:'claude',llmModel:'',stage:'queued',stages:[],conflicts:[],conflictDetails:[],checks:[],deployId:null,deployVersion:null,productionStatus:null,error:null,recommendedAction:null,log:'',canCancel:true,canRetry:false,pushStartedAt:null,startedAt:null,finishedAt:null,createdAt:1})
 
 type Out=string|{output:string;exitCode:number}
-function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affected-check', gitUrl='git@example/repo.git'){
+function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affected-check', gitUrl='git@example/repo.git', kbUpdate:(ctx:MergeKbUpdateContext)=>Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>=async()=>({ok:true,message:'Нечего обновлять'})){
   let run=initial
   const moves:string[]=[]
   const repositories:{agentId:string;path:string;kind:string;state:string}[]=[]
@@ -26,8 +26,12 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
     markTaskRepositoryDeleted:(_t:string,agentId:string,path:string)=>{const item=repositories.find(r=>r.agentId===agentId&&r.path===path);if(item)item.state='deleted'},
     listActiveTaskRepositories:()=>repositories.filter(r=>r.state==='active').map(r=>({taskId:'t1',agentId:r.agentId,path:r.path}))
   }
-  const executor:CommandExecutor={run:vi.fn(async (_req,onChunk)=>{const item=outputs.shift()??'';const spec=typeof item==='string'?{output:item,exitCode:0}:item;onChunk(spec.output);return{exitCode:spec.exitCode,timedOut:false}})}
-  const manager=new MergeRunManager({db:db as unknown as VoiceChatDb,executor,isOnline:()=>true,broadcast:()=>{},boardChanged:()=>{},now:(()=>{let n=10;return()=>++n})()})
+  const executor:CommandExecutor={run:vi.fn(async (req,onChunk)=>{
+    if(req.script.includes("printf 'TARGET=%s\\nSOURCE=%s\\n'")){outputs.shift();onChunk(`TARGET=${target}\nSOURCE=${run.sourceSha ?? source}\n`);return{exitCode:0,timedOut:false}}
+    if(req.script.includes('git add -- docs/kb')){onChunk(merged+'\n');return{exitCode:0,timedOut:false}}
+    const item=outputs.shift()??'';const spec=typeof item==='string'?{output:item,exitCode:0}:item;onChunk(spec.output);return{exitCode:spec.exitCode,timedOut:false}
+  })}
+  const manager=new MergeRunManager({db:db as unknown as VoiceChatDb,executor,kbUpdate,isOnline:()=>true,broadcast:()=>{},boardChanged:()=>{},now:(()=>{let n=10;return()=>++n})()})
   return{manager,get run(){return run},moves,executor,repositories}
 }
 
@@ -35,7 +39,8 @@ describe('MergeRunManager',()=>{
   it('merges from a temporary clone when the released CI workspace no longer exists',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''])
     s.manager.start(s.run)
-    await vi.waitFor(()=>expect(s.run.status).toBe('success'))
+    await vi.waitFor(()=>expect(['success','failed','decision_required']).toContain(s.run.status))
+    expect(s.run.status, `${s.run.error}\n${s.run.log}`).toBe('success')
     expect(s.moves).toContain('done')
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
     expect(scripts.find(v=>v.includes('git push'))).toContain(`--force-with-lease=refs/heads/main:${target}`)
@@ -136,6 +141,27 @@ describe('MergeRunManager',()=>{
     expect(scripts.some(v=>v.includes('rm -rf')&&v.includes("'/repo/task'"))).toBe(true)
     expect(scripts.some(v=>v.includes('rm -rf')&&v.includes('.merge'))).toBe(false)
   })
+  it('runs kb_update on the merged tree before tests and persists its LLM outcome',async()=>{
+    const seen:{repo?:string;targetRef?:string}={}
+    const hook=vi.fn(async(ctx:MergeKbUpdateContext)=>{seen.repo=ctx.repo;seen.targetRef=ctx.targetRef;return{ok:true,message:'Файловая БЗ обновлена',llmEngineId:'engine-1',llmProvider:'codex' as const,llmModel:'gpt-5.6-luna'}})
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''],base(),'npm run affected-check','git@example/repo.git',hook)
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('success'))
+    expect(seen).toEqual({repo:'/repo/.merge',targetRef:'refs/merge-runs/r1/target'})
+    expect(s.run.stages.map(stage=>stage.stage)).toEqual(expect.arrayContaining(['merging','kb_update','testing','pushing']))
+    expect(s.run.stages.find(stage=>stage.stage==='kb_update')).toMatchObject({status:'passed',message:'Файловая БЗ обновлена'})
+    expect(s.run).toMatchObject({llmEngineId:'engine-1',llmProvider:'codex',llmModel:'gpt-5.6-luna'})
+  })
+  it('stops before tests and push when mandatory kb_update fails',async()=>{
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n'],base(),'npm run affected-check','git@example/repo.git',async()=>({ok:false,message:'Ответ модели неразборчив'}))
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
+    expect(s.run.stages.find(stage=>stage.stage==='kb_update')).toMatchObject({status:'failed'})
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    expect(scripts.some(script=>script.includes('affected-check'))).toBe(false)
+    expect(scripts.some(script=>script.includes('git push'))).toBe(false)
+  })
+
   it('runs a JSON test pipeline sequentially',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','one ok\n','two ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''],base(),JSON.stringify(['npm run one','npm run two']))
     s.manager.start(s.run)

@@ -155,12 +155,13 @@ describe('GET /api/ci/runs/:runId/report', () => {
     expect(report.kbHit).toBeNull()
     expect(report.totals.modelActiveMs).toBe(8000)
     // Шаги: команда слота, работа модели и резюме — со статусом и длительностью.
-    expect(report.steps.map((s) => s.title)).toContain('Тесты')
+    expect(report.steps.map((s) => s.title)).not.toContain('Тесты')
+    expect(report.steps.map((s) => s.title)).toContain('Отправить ветку задачи в origin')
     const modelStep = report.steps.find((s) => s.kind === 'model_work')!
     expect(modelStep.status).toBe('success')
     expect(modelStep.durationMs).not.toBeNull()
     expect(modelStep.usage!.requests).toBe(1)
-    const commandStep = report.steps.find((s) => s.title === 'Тесты')!
+    const commandStep = report.steps.find((s) => s.title === 'Отправить ветку задачи в origin')!
     expect(commandStep.usage).toBeNull()
     expect(commandStep.durationMs).not.toBeNull()
   })
