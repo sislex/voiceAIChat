@@ -604,6 +604,15 @@ describe('REST: conversations/messages/settings', () => {
     expect(saved.voice).toBe('ru_RU-dmitri-medium')
   })
 
+  it('нормализует персонализацию и отвергает невозможную дату', async () => {
+    const def = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    const invalid = await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, personalization: { ...def.personalization, birthDay: 31, birthMonth: 2 } } })
+    expect(invalid.statusCode).toBe(400)
+    const saved = await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, personalization: { ...def.personalization, preferredName: '  Алексей   Р. ', birthYear: 1990, responseLanguage: 'ru', responseStyle: 'brief', tone: 'friendly' } } })
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json().personalization).toMatchObject({ preferredName: 'Алексей Р.', birthYear: 1990, responseLanguage: 'ru', responseStyle: 'brief', tone: 'friendly' })
+  })
+
   it('агенты: create → list (offline) → delete', async () => {
     const created = (
       await inj({ method: 'POST', url: '/api/agents', payload: { name: 'MacBook' } })

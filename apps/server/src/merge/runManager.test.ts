@@ -29,6 +29,7 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
   const executor:CommandExecutor={run:vi.fn(async (req,onChunk)=>{
     if(req.script.includes("printf 'TARGET=%s\\nSOURCE=%s\\n'")){outputs.shift();onChunk(`TARGET=${target}\nSOURCE=${run.sourceSha ?? source}\n`);return{exitCode:0,timedOut:false}}
     if(req.script.includes('git add -- docs/kb')){onChunk(merged+'\n');return{exitCode:0,timedOut:false}}
+    if(req.script.includes('git checkout --ours -- docs/kb/README.md'))return{exitCode:0,timedOut:false}
     const item=outputs.shift()??'';const spec=typeof item==='string'?{output:item,exitCode:0}:item;onChunk(spec.output);return{exitCode:spec.exitCode,timedOut:false}
   })}
   const manager=new MergeRunManager({db:db as unknown as VoiceChatDb,executor,kbUpdate,isOnline:()=>true,broadcast:()=>{},boardChanged:()=>{},now:(()=>{let n=10;return()=>++n})()})
@@ -45,7 +46,9 @@ describe('MergeRunManager',()=>{
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
     expect(scripts.find(v=>v.includes('git push'))).toContain(`--force-with-lease=refs/heads/main:${target}`)
     expect(scripts.findIndex(v=>v.includes('npm ci'))).toBeLessThan(scripts.findIndex(v=>v.includes('affected-check')))
+    expect(scripts.findIndex(v=>v.includes('kb.mjs index'))).toBeLessThan(scripts.findIndex(v=>v.includes('affected-check')))
     expect(scripts.findIndex(v=>v.includes('affected-check'))).toBeLessThan(scripts.findIndex(v=>v.includes('git push')))
+    expect(scripts.find(v=>v.includes('kb.mjs index'))).toContain('kb.mjs check')
     expect(scripts.find(v=>v.includes('npm ci'))).toContain('npm_config_cache')
     expect(scripts.find(v=>v.includes('npm ci'))).toContain('merge-lock-sha')
     const calls=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls
@@ -80,22 +83,23 @@ describe('MergeRunManager',()=>{
     const resolve=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script).find(v=>v.includes('kb.mjs touch'))
     expect(resolve).toContain("'docs/kb/ui.md'")
     expect(resolve).toContain('git merge-file --stdout')
-    expect(resolve).toContain('kb.mjs index')
     expect(resolve).toContain('kb.mjs check')
+    expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script).some(v=>v.includes('kb.mjs index'))).toBe(true)
   })
   it('stops for a decision when KB topics diverge in content',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','',{output:'CONFLICT\n',exitCode:1},'docs/kb/README.md\ndocs/kb/ui.md\n',{output:'',exitCode:65}])
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('decision_required'))
-    expect(s.run.conflicts).toEqual(['docs/kb/README.md','docs/kb/ui.md'])
+    expect(s.run.conflicts).toEqual(['docs/kb/ui.md'])
     expect(s.run.stages.find(stage=>stage.stage==='resolving_conflicts')?.message).toContain('содержательное расхождение')
   })
   it('stops for a decision when conflicts touch anything beyond the KB index',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','',{output:'CONFLICT\n',exitCode:1},'docs/kb/README.md\napps/server/src/index.ts\n'])
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('decision_required'))
-    expect(s.run.conflicts).toEqual(['docs/kb/README.md','apps/server/src/index.ts'])
+    expect(s.run.conflicts).toEqual(['apps/server/src/index.ts'])
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    expect(scripts.some(v=>v.includes('git checkout --ours -- docs/kb/README.md'))).toBe(true)
     expect(scripts.some(v=>v.includes('kb.mjs index'))).toBe(false)
   })
   it('stops stale source before creating a worktree',async()=>{
