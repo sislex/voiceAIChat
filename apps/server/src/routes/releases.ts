@@ -10,18 +10,11 @@ const bad=(reply:FastifyReply,error:unknown):FastifyReply=>reply.code(400).send(
 
 export function registerReleaseRoutes(app:FastifyInstance,db:VoiceChatDb,releases:ReleaseManager):void {
   const project=(req:FastifyRequest,projectId:string)=>db.getProject(uid(req),projectId)
-  const ciTarget=(req:FastifyRequest,projectId:string,selectedAgentId?:string):ReleaseProjectTarget|null=>{
+  const ciTarget=(req:FastifyRequest,projectId:string):ReleaseProjectTarget|null=>{
     const value=project(req,projectId)
-    if(!value)return null
-    // Старые и частично обновлённые проекты могут не иметь defaultAgentId. Для
-    // read-only списка release-веток и deploy выбираем первую настроенную
-    // привязанную машину вместо ложного 404 «маршрут не найден».
-    const preferred=selectedAgentId
-      ? value.machines.find(item=>item.agentId===selectedAgentId)
-      : value.machines.find(item=>item.agentId===value.defaultAgentId&&Boolean(item.path)&&db.canUseAgent(uid(req),item.agentId,projectId))
-        ??value.machines.find(item=>Boolean(item.path)&&db.canUseAgent(uid(req),item.agentId,projectId))
-    const agentId=preferred?.agentId
-    return agentId&&preferred.path&&db.canUseAgent(uid(req),agentId,projectId)?{projectId,agentId,path:preferred.path,baseBranch:value.ciBaseBranch||'main',testCommand:value.testCommand?.trim()||'npm run typecheck && npm run test',limits:value.releaseTimeouts??DEFAULT_RELEASE_TIMEOUTS}:null
+    const agentId=value?.defaultAgentId
+    const machine=agentId?value?.machines.find(item=>item.agentId===agentId):undefined
+    return value&&agentId&&machine?.path&&db.canUseAgent(uid(req),agentId,projectId)?{projectId,agentId,path:machine.path,baseBranch:value.ciBaseBranch||'main',testCommand:value.testCommand?.trim()||'npm run typecheck && npm run test',limits:value.releaseTimeouts??DEFAULT_RELEASE_TIMEOUTS}:null
   }
   const productionTarget=(req:FastifyRequest,projectId:string):ProductionTarget|null=>{
     const value=project(req,projectId)
@@ -40,10 +33,10 @@ export function registerReleaseRoutes(app:FastifyInstance,db:VoiceChatDb,release
     if(!value)return bad(reply,'Для проекта не настроена доступная машина с checkout path. Откройте настройки проекта и выберите машину по умолчанию.')
     try{return await releases.listBranches(value)}catch(error){return bad(reply,error)}
   })
-  app.post<{Params:{id:string};Body:{branch?:string;baseBranch?:string;agentId?:string}}>('/api/projects/:id/releases/branches',prepareGuard,async(req,reply)=>{
-    const value=ciTarget(req,req.params.id,req.body?.agentId)
-    if(!value)return bad(reply,'Выбранная машина недоступна, offline или не имеет checkout проекта')
-    if(!releases.isOnline(value.agentId))return bad(reply,'Выбранная машина offline')
+  app.post<{Params:{id:string};Body:{branch?:string;baseBranch?:string}}>('/api/projects/:id/releases/branches',prepareGuard,async(req,reply)=>{
+    const value=ciTarget(req,req.params.id)
+    if(!value)return bad(reply,'В настройках проекта не выбрана машина по умолчанию или для неё не настроен checkout path')
+    if(!releases.isOnline(value.agentId))return bad(reply,'Машина проекта по умолчанию offline')
     try{return reply.code(202).send(await releases.createBranch(uid(req),value,req.body?.branch??'',req.body?.baseBranch??value.baseBranch))}catch(error){return bad(reply,error)}
   })
   app.get<{Params:{id:string}}>('/api/projects/:id/releases',async(req,reply)=>{

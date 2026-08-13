@@ -137,4 +137,22 @@ describe('ReleaseCenter — список, деплой и лента', () => {
     expect(screen.getByText('Сборка и обновление контейнеров')).toBeInTheDocument()
     expect(screen.getByText('Health-check')).toBeInTheDocument()
   })
+
+  it('создаёт релиз только на машине проекта по умолчанию', async () => {
+    const value = api()
+    value['releases:createBranch'] = vi.fn(async ({ projectId, branch }) => ({ ...prepared, projectId, branch, version: branch.slice('release/'.length) }))
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner defaultAgentId="mac" machines={[{ agentId: 'other', name: 'Server', path: '/srv/app', reposRoot: '/srv/repos', online: true }, { agentId: 'mac', name: 'MacBook', path: '/Users/me/app', reposRoot: '/Users/me/repos', online: true }]} api={value} />)
+    expect(await screen.findByDisplayValue('MacBook · online · /Users/me/app')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Машина проекта по умолчанию' })).not.toBeInTheDocument()
+    await userEvent.type(screen.getByPlaceholderText('1.2.3'), '2.0.0')
+    await userEvent.click(screen.getByRole('button', { name: 'Собрать новый релиз' }))
+    expect(value['releases:createBranch']).toHaveBeenCalledWith({ projectId: 'p1', branch: 'release/2.0.0', baseBranch: 'main' })
+  })
+
+  it('блокирует релиз, если checkout машины по умолчанию не настроен', async () => {
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner defaultAgentId="mac" machines={[{ agentId: 'mac', name: 'MacBook', path: '', reposRoot: '/Users/me/repos', online: true }]} api={api()} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('не настроен checkout path')
+    await userEvent.type(screen.getByPlaceholderText('1.2.3'), '2.0.0')
+    expect(screen.getByRole('button', { name: 'Собрать новый релиз' })).toBeDisabled()
+  })
 })
