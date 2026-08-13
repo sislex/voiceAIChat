@@ -25,7 +25,7 @@ import { QuestionsForm } from './QuestionsForm'
 import { Button } from './ui/Button'
 import { Skeleton, RefreshIndicator } from './ui/Skeleton'
 import { EmptyState } from './ui/EmptyState'
-import { IconButton } from './ui/IconButton'
+import { IconButton, SidebarToggle } from './ui/IconButton'
 import { MessageMeta } from './MessageMeta'
 import {
   MessageTimeline,
@@ -62,8 +62,10 @@ export interface ChatColumnProps {
   title: string
   /** Переименовать текущий разговор (клик по заголовку в шапке). */
   onRenameTitle?: (title: string) => void
-  /** Показать/скрыть сайдбар (кнопка ☰, видна только на мобильных). */
+  /** Показать/скрыть общий Sidebar. */
   onToggleSidebar?: () => void
+  /** Фактическое состояние Sidebar для aria-expanded. */
+  sidebarExpanded?: boolean
   /** Открыть отдельную страницу настроек текущего разговора. */
   onOpenConversationSettings?: () => void
   /** Фактический режим активного разговора для бейджа в шапке. */
@@ -170,6 +172,7 @@ export function ChatColumn({
   title,
   onRenameTitle,
   onToggleSidebar,
+  sidebarExpanded = true,
   onOpenConversationSettings,
   permissionMode = 'plan',
   onExecutePlan,
@@ -321,14 +324,7 @@ export function ChatColumn({
     <main className="main">
       <header className="mhead">
         {onToggleSidebar && (
-          <button
-            className="burger"
-            aria-label="Меню разговоров"
-            title="Меню разговоров"
-            onClick={onToggleSidebar}
-          >
-            ☰
-          </button>
+          <SidebarToggle className="burger" expanded={sidebarExpanded} onToggle={onToggleSidebar} />
         )}
         {titleEditing ? (
           <input
