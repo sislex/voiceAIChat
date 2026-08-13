@@ -149,10 +149,11 @@ describe('ReleaseCenter — список, деплой и лента', () => {
     expect(value['releases:createBranch']).toHaveBeenCalledWith({ projectId: 'p1', branch: 'release/2.0.0', baseBranch: 'main' })
   })
 
-  it('блокирует релиз, если checkout машины по умолчанию не настроен', async () => {
+  it('показывает путь автоматического release checkout, если обычный checkout не настроен', async () => {
     render(<ReleaseCenter projectId="p1" baseBranch="main" owner defaultAgentId="mac" machines={[{ agentId: 'mac', name: 'MacBook', path: '', reposRoot: '/Users/me/repos', online: true }]} api={api()} />)
-    expect(await screen.findByRole('alert')).toHaveTextContent('не настроен checkout path')
+    expect(await screen.findByDisplayValue('MacBook · online · релизный клон в /Users/me/repos/.release_repo')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     await userEvent.type(screen.getByPlaceholderText('1.2.3'), '2.0.0')
-    expect(screen.getByRole('button', { name: 'Собрать новый релиз' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Собрать новый релиз' })).toBeEnabled()
   })
 })

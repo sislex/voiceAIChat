@@ -103,7 +103,7 @@ describe('projects REST: доступ', () => {
     const response = await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/releases/branches` })
     expect(response.statusCode).toBe(400)
     expect(response.json()).toEqual({
-      error: 'Для проекта не настроена доступная машина с checkout path. Откройте настройки проекта и выберите машину по умолчанию.'
+      error: 'В настройках проекта не выбрана машина по умолчанию'
     })
   })
 

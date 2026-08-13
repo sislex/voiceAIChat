@@ -636,7 +636,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const agentId = project?.productionAgentId
     const linked = agentId ? project?.machines.some(machine => machine.agentId === agentId) : false
     if (!project || !agentId || !linked || !project.productionCheckoutPath || !project.productionDeployCommand || !project.productionHealthCheckCommand || !project.gitUrl) return null
-    return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl }
+    return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, prepareCheckout: false, gitUrl: project.gitUrl, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl }
   })
   registerReleaseRoutes(app, db, releaseManager)
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })

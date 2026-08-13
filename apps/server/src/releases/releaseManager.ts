@@ -1,7 +1,7 @@
 import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, type ProjectRelease, type ReleaseBranch, type ReleaseStepKind, type ReleaseTimeouts } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 
-export interface ReleaseProjectTarget { projectId:string; agentId:string; path:string; baseBranch:string; testCommand:string; limits?:ReleaseTimeouts }
+export interface ReleaseProjectTarget { projectId:string; agentId:string; path:string; baseBranch:string; testCommand:string; gitUrl:string; prepareCheckout:boolean; limits?:ReleaseTimeouts }
 export interface ProductionTarget extends ReleaseProjectTarget { deployCommand:string; healthCheckCommand:string; expectedRepository:string }
 export const RELEASE_TEST_TIMEOUT_MS=600_000
 export interface ReleaseCommandResult { exitCode:number|null; output:string; timedOut?:boolean }
@@ -18,6 +18,11 @@ export interface ReleaseRuntime {
 const quote=(value:string):string=>`'${value.replace(/'/g, `'"'"'`)}'`
 const at=(target:ReleaseProjectTarget,command:string):string=>`cd ${quote(target.path)} && ${command}`
 const git=(target:ReleaseProjectTarget,args:string):string=>at(target,`git ${args}`)
+
+export function releaseCheckoutCommand(target:ReleaseProjectTarget):string {
+  const parent=target.path.replace(/[\\/]+$/,'').replace(/[\\/][^\\/]+$/,'')||'/'
+  return `if [ ! -e ${quote(target.path)} ]; then mkdir -p ${quote(parent)} && git clone -- ${quote(target.gitUrl)} ${quote(target.path)}; elif [ ! -d ${quote(`${target.path}/.git`)} ]; then echo 'Каталог release checkout уже существует, но не является Git-репозиторием'; exit 1; elif [ "$(git -C ${quote(target.path)} config --get remote.origin.url)" != ${quote(target.gitUrl)} ]; then echo 'Каталог release checkout содержит другой remote.origin.url и не будет перезаписан'; git -C ${quote(target.path)} config --get remote.origin.url; exit 1; else echo 'Release checkout уже подготовлен, повторный clone не требуется'; fi`
+}
 
 /** Изолирует kb:index от общего checkout и не перезаписывает конкурентно сдвинутую release-ветку. */
 export function releaseKnowledgeBaseCommand(target:ReleaseProjectTarget,releaseBranch:string):string {
@@ -74,16 +79,17 @@ export class ReleaseManager {
   isOnline(agentId:string):boolean{return this.runtime.isOnline?.(agentId)!==false}
 
   async listBranches(target:ReleaseProjectTarget):Promise<ReleaseBranch[]> {
-    const result=await this.runtime.exec(target,git(target,`fetch --prune origin '+refs/heads/release/*:refs/remotes/origin/release/*' && git for-each-ref --format='%(refname:short) %(objectname)' refs/remotes/origin/release/`),120_000)
-    if(result.exitCode!==0)throw new Error(result.output||'Не удалось обновить release-ветки')
-    return result.output.split(/\r?\n/).map(line=>line.trim().split(/\s+/)).filter(parts=>parts.length===2).flatMap(([remote,sha])=>{
-      const branch=remote!.replace(/^origin\//,'')
+    const result=await this.runtime.exec(target,`git ls-remote --heads ${quote(target.gitUrl)} ${quote('refs/heads/release/*')}`,120_000)
+    if(result.exitCode!==0)throw new Error(result.output||'Не удалось получить release-ветки из origin')
+    return result.output.split(/\r?\n/).map(line=>line.trim().split(/\s+/)).filter(parts=>parts.length===2).flatMap(([sha,ref])=>{
+      const branch=ref!.replace(/^refs\/heads\//,'')
       try{return [{branch,version:assertReleaseBranch(branch),sha:sha!}]}catch{return []}
     }).sort((a,b)=>b.version.localeCompare(a.version,undefined,{numeric:true}))
   }
 
   async deleteBranch(userId:string,target:ReleaseProjectTarget,releaseId:string,branch:string):Promise<void> {
     assertReleaseBranch(branch)
+    if(target.prepareCheckout)await this.ensureCheckout(target)
     const release=this.db.getProjectRelease(userId,target.projectId,releaseId)
     if(!release||release.branch!==branch||release.previousReleaseId)throw new Error('Release не найден')
     if(!['ready','failed'].includes(release.status))throw new Error('Активный релиз удалить нельзя')
@@ -97,12 +103,14 @@ export class ReleaseManager {
     if(this.preparing.has(target.projectId))throw new Error('Подготовка release-ветки уже выполняется')
     if(baseBranch!==target.baseBranch&&!assertReleaseBranch(baseBranch))throw new Error('Недопустимая базовая ветка')
     if((await this.listBranches(target)).some(item=>item.branch===branch))throw new Error('Release-ветка уже существует')
-    const created=await this.runtime.exec(target,git(target,`fetch origin ${quote(baseBranch)} && git branch ${quote(branch)} FETCH_HEAD && git push origin ${quote(branch)}:refs/heads/${quote(branch)} && git rev-parse ${quote(branch)}`),120_000)
-    if(created.exitCode!==0)throw new Error(created.output||'Не удалось создать release-ветку')
-    const release=this.db.createProjectRelease(userId,target.projectId,{branch,version,sha:created.output.trim().split(/\r?\n/).at(-1)!,status:'preparing',agentId:target.agentId,checkoutPath:target.path,limits:target.limits??DEFAULT_RELEASE_TIMEOUTS})
+    const release=this.db.createProjectRelease(userId,target.projectId,{branch,version,sha:'',status:'preparing',agentId:target.agentId,checkoutPath:target.path,limits:target.limits??DEFAULT_RELEASE_TIMEOUTS})
     this.preparing.add(target.projectId)
-    void this.prepare(userId,target,release).finally(()=>this.preparing.delete(target.projectId))
+    void this.prepare(userId,target,release,baseBranch).finally(()=>this.preparing.delete(target.projectId))
     return release
+  }
+
+  private async ensureCheckout(target:ReleaseProjectTarget):Promise<ReleaseCommandResult> {
+    return this.runtime.exec(target,releaseCheckoutCommand(target),target.limits?.checkoutMs??DEFAULT_RELEASE_TIMEOUTS.checkoutMs)
   }
 
   async start(userId:string,ciTarget:ReleaseProjectTarget,production:ProductionTarget,branch:string):Promise<ProjectRelease> {
@@ -116,6 +124,7 @@ export class ReleaseManager {
     if(!remote)throw new Error('Выбранная release-ветка отсутствует в origin')
     if(remote.sha!==prepared.sha)throw new Error('SHA release-ветки изменился после подготовки')
     const attempt=this.db.createProjectRelease(userId,ciTarget.projectId,{branch,version:prepared.version,sha:prepared.sha,previousReleaseId:prepared.id,status:'queued',agentId:production.agentId,checkoutPath:production.path,limits:production.limits??DEFAULT_RELEASE_TIMEOUTS})
+    this.db.setProjectReleaseStep(attempt.id,'checkout','skipped','Checkout подготовлен при создании release-ветки',userId)
     this.db.setProjectReleaseStep(attempt.id,'regression','skipped','Проверка пройдена при подготовке ветки',userId)
     this.db.setProjectReleaseStep(attempt.id,'knowledge_base','skipped','Проверка пройдена при подготовке ветки',userId)
     this.deploying.add(ciTarget.projectId)
@@ -123,9 +132,19 @@ export class ReleaseManager {
     return attempt
   }
 
-  private async prepare(actor:string,target:ReleaseProjectTarget,release:ProjectRelease):Promise<void> {
-    this.db.setProjectReleaseStatus(release.id,'checking',actor)
+  private async prepare(actor:string,target:ReleaseProjectTarget,release:ProjectRelease,baseBranch:string):Promise<void> {
     try{
+      if(target.prepareCheckout){
+        this.db.setProjectReleaseStep(release.id,'checkout','running','',actor)
+        const checkout=await this.ensureCheckout(target)
+        if(checkout.timedOut)throw new Error(`Подготовка checkout превысила лимит ${Math.round((target.limits?.checkoutMs??DEFAULT_RELEASE_TIMEOUTS.checkoutMs)/1000)} с\n${checkout.output}`)
+        if(checkout.exitCode!==0)throw new Error(checkout.output||'Не удалось подготовить release checkout')
+        this.db.setProjectReleaseStep(release.id,'checkout','passed',checkout.output,actor)
+      }else this.db.setProjectReleaseStep(release.id,'checkout','skipped','Используется существующий checkout',actor)
+      const created=await this.runtime.exec(target,git(target,`fetch origin ${quote(baseBranch)} && git branch ${quote(release.branch)} FETCH_HEAD && git push origin ${quote(release.branch)}:refs/heads/${quote(release.branch)} && git rev-parse ${quote(release.branch)}`),120_000)
+      if(created.exitCode!==0)throw new Error(created.output||'Не удалось создать release-ветку')
+      this.db.setProjectReleaseSha(release.id,created.output.trim().split(/\r?\n/).at(-1)!)
+      this.db.setProjectReleaseStatus(release.id,'checking',actor)
       this.db.setProjectReleaseStep(release.id,'knowledge_base','running','',actor)
       await this.runtime.prepareKnowledgeBase(release.branch,target)
       const found=(await this.listBranches(target)).find(item=>item.branch===release.branch)
@@ -151,7 +170,7 @@ export class ReleaseManager {
     }catch(error){
       const log=error instanceof Error?error.message:String(error)
       const current=this.db.getProjectRelease(actor,target.projectId,release.id)
-      const kind=current?.steps.find(step=>step.status==='running')?.kind??'knowledge_base'
+      const kind=current?.steps.find(step=>step.status==='running')?.kind??'checkout'
       this.db.setProjectReleaseStep(release.id,kind,'failed',log,actor)
       this.db.setProjectReleaseStatus(release.id,'failed',actor)
     }
