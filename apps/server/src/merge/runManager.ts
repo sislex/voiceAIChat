@@ -158,7 +158,9 @@ git add -- ${q}`,repo,30000)
         if(!project?.gitUrl||!ws?.path)throw new Error('Push начат, но данные проекта недоступны; требуется reconcile')
         const remote=await this.cmd(run,`git ls-remote ${shellQuote(project.gitUrl)} refs/heads/main`,this.mergeBase(run,ws).workdir,30000)
         if(remote.output.toLowerCase().startsWith(run.mergeSha.toLowerCase())){
-          this.finish(id,'success',null,null,'done'); return
+          this.finish(id,'success',null,null,'done')
+          await this.releaseTaskRepositories(run)
+          return
         }
         this.finish(id,'decision_required','Push был начат, но origin/main не совпадает с merge SHA','Проверьте удалённый main вручную; автоматический повтор push запрещён.','decision_required'); return
       }
