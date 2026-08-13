@@ -581,7 +581,7 @@ describe('принудительный запуск на указанной ма
     const busy = ci.forceStartOnMachine('admin', projectId, taskIds[0], second)
     expect('error' in busy && busy.error).toContain('уже выполняется')
     const foreign = ci.forceStartOnMachine('admin', projectId, taskIds[1], 'nope')
-    expect('error' in foreign && foreign.error).toContain('не привязана')
+    expect('error' in foreign && foreign.error).toContain('больше недоступна')
     release()
     expect(await waitStatus(first)).toBe('success')
   })
