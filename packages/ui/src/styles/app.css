@@ -5718,3 +5718,19 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .merge-chip--ok{border-color:var(--ci-success);color:var(--ci-success)}
 .merge-chip--muted{opacity:.6}
 @media(max-width:720px){.merge-feed-actions{margin-left:0;flex-basis:100%}.merge-repos th:nth-child(2),.merge-repos td:nth-child(2){display:none}.merge-start{align-items:flex-start;flex-direction:column}}
+.automation-progress{display:flex;min-width:0;flex-direction:column;gap:7px;width:100%;margin:6px 0}
+.automation-progress__head,.automation-progress__meta,.automation-progress__times{display:flex;min-width:0;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 12px;font-size:12px}
+.automation-progress__head strong,.automation-progress__meta span:first-child{min-width:0;overflow-wrap:anywhere}
+.automation-progress__meta,.automation-progress__times{color:var(--text-dim)}
+.automation-progress__bar{position:relative;width:100%;height:8px;overflow:hidden;border-radius:999px;background:var(--ci-neutral-bg)}
+.automation-progress__bar>span{display:block;height:100%;border-radius:inherit;background:var(--ci-progress);transition:width .25s ease}
+.automation-progress__bar--indeterminate:after{content:'';position:absolute;inset:0;width:42%;border-radius:inherit;background:var(--ci-progress);animation:automation-progress-slide 1.4s ease-in-out infinite}
+.automation-progress__steps{display:flex;flex-direction:column;gap:3px;margin:4px 0 0;padding:0;list-style:none}
+.automation-progress__steps li{display:flex;min-width:0;justify-content:space-between;gap:12px;padding:4px 0;border-top:1px solid var(--border-soft);font-size:12px}
+.automation-progress__steps li span:first-child{min-width:0;overflow-wrap:anywhere}
+.automation-progress__steps li[data-status=success]{color:var(--ci-success)}
+.automation-progress__steps li[data-status=failed],.automation-progress__steps li[data-status=cancelled]{color:var(--danger)}
+.automation-progress--compact .automation-progress__meta span:nth-child(2){display:none}
+@keyframes automation-progress-slide{0%{transform:translateX(-110%)}50%{transform:translateX(130%)}100%{transform:translateX(260%)}}
+@media(prefers-reduced-motion:reduce){.automation-progress__bar--indeterminate:after{animation:none;width:100%;opacity:.45}}
+@media(max-width:720px){.automation-progress__head,.automation-progress__meta,.automation-progress__times{align-items:flex-start;flex-direction:column}.automation-progress__bar{max-width:100%}.automation-progress__steps li{flex-wrap:wrap}}
