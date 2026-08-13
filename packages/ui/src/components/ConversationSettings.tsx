@@ -13,6 +13,7 @@ import { useConfirm } from './ui/useConfirm'
 import { useToast } from './ui/Toast'
 import { LlmSettingsEditor } from './LlmSettingsEditor'
 import { SettingsPage } from './SettingsPage'
+import { ContextInspector } from './ContextInspector'
 
 export interface ConversationSettingsProps {
   conversation: Conversation
@@ -65,7 +66,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
-  const [activeTab, setActiveTab] = useState<'general' | 'llm'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'context'>('general')
   const defaultExecTarget = defaultAgentId && agents.some((a) => a.id === defaultAgentId) ? defaultAgentId : null
   const [execTarget, setExecTarget] = useState<string | null>(
     conversation.execTarget ?? (conversation.messageCount === 0 ? defaultExecTarget : null)
@@ -267,9 +268,20 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
         ariaLabel="Разделы настроек чата"
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        tabs={[{ id: 'general', label: 'Общее' }, { id: 'llm', label: 'LLM' }]}
+        tabs={[{ id: 'general', label: 'Общее' }, { id: 'llm', label: 'LLM' }, { id: 'context', label: 'Контекст и инструкции' }]}
       />
       <main className={`convsettings-body convsettings-tab-${activeTab}`}>
+        {activeTab === 'context' && <ContextInspector
+          conversationId={conversation.id}
+          provider={llmProvider}
+          model={llmModel}
+          permissionMode={effectiveMode}
+          kbMode={kbContextMode}
+          agent={selectedAgent}
+          workdir={workdir}
+          project={projects.find((project) => project.id === projectId)}
+          selectedSkillNames={skillNames}
+        />}
         <section className="convsettings-card">
           <label className="convsettings-field"><span>Название разговора</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
           <label className="convsettings-field"><span>Проект</span>

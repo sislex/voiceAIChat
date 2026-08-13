@@ -13,15 +13,15 @@
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 9 коммит(ов) в areas после сверки: 183a5f6 feat: add structured manual QA workflow … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-13 | ⚠ код изменён 2026-08-14, сверка 2026-08-13 (по датам: правки того же дня не видны — поставь checked) |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-13 | ⚠ 7 коммит(ов) в areas после сверки: de5a825 feat: prepare release checkout automatically … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-13 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-14 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: f2b5d60 fix(ci): name task branches and workspaces by issue key … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-13 | ⚠ код изменён 2026-08-14, сверка 2026-08-13 (по датам: правки того же дня не видны — поставь checked) |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 42 коммит(ов) в areas после сверки: de5a825 feat: prepare release checkout automatically … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-13 | ⚠ 1 коммит(ов) в areas после сверки: da0cd12 Merge task a752dbf4-7431-4740-8ed3-14257b87de28 |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-13 | ⚠ 7 коммит(ов) в areas после сверки: b069c6b feat(ui): open task card from task launch … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 296 коммит(ов) в areas после сверки: 40d3603 Merge task dc23fda4-8250-43cd-a79f-5bed81727d4c … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-14 | ⚠ 3 коммит(ов) в areas после сверки: 40d3603 Merge task dc23fda4-8250-43cd-a79f-5bed81727d4c … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-13 | ✓ |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-13 | ⚠ код изменён 2026-08-14, сверка 2026-08-13 (по датам: правки того же дня не видны — поставь checked) |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 296 коммит(ов) в areas после сверки: fb3d749 Merge task dc23fda4-8250-43cd-a79f-5bed81727d4c … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-14 | ✓ |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-13 | ⚠ 2 коммит(ов) в areas после сверки: c6a4a95 feat(CHAT-198): redesign task workflow card … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 12 коммит(ов) в areas после сверки: b069c6b feat(ui): open task card from task launch … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 21 коммит(ов) в areas после сверки: b069c6b feat(ui): open task card from task launch … |
@@ -48,10 +48,11 @@
 
 ## Журнал сессий
 
-Всего записей: 192. Последние:
+Всего записей: 193. Последние:
 
 - [2026-08-14-alexeys-macbook-air-2-task-launch-task-modal.md](log/2026-08-14-alexeys-macbook-air-2-task-launch-task-modal.md) — task-launch-task-modal
 - [2026-08-14-alexeys-macbook-air-2-releases-page-loading-machine.md](log/2026-08-14-alexeys-macbook-air-2-releases-page-loading-machine.md) — releases-page-loading-machine
+- [2026-08-14-alexeys-macbook-air-2-chat-context-inspector.md](log/2026-08-14-alexeys-macbook-air-2-chat-context-inspector.md) — chat-context-inspector
 - [2026-08-13-mac-task-launch-dialog.md](log/2026-08-13-mac-task-launch-dialog.md) — task-launch-dialog
 - [2026-08-13-mac-sidebar-toggle-kanban.md](log/2026-08-13-mac-sidebar-toggle-kanban.md) — sidebar-toggle-kanban
 - [2026-08-13-mac-release-version-footer.md](log/2026-08-13-mac-release-version-footer.md) — release-version-footer
@@ -59,7 +60,6 @@
 - [2026-08-13-mac-development-merge-workflow.md](log/2026-08-13-mac-development-merge-workflow.md) — development-merge-workflow
 - [2026-08-13-mac-chat-189-run-steps-popover.md](log/2026-08-13-mac-chat-189-run-steps-popover.md) — chat-189-run-steps-popover
 - [2026-08-13-alexeys-macbook-air-2-task-card-manual-qa.md](log/2026-08-13-alexeys-macbook-air-2-task-card-manual-qa.md) — task-card-manual-qa
-- [2026-08-13-alexeys-macbook-air-2-roles-rbac.md](log/2026-08-13-alexeys-macbook-air-2-roles-rbac.md) — roles-rbac
 
 ## Исторические планы
 
