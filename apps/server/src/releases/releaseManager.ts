@@ -49,9 +49,9 @@ export async function waitForReleaseHealth(
   throw new Error(`Production не перешёл на версию ${expectedVersion}: ${last}`)
 }
 
-function healthCommit(output:string):string|null {
+function healthMetadata(output:string):{commit:string;version:string|null}|null {
   for(const line of output.split(/\r?\n/).reverse()){
-    try{const value=JSON.parse(line) as {ok?:boolean;commit?:string};if(value.ok===true&&typeof value.commit==='string')return value.commit}catch{}
+    try{const value=JSON.parse(line) as {ok?:boolean;commit?:string;version?:unknown};if(value.ok===true&&typeof value.commit==='string')return {commit:value.commit,version:typeof value.version==='string'?value.version:null}}catch{}
   }
   return null
 }
@@ -106,11 +106,12 @@ export class ReleaseManager {
   }
 
   async start(userId:string,ciTarget:ReleaseProjectTarget,production:ProductionTarget,branch:string):Promise<ProjectRelease> {
-    assertReleaseBranch(branch)
+    const branchVersion=assertReleaseBranch(branch)
     if(this.deploying.has(ciTarget.projectId))throw new Error('Другой production deploy уже выполняется')
     if(this.runtime.isOnline?.(production.agentId)===false)throw new Error('Production-машина offline')
     const prepared=this.db.listProjectReleases(userId,ciTarget.projectId).find(item=>item.branch===branch&&item.status==='ready')
     if(!prepared)throw new Error('Release-ветка не прошла подготовку')
+    if(prepared.version!==branchVersion)throw new Error(`Версия подготовки ${prepared.version} не соответствует ветке ${branch} (${branchVersion})`)
     const remote=(await this.listBranches(ciTarget)).find(item=>item.branch===branch)
     if(!remote)throw new Error('Выбранная release-ветка отсутствует в origin')
     if(remote.sha!==prepared.sha)throw new Error('SHA release-ветки изменился после подготовки')
@@ -186,13 +187,13 @@ export class ReleaseManager {
     for(let attempt=0;Date.now()-started<limit;attempt+=1){
       try{
         const result=await this.runtime.exec(target,at(target,target.healthCheckCommand),15_000)
-        const commit=result.exitCode===0&&!result.timedOut?healthCommit(result.output):null
-        if(commit&&sameCommit(commit,release.sha)){
+        const metadata=result.exitCode===0&&!result.timedOut?healthMetadata(result.output):null
+        if(metadata&&sameCommit(metadata.commit,release.sha)&&metadata.version===release.version){
           this.db.setProjectReleaseStep(release.id,'health_check','passed',result.output,actor)
           this.db.setProjectReleaseStatus(release.id,'released',actor)
           return
         }
-        last=commit?`Production отвечает SHA ${commit}, ожидается ${release.sha}`:(result.output||'Health-check не вернул commit')
+        last=metadata?`Production отвечает SHA ${metadata.commit}, version=${metadata.version??'не указана'}; ожидаются ${release.sha}, version=${release.version}`:(result.output||'Health-check не вернул метаданные релиза')
       }catch(error){last=error instanceof Error?error.message:String(error)}
       if(Date.now()-started<limit)await sleep(Math.min(2_000,Math.max(0,limit-(Date.now()-started))))
     }
