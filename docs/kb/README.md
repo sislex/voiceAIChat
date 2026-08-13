@@ -20,7 +20,7 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 39 коммит(ов) в areas после сверки: 09d5a5a CHAT-192: разделить development CI и merge workflow … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 34 коммит(ов) в areas после сверки: a69c7a4 fix(merge): разрешить конфликты CHAT-184 с main … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-13 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 276 коммит(ов) в areas после сверки: 169a3f7 feat: safely auto-resolve independent merge conflicts … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 277 коммит(ов) в areas после сверки: e92c367 Merge task 7d3e6107-133d-44e0-989c-fe4ab9dab954 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-13 | ⚠ 2 коммит(ов) в areas после сверки: d30596d fix(releases): использовать машину проекта по умолчанию … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-13 | ⚠ 1 коммит(ов) в areas после сверки: f544eda feat: add project role authorization |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 10 коммит(ов) в areas после сверки: a69c7a4 fix(merge): разрешить конфликты CHAT-184 с main … |
