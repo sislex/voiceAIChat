@@ -54,8 +54,9 @@ log "=== пересборка прода начата, HEAD $(git rev-parse --sh
 git fetch --tags origin
 export VC_RELEASE_COMMIT=$(git rev-parse --short=12 HEAD)
 release_tag=$(git tag --points-at HEAD --list 'v*' | grep -E "^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$" | sort -V | awk 'END { print }' || true)
-export VC_RELEASE_VERSION=${release_tag:+${release_tag#v}}
-export VC_RELEASE_VERSION=${VC_RELEASE_VERSION:-0.1.0}
+# Не затираем версию, переданную защищённой публикацией; тег — fallback только
+# для обычной пересборки. Нет версии и тега — backend честно вернёт null.
+export VC_RELEASE_VERSION=${VC_RELEASE_VERSION:-${release_tag:+${release_tag#v}}}
 task_ref=$(git log -1 --pretty=%s | grep -Eio 'chat(ai)?[-[:space:]]*[0-9]+' | grep -Eo '[0-9]+' | head -1 || true)
 export VC_RELEASE_TASK=${task_ref:+chat-$task_ref}
 log "метаданные релиза: version=$VC_RELEASE_VERSION commit=$VC_RELEASE_COMMIT task=${VC_RELEASE_TASK:-нет}"
