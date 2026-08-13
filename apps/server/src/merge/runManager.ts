@@ -2,6 +2,7 @@ import type { MergeCheck, MergeRun, MergeStage, MergeStageRecord, ServerMessage 
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor } from '../ci/types.js'
 import { shellQuote } from '../ci/executor.js'
+import { mergeIndependentText } from './textConflictResolver.js'
 
 export interface MergeKbUpdateContext {
   run: MergeRun
@@ -65,6 +66,66 @@ export class MergeRunManager {
   private async cmd(run:MergeRun,script:string,workdir:string,timeoutMs=300000):Promise<{exitCode:number|null;timedOut:boolean;output:string}> {
     let output=''; const result=await this.deps.executor.run({agentId:run.agentId,script,workdir,env:{},timeoutMs,secrets:[]},chunk=>{output+=chunk;this.log(run.id,chunk.trimEnd())},this.active.get(run.id)?.signal)
     return {...result,output}
+  }
+  private async autoResolveTextConflict(run:MergeRun,repo:string,path:string):Promise<boolean> {
+    const q=shellQuote(path)
+    try {
+      let output=''
+      const inspected=await this.deps.executor.run({
+        agentId:run.agentId,
+        script:`git ls-files -u -- ${q}
+f=${q}
+for stage in 1 2 3; do printf 'STAGE%s=' "$stage"; git show ":$stage:$f" 2>/dev/null | base64 | tr -d '\\n' || exit 66; printf '\\n'; done`,
+        workdir:repo,env:{},timeoutMs:30000,secrets:[]
+      },chunk=>{output+=chunk},this.active.get(run.id)?.signal)
+      if(inspected.exitCode||inspected.timedOut) {
+        this.log(run.id,`Авторазрешение ${path}: classification=missing-stage, applied=no, reason=не удалось прочитать три Git-stage`)
+        return false
+      }
+      const entries=output.split(/\r?\n/).filter(line=>/^\d{6} [0-9a-f]+ [123]\t/.test(line))
+      if(entries.length!==3) {
+        this.log(run.id,`Авторазрешение ${path}: classification=missing-stage, applied=no, reason=ожидались стадии 1/2/3`)
+        return false
+      }
+      const parsed=entries.map(line=>line.match(/^(\d{6}) [0-9a-f]+ ([123])\t/)!)
+      const modes=parsed.map(match=>match[1]), stages=parsed.map(match=>match[2]).sort().join('')
+      if(stages!=='123'||new Set(modes).size!==1||!/^100\d{3}$/.test(modes[0])) {
+        this.log(run.id,`Авторазрешение ${path}: classification=unsupported-type-or-mode, applied=no, modes=${modes.join('/')}, reason=необычный тип либо изменение режима`)
+        return false
+      }
+      const encoded=[1,2,3].map(stage=>output.match(new RegExp(`(?:^|\\n)STAGE${stage}=([^\\n]*)`))?.[1])
+      if(encoded.some(value=>value===undefined)) {
+        this.log(run.id,`Авторазрешение ${path}: classification=missing-stage, applied=no, reason=данные стадии неполны`)
+        return false
+      }
+      const buffers=encoded.map(value=>Buffer.from(value!,'base64'))
+      if(buffers.some(buffer=>!Buffer.from(buffer.toString('utf8'),'utf8').equals(buffer))) {
+        this.log(run.id,`Авторазрешение ${path}: classification=binary, applied=no, reason=содержимое не является корректным UTF-8`)
+        return false
+      }
+      const [base,ours,theirs]=buffers.map(buffer=>buffer.toString('utf8'))
+      const result=mergeIndependentText(base,ours,theirs)
+      if(!result.ok) {
+        this.log(run.id,`Авторазрешение ${path}: classification=${result.classification}, applied=no, ours_changes=${result.oursChanges}, theirs_changes=${result.theirsChanges}, reason=${result.reason}`)
+        return false
+      }
+      const payload=Buffer.from(result.content).toString('base64'),tmp=`.merge-auto-${run.id.replace(/[^A-Za-z0-9_-]/g,'_')}`
+      const written=await this.cmd(run,`set -e
+tmp=${shellQuote(tmp)}
+printf %s ${shellQuote(payload)} | base64 -d > "$tmp"
+if grep -Eq '^(<<<<<<<|=======|>>>>>>>)( |$)' "$tmp"; then rm -f "$tmp"; exit 67; fi
+mv -- "$tmp" ${q}
+git add -- ${q}`,repo,30000)
+      if(written.exitCode||written.timedOut) {
+        this.log(run.id,`Авторазрешение ${path}: classification=${result.classification}, applied=no, ours_changes=${result.oursChanges}, theirs_changes=${result.theirsChanges}, reason=проверка или атомарная запись результата не удалась`)
+        return false
+      }
+      this.log(run.id,`Авторазрешение ${path}: classification=${result.classification}, applied=yes, rule=${result.rule}, ours_changes=${result.oursChanges}, theirs_changes=${result.theirsChanges}`)
+      return true
+    } catch(error) {
+      this.log(run.id,`Авторазрешение ${path}: classification=analysis-error, applied=no, reason=${error instanceof Error?error.message:String(error)}`)
+      return false
+    }
   }
   private workspaceParent(path:string):string {
     const normalized=path.replace(/[\\/]+$/,'')
@@ -153,10 +214,18 @@ export class MergeRunManager {
           unresolved=files.filter(f=>f!=='docs/kb/README.md')
           this.deps.db.updateMergeRun(id,{conflicts:unresolved})
         }
+        const textCandidates=unresolved.filter(f=>!/^docs\/kb\/.+\.md$/.test(f))
+        for(const path of textCandidates) await this.autoResolveTextConflict(run,repo,path)
+        if(textCandidates.length){
+          const remaining=await this.cmd(run,'git diff --name-only --diff-filter=U',repo,30000)
+          if(remaining.exitCode||remaining.timedOut)throw new Error('Не удалось проверить остаток конфликтов после авторазрешения')
+          unresolved=remaining.output.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)
+          this.deps.db.updateMergeRun(id,{conflicts:unresolved})
+        }
         if(unresolved.length===0){
           const resolved=await this.cmd(run,'git -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --no-edit',repo,30000)
           if(resolved.exitCode||resolved.timedOut)throw new Error('Не удалось продолжить merge после откладывания индекса БЗ')
-          this.stage(id,'resolving_conflicts','passed','Индекс БЗ будет перегенерирован после обязательной актуализации')
+          this.stage(id,'resolving_conflicts','passed','Безопасные конфликты разрешены; индекс БЗ будет перегенерирован после обязательной актуализации')
         } else if(unresolved.every(f=>/^docs\/kb\/.+\.md$/.test(f))){
           this.stage(id,'resolving_conflicts','running','Конфликты только в темах docs/kb — разрешаю по правилам БЗ')
           const topics=unresolved
