@@ -19,8 +19,8 @@
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 40 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 38 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 25 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-12 | ⚠ 4 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 257 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-13 | ⚠ 4 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 258 коммит(ов) в areas после сверки: 14f8717 chatai-190: работа CI-рана … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ⚠ 21 коммит(ов) в areas после сверки: abf3b37 fix(CHAT-190): show deployed release version in footer … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 9 коммит(ов) в areas после сверки: abc8bc6 chatai-178: работа CI-рана … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 5 коммит(ов) в areas после сверки: de5164a chatai-182: работа CI-рана … |

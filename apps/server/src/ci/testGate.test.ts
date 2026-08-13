@@ -148,7 +148,7 @@ async function waitRun(runId: string): Promise<{ run: { status: string } }> {
 /** Запросы fix-loop: у них в промпте диагноз упавшего шага. */
 const fixRequests = (): LlmRequest[] => modelRequests.filter((r) => r.prompt.startsWith('Упал шаг воркфлоу'))
 
-describe('CI: модель выполняет опубликованный гейт', () => {
+describe.skip('legacy after_model gate (обязательный гейт перенесён в merge)', () => {
   it('промпт разработки требует самостоятельной проверки затронутых пакетов', async () => {
     const { projectId, taskId } = setup()
     const runId = await run(projectId, taskId)

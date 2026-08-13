@@ -6,11 +6,11 @@ import { fmtDuration } from './ciFormat'
 export const MERGE_STATUS_LABEL: Record<string, string> = {
   success: 'успех', failed: 'ошибка', cancelled: 'отменён', decision_required: 'нужно решение',
   queued: 'в очереди', checking: 'выполняется', fetching: 'выполняется', merging: 'выполняется',
-  resolving_conflicts: 'выполняется', testing: 'выполняется', pushing: 'выполняется'
+  resolving_conflicts: 'выполняется', kb_update: 'выполняется', testing: 'выполняется', pushing: 'выполняется'
 }
 const STAGE_LABEL: Record<string, string> = {
   checking: 'Проверки сервера', fetching: 'Получение веток', merging: 'Merge',
-  resolving_conflicts: 'Конфликты', testing: 'Проверки проекта', pushing: 'Публикация в main'
+  resolving_conflicts: 'Конфликты', kb_update: 'База знаний', testing: 'Проверки проекта', pushing: 'Публикация в main'
 }
 
 export function mergeStatusTone(status: string): 'ok' | 'err' | 'warn' | 'run' {
@@ -97,6 +97,7 @@ export function MergeRunFeed({ runId, onRunChanged }: { runId: string; onRunChan
       </details>
       <dl className="merge-feed-details">
         <dt>Инициатор</dt><dd>{run.triggeredBy}</dd>
+        <dt>LLM БЗ</dt><dd>{run.llmEngineId ?? run.llmProvider} · {run.llmModel || 'по умолчанию'}</dd>
         <dt>Создан</dt><dd>{new Date(run.createdAt).toLocaleString()}</dd>
       </dl>
     </section>

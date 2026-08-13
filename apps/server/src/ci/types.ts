@@ -125,9 +125,9 @@ export type CiModelWorkHook = (ctx: CiModelContext) => Promise<{ ok: boolean; ca
 /** Хук «резюме модели». */
 export type CiModelSummaryHook = (ctx: CiModelContext) => Promise<string>
 /**
- * Хук «Актуализировать базу знаний»: модель сверяет базу с изменениями рабочей
- * копии. Ран из-за него НЕ падает — `ok: false` означает предупреждение в ленте
- * (работа модели уже сделана, терять её из-за базы знаний нельзя).
+ * Общий хук актуализации БЗ. В development больше не вызывается; merge-workflow
+ * переиспользует его в постоянном merge-клоне и трактует `ok:false` как
+ * обязательную ошибку до affected-check/push.
  */
 export type CiKbUpdateHook = (ctx: CiModelContext) => Promise<{ ok: boolean; message: string }>
 /** Хук fix-loop: попытаться довести упавший шаг до успеха. */

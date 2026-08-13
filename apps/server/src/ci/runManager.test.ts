@@ -83,7 +83,10 @@ const ciExecutor: CommandExecutor = {
     if (req.script === 'CLONE') return { exitCode: dirtyWorkspace ? 66 : 0, timedOut: false }
     // Падение шага «оставляет» в копии правки модели — как в реальном ране.
     if (req.script === 'TOGGLE' && failStep) { dirtyWorkspace = true; return { exitCode: 1, timedOut: false } }
-    if (req.script.includes('git push')) return { exitCode: failPush ? 1 : 0, timedOut: false }
+    if (req.script.includes('git push')) {
+      if (!failPush) onChunk(`Ветка отправлена (${'a'.repeat(40)})\n`)
+      return { exitCode: failPush ? 1 : 0, timedOut: false }
+    }
     const fail = req.script.includes('FAIL') || (req.script.includes('FLAKY') && !flakyOk)
     return { exitCode: fail ? 1 : 0, timedOut: false }
   }
@@ -177,7 +180,7 @@ describe('ci run manager', () => {
     // Колонку снимаем в момент запроса к модели: к концу успешного рана карточка
     // уходит в «Ожидает мержа», и проверка после `waitRun` ловила бы уже её.
     let columnAtModel: string | null = null
-    onModelSend = () => { columnAtModel = db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId }
+    onModelSend = () => { if (columnAtModel === null) columnAtModel = db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId }
     const runId = await run(project.id, task.id)
     const detail = await waitRun(runId)
     const development = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
@@ -203,7 +206,7 @@ describe('ci run manager', () => {
     expect(detail.run.llmModel).toBe(DEFAULT_SETTINGS.model)
     // Модель рана — только у разработки: резюме идёт по своей стадии
     // (DEFAULT_CI_STAGE_MODELS.summary), пересказ шагов не требует модели рана.
-    expect(modelRequests.map((r) => r.model)).toEqual([DEFAULT_SETTINGS.model, DEFAULT_CI_STAGE_MODELS.summary])
+    expect(modelRequests.map((r) => r.model)).toEqual([DEFAULT_SETTINGS.model, DEFAULT_CI_STAGE_MODELS.summary, 'sonnet'])
   })
 
   it('DELETE ci/llm снимает переопределение задачи и возвращает наследование', async () => {
@@ -313,16 +316,15 @@ describe('ci run manager', () => {
     expect(db.listMessages('admin', chatId).some((m) => m.meta?.ciRunSummary?.runId === runId)).toBe(true)
   })
 
-  it('резюме сообщает исход актуализации БЗ и после её ошибки', async () => {
+  it('legacy kb_update из старого снимка слота не создаёт шаг development-рана', async () => {
     const { project, task } = setup()
     db.setCiSlotCommands('task', task.id, 'after_model', [CI_KB_UPDATE_COMMAND_ID])
     const runId = await run(project.id, task.id)
     const detail = await waitRun(runId)
-    expect(detail.run.status).toBe('failed')
-    const chatId = db.getCiRunRaw(runId)!.conversationId!
-    const summary = db.listMessages('admin', chatId).find((message) => message.meta?.ciRunSummary?.runId === runId)!
-    expect(summary.text).toContain('База знаний:')
-    expect(summary.text).toContain('база знаний')
+    expect(detail.run.status).toBe('success')
+    const persistedSteps = db.getCiRun('admin', runId)!.steps
+    expect(persistedSteps.some((step) => step.title === 'Актуализировать базу знаний')).toBe(false)
+    expect(persistedSteps.filter((step) => step.title === 'Отправить ветку задачи в origin')).toHaveLength(1)
   })
 
   it('падение в слоте «до» → ран failed и откат задачи в предыдущую колонку', async () => {
@@ -351,38 +353,21 @@ describe('ci run manager', () => {
     expect(d.run.status).toBe('success')
   })
 
-  it('is_cleanup освобождает рабочую директорию', async () => {
+  it('legacy cleanup не выполняется, workspace сохраняется, branch пушится один раз', async () => {
     const { project, task } = setup()
     const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'cleanup', script: 'rm -rf', isCleanup: true })
     db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
     const runId = await run(project.id, task.id)
-    await waitRun(runId)
+    const detail = await waitRun(runId)
+    expect(detail.run.status).toBe('success')
+    expect(scripts).not.toContain('rm -rf')
+    expect(scripts.filter((x) => x.includes('git push origin "HEAD:refs/heads/$BRANCH"'))).toHaveLength(1)
+    const persistedSteps = db.getCiRun('admin', runId)!.steps
+    expect(persistedSteps.some((step) => step.title === 'cleanup')).toBe(false)
+    expect(persistedSteps.filter((step) => step.title === 'Отправить ветку задачи в origin')).toHaveLength(1)
     const report = db.listCiWorkspaceReport('admin', project.id)
-    expect(report.some((w) => w.state === 'released')).toBe(true)
-    const chat = db.getConversation('admin', db.getCiRunRaw(runId)!.conversationId!)!
-    expect(chat.workdir).not.toBe('/repos/p/1/t1')
-  })
-
-  it('перед cleanup отправляет ветку задачи в origin', async () => {
-    const { project, task } = setup()
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'cleanup', script: 'rm -rf', isCleanup: true })
-    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
-    const runId = await run(project.id, task.id)
-    const d = await waitRun(runId)
-    expect(d.run.status).toBe('success')
-    // Пуш идёт до удаления рабочей директории, иначе коммиты модели пропадут.
-    const pushIdx = scripts.findIndex((x) => x.includes('git push origin "HEAD:refs/heads/$BRANCH"'))
-    const cleanupIdx = scripts.indexOf('rm -rf')
-    expect(pushIdx).toBeGreaterThanOrEqual(0)
-    expect(pushIdx).toBeLessThan(cleanupIdx)
-    const steps = db.getCiRun('admin', runId)!.steps
-    const push = steps.find((x) => x.title === 'Отправить ветку задачи в origin')!
-    const cleanup = steps.find((x) => x.title === 'cleanup')!
-    expect(push.status).toBe('success')
-    expect(push.position).toBeLessThan(cleanup.position)
-    // Позиции не пересекаются: резюме остаётся последним шагом ленты.
-    expect(new Set(steps.map((x) => x.position)).size).toBe(steps.length)
-    expect(steps[steps.length - 1].kind).toBe('model_summary')
+    expect(report.some((w) => w.state === 'active')).toBe(true)
+    expect(db.findLatestPushedCiWorkspace(project.id, task.id)?.commitSha).toMatch(/^[0-9a-f]{40}$/)
   })
 
   it('пуш ветки не удался → cleanup не выполняется, рабочая директория сохранена', async () => {
