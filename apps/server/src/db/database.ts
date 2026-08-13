@@ -2614,7 +2614,7 @@ export class VoiceChatDb {
   }
 
   /** Имя машины по id (для читаемой подписи в шапке чата). */
-  private agentName(agentId: string): string | null {
+  agentName(agentId: string): string | null {
     const r = this.db.prepare(`SELECT name FROM agents WHERE id = ?`).get(agentId) as { name: string } | undefined
     return r?.name ?? null
   }
@@ -2713,11 +2713,10 @@ export class VoiceChatDb {
     return parseStringArray(raw)
   }
 
-  /** Машину карточки можно выбирать только среди машин того же проекта. */
-  private validateTaskAgent(projectId: string, agentId: string | null | undefined): string | null {
+  /** Машина карточки доступна владельцу лично либо через контекст проекта. */
+  private validateTaskAgent(userId: string, projectId: string, agentId: string | null | undefined): string | null {
     if (agentId == null) return null
-    const linked = this.db.prepare(`SELECT 1 FROM project_machines WHERE project_id = ? AND agent_id = ?`).get(projectId, agentId)
-    if (!linked) throw new Error('Машина не привязана к проекту')
+    if (!this.canUseAgent(userId, agentId, projectId)) throw new Error('Машина недоступна для этой задачи')
     return agentId
   }
 
@@ -2786,7 +2785,7 @@ export class VoiceChatDb {
         args.parentId ?? null,
         normPriority(args.priority ?? 'medium'),
         args.assignee ?? null,
-        this.validateTaskAgent(projectId, args.agentId),
+        this.validateTaskAgent(userId, projectId, args.agentId),
         JSON.stringify(args.labels ?? []),
         JSON.stringify(skills),
         args.storyPoints ?? null,
@@ -2815,7 +2814,7 @@ export class VoiceChatDb {
     if (fields.assignee != null && !this.isProjectMember(fields.assignee, projectId)) {
       throw new Error('Исполнитель не участник проекта')
     }
-    if (fields.agentId !== undefined) this.validateTaskAgent(projectId, fields.agentId)
+    if (fields.agentId !== undefined) this.validateTaskAgent(userId, projectId, fields.agentId)
     const nextType = fields.type ?? current.type
     const nextParentId = fields.parentId === undefined ? current.parentId : fields.parentId
     if (nextParentId === taskId) throw new Error('Элемент не может быть своим родителем')
