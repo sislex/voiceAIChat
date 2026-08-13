@@ -98,6 +98,7 @@ export function ReleaseCenter({projectId,baseBranch,owner,machines=[],releaseTim
   return <section className="release-center" aria-label="Релизы и деплой">
     <nav className="release-tabs" role="tablist" aria-label="Разделы релизов"><button role="tab" aria-selected={tab==='releases'} onClick={()=>setTab('releases')}>Релизы</button><button role="tab" aria-selected={tab==='deploy'} onClick={()=>setTab('deploy')}>Деплой</button></nav>
     {error&&<p role="alert">{error}</p>}
+    {!owner&&<p role="status">Недостаточно прав: подготовка релиза и production deploy доступны только администратору.</p>}
     {owner&&<button className="vc-btn vc-btn--secondary" onClick={()=>setSettingsOpen(value=>!value)}>Настройки</button>}
     {settingsOpen&&<form className="release-create" onSubmit={event=>{event.preventDefault();void saveSettings()}}>{([['knowledgeBaseMs','База знаний'],['regressionMs','Regression (каждая стадия)'],['switchingMs','Переключение checkout'],['buildingMs','Сборка и обновление контейнеров'],['healthCheckMs','Health-check']] as const).map(([key,label])=><label key={key}>{label}, сек.<input type="number" min="1" max="86400" required value={Math.round(timeouts[key]/1000)} onChange={event=>setTimeouts(value=>({...value,[key]:Number(event.target.value)*1000}))}/></label>)}<button className="vc-btn vc-btn--primary" disabled={busy}>Сохранить</button></form>}
     {tab==='releases'?<>

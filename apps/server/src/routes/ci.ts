@@ -8,7 +8,7 @@ import type { CiCommandInput, CiGlobalSettings, CiLlmConfig, CiSlot, CiRunMode, 
 import { CI_USAGE_KINDS, DEFAULT_CI_LLM_CONFIG } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CiRunManager } from '../ci/runManager.js'
-import { uid } from '../users/auth.js'
+import { requireProjectPermission, uid } from '../users/auth.js'
 
 const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 'not found' })
 const forbid = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
@@ -17,6 +17,7 @@ const bad = (reply: FastifyReply, error: unknown): FastifyReply => reply.code(40
 export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRunManager, agents?: { isOnline(id: string): boolean }): void {
   const isOwner = (req: FastifyRequest, projectId: string): boolean => db.getProject(uid(req), projectId)?.role === 'owner'
   const isAdmin = (req: FastifyRequest): boolean => req.user?.role === 'admin'
+  const workflowGuard = { preHandler: requireProjectPermission('workflow:start') }
 
   // --- Справочник команд ---
   app.get<{ Querystring: { projectId?: string } }>('/api/ci/commands', async (req) => db.listCiCommands(uid(req), req.query.projectId))
@@ -211,7 +212,7 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   })
 
   // --- Запуск / отмена / повтор рана ---
-  app.post<{ Params: { id: string; taskId: string }; Body: { mode?: CiRunMode; provider?: string; model?: string; launch?: string } | undefined }>('/api/projects/:id/tasks/:taskId/ci/run', async (req, reply) => {
+  app.post<{ Params: { id: string; taskId: string }; Body: { mode?: CiRunMode; provider?: string; model?: string; launch?: string } | undefined }>('/api/projects/:id/tasks/:taskId/ci/run', workflowGuard, async (req, reply) => {
     const mode = req.body?.mode === 'plan' || req.body?.mode === 'development' ? req.body.mode : undefined
     const provider = req.body?.provider === 'claude' || req.body?.provider === 'codex' ? req.body.provider : undefined
     const model = provider && typeof req.body?.model === 'string' ? req.body.model : undefined
@@ -222,7 +223,7 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   })
   // Принудительный запуск на явно указанной машине (из настроек задачи):
   // ран из очереди продвигается мимо неё, а не отменяется.
-  app.post<{ Params: { id: string; taskId: string }; Body: { agentId?: string } | undefined }>('/api/projects/:id/tasks/:taskId/ci/run-on-machine', async (req, reply) => {
+  app.post<{ Params: { id: string; taskId: string }; Body: { agentId?: string } | undefined }>('/api/projects/:id/tasks/:taskId/ci/run-on-machine', workflowGuard, async (req, reply) => {
     const agentId = typeof req.body?.agentId === 'string' ? req.body.agentId.trim() : ''
     if (!agentId) return reply.code(400).send({ error: 'Не указана машина запуска' })
     const res = ci.forceStartOnMachine(uid(req), req.params.id, req.params.taskId, agentId)
@@ -275,21 +276,21 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     if (result.status === 'not_found') return nf(reply)
     return result
   })
-  app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/retry', async (req, reply) => {
+  app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/retry', workflowGuard, async (req, reply) => {
     const detail = db.getCiRun(uid(req), req.params.runId)
     if (!detail) return nf(reply)
     const res = ci.start(uid(req), detail.run.projectId, detail.run.taskId)
     if ('error' in res) return reply.code(409).send({ error: res.error })
     return reply.code(202).send(res.run)
   })
-  app.post<{ Params: { runId: string }; Body: { provider?: 'claude' | 'codex'; model?: string; llmEngineId?: string | null } }>('/api/ci/runs/:runId/retry-from-step', async (req, reply) => {
+  app.post<{ Params: { runId: string }; Body: { provider?: 'claude' | 'codex'; model?: string; llmEngineId?: string | null } }>('/api/ci/runs/:runId/retry-from-step', workflowGuard, async (req, reply) => {
     const selection = req.body?.provider && req.body.model !== undefined ? { provider: req.body.provider, model: req.body.model, llmEngineId: req.body.llmEngineId ?? null } : undefined
     const res = ci.retryFromFailed(uid(req), req.params.runId, selection)
     if ('error' in res) return reply.code(409).send({ error: res.error })
     return reply.code(202).send(res.run)
   })
 
-  app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/discard-and-retry', async (req, reply) => {
+  app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/discard-and-retry', workflowGuard, async (req, reply) => {
     const res = await ci.discardChangesAndRetry(uid(req), req.params.runId)
     if ('error' in res) return reply.code(409).send({ error: res.error })
     return reply.code(202).send(res.run)

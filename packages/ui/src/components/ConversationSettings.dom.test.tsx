@@ -56,7 +56,7 @@ describe('ConversationSettings', () => {
   // это данные пользователя, и админ правит их в карточке на `#/users/:name`.
   it('запреты доступа убирают opus/fable из выбора модели разговора', () => {
     const denied: UserLlmAccess[] = [{ provider: 'claude', modelId: 'opus[1m]' }, { provider: 'claude', modelId: 'fable' }]
-    render(<ConversationSettings conversation={conversation} agents={[agent]} role="user" llmAccess={denied} settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="developer" llmAccess={denied} settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Движок разговора' }), { target: { value: 'claude' } })
     const options = Array.from(screen.getByRole('combobox', { name: 'Модель разговора' }).querySelectorAll('option')).map((o) => o.value)
     expect(options).not.toContain('opus[1m]')
@@ -65,7 +65,7 @@ describe('ConversationSettings', () => {
   })
 
   it('без запретов роль user видит все модели: доступ решает llmAccess, а не роль', () => {
-    render(<ConversationSettings conversation={conversation} agents={[agent]} role="user" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="developer" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Движок разговора' }), { target: { value: 'claude' } })
     const options = Array.from(screen.getByRole('combobox', { name: 'Модель разговора' }).querySelectorAll('option')).map((o) => o.value)
     expect(options).toEqual(['default', 'opus[1m]', 'fable', 'sonnet', 'haiku'])
@@ -103,7 +103,7 @@ describe('ConversationSettings', () => {
 
   it('роль user без машины видит, что действует только планирование', () => {
     const conv = { ...conversation, execTarget: null }
-    render(<ConversationSettings conversation={conv} agents={[agent]} role="user" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    render(<ConversationSettings conversation={conv} agents={[agent]} role="developer" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByTestId('conv-mode-current')).toHaveTextContent('Только планирование')
     expect(screen.getByTestId('conv-mode-current')).toHaveTextContent('без своей машины')
   })
