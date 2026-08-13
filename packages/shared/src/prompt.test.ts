@@ -74,6 +74,9 @@ describe('appendChangeAuthorizationHint', () => {
     expect(prompt).toBe(`Исправь ошибку\n\n${CHANGE_AUTHORIZATION_HINT}`)
     expect(prompt).toContain('TODO')
     expect(prompt).toContain('InProgress')
+    expect(prompt.indexOf('подробное описание')).toBeLessThan(prompt.indexOf('проверяемые критерии'))
+    expect(prompt.indexOf('проверяемые критерии')).toBeLessThan(prompt.indexOf('```task-launch'))
+    expect(prompt).toContain('без сокращений и изменения смысла')
   })
 
   it('пустой промпт не меняет', () => {
@@ -101,8 +104,10 @@ describe('parseTaskLaunchRequest', () => {
     ])
   })
 
-  it('не считает обычный текст запросом запуска', () => {
+  it('не считает обычный или некорректный текст запросом запуска', () => {
     expect(parseTaskLaunchRequest('Давайте создадим задачу и исправим разработку.')).toEqual({ text: 'Давайте создадим задачу и исправим разработку.' })
+    const malformed = 'Описание задачи.\n```task-launch\n{"title":"Задача","description":"Описание"}\n```'
+    expect(parseTaskLaunchRequest(malformed)).toEqual({ text: malformed })
   })
 })
 

@@ -17,7 +17,7 @@ import type {
   SttUpdate,
   UploadInfo
 } from '@shared/ipc'
-import type { Board, ProjectDetail, ProjectSummary, TaskChatBadge, TaskChatContext, TaskPriority, WorkItemType, WorkItemDefaultSkills } from '@shared/projects'
+import type { Board, ProjectDetail, ProjectSummary, Task, TaskChatBadge, TaskChatContext, TaskPriority, WorkItemType, WorkItemDefaultSkills } from '@shared/projects'
 
 import type {
   CiCommand,
@@ -668,7 +668,7 @@ export interface StoreActions {
   /** Исправить сообщение пользователя: удалить его и все последующие, переспросить. */
   editMessage(id: string, newText: string): Promise<void>
   /** Персистентно отметить одно предложение задачи созданным или отклонённым. */
-  updateTaskLaunchStatus(messageId: string, proposalId: string, status: 'created' | 'declined'): Promise<void>
+  updateTaskLaunchStatus(messageId: string, proposalId: string, status: 'opened' | 'created' | 'declined'): Promise<void>
   /** Прикрепить файл к следующему сообщению (загрузка на сервер). */
   addAttachment(file: File): Promise<void>
   /** Убрать прикреплённый файл по id. */
@@ -944,7 +944,7 @@ export interface StoreActions {
   /** Создать задачу из чата проекта и сразу поставить её CI-ран в общую FIFO-очередь. */
   createTaskAndStartCi(
     projectId: string,
-    input: { title: string; description?: string; acceptanceCriteria?: string; priority?: TaskPriority; assignee?: string | null; provider: 'claude' | 'codex'; model: string }
+    input: { title: string; provider: 'claude' | 'codex'; model: string } & Partial<Pick<Task, 'description' | 'acceptanceCriteria' | 'type' | 'parentId' | 'priority' | 'assignee' | 'labels' | 'skills' | 'storyPoints' | 'dueDate'>>
   ): Promise<CiRun | null>
   updateTask(
     taskId: string,
@@ -2963,7 +2963,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     await refreshConversations()
   }
 
-  async function updateTaskLaunchStatus(messageId: string, proposalId: string, status: 'created' | 'declined'): Promise<void> {
+  async function updateTaskLaunchStatus(messageId: string, proposalId: string, status: 'opened' | 'created' | 'declined'): Promise<void> {
     if (!state.activeId) return
     const message = state.messages.find((item) => item.id === messageId)
     if (!message?.meta) return
@@ -4130,7 +4130,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   async function createTaskAndStartCi(
     projectId: string,
-    input: { title: string; description?: string; acceptanceCriteria?: string; priority?: TaskPriority; assignee?: string | null; provider: 'claude' | 'codex'; model: string }
+    input: { title: string; provider: 'claude' | 'codex'; model: string } & Partial<Pick<Task, 'description' | 'acceptanceCriteria' | 'type' | 'parentId' | 'priority' | 'assignee' | 'labels' | 'skills' | 'storyPoints' | 'dueDate'>>
   ): Promise<CiRun | null> {
     if (!ciBridge) return null
     try {
@@ -4147,8 +4147,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         title: input.title,
         description: input.description,
         acceptanceCriteria: input.acceptanceCriteria,
+        type: input.type,
+        parentId: input.parentId,
         priority: input.priority,
-        assignee: input.assignee
+        assignee: input.assignee,
+        labels: input.labels,
+        skills: input.skills,
+        storyPoints: input.storyPoints,
+        dueDate: input.dueDate
       })
       if (state.activeProjectId === projectId) await refreshBoard()
       return await startCiRun(projectId, task.id, { provider: input.provider, model: input.model })

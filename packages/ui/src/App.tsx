@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import type { RendererApi } from '@shared/ipc'
 import type { LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
-import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
-import type { TaskPriority } from '@shared/projects'
+import type { Board, Task } from '@shared/projects'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, isPreviewElementMessage, isPreviewInspectorCommand, type PreviewElementPayload } from '@shared/previewInspector'
@@ -24,6 +23,7 @@ import { UsersAdmin } from './components/UsersAdmin'
 import { ProjectSettings } from './components/ProjectSettings'
 import { PersonalizationPage } from './components/SettingsPage'
 import { ProjectBoard } from './components/ProjectBoard'
+import { TaskModal, type TaskUpdateFields } from './components/kanban/TaskModal'
 import { ProjectPage, ProjectsEmptyPage, ProjectNotFoundPage } from './components/ProjectPage'
 import { ReleaseCenter } from './components/releases/ReleaseCenter'
 import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
@@ -36,7 +36,6 @@ import { ToolFrame } from './components/ToolFrame'
 import type { ConsoleHistoryStore, MachineOps } from './components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
 import { UiProviders } from './components/ui/UiProviders'
-import { Dialog } from './components/ui/Dialog'
 import { Button } from './components/ui/Button'
 import { Skeleton } from './components/ui/Skeleton'
 import { useToast } from './components/ui/Toast'
@@ -507,11 +506,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     projectId: string
     messageId: string
     proposalId: string
-    title: string
-    description: string
-    acceptanceCriteria: string
-    priority: TaskPriority
-    assignee: string | null
+    board: Board
+    projectName: string
+    task: Task
     provider: LlmProvider
     model: string
   } | null>(null)
@@ -792,28 +789,82 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const allowedCodexModels = allowedModels(state.llmAccess, 'codex')
   const allowedProviders = (['claude', 'codex'] as const).filter((provider) => isProviderAllowed(state.llmAccess, provider) && (provider === 'claude' ? allowedClaudeModels.length : allowedCodexModels.length))
   const proposalModels = taskProposal?.provider === 'codex' ? allowedCodexModels : allowedClaudeModels
+  const openedTaskLaunches = useRef(new Set<string>())
 
-  const openTaskProposal = (request: TaskLaunchProposal, messageId: string): void => {
+  const openTaskProposal = async (request: TaskLaunchProposal, messageId: string): Promise<boolean> => {
     if (!activeConversation?.projectId) {
       toast.error('Невозможно создать задачу: этот чат не привязан к проекту.')
-      return
+      return false
     }
+    const projectId = activeConversation.projectId
+    const board = state.activeProjectId === projectId && state.board
+      ? state.board
+      : await api['board:get']({ id: projectId })
+    const column = board.columns.find((item) => item.semanticType === 'backlog') ?? board.columns[0]
+    if (!column) {
+      toast.error('Невозможно создать задачу: в проекте нет колонок.')
+      return false
+    }
+    const project = state.projects.find((item) => item.id === projectId)
+    const now = Date.now()
+    const provider = allowedProviders.includes(ciProvider) ? ciProvider : (allowedProviders[0] ?? ciProvider)
+    const models = provider === 'codex' ? allowedCodexModels : allowedClaudeModels
     setTaskProposal({
-      projectId: activeConversation.projectId,
+      projectId,
       messageId,
       proposalId: request.id,
-      title: request.title,
-      description: request.description,
-      acceptanceCriteria: request.acceptanceCriteria,
-      priority: 'medium',
-      assignee: state.currentUser?.name ?? null,
-      provider: allowedProviders.includes(ciProvider) ? ciProvider : (allowedProviders[0] ?? ciProvider),
-      model: (allowedProviders.includes(ciProvider) ? (ciProvider === 'codex' ? allowedCodexModels : allowedClaudeModels) : (allowedProviders[0] === 'codex' ? allowedCodexModels : allowedClaudeModels))[0]?.id ?? ciModel
+      board,
+      projectName: project?.name ?? 'Проект',
+      task: {
+        id: `task-launch-draft:${messageId}:${request.id}`,
+        projectId,
+        columnId: column.id,
+        type: 'task',
+        parentId: null,
+        title: request.title,
+        description: request.description,
+        acceptanceCriteria: request.acceptanceCriteria,
+        priority: 'medium',
+        assignee: state.currentUser?.name ?? null,
+        labels: [],
+        skills: project?.defaultSkills.task ?? [],
+        storyPoints: null,
+        dueDate: null,
+        flagged: false,
+        seq: 0,
+        position: 0,
+        createdAt: now,
+        updatedAt: now,
+        chatId: null
+      },
+      provider,
+      model: models[0]?.id ?? ciModel
     })
+    return true
   }
+
+  useEffect(() => {
+    if (taskProposal || !activeConversation || !inChat || routeChatId !== state.activeId) return
+    const message = [...state.messages].reverse().find((item) => item.role === 'ai' && (item.meta?.taskLaunches?.length || item.meta?.taskLaunch))
+    if (!message) return
+    const proposals: TaskLaunchProposal[] = message.meta?.taskLaunches?.length
+      ? message.meta.taskLaunches
+      : message.meta?.taskLaunch
+        ? [{ id: 'legacy', ...message.meta.taskLaunch }]
+        : []
+    const proposal = proposals.find((item) => !item.status && !openedTaskLaunches.current.has(`${message.id}:${item.id}`))
+    if (!proposal) return
+    openedTaskLaunches.current.add(`${message.id}:${proposal.id}`)
+    void openTaskProposal(proposal, message.id).then((opened) => {
+      if (opened) void actions.updateTaskLaunchStatus(message.id, proposal.id, 'opened')
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.messages, state.activeId, routeChatId, inChat, taskProposal, activeConversation?.id, activeConversation?.projectId])
 
   const chooseTaskLaunch = async (mode: 'todo' | 'in-progress' | 'chat'): Promise<void> => {
     if (!taskProposal || taskLaunchPending) return
+    const task = taskProposal.task
+    if (!task.title.trim()) return
     setTaskLaunchPending(true)
     try {
       if (mode === 'todo') {
@@ -823,23 +874,34 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         await api['tasks:create']({
           projectId: taskProposal.projectId,
           columnId: column.id,
-          title: taskProposal.title,
-          description: taskProposal.description,
-          acceptanceCriteria: taskProposal.acceptanceCriteria,
-          priority: taskProposal.priority,
-          assignee: taskProposal.assignee
+          title: task.title,
+          description: task.description,
+          acceptanceCriteria: task.acceptanceCriteria,
+          type: task.type,
+          parentId: task.parentId,
+          priority: task.priority,
+          assignee: task.assignee,
+          labels: task.labels,
+          skills: task.skills,
+          storyPoints: task.storyPoints,
+          dueDate: task.dueDate
         })
         toast.success('Задача создана в TODO')
       } else if (mode === 'in-progress') {
-        const run = await actions.createTaskAndStartCi(taskProposal.projectId, taskProposal)
+        const run = await actions.createTaskAndStartCi(taskProposal.projectId, { ...task, provider: taskProposal.provider, model: taskProposal.model })
         if (!run) return
         toast.success('Задача создана и поставлена в CI-очередь')
       }
       await actions.updateTaskLaunchStatus(taskProposal.messageId, taskProposal.proposalId, mode === 'chat' ? 'declined' : 'created')
       setTaskProposal(null)
-      if (mode === 'chat') {
-        toast.success('Предложение отклонено')
-      }
+      const selection = mode === 'todo'
+        ? 'Пользователь выбрал: создать предложенную задачу в TODO.'
+        : mode === 'in-progress'
+          ? 'Пользователь выбрал: создать предложенную задачу в InProgress и начать разработку.'
+          : 'Пользователь выбрал: работать над предложенной задачей в текущем чате без создания карточки.'
+      actions.setDraft(selection)
+      await actions.submitText()
+      if (mode === 'chat') toast.success('Продолжаем работу в текущем чате')
     } finally {
       setTaskLaunchPending(false)
     }
@@ -1068,7 +1130,6 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         onDeleteMessage={actions.deleteMessage}
         onEditMessage={actions.editMessage}
         onAnswerQuestions={(text) => void actions.answerQuestions(text)}
-        onCreateTask={openTaskProposal}
         onAnswerCiInteraction={(runId, interactionId, text) => void actions.answerCiInteraction(runId, interactionId, { text })}
         answeredCiInteractions={state.answeredCiInteractions}
         taskHeader={
@@ -1419,68 +1480,41 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       )}
 
       {taskProposal && inChat && routeChatId === state.activeId && (
-        <Dialog
-          title="Как начать разработку?"
-          ariaLabel="Настройки задачи разработки"
-          size="lg"
+        <TaskModal
+          draft
+          task={taskProposal.task}
+          board={taskProposal.board}
+          projectName={taskProposal.projectName}
+          members={state.projectDetail?.id === taskProposal.projectId ? state.projectDetail.members : []}
+          onUpdate={(_taskId: string, fields: TaskUpdateFields) => setTaskProposal((current) => current ? { ...current, task: { ...current.task, ...fields } } : null)}
+          onDelete={() => undefined}
+          onMoveToColumn={(_taskId, columnId) => setTaskProposal((current) => current ? { ...current, task: { ...current.task, columnId } } : null)}
+          onOpenTask={() => undefined}
           onClose={() => { if (!taskLaunchPending) setTaskProposal(null) }}
-          closeOnOverlay={!taskLaunchPending}
-          className="task-launch-dialog"
-          footer={<>
-            <Button variant="secondary" onClick={() => void chooseTaskLaunch('todo')} loading={taskLaunchPending} disabled={!taskProposal.title.trim()}>Создать в TODO</Button>
-            <Button variant="primary" onClick={() => void chooseTaskLaunch('in-progress')} loading={taskLaunchPending} disabled={!taskProposal.title.trim()}>Создать в InProgress</Button>
-            <Button variant="secondary" onClick={() => void chooseTaskLaunch('chat')} loading={taskLaunchPending}>Работать в текущем чате</Button>
-          </>}
-        >
-          <div className="task-launch-fields">
-            <label className="task-launch-title">Название
-              <input value={taskProposal.title} onChange={(event) => setTaskProposal({ ...taskProposal, title: event.target.value })} />
-            </label>
-            <p className="task-launch-intro">Ассистент подготовил задачу. Проверьте параметры и выберите, где начать работу.</p>
-            <div className="task-launch-settings" aria-label="Дополнительные настройки">
-            <label>Движок
-              <select value={taskProposal.provider} onChange={(event) => {
+          detailsExtra={<>
+            <label className="jmodal-field">Движок
+              <select className="sel" aria-label="Движок" value={taskProposal.provider} onChange={(event) => {
                 const provider = event.target.value as LlmProvider
-                setTaskProposal({ ...taskProposal, provider, model: provider === 'codex' ? CODEX_MODELS[0].id : CLAUDE_MODELS[0].id })
+                const models = provider === 'codex' ? allowedCodexModels : allowedClaudeModels
+                setTaskProposal({ ...taskProposal, provider, model: models[0]?.id ?? '' })
               }}>
                 {allowedProviders.includes('claude') && <option value="claude">Claude</option>}
                 {allowedProviders.includes('codex') && <option value="codex">Codex</option>}
-                {allowedProviders.length === 0 && <option value="">Нет доступных движков</option>}
               </select>
             </label>
-            <label>Модель
-              <select value={taskProposal.model} onChange={(event) => setTaskProposal({ ...taskProposal, model: event.target.value })}>
+            <label className="jmodal-field">Модель
+              <select className="sel" aria-label="Модель" value={taskProposal.model} onChange={(event) => setTaskProposal({ ...taskProposal, model: event.target.value })}>
                 {!proposalModels.some((model) => model.id === taskProposal.model) && <option value={taskProposal.model}>{taskProposal.model || 'По умолчанию'}</option>}
-                {proposalModels.length === 0 && <option value="">Нет доступных моделей</option>}
                 {proposalModels.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
               </select>
             </label>
-            <label>Очередь
-              <input value="FIFO" readOnly />
-            </label>
-            <label>Приоритет
-              <select value={taskProposal.priority} onChange={(event) => setTaskProposal({ ...taskProposal, priority: event.target.value as TaskPriority })}>
-                <option value="low">Низкий</option>
-                <option value="medium">Средний</option>
-                <option value="high">Высокий</option>
-                <option value="urgent">Срочный</option>
-              </select>
-            </label>
-            <label>Слияние
-              <input value="Влить в main" readOnly />
-            </label>
-            <label>Ответственный
-              <input value={taskProposal.assignee ?? ''} onChange={(event) => setTaskProposal({ ...taskProposal, assignee: event.target.value || null })} />
-            </label>
-            </div>
-            <label className="task-launch-main-field">Описание
-              <textarea value={taskProposal.description} rows={8} onChange={(event) => setTaskProposal({ ...taskProposal, description: event.target.value })} />
-            </label>
-            <label className="task-launch-main-field">Критерии приёмки
-              <textarea value={taskProposal.acceptanceCriteria} rows={8} onChange={(event) => setTaskProposal({ ...taskProposal, acceptanceCriteria: event.target.value })} />
-            </label>
-          </div>
-        </Dialog>
+          </>}
+          footer={<>
+            <Button variant="secondary" onClick={() => void chooseTaskLaunch('todo')} loading={taskLaunchPending} disabled={!taskProposal.task.title.trim()}>Создать в TODO</Button>
+            <Button variant="primary" onClick={() => void chooseTaskLaunch('in-progress')} loading={taskLaunchPending} disabled={!taskProposal.task.title.trim()}>Создать в InProgress</Button>
+            <Button variant="secondary" onClick={() => void chooseTaskLaunch('chat')} loading={taskLaunchPending}>Работать в текущем чате</Button>
+          </>}
+        />
       )}
 
       {conversationSettingsOpen && activeConversation && (
