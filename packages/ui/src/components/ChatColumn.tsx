@@ -43,9 +43,11 @@ const HIGHLIGHT_MS = 2000
 const EDIT_MIN_ROWS = 2
 const EDIT_MAX_ROWS = 4
 
-/** Подпись кнопки БЗ: число обращений и (если БЗ выключена) причина пустоты. */
+/** Доступное имя кнопки сообщает именно непросмотренные обращения. */
 function kbUsageLabel(count: number, active: boolean, mode: KbContextMode): string {
-  const head = `Использование базы знаний: ${count} обращени${count === 1 ? 'е' : count >= 2 && count <= 4 ? 'я' : 'й'}`
+  const head = count > 0
+    ? `Использование базы знаний — ${count} новых обращени${count === 1 ? 'е' : count >= 2 && count <= 4 ? 'я' : 'й'}`
+    : 'Использование базы знаний — новых обращений нет'
   if (active) return `${head}; идёт обращение`
   if (mode === 'off') return `${head}; база знаний выключена для этого чата`
   return head

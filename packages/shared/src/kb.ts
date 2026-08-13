@@ -243,6 +243,8 @@ export interface KbUsageReport {
   available: boolean
   /** Последний seq в отчёте: отсечка для инкрементальных кадров. */
   lastSeq: number
+  /** Обращения после серверной границы последнего просмотра этим пользователем. */
+  unreadCount: number
   totals: KbUsageTotals
   sections: KbUsageSectionAggregate[]
   recent: KbUsageQuery[]

@@ -343,14 +343,17 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
  */
 /** REST телеметрии БЗ: снапшоты по чату и по проекту (инкременты идут по WS). */
 export function createKbUsageRest(httpBase: string): RendererKbRest {
-  async function req<T>(path: string): Promise<T> {
+  async function req<T>(path: string, init?: RequestInit): Promise<T> {
     const token = getToken()
-    const res = await fetch(httpBase + path, { headers: token ? { authorization: `Bearer ${token}` } : {} })
-    if (!res.ok) throw new Error(`GET ${path} → ${res.status}`)
+    const headers: Record<string, string> = token ? { authorization: `Bearer ${token}` } : {}
+    if (init?.body != null) headers['content-type'] = 'application/json'
+    const res = await fetch(httpBase + path, { ...init, headers })
+    if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
     return (await res.json()) as T
   }
   return {
     getConversationUsage: (conversationId) => req<KbUsageReport>(REST.conversationKbUsage(conversationId)),
+    markConversationUsageViewed: (conversationId, lastSeq) => req(REST.conversationKbUsageViewed(conversationId), { method: 'POST', body: JSON.stringify({ lastSeq }) }),
     getProjectUsage: (projectId) => req<KbProjectUsageReport>(REST.projectKbUsage(projectId))
   }
 }

@@ -135,6 +135,7 @@ export const REST = {
   projectKbResearch: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb/research`,
   /** Телеметрия обращений модели к БЗ: по одному чату и агрегат по проекту. */
   conversationKbUsage: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage`,
+  conversationKbUsageViewed: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage/viewed`,
   projectKbUsage: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb-usage`,
   sessionLogin: '/api/session/login',
   sessionMe: '/api/session/me',

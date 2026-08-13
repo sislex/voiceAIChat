@@ -4345,6 +4345,36 @@ export class VoiceChatDb {
       .get(conversationId) as { m: number }).m
   }
 
+  /**
+   * Продвинуть границу просмотра только вперёд. Проверка владельца выполняется до
+   * upsert, поэтому строку другого пользователя нельзя ни читать, ни менять.
+   */
+  markKbUsageViewed(userId: string, conversationId: string, lastSeq: number): { lastSeq: number; unreadCount: number } | null {
+    if (!this.getConversation(userId, conversationId)) return null
+    const boundary = Math.max(0, Math.min(Math.trunc(lastSeq), this.kbUsageLastSeq(conversationId)))
+    this.db.prepare(
+      `INSERT INTO kb_usage_views (user_id, conversation_id, last_seq, viewed_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, conversation_id) DO UPDATE SET
+         last_seq = MAX(kb_usage_views.last_seq, excluded.last_seq),
+         viewed_at = CASE WHEN excluded.last_seq > kb_usage_views.last_seq THEN excluded.viewed_at ELSE kb_usage_views.viewed_at END`
+    ).run(userId, conversationId, boundary, this.now())
+    return { lastSeq: this.kbUsageViewedSeq(userId, conversationId), unreadCount: this.kbUsageUnreadCount(userId, conversationId) }
+  }
+
+  private kbUsageViewedSeq(userId: string, conversationId: string): number {
+    const row = this.db.prepare(`SELECT last_seq FROM kb_usage_views WHERE user_id = ? AND conversation_id = ?`)
+      .get(userId, conversationId) as { last_seq: number } | undefined
+    return row?.last_seq ?? 0
+  }
+
+  private kbUsageUnreadCount(userId: string, conversationId: string): number {
+    return (this.db.prepare(
+      `SELECT COUNT(*) AS n FROM kb_usage_queries
+       WHERE conversation_id = ? AND seq > ?`
+    ).get(conversationId, this.kbUsageViewedSeq(userId, conversationId)) as { n: number }).n
+  }
+
   /** Отчёт по чату: свой чат (изоляция по владельцу) — иначе null → 404 у роута. */
   kbUsageReport(userId: string, conversationId: string, limit = 40): KbChatUsage | null {
     const conv = this.getConversation(userId, conversationId)
@@ -4357,6 +4387,7 @@ export class VoiceChatDb {
       projectId: conv.projectId ?? null,
       kbContextMode: conv.kbContextMode ?? 'auto',
       lastSeq: this.kbUsageLastSeq(conversationId),
+      unreadCount: this.kbUsageUnreadCount(userId, conversationId),
       totals,
       sections,
       recent

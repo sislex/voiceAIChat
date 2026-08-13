@@ -610,16 +610,29 @@ describe('ChatColumn — кнопка «Использование БЗ»', () =
     const onOpen = vi.fn()
     renderCol({ onOpenKbUsage: onOpen, kbUsageCount: 3 })
     const btn = screen.getByTestId('kb-usage-open')
-    expect(btn).toHaveAccessibleName('Использование базы знаний: 3 обращения')
+    expect(btn).toHaveAccessibleName('Использование базы знаний — 3 новых обращения')
     expect(screen.getByTestId('kb-usage-count')).toHaveTextContent('3')
     await userEvent.click(btn)
     expect(onOpen).toHaveBeenCalled()
   })
 
-  it('счётчик переполнения показывает 99+, но точное число остаётся в подписи', () => {
-    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 128 })
-    expect(screen.getByTestId('kb-usage-count')).toHaveTextContent('99+')
-    expect(screen.getByTestId('kb-usage-open')).toHaveAccessibleName('Использование базы знаний: 128 обращений')
+  it.each([[99, '99'], [100, '99+'], [128, '99+']] as const)(
+    'граница бейджа: %s новых → %s, точное число остаётся в подписи',
+    (count, visible) => {
+      renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: count })
+      expect(screen.getByTestId('kb-usage-count')).toHaveTextContent(visible)
+      expect(screen.getByTestId('kb-usage-open')).toHaveAccessibleName(
+        `Использование базы знаний — ${count} новых обращений`
+      )
+    }
+  )
+
+  it('при нуле бейджа нет, доступное имя сообщает об отсутствии новых обращений', () => {
+    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 0 })
+    expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
+    expect(screen.getByTestId('kb-usage-open')).toHaveAccessibleName(
+      'Использование базы знаний — новых обращений нет'
+    )
   })
 
   it('активное обращение показывает индикатор вместо счётчика', () => {
