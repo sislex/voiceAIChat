@@ -797,6 +797,9 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_checkout_path')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_checkout_path TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_health_check_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_health_check_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'release_timeouts_json')) this.db.exec(`ALTER TABLE projects ADD COLUMN release_timeouts_json TEXT NOT NULL DEFAULT '{}'`)
+    const qaSessionCols = this.db.prepare(`PRAGMA table_info(qa_sessions)`).all() as Array<{ name: string }>
+    if (qaSessionCols.length && !qaSessionCols.some(c => c.name === 'additional_issues')) this.db.exec(`ALTER TABLE qa_sessions ADD COLUMN additional_issues TEXT NOT NULL DEFAULT ''`)
+    if (qaSessionCols.length && !qaSessionCols.some(c => c.name === 'linked_fix_run_id')) this.db.exec(`ALTER TABLE qa_sessions ADD COLUMN linked_fix_run_id TEXT`)
     const releaseCols = this.db.prepare(`PRAGMA table_info(project_releases)`).all() as Array<{ name: string }>
     if (releaseCols.length && !releaseCols.some(c=>c.name==='agent_id')) this.db.exec(`ALTER TABLE project_releases ADD COLUMN agent_id TEXT`)
     if (releaseCols.length && !releaseCols.some(c=>c.name==='checkout_path')) this.db.exec(`ALTER TABLE project_releases ADD COLUMN checkout_path TEXT`)
@@ -4802,9 +4805,9 @@ export class VoiceChatDb {
       status: rawPreparation.status as 'running'|'success'|'failed', attempt: Number(rawPreparation.attempt), maxAttempts: 2,
       error: rawPreparation.error as string | null, attempts: parseJsonValue(String(rawPreparation.diagnostics_json ?? '[]'), []),
       createdAt: Number(rawPreparation.created_at), finishedAt: rawPreparation.finished_at == null ? null : Number(rawPreparation.finished_at),
-      canRetry: rawPreparation.status === 'failed'
+      canRetry: rawPreparation.status === 'failed', log: String(rawPreparation.log ?? '')
     } : null
-    return { criteria, versions, sessions, activeSession: sessions.find((session) => session.status === 'active') ?? null, preparation }
+    return { criteria, versions, sessions, activeSession: sessions.find((session) => session.status === 'active') ?? null, preparation, canEdit: this.canQa(userId, projectId) }
   }
 
   createAcceptanceCriterion(userId: string, projectId: string, taskId: string, input: AcceptanceCriterionSnapshot & { order?: number }): AcceptanceCriterion | null {
@@ -4902,8 +4905,8 @@ export class VoiceChatDb {
     return this.getQaTaskState(userId, projectId, taskId)
   }
 
-  startQaSession(userId: string, args: { projectId: string; taskId: string; branch: string; commitSha: string; testRunId: string; previewId?: string | null; previewSha?: string | null; appUrl?: string | null; storybookUrl?: string | null; testDataScenario?: string; testerId?: string | null }): QaSession | null {
-    if (!this.canQa(userId, args.projectId)) throw new Error('QA permission required')
+  startQaSession(userId: string, args: { projectId: string; taskId: string; branch: string; commitSha: string; testRunId: string; previewId?: string | null; previewSha?: string | null; appUrl?: string | null; storybookUrl?: string | null; testDataScenario?: string; testerId?: string | null }, system = false): QaSession | null {
+    if (!system && !this.canQa(userId, args.projectId)) throw new Error('QA permission required')
     if (!this.db.prepare(`SELECT 1 FROM tasks WHERE id=? AND project_id=?`).get(args.taskId, args.projectId)) return null
     if (this.db.prepare(`SELECT 1 FROM qa_sessions WHERE task_id=? AND status='active'`).get(args.taskId)) throw new Error('active QA session already exists')
     if (args.previewId && args.previewSha !== args.commitSha) throw new Error('preview SHA does not match commit SHA')
@@ -4958,6 +4961,14 @@ export class VoiceChatDb {
     return this.qaResultById(resultId) as QaCriterionResult
   }
 
+  saveQaAdditionalIssues(userId: string, projectId: string, taskId: string, sessionId: string, value: string): QaSession {
+    if (!this.canQa(userId, projectId)) throw new Error('QA permission required')
+    const changed = this.db.prepare(`UPDATE qa_sessions SET additional_issues=? WHERE id=? AND project_id=? AND task_id=? AND status='active' AND stale_reason IS NULL`).run(value, sessionId, projectId, taskId)
+    if (!changed.changes) throw new Error('QA session is stale or closed')
+    this.addQaAudit(projectId, taskId, userId, 'session.additional_issues_saved', { sessionId })
+    return this.mapQaSession(this.db.prepare(`SELECT * FROM qa_sessions WHERE id=?`).get(sessionId) as QaSessionRow)
+  }
+
   linkQaFixRun(userId: string, projectId: string, taskId: string, sessionId: string, runId: string): void {
     if (!this.canQa(userId, projectId)) throw new Error('QA permission required')
     const session = this.db.prepare(`SELECT id FROM qa_sessions WHERE id=? AND project_id=? AND task_id=? AND status='active'`).get(sessionId, projectId, taskId)
@@ -4965,7 +4976,7 @@ export class VoiceChatDb {
     const now = this.now()
     this.db.transaction(() => {
       this.db.prepare(`UPDATE qa_issues SET linked_fix_run_id=? WHERE result_id IN (SELECT id FROM qa_criterion_results WHERE session_id=? AND status='failed')`).run(runId, sessionId)
-      this.db.prepare(`UPDATE qa_sessions SET status='failed',finished_at=?,summary=? WHERE id=? AND status='active'`).run(now, 'Передано на исправление', sessionId)
+      this.db.prepare(`UPDATE qa_sessions SET status='failed',finished_at=?,summary=?,linked_fix_run_id=? WHERE id=? AND status='active'`).run(now, 'Передано на исправление', runId, sessionId)
       this.addQaAudit(projectId, taskId, userId, 'session.fix_started', { sessionId, runId })
     })()
   }
@@ -5122,7 +5133,7 @@ interface ReleaseStepRow { id:string;release_id:string;kind:string;position:numb
 // ============== Ручное QA: строки БД и мапперы ==================
 interface QaCriterionRow { id:string;task_id:string;position:number;title:string;description:string;preconditions:string;steps:string;test_data:string;expected_result:string;required:number;test_type:string;current_version:number;active:number;author:string;created_at:number;updated_at:number }
 interface QaCriterionVersionRow { criterion_id:string;version:number;snapshot_json:string;author:string;reason:string;created_at:number;superseded_by:number|null }
-interface QaSessionRow { id:string;task_id:string;project_id:string;branch:string;commit_sha:string;test_run_id:string;preview_id:string|null;preview_sha:string|null;app_url:string|null;storybook_url:string|null;test_data_scenario:string;criteria_snapshot_json:string;status:string;tester_id:string|null;initiated_by:string;started_at:number;finished_at:number|null;stale_reason:string|null;summary:string }
+interface QaSessionRow { id:string;task_id:string;project_id:string;branch:string;commit_sha:string;test_run_id:string;preview_id:string|null;preview_sha:string|null;app_url:string|null;storybook_url:string|null;test_data_scenario:string;criteria_snapshot_json:string;status:string;tester_id:string|null;initiated_by:string;started_at:number;finished_at:number|null;stale_reason:string|null;summary:string;additional_issues:string;linked_fix_run_id:string|null }
 interface QaResultRow { id:string;session_id:string;criterion_id:string;criterion_version:number;status:string;draft:number;tester_id:string|null;assignee_id:string|null;started_at:number|null;finished_at:number|null;branch:string;commit_sha:string;preview_id:string|null;preview_sha:string|null;app_url:string|null;storybook_url:string|null;test_data_scenario:string;executed_steps:string;expected_result:string;actual_result:string;comment:string;environment:string;blocker_reason:string;blocker_type:string|null;blocker_owner:string|null;not_applicable_reason:string;revision:number;updated_at:number }
 interface QaIssueRow { id:string;result_id:string;classification:string;severity:string;frequency:string;reproduction:string;proposed_route:string;requirement_proposal:string;resolution:string;linked_fix_run_id:string|null;created_at:number }
 interface QaAttachmentRow { id:string;result_id:string;upload_id:string;name:string;mime_type:string;size:number;width:number|null;height:number|null;caption:string;author:string;created_at:number;commit_sha:string }
@@ -5153,7 +5164,7 @@ function mapQaResult(r:QaResultRow,attachments:QaAttachmentRow[],issue:QaIssueRo
   return {id:r.id,sessionId:r.session_id,criterionId:r.criterion_id,criterionVersion:r.criterion_version,status:qaStatus(r.status),draft:!!r.draft,testerId:r.tester_id,assigneeId:r.assignee_id,startedAt:r.started_at,finishedAt:r.finished_at,branch:r.branch,commitSha:r.commit_sha,previewId:r.preview_id,previewSha:r.preview_sha,appUrl:r.app_url,storybookUrl:r.storybook_url,testDataScenario:r.test_data_scenario,executedSteps:r.executed_steps,expectedResult:r.expected_result,actualResult:r.actual_result,comment:r.comment,environment:r.environment,blockerReason:r.blocker_reason,blockerType:r.blocker_type as QaCriterionResult['blockerType'],blockerOwner:r.blocker_owner,notApplicableReason:r.not_applicable_reason,revision:r.revision,updatedAt:r.updated_at,attachments:attachments.map(a=>({id:a.id,resultId:a.result_id,uploadId:a.upload_id,name:a.name,mimeType:a.mime_type as 'image/png'|'image/jpeg'|'image/webp',size:a.size,width:a.width,height:a.height,caption:a.caption,author:a.author,createdAt:a.created_at,commitSha:a.commit_sha})),issue:issue?{id:issue.id,resultId:issue.result_id,classification:issue.classification as QaIssueClassification,severity:issue.severity as QaSeverity,frequency:issue.frequency as QaFrequency,reproduction:issue.reproduction,proposedRoute:issue.proposed_route as QaIssue['proposedRoute'],requirementProposal:issue.requirement_proposal,resolution:issue.resolution,linkedFixRunId:issue.linked_fix_run_id,createdAt:issue.created_at}:null}
 }
 function mapQaSession(r:QaSessionRow,results:QaCriterionResult[]):QaSession {
-  return {id:r.id,taskId:r.task_id,projectId:r.project_id,branch:r.branch,commitSha:r.commit_sha,testRunId:r.test_run_id,previewId:r.preview_id,previewSha:r.preview_sha,appUrl:r.app_url,storybookUrl:r.storybook_url,testDataScenario:r.test_data_scenario,criteriaSnapshot:parseJsonValue(r.criteria_snapshot_json,[]),status:(r.status==='passed'||r.status==='failed'||r.status==='blocked'||r.status==='stale'?r.status:'active'),testerId:r.tester_id,initiatedBy:r.initiated_by,startedAt:r.started_at,finishedAt:r.finished_at,staleReason:r.stale_reason,summary:r.summary,results}
+  return {id:r.id,taskId:r.task_id,projectId:r.project_id,branch:r.branch,commitSha:r.commit_sha,testRunId:r.test_run_id,previewId:r.preview_id,previewSha:r.preview_sha,appUrl:r.app_url,storybookUrl:r.storybook_url,testDataScenario:r.test_data_scenario,criteriaSnapshot:parseJsonValue(r.criteria_snapshot_json,[]),status:(r.status==='passed'||r.status==='failed'||r.status==='blocked'||r.status==='stale'?r.status:'active'),testerId:r.tester_id,initiatedBy:r.initiated_by,startedAt:r.started_at,finishedAt:r.finished_at,staleReason:r.stale_reason,summary:r.summary,additionalIssues:r.additional_issues??'',linkedFixRunId:r.linked_fix_run_id??null,results}
 }
 
 // ============== Использование базы знаний: строки БД и мапперы =======

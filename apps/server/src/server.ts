@@ -557,6 +557,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
               existingTitles.add(scenario.title.toLocaleLowerCase())
             }
             db.completeQaPreparation(userId, projectId, taskId)
+            const qaState = db.getQaTaskState(userId, projectId, taskId)
+            if (!qaState?.activeSession) db.startQaSession(userId, { projectId, taskId, branch, commitSha, testRunId: args.runId ?? preparation.id }, true)
             db.finishQaPreparationRun(preparation.id, 'success')
             boardHub.emit(projectId)
           } catch (cause) {

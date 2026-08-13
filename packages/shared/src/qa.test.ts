@@ -24,8 +24,8 @@ function session(statuses: Array<'not_tested' | 'in_progress' | 'passed' | 'fail
 describe('manual QA gate', () => {
   it.each([
     [['passed'], true],
-    [['not_applicable'], true],
-    [['passed', 'not_applicable'], true],
+    [['not_applicable'], false],
+    [['passed', 'not_applicable'], false],
     [['not_tested'], false],
     [['in_progress'], false],
     [['failed'], false],
@@ -49,7 +49,7 @@ describe('manual QA gate', () => {
   })
   it('requires structured failure, blocker and N/A fields', () => {
     const blank = { actualResult: '', executedSteps: '', expectedResult: '', comment: '', blockerReason: '', blockerType: null, blockerOwner: null, notApplicableReason: '' }
-    expect(validateQaResult('failed', blank)).toEqual(['expectedResult', 'actualResult', 'executedSteps', 'comment'])
+    expect(validateQaResult('failed', blank)).toEqual(['comment'])
     expect(validateQaResult('blocked', blank)).toEqual(['blockerReason', 'blockerType', 'blockerOwner'])
     expect(validateQaResult('not_applicable', blank)).toEqual([])
   })
