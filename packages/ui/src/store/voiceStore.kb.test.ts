@@ -11,6 +11,7 @@ function makeStore(kb?: RendererKbBridge): VoiceStore {
 function fakeBridge(over: Partial<RendererKbBridge> = {}): RendererKbBridge {
   return {
     getConversationUsage: vi.fn(async () => makeKbUsageReport()),
+    markConversationUsageViewed: vi.fn(async (_conversationId, lastSeq) => ({ lastSeq, unreadCount: 0 })),
     getProjectUsage: vi.fn(async () => makeKbProjectUsageReport()),
     onUsage: () => () => {},
     ...over
@@ -37,10 +38,30 @@ describe('voiceStore — телеметрия базы знаний', () => {
     expect(cache.error).toBeNull()
   })
 
-  it('ошибка чтения остаётся в кэше (панель показывает «Повторить»)', async () => {
-    const store = makeStore(fakeBridge({ getConversationUsage: vi.fn(async () => { throw new Error('HTTP 500') }) }))
-    await store.actions.loadKbUsage('c1')
+  it('успешное открытие отмечает seq снапшота и обнуляет бейдж', async () => {
+    const bridge = fakeBridge()
+    const store = makeStore(bridge)
+    await store.actions.loadKbUsage('c1', true)
+    expect(bridge.markConversationUsageViewed).toHaveBeenCalledWith('c1', 3)
+    expect(store.getState().kbUsage.c1.report?.unreadCount).toBe(0)
+    // Исторические итоги при этом не меняются.
+    expect(store.getState().kbUsage.c1.report?.totals.queries).toBe(3)
+  })
+
+  it('ошибка чтения остаётся в кэше и не отмечает просмотр', async () => {
+    const bridge = fakeBridge({ getConversationUsage: vi.fn(async () => { throw new Error('HTTP 500') }) })
+    const store = makeStore(bridge)
+    await store.actions.loadKbUsage('c1', true)
     expect(store.getState().kbUsage['c1']).toMatchObject({ loading: false, error: 'HTTP 500' })
+    expect(bridge.markConversationUsageViewed).not.toHaveBeenCalled()
+  })
+
+  it('ошибка отметки не обнуляет бейдж и не портит исторический отчёт', async () => {
+    const store = makeStore(fakeBridge({
+      markConversationUsageViewed: vi.fn(async () => { throw new Error('HTTP 500') })
+    }))
+    await store.actions.loadKbUsage('c1', true)
+    expect(store.getState().kbUsage.c1.report).toMatchObject({ unreadCount: 3, totals: { queries: 3 } })
   })
 
   it('без моста отчёт собирается из истории сообщений (desktop и старые чаты)', async () => {

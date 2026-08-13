@@ -1115,7 +1115,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         onDownloadModel={actions.downloadModel}
         onExport={actions.exportConversation}
         onOpenKbUsage={state.activeId ? actions.openKbUsage : undefined}
-        kbUsageCount={activeKbUsage?.report?.totals.queries ?? 0}
+        kbUsageCount={activeKbUsage?.report?.unreadCount ?? 0}
         kbUsageActive={hasPendingKbUsage(activeKbUsage?.report ?? null)}
         kbContextMode={activeConversation?.kbContextMode ?? 'auto'}
         turnMeta={state.lastTurnMeta}
@@ -1554,7 +1554,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           projectCache={activeConversation?.projectId ? state.kbUsageByProject[activeConversation.projectId] : undefined}
           kbStatus={state.kbStatus}
           mode={activeConversation?.kbContextMode ?? 'auto'}
-          onLoad={(id) => { void actions.loadKbUsage(id); void actions.refreshKbStatus() }}
+          onLoad={(id) => { void actions.loadKbUsage(id, true); void actions.refreshKbStatus() }}
           onLoadProject={(id) => void actions.loadProjectKbUsage(id)}
           onClose={actions.closeKbUsage}
           onOpenDocument={(documentId) => { actions.closeKbUsage(); navigate(`/kb/${encodeURIComponent(documentId)}`) }}

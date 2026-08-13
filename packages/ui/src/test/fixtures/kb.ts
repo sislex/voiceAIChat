@@ -77,6 +77,7 @@ export function makeKbUsageReport(over: Partial<KbUsageReport> = {}): KbUsageRep
     toolEnabled: true,
     available: true,
     lastSeq: Math.max(0, ...recent.map((query) => query.seq)),
+    unreadCount: over.unreadCount ?? totals.queries,
     totals,
     sections,
     recent,
@@ -118,6 +119,7 @@ export function makeKbProjectCache(over: Partial<KbProjectUsageReport> = {}): Kb
       toolEnabled: report.toolEnabled,
       available: report.available,
       lastSeq: 0,
+      unreadCount: 0,
       totals: report.totals,
       sections: report.sections,
       recent: report.recent

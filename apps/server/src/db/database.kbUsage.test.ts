@@ -87,6 +87,34 @@ describe('VoiceChatDb — обращения к базе знаний', () => {
     const conv = db.createConversation(U, 'Чат')
     db.addKbUsage({ userId: U, conversationId: conv.id, source: 'auto', query: 'q', chars: 10 })
     expect(db.kbUsageReport('bob', conv.id)).toBeNull()
+    expect(db.markKbUsageViewed('bob', conv.id, 1)).toBeNull()
+  })
+
+  it('граница просмотра идемпотентна, движется вперёд и не удаляет историю', () => {
+    const conv = db.createConversation(U, 'Чат')
+    db.addKbUsage({ userId: U, conversationId: conv.id, source: 'auto', query: 'q1', chars: 10 })
+    db.addKbUsage({ userId: U, conversationId: conv.id, source: 'tool_search', query: 'q2', chars: 20 })
+    expect(db.kbUsageReport(U, conv.id)!.unreadCount).toBe(2)
+
+    expect(db.markKbUsageViewed(U, conv.id, 1)).toEqual({ lastSeq: 1, unreadCount: 1 })
+    expect(db.markKbUsageViewed(U, conv.id, 1)).toEqual({ lastSeq: 1, unreadCount: 1 })
+    expect(db.markKbUsageViewed(U, conv.id, 0)).toEqual({ lastSeq: 1, unreadCount: 1 })
+
+    db.addKbUsage({ userId: U, conversationId: conv.id, source: 'auto', status: 'error', query: 'q3', chars: 0 })
+    const report = db.kbUsageReport(U, conv.id)!
+    expect(report.unreadCount).toBe(2)
+    expect(report.totals).toMatchObject({ queries: 3, errors: 1 })
+    expect(report.recent).toHaveLength(3)
+  })
+
+  it('границы пользователей и разговоров изолированы', () => {
+    const a = db.createConversation(U, 'A')
+    const b = db.createConversation(U, 'B')
+    db.addKbUsage({ userId: U, conversationId: a.id, source: 'auto', query: 'a', chars: 1 })
+    db.addKbUsage({ userId: U, conversationId: b.id, source: 'auto', query: 'b', chars: 1 })
+    db.markKbUsageViewed(U, a.id, 1)
+    expect(db.kbUsageReport(U, a.id)!.unreadCount).toBe(0)
+    expect(db.kbUsageReport(U, b.id)!.unreadCount).toBe(1)
   })
 
   it('проектный агрегат виден участнику и считает чаты, а не участнику — null', () => {
