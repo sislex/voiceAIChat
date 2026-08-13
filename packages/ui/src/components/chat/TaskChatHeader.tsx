@@ -13,6 +13,7 @@ import type { CiRunSummary } from '@shared/ci'
 import { ciCardPulse, ciSummaryForTask, isTerminalCiStatus } from '@shared/ci'
 import { RUN_MODE_LABEL, ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { IconButton } from '../ui/IconButton'
+import { AutomationProgressView } from '../kanban/AutomationProgressView'
 
 export interface TaskChatHeaderProps {
   context: TaskChatContext
@@ -125,6 +126,10 @@ export function TaskChatHeader(props: TaskChatHeaderProps): JSX.Element {
             </button>
           )}
         </div>
+      )}
+
+      {!collapsed && props.summary?.progress && (
+        <AutomationProgressView progress={props.summary.progress} compact now={now} />
       )}
 
       {!collapsed && open && run && props.renderRunFeed && (

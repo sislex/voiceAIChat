@@ -3899,7 +3899,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   function applyCiRun(runId: string, run: CiRun): void {
     patchCiRun(runId, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [], interactions: [] } }))
-    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: state.ciSummaries[run.taskId]?.modelActive ?? false, awaitingInput: run.status === 'awaiting_input' } } })
+    const known = state.ciSummaries[run.taskId]
+    setState({ ciSummaries: { ...state.ciSummaries, [run.taskId]: { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive: known?.modelActive ?? false, awaitingInput: run.status === 'awaiting_input', progress: known?.id === run.id ? known.progress : undefined } } })
   }
   function applyCiStep(runId: string, step: CiRunStep): void {
     patchCiRun(runId, (c) => ({ ...c, detail: mergeStep(c.detail, step) }))
@@ -3929,6 +3930,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     scheduleConversationsRefresh()
   }
   function applyCiSummary(_projectId: string, summary: CiRunSummary): void {
+    const known = state.ciSummaries[summary.taskId]
+    // Новый runId всегда сильнее старого. Внутри одного запуска принимаем только
+    // монотонную серверную версию: запоздалый WS/snapshot не откатывает прогресс.
+    if (known?.progress && summary.progress) {
+      if (known.progress.runId !== summary.progress.runId && known.progress.startedAt != null && summary.progress.startedAt != null && known.progress.startedAt > summary.progress.startedAt) return
+      if (known.progress.runId === summary.progress.runId && known.progress.version > summary.progress.version) return
+    }
     setState({ ciSummaries: { ...state.ciSummaries, [summary.taskId]: summary } })
     // Сводка приходит на все соединения пользователя, а не только подписчикам
     // ленты: для страницы без открытой ленты рана это единственный сигнал, что
