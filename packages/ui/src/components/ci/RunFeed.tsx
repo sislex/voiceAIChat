@@ -351,8 +351,10 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
           mode={kbUsage.report.kbContextMode}
           totals={kbUsage.report.totals}
           sections={kbUsage.report.sections}
+          recent={kbUsage.report.recent}
           loading={kbUsage.loading}
           error={kbUsage.error}
+          onRetry={kbUsage.reload}
           testId="ci-run-kb-usage"
         />
       )}
