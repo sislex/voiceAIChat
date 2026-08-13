@@ -4892,15 +4892,22 @@ export class VoiceChatDb {
         const route = patch.classification === 'implementation_defect' ? 'development' : patch.classification === 'requirement_change' ? 'ready' : patch.classification === 'needs_decision' ? 'decision_required' : 'manual_qa'
         this.db.prepare(`INSERT INTO qa_issues (id,result_id,classification,severity,frequency,reproduction,proposed_route,requirement_proposal,created_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(result_id) DO UPDATE SET classification=excluded.classification,severity=excluded.severity,frequency=excluded.frequency,reproduction=excluded.reproduction,proposed_route=excluded.proposed_route,requirement_proposal=excluded.requirement_proposal`)
           .run(this.newId(),resultId,patch.classification,patch.severity,patch.frequency,patch.reproduction,route,patch.requirementProposal??'',now)
-        if (route !== 'manual_qa') {
-          const column=this.getColumnIdBySemantic(projectId, route)
-          if (column) this.moveTask(userId,projectId,taskId,{columnId:column})
-          this.db.prepare(`UPDATE qa_sessions SET status='failed',finished_at=? WHERE id=?`).run(now,current.session_id)
-        }
       }
       this.addQaAudit(projectId,taskId,userId,patch.draft?'result.draft_saved':'result.updated',{resultId,status,revision:expectedRevision+1})
     })()
     return this.qaResultById(resultId) as QaCriterionResult
+  }
+
+  linkQaFixRun(userId: string, projectId: string, taskId: string, sessionId: string, runId: string): void {
+    if (!this.canQa(userId, projectId)) throw new Error('QA permission required')
+    const session = this.db.prepare(`SELECT id FROM qa_sessions WHERE id=? AND project_id=? AND task_id=? AND status='active'`).get(sessionId, projectId, taskId)
+    if (!session) throw new Error('QA session is stale or closed')
+    const now = this.now()
+    this.db.transaction(() => {
+      this.db.prepare(`UPDATE qa_issues SET linked_fix_run_id=? WHERE result_id IN (SELECT id FROM qa_criterion_results WHERE session_id=? AND status='failed')`).run(runId, sessionId)
+      this.db.prepare(`UPDATE qa_sessions SET status='failed',finished_at=?,summary=? WHERE id=? AND status='active'`).run(now, 'Передано на исправление', sessionId)
+      this.addQaAudit(projectId, taskId, userId, 'session.fix_started', { sessionId, runId })
+    })()
   }
 
   completeQaSession(userId: string, projectId: string, taskId: string, sessionId: string, summary: string): QaSession {

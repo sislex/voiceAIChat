@@ -357,10 +357,11 @@ describe('TaskModal — описание: маркдаун в просмотре
 describe('TaskModal — вкладки и merge', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
-  it('переключает девять вкладок без закрытия и сохраняет черновик', async () => {
+  it('переключает шесть вкладок без закрытия и сохраняет черновик', async () => {
     const onClose = vi.fn()
     render(<TaskModal {...props({ onClose })} />)
-    expect(screen.getAllByRole('tab')).toHaveLength(9)
+    expect(screen.getAllByRole('tab')).toHaveLength(6)
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
     fireEvent.change(screen.getByLabelText('Критерии приёмки'), { target: { value: 'черновик' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Ручное QA' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
@@ -376,22 +377,16 @@ describe('TaskModal — вкладки и merge', () => {
     }
   })
 
-  it('машина и LLM размещены в разных вкладках, черновик LLM переживает переключение', async () => {
+  it('машина и LLM размещены вертикально в настройках, черновик переживает переключение', async () => {
     render(<TaskModal {...props()} />)
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Движок модели' }))
-    const modelPanel = screen.getByTestId('task-model-panel')
-    await waitFor(() => expect(within(modelPanel).getByLabelText('Движок модели')).toHaveValue('claude'))
-    expect(within(modelPanel).queryByLabelText('Машина выполнения')).not.toBeInTheDocument()
-    fireEvent.change(within(modelPanel).getByLabelText('Движок модели'), { target: { value: 'codex' } })
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Машина выполнения' }))
-    const machinePanel = screen.getByTestId('task-machine-panel')
-    expect(within(machinePanel).getByLabelText('Машина выполнения')).toBeInTheDocument()
-    expect(within(machinePanel).queryByLabelText('Движок модели')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Движок модели' }))
-    expect(within(modelPanel).getByLabelText('Движок модели')).toHaveValue('codex')
+    fireEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
+    const settings = screen.getByTestId('task-settings-panel')
+    await waitFor(() => expect(within(settings).getByLabelText('Движок модели')).toHaveValue('claude'))
+    expect(within(settings).getByLabelText('Машина выполнения')).toBeInTheDocument()
+    fireEvent.change(within(settings).getByLabelText('Движок модели'), { target: { value: 'codex' } })
+    fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
+    expect(within(settings).getByLabelText('Движок модели')).toHaveValue('codex')
   })
 })
 

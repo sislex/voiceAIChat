@@ -30,6 +30,7 @@ import { ManualQaPanel } from '../qa/ManualQaPanel'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { CiReport } from '../ci/CiReport'
 import { MergePanel } from '../ci/MergePanel'
+import { MergeRunFeed } from '../ci/MergeRunFeed'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { canStartCiRun, isActiveCiStatus, type CiRunSummary, type CiTaskReport } from '@shared/ci'
@@ -109,10 +110,14 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [criteria, setCriteria] = useState(task.acceptanceCriteria)
   const [labelDraft, setLabelDraft] = useState('')
   const [skillDraft, setSkillDraft] = useState('')
-  const [activeTab, setActiveTab] = useState<'general' | 'qa' | 'auto' | 'merge' | 'settings' | 'preview' | 'machine' | 'model' | 'chat'>('general')
-  const [autoTab, setAutoTab] = useState<'development' | 'testing' | 'qa_create' | 'summary' | 'report' | 'kb_usage' | 'kb_updates'>('development')
+  type TaskTab = 'general' | 'settings' | 'qa' | 'progress' | 'merge' | 'feed'
+  type ProgressTab = 'overview' | 'model' | 'checks' | 'changes' | 'kb' | 'delivery' | 'resources'
+  const defaultTab = (): TaskTab => (props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || task.activeMergeRunId ? 'feed' : 'general'
+  const [activeTab, setActiveTab] = useState<TaskTab>(defaultTab)
+  const [progressTab, setProgressTab] = useState<ProgressTab>('overview')
   // Описание: просмотр (маркдаун) ↔ правка (textarea на 10 строк по кнопке).
   const [descEditing, setDescEditing] = useState(false)
+  const [criteriaEditing, setCriteriaEditing] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
   const descWrapRef = useRef<HTMLDivElement>(null)
   // Заголовок растёт под текст: на узком экране он занимает три-четыре строки, а
@@ -167,8 +172,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     setDescEditing(false)
     setLabelDraft('')
     setSkillDraft('')
-    setActiveTab('general')
-  }, [task.id, task.title, task.description, task.acceptanceCriteria])
+    setActiveTab(defaultTab())
+  }, [task.id])
 
 
   // Чат к задаче создаётся сам при первом открытии карточки: дальше в него
@@ -372,8 +377,13 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       className="jmodal-frame"
       actions={headActions}
     >
+      <div className="task-card-state" aria-live="polite">
+        <span className="task-card-state__identity">{key} · {task.title}</span>
+        <span className="task-card-state__current">{column?.name ?? 'Без статуса'}{props.ciSummary && isActiveCiStatus(props.ciSummary.status) ? ` · ${props.ciSummary.slotProgress.phase}` : task.activeMergeRunId ? ' · Мерж выполняется' : ''}</span>
+        {props.ciSummary && !isActiveCiStatus(props.ciSummary.status) && <span className={`lozenge ci-lozenge--${ciTone(props.ciSummary.status)}`}>Последний запуск: {ciStatusLabel(props.ciSummary.status)}</span>}
+      </div>
       <nav className="task-tabs" role="tablist" aria-label="Разделы карточки">
-        {([['general','Общее'],['qa','Ручное QA'],['auto','Автошаги'],['merge','Merge'],['settings','Настройки'],['preview','Тестовое окружение'],['machine','Машина выполнения'],['model','Движок модели'],['chat','Чат']] as const).map(([id, label]) => (
+        {([['general','Общее'],['settings','Настройки'],['qa','Ручное QA'],['progress','Ход выполнения'],['merge','Merge'],['feed','Лента рана']] as const).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={activeTab === id} className={activeTab === id ? 'task-tab task-tab--active' : 'task-tab'} onClick={() => setActiveTab(id)}>{label}</button>
         ))}
       </nav>
@@ -410,6 +420,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               {assigneeField}
             </div>
           )}
+          <section className="task-content-block" aria-label="Описание и критерии приёмки">
           <div className="jmodal-desc-head">
             <h3 className="jmodal-h">Описание</h3>
             {!descEditing && (
@@ -465,17 +476,23 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               Добавьте описание…
             </button>
           )}
-          <h3 className="jmodal-h">Критерии приёмки</h3>
-          <textarea
+          <div className="jmodal-desc-head">
+            <h3 className="jmodal-h">Критерии приёмки</h3>
+            {!criteriaEditing && <IconButton size="sm" aria-label="Изменить критерии приёмки" title="Изменить критерии приёмки" onClick={() => setCriteriaEditing(true)}>✏️</IconButton>}
+          </div>
+          {criteriaEditing ? <textarea
             className="login-input jmodal-desc"
             aria-label="Критерии приёмки"
             placeholder="Что должно быть выполнено…"
+            rows={10}
             value={criteria}
             onChange={(e) => setCriteria(e.target.value)}
             onBlur={() => {
               if (criteria !== task.acceptanceCriteria) props.onUpdate(task.id, { acceptanceCriteria: criteria })
+              setCriteriaEditing(false)
             }}
-          />
+          /> : criteria.trim() ? <div className="jmodal-desc-view" data-testid="task-criteria-view"><Markdown>{criteria}</Markdown></div> : <button className="jmodal-desc-empty" onClick={() => setCriteriaEditing(true)}>Добавьте критерии приёмки…</button>}
+          </section>
           {children.length > 0 && (
             <>
               <h3 className="jmodal-h">Подзадачи</h3>
@@ -672,15 +689,27 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             </div>
           )}
         </aside>
-        <section className="task-tab-panel" hidden={activeTab !== 'qa'}><ManualQaPanel projectId={task.projectId} taskId={task.id} /></section>
-        <section className="task-tab-panel" hidden={activeTab !== 'auto'}>
-          <nav className="task-subtabs" role="tablist" aria-label="Автоматические этапы">
-            {([['development','Разработка'],['testing','Тестирование'],['qa_create','Создание ручного QA'],['summary','Резюме'],['report','Отчёт'],['kb_usage','Использование БЗ'],['kb_updates','Обновлённые разделы БЗ']] as const).map(([id,label]) => <button key={id} role="tab" aria-selected={autoTab === id} className={autoTab === id ? 'task-tab task-tab--active' : 'task-tab'} onClick={() => setAutoTab(id)}>{label}</button>)}
+        <section className="task-tab-panel" data-testid="task-settings-panel" hidden={activeTab !== 'settings'}>
+          <div className="task-settings-stack">
+            <CiTaskSettings section="machine" projectId={task.projectId} taskId={task.id} mergeMachineBound={task.mergeMachineBound} />
+            <CiTaskSettings section="model" projectId={task.projectId} taskId={task.id} />
+            <CiTaskSettings section="commands" projectId={task.projectId} taskId={task.id} />
+            <FeaturePreviewSection projectId={task.projectId} taskId={task.id} />
+          </div>
+        </section>
+        <section className="task-tab-panel" hidden={activeTab !== 'qa'}><ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} /></section>
+        <section className="task-tab-panel" hidden={activeTab !== 'progress'}>
+          {props.ciSummary?.progress && <AutomationProgressView progress={props.ciSummary.progress} />}
+          <nav className="task-subtabs" role="tablist" aria-label="Ход выполнения">
+            {([['overview','Обзор'],['model','Работа модели'],['checks','Проверки'],['changes','Изменения'],['kb','База знаний'],['delivery','Результат и доставка'],['resources','Ресурсы']] as const).map(([id,label]) => <button key={id} role="tab" aria-selected={progressTab === id} className={progressTab === id ? 'task-tab task-tab--active' : 'task-tab'} onClick={() => setProgressTab(id)}>{label}</button>)}
           </nav>
-          <div hidden={autoTab !== 'report'}><CiReport report={ciReport.report} loading={ciReport.loading} error={ciReport.error} onOpenRun={props.onOpenCiRun} testId="task-modal-report" /></div>
-          <div hidden={autoTab !== 'kb_usage'}>{kbUsage.report && <KbUsageBrief title="Использование БЗ" note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'} totals={kbUsage.report.totals} sections={kbUsage.report.sections} loading={kbUsage.loading} error={kbUsage.error} testId="task-modal-kb-usage" />}</div>
-          {autoTab === 'kb_updates' && <p className="task-tab-empty">Обновлённые разделы БЗ появятся после завершения рана.</p>}
-          {!['report','kb_usage','kb_updates'].includes(autoTab) && <p className="task-tab-empty">Выберите исторический ран в ленте, чтобы увидеть статус, время, модель, результат, ошибки и журнал этапа «{autoTab}».</p>}
+          {progressTab === 'overview' && <CiReport report={ciReport.report} loading={ciReport.loading} error={ciReport.error} onOpenRun={props.onOpenCiRun} testId="task-modal-report" />}
+          <div hidden={progressTab !== 'kb'}>{kbUsage.report && <KbUsageBrief title="База знаний" note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'} totals={kbUsage.report.totals} sections={kbUsage.report.sections} loading={kbUsage.loading} error={kbUsage.error} testId="task-modal-kb-usage" />}</div>
+          {progressTab === 'model' && (ciReport.report?.runs[0] ? <div className="task-progress-detail"><h4>{ciReport.report.runs[0].provider} · {ciReport.report.runs[0].model}</h4><p>Попыток исправления: {ciReport.report.runs[0].fixAttempts}</p><ul>{ciReport.report.runs[0].stages.map((stage) => <li key={`${stage.kind}:${stage.model}`}>{stage.kind} · {stage.model} · {stage.totals.requests} запросов</li>)}</ul></div> : <p className="task-tab-empty">Данных о работе модели пока нет.</p>)}
+          {progressTab === 'checks' && (ciReport.report?.runs[0]?.steps.length ? <ol className="task-progress-list">{ciReport.report.runs[0].steps.map((step) => <li key={step.id} data-status={step.status}><span>{step.title}</span><span>{ciStatusLabel(step.status)}{step.durationMs != null ? ` · ${fmtDuration(step.durationMs)}` : ''}</span></li>)}</ol> : <p className="task-tab-empty">Сервер не сообщил проверки для этого запуска.</p>)}
+          {progressTab === 'changes' && <p className="task-tab-empty">Сведения о ветке, файлах и коммитах появятся, когда сервер включит их в отчёт запуска.</p>}
+          {progressTab === 'delivery' && (ciReport.report?.runs[0] ? <dl className="task-progress-facts"><dt>Результат</dt><dd>{ciStatusLabel(ciReport.report.runs[0].status)}</dd><dt>Начало</dt><dd>{ciReport.report.runs[0].startedAt ? new Date(ciReport.report.runs[0].startedAt).toLocaleString('ru') : '—'}</dd><dt>Завершение</dt><dd>{ciReport.report.runs[0].finishedAt ? new Date(ciReport.report.runs[0].finishedAt).toLocaleString('ru') : '—'}</dd></dl> : <p className="task-tab-empty">Результата доставки пока нет.</p>)}
+          {progressTab === 'resources' && (ciReport.report?.runs[0] ? <dl className="task-progress-facts"><dt>Общее время</dt><dd>{ciReport.report.runs[0].durationMs != null ? fmtDuration(ciReport.report.runs[0].durationMs) : '—'}</dd><dt>Запросы модели</dt><dd>{ciReport.report.runs[0].totals.requests}</dd><dt>Токены</dt><dd>{ciReport.report.runs[0].totals.inputTokens + ciReport.report.runs[0].totals.outputTokens}</dd><dt>Инструменты</dt><dd>{ciReport.report.runs[0].toolCalls ? Object.values(ciReport.report.runs[0].toolCalls).reduce((sum, value) => sum + value, 0) : '—'}</dd></dl> : <p className="task-tab-empty">Данных о ресурсах пока нет.</p>)}
         </section>
         <section className="task-tab-panel" data-testid="task-merge-tab" hidden={activeTab !== 'merge'}>
           <MergePanel
@@ -691,11 +720,12 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             onStartMerge={(agentId) => props.onStartMerge?.(task.id, agentId)}
           />
         </section>
-        <section className="task-tab-panel" data-testid="task-settings-panel" hidden={activeTab !== 'settings'}><CiTaskSettings section="commands" projectId={task.projectId} taskId={task.id} /></section>
-        <section className="task-tab-panel" data-testid="task-preview-panel" hidden={activeTab !== 'preview'}><FeaturePreviewSection projectId={task.projectId} taskId={task.id} /></section>
-        <section className="task-tab-panel" data-testid="task-machine-panel" hidden={activeTab !== 'machine'}><CiTaskSettings section="machine" projectId={task.projectId} taskId={task.id} mergeMachineBound={task.mergeMachineBound} /></section>
-        <section className="task-tab-panel" data-testid="task-model-panel" hidden={activeTab !== 'model'}><CiTaskSettings section="model" projectId={task.projectId} taskId={task.id} /></section>
-        <section className="task-tab-panel" hidden={activeTab !== 'chat'}><h3>Чат задачи</h3><p>Открывается существующий связанный разговор; повторное открытие не создаёт дубликат.</p><Button variant="primary" onClick={() => props.onOpenChat?.(task.id)}>Открыть чат</Button>{task.activeMergeStatus && <p>Merge-ран: {task.activeMergeStatus}</p>}</section>
+        <section className="task-tab-panel" data-testid="task-run-feed-tab" hidden={activeTab !== 'feed'}>
+          <h3 className="jmodal-h">Техническая лента</h3>
+          <p>{task.activeMergeRunId ? 'Активен merge-ран.' : props.ciSummary ? `${ciStatusLabel(props.ciSummary.status)} · ${props.ciSummary.slotProgress.done}/${props.ciSummary.slotProgress.total}` : 'Запусков ещё нет.'}</p>
+          {task.activeMergeRunId && <MergeRunFeed runId={task.activeMergeRunId} />}
+          {!task.activeMergeRunId && props.ciSummary && props.onOpenCiRun && <Button variant="primary" onClick={() => props.onOpenCiRun?.(props.ciSummary!.id)}>Открыть техническую ленту</Button>}
+        </section>
       </div>
     </Dialog>
     <PromptBuilder {...aiAssist.popupProps} />

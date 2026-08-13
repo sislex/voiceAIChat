@@ -273,6 +273,8 @@ export const REST = {
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/results/${encodeURIComponent(resultId)}`,
   taskQaComplete: (id: string, taskId: string, sessionId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/sessions/${encodeURIComponent(sessionId)}/complete`,
+  taskQaFix: (id: string, taskId: string, sessionId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/sessions/${encodeURIComponent(sessionId)}/fix`,
 
   // --- CI-раннер (Авто-подготовка окружения для таска) ---
   ciCommands: '/api/ci/commands',

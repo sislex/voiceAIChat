@@ -4,6 +4,7 @@ import { basename, extname } from 'node:path'
 import type { AcceptanceCriterionSnapshot } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { UploadStore } from '../uploads.js'
+import type { CiRunManager } from '../ci/runManager.js'
 import { uid } from '../users/auth.js'
 
 type TaskParams = { projectId: string; taskId: string }
@@ -13,7 +14,7 @@ function qaError(reply: FastifyReply, error: unknown): FastifyReply {
   return reply.code(status).send({ error: message })
 }
 
-export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore): void {
+export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager): void {
   const base = '/api/projects/:projectId/tasks/:taskId/qa'
   app.get<{ Params: TaskParams }>(`${base}`, async (req, reply) => {
     const state = db.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
@@ -60,6 +61,23 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
       } catch (error) { return qaError(reply, error) }
     }
   )
+  app.post<{ Params: TaskParams & { sessionId: string } }>(`${base}/sessions/:sessionId/fix`, async (req, reply) => {
+    try {
+      const state = db.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
+      const session = state?.sessions.find((item) => item.id === req.params.sessionId)
+      if (!session) throw new Error('QA session not found')
+      const failed = session.results.filter((result) => result.status === 'failed')
+      const linked = failed.map((result) => result.issue?.linkedFixRunId).find(Boolean)
+      if (linked) return db.getCiRun(uid(req), linked) ?? reply.code(409).send({ error: 'Связанный ран не найден' })
+      if (state?.activeSession?.id !== session.id) throw new Error('QA session is stale or closed')
+      if (!failed.length) throw new Error('Нет неработающих тестов')
+      if (failed.some((result) => !result.comment.trim())) throw new Error('Для каждого неработающего теста нужен комментарий')
+      const started = ci.start(uid(req), req.params.projectId, req.params.taskId, { mode: 'development' })
+      if ('error' in started) return reply.code(409).send({ error: started.error })
+      db.linkQaFixRun(uid(req), req.params.projectId, req.params.taskId, session.id, started.run.id)
+      return reply.code(202).send(started.run)
+    } catch (error) { return qaError(reply, error) }
+  })
   app.post<{ Params: TaskParams & { sessionId: string }; Body: { summary?: string } }>(
     `${base}/sessions/:sessionId/complete`,
     async (req, reply) => {
