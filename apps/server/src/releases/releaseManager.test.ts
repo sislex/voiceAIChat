@@ -91,14 +91,34 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(prepared.status).toBe('ready')
   })
 
-  it('resumes an active health check after server restart and verifies the expected commit',async()=>{
+  it('does not release when health reports the expected commit with another version',async()=>{
+    const limits={knowledgeBaseMs:1_000,regressionMs:1_000,switchingMs:1_000,buildingMs:1_000,healthCheckMs:1_000}
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>target.agentId==='ci'?{exitCode:0,output:'origin/release/0.1.35 fixed-sha\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.0","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}
+    db.createProjectRelease('owner',projectId,{branch:'release/0.1.35',version:'0.1.35',sha:'fixed-sha',status:'ready'})
+    const attempt=await new ReleaseManager(db,runtime).start('owner',ci(),{...prod(),limits},'release/0.1.35')
+    await new Promise(resolve=>setTimeout(resolve,1_050))
+    const stored=db.getProjectRelease('owner',projectId,attempt.id)
+    expect(stored?.status).toBe('failed')
+    expect(stored?.steps.find(step=>step.kind==='health_check')?.log).toContain('version=0.1.0')
+  })
+
+  it('resumes an active health check after server restart and verifies the expected commit and version',async()=>{
     const release=db.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'health_check'})
     db.setProjectReleaseStep(release.id,'health_check','running','waiting','owner')
-    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async()=>({exitCode:0,output:'{"ok":true,"commit":"fixed-sha"}'})}
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async()=>({exitCode:0,output:'{"ok":true,"version":"1.0.0","commit":"fixed-sha"}'})}
     const manager=new ReleaseManager(db,runtime)
     manager.reconcile(()=>prod())
     await tick();await tick()
     expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('released')
+  })
+
+  it('blocks mismatched prepared version before changing production',async()=>{
+    const commands:string[]=[]
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return {exitCode:0,output:'origin/release/0.1.35 fixed-sha\n'}}}
+    db.createProjectRelease('owner',projectId,{branch:'release/0.1.35',version:'0.1.0',sha:'fixed-sha',status:'ready'})
+    await expect(new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/0.1.35')).rejects.toThrow('Версия подготовки 0.1.0 не соответствует ветке release/0.1.35 (0.1.35)')
+    expect(commands).toEqual([])
+    expect(db.listProjectReleases('owner',projectId)).toHaveLength(1)
   })
 
   it('blocks changed SHA, offline production and concurrent deploy',async()=>{
