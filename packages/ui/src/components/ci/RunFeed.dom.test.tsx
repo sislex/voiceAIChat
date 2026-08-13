@@ -407,20 +407,31 @@ describe('RunFeed — использование базы знаний', () => {
     render(<RunFeed {...baseProps(cache)} />)
   }
 
-  it('показывает цифры рана и ссылку на раздел базы знаний', async () => {
+  it('по умолчанию показывает компактную строку и раскрывает отчёт на месте', async () => {
     mount()
     const block = await screen.findByTestId('ci-run-kb-usage')
-    expect(within(block).getByTestId('ci-run-kb-usage-nums').textContent).toContain('3 обращений')
-    expect(within(block).getByTestId('ci-run-kb-usage-nums').textContent).toContain('2 разделов')
-    expect(within(block).getByTestId('ci-run-kb-usage-nums').textContent).toContain('300')
+    const toggle = within(block).getByRole('button', { name: /Использование базы знаний/ })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveTextContent('3 обращений')
+    expect(toggle).toHaveTextContent('2 разделов')
+    expect(toggle).toHaveTextContent('≈300 токенов')
+    expect(within(block).queryByRole('link')).not.toBeInTheDocument()
+
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(within(block).getByText('Использованные статьи и разделы')).toBeInTheDocument()
     expect(within(block).getByRole('link', { name: /CI-раннер \/ Работа модели/ })).toHaveAttribute('href', '#/kb/ci-runner')
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('режим «выключена» объясняет пустоту настройкой, а не поведением модели', async () => {
     mount({ kbContextMode: 'off', totals: { queries: 0, delivered: 0, empty: 0, errors: 0, toolQueries: 0, sections: 0, documents: 0, chars: 0, estimatedTokens: 0, promptChars: 0, lastAt: null }, sections: [] })
     const block = await screen.findByTestId('ci-run-kb-usage')
-    expect(within(block).getByText('БЗ выключена')).toBeInTheDocument()
-    expect(within(block).getByText(/модель работала без базы знаний/)).toBeInTheDocument()
+    const toggle = within(block).getByRole('button', { name: /Использование базы знаний/ })
+    expect(toggle).toHaveTextContent('Отключена')
+    await userEvent.click(toggle)
+    expect(within(block).getByText(/отключена для этого рана/)).toBeInTheDocument()
   })
 
   it('без моста CI вреза нет — лента рана от этого не ломается', () => {
