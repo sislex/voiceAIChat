@@ -8,7 +8,7 @@ const source='1'.repeat(40), target='2'.repeat(40), merged='3'.repeat(40)
 const base=():MergeRun=>({id:'r1',projectId:'p1',taskId:'t1',status:'queued',triggeredBy:'admin',sourceBranch:'CHAT-178',targetBranch:'main',sourceSha:source,targetSha:null,mergeSha:null,revertSha:null,agentId:'a1',machineName:'Mac',llmEngineId:null,llmProvider:'claude',llmModel:'',stage:'queued',stages:[],conflicts:[],conflictDetails:[],checks:[],deployId:null,deployVersion:null,productionStatus:null,error:null,recommendedAction:null,log:'',canCancel:true,canRetry:false,pushStartedAt:null,startedAt:null,finishedAt:null,createdAt:1})
 
 type Out=string|{output:string;exitCode:number}
-function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affected-check', gitUrl='git@example/repo.git', kbUpdate:(ctx:MergeKbUpdateContext)=>Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>=async()=>({ok:true,message:'Нечего обновлять'})){
+function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affected-check', gitUrl='git@example/repo.git', kbUpdate:(ctx:MergeKbUpdateContext)=>Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>=async()=>({ok:true,message:'Нечего обновлять'}), isOnline:(agentId:string)=>boolean=()=>true){
   let run=initial
   const moves:string[]=[]
   const repositories:{agentId:string;path:string;kind:string;state:string}[]=[]
@@ -21,7 +21,7 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
     moveMergeTask:(_p:string,_t:string,column:string)=>moves.push(column),
     getProject:()=>({gitUrl,testCommand}),
     findLatestPushedCiWorkspace:()=>({path:'/repo/task',pushed:true,agentId:'a1'}),
-    getProjectMachine:(_p:string,agentId:string)=>agentId==='a2'?{agentId,path:'/other/project',reposRoot:'/other-repos'}:null,
+    getProjectMachine:(_p:string,agentId:string)=>agentId==='a2'?{agentId,path:'/other/project',reposRoot:'/other-repos'}:agentId==='a3'?{agentId,path:'/missing-root/project',reposRoot:null}:null,
     upsertTaskRepository:(_p:string,_t:string,agentId:string,path:string,kind:string)=>{repositories.push({agentId,path,kind,state:'active'})},
     markTaskRepositoryDeleted:(_t:string,agentId:string,path:string)=>{const item=repositories.find(r=>r.agentId===agentId&&r.path===path);if(item)item.state='deleted'},
     listActiveTaskRepositories:()=>repositories.filter(r=>r.state==='active').map(r=>({taskId:'t1',agentId:r.agentId,path:r.path}))
@@ -32,7 +32,7 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
     if(req.script.includes('git checkout --ours -- docs/kb/README.md'))return{exitCode:0,timedOut:false}
     const item=outputs.shift()??'';const spec=typeof item==='string'?{output:item,exitCode:0}:item;onChunk(spec.output);return{exitCode:spec.exitCode,timedOut:false}
   })}
-  const manager=new MergeRunManager({db:db as unknown as VoiceChatDb,executor,kbUpdate,isOnline:()=>true,broadcast:()=>{},boardChanged:()=>{},now:(()=>{let n=10;return()=>++n})()})
+  const manager=new MergeRunManager({db:db as unknown as VoiceChatDb,executor,kbUpdate,isOnline,broadcast:()=>{},boardChanged:()=>{},now:(()=>{let n=10;return()=>++n})()})
   return{manager,get run(){return run},moves,executor,repositories}
 }
 
@@ -171,6 +171,38 @@ describe('MergeRunManager',()=>{
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
     expect(scripts.some(v=>v.includes('rm -rf')&&v.includes("'/repo/task'"))).toBe(true)
     expect(scripts.some(v=>v.includes('rm -rf')&&v.includes('.merge'))).toBe(false)
+  })
+  it('fails with a clear configuration error when the chosen machine has no repos_root',async()=>{
+    const s=setup([],{...base(),agentId:'a3'})
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
+    expect(s.run.error).toBe('У выбранной машины нет каталога репозиториев (repos_root)')
+    expect(s.executor.run).not.toHaveBeenCalled()
+  })
+  it('keeps repositories on unavailable machines pending after successful cleanup',async()=>{
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'MERGED\n',''],base(),'npm run affected-check','git@example/repo.git',async()=>({ok:true,message:'Нечего обновлять'}),agentId=>agentId!=='offline')
+    s.repositories.push({agentId:'offline',path:'/offline/repo/task',kind:'dev-workspace',state:'active'})
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('success'))
+    await vi.waitFor(()=>expect(s.repositories.find(repo=>repo.agentId==='a1')?.state).toBe('deleted'))
+    expect(s.repositories.find(repo=>repo.agentId==='offline')?.state).toBe('active')
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    expect(scripts.some(script=>script.includes('/offline/repo/task'))).toBe(false)
+  })
+  it('does not release repositories when checks fail',async()=>{
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n',{output:'tests failed\n',exitCode:1}])
+    s.repositories.push({agentId:'a1',path:'/repo/old-task-copy',kind:'merge-clone',state:'active'})
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
+    expect(s.repositories.every(repo=>repo.state==='active')).toBe(true)
+    expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.some(call=>call[0].script.includes('rm -rf'))).toBe(false)
+  })
+  it('releases repositories when reconcile confirms an earlier push',async()=>{
+    const s=setup([merged+' refs/heads/main\n',''],{...base(),pushStartedAt:5,mergeSha:merged})
+    s.repositories.push({agentId:'a1',path:'/repo/task',kind:'dev-workspace',state:'active'})
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('success'))
+    await vi.waitFor(()=>expect(s.repositories[0].state).toBe('deleted'))
   })
   it('runs kb_update on the merged tree before tests and persists its LLM outcome',async()=>{
     const seen:{repo?:string;targetRef?:string}={}
