@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { fastCheckForPackage, packageArgs, relatedArgs, runFastChecks, runPackageGates, selectAffected } from './affected-check.mjs'
+import { createCommandDiagnostics, fastCheckForPackage, packageArgs, relatedArgs, runFastChecks, runPackageGates, selectAffected } from './affected-check.mjs'
 import { gitHistoryPaths } from './kb.mjs'
 
 const ids = (decision) => decision.packages.map((pkg) => pkg.id)
@@ -80,6 +80,31 @@ test('gitHistoryPaths исключает генерируемый индекс �
     'apps/server/src/kb',
     ':(exclude)docs/kb/README.md'
   ])
+})
+
+test('диагностика молчит на быстром успехе, даёт heartbeat и хвост при остановке', async () => {
+  const info = []
+  const errors = []
+  const quick = createCommandDiagnostics('server / test', { heartbeatMs: 20, info: (line) => info.push(line), error: (line) => errors.push(line) })
+  quick.append('quick output')
+  quick.complete()
+  await delay(30)
+  assert.deepEqual(info, [])
+  assert.deepEqual(errors, [])
+
+  let now = 0
+  const hanging = createCommandDiagnostics('server / test', {
+    heartbeatMs: 10,
+    now: () => now,
+    info: (line) => info.push(line),
+    error: (line) => errors.push(line)
+  })
+  hanging.append('first line\nlast active test')
+  now = 31_000
+  await delay(15)
+  hanging.stopped('timeout')
+  assert.match(info.at(-1), /active package: server \/ test; elapsed: 31s; stage: running/)
+  assert.match(errors.at(-1), /timeout: server \/ test[\s\S]*last active test/)
 })
 
 test('packageArgs согласует min/max workers для Vitest', () => {
