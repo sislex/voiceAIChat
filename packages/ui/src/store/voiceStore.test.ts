@@ -1683,7 +1683,7 @@ describe('voiceStore — админ-страница пользователей'
     await store.actions.openUsers()
     expect(store.getState().usersOpen).toBe(true)
     expect(store.getState().adminUsers.map((u) => u.name)).toContain('admin')
-    await store.actions.createUserAccount('bob', 'pw', 'user')
+    await store.actions.createUserAccount('bob', 'pw', 'developer')
     expect(store.getState().adminUsers.map((u) => u.name)).toContain('bob')
   })
 })

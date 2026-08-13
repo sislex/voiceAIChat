@@ -9,7 +9,7 @@ describe('accounts — токены', () => {
   const secret = 'secret-A'
 
   it('подписанный токен проходит проверку и даёт имя пользователя', () => {
-    const token = signToken({ name: 'bob', role: 'user' }, secret)
+    const token = signToken({ name: 'bob', role: 'developer' }, secret)
     expect(verifyTokenName(token, secret)).toBe('bob')
   })
 

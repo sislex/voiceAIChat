@@ -6,8 +6,8 @@ let ids = 0
 beforeEach(() => {
   ids = 0
   db = new VoiceChatDb(':memory:', { newId: () => `qa-${++ids}`, now: () => 1_000 + ids })
-  db.createUser('owner', '', 'user')
-  db.createUser('developer', '', 'user')
+  db.createUser('owner', '', 'developer')
+  db.createUser('developer', '', 'developer')
 })
 afterEach(() => db.close())
 
@@ -88,7 +88,7 @@ describe('manual QA persistence and workflow', () => {
     const attachment = db.addQaAttachment('owner', project.id, task.id, session.results[0].id, { uploadId: 'opaque-upload', name: '../../proof.png', mimeType: 'image/png', size: 42, caption: 'Cancel result' })
     expect(db.getQaAttachment('owner', attachment.id)?.uploadId).toBe('opaque-upload')
     expect(db.getQaAttachment('developer', attachment.id)?.taskId).toBe(task.id)
-    db.createUser('outsider', '', 'user')
+    db.createUser('outsider', '', 'developer')
     expect(db.getQaAttachment('outsider', attachment.id)).toBeNull()
   })
 

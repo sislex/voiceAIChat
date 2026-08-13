@@ -14,8 +14,8 @@ beforeEach(() => {
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.createUser('alice', '', 'user')
-  db.createUser('bob', '', 'user')
+  db.createUser('alice', '', 'developer')
+  db.createUser('bob', '', 'developer')
 })
 
 afterEach(() => db.close())
@@ -179,7 +179,7 @@ describe('messages_fts — синхронизация триггерами', () 
     const dir = mkdtempSync(join(tmpdir(), 'vc-fts-upd-'))
     const file = join(dir, 'db.sqlite')
     const owner = new VoiceChatDb(file)
-    owner.createUser('alice', '', 'user')
+    owner.createUser('alice', '', 'developer')
     const c = owner.createConversation('alice', 'Беседа')
     const m = owner.addMessage('alice', c.id, 'u1', 'старое слово', '12:00')
 
@@ -221,7 +221,7 @@ describe('messages_fts — миграция и бэкфилл', () => {
   it('старая база без индекса бэкфиллится порциями, повторный старт ничего не ломает', () => {
     const file = tmpDb()
     const first = new VoiceChatDb(file)
-    first.createUser('alice', '', 'user')
+    first.createUser('alice', '', 'developer')
     const c = first.createConversation('alice', 'История')
     for (let i = 0; i < 12; i++) first.addMessage('alice', c.id, 'u1', `история про миграцию ${i}`, '12:00')
     first.close()
@@ -252,7 +252,7 @@ describe('messages_fts — миграция и бэкфилл', () => {
   it('потерянное состояние бэкфилла пересобирает индекс, а не удваивает его', () => {
     const file = tmpDb()
     const first = new VoiceChatDb(file)
-    first.createUser('alice', '', 'user')
+    first.createUser('alice', '', 'developer')
     const c = first.createConversation('alice', 'История')
     first.addMessage('alice', c.id, 'u1', 'единственная миграция', '12:00')
     first.close()
@@ -270,7 +270,7 @@ describe('messages_fts — миграция и бэкфилл', () => {
   it('сообщения, добавленные во время бэкфилла, не дублируются в индексе', () => {
     const file = tmpDb()
     const first = new VoiceChatDb(file)
-    first.createUser('alice', '', 'user')
+    first.createUser('alice', '', 'developer')
     const c = first.createConversation('alice', 'История')
     for (let i = 0; i < 6; i++) first.addMessage('alice', c.id, 'u1', `миграция ${i}`, '12:00')
     first.close()

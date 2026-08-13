@@ -44,7 +44,7 @@ describe('PersonalizationPage', () => {
 
   it('показывает отдельную страницу и сохраняет настройки', async () => {
     const save = vi.fn().mockResolvedValue(undefined)
-    render(<PersonalizationPage user={{ name: 'alexey', role: 'user' }} value={DEFAULT_SETTINGS.personalization} onSave={save} onCancel={vi.fn()} />)
+    render(<PersonalizationPage user={{ name: 'alexey', role: 'developer' }} value={DEFAULT_SETTINGS.personalization} onSave={save} onCancel={vi.fn()} />)
     expect(screen.getByRole('heading', { name: 'Персонализация — alexey' })).toBeInTheDocument()
     await userEvent.type(screen.getByLabelText('Имя или обращение'), 'Лёша')
     await userEvent.selectOptions(screen.getByLabelText('Объём'), 'brief')
@@ -53,7 +53,7 @@ describe('PersonalizationPage', () => {
   })
 
   it('сообщает о невозможной дате доступным alert', async () => {
-    render(<PersonalizationPage user={{ name: 'alexey', role: 'user' }} value={DEFAULT_SETTINGS.personalization} onSave={vi.fn()} onCancel={vi.fn()} />)
+    render(<PersonalizationPage user={{ name: 'alexey', role: 'developer' }} value={DEFAULT_SETTINGS.personalization} onSave={vi.fn()} onCancel={vi.fn()} />)
     await userEvent.selectOptions(screen.getByLabelText('День'), '31')
     await userEvent.selectOptions(screen.getByLabelText('Месяц'), '2')
     expect(screen.getByRole('alert')).toHaveTextContent('Такой даты не существует')
@@ -76,7 +76,7 @@ describe('SettingsModal — модели Claude', () => {
   // пользователя, их правит админ в карточке на `#/users/:name`.
   it('запреты доступа убирают opus и fable — остаются default/sonnet/haiku', () => {
     const denied: UserLlmAccess[] = [{ provider: 'claude', modelId: 'opus[1m]' }, { provider: 'claude', modelId: 'fable' }]
-    renderModal('user', { llmAccess: denied })
+    renderModal('developer', { llmAccess: denied })
     const select = screen.getByLabelText('Модель Claude')
     const opts = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
     expect(opts).toEqual(['default', 'sonnet', 'haiku'])
@@ -85,7 +85,7 @@ describe('SettingsModal — модели Claude', () => {
   })
 
   it('без запретов у роли user меню то же, что у админа', () => {
-    renderModal('user')
+    renderModal('developer')
     const select = screen.getByLabelText('Модель Claude')
     const opts = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
     expect(opts).toEqual(['default', 'opus[1m]', 'fable', 'sonnet', 'haiku'])
@@ -152,7 +152,7 @@ describe('SettingsModal — глобальная блокировка голос
 describe('SettingsModal — выбор исполнителя', () => {
   it('показывает доступные записи и сохраняет id вместе с kind', async () => {
     const onChange = vi.fn()
-    renderModal('user', { engines: [{ id: 'work', name: 'Рабочий', kind: 'codex', isDefault: true }], onChange })
+    renderModal('developer', { engines: [{ id: 'work', name: 'Рабочий', kind: 'codex', isDefault: true }], onChange })
     await userEvent.selectOptions(screen.getByLabelText('Исполнитель LLM'), 'work')
     expect(onChange).toHaveBeenCalledWith({ llmEngineId: 'work', llmProvider: 'codex' })
   })

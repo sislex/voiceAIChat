@@ -12,8 +12,8 @@ beforeEach(() => {
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.createUser('alice', '', 'user')
-  db.createUser('bob', '', 'user')
+  db.createUser('alice', '', 'developer')
+  db.createUser('bob', '', 'developer')
 })
 afterEach(() => db.close())
 
@@ -73,7 +73,7 @@ describe('ci: справочник команд', () => {
     const file = join(dir, 'db.sqlite')
     let n = 0
     const first = new VoiceChatDb(file, { newId: () => `t-${++n}`, now: () => 1000 })
-    first.createUser('alice', '', 'user')
+    first.createUser('alice', '', 'developer')
     const gate = first.createCiCommand('alice', { scope: 'global', name: 'Тесты', script: 'npm run -w @voicechat/server test' })
     const install = first.createCiCommand('alice', { scope: 'global', name: 'Установка', script: 'npm ci' })
     first.close()
@@ -96,7 +96,7 @@ describe('ci: справочник команд', () => {
     const file = join(dir, 'db.sqlite')
     let n = 0
     const first = new VoiceChatDb(file, { newId: () => `a-${++n}`, now: () => 1000 })
-    first.createUser('alice', '', 'user')
+    first.createUser('alice', '', 'developer')
     const gate = first.createCiCommand('alice', {
       scope: 'global',
       name: 'Запустить проверки (typecheck + npm test)',
@@ -505,7 +505,7 @@ describe('встроенный шаг «Актуализировать базу 
     const file = join(dir, 'db.sqlite')
     let n = 0
     const first = new VoiceChatDb(file, { newId: () => `s-${++n}`, now: () => 1000 })
-    first.createUser('alice', '', 'user')
+    first.createUser('alice', '', 'developer')
     const p = first.createProject('alice', { name: 'P' })
     const test = first.createCiCommand('alice', { scope: 'global', name: 'Запустить тестирование (npm test)', script: 'npm test' })
     const commit = first.createCiCommand('alice', { scope: 'global', name: 'Закоммитить работу в ветку задачи', script: 'git add -A' })

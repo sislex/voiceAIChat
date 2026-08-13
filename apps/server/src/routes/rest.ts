@@ -183,7 +183,7 @@ export async function registerRest(
       if (typeof req.body.title === 'string') db.renameConversation(userId, req.params.id, req.body.title)
       if (req.body.kbContextMode === 'auto' || req.body.kbContextMode === 'manual' || req.body.kbContextMode === 'off') db.setConversationKbContextMode(uid(req), req.params.id, req.body.kbContextMode)
       if (req.body.execTarget !== undefined) {
-        const role = db.getUser(uid(req))?.role ?? 'user'
+        const role = db.getUser(uid(req))?.role ?? 'developer'
         if (req.body.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === req.body.llmEngineId)) {
           return reply.code(403).send({ error: 'llm engine is not available for role' })
         }
@@ -438,7 +438,7 @@ export async function registerRest(
     return { conversation: db.getConversation(u, conv.id), messages: db.listMessages(u, conv.id) }
   })
 
-  app.get(REST.llmEngines, async (req) => db.listLlmEnginesForRole(db.getUser(uid(req))?.role ?? 'user'))
+  app.get(REST.llmEngines, async (req) => db.listLlmEnginesForRole(db.getUser(uid(req))?.role ?? 'developer'))
 
   app.get(REST.settings, async (req) => db.getSettings(uid(req)))
   const myLlmAccess = async (req: Parameters<typeof uid>[0]) => db.getUserLlmAccess(uid(req))
@@ -464,7 +464,7 @@ export async function registerRest(
   app.get<{ Querystring: { unit?: string; from?: string; to?: string; conversationId?: string } }>(REST.meUsage, async (req, reply) => usageForMe(uid(req), req.query, reply))
 
   app.put<{ Body: Settings }>(REST.settings, async (req, reply) => {
-    const role = db.getUser(uid(req))?.role ?? 'user'
+    const role = db.getUser(uid(req))?.role ?? 'developer'
     if (req.body.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === req.body.llmEngineId)) {
       return reply.code(403).send({ error: 'llm engine is not available for role' })
     }

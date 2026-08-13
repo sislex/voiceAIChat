@@ -20,12 +20,12 @@ let clock = Date.now()
 beforeEach(async () => {
   clock = Date.now()
   db = new VoiceChatDb(':memory:', { now: () => clock })
-  db.createUser('bob', '', 'user')
+  db.createUser('bob', '', 'developer')
   app = await buildServer({ config: loadConfig({ PORT: '0' }), db, sessionSecret: SECRET })
   await app.listen({ port: 0, host: '127.0.0.1' })
   port = (app.server.address() as AddressInfo).port
   adminTok = signToken({ name: 'admin', role: 'admin' }, SECRET)
-  bobTok = signToken({ name: 'bob', role: 'user' }, SECRET)
+  bobTok = signToken({ name: 'bob', role: 'developer' }, SECRET)
 })
 afterEach(async () => {
   await app.close()

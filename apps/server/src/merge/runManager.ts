@@ -142,14 +142,24 @@ export class MergeRunManager {
       if(merged.exitCode){
         const found=await this.cmd(run,'git diff --name-only --diff-filter=U',repo,30000), files=found.output.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)
         this.deps.db.updateMergeRun(id,{conflicts:files})
-        // Конфликты внутри docs/kb разрешаются по правилам самой базы
-        // (kb-workflow «Почему нет merge-конфликтов»): индекс перегенерируется,
-        // у тем конфликтуют только метаданные updated:/checked: — их нормализует
-        // kb.mjs touch. Содержательное расхождение тем — exit 65 и решение
-        // пользователя, как для любого не-БЗ конфликта.
-        if(files.length>0&&files.every(f=>/^docs\/kb\/.+\.md$/.test(f))){
-          this.stage(id,'resolving_conflicts','running','Конфликты только в docs/kb — разрешаю по правилам БЗ')
-          const topics=files.filter(f=>f!=='docs/kb/README.md')
+        // README — производный индекс. Оставляем target-версию только временно:
+        // после kb_update индекс безусловно строится из итогового merge-дерева.
+        // Такой конфликт не должен блокировать merge или скрывать конфликт в коде.
+        let unresolved=files
+        if(files.includes('docs/kb/README.md')){
+          this.stage(id,'resolving_conflicts','running','Откладываю генерацию индекса БЗ до итогового merge-дерева')
+          const deferred=await this.cmd(run,'git checkout --ours -- docs/kb/README.md\ngit add -- docs/kb/README.md',repo,30000)
+          if(deferred.exitCode||deferred.timedOut)throw new Error('Не удалось отложить генерацию индекса БЗ')
+          unresolved=files.filter(f=>f!=='docs/kb/README.md')
+          this.deps.db.updateMergeRun(id,{conflicts:unresolved})
+        }
+        if(unresolved.length===0){
+          const resolved=await this.cmd(run,'git -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --no-edit',repo,30000)
+          if(resolved.exitCode||resolved.timedOut)throw new Error('Не удалось продолжить merge после откладывания индекса БЗ')
+          this.stage(id,'resolving_conflicts','passed','Индекс БЗ будет перегенерирован после обязательной актуализации')
+        } else if(unresolved.every(f=>/^docs\/kb\/.+\.md$/.test(f))){
+          this.stage(id,'resolving_conflicts','running','Конфликты только в темах docs/kb — разрешаю по правилам БЗ')
+          const topics=unresolved
           // Метаданные updated:/checked: нормализуются плейсхолдером во всех трёх
           // стадиях, затем честный трёхсторонний merge-file: чистый результат
           // значит, что конфликтовали только метаданные (несовпадающие правки
@@ -165,15 +175,15 @@ export class MergeRunManager {
             'node scripts/kb.mjs touch "$f"',
             'git add -- "$f"'
           ].join('\n')).join('\n')
-          const resolved=await this.cmd(run,`set -e\n${perFile}\nrm -f .merge-kb-base .merge-kb-ours .merge-kb-theirs .merge-kb-base.n .merge-kb-ours.n .merge-kb-theirs.n\nnode scripts/kb.mjs index\ngit add docs/kb/README.md\nnode scripts/kb.mjs check\ngit -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --no-edit`,repo,300000)
+          const resolved=await this.cmd(run,`set -e\n${perFile}\nrm -f .merge-kb-base .merge-kb-ours .merge-kb-theirs .merge-kb-base.n .merge-kb-ours.n .merge-kb-theirs.n\nnode scripts/kb.mjs check\ngit -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --no-edit`,repo,300000)
           if(resolved.exitCode||resolved.timedOut){
-            this.stage(id,'resolving_conflicts','failed',`Конфликты: ${files.join(', ')} — содержательное расхождение тем БЗ`)
+            this.stage(id,'resolving_conflicts','failed',`Конфликты: ${unresolved.join(', ')} — содержательное расхождение тем БЗ`)
             this.finish(id,'decision_required','Конфликты требуют решения пользователя','Разрешите файлы в ветке задачи и повторите merge.','decision_required'); return
           }
           this.deps.db.updateMergeRun(id,{conflicts:[]})
-          this.stage(id,'resolving_conflicts','passed',topics.length?'Метаданные тем нормализованы, индекс БЗ перегенерирован, merge продолжен':'Индекс БЗ перегенерирован, merge продолжен')
+          this.stage(id,'resolving_conflicts','passed','Метаданные тем нормализованы; индекс будет перегенерирован после актуализации БЗ')
         } else {
-          this.stage(id,'resolving_conflicts','failed',`Конфликты: ${files.join(', ')||'не удалось определить'}`)
+          this.stage(id,'resolving_conflicts','failed',`Конфликты: ${unresolved.join(', ')||'не удалось определить'}`)
           this.finish(id,'decision_required','Конфликты требуют решения пользователя','Разрешите файлы в ветке задачи и повторите merge.','decision_required'); return
         }
       }
@@ -193,7 +203,10 @@ export class MergeRunManager {
         this.stage(id,'kb_update','failed',kbResult.message)
         throw new Error(kbResult.message)
       }
-      const kbCommitted = await this.cmd(run,`git add -- docs/kb\nif git diff --cached --quiet; then echo KB_TREE_UNCHANGED; else git -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --amend --no-edit; fi\ngit rev-parse HEAD`,repo,300000)
+      // Индекс строится ровно здесь — после содержательного обновления БЗ и
+      // до тестов. Версия README из development-ветки никогда не становится
+      // итоговой и потому не требует осмысленного разрешения конфликтов.
+      const kbCommitted = await this.cmd(run,`node scripts/kb.mjs index\nnode scripts/kb.mjs check\ngit add -- docs/kb\nif git diff --cached --quiet; then echo KB_TREE_UNCHANGED; else git -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --amend --no-edit; fi\ngit rev-parse HEAD`,repo,300000)
       const finalMergeSha = kbCommitted.output.match(/[0-9a-f]{40}/ig)?.at(-1)
       if (kbCommitted.exitCode || !finalMergeSha) throw new Error('Не удалось включить файловую базу знаний в merge-коммит')
       this.deps.db.updateMergeRun(id,{mergeSha:finalMergeSha})

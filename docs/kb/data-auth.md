@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-08-12
-checked: 0465712
+updated: 2026-08-13
+checked: c7e30b3
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -140,7 +140,9 @@ FTS5 не должна валить старт (тогда `searchMessages` пр
 
 ## Пользователи и роли
 
-`UserRole = 'admin' | 'user'` (`packages/shared/src/types.ts`) ограничивает исполнителей LLM по `llm_engines.allowed_roles`; это не механизм доступа к моделям. Модели разрешаются персонально через `user_llm_access`: каждая строка deny-list — `(user_name, provider, model_id)`, а `model_id = '*'` запрещает весь provider. Отсутствие строк означает полный доступ, поэтому новые пользователи и модели, позднее добавленные в `CLAUDE_MODELS`/`CODEX_MODELS`, не требуют миграции прав. Внешний контракт и чистые проверки (`isProviderAllowed`, `allowedModels`, `clampModel`, `firstAllowedProvider`) находятся в `packages/shared/src/llmAccess.ts`.
+`UserRole = 'admin' | 'developer' | 'tester' | 'observer'` (`packages/shared/src/types.ts`). Проектные полномочия централизованы в `apps/server/src/users/auth.ts`: `admin` разрешены все текущие и будущие операции; `developer` — просмотр, создание и редактирование задач, запуск и повтор workflow, а также merge; `tester` и `observer` пока не имеют отдельных разрешений. Подготовка release, production deploy, управление пользователями и ролями, а также настройки проекта доступны только `admin`. `projectPermissionForRequest` классифицирует защищённые HTTP-операции в глобальном auth-hook до обращения к данным, а маршрутные `requireProjectPermission(...)` фиксируют требуемое полномочие рядом с обработчиком; прямой HTTP-запрос поэтому не обходит UI. Админский API принимает все четыре роли при создании пользователя и меняет роль через `PATCH /api/admin/users/:name`. Legacy-роль `user` мигрирует в `developer`, а только конкретные существующие аккаунты ChatAI `admin` и `admin1` повышаются до `admin`, поэтому будущие пользователи автоматически привилегий не получают.
+
+Роль по-прежнему отдельно участвует в `llm_engines.allowed_roles`; это не механизм персонального доступа к моделям. Модели разрешаются через `user_llm_access`: каждая строка deny-list — `(user_name, provider, model_id)`, а `model_id = '*'` запрещает весь provider. Отсутствие строк означает полный доступ, поэтому новые пользователи и модели, позднее добавленные в `CLAUDE_MODELS`/`CODEX_MODELS`, не требуют миграции прав. Внешний контракт и чистые проверки (`isProviderAllowed`, `allowedModels`, `clampModel`, `firstAllowedProvider`) находятся в `packages/shared/src/llmAccess.ts`.
 
 `getUserLlmAccess`/`setUserLlmAccess` читают и атомарно заменяют список запретов. Администратор работает через защищённые `GET/PUT /api/admin/users/:name/llm-access`; PUT принимает только `claude`/`codex`, `*` или известный id модели и убирает дубликаты. Пользователь может прочитать только собственный список через `GET /api/llm-access`. При удалении пользователя строки прав удаляются каскадным внешним ключом таблицы.
 
