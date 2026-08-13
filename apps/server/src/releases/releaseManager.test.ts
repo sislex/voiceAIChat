@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
-import { RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseKnowledgeBaseCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
+import { RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseCheckoutCommand, releaseKnowledgeBaseCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
 
 let db:VoiceChatDb
 let projectId:string
-const ci=():ReleaseProjectTarget=>({projectId,agentId:'ci',path:'/ci',baseBranch:'main',testCommand:'npm run verify:release'})
+const ci=():ReleaseProjectTarget=>({projectId,agentId:'ci',path:'/ci',baseBranch:'main',testCommand:'npm run verify:release',gitUrl:'git@example/repo.git',prepareCheckout:false})
 const prod=():ProductionTarget=>({...ci(),agentId:'prod',path:'/prod',deployCommand:'npm run deploy:prod',healthCheckCommand:'npm run health:prod',expectedRepository:'git@example/repo.git'})
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0))
 beforeEach(()=>{let id=0;db=new VoiceChatDb(':memory:',{newId:()=>`id-${++id}`,now:()=>1000+id});db.createUser('owner','','developer');projectId=db.createProject('owner',{name:'P'}).id})
@@ -29,6 +29,13 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(command).not.toContain('git checkout -B')
   })
 
+  it('builds an idempotent checkout command that refuses a foreign origin',()=>{
+    const command=releaseCheckoutCommand({...ci(),path:'/repos/.release_repo',prepareCheckout:true})
+    expect(command).toContain("git clone -- 'git@example/repo.git' '/repos/.release_repo'")
+    expect(command).toContain('другой remote.origin.url')
+    expect(command).not.toContain('rm -rf')
+  })
+
   it('keeps a compound regression stage inside the project checkout',async()=>{
     const commands:string[]=[]
     const target={...ci(),testCommand:'npm run shared & p1=$!; npm run ui & p2=$!; wait $p1; wait $p2'}
@@ -37,7 +44,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
       prepareKnowledgeBase:async()=>{},
       exec:async(_target,command)=>{
         commands.push(command)
-        if(command.includes('for-each-ref'))return {exitCode:0,output:commands.some(x=>x.includes('git branch'))?'origin/release/1.2.3 prepared-sha\n':''}
+        if(command.includes('ls-remote'))return {exitCode:0,output:commands.some(x=>x.includes('git branch'))?'prepared-sha\trefs/heads/release/1.2.3\n':''}
         if(command.includes('git branch'))return {exitCode:0,output:'prepared-sha\n'}
         return {exitCode:0,output:'ok'}
       }
@@ -55,7 +62,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
       prepareKnowledgeBase:vi.fn(async()=>{}),
       exec:async(_target,command)=>{
         commands.push(command)
-        if(command.includes('for-each-ref'))return {exitCode:0,output:commands.some(x=>x.includes('git branch'))?'origin/release/1.2.3 prepared-sha\n':''}
+        if(command.includes('ls-remote'))return {exitCode:0,output:commands.some(x=>x.includes('git branch'))?'prepared-sha\trefs/heads/release/1.2.3\n':''}
         if(command.includes('git branch'))return {exitCode:0,output:'prepared-sha\n'}
         return {exitCode:0,output:'ok'}
       }
@@ -79,7 +86,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
 
   it('passes the release branch version to production without merging main or creating a tag',async()=>{
     const commands:string[]=[]
-    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return command.includes('for-each-ref')?{exitCode:0,output:'origin/release/0.1.27 fixed-sha\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.27","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}}
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return command.includes('ls-remote')?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.27\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.27","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}}
     const prepared=db.createProjectRelease('owner',projectId,{branch:'release/0.1.27',version:'0.1.27',sha:'fixed-sha',status:'ready'})
     const manager=new ReleaseManager(db,runtime)
     const attempt=await manager.start('owner',ci(),prod(),'release/0.1.27')
@@ -92,8 +99,8 @@ describe('ReleaseManager separated preparation and deploy',()=>{
   })
 
   it('does not release when health reports the expected commit with another version',async()=>{
-    const limits={knowledgeBaseMs:1_000,regressionMs:1_000,switchingMs:1_000,buildingMs:1_000,healthCheckMs:1_000}
-    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>target.agentId==='ci'?{exitCode:0,output:'origin/release/0.1.35 fixed-sha\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.0","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}
+    const limits={checkoutMs:1_000,knowledgeBaseMs:1_000,regressionMs:1_000,switchingMs:1_000,buildingMs:1_000,healthCheckMs:1_000}
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>target.agentId==='ci'?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.35\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.0","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}
     db.createProjectRelease('owner',projectId,{branch:'release/0.1.35',version:'0.1.35',sha:'fixed-sha',status:'ready'})
     const attempt=await new ReleaseManager(db,runtime).start('owner',ci(),{...prod(),limits},'release/0.1.35')
     await new Promise(resolve=>setTimeout(resolve,1_050))
@@ -114,7 +121,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
 
   it('blocks mismatched prepared version before changing production',async()=>{
     const commands:string[]=[]
-    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return {exitCode:0,output:'origin/release/0.1.35 fixed-sha\n'}}}
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return {exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.35\n'}}}
     db.createProjectRelease('owner',projectId,{branch:'release/0.1.35',version:'0.1.0',sha:'fixed-sha',status:'ready'})
     await expect(new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/0.1.35')).rejects.toThrow('Версия подготовки 0.1.0 не соответствует ветке release/0.1.35 (0.1.35)')
     expect(commands).toEqual([])
@@ -122,7 +129,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
   })
 
   it('blocks changed SHA, offline production and concurrent deploy',async()=>{
-    const runtime:ReleaseRuntime={isOnline:()=>false,prepareKnowledgeBase:async()=>{},exec:async()=>({exitCode:0,output:'origin/release/1.0.0 moved-sha\n'})}
+    const runtime:ReleaseRuntime={isOnline:()=>false,prepareKnowledgeBase:async()=>{},exec:async()=>({exitCode:0,output:'moved-sha\trefs/heads/release/1.0.0\n'})}
     db.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'ready'})
     await expect(new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/1.0.0')).rejects.toThrow('offline')
     runtime.isOnline=()=>true
@@ -130,7 +137,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
   })
 
   it('numbers a retry deploy after a failed attempt without hitting the unique constraint',async()=>{
-    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>{if(target.agentId==='ci')return {exitCode:0,output:'origin/release/2.0.0 fixed-sha\n'};return command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"2.0.0","commit":"fixed-sha"}'}:{exitCode:1,output:'dirty checkout'}}}
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>{if(target.agentId==='ci')return {exitCode:0,output:'fixed-sha\trefs/heads/release/2.0.0\n'};return command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"2.0.0","commit":"fixed-sha"}'}:{exitCode:1,output:'dirty checkout'}}}
     db.createProjectRelease('owner',projectId,{branch:'release/2.0.0',version:'2.0.0',sha:'fixed-sha',status:'ready'})
     const manager=new ReleaseManager(db,runtime)
     const failed=await manager.start('owner',ci(),prod(),'release/2.0.0')
@@ -143,7 +150,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
 
   it('fails before build when production checkout validation fails',async()=>{
     const commands:string[]=[]
-    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>{commands.push(command);if(target.agentId==='ci')return {exitCode:0,output:'origin/release/1.0.0 fixed-sha\n'};return {exitCode:1,output:'dirty checkout'}}}
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>{commands.push(command);if(target.agentId==='ci')return {exitCode:0,output:'fixed-sha\trefs/heads/release/1.0.0\n'};return {exitCode:1,output:'dirty checkout'}}}
     db.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'ready'})
     const attempt=await new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/1.0.0')
     await tick();await tick()
