@@ -4,7 +4,7 @@
 // команды и глобальные настройки — глобальный admin; запуск — любой участник проекта.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import type { CiCommandInput, CiGlobalSettings, CiLlmConfig, CiSlot, CiRunMode, CiPlanDecision, CiUsageKind, CiStageLlmSelection } from '@voicechat/shared'
+import type { CiCommandInput, CiGlobalSettings, CiLlmConfig, CiSlot, CiRunMode, CiPlanDecision, CiUsageKind, CiStageLlmSelection, CiTaskMachines } from '@voicechat/shared'
 import { CI_USAGE_KINDS, DEFAULT_CI_LLM_CONFIG } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CiRunManager } from '../ci/runManager.js'
@@ -14,7 +14,7 @@ const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 
 const forbid = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
 const bad = (reply: FastifyReply, error: unknown): FastifyReply => reply.code(400).send({ error: error instanceof Error ? error.message : String(error) })
 
-export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRunManager): void {
+export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRunManager, agents?: { isOnline(id: string): boolean }): void {
   const isOwner = (req: FastifyRequest, projectId: string): boolean => db.getProject(uid(req), projectId)?.role === 'owner'
   const isAdmin = (req: FastifyRequest): boolean => req.user?.role === 'admin'
 
@@ -166,6 +166,31 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
     db.clearCiStageLlmConfig('task', req.params.taskId, req.params.stage)
     return { effective: db.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage) }
+  })
+
+  // --- Машины выполнения задачи: личные + проектные, без дублей ---
+  app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci/machines', async (req, reply): Promise<CiTaskMachines | FastifyReply> => {
+    const userId = uid(req)
+    const project = db.getProject(userId, req.params.id)
+    const task = db.getCiTask(userId, req.params.id, req.params.taskId)
+    if (!project || !task) return nf(reply)
+    const personalIds = new Set(db.listAgents(userId).map((agent) => agent.id))
+    const projectById = new Map(project.machines.map((machine) => [machine.agentId, machine]))
+    const usable = db.listUsableAgents(userId, project.id)
+    const machines = usable.map((agent) => ({
+      agentId: agent.id,
+      name: agent.name,
+      online: agents?.isOnline(agent.id) ?? false,
+      personal: personalIds.has(agent.id),
+      project: projectById.has(agent.id),
+      projectDefault: project.defaultAgentId === agent.id
+    }))
+    const selectedAvailable = task.agentId == null || machines.some((machine) => machine.agentId === task.agentId)
+    return {
+      machines,
+      selectedAgentId: task.agentId ?? null,
+      unavailableSelection: selectedAvailable || !task.agentId ? null : { agentId: task.agentId, name: db.agentName(task.agentId) ?? null }
+    }
   })
 
   // --- Слот-конфиг задачи (переопределение + метка наследования) ---

@@ -25,7 +25,8 @@ import type {
   CiCommandMetric,
   CiModelWorkMetric,
   CiRunReport,
-  CiTaskReport
+  CiTaskReport,
+  CiTaskMachines
 } from '@shared/ci'
 import type { Message } from '@shared/types'
 import type { MergeRun, TaskRepository } from '@shared/merge'
@@ -85,6 +86,7 @@ export interface RendererCiRest {
   /** Снять переопределение задачи — вернуться к движку/модели проекта. */
   resetTaskCiLlm(projectId: string, taskId: string): Promise<CiTaskLlmConfig>
   getTaskCi(projectId: string, taskId: string): Promise<CiTaskConfig>
+  getTaskMachines(projectId: string, taskId: string): Promise<CiTaskMachines>
   putTaskCi(projectId: string, taskId: string, config: CiSlotConfig): Promise<CiSlotConfig>
   startRun(projectId: string, taskId: string, options?: { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string; launch?: 'queue' | 'parallel' }): Promise<CiRun>
   /** agentId выбирает машину проекта для рана; без него — машина workspace. */
