@@ -3,7 +3,8 @@
 // вложены под model_work, последний элемент — итог модели. Подписка на realtime
 // при монтировании, отписка при закрытии; REST-подгрузка как фолбэк.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { CiRunDetail, CiRunStep, CiLogLine, CiRunConclusion, CiInteraction, CiInteractionAnswer } from '@shared/ci'
 import { DEFAULT_CI_CLAUDE_MODEL, isTerminalCiStatus } from '@shared/ci'
 import type { LlmEngineOption } from '@shared/admin'
@@ -14,6 +15,7 @@ import { ciStatusIcon, ciStatusLabel, ciTone, fmtDuration } from './ciFormat'
 import { CiConsole } from './CiConsole'
 import { QuestionsForm } from '../QuestionsForm'
 import { Button } from '../ui/Button'
+import { IconButton } from '../ui/IconButton'
 import { useConfirm } from '../ui/useConfirm'
 import { Skeleton, RefreshIndicator } from '../ui/Skeleton'
 import { EmptyState } from '../ui/EmptyState'
@@ -324,7 +326,12 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
         <span className={`ci-lozenge ci-lozenge--${run ? ciTone(run.status) : 'neutral'}`}>
           {run ? ciStatusLabel(run.status) : 'загрузка…'}
         </span>
-        {run && <span className="ci-step-dur">{run.slotProgress.phase} · {run.slotProgress.done}/{run.slotProgress.total}</span>}
+        {run && (
+          <span className="ci-run-progress">
+            <span className="ci-step-dur">{run.slotProgress.phase} · {run.slotProgress.done}/{run.slotProgress.total}</span>
+            <RunStepsPopover steps={topSteps.roots} progress={run.slotProgress} />
+          </span>
+        )}
         {run && <span className="ci-step-dur">{fmtDuration(run.durationMs ?? (run.startedAt ? now() - run.startedAt : null))}</span>}
         {view.refreshing && <RefreshIndicator label="Обновляем ленту…" />}
         <div className="ci-runfeed-actions">
@@ -396,6 +403,128 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
     </div>
     {consoleOpen && <CiConsole runId={runId} onClose={() => setConsoleOpen(false)} />}
     </>
+  )
+}
+
+const RUN_STEPS_CLOSE_DELAY_MS = 140
+
+/** Доступный popover со снимком фактических корневых шагов этого рана. */
+function RunStepsPopover(props: { steps: CiRunStep[]; progress: { done: number; total: number } }): JSX.Element {
+  const id = useId()
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const closeTimer = useRef<number | null>(null)
+  const pointerFocus = useRef(false)
+  const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null)
+
+  const cancelClose = (): void => {
+    if (closeTimer.current != null) window.clearTimeout(closeTimer.current)
+    closeTimer.current = null
+  }
+  const closeSoon = (): void => {
+    cancelClose()
+    closeTimer.current = window.setTimeout(() => setOpen(false), RUN_STEPS_CLOSE_DELAY_MS)
+  }
+
+  useEffect(() => () => cancelClose(), [])
+
+  useEffect(() => {
+    if (!open) return
+    const place = (): void => {
+      const trigger = buttonRef.current?.getBoundingClientRect()
+      const panel = panelRef.current?.getBoundingClientRect()
+      if (!trigger || !panel) return
+      const gutter = 8
+      const roomBelow = window.innerHeight - trigger.bottom
+      const top = roomBelow >= panel.height + gutter || trigger.top < roomBelow
+        ? trigger.bottom + gutter
+        : trigger.top - panel.height - gutter
+      setPosition({
+        top: Math.max(gutter, Math.min(top, window.innerHeight - panel.height - gutter)),
+        left: Math.max(gutter, Math.min(trigger.right - panel.width, window.innerWidth - panel.width - gutter))
+      })
+    }
+    place()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [open, props.steps.length])
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target as Node
+      if (!buttonRef.current?.contains(target) && !panelRef.current?.contains(target)) setOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        buttonRef.current?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  const panel = open && typeof document !== 'undefined' ? createPortal(
+    <div
+      ref={panelRef}
+      id={id}
+      role="dialog"
+      aria-label={'Шаги рана: ' + props.progress.done + ' из ' + props.progress.total}
+      className="ci-run-steps-popover"
+      data-testid="ci-run-steps-popover"
+      style={{ ...(position ?? { top: 8, left: 8, visibility: 'hidden' as const }), maxHeight: 'calc(100dvh - 16px)', overflowX: 'hidden', overflowY: 'auto' }}
+      onMouseEnter={cancelClose}
+      onMouseLeave={closeSoon}
+    >
+      <div className="ci-run-steps-title">Шаги рана</div>
+      <ol className="ci-run-steps-list">
+        {props.steps.map((step, index) => {
+          const current = step.status === 'running' || step.status === 'awaiting_input'
+          return (
+            <li key={step.id} className={'ci-run-step-summary ci-run-step-summary--' + ciTone(step.status) + (current ? ' is-current' : '')} aria-current={current ? 'step' : undefined}>
+              <span className="ci-run-step-number">{index + 1}.</span>
+              <span className="ci-run-step-name" style={{ overflowWrap: 'anywhere' }}>{step.title}</span>
+              <span className="ci-run-step-status">
+                <span aria-hidden>{ciStatusIcon(step.status)}</span>
+                <span>{ciStatusLabel(step.status)}</span>
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+    </div>,
+    document.body
+  ) : null
+
+  return (
+    <span className="ci-run-steps-trigger" onMouseEnter={() => { cancelClose(); setOpen(true) }} onMouseLeave={closeSoon}>
+      <IconButton
+        ref={buttonRef}
+        size="sm"
+        className="ci-run-steps-info"
+        aria-label="Показать шаги рана"
+        aria-expanded={open}
+        aria-controls={id}
+        title="Показать шаги рана"
+        onPointerDown={() => { pointerFocus.current = true }}
+        onFocus={() => { if (!pointerFocus.current) { cancelClose(); setOpen(true) } }}
+        onBlur={closeSoon}
+        onClick={() => { cancelClose(); setOpen((value) => !value); pointerFocus.current = false }}
+      >
+        <span aria-hidden className="ci-run-steps-info-icon">i</span>
+      </IconButton>
+      {panel}
+    </span>
   )
 }
 
