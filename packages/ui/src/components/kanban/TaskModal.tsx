@@ -33,6 +33,7 @@ import { MergePanel } from '../ci/MergePanel'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { canStartCiRun, isActiveCiStatus, type CiRunSummary, type CiTaskReport } from '@shared/ci'
+import { AutomationProgressView } from './AutomationProgressView'
 import { canStartMerge } from '@shared/merge'
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
 import { useAutoGrow } from '../../lib/autoGrow'
@@ -642,10 +643,12 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                 )}
               </div>
               {props.ciSummary && (
-                <p className="jcard-ci-phase">
-                  {props.ciSummary.slotProgress.phase} {props.ciSummary.slotProgress.done}/{props.ciSummary.slotProgress.total}
-                  {props.ciSummary.durationMs != null ? ` · ${fmtDuration(props.ciSummary.durationMs)}` : ''}
-                </p>
+                props.ciSummary.progress
+                  ? <AutomationProgressView progress={props.ciSummary.progress} />
+                  : <p className="jcard-ci-phase">
+                      {props.ciSummary.slotProgress.phase} {props.ciSummary.slotProgress.done}/{props.ciSummary.slotProgress.total}
+                      {props.ciSummary.durationMs != null ? ` · ${fmtDuration(props.ciSummary.durationMs)}` : ''}
+                    </p>
               )}
               <div className="jmodal-ci-actions">
                 {props.ciSummary && props.onOpenCiRun && (

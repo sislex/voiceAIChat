@@ -359,6 +359,10 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   }
   function emitStep(step: CiRunStep, userId: string): void {
     broadcast({ t: 'ci.step', runId: step.runId, step }, userId)
+    // Компактные поверхности не подписаны на ленту конкретного рана. Обновляем
+    // серверный snapshot доски после каждого значимого перехода шага.
+    const run = deps.db.getCiRunRaw(step.runId)
+    if (run) deps.boardChanged(run.projectId)
   }
 
   function start(userId: string, projectId: string, taskId: string, options?: CiRunMode | CiRunStartOptions): { run: CiRun } | { error: string } {
