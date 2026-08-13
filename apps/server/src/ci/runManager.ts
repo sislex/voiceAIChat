@@ -956,7 +956,7 @@ remote=$(git ls-remote --heads origin "refs/heads/$BRANCH" | awk '{print $1}')
 if [ "$remote" != "$head" ]; then echo "SHA origin/$BRANCH не совпадает с локальным HEAD" >&2; exit 70; fi
 echo "Ветка $BRANCH отправлена в origin ($head)"`
 
-  /** Системный шаг «сохранить работу модели»: пуш ветки перед cleanup. */
+  /** Обязательная граница development-рана: один подтверждённый push task-ветки. */
   async function pushTaskBranch(
     runId: string,
     userId: string,
@@ -1534,43 +1534,18 @@ fi`
           done++
           continue
         }
-        // Разработка заканчивается подготовленной веткой. Merge и production deploy
-        // являются отдельными workflow-этапами и не исполняются тем же раном.
-        if (slot === 'after_model' && (isMergeToBase(command.name, command.script) || isProdRebuild(command.name, command.script))) {
-          const skipped = deps.db.addCiRunStep({
-            runId, slot, position: posBase + done + 1 + extraSteps, kind: 'command', initiatedBy: 'system',
-            commandId: command.id, commandSnapshot: command.script, title: command.name, status: 'skipped'
-          })
-          emitStep(skipped, userId)
-          const line = deps.db.appendCiLog(runId, skipped.id, 'system', 'Отложено: merge и production deploy выполняются отдельными стадиями workflow.\n')
-          broadcast({ t: 'ci.log', runId, line }, userId)
+        // Legacy-интеграционные команды не должны попадать даже skipped-шагами:
+        // миграция удаляет их из after_model, а эта защита игнорирует старый снимок
+        // слота у рана, созданного до обновления сервера.
+        if (slot === 'after_model' && (
+          command.builtin === 'kb_update'
+          || command.isCleanup
+          || command.isTest
+          || isMergeToBase(command.name, command.script)
+          || isProdRebuild(command.name, command.script)
+        )) {
           done++
           continue
-        }
-        // Встроенный серверный шаг идёт мимо исполнителя команд машины.
-        if (command.builtin === 'kb_update') {
-          const updated = await runKbUpdateStep(command, slot, posBase + done + 1 + extraSteps)
-          if (signal.aborted) return finishCancelled()
-          if (!updated) {
-            deps.db.updateCiRun(runId, { status: 'failed' })
-            return false
-          }
-          done++
-          continue
-        }
-        // Cleanup сносит рабочую директорию вместе с коммитами модели — сначала
-        // отправляем ветку в origin; не получилось — не удаляем и падаем.
-        if (command.isCleanup) {
-          const pushed = await pushTaskBranch(runId, userId, agentId, commandWorkspacePath, env, slot, posBase + done + 1 + extraSteps, signal)
-          extraSteps++
-          if (!pushed) {
-            if (slot === 'before_model') {
-              rollbackAndFail(runId, userId, runRow.prevColumnId, 'script_error')
-              return false
-            }
-            deps.db.updateCiRun(runId, { status: 'failed' })
-            return false
-          }
         }
         const res = await runCommandStep(runId, userId, agentId, project.machines, commandWorkspacePath, env, slot, posBase + done + 1 + extraSteps, command, 'user', null, signal)
         // Шаг мог упасть именно из-за отмены (исполнитель отклонил команду) —
@@ -1719,6 +1694,13 @@ fi`
     if (!emptyWork) {
       const afterOk = await runSlot('after_model', slots.afterModel, 'Финальные команды', resume?.kind === 'command' && resume.slot === 'after_model' ? resume.index : 0)
       if (!afterOk && !signal.aborted) afterFailed = true
+      // Единственная обязательная граница успешного development-рана: после
+      // коммита оставшихся изменений публикуем ветку и сохраняем branch/SHA/pushed.
+      if (afterOk && !signal.aborted) {
+        const pushed = await pushTaskBranch(runId, userId, agentId, commandWorkspacePath, env, 'after_model', posBase + done + 1 + extraSteps, signal)
+        extraSteps++
+        if (!pushed && !signal.aborted) afterFailed = true
+      }
     }
 
     // 4) Резюме модели.

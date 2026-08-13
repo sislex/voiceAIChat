@@ -608,6 +608,7 @@ export class VoiceChatDb {
     // Не в `migrate()`: сидирование пишет строки и потому требует уже готовых
     // `newId`/`now`, а миграция идёт до их присвоения.
     this.ensureKbUpdateCommand()
+    this.pruneDevelopmentAfterModelCommands()
     this.setupMessagesFts()
   }
 
@@ -835,7 +836,7 @@ export class VoiceChatDb {
     const mergeRunCols = this.db.prepare(`PRAGMA table_info(merge_runs)`).all() as Array<{ name: string }>
     if (mergeRunCols.length) {
       this.db.exec(`DROP INDEX IF EXISTS idx_merge_runs_one_active_task`)
-      this.db.exec(`CREATE UNIQUE INDEX idx_merge_runs_one_active_task ON merge_runs(task_id) WHERE status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing')`)
+      this.db.exec(`CREATE UNIQUE INDEX idx_merge_runs_one_active_task ON merge_runs(task_id) WHERE status IN ('queued','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing')`)
     }
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'stages_json')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN stages_json TEXT NOT NULL DEFAULT '[]'`)
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'checks_json')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN checks_json TEXT NOT NULL DEFAULT '[]'`)
@@ -2515,9 +2516,9 @@ export class VoiceChatDb {
                         ORDER BY c.created_at ASC LIMIT 1) AS chat_id,
              (SELECT w.branch FROM ci_workspaces w WHERE w.task_id=t.id AND w.pushed=1 ORDER BY w.created_at DESC LIMIT 1) AS merge_source_branch,
              (SELECT w.commit_sha FROM ci_workspaces w WHERE w.task_id=t.id AND w.pushed=1 ORDER BY w.created_at DESC LIMIT 1) AS merge_source_sha,
-             (SELECT r.id FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_run_id,
+             (SELECT r.id FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_run_id,
              (SELECT r.id FROM merge_runs r WHERE r.task_id=t.id ORDER BY r.created_at DESC LIMIT 1) AS latest_merge_run_id,
-             (SELECT r.status FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_status,
+             (SELECT r.status FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_status,
              EXISTS(SELECT 1 FROM project_members pm WHERE pm.project_id=t.project_id AND pm.username=? AND pm.role='owner') AS merge_permitted,
              EXISTS(SELECT 1 FROM project_machines pm WHERE pm.project_id=t.project_id AND pm.agent_id=COALESCE(t.agent_id,(SELECT default_agent_id FROM projects WHERE id=t.project_id))) AS merge_machine_bound,
              (SELECT r.merge_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_sha
@@ -3125,20 +3126,32 @@ export class VoiceChatDb {
         ts,
         ts
       )
-    const owners = this.db
-      .prepare(`SELECT DISTINCT owner_id FROM ci_slot_commands WHERE owner_type = 'project' AND slot = 'after_model'`)
-      .all() as Array<{ owner_id: string }>
-    for (const { owner_id: projectId } of owners) {
-      const ids = this.readSlot('project', projectId, 'after_model')
-      if (ids.includes(CI_KB_UPDATE_COMMAND_ID)) continue
-      const at = ids.findIndex((id) => {
-        const row = this.db.prepare(`SELECT name, script FROM ci_commands WHERE id = ?`).get(id) as { name: string; script: string } | undefined
-        return !!row && isCommitStepLike(row.name, row.script)
-      })
-      const next = [...ids]
-      next.splice(at < 0 ? next.length : at, 0, CI_KB_UPDATE_COMMAND_ID)
-      this.setCiSlotCommands('project', projectId, 'after_model', next)
-    }
+  }
+
+  /**
+   * Идемпотентная миграция development pipeline. Удаляет только известные
+   * системные интеграционные команды из after_model; строки справочника и любые
+   * пользовательские команды сохраняются для истории и других интерфейсов.
+   */
+  private pruneDevelopmentAfterModelCommands(): void {
+    const rows = this.db.prepare(`
+      SELECT s.id, c.name, c.script, c.builtin, c.is_cleanup, c.is_test
+      FROM ci_slot_commands s
+      JOIN ci_commands c ON c.id = s.command_id
+      WHERE s.slot = 'after_model'
+    `).all() as Array<{ id:string; name:string; script:string; builtin:string|null; is_cleanup:number; is_test:number }>
+    const remove = this.db.prepare(`DELETE FROM ci_slot_commands WHERE id = ?`)
+    const tx = this.db.transaction(() => {
+      for (const row of rows) {
+        const legacy = row.builtin === 'kb_update'
+          || !!row.is_cleanup
+          || !!row.is_test
+          || isMergeToBaseStepLike(row.name, row.script)
+          || isProductionDeployStepLike(row.name, row.script)
+        if (legacy) remove.run(row.id)
+      }
+    })
+    tx()
   }
 
   /** Эффективные слоты задачи: её переопределение либо дефолты проекта. */
@@ -3881,6 +3894,11 @@ export class VoiceChatDb {
     return r ? mapCiWorkspace(r) : null
   }
 
+  findLatestCiRunForTask(projectId: string, taskId: string): CiRun | null {
+    const row = this.db.prepare(`SELECT id FROM ci_runs WHERE project_id=? AND task_id=? ORDER BY created_at DESC LIMIT 1`).get(projectId, taskId) as { id:string } | undefined
+    return row ? this.getCiRunRaw(row.id) : null
+  }
+
   recordCiWorkspaceRevision(workspaceId: string, branch: string, commitSha: string): void {
     this.db.prepare(`UPDATE ci_workspaces SET branch=?, commit_sha=?, pushed=1 WHERE id=?`).run(branch, commitSha, workspaceId)
   }
@@ -4494,7 +4512,7 @@ export class VoiceChatDb {
    */
   startMergeRun(userId: string, projectId: string, taskId: string, agentIdOverride?: string | null): MergeRun {
     return this.db.transaction(() => {
-      const existing = this.db.prepare(`SELECT * FROM merge_runs WHERE task_id=? AND status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string, unknown> | undefined
+      const existing = this.db.prepare(`SELECT * FROM merge_runs WHERE task_id=? AND status IN ('queued','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string, unknown> | undefined
       if (existing) return this.mapMergeRun(existing)
 
       const row = this.db.prepare(`SELECT t.*, c.semantic_type, p.ci_base_branch, p.default_agent_id, pm.role
@@ -4531,11 +4549,11 @@ export class VoiceChatDb {
   }
 
   listActiveMergeRuns(): MergeRun[] {
-    return (this.db.prepare(`SELECT * FROM merge_runs WHERE status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing') ORDER BY created_at`).all() as Record<string, unknown>[]).map((row) => this.mapMergeRun(row))
+    return (this.db.prepare(`SELECT * FROM merge_runs WHERE status IN ('queued','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing') ORDER BY created_at`).all() as Record<string, unknown>[]).map((row) => this.mapMergeRun(row))
   }
 
-  updateMergeRun(runId: string, fields: Partial<Pick<MergeRun, 'status' | 'stage' | 'sourceSha' | 'targetSha' | 'mergeSha' | 'conflicts' | 'stages' | 'checks' | 'error' | 'recommendedAction' | 'log' | 'pushStartedAt' | 'startedAt' | 'finishedAt' | 'deployId' | 'deployVersion' | 'productionStatus'>>): MergeRun | null {
-    const names: Record<string, string> = { sourceSha:'source_sha', targetSha:'target_sha', mergeSha:'merge_sha', conflicts:'conflicts_json', stages:'stages_json', checks:'checks_json', recommendedAction:'recommended_action', pushStartedAt:'push_started_at', startedAt:'started_at', finishedAt:'finished_at', deployId:'deploy_id', deployVersion:'deploy_version', productionStatus:'production_status' }
+  updateMergeRun(runId: string, fields: Partial<Pick<MergeRun, 'status' | 'stage' | 'sourceSha' | 'targetSha' | 'mergeSha' | 'conflicts' | 'stages' | 'checks' | 'error' | 'recommendedAction' | 'log' | 'pushStartedAt' | 'startedAt' | 'finishedAt' | 'deployId' | 'deployVersion' | 'productionStatus' | 'llmEngineId' | 'llmProvider' | 'llmModel'>>): MergeRun | null {
+    const names: Record<string, string> = { sourceSha:'source_sha', targetSha:'target_sha', mergeSha:'merge_sha', conflicts:'conflicts_json', stages:'stages_json', checks:'checks_json', recommendedAction:'recommended_action', pushStartedAt:'push_started_at', startedAt:'started_at', finishedAt:'finished_at', deployId:'deploy_id', deployVersion:'deploy_version', productionStatus:'production_status', llmEngineId:'llm_engine_id', llmProvider:'llm_provider', llmModel:'llm_model' }
     const set: string[] = [], values: unknown[] = []
     for (const [key, value] of Object.entries(fields)) {
       set.push(`${names[key] ?? key}=?`)
@@ -5034,6 +5052,14 @@ interface CiCommandRow {
  */
 function isCommitStepLike(name: string, script: string): boolean {
   return /коммит|commit/i.test(name) || /git\s+commit/i.test(script)
+}
+function isMergeToBaseStepLike(name: string, script: string): boolean {
+  return /влить.*(ветк|прод)|merge.*(main|base)/i.test(name)
+    || (/git\s+merge/i.test(script) && /git\s+push/i.test(script))
+}
+function isProductionDeployStepLike(name: string, script: string): boolean {
+  return /обновить.*прод|production.*deploy|prod.*rebuild/i.test(name)
+    || /PROD_DIR|rebuild-when-idle|production_deploy/i.test(script)
 }
 
 function parseCiEnv(j: string): Record<string, string> {
