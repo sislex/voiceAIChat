@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from '../../test/a11y'
 import { act, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
+import userEvent from '@testing-library/user-event'
 import { RunFeed, type RunFeedCache } from './RunFeed'
 import { listCommands, resetCommands } from '../../lib/commands'
 import { createFakeCi } from '../../test/fakeApi'
@@ -178,6 +179,111 @@ describe('RunFeed', () => {
     render(<RunFeed {...p} />)
     fireEvent.click(screen.getByRole('button', { name: 'Повторить весь воркфлоу' }))
     expect(p.onRetry).toHaveBeenCalledWith('run-1')
+  })
+})
+
+describe('RunFeed — список шагов', () => {
+  const pipeline = [
+    mkStep({ id: 's1', position: 1, title: 'Клонирование репозитория', status: 'success' }),
+    mkStep({ id: 's2', position: 2, title: 'Модель работает', status: 'running' }),
+    mkStep({ id: 's3', position: 3, title: 'Ожидание', status: 'queued' }),
+    mkStep({ id: 's4', position: 4, title: 'Не требуется', status: 'skipped' }),
+    mkStep({ id: 's5', position: 5, title: 'Проверка упала', status: 'failed' }),
+    mkStep({ id: 's6', position: 6, title: 'Остановлено', status: 'cancelled' })
+  ]
+  const cache: RunFeedCache = {
+    detail: { run: mkRun({ slotProgress: { done: 2, total: 6, phase: 'работа модели' } }), steps: pipeline, fixAttempts: [], interactions: [] },
+    log: [],
+    conclusion: null
+  }
+
+  it('открывается мышью, показывает фактический порядок и закрывается с задержкой', async () => {
+    render(<RunFeed {...baseProps(cache)} />)
+    const button = screen.getByRole('button', { name: 'Показать шаги рана' })
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.mouseEnter(button)
+    const panel = screen.getByTestId('ci-run-steps-popover')
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    expect(within(panel).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      '1.Клонирование репозитория✓успех',
+      '2.Модель работает▸выполняется',
+      '3.Ожидание○в очереди',
+      '4.Не требуется–пропущен',
+      '5.Проверка упала✕ошибка',
+      '6.Остановлено⊘отменён'
+    ])
+    expect(within(panel).getByText('Модель работает').closest('li')).toHaveAttribute('aria-current', 'step')
+    fireEvent.mouseLeave(button)
+    fireEvent.mouseEnter(panel)
+    await new Promise((resolve) => window.setTimeout(resolve, 170))
+    expect(panel).toBeInTheDocument()
+    fireEvent.mouseLeave(panel)
+    await waitFor(() => expect(screen.queryByTestId('ci-run-steps-popover')).not.toBeInTheDocument())
+  })
+
+  it('открывается фокусом и управляется Enter, Space и Esc', async () => {
+    const user = userEvent.setup()
+    render(<RunFeed {...baseProps(cache)} />)
+    const button = screen.getByRole('button', { name: 'Показать шаги рана' })
+    await user.tab()
+    expect(button).toHaveFocus()
+    expect(screen.getByTestId('ci-run-steps-popover')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByTestId('ci-run-steps-popover')).not.toBeInTheDocument()
+    await user.keyboard('{Enter}')
+    expect(screen.getByTestId('ci-run-steps-popover')).toBeInTheDocument()
+    await user.keyboard(' ')
+    expect(screen.queryByTestId('ci-run-steps-popover')).not.toBeInTheDocument()
+  })
+
+  it('на touch открывается и закрывается нажатием, кликом снаружи', () => {
+    render(<><RunFeed {...baseProps(cache)} /><button>Снаружи</button></>)
+    const button = screen.getByRole('button', { name: 'Показать шаги рана' })
+    fireEvent.pointerDown(button, { pointerType: 'touch' })
+    fireEvent.click(button)
+    expect(screen.getByTestId('ci-run-steps-popover')).toBeInTheDocument()
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Снаружи' }), { pointerType: 'touch' })
+    expect(screen.queryByTestId('ci-run-steps-popover')).not.toBeInTheDocument()
+    fireEvent.pointerDown(button, { pointerType: 'touch' })
+    fireEvent.click(button)
+    fireEvent.pointerDown(button, { pointerType: 'touch' })
+    fireEvent.click(button)
+    expect(screen.queryByTestId('ci-run-steps-popover')).not.toBeInTheDocument()
+  })
+
+  it('ограничивает длинный список viewport и переносит длинные названия', async () => {
+    const longSteps = Array.from({ length: 30 }, (_, index) => mkStep({
+      id: 'long-' + index,
+      position: index + 1,
+      title: 'Очень длинное название шага без горизонтальной прокрутки ' + index,
+      status: index === 0 ? 'running' : 'queued'
+    }))
+    const longCache: RunFeedCache = {
+      detail: { run: mkRun({ slotProgress: { done: 1, total: 30, phase: 'pipeline' } }), steps: longSteps, fixAttempts: [], interactions: [] },
+      log: [],
+      conclusion: null
+    }
+    const rect = (left: number, top: number, width: number, height: number): DOMRect =>
+      ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }) as DOMRect
+    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('ci-run-steps-popover')) return rect(0, 0, 304, 420)
+      if (this.getAttribute('aria-label') === 'Показать шаги рана') return rect(292, 450, 24, 24)
+      return rect(0, 0, 0, 0)
+    })
+    vi.stubGlobal('innerWidth', 320)
+    vi.stubGlobal('innerHeight', 480)
+
+    render(<RunFeed {...baseProps(longCache)} />)
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Показать шаги рана' }))
+    const panel = screen.getByTestId('ci-run-steps-popover')
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(30)
+    await waitFor(() => expect(panel).toHaveStyle({ top: '22px', left: '8px' }))
+    expect(getComputedStyle(panel).overflowY).toBe('auto')
+    expect(getComputedStyle(panel).overflowX).toBe('hidden')
+    expect(getComputedStyle(within(panel).getByText('Очень длинное название шага без горизонтальной прокрутки 0')).overflowWrap).toBe('anywhere')
+
+    bounds.mockRestore()
+    vi.unstubAllGlobals()
   })
 })
 
