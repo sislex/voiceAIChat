@@ -908,6 +908,18 @@ CREATE TABLE IF NOT EXISTS kb_usage_queries (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_usage_seq ON kb_usage_queries(conversation_id, seq);
 CREATE INDEX IF NOT EXISTS idx_kb_usage_project ON kb_usage_queries(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_kb_usage_turn ON kb_usage_queries(turn_id);
+
+-- Серверная граница просмотра бейджа. Телеметрия остаётся неизменной; одна
+-- отметка изолирована одновременно владельцем и разговором.
+CREATE TABLE IF NOT EXISTS kb_usage_views (
+  user_id         TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  last_seq        INTEGER NOT NULL DEFAULT 0,
+  viewed_at       INTEGER NOT NULL,
+  PRIMARY KEY (user_id, conversation_id),
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
 -- Индекс по ci_run_id создаёт migrate(): на БД, которая старше этих колонок,
 -- CREATE TABLE IF NOT EXISTS их не добавит, и индекс здесь упал бы на старте.
 

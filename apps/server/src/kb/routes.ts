@@ -126,6 +126,16 @@ export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService,
     if (!report) return reply.code(404).send({ error: 'conversation not found' })
     return { ...report, ...kbUsageFlags(kb, usage.toolEnabled) } satisfies KbUsageReport
   })
+
+  // Граница берётся из успешно показанного снапшота. Более новое конкурентное
+  // событие имеет больший seq и останется непросмотренным.
+  app.post<{ Params: { id: string }; Body: { lastSeq?: number } }>('/api/conversations/:id/kb-usage/viewed', async (req, reply) => {
+    const lastSeq = req.body?.lastSeq
+    if (!Number.isSafeInteger(lastSeq) || (lastSeq ?? -1) < 0) return reply.code(400).send({ error: 'lastSeq must be a non-negative integer' })
+    const result = usage.db.markKbUsageViewed(uid(req), req.params.id, lastSeq!)
+    if (!result) return reply.code(404).send({ error: 'conversation not found' })
+    return result
+  })
 }
 
 /**

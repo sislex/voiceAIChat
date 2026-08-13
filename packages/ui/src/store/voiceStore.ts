@@ -999,7 +999,7 @@ export interface StoreActions {
   openKbUsage(): void
   closeKbUsage(): void
   /** Снапшот телеметрии БЗ чата (+ фолбэк по истории, если моста нет). */
-  loadKbUsage(conversationId: string): Promise<void>
+  loadKbUsage(conversationId: string, markViewed?: boolean): Promise<void>
   /** Снапшот телеметрии БЗ проекта (вкладка «По проекту»). */
   loadProjectKbUsage(projectId: string): Promise<void>
   /** Живой кадр kb.usage: upsert по id с отсечкой по seq. */
@@ -3702,7 +3702,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       available: state.kbStatus ? state.kbStatus.available : true
     })
   }
-  async function loadKbUsage(conversationId: string): Promise<void> {
+  async function loadKbUsage(conversationId: string, markViewed = false): Promise<void> {
     const fallback = kbUsageFallback(conversationId)
     if (!kbBridge) {
       // Моста нет (desktop) — панель всё равно показывает, что видела модель.
@@ -3713,6 +3713,12 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     try {
       const report = await kbBridge.getConversationUsage(conversationId)
       patchKbUsage(conversationId, () => kbUsageSnapshot(mergeKbUsage(report, fallback)))
+      if (markViewed) {
+        const viewed = await kbBridge.markConversationUsageViewed(conversationId, report.lastSeq)
+        patchKbUsage(conversationId, (c) => c.report
+          ? { ...c, report: { ...c.report, unreadCount: viewed.unreadCount } }
+          : c)
+      }
     } catch (err) {
       patchKbUsage(conversationId, (c) => ({ ...c, loading: false, error: err instanceof Error ? err.message : String(err) }))
     }
@@ -3731,6 +3737,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
           toolEnabled: report.toolEnabled,
           available: report.available,
           lastSeq: 0,
+          unreadCount: 0,
           totals: report.totals,
           sections: report.sections,
           recent: report.recent
@@ -3746,6 +3753,19 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     // пропускаем — их отчёт соберётся при открытии панели.
     if (state.kbUsage[conversationId]?.report) {
       patchKbUsage(conversationId, (c) => applyKbUsageFrame(c, query))
+      if (query.status !== 'pending' && kbBridge) {
+        if (state.kbUsageOpen && state.activeId === conversationId) {
+          // Пока панель открыта, каждый показанный терминальный кадр сразу
+          // продвигает границу. Повторный вызов безопасен благодаря MAX на сервере.
+          void kbBridge.markConversationUsageViewed(conversationId, query.seq)
+            .then((viewed) => patchKbUsage(conversationId, (c) => c.report
+              ? { ...c, report: { ...c.report, unreadCount: viewed.unreadCount } }
+              : c))
+        } else {
+          // Заодно подхватываем границу, которую могло продвинуть другое окно.
+          void loadKbUsage(conversationId)
+        }
+      }
     }
     if (projectId && state.kbUsageByProject[projectId]?.report) {
       patchKbProjectUsage(projectId, (c) => applyKbUsageFrame(c, query))

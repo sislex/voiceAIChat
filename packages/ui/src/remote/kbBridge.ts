@@ -8,6 +8,7 @@ import type { KbProjectUsageReport, KbUsageQuery, KbUsageReport } from '@shared/
 /** REST-часть моста (реализация — createKbUsageRest в httpApi.ts). */
 export interface RendererKbRest {
   getConversationUsage(conversationId: string): Promise<KbUsageReport>
+  markConversationUsageViewed(conversationId: string, lastSeq: number): Promise<{ lastSeq: number; unreadCount: number }>
   getProjectUsage(projectId: string): Promise<KbProjectUsageReport>
 }
 
