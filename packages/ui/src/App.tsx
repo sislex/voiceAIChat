@@ -1392,7 +1392,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         <Dialog
           title="Как начать разработку?"
           ariaLabel="Настройки задачи разработки"
-          size="sm"
+          size="lg"
           onClose={() => { if (!taskLaunchPending) setTaskProposal(null) }}
           closeOnOverlay={!taskLaunchPending}
           className="task-launch-dialog"
@@ -1402,17 +1402,12 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
             <Button variant="secondary" onClick={() => void chooseTaskLaunch('chat')} loading={taskLaunchPending}>Работать в текущем чате</Button>
           </>}
         >
-          <p className="task-launch-intro">Ассистент подготовил задачу. Выберите, где начать работу.</p>
           <div className="task-launch-fields">
-            <label>Название
+            <label className="task-launch-title">Название
               <input value={taskProposal.title} onChange={(event) => setTaskProposal({ ...taskProposal, title: event.target.value })} />
             </label>
-            <label>Описание
-              <textarea value={taskProposal.description} rows={4} onChange={(event) => setTaskProposal({ ...taskProposal, description: event.target.value })} />
-            </label>
-            <label>Критерии приёмки
-              <textarea value={taskProposal.acceptanceCriteria} rows={4} onChange={(event) => setTaskProposal({ ...taskProposal, acceptanceCriteria: event.target.value })} />
-            </label>
+            <p className="task-launch-intro">Ассистент подготовил задачу. Проверьте параметры и выберите, где начать работу.</p>
+            <div className="task-launch-settings" aria-label="Дополнительные настройки">
             <label>Движок
               <select value={taskProposal.provider} onChange={(event) => {
                 const provider = event.target.value as LlmProvider
@@ -1446,6 +1441,13 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
             </label>
             <label>Ответственный
               <input value={taskProposal.assignee ?? ''} onChange={(event) => setTaskProposal({ ...taskProposal, assignee: event.target.value || null })} />
+            </label>
+            </div>
+            <label className="task-launch-main-field">Описание
+              <textarea value={taskProposal.description} rows={8} onChange={(event) => setTaskProposal({ ...taskProposal, description: event.target.value })} />
+            </label>
+            <label className="task-launch-main-field">Критерии приёмки
+              <textarea value={taskProposal.acceptanceCriteria} rows={8} onChange={(event) => setTaskProposal({ ...taskProposal, acceptanceCriteria: event.target.value })} />
             </label>
           </div>
         </Dialog>
