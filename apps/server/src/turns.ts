@@ -549,7 +549,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
     // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
     // выполнения). На своей машине действия регулирует политика машины.
-    if (executionDisabled || (role === 'user' && !remote)) permissionMode = 'plan'
+    if (executionDisabled || (role !== 'admin' && !remote)) permissionMode = 'plan'
     // Полный контекст хода: все сообщения разговора на момент отправки
     // (реплика пользователя уже сохранена клиентом перед claude.send).
     const contextMessages = deps.db

@@ -23,7 +23,7 @@ import {
 } from '@voicechat/shared'
 
 import type { VoiceChatDb } from '../db/database.js'
-import { uid } from '../users/auth.js'
+import { requireProjectPermission, uid } from '../users/auth.js'
 import type { BoardHub } from '../projects/boardHub.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import { kbUsageFlags } from '../kb/routes.js'
@@ -80,13 +80,18 @@ export function registerProjectRoutes(
   const member = (req: FastifyRequest, id: string): ProjectDetail | null =>
     withMachineStatus(db.getProject(uid(req), id))
 
+  const taskCreateGuard = { preHandler: requireProjectPermission('task:create') }
+  const taskUpdateGuard = { preHandler: requireProjectPermission('task:update') }
+  const mergeGuard = { preHandler: requireProjectPermission('task:merge') }
+  const settingsGuard = { preHandler: requireProjectPermission('project:settings') }
+
   // --- Проекты ---------------------------------------------------------
 
   app.get(REST.projects, async (req): Promise<ProjectSummary[]> => db.listProjects(uid(req)))
 
   app.post<{
     Body: { name?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
-  }>(REST.projects, async (req, reply): Promise<ProjectDetail | FastifyReply> => {
+  }>(REST.projects, settingsGuard, async (req, reply): Promise<ProjectDetail | FastifyReply> => {
     const b = req.body ?? {}
     const name = (b.name ?? '').trim()
     if (!name) return badReq(reply, 'name required')
@@ -137,11 +142,10 @@ export function registerProjectRoutes(
       ciTestFixCycleLimit?: number
       doneRetentionDays?: number | null
     }
-  }>('/api/projects/:id', async (req, reply) => {
+  }>('/api/projects/:id', settingsGuard, async (req, reply) => {
 
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
-    if (p.role !== 'owner') return forbidden(reply)
     const body = { ...(req.body ?? {}) }
     if (body.previewUrl !== undefined) {
       const previewUrl = normalizePreviewUrl(body.previewUrl)
@@ -154,10 +158,9 @@ export function registerProjectRoutes(
     return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)
   })
 
-  app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
+  app.delete<{ Params: { id: string } }>('/api/projects/:id', settingsGuard, async (req, reply) => {
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
-    if (p.role !== 'owner') return forbidden(reply)
     db.deleteProject(uid(req), req.params.id)
     return { ok: true }
   })
@@ -169,8 +172,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
-      if (p.role !== 'owner') return forbidden(reply)
-      const username = (req.body?.username ?? '').trim()
+        const username = (req.body?.username ?? '').trim()
       if (!username) return badReq(reply, 'username required')
       try {
         return db.addMember(uid(req), req.params.id, username) ?? nf(reply)
@@ -185,8 +187,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
-      if (p.role !== 'owner') return forbidden(reply)
-      const detail = db.removeMember(uid(req), req.params.id, req.params.username)
+        const detail = db.removeMember(uid(req), req.params.id, req.params.username)
       boardHub.emit(req.params.id) // снятые назначения меняют доску
       return detail ?? nf(reply)
     }
@@ -202,7 +203,6 @@ export function registerProjectRoutes(
   app.get<{ Params: { id: string } }>('/api/projects/:id/machines/available', async (req, reply) => {
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
-    if (p.role !== 'owner') return forbidden(reply)
     const linked = new Set(p.machines.map((machine) => machine.agentId))
     return db.listAgents(uid(req))
       .filter((agent) => !linked.has(agent.id))
@@ -214,8 +214,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
-      if (p.role !== 'owner') return forbidden(reply)
-      const agentId = (req.body?.agentId ?? '').trim()
+        const agentId = (req.body?.agentId ?? '').trim()
       if (!agentId) return badReq(reply, 'agentId required')
       if (p.machines.some((machine) => machine.agentId === agentId)) {
         return reply.code(409).send({ error: 'machine already linked' })
@@ -233,8 +232,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
-      if (p.role !== 'owner') return forbidden(reply)
-      return withMachineStatus(db.unlinkMachine(uid(req), req.params.id, req.params.agentId)) ?? nf(reply)
+        return withMachineStatus(db.unlinkMachine(uid(req), req.params.id, req.params.agentId)) ?? nf(reply)
     }
   )
 
@@ -244,8 +242,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
-      if (p.role !== 'owner') return forbidden(reply)
-      return req.body?.reposRoot !== undefined
+        return req.body?.reposRoot !== undefined
         ? withMachineStatus(db.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot)) ?? nf(reply)
         : withMachineStatus(db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? '')) ?? nf(reply)
     }
@@ -257,8 +254,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
-      if (p.role !== 'owner') return forbidden(reply)
-      const agentId = (req.body?.agentId ?? '').trim()
+        const agentId = (req.body?.agentId ?? '').trim()
       if (!agentId) return badReq(reply, 'agentId required')
       try {
         return withMachineStatus(db.setProjectDefaultMachine(uid(req), req.params.id, agentId)) ?? nf(reply)
@@ -358,7 +354,7 @@ export function registerProjectRoutes(
   app.post<{
     Params: { id: string }
     Body: { columnId?: string; title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null }
-  }>('/api/projects/:id/tasks', async (req, reply): Promise<Task | FastifyReply> => {
+  }>('/api/projects/:id/tasks', taskCreateGuard, async (req, reply): Promise<Task | FastifyReply> => {
     const b = req.body ?? {}
     const title = (b.title ?? '').trim()
     if (!b.columnId || !title) return badReq(reply, 'columnId and title required')
@@ -390,7 +386,7 @@ export function registerProjectRoutes(
   app.patch<{
     Params: { id: string; taskId: string }
     Body: { title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
-  }>('/api/projects/:id/tasks/:taskId', async (req, reply): Promise<Task | FastifyReply> => {
+  }>('/api/projects/:id/tasks/:taskId', taskUpdateGuard, async (req, reply): Promise<Task | FastifyReply> => {
 
     try {
       const task = db.updateTask(uid(req), req.params.id, req.params.taskId, req.body ?? {})
@@ -453,10 +449,10 @@ export function registerProjectRoutes(
   // по умолчанию машина workspace, agentId в теле выбирает другую машину проекта.
   app.post<{ Params: { id: string; taskId: string }; Body: { agentId?: string } }>(
     '/api/projects/:id/tasks/:taskId/merge',
+    mergeGuard,
     async (req, reply) => {
       const project = member(req, req.params.id)
       if (!project) return nf(reply)
-      if (project.role !== 'owner') return forbidden(reply)
       try {
         const run = db.startMergeRun(uid(req), req.params.id, req.params.taskId, req.body?.agentId ?? null)
         merge?.start(run)
@@ -485,7 +481,7 @@ export function registerProjectRoutes(
     }
   })
 
-  app.post<{ Params: { runId: string }; Body: { agentId?: string; unpin?: boolean } }>('/api/merge/runs/:runId/retry', async (req, reply) => {
+  app.post<{ Params: { runId: string }; Body: { agentId?: string; unpin?: boolean } }>('/api/merge/runs/:runId/retry', mergeGuard, async (req, reply) => {
     try {
       const run = db.retryMergeRun(uid(req), req.params.runId, req.body?.agentId ?? null, req.body?.unpin === true)
       merge?.start(run)

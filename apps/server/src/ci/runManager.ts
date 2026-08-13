@@ -404,7 +404,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId, userId)
     const settings = deps.db.getSettings(userId)
     const userLlm = deps.db.ciLlmDefaultsForUser(userId)
-    const role = deps.db.getUser(userId)?.role ?? 'user'
+    const role = deps.db.getUser(userId)?.role ?? 'developer'
     // Обычный запуск наследует пару задачи → проекта → пользователя. Окно создания
     // задачи передаёт разовый выбор, который фиксируется только в этом ране.
     const requestedProvider = launchOptions?.provider ?? userLlm.provider
@@ -764,7 +764,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       const selectedModel = model ? model.model.trim() : run.llmModel
       if (provider !== 'claude' && provider !== 'codex') return { error: 'Неизвестный провайдер модели' }
       if (provider === 'claude' && !selectedModel) return { error: 'Модель Claude не выбрана' }
-      const role = deps.db.getUser(userId)?.role ?? 'user'
+      const role = deps.db.getUser(userId)?.role ?? 'developer'
       const resolvedEngine = deps.db.resolveLlmEngine(model?.llmEngineId ?? run.llmEngineId, provider, role)
       if (model?.llmEngineId && !resolvedEngine.engine) return { error: 'Исполнитель недоступен для роли' }
       deps.db.updateCiRun(run.id, { llmEngineId: resolvedEngine.engine?.id ?? null, llmProvider: provider, llmModel: selectedModel })

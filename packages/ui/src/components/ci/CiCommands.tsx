@@ -43,7 +43,7 @@ export interface CiCommandsProps {
   suggestions: CiCommandSuggestion[]
   workspaces: CiWorkspaceReportItem[]
   /** Роль текущего пользователя — правка глобальных настроек только для admin. */
-  role: 'admin' | 'user'
+  role: import('@shared/types').UserRole
   llmAccess?: UserLlmAccess[]
   /** Проекты для выбора scope='project'. */
   projects: Array<{ id: string; name: string }>

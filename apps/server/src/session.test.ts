@@ -172,7 +172,7 @@ describe('WS: роль user не выполняет на сервере (фор�
     }
   }
 
-  async function permForRole(role: 'admin' | 'user', convMode?: 'plan' | 'acceptEdits' | 'bypassPermissions'): Promise<string> {
+  async function permForRole(role: 'admin' | 'developer', convMode?: 'plan' | 'acceptEdits' | 'bypassPermissions'): Promise<string> {
     const rdb = new VoiceChatDb(':memory:')
     const rapp = await buildServer({
       config: loadConfig({ PORT: '0' }),
@@ -182,7 +182,7 @@ describe('WS: роль user не выполняет на сервере (фор�
     })
     await rapp.listen({ port: 0, host: '127.0.0.1' })
     const rport = (rapp.server.address() as AddressInfo).port
-    if (role === 'user') rdb.createUser('user', '', 'user') // admin засеян buildServer'ом
+    if (role === 'developer') rdb.createUser('developer', '', 'developer') // admin засеян buildServer'ом
     const conv = rdb.createConversation(role, 'Чат')
     if (convMode) rdb.setConversationExecTarget(role, conv.id, null, undefined, undefined, undefined, undefined, convMode)
     const ws = await connect(rport, signToken({ name: role, role }, SECRET))
@@ -201,7 +201,7 @@ describe('WS: роль user не выполняет на сервере (фор�
   }
 
   it('user на сервере → permissionMode форсится в plan', async () => {
-    expect(await permForRole('user')).toBe('perm:plan')
+    expect(await permForRole('developer')).toBe('perm:plan')
   })
 
   it('admin на сервере → permissionMode из настроек (не клампится)', async () => {
@@ -214,7 +214,7 @@ describe('WS: роль user не выполняет на сервере (фор�
   })
 
   it('переопределение разговора не даёт роли user обойти форс plan на сервере', async () => {
-    expect(await permForRole('user', 'bypassPermissions')).toBe('perm:plan')
+    expect(await permForRole('developer', 'bypassPermissions')).toBe('perm:plan')
   })
 })
 
@@ -506,10 +506,10 @@ describe('WS: relay действий веб-превью', () => {
     app = await buildServer({ config: loadConfig({ PORT: '0' }), db, claude: mockClaude, sessionSecret: SECRET, previewRelay: relay })
     await app.listen({ port: 0, host: '127.0.0.1' })
     const p2 = (app.server.address() as AddressInfo).port
-    db.createUser('bob', '', 'user')
+    db.createUser('bob', '', 'developer')
 
     const mine = await connect(p2)
-    const other = await connect(p2, signToken({ name: 'bob', role: 'user' }, SECRET))
+    const other = await connect(p2, signToken({ name: 'bob', role: 'developer' }, SECRET))
     const otherFrames: Array<{ t: string }> = []
     other.on('message', (d) => otherFrames.push(JSON.parse(d.toString())))
     // Клиент-автоответчик: получил preview.action — вернул результат чтения.
@@ -537,11 +537,11 @@ describe('WS: кадры использования базы знаний', () =
     app = await buildServer({ config: loadConfig({ PORT: '0' }), db, claude: mockClaude, sessionSecret: SECRET, kbUsage: tracker })
     await app.listen({ port: 0, host: '127.0.0.1' })
     const p2 = (app.server.address() as AddressInfo).port
-    db.createUser('bob', '', 'user')
+    db.createUser('bob', '', 'developer')
     const conv = db.createConversation(U, 'Чат')
 
     const mine = await connect(p2)
-    const other = await connect(p2, signToken({ name: 'bob', role: 'user' }, SECRET))
+    const other = await connect(p2, signToken({ name: 'bob', role: 'developer' }, SECRET))
     const mineFrames: Array<{ t: string; query?: { status: string; chars: number } }> = []
     const otherFrames: Array<{ t: string }> = []
     mine.on('message', (d) => mineFrames.push(JSON.parse(d.toString())))
