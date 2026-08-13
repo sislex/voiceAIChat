@@ -31,9 +31,9 @@ services:
       HOST: 0.0.0.0
       PORT: "8787"
       VC_DATA_DIR: /data
-      # Метаданные релиза: номер можно переопределить при деплое, время без
-      # VC_RELEASED_AT фиксируется сервером при старте нового контейнера.
-      VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-0.1.0}
+      # Метаданные релиза: номер приходит от публикации или строгого Git-тега;
+      # пустое значение означает, что версия выпуска неизвестна.
+      VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
       VC_RELEASED_AT: ${VC_RELEASED_AT:-}
       VC_RELEASE_COMMIT: ${VC_RELEASE_COMMIT:-}
       VC_RELEASE_TASK: ${VC_RELEASE_TASK:-}

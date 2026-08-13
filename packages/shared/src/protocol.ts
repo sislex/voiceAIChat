@@ -111,8 +111,8 @@ export interface DesktopMigrationResult {
 
 export interface HealthResponse {
   ok: true
-  /** Номер версии собранного релиза. */
-  version: string
+  /** Номер версии собранного релиза; null, если release-метаданные не переданы. */
+  version: string | null
   /** ISO-время сборки/выпуска релиза. */
   releasedAt: string
   /** Короткий Git SHA собранного релиза; null вне Git-сборки. */

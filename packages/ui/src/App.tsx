@@ -924,7 +924,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       ].filter(Boolean).join(' ')}
       data-theme={state.settings.theme}
     >
-      {release && (() => {
+      {release?.version && (() => {
         const details = [
           `выпущена: ${new Date(release.releasedAt).toLocaleString()}`,
           ...(release.commit ? [`Коммит: ${release.commit}`] : []),

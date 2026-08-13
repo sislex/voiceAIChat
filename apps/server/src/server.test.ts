@@ -38,7 +38,7 @@ describe('server: HTTP', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({
       ok: true,
-      version: expect.any(String),
+      version: null,
       commit: null,
       task: null
     })
@@ -73,11 +73,25 @@ describe('server: VC_MCP_PUBLIC_BASE', () => {
   })
 })
 
-describe('docker-compose: сервер отдаёт исполнителю адрес, по которому тот его видит', () => {
+describe('docker-compose: runtime-метаданные и адрес исполнителя', () => {
+  const compose = readFileSync(new URL('../../../docker-compose.yml', import.meta.url), 'utf8')
+
   it('у сервиса voicechat задан VC_MCP_PUBLIC_BASE с дефолтом на имя сервиса', () => {
-    const compose = readFileSync(new URL('../../../docker-compose.yml', import.meta.url), 'utf8')
     // Дефолт живёт в compose, а не в коде: имя сервиса известно только ему.
     expect(compose).toContain('VC_MCP_PUBLIC_BASE: ${VC_MCP_PUBLIC_BASE:-http://voicechat:8787}')
+  })
+
+  it('не подменяет отсутствующую версию релиза техническим номером', () => {
+    expect(compose).toContain('VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}')
+    expect(compose).not.toContain('VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-0.1.0}')
+  })
+
+  it('prod-скрипты сохраняют версию защищённой публикации и используют Git-тег как fallback', () => {
+    for (const script of ['deploy.sh', 'rebuild-when-idle.sh']) {
+      const source = readFileSync(new URL(`../../../scripts/prod/${script}`, import.meta.url), 'utf8')
+      expect(source).toContain('export VC_RELEASE_VERSION=${VC_RELEASE_VERSION:-${release_tag:+${release_tag#v}}}')
+      expect(source).not.toContain('export VC_RELEASE_VERSION=${VC_RELEASE_VERSION:-0.1.0}')
+    }
   })
 })
 
