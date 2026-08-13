@@ -420,6 +420,9 @@ describe('TaskModal — использование базы знаний по р
     const block = await screen.findByTestId('task-modal-kb-usage')
     expect(within(block).getByText('по 2 ранам задачи')).toBeInTheDocument()
     expect(within(block).getByTestId('task-modal-kb-usage-nums').textContent).toContain('5 обращений')
+    const toggle = within(block).getByRole('button', { name: /Использование базы знаний/, hidden: true })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toggle)
     expect(within(block).getByRole('link', { name: /CI-раннер/, hidden: true })).toHaveAttribute('href', '#/kb/ci-runner')
   })
 
