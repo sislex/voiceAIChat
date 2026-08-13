@@ -11,7 +11,7 @@
 // «Подробности», а действия шапки (чат, флаг, удаление) — в ⋯-меню. Разметка
 // разная, поэтому ширина проверяется через useMediaQuery, а не только в CSS.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Board, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { TASK_PRIORITIES } from '@shared/projects'
 import type { ModifierPrompt } from '@shared/types'
@@ -87,6 +87,12 @@ export interface TaskModalProps {
   onClose: () => void
   /** Focused editable field, for synchronized assistant context. */
   onSelectedFieldChange?: (field: keyof TaskUpdateFields | null) => void
+  /** Черновик новой задачи: карточка ничего не сохраняет до выбора действия. */
+  draft?: boolean
+  /** Действия создания, показанные в стандартной нижней панели карточки. */
+  footer?: ReactNode
+  /** Дополнительные проектные настройки черновика (например, движок и модель). */
+  detailsExtra?: ReactNode
 }
 
 function toDateInput(ms: number | null): string {
@@ -180,14 +186,14 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   // дублируются вопросы модели из CI-рана.
   const ensureChat = props.onEnsureChat
   useEffect(() => {
-    if (task.type === 'task' && !task.chatId && ensureChat) ensureChat(task.id)
-  }, [task.id, task.type, task.chatId, ensureChat])
+    if (!props.draft && task.type === 'task' && !task.chatId && ensureChat) ensureChat(task.id)
+  }, [task.id, task.type, task.chatId, ensureChat, props.draft])
 
   // Использование БЗ — агрегат по ВСЕМ ранам задачи. Перечитываем, когда
   // меняется статус последнего рана: только что закончившийся ран добавил свои
   // обращения, и цифры в карточке обязаны это показать.
   const kbUsage = useRemoteReport(
-    () => (task.type === 'task' ? window.ci?.getTaskKbUsage(task.projectId, task.id) : undefined),
+    () => (!props.draft && task.type === 'task' ? window.ci?.getTaskKbUsage(task.projectId, task.id) : undefined),
     [task.id, task.projectId, task.type, props.ciSummary?.status]
   )
   // Отчёт по расходу — только когда ран задачи завершён: пока он идёт, цифры
@@ -195,7 +201,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   // же ключу, что и БЗ: закончившийся ран добавил свои ходы.
   const ciFinished = props.ciSummary != null && !isActiveCiStatus(props.ciSummary.status)
   const ciReport = useRemoteReport<CiTaskReport>(
-    () => (task.type === 'task' && ciFinished ? window.ci?.getTaskReport(task.projectId, task.id) : undefined),
+    () => (!props.draft && task.type === 'task' && ciFinished ? window.ci?.getTaskReport(task.projectId, task.id) : undefined),
     [task.id, task.projectId, task.type, ciFinished, props.ciSummary?.status]
   )
 
@@ -302,7 +308,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     </label>
   )
 
-  const headActions = mobile ? (
+  const headActions = props.draft ? null : mobile ? (
     <span className="jmodal-menuwrap" ref={menuRef}>
       <IconButton
         aria-label="Действия с задачей"
@@ -369,24 +375,26 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         их не получает: окна лежат в общем стеке (useDialogStack). Своего слушателя
         Esc у карточки нет — запрос на закрытие приходит в requestClose. */}
     <Dialog
-      title={`${TYPE_LABEL[task.type]} · ${key}`}
+      title={props.draft ? 'Создание задачи' : `${TYPE_LABEL[task.type]} · ${key}`}
+      ariaLabel={props.draft ? 'Создание задачи' : undefined}
       size="lg"
       onClose={props.onClose}
       onEscape={requestClose}
       testId="task-modal"
       className="jmodal-frame"
       actions={headActions}
+      footer={props.footer}
     >
-      <div className="task-card-state" aria-live="polite">
+      {!props.draft && <div className="task-card-state" aria-live="polite">
         <span className="task-card-state__identity">{key} · {task.title}</span>
         <span className="task-card-state__current">{column?.name ?? 'Без статуса'}{props.ciSummary && isActiveCiStatus(props.ciSummary.status) ? ` · ${props.ciSummary.slotProgress.phase}` : task.activeMergeRunId ? ' · Мерж выполняется' : ''}</span>
         {props.ciSummary && !isActiveCiStatus(props.ciSummary.status) && <span className={`lozenge ci-lozenge--${ciTone(props.ciSummary.status)}`}>Последний запуск: {ciStatusLabel(props.ciSummary.status)}</span>}
-      </div>
-      <nav className="task-tabs" role="tablist" aria-label="Разделы карточки">
+      </div>}
+      {!props.draft && <nav className="task-tabs" role="tablist" aria-label="Разделы карточки">
         {([['general','Общее'],['settings','Настройки'],['qa','Ручное QA'],['progress','Ход выполнения'],['merge','Merge'],['feed','Лента рана']] as const).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={activeTab === id} className={activeTab === id ? 'task-tab task-tab--active' : 'task-tab'} onClick={() => setActiveTab(id)}>{label}</button>
         ))}
-      </nav>
+      </nav>}
       <div className={`jmodal jmodal--tab-${activeTab}`} onFocusCapture={(event) => {
         const label = (event.target as HTMLElement).getAttribute('aria-label') ?? ''
         const field: keyof TaskUpdateFields | null = label.includes('Заголовок') ? 'title' : label.includes('Описание') ? 'description' : label.includes('Критерии') ? 'acceptanceCriteria' : label.includes('Приоритет') ? 'priority' : label.includes('Исполнитель') ? 'assignee' : label.includes('Стори') ? 'storyPoints' : label.includes('Срок') ? 'dueDate' : null
@@ -644,11 +652,12 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                   onChange={(e) => props.onUpdate(task.id, { dueDate: fromDateInput(e.target.value) })}
                 />
               </label>
-              <p className="jmodal-dates">
+              {props.detailsExtra}
+              {!props.draft && <p className="jmodal-dates">
                 Статус: {column?.name ?? '—'}
                 <br />Создано: {new Date(task.createdAt).toLocaleDateString('ru')}
                 <br />Обновлено: {new Date(task.updatedAt).toLocaleDateString('ru')}
-              </p>
+              </p>}
             </div>
           )}
           {task.type === 'task' && (props.onStartCi || props.ciSummary) && (
@@ -689,15 +698,15 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             </div>
           )}
         </aside>
-        <section className="task-tab-panel" data-testid="task-settings-panel" hidden={activeTab !== 'settings'}>
+        {!props.draft && <section className="task-tab-panel" data-testid="task-settings-panel" hidden={activeTab !== 'settings'}>
           <div className="task-settings-stack">
             <CiTaskSettings section="machine" projectId={task.projectId} taskId={task.id} mergeMachineBound={task.mergeMachineBound} />
             <CiTaskSettings section="model" projectId={task.projectId} taskId={task.id} />
             <CiTaskSettings section="commands" projectId={task.projectId} taskId={task.id} />
             <FeaturePreviewSection projectId={task.projectId} taskId={task.id} />
           </div>
-        </section>
-        <section className="task-tab-panel" hidden={activeTab !== 'qa'}><ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} /></section>
+        </section>}
+        {!props.draft && <><section className="task-tab-panel" hidden={activeTab !== 'qa'}><ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} /></section>
         <section className="task-tab-panel" hidden={activeTab !== 'progress'}>
           {props.ciSummary?.progress && <AutomationProgressView progress={props.ciSummary.progress} />}
           <nav className="task-subtabs" role="tablist" aria-label="Ход выполнения">
@@ -725,7 +734,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           <p>{task.activeMergeRunId ? 'Активен merge-ран.' : props.ciSummary ? `${ciStatusLabel(props.ciSummary.status)} · ${props.ciSummary.slotProgress.done}/${props.ciSummary.slotProgress.total}` : 'Запусков ещё нет.'}</p>
           {task.activeMergeRunId && <MergeRunFeed runId={task.activeMergeRunId} />}
           {!task.activeMergeRunId && props.ciSummary && props.onOpenCiRun && <Button variant="primary" onClick={() => props.onOpenCiRun?.(props.ciSummary!.id)}>Открыть техническую ленту</Button>}
-        </section>
+        </section></>}
       </div>
     </Dialog>
     <PromptBuilder {...aiAssist.popupProps} />
