@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { createTurnManager } from './turns.js'
 import { VoiceChatDb } from './db/database.js'
 import { DEFAULT_AGENT_POLICY, imageBlock } from '@voicechat/shared'
-import type { LlmClient, LlmRequest } from './claude/types.js'
+import type { LlmClient, LlmRequest, LlmStreamHandlers } from './claude/types.js'
 import { createKbUsageTracker } from './kb/usage.js'
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -758,6 +758,84 @@ describe('turns: чередование действий (смещение at)',
     expect(ai?.meta?.activity?.[0]?.at).toBeUndefined()
     // ts не привязан к тексту и остаётся (для длительностей в кратком виде).
     expect(typeof ai?.meta?.activity?.[0]?.ts).toBe('number')
+    db.close()
+  })
+})
+
+describe('turns: управляемая персистентная очередь', () => {
+  function controlled() {
+    const handlers: LlmStreamHandlers[] = []
+    let cancels = 0
+    const client: LlmClient = {
+      send(_req, next) {
+        handlers.push(next)
+        return { cancel: () => { cancels += 1 } }
+      }
+    }
+    return { client, handlers, cancels: () => cancels }
+  }
+
+  it('Stop завершает CLI, сохраняет partial как interrupted и не запускает очередь', async () => {
+    const db = freshDb()
+    const conversation = db.createConversation(U, 'queue')
+    const activeMessage = db.addMessage(U, conversation.id, 'u1', 'Активный', '10:00')
+    const queuedMessage = db.addMessage(U, conversation.id, 'u1', 'Следующий', '10:01')
+    const llm = controlled()
+    const turns = createTurnManager({ db, claude: llm.client })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: activeMessage.id, segments: [{ speakerId: 1, text: 'Активный' }] })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: queuedMessage.id, segments: [{ speakerId: 1, text: 'Следующий' }] })
+    llm.handlers[0].onDelta('Часть ответа')
+    turns.cancel(conversation.id)
+
+    expect(llm.cancels()).toBe(1)
+    expect(llm.handlers).toHaveLength(1)
+    expect(db.listMessages(U, conversation.id).at(-1)).toMatchObject({ role: 'ai', text: 'Часть ответа', meta: { interrupted: true } })
+    expect(db.isTurnQueuePaused(U, conversation.id)).toBe(true)
+    expect(db.listQueuedTurns(U, conversation.id)).toMatchObject([{ messageId: queuedMessage.id }])
+    llm.handlers[0].onDelta(' поздний токен')
+    expect(db.listMessages(U, conversation.id).at(-1)?.text).toBe('Часть ответа')
+    db.close()
+  })
+
+  it('два одновременных start дают один CLI-ход и один элемент очереди', async () => {
+    const db = freshDb()
+    const conversation = db.createConversation(U, 'queue')
+    const first = db.addMessage(U, conversation.id, 'u1', 'Первый', '10:00')
+    const second = db.addMessage(U, conversation.id, 'u1', 'Второй', '10:01')
+    const llm = controlled()
+    const turns = createTurnManager({ db, claude: llm.client })
+    await Promise.all([
+      turns.start({ userId: U, conversationId: conversation.id, messageId: first.id, segments: [{ speakerId: 1, text: 'Первый' }] }),
+      turns.start({ userId: U, conversationId: conversation.id, messageId: second.id, segments: [{ speakerId: 1, text: 'Второй' }] }),
+      turns.start({ userId: U, conversationId: conversation.id, messageId: second.id, segments: [{ speakerId: 1, text: 'Второй' }] })
+    ])
+    expect(llm.handlers).toHaveLength(1)
+    expect(db.listQueuedTurns(U, conversation.id)).toHaveLength(1)
+    db.close()
+  })
+
+  it('Отправить сейчас прерывает активный ход и запускает один понятный объединённый prompt', async () => {
+    const db = freshDb()
+    const conversation = db.createConversation(U, 'queue')
+    const active = db.addMessage(U, conversation.id, 'u1', 'Базовый вопрос', '10:00')
+    const addition = db.addMessage(U, conversation.id, 'u1', 'Добавь пример', '10:01')
+    const requests: LlmRequest[] = []
+    const handlers: LlmStreamHandlers[] = []
+    const client: LlmClient = { send(req, next) { requests.push(req); handlers.push(next); return { cancel: () => {} } } }
+    const turns = createTurnManager({ db, claude: client })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: active.id, segments: [{ speakerId: 1, text: active.text }] })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: addition.id, segments: [{ speakerId: 1, text: addition.text }] })
+    const queued = db.listQueuedTurns(U, conversation.id)[0]
+    turns.sendQueuedNow(U, conversation.id, queued.id)
+    await new Promise<void>((resolve) => queueMicrotask(() => resolve()))
+
+    expect(requests).toHaveLength(2)
+    expect(requests[1].prompt).toContain('Исходный вопрос:')
+    expect(requests[1].prompt).toContain('Базовый вопрос')
+    expect(requests[1].prompt).toContain('Дополнение:')
+    expect(requests[1].prompt).toContain('Добавь пример')
+    expect(db.listQueuedTurns(U, conversation.id)).toEqual([])
+    expect(db.listMessages(U, conversation.id).at(-1)?.text).toContain('Ответь на итоговый вопрос')
     db.close()
   })
 })

@@ -51,7 +51,7 @@ import {
 import type { LoadStatus } from '../lib/loadState'
 import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
 import { detectOpenUtility, toolBlock, type ToolSpec } from '@shared/tools'
-import type { ActiveTurn, ServerFileInfo, SystemCapabilities } from '@shared/protocol'
+import type { ActiveTurn, QueuedTurn, ServerFileInfo, SystemCapabilities } from '@shared/protocol'
 import type { McpServer } from '@shared/mcp'
 import type { LoginStatusMap } from '@shared/auth'
 import type { AgentCreated, AgentInfo, AgentPolicy } from '@shared/agentProtocol'
@@ -320,6 +320,9 @@ export interface AppState {
   streamingReply: string
   /** Незавершённые ходы модели по разговорам: id → накопленный частичный текст. */
   activeTurns: Record<string, string>
+  /** Персистентная очередь по разговорам и её явная пауза после Stop. */
+  queuedTurns: Record<string, QueuedTurn[]>
+  queuePaused: Record<string, boolean>
   /** Активность незавершённых ходов по разговорам — восстановление счётчика действий. */
   activeActivity: Record<string, ClaudeLogEntry[]>
   /** Метаданные последнего завершённого хода (длительность/токены/стоимость). */
@@ -556,10 +559,14 @@ export interface StoreDeps {
     segments: SttSegmentWire[],
     attachments?: string[],
     verbose?: boolean,
-    execTarget?: string | null
+    execTarget?: string | null,
+    messageId?: string
   ) => void
   /** Отмена текущего запроса к Claude (renderer → main). */
   cancelClaude?: (conversationId?: string) => void
+  editQueued?: (conversationId: string, id: string, text: string) => void
+  deleteQueued?: (conversationId: string, id: string) => void
+  sendQueuedNow?: (conversationId: string, id: string) => void
   /** Запрос статуса модели Whisper (наличие). */
   getSttStatus?: () => Promise<SttStatus>
   /** Запуск скачивания модели Whisper (renderer → main). */
@@ -691,6 +698,10 @@ export interface StoreActions {
   applyClaudeError(message: string, conversationId?: string): void
   /** Применить снапшот активных ходов (claude:active) — восстановление стрима. */
   applyClaudeActive(turns: ActiveTurn[]): void
+  applyClaudeQueue(conversationId: string, items: QueuedTurn[], paused: boolean): void
+  editQueued(id: string, text: string): void
+  deleteQueued(id: string): void
+  sendQueuedNow(id: string): void
   /** Применить живые счётчики токенов хода (claude:usage); conversationId — чей ход. */
   applyClaudeUsage(usage: TurnUsage, conversationId?: string): void
   /** Скрыть баннер ошибки. */
@@ -1041,6 +1052,8 @@ function initialState(): AppState {
     liveActivity: [],
     streamingReply: '',
     activeTurns: {},
+    queuedTurns: {},
+    queuePaused: {},
     activeActivity: {},
     lastTurnMeta: null,
     liveUsage: null,
@@ -1734,13 +1747,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Роутинг ответа: реальный Claude (стрим событиями) или мок-пайплайн. */
-  function beginReply(segments: SttSegmentWire[], attachments: string[] = [], execTarget: string | null = activeConversationExecTarget()): void {
+  function beginReply(segments: SttSegmentWire[], attachments: string[] = [], execTarget: string | null = activeConversationExecTarget(), messageId?: string): void {
     if (claudeEnabled && deps.sendClaudePrompt && state.activeId) {
       setState({ streamingReply: '', lastTurnMeta: null, liveActivity: [], liveUsage: null })
       ttsBuffer = ''
       // verbose=true всегда: активность нужна для живого статуса и подробного вида
       // сообщения (глобальная консоль всё равно рендерится только при showConsole).
-      if (execTarget === null) deps.sendClaudePrompt(state.activeId, segments, attachments, true)
+      if (messageId) deps.sendClaudePrompt(state.activeId, segments, attachments, true, execTarget, messageId)
+      else if (execTarget === null) deps.sendClaudePrompt(state.activeId, segments, attachments, true)
       else deps.sendClaudePrompt(state.activeId, segments, attachments, true, execTarget)
       return
     }
@@ -2879,9 +2893,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       ...(messageAttachments.length ? { attachments: messageAttachments } : {})
     })
     const execTarget = activeConversationExecTarget()
-    if (!created) {
-      await persistMessage('u1', messageText, undefined, messageMeta, execTarget, messageAttachments)
-    }
+    const persisted = created
+      ? [...state.messages].reverse().find((message) => message.role !== 'ai')
+      : await persistMessage('u1', messageText, undefined, messageMeta, execTarget, messageAttachments)
     setState({ draft: '', attachments: [] })
     await refreshConversations()
     // Команда «открой консоль/проводник» → виджет прямо в ответе, без обращения к LLM.
@@ -2889,7 +2903,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!queueOnly && !dispatchVoice('submit_text')) return false // idle → thinking
     const segments = [{ speakerId: 1, text: withPreviewElementContext(text || 'См. приложенные файлы.', previewElement) }]
     if (queueOnly && claudeEnabled && deps.sendClaudePrompt && state.activeId) {
-      deps.sendClaudePrompt(state.activeId, segments, atts.map((a) => a.id), true, execTarget)
+      deps.sendClaudePrompt(state.activeId, segments, atts.map((a) => a.id), true, execTarget, persisted?.id)
     } else {
       beginReply(segments, atts.map((a) => a.id), execTarget)
     }
@@ -2971,11 +2985,16 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
 
   async function editMessage(id: string, newText: string): Promise<void> {
     const text = newText.trim()
-    if (!state.activeId || !text || state.voice !== 'idle') return
+    if (!state.activeId || !text) return
     const idx = state.messages.findIndex((m) => m.id === id)
     if (idx < 0) return
-    const role = state.messages[idx].role
-    const messageExecTarget = state.messages[idx].execTarget ?? null
+    const source = state.messages[idx]
+    const role = source.role
+    if (role === 'ai') return
+    // WS сохраняет порядок: cancel обрабатывается раньше новой отправки. Partial
+    // старого ответа остаётся отдельным interrupted-сообщением на сервере.
+    if (state.voice === 'thinking' || state.voice === 'speaking') cancelRequest()
+    const messageExecTarget = source.execTarget ?? null
     // Удаляем правимое сообщение и все последующие (в БД и в ленте) — перегенерация.
     const removed = state.messages.slice(idx)
     for (const m of removed) {
@@ -2983,10 +3002,11 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     }
     setState({ messages: state.messages.slice(0, idx), error: null })
     const execTarget = messageExecTarget
-    await persistMessage(role, text, undefined, undefined, execTarget)
+    const sourceAttachments = source.attachments ?? []
+    await persistMessage(role, text, undefined, source.meta, execTarget, sourceAttachments)
     await refreshConversations()
     if (!dispatchVoice('submit_text')) return // idle → thinking
-    beginReply([{ speakerId: 1, text }], [], execTarget)
+    beginReply([{ speakerId: 1, text }], sourceAttachments.flatMap((item) => item.uploadId ? [item.uploadId] : []), execTarget)
   }
 
   async function addAttachment(file: File): Promise<void> {
@@ -3237,6 +3257,28 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Живые счётчики токенов хода (claude:usage): per-разговор и, если ход активного, в liveUsage. */
+  function applyClaudeQueue(conversationId: string, items: QueuedTurn[], paused: boolean): void {
+    setState({
+      queuedTurns: { ...state.queuedTurns, [conversationId]: items },
+      queuePaused: { ...state.queuePaused, [conversationId]: paused }
+    })
+  }
+
+  function editQueued(id: string, text: string): void {
+    if (!state.activeId || !text.trim()) return
+    deps.editQueued?.(state.activeId, id, text.trim())
+  }
+
+  function deleteQueued(id: string): void {
+    if (!state.activeId) return
+    deps.deleteQueued?.(state.activeId, id)
+  }
+
+  function sendQueuedNow(id: string): void {
+    if (!state.activeId) return
+    deps.sendQueuedNow?.(state.activeId, id)
+  }
+
   function applyClaudeUsage(usage: TurnUsage, conversationId?: string): void {
     const patch: Partial<AppState> = {}
     if (conversationId !== undefined) {
@@ -4242,6 +4284,10 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       applyClaudeDone,
       applyClaudeError,
       applyClaudeActive,
+      applyClaudeQueue,
+      editQueued,
+      deleteQueued,
+      sendQueuedNow,
       applyClaudeUsage,
       dismissError,
       notify,

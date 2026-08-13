@@ -47,8 +47,9 @@ export function useVoiceStore(deps: UseVoiceStoreDeps): UseVoiceStore {
             segments: SttSegmentWire[],
             attachments?: string[],
             verbose?: boolean,
-            execTarget?: string | null
-          ) => window.claude.send({ conversationId, segments, attachments, verbose, execTarget })
+            execTarget?: string | null,
+            messageId?: string
+          ) => window.claude.send({ conversationId, messageId, segments, attachments, verbose, execTarget })
         : undefined)
     const cancelClaude =
       deps.cancelClaude ??
@@ -106,6 +107,9 @@ export function useVoiceStore(deps: UseVoiceStoreDeps): UseVoiceStore {
       claudeEnabled,
       sendClaudePrompt,
       cancelClaude,
+      editQueued: deps.editQueued ?? (hasClaude ? (conversationId, id, text) => window.claude.editQueued?.({ conversationId, id, text, segments: [{ speakerId: 1, text }] }) : undefined),
+      deleteQueued: deps.deleteQueued ?? (hasClaude ? (conversationId, id) => window.claude.deleteQueued?.({ conversationId, id }) : undefined),
+      sendQueuedNow: deps.sendQueuedNow ?? (hasClaude ? (conversationId, id) => window.claude.sendQueuedNow?.({ conversationId, id }) : undefined),
       getSttStatus,
       startModelDownload,
       ttsEnabled,
@@ -159,6 +163,9 @@ export function useVoiceStore(deps: UseVoiceStoreDeps): UseVoiceStore {
       )
       if (window.claude.onActive) {
         unsubs.push(window.claude.onActive((m) => store.actions.applyClaudeActive(m.turns)))
+      }
+      if (window.claude.onQueue) {
+        unsubs.push(window.claude.onQueue((m) => store.actions.applyClaudeQueue(m.conversationId, m.items, m.paused)))
       }
       if (window.claude.onUsage) {
         unsubs.push(

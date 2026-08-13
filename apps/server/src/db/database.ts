@@ -20,6 +20,8 @@ import {
   type MessageRole,
   type MessageSearchHit,
   type MessageSearchResult,
+  type QueuedTurn,
+  type QueueTurnPayload,
   type PermissionMode,
   type Settings,
   type TurnMeta,
@@ -1257,6 +1259,116 @@ export class VoiceChatDb {
     this.db
       .prepare(`UPDATE conversations SET claude_session_id = ? WHERE id = ? AND user_id = ?`)
       .run(sessionId, id, userId)
+  }
+
+  // ---- Persistent turn queue ---------------------------------------------
+
+  listQueuedTurns(userId: string, conversationId: string): QueuedTurn[] {
+    if (!this.ownsConversation(userId, conversationId)) return []
+    const rows = this.db.prepare(
+      `SELECT q.id, q.conversation_id, q.message_id, q.payload, q.status, q.position,
+              q.created_at, m.text
+       FROM conversation_turn_queue q
+       JOIN messages m ON m.id = q.message_id
+       WHERE q.user_id = ? AND q.conversation_id = ? AND q.status IN ('queued','failed')
+       ORDER BY q.position, q.created_at`
+    ).all(userId, conversationId) as Array<{ id: string; conversation_id: string; message_id: string; payload: string; status: string; position: number; created_at: number; text: string }>
+    return rows.map((row, index) => {
+      let payload: QueueTurnPayload = { segments: [] }
+      try { payload = JSON.parse(row.payload) as QueueTurnPayload } catch { /* keep recoverable row visible */ }
+      return {
+        id: row.id,
+        conversationId: row.conversation_id,
+        messageId: row.message_id,
+        text: row.text,
+        attachments: payload.attachments ?? [],
+        position: index + 1,
+        status: row.status === 'failed' ? 'failed' : 'queued',
+        createdAt: row.created_at
+      }
+    })
+  }
+
+  isTurnQueuePaused(userId: string, conversationId: string): boolean {
+    if (!this.ownsConversation(userId, conversationId)) return false
+    const row = this.db.prepare(`SELECT paused FROM conversation_turn_control WHERE conversation_id = ?`).get(conversationId) as { paused: number } | undefined
+    return Boolean(row?.paused)
+  }
+
+  setTurnQueuePaused(userId: string, conversationId: string, paused: boolean): void {
+    if (!this.ownsConversation(userId, conversationId)) return
+    this.db.prepare(
+      `INSERT INTO conversation_turn_control (conversation_id, paused) VALUES (?, ?)
+       ON CONFLICT(conversation_id) DO UPDATE SET paused = excluded.paused`
+    ).run(conversationId, paused ? 1 : 0)
+  }
+
+  enqueueTurn(userId: string, conversationId: string, messageId: string, payload: QueueTurnPayload): QueuedTurn[] {
+    if (!this.ownsConversation(userId, conversationId)) throw new Error('conversation not found')
+    const now = this.now()
+    this.db.transaction(() => {
+      const position = (this.db.prepare(
+        `SELECT COALESCE(MAX(position), 0) + 1 AS position FROM conversation_turn_queue WHERE conversation_id = ?`
+      ).get(conversationId) as { position: number }).position
+      this.db.prepare(
+        `INSERT OR IGNORE INTO conversation_turn_queue
+          (id, conversation_id, user_id, message_id, payload, status, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)`
+      ).run(this.newId(), conversationId, userId, messageId, JSON.stringify(payload), position, now, now)
+    })()
+    return this.listQueuedTurns(userId, conversationId)
+  }
+
+  queuedTurnPayload(userId: string, conversationId: string, id: string): QueueTurnPayload | null {
+    const row = this.db.prepare(
+      `SELECT payload FROM conversation_turn_queue WHERE id = ? AND conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`
+    ).get(id, conversationId, userId) as { payload: string } | undefined
+    if (!row) return null
+    try { return JSON.parse(row.payload) as QueueTurnPayload } catch { return null }
+  }
+
+  updateQueuedTurn(userId: string, conversationId: string, id: string, text: string, payload: QueueTurnPayload): QueuedTurn[] {
+    this.db.transaction(() => {
+      const row = this.db.prepare(
+        `SELECT message_id FROM conversation_turn_queue WHERE id = ? AND conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`
+      ).get(id, conversationId, userId) as { message_id: string } | undefined
+      if (!row) return
+      this.db.prepare(`UPDATE messages SET text = ? WHERE id = ? AND conversation_id = ?`).run(text, row.message_id, conversationId)
+      this.db.prepare(`UPDATE conversation_turn_queue SET payload = ?, status = 'queued', updated_at = ? WHERE id = ?`).run(JSON.stringify(payload), this.now(), id)
+    })()
+    return this.listQueuedTurns(userId, conversationId)
+  }
+
+  deleteQueuedTurn(userId: string, conversationId: string, id: string): QueuedTurn[] {
+    this.db.transaction(() => {
+      const row = this.db.prepare(
+        `SELECT message_id FROM conversation_turn_queue WHERE id = ? AND conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`
+      ).get(id, conversationId, userId) as { message_id: string } | undefined
+      if (!row) return
+      this.db.prepare(`DELETE FROM conversation_turn_queue WHERE id = ?`).run(id)
+      this.db.prepare(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`).run(row.message_id, conversationId)
+    })()
+    return this.listQueuedTurns(userId, conversationId)
+  }
+
+  takeQueuedTurn(userId: string, conversationId: string, id?: string): { id: string; messageId: string; payload: QueueTurnPayload } | null {
+    return this.db.transaction(() => {
+      const row = this.db.prepare(
+        `SELECT id, message_id, payload FROM conversation_turn_queue
+         WHERE user_id = ? AND conversation_id = ? AND status IN ('queued','failed')
+           AND (? IS NULL OR id = ?)
+         ORDER BY position LIMIT 1`
+      ).get(userId, conversationId, id ?? null, id ?? null) as { id: string; message_id: string; payload: string } | undefined
+      if (!row) return null
+      this.db.prepare(`DELETE FROM conversation_turn_queue WHERE id = ?`).run(row.id)
+      return { id: row.id, messageId: row.message_id, payload: JSON.parse(row.payload) as QueueTurnPayload }
+    })()
+  }
+
+  markQueuedTurnFailed(userId: string, conversationId: string, messageId: string): void {
+    this.db.prepare(
+      `UPDATE conversation_turn_queue SET status = 'failed', updated_at = ? WHERE user_id = ? AND conversation_id = ? AND message_id = ?`
+    ).run(this.now(), userId, conversationId, messageId)
   }
 
   // ---- Messages ---------------------------------------------------------

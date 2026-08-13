@@ -108,6 +108,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
         if (ownerUserId === deps.user.name) ctx.send(m)
       })
       ctx.send({ t: 'claude.active', turns: deps.turns.active(deps.user.name) })
+      deps.turns.resumeQueues(deps.user.name)
       if (deps.ci) {
         unsubCi = deps.ci.subscribe((m, ownerUserId) => {
           if (ownerUserId === deps.user.name) ctx.send(m)
@@ -141,6 +142,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
           void deps.turns.start({
             userId: deps.user.name,
             conversationId: msg.conversationId,
+            messageId: msg.messageId,
             segments: msg.segments,
             attachments: msg.attachments,
             verbose: msg.verbose,
@@ -150,6 +152,15 @@ export function createSession(deps: SessionDeps): WsHandlers {
           break
         case 'claude.cancel':
           deps.turns.cancel(msg.conversationId)
+          break
+        case 'claude.queue.edit':
+          deps.turns.editQueued(deps.user.name, msg.conversationId, msg.id, msg.text, msg.segments)
+          break
+        case 'claude.queue.delete':
+          deps.turns.deleteQueued(deps.user.name, msg.conversationId, msg.id)
+          break
+        case 'claude.queue.now':
+          deps.turns.sendQueuedNow(deps.user.name, msg.conversationId, msg.id)
           break
 
         case 'audio.start': {

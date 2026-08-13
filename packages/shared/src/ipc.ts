@@ -23,7 +23,7 @@ import type {
   WhisperModel,
   WhisperModelInfo
 } from './types'
-import type { HealthResponse, ServerFileInfo, SystemCapabilities } from './protocol'
+import type { HealthResponse, QueuedTurn, ServerFileInfo, SystemCapabilities } from './protocol'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
 import type {
   AdminLlmEngine,
@@ -416,6 +416,7 @@ export interface IpcSendMap {
   /** Запрос ответа Claude на реплику (сегменты хода + вложения + режим консоли). */
   'claude:send': {
     conversationId: string
+    messageId?: string
     segments: SttSegmentWire[]
     attachments?: string[]
     verbose?: boolean
@@ -514,6 +515,7 @@ export interface IpcEventMap {
   'claude:usage': { conversationId: string; usage: TurnUsage }
   /** Снапшот активных ходов при (пере)подключении — восстановление стрима. */
   'claude:active': { turns: Array<{ conversationId: string; partial: string; activity?: ClaudeLogEntry[]; usage?: TurnUsage }> }
+  'claude:queue': { conversationId: string; items: QueuedTurn[]; paused: boolean }
   /** Прогресс скачивания модели Whisper (0–100). */
   'stt:downloadProgress': { percent: number }
   /** Скачивание модели завершено. */
@@ -549,6 +551,7 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'claude:log',
   'claude:usage',
   'claude:active',
+  'claude:queue',
   'stt:downloadProgress',
   'stt:downloadDone',
   'stt:downloadError',
@@ -678,6 +681,9 @@ export interface RendererPtyBridge {
 export interface RendererClaudeBridge {
   send(payload: IpcSendPayload<'claude:send'>): void
   cancel(payload?: IpcSendPayload<'claude:cancel'>): void
+  editQueued?(payload: { conversationId: string; id: string; text: string; segments: SttSegmentWire[] }): void
+  deleteQueued?(payload: { conversationId: string; id: string }): void
+  sendQueuedNow?(payload: { conversationId: string; id: string }): void
   onToken(cb: (msg: IpcEventPayload<'claude:token'>) => void): () => void
   onDone(cb: (msg: IpcEventPayload<'claude:done'>) => void): () => void
   onError(cb: (msg: IpcEventPayload<'claude:error'>) => void): () => void
@@ -687,6 +693,7 @@ export interface RendererClaudeBridge {
   onUsage?(cb: (msg: IpcEventPayload<'claude:usage'>) => void): () => void
   /** Снапшот активных ходов (только remote-мост; desktop-main его не шлёт). */
   onActive?(cb: (msg: IpcEventPayload<'claude:active'>) => void): () => void
+  onQueue?(cb: (msg: IpcEventPayload<'claude:queue'>) => void): () => void
 }
 
 /**

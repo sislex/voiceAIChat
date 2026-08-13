@@ -1051,7 +1051,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         onExecutePlan={(answerId) => void actions.executePlan(answerId)}
         canExecutePlan={!forcedPlan}
         state={state.voice}
-        messages={state.messages}
+        messages={state.messages.filter((message) => !(state.activeId ? state.queuedTurns[state.activeId] ?? [] : []).some((item) => item.messageId === message.id))}
         loadingMessages={state.loadingMessages}
         highlightMessageId={state.highlightMessageId}
         onHighlightDone={actions.clearMessageHighlight}
@@ -1131,6 +1131,11 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
             aiLabel={(activeConversation?.llmProvider ?? state.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
             attachments={state.attachments}
             previewElement={previewElement}
+            queuedTurns={state.activeId ? state.queuedTurns[state.activeId] ?? [] : []}
+            queuePaused={state.activeId ? state.queuePaused[state.activeId] ?? false : false}
+            onEditQueued={actions.editQueued}
+            onDeleteQueued={actions.deleteQueued}
+            onSendQueuedNow={actions.sendQueuedNow}
             onDraftChange={actions.setDraft}
             onSubmitText={() => { void actions.submitText(previewElement ?? undefined).then((sent) => { if (sent) setPreviewElement(null) }) }}
             onStartVoice={actions.startVoice}

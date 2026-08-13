@@ -1185,18 +1185,27 @@ describe('voiceStore — правки/удаление/вложения', () => 
     api: FakeApi
     sendClaudePrompt: ReturnType<typeof vi.fn>
     cancelClaude: ReturnType<typeof vi.fn>
+    editQueued: ReturnType<typeof vi.fn>
+    deleteQueued: ReturnType<typeof vi.fn>
+    sendQueuedNow: ReturnType<typeof vi.fn>
   } {
     const api = createFakeApi([])
     const sendClaudePrompt = vi.fn()
     const cancelClaude = vi.fn()
+    const editQueued = vi.fn()
+    const deleteQueued = vi.fn()
+    const sendQueuedNow = vi.fn()
     const store = createVoiceStore({
       api,
       delays: DELAYS,
       claudeEnabled: true,
       sendClaudePrompt,
-      cancelClaude
+      cancelClaude,
+      editQueued,
+      deleteQueued,
+      sendQueuedNow
     })
-    return { store, api, sendClaudePrompt, cancelClaude }
+    return { store, api, sendClaudePrompt, cancelClaude, editQueued, deleteQueued, sendQueuedNow }
   }
 
   it('cancelRequest отменяет запрос и возвращает в idle', async () => {
@@ -1388,18 +1397,27 @@ describe('voiceStore — ходы, переживающие обновление
     api: FakeApi
     sendClaudePrompt: ReturnType<typeof vi.fn>
     cancelClaude: ReturnType<typeof vi.fn>
+    editQueued: ReturnType<typeof vi.fn>
+    deleteQueued: ReturnType<typeof vi.fn>
+    sendQueuedNow: ReturnType<typeof vi.fn>
   } {
     const api = createFakeApi([])
     const sendClaudePrompt = vi.fn()
     const cancelClaude = vi.fn()
+    const editQueued = vi.fn()
+    const deleteQueued = vi.fn()
+    const sendQueuedNow = vi.fn()
     const store = createVoiceStore({
       api,
       delays: DELAYS,
       claudeEnabled: true,
       sendClaudePrompt,
-      cancelClaude
+      cancelClaude,
+      editQueued,
+      deleteQueued,
+      sendQueuedNow
     })
-    return { store, api, sendClaudePrompt, cancelClaude }
+    return { store, api, sendClaudePrompt, cancelClaude, editQueued, deleteQueued, sendQueuedNow }
   }
 
   /** Сообщение «как из БД сервера» (сервер сохраняет ответ сам). */
@@ -1519,6 +1537,24 @@ describe('voiceStore — ходы, переживающие обновление
     store.actions.applyClaudeActive([{ conversationId: first, partial: 'x' }])
     store.actions.cancelRequest()
     expect(cancelClaude).toHaveBeenCalledWith(first)
+  })
+
+  it('восстанавливает очередь и адресует edit/delete/send now активному разговору', async () => {
+    const { store, editQueued, deleteQueued, sendQueuedNow } = makeClaudeStore()
+    await store.actions.init()
+    store.actions.setDraft('активный')
+    await store.actions.submitText()
+    const conversationId = store.getState().activeId!
+    const item = { id: 'q1', conversationId, messageId: 'm2', text: 'Следующий', attachments: ['f1'], position: 1, status: 'queued' as const, createdAt: 1 }
+    store.actions.applyClaudeQueue(conversationId, [item], true)
+    expect(store.getState().queuedTurns[conversationId]).toEqual([item])
+    expect(store.getState().queuePaused[conversationId]).toBe(true)
+    store.actions.editQueued('q1', 'Исправленный')
+    store.actions.deleteQueued('q1')
+    store.actions.sendQueuedNow('q1')
+    expect(editQueued).toHaveBeenCalledWith(conversationId, 'q1', 'Исправленный')
+    expect(deleteQueued).toHaveBeenCalledWith(conversationId, 'q1')
+    expect(sendQueuedNow).toHaveBeenCalledWith(conversationId, 'q1')
   })
 })
 
