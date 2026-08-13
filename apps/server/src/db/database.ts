@@ -440,7 +440,7 @@ function parseJsonObject(raw: unknown): Record<string, unknown> | null {
 }
 
 function parseAllowedRoles(raw: string | null): UserRole[] {
-  return parseStringArray(raw).filter((role): role is UserRole => role === 'admin' || role === 'user')
+  return parseStringArray(raw).map((role) => role === 'user' ? 'developer' : role).filter((role): role is UserRole => role === 'admin' || role === 'developer' || role === 'tester' || role === 'observer')
 }
 
 function normEngineKind(raw: string): LlmEngineKind {
@@ -614,6 +614,12 @@ export class VoiceChatDb {
 
   /** Лёгкие миграции существующих БД (idempotent). */
   private migrate(): void {
+    // CHAT-193: legacy `user` becomes developer; only the two known ChatAI
+    // accounts are elevated. Future accounts are never promoted implicitly.
+    this.db.prepare(`UPDATE users SET role = 'developer' WHERE role = 'user'`).run()
+    this.db.prepare(`UPDATE users SET role = 'admin' WHERE name IN ('admin', 'admin1')`).run()
+    this.db.prepare(`UPDATE llm_engines SET allowed_roles = replace(allowed_roles, '"user"', '"developer"') WHERE allowed_roles LIKE '%"user"%'`).run()
+
     const agentCols = this.db.prepare(`PRAGMA table_info(agents)`).all() as Array<{ name: string }>
     if (!agentCols.some((c) => c.name === 'policy')) {
       this.db.exec(`ALTER TABLE agents ADD COLUMN policy TEXT`)
@@ -939,7 +945,7 @@ export class VoiceChatDb {
     const llmEngineCols = this.db.prepare(`PRAGMA table_info(llm_engines)`).all() as Array<{ name: string }>
     if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'token')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN token TEXT NOT NULL DEFAULT ''`)
     if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'enabled')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`)
-    if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'allowed_roles')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN allowed_roles TEXT NOT NULL DEFAULT '[\"admin\",\"user\"]'`)
+    if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'allowed_roles')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN allowed_roles TEXT NOT NULL DEFAULT '[\"admin\",\"developer\",\"tester\",\"observer\"]'`)
     if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'is_default')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`)
     if (llmEngineCols.length && !llmEngineCols.some((c) => c.name === 'created_at')) this.db.exec(`ALTER TABLE llm_engines ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0`)
     if (llmEngineCols.length) {
@@ -1536,7 +1542,7 @@ export class VoiceChatDb {
 
   /** Настройки LLM, которые связанный чат задачи наследует от своего владельца. */
   private taskChatLlmDefaults(userId: string, settings = this.getSettings(userId)): { engineId: string | null; provider: LlmProvider; model: string } {
-    const role = this.getUser(userId)?.role ?? 'user'
+    const role = this.getUser(userId)?.role ?? 'developer'
     const provider = settings.llmProvider
     const model = provider === 'codex' ? settings.codexModel : settings.model
     const engineId = this.resolveLlmEngine(settings.llmEngineId, provider, role).engine?.id ?? null
@@ -1714,7 +1720,7 @@ export class VoiceChatDb {
       .run('admin', hashPassword(password), this.now())
   }
 
-  /** Создаёт пользователя (роль admin/user). Кидает при дубликате имени. */
+  /** Создаёт пользователя с одной из поддерживаемых ролей. Кидает при дубликате имени. */
   createUser(name: string, password: string, role: UserRole): UserRow {
     this.db
       .prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at) VALUES (?, ?, ?, 0, ?)`)
@@ -1745,6 +1751,11 @@ export class VoiceChatDb {
 
   setUserBlocked(name: string, blocked: boolean): void {
     this.db.prepare(`UPDATE users SET blocked = ? WHERE name = ?`).run(blocked ? 1 : 0, name)
+  }
+
+  setUserRole(name: string, role: UserRole): UserRow | null {
+    this.db.prepare(`UPDATE users SET role = ? WHERE name = ?`).run(role, name)
+    return this.getUser(name)
   }
 
   setUserPassword(name: string, password: string): void {
@@ -4520,7 +4531,6 @@ export class VoiceChatDb {
         JOIN project_members pm ON pm.project_id=p.id AND pm.username=?
         WHERE t.id=? AND t.project_id=?`).get(userId, taskId, projectId) as (TaskRow & { semantic_type: string; ci_base_branch: string; default_agent_id: string | null; role: string }) | undefined
       if (!row) throw new Error('task not found')
-      if (row.role !== 'owner') throw new Error('merge permission required')
       if (row.semantic_type !== 'awaiting_merge') throw new Error('task must be in awaiting_merge')
       if ((row.ci_base_branch || 'main') !== 'main') throw new Error('merge target must be main')
 

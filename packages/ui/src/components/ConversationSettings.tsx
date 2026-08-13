@@ -214,7 +214,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
       return
     }
     const startedInPlan =
-      (role === 'user' && (!conversation.execTarget || conversation.execTarget === 'none')) ||
+      (role !== 'admin' && (!conversation.execTarget || conversation.execTarget === 'none')) ||
       (conversation.permissionMode ?? settings.permissionMode) === 'plan'
     if (
       startedInPlan &&
@@ -254,7 +254,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
   }
 
   // Фактический режим хода: сервер форсит «план», когда роль user работает без своей машины (turns.ts).
-  const forcedPlan = role === 'user' && (!execTarget || execTarget === 'none')
+  const forcedPlan = role !== 'admin' && (!execTarget || execTarget === 'none')
   const effectiveMode: PermissionMode = forcedPlan ? 'plan' : permissionMode || settings.permissionMode
 
   return (

@@ -68,7 +68,7 @@ export const WithWorkspaces: Story = {
 }
 
 /** Роль user: глобальные настройки CI только для чтения. */
-export const ReadOnlySettings: Story = { args: { role: 'user' } }
+export const ReadOnlySettings: Story = { args: { role: 'developer' } }
 
 /** Выбор команды в списке заполняет форму правки её скриптом и флагами. */
 export const SelectCommand: Story = {

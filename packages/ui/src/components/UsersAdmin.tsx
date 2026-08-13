@@ -36,7 +36,7 @@ export interface UsersAdminProps {
   conversationId: string | null
   currentUserName: string
   onSelect: (name: string) => void
-  onCreate: (name: string, password: string, role: 'admin' | 'user') => void
+  onCreate: (name: string, password: string, role: import('@shared/types').UserRole) => void
   onSetBlocked: (name: string, blocked: boolean) => void
   onDelete: (name: string) => void
   onLoadUsage: (unit: UsageUnit, from?: number, to?: number, conversationId?: string) => void
@@ -82,7 +82,7 @@ const EMPTY_ENGINE: AdminLlmEngineInput = {
   baseUrl: '',
   token: '',
   enabled: true,
-  allowedRoles: ['admin', 'user'],
+  allowedRoles: ['admin', 'developer', 'tester', 'observer'],
   isDefault: false
 }
 
@@ -134,7 +134,7 @@ export function UsersAdmin({
 }: UsersAdminProps): JSX.Element {
   const [newName, setNewName] = useState('')
   const [newPass, setNewPass] = useState('')
-  const [newRole, setNewRole] = useState<'admin' | 'user'>('user')
+  const [newRole, setNewRole] = useState<import('@shared/types').UserRole>('developer')
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [usageDays, setUsageDays] = useState<7 | 30 | null>(30)
   const [usageConversationId, setUsageConversationId] = useState('')
@@ -174,7 +174,7 @@ export function UsersAdmin({
     onCreate(n, newPass, newRole)
     setNewName('')
     setNewPass('')
-    setNewRole('user')
+    setNewRole('developer')
   }
 
   const resetEngineForm = (): void => {
@@ -224,8 +224,10 @@ export function UsersAdmin({
             <p className="ucreate-h">Создать пользователя</p>
             <input className="login-input" placeholder="Логин" aria-label="Логин нового пользователя" value={newName} onChange={(e) => setNewName(e.target.value)} />
             <input className="login-input" type="password" placeholder="Пароль (можно пустой)" aria-label="Пароль нового пользователя" value={newPass} onChange={(e) => setNewPass(e.target.value)} />
-            <select className="sel" aria-label="Роль нового пользователя" value={newRole} onChange={(e) => setNewRole(e.target.value as 'admin' | 'user')}>
-              <option value="user">user</option>
+            <select className="sel" aria-label="Роль нового пользователя" value={newRole} onChange={(e) => setNewRole(e.target.value as import('@shared/types').UserRole)}>
+              <option value="developer">developer</option>
+              <option value="tester">tester</option>
+              <option value="observer">observer</option>
               <option value="admin">admin</option>
             </select>
             <Button variant="primary" disabled={!newName.trim()} onClick={submitCreate}>Создать</Button>
@@ -413,7 +415,7 @@ export function UsersAdmin({
               <label className="cc-sub"><input type="checkbox" checked={engineDraft.enabled} onChange={(e) => setEngineDraft({ ...engineDraft, enabled: e.target.checked })} /> enabled</label>
               <label className="cc-sub"><input type="checkbox" checked={engineDraft.isDefault} onChange={(e) => setEngineDraft({ ...engineDraft, isDefault: e.target.checked })} /> default для kind</label>
               <label className="cc-sub"><input type="checkbox" checked={engineDraft.allowedRoles.includes('admin')} onChange={(e) => setEngineDraft({ ...engineDraft, allowedRoles: e.target.checked ? Array.from(new Set([...engineDraft.allowedRoles, 'admin'])) : engineDraft.allowedRoles.filter((role) => role !== 'admin') })} /> admin</label>
-              <label className="cc-sub"><input type="checkbox" checked={engineDraft.allowedRoles.includes('user')} onChange={(e) => setEngineDraft({ ...engineDraft, allowedRoles: e.target.checked ? Array.from(new Set([...engineDraft.allowedRoles, 'user'])) : engineDraft.allowedRoles.filter((role) => role !== 'user') })} /> user</label>
+              {(['developer', 'tester', 'observer'] as const).map((role) => <label key={role} className="cc-sub"><input type="checkbox" checked={engineDraft.allowedRoles.includes(role)} onChange={(e) => setEngineDraft({ ...engineDraft, allowedRoles: e.target.checked ? Array.from(new Set([...engineDraft.allowedRoles, role])) : engineDraft.allowedRoles.filter((item) => item !== role) })} /> {role}</label>) }
               <div className="uadmin-actions">
                 <Button variant="primary" disabled={!engineDraft.name.trim() || !engineDraft.baseUrl.trim() || engineDraft.allowedRoles.length === 0} onClick={submitEngine}>{editingEngineId ? 'Сохранить' : 'Добавить'}</Button>
                 {editingEngineId && <Button onClick={resetEngineForm}>Отмена</Button>}

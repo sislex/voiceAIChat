@@ -349,8 +349,8 @@ describe('GET /api/ci/runs/:runId/report', () => {
   it('чужому пользователю — 404, а не пустой отчёт', async () => {
     const { project, task } = setup()
     const runId = await runTask(project.id, task.id)
-    db.createUser('bob', '', 'user')
-    const bob = signToken({ name: 'bob', role: 'user' }, SECRET)
+    db.createUser('bob', '', 'developer')
+    const bob = signToken({ name: 'bob', role: 'developer' }, SECRET)
 
     expect((await inj(bob, `/api/ci/runs/${runId}/report`)).statusCode).toBe(404)
     expect((await inj(bob, `/api/projects/${project.id}/tasks/${task.id}/report`)).statusCode).toBe(404)

@@ -12,9 +12,9 @@ beforeEach(() => {
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.createUser('alice', '', 'user')
-  db.createUser('bob', '', 'user')
-  db.createUser('carol', '', 'user')
+  db.createUser('alice', '', 'developer')
+  db.createUser('bob', '', 'developer')
+  db.createUser('carol', '', 'developer')
 })
 
 afterEach(() => db.close())
@@ -24,7 +24,7 @@ describe('projects: миграция имён связанных чатов', ()
     const dir = mkdtempSync(join(tmpdir(), 'vc-taskchat-'))
     const file = join(dir, 'db.sqlite')
     const first = new VoiceChatDb(file)
-    first.createUser('alice', '', 'user')
+    first.createUser('alice', '', 'developer')
     const p = first.createProject('alice', { name: 'P' })
     const col = first.getBoard('alice', p.id)!.columns[0]
     const t1 = first.createTask('alice', p.id, { columnId: col.id, title: 'Скролл' })!
@@ -377,7 +377,7 @@ describe('projects: навыки по умолчанию и связанный �
   })
 
   it('openOrCreateTaskChat: наследует LLM-настройки пользователя, привязывает задачу/проект/навыки и виден в board.chatId', () => {
-    const engine = db.createLlmEngine({ name: 'Codex', kind: 'codex', baseUrl: 'http://codex', token: '', enabled: true, allowedRoles: ['user'], isDefault: false })
+    const engine = db.createLlmEngine({ name: 'Codex', kind: 'codex', baseUrl: 'http://codex', token: '', enabled: true, allowedRoles: ['developer'], isDefault: false })
     db.saveSettings('alice', { ...DEFAULT_SETTINGS, llmEngineId: engine.id, llmProvider: 'codex', codexModel: 'gpt-5.6-luna' })
     const p = db.createProject('alice', { name: 'P', defaultSkills: { epic: [], story: [], task: ['ts'] } })
     const col = db.getBoard('alice', p.id)!.columns[0]
@@ -433,7 +433,7 @@ describe('доска: завершённые задачи уходят с дос
     let id = 0
     let clock = 1_700_000_000_000
     const fresh = new VoiceChatDb(':memory:', { newId: () => `c-${++id}`, now: () => clock })
-    fresh.createUser('alice', '', 'user')
+    fresh.createUser('alice', '', 'developer')
     return { db: fresh, set: (t) => { clock = t } }
   }
 
@@ -562,7 +562,7 @@ describe('доска: завершённые задачи уходят с дос
     const file = join(dir, 'db.sqlite')
     let clock = 1_700_000_000_000
     const firstDb = new VoiceChatDb(file, { newId: (() => { let id = 0; return () => `task-${++id}` })(), now: () => clock })
-    firstDb.createUser('alice', '', 'user')
+    firstDb.createUser('alice', '', 'developer')
     const p = firstDb.createProject('alice', { name: 'P' })
     firstDb.updateProject('alice', p.id, { doneRetentionDays: null })
     const columns = firstDb.getBoard('alice', p.id)!.columns
@@ -587,7 +587,7 @@ describe('доска: завершённые задачи уходят с дос
     const dir = mkdtempSync(join(tmpdir(), 'vc-doneat-'))
     const file = join(dir, 'db.sqlite')
     const first = new VoiceChatDb(file, { now: () => 1_700_000_000_000 })
-    first.createUser('alice', '', 'user')
+    first.createUser('alice', '', 'developer')
     const p = first.createProject('alice', { name: 'P' })
     const done = first.getBoard('alice', p.id)!.columns.find((c) => c.semanticType === 'done')!
     const t = first.createTask('alice', p.id, { columnId: done.id, title: 'T' })!

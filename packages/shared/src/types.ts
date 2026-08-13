@@ -216,7 +216,7 @@ export function normalizeClaudeModel(raw: string): ClaudeModel {
 }
 
 /** Роль пользователя приложения (многопользовательский режим web-версии). */
-export type UserRole = 'admin' | 'user'
+export type UserRole = 'admin' | 'developer' | 'tester' | 'observer'
 
 /** Аутентифицированный пользователь сессии. */
 export interface SessionUser {

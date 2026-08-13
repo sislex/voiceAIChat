@@ -49,7 +49,7 @@ describe('SettingsModal — модели Claude', () => {
   // пользователя, их правит админ в карточке на `#/users/:name`.
   it('запреты доступа убирают opus и fable — остаются default/sonnet/haiku', () => {
     const denied: UserLlmAccess[] = [{ provider: 'claude', modelId: 'opus[1m]' }, { provider: 'claude', modelId: 'fable' }]
-    renderModal('user', { llmAccess: denied })
+    renderModal('developer', { llmAccess: denied })
     const select = screen.getByLabelText('Модель Claude')
     const opts = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
     expect(opts).toEqual(['default', 'sonnet', 'haiku'])
@@ -58,7 +58,7 @@ describe('SettingsModal — модели Claude', () => {
   })
 
   it('без запретов у роли user меню то же, что у админа', () => {
-    renderModal('user')
+    renderModal('developer')
     const select = screen.getByLabelText('Модель Claude')
     const opts = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
     expect(opts).toEqual(['default', 'opus[1m]', 'fable', 'sonnet', 'haiku'])
@@ -125,7 +125,7 @@ describe('SettingsModal — глобальная блокировка голос
 describe('SettingsModal — выбор исполнителя', () => {
   it('показывает доступные записи и сохраняет id вместе с kind', async () => {
     const onChange = vi.fn()
-    renderModal('user', { engines: [{ id: 'work', name: 'Рабочий', kind: 'codex', isDefault: true }], onChange })
+    renderModal('developer', { engines: [{ id: 'work', name: 'Рабочий', kind: 'codex', isDefault: true }], onChange })
     await userEvent.selectOptions(screen.getByLabelText('Исполнитель LLM'), 'work')
     expect(onChange).toHaveBeenCalledWith({ llmEngineId: 'work', llmProvider: 'codex' })
   })

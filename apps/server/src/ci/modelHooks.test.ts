@@ -76,7 +76,7 @@ beforeEach(() => {
   let id = 0
   let clock = 1_000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.createUser(U, '', 'user')
+  db.createUser(U, '', 'developer')
 })
 afterEach(() => db.close())
 
