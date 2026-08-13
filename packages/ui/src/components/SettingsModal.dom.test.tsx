@@ -4,6 +4,7 @@ import { screen, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { SettingsModal, type SettingsModalProps } from './SettingsModal'
+import { PersonalizationPage, isValidPersonalizationDate } from './SettingsPage'
 import { DEFAULT_SETTINGS, type UserRole } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 
@@ -33,6 +34,32 @@ function renderModal(role: UserRole, overrides: Partial<SettingsModalProps> = {}
   }
   render(<SettingsModal {...props} />)
 }
+
+describe('PersonalizationPage', () => {
+  it('валидирует полные даты и допускает частичные', () => {
+    expect(isValidPersonalizationDate({ ...DEFAULT_SETTINGS.personalization, birthDay: 31, birthMonth: 2 })).toBe(false)
+    expect(isValidPersonalizationDate({ ...DEFAULT_SETTINGS.personalization, birthMonth: 2, birthYear: 1990 })).toBe(true)
+    expect(isValidPersonalizationDate({ ...DEFAULT_SETTINGS.personalization, birthYear: 1990 })).toBe(true)
+  })
+
+  it('показывает отдельную страницу и сохраняет настройки', async () => {
+    const save = vi.fn().mockResolvedValue(undefined)
+    render(<PersonalizationPage user={{ name: 'alexey', role: 'user' }} value={DEFAULT_SETTINGS.personalization} onSave={save} onCancel={vi.fn()} />)
+    expect(screen.getByRole('heading', { name: 'Персонализация — alexey' })).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Имя или обращение'), 'Лёша')
+    await userEvent.selectOptions(screen.getByLabelText('Объём'), 'brief')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ preferredName: 'Лёша', responseStyle: 'brief' }))
+  })
+
+  it('сообщает о невозможной дате доступным alert', async () => {
+    render(<PersonalizationPage user={{ name: 'alexey', role: 'user' }} value={DEFAULT_SETTINGS.personalization} onSave={vi.fn()} onCancel={vi.fn()} />)
+    await userEvent.selectOptions(screen.getByLabelText('День'), '31')
+    await userEvent.selectOptions(screen.getByLabelText('Месяц'), '2')
+    expect(screen.getByRole('alert')).toHaveTextContent('Такой даты не существует')
+    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled()
+  })
+})
 
 describe('SettingsModal — модели Claude', () => {
   it('admin видит меню CLI целиком и в его порядке', () => {

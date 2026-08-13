@@ -420,7 +420,8 @@ describe('VoiceChatDb — настройки', () => {
       defaultAgentId: null,
       aiAssistProvider: 'claude',
       aiAssistModel: 'haiku',
-      aiAssistPrompts: DEFAULT_SETTINGS.aiAssistPrompts
+      aiAssistPrompts: DEFAULT_SETTINGS.aiAssistPrompts,
+      personalization: DEFAULT_SETTINGS.personalization
     })
   })
 

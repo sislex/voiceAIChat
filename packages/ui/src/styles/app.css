@@ -5775,3 +5775,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 @keyframes automation-progress-slide{0%{transform:translateX(-110%)}50%{transform:translateX(130%)}100%{transform:translateX(260%)}}
 @media(prefers-reduced-motion:reduce){.automation-progress__bar--indeterminate:after{animation:none;width:100%;opacity:.45}}
 @media(max-width:720px){.automation-progress__head,.automation-progress__meta,.automation-progress__times{align-items:flex-start;flex-direction:column}.automation-progress__bar{max-width:100%}.automation-progress__steps li{flex-wrap:wrap}}
+.personalization-page{box-sizing:border-box;width:min(760px,100%);max-width:100%;margin:0 auto;padding:clamp(20px,4vw,48px);overflow-x:hidden}
+.personalization-page header{margin-bottom:28px}.personalization-page h1{margin:0 0 8px;font-size:clamp(24px,4vw,34px)}.personalization-page header p,.personalization-page .field-hint{color:var(--text-dim);line-height:1.5}
+.personalization-page section{display:grid;gap:10px;padding:20px 0;border-top:1px solid var(--border-soft)}.personalization-page h2{margin:0;font-size:18px}.personalization-page label{display:grid;gap:6px;min-width:0;font-size:13px;font-weight:600}
+.personalization-page input,.personalization-page select{box-sizing:border-box;width:100%;max-width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--radius-medium);background:var(--surface);color:var(--text);font:inherit}
+.personal-check{display:flex!important;align-items:center;gap:8px}.personal-check input{width:auto}.personal-date{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.field-error{margin:0;color:var(--danger)}.personal-actions{display:flex;flex-wrap:wrap;gap:10px;padding-top:20px}
+@media(max-width:720px){.personalization-page{padding:20px 16px}.personal-date{grid-template-columns:1fr}.personal-actions{align-items:stretch;flex-direction:column}.personal-actions .vc-btn{width:100%}}

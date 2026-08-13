@@ -22,6 +22,7 @@ import { LoginScreen } from './components/LoginScreen'
 import { EnginesObserver, type ObserverEngine } from './components/EnginesObserver'
 import { UsersAdmin } from './components/UsersAdmin'
 import { ProjectSettings } from './components/ProjectSettings'
+import { PersonalizationPage } from './components/SettingsPage'
 import { ProjectBoard } from './components/ProjectBoard'
 import { ProjectPage, ProjectsEmptyPage, ProjectNotFoundPage } from './components/ProjectPage'
 import { ReleaseCenter } from './components/releases/ReleaseCenter'
@@ -84,7 +85,7 @@ export function appendWidgetAction(items: WidgetUserAction[], action: WidgetActi
 }
 
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
-const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users', 'ci']
+const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users', 'ci', 'personalization']
 
 // Запуск задачи предлагает только явный структурированный сигнал ассистента.
 
@@ -990,6 +991,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         onSelectProject={(id) => void actions.setSidebarProject(id)}
         onOpenObserver={menu(() => navigate('/claude-code'))}
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
+        onOpenPersonalization={state.currentUser ? menu(() => navigate('/personalization')) : undefined}
         onOpenSettings={menu(actions.openSettings)}
         onOpenFiles={state.authRequired ? menu(() => actions.openUtilityForActiveChat('explorer')) : undefined}
         onOpenConsole={state.authRequired ? menu(() => actions.openUtilityForActiveChat('console')) : undefined}
@@ -1283,6 +1285,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
 
       {utilitySeg === 'kb' && (
         <KnowledgeBase api={api} variant="page" documentId={routeKbDocumentId} onClose={() => navigate('/')} />
+      )}
+
+      {utilitySeg === 'personalization' && state.currentUser && (
+        <PersonalizationPage user={state.currentUser} value={state.settings.personalization} onSave={async (personalization) => { await actions.updateSettings({ personalization }); navigate('/') }} onCancel={() => navigate('/')} />
       )}
 
       {/* Объединённый наблюдатель агентов: один компонент с переключателем
