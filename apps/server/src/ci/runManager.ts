@@ -32,6 +32,8 @@ export interface CiRunManagerDeps {
   executor: CommandExecutor
   /** Дёрнуть обновление доски (сводка рана на карточке). */
   boardChanged: (projectId: string) => void
+  /** Живой статус агента; offline CI не ставится в ожидание, а блокируется. */
+  isAgentOnline?: (agentId: string) => boolean
   /**
    * Продублировать вопрос/план в связанный чат задачи и вернуть id сообщения.
    * Инъектируется, чтобы раннер не зависел от TurnManager; `undefined` — не дублируем.
@@ -387,10 +389,13 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     } else {
       agentId = task.agentId ?? project.defaultAgentId
     }
-    if (agentId && !project.machines.some((machine) => machine.agentId === agentId)) {
-      return { error: 'Выбранная машина больше не привязана к проекту' }
-    }
     if (!agentId) return { error: 'Для запуска не задана машина проекта' }
+    if (!deps.db.canUseAgent(userId, agentId, projectId)) {
+      return { error: 'Выбранная машина больше недоступна для этой задачи' }
+    }
+    if (deps.isAgentOnline && !deps.isAgentOnline(agentId)) {
+      return { error: 'Выбранная машина offline. CI не ожидает подключения: выберите online-машину' }
+    }
     const slots = deps.db.resolveTaskSlots(projectId, taskId)
     const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId, userId)
     const settings = deps.db.getSettings(userId)
@@ -459,8 +464,11 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const project = deps.db.getProject(userId, projectId)
     if (!project) return { error: 'Проект недоступен' }
     if (!deps.db.getCiTask(userId, projectId, taskId)) return { error: 'Задача не найдена' }
-    if (!project.machines.some((machine) => machine.agentId === agentId)) {
-      return { error: 'Выбранная машина больше не привязана к проекту' }
+    if (!deps.db.canUseAgent(userId, agentId, projectId)) {
+      return { error: 'Выбранная машина больше недоступна для этой задачи' }
+    }
+    if (deps.isAgentOnline && !deps.isAgentOnline(agentId)) {
+      return { error: 'Выбранная машина offline. CI не ожидает подключения: выберите online-машину' }
     }
     for (const [id, a] of active) {
       if (a.taskId !== taskId || isClosingRun(id, a)) continue
@@ -1289,6 +1297,13 @@ fi`
     // Машина рана зафиксирована при запуске (выбор карточки, автоподбор или
     // принудительный запуск); NULL остался только у ранов до появления выбора.
     const agentId = runRow.agentId ?? project.defaultAgentId
+    // Повторный гейт непосредственно перед первой командой защищает ран, который
+    // ждал в очереди во время удаления машины, смены владельца или отзыва членства.
+    if (!agentId || !deps.db.canUseAgent(userId, agentId, runRow.projectId) || (deps.isAgentOnline && !deps.isAgentOnline(agentId))) {
+      deps.db.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.machine_unavailable', actorType: 'system', payload: { agentId, message: 'Машина выполнения больше недоступна или offline' } })
+      finalize(runId, userId, 'failed')
+      return
+    }
     const machine = project.machines.find((m) => m.agentId === agentId)
     const repoRoot = machine?.reposRoot?.replace(/\/$/, '') || ''
     const projectSlug = slugify(project.name)

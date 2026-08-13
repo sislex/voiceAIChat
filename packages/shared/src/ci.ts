@@ -7,6 +7,23 @@ import type { KbContextMode } from './types'
 import { CLAUDE_MODELS, CODEX_MODELS } from './types'
 import { estimateCostUsd } from './pricing'
 
+/** Доступная машине выполнения задачи с основаниями доступа и живым статусом. */
+export interface CiTaskMachine {
+  agentId: string
+  name: string
+  online: boolean
+  personal: boolean
+  project: boolean
+  projectDefault: boolean
+}
+
+export interface CiTaskMachines {
+  machines: CiTaskMachine[]
+  selectedAgentId: string | null
+  /** Сохранённый id, который больше не существует или недоступен пользователю. */
+  unavailableSelection: { agentId: string; name: string | null } | null
+}
+
 // --- Справочник команд ---------------------------------------------------
 
 /** Область видимости команды. */

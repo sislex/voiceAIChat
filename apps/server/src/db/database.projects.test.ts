@@ -166,6 +166,20 @@ describe('board: задачи, приоритеты, assignee, перемеще�
     expect(() => db.updateTask('alice', p.id, t.id, { assignee: 'carol' })).toThrow()
   })
 
+  it('машина задачи доступна лично или через проект, чужая отклоняется', () => {
+    const p = db.createProject('alice', { name: 'P1' })
+    const col = db.getBoard('alice', p.id)!.columns[0]
+    const personal = db.createAgent('alice', 'Личная')
+    const projectMachine = db.createAgent('alice', 'Проектная')
+    db.linkMachine('alice', p.id, projectMachine.id)
+    const foreign = db.createAgent('bob', 'Чужая')
+
+    const task = db.createTask('alice', p.id, { columnId: col.id, title: 'T', agentId: personal.id })!
+    expect(task.agentId).toBe(personal.id)
+    expect(db.updateTask('alice', p.id, task.id, { agentId: projectMachine.id })!.agentId).toBe(projectMachine.id)
+    expect(() => db.updateTask('alice', p.id, task.id, { agentId: foreign.id })).toThrow('Машина недоступна')
+  })
+
   it('moveTask: в середину, вниз, вверх, в пустую колонку', () => {
     const p = db.createProject('alice', { name: 'P1' })
     const [todo, doing] = db.getBoard('alice', p.id)!.columns

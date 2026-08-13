@@ -1,11 +1,10 @@
 // CI-настройки задачи: команды и наследуемый движок/модель.
 import { useEffect, useState, type JSX } from 'react'
-import type { CiCommand, CiClarifyLevel, CiLlmConfig, CiRunMode, CiSlotConfig } from '@shared/ci'
+import type { CiCommand, CiClarifyLevel, CiLlmConfig, CiRunMode, CiSlotConfig, CiTaskMachine } from '@shared/ci'
 import { CI_CLARIFY_MAX_LIMIT, DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
 import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 import { CODEX_MODELS } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
-import type { ProjectMachine } from '@shared/projects'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { Button } from '../ui/Button'
 import { CiSlotEditor } from './CiSlotEditor'
@@ -27,8 +26,11 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const [llm, setLlm] = useState<CiLlmConfig>({ ...DEFAULT_CI_LLM_CONFIG })
   const [llmOverridden, setLlmOverridden] = useState(false)
   const [llmSaved, setLlmSaved] = useState(true)
-  const [machines, setMachines] = useState<ProjectMachine[]>([])
+  const [machines, setMachines] = useState<CiTaskMachine[]>([])
   const [agentId, setAgentId] = useState<string | null>(null)
+  const [unavailableAgentId, setUnavailableAgentId] = useState<string | null>(null)
+  const [unavailableName, setUnavailableName] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [forceStatus, setForceStatus] = useState<{ kind: 'idle' | 'started' | 'error'; text?: string }>({ kind: 'idle' })
 
   useEffect(() => {
@@ -46,16 +48,23 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
       if (cancelled) return
       setLlm(r.config); setLlmOverridden(r.overridden)
     })
-    void (window.api?.['projects:get']({ id: props.projectId }) ?? Promise.resolve(null)).then((project) => {
-      if (!cancelled && project) setMachines(project.machines)
-    })
-    void (window.api?.['board:get']({ id: props.projectId }) ?? Promise.resolve(null)).then((board) => {
-      const task = board?.tasks.find((item) => item.id === props.taskId)
-      if (!cancelled) setAgentId(task?.agentId ?? null)
+    void bridge.getTaskMachines(props.projectId, props.taskId).then((result) => {
+      if (cancelled) return
+      setMachines(result.machines)
+      setAgentId(result.selectedAgentId)
+      setUnavailableAgentId(result.unavailableSelection?.agentId ?? null)
+      setUnavailableName(result.unavailableSelection?.name ?? null)
     })
     return () => { cancelled = true }
   }, [props.projectId, props.taskId])
 
+  const selectedMachine = agentId ? machines.find((machine) => machine.agentId === agentId) : undefined
+  const personalMachines = machines.filter((machine) => machine.personal)
+  const projectMachines = machines.filter((machine) => machine.project && !machine.personal)
+  const machineLabel = (machine: CiTaskMachine): string => {
+    const access = machine.personal && machine.project ? 'моя + проектная' : machine.personal ? 'личная' : 'проектная'
+    return `${machine.name} — ${machine.online ? 'online' : 'offline'}; ${access}${machine.projectDefault ? '; по умолчанию' : ''} · ${machine.agentId.slice(0, 8)}`
+  }
   const isCleanup = (id: string): boolean => commands.find((c) => c.id === id)?.isCleanup ?? false
   const cleanupWarn = after.some(isCleanup) && before.length === 0
   const save = (): void => {
@@ -87,17 +96,28 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     <label>Машина<select aria-label="Машина выполнения" className="sel" value={agentId ?? ''} onChange={(e) => {
       const next = e.target.value || null
       setAgentId(next)
+      setUnavailableAgentId(null)
+      setUnavailableName(null)
+      setSaveError(null)
       void window.api?.['tasks:update']({ projectId: props.projectId, taskId: props.taskId, agentId: next })
+        .catch((error: unknown) => setSaveError(error instanceof Error ? error.message : String(error)))
     }}>
       <option value="">Машина проекта по умолчанию</option>
-      {agentId && !machines.some((machine) => machine.agentId === agentId) && <option value={agentId}>{agentId} (не привязана)</option>}
-      {machines.map((machine) => <option key={machine.agentId} value={machine.agentId}>{machine.agentId}</option>)}
+      {unavailableAgentId && <option value={unavailableAgentId}>{unavailableName ?? 'Недоступная машина'} — недоступна · {unavailableAgentId.slice(0, 8)}</option>}
+      {personalMachines.length > 0 && <optgroup label="Мои машины">
+        {personalMachines.map((machine) => <option key={machine.agentId} value={machine.agentId}>{machineLabel(machine)}</option>)}
+      </optgroup>}
+      {projectMachines.length > 0 && <optgroup label="Машины проекта">
+        {projectMachines.map((machine) => <option key={machine.agentId} value={machine.agentId}>{machineLabel(machine)}</option>)}
+      </optgroup>}
     </select></label>
-    {agentId && !machines.some((machine) => machine.agentId === agentId) && <div className="ci-warn">Выбранная машина больше не привязана к проекту. Запуск merge заблокирован.</div>}
-    {props.mergeMachineBound === false && !agentId && <div className="ci-warn">Машина проекта по умолчанию не привязана. Запуск merge заблокирован.</div>}
+    {unavailableAgentId && <div className="ci-warn">Сохранённая машина больше не существует или недоступна. Выбор не изменён автоматически; запуск CI заблокирован до выбора доступной машины.</div>}
+    {!agentId && !machines.some((machine) => machine.projectDefault) && <div className="ci-warn">Машина проекта по умолчанию не задана или недоступна. Запуск CI заблокирован.</div>}
+    {selectedMachine && !selectedMachine.online && <div className="ci-warn">Машина offline. CI не ждёт подключения и не запустится, пока вы не выберете online-машину.</div>}
+    {saveError && <div className="ci-warn">Не удалось сохранить машину: {saveError}</div>}
     {/* Принудительный запуск работает и для задачи, чей ран стоит в очереди:
         сервер продвинет его на выбранную машину, а не отменит. */}
-    {agentId && (
+    {agentId && selectedMachine?.online && (
       <div className="ci-task-llm-actions">
         <Button size="sm" onClick={() => {
           setForceStatus({ kind: 'idle' })

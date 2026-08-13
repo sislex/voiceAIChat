@@ -515,6 +515,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     db,
     executor: ciExecutor,
     boardChanged: (projectId) => boardHub.emit(projectId),
+    // Боевой исполнитель не ждёт reconnect агента; тестовый executor сам задаёт
+    // доступность и не зависит от реестра WebSocket.
+    isAgentOnline: opts.ciExecutor ? undefined : (agentId) => agentRegistry.isOnline(agentId),
     postToChat: ({ userId, conversationId, text, runId, interactionId }) => {
       try {
         return db.addMessage(userId, conversationId, 'ai', text, ciChatTime(), undefined, { ciInteraction: { runId, interactionId } }).id
@@ -582,7 +585,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       })
     }
   })
-  registerCiRoutes(app, db, ciRunManager)
+  registerCiRoutes(app, db, ciRunManager, agentRegistry)
   const featurePreviews = new FeaturePreviewManager({
     db,
     executor: ciExecutor,

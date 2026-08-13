@@ -125,6 +125,33 @@ function setup() {
   return { project, task, readyColId: ready.id }
 }
 
+it('каталог машин задачи объединяет личные и проектные машины без дублей', async () => {
+  const { project, task } = setup()
+  const personal = db.createAgent('admin', 'Личный ноутбук')
+  const foreign = db.createAgent('other', 'Чужая машина')
+  const response = await inj(admin, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/ci/machines` })
+
+  expect(response.statusCode).toBe(200)
+  const body = response.json()
+  expect(body.machines).toHaveLength(2)
+  expect(body.machines).toEqual(expect.arrayContaining([
+    expect.objectContaining({ name: 'M', personal: true, project: true, projectDefault: true }),
+    expect.objectContaining({ agentId: personal.id, name: 'Личный ноутбук', personal: true, project: false })
+  ]))
+  expect(body.machines.some((machine: { agentId: string }) => machine.agentId === foreign.id)).toBe(false)
+})
+
+it('повторно отклоняет удалённую выбранную машину перед стартом CI', async () => {
+  const { project, task } = setup()
+  const personal = db.createAgent('admin', 'Временная')
+  db.updateTask('admin', project.id, task.id, { agentId: personal.id })
+  db.deleteAgent('admin', personal.id)
+
+  const response = await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/ci/run` })
+  expect(response.statusCode).toBe(409)
+  expect(response.json().error).toContain('больше недоступна')
+})
+
 async function run(projectId: string, taskId: string, payload?: object): Promise<string> {
   const res = await inj(admin, { method: 'POST', url: `/api/projects/${projectId}/tasks/${taskId}/ci/run`, ...(payload ? { payload } : {}) })
   expect(res.statusCode).toBe(202)
@@ -942,7 +969,7 @@ describe('карточка после падения, отмены и повто
     expect(db.latestCiRunSummary(task.id)!.status).toBe('success')
   })
 
-  it('берёт для рана выбранную машиной карточки, а чужую машину REST отклоняет', async () => {
+  it('берёт выбранную машину карточки, разрешает личную и отклоняет чужую', async () => {
     const { project, task } = setup()
     const selected = db.createAgent('admin', 'Вторая машина')
     db.linkMachine('admin', project.id, selected.id)
@@ -956,7 +983,13 @@ describe('карточка после падения, отмены и повто
     const runId = await run(project.id, task.id)
     expect(db.getCiRunRaw(runId)!.agentId).toBe(selected.id)
 
-    const foreign = db.createAgent('admin', 'Не в проекте')
+    const personal = db.createAgent('admin', 'Личная не в проекте')
+    const accepted = await inj(admin, {
+      method: 'PATCH', url: `/api/projects/${project.id}/tasks/${task.id}`, payload: { agentId: personal.id }
+    })
+    expect(accepted.statusCode).toBe(200)
+
+    const foreign = db.createAgent('other', 'Чужая')
     const rejected = await inj(admin, {
       method: 'PATCH', url: `/api/projects/${project.id}/tasks/${task.id}`, payload: { agentId: foreign.id }
     })
