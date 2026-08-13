@@ -462,6 +462,66 @@ describe('App — доступность', () => {
 })
 
 describe('App — запуск задачи из чата', () => {
+  it.each([
+    ['широком desktop', 1440, false],
+    ['средней ширине', 900, false],
+    ['мобильной ширине', 390, true]
+  ] as const)('сохраняет вертикальный порядок и адаптирует окно на %s', async (_label, width, phone) => {
+    const originalMatchMedia = window.matchMedia
+    window.matchMedia = ((query: string) => {
+      const maxWidth = /max-width:\s*(\d+)px/.exec(query)?.[1]
+      return {
+        matches: maxWidth ? width <= Number(maxWidth) : false,
+        media: query,
+        onchange: null,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => true
+      }
+    }) as typeof window.matchMedia
+
+    try {
+      const api = createFakeApi([])
+      await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+      const project = await api['projects:create']({ name: 'Адаптивная форма' })
+      const board = await api['board:get']({ id: project.id })
+      const source = await api['tasks:create']({ projectId: project.id, columnId: board.columns[0]!.id, title: 'Исходная' })
+      const chat = await api['tasks:openChat']({ projectId: project.id, taskId: source.id })
+      await api['messages:add']({
+        conversationId: chat.id,
+        role: 'ai',
+        text: 'Предложение.',
+        time: '12:01',
+        meta: { taskLaunch: { title: 'Длинная задача', description: 'Описание\\n'.repeat(20), acceptanceCriteria: 'Критерий\\n'.repeat(20) } }
+      })
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/chat/${chat.id}`)
+      render(<App api={api} delays={SLOW} />)
+      await screen.findByTestId('task-chat-header')
+      await userEvent.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+      const dialog = await screen.findByRole('dialog', { name: 'Настройки задачи разработки' })
+      expect(dialog).toHaveClass('task-launch-dialog', 'vc-dialog--lg')
+      expect(dialog).toHaveClass(phone ? 'vc-dialog--phone' : 'vc-dialog--lg')
+      if (!phone) expect(dialog).not.toHaveClass('vc-dialog--phone')
+
+      const title = within(dialog).getByLabelText('Название')
+      const settings = within(dialog).getByLabelText('Дополнительные настройки')
+      const description = within(dialog).getByLabelText('Описание')
+      const criteria = within(dialog).getByLabelText('Критерии приёмки')
+      const actions = within(dialog).getByRole('button', { name: 'Создать в TODO' }).parentElement!
+      expect(title.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(settings.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(description.compareDocumentPosition(criteria) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(criteria.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(description).toHaveAttribute('rows', '8')
+      expect(criteria).toHaveAttribute('rows', '8')
+    } finally {
+      window.matchMedia = originalMatchMedia
+    }
+  })
+
   it('показывает сохранённое предложение кнопкой и открывает карточку только по клику', async () => {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
