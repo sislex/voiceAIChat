@@ -20,18 +20,18 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 37 коммит(ов) в areas после сверки: 4963872 feat(ci): show accessible task machines … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 24 коммит(ов) в areas после сверки: 4963872 feat(ci): show accessible task machines … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-12 | ⚠ 3 коммит(ов) в areas после сверки: 4963872 feat(ci): show accessible task machines … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 256 коммит(ов) в areas после сверки: 4d01228 Merge task 073c6e1b-6eff-4536-8bbf-e6ed903ad6f7 … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ⚠ 20 коммит(ов) в areas после сверки: 4d01228 Merge task 073c6e1b-6eff-4536-8bbf-e6ed903ad6f7 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 257 коммит(ов) в areas после сверки: dc14ee4 CHAT-189: показать шаги CI-рана … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ⚠ 21 коммит(ов) в areas после сверки: dc14ee4 CHAT-189: показать шаги CI-рана … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 9 коммит(ов) в areas после сверки: abc8bc6 chatai-178: работа CI-рана … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 5 коммит(ов) в areas после сверки: de5164a chatai-182: работа CI-рана … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 5 коммит(ов) в areas после сверки: 4963872 feat(ci): show accessible task machines … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-13 | ⚠ 4 коммит(ов) в areas после сверки: 4d01228 Merge task 073c6e1b-6eff-4536-8bbf-e6ed903ad6f7 … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-13 | ⚠ 5 коммит(ов) в areas после сверки: dc14ee4 CHAT-189: показать шаги CI-рана … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-12 | ⚠ 8 коммит(ов) в areas после сверки: 4963872 feat(ci): show accessible task machines … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-08 | ⚠ 63 коммит(ов) в areas после сверки: 4d01228 Merge task 073c6e1b-6eff-4536-8bbf-e6ed903ad6f7 … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 24 коммит(ов) в areas после сверки: 4963872 feat(ci): show accessible task machines … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-13 | ⚠ 1 коммит(ов) в areas после сверки: 7cf3522 test(server): allow ten minutes per test |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-13 | ⚠ 4 коммит(ов) в areas после сверки: 4d01228 Merge task 073c6e1b-6eff-4536-8bbf-e6ed903ad6f7 … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-13 | ⚠ 5 коммит(ов) в areas после сверки: dc14ee4 CHAT-189: показать шаги CI-рана … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-13, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
 
