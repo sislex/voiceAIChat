@@ -3,7 +3,7 @@ import type { AcceptanceCriterion, AcceptanceCriterionSnapshot, QaCriterionResul
 import { canCompleteQa, qaProgress } from '@shared/qa'
 import { Button } from '../ui/Button'
 
-export function ManualQaPanel(props: { projectId: string; taskId: string }): JSX.Element {
+export function ManualQaPanel(props: { projectId: string; taskId: string; activeRun?: boolean; onFixStarted?: (runId: string) => void }): JSX.Element {
   const [state, setState] = useState<QaTaskState | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -41,7 +41,7 @@ export function ManualQaPanel(props: { projectId: string; taskId: string }): JSX
         {session.staleReason && <span role="alert">{session.staleReason}</span>}
         {session.appUrl && <a href={session.appUrl} target="_blank" rel="noreferrer">Открыть preview</a>}
         {session.storybookUrl && <a href={session.storybookUrl} target="_blank" rel="noreferrer">Открыть Storybook</a>}
-        <span>Passed {progress.passed} · Failed {progress.failed} · Blocked {progress.blocked} · N/A {progress.notApplicable} · Не проверено {progress.notTested}</span>
+        <span>Работает: {progress.passed} · Не работает: {progress.failed} · Нет возможности проверить: {progress.notApplicable} · Не проверено: {progress.notTested + progress.inProgress + progress.blocked}</span>
       </div>}
       <details className="manual-qa-create">
         <summary>Добавить сценарий ручного QA</summary>
@@ -90,6 +90,13 @@ export function ManualQaPanel(props: { projectId: string; taskId: string }): JSX
         catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
         finally { setBusy(false) }
       }}>Сценарии готовы — перейти в ручное QA</Button>}
+      {state.activeSession && progress && progress.failed > 0 && <Button variant="primary" disabled={busy || props.activeRun || state.activeSession.results.some((result) => result.status === 'failed' && !result.comment.trim())} onClick={async () => {
+        if (!window.qa) return
+        setBusy(true)
+        try { const run = await window.qa.requestFix(props.projectId, props.taskId, state.activeSession!.id); props.onFixStarted?.(run.id); await load() }
+        catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+        finally { setBusy(false) }
+      }}>Внести правки</Button>}
       {state.activeSession && canCompleteQa(state.activeSession).allowed && <Button variant="primary" disabled={busy} onClick={async () => {
         if (!window.qa) return
         setBusy(true)
@@ -127,15 +134,14 @@ function CriterionCard(props: {
       {result && <>
         <label>Фактически выполненные шаги<textarea value={steps} onChange={(event) => setSteps(event.target.value)} /></label>
         <label>Фактический результат<textarea value={actual} onChange={(event) => setActual(event.target.value)} /></label>
-        <label>Комментарий<textarea value={comment} onChange={(event) => setComment(event.target.value)} /></label>
+        <label>Комментарий{result.status === 'failed' ? ' (обязательно)' : ''}<textarea value={comment} onChange={(event) => setComment(event.target.value)} /></label>
         <label>Причина для Blocked / N/A<textarea value={reason} onChange={(event) => setReason(event.target.value)} /></label>
         <label>Скриншоты<input type="file" accept="image/png,image/jpeg,image/webp" multiple disabled={props.disabled} onChange={(event) => { for (const file of Array.from(event.currentTarget.files ?? [])) void props.onAttach(result, file) }} /></label>
         <div className="manual-qa-actions">
           <Button size="sm" disabled={props.disabled} onClick={() => props.onUpdate(result, 'in_progress', { draft: true, executedSteps: steps, actualResult: actual, comment })}>Сохранить черновик</Button>
-          <Button size="sm" variant="primary" disabled={props.disabled} onClick={() => props.onUpdate(result, 'passed', { executedSteps: steps, actualResult: actual, comment })}>Пройден</Button>
-          <Button size="sm" disabled={props.disabled} onClick={() => props.onUpdate(result, 'failed', { executedSteps: steps, actualResult: actual, comment, classification: 'implementation_defect', severity: 'major', frequency: 'unknown', reproduction: steps })}>Не пройден</Button>
-          <Button size="sm" disabled={props.disabled || !reason.trim()} onClick={() => props.onUpdate(result, 'blocked', { executedSteps: steps, actualResult: actual, comment, blockerReason: reason, blockerType: 'other', blockerOwner: 'QA owner' })}>Заблокирован</Button>
-          <Button size="sm" disabled={props.disabled || !reason.trim()} onClick={() => props.onUpdate(result, 'not_applicable', { executedSteps: steps, actualResult: actual, comment, notApplicableReason: reason })}>Неприменим</Button>
+          <Button size="sm" variant="primary" disabled={props.disabled} onClick={() => props.onUpdate(result, 'passed', { executedSteps: steps, actualResult: actual, comment })}>Работает</Button>
+          <Button size="sm" disabled={props.disabled || !comment.trim() || !actual.trim() || !steps.trim()} onClick={() => props.onUpdate(result, 'failed', { executedSteps: steps, actualResult: actual, comment, classification: 'implementation_defect', severity: 'major', frequency: 'unknown', reproduction: steps })}>Не работает</Button>
+          <Button size="sm" disabled={props.disabled} onClick={() => props.onUpdate(result, 'not_applicable', { executedSteps: steps, actualResult: actual, comment, notApplicableReason: reason })}>Нет возможности проверить</Button>
         </div>
         {result.attachments.length > 0 && <div>{result.attachments.map((attachment) => <a key={attachment.id} href={`/api/qa/attachments/${attachment.id}`} target="_blank" rel="noreferrer">{attachment.caption || attachment.name}</a>)}</div>}
       </>}

@@ -85,24 +85,23 @@ export function canCompleteQa(session: QaSession): QaCompletionCheck {
     const result = byCriterion.get(`${item.criterionId}:${item.version}`)
     if (!result) { reasons.push(`missing:${item.criterionId}`); continue }
     if (result.commitSha !== session.commitSha || result.previewSha !== session.previewSha) reasons.push(`stale_result:${item.criterionId}`)
-    else if (result.status === 'not_applicable' && !result.notApplicableReason.trim()) reasons.push(`invalid_not_applicable:${item.criterionId}`)
     else if (result.status !== 'passed' && result.status !== 'not_applicable') reasons.push(`${result.status}:${item.criterionId}`)
   }
   return { allowed: reasons.length === 0, reasons }
 }
-export type QaRequiredFields = Pick<QaCriterionResult, 'actualResult' | 'executedSteps' | 'expectedResult' | 'blockerReason' | 'blockerType' | 'blockerOwner' | 'notApplicableReason'>
+export type QaRequiredFields = Pick<QaCriterionResult, 'actualResult' | 'executedSteps' | 'expectedResult' | 'comment' | 'blockerReason' | 'blockerType' | 'blockerOwner' | 'notApplicableReason'>
 export function validateQaResult(status: QaResultStatus, fields: QaRequiredFields): string[] {
   const missing: string[] = []
   if (status === 'failed') {
     if (!fields.expectedResult.trim()) missing.push('expectedResult')
     if (!fields.actualResult.trim()) missing.push('actualResult')
     if (!fields.executedSteps.trim()) missing.push('executedSteps')
+    if (!fields.comment.trim()) missing.push('comment')
   }
   if (status === 'blocked') {
     if (!fields.blockerReason.trim()) missing.push('blockerReason')
     if (!fields.blockerType) missing.push('blockerType')
     if (!fields.blockerOwner?.trim()) missing.push('blockerOwner')
   }
-  if (status === 'not_applicable' && !fields.notApplicableReason.trim()) missing.push('notApplicableReason')
   return missing
 }

@@ -653,6 +653,16 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         // контекста по теме задачи сервер подмешивает сам (режим `auto`).
         const kbMode = kbModeOf(ctx)
         let prompt = taskPrompt(ctx, phase)
+        const qa = deps.db.getQaTaskState(ctx.run.triggeredBy, ctx.task.projectId, ctx.task.id)
+        const fixSession = qa?.sessions.find((session) => session.status === 'failed' && session.results.some((result) => result.issue?.linkedFixRunId === ctx.run.id))
+        if (fixSession) {
+          const criteria = new Map(qa?.criteria.map((criterion) => [criterion.id, criterion]))
+          const feedback = fixSession.results.filter((result) => result.status === 'failed').map((result, index) => {
+            const criterion = criteria.get(result.criterionId)
+            return `${index + 1}. ${criterion?.title ?? 'Тест'}\nОжидалось: ${result.expectedResult}\nФактически: ${result.actualResult}\nШаги: ${result.executedSteps}\nЗамечание QA: ${result.comment}`
+          }).join('\n\n')
+          prompt += `\n\nПредыдущий результат не прошёл ручное QA. Исправь все замечания:\n${feedback}`
+        }
         if (kbFields.kbMcpUrl) prompt = `${prompt}\n\n${kbRunDirective(kbMode === 'manual' ? 'manual' : 'auto')}`
         prompt = `${prompt}${await kbTaskContext(ctx, kbTurnId, ctx.parentStepId)}`
         if (budget > 0) prompt = `${prompt}\n\n${clarifyHint(budget)}`
