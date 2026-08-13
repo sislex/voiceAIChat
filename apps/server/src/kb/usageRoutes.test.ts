@@ -82,6 +82,40 @@ describe('GET /api/conversations/:id/kb-usage', () => {
     const res = await app.inject({ method: 'GET', url: REST.conversationKbUsage(conv.id) })
     expect(res.statusCode).toBe(401)
   })
+
+  it('успешно отмечает загруженную границу, не захватывая более новое событие', async () => {
+    const conv = db.createConversation('admin', 'Чат')
+    db.addKbUsage({ userId: 'admin', conversationId: conv.id, source: 'auto', query: 'q1', chars: 1 })
+    const snapshot = (await get(adminTok, REST.conversationKbUsage(conv.id))).json() as KbUsageReport
+    db.addKbUsage({ userId: 'admin', conversationId: conv.id, source: 'tool_search', query: 'q2', chars: 1 })
+
+    const marked = await app.inject({
+      method: 'POST',
+      url: REST.conversationKbUsageViewed(conv.id),
+      headers: { authorization: `Bearer ${adminTok}` },
+      payload: { lastSeq: snapshot.lastSeq }
+    })
+    expect(marked.statusCode).toBe(200)
+    expect(marked.json()).toEqual({ lastSeq: 1, unreadCount: 1 })
+    expect((await get(adminTok, REST.conversationKbUsage(conv.id))).json()).toMatchObject({
+      unreadCount: 1,
+      totals: { queries: 2 }
+    })
+  })
+
+  it('не позволяет отмечать чужой чат и валидирует границу', async () => {
+    const conv = db.createConversation('admin', 'Чат')
+    const foreign = await app.inject({
+      method: 'POST', url: REST.conversationKbUsageViewed(conv.id),
+      headers: { authorization: `Bearer ${bobTok}` }, payload: { lastSeq: 0 }
+    })
+    expect(foreign.statusCode).toBe(404)
+    const bad = await app.inject({
+      method: 'POST', url: REST.conversationKbUsageViewed(conv.id),
+      headers: { authorization: `Bearer ${adminTok}` }, payload: { lastSeq: -1 }
+    })
+    expect(bad.statusCode).toBe(400)
+  })
 })
 
 describe('GET /api/projects/:id/kb-usage', () => {

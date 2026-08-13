@@ -160,6 +160,7 @@ export function buildKbUsageFromMessages(messages: Message[], opts: KbUsageFallb
     toolEnabled: opts.toolEnabled ?? false,
     available: opts.available ?? true,
     lastSeq: 0,
+    unreadCount: totals.queries,
     totals,
     sections,
     recent
@@ -245,7 +246,12 @@ export function applyKbUsageFrame(cache: KbUsageCache, query: KbUsageQuery): KbU
   return {
     ...cache,
     counted: [...counted],
-    report: { ...report, lastSeq: Math.max(report.lastSeq, query.seq), totals, sections, recent }
+    report: {
+      ...report,
+      lastSeq: Math.max(report.lastSeq, query.seq),
+      unreadCount: report.unreadCount + (query.status !== 'pending' && !cache.counted.includes(query.id) ? 1 : 0),
+      totals, sections, recent
+    }
   }
 }
 
