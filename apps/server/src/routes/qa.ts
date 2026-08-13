@@ -14,7 +14,7 @@ function qaError(reply: FastifyReply, error: unknown): FastifyReply {
   return reply.code(status).send({ error: message })
 }
 
-export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager): void {
+export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => boolean): void {
   const base = '/api/projects/:projectId/tasks/:taskId/qa'
   app.get<{ Params: TaskParams }>(`${base}`, async (req, reply) => {
     const state = db.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
@@ -42,6 +42,17 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     try {
       return db.completeQaPreparation(uid(req), req.params.projectId, req.params.taskId)
         ?? reply.code(404).send({ error: 'task not found' })
+    } catch (error) { return qaError(reply, error) }
+  })
+  app.post<{ Params: TaskParams }>(`${base}/preparation/retry`, async (req, reply) => {
+    try {
+      const userId = uid(req)
+      const state = db.getQaTaskState(userId, req.params.projectId, req.params.taskId)
+      if (!state) return reply.code(404).send({ error: 'task not found' })
+      const run = state.preparation
+      if (!run || run.status !== 'failed' || !retryPreparation) return reply.code(409).send({ error: 'Повтор подготовки сейчас недоступен' })
+      if (!retryPreparation({ userId, projectId: req.params.projectId, taskId: req.params.taskId, branch: run.branch, commitSha: run.commitSha })) return reply.code(409).send({ error: 'Подготовка уже запущена' })
+      return reply.code(202).send(db.getQaTaskState(userId, req.params.projectId, req.params.taskId)?.preparation)
     } catch (error) { return qaError(reply, error) }
   })
   app.post<{ Params: TaskParams; Body: { branch: string; commitSha: string; testRunId: string; previewId?: string | null; previewSha?: string | null; appUrl?: string | null; storybookUrl?: string | null; testDataScenario?: string; testerId?: string | null } }>(

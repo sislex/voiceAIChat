@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, type AcceptanceCriterionSnapshot, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -138,6 +138,28 @@ function makeTtsEngine(config: ServerConfig): TtsEngine {
 export interface BuiltServer {
   app: FastifyInstance
   db: VoiceChatDb
+}
+
+export function parseQaPreparationResponse(text: string): AcceptanceCriterionSnapshot[] {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]
+  const start = text.indexOf('['), end = text.lastIndexOf(']')
+  const raw = (fenced ?? (start >= 0 && end > start ? text.slice(start, end + 1) : text)).trim()
+  let value: unknown
+  try { value = JSON.parse(raw) }
+  catch (cause) { throw new Error(`Невалидный JSON: ${cause instanceof Error ? cause.message : String(cause)}`) }
+  if (!Array.isArray(value) || value.length === 0) throw new Error('Модель не вернула ни одного сценария')
+  return value.map((item, index) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`Сценарий ${index + 1}: ожидается объект`)
+    const row = item as Record<string, unknown>
+    for (const field of ['title','description','preconditions','steps','testData','expectedResult'] as const) {
+      if (typeof row[field] !== 'string') throw new Error(`Сценарий ${index + 1}: поле ${field} должно быть строкой`)
+    }
+    const strings = row as Record<'title'|'description'|'preconditions'|'steps'|'testData'|'expectedResult', string> & Record<string, unknown>
+    if (!strings.title.trim() || !strings.steps.trim() || !strings.expectedResult.trim()) throw new Error(`Сценарий ${index + 1}: title, steps и expectedResult не могут быть пустыми`)
+    if (typeof row.required !== 'boolean') throw new Error(`Сценарий ${index + 1}: поле required должно быть boolean`)
+    if (row.testType !== 'manual' && row.testType !== 'mixed' && row.testType !== 'not_testable_in_app') throw new Error(`Сценарий ${index + 1}: недопустимый testType`)
+    return { title: strings.title.trim(), description: strings.description.trim(), preconditions: strings.preconditions.trim(), steps: strings.steps.trim(), testData: strings.testData.trim(), expectedResult: strings.expectedResult.trim(), required: row.required, testType: row.testType }
+  })
 }
 
 export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> {
@@ -511,6 +533,51 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const d = new Date()
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }
+  const launchQaPreparation = (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string; runId?: string }, retry = false): boolean => {
+    const { userId, projectId, taskId, branch, commitSha } = args
+    const preparation = db.startQaPreparationRun(projectId, taskId, branch, commitSha, retry)
+    if (!preparation) return false
+    const task = db.getCiTask(userId, projectId, taskId)
+    const existing = db.getQaTaskState(userId, projectId, taskId)?.criteria.filter((criterion) => criterion.active) ?? []
+    const development = args.runId ? db.getCiRun(userId, args.runId) : null
+    const basePrompt = `Ты формируешь финальные структурированные сценарии ручного QA. Не запускай агентов или инструменты, не делегируй работу, не переходи в режим ожидания и не описывай свои действия. Ответь за один ход ТОЛЬКО JSON-массивом без Markdown и пояснений. Каждый объект обязан содержать строковые поля title, description, preconditions, steps, testData, expectedResult, boolean required и testType: manual|mixed|not_testable_in_app. title, steps и expectedResult должны быть непустыми.\n\nЗадача: ${task?.title ?? ''}\nОписание: ${task?.description ?? ''}\nAcceptance criteria: ${task?.acceptanceCriteria ?? ''}\nFeature branch: ${branch}\nCommit SHA: ${commitSha}\nАвтотесты: ${(development?.steps ?? []).map((step) => `${step.title}: ${step.status}`).join('; ')}\nУже активные сценарии (не дублировать): ${existing.map((criterion) => criterion.title).join('; ')}`
+    const sendAttempt = (attempt: number, correction?: string): void => {
+      const prompt = correction ? `${basePrompt}\n\nПредыдущий ответ отклонён: ${correction}. Исправь ошибку и верни только валидный JSON-массив установленной схемы.` : basePrompt
+      claude.send({ userId, prompt, sessionId: null, model: 'sonnet', executionDisabled: true }, {
+        onDelta: (chunk) => db.appendQaPreparationLog(preparation.id, chunk),
+        onSession: () => {},
+        onDone: (text) => {
+          try {
+            const scenarios = parseQaPreparationResponse(text)
+            db.recordQaPreparationAttempt(preparation.id, attempt, text, null)
+            const existingTitles = new Set(existing.map((criterion) => criterion.title.trim().toLocaleLowerCase()))
+            for (const scenario of scenarios) {
+              if (existingTitles.has(scenario.title.toLocaleLowerCase())) continue
+              db.createAcceptanceCriterion(userId, projectId, taskId, scenario)
+              existingTitles.add(scenario.title.toLocaleLowerCase())
+            }
+            db.completeQaPreparation(userId, projectId, taskId)
+            db.finishQaPreparationRun(preparation.id, 'success')
+            boardHub.emit(projectId)
+          } catch (cause) {
+            const message = cause instanceof Error ? cause.message : String(cause)
+            db.recordQaPreparationAttempt(preparation.id, attempt, text, message)
+            if (attempt < 2) sendAttempt(attempt + 1, message)
+            else { db.finishQaPreparationRun(preparation.id, 'failed', message); boardHub.emit(projectId) }
+          }
+        },
+        onError: (message) => {
+          db.recordQaPreparationAttempt(preparation.id, attempt, '', message)
+          if (attempt < 2) sendAttempt(attempt + 1, message)
+          else { db.finishQaPreparationRun(preparation.id, 'failed', message); boardHub.emit(projectId) }
+        }
+      })
+    }
+    sendAttempt(1)
+    boardHub.emit(projectId)
+    return true
+  }
+
   const ciRunManager = createCiRunManager({
     db,
     executor: ciExecutor,
@@ -545,45 +612,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     modelSummary: ciModelHooks.modelSummary,
     attemptFix: ciModelHooks.attemptFix,
     kbUpdate: opts.ciKbUpdate ?? ciModelHooks.kbUpdate,
-    qaPreparation: ({ userId, projectId, taskId, branch, commitSha, runId }) => {
-      const preparation = db.startQaPreparationRun(projectId, taskId, branch, commitSha)
-      if (!preparation) return // UNIQUE(task, SHA): ровно один ран, в том числе после рестарта.
-      const task = db.getCiTask(userId, projectId, taskId)
-      const existing = db.getQaTaskState(userId, projectId, taskId)?.criteria.filter((criterion) => criterion.active) ?? []
-      const development = db.getCiRun(userId, runId)
-      const prompt = `Создай сценарии ручного QA для задачи. Верни ТОЛЬКО JSON-массив объектов с полями title, description, preconditions, steps, testData, expectedResult, required, testType (manual|mixed|not_testable_in_app).\n\nЗадача: ${task?.title ?? ''}\nОписание: ${task?.description ?? ''}\nAcceptance criteria: ${task?.acceptanceCriteria ?? ''}\nFeature branch: ${branch}\nCommit SHA: ${commitSha}\nАвтотесты: ${(development?.steps ?? []).map((step) => `${step.title}: ${step.status}`).join('; ')}\nУже активные сценарии (не дублировать): ${existing.map((criterion) => criterion.title).join('; ')}`
-      claude.send({ userId, prompt, sessionId: null, model: 'sonnet', executionDisabled: true }, {
-        onDelta: (chunk) => db.appendQaPreparationLog(preparation.id, chunk),
-        onSession: () => {},
-        onDone: (text) => {
-          try {
-            const raw = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? text
-            const scenarios = JSON.parse(raw.trim()) as Array<Record<string, unknown>>
-            if (!Array.isArray(scenarios) || !scenarios.length) throw new Error('Модель не вернула сценарии')
-            const existingTitles = new Set(existing.map((criterion) => criterion.title.trim().toLocaleLowerCase()))
-            for (const scenario of scenarios) {
-              const title = String(scenario.title ?? '').trim()
-              if (!title || existingTitles.has(title.toLocaleLowerCase())) continue
-              db.createAcceptanceCriterion(userId, projectId, taskId, {
-              title, description: String(scenario.description ?? '').trim(),
-              preconditions: String(scenario.preconditions ?? '').trim(), steps: String(scenario.steps ?? '').trim(),
-              testData: String(scenario.testData ?? '').trim(), expectedResult: String(scenario.expectedResult ?? '').trim(),
-              required: scenario.required !== false,
-              testType: scenario.testType === 'mixed' || scenario.testType === 'not_testable_in_app' ? scenario.testType : 'manual'
-              })
-              existingTitles.add(title.toLocaleLowerCase())
-            }
-            db.completeQaPreparation(userId, projectId, taskId)
-            db.finishQaPreparationRun(preparation.id, 'success')
-            boardHub.emit(projectId)
-          } catch (error) {
-            db.finishQaPreparationRun(preparation.id, 'failed', error instanceof Error ? error.message : String(error))
-            boardHub.emit(projectId)
-          }
-        },
-        onError: (message) => { db.finishQaPreparationRun(preparation.id, 'failed', message); boardHub.emit(projectId) }
-      })
-    }
+    qaPreparation: (args) => { void launchQaPreparation(args) }
   })
   registerCiRoutes(app, db, ciRunManager, agentRegistry)
   const featurePreviews = new FeaturePreviewManager({
@@ -613,12 +642,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager)
   mergeRunManager.reconcile()
-  registerQaRoutes(app, db, uploads, ciRunManager)
+  registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true))
 
   // Раны предыдущего процесса живут только в его памяти: после рестарта они
   // навсегда остались бы «running» и блокировали карточку задачи.
   const interrupted = db.failInterruptedCiRuns()
   if (interrupted.length) app.log.warn({ runs: interrupted.map((r) => r.id) }, 'ci: прерванные раны закрыты как failed')
+  const interruptedQa = db.failInterruptedQaPreparationRuns()
+  if (interruptedQa.length) app.log.warn({ runs: interruptedQa }, 'qa preparation: прерванные раны закрыты как failed')
 
   // Плановая остановка (деплой/SIGTERM → app.close()): сохранить частичные
   // ответы активных ходов, чтобы рестарт контейнера не терял набранный текст.

@@ -206,7 +206,9 @@ describe('ci run manager', () => {
     expect(detail.run.llmModel).toBe(DEFAULT_SETTINGS.model)
     // Модель рана — только у разработки: резюме идёт по своей стадии
     // (DEFAULT_CI_STAGE_MODELS.summary), пересказ шагов не требует модели рана.
-    expect(modelRequests.map((r) => r.model)).toEqual([DEFAULT_SETTINGS.model, DEFAULT_CI_STAGE_MODELS.summary, 'sonnet'])
+    // Тестовый LLM отвечает невалидным текстом на QA preparation, поэтому видны
+    // обе ограниченные попытки подготовки сценариев.
+    expect(modelRequests.map((r) => r.model)).toEqual([DEFAULT_SETTINGS.model, DEFAULT_CI_STAGE_MODELS.summary, 'sonnet', 'sonnet'])
   })
 
   it('DELETE ci/llm снимает переопределение задачи и возвращает наследование', async () => {

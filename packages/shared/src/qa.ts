@@ -52,9 +52,18 @@ export interface QaSession {
   startedAt: number; finishedAt: number | null; staleReason: string | null; summary: string
   results: QaCriterionResult[]
 }
+export type QaPreparationStatus = 'running' | 'success' | 'failed'
+export interface QaPreparationAttempt {
+  attempt: number; rawResponse: string; error: string | null; status: 'success' | 'failed'
+}
+export interface QaPreparationRun {
+  id: string; taskId: string; branch: string; commitSha: string; status: QaPreparationStatus
+  attempt: number; maxAttempts: number; error: string | null; attempts: QaPreparationAttempt[]
+  createdAt: number; finishedAt: number | null; canRetry: boolean
+}
 export interface QaTaskState {
   criteria: AcceptanceCriterion[]; versions: AcceptanceCriterionVersion[]
-  sessions: QaSession[]; activeSession: QaSession | null
+  sessions: QaSession[]; activeSession: QaSession | null; preparation?: QaPreparationRun | null
 }
 export interface QaProgress {
   total: number; passed: number; failed: number; blocked: number; notTested: number
