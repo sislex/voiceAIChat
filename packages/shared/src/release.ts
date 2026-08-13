@@ -2,24 +2,25 @@
 export const RELEASE_BRANCH_RE = /^release\/(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 
 export type ReleaseStatus = 'preparing' | 'checking' | 'ready' | 'queued' | 'switching' | 'building' | 'health_check' | 'failed' | 'released'
-export type ReleaseStepKind = 'regression' | 'knowledge_base' | 'switching' | 'building' | 'health_check'
+export type ReleaseStepKind = 'checkout' | 'regression' | 'knowledge_base' | 'switching' | 'building' | 'health_check'
 export type ReleaseStepStatus = 'queued' | 'running' | 'passed' | 'failed' | 'skipped'
 
 export interface ReleaseTimeouts {
+  checkoutMs: number
   knowledgeBaseMs: number
   regressionMs: number
   switchingMs: number
   buildingMs: number
   healthCheckMs: number
 }
-export const DEFAULT_RELEASE_TIMEOUTS: ReleaseTimeouts = { knowledgeBaseMs: 600_000, regressionMs: 600_000, switchingMs: 120_000, buildingMs: 600_000, healthCheckMs: 1_800_000 }
+export const DEFAULT_RELEASE_TIMEOUTS: ReleaseTimeouts = { checkoutMs: 300_000, knowledgeBaseMs: 600_000, regressionMs: 600_000, switchingMs: 120_000, buildingMs: 600_000, healthCheckMs: 1_800_000 }
 export const RELEASE_TIMEOUT_MIN_MS = 1_000
 export const RELEASE_TIMEOUT_MAX_MS = 86_400_000
 export function validateReleaseTimeouts(value: ReleaseTimeouts): ReleaseTimeouts {
   for (const [name, timeout] of Object.entries(value)) if (!Number.isInteger(timeout) || timeout < RELEASE_TIMEOUT_MIN_MS || timeout > RELEASE_TIMEOUT_MAX_MS) throw new Error(`${name}: лимит должен быть от 1 секунды до 24 часов`)
   return value
 }
-export const releaseStepLimit = (kind: ReleaseStepKind, limits: ReleaseTimeouts): number => ({knowledge_base:limits.knowledgeBaseMs,regression:limits.regressionMs,switching:limits.switchingMs,building:limits.buildingMs,health_check:limits.healthCheckMs})[kind]
+export const releaseStepLimit = (kind: ReleaseStepKind, limits: ReleaseTimeouts): number => ({checkout:limits.checkoutMs,knowledge_base:limits.knowledgeBaseMs,regression:limits.regressionMs,switching:limits.switchingMs,building:limits.buildingMs,health_check:limits.healthCheckMs})[kind]
 
 export interface ReleaseBranch { branch: string; version: string; sha: string }
 export interface ReleaseStep {
@@ -35,6 +36,7 @@ export interface ReleaseStep {
   limitMs?: number | null
 }
 const RELEASE_FAILURE_FALLBACK: Record<ReleaseStepKind, string> = {
+  checkout: 'Не удалось подготовить checkout',
   regression: 'Регрессионные проверки не прошли',
   knowledge_base: 'База знаний не синхронизирована с кодом',
   switching: 'Не удалось переключить production checkout',
@@ -89,4 +91,4 @@ export function assertReleaseBranch(branch: string): string {
   if (!version) throw new Error('Разрешены только ветки release/x.y.z')
   return version
 }
-export const RELEASE_STEP_ORDER: readonly ReleaseStepKind[] = ['regression', 'knowledge_base', 'switching', 'building', 'health_check']
+export const RELEASE_STEP_ORDER: readonly ReleaseStepKind[] = ['checkout', 'regression', 'knowledge_base', 'switching', 'building', 'health_check']
