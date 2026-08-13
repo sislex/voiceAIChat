@@ -234,6 +234,8 @@ export interface SidebarProps {
   onSelectProject?: (id: string | null) => void
   onOpenObserver: () => void
   onOpenKnowledgeBase?: () => void
+  /** Открыть отдельную страницу персонализации текущего пользователя. */
+  onOpenPersonalization?: () => void
   onOpenSettings: () => void
   /** Открыть файловый проводник по машине-агенту (web). */
   onOpenFiles?: () => void
@@ -299,6 +301,7 @@ export function Sidebar({
   onSelectProject,
   onOpenObserver,
   onOpenKnowledgeBase,
+  onOpenPersonalization,
   onOpenSettings,
   onOpenFiles,
   onOpenConsole,
@@ -746,6 +749,7 @@ export function Sidebar({
                     Пользователи
                   </Button>
                 )}
+                {onOpenPersonalization && <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenPersonalization)}><span className="footico">✨</span>Персонализация</Button>}
                 <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenSettings)}>
                   <GearIcon />
                   Настройки

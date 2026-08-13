@@ -27,11 +27,51 @@ export function uid(req: FastifyRequest): string {
   return req.user.name
 }
 
-/** Guard «только admin» для admin-роутов (вешается как preHandler). */
-export async function requireAdmin(req: FastifyRequest, reply: FastifyReply): Promise<void> {
-  if (req.user?.role !== 'admin') {
-    await reply.code(403).send({ error: 'forbidden' })
+export type ProjectPermission =
+  | 'project:view'
+  | 'task:create'
+  | 'task:update'
+  | 'workflow:start'
+  | 'task:merge'
+  | 'release:prepare'
+  | 'production:deploy'
+  | 'users:manage'
+  | 'project:settings'
+
+const DEVELOPER_PERMISSIONS = new Set<ProjectPermission>([
+  'project:view', 'task:create', 'task:update', 'workflow:start', 'task:merge'
+])
+
+/** Централизованная матрица проектных полномочий; admin разрешены и будущие действия. */
+export function hasProjectPermission(role: SessionUser['role'], permission: ProjectPermission): boolean {
+  return role === 'admin' || (role === 'developer' && DEVELOPER_PERMISSIONS.has(permission))
+}
+
+/** Fastify guard для проектных операций. Аутентификацию раньше проверяет глобальный hook. */
+export function requireProjectPermission(permission: ProjectPermission) {
+  return async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    if (!req.user || !hasProjectPermission(req.user.role, permission)) {
+      await reply.code(403).send({ error: 'forbidden', permission })
+    }
   }
+}
+
+/** Guard «только admin» для административных роутов. */
+export const requireAdmin = requireProjectPermission('users:manage')
+
+/** Единая классификация защищённых HTTP-операций; маршруты не дублируют матрицу ролей. */
+export function projectPermissionForRequest(method: string, url: string): ProjectPermission | null {
+  if (url.startsWith('/api/admin/')) return 'users:manage'
+  if (/^\/api\/projects\/[^/]+\/machines\/available$/.test(url)) return 'project:settings'
+  if (method === 'GET') return null
+  if (/^\/api\/projects\/[^/]+\/releases\/deploy$/.test(url) || /^\/api\/merge\/runs\/[^/]+\/deploy$/.test(url)) return 'production:deploy'
+  if (/^\/api\/projects\/[^/]+\/releases(?:\/|$)/.test(url)) return 'release:prepare'
+  if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/merge$/.test(url) || /^\/api\/merge\/runs\/[^/]+\/retry$/.test(url)) return 'task:merge'
+  if (/\/ci\/run(?:-on-machine)?$/.test(url) || /^\/api\/ci\/runs\/[^/]+\/(?:retry|retry-from-step|discard-and-retry)$/.test(url)) return 'workflow:start'
+  if (method === 'POST' && /^\/api\/projects\/[^/]+\/tasks$/.test(url)) return 'task:create'
+  if (method === 'PATCH' && /^\/api\/projects\/[^/]+\/tasks\/[^/]+$/.test(url)) return 'task:update'
+  if (url === '/api/projects' || /^\/api\/projects\/[^/]+$/.test(url) || /^\/api\/projects\/[^/]+\/(?:members|machines|default-machine|columns)(?:\/|$)/.test(url)) return 'project:settings'
+  return null
 }
 
 /** Токен из заголовка Authorization: Bearer <token>. */
@@ -92,6 +132,11 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       return reply
     }
     req.user = user
+    const permission = projectPermissionForRequest(req.method, url)
+    if (permission && !hasProjectPermission(user.role, permission)) {
+      await reply.code(403).send({ error: 'forbidden', permission })
+      return reply
+    }
   })
 
   app.post<{ Body: { name?: string; password?: string } }>(

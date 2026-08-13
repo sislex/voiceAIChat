@@ -329,7 +329,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
 } {
   const now = deps.now ?? (() => Date.now())
   const clientFor = (ctx: CiModelContext): LlmClient => {
-    const role = deps.db.getUser(ctx.run.triggeredBy)?.role ?? 'user'
+    const role = deps.db.getUser(ctx.run.triggeredBy)?.role ?? 'developer'
     const resolved = deps.db.resolveLlmEngine(ctx.run.llmEngineId, ctx.run.llmProvider, role)
     return resolved.engine && deps.engineClient ? deps.engineClient(resolved.engine) : ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
   }

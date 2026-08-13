@@ -183,7 +183,7 @@ export async function registerRest(
       if (typeof req.body.title === 'string') db.renameConversation(userId, req.params.id, req.body.title)
       if (req.body.kbContextMode === 'auto' || req.body.kbContextMode === 'manual' || req.body.kbContextMode === 'off') db.setConversationKbContextMode(uid(req), req.params.id, req.body.kbContextMode)
       if (req.body.execTarget !== undefined) {
-        const role = db.getUser(uid(req))?.role ?? 'user'
+        const role = db.getUser(uid(req))?.role ?? 'developer'
         if (req.body.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === req.body.llmEngineId)) {
           return reply.code(403).send({ error: 'llm engine is not available for role' })
         }
@@ -438,7 +438,7 @@ export async function registerRest(
     return { conversation: db.getConversation(u, conv.id), messages: db.listMessages(u, conv.id) }
   })
 
-  app.get(REST.llmEngines, async (req) => db.listLlmEnginesForRole(db.getUser(uid(req))?.role ?? 'user'))
+  app.get(REST.llmEngines, async (req) => db.listLlmEnginesForRole(db.getUser(uid(req))?.role ?? 'developer'))
 
   app.get(REST.settings, async (req) => db.getSettings(uid(req)))
   const myLlmAccess = async (req: Parameters<typeof uid>[0]) => db.getUserLlmAccess(uid(req))
@@ -464,11 +464,24 @@ export async function registerRest(
   app.get<{ Querystring: { unit?: string; from?: string; to?: string; conversationId?: string } }>(REST.meUsage, async (req, reply) => usageForMe(uid(req), req.query, reply))
 
   app.put<{ Body: Settings }>(REST.settings, async (req, reply) => {
-    const role = db.getUser(uid(req))?.role ?? 'user'
+    const role = db.getUser(uid(req))?.role ?? 'developer'
     if (req.body.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === req.body.llmEngineId)) {
       return reply.code(403).send({ error: 'llm engine is not available for role' })
     }
-    db.saveSettings(uid(req), req.body)
+    const raw = req.body.personalization ?? db.getSettings(uid(req)).personalization
+    const preferredName = raw.preferredName?.trim().replace(/\s+/g, ' ') || null
+    const currentYear = new Date().getUTCFullYear()
+    const validParts =
+      (raw.birthDay === null || (Number.isInteger(raw.birthDay) && raw.birthDay >= 1 && raw.birthDay <= 31)) &&
+      (raw.birthMonth === null || (Number.isInteger(raw.birthMonth) && raw.birthMonth >= 1 && raw.birthMonth <= 12)) &&
+      (raw.birthYear === null || (Number.isInteger(raw.birthYear) && raw.birthYear >= 1900 && raw.birthYear <= currentYear))
+    const validDate = raw.birthDay === null || raw.birthMonth === null || raw.birthDay <= new Date(Date.UTC(raw.birthYear ?? 2000, raw.birthMonth, 0)).getUTCDate()
+    const validEnums = (raw.responseLanguage === null || /^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(raw.responseLanguage)) &&
+      ['brief', 'normal', 'detailed', 'step-by-step'].includes(raw.responseStyle) &&
+      ['neutral', 'friendly', 'business', 'plain'].includes(raw.tone)
+    if (preferredName && preferredName.length > 80) return reply.code(400).send({ error: 'preferredName is too long' })
+    if (!validParts || !validDate || !validEnums) return reply.code(400).send({ error: 'invalid personalization' })
+    db.saveSettings(uid(req), { ...req.body, personalization: { ...raw, preferredName } })
     return db.getSettings(uid(req))
   })
 }

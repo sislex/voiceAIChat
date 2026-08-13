@@ -261,7 +261,7 @@ export interface IpcInvokeMap {
   'admin:usageSummary': { arg: { from?: number; to?: number } | void; result: import('./admin').UserUsageSummary[] }
   'admin:llmAccess': { arg: { name: string }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:saveLlmAccess': { arg: { name: string; access: import('./llmAccess').UserLlmAccess[] }; result: import('./llmAccess').UserLlmAccess[] }
-  'admin:createUser': { arg: { name: string; password: string; role: 'admin' | 'user' }; result: AdminUserInfo }
+  'admin:createUser': { arg: { name: string; password: string; role: import('./types').UserRole }; result: AdminUserInfo }
   'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
   'admin:deleteUser': { arg: { name: string }; result: void }
   'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }

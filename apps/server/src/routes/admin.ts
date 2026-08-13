@@ -25,7 +25,7 @@ import { requireAdmin, uid } from '../users/auth.js'
 
 const UNITS: UsageUnit[] = ['hour', 'day', 'week']
 const ENGINE_KINDS: LlmEngineKind[] = ['claude', 'codex']
-const ROLES: UserRole[] = ['admin', 'user']
+const ROLES: UserRole[] = ['admin', 'developer', 'tester', 'observer']
 const HEALTH_TIMEOUT_MS = 5_000
 
 export interface DeployTrigger {
@@ -244,10 +244,21 @@ export function registerAdminRoutes(
       const name = req.body?.name?.trim()
       const role = req.body?.role
       if (!name) return reply.code(400).send({ error: 'name required' })
-      if (role !== 'admin' && role !== 'user') return reply.code(400).send({ error: 'bad role' })
+      if (role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
       if (db.getUser(name)) return reply.code(409).send({ error: 'пользователь уже существует' })
       const u = db.createUser(name, req.body?.password ?? '', role)
       return toInfo(u.name, u.role, u.blocked, u.createdAt)
+    }
+  )
+
+  app.patch<{ Params: { name: string }; Body: { role?: string } }>(
+    REST.adminUser(':name').replace('%3Aname', ':name'),
+    guard,
+    async (req, reply) => {
+      const role = req.body?.role
+      if (role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
+      const user = db.setUserRole(req.params.name, role)
+      return user ? toInfo(user.name, user.role, user.blocked, user.createdAt) : reply.code(404).send({ error: 'not found' })
     }
   )
 

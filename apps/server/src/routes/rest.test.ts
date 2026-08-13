@@ -63,7 +63,7 @@ afterEach(async () => {
 
 describe('REST: аутентификация', () => {
   it('без токена защищённый роут → 401, health и login — открыты', async () => {
-    db.createUser('user', '', 'user') // пользователь теперь заводится в БД
+    db.createUser('user', '', 'developer') // пользователь теперь заводится в БД
     expect((await app.inject({ method: 'GET', url: '/api/conversations' })).statusCode).toBe(401)
     expect((await app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(200)
     // Логин: верный пароль (пустой) → токен; неверный → 401.
@@ -73,7 +73,7 @@ describe('REST: аутентификация', () => {
       payload: { name: 'user', password: '' }
     })
     expect(ok.statusCode).toBe(200)
-    expect(ok.json().user).toEqual({ name: 'user', role: 'user' })
+    expect(ok.json().user).toEqual({ name: 'user', role: 'developer' })
     expect(typeof ok.json().token).toBe('string')
     expect(ok.headers['set-cookie']).toContain('vc_preview_session=')
     expect(ok.headers['set-cookie']).toContain('Path=/api/preview')
@@ -88,7 +88,7 @@ describe('REST: аутентификация', () => {
   })
 
   it('same-origin cookie авторизует только iframe-превью и удаляется при logout', async () => {
-    db.createUser('user', '', 'user')
+    db.createUser('user', '', 'developer')
     const login = await app.inject({
       method: 'POST',
       url: '/api/session/login',
@@ -111,8 +111,8 @@ describe('REST: аутентификация', () => {
   })
 
   it('POST /api/session/preview выпускает preview-cookie из Bearer, без токена — 401', async () => {
-    db.createUser('user', '', 'user')
-    const userTok = signToken({ name: 'user', role: 'user' }, SECRET)
+    db.createUser('user', '', 'developer')
+    const userTok = signToken({ name: 'user', role: 'developer' }, SECRET)
 
     // Сессия, восстановленная из localStorage без повторного login, получает cookie здесь.
     const minted = await app.inject({
@@ -145,9 +145,9 @@ describe('REST: аутентификация', () => {
   })
 
   it('данные пользователей изолированы (user не видит разговоры admin)', async () => {
-    db.createUser('user', '', 'user')
+    db.createUser('user', '', 'developer')
     const adminTok = signToken({ name: 'admin', role: 'admin' }, SECRET)
-    const userTok = signToken({ name: 'user', role: 'user' }, SECRET)
+    const userTok = signToken({ name: 'user', role: 'developer' }, SECRET)
     const auth = (t: string) => ({ authorization: `Bearer ${t}` })
     await app.inject({
       method: 'POST',
@@ -168,8 +168,8 @@ describe('REST: аутентификация', () => {
 
 describe('REST: админ-роуты (только admin)', () => {
   it('запуск деплоя доступен только admin и не принимает shell-параметры', async () => {
-    db.createUser('user', '', 'user')
-    const userTok = signToken({ name: 'user', role: 'user' }, SECRET)
+    db.createUser('user', '', 'developer')
+    const userTok = signToken({ name: 'user', role: 'developer' }, SECRET)
     const denied = await app.inject({
       method: 'POST',
       url: '/api/admin/deploy',
@@ -198,8 +198,8 @@ describe('REST: админ-роуты (только admin)', () => {
   })
 
   it('user → 403 на /api/admin/users', async () => {
-    db.createUser('user', '', 'user')
-    const userTok = signToken({ name: 'user', role: 'user' }, SECRET)
+    db.createUser('user', '', 'developer')
+    const userTok = signToken({ name: 'user', role: 'developer' }, SECRET)
     const res = await app.inject({
       method: 'GET',
       url: '/api/admin/users',
@@ -220,10 +220,10 @@ describe('REST: админ-роуты (только admin)', () => {
     const created = await inj({
       method: 'POST',
       url: '/api/admin/users',
-      payload: { name: 'bob', password: 'pw', role: 'user' }
+      payload: { name: 'bob', password: 'pw', role: 'developer' }
     })
     expect(created.statusCode).toBe(200)
-    expect(created.json()).toMatchObject({ name: 'bob', role: 'user', blocked: false })
+    expect(created.json()).toMatchObject({ name: 'bob', role: 'developer', blocked: false })
 
     await inj({ method: 'POST', url: '/api/admin/users/bob/block', payload: { blocked: true } })
     const blocked = (await inj({ method: 'GET', url: '/api/admin/users' })).json()
@@ -256,8 +256,8 @@ describe('REST: реестр LLM-исполнителей (только admin)',
   })
 
   it('user → 403 на /api/admin/llm-engines', async () => {
-    db.createUser('user', '', 'user')
-    const userTok = signToken({ name: 'user', role: 'user' }, SECRET)
+    db.createUser('user', '', 'developer')
+    const userTok = signToken({ name: 'user', role: 'developer' }, SECRET)
     const res = await app.inject({
       method: 'GET',
       url: '/api/admin/llm-engines',
@@ -276,7 +276,7 @@ describe('REST: реестр LLM-исполнителей (только admin)',
         baseUrl: 'http://runner.test:8080',
         token: 'secret',
         enabled: true,
-        allowedRoles: ['admin', 'user'],
+        allowedRoles: ['admin', 'developer'],
         isDefault: true
       }
     })
@@ -604,6 +604,15 @@ describe('REST: conversations/messages/settings', () => {
     expect(saved.voice).toBe('ru_RU-dmitri-medium')
   })
 
+  it('нормализует персонализацию и отвергает невозможную дату', async () => {
+    const def = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    const invalid = await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, personalization: { ...def.personalization, birthDay: 31, birthMonth: 2 } } })
+    expect(invalid.statusCode).toBe(400)
+    const saved = await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, personalization: { ...def.personalization, preferredName: '  Алексей   Р. ', birthYear: 1990, responseLanguage: 'ru', responseStyle: 'brief', tone: 'friendly' } } })
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json().personalization).toMatchObject({ preferredName: 'Алексей Р.', birthYear: 1990, responseLanguage: 'ru', responseStyle: 'brief', tone: 'friendly' })
+  })
+
   it('агенты: create → list (offline) → delete', async () => {
     const created = (
       await inj({ method: 'POST', url: '/api/agents', payload: { name: 'MacBook' } })
@@ -786,7 +795,7 @@ describe('REST: утилиты машины (exec/fs)', () => {
     expect(own.json().error).toContain('не в сети')
 
     // Чужая машина (создана под user) → 404 для admin.
-    db.createUser('user', '', 'user')
+    db.createUser('user', '', 'developer')
     const other = db.createAgent('user', 'UserBox')
     const foreign = await inj({
       method: 'POST',
@@ -888,7 +897,7 @@ describe('REST: GET /api/search — полнотекстовый поиск по
   })
 
   it('не выдаёт сообщения другого пользователя', async () => {
-    db.createUser('mallory', '', 'user')
+    db.createUser('mallory', '', 'developer')
     const theirs = seed('mallory', 'Чужая беседа', ['чужой секрет про миграцию'])
     seed(U, 'Своя беседа', ['свой текст про миграцию'])
 
@@ -940,8 +949,8 @@ describe('REST: GET /api/search — полнотекстовый поиск по
 
 describe('REST: машины настроек разговора', () => {
   it('обычный чат видит только личные машины, проектный — личные и проектные без дублей', async () => {
-    db.createUser('owner', '', 'user')
-    db.createUser('outsider', '', 'user')
+    db.createUser('owner', '', 'developer')
+    db.createUser('outsider', '', 'developer')
     const own = db.createAgent(U, 'Личная')
     const shared = db.createAgent('owner', 'Проектная')
     const hidden = db.createAgent('outsider', 'Чужая')
@@ -960,7 +969,7 @@ describe('REST: машины настроек разговора', () => {
   })
 
   it('не даёт неучастнику увидеть проектную машину или сохранить недоступную', async () => {
-    db.createUser('owner', '', 'user')
+    db.createUser('owner', '', 'developer')
     const foreign = db.createAgent('owner', 'Серверная')
     const project = db.createProject('owner', { name: 'Private' })
     db.linkMachine('owner', project.id, foreign.id)
