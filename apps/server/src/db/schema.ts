@@ -995,6 +995,8 @@ CREATE TABLE IF NOT EXISTS qa_preparation_runs (
   status      TEXT NOT NULL DEFAULT 'running',
   log         TEXT NOT NULL DEFAULT '',
   error       TEXT,
+  attempt     INTEGER NOT NULL DEFAULT 1,
+  diagnostics_json TEXT NOT NULL DEFAULT '[]',
   created_at  INTEGER NOT NULL,
   finished_at INTEGER,
   UNIQUE(task_id, commit_sha),

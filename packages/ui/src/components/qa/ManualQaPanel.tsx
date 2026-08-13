@@ -17,6 +17,11 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }
   useEffect(() => { void load() }, [props.projectId, props.taskId])
+  useEffect(() => {
+    if (state?.preparation?.status !== 'running') return
+    const timer = window.setTimeout(() => { void load() }, 2_000)
+    return () => window.clearTimeout(timer)
+  }, [state?.preparation?.status, state?.preparation?.attempt])
   const session = state?.activeSession ?? state?.sessions[0] ?? null
   const progress = useMemo(() => session ? qaProgress(session) : null, [session])
 
@@ -34,6 +39,18 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
     <h3 className="jmodal-h">Ручное QA</h3>
     {error && <div className="err" role="alert">{error}</div>}
     {!state ? <p>Загрузка QA…</p> : <>
+      {state.preparation?.status === 'running' && <div className="manual-qa-summary" role="status"><strong>Создание сценариев…</strong><span>Попытка {state.preparation.attempt} из {state.preparation.maxAttempts}</span></div>}
+      {state.preparation?.status === 'failed' && <div className="err" role="alert">
+        <strong>Не удалось создать сценарии</strong>
+        <p>{state.preparation.error || 'Модель не вернула валидные сценарии'}</p>
+        <Button size="sm" disabled={busy || !state.preparation.canRetry || !window.qa?.retryPreparation} onClick={async () => {
+          if (!window.qa?.retryPreparation) return
+          setBusy(true)
+          try { await window.qa.retryPreparation(props.projectId, props.taskId); await load() }
+          catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+          finally { setBusy(false) }
+        }}>Повторить создание сценариев</Button>
+      </div>}
       {session && progress && <div className="manual-qa-summary">
         <strong>{session.status === 'stale' ? 'Session устарела' : `Прогресс ${progress.passed + progress.notApplicable}/${progress.total}`}</strong>
         <span>SHA {session.commitSha.slice(0, 8)}</span>

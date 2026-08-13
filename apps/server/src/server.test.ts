@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
-import { buildServer } from './server.js'
+import { buildServer, parseQaPreparationResponse } from './server.js'
 import { loadConfig } from './config.js'
 import { buildPublicMcpUrl, mcpBaseMisconfigured } from './mcp/publicBase.js'
 import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
@@ -30,6 +30,21 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close()
+})
+
+describe('QA preparation response contract', () => {
+  const valid = [{ title:'Happy path', description:'goal', preconditions:'open app', steps:'1. click', testData:'user', expectedResult:'saved', required:true, testType:'manual' }]
+  it('accepts valid JSON and extracts a fenced structured response', () => {
+    expect(parseQaPreparationResponse(JSON.stringify(valid))).toHaveLength(1)
+    expect(parseQaPreparationResponse(`result:\n\`\`\`json\n${JSON.stringify(valid)}\n\`\`\``)[0]?.title).toBe('Happy path')
+  })
+  it.each([
+    ['invalid JSON', 'Жду результаты…'],
+    ['empty list', '[]'],
+    ['schema mismatch', JSON.stringify([{ ...valid[0], steps: '' }])]
+  ])('rejects %s without returning partial scenarios', (_name, response) => {
+    expect(() => parseQaPreparationResponse(response)).toThrow()
+  })
 })
 
 describe('server: HTTP', () => {

@@ -8,6 +8,7 @@ export interface RendererQaBridge {
   createCriterion(projectId: string, taskId: string, input: AcceptanceCriterionSnapshot & { order?: number }): Promise<AcceptanceCriterion>
   reviseCriterion(projectId: string, taskId: string, criterionId: string, input: AcceptanceCriterionSnapshot & { reason: string; semanticChange?: boolean }): Promise<AcceptanceCriterion>
   completePreparation(projectId: string, taskId: string): Promise<QaTaskState>
+  retryPreparation?(projectId: string, taskId: string): Promise<import('@shared/qa').QaPreparationRun>
   startSession(projectId: string, taskId: string, input: StartSessionInput): Promise<QaSession>
   saveResult(projectId: string, taskId: string, resultId: string, revision: number, patch: Partial<QaCriterionResult> & Record<string, unknown>): Promise<QaCriterionResult>
   addAttachment(projectId: string, taskId: string, resultId: string, uploadId: string, caption: string): Promise<import('@shared/qa').QaAttachment>
@@ -29,6 +30,7 @@ export function createQaRest(httpBase: string): RendererQaBridge {
     createCriterion: (projectId, taskId, input) => request(REST.taskQaCriteria(projectId, taskId), { method: 'POST', body: JSON.stringify(input) }),
     reviseCriterion: (projectId, taskId, criterionId, input) => request(REST.taskQaCriterion(projectId, taskId, criterionId), { method: 'PUT', body: JSON.stringify(input) }),
     completePreparation: (projectId, taskId) => request(REST.taskQaPreparationComplete(projectId, taskId), { method: 'POST' }),
+    retryPreparation: (projectId, taskId) => request(REST.taskQaPreparationRetry(projectId, taskId), { method: 'POST' }),
     startSession: (projectId: string, taskId: string, input: StartSessionInput) => request(REST.taskQaSessions(projectId, taskId), { method: 'POST', body: JSON.stringify(input) }),
     saveResult: (projectId, taskId, resultId, revision, patch) => request(REST.taskQaResult(projectId, taskId, resultId), { method: 'PATCH', body: JSON.stringify({ revision, patch }) }),
     addAttachment: (projectId, taskId, resultId, uploadId, caption) => request(`${REST.taskQaResult(projectId, taskId, resultId)}/attachments`, { method: 'POST', body: JSON.stringify({ uploadId, caption }) }),
