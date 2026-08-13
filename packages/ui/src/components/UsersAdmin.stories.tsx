@@ -16,7 +16,7 @@ const meta: Meta<typeof UsersAdmin> = {
     variant: 'page',
     users: [
       { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 12, agents: [] },
-      { name: 'alex', role: 'user', blocked: false, createdAt: 2, conversationCount: 3, agents: [] }
+      { name: 'alex', role: 'developer', blocked: false, createdAt: 2, conversationCount: 3, agents: [] }
     ],
     selected: 'alex',
     currentUserName: 'admin',

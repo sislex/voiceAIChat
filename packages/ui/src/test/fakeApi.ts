@@ -51,7 +51,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       baseUrl: 'http://runner-work:8080',
       token: 'secret',
       enabled: true,
-      allowedRoles: ['admin', 'user'],
+      allowedRoles: ['admin', 'developer', 'tester', 'observer'],
       isDefault: true,
       createdAt: 2
     }

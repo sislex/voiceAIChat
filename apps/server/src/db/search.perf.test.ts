@@ -42,8 +42,8 @@ describe.runIf(ENABLED)('searchMessages — 100k сообщений', () => {
     try {
       const file = join(dir, 'db.sqlite')
       const db = new VoiceChatDb(file)
-      db.createUser('alice', '', 'user')
-      db.createUser('bob', '', 'user')
+      db.createUser('alice', '', 'developer')
+      db.createUser('bob', '', 'developer')
       const convIds = Array.from({ length: CONVERSATIONS }, (_, i) =>
         // Каждая десятая беседа — чужая: фильтр по владельцу работает на реальных данных.
         db.createConversation(i % 10 === 0 ? 'bob' : 'alice', `Беседа ${i}`).id

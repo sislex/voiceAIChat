@@ -8,7 +8,7 @@ import { makeConversation } from '../test/fixtures/conversations'
 
 const users: AdminUserInfo[] = [
   { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 2, agents: [] },
-  { name: 'bob', role: 'user', blocked: false, createdAt: 2, conversationCount: 0, agents: [] }
+  { name: 'bob', role: 'developer', blocked: false, createdAt: 2, conversationCount: 0, agents: [] }
 ]
 
 const engines: AdminLlmEngine[] = [
@@ -19,7 +19,7 @@ const engines: AdminLlmEngine[] = [
     baseUrl: 'http://runner-work:8080',
     token: 'secret',
     enabled: true,
-    allowedRoles: ['admin', 'user'],
+    allowedRoles: ['admin', 'developer', 'tester', 'observer'],
     isDefault: true,
     createdAt: 3
   }
@@ -76,9 +76,9 @@ describe('UsersAdmin', () => {
   it('создание пользователя зовёт onCreate', async () => {
     const p = renderAdmin()
     await userEvent.type(screen.getByLabelText('Логин нового пользователя'), 'carol')
-    await userEvent.selectOptions(screen.getByLabelText('Роль нового пользователя'), 'user')
+    await userEvent.selectOptions(screen.getByLabelText('Роль нового пользователя'), 'developer')
     await userEvent.click(screen.getByRole('button', { name: 'Создать' }))
-    expect(p.onCreate).toHaveBeenCalledWith('carol', '', 'user')
+    expect(p.onCreate).toHaveBeenCalledWith('carol', '', 'developer')
   })
 
   it('у обычного пользователя есть блок/удаление', () => {
@@ -155,7 +155,7 @@ describe('UsersAdmin', () => {
       baseUrl: 'http://runner-codex:8080',
       token: 'tok',
       enabled: true,
-      allowedRoles: ['admin', 'user'],
+      allowedRoles: ['admin', 'developer', 'tester', 'observer'],
       isDefault: false
     })
   })
