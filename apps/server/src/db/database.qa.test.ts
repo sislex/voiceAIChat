@@ -100,8 +100,15 @@ describe('manual QA persistence and workflow', () => {
   it('deduplicates QA preparation by task and SHA and stales a session for a new SHA', () => {
     const { project, task } = fixture()
     const session = db.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
-    expect(db.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc')).not.toBeNull()
+    const first = db.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc')!
     expect(db.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc')).toBeNull()
+    db.recordQaPreparationAttempt(first.id, 1, 'Жду результаты…', 'Невалидный JSON')
+    db.finishQaPreparationRun(first.id, 'failed', 'Невалидный JSON')
+    expect(db.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc', true)?.id).toBe(first.id)
+    expect(db.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc', true)).toBeNull()
+    expect(db.failInterruptedQaPreparationRuns()).toEqual([first.id])
+    const state = db.getQaTaskState('owner', project.id, task.id)!
+    expect(state.preparation).toMatchObject({ status: 'failed', canRetry: true, error: 'Подготовка прервана перезапуском сервера' })
     expect(db.startQaPreparationRun(project.id, task.id, 'feature/1', 'def')).not.toBeNull()
     expect(db.getQaTaskState('owner', project.id, task.id)?.sessions.find((item) => item.id === session.id)?.status).toBe('stale')
   })

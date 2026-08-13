@@ -934,6 +934,9 @@ export class VoiceChatDb {
     }
     const ciToolCallCols = this.db.prepare(`PRAGMA table_info(ci_run_tool_calls)`).all() as Array<{ name: string }>
     if (ciToolCallCols.length && !ciToolCallCols.some((c) => c.name === 'chars')) this.db.exec(`ALTER TABLE ci_run_tool_calls ADD COLUMN chars INTEGER NOT NULL DEFAULT 0`)
+    const qaPreparationCols = this.db.prepare(`PRAGMA table_info(qa_preparation_runs)`).all() as Array<{ name: string }>
+    if (qaPreparationCols.length && !qaPreparationCols.some((c) => c.name === 'attempt')) this.db.exec(`ALTER TABLE qa_preparation_runs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 1`)
+    if (qaPreparationCols.length && !qaPreparationCols.some((c) => c.name === 'diagnostics_json')) this.db.exec(`ALTER TABLE qa_preparation_runs ADD COLUMN diagnostics_json TEXT NOT NULL DEFAULT '[]'`)
 
     // Привязка обращения к БЗ к рану и шагу CI: отчёты по ране/задаче строятся
     // по ним, а старые строки просто остаются с NULL (это обращения из чата).
@@ -4793,7 +4796,15 @@ export class VoiceChatDb {
       (this.db.prepare(`SELECT * FROM acceptance_criterion_versions WHERE criterion_id = ? ORDER BY version DESC`).all(criterion.id) as QaCriterionVersionRow[]).map(mapQaCriterionVersion)
     )
     const sessions = (this.db.prepare(`SELECT * FROM qa_sessions WHERE task_id = ? ORDER BY started_at DESC`).all(taskId) as QaSessionRow[]).map((row) => this.mapQaSession(row))
-    return { criteria, versions, sessions, activeSession: sessions.find((session) => session.status === 'active') ?? null }
+    const rawPreparation = this.db.prepare(`SELECT * FROM qa_preparation_runs WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string, unknown> | undefined
+    const preparation = rawPreparation ? {
+      id: String(rawPreparation.id), taskId, branch: String(rawPreparation.branch), commitSha: String(rawPreparation.commit_sha),
+      status: rawPreparation.status as 'running'|'success'|'failed', attempt: Number(rawPreparation.attempt), maxAttempts: 2,
+      error: rawPreparation.error as string | null, attempts: parseJsonValue(String(rawPreparation.diagnostics_json ?? '[]'), []),
+      createdAt: Number(rawPreparation.created_at), finishedAt: rawPreparation.finished_at == null ? null : Number(rawPreparation.finished_at),
+      canRetry: rawPreparation.status === 'failed'
+    } : null
+    return { criteria, versions, sessions, activeSession: sessions.find((session) => session.status === 'active') ?? null, preparation }
   }
 
   createAcceptanceCriterion(userId: string, projectId: string, taskId: string, input: AcceptanceCriterionSnapshot & { order?: number }): AcceptanceCriterion | null {
@@ -4838,9 +4849,13 @@ export class VoiceChatDb {
     return mapQaCriterion(this.db.prepare(`SELECT * FROM acceptance_criteria WHERE id = ?`).get(criterionId) as QaCriterionRow)
   }
 
-  startQaPreparationRun(projectId: string, taskId: string, branch: string, commitSha: string): { id: string; status: string } | null {
+  startQaPreparationRun(projectId: string, taskId: string, branch: string, commitSha: string, retry = false): { id: string; status: string } | null {
     const existing = this.db.prepare(`SELECT id,status FROM qa_preparation_runs WHERE task_id=? AND commit_sha=?`).get(taskId, commitSha) as { id:string; status:string } | undefined
-    if (existing) return null
+    if (existing) {
+      if (!retry || existing.status !== 'failed') return null
+      const changed = this.db.prepare(`UPDATE qa_preparation_runs SET status='running',error=NULL,attempt=1,diagnostics_json='[]',log='',created_at=?,finished_at=NULL WHERE id=? AND status='failed'`).run(this.now(), existing.id)
+      return changed.changes ? { id: existing.id, status: 'running' } : null
+    }
     const id = this.newId()
     this.db.prepare(`INSERT INTO qa_preparation_runs (id,project_id,task_id,branch,commit_sha,status,created_at) VALUES (?,?,?,?,?,'running',?)`).run(id,projectId,taskId,branch,commitSha,this.now())
     const active = this.db.prepare(`SELECT commit_sha FROM qa_sessions WHERE project_id=? AND task_id=? AND status='active' LIMIT 1`).get(projectId,taskId) as { commit_sha:string } | undefined
@@ -4852,8 +4867,22 @@ export class VoiceChatDb {
     this.db.prepare(`UPDATE qa_preparation_runs SET log=substr(log || ?, -500000) WHERE id=? AND status='running'`).run(chunk,id)
   }
 
+  recordQaPreparationAttempt(id: string, attempt: number, rawResponse: string, error: string | null): void {
+    const row = this.db.prepare(`SELECT diagnostics_json FROM qa_preparation_runs WHERE id=? AND status='running'`).get(id) as { diagnostics_json: string } | undefined
+    if (!row) return
+    const diagnostics = parseJsonValue<Array<Record<string, unknown>>>(row.diagnostics_json, [])
+    diagnostics.push({ attempt, rawResponse: rawResponse.slice(-500000), error, status: error ? 'failed' : 'success' })
+    this.db.prepare(`UPDATE qa_preparation_runs SET attempt=?,diagnostics_json=? WHERE id=? AND status='running'`).run(attempt, JSON.stringify(diagnostics), id)
+  }
+
   finishQaPreparationRun(id: string, status: 'success'|'failed', error: string | null = null): void {
-    this.db.prepare(`UPDATE qa_preparation_runs SET status=?,error=?,finished_at=? WHERE id=?`).run(status,error,this.now(),id)
+    this.db.prepare(`UPDATE qa_preparation_runs SET status=?,error=?,finished_at=? WHERE id=? AND status='running'`).run(status,error,this.now(),id)
+  }
+
+  failInterruptedQaPreparationRuns(): string[] {
+    const rows = this.db.prepare(`SELECT id FROM qa_preparation_runs WHERE status='running'`).all() as Array<{ id: string }>
+    this.db.prepare(`UPDATE qa_preparation_runs SET status='failed',error='Подготовка прервана перезапуском сервера',finished_at=? WHERE status='running'`).run(this.now())
+    return rows.map((row) => row.id)
   }
 
   completeQaPreparation(userId: string, projectId: string, taskId: string): QaTaskState | null {

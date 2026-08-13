@@ -56,6 +56,18 @@ describe('ManualQaPanel', () => {
     await waitFor(() => expect(completePreparation).toHaveBeenCalledWith('p1', 't1'))
   })
 
+  it('shows terminal preparation error and retries it once', async () => {
+    const failed: QaTaskState = { criteria:[], versions:[], sessions:[], activeSession:null, preparation:{ id:'prep',taskId:'t1',branch:'CHAT-195',commitSha:'abc',status:'failed',attempt:2,maxAttempts:2,error:'Невалидный JSON',attempts:[],createdAt:1,finishedAt:2,canRetry:true } }
+    const running = { ...failed.preparation!, status:'running' as const, attempt:1, error:null, finishedAt:null, canRetry:false }
+    const retryPreparation = vi.fn().mockResolvedValue(running)
+    window.qa={get:vi.fn().mockResolvedValueOnce(failed).mockResolvedValue({ ...failed, preparation:running }),retryPreparation,saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
+    render(<ManualQaPanel projectId="p1" taskId="t1" />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Невалидный JSON')
+    fireEvent.click(screen.getByRole('button',{name:'Повторить создание сценариев'}))
+    await waitFor(()=>expect(retryPreparation).toHaveBeenCalledTimes(1))
+    expect(await screen.findByRole('status')).toHaveTextContent('Попытка 1 из 2')
+  })
+
   it('shows stale reason and disables result actions', async () => {
     window.qa={get:vi.fn().mockResolvedValue(qaState('stale')),saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
