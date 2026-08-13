@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { MergeRun } from '@shared/merge'
 import { Button } from '../ui/Button'
 import { fmtDuration } from './ciFormat'
@@ -18,6 +18,34 @@ export function mergeStatusTone(status: string): 'ok' | 'err' | 'warn' | 'run' {
   if (status === 'failed' || status === 'cancelled') return 'err'
   if (status === 'decision_required') return 'warn'
   return 'run'
+}
+
+function MergeKbDisclosure({ run }: { run: MergeRun }): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const panelId = useId()
+  const stage = run.stages.find((item) => item.stage === 'kb_update')
+  const status = !stage ? 'Не запускалась' : stage.status === 'queued' ? 'Ожидает' : stage.status === 'running' ? 'Выполняется…' : stage.status === 'passed' ? 'Успешно' : stage.status === 'skipped' ? 'Пропущена' : 'Есть ошибки'
+  return (
+    <section className={`kbu-brief kbu-brief--disclosure${open ? ' is-open' : ''}`} data-testid="merge-run-kb-usage">
+      <button className="kbu-brief__toggle" aria-expanded={open} aria-controls={panelId}
+        aria-label={`Использование базы знаний: актуализация, ${status.toLowerCase()}. ${open ? 'Скрыть подробности' : 'Показать подробности'}`}
+        onClick={() => setOpen(!open)}>
+        <span className="kbu-brief__icon" aria-hidden>⧉</span>
+        <span className="kbu-brief__line"><strong>База знаний</strong><span>Актуализация БЗ</span><span className={stage?.status === 'failed' ? 'kbu-brief__status kbu-brief__status--error' : 'kbu-brief__status'}>{status}</span></span>
+        <span className="kbu-brief__chevron" aria-hidden>{stage?.status === 'running' ? '…' : stage?.status === 'failed' ? '⚠' : open ? '⌃' : '⌄'}</span>
+      </button>
+      {open && <div id={panelId} className="kbu-run-report" onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false) }}>
+        <section><h4>Актуализация базы знаний</h4>
+          {!stage ? <p>Этап актуализации БЗ не запускался.</p> : <>
+            <p>Статус: {status}.</p>
+            <p>{stage.message || (stage.status === 'running' ? 'Отчёт ещё формируется.' : 'Дополнительные сведения недоступны.')}</p>
+            {stage.durationMs != null && <p>Длительность: {fmtDuration(stage.durationMs)}.</p>}
+          </>}
+        </section>
+        <p>Использование БЗ моделью и актуализация показаны раздельно; эта строка относится только к merge-рану {run.id}.</p>
+      </div>}
+    </section>
+  )
 }
 
 /** Живая лента merge-рана: статус-шапка, степпер стадий, терминальные блоки
@@ -62,6 +90,7 @@ export function MergeRunFeed({ runId, onRunChanged }: { runId: string; onRunChan
           {run.status === 'success' && !run.deployId && <Button variant="primary" onClick={() => void window.ci?.deployMergeRun(run.id).then(act).catch((e) => setError(e instanceof Error ? e.message : String(e)))}>Выпустить на прод</Button>}
         </div>
       </header>
+      <MergeKbDisclosure run={run} />
       {run.error && (
         <div className="merge-alert" role="alert">
           <strong>{run.error}</strong>
