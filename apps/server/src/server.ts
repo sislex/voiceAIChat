@@ -610,7 +610,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl }
   })
   registerReleaseRoutes(app, db, releaseManager)
-  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, isOnline: (id) => agentRegistry.isOnline(id), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
+  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager)
   mergeRunManager.reconcile()
   registerQaRoutes(app, db, uploads)

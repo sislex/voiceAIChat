@@ -395,7 +395,7 @@ CREATE TABLE IF NOT EXISTS merge_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_merge_runs_task ON merge_runs(task_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_merge_runs_one_active_task ON merge_runs(task_id)
-  WHERE status IN ('queued','checking','fetching','merging','resolving_conflicts','testing','pushing');
+  WHERE status IN ('queued','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing');
 
 -- Учёт репозиториев задачи по машинам: dev-workspace и merge-клоны. Запись
 -- создаётся при клонировании, помечается deleted после подтверждённого rm -rf;

@@ -3,7 +3,14 @@ import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor } from '../ci/types.js'
 import { shellQuote } from '../ci/executor.js'
 
-export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecutor; isOnline(id:string):boolean; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; now?:()=>number }
+export interface MergeKbUpdateContext {
+  run: MergeRun
+  repo: string
+  targetRef: string
+  signal: AbortSignal
+  log(chunk: string): void
+}
+export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecutor; kbUpdate?(ctx:MergeKbUpdateContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; isOnline(id:string):boolean; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; now?:()=>number }
 const terminal = new Set(['success','failed','cancelled','decision_required'])
 const validSha = /^[0-9a-f]{40}$/i
 const validBranch = /^(?!-)(?!.*\.\.)(?!.*[~^:?*\[\]\\])[A-Za-z0-9._/-]+$/
@@ -40,7 +47,13 @@ export class MergeRunManager {
   private emit(id:string):void { const run=this.deps.db.getMergeRunRaw(id); if(run)this.deps.broadcast({t:'merge.snapshot',runId:id,run},run.triggeredBy) }
   private log(id:string,text:string):void {
     const safe=text.replace(/(authorization|token|password)\s*[:=]\s*\S+/gi,'$1=***')
-    this.deps.db.appendMergeLog(id,`[${new Date(this.now()).toISOString()}] ${safe}\n`); this.emit(id)
+    const line=`[${new Date(this.now()).toISOString()}] ${safe}\n`
+    const run=this.deps.db.getMergeRunRaw(id)
+    if(run){
+      const stages=run.stages.map(stage=>stage.stage===run.stage?{...stage,log:stage.log+line}:stage)
+      this.deps.db.updateMergeRun(id,{stages})
+    }
+    this.deps.db.appendMergeLog(id,line); this.emit(id)
   }
   private stage(id:string,stage:MergeStage,status:MergeStageRecord['status'],message:string):void {
     const run=this.deps.db.getMergeRunRaw(id); if(!run)return
@@ -168,6 +181,24 @@ export class MergeRunManager {
       if(!mergeSha)throw new Error('Merge-коммит не создан')
       this.deps.db.updateMergeRun(id,{mergeSha}); this.stage(id,'merging','passed',`Создан merge ${mergeSha.slice(0,8)}`)
 
+      this.stage(id,'kb_update','running','Актуализирую базу знаний по итоговому merged diff')
+      if (!this.deps.kbUpdate) throw new Error('Обязательный обработчик актуализации базы знаний не подключён')
+      const kbResult = await this.deps.kbUpdate({ run: this.deps.db.getMergeRunRaw(id) ?? run, repo, targetRef, signal: ctl.signal, log: chunk => this.log(id, chunk) })
+      this.deps.db.updateMergeRun(id, {
+        ...(kbResult.llmEngineId !== undefined ? { llmEngineId: kbResult.llmEngineId } : {}),
+        ...(kbResult.llmProvider ? { llmProvider: kbResult.llmProvider } : {}),
+        ...(kbResult.llmModel !== undefined ? { llmModel: kbResult.llmModel } : {})
+      })
+      if (!kbResult.ok) {
+        this.stage(id,'kb_update','failed',kbResult.message)
+        throw new Error(kbResult.message)
+      }
+      const kbCommitted = await this.cmd(run,`git add -- docs/kb\nif git diff --cached --quiet; then echo KB_TREE_UNCHANGED; else git -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --amend --no-edit; fi\ngit rev-parse HEAD`,repo,300000)
+      const finalMergeSha = kbCommitted.output.match(/[0-9a-f]{40}/ig)?.at(-1)
+      if (kbCommitted.exitCode || !finalMergeSha) throw new Error('Не удалось включить файловую базу знаний в merge-коммит')
+      this.deps.db.updateMergeRun(id,{mergeSha:finalMergeSha})
+      this.stage(id,'kb_update','passed',kbResult.message)
+
       this.stage(id,'testing','running','Проверяю зависимости merge-клона')
       // node_modules переживает раны: установка нужна только при изменении
       // package-lock.json; маркер живёт внутри node_modules (git clean его не трёт).
@@ -187,13 +218,17 @@ export class MergeRunManager {
       this.stage(id,'testing','passed','Все обязательные проверки прошли')
 
       this.stage(id,'pushing','running','Повторно проверяю origin/main перед push')
-      const refreshed=await this.cmd(run,`git fetch --no-tags origin +refs/heads/main:${shellQuote(targetRef)}\nprintf 'TARGET=%s\\n' "$(git rev-parse ${shellQuote(targetRef)})"`,repo), latest=refreshed.output.match(/TARGET=([0-9a-f]{40})/i)?.[1]
+      const refreshed=await this.cmd(run,`git fetch --no-tags origin +refs/heads/main:${shellQuote(targetRef)} +${shellQuote(run.sourceBranch)}:${shellQuote(sourceRef)}\nprintf 'TARGET=%s\\nSOURCE=%s\\n' "$(git rev-parse ${shellQuote(targetRef)})" "$(git rev-parse ${shellQuote(sourceRef)})"`,repo)
+      const latest=refreshed.output.match(/TARGET=([0-9a-f]{40})/i)?.[1], latestSource=refreshed.output.match(/SOURCE=([0-9a-f]{40})/i)?.[1]
       if(!latest||latest.toLowerCase()!==target.toLowerCase())throw new Error('origin/main изменился конкурентно; повторите merge')
+      if(!latestSource||latestSource.toLowerCase()!==source.toLowerCase())throw new Error('stale source: ветка изменилась перед push')
+      const finalSha=this.deps.db.getMergeRunRaw(id)?.mergeSha
+      if(!finalSha)throw new Error('Итоговый merge SHA отсутствует')
       this.deps.db.updateMergeRun(id,{pushStartedAt:this.now()})
-      const pushed=await this.cmd(run,`git push --porcelain --force-with-lease=refs/heads/main:${target} origin ${mergeSha}:refs/heads/main`,repo)
+      const pushed=await this.cmd(run,`git push --porcelain --force-with-lease=refs/heads/main:${target} origin ${finalSha}:refs/heads/main`,repo)
       if(pushed.exitCode)throw new Error('Безопасный push отклонён; требуется reconcile')
       const verified=await this.cmd(run,'git ls-remote origin refs/heads/main',repo,30000)
-      if(!verified.output.toLowerCase().startsWith(mergeSha.toLowerCase()))throw new Error('Неопределённый результат push; требуется reconcile')
+      if(!verified.output.toLowerCase().startsWith(finalSha.toLowerCase()))throw new Error('Неопределённый результат push; требуется reconcile')
       this.stage(id,'pushing','passed','origin/main подтверждён'); this.finish(id,'success',null,null,'done')
       await this.releaseTaskRepositories(run)
     } catch(error) {

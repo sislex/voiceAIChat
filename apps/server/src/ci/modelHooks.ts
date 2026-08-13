@@ -325,6 +325,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   modelSummary: CiModelSummaryHook
   attemptFix: CiFixHook
   kbUpdate: CiKbUpdateHook
+  kbUpdateForMerge(args: { run: import('@voicechat/shared').MergeRun; repo: string; targetRef: string; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }>
 } {
   const now = deps.now ?? (() => Date.now())
   const clientFor = (ctx: CiModelContext): LlmClient => {
@@ -1055,5 +1056,36 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     return { ok: true, message: formatKbUpdateSummary(out, saved) }
   }
 
-  return { modelWork, modelSummary, attemptFix, kbUpdate }
+  const kbUpdateForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; targetRef: string; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
+    const project = deps.db.getProject(args.run.triggeredBy, args.run.projectId)
+    const task = deps.db.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
+    const development = deps.db.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
+    if (!project || !task || !development) return { ok:false, message:'Контекст development-рана для БЗ недоступен', llmEngineId:null, llmProvider:'claude', llmModel:'' }
+    const llm = deps.db.resolveTaskStageLlmConfig(args.run.projectId, args.run.taskId, 'kb_update')
+    const noop = (): never => { throw new Error('Операция development CI недоступна в merge kb_update') }
+    const ctx = {
+      runId: development.id,
+      agentId: args.run.agentId,
+      workspacePath: args.repo,
+      env: { BASE_BRANCH:'main', KB_BASE_REF:args.targetRef },
+      signal: args.signal,
+      addStep: noop,
+      finishStep: noop,
+      log: (_stepId:string,_stream:'stdout'|'stderr'|'system',chunk:string) => args.log(chunk),
+      runCommandById: noop,
+      setModelSessionId: () => {},
+      recordFix: noop,
+      suggest: noop,
+      askUser: noop,
+      askPlanApproval: noop,
+      run: { ...development, llmEngineId:llm.llmEngineId, llmProvider:llm.provider, llmModel:llm.model },
+      task,
+      project,
+      parentStepId: 'merge-kb-update'
+    } as unknown as CiModelContext
+    const result = await kbUpdate(ctx)
+    return { ...result, llmEngineId:llm.llmEngineId, llmProvider:llm.provider, llmModel:llm.model }
+  }
+
+  return { modelWork, modelSummary, attemptFix, kbUpdate, kbUpdateForMerge }
 }

@@ -500,7 +500,7 @@ describe('встроенный шаг «Актуализировать базу 
     expect(db.listCiCommands('bob').some((c) => c.id === CI_KB_UPDATE_COMMAND_ID)).toBe(true)
   })
 
-  it('при первом появлении встаёт в слот «после модели» проектов — перед шагом коммита', () => {
+  it('остаётся в справочнике, но миграция удаляет интеграционные команды из after_model', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-kb-seed-'))
     const file = join(dir, 'db.sqlite')
     let n = 0
@@ -520,12 +520,13 @@ describe('встроенный шаг «Актуализировать базу 
     raw.close()
 
     const second = new VoiceChatDb(file, { newId: () => `s2-${++n}`, now: () => 2000 })
-    expect(second.getCiSlotConfig('project', p.id).afterModel).toEqual([test.id, CI_KB_UPDATE_COMMAND_ID, commit.id, merge.id])
-    // Повторное открытие ничего не дублирует и убранный руками шаг не возвращает.
+    expect(second.getCiSlotConfig('project', p.id).afterModel).toEqual([commit.id])
+    expect(second.getCiCommand('alice', CI_KB_UPDATE_COMMAND_ID)).toBeTruthy()
+    // Повторное открытие ничего не возвращает в development pipeline.
     second.setCiSlotCommands('project', p.id, 'after_model', [test.id, commit.id])
     second.close()
     const third = new VoiceChatDb(file, { newId: () => `s3-${++n}`, now: () => 3000 })
-    expect(third.getCiSlotConfig('project', p.id).afterModel).toEqual([test.id, commit.id])
+    expect(third.getCiSlotConfig('project', p.id).afterModel).toEqual([commit.id])
     third.close()
     rmSync(dir, { recursive: true, force: true })
   })
