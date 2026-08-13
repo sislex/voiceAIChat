@@ -136,6 +136,7 @@ import {
   ciUsageStages,
   ciUsageTotals,
   normCiStageModels,
+  buildCiAutomationProgress,
   isVerificationCommand,
   canCompleteQa,
   validateQaResult,
@@ -4026,8 +4027,31 @@ export class VoiceChatDb {
 
   private ciRunSummary(row: CiRunRow): CiRunSummary {
     const run = mapCiRun(row)
-    const modelActive = run.status === 'running' && this.db.prepare(`SELECT 1 FROM ci_run_steps WHERE run_id = ? AND kind = 'model_work' AND status = 'running' LIMIT 1`).get(row.id) !== undefined
-    return { id: run.id, taskId: run.taskId, status: run.status, slotProgress: run.slotProgress, durationMs: run.durationMs, modelActive, awaitingInput: run.status === 'awaiting_input', terminalColumnId: run.terminalColumnId }
+    const stepRows = this.db.prepare(`SELECT * FROM ci_run_steps WHERE run_id = ? ORDER BY position ASC, id ASC`).all(row.id) as CiRunStepRow[]
+    const steps = stepRows.map(mapCiRunStep)
+    const modelActive = run.status === 'running' && steps.some((step) => step.kind === 'model_work' && step.status === 'running')
+    const historyRows = this.db.prepare(`
+      SELECT s.title, s.duration_ms
+      FROM ci_run_steps s
+      JOIN ci_runs r ON r.id = s.run_id
+      WHERE r.project_id = ? AND r.status = 'success' AND s.status = 'success'
+        AND s.duration_ms IS NOT NULL AND s.duration_ms > 0
+      ORDER BY r.finished_at DESC
+      LIMIT 200
+    `).all(row.project_id) as Array<{ title: string; duration_ms: number }>
+    const history: Record<string, number[]> = {}
+    for (const item of historyRows) (history[item.title] ??= []).push(item.duration_ms)
+    return {
+      id: run.id,
+      taskId: run.taskId,
+      status: run.status,
+      slotProgress: run.slotProgress,
+      durationMs: run.durationMs,
+      modelActive,
+      awaitingInput: run.status === 'awaiting_input',
+      progress: buildCiAutomationProgress(run, steps, history),
+      terminalColumnId: run.terminalColumnId
+    }
   }
 
   // ---- Использование базы знаний (телеметрия обращений модели) -----------

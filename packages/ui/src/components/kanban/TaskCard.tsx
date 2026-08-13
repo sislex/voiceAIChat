@@ -13,6 +13,7 @@ import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { KanbanColumnSemanticType, Task } from '@shared/projects'
 import { canStartMerge } from '@shared/merge'
 import { canStartCiRun, ciCardPulse, ciSummaryForTask, type CiRunSummary } from '@shared/ci'
+import { AutomationProgressView } from './AutomationProgressView'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
 import { Button } from '../ui/Button'
@@ -214,24 +215,19 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
           {visibleCiSummary && (() => {
             const ciSummary = visibleCiSummary
             const tone = ciTone(ciSummary.status)
-            const fillMod = tone === 'success' ? ' jcard-ci-fill--success' : tone === 'removed' ? ' jcard-ci-fill--removed' : ''
-            const total = ciSummary.slotProgress.total || 1
-            const pct = ciSummary.status === 'success' ? 100 : Math.round((ciSummary.slotProgress.done / total) * 100)
             return (
               <>
                 <div className="jcard-ci-row">
                   <span className={`ci-lozenge ci-lozenge--${tone}`}>{ciStatusLabel(ciSummary.status)}</span>
-                  <span className="jcard-ci-phase">{ciSummary.slotProgress.phase} {ciSummary.slotProgress.done}/{ciSummary.slotProgress.total}</span>
-                  {ciSummary.durationMs != null && <span className="jcard-ci-phase">{fmtDuration(ciSummary.durationMs)}</span>}
                 </div>
+                {ciSummary.progress
+                  ? <AutomationProgressView progress={ciSummary.progress} compact />
+                  : <p className="jcard-ci-phase">{ciSummary.slotProgress.phase} {ciSummary.slotProgress.done}/{ciSummary.slotProgress.total}{ciSummary.durationMs != null ? ` · ${fmtDuration(ciSummary.durationMs)}` : ''}</p>}
                 {ciSummary.latestAttempt?.status === 'cancelled' && (
                   <div className="jcard-ci-row">
                     <button className="jcard-ci-phase" onClick={() => props.onOpenCiRun?.(ciSummary.latestAttempt!.id)}>Последняя попытка отменена</button>
                   </div>
                 )}
-                <div className="jcard-ci-row">
-                  <span className="jcard-ci-bar"><span className={`jcard-ci-fill${fillMod}`} style={{ width: `${pct}%` }} /></span>
-                </div>
               </>
             )
           })()}

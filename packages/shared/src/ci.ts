@@ -822,6 +822,112 @@ export interface CiRunDetail {
   interactions: CiInteraction[]
 }
 
+/** Состояние наблюдаемого автоматического процесса. Сервер — единственный
+ * источник завершённых шагов и процента; клиенту разрешено тикать только elapsed. */
+export type AutomationProgressStatus = 'queued' | 'running' | 'waiting' | 'success' | 'failed' | 'cancelled'
+
+export interface AutomationProgressStep {
+  id: string
+  title: string
+  status: AutomationProgressStatus | 'pending' | 'skipped'
+  startedAt: number | null
+  finishedAt: number | null
+  durationMs: number | null
+}
+
+export interface AutomationProgress {
+  runId: string
+  /** Монотонная версия снимка внутри runId. */
+  version: number
+  stage: string
+  status: AutomationProgressStatus
+  startedAt: number | null
+  finishedAt: number | null
+  elapsedMs: number
+  /** null означает неизвестный заранее объём и indeterminate progressbar. */
+  percent: number | null
+  completedSteps: number
+  totalSteps: number | null
+  currentStep: string | null
+  etaMs: number | null
+  etaRangeMs: [number, number] | null
+  etaUnavailableReason: string | null
+  logUrl: string
+  steps: AutomationProgressStep[]
+}
+
+function automationStatus(status: CiStatus): AutomationProgressStatus | 'pending' | 'skipped' {
+  if (status === 'awaiting_input') return 'waiting'
+  if (status === 'timeout') return 'failed'
+  return status
+}
+
+/**
+ * Строит серверный снимок CI-прогресса из фактически сохранённых шагов.
+ * model_work намеренно indeterminate, пока он активен: число его внутренних
+ * операций заранее неизвестно. ETA появляется лишь после фактических измерений.
+ */
+export function buildCiAutomationProgress(
+  run: CiRun,
+  steps: CiRunStep[],
+  historicalStepDurations: Record<string, number[]> = {},
+  now = Date.now()
+): AutomationProgress {
+  const ordered = [...steps].filter((step) => step.parentStepId == null).sort((a, b) => a.position - b.position)
+  const current = ordered.find((step) => step.status === 'running' || step.status === 'awaiting_input') ?? null
+  const completed = ordered.filter((step) => step.status === 'success' || step.status === 'skipped')
+  const terminal = isTerminalCiStatus(run.status)
+  const unknownWork = current?.kind === 'model_work'
+  const knownTotal = Math.max(run.slotProgress.total, ordered.length)
+  const percent = run.status === 'success'
+    ? 100
+    : unknownWork
+      ? null
+      : knownTotal > 0 ? Math.min(99, Math.round((completed.length / knownTotal) * 100)) : null
+  const measured = completed.map((step) => step.durationMs).filter((value): value is number => value != null && value > 0)
+  const historical = ordered.flatMap((step) => historicalStepDurations[step.title] ?? []).filter((value) => value > 0)
+  const samples = measured.length ? measured : historical
+  const remaining = Math.max(0, knownTotal - completed.length)
+  const average = samples.length ? samples.reduce((sum, value) => sum + value, 0) / samples.length : null
+  const etaMs = terminal || unknownWork || average == null ? null : Math.round(average * remaining)
+  const elapsedMs = run.startedAt == null ? 0 : Math.max(0, (run.finishedAt ?? now) - run.startedAt)
+  const stateRank = (status: CiStatus): number =>
+    status === 'success' || status === 'failed' || status === 'cancelled' || status === 'timeout' || status === 'skipped'
+      ? 4 : status === 'awaiting_input' ? 3 : status === 'running' ? 2 : status === 'queued' ? 1 : 0
+  const version = Math.max(
+    run.createdAt,
+    run.startedAt ?? 0,
+    run.finishedAt ?? 0,
+    ...ordered.map((step) => step.finishedAt ?? step.startedAt ?? 0)
+  ) * 1000 + Math.min(990, ordered.reduce((sum, step) => sum + stateRank(step.status), stateRank(run.status)))
+
+  return {
+    runId: run.id,
+    version,
+    stage: run.status === 'queued' ? 'Очередь' : run.status === 'awaiting_input' ? 'Ожидание пользователя' : current?.title ?? run.slotProgress.phase,
+    status: automationStatus(run.status) as AutomationProgressStatus,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    elapsedMs,
+    percent,
+    completedSteps: completed.length,
+    totalSteps: unknownWork ? null : knownTotal || null,
+    currentStep: current?.title ?? (terminal ? run.slotProgress.phase : null),
+    etaMs,
+    etaRangeMs: etaMs == null ? null : [Math.round(etaMs * 0.75), Math.round(etaMs * 1.25)],
+    etaUnavailableReason: terminal ? null : unknownWork ? 'Объём текущей операции заранее неизвестен' : average == null ? 'Пока недостаточно данных для оценки' : null,
+    logUrl: `/api/ci/runs/${encodeURIComponent(run.id)}/log`,
+    steps: ordered.map((step) => ({
+      id: step.id,
+      title: step.title,
+      status: automationStatus(step.status),
+      startedAt: step.startedAt,
+      finishedAt: step.finishedAt,
+      durationMs: step.durationMs
+    }))
+  }
+}
+
 /** Краткая сводка рана по задаче — для доски/карточки. */
 export interface CiRunSummary {
   id: string
@@ -833,6 +939,8 @@ export interface CiRunSummary {
   modelActive: boolean
   /** Ран стоит и ждёт ответа пользователя. */
   awaitingInput: boolean
+  /** Серверный снимок фактического прогресса; отсутствует у legacy payload. */
+  progress?: AutomationProgress
   /** Этап задачи, на котором был зафиксирован терминальный результат. */
   terminalColumnId?: string | null
   /** Более новая отменённая/пропущенная попытка, не заменяющая основной результат. */
