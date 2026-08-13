@@ -394,7 +394,17 @@ describe('WS: ходы переживают обрыв соединения (Tur
   })
 
   it('новое подключение получает claude.active с накопленным текстом, а затем done с сообщением из БД', async () => {
-    const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча', 'сть'], 'Часть ответа', 80))
+    let finish: (() => void) | undefined
+    const controlledClaude: LlmClient = {
+      send(_req, h) {
+        h.onSession('sess-slow')
+        setTimeout(() => h.onDelta('Ча'), 5)
+        setTimeout(() => h.onDelta('сть'), 10)
+        finish = () => h.onDone('Часть ответа')
+        return { cancel: () => { finish = undefined } }
+      }
+    }
+    const { sapp, sdb, sport } = await buildSlow(controlledClaude)
     const conv = sdb.createConversation(U, 'Чат')
     const ws1 = await connectTo(sport)
     // Ждём сами дельты, а не фиксированную паузу: под нагрузкой (полный прогон
@@ -428,6 +438,12 @@ describe('WS: ходы переживают обрыв соединения (Tur
         if (m.t === 'claude.done') resolve()
       })
     })
+    await new Promise<void>((resolve, reject) => {
+      ws2.on('open', () => resolve())
+      ws2.on('error', reject)
+    })
+    expect(finish).toBeDefined()
+    finish?.()
     await done
     ws2.close()
 
