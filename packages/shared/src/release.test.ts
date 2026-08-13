@@ -25,7 +25,7 @@ describe('release branch contract', () => {
 
   it('keeps all release gates ordered and mandatory', () => {
     expect(RELEASE_STEP_ORDER).toEqual([
-      'regression', 'knowledge_base', 'switching', 'building', 'health_check'
+      'checkout', 'regression', 'knowledge_base', 'switching', 'building', 'health_check'
     ])
   })
 
