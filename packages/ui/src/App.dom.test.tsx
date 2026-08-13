@@ -529,30 +529,20 @@ describe('App — запуск задачи из чата', () => {
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/chat/${chat.id}`)
       render(<App api={api} delays={SLOW} />)
       await screen.findByTestId('task-chat-header')
-      await userEvent.click(screen.getByRole('button', { name: 'Создать задачу' }))
-
-      const dialog = await screen.findByRole('dialog', { name: 'Настройки задачи разработки' })
-      expect(dialog).toHaveClass('task-launch-dialog', 'vc-dialog--lg')
+      const dialog = await screen.findByRole('dialog', { name: 'Создание задачи' })
+      expect(dialog).toHaveClass('jmodal-frame')
       expect(dialog).toHaveClass(phone ? 'vc-dialog--phone' : 'vc-dialog--lg')
-      if (!phone) expect(dialog).not.toHaveClass('vc-dialog--phone')
-
-      const title = within(dialog).getByLabelText('Название')
-      const settings = within(dialog).getByLabelText('Дополнительные настройки')
-      const description = within(dialog).getByLabelText('Описание')
-      const criteria = within(dialog).getByLabelText('Критерии приёмки')
-      const actions = within(dialog).getByRole('button', { name: 'Создать в TODO' }).parentElement!
-      expect(title.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      expect(settings.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      expect(description.compareDocumentPosition(criteria) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      expect(criteria.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      expect(description).toHaveAttribute('rows', '8')
-      expect(criteria).toHaveAttribute('rows', '8')
+      expect(within(dialog).getByLabelText('Заголовок задачи')).toHaveValue('Длинная задача')
+      expect(within(dialog).getByTestId('task-desc-view')).toHaveTextContent('Описание')
+      expect(within(dialog).getByTestId('task-criteria-view')).toHaveTextContent('Критерий')
+      expect(within(dialog).getByRole('button', { name: 'Создать в TODO' })).toBeInTheDocument()
+      expect(screen.queryByText('Как начать разработку?')).not.toBeInTheDocument()
     } finally {
       window.matchMedia = originalMatchMedia
     }
   })
 
-  it('показывает сохранённое предложение кнопкой и открывает карточку только по клику', async () => {
+  it('сразу открывает стандартную карточку с заполненными полями', async () => {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
     const project = await api['projects:create']({ name: 'Проект запуска' })
@@ -571,11 +561,10 @@ describe('App — запуск задачи из чата', () => {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/chat/${chat.id}`)
     render(<App api={api} delays={SLOW} />)
     await screen.findByTestId('task-chat-header')
-    expect(screen.queryByRole('dialog', { name: 'Настройки задачи разработки' })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Создать задачу' }))
-
-    const dialog = await screen.findByRole('dialog', { name: 'Настройки задачи разработки' })
-    expect(within(dialog).getByLabelText('Название')).toHaveValue('Исправить запуск')
+    const dialog = await screen.findByRole('dialog', { name: 'Создание задачи' })
+    expect(within(dialog).getByLabelText('Заголовок задачи')).toHaveValue('Исправить запуск')
+    expect(within(dialog).getByTestId('task-desc-view')).toHaveTextContent('Описание задачи')
+    expect(within(dialog).getByTestId('task-criteria-view')).toHaveTextContent('TODO создан')
     expect(within(dialog).getByRole('button', { name: 'Создать в TODO' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Создать в InProgress' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Работать в текущем чате' })).toBeInTheDocument()
@@ -606,29 +595,21 @@ describe('App — запуск задачи из чата', () => {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/chat/${chat.id}`)
     const view = render(<App api={api} delays={SLOW} />)
     await screen.findByTestId('task-chat-header')
-    expect(screen.getByRole('columnheader', { name: 'Название задачи' })).toBeInTheDocument()
-
-    const secondRow = screen.getAllByRole('row').find((row) => within(row).queryByText('Вторая задача'))!
-    await userEvent.click(within(secondRow).getByRole('button', { name: 'Создать задачу' }))
-    let dialog = await screen.findByRole('dialog', { name: 'Настройки задачи разработки' })
-    expect(within(dialog).getByLabelText('Название')).toHaveValue('Вторая задача')
-    expect(within(dialog).getByLabelText('Описание')).toHaveValue(secondDescription)
-    expect(within(dialog).getByLabelText('Критерии приёмки')).toHaveValue(secondCriteria)
+    let dialog = await screen.findByRole('dialog', { name: 'Создание задачи' })
+    expect(within(dialog).getByLabelText('Заголовок задачи')).toHaveValue('Первая задача')
+    expect(within(dialog).getByTestId('task-desc-view')).toHaveTextContent('Первое описание')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Создать в TODO' }))
-    await waitFor(() => expect(within(secondRow).getByText('Создана')).toBeInTheDocument())
 
-    // Имитируем обновление страницы: сообщение и статус заново читаются из API.
+    dialog = await screen.findByRole('dialog', { name: 'Создание задачи' })
+    expect(within(dialog).getByLabelText('Заголовок задачи')).toHaveValue('Вторая задача')
+    expect(within(dialog).getByTestId('task-desc-view')).toHaveTextContent('Второе описание')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Создать в TODO' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Создание задачи' })).not.toBeInTheDocument())
     view.unmount()
     render(<App api={api} delays={SLOW} />)
     await screen.findByTestId('task-chat-header')
-    expect(screen.getByText('Вторая задача').closest('tr')).toHaveTextContent('Создана')
-    const firstRow = screen.getByText('Первая задача').closest('tr')!
-    await userEvent.click(within(firstRow).getByRole('button', { name: 'Создать задачу' }))
-    dialog = await screen.findByRole('dialog', { name: 'Настройки задачи разработки' })
-    expect(within(dialog).getByLabelText('Название')).toHaveValue('Первая задача')
-    expect(within(dialog).getByLabelText('Описание')).toHaveValue(firstDescription)
-    expect(within(dialog).getByLabelText('Критерии приёмки')).toHaveValue(firstCriteria)
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Создать в TODO' }))
+    expect(screen.queryByRole('dialog', { name: 'Создание задачи' })).not.toBeInTheDocument()
 
     await waitFor(async () => {
       const saved = (await api['board:get']({ id: project.id })).tasks
@@ -658,13 +639,66 @@ describe('App — запуск задачи из чата', () => {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/chat/${chat.id}`)
     render(<App api={api} delays={SLOW} />)
     await screen.findByTestId('task-chat-header')
-    await userEvent.click(screen.getByRole('button', { name: 'Создать задачу' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Настройки задачи разработки' })
+    const dialog = await screen.findByRole('dialog', { name: 'Создание задачи' })
     await userEvent.click(within(dialog).getByRole('button', { name: 'Создать в TODO' }))
 
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Настройки задачи разработки' })).not.toBeInTheDocument())
-    expect(api._state.messages).toHaveLength(messageCount)
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Создание задачи' })).not.toBeInTheDocument())
+    await waitFor(() => expect(api._state.messages).toHaveLength(messageCount + 1))
+    expect(api._state.messages.at(-1)?.text).toContain('создать предложенную задачу в TODO')
     const updatedBoard = await api['board:get']({ id: project.id })
     expect(updatedBoard.tasks.some((task) => task.title === 'Новая задача')).toBe(true)
+  })
+
+  it('работает в текущем чате без карточки на доске и отправляет выбор следующим ходом', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const project = await api['projects:create']({ name: 'Проект запуска' })
+    const board = await api['board:get']({ id: project.id })
+    const source = await api['tasks:create']({ projectId: project.id, columnId: board.columns[0]!.id, title: 'Исходная' })
+    const chat = await api['tasks:openChat']({ projectId: project.id, taskId: source.id })
+    await api['messages:add']({
+      conversationId: chat.id,
+      role: 'ai',
+      text: 'Подробное описание.\n\nКритерии приёмки:\n- Проверка',
+      time: '12:01',
+      meta: { taskLaunch: { title: 'Без карточки', description: 'Подробное описание.', acceptanceCriteria: '- Проверка' } }
+    })
+    const tasksBefore = (await api['board:get']({ id: project.id })).tasks.length
+
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/chat/${chat.id}`)
+    render(<App api={api} delays={SLOW} />)
+    const dialog = await screen.findByRole('dialog', { name: 'Создание задачи' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Работать в текущем чате' }))
+
+    await waitFor(() => expect(api._state.messages.at(-1)?.text).toContain('без создания карточки'))
+    expect((await api['board:get']({ id: project.id })).tasks).toHaveLength(tasksBefore)
+  })
+
+  it('закрывает черновик без создания задачи и не открывает его повторно', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const project = await api['projects:create']({ name: 'Проект запуска' })
+    const board = await api['board:get']({ id: project.id })
+    const source = await api['tasks:create']({ projectId: project.id, columnId: board.columns[0]!.id, title: 'Исходная' })
+    const chat = await api['tasks:openChat']({ projectId: project.id, taskId: source.id })
+    await api['messages:add']({
+      conversationId: chat.id,
+      role: 'ai',
+      text: 'Предложение.',
+      time: '12:01',
+      meta: { taskLaunch: { title: 'Закрываемая', description: 'Описание', acceptanceCriteria: 'Критерий' } }
+    })
+
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/chat/${chat.id}`)
+    const view = render(<App api={api} delays={SLOW} />)
+    const dialog = await screen.findByRole('dialog', { name: 'Создание задачи' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Закрыть' }))
+    expect(screen.queryByRole('dialog', { name: 'Создание задачи' })).not.toBeInTheDocument()
+    expect((await api['board:get']({ id: project.id })).tasks).toHaveLength(1)
+
+    view.unmount()
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByTestId('task-chat-header')
+    expect(screen.queryByRole('dialog', { name: 'Создание задачи' })).not.toBeInTheDocument()
   })
 })

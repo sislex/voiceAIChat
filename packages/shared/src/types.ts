@@ -18,7 +18,7 @@ export interface TaskLaunchRequest {
 /** Одно предложение в списке задач, сохранённом вместе с ответом ассистента. */
 export interface TaskLaunchProposal extends TaskLaunchRequest {
   id: string
-  status?: 'created' | 'declined'
+  status?: 'opened' | 'created' | 'declined'
   taskId?: string
 }
 
