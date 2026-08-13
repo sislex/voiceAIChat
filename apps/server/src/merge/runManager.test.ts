@@ -94,7 +94,7 @@ describe('MergeRunManager',()=>{
     expect(s.run.stages.find(stage=>stage.stage==='resolving_conflicts')?.message).toContain('содержательное расхождение')
   })
   it('stops for a decision when conflicts touch anything beyond the KB index',async()=>{
-    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','',{output:'CONFLICT\n',exitCode:1},'docs/kb/README.md\napps/server/src/index.ts\n'])
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','',{output:'CONFLICT\n',exitCode:1},'docs/kb/README.md\napps/server/src/index.ts\n','','apps/server/src/index.ts\n'])
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('decision_required'))
     expect(s.run.conflicts).toEqual(['apps/server/src/index.ts'])
@@ -102,6 +102,33 @@ describe('MergeRunManager',()=>{
     expect(scripts.some(v=>v.includes('git checkout --ours -- docs/kb/README.md'))).toBe(true)
     expect(scripts.some(v=>v.includes('kb.mjs index'))).toBe(false)
   })
+  it('auto-resolves all independent text conflicts and continues through gates',async()=>{
+    const enc=(value:string)=>Buffer.from(value).toString('base64')
+    const path='packages/ui/src/styles/app.css', baseCss='.automation-progress {}\n'
+    const stageOutput=`100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1\t${path}\n100644 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 2\t${path}\n100644 cccccccccccccccccccccccccccccccccccccccc 3\t${path}\nSTAGE1=${enc(baseCss)}\nSTAGE2=${enc(baseCss+'.turn-queue {}\n')}\nSTAGE3=${enc(baseCss+'.personalization-page {}\n')}\n`
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','',{output:'CONFLICT\n',exitCode:1},path+'\n',stageOutput,'','',merged+'\n',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''])
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(['success','failed','decision_required']).toContain(s.run.status))
+    expect(s.run.status,`${s.run.error}\n${s.run.log}`).toBe('success')
+    expect(s.run.conflicts).toEqual([])
+    expect(s.run.log).toContain('classification=same-anchor-independent-insert')
+    expect(s.run.log).toContain('rule=same-anchor-ours-then-theirs')
+    expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.some(call=>call[0].script.includes('git add --')&&call[0].script.includes(path))).toBe(true)
+    expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.some(call=>call[0].script.includes('affected-check'))).toBe(true)
+  })
+
+  it('indexes safe files but keeps only ambiguous conflicts for a decision',async()=>{
+    const enc=(value:string)=>Buffer.from(value).toString('base64')
+    const stages=(baseText:string,oursText:string,theirsText:string,path:string)=>`100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1\t${path}\n100644 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 2\t${path}\n100644 cccccccccccccccccccccccccccccccccccccccc 3\t${path}\nSTAGE1=${enc(baseText)}\nSTAGE2=${enc(oursText)}\nSTAGE3=${enc(theirsText)}\n`
+    const safe='safe.css',ambiguous='ambiguous.ts'
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','',{output:'CONFLICT\n',exitCode:1},safe+'\n'+ambiguous+'\n',stages('a\n','a\nours\n','a\ntheirs\n',safe),'',stages('a\nb\n','a\nB\n','a\nX\n',ambiguous),ambiguous+'\n'])
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('decision_required'))
+    expect(s.run.conflicts).toEqual([ambiguous])
+    expect(s.run.log).toContain(`Авторазрешение ${safe}: classification=same-anchor-independent-insert, applied=yes`)
+    expect(s.run.log).toContain(`Авторазрешение ${ambiguous}: classification=ambiguous, applied=no`)
+  })
+
   it('stops stale source before creating a worktree',async()=>{
     const changed='4'.repeat(40), s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${changed}\nTARGET=${target}\n`,'PENDING\n',''])
     s.manager.start(s.run)
