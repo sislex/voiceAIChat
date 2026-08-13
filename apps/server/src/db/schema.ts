@@ -167,7 +167,7 @@ CREATE TABLE IF NOT EXISTS llm_engines (
   base_url      TEXT NOT NULL,
   token         TEXT NOT NULL DEFAULT '',
   enabled       INTEGER NOT NULL DEFAULT 1,
-  allowed_roles TEXT NOT NULL DEFAULT '["admin","user"]',
+  allowed_roles TEXT NOT NULL DEFAULT '["admin","developer","tester","observer"]',
   is_default    INTEGER NOT NULL DEFAULT 0,
   created_at    INTEGER NOT NULL
 );

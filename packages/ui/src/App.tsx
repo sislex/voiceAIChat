@@ -22,6 +22,7 @@ import { LoginScreen } from './components/LoginScreen'
 import { EnginesObserver, type ObserverEngine } from './components/EnginesObserver'
 import { UsersAdmin } from './components/UsersAdmin'
 import { ProjectSettings } from './components/ProjectSettings'
+import { PersonalizationPage } from './components/SettingsPage'
 import { ProjectBoard } from './components/ProjectBoard'
 import { ProjectPage, ProjectsEmptyPage, ProjectNotFoundPage } from './components/ProjectPage'
 import { ReleaseCenter } from './components/releases/ReleaseCenter'
@@ -84,7 +85,7 @@ export function appendWidgetAction(items: WidgetUserAction[], action: WidgetActi
 }
 
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
-const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users', 'ci']
+const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users', 'ci', 'personalization']
 
 // Запуск задачи предлагает только явный структурированный сигнал ассистента.
 
@@ -781,7 +782,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     if (authed && state.activeId) void actions.loadKbUsage(state.activeId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, state.activeId, state.messages.length])
-  const forcedPlan = state.currentUser?.role === 'user' && (!activeExecTarget || activeExecTarget === 'none')
+  const forcedPlan = state.currentUser?.role !== 'admin' && (!activeExecTarget || activeExecTarget === 'none')
   const activePermissionMode: PermissionMode = forcedPlan
     ? 'plan'
     : activeConversation?.permissionMode ?? state.settings.permissionMode
@@ -990,6 +991,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         onSelectProject={(id) => void actions.setSidebarProject(id)}
         onOpenObserver={menu(() => navigate('/claude-code'))}
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
+        onOpenPersonalization={state.currentUser ? menu(() => navigate('/personalization')) : undefined}
         onOpenSettings={menu(actions.openSettings)}
         onOpenFiles={state.authRequired ? menu(() => actions.openUtilityForActiveChat('explorer')) : undefined}
         onOpenConsole={state.authRequired ? menu(() => actions.openUtilityForActiveChat('console')) : undefined}
@@ -1182,7 +1184,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onOpenAssistantPage={() => navigate(`/projects/${routeProjectId}/assistant`) }
         >
           {routeReleases ? (
-            state.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={state.projectDetail.ciBaseBranch ?? 'main'} owner={state.projectDetail.role === 'owner'} machines={state.projectDetail.machines} releaseTimeouts={state.projectDetail.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
+            state.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={state.projectDetail.ciBaseBranch ?? 'main'} owner={state.currentUser?.role === 'admin'} machines={state.projectDetail.machines} releaseTimeouts={state.projectDetail.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
           ) : routeSettings ? (
             state.projectDetail?.id === routeProjectId ? (
               <ProjectSettings
@@ -1288,6 +1290,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
 
       {utilitySeg === 'kb' && (
         <KnowledgeBase api={api} variant="page" documentId={routeKbDocumentId} onClose={() => navigate('/')} />
+      )}
+
+      {utilitySeg === 'personalization' && state.currentUser && (
+        <PersonalizationPage user={state.currentUser} value={state.settings.personalization} onSave={async (personalization) => { await actions.updateSettings({ personalization }); navigate('/') }} onCancel={() => navigate('/')} />
       )}
 
       {/* Объединённый наблюдатель агентов: один компонент с переключателем

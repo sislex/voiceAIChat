@@ -420,7 +420,8 @@ describe('VoiceChatDb — настройки', () => {
       defaultAgentId: null,
       aiAssistProvider: 'claude',
       aiAssistModel: 'haiku',
-      aiAssistPrompts: DEFAULT_SETTINGS.aiAssistPrompts
+      aiAssistPrompts: DEFAULT_SETTINGS.aiAssistPrompts,
+      personalization: DEFAULT_SETTINGS.personalization
     })
   })
 
@@ -529,8 +530,8 @@ describe('VoiceChatDb — пользователи и админ-данные', 
   })
 
   it('createUser/getUser/verifyUserPassword/блокировка/удаление', () => {
-    db.createUser('bob', 'pw', 'user')
-    expect(db.getUser('bob')).toMatchObject({ name: 'bob', role: 'user', blocked: false })
+    db.createUser('bob', 'pw', 'developer')
+    expect(db.getUser('bob')).toMatchObject({ name: 'bob', role: 'developer', blocked: false })
     expect(db.verifyUserPassword('bob', 'pw')?.name).toBe('bob')
     expect(db.verifyUserPassword('bob', 'x')).toBeNull()
     db.setUserBlocked('bob', true)
@@ -540,7 +541,7 @@ describe('VoiceChatDb — пользователи и админ-данные', 
   })
 
   it('deleteUserData стирает разговоры/агентов/настройки и учётку', () => {
-    db.createUser('bob', '', 'user')
+    db.createUser('bob', '', 'developer')
     const c = db.createConversation('bob', 'Чат')
     db.addMessage('bob', c.id, 'u1', 'привет', '10:00')
     db.createAgent('bob', 'BobBox')
@@ -606,7 +607,7 @@ describe('VoiceChatDb — пользователи и админ-данные', 
 describe('VoiceChatDb — режим базы знаний разговора', () => {
   it('по умолчанию auto и сохраняет manual/off', () => {
     const db = new VoiceChatDb(':memory:')
-    db.createUser('kb-user', '', 'user')
+    db.createUser('kb-user', '', 'developer')
     const conversation = db.createConversation('kb-user', 'KB')
     expect(conversation.kbContextMode).toBe('auto')
     expect(db.setConversationKbContextMode('kb-user', conversation.id, 'manual')?.kbContextMode).toBe('manual')
@@ -619,11 +620,11 @@ describe('VoiceChatDb — режим базы знаний разговора', 
 describe('VoiceChatDb — резолв исполнителя LLM', () => {
   it('выбирает запрошенный доступный и заменяет закрытый на default роли', () => {
     const db = makeDb()
-    const def = db.createLlmEngine({ name: 'Рабочий', kind: 'claude', baseUrl: 'http://work', token: '', enabled: true, allowedRoles: ['admin', 'user'], isDefault: true })
+    const def = db.createLlmEngine({ name: 'Рабочий', kind: 'claude', baseUrl: 'http://work', token: '', enabled: true, allowedRoles: ['admin', 'developer'], isDefault: true })
     const personal = db.createLlmEngine({ name: 'Личный', kind: 'claude', baseUrl: 'http://personal', token: '', enabled: true, allowedRoles: ['admin'], isDefault: false })
     expect(db.resolveLlmEngine(personal.id, 'claude', 'admin')).toMatchObject({ engine: { id: personal.id }, substituted: false })
-    expect(db.resolveLlmEngine(personal.id, 'claude', 'user')).toMatchObject({ engine: { id: def.id }, substituted: true })
-    expect(db.listLlmEnginesForRole('user').map((engine) => engine.id)).toEqual([def.id])
+    expect(db.resolveLlmEngine(personal.id, 'claude', 'developer')).toMatchObject({ engine: { id: def.id }, substituted: true })
+    expect(db.listLlmEnginesForRole('developer').map((engine) => engine.id)).toEqual([def.id])
     db.close()
   })
 })

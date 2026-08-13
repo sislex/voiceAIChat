@@ -83,15 +83,15 @@ describe('VoiceChatDb — обращения к базе знаний', () => {
   })
 
   it('чужой чат не отдаёт отчёт (изоляция по владельцу)', () => {
-    db.createUser('bob', 'x', 'user')
+    db.createUser('bob', 'x', 'developer')
     const conv = db.createConversation(U, 'Чат')
     db.addKbUsage({ userId: U, conversationId: conv.id, source: 'auto', query: 'q', chars: 10 })
     expect(db.kbUsageReport('bob', conv.id)).toBeNull()
   })
 
   it('проектный агрегат виден участнику и считает чаты, а не участнику — null', () => {
-    db.createUser('alice', 'x', 'user')
-    db.createUser('bob', 'x', 'user')
+    db.createUser('alice', 'x', 'developer')
+    db.createUser('bob', 'x', 'developer')
     const project = db.createProject('alice', { name: 'P' })
     const a = db.createConversation('alice', 'A')
     const b = db.createConversation('alice', 'B')
@@ -122,8 +122,8 @@ describe('VoiceChatDb — обращения к БЗ внутри CI-рана', 
   let db: VoiceChatDb
   beforeEach(() => {
     db = makeDb()
-    db.createUser('alice', 'x', 'user')
-    db.createUser('bob', 'x', 'user')
+    db.createUser('alice', 'x', 'developer')
+    db.createUser('bob', 'x', 'developer')
   })
   afterEach(() => db.close())
 

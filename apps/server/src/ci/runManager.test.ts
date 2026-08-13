@@ -854,8 +854,8 @@ describe('ci run manager: база знаний', () => {
     const { project, task } = setup()
     const runId = await run(project.id, task.id)
     await waitRun(runId)
-    db.createUser('bob', '', 'user')
-    const bob = signToken({ name: 'bob', role: 'user' }, SECRET)
+    db.createUser('bob', '', 'developer')
+    const bob = signToken({ name: 'bob', role: 'developer' }, SECRET)
 
     const mine = await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/kb-usage` })
     expect(mine.statusCode).toBe(200)

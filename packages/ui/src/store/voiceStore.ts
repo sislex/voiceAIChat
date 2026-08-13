@@ -799,7 +799,7 @@ export interface StoreActions {
   /** Закрыть страницу пользователей. */
   closeUsers(): void
   /** Создать пользователя (admin). */
-  createUserAccount(name: string, password: string, role: 'admin' | 'user'): Promise<void>
+  createUserAccount(name: string, password: string, role: import('@shared/types').UserRole): Promise<void>
   /** Блокировать/разблокировать пользователя. */
   setUserBlocked(name: string, blocked: boolean): Promise<void>
   /** Удалить пользователя и все его данные. */
@@ -2334,7 +2334,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       // иначе открытие страницы не грузило бы вообще ничего.
       if (state.currentUser && state.currentUser.role !== 'admin') {
         setState({
-          adminUsers: [{ name: state.currentUser.name, role: 'user', blocked: false, createdAt: 0, conversationCount: state.conversations.length, agents: [] }],
+          adminUsers: [{ name: state.currentUser.name, role: 'developer', blocked: false, createdAt: 0, conversationCount: state.conversations.length, agents: [] }],
           adminUsageSummary: []
         })
         await selectAdminUser(state.currentUser.name)
@@ -2358,7 +2358,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     })
   }
 
-  async function createUserAccount(name: string, password: string, role: 'admin' | 'user'): Promise<void> {
+  async function createUserAccount(name: string, password: string, role: import('@shared/types').UserRole): Promise<void> {
     try {
       await api['admin:createUser']({ name, password, role })
       await refreshAdminUsers()

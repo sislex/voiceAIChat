@@ -7,7 +7,7 @@ let projectId:string
 const ci=():ReleaseProjectTarget=>({projectId,agentId:'ci',path:'/ci',baseBranch:'main',testCommand:'npm run verify:release'})
 const prod=():ProductionTarget=>({...ci(),agentId:'prod',path:'/prod',deployCommand:'npm run deploy:prod',healthCheckCommand:'npm run health:prod',expectedRepository:'git@example/repo.git'})
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0))
-beforeEach(()=>{let id=0;db=new VoiceChatDb(':memory:',{newId:()=>`id-${++id}`,now:()=>1000+id});db.createUser('owner','','user');projectId=db.createProject('owner',{name:'P'}).id})
+beforeEach(()=>{let id=0;db=new VoiceChatDb(':memory:',{newId:()=>`id-${++id}`,now:()=>1000+id});db.createUser('owner','','developer');projectId=db.createProject('owner',{name:'P'}).id})
 afterEach(()=>db.close())
 
 describe('ReleaseManager separated preparation and deploy',()=>{

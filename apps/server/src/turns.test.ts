@@ -85,6 +85,38 @@ describe('turns: канбан-ассистент', () => {
   })
 })
 
+describe('turns: персонализация', () => {
+  it('добавляет короткие предпочтения и возраст, но не полную дату рождения', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    db.saveSettings(U, { ...db.getSettings(U), personalization: { preferredName: 'Лёша', birthDay: 12, birthMonth: 4, birthYear: 1990, responseLanguage: 'ru', responseStyle: 'brief', tone: 'friendly' } })
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+    expect(rec.last()?.prompt).toContain('## Персонализация пользователя')
+    expect(rec.last()?.prompt).toContain('Обращение к пользователю: Лёша')
+    expect(rec.last()?.prompt).toContain('явная просьба в текущем сообщении имеет приоритет')
+    expect(rec.last()?.prompt).toContain('Возраст пользователя:')
+    expect(rec.last()?.prompt).not.toContain('12.04.1990')
+    db.close()
+  })
+
+  it('одинаково передаёт персонализацию клиенту Codex', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    db.saveSettings(U, { ...db.getSettings(U), llmProvider: 'codex', personalization: { ...db.getSettings(U).personalization, tone: 'business' } })
+    const claude = recorder()
+    const codex = recorder()
+    const turns = createTurnManager({ db, claude: claude.client, codex: codex.client })
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((m) => { if (m.t === 'claude.done') { off(); resolve() } })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'привет' }] })
+    })
+    expect(codex.last()?.prompt).toContain('Тон общения: деловой')
+    expect(claude.last()).toBeNull()
+    db.close()
+  })
+})
+
 describe('turns: рабочий каталог разговора принадлежит машине, а не серверу', () => {
   it('серверный settings.workdir уходит исполнителю как желаемый cwd без локальной проверки', async () => {
     const db = new VoiceChatDb(':memory:')
@@ -789,11 +821,11 @@ describe('turns: управляемая персистентная очеред�
 
     expect(llm.cancels()).toBe(1)
     expect(llm.handlers).toHaveLength(1)
-    expect(db.listMessages(U, conversation.id).at(-1)).toMatchObject({ role: 'ai', text: 'Часть ответа', meta: { interrupted: true } })
+    expect(db.listMessages(U, conversation.id).find((message) => message.role === 'ai' && message.meta?.interrupted)).toMatchObject({ role: 'ai', text: 'Часть ответа', meta: { interrupted: true } })
     expect(db.isTurnQueuePaused(U, conversation.id)).toBe(true)
     expect(db.listQueuedTurns(U, conversation.id)).toMatchObject([{ messageId: queuedMessage.id }])
     llm.handlers[0].onDelta(' поздний токен')
-    expect(db.listMessages(U, conversation.id).at(-1)?.text).toBe('Часть ответа')
+    expect(db.listMessages(U, conversation.id).find((message) => message.role === 'ai' && message.meta?.interrupted)?.text).toBe('Часть ответа')
     db.close()
   })
 
@@ -835,7 +867,7 @@ describe('turns: управляемая персистентная очеред�
     expect(requests[1].prompt).toContain('Дополнение:')
     expect(requests[1].prompt).toContain('Добавь пример')
     expect(db.listQueuedTurns(U, conversation.id)).toEqual([])
-    expect(db.listMessages(U, conversation.id).at(-1)?.text).toContain('Ответь на итоговый вопрос')
+    expect(db.listMessages(U, conversation.id).find((message) => message.text.includes('Ответь на итоговый вопрос'))?.text).toContain('Ответь на итоговый вопрос')
     db.close()
   })
 })

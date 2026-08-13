@@ -216,7 +216,7 @@ export function normalizeClaudeModel(raw: string): ClaudeModel {
 }
 
 /** Роль пользователя приложения (многопользовательский режим web-версии). */
-export type UserRole = 'admin' | 'user'
+export type UserRole = 'admin' | 'developer' | 'tester' | 'observer'
 
 /** Аутентифицированный пользователь сессии. */
 export interface SessionUser {
@@ -534,6 +534,32 @@ export const DEFAULT_AI_ASSIST_PROMPTS: ModifierPrompt[] = [
   { id: 'structured', title: 'Структурированно', text: 'Если уместно, добавь структуру и явный ожидаемый результат.', enabled: true }
 ]
 
+export type PersonalizationResponseStyle = 'brief' | 'normal' | 'detailed' | 'step-by-step'
+export type PersonalizationTone = 'neutral' | 'friendly' | 'business' | 'plain'
+
+/** Персональные предпочтения общения, применяемые только к пользовательским LLM-ходам. */
+export interface UserPersonalization {
+  /** null — без обращения; пустая строка в форме нормализуется в null. */
+  preferredName: string | null
+  birthDay: number | null
+  birthMonth: number | null
+  birthYear: number | null
+  /** BCP-47 код; null — определять по текущему сообщению. */
+  responseLanguage: string | null
+  responseStyle: PersonalizationResponseStyle
+  tone: PersonalizationTone
+}
+
+export const DEFAULT_PERSONALIZATION: UserPersonalization = {
+  preferredName: null,
+  birthDay: null,
+  birthMonth: null,
+  birthYear: null,
+  responseLanguage: null,
+  responseStyle: 'normal',
+  tone: 'neutral'
+}
+
 /** Пользовательские настройки приложения. */
 export interface Settings {
   model: ClaudeModel
@@ -575,6 +601,8 @@ export interface Settings {
   aiAssistModel: string
   /** Дефолтные модификаторы для полей ввода. */
   aiAssistPrompts: ModifierPrompt[]
+  /** Централизованные предпочтения общения с моделью. */
+  personalization: UserPersonalization
 }
 
 /** Поддерживаемые LLM-движки (CLI). */
@@ -626,7 +654,8 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultAgentId: null,
   aiAssistProvider: 'claude',
   aiAssistModel: 'haiku',
-  aiAssistPrompts: DEFAULT_AI_ASSIST_PROMPTS
+  aiAssistPrompts: DEFAULT_AI_ASSIST_PROMPTS,
+  personalization: DEFAULT_PERSONALIZATION
 
 }
 
