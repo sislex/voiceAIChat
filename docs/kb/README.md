@@ -14,14 +14,14 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 2 коммит(ов) в areas после сверки: 12232f7 feat: extract web recorder app … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-12 | ⚠ 14 коммит(ов) в areas после сверки: 6066439 fix: number release deploy retries from the branch max attempt … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-12 | ⚠ 1 коммит(ов) в areas после сверки: 31c5e8b feat: execute merge runs with realtime feed |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-12 | ⚠ 13 коммит(ов) в areas после сверки: 6066439 fix: number release deploy retries from the branch max attempt … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-12 | ⚠ 14 коммит(ов) в areas после сверки: 907445a CHAT-186 adapt task creation dialog … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-10 | ⚠ 2 коммит(ов) в areas после сверки: f2b5d60 fix(ci): name task branches and workspaces by issue key … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-07 | ⚠ 38 коммит(ов) в areas после сверки: 9863f81 Merge task 441335e0-b9c2-40f8-ae2c-453d6e9b859d … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 36 коммит(ов) в areas после сверки: 31c5e8b feat: execute merge runs with realtime feed … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-10 | ⚠ 23 коммит(ов) в areas после сверки: 6066439 fix: number release deploy retries from the branch max attempt … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-12 | ⚠ 2 коммит(ов) в areas после сверки: 6066439 fix: number release deploy retries from the branch max attempt … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 249 коммит(ов) в areas после сверки: 7cf3522 test(server): allow ten minutes per test … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ⚠ 15 коммит(ов) в areas после сверки: 6066439 fix: number release deploy retries from the branch max attempt … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 252 коммит(ов) в areas после сверки: eb4b12d Merge task f71be274-6773-43b8-8aab-67ff35443ef6 … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-12 | ⚠ 16 коммит(ов) в areas после сверки: 907445a CHAT-186 adapt task creation dialog … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-07 | ⚠ 9 коммит(ов) в areas после сверки: abc8bc6 chatai-178: работа CI-рана … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 5 коммит(ов) в areas после сверки: de5164a chatai-182: работа CI-рана … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 4 коммит(ов) в areas после сверки: 6066439 fix: number release deploy retries from the branch max attempt … |
@@ -31,8 +31,8 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 23 коммит(ов) в areas после сверки: d812a98 Merge task 49099a4e-9275-4f8c-a21a-6d21a3bdbf67 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-13 | ⚠ 1 коммит(ов) в areas после сверки: 7cf3522 test(server): allow ten minutes per test |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-12 | ⚠ 3 коммит(ов) в areas после сверки: 411154d test(ui): cover kanban scroll persistence and drag autoscroll … |
-| [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-12, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-13 | ⚠ 1 коммит(ов) в areas после сверки: 907445a CHAT-186 adapt task creation dialog |
+| [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-13, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-07 | ✓ |
 
 ## Инструкции по пакетам
@@ -48,9 +48,10 @@
 
 ## Журнал сессий
 
-Всего записей: 173. Последние:
+Всего записей: 174. Последние:
 
 - [2026-08-13-mac-task-launch-dialog.md](log/2026-08-13-mac-task-launch-dialog.md) — task-launch-dialog
+- [2026-08-13-mac-sidebar-toggle-kanban.md](log/2026-08-13-mac-sidebar-toggle-kanban.md) — sidebar-toggle-kanban
 - [2026-08-12-alexeys-macbook-air-2-merge-runner.md](log/2026-08-12-alexeys-macbook-air-2-merge-runner.md) — merge-runner
 - [2026-08-12-alexeys-macbook-air-2-ci-display-summary.md](log/2026-08-12-alexeys-macbook-air-2-ci-display-summary.md) — ci-display-summary
 - [2026-08-12-alexeys-macbook-air-2-chat-message-queue.md](log/2026-08-12-alexeys-macbook-air-2-chat-message-queue.md) — chat-message-queue
@@ -59,7 +60,6 @@
 - [2026-08-12-2470-com-release-run-management.md](log/2026-08-12-2470-com-release-run-management.md) — release-run-management
 - [2026-08-12-2470-com-conversation-drafts.md](log/2026-08-12-2470-com-conversation-drafts.md) — conversation-drafts
 - [2026-08-12-2470-com-chat-machine-access.md](log/2026-08-12-2470-com-chat-machine-access.md) — chat-machine-access
-- [2026-08-12-2470-com-chat-176-task-tabs.md](log/2026-08-12-2470-com-chat-176-task-tabs.md) — chat-176-task-tabs
 
 ## Исторические планы
 

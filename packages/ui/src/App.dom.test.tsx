@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -413,9 +413,24 @@ describe('App — интеграция UI со стором и IPC', () => {
 })
 
 describe('App — мобильное меню', () => {
+  const desktopMatchMedia = window.matchMedia
+  beforeEach(() => {
+    window.matchMedia = ((query: string) => ({
+      matches: query === '(max-width: 768px)',
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false
+    })) as typeof window.matchMedia
+  })
+  afterEach(() => { window.matchMedia = desktopMatchMedia })
+
   it('клик по пункту меню (Настройки) закрывает выдвинутый сайдбар', async () => {
     await renderApp()
-    await userEvent.click(screen.getByLabelText('Меню разговоров')) // ☰ — выдвинуть
+    await userEvent.click(screen.getByLabelText('Открыть боковую панель')) // ☰ — выдвинуть
     expect(document.querySelector('.side--open')).not.toBeNull()
     await userEvent.click(screen.getByText('Настройки'))
     expect(document.querySelector('.side--open')).toBeNull()
@@ -424,7 +439,7 @@ describe('App — мобильное меню', () => {
   it('смена маршрута закрывает сайдбар — иначе он висит поверх открытой страницы', async () => {
     await renderApp()
     try {
-      await userEvent.click(screen.getByLabelText('Меню разговоров'))
+      await userEvent.click(screen.getByLabelText('Открыть боковую панель'))
       expect(document.querySelector('.side--open')).not.toBeNull()
       // Переход не через пункт меню (так работает «Открыть задачу» из шапки
       // связанного чата): раньше панель оставалась поверх карточки задачи.

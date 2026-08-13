@@ -71,7 +71,65 @@ describe('App — страница проекта по URL', () => {
     await waitFor(() => expect(within(page).getByTestId('kanban-board')).toBeInTheDocument())
     // Уходят со страницы навигацией: крестика в шапке нет.
     expect(within(page).queryByRole('button', { name: 'Закрыть' })).not.toBeInTheDocument()
-    expect(within(page).getByRole('button', { name: 'Открыть меню' })).toBeInTheDocument()
+    const toggle = within(page).getByRole('button', { name: 'Закрыть боковую панель' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(toggle).toHaveAttribute('title', 'Закрыть боковую панель')
+  })
+
+  it('на десктопе переключатель сворачивает и возвращает Sidebar без сброса позиции доски', async () => {
+    const { projectId } = await renderWithProject()
+    window.location.hash = `#/projects/${projectId}`
+    const board = await screen.findByTestId('kanban-board')
+    board.scrollLeft = 180
+    board.scrollTop = 75
+
+    await userEvent.click(screen.getByRole('button', { name: 'Закрыть боковую панель' }))
+    expect(document.querySelector('.app')).toHaveClass('app--sidebar-collapsed')
+    expect(screen.getByRole('button', { name: 'Открыть боковую панель' })).toHaveAttribute('aria-expanded', 'false')
+    expect(board).toBeInTheDocument()
+    expect(board.scrollLeft).toBe(180)
+    expect(board.scrollTop).toBe(75)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть боковую панель' }))
+    expect(document.querySelector('.app')).not.toHaveClass('app--sidebar-collapsed')
+    expect(board.scrollLeft).toBe(180)
+    expect(board.scrollTop).toBe(75)
+  })
+
+  it('на мобильной ширине открывает drawer, закрывает по Esc и backdrop и возвращает фокус', async () => {
+    const original = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: query === '(max-width: 768px)',
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false
+    })) as typeof window.matchMedia
+    try {
+      const { projectId } = await renderWithProject()
+      window.location.hash = `#/projects/${projectId}`
+      await screen.findByTestId('kanban-board')
+      const open = screen.getByRole('button', { name: 'Открыть боковую панель' })
+
+      await userEvent.click(open)
+      expect(document.querySelector('aside.side')).toHaveClass('side--open')
+      expect(screen.getByRole('button', { name: 'Закрыть боковую панель' })).toHaveAttribute('aria-expanded', 'true')
+      expect(document.querySelector('.side-backdrop')).toBeInTheDocument()
+
+      await userEvent.keyboard('{Escape}')
+      await waitFor(() => expect(document.querySelector('.side-backdrop')).not.toBeInTheDocument())
+      expect(open).toHaveFocus()
+
+      await userEvent.click(open)
+      await userEvent.click(document.querySelector('.side-backdrop')!)
+      await waitFor(() => expect(document.querySelector('aside.side')).not.toHaveClass('side--open'))
+      expect(open).toHaveFocus()
+    } finally {
+      window.matchMedia = original
+    }
   })
 
   it('вкладки меняют только содержимое: шапка и имя проекта остаются на месте', async () => {

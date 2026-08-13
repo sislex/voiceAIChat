@@ -12,6 +12,7 @@ import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { ErrorState } from './ui/ErrorState'
 import { EmptyState } from './ui/EmptyState'
 import { ToolFrame } from './ToolFrame'
+import { SidebarToggle } from './ui/IconButton'
 
 /** Раздел страницы проекта — он же вкладка в шапке. */
 export type ProjectSection = 'board' | 'releases' | 'settings'
@@ -29,8 +30,12 @@ export interface ProjectPageProps {
   section: ProjectSection
   /** Клик по вкладке: навигация, а не локальное состояние. */
   onSectionChange: (section: ProjectSection) => void
-  /** Открыть мобильный сайдбар со списком чатов и проектов. */
+  /** Показать/скрыть общий Sidebar. */
   onToggleSidebar?: () => void
+  /** Фактическое состояние Sidebar для aria-expanded. */
+  sidebarExpanded?: boolean
+  /** Отдать Esc открытому мобильному Sidebar раньше рамки страницы. */
+  onSidebarEscape?: () => boolean
   /** Содержимое активного раздела. */
   children: ReactNode
   assistantOpen?: boolean
@@ -38,7 +43,7 @@ export interface ProjectPageProps {
   onOpenAssistantPage?: () => void
 }
 
-export function ProjectPage({ projectName, section, onSectionChange, onToggleSidebar, children, assistantOpen = false, onAssistantOpenChange, onOpenAssistantPage }: ProjectPageProps): JSX.Element {
+export function ProjectPage({ projectName, section, onSectionChange, onToggleSidebar, sidebarExpanded = true, onSidebarEscape, children, assistantOpen = false, onAssistantOpenChange, onOpenAssistantPage }: ProjectPageProps): JSX.Element {
   const tabsRef = useRef<HTMLDivElement>(null)
   // Стрелки переключают вкладку сразу (automatic activation в терминах ARIA).
   // Фокус переносим руками: активная вкладка единственная в tab-порядке
@@ -63,11 +68,10 @@ export function ProjectPage({ projectName, section, onSectionChange, onToggleSid
       variant="page"
       testId="project-page"
       className="projpage"
+      onEscape={onSidebarEscape}
+      leading={onToggleSidebar ? <SidebarToggle className="proj-sidebar-toggle" expanded={sidebarExpanded} onToggle={onToggleSidebar} /> : undefined}
       actions={
         <>
-          {onToggleSidebar && (
-            <button className="proj-sidebar-toggle" aria-label="Открыть меню" onClick={onToggleSidebar}>☰</button>
-          )}
           {section === 'board' && onAssistantOpenChange && <button type="button" className="vc-btn vc-btn--secondary project-assistant-toggle" aria-pressed={assistantOpen} onClick={() => onAssistantOpenChange(!assistantOpen)}>✦ Ассистент</button>}
           {section === 'board' && assistantOpen && onOpenAssistantPage && <button type="button" className="vc-btn vc-btn--secondary" aria-label="Открыть виджет с ассистентом отдельной страницей" onClick={onOpenAssistantPage}>↗</button>}
           <div
