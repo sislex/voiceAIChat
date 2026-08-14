@@ -843,6 +843,13 @@ describe('turns: управляемая персистентная очеред�
     ])
     expect(llm.handlers).toHaveLength(1)
     expect(db.listQueuedTurns(U, conversation.id)).toHaveLength(1)
+    expect(db.listMessages(U, conversation.id).map((message) => message.text)).toEqual(['Первый'])
+
+    llm.handlers[0].onDone('Ответ 1')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(llm.handlers).toHaveLength(2)
+    expect(db.listMessages(U, conversation.id).map((message) => message.text)).toEqual(['Первый', 'Ответ 1', 'Второй'])
+    expect(db.listMessages(U, conversation.id)[2]?.id).toBe(second.id)
     db.close()
   })
 

@@ -449,7 +449,7 @@ export type ServerMessage =
   | { t: 'claude.log'; conversationId: string; entry: ClaudeLogEntry }
   | { t: 'claude.usage'; conversationId: string; usage: TurnUsage }
   | { t: 'claude.active'; turns: ActiveTurn[] }
-  | { t: 'claude.queue'; conversationId: string; items: QueuedTurn[]; paused: boolean }
+  | { t: 'claude.queue'; conversationId: string; items: QueuedTurn[]; paused: boolean; published?: Message }
   | { t: 'tts.audio'; audio: string } // base64 WAV (или бинарный кадр — см. реализацию)
   | { t: 'tts.error'; message: string }
   | { t: 'tts.voiceProgress'; id: string; percent: number }

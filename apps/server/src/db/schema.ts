@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS messages (
   meta            TEXT,
   exec_target     TEXT,
   attachments     TEXT,
+  state           TEXT NOT NULL DEFAULT 'published',
+  history_position INTEGER,
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 

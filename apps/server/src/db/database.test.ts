@@ -716,6 +716,7 @@ describe('VoiceChatDb — персистентная очередь ходов',
     db.enqueueTurn(U, conversation.id, first.id, { segments: [{ speakerId: 1, text: 'ДУБЛЬ' }] })
     db.enqueueTurn(U, conversation.id, second.id, { segments: [{ speakerId: 1, text: 'Второй' }] })
     expect(db.listQueuedTurns(U, conversation.id).map((item) => item.text)).toEqual(['Первый', 'Второй'])
+    expect(db.listMessages(U, conversation.id)).toEqual([])
     db.close()
 
     db = new VoiceChatDb(file)
@@ -723,6 +724,10 @@ describe('VoiceChatDb — персистентная очередь ходов',
       { messageId: first.id, position: 1, attachments: ['a1'] },
       { messageId: second.id, position: 2 }
     ])
+    expect(db.listMessages(U, conversation.id)).toEqual([])
+    const dispatched = db.takeQueuedTurn(U, conversation.id)
+    expect(dispatched?.message.id).toBe(first.id)
+    expect(db.listMessages(U, conversation.id).map((message) => message.id)).toEqual([first.id])
     db.close()
     rmSync(dir, { recursive: true, force: true })
   })
