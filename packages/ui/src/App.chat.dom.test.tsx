@@ -168,6 +168,104 @@ describe('App — отдельная страница Web Reader', () => {
     expect(screen.queryByText('Что подарить?')).not.toBeInTheDocument()
   })
 
+  it('фильтр проекта в сайдбаре не сжимает список Web Reader и не плодит чаты', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const project = await api['projects:create']({ name: 'P' })
+    const reader = await api['conversations:create']({ title: 'Reader', assistantKind: 'web-recorder' })
+    // Персистентный фильтр обычного сайдбара сужает список другим проектом.
+    localStorage.setItem('vc.sidebar.project', project.id)
+    const count = api._state.conversations.length
+    window.location.hash = '#/web-reader'
+    try {
+      render(<App api={api} delays={SLOW} />)
+
+      await screen.findByTitle('Web Reader')
+      // Открылся существующий reader-чат; цикла повторного создания нет.
+      await waitFor(() => expect(window.location.hash).toBe(`#/web-reader/${reader.id}`))
+      expect(api._state.conversations).toHaveLength(count)
+    } finally {
+      localStorage.removeItem('vc.sidebar.project')
+    }
+  })
+
+  it('селектор перечисляет typed и legacy reader-чаты и подсвечивает активный', async () => {
+    const { api } = await seededApi()
+    await api['conversations:create']({ title: 'Reader', assistantKind: 'web-recorder' })
+    const legacy = await api['conversations:create']({ title: 'Старый ридер' })
+    await api['conversations:setPreviewUrl']({ id: legacy.id, previewUrl: 'https://example.com' })
+    window.location.hash = `#/web-reader/${legacy.id}`
+    render(<App api={api} delays={SLOW} />)
+
+    const select = await screen.findByLabelText('Разговор Web Reader')
+    await waitFor(() => expect(select).toHaveValue(legacy.id))
+    expect(screen.getByRole('option', { name: 'Reader' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Старый ридер' })).toBeInTheDocument()
+    // Обычные чаты в селектор не попадают, плейсхолдера при подсвеченном активном нет.
+    expect(screen.queryByRole('option', { name: 'Поездка в Лиссабон' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Чат не выбран' })).not.toBeInTheDocument()
+  })
+
+  it('активный чат вне списка не подсвечивает первый пункт — виден плейсхолдер', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const reader = await api['conversations:create']({ title: 'Reader', assistantKind: 'web-recorder' })
+    await api['conversations:create']({ title: 'Обычный' })
+    // Ответ выбора reader-чата задержан: активным пока остаётся обычный чат.
+    const realGet = api['conversations:get']
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    api['conversations:get'] = async (arg) => {
+      if (arg.id === reader.id) await gate
+      return realGet(arg)
+    }
+    window.location.hash = '#/web-reader'
+    render(<App api={api} delays={SLOW} />)
+
+    await screen.findByRole('option', { name: 'Reader' })
+    const select = screen.getByLabelText('Разговор Web Reader')
+    expect(select).toHaveValue('')
+    expect(screen.getByRole('option', { name: 'Чат не выбран' })).toBeInTheDocument()
+
+    release()
+    await waitFor(() => expect(select).toHaveValue(reader.id))
+    expect(screen.queryByRole('option', { name: 'Чат не выбран' })).not.toBeInTheDocument()
+  })
+
+  it('«+ Новый» детерминированно открывает созданный чат, устаревший ответ не возвращает старый', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const first = await api['conversations:create']({ title: 'Первый ридер', assistantKind: 'web-recorder' })
+    const second = await api['conversations:create']({ title: 'Второй ридер', assistantKind: 'web-recorder' })
+    // Клик по старому чату, ответ которого искусственно задержан…
+    const realGet = api['conversations:get']
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    api['conversations:get'] = async (arg) => {
+      if (arg.id === first.id) await gate
+      return realGet(arg)
+    }
+    window.location.hash = `#/web-reader/${second.id}`
+    render(<App api={api} delays={SLOW} />)
+    const select = await screen.findByLabelText('Разговор Web Reader')
+    await waitFor(() => expect(select).toHaveValue(second.id))
+    await userEvent.selectOptions(select, first.id)
+
+    // …и сразу «+ Новый»: должен открыться именно созданный чат.
+    await userEvent.click(screen.getByRole('button', { name: '+ Новый' }))
+    const created = await waitFor(() => {
+      const conv = api._state.conversations.find((c) => c.title === 'Web Reader 1')
+      expect(conv).toBeDefined()
+      return conv!
+    })
+    await waitFor(() => expect(window.location.hash).toBe(`#/web-reader/${created.id}`))
+
+    // Отложенный устаревший ответ старого чата не перетирает выбор.
+    release()
+    await waitFor(() => expect(select).toHaveValue(created.id))
+    expect(window.location.hash).toBe(`#/web-reader/${created.id}`)
+  })
+
   it('переключает Reader по URL при навигации назад и вперёд', async () => {
     const { api } = await seededApi()
     const first = await api['conversations:create']({ title: 'Reader 1', assistantKind: 'web-recorder' })
