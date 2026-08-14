@@ -3731,6 +3731,13 @@ export class VoiceChatDb {
     return r ? mapCiRun(r) : null
   }
 
+  activeCiRunForTask(taskId: string): CiRun | null {
+    const r = this.db.prepare(
+      `SELECT * FROM ci_runs WHERE task_id = ? AND status IN ('queued', 'running', 'awaiting_input') ORDER BY created_at DESC, rowid DESC LIMIT 1`
+    ).get(taskId) as CiRunRow | undefined
+    return r ? mapCiRun(r) : null
+  }
+
   getCiRun(userId: string, runId: string): CiRunDetail | null {
     const r = this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(runId) as CiRunRow | undefined
     if (!r || !this.isProjectMember(userId, r.project_id)) return null
