@@ -291,6 +291,64 @@ export function canCompleteComponentQa(input: ComponentQaGateInput): ReadinessCh
   return { allowed: reasons.length === 0, reasons }
 }
 
+export type IntegrationTestRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'blocked' | 'cancelled' | 'stale' | 'skipped'
+export type IntegrationTestFailureClassification = 'implementation_defect' | 'infrastructure'
+export interface IntegrationTestCommandResult {
+  commandId: string
+  name: string
+  command: string
+  exitCode: number | null
+  durationMs: number
+  status: 'pending' | 'running' | 'passed' | 'failed' | 'blocked' | 'cancelled'
+  diagnostic: string
+  stdout: string
+  stderr: string
+}
+export interface IntegrationTestRun {
+  id: string; projectId: string; taskId: string; developmentRunId: string
+  linkedFixRunId: string | null; branch: string; commitSha: string; attempt: number
+  status: IntegrationTestRunStatus; readinessRunId: string; snapshotVersion: string
+  testCases: TestCaseDefinition[]; automationLinks: QaAutomationLink[]
+  commands: IntegrationTestCommandResult[]; log: string
+  failureClassification: IntegrationTestFailureClassification | null
+  failureReason: string | null; blockerReasons: string[]; summary: string
+  createdAt: number; startedAt: number | null; finishedAt: number | null
+  staleReason: 'sha_changed' | 'snapshot_changed' | null
+  canCancel: boolean; canRetry: boolean
+}
+export interface IntegrationTestTaskState {
+  activeRun: IntegrationTestRun | null; latestRun: IntegrationTestRun | null
+  runs: IntegrationTestRun[]; testCases: TestCaseDefinition[]
+  launchReasons: string[]; canStart: boolean; canComplete: boolean; gateReasons: string[]
+}
+export function integrationTestSemanticVersion(testCases: readonly TestCaseDefinition[]): string {
+  const stable = JSON.stringify(testCases.filter((item) => item.automatable).map((item) => ({
+    id:item.id,title:item.title,description:item.description,preconditions:item.preconditions,
+    testData:item.testData,steps:item.steps,expectedResult:item.expectedResult,required:item.required,
+    testType:item.testType,automatable:item.automatable
+  })))
+  let hash = 2166136261
+  for (let index=0; index<stable.length; index++) { hash ^= stable.charCodeAt(index); hash = Math.imul(hash,16777619) }
+  return (hash>>>0).toString(16).padStart(8,'0')
+}
+export function integrationTestGate(run: IntegrationTestRun, currentSha: string, currentCases: readonly TestCaseDefinition[]): ReadinessCheck {
+  const reasons:string[]=[]
+  if (run.status!=='passed'&&run.status!=='skipped') reasons.push(`run_${run.status}`)
+  if (run.status==='stale'||run.staleReason) reasons.push('run_stale')
+  if (run.commitSha!==currentSha) reasons.push('commit_sha_mismatch')
+  if (run.snapshotVersion!==integrationTestSemanticVersion(currentCases)) reasons.push('snapshot_version_mismatch')
+  for (const command of run.commands) if (command.status!=='passed'||command.exitCode!==0) reasons.push(`command_failed:${command.commandId}`)
+  if (run.blockerReasons.length) reasons.push('has_blockers')
+  reasons.push(...canCompleteAutomation(currentCases,currentSha).reasons)
+  return {allowed:reasons.length===0,reasons:[...new Set(reasons)]}
+}
+export function validateIntegrationTestDiff(paths: readonly string[], patterns: readonly RegExp[] = [
+  /(^|\/)(__tests__|tests?|test|integration)(\/|$)/i,
+  /\.(test|spec)\.[cm]?[jt]sx?$/i
+]): string[] {
+  return paths.filter((path)=>!patterns.some((pattern)=>pattern.test(path)))
+}
+
 export type QaResultStatus = 'not_tested' | 'in_progress' | 'passed' | 'failed' | 'blocked' | 'not_applicable' | 'stale'
 export const QA_RESULT_STATUSES: QaResultStatus[] = ['not_tested', 'in_progress', 'passed', 'failed', 'blocked', 'not_applicable', 'stale']
 export type QaSessionStatus = 'active' | 'passed' | 'failed' | 'blocked' | 'stale'

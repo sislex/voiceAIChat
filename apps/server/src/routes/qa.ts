@@ -14,7 +14,7 @@ function qaError(reply: FastifyReply, error: unknown): FastifyReply {
   return reply.code(status).send({ error: message })
 }
 
-export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => boolean, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void): void {
+export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => boolean, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void): void {
   const base = '/api/projects/:projectId/tasks/:taskId/qa'
   app.get<{ Params: TaskParams }>(`${base}`, async (req, reply) => {
     const state = db.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
@@ -57,6 +57,32 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
       db.linkComponentQaFixRun(userId,run.id,started.run.id)
       return reply.code(202).send(started.run)
     } catch(error) { return qaError(reply,error) }
+  })
+
+  app.get<{Params:TaskParams}>(`${base}/integration`,async(req,reply)=>
+    db.getIntegrationTestTaskState(uid(req),req.params.projectId,req.params.taskId)??reply.code(404).send({error:'task not found'}))
+  app.post<{Params:TaskParams}>(`${base}/integration/runs`,async(req,reply)=>{
+    try{const userId=uid(req),run=db.startIntegrationTestRun(userId,req.params.projectId,req.params.taskId);if(run.status==='queued')launchIntegrationTests?.(run.id,userId);return reply.code(run.status==='queued'||run.status==='running'?202:200).send(run)}
+    catch(error){return qaError(reply,error)}
+  })
+  app.post<{Params:TaskParams&{runId:string}}>(`${base}/integration/runs/:runId/cancel`,async(req,reply)=>{
+    try{cancelIntegrationTests?.(req.params.runId);return db.cancelIntegrationTestRun(uid(req),req.params.runId)}catch(error){return qaError(reply,error)}
+  })
+  app.post<{Params:TaskParams&{runId:string}}>(`${base}/integration/runs/:runId/complete`,async(req,reply)=>{
+    try{return db.completeIntegrationTestRun(uid(req),req.params.projectId,req.params.taskId,req.params.runId)}catch(error){return qaError(reply,error)}
+  })
+  app.post<{Params:TaskParams&{runId:string}}>(`${base}/integration/runs/:runId/fix`,async(req,reply)=>{
+    try{
+      const userId=uid(req),run=db.getIntegrationTestRun(userId,req.params.runId)
+      if(!run||run.taskId!==req.params.taskId)throw new Error('integration test run not found')
+      if(!['failed','blocked'].includes(run.status))throw new Error('integration test run must be failed or blocked')
+      if(run.linkedFixRunId)return db.getCiRun(userId,run.linkedFixRunId)??reply.code(409).send({error:'Связанный ран не найден'})
+      const started=ci.start(userId,req.params.projectId,req.params.taskId,{mode:'development'})
+      if('error'in started)return reply.code(409).send({error:started.error})
+      db.updateCiRun(started.run.id,{fixContext:{stepId:`integration_tests:${run.id}`,logTail:[run.summary,run.log,...run.commands.map((command)=>command.command+'\n'+command.diagnostic+'\n'+command.stdout+'\n'+command.stderr)].filter(Boolean).join('\n').slice(-50000),failures:run.testCases.filter((item)=>item.required&&item.automatable&&!item.automationLinks.some((link)=>link.commitSha===run.commitSha)).map((item)=>({packageName:null,file:null,testName:item.title,command:run.commands[0]?.command??null,message:'automation missing or failed'})),updatedAt:Date.now()}})
+      db.linkIntegrationTestFixRun(userId,run.id,started.run.id)
+      return reply.code(202).send(started.run)
+    }catch(error){return qaError(reply,error)}
   })
 
   app.post<{ Params: TaskParams; Body: AcceptanceCriterionSnapshot & { order?: number } }>(
