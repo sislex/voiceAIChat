@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-08-08
-checked: 6f827c7
+updated: 2026-08-14
+checked: b444ebe
 areas:
   - apps/server/src
 ---
@@ -89,7 +89,7 @@ session-cookie от предыдущего входа уже пропала; б�
 
 `ws.ts` отвечает только за framing и routing: JSON управляющие сообщения, binary PCM, lifecycle сокета. `createSession()` создаёт per-connection handlers и владеет STT/TTS session, подписками tail, PTY relay и cleanup.
 
-При подключении сервер отправляет активные LLM turns. Обрыв сокета закрывает микрофон, TTS, observer-tail и PTY подписки, но не модельный turn. Все callback-и должны быть сняты в одном cleanup, иначе reconnect удвоит события.
+При подключении сервер отправляет активные LLM turns. Обрыв сокета закрывает микрофон, TTS, observer-tail и PTY подписки, но не модельный turn. Все callback-и должны быть сняты в одном cleanup, иначе reconnect удвоит события. В интеграционных тестах `ws.close()` только начинает closing handshake: перед `app.close()` нужно дождаться события `close`, поскольку именно оно запускает session cleanup. Локальные Fastify, WebSocket и SQLite ресурсы регистрируются в `afterEach`, чтобы assertion или timeout не оставляли worker с живым listener.
 
 STT session аккумулирует PCM, конвертирует в WAV и вызывает engine. TTS session сериализует запросы, возвращает аудио/ошибки и поддерживает cancel. Resource capabilities проверяются сервером до запуска тяжёлого процесса.
 
@@ -97,7 +97,7 @@ STT session аккумулирует PCM, конвертирует в WAV и в�
 
 `turns.ts` хранит по одному активному ходу на conversation id. `start()` выбирает Claude/Codex client, строит запрос с cwd/profile/MCP и подписывается на token/activity/usage. Partial хранится в памяти и транслируется всем заинтересованным соединениям.
 
-По завершении сервер сохраняет AI message и метаданные в SQLite, обновляет conversation и отправляет `done`. По cancel/error снимает handle и очищает map. Проверка identity текущего turn не позволяет позднему callback старого процесса удалить новый ход того же разговора.
+По завершении сервер сохраняет AI message и метаданные в SQLite, обновляет conversation и отправляет `done`. По cancel/error снимает handle и очищает map. Пользовательский cancel после уже полученной дельты сохраняет partial как AI message с `meta.interrupted=true` и отправляет `done` с этим partial; поздний callback модели игнорируется. Тест не должен ждать пустой `done`, если мок успел отдать токен: такое ожидание держало Vitest до глобального 10-минутного timeout. Проверка identity текущего turn не позволяет позднему callback старого процесса удалить новый ход того же разговора.
 
 Пользовательские CLI-профили изолированы в `dataDir/cli-users/<base64url(логин)>/...`; `cliProfiles.ts` (переехал в `apps/llm-runner/src/cli/`) создаёт HOME/config и environment. Это не контейнерный root profile. Login status читается отдельно для каждого профиля.
 

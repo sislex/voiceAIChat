@@ -125,9 +125,9 @@ export function startPackageCommand(pkg, script, { maxWorkers } = {}) {
   // Успешные проверки и предупреждения не засоряют ленту. Для Vitest берём
   // структурированный отчёт, чтобы в ошибке остались только имя теста и причина.
   const child = spawn('npm', args, { stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
-  let output = ''
-  child.stdout.on('data', (chunk) => { output = (output + chunk).slice(-8_000) })
-  child.stderr.on('data', (chunk) => { output = (output + chunk).slice(-8_000) })
+  const diagnostics = createCommandDiagnostics(`${pkg.id} / ${script}`)
+  child.stdout.on('data', (chunk) => diagnostics.append(chunk))
+  child.stderr.on('data', (chunk) => diagnostics.append(chunk))
   let killTimer
   let settled = false
   const kill = (signal) => {
@@ -137,15 +137,20 @@ export function startPackageCommand(pkg, script, { maxWorkers } = {}) {
   }
   return {
     done: new Promise((resolve, reject) => {
-      child.once('error', reject)
+      child.once('error', (error) => {
+        diagnostics.complete()
+        reject(error)
+      })
       child.once('exit', (code, signal) => {
         settled = true
+        diagnostics.complete()
         clearTimeout(killTimer)
         const summary = reportFile ? vitestSummary(reportFile) : null
         if (code === 0) {
           resolve(summary)
           return
         }
+        const output = diagnostics.output()
         if (script === 'test') printVitestFailure(pkg, summary, output)
         else if (output.trim()) console.error(`[check failed] ${pkg.id}: ${script}\n${compactOutput(output)}`)
         reject(Object.assign(new Error(`${pkg.id} ${script} завершился${signal ? ` по сигналу ${signal}` : ` с кодом ${code}`}`), { code: code ?? 1, summary }))
@@ -153,6 +158,7 @@ export function startPackageCommand(pkg, script, { maxWorkers } = {}) {
     }),
     stop: () => {
       try {
+        diagnostics.stopped('stopped')
         kill('SIGTERM')
         killTimer = setTimeout(() => {
           try {
@@ -190,6 +196,60 @@ function compactOutput(output) {
   return output.trim().split('\n').slice(-16).join('\n')
 }
 
+/**
+ * Держит полный вывод дочерней проверки вне успешной ленты, но после порога
+ * сообщает активный пакет/этап. При остановке печатает хвост до отправки сигнала.
+ */
+const activeDiagnostics = new Set()
+
+export function createCommandDiagnostics(label, {
+  heartbeatMs = 30_000,
+  now = Date.now,
+  info = console.log,
+  error = console.error
+} = {}) {
+  const startedAt = now()
+  let output = ''
+  let finished = false
+  const elapsed = () => Math.max(0, now() - startedAt)
+  const timer = heartbeatMs > 0
+    ? setInterval(() => info(`[affected-check] active package: ${label}; elapsed: ${Math.round(elapsed() / 1000)}s; stage: running`), heartbeatMs)
+    : null
+  timer?.unref?.()
+  const diagnostics = {
+    append(chunk) {
+      output = (output + chunk).slice(-8_000)
+    },
+    output() {
+      return output
+    },
+    complete() {
+      if (finished) return
+      finished = true
+      activeDiagnostics.delete(diagnostics)
+      if (timer) clearInterval(timer)
+    },
+    stopped(reason = 'stopped') {
+      if (finished) return
+      this.complete()
+      error(`[affected-check] ${reason}: ${label}; elapsed: ${Math.round(elapsed() / 1000)}s\n${compactOutput(output) || '(no child output)'}`)
+    }
+  }
+  activeDiagnostics.add(diagnostics)
+  return diagnostics
+}
+
+function installSignalDiagnostics() {
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    const handler = () => {
+      for (const diagnostics of [...activeDiagnostics]) diagnostics.stopped(`signal ${signal}`)
+      process.removeListener(signal, handler)
+      process.kill(process.pid, signal)
+    }
+    process.once(signal, handler)
+  }
+}
+
 export function relatedArgs(files, reportFile, maxWorkers) {
   const args = ['vitest', 'related', ...files, '--run', '--passWithNoTests', '--reporter=json', `--outputFile=${reportFile}`, '--silent']
   // Vitest 2 валится до запуска suites, если вычисленный minWorkers больше
@@ -208,14 +268,11 @@ export function startRelatedTest(check, { maxWorkers } = {}) {
   // `check.files` уже относительны пакету.
   const args = relatedArgs(check.files, reportFile, maxWorkers)
   const child = spawn('npx', args, { cwd: check.pkg.path, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
-  let output = ''
+  const diagnostics = createCommandDiagnostics(`${check.pkg.id} / related tests`)
   let killTimer
   let settled = false
-  const append = (chunk) => {
-    output = (output + chunk).slice(-8_000)
-  }
-  child.stdout.on('data', append)
-  child.stderr.on('data', append)
+  child.stdout.on('data', (chunk) => diagnostics.append(chunk))
+  child.stderr.on('data', (chunk) => diagnostics.append(chunk))
 
   const kill = (signal) => {
     if (settled) return
@@ -224,10 +281,15 @@ export function startRelatedTest(check, { maxWorkers } = {}) {
   }
   return {
     done: new Promise((resolve, reject) => {
-      child.once('error', reject)
+      child.once('error', (error) => {
+        diagnostics.complete()
+        reject(error)
+      })
       child.once('exit', (code, signal) => {
         settled = true
+        diagnostics.complete()
         clearTimeout(killTimer)
+        const output = diagnostics.output()
         const summary = vitestSummary(reportFile)
         if (code === 0) {
           resolve({ found: !/No test files found/i.test(output), summary })
@@ -239,6 +301,7 @@ export function startRelatedTest(check, { maxWorkers } = {}) {
     }),
     stop: () => {
       try {
+        diagnostics.stopped('stopped')
         kill('SIGTERM')
         killTimer = setTimeout(() => {
           try {
@@ -392,6 +455,7 @@ async function main() {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  installSignalDiagnostics()
   main().catch((error) => {
     console.error(`[affected-check] ${error.message}`)
     process.exitCode = error.code ?? 1

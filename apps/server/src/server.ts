@@ -624,7 +624,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerFeaturePreviewRoutes(app, featurePreviews)
   void featurePreviews.reconcile()
   const releaseManager = new ReleaseManager(db, {
-    exec: (target, command, timeoutMs) => agentRegistry.exec(target.agentId, command, timeoutMs),
+    exec: async (target, command, timeoutMs, onChunk) => {
+      let output = ''
+      const result = await agentRegistry.execStream(target.agentId, command, timeoutMs, (chunk) => {
+        output += chunk
+        onChunk?.(chunk)
+      })
+      return { ...result, output }
+    },
     isOnline: (agentId) => agentRegistry.isOnline(agentId),
     prepareKnowledgeBase: async (releaseBranch, target) => {
       const result = await agentRegistry.exec(target.agentId, releaseKnowledgeBaseCommand(target, releaseBranch), 120_000)
