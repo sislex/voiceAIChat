@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-14
-checked: 0345f84
+checked: efcb78e
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -1506,3 +1506,11 @@ runtime-поток карточки.
 quality gates; допуск из ручной проверки переносит карточку в `awaiting_merge`.
 Домен критериев, sessions, результатов и скриншотов описан в
 [manual-qa.md](manual-qa.md).
+
+Стадия `component_qa` больше не проходится вручную: она ведёт собственные раны
+`component_qa_runs`, привязанные к workspace и SHA завершившегося
+development-рана, и сама переводит карточку в `integration_tests` при
+выполненном gate. Возврат на доработку из неё запускает обычный development-ран
+через `CiRunManager.start` (карточка уезжает в `development`) и передаёт модели
+`fixContext` со `stepId` `component_qa:<runId>`, логом команд и списком упавших
+сценариев. Подробности — в [manual-qa.md](manual-qa.md).
