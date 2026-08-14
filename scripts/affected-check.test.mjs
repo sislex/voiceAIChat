@@ -226,3 +226,64 @@ case "$*" in *test*) exit 1 ;; *) exit 0 ;; esac
     rmSync(tempRoot, { recursive: true, force: true })
   }
 })
+
+test('production deploy сохраняет версию защищённого релиза после setsid/nohup', async () => {
+  const repository = dirname(dirname(fileURLToPath(import.meta.url)))
+  const tempRoot = mkdtempSync(join(tmpdir(), 'voicechat-deploy-test-'))
+  const commandsDirectory = join(tempRoot, 'commands')
+  const marker = join(tempRoot, 'docker-env')
+  const log = join(tempRoot, 'deploy.log')
+  mkdirSync(commandsDirectory)
+
+  const executable = (name, body) => {
+    const path = join(commandsDirectory, name)
+    writeFileSync(path, `#!/bin/sh
+set -eu
+${body}
+`)
+    chmodSync(path, 0o755)
+  }
+
+  try {
+    executable('git', `
+case "$*" in
+  "rev-parse --short=12 HEAD") echo abcdef123456 ;;
+  "rev-parse --short HEAD") echo abcdef1 ;;
+  "log -1 --pretty=%s") echo "release test" ;;
+esac
+`)
+    // macOS не поставляет GNU setsid; заглушки сохраняют границу exec/env,
+    // которую проверяет тест, не привязывая suite к платформе CI.
+    executable('setsid', `exec "$@"`)
+    executable('nohup', `exec "$@"`)
+    executable('flock', `exit 0`)
+    executable('docker', `printf '%s|%s|%s' "$VC_RELEASE_VERSION" "$VC_RELEASE_SOURCE" "$VC_RELEASE_COMMIT" >"$DEPLOY_TEST_MARKER"`)
+    executable('curl', `printf '%s\\n' '{"ok":true}'`)
+
+    const result = spawnSync('bash', [join(repository, 'scripts/prod/deploy.sh')], {
+      cwd: tempRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${commandsDirectory}:${process.env.PATH}`,
+        VC_REPO_DIR: tempRoot,
+        VC_DEPLOY_LOG: log,
+        VC_DEPLOY_LOCK: join(tempRoot, 'deploy.lock'),
+        VC_RELEASE_VERSION: '0.1.42',
+        VC_RELEASE_SOURCE: 'protected-release',
+        DEPLOY_TEST_MARKER: marker
+      }
+    })
+    assert.equal(result.status, 0, result.stderr)
+
+    let metadata = ''
+    for (let attempt = 0; attempt < 100 && !metadata; attempt += 1) {
+      await delay(20)
+      try { metadata = readFileSync(marker, 'utf8') } catch {}
+    }
+    assert.equal(metadata, '0.1.42|protected-release|abcdef123456')
+    assert.match(readFileSync(log, 'utf8'), /version=0\.1\.42 source=protected-release/)
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true })
+  }
+})

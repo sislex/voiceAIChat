@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
-import { RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseCheckoutCommand, releaseKnowledgeBaseCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
+import { RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseCheckoutCommand, releaseKnowledgeBaseCommand, releaseRegressionCleanupCommand, releaseRegressionSetupCommand, releaseRegressionStageCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
 
 let db:VoiceChatDb
 let projectId:string
@@ -51,8 +51,32 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     }
     const release=await new ReleaseManager(db,runtime).createBranch('owner',target,'release/1.2.3','main')
     await tick();await tick()
-    expect(commands).toContain("cd '/ci' && git checkout --detach 'prepared-sha' && (npm run shared & p1=$!; npm run ui & p2=$!; wait $p1; wait $p2)")
+    expect(commands).toContain(releaseRegressionSetupCommand(target,release.id,'prepared-sha'))
+    expect(commands).toContain(releaseRegressionStageCommand(target,release.id,target.testCommand))
+    expect(commands).toContain(releaseRegressionCleanupCommand(target,release.id))
+    expect(commands.join('\n')).not.toContain("git checkout --detach 'prepared-sha' && (npm run shared")
     expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('ready')
+  })
+
+  it('cleans the isolated regression worktree after a failed stage without switching the shared checkout',async()=>{
+    const commands:string[]=[]
+    const runtime:ReleaseRuntime={
+      isOnline:()=>true,
+      prepareKnowledgeBase:async()=>{},
+      exec:async(_target,command)=>{
+        commands.push(command)
+        if(command.includes('ls-remote'))return {exitCode:0,output:commands.some(x=>x.includes('git branch'))?'prepared-sha\trefs/heads/release/1.2.3\n':''}
+        if(command.includes('git branch'))return {exitCode:0,output:'prepared-sha\n'}
+        if(command.includes('(npm run fail)'))return {exitCode:1,output:'failed stage'}
+        return {exitCode:0,output:'ok'}
+      }
+    }
+    const target={...ci(),testCommand:'npm run fail'}
+    const release=await new ReleaseManager(db,runtime).createBranch('owner',target,'release/1.2.3','main')
+    await tick();await tick()
+    expect(commands).toContain(releaseRegressionCleanupCommand(target,release.id))
+    expect(commands.join('\n')).not.toMatch(/git checkout --detach 'prepared-sha' &&/)
+    expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('failed')
   })
 
   it('prepares KB and runs regression while creating the branch',async()=>{
@@ -93,7 +117,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     await tick();await tick()
     expect(commands.join('\n')).not.toMatch(/affected-check|merge |tag |push .*main/)
     expect(commands.some(command=>command.includes("checkout -B 'release/0.1.27' 'fixed-sha'"))).toBe(true)
-    expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.27' && npm run deploy:prod")
+    expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.27' VC_RELEASE_SOURCE='protected-release' && echo 'production release metadata: version='\"$VC_RELEASE_VERSION\"' source='\"$VC_RELEASE_SOURCE\" && npm run deploy:prod")
     expect(db.getProjectRelease('owner',projectId,attempt.id)?.status).toBe('released')
     expect(prepared.status).toBe('ready')
   })
