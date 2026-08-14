@@ -56,10 +56,16 @@ export VC_RELEASE_COMMIT=$(git rev-parse --short=12 HEAD)
 release_tag=$(git tag --points-at HEAD --list 'v*' | grep -E "^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$" | sort -V | awk 'END { print }' || true)
 # Не затираем версию, переданную защищённой публикацией; тег — fallback только
 # для обычной пересборки. Нет версии и тега — backend честно вернёт null.
-export VC_RELEASE_VERSION=${VC_RELEASE_VERSION:-${release_tag:+${release_tag#v}}}
+if [[ -n ${VC_RELEASE_VERSION:-} ]]; then
+  release_version_source=${VC_RELEASE_VERSION_SOURCE:-explicit}
+else
+  export VC_RELEASE_VERSION=${release_tag:+${release_tag#v}}
+  release_version_source=${release_tag:+git-tag}
+  release_version_source=${release_version_source:-none}
+fi
 task_ref=$(git log -1 --pretty=%s | grep -Eio 'chat(ai)?[-[:space:]]*[0-9]+' | grep -Eo '[0-9]+' | head -1 || true)
 export VC_RELEASE_TASK=${task_ref:+chat-$task_ref}
-log "метаданные релиза: version=$VC_RELEASE_VERSION commit=$VC_RELEASE_COMMIT task=${VC_RELEASE_TASK:-нет}"
+log "метаданные релиза: version=${VC_RELEASE_VERSION:-нет} commit=$VC_RELEASE_COMMIT task=${VC_RELEASE_TASK:-нет} source=$release_version_source"
 
 # Этап 1. Сборка образов: контейнеры остаются старыми, раны не задеты.
 log "docker compose build $BUILD_SERVICES"

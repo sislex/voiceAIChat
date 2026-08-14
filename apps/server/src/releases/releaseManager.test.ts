@@ -84,10 +84,11 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const runtime:ReleaseRuntime={
       isOnline:()=>true,
       prepareKnowledgeBase:vi.fn(async()=>{}),
-      exec:async(_target,command)=>{
+      exec:async(_target,command,_timeout,onChunk)=>{
         commands.push(command)
         if(command.includes('ls-remote'))return {exitCode:0,output:commands.some(x=>x.includes('git branch'))?'prepared-sha\trefs/heads/release/1.2.3\n':''}
         if(command.includes('git branch'))return {exitCode:0,output:'prepared-sha\n'}
+        if(command.includes('verify:release'))onChunk?.('[affected-check] active package: server; elapsed: 30s; stage: running\n')
         return {exitCode:0,output:'ok'}
       }
     }
@@ -97,7 +98,9 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(runtime.prepareKnowledgeBase).toHaveBeenCalledWith('release/1.2.3',ci())
     expect(commands.some(command=>command.includes('npm run verify:release'))).toBe(true)
     expect(commands.some(command=>command.includes('affected-check'))).toBe(false)
-    expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('ready')
+    const stored=db.getProjectRelease('owner',projectId,release.id)
+    expect(stored?.status).toBe('ready')
+    expect(stored?.steps.find(step=>step.kind==='regression')?.log).toContain('active package: server')
   })
 
   it('switches production through an attempt-specific ref instead of FETCH_HEAD',()=>{
@@ -117,7 +120,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     await tick();await tick()
     expect(commands.join('\n')).not.toMatch(/affected-check|merge |tag |push .*main/)
     expect(commands.some(command=>command.includes("checkout -B 'release/0.1.27' 'fixed-sha'"))).toBe(true)
-    expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.27' VC_RELEASE_SOURCE='protected-release' && echo 'production release metadata: version='\"$VC_RELEASE_VERSION\"' source='\"$VC_RELEASE_SOURCE\" && npm run deploy:prod")
+    expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.27' VC_RELEASE_VERSION_SOURCE='release-manager' && echo 'Ожидаемые production metadata: version=0.1.27 commit=fixed-sha source=release-manager' && npm run deploy:prod")
     expect(db.getProjectRelease('owner',projectId,attempt.id)?.status).toBe('released')
     expect(prepared.status).toBe('ready')
   })

@@ -50,8 +50,12 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
       const state = db.getQaTaskState(userId, req.params.projectId, req.params.taskId)
       if (!state) return reply.code(404).send({ error: 'task not found' })
       const run = state.preparation
+      if (run?.status === 'running') return reply.code(202).send(run)
       if (!run || run.status !== 'failed' || !retryPreparation) return reply.code(409).send({ error: 'Повтор подготовки сейчас недоступен' })
-      if (!retryPreparation({ userId, projectId: req.params.projectId, taskId: req.params.taskId, branch: run.branch, commitSha: run.commitSha })) return reply.code(409).send({ error: 'Подготовка уже запущена' })
+      if (!retryPreparation({ userId, projectId: req.params.projectId, taskId: req.params.taskId, branch: run.branch, commitSha: run.commitSha })) {
+        const active = db.getQaTaskState(userId, req.params.projectId, req.params.taskId)?.preparation
+        return active?.status === 'running' ? reply.code(202).send(active) : reply.code(409).send({ error: 'Подготовка уже запущена' })
+      }
       return reply.code(202).send(db.getQaTaskState(userId, req.params.projectId, req.params.taskId)?.preparation)
     } catch (error) { return qaError(reply, error) }
   })
@@ -72,16 +76,20 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
       } catch (error) { return qaError(reply, error) }
     }
   )
+  app.patch<{ Params: TaskParams & { sessionId: string }; Body: { additionalIssues?: string } }>(`${base}/sessions/:sessionId`, async (req, reply) => {
+    try { return db.saveQaAdditionalIssues(uid(req), req.params.projectId, req.params.taskId, req.params.sessionId, req.body?.additionalIssues ?? '') }
+    catch (error) { return qaError(reply, error) }
+  })
   app.post<{ Params: TaskParams & { sessionId: string } }>(`${base}/sessions/:sessionId/fix`, async (req, reply) => {
     try {
       const state = db.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
       const session = state?.sessions.find((item) => item.id === req.params.sessionId)
       if (!session) throw new Error('QA session not found')
       const failed = session.results.filter((result) => result.status === 'failed')
-      const linked = failed.map((result) => result.issue?.linkedFixRunId).find(Boolean)
+      const linked = session.linkedFixRunId ?? failed.map((result) => result.issue?.linkedFixRunId).find(Boolean)
       if (linked) return db.getCiRun(uid(req), linked) ?? reply.code(409).send({ error: 'Связанный ран не найден' })
       if (state?.activeSession?.id !== session.id) throw new Error('QA session is stale or closed')
-      if (!failed.length) throw new Error('Нет неработающих тестов')
+      if (!failed.length && !session.additionalIssues?.trim()) throw new Error('Нет ошибок или дополнительных замечаний')
       if (failed.some((result) => !result.comment.trim())) throw new Error('Для каждого неработающего теста нужен комментарий')
       const started = ci.start(uid(req), req.params.projectId, req.params.taskId, { mode: 'development' })
       if ('error' in started) return reply.code(409).send({ error: started.error })
