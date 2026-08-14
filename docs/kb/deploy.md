@@ -336,12 +336,16 @@ prod-деплоя это и есть время обновления.
 Git-теги и ищут на собираемом `HEAD` строгий тег `vX.Y.Z`. Защищённая публикация
 release-ветки передаёт её проверенную версию непосредственно в production deploy как
 `VC_RELEASE_VERSION`; скрипты сохраняют это значение, поэтому опубликованная версия
-не зависит от наличия Git-тега на выбранном SHA. Стабильный launcher явно
-материализует version/source при переходе в content-addressed runtime, а первый
-проход `deploy.sh` сериализует их в служебные позиционные аргументы для
-`setsid nohup`; detached-процесс восстанавливает значения до deploy-lock, Git и
-Compose. Поэтому старый env или compose-default не может подменить проверенную
-ReleaseManager версию. Для обычного production deploy
+не зависит от наличия Git-тега на выбранном SHA. До запуска настроенной команды
+`ReleaseManager` обновляет `/usr/local/bin/voicechat-deploy` из уже проверенного
+`scripts/prod/deploy.sh`, если production-команда использует этот launcher. Это
+мигрирует даже установленную старую копию, которая после `git pull` продолжала
+исполнять собственный код и безусловно заменяла переданную версию историческим
+fallback `0.1.0`. Стабильный launcher явно материализует version/source при переходе
+в content-addressed runtime, а первый проход `deploy.sh` сериализует их в служебные
+позиционные аргументы для `setsid nohup`; detached-процесс восстанавливает значения
+до deploy-lock, Git и Compose. Поэтому старый launcher, env или compose-default не
+может подменить проверенную ReleaseManager версию. Для обычного production deploy
 источником служит строгий тег текущего `HEAD`: найденный номер без `v` становится
 `VC_RELEASE_VERSION`. Если ни переданного значения, ни тега нет, compose передаёт
 пустую строку, а health честно возвращает `version: null` вместо технического номера.

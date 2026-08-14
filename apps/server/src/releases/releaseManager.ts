@@ -39,6 +39,19 @@ export function releaseSwitchCommand(target:ProductionTarget,release:Pick<Projec
   return at(target,`test -z "$(git status --porcelain)" && test "$(git config --get remote.origin.url)" = ${quote(target.expectedRepository)} && git fetch origin ${refspec} && test "$(git rev-parse ${quote(fetchedRef)})" = ${quote(release.sha)} && git cat-file -e ${quote(`${release.sha}^{commit}`)} && git checkout -B ${quote(release.branch)} ${quote(release.sha)} && git reset --hard ${quote(release.sha)} && git update-ref -d ${quote(fetchedRef)}`)
 }
 
+/**
+ * Protected releases must not execute a stale installed copy of voicechat-deploy:
+ * old copies overwrite VC_RELEASE_VERSION with the historic 0.1.0 fallback.
+ * Refreshing from the already verified release checkout makes the first deploy after
+ * an installer update safe as well; subsequent installs replace this with the stable launcher.
+ */
+export function releaseDeployCommand(target:ProductionTarget,version:string,expectedMetadata:string):string {
+  const refreshLauncher=target.deployCommand.includes('/usr/local/bin/voicechat-deploy')
+    ? 'install -m 755 scripts/prod/deploy.sh /usr/local/bin/voicechat-deploy && '
+    : ''
+  return at(target,`export VC_RELEASE_VERSION=${quote(version)} VC_RELEASE_VERSION_SOURCE='release-manager' && echo ${quote(expectedMetadata)} && ${refreshLauncher}${target.deployCommand}`)
+}
+
 export async function waitForReleaseHealth(
   expectedVersion:string,
   probe:()=>Promise<{ok?:boolean;version?:string}>,
@@ -254,7 +267,7 @@ export class ReleaseManager {
       const buildLimit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='building')?.limitMs??300_000
       const expectedMetadata=`Ожидаемые production metadata: version=${release.version} commit=${release.sha} source=release-manager`
       this.db.setProjectReleaseStep(release.id,'building','running',expectedMetadata,actor)
-      const built=await this.runtime.exec(target,at(target,`export VC_RELEASE_VERSION=${quote(release.version)} VC_RELEASE_VERSION_SOURCE='release-manager' && echo ${quote(expectedMetadata)} && ${target.deployCommand}`),buildLimit)
+      const built=await this.runtime.exec(target,releaseDeployCommand(target,release.version,expectedMetadata),buildLimit)
       if(built.timedOut)throw new Error(`Сборка и обновление контейнеров: фактическая длительность превысила лимит ${Math.round(buildLimit/1000)} с\n${built.output}`)
       if(built.exitCode!==0)throw new Error(built.output||'Production build завершился с ошибкой')
       this.db.setProjectReleaseStep(release.id,'building','passed',built.output,actor)

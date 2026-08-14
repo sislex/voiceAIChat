@@ -128,6 +128,29 @@ describe('manual QA persistence and workflow', () => {
     expect(db.startMergeRun('owner', project.id, task.id).agentId).toBe('workspace-agent')
   })
 
+  it('allows the owner personal workspace machine and exposes a newer source after a successful merge', () => {
+    const project = db.createProject('owner', { name: 'Repeated merge' })
+    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const personal = db.createAgent('owner', 'Personal Mac')
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
+    raw.prepare(`UPDATE projects SET git_url=? WHERE id=?`).run('git@example/repo.git', project.id)
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace-old', project.id, task.id, personal.id, '/repos/task', 'CHAT-194', '1'.repeat(40), 1, 'released', 1)
+
+    const merged = db.startMergeRun('owner', project.id, task.id)
+    expect(merged).toMatchObject({ agentId: personal.id, machineName: 'Personal Mac' })
+    db.updateMergeRun(merged.id, { status: 'success', stage: 'success', mergeSha: '2'.repeat(40) })
+    db.moveMergeTask(project.id, task.id, 'awaiting_merge')
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace-new', project.id, task.id, personal.id, '/repos/task', 'CHAT-194', '3'.repeat(40), 1, 'released', 2)
+
+    expect(db.getBoard('owner', project.id)!.tasks.find((item) => item.id === task.id)).toMatchObject({
+      mergeSourceSha: '3'.repeat(40),
+      mergedSourceSha: '1'.repeat(40),
+      mergedSha: '2'.repeat(40),
+      mergeMachineBound: true
+    })
+  })
+
   it('lets a conflict retry pin the resolved branch SHA during fetch', () => {
     const project = db.createProject('owner', { name: 'Merge retry' })
     const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
@@ -184,7 +207,7 @@ describe('manual QA persistence and workflow', () => {
     raw.prepare(`UPDATE projects SET git_url=? WHERE id=?`).run('git@example/repo.git', project.id)
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace', project.id, task.id, 'workspace-agent', '/repos/task', 'CHAT-180', '1'.repeat(40), 1, 'released', 2)
 
-    expect(() => db.startMergeRun('owner', project.id, task.id, 'ghost-agent')).toThrow('merge machine is not bound to project')
+    expect(() => db.startMergeRun('owner', project.id, task.id, 'ghost-agent')).toThrow('merge machine is not available to user or project')
     const run = db.startMergeRun('owner', project.id, task.id, 'other-agent')
     expect(run.agentId).toBe('other-agent')
     expect(db.getProjectMachine(project.id, 'other-agent')).toMatchObject({ reposRoot: '/other-repos' })
