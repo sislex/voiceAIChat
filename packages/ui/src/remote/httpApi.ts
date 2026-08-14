@@ -330,6 +330,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectTask(projectId, taskId), { method: 'PATCH', body: JSON.stringify(b) }),
     'tasks:move': ({ projectId, taskId, ...b }) =>
       req(REST.projectTaskMove(projectId, taskId), { method: 'POST', body: JSON.stringify(b) }),
+    'tasks:listPreparationRuns': ({ projectId, taskId }) =>
+      req(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/preparation/runs`),
+    'tasks:cancelPreparationRun': ({ runId }) =>
+      req(`/api/task-preparation/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' }),
+    'tasks:retryPreparationRun': ({ runId }) =>
+      req(`/api/task-preparation/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST' }),
     'tasks:openChat': ({ projectId, taskId }) =>
       req(REST.projectTaskChat(projectId, taskId), { method: 'POST' }),
     'tasks:delete': async ({ projectId, taskId }) => {

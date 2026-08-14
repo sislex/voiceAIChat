@@ -797,5 +797,8 @@ describe('projects: пред-разработческая подготовка',
     db.failTaskPreparationRun(run.id, 'Гейт не пройден', ['missing_acceptance_criteria'])
     expect(db.getTaskPreparationRun('alice', run.id)).toMatchObject({ status: 'failed', canRetry: true, gateReasons: ['missing_acceptance_criteria'] })
     expect(db.getBoard('alice', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).toBe(preparation.id)
+    const retry = db.startTaskPreparationRun('alice', project.id, task.id)
+    expect(retry).toMatchObject({ status: 'running', attempt: 2 })
+    expect(db.listTaskPreparationRuns('alice', project.id, task.id).map((item) => item.id)).toEqual([retry.id, run.id])
   })
 })

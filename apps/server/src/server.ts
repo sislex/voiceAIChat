@@ -588,6 +588,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
     return value
   }
+  const taskPreparationHandles = new Map<string, { cancel(): void }>()
   const launchTaskPreparation = (userId: string, projectId: string, taskId: string): import('@voicechat/shared').TaskPreparationRun => {
     const run = db.startTaskPreparationRun(userId, projectId, taskId)
     if (run.status !== 'running' || run.log) return run
@@ -595,10 +596,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const basePrompt = `Подготовь задачу к разработке. Не меняй код, не запускай инструменты и не делегируй работу. Уточни функциональные требования и верни за один ход ТОЛЬКО JSON без Markdown: {"functionalRequirements":"подробное описание","acceptanceCriteria":"нумерованный список","testCases":[{"id":"stable-id","title":"","description":"","preconditions":"","testData":"","steps":"","expectedResult":"","required":true,"testType":"manual","automatable":false,"automationLinks":[],"notAutomatedReason":"","alternativeManualVerification":"","comments":""}],"uiImpact":"none|existing_components|new_components|multi_component_flow","affectedComponents":[{"id":"","name":"","storybookStoryId":null,"reusable":false,"coverage":null,"exclusionReason":"","alternativeVerification":""}],"acceptanceCriteriaConflict":false}. Для UI-компонентов либо укажи storybookStoryId, либо непустые exclusionReason и alternativeVerification. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}`
     const sendAttempt = (attempt: number, correction?: string): void => {
       const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный JSON.` : basePrompt
-      claude.send({ userId, prompt, sessionId: null, model: 'sonnet', executionDisabled: true }, {
+      const handle = claude.send({ userId, prompt, sessionId: null, model: 'sonnet', executionDisabled: true }, {
         onDelta: (chunk) => { db.appendTaskPreparationLog(run.id, chunk); boardHub.emit(projectId) },
         onSession: () => {},
         onDone: (text) => {
+          taskPreparationHandles.delete(run.id)
+          if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
           try {
             const readiness = parseTaskPreparation(text)
             const gate = canConfirmDevelopmentReadiness(readiness)
@@ -612,10 +615,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           }
         },
         onError: (message) => {
+          taskPreparationHandles.delete(run.id)
+          if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
           if (attempt < 2) sendAttempt(attempt + 1, message)
           else { db.failTaskPreparationRun(run.id, message); boardHub.emit(projectId) }
         }
       })
+      if (handle) taskPreparationHandles.set(run.id, handle)
     }
     sendAttempt(1)
     boardHub.emit(projectId)
@@ -635,6 +641,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   app.delete<{ Params: { runId: string } }>('/api/task-preparation/runs/:runId', async (req, reply) => {
     const run = db.cancelTaskPreparationRun(uid(req), req.params.runId)
     if (!run) return reply.code(404).send({ error: 'not found' })
+    try { taskPreparationHandles.get(run.id)?.cancel() } finally { taskPreparationHandles.delete(run.id) }
     boardHub.emit(run.projectId)
     return run
   })

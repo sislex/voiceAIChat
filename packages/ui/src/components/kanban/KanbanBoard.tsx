@@ -17,6 +17,7 @@ import type { Board, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemTy
 import { compareTasksInColumn, TASK_PRIORITIES, WORK_ITEM_TYPES } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import type { ModifierPrompt } from '@shared/types'
+import type { TaskPreparationRun } from '@shared/qa'
 import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
 import { TaskCard, epicOf } from './TaskCard'
 import { TaskModal, type TaskUpdateFields } from './TaskModal'
@@ -84,7 +85,8 @@ export interface KanbanBoardProps {
   /** Управляемая открытая задача (обёртке-странице нужен перехват Esc);
       не задано — состояние внутреннее (Storybook, встраивание). */
   openTaskId?: string | null
-  onOpenTaskChange?: (taskId: string | null) => void
+  onOpenTaskChange?: (taskId: string | null, tab?: 'preparation') => void
+  initialOpenTaskTab?: 'preparation'
   onSelectedFieldChange?: (field: keyof TaskUpdateFields | null) => void
   /** Стартовое значение селекта «Свимлейны». */
   defaultSwimlane?: Swimlane
@@ -126,6 +128,9 @@ export interface KanbanBoardProps {
   /** Убрать ожидающий ран из очереди CI. */
   onDequeueCiRun?: (runId: string) => void
   onStartMerge?: (taskId: string, agentId?: string | null) => void
+  loadPreparationRuns?: (taskId: string) => Promise<TaskPreparationRun[]>
+  onRetryPreparation?: (runId: string) => Promise<TaskPreparationRun | void>
+  onCancelPreparation?: (runId: string) => Promise<TaskPreparationRun | void>
   aiAssistPrompts?: ModifierPrompt[]
   onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
   generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>
@@ -186,8 +191,13 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [newColumn, setNewColumn] = useState('')
   // Модалка задачи: управляемая пропсами или внутренняя.
   const [internalOpenTask, setInternalOpenTask] = useState<string | null>(null)
+  const [openTaskTab, setOpenTaskTab] = useState<'preparation' | undefined>(props.initialOpenTaskTab)
   const openTaskId = props.openTaskId !== undefined ? props.openTaskId : internalOpenTask
-  const setOpenTaskId = props.onOpenTaskChange ?? setInternalOpenTask
+  const setOpenTaskId = (taskId: string | null, tab?: 'preparation'): void => {
+    setOpenTaskTab(tab)
+    if (props.onOpenTaskChange) props.onOpenTaskChange(taskId, tab)
+    else setInternalOpenTask(taskId)
+  }
   const composerRef = useRef<HTMLInputElement | null>(null)
   const boardRef = useRef<HTMLDivElement | null>(null)
   const colMenuRef = useRef<HTMLSpanElement | null>(null)
@@ -1178,6 +1188,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             const column = board.columns.find((item) => item.semanticType === 'preparation')
             if (column) props.onMoveTask(taskId, column.id, null, null)
           }}
+          initialTab={openTaskTab}
+          loadPreparationRuns={props.loadPreparationRuns}
+          onRetryPreparation={props.onRetryPreparation}
+          onCancelPreparation={props.onCancelPreparation}
           onStartCiParallel={props.onStartCiParallel}
           onOpenCiRun={props.onOpenCiRun}
           onStartMerge={props.onStartMerge}
