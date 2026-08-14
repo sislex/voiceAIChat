@@ -42,7 +42,7 @@ export class MergeRunManager {
     const run=this.deps.db.getMergeRun(userId,id); if(!run)return null
     if(run.pushStartedAt)throw new Error('push уже начался; требуется reconcile')
     this.active.get(id)?.abort()
-    this.finish(id,'cancelled','Отменено пользователем','Можно безопасно повторить merge.','awaiting_merge')
+    this.finish(id,'cancelled','Отменено пользователем','Можно безопасно повторить merge.','merge')
     return this.deps.db.getMergeRun(userId,id)
   }
   private emit(id:string):void { const run=this.deps.db.getMergeRunRaw(id); if(run)this.deps.broadcast({t:'merge.snapshot',runId:id,run},run.triggeredBy) }
@@ -318,10 +318,10 @@ git add -- ${q}`,repo,30000)
     } catch(error) {
       if(ctl.signal.aborted)return
       const message=error instanceof Error?error.message:String(error), decision=/stale source|конкурентно|reconcile|Неопределённый/i.test(message)
-      this.finish(id,decision?'decision_required':'failed',message,decision?'Обновите ветку или main и повторите merge.':'Исправьте причину и повторите merge.',decision?'decision_required':'awaiting_merge')
+      this.finish(id,decision?'decision_required':'failed',message,decision?'Обновите ветку или main и повторите merge.':'Исправьте причину и повторите merge.',decision?'decision_required':'merge')
     }
   }
-  private finish(id:string,status:'success'|'failed'|'cancelled'|'decision_required',error:string|null,action:string|null,column:'done'|'awaiting_merge'|'decision_required'):void {
+  private finish(id:string,status:'success'|'failed'|'cancelled'|'decision_required',error:string|null,action:string|null,column:'done'|'merge'|'decision_required'):void {
     const run=this.deps.db.getMergeRunRaw(id); if(!run||terminal.has(run.status))return
     this.deps.db.updateMergeRun(id,{status,stage:status,finishedAt:this.now(),error,recommendedAction:action}); this.deps.db.moveMergeTask(run.projectId,run.taskId,column); this.emit(id); this.deps.boardChanged(run.projectId)
   }
