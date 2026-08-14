@@ -384,7 +384,7 @@ export interface IpcInvokeMap {
 
   /** Переместить задачу в колонку между соседями afterId/beforeId (смена статуса). */
   'tasks:move': {
-    arg: { projectId: string; taskId: string; columnId: string; afterId?: string | null; beforeId?: string | null }
+    arg: { projectId: string; taskId: string; columnId: string; fromColumnId?: string | null; afterId?: string | null; beforeId?: string | null }
     result: Task
   }
   'tasks:listPreparationRuns': { arg: { projectId: string; taskId: string }; result: TaskPreparationRun[] }

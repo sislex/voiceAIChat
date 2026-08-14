@@ -23,6 +23,7 @@ import { ReleaseManager, releaseKnowledgeBaseCommand } from './releases/releaseM
 import { FeaturePreviewManager } from './preview/manager.js'
 import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
+import { createComponentQaRunner } from './ci/componentQa.js'
 import { MergeRunManager } from './merge/runManager.js'
 import { createCiModelHooks } from './ci/modelHooks.js'
 import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
@@ -724,7 +725,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId) => { launchTaskPreparation(userId, projectId, taskId) })
   mergeRunManager.reconcile()
-  registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true))
+  const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor})
+  registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId))
 
   // Раны предыдущего процесса живут только в его памяти: после рестарта они
   // навсегда остались бы «running» и блокировали карточку задачи.
@@ -734,6 +736,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   if (interruptedPreparation.length) app.log.warn({ runs: interruptedPreparation }, 'task preparation: прерванные раны закрыты как failed')
   const interruptedQa = db.failInterruptedQaPreparationRuns()
   if (interruptedQa.length) app.log.warn({ runs: interruptedQa }, 'qa preparation: прерванные раны закрыты как failed')
+  const interruptedComponentQa=db.failInterruptedComponentQaRuns()
+  if (interruptedComponentQa.length) app.log.warn({runs:interruptedComponentQa},'component QA: прерванные раны закрыты как blocked infrastructure')
 
   // Плановая остановка (деплой/SIGTERM → app.close()): сохранить частичные
   // ответы активных ходов, чтобы рестарт контейнера не терял набранный текст.

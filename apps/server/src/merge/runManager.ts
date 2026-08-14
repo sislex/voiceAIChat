@@ -2,6 +2,7 @@ import type { MergeCheck, MergeRun, MergeStage, MergeStageRecord, ServerMessage 
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor } from '../ci/types.js'
 import { shellQuote } from '../ci/executor.js'
+import { testStages } from '../ci/testStages.js'
 import { mergeIndependentText } from './textConflictResolver.js'
 
 export interface MergeKbUpdateContext {
@@ -19,13 +20,6 @@ const validBranch = /^(?!-)(?!.*\.\.)(?!.*[~^:?*\[\]\\])[A-Za-z0-9._/-]+$/
  *  репозитория совпадают (машинный insteadOf-rewrite меняет протокол). */
 function canonicalGitUrl(value:string):string {
   return value.trim().toLowerCase().replace(/^[a-z+]+:\/\//,'').replace(/^[^@/]+@/,'').replace(':','/').replace(/\.git$/,'').replace(/\/+$/,'')
-}
-function testStages(value:string):string[] {
-  const trimmed=value.trim()
-  if(!trimmed)return ['npm run affected-check']
-  if(!trimmed.startsWith('['))return [trimmed]
-  try { const parsed=JSON.parse(trimmed); if(Array.isArray(parsed)){ const stages=parsed.filter((item):item is string=>typeof item==='string'&&item.trim().length>0).map(item=>item.trim()); if(stages.length)return stages } } catch { /* execute malformed value as a plain command for an explicit failure */ }
-  return [trimmed]
 }
 
 export class MergeRunManager {
@@ -289,7 +283,7 @@ git add -- ${q}`,repo,30000)
       const installed=await this.cmd(run,`LOCK=$(git hash-object package-lock.json)\nif [ -f node_modules/.merge-lock-sha ] && [ "$(cat node_modules/.merge-lock-sha)" = "$LOCK" ]; then echo DEPS_UP_TO_DATE; else npm_config_cache=${shellQuote(cacheDir)} npm ci --no-audit --no-fund && printf %s "$LOCK" > node_modules/.merge-lock-sha; fi`,repo,900000)
       if(installed.exitCode||installed.timedOut)throw new Error('Не удалось установить зависимости merge-клона')
       this.stage(id,'testing','running',installed.output.includes('DEPS_UP_TO_DATE')?'Зависимости актуальны (npm ci пропущен), запускаю проверки':'Запускаю обязательные проверки до push')
-      const commands=testStages(project.testCommand??''), began=this.now()
+      const commands=testStages(project.testCommand??'',['npm run affected-check']), began=this.now()
       let tested:{exitCode:number|null;timedOut:boolean;output:string}={exitCode:0,timedOut:false,output:''}
       for(const command of commands){
         const result=await this.cmd(run,command,repo,1800000)

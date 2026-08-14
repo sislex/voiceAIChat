@@ -387,6 +387,27 @@ describe('App — удаление проекта из его настроек',
 })
 
 describe('App — упавший вызов моста показывается тостом', () => {
+  it('ошибка автозапуска при переносе показывает причину и откатывает карточку в ready', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const project = await api['projects:create']({ name: 'Мой проект' })
+    const board = await api['board:get']({ id: project.id })
+    const ready = board.columns.find((column) => column.semanticType === 'ready')!
+    const development = board.columns.find((column) => column.semanticType === 'development')!
+    const task = await api['tasks:create']({ projectId: project.id, columnId: ready.id, title: 'Автозапуск' })
+    api['tasks:move'] = async () => { throw new Error('Выбранная машина offline. Выберите online-машину') }
+    window.location.hash = `#/projects/${project.id}`
+    render(<App api={api} delays={SLOW} />)
+
+    await userEvent.click(await screen.findByText('Автозапуск'))
+    const modal = await screen.findByTestId('task-modal')
+    await userEvent.selectOptions(within(modal).getByLabelText('Статус'), development.id)
+
+    expect(await screen.findByTestId('toast-error')).toHaveTextContent('Выбранная машина offline')
+    await waitFor(() => expect(within(modal).getByLabelText('Статус')).toHaveValue(ready.id))
+    expect((await api['board:get']({ id: project.id })).tasks.find((item) => item.id === task.id)?.columnId).toBe(ready.id)
+  })
+
   it('ошибка загрузки доски даёт тост с текстом и «Повторить»', async () => {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
