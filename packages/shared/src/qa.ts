@@ -50,7 +50,7 @@ export interface QaSession {
   criteriaSnapshot: Array<{ criterionId: string; version: number; required: boolean }>
   status: QaSessionStatus; testerId: string | null; initiatedBy: string
   startedAt: number; finishedAt: number | null; staleReason: string | null; summary: string
-  results: QaCriterionResult[]
+  additionalIssues?: string; linkedFixRunId?: string | null; results: QaCriterionResult[]
 }
 export type QaPreparationStatus = 'running' | 'success' | 'failed'
 export interface QaPreparationAttempt {
@@ -59,11 +59,11 @@ export interface QaPreparationAttempt {
 export interface QaPreparationRun {
   id: string; taskId: string; branch: string; commitSha: string; status: QaPreparationStatus
   attempt: number; maxAttempts: number; error: string | null; attempts: QaPreparationAttempt[]
-  createdAt: number; finishedAt: number | null; canRetry: boolean
+  createdAt: number; finishedAt: number | null; canRetry: boolean; log?: string
 }
 export interface QaTaskState {
   criteria: AcceptanceCriterion[]; versions: AcceptanceCriterionVersion[]
-  sessions: QaSession[]; activeSession: QaSession | null; preparation?: QaPreparationRun | null
+  sessions: QaSession[]; activeSession: QaSession | null; preparation?: QaPreparationRun | null; canEdit?: boolean
 }
 export interface QaProgress {
   total: number; passed: number; failed: number; blocked: number; notTested: number
@@ -94,17 +94,21 @@ export function canCompleteQa(session: QaSession): QaCompletionCheck {
     const result = byCriterion.get(`${item.criterionId}:${item.version}`)
     if (!result) { reasons.push(`missing:${item.criterionId}`); continue }
     if (result.commitSha !== session.commitSha || result.previewSha !== session.previewSha) reasons.push(`stale_result:${item.criterionId}`)
-    else if (result.status !== 'passed' && result.status !== 'not_applicable') reasons.push(`${result.status}:${item.criterionId}`)
+    else if (result.status !== 'passed') reasons.push(`${result.status}:${item.criterionId}`)
   }
+  for (const item of session.criteriaSnapshot) {
+    if (item.required) continue
+    const result = byCriterion.get(`${item.criterionId}:${item.version}`)
+    if (!result || !['passed', 'not_applicable'].includes(result.status)) reasons.push(`${result?.status ?? 'missing'}:${item.criterionId}`)
+  }
+  if (session.results.some((result) => result.status === 'failed')) reasons.push('has_failed_tests')
+  if (session.additionalIssues?.trim()) reasons.push('has_additional_issues')
   return { allowed: reasons.length === 0, reasons }
 }
 export type QaRequiredFields = Pick<QaCriterionResult, 'actualResult' | 'executedSteps' | 'expectedResult' | 'comment' | 'blockerReason' | 'blockerType' | 'blockerOwner' | 'notApplicableReason'>
 export function validateQaResult(status: QaResultStatus, fields: QaRequiredFields): string[] {
   const missing: string[] = []
   if (status === 'failed') {
-    if (!fields.expectedResult.trim()) missing.push('expectedResult')
-    if (!fields.actualResult.trim()) missing.push('actualResult')
-    if (!fields.executedSteps.trim()) missing.push('executedSteps')
     if (!fields.comment.trim()) missing.push('comment')
   }
   if (status === 'blocked') {

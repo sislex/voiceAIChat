@@ -5576,6 +5576,13 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 .manual-qa { display: grid; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 .manual-qa-summary { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 10px; border-radius: 8px; background: var(--panel); font-size: 12px; }
+.manual-qa-preparation { padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.manual-qa-preparation > summary { cursor: pointer; }
+.manual-qa-preparation .merge-terminal { margin-top: 10px; max-height: 280px; overflow: auto; white-space: pre-wrap; }
+.manual-qa-spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: qa-spin .8s linear infinite; }
+.manual-qa-additional { display: grid; gap: 5px; font-size: 12px; }
+.manual-qa-additional textarea { min-height: 90px; resize: vertical; border: 1px solid var(--border); border-radius: 7px; padding: 7px; background: var(--bg); color: var(--text); font: inherit; }
+@keyframes qa-spin { to { transform: rotate(360deg); } }
 .manual-qa-create { padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
 .manual-qa-create summary { cursor: pointer; font-weight: 600; }
 .manual-qa-create__form { display: grid; gap: 8px; margin-top: 10px; }
