@@ -276,3 +276,21 @@ describe('TaskCard: следов прошлого рана не остаётся
     expect(screen.getByTestId('task-card').className).toContain('jcard--ci-running')
   })
 })
+
+describe('TaskCard — подготовка к разработке', () => {
+  it('в TODO показывает только запуск подготовки, без development-кнопок', () => {
+    const onStartPreparation = vi.fn()
+    render(<TaskCard {...props({ columnSemanticType: 'backlog', onStartPreparation, onStartCi: vi.fn(), onStartCiParallel: vi.fn() })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Начать подготовку задачи' }))
+    expect(onStartPreparation).toHaveBeenCalledWith('t1')
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Параллельно' })).not.toBeInTheDocument()
+  })
+
+  it('в preparation показывает отдельную ленту и ошибку', () => {
+    render(<TaskCard {...props({ columnSemanticType: 'preparation', task: mkTask({ taskPreparationStatus: 'failed', taskPreparationError: 'Гейт не пройден' }), onStartPreparation: vi.fn(), onStartCi: vi.fn() })} />)
+    expect(screen.getByTestId('task-preparation-panel')).toHaveTextContent('Гейт не пройден')
+    expect(screen.getByRole('button', { name: 'Лента подготовки' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
+  })
+})

@@ -984,6 +984,26 @@ CREATE TABLE IF NOT EXISTS kb_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_kb_documents_scope ON kb_documents(scope, project_id, owner_id);
 
+-- Пред-разработческая подготовка задачи. Не смешивается с qa_preparation_runs:
+-- те строят сценарии ручного QA уже после development.
+CREATE TABLE IF NOT EXISTS task_preparation_runs (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'running',
+  attempt INTEGER NOT NULL DEFAULT 1,
+  log TEXT NOT NULL DEFAULT '',
+  error TEXT,
+  readiness_json TEXT,
+  gate_reasons_json TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_preparation_task ON task_preparation_runs(task_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_preparation_active ON task_preparation_runs(task_id) WHERE status = 'running';
+
 -- ============================ Ручное QA ============================
 CREATE TABLE IF NOT EXISTS acceptance_criteria (
   id TEXT PRIMARY KEY, task_id TEXT NOT NULL, position INTEGER NOT NULL,

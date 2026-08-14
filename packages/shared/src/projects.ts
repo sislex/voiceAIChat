@@ -253,6 +253,11 @@ export interface Task {
   mergedSha?: string | null
   /** Source SHA, который был использован последним успешным merge-раном. */
   mergedSourceSha?: string | null
+  /** Последняя отдельная попытка пред-разработческой подготовки. */
+  taskPreparationRunId?: string | null
+  taskPreparationStatus?: import('./qa').TaskPreparationStatus | null
+  taskPreparationError?: string | null
+  taskPreparationLog?: string | null
 }
 
 /**
