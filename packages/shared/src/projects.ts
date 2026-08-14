@@ -31,8 +31,13 @@ export const EMPTY_DEFAULT_SKILLS: WorkItemDefaultSkills = { epic: [], story: []
 /** Стабильное назначение колонки, не зависящее от отображаемого имени. */
 export type KanbanColumnSemanticType =
   | 'backlog'
+  | 'preparation'
   | 'ready'
   | 'development'
+  | 'component_qa'
+  | 'integration_tests'
+  | 'automated_qa'
+  /** Legacy aliases kept for existing boards and persisted history. */
   | 'testing'
   | 'qa_preparation'
   | 'manual_qa'
@@ -43,8 +48,41 @@ export type KanbanColumnSemanticType =
   | 'custom'
 
 export const KANBAN_COLUMN_SEMANTIC_TYPES: KanbanColumnSemanticType[] = [
-  'backlog', 'ready', 'development', 'testing', 'qa_preparation', 'manual_qa', 'awaiting_merge', 'merge', 'decision_required', 'done', 'custom'
+  'backlog', 'preparation', 'ready', 'development', 'component_qa', 'integration_tests',
+  'automated_qa', 'testing', 'qa_preparation', 'manual_qa', 'awaiting_merge', 'merge',
+  'decision_required', 'done', 'custom'
 ]
+
+/** Canonical machine workflow. Display names are deliberately absent. */
+export const QA_WORKFLOW: readonly KanbanColumnSemanticType[] = [
+  'backlog', 'preparation', 'ready', 'development', 'component_qa',
+  'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'done'
+]
+
+const QA_WORKFLOW_TRANSITIONS: Readonly<Record<string, readonly KanbanColumnSemanticType[]>> = {
+  backlog: ['preparation'],
+  preparation: ['ready', 'decision_required'],
+  ready: ['development', 'preparation'],
+  development: ['component_qa', 'decision_required'],
+  component_qa: ['integration_tests', 'development', 'decision_required'],
+  integration_tests: ['automated_qa', 'development', 'decision_required'],
+  automated_qa: ['manual_qa', 'integration_tests', 'development', 'decision_required'],
+  manual_qa: ['awaiting_merge', 'development', 'preparation', 'decision_required'],
+  awaiting_merge: ['done', 'component_qa', 'automated_qa', 'decision_required'],
+  done: [],
+  decision_required: []
+}
+
+/** Automatic routes may never leave decision_required; a user decision is required. */
+export function canTransitionWorkflow(
+  from: KanbanColumnSemanticType,
+  to: KanbanColumnSemanticType,
+  actor: 'user' | 'automation'
+): boolean {
+  if (from === to) return true
+  if (from === 'decision_required') return actor === 'user' && to !== 'done'
+  return (QA_WORKFLOW_TRANSITIONS[from] ?? []).includes(to)
+}
 
 /** Роль пользователя в проекте. */
 export type ProjectRole = 'owner' | 'member'

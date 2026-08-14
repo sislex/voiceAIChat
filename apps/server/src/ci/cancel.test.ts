@@ -158,7 +158,7 @@ describe('отмена рана в фазе модели', () => {
     expect(await waitStatus(first)).toBe('cancelled')
     expect(await waitStatus(secondId, 5000)).toBe('success')
     // Конечное состояние — как у обычного успешного рана без мержа.
-    const preparation = db.getBoard('admin', projectId)!.columns.find((c) => c.semanticType === 'qa_preparation')!
+    const preparation = db.getBoard('admin', projectId)!.columns.find((c) => c.semanticType === 'component_qa')!
     expect(db.getBoard('admin', projectId)!.tasks.find((t) => t.id === taskIds[0])!.columnId).toBe(preparation.id)
     expect(db.latestCiRunSummary(taskIds[0])!.id).toBe(secondId)
   })

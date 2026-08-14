@@ -204,11 +204,9 @@ describe('ci run manager', () => {
     expect(detail.run.status).toBe('success')
     expect(detail.run.llmProvider).toBe('claude')
     expect(detail.run.llmModel).toBe(DEFAULT_SETTINGS.model)
-    // Модель рана — только у разработки: резюме идёт по своей стадии
-    // (DEFAULT_CI_STAGE_MODELS.summary), пересказ шагов не требует модели рана.
-    // Тестовый LLM отвечает невалидным текстом на QA preparation, поэтому видны
-    // обе ограниченные попытки подготовки сценариев.
-    expect(modelRequests.map((r) => r.model)).toEqual([DEFAULT_SETTINGS.model, DEFAULT_CI_STAGE_MODELS.summary, 'sonnet', 'sonnet'])
+    // Модель рана — только у разработки: резюме идёт по своей стадии.
+    // Подготовка тест-кейсов теперь выполняется до development-run.
+    expect(modelRequests.map((r) => r.model)).toEqual([DEFAULT_SETTINGS.model, DEFAULT_CI_STAGE_MODELS.summary])
   })
 
   it('DELETE ci/llm снимает переопределение задачи и возвращает наследование', async () => {
@@ -540,17 +538,17 @@ describe('ci run manager', () => {
     const t = db.getBoard('admin', project.id)!.tasks.find((x) => x.id === task.id)!
     expect(t.columnId).toBe(devCol.id)
   })
-  it('успешный ран обязательных проверок переводит карточку в «Ручное QA»', async () => {
+  it('успешный development-run переводит карточку в Component QA', async () => {
     const { project, task } = setup()
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')
     const board = db.getBoard('admin', project.id)!
-    const manualQa = board.columns.find((c) => c.semanticType === 'qa_preparation')!
+    const manualQa = board.columns.find((c) => c.semanticType === 'component_qa')!
     expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(manualQa.id)
     // Причина переноса видна в ленте рана.
     const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json() as Array<{ chunk: string }>
-    expect(log.some((l) => l.chunk.includes('ручного QA'))).toBe(true)
+    expect(log.some((l) => l.chunk.includes('Component QA'))).toBe(true)
   })
 
   it.skip('legacy: merge выполнялся внутри разработки', async () => {
@@ -599,7 +597,7 @@ describe('ci run manager', () => {
   it('нет колонки qa_preparation в проекте — ран success и карточка не двигается', async () => {
     const { project, task } = setup()
     const real = db.getColumnIdBySemantic.bind(db)
-    const spy = vi.spyOn(db, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'qa_preparation' ? null : real(pid, semantic)))
+    const spy = vi.spyOn(db, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'component_qa' ? null : real(pid, semantic)))
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')
@@ -898,7 +896,7 @@ describe('карточка после падения, отмены и повто
     const second = await run(project.id, task.id)
     expect((await waitRun(second)).run.status).toBe('success')
     const board = db.getBoard('admin', project.id)!
-    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(board.columns.find((c) => c.semanticType === 'qa_preparation')!.id)
+    expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(board.columns.find((c) => c.semanticType === 'component_qa')!.id)
     // Сводка на доске — про новый ран, а не про упавший.
     const summary = db.latestCiRunSummary(task.id)!
     expect(summary.id).toBe(second)
@@ -952,7 +950,7 @@ describe('карточка после падения, отмены и повто
     expect(done.run.status).toBe('success')
     // Повтор — это работа, а не простой: карточка вернулась в разработку на время рана.
     expect(columnAtStep).toBe(columns.find((c) => c.semanticType === 'development')!.id)
-    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(columns.find((c) => c.semanticType === 'qa_preparation')!.id)
+    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(columns.find((c) => c.semanticType === 'component_qa')!.id)
     expect(db.latestCiRunSummary(task.id)!.status).toBe('success')
   })
 
