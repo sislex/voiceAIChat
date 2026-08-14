@@ -654,14 +654,15 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         const kbMode = kbModeOf(ctx)
         let prompt = taskPrompt(ctx, phase)
         const qa = deps.db.getQaTaskState(ctx.run.triggeredBy, ctx.task.projectId, ctx.task.id)
-        const fixSession = qa?.sessions.find((session) => session.status === 'failed' && session.results.some((result) => result.issue?.linkedFixRunId === ctx.run.id))
+        const fixSession = qa?.sessions.find((session) => session.status === 'failed' && (session.linkedFixRunId === ctx.run.id || session.results.some((result) => result.issue?.linkedFixRunId === ctx.run.id)))
         if (fixSession) {
           const criteria = new Map(qa?.criteria.map((criterion) => [criterion.id, criterion]))
           const feedback = fixSession.results.filter((result) => result.status === 'failed').map((result, index) => {
             const criterion = criteria.get(result.criterionId)
             return `${index + 1}. ${criterion?.title ?? 'Тест'}\nОжидалось: ${result.expectedResult}\nФактически: ${result.actualResult}\nШаги: ${result.executedSteps}\nЗамечание QA: ${result.comment}`
           }).join('\n\n')
-          prompt += `\n\nПредыдущий результат не прошёл ручное QA. Исправь все замечания:\n${feedback}`
+          const additional = fixSession.additionalIssues?.trim() ? `\n\nДополнительные баги и недоработки:\n${fixSession.additionalIssues.trim()}` : ''
+          prompt += `\n\nПредыдущий результат не прошёл ручное QA. Исправь все замечания:\n${feedback}${additional}`
         }
         if (kbFields.kbMcpUrl) prompt = `${prompt}\n\n${kbRunDirective(kbMode === 'manual' ? 'manual' : 'auto')}`
         prompt = `${prompt}${await kbTaskContext(ctx, kbTurnId, ctx.parentStepId)}`

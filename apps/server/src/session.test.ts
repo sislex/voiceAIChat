@@ -326,6 +326,19 @@ describe('WS: выбор движка Codex', () => {
 })
 
 describe('WS: ходы переживают обрыв соединения (TurnManager)', () => {
+  const slowApps = new Set<FastifyInstance>()
+  const slowDbs = new Set<VoiceChatDb>()
+  const slowSockets = new Set<WebSocket>()
+
+  afterEach(async () => {
+    await Promise.all([...slowSockets].map(closeWs))
+    slowSockets.clear()
+    await Promise.all([...slowApps].map((server) => server.close()))
+    slowApps.clear()
+    for (const database of slowDbs) database.close()
+    slowDbs.clear()
+  })
+
   // Медленный мок: дельты и финал приходят по таймерам — можно оборвать WS посреди хода.
   function makeSlowClaude(deltas: string[], finalText: string, doneAfterMs: number): LlmClient {
     return {
@@ -356,18 +369,42 @@ describe('WS: ходы переживают обрыв соединения (Tur
     })
     await sapp.listen({ port: 0, host: '127.0.0.1' })
     const sport = (sapp.server.address() as AddressInfo).port
+    slowApps.add(sapp)
+    slowDbs.add(sdb)
     return { sapp, sdb, sport }
   }
 
   function connectTo(sport: number): Promise<WebSocket> {
     const ws = new WebSocket(`ws://127.0.0.1:${sport}/ws?token=${TOKEN}`)
     return new Promise((res, rej) => {
-      ws.on('open', () => res(ws))
+      ws.on('open', () => {
+        slowSockets.add(ws)
+        res(ws)
+      })
       ws.on('error', rej)
     })
   }
 
   const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+  /** close() только начинает handshake; session cleanup выполняется на событии close. */
+  function closeWs(ws: WebSocket): Promise<void> {
+    if (ws.readyState === WebSocket.CLOSED) return Promise.resolve()
+    return new Promise((resolve) => {
+      ws.once('close', resolve)
+      if (ws.readyState === WebSocket.CONNECTING) ws.once('open', () => ws.close())
+      else ws.close()
+    })
+  }
+
+  async function cleanupSlow(sapp: FastifyInstance, sdb: VoiceChatDb, sockets: WebSocket[]): Promise<void> {
+    await Promise.all(sockets.map(closeWs))
+    for (const ws of sockets) slowSockets.delete(ws)
+    await sapp.close()
+    slowApps.delete(sapp)
+    sdb.close()
+    slowDbs.delete(sdb)
+  }
 
   it('обрыв WS не отменяет ход: ответ сохраняет в БД сам сервер', async () => {
     const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча', 'сть'], 'Часть ответа', 60))
@@ -381,7 +418,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
       })
     )
     await wait(20)
-    ws.close() // «обновление страницы» посреди генерации
+    await closeWs(ws) // «обновление страницы» посреди генерации
     await wait(90)
 
     const saved = sdb.listMessages(U, conv.id).filter((m) => m.role === 'ai')
@@ -389,8 +426,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
     expect(saved[0].text).toBe('Часть ответа')
     expect(saved[0].engine).toBe('claude')
     expect(saved[0].meta?.request?.provider).toBe('claude')
-    await sapp.close()
-    sdb.close()
+    await cleanupSlow(sapp, sdb, [ws])
   })
 
   it('новое подключение получает claude.active с накопленным текстом, а затем done с сообщением из БД', async () => {
@@ -425,7 +461,8 @@ describe('WS: ходы переживают обрыв соединения (Tur
       })
     )
     await streamed
-    ws1.close()
+    await closeWs(ws1)
+    slowSockets.delete(ws1)
 
     // Второй клиент («страница после обновления»); слушатель вешаем ДО open,
     // чтобы не потерять claude.active, который сервер шлёт сразу при подключении.
@@ -439,13 +476,16 @@ describe('WS: ходы переживают обрыв соединения (Tur
       })
     })
     await new Promise<void>((resolve, reject) => {
-      ws2.on('open', () => resolve())
+      ws2.on('open', () => {
+        slowSockets.add(ws2)
+        resolve()
+      })
       ws2.on('error', reject)
     })
     expect(finish).toBeDefined()
     finish?.()
     await done
-    ws2.close()
+    await closeWs(ws2)
 
     const active = events.find((e) => e.t === 'claude.active') as unknown as {
       turns: Array<{ conversationId: string; partial: string }>
@@ -465,20 +505,22 @@ describe('WS: ходы переживают обрыв соединения (Tur
     const saved = sdb.listMessages(U, conv.id).filter((m) => m.role === 'ai')
     expect(saved).toHaveLength(1)
     expect(doneMsg.message?.id).toBe(saved[0].id)
-    await sapp.close()
-    sdb.close()
+    await cleanupSlow(sapp, sdb, [ws2])
   })
 
-  it('claude.cancel с conversationId снимает ход: ничего не сохраняется, приходит пустой done', async () => {
+  it('claude.cancel с conversationId снимает ход: partial сохраняется как interrupted и поздний done игнорируется', async () => {
     const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча'], 'Часть ответа', 60))
     const conv = sdb.createConversation(U, 'Чат')
     const ws = await connectTo(sport)
     const events: Array<{ t: string; text?: string }> = []
-    const emptyDone = new Promise<void>((resolve) => {
+    let firstTokenResolve: (() => void) | undefined
+    const firstToken = new Promise<void>((resolve) => { firstTokenResolve = resolve })
+    const cancelledDone = new Promise<void>((resolve) => {
       ws.on('message', (d) => {
         const m = JSON.parse(d.toString())
         events.push(m)
-        if (m.t === 'claude.done' && m.text === '') resolve()
+        if (m.t === 'claude.token') firstTokenResolve?.()
+        if (m.t === 'claude.done') resolve()
       })
     })
     ws.send(
@@ -488,14 +530,15 @@ describe('WS: ходы переживают обрыв соединения (Tur
         segments: [{ speakerId: 1, text: 'привет' }]
       })
     )
-    await wait(15)
+    await firstToken
     ws.send(JSON.stringify({ t: 'claude.cancel', conversationId: conv.id }))
-    await emptyDone
-    await wait(80) // финал мока уже не должен ничего записать
-    expect(sdb.listMessages(U, conv.id).filter((m) => m.role === 'ai')).toHaveLength(0)
-    ws.close()
-    await sapp.close()
-    sdb.close()
+    await cancelledDone
+    await wait(80) // финал мока уже не должен записать второе сообщение
+    const saved = sdb.listMessages(U, conv.id).filter((m) => m.role === 'ai')
+    expect(saved).toHaveLength(1)
+    expect(saved[0]).toMatchObject({ text: 'Ча', meta: { interrupted: true } })
+    expect(events.filter((event) => event.t === 'claude.done')).toHaveLength(1)
+    await cleanupSlow(sapp, sdb, [ws])
   })
 })
 

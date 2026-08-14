@@ -21,17 +21,14 @@ HEALTH_TRIES=${VC_HEALTH_TRIES:-60}   # × 5 с = до 5 минут на под�
 log() { printf '[%s] %s\n' "$(date -Is)" "$*"; }
 
 # Первый проход: отцепиться от родителя и выйти. Передаём release metadata
-# фоновой копии явно: защищённый release запускается через несколько shell/process
-# границ, и простого наследования окружения недостаточно для надёжного контракта.
+# явно: detached-процесс не должен зависеть от окружения вызывающей сессии.
 if [[ ${VC_DEPLOY_CHILD:-} != 1 ]]; then
-  setsid nohup env \
-    VC_DEPLOY_CHILD=1 \
-    VC_RELEASE_VERSION="${VC_RELEASE_VERSION-}" \
-    VC_RELEASE_SOURCE="${VC_RELEASE_SOURCE-}" \
-    VC_RELEASED_AT="${VC_RELEASED_AT-}" \
-    VC_RELEASE_COMMIT="${VC_RELEASE_COMMIT-}" \
-    VC_RELEASE_TASK="${VC_RELEASE_TASK-}" \
-    "$0" "$@" >>"$LOG" 2>&1 </dev/null &
+  release_version=${VC_RELEASE_VERSION-}
+  release_version_source=${VC_RELEASE_VERSION_SOURCE:-${release_version:+explicit}}
+  VC_DEPLOY_CHILD=1 setsid nohup "$0" \
+    --release-version "$release_version" \
+    --release-version-source "$release_version_source" \
+    "$@" >>"$LOG" 2>&1 </dev/null &
   cat <<EOF
 деплой запущен в фоне (pid $!) и не зависит от этой сессии
 лог:     tail -f $LOG
@@ -39,6 +36,14 @@ if [[ ${VC_DEPLOY_CHILD:-} != 1 ]]; then
 здоровье: curl -s $HEALTH_URL
 EOF
   exit 0
+fi
+
+# Второй проход получает канонические значения позиционно: это надёжная граница
+# между вызывающей сессией и detached-процессом, независимо от сохранённого env.
+if [[ ${1:-} == --release-version && ${3:-} == --release-version-source ]]; then
+  export VC_RELEASE_VERSION=$2
+  export VC_RELEASE_VERSION_SOURCE=$4
+  shift 4
 fi
 
 # Второй проход — собственно деплой. Блокировка на дескрипторе: если процесс убьют,
@@ -63,15 +68,15 @@ release_tag=$(git tag --points-at HEAD --list 'v*' | grep -E "^v(0|[1-9][0-9]*)\
 # Защищённая публикация передаёт каноническую версию release-ветки. Для обычного
 # деплоя источником служит строгий тег текущего HEAD; без обоих версия неизвестна.
 if [[ -n ${VC_RELEASE_VERSION:-} ]]; then
-  release_source=${VC_RELEASE_SOURCE:-explicit}
+  release_version_source=${VC_RELEASE_VERSION_SOURCE:-explicit}
 else
   export VC_RELEASE_VERSION=${release_tag:+${release_tag#v}}
-  release_source=${VC_RELEASE_VERSION:+git-tag}
-  release_source=${release_source:-unknown}
+  release_version_source=${release_tag:+git-tag}
+  release_version_source=${release_version_source:-none}
 fi
 task_ref=$(git log -1 --pretty=%s | grep -Eio 'chat(ai)?[-[:space:]]*[0-9]+' | grep -Eo '[0-9]+' | head -1 || true)
 export VC_RELEASE_TASK=${task_ref:+chat-$task_ref}
-log "метаданные релиза: version=${VC_RELEASE_VERSION:-неизвестна} source=$release_source commit=$VC_RELEASE_COMMIT task=${VC_RELEASE_TASK:-нет}"
+log "метаданные релиза: version=${VC_RELEASE_VERSION:-нет} commit=$VC_RELEASE_COMMIT task=${VC_RELEASE_TASK:-нет} source=$release_version_source"
 
 log 'docker compose up -d --build'
 docker compose up -d --build
