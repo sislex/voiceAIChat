@@ -136,10 +136,10 @@ export interface QaStageRun {
   canCancel: boolean
   canRetry: boolean
 }
-export interface ComponentQaRun extends QaStageRun { kind: 'componentQaRun'; stage: 'component_qa' }
+export interface ComponentQaStageRun extends QaStageRun { kind: 'componentQaRun'; stage: 'component_qa' }
 export interface IntegrationTestsRun extends QaStageRun { kind: 'integrationTestsRun'; stage: 'integration_tests' }
 export interface AutomatedQaRun extends QaStageRun { kind: 'automatedQaRun'; stage: 'automated_qa' }
-export type AnyQaStageRun = ComponentQaRun | IntegrationTestsRun | AutomatedQaRun
+export type AnyQaStageRun = ComponentQaStageRun | IntegrationTestsRun | AutomatedQaRun
 export const QA_RUN_KIND: Record<QaRunStage, QaStageRunKind> = {
   component_qa: 'componentQaRun',
   integration_tests: 'integrationTestsRun',
@@ -147,6 +147,148 @@ export const QA_RUN_KIND: Record<QaRunStage, QaStageRunKind> = {
 }
 export function isActiveQaStageRun(status: QaStageRunStatus): boolean {
   return status === 'queued' || status === 'running' || status === 'awaiting_input'
+}
+export type ComponentQaRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'blocked' | 'cancelled' | 'stale' | 'skipped'
+export type ComponentQaFailureClassification = 'implementation_defect' | 'infrastructure'
+export type ComponentQaScenarioStatus = 'pending' | 'passed' | 'failed' | 'blocked' | 'not_applicable'
+export interface ComponentQaScenarioSnapshot {
+  testCase: TestCaseDefinition
+  version: number
+  semanticHash: string
+  status: ComponentQaScenarioStatus
+  actualResult: string
+  diagnostic: string
+}
+export interface ComponentQaCommandResult {
+  commandId: string
+  name: string
+  command: string
+  exitCode: number | null
+  durationMs: number
+  status: 'pending' | 'running' | 'passed' | 'failed' | 'blocked' | 'cancelled'
+  stdout: string
+  stderr: string
+  diagnostic: string
+  artifacts: ComponentQaArtifact[]
+}
+export interface ComponentQaArtifact {
+  id: string
+  kind: 'report' | 'screenshot' | 'visual_diff' | 'storybook' | 'log'
+  name: string
+  url: string
+  path: string
+}
+export interface ComponentQaRun {
+  id: string
+  projectId: string
+  taskId: string
+  developmentRunId: string
+  linkedFixRunId: string | null
+  branch: string
+  commitSha: string
+  attempt: number
+  status: ComponentQaRunStatus
+  uiImpact: UiImpact
+  readinessRunId: string
+  readinessVersion: string
+  scenarios: ComponentQaScenarioSnapshot[]
+  components: AffectedUiComponent[]
+  commands: ComponentQaCommandResult[]
+  artifacts: ComponentQaArtifact[]
+  failureClassification: ComponentQaFailureClassification | null
+  blockerReasons: string[]
+  summary: string
+  log: string
+  storybookUrl: string | null
+  createdAt: number
+  startedAt: number | null
+  finishedAt: number | null
+  staleReason: string | null
+  canCancel: boolean
+  canRetry: boolean
+}
+export interface ComponentQaTaskState {
+  activeRun: ComponentQaRun | null
+  latestRun: ComponentQaRun | null
+  runs: ComponentQaRun[]
+  launchReasons: string[]
+  canStart: boolean
+  canComplete: boolean
+  gateReasons: string[]
+}
+export interface ComponentQaGateInput {
+  run: ComponentQaRun
+  currentCommitSha: string
+  currentReadinessVersion: string
+  acceptanceCriteriaConflict: boolean
+}
+export function componentQaSemanticVersion(readiness: Pick<DevelopmentReadiness, 'testCases' | 'affectedComponents' | 'uiImpact' | 'acceptanceCriteriaConflict'>): string {
+  const stable = JSON.stringify({
+    uiImpact: readiness.uiImpact,
+    conflict: readiness.acceptanceCriteriaConflict,
+    tests: readiness.testCases.map((item) => ({
+      id: item.id, title: item.title, description: item.description, preconditions: item.preconditions,
+      testData: item.testData, steps: item.steps, expectedResult: item.expectedResult,
+      required: item.required, testType: item.testType, automatable: item.automatable,
+      notAutomatedReason: item.notAutomatedReason, alternativeManualVerification: item.alternativeManualVerification
+    })),
+    components: readiness.affectedComponents.map((item) => ({
+      id: item.id, name: item.name, storybookStoryId: item.storybookStoryId, reusable: item.reusable,
+      coverage: item.coverage, exclusionReason: item.exclusionReason, alternativeVerification: item.alternativeVerification
+    }))
+  })
+  let hash = 2166136261
+  for (let index = 0; index < stable.length; index++) {
+    hash ^= stable.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+export function componentQaLaunchReasons(readiness: DevelopmentReadiness): string[] {
+  if (readiness.uiImpact === 'none') return []
+  const reasons: string[] = []
+  if (!readiness.uiImpact) reasons.push('missing_ui_impact')
+  if (!readiness.affectedComponents.length) reasons.push('missing_affected_components')
+  const componentCases = readiness.testCases.filter((item) => item.testType === 'ui' || item.testType === 'automated' || item.testType === 'mixed')
+  if (!componentCases.some((item) => item.required)) reasons.push('missing_required_component_scenarios')
+  for (const component of readiness.affectedComponents) {
+    if (!component.storybookStoryId) {
+      if (!component.exclusionReason.trim()) reasons.push(`missing_exclusion_reason:${component.id}`)
+      if (!component.alternativeVerification.trim()) reasons.push(`missing_alternative_verification:${component.id}`)
+      continue
+    }
+    if (!component.coverage) { reasons.push(`missing_storybook_coverage:${component.id}`); continue }
+    const missing = Object.entries(component.coverage).filter(([, covered]) => !covered).map(([name]) => name)
+    for (const name of missing) reasons.push(`missing_storybook_${name}:${component.id}`)
+  }
+  if (readiness.acceptanceCriteriaConflict) reasons.push('acceptance_criteria_conflict')
+  return reasons
+}
+export function canCompleteComponentQa(input: ComponentQaGateInput): ReadinessCheck {
+  const reasons: string[] = []
+  const { run } = input
+  if (run.status !== 'passed' && run.status !== 'skipped') reasons.push(`run_${run.status}`)
+  if (run.staleReason || run.status === 'stale') reasons.push('run_stale')
+  if (run.commitSha !== input.currentCommitSha) reasons.push('commit_sha_mismatch')
+  if (run.readinessVersion !== input.currentReadinessVersion) reasons.push('scenario_version_mismatch')
+  if (input.acceptanceCriteriaConflict) reasons.push('acceptance_criteria_conflict')
+  if (run.uiImpact === 'none') {
+    if (run.status !== 'skipped') reasons.push('ui_none_not_skipped')
+    return { allowed: reasons.length === 0, reasons }
+  }
+  for (const scenario of run.scenarios) {
+    if (scenario.testCase.required && scenario.status !== 'passed') reasons.push(`${scenario.status}:${scenario.testCase.id}`)
+  }
+  for (const component of run.components) {
+    if (!component.storybookStoryId) {
+      if (!component.exclusionReason.trim() || !component.alternativeVerification.trim()) reasons.push(`component_unverified:${component.id}`)
+    } else if (!component.coverage || Object.values(component.coverage).some((covered) => !covered)) {
+      reasons.push(`storybook_incomplete:${component.id}`)
+    }
+  }
+  for (const command of run.commands) if (command.status !== 'passed' || command.exitCode !== 0) reasons.push(`command_failed:${command.commandId}`)
+  if (run.blockerReasons.length) reasons.push('has_blockers')
+  return { allowed: reasons.length === 0, reasons }
 }
 
 export type QaResultStatus = 'not_tested' | 'in_progress' | 'passed' | 'failed' | 'blocked' | 'not_applicable' | 'stale'

@@ -14,12 +14,51 @@ function qaError(reply: FastifyReply, error: unknown): FastifyReply {
   return reply.code(status).send({ error: message })
 }
 
-export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => boolean): void {
+export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => boolean, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void): void {
   const base = '/api/projects/:projectId/tasks/:taskId/qa'
   app.get<{ Params: TaskParams }>(`${base}`, async (req, reply) => {
     const state = db.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
     return state ?? reply.code(404).send({ error: 'task not found' })
   })
+  app.get<{ Params: TaskParams }>(`${base}/component`, async (req, reply) => {
+    const state=db.getComponentQaTaskState(uid(req),req.params.projectId,req.params.taskId)
+    return state ?? reply.code(404).send({error:'task not found'})
+  })
+  app.post<{ Params: TaskParams }>(`${base}/component/runs`, async (req,reply)=>{
+    try {
+      const userId=uid(req)
+      const run=db.startComponentQaRun(userId,req.params.projectId,req.params.taskId)
+      if (run.status==='queued') launchComponentQa?.(run.id,userId)
+      return reply.code(run.status==='queued'||run.status==='running'?202:200).send(run)
+    } catch(error) { return qaError(reply,error) }
+  })
+  app.post<{Params:TaskParams&{runId:string}}>(`${base}/component/runs/:runId/cancel`,async(req,reply)=>{
+    try { cancelComponentQa?.(req.params.runId); return db.cancelComponentQaRun(uid(req),req.params.runId) }
+    catch(error) { return qaError(reply,error) }
+  })
+  app.post<{Params:TaskParams&{runId:string}}>(`${base}/component/runs/:runId/complete`,async(req,reply)=>{
+    try { return db.completeComponentQaRun(uid(req),req.params.projectId,req.params.taskId,req.params.runId) }
+    catch(error) { return qaError(reply,error) }
+  })
+  app.post<{Params:TaskParams&{runId:string}}>(`${base}/component/runs/:runId/fix`,async(req,reply)=>{
+    try {
+      const userId=uid(req), run=db.getComponentQaRun(userId,req.params.runId)
+      if (!run||run.taskId!==req.params.taskId) throw new Error('component QA run not found')
+      if (!['failed','blocked'].includes(run.status)) throw new Error('component QA run must be failed or blocked')
+      if (run.linkedFixRunId) return db.getCiRun(userId,run.linkedFixRunId) ?? reply.code(409).send({error:'Связанный ран не найден'})
+      const started=ci.start(userId,req.params.projectId,req.params.taskId,{mode:'development'})
+      if ('error' in started) return reply.code(409).send({error:started.error})
+      db.updateCiRun(started.run.id,{fixContext:{
+        stepId:'component_qa:'+run.id,
+        logTail:[run.summary,run.log,...run.commands.map((command)=>command.command+'\n'+command.diagnostic+'\n'+command.stdout+'\n'+command.stderr),...run.artifacts.map((artifact)=>artifact.kind+': '+(artifact.url||artifact.path))].filter(Boolean).join('\n').slice(-50000),
+        failures:run.scenarios.filter((item)=>item.status==='failed'||item.status==='blocked').map((item)=>({packageName:null,file:null,testName:item.testCase.title,command:run.commands[0]?.command??null,message:item.actualResult||item.diagnostic||item.status})),
+        updatedAt:Date.now()
+      }})
+      db.linkComponentQaFixRun(userId,run.id,started.run.id)
+      return reply.code(202).send(started.run)
+    } catch(error) { return qaError(reply,error) }
+  })
+
   app.post<{ Params: TaskParams; Body: AcceptanceCriterionSnapshot & { order?: number } }>(
     `${base}/criteria`,
     async (req, reply) => {

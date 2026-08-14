@@ -1,12 +1,13 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
 updated: 2026-08-14
-checked: 0345f84
+checked: bc4f4c3
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
   - apps/server/src/merge
+  - apps/server/src/ci/testStages.ts
   - apps/server/src/db/database.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/routes/projects.ts
@@ -168,7 +169,9 @@ workspace-каталог не нужен:
 запуска проверок.
 
 Настроенная `project.testCommand` либо fallback `npm run affected-check`
-выполняется в постоянном merge-клоне до push. Обычная строка запускается как одна
+выполняется в постоянном merge-клоне до push. Разбор настройки — общий модуль
+`apps/server/src/ci/testStages.ts` (его же использует Component QA со своим
+дефолтом `npm run test:storybook`): обычная строка запускается как одна
 команда; JSON-массив непустых строк исполняется последовательно с fail-fast — в том
 же формате, который использует release-gate проекта; каждой команде отводится до
 30 минут (полный UI-набор не укладывался в прежние 5). Результат проверки хранит времена,

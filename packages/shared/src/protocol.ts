@@ -262,6 +262,12 @@ export const REST = {
   mergeRunDeploy: (runId: string) => `/api/merge/runs/${encodeURIComponent(runId)}/deploy`,
   taskQa: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa`,
+  taskComponentQa: (id:string,taskId:string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/component`,
+  taskComponentQaRuns: (id:string,taskId:string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/component/runs`,
+  taskComponentQaAction: (id:string,taskId:string,runId:string,action:'cancel'|'complete'|'fix') =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/component/runs/${encodeURIComponent(runId)}/${action}`,
   taskQaCriteria: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/criteria`,
   taskQaCriterion: (id: string, taskId: string, criterionId: string) =>

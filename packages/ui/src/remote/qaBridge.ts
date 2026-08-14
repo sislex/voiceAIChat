@@ -1,10 +1,15 @@
 import { REST } from '@shared/protocol'
-import type { AcceptanceCriterion, AcceptanceCriterionSnapshot, QaCriterionResult, QaSession, QaTaskState } from '@shared/qa'
+import type { AcceptanceCriterion, AcceptanceCriterionSnapshot, ComponentQaRun, ComponentQaTaskState, QaCriterionResult, QaSession, QaTaskState } from '@shared/qa'
 import { getToken } from './session'
 
 type StartSessionInput = { branch: string; commitSha: string; testRunId: string; previewId?: string | null; previewSha?: string | null; appUrl?: string | null; storybookUrl?: string | null; testDataScenario?: string; testerId?: string | null }
 export interface RendererQaBridge {
   get(projectId: string, taskId: string): Promise<QaTaskState | null>
+  getComponent?(projectId:string,taskId:string):Promise<ComponentQaTaskState|null>
+  startComponent?(projectId:string,taskId:string):Promise<ComponentQaRun>
+  cancelComponent?(projectId:string,taskId:string,runId:string):Promise<ComponentQaRun>
+  completeComponent?(projectId:string,taskId:string,runId:string):Promise<ComponentQaRun>
+  fixComponent?(projectId:string,taskId:string,runId:string):Promise<{id:string}>
   createCriterion(projectId: string, taskId: string, input: AcceptanceCriterionSnapshot & { order?: number }): Promise<AcceptanceCriterion>
   reviseCriterion(projectId: string, taskId: string, criterionId: string, input: AcceptanceCriterionSnapshot & { reason: string; semanticChange?: boolean }): Promise<AcceptanceCriterion>
   completePreparation(projectId: string, taskId: string): Promise<QaTaskState>
@@ -33,6 +38,11 @@ export function createQaRest(httpBase: string): RendererQaBridge {
   }
   return {
     get: (projectId, taskId) => request(REST.taskQa(projectId, taskId)),
+    getComponent:(projectId,taskId)=>request(REST.taskComponentQa(projectId,taskId)),
+    startComponent:(projectId,taskId)=>request(REST.taskComponentQaRuns(projectId,taskId),{method:'POST'}),
+    cancelComponent:(projectId,taskId,runId)=>request(REST.taskComponentQaAction(projectId,taskId,runId,'cancel'),{method:'POST'}),
+    completeComponent:(projectId,taskId,runId)=>request(REST.taskComponentQaAction(projectId,taskId,runId,'complete'),{method:'POST'}),
+    fixComponent:(projectId,taskId,runId)=>request(REST.taskComponentQaAction(projectId,taskId,runId,'fix'),{method:'POST'}),
     createCriterion: (projectId, taskId, input) => request(REST.taskQaCriteria(projectId, taskId), { method: 'POST', body: JSON.stringify(input) }),
     reviseCriterion: (projectId, taskId, criterionId, input) => request(REST.taskQaCriterion(projectId, taskId, criterionId), { method: 'PUT', body: JSON.stringify(input) }),
     completePreparation: (projectId, taskId) => request(REST.taskQaPreparationComplete(projectId, taskId), { method: 'POST' }),

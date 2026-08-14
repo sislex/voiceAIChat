@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
 import { toFtsMatchQuery } from './fts.js'
 import { calculateKbHit, filesReadFromCiLog } from '../ci/kbHit.js'
+import { testStages } from '../ci/testStages.js'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_AGENT_POLICY,
@@ -141,6 +142,10 @@ import {
   buildCiAutomationProgress,
   isVerificationCommand,
   canCompleteQa,
+  canCompleteComponentQa,
+  componentQaLaunchReasons,
+  componentQaSemanticVersion,
+  canTransitionWorkflow,
   validateQaResult,
   type AcceptanceCriterion,
   type AcceptanceCriterionSnapshot,
@@ -161,6 +166,11 @@ import {
   type QaIssueClassification,
   type QaSeverity,
   type QaFrequency,
+  type ComponentQaRun,
+  type ComponentQaTaskState,
+  type ComponentQaScenarioSnapshot,
+  type ComponentQaCommandResult,
+  type ComponentQaArtifact,
   RELEASE_STEP_ORDER,
   type ProjectRelease,
   type ReleaseStepKind,
@@ -3726,6 +3736,13 @@ export class VoiceChatDb {
     return r ? mapCiRun(r) : null
   }
 
+  activeCiRunForTask(taskId: string): CiRun | null {
+    const r = this.db.prepare(
+      `SELECT * FROM ci_runs WHERE task_id = ? AND status IN ('queued', 'running', 'awaiting_input') ORDER BY created_at DESC, rowid DESC LIMIT 1`
+    ).get(taskId) as CiRunRow | undefined
+    return r ? mapCiRun(r) : null
+  }
+
   getCiRun(userId: string, runId: string): CiRunDetail | null {
     const r = this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(runId) as CiRunRow | undefined
     if (!r || !this.isProjectMember(userId, r.project_id)) return null
@@ -4882,6 +4899,152 @@ export class VoiceChatDb {
   private canQa(userId: string, projectId: string): boolean {
     const row = this.db.prepare(`SELECT role, qa_permission FROM project_members WHERE project_id = ? AND username = ?`).get(projectId, userId) as { role: string; qa_permission: number } | undefined
     return !!row && (row.role === 'owner' || !!row.qa_permission)
+  }
+
+  private mapComponentQaRun(row: Record<string, unknown>): ComponentQaRun {
+    const status = row.status as ComponentQaRun['status']
+    return {
+      id:String(row.id), projectId:String(row.project_id), taskId:String(row.task_id),
+      developmentRunId:String(row.development_run_id), linkedFixRunId:row.linked_fix_run_id as string|null,
+      branch:String(row.branch), commitSha:String(row.commit_sha), attempt:Number(row.attempt), status,
+      uiImpact:row.ui_impact as ComponentQaRun['uiImpact'], readinessRunId:String(row.readiness_run_id),
+      readinessVersion:String(row.readiness_version),
+      scenarios:parseJsonValue<ComponentQaScenarioSnapshot[]>(String(row.scenarios_json ?? '[]'), []),
+      components:parseJsonValue(String(row.components_json ?? '[]'), []),
+      commands:parseJsonValue<ComponentQaCommandResult[]>(String(row.commands_json ?? '[]'), []),
+      artifacts:parseJsonValue<ComponentQaArtifact[]>(String(row.artifacts_json ?? '[]'), []),
+      failureClassification:row.failure_classification as ComponentQaRun['failureClassification'],
+      blockerReasons:parseStringArray(String(row.blocker_reasons_json ?? '[]')), summary:String(row.summary ?? ''),
+      log:String(row.log ?? ''), storybookUrl:row.storybook_url as string|null, createdAt:Number(row.created_at),
+      startedAt:row.started_at == null ? null : Number(row.started_at), finishedAt:row.finished_at == null ? null : Number(row.finished_at),
+      staleReason:row.stale_reason as string|null, canCancel:status === 'queued' || status === 'running',
+      canRetry:['failed','blocked','cancelled','stale'].includes(status)
+    }
+  }
+
+  getComponentQaRun(userId: string, runId: string): ComponentQaRun | null {
+    const row = this.db.prepare(`SELECT r.* FROM component_qa_runs r JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`).get(runId,userId) as Record<string,unknown>|undefined
+    return row ? this.mapComponentQaRun(row) : null
+  }
+
+  getComponentQaTaskState(userId: string, projectId: string, taskId: string): ComponentQaTaskState | null {
+    if (!this.isProjectMember(userId,projectId)) return null
+    const task = this.db.prepare(`SELECT t.id,c.semantic_type FROM tasks t JOIN kanban_columns c ON c.id=t.column_id WHERE t.id=? AND t.project_id=?`).get(taskId,projectId) as {id:string;semantic_type:string}|undefined
+    if (!task) return null
+    const runs=(this.db.prepare(`SELECT * FROM component_qa_runs WHERE task_id=? ORDER BY attempt DESC,created_at DESC`).all(taskId) as Record<string,unknown>[]).map((row)=>this.mapComponentQaRun(row))
+    const activeRun=runs.find((run)=>run.status==='queued'||run.status==='running') ?? null
+    const latestRun=runs[0] ?? null
+    const prep=this.db.prepare(`SELECT readiness_json FROM task_preparation_runs WHERE task_id=? AND status='success' AND readiness_json IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId) as {readiness_json:string}|undefined
+    const readiness=prep ? parseJsonValue<DevelopmentReadiness|null>(prep.readiness_json,null) : null
+    const workspace=this.findLatestPushedCiWorkspace(projectId,taskId)
+    const launchReasons:string[]=[]
+    if (task.semantic_type!=='component_qa') launchReasons.push('task_not_in_component_qa')
+    if (!workspace?.branch || !workspace.commitSha) launchReasons.push('missing_development_workspace')
+    if (!readiness) launchReasons.push('missing_readiness_snapshot')
+    else launchReasons.push(...componentQaLaunchReasons(readiness))
+    let gateReasons:string[]=[]
+    if (latestRun && workspace && readiness) gateReasons=canCompleteComponentQa({
+      run:latestRun,currentCommitSha:workspace.commitSha ?? '',currentReadinessVersion:componentQaSemanticVersion(readiness),
+      acceptanceCriteriaConflict:readiness.acceptanceCriteriaConflict
+    }).reasons
+    return {activeRun,latestRun,runs,launchReasons,canStart:!activeRun&&launchReasons.length===0,canComplete:gateReasons.length===0&&!!latestRun,gateReasons}
+  }
+
+  startComponentQaRun(userId: string, projectId: string, taskId: string): ComponentQaRun {
+    if (!this.canQa(userId,projectId)) throw new Error('QA permission required')
+    return this.db.transaction(()=>{
+      const task=this.db.prepare(`SELECT c.semantic_type FROM tasks t JOIN kanban_columns c ON c.id=t.column_id WHERE t.id=? AND t.project_id=?`).get(taskId,projectId) as {semantic_type:string}|undefined
+      if (!task) throw new Error('task not found')
+      if (task.semantic_type!=='component_qa') throw new Error('task must be in component_qa')
+      const workspace=this.findLatestPushedCiWorkspace(projectId,taskId)
+      if (!workspace?.branch || !workspace.commitSha || !workspace.agentId || !workspace.path) throw new Error('missing current development workspace')
+      const dev=this.db.prepare(`SELECT id FROM ci_runs WHERE project_id=? AND task_id=? AND workspace_id=? AND status='success' ORDER BY created_at DESC LIMIT 1`).get(projectId,taskId,workspace.id) as {id:string}|undefined
+      if (!dev) throw new Error('successful development run not found')
+      const prep=this.db.prepare(`SELECT id,readiness_json FROM task_preparation_runs WHERE task_id=? AND status='success' AND readiness_json IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId) as {id:string;readiness_json:string}|undefined
+      if (!prep) throw new Error('missing readiness snapshot')
+      const readiness=parseJsonValue<DevelopmentReadiness|null>(prep.readiness_json,null)
+      if (!readiness || !readiness.uiImpact) throw new Error('missing readiness snapshot')
+      this.db.prepare(`UPDATE component_qa_runs SET status='stale',stale_reason='development_sha_changed',finished_at=? WHERE task_id=? AND commit_sha<>? AND status IN ('queued','running')`).run(this.now(),taskId,workspace.commitSha)
+      const version=componentQaSemanticVersion(readiness)
+      this.db.prepare(`UPDATE component_qa_runs SET status='stale',stale_reason='scenario_version_changed',finished_at=? WHERE task_id=? AND readiness_version<>? AND status IN ('queued','running')`).run(this.now(),taskId,version)
+      const active=this.db.prepare(`SELECT * FROM component_qa_runs WHERE task_id=? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string,unknown>|undefined
+      if (active) return this.mapComponentQaRun(active)
+      const reasons=componentQaLaunchReasons(readiness)
+      const attempt=Number((this.db.prepare(`SELECT COALESCE(MAX(attempt),0)+1 AS n FROM component_qa_runs WHERE task_id=?`).get(taskId) as {n:number}).n)
+      const id=this.newId(), now=this.now()
+      const componentCases=readiness.testCases.filter((item)=>item.testType==='ui'||item.testType==='automated'||item.testType==='mixed')
+      const scenarios:ComponentQaScenarioSnapshot[]=componentCases.map((testCase)=>({testCase,version:1,semanticHash:version,status:'pending',actualResult:'',diagnostic:''}))
+      const status:ComponentQaRun['status']=readiness.uiImpact==='none'?'skipped':reasons.length?'blocked':'queued'
+      this.db.prepare(`INSERT INTO component_qa_runs (id,project_id,task_id,development_run_id,branch,commit_sha,attempt,status,ui_impact,readiness_run_id,readiness_version,scenarios_json,components_json,blocker_reasons_json,summary,created_at,finished_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,projectId,taskId,dev.id,workspace.branch,workspace.commitSha,attempt,status,readiness.uiImpact,prep.id,version,JSON.stringify(scenarios),JSON.stringify(readiness.affectedComponents),JSON.stringify(reasons),readiness.uiImpact==='none'?'Component QA не применим: uiImpact=none':reasons.length?'Component QA заблокирован обязательными входными данными':'',now,status==='queued'?null:now)
+      if (status==='skipped') {
+        const target=this.getColumnIdBySemantic(projectId,'integration_tests')
+        if (!target || !canTransitionWorkflow('component_qa','integration_tests','automation')) throw new Error('integration_tests transition unavailable')
+        this.moveTask(userId,projectId,taskId,{columnId:target})
+      }
+      return this.getComponentQaRun(userId,id)!
+    })()
+  }
+
+  componentQaExecutionContext(runId:string):{agentId:string;workdir:string;commands:string[]}|null {
+    const row=this.db.prepare(`SELECT w.agent_id,w.path,p.test_command FROM component_qa_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;test_command:string|null}|undefined
+    if (!row?.agent_id||!row.path) return null
+    return {agentId:row.agent_id,workdir:row.path,commands:testStages(row.test_command??'',['npm run test:storybook'])}
+  }
+
+  markComponentQaRunning(id:string):void {
+    this.db.prepare(`UPDATE component_qa_runs SET status='running',started_at=COALESCE(started_at,?) WHERE id=? AND status='queued'`).run(this.now(),id)
+  }
+
+  appendComponentQaLog(id:string,stream:'stdout'|'stderr',chunk:string):void {
+    const prefix=stream==='stderr'?'[stderr] ':''
+    this.db.prepare(`UPDATE component_qa_runs SET log=substr(log || ?, -500000) WHERE id=? AND status='running'`).run(prefix+chunk,id)
+  }
+
+  finishComponentQaRun(userId:string,runId:string,input:{status:'passed'|'failed'|'blocked';scenarios:ComponentQaScenarioSnapshot[];commands:ComponentQaCommandResult[];artifacts?:ComponentQaArtifact[];summary:string;storybookUrl?:string|null;failureClassification?:ComponentQaRun['failureClassification'];blockerReasons?:string[]}):ComponentQaRun {
+    const run=this.getComponentQaRun(userId,runId)
+    if (!run || run.status!=='running') throw new Error('component QA run is not running')
+    this.db.prepare(`UPDATE component_qa_runs SET status=?,scenarios_json=?,commands_json=?,artifacts_json=?,summary=?,storybook_url=?,failure_classification=?,blocker_reasons_json=?,finished_at=? WHERE id=? AND status='running'`).run(input.status,JSON.stringify(input.scenarios),JSON.stringify(input.commands),JSON.stringify(input.artifacts??[]),input.summary,input.storybookUrl??null,input.failureClassification??null,JSON.stringify(input.blockerReasons??[]),this.now(),runId)
+    return this.getComponentQaRun(userId,runId)!
+  }
+
+  completeComponentQaRun(userId:string,projectId:string,taskId:string,runId:string):ComponentQaRun {
+    if (!this.canQa(userId,projectId)) throw new Error('QA permission required')
+    const run=this.getComponentQaRun(userId,runId)
+    const workspace=this.findLatestPushedCiWorkspace(projectId,taskId)
+    const prep=this.db.prepare(`SELECT readiness_json FROM task_preparation_runs WHERE task_id=? AND status='success' AND readiness_json IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId) as {readiness_json:string}|undefined
+    if (!run||run.taskId!==taskId||!workspace?.commitSha||!prep) throw new Error('component QA state incomplete')
+    const readiness=parseJsonValue<DevelopmentReadiness|null>(prep.readiness_json,null)
+    if (!readiness) throw new Error('component QA state incomplete')
+    const gate=canCompleteComponentQa({run,currentCommitSha:workspace.commitSha,currentReadinessVersion:componentQaSemanticVersion(readiness),acceptanceCriteriaConflict:readiness.acceptanceCriteriaConflict})
+    if (!gate.allowed) throw new Error(`component QA gate incomplete: ${gate.reasons.join(', ')}`)
+    const task=this.db.prepare(`SELECT c.semantic_type FROM tasks t JOIN kanban_columns c ON c.id=t.column_id WHERE t.id=? AND t.project_id=?`).get(taskId,projectId) as {semantic_type:string}|undefined
+    if (task?.semantic_type!=='component_qa'||!canTransitionWorkflow('component_qa','integration_tests','automation')) throw new Error('workflow transition conflict')
+    const target=this.getColumnIdBySemantic(projectId,'integration_tests')
+    if (!target) throw new Error('integration_tests column not found')
+    this.moveTask(userId,projectId,taskId,{columnId:target})
+    return run
+  }
+
+  cancelComponentQaRun(userId:string,runId:string):ComponentQaRun {
+    const run=this.getComponentQaRun(userId,runId)
+    if (!run) throw new Error('component QA run not found')
+    if (!this.canQa(userId,run.projectId)) throw new Error('QA permission required')
+    this.db.prepare(`UPDATE component_qa_runs SET status='cancelled',summary='Component QA отменён пользователем',finished_at=? WHERE id=? AND status IN ('queued','running')`).run(this.now(),runId)
+    return this.getComponentQaRun(userId,runId)!
+  }
+
+  linkComponentQaFixRun(userId:string,runId:string,fixRunId:string):ComponentQaRun {
+    const run=this.getComponentQaRun(userId,runId)
+    if (!run||!this.canQa(userId,run.projectId)) throw new Error('QA permission required')
+    this.db.prepare(`UPDATE component_qa_runs SET status='failed',linked_fix_run_id=?,failure_classification='implementation_defect',finished_at=COALESCE(finished_at,?) WHERE id=?`).run(fixRunId,this.now(),runId)
+    return this.getComponentQaRun(userId,runId)!
+  }
+
+  failInterruptedComponentQaRuns():string[] {
+    const rows=this.db.prepare(`SELECT id FROM component_qa_runs WHERE status IN ('queued','running')`).all() as Array<{id:string}>
+    this.db.prepare(`UPDATE component_qa_runs SET status='blocked',failure_classification='infrastructure',blocker_reasons_json='["server_restarted"]',summary='Component QA прерван перезапуском сервера',finished_at=? WHERE status IN ('queued','running')`).run(this.now())
+    return rows.map((row)=>row.id)
   }
 
   /**

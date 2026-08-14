@@ -48,15 +48,21 @@ export function makeColumn(over: Partial<KanbanColumn> = {}): KanbanColumn {
   }
 }
 
-/** Шесть системных колонок нового проекта (как на сервере). */
+/** Полный системный QA-workflow нового проекта (как на сервере). */
 export function makeDefaultColumns(): KanbanColumn[] {
   const names: Array<[string, KanbanColumn['semanticType']]> = [
     ['Бэклог', 'backlog'],
-    ['Готово к разработке', 'ready'],
-    ['Разработка', 'development'],
-    ['Тестирование', 'testing'],
-    ['Ожидает merge', 'awaiting_merge'],
-    ['Готово', 'done']
+    ['Подготовка к разработке', 'preparation'],
+    ['Ready for Development', 'ready'],
+    ['Development', 'development'],
+    ['Component QA', 'component_qa'],
+    ['Создание интеграционных автотестов', 'integration_tests'],
+    ['Automated QA', 'automated_qa'],
+    ['Ручное QA', 'manual_qa'],
+    ['Ожидает мержа', 'awaiting_merge'],
+    ['Мерж', 'merge'],
+    ['Готово', 'done'],
+    ['Требуется решение', 'decision_required']
   ]
   return names.map(([name, semanticType], i) =>
     makeColumn({ id: `col-${semanticType}`, name, semanticType, position: (i + 1) * 1024 })
