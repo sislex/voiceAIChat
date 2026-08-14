@@ -89,12 +89,29 @@ interface OnlineAgent {
   imageHost?: AgentImageHost
 }
 
+interface TunnelSession {
+  id: string
+  sourceAgentId: string
+  targetAgentId: string
+  targetPort: number
+  localPort: number | null
+  resolve?: (port: number) => void
+  reject?: (error: Error) => void
+  timer: NodeJS.Timeout
+  idleTimer: NodeJS.Timeout
+  authorize: () => boolean
+  onClose?: () => void
+}
+const TUNNEL_START_TIMEOUT_MS = 10_000
+const TUNNEL_IDLE_TTL_MS = 30 * 60_000
+
 export class AgentRegistry {
   private readonly online = new Map<string, OnlineAgent>()
   private readonly pending = new Map<string, PendingExec>()
   private readonly pendingFs = new Map<string, PendingFs>()
   private readonly ptys = new Map<string, PtySession>()
   private readonly telemetry = new Map<string, AgentTelemetry>()
+  private readonly tunnels = new Map<string, TunnelSession>()
   private readonly newId: () => string
   private readonly changeListeners = new Set<() => void>()
 
@@ -183,6 +200,7 @@ export class AgentRegistry {
   unregister(agentId: string): void {
     const had = this.online.delete(agentId)
     this.telemetry.delete(agentId)
+    for (const tunnel of [...this.tunnels.values()]) if (tunnel.sourceAgentId === agentId || tunnel.targetAgentId === agentId) this.closeTunnel(tunnel.id)
     for (const [execId, p] of this.pending) {
       if (p.agentId !== agentId) continue
       this.pending.delete(execId)
@@ -498,6 +516,38 @@ export class AgentRegistry {
     this.send(sess.agentId, { t: 'pty.kill', ptyId })
   }
 
+  createTunnel(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize: () => boolean = () => true, onClose?: () => void): Promise<number> {
+    const existing = this.tunnels.get(id)
+    if (existing?.localPort) return Promise.resolve(existing.localPort)
+    if (!this.online.has(sourceAgentId)) return Promise.reject(new Error('Требуется локальный агент'))
+    if (!this.online.has(targetAgentId)) return Promise.reject(new Error('Preview-машина не в сети'))
+    const versionError = this.versionError(sourceAgentId, 'tunnel') ?? this.versionError(targetAgentId, 'tunnel')
+    if (versionError) return Promise.reject(versionError)
+    return new Promise<number>((resolve, reject) => {
+      const timer = setTimeout(() => { this.closeTunnel(id); reject(new Error('Туннель не создан: агент не ответил')) }, TUNNEL_START_TIMEOUT_MS)
+      const idleTimer = setTimeout(() => this.closeTunnel(id), TUNNEL_IDLE_TTL_MS); idleTimer.unref?.()
+      this.tunnels.set(id, { id, sourceAgentId, targetAgentId, targetPort, localPort: null, resolve, reject, timer, idleTimer, authorize, onClose })
+      this.send(sourceAgentId, { t: 'tunnel.listen', tunnelId: id })
+    })
+  }
+
+  tunnelPort(id: string): number | null { return this.tunnels.get(id)?.localPort ?? null }
+
+  closeTunnel(id: string): boolean {
+    const tunnel = this.tunnels.get(id)
+    if (!tunnel) return false
+    this.tunnels.delete(id); clearTimeout(tunnel.timer); clearTimeout(tunnel.idleTimer)
+    this.send(tunnel.sourceAgentId, { t: 'tunnel.close', tunnelId: id })
+    this.send(tunnel.targetAgentId, { t: 'tunnel.close', tunnelId: id })
+    tunnel.reject?.(new Error('Туннель закрыт'))
+    tunnel.onClose?.()
+    return true
+  }
+
+  closeTunnelsForTarget(agentId: string): void {
+    for (const tunnel of [...this.tunnels.values()]) if (tunnel.targetAgentId === agentId) this.closeTunnel(tunnel.id)
+  }
+
   /** Отменяет все незавершённые команды агента (напр., ход Claude прерван). */
   cancelAll(agentId: string): void {
     for (const [execId, p] of this.pending) {
@@ -519,6 +569,27 @@ export class AgentRegistry {
     }
     if (msg.t === 'agent.imageHost') {
       this.setImageHost(agentId, msg.imageHost)
+      return
+    }
+    if ('tunnelId' in msg) {
+      const tunnel = this.tunnels.get(msg.tunnelId)
+      if (!tunnel || (agentId !== tunnel.sourceAgentId && agentId !== tunnel.targetAgentId)) return
+      if (!tunnel.authorize()) { this.closeTunnel(tunnel.id); return }
+      clearTimeout(tunnel.idleTimer)
+      tunnel.idleTimer = setTimeout(() => this.closeTunnel(tunnel.id), TUNNEL_IDLE_TTL_MS); tunnel.idleTimer.unref?.()
+      if (msg.t === 'tunnel.listening' && agentId === tunnel.sourceAgentId) {
+        tunnel.localPort = msg.port; clearTimeout(tunnel.timer); tunnel.resolve?.(msg.port); tunnel.resolve = undefined; tunnel.reject = undefined
+      } else if (msg.t === 'tunnel.open' && agentId === tunnel.sourceAgentId) {
+        this.send(tunnel.targetAgentId, { t: 'tunnel.connect', tunnelId: tunnel.id, connectionId: msg.connectionId, port: tunnel.targetPort })
+      } else if (msg.t === 'tunnel.connected' && agentId === tunnel.targetAgentId) {
+        // TCP accept on the source is already waiting; data can flow now.
+      } else if (msg.t === 'tunnel.data') {
+        this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, msg)
+      } else if (msg.t === 'tunnel.end' || msg.t === 'tunnel.connectionError') {
+        this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, { t: 'tunnel.end', tunnelId: tunnel.id, connectionId: msg.connectionId })
+      } else if (msg.t === 'tunnel.error') {
+        tunnel.reject?.(new Error(msg.message)); this.closeTunnel(tunnel.id)
+      }
       return
     }
     if (msg.t === 'fs.result' || msg.t === 'fs.error') {

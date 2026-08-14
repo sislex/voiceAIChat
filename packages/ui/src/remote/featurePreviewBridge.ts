@@ -1,10 +1,12 @@
-import type { PreviewEnvironment, PreviewOperation } from '@shared/preview'
+import type { PreviewEnvironment, PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@shared/preview'
 import { getToken } from './session'
 
 export interface RendererFeaturePreviewBridge {
   get(projectId: string, taskId: string): Promise<PreviewEnvironment | null>
   operate(projectId: string, taskId: string, operation: PreviewOperation, args?: { idempotencyKey?: string; scenario?: string; agentId?: string }): Promise<PreviewEnvironment>
   cancel(projectId: string, taskId: string): Promise<boolean>
+  open(projectId: string, taskId: string, service: PreviewServiceKind): Promise<PreviewAccessResult>
+  closeTunnel(projectId: string, taskId: string, tunnelId: string): Promise<boolean>
 }
 
 export function createFeaturePreviewRest(httpBase: string): RendererFeaturePreviewBridge {
@@ -19,6 +21,7 @@ export function createFeaturePreviewRest(httpBase: string): RendererFeaturePrevi
     })
     if (response.status === 404 && (!init || init.method === undefined)) return null as T
     const body = await response.json().catch(() => ({})) as { error?: string }
+    if (!response.ok && 'connectionType' in body) return body as T
     if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`)
     return body as T
   }
@@ -31,6 +34,11 @@ export function createFeaturePreviewRest(httpBase: string): RendererFeaturePrevi
     cancel: async (projectId, taskId) => {
       await request(`${base(projectId, taskId)}/cancel`, { method: 'POST' })
       return true
+    },
+    open: (projectId, taskId, service) => request(`${base(projectId, taskId)}/open`, { method: 'POST', body: JSON.stringify({ service }) }),
+    closeTunnel: async (projectId, taskId, tunnelId) => {
+      const result = await request<{ closed: boolean }>(`${base(projectId, taskId)}/tunnels/${encodeURIComponent(tunnelId)}`, { method: 'DELETE' })
+      return result.closed
     }
   }
 }

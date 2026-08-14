@@ -29,6 +29,7 @@ interface Deps {
   executor: CommandExecutor
   storePath: string
   isOnline: (agentId: string) => boolean
+  closeTunnelsForAgent?: (agentId: string) => void
   now?: () => number
   newId?: () => string
 }
@@ -137,6 +138,7 @@ export class FeaturePreviewManager {
       env.builtCommitSha = null; env.currentCommitSha = null; env.state = 'not_created'
     }
     const now = this.now()
+    if (env && (operation === 'stop' || operation === 'remove' || operation === 'rebuild')) this.deps.closeTunnelsForAgent?.(env.agentId)
     if (!env || env.state === 'removed') {
       env = {
         id: this.newId(), projectId, taskId, agentId: targetAgentId, workspacePath,
