@@ -107,7 +107,8 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const pulse = ciCardPulse(visibleCiSummary)
   // В «Готово» запуск нового CI-рана запрещён: завершённая карточка остаётся
   // историей результата, а не точкой повторного выполнения.
-  const developmentAllowed = props.columnSemanticType !== 'backlog' && props.columnSemanticType !== 'preparation'
+  const qaStage = props.columnSemanticType === 'component_qa' || props.columnSemanticType === 'integration_tests' || props.columnSemanticType === 'automated_qa'
+  const developmentAllowed = props.columnSemanticType !== 'backlog' && props.columnSemanticType !== 'preparation' && !qaStage
   const canStart = !done && developmentAllowed && canStartCiRun(ciSummary)
 
   const epic = epicOf(task, props.allTasks)
@@ -235,6 +236,12 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
           {task.taskPreparationError && <p className="jcard-ci-phase">{task.taskPreparationError}</p>}
           <Button size="sm" onClick={() => props.onOpen(task.id, 'preparation')}>Лента подготовки</Button>
           {task.taskPreparationStatus !== 'running' && props.onStartPreparation && <Button size="sm" onClick={() => void props.onStartPreparation?.(task.id)}>Повторить</Button>}
+        </div>
+      )}
+      {task.type === 'task' && qaStage && (
+        <div className="jcard-ci" data-testid="task-qa-run-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="jcard-ci-row"><span className="ci-lozenge">{props.columnSemanticType === 'component_qa' ? 'Component QA' : props.columnSemanticType === 'integration_tests' ? 'Интеграционные тесты' : 'Automated QA'}</span></div>
+          <Button size="sm" onClick={() => props.onOpen(task.id)}>Лента рана</Button>
         </div>
       )}
       {task.type === 'task' && developmentAllowed && (props.onStartCi || visibleCiSummary) && (

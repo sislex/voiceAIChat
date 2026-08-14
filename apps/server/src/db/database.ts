@@ -153,6 +153,11 @@ import {
   type QaTaskState,
   type TaskPreparationRun,
   type DevelopmentReadiness,
+  type AnyQaStageRun,
+  type QaRunStage,
+  type QaStageRunStatus,
+  QA_RUN_KIND,
+  canCompleteAutomation,
   type QaSession,
   type QaCriterionResult,
   type QaAttachment,
@@ -5250,6 +5255,123 @@ export class VoiceChatDb {
   failInterruptedTaskPreparationRuns(): string[] {
     const rows = this.db.prepare(`SELECT id FROM task_preparation_runs WHERE status='running'`).all() as Array<{ id: string }>
     this.db.prepare(`UPDATE task_preparation_runs SET status='failed',error='Подготовка прервана перезапуском сервера',finished_at=? WHERE status='running'`).run(this.now())
+    return rows.map((row) => row.id)
+  }
+
+  private mapQaStageRun(row: Record<string, unknown>): AnyQaStageRun {
+    const stage = row.stage as QaRunStage
+    const status = row.status as QaStageRunStatus
+    return {
+      id: String(row.id), projectId: String(row.project_id), taskId: String(row.task_id),
+      kind: QA_RUN_KIND[stage], stage, status, attempt: Number(row.attempt),
+      triggeredBy: String(row.triggered_by), branch: String(row.branch ?? ''), commitSha: String(row.commit_sha ?? ''),
+      llmEngineId: row.llm_engine_id as string | null, llmProvider: (row.llm_provider ?? 'claude') as LlmProvider,
+      llmModel: String(row.llm_model ?? ''), currentStep: String(row.current_step ?? ''),
+      progress: parseJsonValue(String(row.progress_json ?? '{}'), { current: 0, total: 0, label: '' }),
+      log: parseJsonValue(String(row.log_json ?? '[]'), []), result: row.result_json ? parseJsonValue(String(row.result_json), {}) : null,
+      gateReasons: parseStringArray(String(row.gate_reasons_json ?? '[]')), error: row.error as string | null,
+      createdAt: Number(row.created_at), startedAt: row.started_at == null ? null : Number(row.started_at),
+      finishedAt: row.finished_at == null ? null : Number(row.finished_at),
+      canCancel: ['queued','running','awaiting_input'].includes(status),
+      canRetry: ['gate_failed','failed','cancelled','interrupted'].includes(status)
+    } as AnyQaStageRun
+  }
+
+  getQaStageRun(userId: string, runId: string): AnyQaStageRun | null {
+    const row = this.db.prepare(`SELECT r.* FROM qa_stage_runs r JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`).get(runId, userId) as Record<string, unknown> | undefined
+    return row ? this.mapQaStageRun(row) : null
+  }
+
+  listQaStageRuns(userId: string, projectId: string, taskId: string, stage: QaRunStage): AnyQaStageRun[] {
+    if (!this.isProjectMember(userId, projectId)) return []
+    return (this.db.prepare(`SELECT * FROM qa_stage_runs WHERE project_id=? AND task_id=? AND stage=? ORDER BY attempt DESC`).all(projectId, taskId, stage) as Record<string, unknown>[]).map((row) => this.mapQaStageRun(row))
+  }
+
+  startQaStageRun(userId: string, projectId: string, taskId: string, stage: QaRunStage): AnyQaStageRun {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
+    const task = this.getTask(projectId, taskId)
+    if (!task || task.type !== 'task') throw new Error('Задача не найдена')
+    const current = this.getBoard(userId, projectId)?.columns.find((column) => column.id === task.columnId)
+    if (current?.semanticType !== stage) throw new Error(`Этап ${stage} нельзя запустить из колонки ${current?.semanticType ?? 'unknown'}`)
+    const active = this.db.prepare(`SELECT * FROM qa_stage_runs WHERE task_id=? AND stage=? AND status IN ('queued','running','awaiting_input')`).get(taskId, stage) as Record<string, unknown> | undefined
+    if (active) return this.mapQaStageRun(active)
+    const attempt = Number((this.db.prepare(`SELECT COALESCE(MAX(attempt),0)+1 AS n FROM qa_stage_runs WHERE task_id=? AND stage=?`).get(taskId, stage) as { n: number }).n)
+    const id = this.newId(), now = this.now()
+    this.db.prepare(`INSERT INTO qa_stage_runs
+      (id,project_id,task_id,stage,status,attempt,triggered_by,branch,commit_sha,current_step,created_at,started_at)
+      VALUES (?,?,?,?,'running',?,?,?,?, 'starting',?,?)`).run(
+        id, projectId, taskId, stage, attempt, userId, task.mergeSourceBranch ?? '', task.mergeSourceSha ?? '', now, now
+      )
+    return this.getQaStageRun(userId, id)!
+  }
+
+  updateQaStageRun(runId: string, patch: {
+    status?: QaStageRunStatus; currentStep?: string; progress?: { current: number; total: number; label: string }
+    log?: Array<{ seq: number; at: number; stream: 'out'|'err'|'system'; text: string }>
+    result?: Record<string, unknown> | null; gateReasons?: string[]; error?: string | null
+  }): void {
+    const current = this.db.prepare(`SELECT * FROM qa_stage_runs WHERE id=?`).get(runId) as Record<string, unknown> | undefined
+    if (!current) return
+    const status = patch.status ?? current.status as QaStageRunStatus
+    const terminal = ['success','gate_failed','failed','cancelled','interrupted'].includes(status)
+    this.db.prepare(`UPDATE qa_stage_runs SET status=?,current_step=?,progress_json=?,log_json=?,result_json=?,gate_reasons_json=?,error=?,finished_at=? WHERE id=?`).run(
+      status, patch.currentStep ?? current.current_step, JSON.stringify(patch.progress ?? parseJsonValue(String(current.progress_json), {})),
+      JSON.stringify(patch.log ?? parseJsonValue(String(current.log_json), [])),
+      patch.result === undefined ? current.result_json : patch.result == null ? null : JSON.stringify(patch.result),
+      JSON.stringify(patch.gateReasons ?? parseStringArray(String(current.gate_reasons_json))),
+      patch.error === undefined ? current.error : patch.error, terminal ? this.now() : current.finished_at, runId
+    )
+  }
+
+  completeQaStageRun(userId: string, runId: string, result: Record<string, unknown>): AnyQaStageRun | null {
+    const run = this.getQaStageRun(userId, runId)
+    if (!run || !['running','awaiting_input'].includes(run.status)) return run
+    let reasons: string[] = []
+    if (run.stage === 'integration_tests') {
+      const testCases = Array.isArray(result.testCases) ? result.testCases as import('@voicechat/shared').TestCaseDefinition[] : []
+      reasons = testCases.some((testCase) => testCase.required) ? canCompleteAutomation(testCases, run.commitSha).reasons : ['missing_required_test_cases']
+    } else if (result.gatePassed !== true) {
+      reasons = Array.isArray(result.gateReasons) ? result.gateReasons.filter((item): item is string => typeof item === 'string') : ['quality_gate_failed']
+    }
+    if (reasons.length) {
+      this.updateQaStageRun(runId, { status: 'gate_failed', result, gateReasons: reasons, currentStep: 'gate' })
+      return this.getQaStageRun(userId, runId)
+    }
+    const next: Record<QaRunStage, KanbanColumnSemanticType> = { component_qa: 'integration_tests', integration_tests: 'automated_qa', automated_qa: 'manual_qa' }
+    const target = this.getColumnIdBySemantic(run.projectId, next[run.stage])
+    if (!target) throw new Error(`Следующая колонка ${next[run.stage]} не найдена`)
+    this.db.transaction(() => {
+      this.updateQaStageRun(runId, { status: 'success', result, gateReasons: [], currentStep: 'complete' })
+      this.moveTask(userId, run.projectId, run.taskId, { columnId: target })
+    })()
+    return this.getQaStageRun(userId, runId)
+  }
+
+  cancelQaStageRun(userId: string, runId: string): AnyQaStageRun | null {
+    const run = this.getQaStageRun(userId, runId)
+    if (!run) return null
+    if (run.canCancel) this.updateQaStageRun(runId, { status: 'cancelled', error: 'Ран отменён пользователем' })
+    return this.getQaStageRun(userId, runId)
+  }
+
+  retryQaStageRun(userId: string, runId: string): AnyQaStageRun | null {
+    const run = this.getQaStageRun(userId, runId)
+    if (!run) return null
+    if (!run.canRetry) throw new Error('Повтор этого рана недоступен')
+    return this.startQaStageRun(userId, run.projectId, run.taskId, run.stage)
+  }
+
+  answerQaStageRun(userId: string, runId: string, answer: string): AnyQaStageRun | null {
+    const run = this.getQaStageRun(userId, runId)
+    if (!run || run.stage !== 'integration_tests' || run.status !== 'awaiting_input') throw new Error('Ран не ожидает ответа')
+    if (!answer.trim()) throw new Error('Ответ не может быть пустым')
+    this.updateQaStageRun(runId, { status: 'running', currentStep: 'model_answered' })
+    return this.getQaStageRun(userId, runId)
+  }
+
+  failInterruptedQaStageRuns(): string[] {
+    const rows = this.db.prepare(`SELECT id FROM qa_stage_runs WHERE status IN ('queued','running','awaiting_input')`).all() as Array<{ id: string }>
+    this.db.prepare(`UPDATE qa_stage_runs SET status='interrupted',error='Ран прерван перезапуском сервера',finished_at=? WHERE status IN ('queued','running','awaiting_input')`).run(this.now())
     return rows.map((row) => row.id)
   }
 
