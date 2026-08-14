@@ -89,6 +89,8 @@ export const releaseRegressionSetupCommand=(target:ReleaseProjectTarget,releaseI
   at(target,`test ! -e ${quote(regressionWorktreePath(target,releaseId))} && git worktree add --detach ${quote(regressionWorktreePath(target,releaseId))} ${quote(sha)}`)
 export const releaseRegressionStageCommand=(target:ReleaseProjectTarget,releaseId:string,command:string):string=>
   `cd ${quote(regressionWorktreePath(target,releaseId))} && (${command})`
+export const releaseRegressionInstallCommand=(target:ReleaseProjectTarget,releaseId:string):string=>
+  releaseRegressionStageCommand(target,releaseId,'npm ci')
 export const releaseRegressionCleanupCommand=(target:ReleaseProjectTarget,releaseId:string):string=>
   at(target,`git worktree remove --force ${quote(regressionWorktreePath(target,releaseId))}`)
 
@@ -178,19 +180,23 @@ export class ReleaseManager {
       const setup=await this.runtime.exec(target,releaseRegressionSetupCommand(target,release.id,found.sha),30_000)
       if(setup.timedOut||setup.exitCode!==0)throw new Error(setup.output||'Не удалось создать изолированный worktree для Regression')
       try{
-        for(let index=0;index<commands.length;index+=1){
-          // Группировка удерживает всю составную shell-стадию (включая `&`/`wait`) внутри временного worktree.
-          const limit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='regression')?.limitMs??RELEASE_TEST_TIMEOUT_MS
+        const limit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='regression')?.limitMs??RELEASE_TEST_TIMEOUT_MS
+        const runRegressionCommand=async(command:string,label:string):Promise<void>=>{
           let stageOutput=''
-          const regression=await this.runtime.exec(target,releaseRegressionStageCommand(target,release.id,commands[index]!),limit,(chunk)=>{
+          const regression=await this.runtime.exec(target,releaseRegressionStageCommand(target,release.id,command),limit,(chunk)=>{
             stageOutput+=chunk
-            const live=[...logs,`$ ${commands[index]}\n${stageOutput}`].join('\n\n')
+            const live=[...logs,`$ ${command}\n${stageOutput}`].join('\n\n')
             this.db.setProjectReleaseStep(release.id,'regression','running',live,actor)
           })
           const output=stageOutput||regression.output
-          logs.push(`$ ${commands[index]}\n${output}`)
-          if(regression.timedOut)throw new Error(`Regression, стадия ${index+1}/${commands.length}: фактическая длительность превысила лимит ${Math.round(limit/1000)} с\n${output}`)
-          if(regression.exitCode!==0)throw new Error(output||`Regression-команда ${index+1}/${commands.length} завершилась с ошибкой`)
+          logs.push(`$ ${command}\n${output}`)
+          if(regression.timedOut)throw new Error(`${label}: фактическая длительность превысила лимит ${Math.round(limit/1000)} с\n${output}`)
+          if(regression.exitCode!==0)throw new Error(output?`${label} завершилась с ошибкой\n${output}`:`${label} завершилась с ошибкой`)
+        }
+        await runRegressionCommand('npm ci','Установка зависимостей Regression')
+        for(let index=0;index<commands.length;index+=1){
+          // Группировка удерживает всю составную shell-стадию (включая `&`/`wait`) внутри временного worktree.
+          await runRegressionCommand(commands[index]!,`Regression, стадия ${index+1}/${commands.length}`)
         }
       }finally{
         await this.runtime.exec(target,releaseRegressionCleanupCommand(target,release.id),30_000)

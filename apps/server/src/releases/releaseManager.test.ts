@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
-import { RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseCheckoutCommand, releaseKnowledgeBaseCommand, releaseRegressionCleanupCommand, releaseRegressionSetupCommand, releaseRegressionStageCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
+import { RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseCheckoutCommand, releaseKnowledgeBaseCommand, releaseRegressionCleanupCommand, releaseRegressionInstallCommand, releaseRegressionSetupCommand, releaseRegressionStageCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
 
 let db:VoiceChatDb
 let projectId:string
@@ -51,11 +51,43 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     }
     const release=await new ReleaseManager(db,runtime).createBranch('owner',target,'release/1.2.3','main')
     await tick();await tick()
-    expect(commands).toContain(releaseRegressionSetupCommand(target,release.id,'prepared-sha'))
-    expect(commands).toContain(releaseRegressionStageCommand(target,release.id,target.testCommand))
-    expect(commands).toContain(releaseRegressionCleanupCommand(target,release.id))
+    const setup=releaseRegressionSetupCommand(target,release.id,'prepared-sha')
+    const install=releaseRegressionInstallCommand(target,release.id)
+    const stage=releaseRegressionStageCommand(target,release.id,target.testCommand)
+    const cleanup=releaseRegressionCleanupCommand(target,release.id)
+    expect(commands).toContain(setup)
+    expect(commands).toContain(install)
+    expect(commands).toContain(stage)
+    expect(commands).toContain(cleanup)
+    expect(commands.indexOf(setup)).toBeLessThan(commands.indexOf(install))
+    expect(commands.indexOf(install)).toBeLessThan(commands.indexOf(stage))
+    expect(commands.indexOf(stage)).toBeLessThan(commands.indexOf(cleanup))
     expect(commands.join('\n')).not.toContain("git checkout --detach 'prepared-sha' && (npm run shared")
     expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('ready')
+  })
+
+  it('logs a reproducible dependency installation failure and cleans the isolated worktree',async()=>{
+    const commands:string[]=[]
+    const runtime:ReleaseRuntime={
+      isOnline:()=>true,
+      prepareKnowledgeBase:async()=>{},
+      exec:async(_target,command,_timeout,onChunk)=>{
+        commands.push(command)
+        if(command.includes('ls-remote'))return {exitCode:0,output:commands.some(x=>x.includes('git branch'))?'prepared-sha\trefs/heads/release/1.2.3\n':''}
+        if(command.includes('git branch'))return {exitCode:0,output:'prepared-sha\n'}
+        if(command.includes('(npm ci)')){onChunk?.('npm ERR! lock mismatch\n');return {exitCode:1,output:'npm ERR! lock mismatch\n'}}
+        return {exitCode:0,output:'ok'}
+      }
+    }
+    const target={...ci(),testCommand:'npm run verify:release'}
+    const release=await new ReleaseManager(db,runtime).createBranch('owner',target,'release/1.2.3','main')
+    await tick();await tick()
+    const stored=db.getProjectRelease('owner',projectId,release.id)
+    expect(commands).toContain(releaseRegressionInstallCommand(target,release.id))
+    expect(commands).not.toContain(releaseRegressionStageCommand(target,release.id,target.testCommand))
+    expect(commands).toContain(releaseRegressionCleanupCommand(target,release.id))
+    expect(stored?.status).toBe('failed')
+    expect(stored?.steps.find(step=>step.kind==='regression')?.log).toContain('npm ERR! lock mismatch')
   })
 
   it('cleans the isolated regression worktree after a failed stage without switching the shared checkout',async()=>{
@@ -77,6 +109,27 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(commands).toContain(releaseRegressionCleanupCommand(target,release.id))
     expect(commands.join('\n')).not.toMatch(/git checkout --detach 'prepared-sha' &&/)
     expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('failed')
+  })
+
+  it('cleans the isolated regression worktree after a timed out stage',async()=>{
+    const commands:string[]=[]
+    const runtime:ReleaseRuntime={
+      isOnline:()=>true,
+      prepareKnowledgeBase:async()=>{},
+      exec:async(_target,command)=>{
+        commands.push(command)
+        if(command.includes('ls-remote'))return {exitCode:0,output:commands.some(x=>x.includes('git branch'))?'prepared-sha\trefs/heads/release/1.2.3\n':''}
+        if(command.includes('git branch'))return {exitCode:0,output:'prepared-sha\n'}
+        if(command.includes('(npm run slow)'))return {exitCode:null,output:'still running',timedOut:true}
+        return {exitCode:0,output:'ok'}
+      }
+    }
+    const target={...ci(),testCommand:'npm run slow'}
+    const release=await new ReleaseManager(db,runtime).createBranch('owner',target,'release/1.2.3','main')
+    await tick();await tick()
+    expect(commands).toContain(releaseRegressionCleanupCommand(target,release.id))
+    expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('failed')
+    expect(db.getProjectRelease('owner',projectId,release.id)?.steps.find(step=>step.kind==='regression')?.log).toContain('превысила лимит')
   })
 
   it('prepares KB and runs regression while creating the branch',async()=>{
