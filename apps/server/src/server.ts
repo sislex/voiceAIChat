@@ -621,9 +621,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     db,
     executor: ciExecutor,
     storePath: join(opts.config.dataDir, 'feature-previews.json'),
-    isOnline: (agentId) => agentRegistry.isOnline(agentId)
+    isOnline: (agentId) => agentRegistry.isOnline(agentId),
+    closeTunnelsForAgent: (agentId) => agentRegistry.closeTunnelsForTarget(agentId)
   })
-  registerFeaturePreviewRoutes(app, featurePreviews)
+  registerFeaturePreviewRoutes(app, featurePreviews, db, agentRegistry)
   void featurePreviews.reconcile()
   const releaseManager = new ReleaseManager(db, {
     exec: async (target, command, timeoutMs, onChunk) => {

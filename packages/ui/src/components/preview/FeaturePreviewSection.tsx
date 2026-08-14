@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { PreviewEnvironment, PreviewOperation } from '@shared/preview'
+import type { PreviewEnvironment, PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@shared/preview'
 import type { ProjectMachine } from '@shared/projects'
 import { isPreviewBusy, previewActions } from '@shared/preview'
 import { Button } from '../ui/Button'
@@ -35,6 +35,8 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
   const [scenario, setScenario] = useState('basic-user')
   const [machines, setMachines] = useState<ProjectMachine[]>([])
   const [selectedAgentId, setSelectedAgentId] = useState('')
+  const [opening, setOpening] = useState<PreviewServiceKind | null>(null)
+  const [connection, setConnection] = useState<PreviewAccessResult | null>(null)
   const load = useCallback(async () => {
     if (!api) return
     try {
@@ -78,9 +80,23 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
       }))
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }
+  const openService = async (service: PreviewServiceKind): Promise<void> => {
+    setOpening(service); setConnection(null); setError(null)
+    try {
+      const result = await api.open(props.projectId, props.taskId, service)
+      setConnection(result)
+      if (result.url) window.open(result.url, '_blank', 'noopener,noreferrer')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setOpening(null) }
+  }
+  const closeConnection = async (): Promise<void> => {
+    if (!connection?.tunnelId) return
+    await api.closeTunnel(props.projectId, props.taskId, connection.tunnelId)
+    setConnection({ ...connection, state: 'closed', url: null })
+  }
   const run = environment?.runs.at(-1)
   const current = environment?.expectedCommitSha && environment.expectedCommitSha === environment.currentCommitSha && environment.currentCommitSha === environment.builtCommitSha
-  const externallyReachable = (url: string | null): boolean => !!url && !/^https?:\/\/(?:127\.0\.0\.1|localhost)(?::|\/|$)/i.test(url)
+  const canOpen = state === 'running' && environment?.healthStatus === 'healthy'
   return <section className={`feature-preview feature-preview--${state}`} data-testid="feature-preview">
     <div className="feature-preview__head">
       <div>
@@ -108,7 +124,16 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
         <div><dt>Данные</dt><dd>{environment.selectedSeedScenario ?? 'не подготовлены'}</dd></div>
       </dl>
       {state === 'stale' || (environment.builtCommitSha && !current) ? <p className="feature-preview__warning">Окружение не соответствует зафиксированному SHA. Для QA требуется пересборка.</p> : null}
-      {environment.appUrl && !externallyReachable(environment.appUrl) && <p className="feature-preview__warning">Приложение доступно только на loopback выбранной машины; открыть его из этого клиента нельзя.</p>}
+      {connection && <div className="feature-preview__connection" role="status">
+        <span>{connection.state === 'connected' ? `Подключено · ${connection.connectionType === 'direct' ? 'прямой доступ' : 'защищённый туннель'}` : connection.error ?? 'Туннель закрыт'}</span>
+        {connection.tunnelId && connection.state === 'connected' && <Button size="sm" variant="ghost" onClick={() => void closeConnection()}>Закрыть подключение</Button>}
+        {connection.manualCommand && !connection.url && <div className="feature-preview__manual">
+          <code>{connection.manualCommand}</code>
+          <Button size="sm" variant="ghost" onClick={() => void navigator.clipboard?.writeText(connection.manualCommand!)}>Копировать команду</Button>
+          <small>Запустите команду в терминале рабочей машины. Пароли и SSH-ключи остаются на ней.</small>
+        </div>}
+      </div>}
+      <details className="feature-preview__technical"><summary>Технические адреса</summary><dl>{environment.services.map((service) => <div key={service.name}><dt>{service.name}</dt><dd><code>{service.url}</code> · порт {service.hostPort}</dd></div>)}</dl></details>
       {environment.lastError && <p className="feature-preview__error">{environment.lastError.type}: {environment.lastError.message}</p>}
       <label className="feature-preview__scenario">Сценарий данных
         <select value={scenario} onChange={(event) => setScenario(event.target.value)}>
@@ -122,8 +147,8 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
       {actions.includes('start') && <Button variant="primary" size="sm" onClick={() => void operate('start')}>{state === 'stopped' ? 'Запустить снова' : 'Запустить тестовый контейнер'}</Button>}
       {actions.includes('rebuild') && <Button size="sm" onClick={() => void operate('rebuild')}>Пересобрать</Button>}
       {actions.includes('stop') && <Button size="sm" onClick={() => void operate('stop')}>Остановить</Button>}
-      {environment?.appUrl && externallyReachable(environment.appUrl) && <a className="btn btn--sm" href={environment.appUrl} target="_blank" rel="noreferrer">Открыть приложение</a>}
-      {environment?.storybookUrl && externallyReachable(environment.storybookUrl) && <a className="btn btn--sm" href={environment.storybookUrl} target="_blank" rel="noreferrer">Открыть Storybook</a>}
+      {canOpen && environment?.appUrl && <Button variant="primary" size="sm" disabled={opening !== null} onClick={() => void openService('app')}>{opening === 'app' ? 'Создаём подключение…' : 'Открыть проект'}</Button>}
+      {canOpen && environment?.storybookUrl && environment.storybookStatus === 'ready' && <Button size="sm" disabled={opening !== null} onClick={() => void openService('storybook')}>{opening === 'storybook' ? 'Создаём подключение…' : 'Открыть Storybook'}</Button>}
       {actions.includes('seed') && <Button size="sm" onClick={() => void operate('seed')}>Подготовить тестовые данные</Button>}
       {actions.includes('reset') && <Button size="sm" onClick={() => void operate('reset')}>Сбросить тестовые данные</Button>}
       {actions.includes('health_check') && <Button size="sm" onClick={() => void operate('health_check')}>Проверить состояние</Button>}

@@ -23,14 +23,14 @@ describe('FeaturePreviewSection', () => {
     ['not_created','Не создано'], ['building','Сборка'], ['running','Работает'], ['stale','Окружение устарело'],
     ['stopped','Остановлено'], ['failed','Ошибка'], ['cleaning','Удаление'], ['removed','Удалено']
   ] as const)('renders server state %s', async (state, label) => {
-    window.featurePreview = { get: vi.fn().mockResolvedValue(state === 'not_created' ? null : environment(state)), operate: vi.fn(), cancel: vi.fn() }
+    window.featurePreview = { get: vi.fn().mockResolvedValue(state === 'not_created' ? null : environment(state)), operate: vi.fn(), cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
     render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
     expect(await screen.findByText(label)).toBeInTheDocument()
   })
 
   it('starts only after explicit click', async () => {
     const operate = vi.fn().mockResolvedValue(environment('building'))
-    window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate, cancel: vi.fn() }
+    window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate, cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
     render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
     await screen.findByText('Не создано')
     expect(operate).not.toHaveBeenCalled()
@@ -44,7 +44,7 @@ describe('FeaturePreviewSection', () => {
       getRandomValues: (bytes: Uint8Array) => { bytes.fill(7); return bytes }
     })
     const operate = vi.fn().mockResolvedValue(environment('building'))
-    window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate, cancel: vi.fn() }
+    window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate, cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
     render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
     fireEvent.click(await screen.findByRole('button', { name: 'Запустить тестовый контейнер' }))
     await waitFor(() => expect(operate).toHaveBeenCalledWith('p1', 't1', 'start', {
@@ -56,16 +56,38 @@ describe('FeaturePreviewSection', () => {
   it('offers to start Docker when the server reports a stopped Engine', async () => {
     const failed = { ...environment('failed'), lastError: { type: 'docker' as const, message: 'Docker установлен, но не запущен' } }
     const operate = vi.fn().mockResolvedValue(environment('starting'))
-    window.featurePreview = { get: vi.fn().mockResolvedValue(failed), operate, cancel: vi.fn() }
+    window.featurePreview = { get: vi.fn().mockResolvedValue(failed), operate, cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
     render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
     fireEvent.click(await screen.findByRole('button', { name: 'Запустить Docker' }))
     await waitFor(() => expect(operate).toHaveBeenCalledWith('p1', 't1', 'docker_start', expect.objectContaining({ idempotencyKey: expect.any(String) })))
   })
 
   it('warns about stale SHA and offers rebuild', async () => {
-    window.featurePreview = { get: vi.fn().mockResolvedValue(environment('stale')), operate: vi.fn().mockResolvedValue(environment('rebuilding')), cancel: vi.fn() }
+    window.featurePreview = { get: vi.fn().mockResolvedValue(environment('stale')), operate: vi.fn().mockResolvedValue(environment('rebuilding')), cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
     render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
     expect(await screen.findByText(/Для QA требуется пересборка/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Пересобрать' })).toBeEnabled()
+  })
+
+  it('opens a ready project through the bridge and shows tunnel state', async () => {
+    const ready = { ...environment('running'), services: [{ name: 'app', internalPort: 3000, hostPort: 18000, url: 'http://127.0.0.1:18000', containerId: 'c1', state: 'running', healthStatus: 'healthy' as const }] }
+    const open = vi.fn().mockResolvedValue({ connectionType: 'tunnel', state: 'connected', url: 'http://127.0.0.1:32100', tunnelId: 'tun1', manualCommand: null, internalUrl: ready.appUrl!, localAgentId: 'local', error: null })
+    const browserOpen = vi.spyOn(window, 'open').mockImplementation(() => null)
+    window.featurePreview = { get: vi.fn().mockResolvedValue(ready), operate: vi.fn(), cancel: vi.fn(), open, closeTunnel: vi.fn() }
+    render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть проект' }))
+    await waitFor(() => expect(open).toHaveBeenCalledWith('p1', 't1', 'app'))
+    expect(browserOpen).toHaveBeenCalledWith('http://127.0.0.1:32100', '_blank', 'noopener,noreferrer')
+    expect(screen.getByText(/защищённый туннель/)).toBeInTheDocument()
+  })
+
+  it('shows Storybook separately and renders the manual fallback without horizontal-only data', async () => {
+    const ready = { ...environment('running'), storybookUrl: 'http://127.0.0.1:18001', storybookStatus: 'ready' as const, services: [{ name: 'storybook', internalPort: 6006, hostPort: 18001, url: 'http://127.0.0.1:18001', containerId: 'c2', state: 'running', healthStatus: 'healthy' as const }] }
+    const open = vi.fn().mockResolvedValue({ connectionType: 'manual', state: 'agent_required', url: null, tunnelId: null, manualCommand: 'ssh -N -L 18000:127.0.0.1:18001 preview', internalUrl: ready.storybookUrl, localAgentId: null, error: 'Для автоматического подключения нужен локальный агент ChatAI' })
+    window.featurePreview = { get: vi.fn().mockResolvedValue(ready), operate: vi.fn(), cancel: vi.fn(), open, closeTunnel: vi.fn() }
+    render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть Storybook' }))
+    expect(await screen.findByText(/ssh -N -L/)).toBeInTheDocument()
+    expect(screen.getByText(/Пароли и SSH-ключи остаются/)).toBeInTheDocument()
   })
 })
