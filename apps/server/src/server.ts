@@ -23,6 +23,7 @@ import { ReleaseManager, releaseKnowledgeBaseCommand } from './releases/releaseM
 import { FeaturePreviewManager } from './preview/manager.js'
 import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
+import { createComponentQaRunner } from './ci/componentQa.js'
 import { MergeRunManager } from './merge/runManager.js'
 import { createCiModelHooks } from './ci/modelHooks.js'
 import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
@@ -717,39 +718,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId) => { launchTaskPreparation(userId, projectId, taskId) })
   mergeRunManager.reconcile()
-  const componentQaControllers=new Map<string,AbortController>()
-  const launchComponentQa=(runId:string,userId:string):void=>{
-    if (componentQaControllers.has(runId)) return
-    const context=db.componentQaExecutionContext(runId)
-    const run=db.getComponentQaRun(userId,runId)
-    if (!context||!run) {
-      if (run) {
-        db.markComponentQaRunning(runId)
-        db.finishComponentQaRun(userId,runId,{status:'blocked',scenarios:run.scenarios.map((item)=>({...item,status:'blocked',diagnostic:'development workspace is unavailable'})),commands:[],summary:'Development workspace недоступен',failureClassification:'infrastructure',blockerReasons:['workspace_unavailable']})
-      }
-      return
-    }
-    const controller=new AbortController()
-    componentQaControllers.set(runId,controller)
-    db.markComponentQaRunning(runId)
-    const startedAt=Date.now()
-    let output=''
-    void ciExecutor.run({agentId:context.agentId,script:context.command,workdir:context.workdir,env:{CI:'1'},timeoutMs:30*60_000},(chunk)=>{
-      output=(output+chunk).slice(-500000)
-      db.appendComponentQaLog(runId,'stdout',chunk)
-    },controller.signal).then((result)=>{
-      const current=db.getComponentQaRun(userId,runId)
-      if (!current||current.status!=='running') return
-      const infrastructure=result.timedOut||result.exitCode==null
-      const passed=result.exitCode===0&&!result.timedOut
-      const command={commandId:'project-component-tests',name:'Component / Storybook tests',command:context.command,exitCode:result.exitCode,durationMs:Date.now()-startedAt,status:passed?'passed' as const:infrastructure?'blocked' as const:'failed' as const,stdout:output,stderr:'',diagnostic:result.timedOut?'command_timeout':result.exitCode==null?'executor_disconnected':passed?'':'non_zero_exit',artifacts:[]}
-      db.finishComponentQaRun(userId,runId,{status:passed?'passed':infrastructure?'blocked':'failed',scenarios:current.scenarios.map((item)=>({...item,status:passed?'passed':infrastructure?'blocked':'failed',actualResult:passed?'Компонентные проверки прошли':'Команда компонентных проверок завершилась с ошибкой',diagnostic:command.diagnostic})),commands:[command],summary:passed?'Component QA пройден':infrastructure?'Component QA заблокирован инфраструктурой':'Component QA выявил дефект реализации',failureClassification:passed?null:infrastructure?'infrastructure':'implementation_defect',blockerReasons:infrastructure?[command.diagnostic]:[]})
-    }).catch((error)=>{
-      const current=db.getComponentQaRun(userId,runId)
-      if (current?.status==='running') db.finishComponentQaRun(userId,runId,{status:'blocked',scenarios:current.scenarios.map((item)=>({...item,status:'blocked',diagnostic:String(error)})),commands:[],summary:String(error),failureClassification:'infrastructure',blockerReasons:['executor_error']})
-    }).finally(()=>componentQaControllers.delete(runId))
-  }
-  registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),launchComponentQa,(runId)=>componentQaControllers.get(runId)?.abort())
+  const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor})
+  registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId))
 
   // Раны предыдущего процесса живут только в его памяти: после рестарта они
   // навсегда остались бы «running» и блокировали карточку задачи.

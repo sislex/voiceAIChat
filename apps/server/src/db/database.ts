@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
 import { toFtsMatchQuery } from './fts.js'
 import { calculateKbHit, filesReadFromCiLog } from '../ci/kbHit.js'
+import { testStages } from '../ci/testStages.js'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_AGENT_POLICY,
@@ -4973,10 +4974,10 @@ export class VoiceChatDb {
     })()
   }
 
-  componentQaExecutionContext(runId:string):{agentId:string;workdir:string;command:string}|null {
+  componentQaExecutionContext(runId:string):{agentId:string;workdir:string;commands:string[]}|null {
     const row=this.db.prepare(`SELECT w.agent_id,w.path,p.test_command FROM component_qa_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;test_command:string|null}|undefined
     if (!row?.agent_id||!row.path) return null
-    return {agentId:row.agent_id,workdir:row.path,command:row.test_command?.trim()||'npm run test:storybook'}
+    return {agentId:row.agent_id,workdir:row.path,commands:testStages(row.test_command??'',['npm run test:storybook'])}
   }
 
   markComponentQaRunning(id:string):void {

@@ -80,16 +80,32 @@ FNV-1a-хеш стабильно сериализованных сценарие
 Клиент не передаёт путь, команду, SHA или машину: `componentQaExecutionContext`
 достаёт их SQL-джойном ран → development-ран → workspace, причём только для
 рана в статусе `queued` и workspace с `pushed = 1` и совпадающим
-`commit_sha`. Команда — `projects.test_command`, fallback
-`npm run test:storybook`; запуск идёт через тот же `ciExecutor` с `CI=1` и
-таймаутом 30 минут, stdout пишется в `component_qa_runs.log` с обрезкой до
-последних 500 000 символов. Выполняется одна команда, и её агрегированный
-исход присваивается всем сценариям снимка: exit 0 → `passed`, ненулевой код →
-`failed` с классификацией `implementation_defect`, timeout или потеря
-исполнителя (`exitCode == null`) → `blocked` с `infrastructure` и диагностикой
+`commit_sha`. Настройка `projects.test_command` разбирается общим с merge-раном
+модулем `apps/server/src/ci/testStages.ts` (единственная копия функции;
+merge-ран передаёт дефолт `npm run affected-check`, Component QA —
+`npm run test:storybook`): пустая настройка → дефолт вызывающей стороны, строка
+без ведущей `[` → одиночная команда, валидный JSON-массив → список непустых
+trim-нутых стадий, некорректный JSON с ведущей `[` выполняется как одна команда
+и явно падает. Фолбэк `npm run test:storybook` существует в корневом
+`package.json` как алиас `npm run build:storybook` (смоук-сборка Storybook —
+единственная проверка, которая ловит сломанный рендер сториз).
+
+Стадии исполняет `createComponentQaRunner`
+(`apps/server/src/ci/componentQa.ts`, собирается в `server.ts`) последовательно
+через тот же `ciExecutor` с `CI=1` в окружении каждой стадии; бюджет 30 минут
+общий на ран — каждая стадия получает остаток. stdout всех стадий пишется в
+единый `component_qa_runs.log` с обрезкой до последних 500 000 символов, и на
+каждую стадию создаётся отдельная запись в `commands` (`commandId` вида
+`stage-N`, имя стадии, текст команды, exit code, длительность, статус,
+диагностика); панель показывает их все. Первый ненулевой код прерывает
+оставшиеся стадии: все exit 0 → `passed`, ненулевой код → `failed` с
+классификацией `implementation_defect` и диагностикой `non_zero_exit` у упавшей
+стадии, timeout (в т.ч. исчерпание общего бюджета) или потеря исполнителя
+(`exitCode == null`) → `blocked` с `infrastructure` и диагностикой
 `command_timeout`/`executor_disconnected`; недоступный workspace даёт
-`blocked` + `workspace_unavailable`. Отмена дергает `AbortController` из карты
-живых ранов в `server.ts` и переводит ран в `cancelled`. При старте сервера
+`blocked` + `workspace_unavailable`. Итог рана по-прежнему присваивается всем
+сценариям снимка. Отмена дергает `AbortController` из карты живых ранов и
+переводит ран в `cancelled`. При старте сервера
 `failInterruptedComponentQaRuns` закрывает все `queued|running` как `blocked`
 + `infrastructure` + `server_restarted`, поэтому статус задачи не меняется, а
 повтор разрешён.
