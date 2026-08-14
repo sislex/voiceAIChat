@@ -590,6 +590,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return value
   }
   const taskPreparationHandles = new Map<string, { cancel(): void }>()
+  // CLI-дети подготовки не должны переживать app.close(): cancel() ставит
+  // finished и глушит поздние onDone/onError, которые иначе читают закрытую БД.
+  app.addHook('onClose', async () => {
+    for (const handle of taskPreparationHandles.values()) handle.cancel()
+    taskPreparationHandles.clear()
+  })
   const launchTaskPreparation = (userId: string, projectId: string, taskId: string): import('@voicechat/shared').TaskPreparationRun => {
     const run = db.startTaskPreparationRun(userId, projectId, taskId)
     if (run.status !== 'running' || run.log) return run
