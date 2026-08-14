@@ -146,6 +146,8 @@ import {
   type AcceptanceCriterionSnapshot,
   type AcceptanceCriterionVersion,
   type QaTaskState,
+  type TaskPreparationRun,
+  type DevelopmentReadiness,
   type QaSession,
   type QaCriterionResult,
   type QaAttachment,
@@ -406,6 +408,10 @@ interface TaskRow {
   merge_machine_bound?: number
   merged_sha?: string | null
   merged_source_sha?: string | null
+  task_preparation_run_id?: string | null
+  task_preparation_status?: string | null
+  task_preparation_error?: string | null
+  task_preparation_log?: string | null
 }
 
 
@@ -512,7 +518,11 @@ function mapTask(r: TaskRow): Task {
     mergePermitted: r.merge_permitted !== 0,
     mergeMachineBound: r.merge_machine_bound !== 0,
     mergedSha: r.merged_sha ?? null,
-    mergedSourceSha: r.merged_source_sha ?? null
+    mergedSourceSha: r.merged_source_sha ?? null,
+    taskPreparationRunId: r.task_preparation_run_id ?? null,
+    taskPreparationStatus: (r.task_preparation_status as Task['taskPreparationStatus']) ?? null,
+    taskPreparationError: r.task_preparation_error ?? null,
+    taskPreparationLog: r.task_preparation_log ?? null
   }
 }
 
@@ -2850,7 +2860,11 @@ export class VoiceChatDb {
                  AND (a.user_id=? OR EXISTS(SELECT 1 FROM project_machines pm WHERE pm.project_id=t.project_id AND pm.agent_id=a.id))
              ) AS merge_machine_bound,
              (SELECT r.merge_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_sha,
-             (SELECT r.source_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_source_sha
+             (SELECT r.source_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_source_sha,
+             (SELECT p.id FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_run_id,
+             (SELECT p.status FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_status,
+             (SELECT p.error FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_error,
+             (SELECT p.log FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_log
            FROM tasks t WHERE t.project_id = ? ORDER BY t.column_id ASC, t.position ASC`
         )
         .all(userId, userId, userId, projectId) as TaskRow[]
@@ -4990,6 +5004,89 @@ export class VoiceChatDb {
       canRetry: !ACTIVE_MERGE_STATUSES.includes(r.status as MergeRun['status']) && r.status !== 'success', pushStartedAt: r.push_started_at as number | null,
       startedAt: r.started_at as number | null, finishedAt: r.finished_at as number | null, createdAt: Number(r.created_at), machineName: this.agentName(String(r.agent_id))
     }
+  }
+
+  private mapTaskPreparationRun(row: Record<string, unknown>): TaskPreparationRun {
+    const status = row.status as TaskPreparationRun['status']
+    return {
+      id: String(row.id), projectId: String(row.project_id), taskId: String(row.task_id), status,
+      attempt: Number(row.attempt), maxAttempts: 2, log: String(row.log ?? ''),
+      error: row.error as string | null,
+      readiness: row.readiness_json ? parseJsonValue<DevelopmentReadiness>(String(row.readiness_json), null as unknown as DevelopmentReadiness) : null,
+      gateReasons: parseStringArray(String(row.gate_reasons_json ?? '[]')),
+      createdAt: Number(row.created_at), finishedAt: row.finished_at == null ? null : Number(row.finished_at),
+      canRetry: status === 'failed' || status === 'cancelled', canCancel: status === 'running'
+    }
+  }
+
+  getTaskPreparationRun(userId: string, runId: string): TaskPreparationRun | null {
+    const row = this.db.prepare(`SELECT p.* FROM task_preparation_runs p JOIN project_members m ON m.project_id=p.project_id WHERE p.id=? AND m.username=?`).get(runId, userId) as Record<string, unknown> | undefined
+    return row ? this.mapTaskPreparationRun(row) : null
+  }
+
+  listTaskPreparationRuns(userId: string, projectId: string, taskId: string): TaskPreparationRun[] {
+    if (!this.isProjectMember(userId, projectId)) return []
+    return (this.db.prepare(`SELECT * FROM task_preparation_runs WHERE project_id=? AND task_id=? ORDER BY created_at DESC`).all(projectId, taskId) as Record<string, unknown>[]).map((row) => this.mapTaskPreparationRun(row))
+  }
+
+  startTaskPreparationRun(userId: string, projectId: string, taskId: string): TaskPreparationRun {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
+    const task = this.getTask(projectId, taskId)
+    if (!task || task.type !== 'task') throw new Error('Задача не найдена')
+    const board = this.getBoard(userId, projectId)
+    const current = board?.columns.find((column) => column.id === task.columnId)
+    if (current?.semanticType !== 'backlog' && current?.semanticType !== 'preparation') throw new Error('Подготовку можно запускать только из TODO или Подготовки к разработке')
+    const active = this.db.prepare(`SELECT * FROM task_preparation_runs WHERE task_id=? AND status='running'`).get(taskId) as Record<string, unknown> | undefined
+    if (active) return this.mapTaskPreparationRun(active)
+    const target = this.getColumnIdBySemantic(projectId, 'preparation')
+    if (!target) throw new Error('Колонка Подготовка к разработке не найдена')
+    const id = this.newId(), now = this.now()
+    this.db.transaction(() => {
+      this.db.prepare(`INSERT INTO task_preparation_runs (id,project_id,task_id,status,created_at) VALUES (?,?,?,'running',?)`).run(id, projectId, taskId, now)
+      if (task.columnId !== target) this.moveTask(userId, projectId, taskId, { columnId: target })
+    })()
+    return this.getTaskPreparationRun(userId, id)!
+  }
+
+  appendTaskPreparationLog(id: string, chunk: string): void {
+    this.db.prepare(`UPDATE task_preparation_runs SET log=substr(log || ?, -500000) WHERE id=? AND status='running'`).run(chunk, id)
+  }
+
+  completeTaskPreparationRun(userId: string, id: string, readiness: DevelopmentReadiness): TaskPreparationRun | null {
+    const run = this.getTaskPreparationRun(userId, id)
+    if (!run || run.status !== 'running') return run
+    const target = this.getColumnIdBySemantic(run.projectId, 'ready')
+    if (!target) throw new Error('Колонка Ready for Development не найдена')
+    this.db.transaction(() => {
+      this.db.prepare(`UPDATE tasks SET description=?,acceptance_criteria=?,updated_at=? WHERE id=?`).run(readiness.functionalRequirements.trim(), readiness.acceptanceCriteria.trim(), this.now(), run.taskId)
+      for (const testCase of readiness.testCases) {
+        this.createAcceptanceCriterion(userId, run.projectId, run.taskId, {
+          title: testCase.title, description: testCase.description, preconditions: testCase.preconditions,
+          steps: testCase.steps, testData: testCase.testData, expectedResult: testCase.expectedResult,
+          required: testCase.required, testType: testCase.testType
+        })
+      }
+      this.moveTask(userId, run.projectId, run.taskId, { columnId: target })
+      this.db.prepare(`UPDATE task_preparation_runs SET status='success',readiness_json=?,gate_reasons_json='[]',finished_at=? WHERE id=? AND status='running'`).run(JSON.stringify(readiness), this.now(), id)
+    })()
+    return this.getTaskPreparationRun(userId, id)
+  }
+
+  failTaskPreparationRun(id: string, error: string, reasons: string[] = []): void {
+    this.db.prepare(`UPDATE task_preparation_runs SET status='failed',error=?,gate_reasons_json=?,finished_at=? WHERE id=? AND status='running'`).run(error, JSON.stringify(reasons), this.now(), id)
+  }
+
+  cancelTaskPreparationRun(userId: string, id: string): TaskPreparationRun | null {
+    const run = this.getTaskPreparationRun(userId, id)
+    if (!run) return null
+    this.db.prepare(`UPDATE task_preparation_runs SET status='cancelled',error='Подготовка отменена пользователем',finished_at=? WHERE id=? AND status='running'`).run(this.now(), id)
+    return this.getTaskPreparationRun(userId, id)
+  }
+
+  failInterruptedTaskPreparationRuns(): string[] {
+    const rows = this.db.prepare(`SELECT id FROM task_preparation_runs WHERE status='running'`).all() as Array<{ id: string }>
+    this.db.prepare(`UPDATE task_preparation_runs SET status='failed',error='Подготовка прервана перезапуском сервера',finished_at=? WHERE status='running'`).run(this.now())
+    return rows.map((row) => row.id)
   }
 
   getQaTaskState(userId: string, projectId: string, taskId: string): QaTaskState | null {
