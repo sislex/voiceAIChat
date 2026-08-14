@@ -1004,6 +1004,38 @@ CREATE TABLE IF NOT EXISTS task_preparation_runs (
 CREATE INDEX IF NOT EXISTS idx_task_preparation_task ON task_preparation_runs(task_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_task_preparation_active ON task_preparation_runs(task_id) WHERE status = 'running';
 
+-- Три пост-development QA-этапа имеют самостоятельные попытки и выборки.
+-- Discriminator stage не позволяет смешать их с CI, preparation, manual QA или merge.
+CREATE TABLE IF NOT EXISTS qa_stage_runs (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  stage TEXT NOT NULL CHECK(stage IN ('component_qa','integration_tests','automated_qa')),
+  status TEXT NOT NULL DEFAULT 'queued',
+  attempt INTEGER NOT NULL,
+  triggered_by TEXT NOT NULL,
+  branch TEXT NOT NULL DEFAULT '',
+  commit_sha TEXT NOT NULL DEFAULT '',
+  llm_engine_id TEXT,
+  llm_provider TEXT NOT NULL DEFAULT 'claude',
+  llm_model TEXT NOT NULL DEFAULT '',
+  current_step TEXT NOT NULL DEFAULT 'queued',
+  progress_json TEXT NOT NULL DEFAULT '{"current":0,"total":0,"label":""}',
+  log_json TEXT NOT NULL DEFAULT '[]',
+  result_json TEXT,
+  gate_reasons_json TEXT NOT NULL DEFAULT '[]',
+  error TEXT,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  finished_at INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_qa_stage_runs_task_stage ON qa_stage_runs(task_id, stage, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_qa_stage_runs_one_active
+  ON qa_stage_runs(task_id, stage)
+  WHERE status IN ('queued','running','awaiting_input');
+
 -- ============================ Ручное QA ============================
 CREATE TABLE IF NOT EXISTS acceptance_criteria (
   id TEXT PRIMARY KEY, task_id TEXT NOT NULL, position INTEGER NOT NULL,

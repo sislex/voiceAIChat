@@ -15,6 +15,11 @@ export interface RendererQaBridge {
   saveAdditionalIssues?(projectId: string, taskId: string, sessionId: string, additionalIssues: string): Promise<QaSession>
   complete(projectId: string, taskId: string, sessionId: string, summary: string): Promise<QaSession>
   requestFix(projectId: string, taskId: string, sessionId: string): Promise<{ id: string }>
+  listStageRuns?(projectId: string, taskId: string, stage: import('@shared/qa').QaRunStage): Promise<import('@shared/qa').AnyQaStageRun[]>
+  startStageRun?(projectId: string, taskId: string, stage: import('@shared/qa').QaRunStage): Promise<import('@shared/qa').AnyQaStageRun>
+  cancelStageRun?(runId: string): Promise<import('@shared/qa').AnyQaStageRun>
+  retryStageRun?(runId: string): Promise<import('@shared/qa').AnyQaStageRun>
+  answerStageRun?(runId: string, answer: string): Promise<import('@shared/qa').AnyQaStageRun>
 }
 
 export function createQaRest(httpBase: string): RendererQaBridge {
@@ -37,6 +42,11 @@ export function createQaRest(httpBase: string): RendererQaBridge {
     addAttachment: (projectId, taskId, resultId, uploadId, caption) => request(`${REST.taskQaResult(projectId, taskId, resultId)}/attachments`, { method: 'POST', body: JSON.stringify({ uploadId, caption }) }),
     saveAdditionalIssues: (projectId, taskId, sessionId, additionalIssues) => request(REST.taskQaSession(projectId, taskId, sessionId), { method: 'PATCH', body: JSON.stringify({ additionalIssues }) }),
     complete: (projectId, taskId, sessionId, summary) => request(REST.taskQaComplete(projectId, taskId, sessionId), { method: 'POST', body: JSON.stringify({ summary }) }),
-    requestFix: (projectId, taskId, sessionId) => request(REST.taskQaFix(projectId, taskId, sessionId), { method: 'POST' })
+    requestFix: (projectId, taskId, sessionId) => request(REST.taskQaFix(projectId, taskId, sessionId), { method: 'POST' }),
+    listStageRuns: (projectId, taskId, stage) => request(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/qa/runs/${stage}`),
+    startStageRun: (projectId, taskId, stage) => request(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/qa/runs/${stage}`, { method: 'POST' }),
+    cancelStageRun: (runId) => request(`/api/qa/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' }),
+    retryStageRun: (runId) => request(`/api/qa/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST' }),
+    answerStageRun: (runId, answer) => request(`/api/qa/runs/${encodeURIComponent(runId)}/answer`, { method: 'POST', body: JSON.stringify({ answer }) })
   }
 }

@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
-import type { AcceptanceCriterionSnapshot } from '@voicechat/shared'
+import { QA_RUN_STAGES, type AcceptanceCriterionSnapshot, type QaRunStage } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { UploadStore } from '../uploads.js'
 import type { CiRunManager } from '../ci/runManager.js'
@@ -130,6 +130,39 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     if (!upload || upload.agentId) return reply.code(404).send({ error: 'attachment file not found' })
     reply.header('content-disposition', `inline; filename="${basename(attachment.name).replace(/["\\]/g, '_')}"`)
     return reply.type(attachment.mimeType).send(readFileSync(upload.path))
+  })
+
+  const stageOf = (raw: string): QaRunStage | null => QA_RUN_STAGES.includes(raw as QaRunStage) ? raw as QaRunStage : null
+  app.get<{ Params: TaskParams & { stage: string } }>(`${base}/runs/:stage`, async (req, reply) => {
+    const stage = stageOf(req.params.stage)
+    if (!stage) return reply.code(404).send({ error: 'unknown QA stage' })
+    return db.listQaStageRuns(uid(req), req.params.projectId, req.params.taskId, stage)
+  })
+  app.get<{ Params: TaskParams & { stage: string } }>(`${base}/runs/:stage/current`, async (req, reply) => {
+    const stage = stageOf(req.params.stage)
+    if (!stage) return reply.code(404).send({ error: 'unknown QA stage' })
+    return db.listQaStageRuns(uid(req), req.params.projectId, req.params.taskId, stage)[0] ?? reply.code(404).send({ error: 'run not found' })
+  })
+  app.post<{ Params: TaskParams & { stage: string } }>(`${base}/runs/:stage`, async (req, reply) => {
+    try {
+      const stage = stageOf(req.params.stage)
+      if (!stage) return reply.code(404).send({ error: 'unknown QA stage' })
+      return reply.code(202).send(db.startQaStageRun(uid(req), req.params.projectId, req.params.taskId, stage))
+    } catch (error) { return qaError(reply, error) }
+  })
+  app.delete<{ Params: { runId: string } }>('/api/qa/runs/:runId', async (req, reply) => {
+    try { return db.cancelQaStageRun(uid(req), req.params.runId) ?? reply.code(404).send({ error: 'run not found' }) }
+    catch (error) { return qaError(reply, error) }
+  })
+  app.post<{ Params: { runId: string } }>('/api/qa/runs/:runId/retry', async (req, reply) => {
+    try {
+      const run = db.retryQaStageRun(uid(req), req.params.runId)
+      return run ? reply.code(202).send(run) : reply.code(404).send({ error: 'run not found' })
+    } catch (error) { return qaError(reply, error) }
+  })
+  app.post<{ Params: { runId: string }; Body: { answer?: string } }>('/api/qa/runs/:runId/answer', async (req, reply) => {
+    try { return db.answerQaStageRun(uid(req), req.params.runId, req.body?.answer ?? '') ?? reply.code(404).send({ error: 'run not found' }) }
+    catch (error) { return qaError(reply, error) }
   })
 }
 

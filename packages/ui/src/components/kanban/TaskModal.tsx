@@ -27,6 +27,8 @@ import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanban
 import { CiTaskSettings } from '../ci/CiTaskSettings'
 import { FeaturePreviewSection } from '../preview/FeaturePreviewSection'
 import { ManualQaPanel } from '../qa/ManualQaPanel'
+import { QaStageRunPanel } from '../qa/QaStageRunPanel'
+import type { AnyQaStageRun, QaRunStage } from '@shared/qa'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { CiReport } from '../ci/CiReport'
 import { MergePanel } from '../ci/MergePanel'
@@ -118,11 +120,28 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [criteria, setCriteria] = useState(() => normalizeAcceptanceCriteria(task.acceptanceCriteria))
   const [labelDraft, setLabelDraft] = useState('')
   const [skillDraft, setSkillDraft] = useState('')
-  type TaskTab = 'general' | 'settings' | 'qa' | 'progress' | 'merge' | 'feed'
+  type TaskTab = 'general' | 'settings' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'progress' | 'merge' | 'feed'
   type ProgressTab = 'overview' | 'model' | 'checks' | 'changes' | 'kb' | 'delivery' | 'resources'
-  const defaultTab = (): TaskTab => (props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || task.activeMergeRunId ? 'feed' : 'general'
+  const defaultTab = (): TaskTab => {
+    const stage = board.columns.find((item) => item.id === task.columnId)?.semanticType
+    if (stage === 'component_qa' || stage === 'integration_tests' || stage === 'automated_qa') return stage
+    return (props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || task.activeMergeRunId ? 'feed' : 'general'
+  }
   const [activeTab, setActiveTab] = useState<TaskTab>(defaultTab)
   const [progressTab, setProgressTab] = useState<ProgressTab>('overview')
+  const [qaStageRuns, setQaStageRuns] = useState<Partial<Record<QaRunStage, AnyQaStageRun[]>>>({})
+  useEffect(() => {
+    if (props.draft || task.type !== 'task' || !window.qa?.listStageRuns) return
+    let live = true
+    void Promise.all((['component_qa','integration_tests','automated_qa'] as QaRunStage[]).map(async (stage) => [stage, await window.qa!.listStageRuns!(task.projectId, task.id, stage)] as const)).then((entries) => {
+      if (!live) return
+      const next = Object.fromEntries(entries) as Partial<Record<QaRunStage, AnyQaStageRun[]>>
+      setQaStageRuns(next)
+      const active = entries.find(([, runs]) => runs.some((run) => ['queued','running','awaiting_input'].includes(run.status)))
+      if (active) setActiveTab(active[0])
+    }).catch(() => {})
+    return () => { live = false }
+  }, [task.id])
   // Описание: просмотр (маркдаун) ↔ правка (textarea на 10 строк по кнопке).
   const [descEditing, setDescEditing] = useState(false)
   const [criteriaEditing, setCriteriaEditing] = useState(false)
@@ -219,6 +238,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   )
 
   const column = board.columns.find((c) => c.id === task.columnId)
+  const qaStageOrder: QaRunStage[] = ['component_qa','integration_tests','automated_qa']
+  const workflowOrder = ['backlog','preparation','ready','development','component_qa','integration_tests','automated_qa','manual_qa','awaiting_merge','merge','done']
+  const currentWorkflowIndex = workflowOrder.indexOf(column?.semanticType ?? '')
+  const qaStageVisible = (stage: QaRunStage): boolean => qaStageRuns[stage]?.length ? true : currentWorkflowIndex >= workflowOrder.indexOf(stage)
   // Пока ран задачи идёт запуск недоступен; в семантическом «Готово» новый
   // запуск также запрещён — задача завершена, даже если старый ран терминальный.
   const canStartCi = column?.semanticType !== 'done' && column?.semanticType !== 'backlog' && column?.semanticType !== 'preparation' && canStartCiRun(props.ciSummary)
@@ -426,7 +449,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       footer={props.footer}
     >
       {!props.draft && <nav className="task-tabs" role="tablist" aria-label="Разделы карточки">
-        {([['general','Общее'],['settings','Настройки'],['qa','Ручное QA'],['progress','Ход выполнения'],['merge','Merge'],['feed','Лента рана']] as const).map(([id, label]) => (
+        {([
+          ['general','Общее'],['settings','Настройки'],
+          ...qaStageOrder.filter(qaStageVisible).map((stage) => [stage, stage === 'component_qa' ? 'Component QA' : stage === 'integration_tests' ? 'Интеграционные тесты' : 'Automated QA'] as const),
+          ['qa','Ручное QA'],['progress','Ход выполнения'],['merge','Merge'],['feed','Лента рана']
+        ] as Array<readonly [TaskTab, string]>).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={activeTab === id} className={activeTab === id ? 'task-tab task-tab--active' : 'task-tab'} onClick={() => setActiveTab(id)}>{label}</button>
         ))}
       </nav>}
@@ -813,7 +840,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             <FeaturePreviewSection projectId={task.projectId} taskId={task.id} />
           </div>
         </section>}
-        {!props.draft && <><section className="task-tab-panel" hidden={activeTab !== 'qa'}><ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} /></section>
+        {!props.draft && <>
+        {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" hidden={activeTab !== stage}><QaStageRunPanel projectId={task.projectId} taskId={task.id} stage={stage} /></section>)}
+        <section className="task-tab-panel" hidden={activeTab !== 'qa'}><ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} /></section>
         <section className="task-tab-panel" hidden={activeTab !== 'progress'}>
           {props.ciSummary?.progress && <AutomationProgressView progress={props.ciSummary.progress} />}
           <nav className="task-subtabs" role="tablist" aria-label="Ход выполнения">
