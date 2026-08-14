@@ -375,6 +375,11 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (!project) return { error: 'Проект недоступен' }
     const task = deps.db.getCiTask(userId, projectId, taskId)
     if (!task) return { error: 'Задача не найдена' }
+    const board = deps.db.getBoard(userId, projectId)
+    const taskColumn = board?.columns.find((column) => column.id === task.columnId)
+    if (taskColumn?.semanticType === 'backlog' || taskColumn?.semanticType === 'preparation') {
+      return { error: 'Development-run нельзя запускать из TODO или Подготовки к разработке' }
+    }
     // Параллельность — между задачами: два рана одной задачи неизбежно делили бы
     // рабочую директорию и ветку, а это и есть то, чего мы не допускаем.
     if (hasActiveRunForTask(taskId)) return { error: 'Для этой задачи уже выполняется ран' }
@@ -1906,7 +1911,7 @@ fi`
     if (!row) return
     const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
     const merged = steps.some((st) => isMergeToBaseStep(st) && st.status === 'success')
-    const columnId = deps.db.getColumnIdBySemantic(row.projectId, merged ? 'done' : 'qa_preparation')
+    const columnId = deps.db.getColumnIdBySemantic(row.projectId, merged ? 'done' : 'component_qa')
     if (!columnId) return
     const task = deps.db.getCiTask(userId, row.projectId, row.taskId)
     if (!task || task.columnId === columnId) return
@@ -1915,20 +1920,14 @@ fi`
     } catch {
       return /* колонка могла исчезнуть между запросом и переносом */
     }
-    deps.db.addCiEvent({ projectId: row.projectId, runId, type: merged ? 'run.task_done' : 'run.qa_preparation', actorType: 'system', payload: { columnId } })
-    if (!merged) {
-      const workspace = deps.db.findLatestCiWorkspace(row.projectId, row.taskId)
-      if (workspace?.branch && workspace.commitSha && workspace.pushed) {
-        deps.qaPreparation?.({ userId, projectId: row.projectId, taskId: row.taskId, branch: workspace.branch, commitSha: workspace.commitSha, runId })
-      }
-    }
+    deps.db.addCiEvent({ projectId: row.projectId, runId, type: merged ? 'run.task_done' : 'run.component_qa', actorType: 'system', payload: { columnId } })
     const last = steps[steps.length - 1]
     if (last) {
       const line = deps.db.appendCiLog(
         runId, last.id, 'system',
         merged
           ? 'Ветка задачи влита в прод-ветку — карточка переехала в «Готово»\n'
-          : 'Обязательные автопроверки завершены — карточка ждёт ручного QA\n'
+          : 'Development-run завершён — карточка перешла в Component QA\n'
       )
       broadcast({ t: 'ci.log', runId, line }, userId)
     }

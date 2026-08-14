@@ -1,9 +1,23 @@
 import { describe, it, expect } from 'vitest'
-import { compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, projectKey } from './projects'
+import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, projectKey, QA_WORKFLOW } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
 const T0 = 1_700_000_000_000
+
+describe('QA workflow semantics', () => {
+  it('keeps the canonical sequence independent of display names', () => {
+    expect(QA_WORKFLOW).toEqual([
+      'backlog', 'preparation', 'ready', 'development', 'component_qa',
+      'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'done'
+    ])
+  })
+  it('requires a user decision to leave decision_required', () => {
+    expect(canTransitionWorkflow('decision_required', 'development', 'automation')).toBe(false)
+    expect(canTransitionWorkflow('decision_required', 'development', 'user')).toBe(true)
+    expect(canTransitionWorkflow('backlog', 'development', 'user')).toBe(false)
+  })
+})
 
 describe('normalizeAcceptanceCriteria', () => {
   it('нумерует непустые абзацы и нормализует старые номера', () => {
