@@ -62,17 +62,36 @@ describe('TaskCard feature-preview', () => {
 })
 
 describe('TaskCard CI-панель', () => {
-  it('кнопка «Выполнить» вызывает onStartCi', () => {
+  it('кнопка «В очередь» вызывает onStartCi', () => {
     const onStartCi = vi.fn()
     render(<TaskCard {...props({ onStartCi })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Выполнить' }))
+    fireEvent.click(screen.getByRole('button', { name: 'В очередь' }))
     expect(onStartCi).toHaveBeenCalledWith('t1')
+  })
+
+  it('блокирует повторный запуск и показывает состояние постановки в очередь', async () => {
+    let finish!: () => void
+    const onStartCi = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+    render(<TaskCard {...props({ onStartCi, onStartCiParallel: vi.fn() })} />)
+
+    const queue = screen.getByRole('button', { name: 'В очередь' })
+    expect(queue).toHaveAttribute('title', 'Добавить задачу в очередь выполнения. Если свободный слот есть, выполнение начнётся сразу')
+    fireEvent.click(queue)
+    fireEvent.click(queue)
+
+    expect(onStartCi).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Добавляем в очередь…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Параллельно' })).toBeDisabled()
+    finish()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'В очередь' })).toBeEnabled())
   })
 
   it('кнопка «Параллельно» запускает мимо очереди и скрыта при активном ране', () => {
     const onStartCiParallel = vi.fn()
     const { rerender } = render(<TaskCard {...props({ onStartCi: vi.fn(), onStartCiParallel })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Параллельно' }))
+    const parallel = screen.getByRole('button', { name: 'Параллельно' })
+    expect(parallel).toHaveAttribute('title', 'Запустить задачу сразу, минуя общую очередь. Машина будет выбрана автоматически с учётом загрузки')
+    fireEvent.click(parallel)
     expect(onStartCiParallel).toHaveBeenCalledWith('t1')
 
     rerender(<TaskCard {...props({ ciSummary: mkSummary({ status: 'queued' }), onStartCi: vi.fn(), onStartCiParallel })} />)
@@ -102,11 +121,11 @@ describe('TaskCard CI-панель', () => {
     expect(screen.queryByRole('button', { name: 'Убрать из очереди' })).not.toBeInTheDocument()
   })
 
-  it('пока ран идёт, «Выполнить» недоступна — остаётся только лента', () => {
+  it('пока ран идёт, «В очередь» недоступна — остаётся только лента', () => {
     for (const status of ['queued', 'running', 'awaiting_input'] as const) {
       const ciSummary = mkSummary({ status, awaitingInput: status === 'awaiting_input' })
       const { unmount } = render(<TaskCard {...props({ ciSummary, onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
-      expect(screen.queryByRole('button', { name: 'Выполнить' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: status === 'awaiting_input' ? 'Ответить модели' : 'Лента рана' })).toBeInTheDocument()
       unmount()
     }
@@ -134,7 +153,7 @@ describe('TaskCard CI-панель', () => {
     for (const status of ['success', 'failed', 'cancelled', 'timeout'] as const) {
       const onStartCi = vi.fn()
       const { unmount } = render(<TaskCard {...props({ ciSummary: mkSummary({ status }), onOpenCiRun: vi.fn(), onStartCi })} />)
-      fireEvent.click(screen.getByRole('button', { name: 'Выполнить' }))
+      fireEvent.click(screen.getByRole('button', { name: 'В очередь' }))
       expect(onStartCi).toHaveBeenCalledWith('t1')
       unmount()
     }
@@ -143,7 +162,7 @@ describe('TaskCard CI-панель', () => {
 
 /**
  * Карточка, подключённая к фейковому `window.ci` так же, как её подключает стор:
- * «Выполнить» зовёт `startRun`, сводка обновляется ответом api и кадром `ci.done`.
+ * «В очередь» зовёт `startRun`, сводка обновляется ответом api и кадром `ci.done`.
  * Проверяем не только видимость кнопки, но и что клик действительно заводит
  * новый ран, а не переоткрывает прошлый.
  */
@@ -176,27 +195,27 @@ function CardWithFakeCi({ initial }: { initial?: CiRunSummary }): JSX.Element {
 }
 
 describe('TaskCard CI-панель с фейковым api', () => {
-  it('на выполненной задаче «Выполнить» стартует новый ран, кнопка уходит на время рана и возвращается после', async () => {
+  it('на выполненной задаче «В очередь» стартует новый ран, кнопка уходит на время рана и возвращается после', async () => {
     const ci = createFakeCi()
     window.ci = ci
     const startRun = vi.spyOn(ci, 'startRun')
     render(<CardWithFakeCi initial={mkSummary({ id: 'run-old', status: 'success', durationMs: 12_000 })} />)
     expect(screen.getByText('успех')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Выполнить' }))
+    await userEvent.click(screen.getByRole('button', { name: 'В очередь' }))
 
     expect(startRun).toHaveBeenCalledWith('p1', 't1')
     const started = (await startRun.mock.results[0]!.value) as CiRun
     expect(started.id).not.toBe('run-old')
     // Ран в очереди — активен, значит запускать нечего: остаётся только лента.
     await waitFor(() => expect(screen.getByText('в очереди')).toBeInTheDocument())
-    expect(screen.queryByRole('button', { name: 'Выполнить' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Лента рана' })).toBeInTheDocument()
 
     // Кадр `ci.done` приходит из сервера — в тесте досылаем его руками.
     act(() => ci._emitDone({ ...started, status: 'success', finishedAt: (started.startedAt ?? 0) + 1000, durationMs: 1000 }))
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Выполнить' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'В очередь' })).toBeInTheDocument())
     expect(screen.getByText('успех')).toBeInTheDocument()
   })
 })

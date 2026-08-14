@@ -124,7 +124,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
           void window.ci?.forceStartRun(props.projectId, props.taskId, agentId)
             .then(() => setForceStatus({ kind: 'started' }))
             .catch((err: unknown) => setForceStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) }))
-        }}>Запустить на этой машине сейчас</Button>
+        }} title="Запустить или продвинуть ожидающий ран на выбранной машине">Запустить на этой машине сейчас</Button>
       </div>
     )}
     {forceStatus.kind === 'started' && <p className="ci-task-hint">Ран запущен на выбранной машине, мимо очереди.</p>}
