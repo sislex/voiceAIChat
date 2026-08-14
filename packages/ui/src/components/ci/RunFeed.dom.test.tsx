@@ -180,6 +180,21 @@ describe('RunFeed', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Повторить весь воркфлоу' }))
     expect(p.onRetry).toHaveBeenCalledWith('run-1')
   })
+
+  it('ручная прокрутка вверх останавливает автоскролл и показывает переход к новым событиям', () => {
+    const cache: RunFeedCache = { detail: { run: mkRun(), steps: [mkStep()], fixAttempts: [], interactions: [] }, log: [mkLog()], conclusion: null }
+    render(<RunFeed {...baseProps(cache)} />)
+    const feed = screen.getByTestId('ci-runfeed')
+    Object.defineProperties(feed, {
+      scrollHeight: { configurable: true, value: 800 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, value: 100, writable: true }
+    })
+    fireEvent.scroll(feed)
+    const jump = screen.getByRole('button', { name: 'К новым событиям' })
+    fireEvent.click(jump)
+    expect(screen.queryByRole('button', { name: 'К новым событиям' })).not.toBeInTheDocument()
+  })
 })
 
 describe('RunFeed — список шагов', () => {

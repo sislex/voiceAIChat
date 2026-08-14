@@ -30,7 +30,7 @@ import { ManualQaPanel } from '../qa/ManualQaPanel'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { CiReport } from '../ci/CiReport'
 import { MergePanel } from '../ci/MergePanel'
-import { MergeRunFeed } from '../ci/MergeRunFeed'
+import { TaskRunFeed } from '../ci/TaskRunFeed'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { canStartCiRun, isActiveCiStatus, type CiRunSummary, type CiTaskReport } from '@shared/ci'
@@ -779,9 +779,12 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         </section>
         <section className="task-tab-panel" data-testid="task-run-feed-tab" hidden={activeTab !== 'feed'}>
           <h3 className="jmodal-h">Техническая лента</h3>
-          <p>{task.activeMergeRunId ? 'Активен merge-ран.' : props.ciSummary ? `${ciStatusLabel(props.ciSummary.status)} · ${props.ciSummary.slotProgress.done}/${props.ciSummary.slotProgress.total}` : 'Запусков ещё нет.'}</p>
-          {task.activeMergeRunId && <MergeRunFeed runId={task.activeMergeRunId} />}
-          {!task.activeMergeRunId && props.ciSummary && props.onOpenCiRun && <Button variant="primary" onClick={() => props.onOpenCiRun?.(props.ciSummary!.id)}>Открыть техническую ленту</Button>}
+          {activeTab === 'feed' && <TaskRunFeed
+            projectId={task.projectId}
+            taskId={task.id}
+            activeDevelopmentRunId={props.ciSummary && isActiveCiStatus(props.ciSummary.status) ? props.ciSummary.id : null}
+            activeMergeRunId={task.activeMergeRunId}
+          />}
         </section></>}
       </div>
     </Dialog>
