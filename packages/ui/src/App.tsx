@@ -1312,8 +1312,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               onOpenChat={(taskId) => void actions.openTaskChat(taskId).then((id) => navigate(id ? `/projects/${routeProjectId}/task/${taskId}/chat/${id}` : '/'))}
               onEnsureChat={(taskId) => void actions.ensureTaskChat(taskId)}
               ciSummaries={state.ciSummaries}
-              onStartCi={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId).then((run) => { if (run) actions.openCiRun(run.id) }) }}
-              onStartCiParallel={(taskId) => { if (routeProjectId) void actions.startCiRun(routeProjectId, taskId, { launch: 'parallel' }).then((run) => { if (run) actions.openCiRun(run.id) }) }}
+              onStartCi={async (taskId) => { if (routeProjectId) { const run = await actions.startCiRun(routeProjectId, taskId); if (run) actions.openCiRun(run.id) } }}
+              onStartCiParallel={async (taskId) => { if (routeProjectId) { const run = await actions.startCiRun(routeProjectId, taskId, { launch: 'parallel' }); if (run) actions.openCiRun(run.id) } }}
               onOpenCiRun={(runId) => actions.openCiRun(runId)}
               onDequeueCiRun={(runId) => void actions.dequeueCiRun(runId)}
               onStartMerge={(taskId, agentId) => { if (routeProjectId) void actions.startMergeRun(routeProjectId, taskId, agentId) }}

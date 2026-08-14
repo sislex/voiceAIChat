@@ -29,7 +29,9 @@ describe('CiTaskSettings', () => {
 
     fireEvent.change(select, { target: { value: 'm2' } })
     expect(window.api?.['tasks:update']).toHaveBeenCalledWith({ projectId: 'p1', taskId: 't1', agentId: 'm2' })
-    fireEvent.click(screen.getByRole('button', { name: 'Запустить на этой машине сейчас' }))
+    const forceStart = screen.getByRole('button', { name: 'Запустить на этой машине сейчас' })
+    expect(forceStart).toHaveAttribute('title', 'Запустить или продвинуть ожидающий ран на выбранной машине')
+    fireEvent.click(forceStart)
     await waitFor(() => expect(force).toHaveBeenCalledWith('p1', 't1', 'm2'))
     expect(await screen.findByText(/мимо очереди/)).toBeInTheDocument()
   })

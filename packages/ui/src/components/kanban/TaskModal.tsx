@@ -71,9 +71,9 @@ export interface TaskModalProps {
   onEnsureChat?: (taskId: string) => void
   /** Сводка последнего CI-рана задачи и переходы в его ленту. */
   ciSummary?: CiRunSummary
-  onStartCi?: (taskId: string) => void
+  onStartCi?: (taskId: string) => void | Promise<void>
   /** Параллельный запуск: сразу в работу, мимо очереди сервера. */
-  onStartCiParallel?: (taskId: string) => void
+  onStartCiParallel?: (taskId: string) => void | Promise<void>
   onOpenCiRun?: (runId: string) => void
   onStartMerge?: (taskId: string, agentId?: string | null) => void
 
@@ -111,6 +111,7 @@ function fromDateInput(v: string): number | null {
 export function TaskModal(props: TaskModalProps): JSX.Element {
   const { task, board } = props
   const confirm = useConfirm()
+  const [launching, setLaunching] = useState<'queue' | 'parallel' | null>(null)
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description)
   const [criteria, setCriteria] = useState(task.acceptanceCriteria)
@@ -129,6 +130,16 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   // Заголовок растёт под текст: на узком экране он занимает три-четыре строки, а
   // rows={1} со скроллом внутри поля прятал бы его конец.
   const titleGrow = useAutoGrow(title, 1, 6)
+
+  async function launchCi(kind: 'queue' | 'parallel'): Promise<void> {
+    if (launching) return
+    setLaunching(kind)
+    try {
+      await (kind === 'queue' ? props.onStartCi?.(task.id) : props.onStartCiParallel?.(task.id))
+    } finally {
+      setLaunching(null)
+    }
+  }
 
   const mobile = useMediaQuery(MOBILE_QUERY)
   // «Подробности»: на телефоне свёрнуты, на десктопе это всегда открытая колонка.
@@ -687,12 +698,25 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                   </Button>
                 )}
                 {/* Активный ран нельзя запустить второй раз — только смотреть ленту;
-                    после завершения «Выполнить» снова доступна. */}
+                    после завершения постановка в очередь снова доступна. */}
                 {props.onStartCi && canStartCi && (
-                  <Button variant="primary" size="sm" onClick={() => props.onStartCi?.(task.id)}>Выполнить</Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    loading={launching === 'queue'}
+                    disabled={launching !== null}
+                    title="Добавить задачу в очередь выполнения. Если свободный слот есть, выполнение начнётся сразу"
+                    onClick={() => void launchCi('queue')}
+                  >{launching === 'queue' ? 'Добавляем в очередь…' : 'В очередь'}</Button>
                 )}
                 {props.onStartCiParallel && canStartCi && (
-                  <Button size="sm" title="Запустить сразу, мимо очереди — машина подберётся по загрузке" onClick={() => props.onStartCiParallel?.(task.id)}>Параллельно</Button>
+                  <Button
+                    size="sm"
+                    loading={launching === 'parallel'}
+                    disabled={launching !== null}
+                    title="Запустить задачу сразу, минуя общую очередь. Машина будет выбрана автоматически с учётом загрузки"
+                    onClick={() => void launchCi('parallel')}
+                  >Параллельно</Button>
                 )}
               </div>
             </div>

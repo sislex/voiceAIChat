@@ -100,28 +100,28 @@ describe('TaskModal — панель CI-рана', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Лента рана' }))
     expect(onOpenCiRun).toHaveBeenCalledWith('run-1')
     // Ран идёт — повторный запуск недоступен.
-    expect(screen.queryByRole('button', { name: 'Выполнить' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
     expect(onStartCi).not.toHaveBeenCalled()
   })
 
-  it('после завершения рана «Выполнить» снова доступна', () => {
+  it('после завершения рана «В очередь» снова доступна', () => {
     const onStartCi = vi.fn()
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }), onOpenCiRun: vi.fn(), onStartCi })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Выполнить' }))
+    fireEvent.click(screen.getByRole('button', { name: 'В очередь' }))
     expect(onStartCi).toHaveBeenCalledWith('t1')
   })
 
   it('в колонке «Готово» кнопка запуска не показывается', () => {
     const doneBoard: Board = { ...board, columns: [{ ...board.columns[0]!, semanticType: 'done' }] }
     render(<TaskModal {...props({ board: doneBoard, ciSummary: mkSummary({ status: 'success', modelActive: false }), onStartCi: vi.fn() })} />)
-    expect(screen.queryByRole('button', { name: 'Выполнить' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
   })
 
   it('когда ран ждёт ответа, кнопка зовёт ответить', () => {
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'awaiting_input', awaitingInput: true }), onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
     expect(screen.getByTestId('task-modal-ci')).toHaveTextContent('ждёт ответа')
     expect(screen.getByRole('button', { name: 'Ответить модели' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Выполнить' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
   })
 
   it('у эпика панели рана нет', () => {
