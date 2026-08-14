@@ -72,6 +72,7 @@ export interface TaskModalProps {
   /** Сводка последнего CI-рана задачи и переходы в его ленту. */
   ciSummary?: CiRunSummary
   onStartCi?: (taskId: string) => void | Promise<void>
+  onStartPreparation?: (taskId: string) => void | Promise<void>
   /** Параллельный запуск: сразу в работу, мимо очереди сервера. */
   onStartCiParallel?: (taskId: string) => void | Promise<void>
   onOpenCiRun?: (runId: string) => void
@@ -220,7 +221,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const column = board.columns.find((c) => c.id === task.columnId)
   // Пока ран задачи идёт запуск недоступен; в семантическом «Готово» новый
   // запуск также запрещён — задача завершена, даже если старый ран терминальный.
-  const canStartCi = column?.semanticType !== 'done' && canStartCiRun(props.ciSummary)
+  const canStartCi = column?.semanticType !== 'done' && column?.semanticType !== 'backlog' && column?.semanticType !== 'preparation' && canStartCiRun(props.ciSummary)
   const parent = task.parentId ? board.tasks.find((t) => t.id === task.parentId) : null
   const children = board.tasks.filter((t) => t.parentId === task.id)
   const key = issueKey(props.projectName, task)
@@ -739,7 +740,21 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               </p>}
             </div>
           )}
-          {task.type === 'task' && (props.onStartCi || props.ciSummary) && (
+          {task.type === 'task' && (column?.semanticType === 'backlog' || column?.semanticType === 'preparation') && (
+            <div className="jmodal-ci" data-testid="task-modal-preparation">
+              <div className="jmodal-ci-head"><span className="ci-task-title">Подготовка задачи</span></div>
+              {column?.semanticType === 'backlog' && <p className="jcard-ci-phase">Отдельный ран уточнит требования, критерии и тестовые сценарии. Код изменяться не будет.</p>}
+              {column?.semanticType === 'preparation' && <>
+                <p className="jcard-ci-phase">Статус: {task.taskPreparationStatus === 'running' ? 'выполняется' : task.taskPreparationStatus === 'success' ? 'готово' : task.taskPreparationStatus === 'failed' ? 'ошибка' : 'не запускалась'}</p>
+                {task.taskPreparationError && <p className="jcard-ci-phase">{task.taskPreparationError}</p>}
+                <pre className="ci-console-pre" data-testid="task-preparation-feed">{task.taskPreparationLog || 'Лента подготовки пока пуста.'}</pre>
+              </>}
+              <div className="jmodal-ci-actions">
+                {props.onStartPreparation && task.taskPreparationStatus !== 'running' && <Button variant="primary" size="sm" onClick={() => void props.onStartPreparation?.(task.id)}>{column?.semanticType === 'backlog' ? 'Начать подготовку задачи' : 'Повторить подготовку'}</Button>}
+              </div>
+            </div>
+          )}
+          {task.type === 'task' && column?.semanticType !== 'backlog' && column?.semanticType !== 'preparation' && (props.onStartCi || props.ciSummary) && (
             <div className="jmodal-ci" data-testid="task-modal-ci">
               <div className="jmodal-ci-head">
                 <span className="ci-task-title">CI-ран</span>

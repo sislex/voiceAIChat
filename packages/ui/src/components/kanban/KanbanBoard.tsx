@@ -564,6 +564,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onOpenChat={props.onOpenChat}
       ciSummary={props.ciSummaries?.[t.id]}
       onStartCi={props.onStartCi}
+      onStartPreparation={(taskId) => {
+        const column = board?.columns.find((item) => item.semanticType === 'preparation')
+        if (column) props.onMoveTask(taskId, column.id, null, null)
+      }}
       onStartCiParallel={props.onStartCiParallel}
       onOpenCiRun={props.onOpenCiRun}
       onDequeueCiRun={props.onDequeueCiRun}
@@ -1170,6 +1174,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onEnsureChat={props.onEnsureChat}
           ciSummary={props.ciSummaries?.[openTask.id]}
           onStartCi={props.onStartCi}
+          onStartPreparation={(taskId) => {
+            const column = board.columns.find((item) => item.semanticType === 'preparation')
+            if (column) props.onMoveTask(taskId, column.id, null, null)
+          }}
           onStartCiParallel={props.onStartCiParallel}
           onOpenCiRun={props.onOpenCiRun}
           onStartMerge={props.onStartMerge}

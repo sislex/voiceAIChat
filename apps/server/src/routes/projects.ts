@@ -69,7 +69,8 @@ export function registerProjectRoutes(
   /** Нужен переносу в TODO: ожидающий CI-ран надо снять до успешного ответа. */
   ci?: CiRunManager,
   agents?: AgentRegistry,
-  merge?: MergeRunManager
+  merge?: MergeRunManager,
+  startTaskPreparation?: (userId: string, projectId: string, taskId: string) => void
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const withMachineStatus = (project: ProjectDetail | null): ProjectDetail | null => {
@@ -446,6 +447,17 @@ export function registerProjectRoutes(
             : 'Не удалось исключить ран из очереди: обновите доску и повторите перенос'
           return reply.code(409).send({ error })
         }
+      }
+    }
+    // TODO → Подготовка — это запуск отдельного preparation-run, а не простой
+    // визуальный перенос. Менеджер атомарно создаёт ран и переводит карточку.
+    if ((from?.semanticType === 'backlog' || from?.semanticType === 'preparation') && to?.semanticType === 'preparation' && startTaskPreparation) {
+      try {
+        startTaskPreparation(uid(req), req.params.id, req.params.taskId)
+        boardHub.emit(req.params.id)
+        return db.getBoard(uid(req), req.params.id)?.tasks.find((item) => item.id === req.params.taskId) ?? nf(reply)
+      } catch (error) {
+        return reply.code(409).send({ error: errMessage(error) })
       }
     }
     const task = db.moveTask(uid(req), req.params.id, req.params.taskId, {
