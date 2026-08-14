@@ -199,6 +199,37 @@ development-рана скрыт (`developmentAllowed` теперь исключ�
 кнопкой «Лента рана». Кнопка вызывает обычное `onOpen(task.id)`: карточка
 открывается, а нужную вкладку выбирает `defaultTab` по колонке задачи.
 
+## Предметный контур Integration Tests
+
+Вкладка `integration_tests` больше не использует общий ран для исполнения.
+Её runtime-состояние хранится в `integration_test_runs` и читается через
+`GET …/qa/integration`. Start/cancel/complete/fix находятся под
+`…/qa/integration/runs`. Общая `qa_stage_runs` остаётся совместимой
+исторической моделью и продолжает обслуживать Automated QA; её старые
+integration-записи могут влиять на видимость вкладки, но специализированная
+панель показывает предметную историю.
+
+Старт требует QA-разрешение и одной транзакцией проверяет нахождение карточки в
+`integration_tests`, pushed CI-workspace, успешный development-ран на нём и
+успешный readiness snapshot. Нарушения дают сохранённый `blocked`-ран с
+конкретными причинами. Partial unique index по задаче для `queued|running`
+обеспечивает идемпотентность. Валидная ветка без обязательных automatable-кейсов
+создаёт `skipped` и сразу переводит карточку в `automated_qa`.
+
+Проектные test stages исполняются fail-fast с `CI=1` и 30-минутным бюджетом.
+Ран хранит команды, коды, длительности, классификацию, блокеры, сводку и
+500-тысячный хвост лога. Рестарт закрывает активные попытки как
+`blocked/infrastructure/server_restarted`. Смена workspace SHA или semantic
+hash automatable-кейсов фиксируется при следующем старте как `stale`.
+
+Complete не доверяет кнопке: сверяет сохранённый статус `passed|skipped`,
+stale, SHA, snapshot version, команды и блокеры, затем вызывает существующий
+`canCompleteAutomation`. Fix создаёт не более одного development-рана с
+`stepId=integration_tests:<runId>`. Специализированная панель опрашивает
+состояние раз в две секунды, защищает state от старого ответа и показывает
+ветку/SHA, попытку, причины запуска, кейсы со ссылками, команды, лог, итог и
+историю.
+
 ## Проверки
 
 Сервер покрыт двумя кейсами в `apps/server/src/db/database.qa.test.ts`:

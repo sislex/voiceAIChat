@@ -171,6 +171,11 @@ import {
   type ComponentQaScenarioSnapshot,
   type ComponentQaCommandResult,
   type ComponentQaArtifact,
+  type IntegrationTestRun,
+  type IntegrationTestTaskState,
+  type IntegrationTestCommandResult,
+  integrationTestSemanticVersion,
+  integrationTestGate,
   RELEASE_STEP_ORDER,
   type ProjectRelease,
   type ReleaseStepKind,
@@ -5044,6 +5049,147 @@ export class VoiceChatDb {
   failInterruptedComponentQaRuns():string[] {
     const rows=this.db.prepare(`SELECT id FROM component_qa_runs WHERE status IN ('queued','running')`).all() as Array<{id:string}>
     this.db.prepare(`UPDATE component_qa_runs SET status='blocked',failure_classification='infrastructure',blocker_reasons_json='["server_restarted"]',summary='Component QA прерван перезапуском сервера',finished_at=? WHERE status IN ('queued','running')`).run(this.now())
+    return rows.map((row)=>row.id)
+  }
+
+  // ============== Создание интеграционных автотестов =================
+  private mapIntegrationTestRun(row:Record<string,unknown>):IntegrationTestRun {
+    const status=row.status as IntegrationTestRun['status']
+    return {
+      id:String(row.id),projectId:String(row.project_id),taskId:String(row.task_id),
+      developmentRunId:row.development_run_id==null?'':String(row.development_run_id),linkedFixRunId:row.linked_fix_run_id as string|null,
+      branch:String(row.branch),commitSha:String(row.commit_sha),attempt:Number(row.attempt),status,
+      readinessRunId:String(row.readiness_run_id),snapshotVersion:String(row.snapshot_version),
+      testCases:parseJsonValue(String(row.test_cases_json??'[]'),[]),automationLinks:parseJsonValue(String(row.automation_links_json??'[]'),[]),
+      commands:parseJsonValue<IntegrationTestCommandResult[]>(String(row.commands_json??'[]'),[]),
+      log:String(row.log??''),failureClassification:row.failure_classification as IntegrationTestRun['failureClassification'],
+      failureReason:row.failure_reason as string|null,blockerReasons:parseStringArray(String(row.blocker_reasons_json??'[]')),
+      summary:String(row.summary??''),createdAt:Number(row.created_at),startedAt:row.started_at==null?null:Number(row.started_at),
+      finishedAt:row.finished_at==null?null:Number(row.finished_at),staleReason:row.stale_reason as IntegrationTestRun['staleReason'],
+      canCancel:status==='queued'||status==='running',canRetry:['failed','blocked','cancelled','stale'].includes(status)
+    }
+  }
+
+  getIntegrationTestRun(userId:string,runId:string):IntegrationTestRun|null {
+    const row=this.db.prepare(`SELECT r.* FROM integration_test_runs r JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`).get(runId,userId) as Record<string,unknown>|undefined
+    return row?this.mapIntegrationTestRun(row):null
+  }
+
+  private currentIntegrationInputs(projectId:string,taskId:string) {
+    const task=this.db.prepare(`SELECT c.semantic_type FROM tasks t JOIN kanban_columns c ON c.id=t.column_id WHERE t.id=? AND t.project_id=?`).get(taskId,projectId) as {semantic_type:string}|undefined
+    const workspace=this.findLatestPushedCiWorkspace(projectId,taskId)
+    const prep=this.db.prepare(`SELECT id,readiness_json FROM task_preparation_runs WHERE task_id=? AND status='success' AND readiness_json IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId) as {id:string;readiness_json:string}|undefined
+    const readiness=prep?parseJsonValue<DevelopmentReadiness|null>(prep.readiness_json,null):null
+    const dev=workspace?this.db.prepare(`SELECT id FROM ci_runs WHERE project_id=? AND task_id=? AND workspace_id=? AND status='success' ORDER BY created_at DESC LIMIT 1`).get(projectId,taskId,workspace.id) as {id:string}|undefined:undefined
+    return {task,workspace,prep,readiness,dev}
+  }
+
+  getIntegrationTestTaskState(userId:string,projectId:string,taskId:string):IntegrationTestTaskState|null {
+    if(!this.isProjectMember(userId,projectId)) return null
+    const input=this.currentIntegrationInputs(projectId,taskId)
+    if(!input.task) return null
+    const runs=(this.db.prepare(`SELECT * FROM integration_test_runs WHERE task_id=? ORDER BY attempt DESC,created_at DESC`).all(taskId) as Record<string,unknown>[]).map((row)=>this.mapIntegrationTestRun(row))
+    const activeRun=runs.find((run)=>run.status==='queued'||run.status==='running')??null
+    const latestRun=runs[0]??null
+    const reasons:string[]=[]
+    if(input.task.semantic_type!=='integration_tests') reasons.push('task_not_in_integration_tests')
+    if(!input.workspace?.branch||!input.workspace.commitSha||!input.workspace.agentId||!input.workspace.path||!input.workspace.pushed) reasons.push('missing_pushed_development_workspace')
+    if(!input.dev) reasons.push('successful_development_run_not_found')
+    if(!input.prep||!input.readiness) reasons.push('missing_readiness_snapshot')
+    const cases=input.readiness?.testCases??[]
+    const gate=latestRun&&input.workspace?.commitSha&&input.readiness?integrationTestGate(latestRun,input.workspace.commitSha,cases):{allowed:false,reasons:['integration_test_run_missing']}
+    return {activeRun,latestRun,runs,testCases:cases,launchReasons:reasons,canStart:!activeRun&&reasons.length===0,canComplete:gate.allowed,gateReasons:gate.reasons}
+  }
+
+  startIntegrationTestRun(userId:string,projectId:string,taskId:string):IntegrationTestRun {
+    if(!this.canQa(userId,projectId)) throw new Error('QA permission required')
+    return this.db.transaction(()=>{
+      const input=this.currentIntegrationInputs(projectId,taskId)
+      const reasons:string[]=[]
+      if(!input.task) throw new Error('task not found')
+      if(input.task.semantic_type!=='integration_tests') reasons.push('task_not_in_integration_tests')
+      if(!input.workspace?.branch||!input.workspace.commitSha||!input.workspace.agentId||!input.workspace.path||!input.workspace.pushed) reasons.push('missing_pushed_development_workspace')
+      if(!input.dev) reasons.push('successful_development_run_not_found')
+      if(!input.prep||!input.readiness) reasons.push('missing_readiness_snapshot')
+      const currentSha=input.workspace?.commitSha??''
+      const cases=input.readiness?.testCases??[]
+      const version=integrationTestSemanticVersion(cases)
+      const ts=this.now()
+      this.db.prepare(`UPDATE integration_test_runs SET status='stale',stale_reason='sha_changed',finished_at=? WHERE task_id=? AND commit_sha<>? AND status IN ('queued','running','passed','failed','blocked','cancelled','skipped')`).run(ts,taskId,currentSha)
+      this.db.prepare(`UPDATE integration_test_runs SET status='stale',stale_reason='snapshot_changed',finished_at=? WHERE task_id=? AND snapshot_version<>? AND status IN ('queued','running','passed','failed','blocked','cancelled','skipped')`).run(ts,taskId,version)
+      const active=this.db.prepare(`SELECT * FROM integration_test_runs WHERE task_id=? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string,unknown>|undefined
+      if(active) return this.mapIntegrationTestRun(active)
+      const requiredAutomatable=cases.filter((item)=>item.required&&item.automatable)
+      const invalidExcluded=cases.filter((item)=>item.required&&!item.automatable&&(!item.notAutomatedReason.trim()||!item.alternativeManualVerification.trim()))
+      const skipped=reasons.length===0&&requiredAutomatable.length===0&&invalidExcluded.length===0
+      const status:IntegrationTestRun['status']=skipped?'skipped':reasons.length?'blocked':'queued'
+      const attempt=Number((this.db.prepare(`SELECT COALESCE(MAX(attempt),0)+1 n FROM integration_test_runs WHERE task_id=?`).get(taskId) as {n:number}).n)
+      const id=this.newId()
+      this.db.prepare(`INSERT INTO integration_test_runs (id,project_id,task_id,development_run_id,branch,commit_sha,attempt,status,readiness_run_id,snapshot_version,test_cases_json,blocker_reasons_json,summary,created_at,finished_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,projectId,taskId,input.dev?.id??null,input.workspace?.branch??'',currentSha,attempt,status,input.prep?.id??'',version,JSON.stringify(cases),JSON.stringify(reasons),skipped?'Нет обязательных automatable-кейсов':reasons.length?'Запуск заблокирован предусловиями':'',ts,status==='queued'?null:ts)
+      if(skipped){
+        const target=this.getColumnIdBySemantic(projectId,'automated_qa')
+        if(!target||!canTransitionWorkflow('integration_tests','automated_qa','automation')) throw new Error('automated_qa transition unavailable')
+        this.moveTask(userId,projectId,taskId,{columnId:target})
+      }
+      return this.getIntegrationTestRun(userId,id)!
+    })()
+  }
+
+  integrationTestExecutionContext(runId:string):{agentId:string;workdir:string;commands:string[]}|null {
+    const row=this.db.prepare(`SELECT w.agent_id,w.path,p.test_command FROM integration_test_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;test_command:string|null}|undefined
+    return row?.agent_id&&row.path?{agentId:row.agent_id,workdir:row.path,commands:testStages(row.test_command??'',['npm run affected-check'])}:null
+  }
+  markIntegrationTestRunning(id:string):void { this.db.prepare(`UPDATE integration_test_runs SET status='running',started_at=COALESCE(started_at,?) WHERE id=? AND status='queued'`).run(this.now(),id) }
+  appendIntegrationTestLog(id:string,chunk:string):void { this.db.prepare(`UPDATE integration_test_runs SET log=substr(log||?,-500000) WHERE id=? AND status='running'`).run(chunk,id) }
+  finishIntegrationTestRun(userId:string,runId:string,input:{status:'passed'|'failed'|'blocked';commands:IntegrationTestCommandResult[];summary:string;failureClassification?:IntegrationTestRun['failureClassification'];failureReason?:string|null;blockerReasons?:string[]}):IntegrationTestRun {
+    const run=this.getIntegrationTestRun(userId,runId)
+    if(!run||run.status!=='running') throw new Error('integration test run is not running')
+    this.db.prepare(`UPDATE integration_test_runs SET status=?,commands_json=?,summary=?,failure_classification=?,failure_reason=?,blocker_reasons_json=?,finished_at=? WHERE id=? AND status='running'`).run(input.status,JSON.stringify(input.commands),input.summary,input.failureClassification??null,input.failureReason??null,JSON.stringify(input.blockerReasons??[]),this.now(),runId)
+    return this.getIntegrationTestRun(userId,runId)!
+  }
+  recordIntegrationAutomationLinks(userId:string,runId:string,links:Array<{testId:string;path:string}>,commitSha:string):IntegrationTestRun {
+    const run=this.getIntegrationTestRun(userId,runId)
+    if(!run||run.status!=='running') throw new Error('integration test run is not running')
+    const prep=this.db.prepare(`SELECT readiness_json FROM task_preparation_runs WHERE id=? AND status='success'`).get(run.readinessRunId) as {readiness_json:string}|undefined
+    const readiness=prep?parseJsonValue<DevelopmentReadiness|null>(prep.readiness_json,null):null
+    if(!readiness) throw new Error('readiness snapshot missing')
+    const now=this.now(), created=links.map((item)=>({testId:item.testId,path:item.path,updatedAt:now,commitSha}))
+    readiness.testCases=readiness.testCases.map((testCase)=>({...testCase,automationLinks:[...testCase.automationLinks.filter((link)=>link.commitSha!==commitSha),...created.filter((link)=>link.testId===testCase.id)]}))
+    this.db.prepare(`UPDATE task_preparation_runs SET readiness_json=? WHERE id=?`).run(JSON.stringify(readiness),run.readinessRunId)
+    this.db.prepare(`UPDATE integration_test_runs SET commit_sha=?,test_cases_json=?,automation_links_json=? WHERE id=?`).run(commitSha,JSON.stringify(readiness.testCases),JSON.stringify(created),runId)
+    this.db.prepare(`UPDATE ci_workspaces SET commit_sha=? WHERE id=(SELECT workspace_id FROM ci_runs WHERE id=?)`).run(commitSha,run.developmentRunId)
+    return this.getIntegrationTestRun(userId,runId)!
+  }
+  completeIntegrationTestRun(userId:string,projectId:string,taskId:string,runId:string):IntegrationTestRun {
+    if(!this.canQa(userId,projectId)) throw new Error('QA permission required')
+    return this.db.transaction(()=>{
+      const run=this.getIntegrationTestRun(userId,runId),input=this.currentIntegrationInputs(projectId,taskId)
+      if(!run||run.taskId!==taskId||!input.workspace?.commitSha||!input.readiness) throw new Error('integration test state incomplete')
+      const gate=integrationTestGate(run,input.workspace.commitSha,input.readiness.testCases)
+      if(!gate.allowed) throw new Error(`integration test gate incomplete: ${gate.reasons.join(', ')}`)
+      if(input.task?.semantic_type!=='integration_tests'||!canTransitionWorkflow('integration_tests','automated_qa','automation')) throw new Error('workflow transition conflict')
+      const target=this.getColumnIdBySemantic(projectId,'automated_qa')
+      if(!target) throw new Error('automated_qa column not found')
+      this.moveTask(userId,projectId,taskId,{columnId:target})
+      return run
+    })()
+  }
+  cancelIntegrationTestRun(userId:string,runId:string):IntegrationTestRun {
+    const run=this.getIntegrationTestRun(userId,runId)
+    if(!run||!this.canQa(userId,run.projectId)) throw new Error('QA permission required')
+    this.db.prepare(`UPDATE integration_test_runs SET status='cancelled',summary='Ран отменён пользователем',finished_at=? WHERE id=? AND status IN ('queued','running')`).run(this.now(),runId)
+    return this.getIntegrationTestRun(userId,runId)!
+  }
+  linkIntegrationTestFixRun(userId:string,runId:string,fixRunId:string):IntegrationTestRun {
+    const run=this.getIntegrationTestRun(userId,runId)
+    if(!run||!this.canQa(userId,run.projectId)) throw new Error('QA permission required')
+    this.db.prepare(`UPDATE integration_test_runs SET linked_fix_run_id=? WHERE id=? AND linked_fix_run_id IS NULL`).run(fixRunId,runId)
+    return this.getIntegrationTestRun(userId,runId)!
+  }
+  failInterruptedIntegrationTestRuns():string[] {
+    const rows=this.db.prepare(`SELECT id FROM integration_test_runs WHERE status IN ('queued','running')`).all() as Array<{id:string}>
+    this.db.prepare(`UPDATE integration_test_runs SET status='blocked',failure_classification='infrastructure',failure_reason='server_restarted',blocker_reasons_json='["server_restarted"]',summary='Ран прерван перезапуском сервера',finished_at=? WHERE status IN ('queued','running')`).run(this.now())
     return rows.map((row)=>row.id)
   }
 

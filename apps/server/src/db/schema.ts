@@ -1036,6 +1036,40 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_qa_stage_runs_one_active
   ON qa_stage_runs(task_id, stage)
   WHERE status IN ('queued','running','awaiting_input');
 
+-- ======================= Integration test creation =======================
+CREATE TABLE IF NOT EXISTS integration_test_runs (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  development_run_id TEXT,
+  linked_fix_run_id TEXT,
+  branch TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  attempt INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK(status IN ('queued','running','passed','failed','blocked','cancelled','stale','skipped')),
+  readiness_run_id TEXT NOT NULL,
+  snapshot_version TEXT NOT NULL,
+  test_cases_json TEXT NOT NULL DEFAULT '[]',
+  automation_links_json TEXT NOT NULL DEFAULT '[]',
+  commands_json TEXT NOT NULL DEFAULT '[]',
+  log TEXT NOT NULL DEFAULT '',
+  failure_classification TEXT,
+  failure_reason TEXT,
+  blocker_reasons_json TEXT NOT NULL DEFAULT '[]',
+  summary TEXT NOT NULL DEFAULT '',
+  stale_reason TEXT,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  finished_at INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (development_run_id) REFERENCES ci_runs(id)
+);
+CREATE INDEX IF NOT EXISTS idx_integration_test_runs_task ON integration_test_runs(task_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_integration_test_runs_active
+  ON integration_test_runs(task_id) WHERE status IN ('queued','running');
+
 -- ============================ Component QA ============================
 -- Самостоятельный audit trail, зафиксированный на development workspace/SHA и
 -- версии readiness. Существующие карточки component_qa не получают synthetic pass.
