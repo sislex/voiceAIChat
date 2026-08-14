@@ -1,4 +1,5 @@
 // Структурированное ручное QA: общий контракт и чистые правила допуска к merge.
+import type { LlmProvider } from './types'
 export type QaCriterionTestType =
   | 'ui' | 'api' | 'integration' | 'negative' | 'regression' | 'manual'
   /** Legacy values remain readable for persisted criteria. */
@@ -102,6 +103,50 @@ export function canCompleteAutomation(testCases: readonly TestCaseDefinition[], 
     }
   }
   return { allowed: reasons.length === 0, reasons }
+}
+export const QA_RUN_STAGES = ['component_qa', 'integration_tests', 'automated_qa'] as const
+export type QaRunStage = typeof QA_RUN_STAGES[number]
+export type QaStageRunKind = 'componentQaRun' | 'integrationTestsRun' | 'automatedQaRun'
+export type QaStageRunStatus = 'queued' | 'running' | 'awaiting_input' | 'success' | 'gate_failed' | 'failed' | 'cancelled' | 'interrupted'
+export interface QaStageProgress { current: number; total: number; label: string }
+export interface QaStageLogEntry { seq: number; at: number; stream: 'out' | 'err' | 'system'; text: string }
+export interface QaStageRun {
+  id: string
+  projectId: string
+  taskId: string
+  kind: QaStageRunKind
+  stage: QaRunStage
+  status: QaStageRunStatus
+  attempt: number
+  triggeredBy: string
+  branch: string
+  commitSha: string
+  llmEngineId: string | null
+  llmProvider: LlmProvider
+  llmModel: string
+  currentStep: string
+  progress: QaStageProgress
+  log: QaStageLogEntry[]
+  result: Record<string, unknown> | null
+  gateReasons: string[]
+  error: string | null
+  createdAt: number
+  startedAt: number | null
+  finishedAt: number | null
+  canCancel: boolean
+  canRetry: boolean
+}
+export interface ComponentQaStageRun extends QaStageRun { kind: 'componentQaRun'; stage: 'component_qa' }
+export interface IntegrationTestsRun extends QaStageRun { kind: 'integrationTestsRun'; stage: 'integration_tests' }
+export interface AutomatedQaRun extends QaStageRun { kind: 'automatedQaRun'; stage: 'automated_qa' }
+export type AnyQaStageRun = ComponentQaStageRun | IntegrationTestsRun | AutomatedQaRun
+export const QA_RUN_KIND: Record<QaRunStage, QaStageRunKind> = {
+  component_qa: 'componentQaRun',
+  integration_tests: 'integrationTestsRun',
+  automated_qa: 'automatedQaRun'
+}
+export function isActiveQaStageRun(status: QaStageRunStatus): boolean {
+  return status === 'queued' || status === 'running' || status === 'awaiting_input'
 }
 export type ComponentQaRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'blocked' | 'cancelled' | 'stale' | 'skipped'
 export type ComponentQaFailureClassification = 'implementation_defect' | 'infrastructure'
