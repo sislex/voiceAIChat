@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canCompleteAutomation, canCompleteQa, canConfirmDevelopmentReadiness, qaProgress, validateQaResult, type DevelopmentReadiness, type QaSession, type TestCaseDefinition } from './qa'
+import { canCompleteAutomation, canCompleteComponentQa, canCompleteQa, canConfirmDevelopmentReadiness, componentQaLaunchReasons, componentQaSemanticVersion, qaProgress, validateQaResult, type ComponentQaRun, type DevelopmentReadiness, type QaSession, type TestCaseDefinition } from './qa'
 
 function session(statuses: Array<'not_tested' | 'in_progress' | 'passed' | 'failed' | 'blocked' | 'not_applicable' | 'stale'>): QaSession {
   return {
@@ -57,6 +57,47 @@ describe('development readiness gate', () => {
       automatable: false, notAutomatedReason: 'Hardware only',
       alternativeManualVerification: 'Verify on device'
     })], 'sha-1').allowed).toBe(true)
+  })
+})
+
+describe('component QA gate', () => {
+  const readiness = (): DevelopmentReadiness => ({
+    functionalRequirements: 'UI', acceptanceCriteria: 'Works', testCases: [testCase()],
+    uiImpact: 'existing_components', acceptanceCriteriaConflict: false,
+    affectedComponents: [{ id: 'button', name: 'Button', storybookStoryId: 'ui-button--default', reusable: true,
+      coverage: { stories:true, states:true, fixtures:true, playFunctions:true, domTests:true, accessibility:true, visual:true },
+      exclusionReason:'', alternativeVerification:'' }]
+  })
+  const run = (value = readiness()): ComponentQaRun => ({
+    id:'cq1',projectId:'p1',taskId:'t1',developmentRunId:'dev1',linkedFixRunId:null,branch:'feature',commitSha:'abc',
+    attempt:1,status:'passed',uiImpact:value.uiImpact!,readinessRunId:'prep1',readinessVersion:componentQaSemanticVersion(value),
+    scenarios:value.testCases.map((item)=>({testCase:item,version:1,semanticHash:'h',status:'passed',actualResult:'ok',diagnostic:''})),
+    components:value.affectedComponents,commands:[{commandId:'storybook',name:'Storybook',command:'npm run test-storybook',
+      exitCode:0,durationMs:10,status:'passed',stdout:'ok',stderr:'',diagnostic:'',artifacts:[]}],
+    artifacts:[],failureClassification:null,blockerReasons:[],summary:'ok',log:'',storybookUrl:null,
+    createdAt:1,startedAt:1,finishedAt:2,staleReason:null,canCancel:false,canRetry:false
+  })
+  it('blocks missing components, scenarios and incomplete Storybook coverage', () => {
+    const value = readiness()
+    value.testCases = []
+    value.affectedComponents[0].coverage!.visual = false
+    expect(componentQaLaunchReasons(value)).toEqual(['missing_required_component_scenarios','missing_storybook_visual:button'])
+  })
+  it('accepts explicit Storybook exclusion with alternative verification', () => {
+    const value = readiness()
+    value.affectedComponents[0] = { ...value.affectedComponents[0], storybookStoryId:null, coverage:null, exclusionReason:'Canvas only', alternativeVerification:'DOM fixture test' }
+    expect(componentQaLaunchReasons(value)).toEqual([])
+  })
+  it('pins SHA and semantic scenario version and requires every command/scenario', () => {
+    const value = readiness(), current = run(value)
+    expect(canCompleteComponentQa({run:current,currentCommitSha:'abc',currentReadinessVersion:componentQaSemanticVersion(value),acceptanceCriteriaConflict:false}).allowed).toBe(true)
+    current.scenarios[0].status='failed'
+    expect(canCompleteComponentQa({run:current,currentCommitSha:'def',currentReadinessVersion:'new',acceptanceCriteriaConflict:false}).reasons).toEqual(expect.arrayContaining(['commit_sha_mismatch','scenario_version_mismatch','failed:TC-1']))
+  })
+  it('only allows uiImpact none through an auditable skipped run', () => {
+    const value = readiness(); value.uiImpact='none'; value.affectedComponents=[]
+    const current=run(value); current.status='skipped'; current.uiImpact='none'; current.scenarios=[]; current.commands=[]
+    expect(canCompleteComponentQa({run:current,currentCommitSha:'abc',currentReadinessVersion:componentQaSemanticVersion(value),acceptanceCriteriaConflict:false}).allowed).toBe(true)
   })
 })
 

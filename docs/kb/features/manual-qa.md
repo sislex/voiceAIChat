@@ -34,6 +34,39 @@ Component QA в `manual_qa`; успешная подготовка создаё�
 QA session. Только успешный `completeQaSession` переносит карточку в
 `awaiting_merge`. Новый SHA помечает активную QA session stale.
 
+## Автоматизированный Component QA
+
+`component_qa_runs` — отдельный от `ci_runs`, `task_preparation_runs`,
+`qa_preparation_runs` и ручных sessions журнал. Попытка фиксирует успешный
+development-run, его серверный workspace, ветку и commit SHA, id readiness-run,
+семантическую версию снимка сценариев и компонентов, команды, exit code,
+длительность, потоковый лог, диагностику и артефакты. Partial unique index
+запрещает более одного `queued|running`-рана задачи; повторный старт
+возвращает активный ран. После рестарта незавершённый ран становится `blocked`
+с классификацией `infrastructure` и допускает повтор.
+
+`componentQaLaunchReasons` требует для UI-задачи обязательный component-сценарий
+и затронутые компоненты. Storybook-компонент обязан заявить stories, states,
+fixtures, play functions, DOM tests, accessibility и visual coverage; отсутствие
+story допустимо только с непустыми `exclusionReason` и
+`alternativeVerification`. `uiImpact=none` создаёт сохраняемый
+`skipped`-ран и автоматически переводит карточку в `integration_tests`.
+Неполные входы создают `blocked`-результат и оставляют карточку в
+`component_qa`.
+
+Сервер не принимает от UI команду, путь, SHA или машину: они разрешаются через
+зафиксированный development-run и pushed workspace; команда берётся из
+`projects.test_command`, с fallback `npm run test:storybook`. Успех
+исполнителя сохраняет результат сценариев и команды как `passed`; non-zero exit
+классифицируется как `implementation_defect`, timeout/disconnect/ошибка
+исполнителя — как `infrastructure`. `canCompleteComponentQa` и
+`canTransitionWorkflow` разрешают переход в `integration_tests` только
+для актуальных SHA/версии, полного Storybook coverage, прошедших обязательных
+сценариев и команд и отсутствия блокеров. Панель `ComponentQaPanel`
+восстанавливает состояние REST-polling каждые две секунды и не заменяет более
+новый локальный снимок старым ответом; показывает историю и audit trail и
+предоставляет start/cancel/retry/Storybook/fix/transition действия.
+
 ## Домен и критерий допуска
 
 Общий контракт и чистые правила находятся в `packages/shared/src/qa.ts`.
