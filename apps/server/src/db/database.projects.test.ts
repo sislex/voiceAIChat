@@ -50,6 +50,31 @@ describe('projects: миграция имён связанных чатов', ()
   })
 })
 
+describe('projects: миграция владельцев', () => {
+  it('добавляет created_by владельцем старого проекта и сохраняет остальных участников', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-project-owner-'))
+    const file = join(dir, 'db.sqlite')
+    const first = new VoiceChatDb(file)
+    first.createUser('alice', '', 'developer')
+    first.createUser('bob', '', 'developer')
+    const project = first.createProject('alice', { name: 'Legacy' })
+    first.addMember('alice', project.id, 'bob')
+    first.close()
+
+    const raw = new Database(file)
+    raw.prepare(`DELETE FROM project_members WHERE project_id = ? AND username = 'alice'`).run(project.id)
+    raw.close()
+
+    const migrated = new VoiceChatDb(file)
+    expect(migrated.getProject('alice', project.id)!.members).toEqual([
+      expect.objectContaining({ username: 'alice', role: 'owner' }),
+      expect.objectContaining({ username: 'bob', role: 'member' })
+    ])
+    migrated.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
 describe('projects: создание и членство', () => {
   it('createProject сеет владельца и дефолтные колонки', () => {
     const p = db.createProject('alice', { name: 'P1', description: 'd', technologies: ['ts'], skills: ['db'] })
@@ -99,7 +124,7 @@ describe('projects: создание и членство', () => {
     expect(db.getProject('alice', p.id)).toBeNull()
   })
 
-  it('removeMember не трогает владельца, снимает назначения', () => {
+  it('removeMember снимает назначения и защищает последнего владельца', () => {
     const p = db.createProject('alice', { name: 'P1' })
     db.addMember('alice', p.id, 'bob')
     const col = db.getBoard('alice', p.id)!.columns[0]
@@ -108,9 +133,36 @@ describe('projects: создание и членство', () => {
     db.removeMember('alice', p.id, 'bob')
     expect(db.getProject('bob', p.id)).toBeNull()
     expect(db.getBoard('alice', p.id)!.tasks[0].assignee).toBeNull()
-    // владельца удалить нельзя
-    db.removeMember('alice', p.id, 'alice')
-    expect(db.getProject('alice', p.id)!.members.map((m) => m.username)).toContain('alice')
+    expect(() => db.removeMember('alice', p.id, 'alice')).toThrow('последнего владельца')
+  })
+
+  it('поддерживает нескольких равноправных владельцев, выход и аудит ролей', () => {
+    const p = db.createProject('alice', { name: 'P1' })
+    db.addMember('alice', p.id, 'bob')
+    db.updateMemberRole('alice', p.id, 'bob', 'owner')
+    expect(db.getProject('bob', p.id)!.role).toBe('owner')
+    expect(db.updateProject('bob', p.id, { name: 'От Bob' })!.name).toBe('От Bob')
+
+    db.removeMember('bob', p.id, 'alice')
+    expect(db.getProject('alice', p.id)).toBeNull()
+    expect(db.getProject('bob', p.id)!.members).toEqual([
+      expect.objectContaining({ username: 'bob', role: 'owner' })
+    ])
+    expect(db.listProjectMemberRoleAudit(p.id)).toEqual([
+      expect.objectContaining({ actor: 'alice', targetUser: 'bob', oldRole: null, newRole: 'member', action: 'add' }),
+      expect.objectContaining({ actor: 'alice', targetUser: 'bob', oldRole: 'member', newRole: 'owner', action: 'role_change' }),
+      expect.objectContaining({ actor: 'bob', targetUser: 'alice', oldRole: 'owner', newRole: null, action: 'remove' })
+    ])
+  })
+
+  it('не назначает владельцем не-участника и не позволяет двум владельцам убрать последнего', () => {
+    const p = db.createProject('alice', { name: 'P1' })
+    expect(() => db.updateMemberRole('alice', p.id, 'bob', 'owner')).toThrow('Сначала добавьте')
+    db.addMember('alice', p.id, 'bob')
+    db.updateMemberRole('alice', p.id, 'bob', 'owner')
+    db.updateMemberRole('alice', p.id, 'bob', 'member')
+    expect(() => db.updateMemberRole('alice', p.id, 'alice', 'member')).toThrow('последнего владельца')
+    expect(db.getProject('alice', p.id)!.members.filter((m) => m.role === 'owner')).toHaveLength(1)
   })
 })
 

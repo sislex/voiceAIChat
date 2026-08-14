@@ -295,6 +295,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'projects:addMember': ({ id, username }) =>
       req(REST.projectMembers(id), { method: 'POST', body: JSON.stringify({ username }) }),
+    'projects:updateMemberRole': ({ id, username, role }) =>
+      req(REST.projectMember(id, username), { method: 'PATCH', body: JSON.stringify({ role }) }),
     'projects:removeMember': ({ id, username }) =>
       req(REST.projectMember(id, username), { method: 'DELETE' }),
     'projects:linkMachine': ({ id, agentId }) =>
