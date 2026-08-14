@@ -85,6 +85,56 @@ describe('TaskModal — вложенное окно AI-помощника', () =
   })
 })
 
+describe('TaskModal — название и текущее состояние в шапке', () => {
+  beforeEach(() => { window.ci = createFakeCi() })
+
+  it('показывает ключ, редактируемое название и этап единственный раз', () => {
+    render(<TaskModal {...props()} />)
+
+    const heading = screen.getByTestId('task-modal-heading')
+    expect(heading).toHaveTextContent('PROJ-1 ·')
+    expect(within(heading).getByLabelText('Заголовок задачи')).toHaveValue('Задача A')
+    expect(heading).toHaveTextContent('(Разработка)')
+    expect(screen.getAllByText('PROJ-1 ·', { exact: true })).toHaveLength(1)
+    expect(screen.getAllByLabelText('Заголовок задачи')).toHaveLength(1)
+    expect(screen.queryByText(/Последний запуск:/)).not.toBeInTheDocument()
+  })
+
+  it('добавляет фазу активного development-рана и обновляется по новым props', () => {
+    const { rerender } = render(<TaskModal {...props()} />)
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Разработка)')
+
+    rerender(<TaskModal {...props({ ciSummary: mkSummary() })} />)
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Разработка · Модель работает)')
+  })
+
+  it('после успешного рана показывает только новый этап', () => {
+    const qaBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Ручное QA', semanticType: 'manual_qa' }] }
+    render(<TaskModal {...props({
+      board: qaBoard,
+      ciSummary: mkSummary({ status: 'success', modelActive: false, slotProgress: { done: 4, total: 4, phase: 'Готово' } })
+    })} />)
+
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Ручное QA)')
+    expect(screen.getByTestId('task-modal-heading')).not.toHaveTextContent('Готово')
+  })
+
+  it('показывает актуальный ошибочный итог вместе с этапом', () => {
+    const errorBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Ошибка' }] }
+    render(<TaskModal {...props({
+      board: errorBoard,
+      ciSummary: mkSummary({ status: 'failed', modelActive: false, slotProgress: { done: 2, total: 4, phase: 'Проверки не пройдены' } })
+    })} />)
+
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Ошибка · Проверки не пройдены)')
+  })
+
+  it('активный merge отображается в тех же скобках', () => {
+    render(<TaskModal {...props({ task: mkTask({ activeMergeRunId: 'merge-1' }) })} />)
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Разработка · Мерж выполняется)')
+  })
+})
+
 describe('TaskModal — панель CI-рана', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
