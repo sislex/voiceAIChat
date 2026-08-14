@@ -501,7 +501,7 @@ describe('параллельный запуск мимо очереди', () => 
     db.updateCiSettings({ maxConcurrentRuns: 1 })
     const second = linkSecondMachine()
     const defaultAgent = db.getProject('admin', projectId)!.defaultAgentId!
-    const third = db.createTask('admin', projectId, { columnId: db.getBoard('admin', projectId)!.columns[0].id, title: 'T3' })!.id
+    const third = db.createTask('admin', projectId, { columnId: db.getColumnIdBySemantic(projectId, 'ready')!, title: 'T3' })!.id
     const { hold, release } = holdModel()
     const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
     // Обе машины заняты: на умолчальной ран работает, вторая держит очередь
