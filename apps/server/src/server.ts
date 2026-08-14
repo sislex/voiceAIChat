@@ -727,6 +727,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   if (interruptedPreparation.length) app.log.warn({ runs: interruptedPreparation }, 'task preparation: прерванные раны закрыты как failed')
   const interruptedQa = db.failInterruptedQaPreparationRuns()
   if (interruptedQa.length) app.log.warn({ runs: interruptedQa }, 'qa preparation: прерванные раны закрыты как failed')
+  const interruptedQaStages = db.failInterruptedQaStageRuns()
+  if (interruptedQaStages.length) app.log.warn({ runs: interruptedQaStages }, 'qa stages: прерванные раны закрыты как interrupted')
 
   // Плановая остановка (деплой/SIGTERM → app.close()): сохранить частичные
   // ответы активных ходов, чтобы рестарт контейнера не терял набранный текст.
