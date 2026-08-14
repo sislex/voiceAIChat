@@ -38,9 +38,9 @@ export interface TaskCardProps {
   /** Сводка последнего CI-рана задачи (доска). */
   ciSummary?: CiRunSummary
   /** Запустить CI-воркфлоу для задачи. */
-  onStartCi?: (taskId: string) => void
+  onStartCi?: (taskId: string) => void | Promise<void>
   /** Параллельный запуск: сразу в работу, мимо очереди сервера. */
-  onStartCiParallel?: (taskId: string) => void
+  onStartCiParallel?: (taskId: string) => void | Promise<void>
   /** Открыть ленту рана. */
   onOpenCiRun?: (runId: string) => void
   /** Убрать ожидающий ран из очереди CI. */
@@ -72,6 +72,17 @@ export function epicOf(task: Task, all: Task[]): Task | null {
 }
 
 export function TaskCard(props: TaskCardProps): JSX.Element {
+  const [launching, setLaunching] = useState<'queue' | 'parallel' | null>(null)
+
+  async function launchCi(kind: 'queue' | 'parallel'): Promise<void> {
+    if (launching) return
+    setLaunching(kind)
+    try {
+      await (kind === 'queue' ? props.onStartCi?.(props.task.id) : props.onStartCiParallel?.(props.task.id))
+    } finally {
+      setLaunching(null)
+    }
+  }
   const { task, ciSummary } = props
   const confirm = useConfirm()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -263,10 +274,23 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 завершения (успех, падение, отмена) кнопка возвращается: с карточки
                 всегда можно запустить задачу заново. */}
             {canStart && props.onStartCi && (
-              <Button variant="primary" size="sm" onClick={() => props.onStartCi?.(task.id)}>Выполнить</Button>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={launching === 'queue'}
+                disabled={launching !== null}
+                title="Добавить задачу в очередь выполнения. Если свободный слот есть, выполнение начнётся сразу"
+                onClick={() => void launchCi('queue')}
+              >{launching === 'queue' ? 'Добавляем в очередь…' : 'В очередь'}</Button>
             )}
             {canStart && props.onStartCiParallel && (
-              <Button size="sm" title="Запустить сразу, мимо очереди — машина подберётся по загрузке" onClick={() => props.onStartCiParallel?.(task.id)}>Параллельно</Button>
+              <Button
+                size="sm"
+                loading={launching === 'parallel'}
+                disabled={launching !== null}
+                title="Запустить задачу сразу, минуя общую очередь. Машина будет выбрана автоматически с учётом загрузки"
+                onClick={() => void launchCi('parallel')}
+              >Параллельно</Button>
             )}
           </div>
         </div>
