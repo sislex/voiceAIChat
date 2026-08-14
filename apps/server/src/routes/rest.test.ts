@@ -7,7 +7,7 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from '../users/accounts.js'
-import { isPublicAddress, previewInspectorScript, rewritePreviewBody } from './previewProxy.js'
+import { isPublicAddress, previewInspectorScript, rewritePreviewBody, upstreamRequestHeaders } from './previewProxy.js'
 
 let app: FastifyInstance
 let db: VoiceChatDb
@@ -21,7 +21,7 @@ const triggerDeploy = vi.fn<() => Promise<{ status: 'accepted' | 'running'; mess
 interface InjOpts {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   url: string
-  payload?: object
+  payload?: object | string
   headers?: Record<string, string>
 }
 
@@ -1004,6 +1004,37 @@ describe('REST: preview proxy', () => {
     expect(result).toContain('/api/preview?url=https%3A%2F%2Fsite.example%2Fbase%2Fimage.png')
     expect(result).toContain('id="voicechat-preview-inspector"')
     expect(result.indexOf('voicechat-preview-inspector')).toBeLessThan(result.indexOf('</body>') === -1 ? result.length : result.indexOf('</body>'))
+  })
+
+  it('переписывает url() в <style>-блоках и inline style-атрибутах', () => {
+    const html = '<style>.a{background:url("/bg.png")}</style><div style="background-image:url(img/x.png)">x</div>'
+    const result = rewritePreviewBody(Buffer.from(html), 'text/html', new URL('https://site.example/base/')).toString()
+    expect(result).toContain('url("/api/preview?url=https%3A%2F%2Fsite.example%2Fbg.png")')
+    expect(result).toContain('url(/api/preview?url=https%3A%2F%2Fsite.example%2Fbase%2Fimg%2Fx.png)')
+  })
+
+  it('не пропускает наружу cookie и Authorization ChatAI, а Authorization страницы возвращает апстриму', () => {
+    const headers = upstreamRequestHeaders({
+      host: 'chat.example',
+      cookie: 'vc_preview_session=secret',
+      authorization: 'Bearer chatai-token',
+      'x-preview-authorization': 'Bearer site-token',
+      'content-type': 'application/json',
+      'x-api-key': 'k',
+      'sec-fetch-mode': 'cors',
+      'accept-encoding': 'gzip',
+      'x-forwarded-for': '1.2.3.4'
+    })
+    expect(headers).toEqual({ authorization: 'Bearer site-token', 'content-type': 'application/json', 'x-api-key': 'k' })
+  })
+
+  it('тело любого content-type принимается сырым, SSRF-граница действует и для POST', async () => {
+    // Невалидный JSON не должен падать на парсере — тело уходит апстриму как есть,
+    // а до апстрима запрос к приватному адресу не доходит (403, не 400/415).
+    const json = await inj({ method: 'POST', url: '/api/preview?url=http%3A%2F%2F127.0.0.1%2F', payload: '{"broken', headers: { 'content-type': 'application/json' } })
+    expect(json.statusCode).toBe(403)
+    const beacon = await inj({ method: 'POST', url: '/api/preview?url=http%3A%2F%2F192.168.1.1%2F', payload: 'beacon-body', headers: { 'content-type': 'text/plain' } })
+    expect(beacon.statusCode).toBe(403)
   })
 
   it('инспектор строит уникальный selector, сериализует стили и ограничивает payload', () => {

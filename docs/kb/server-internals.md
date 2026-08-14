@@ -58,13 +58,41 @@ loopback, unspecified, private, link-local, multicast/reserved IPv4 и IPv6 ULA
 Один внешний ответ ждут не дольше 10 секунд и читают максимум 5 MiB. Для HTML,
 XHTML и CSS прокси переписывает URL ресурсов, ссылок, форм, постеров и `srcset`
 обратно в `/api/preview`, сохраняя навигацию и зависимые ресурсы внутри проверяемой
-границы. Перед отправкой он снимает `X-Frame-Options`, CSP и cookies, пересчитывает
+границы; `url(...)` переписывается не только в самостоятельных CSS-ответах, но и в
+`<style>`-блоках HTML и в inline `style=""`-атрибутах. Перед отправкой он снимает
+`X-Frame-Options`, CSP и cookies, пересчитывает
 длину изменённого тела и отдаёт исходный status; ошибки загрузки возвращаются как
 структурированный JSON. В HTML перед закрывающим `body` (либо в конец документа)
 вставляется автономный same-origin скрипт: он обслуживает инспектор, DOM-действия и
 запись пользовательских действий через `postMessage`, а на `pagehide` снимает их
 обработчики. UI-поведение и семантика сценариев — в [ui.md](ui.md#веб-превью), путь
 контракта — в `packages/shared/src/protocol.ts`.
+
+Динамический сетевой трафик страницы тоже не покидает `/api/preview`: context shim
+(`previewContextScript`, вставляется в начало `<head>`) переопределяет `window.fetch`,
+`XMLHttpRequest.prototype.open`, `navigator.sendBeacon` и `history.pushState/replaceState`.
+Каждый URL резолвится относительно текущей страницы внешнего сайта (база берётся из
+`?url=` текущего `location.href`, при недоступности — из URL, с которым рендерился
+документ) и, если он http/https и ещё не обёрнут, заворачивается в
+`/api/preview?url=<encoded>`; fetch сохраняет метод, тело и заголовки и форсирует
+`credentials: 'same-origin'`, чтобы preview-cookie дошла до гейта. Перехват
+`location.assign/replace/href` — best-effort через `Object.defineProperty` в
+`try/catch`: в реальных браузерах интерфейс `Location` целиком `[LegacyUnforgeable]`
+и не переопределяется, поэтому прямое присваивание `location.href` шим не ловит —
+SPA-навигацию держит перехват History API и серверное переписывание ссылок.
+`Authorization`, выставленный самой страницей, шим переименовывает в
+`x-preview-authorization` (иначе Bearer-гейт ChatAI принял бы его за токен ChatAI и
+ответил 401), а роут возвращает его апстриму как `authorization`.
+
+Роут принимает тело запроса любого content-type сырым буфером (JSON, multipart,
+бинарь) — парсеры остального API не затронуты: внутри `registerPreviewProxy()` свой
+fastify-scope с `removeAllContentTypeParsers()` и catch-all `'*'`-парсером. Заголовки
+входящего запроса пробрасываются апстриму через `upstreamRequestHeaders()`, кроме
+hop-by-hop, адресации и авторизации/сессии ChatAI: `cookie`, `authorization`,
+`host`, `origin`, `referer`, `accept-encoding`, `sec-*`, `x-forwarded-*` и т.п.
+наружу не уходят; `content-type` уходит как есть. SSRF-проверка (`assertPublicHost`
+плюс кастомный DNS-lookup) выполняется в `get()` на каждый проксируемый запрос —
+включая переписанные fetch/XHR/beacon и каждый redirect-хоп, исключений нет.
 
 `GET /api/preview` защищён, но не Bearer-токеном в query (тот попал бы в лог/историю
 браузера) — авторизация идёт через отдельную HttpOnly-cookie `vc_preview_session`
