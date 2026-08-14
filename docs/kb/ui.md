@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-14
-checked: bc4f4c3
+checked: 8d937de
 areas:
   - packages/ui/src
   - apps/web/src
@@ -601,6 +601,19 @@ Merge живёт в отдельной вкладке «Merge» карточки
 DOM-тест умеет открыть чат задачи по адресу и проверить, что виджет исчезает
 после «+ Новый» (`App.projects.dom.test.tsx`), а подмена `conversationId` на чужой
 чат воспроизводит гонку с опоздавшим ответом.
+
+Тот же принцип держит и структуру доски: `createProject` в `fakeApi.ts` засевает
+канонический системный workflow целиком — `backlog`, `preparation`, `ready`,
+`development`, `component_qa`, `integration_tests`, `automated_qa`, `manual_qa`,
+`awaiting_merge`, `merge`, `done` и замыкающую `decision_required`, — без legacy
+`testing`/`qa_preparation`, как это делает серверный шаблон нового проекта.
+Storybook-фикстура `makeDefaultColumns()` (`components/kanban/fixtures.ts`) даёт
+тот же набор с id вида `col-<semanticType>`, поэтому сториз канбана адресуют
+колонки семантикой (`col-automated_qa`), а не исчезнувшим `col-testing`.
+Проверки store сравнивают `semanticType`, а не подписи колонок
+(`voiceStore.projects.test.ts`): имя пользователь переименовывает, машинный смысл
+— нет; созданная пользователем колонка получает семантику `custom` и встаёт после
+`decision_required`.
 
 Гейт: `npm run -w @voicechat/ui typecheck && npm run -w @voicechat/ui test`. При CSS, host-init или сборке дополнительно `npm run -w @voicechat/web build`.
 

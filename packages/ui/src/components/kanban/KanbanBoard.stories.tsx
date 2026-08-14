@@ -140,7 +140,7 @@ const epicBoard = (): Board => {
     makeTask({ id: 'st1', type: 'story', parentId: 'ep-auth', title: 'Вход по паролю', columnId: 'col-ready', assignee: 'bob' }),
     makeTask({ parentId: 'st1', title: 'Форма входа', columnId: 'col-development', assignee: 'bob' }),
     makeTask({ parentId: 'ep-voice', type: 'story', title: 'Запись с микрофона', columnId: 'col-development', assignee: 'carol' }),
-    makeTask({ title: 'Задача без эпика', columnId: 'col-testing' }),
+    makeTask({ title: 'Задача без эпика', columnId: 'col-automated_qa' }),
     makeTask({ title: 'Готовая задача', columnId: 'col-done', assignee: 'admin' })
   ])
 }
@@ -215,7 +215,7 @@ const dragBoard = (): Board => {
     makeTask({ id: 'dr2', title: 'Экран настроек: вкладка «Голос»', columnId: 'col-backlog' }),
     makeTask({ id: 'dr3', title: 'Перенести карточку пальцем', columnId: 'col-development', assignee: 'admin', labels: ['ui'] }),
     makeTask({ id: 'dr4', title: 'Скролл доски у края экрана', columnId: 'col-development' }),
-    makeTask({ id: 'dr5', title: 'Озвучить перенос в aria-live', columnId: 'col-testing', assignee: 'carol' })
+    makeTask({ id: 'dr5', title: 'Озвучить перенос в aria-live', columnId: 'col-automated_qa', assignee: 'carol' })
   ])
 }
 
