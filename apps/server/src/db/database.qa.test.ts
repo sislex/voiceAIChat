@@ -248,4 +248,44 @@ describe('manual QA persistence and workflow', () => {
     db.upsertTaskRepository(project.id, task.id, 'agent-y', '/repos2/chatai/CHAT-1.merge-r1', 'merge-clone')
     expect(db.listActiveTaskRepositories(task.id)).toHaveLength(2)
   })
+
+  function componentFixture(uiImpact:'none'|'existing_components'='existing_components') {
+    const project=db.createProject('owner',{name:'Component QA'})
+    const column=db.getBoard('owner',project.id)!.columns.find((item)=>item.semanticType==='component_qa')!
+    const task=db.createTask('owner',project.id,{columnId:column.id,title:'Button'})!
+    const raw=(db as unknown as {db:{prepare(sql:string):{run(...values:unknown[]):unknown}}}).db
+    const readiness={functionalRequirements:'Button works',acceptanceCriteria:'Visible',acceptanceCriteriaConflict:false,uiImpact,
+      testCases:uiImpact==='none'?[]:[{id:'TC-COMP',title:'Default',description:'',preconditions:'Storybook',testData:'fixture',steps:'render',expectedResult:'visible',required:true,testType:'ui',automatable:true,automationLinks:[],notAutomatedReason:'',alternativeManualVerification:'',comments:''}],
+      affectedComponents:uiImpact==='none'?[]:[{id:'button',name:'Button',storybookStoryId:'ui-button--default',reusable:true,coverage:{stories:true,states:true,fixtures:true,playFunctions:true,domTests:true,accessibility:true,visual:true},exclusionReason:'',alternativeVerification:''}]}
+    raw.prepare(`INSERT INTO task_preparation_runs (id,project_id,task_id,status,readiness_json,created_at,finished_at) VALUES (?,?,?,'success',?,?,?)`).run('prep-component',project.id,task.id,JSON.stringify(readiness),1,2)
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('ws-component',project.id,task.id,'agent-component','/repos/component','CHAT-227','a'.repeat(40),1,'released',3)
+    raw.prepare(`INSERT INTO ci_runs (id,project_id,task_id,status,workspace_id,triggered_by,mode,created_at) VALUES (?,?,?,'success',?,'owner','development',?)`).run('dev-component',project.id,task.id,'ws-component',4)
+    return {project,task,raw}
+  }
+
+  it('creates one active Component QA run pinned to the development SHA',()=>{
+    const {project,task}=componentFixture()
+    const first=db.startComponentQaRun('owner',project.id,task.id)
+    const second=db.startComponentQaRun('owner',project.id,task.id)
+    expect(second.id).toBe(first.id)
+    expect(first).toMatchObject({status:'queued',commitSha:'a'.repeat(40),developmentRunId:'dev-component',attempt:1})
+    expect(db.getComponentQaTaskState('owner',project.id,task.id)?.activeRun?.id).toBe(first.id)
+  })
+
+  it('audits uiImpact none as skipped and moves to integration tests',()=>{
+    const {project,task}=componentFixture('none')
+    const run=db.startComponentQaRun('owner',project.id,task.id)
+    expect(run).toMatchObject({status:'skipped',uiImpact:'none'})
+    const board=db.getBoard('owner',project.id)!
+    const moved=board.tasks.find((item)=>item.id===task.id)!
+    expect(board.columns.find((item)=>item.id===moved.columnId)?.semanticType).toBe('integration_tests')
+  })
+
+  it('marks interrupted execution as infrastructure and permits retry',()=>{
+    const {project,task}=componentFixture()
+    const run=db.startComponentQaRun('owner',project.id,task.id)
+    db.markComponentQaRunning(run.id)
+    expect(db.failInterruptedComponentQaRuns()).toEqual([run.id])
+    expect(db.getComponentQaRun('owner',run.id)).toMatchObject({status:'blocked',failureClassification:'infrastructure',canRetry:true})
+  })
 })

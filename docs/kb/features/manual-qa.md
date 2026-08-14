@@ -1,9 +1,10 @@
 ---
 title: Структурированное ручное QA
 updated: 2026-08-14
-checked: 0345f84
+checked: efcb78e
 areas:
   - packages/shared/src/qa.ts
+  - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
@@ -34,9 +35,134 @@ Component QA в `manual_qa`; успешная подготовка создаё�
 QA session. Только успешный `completeQaSession` переносит карточку в
 `awaiting_merge`. Новый SHA помечает активную QA session stale.
 
+## Автоматизированный Component QA
+
+`component_qa_runs` — отдельная от `ci_runs`, `task_preparation_runs`,
+`qa_preparation_runs` и ручных `qa_sessions` таблица (`schema.ts`, создание
+идемпотентным `CREATE TABLE IF NOT EXISTS`; существующим карточкам в
+`component_qa` миграция ничего не проставляет). Ран хранит id успешного
+development-рана, ветку и commit SHA его workspace, номер попытки, статус
+(`queued|running|passed|failed|blocked|cancelled|stale|skipped`), `ui_impact`,
+id readiness-рана и семантическую версию снимка, снимки сценариев и
+компонентов, результаты команд, артефакты, классификацию отказа, список
+блокеров, сводку, потоковый лог, ссылку на Storybook, `stale_reason` и id
+связанного fix-рана. Partial unique index по `task_id` при
+`status IN ('queued','running')` запрещает второй активный ран; повторный
+`POST …/qa/component/runs` возвращает существующий активный ран (202) вместо
+создания нового. Флаги `canCancel` (queued/running) и `canRetry`
+(failed/blocked/cancelled/stale) вычисляются при чтении, а не хранятся.
+
+`startComponentQaRun` требует QA-разрешение (`canQa`: владелец либо
+`project_members.qa_permission`), колонку задачи с `semantic_type =
+component_qa`, pushed CI-workspace с ветку/SHA/машиной, успешный
+development-ран на этом workspace и успешный `task_preparation_runs` с
+`readiness_json`; всё выполняется в одной SQLite-транзакции. Перед созданием
+нового рана тот же вызов помечает активный ран `stale` с причиной
+`development_sha_changed` (SHA workspace изменился) или
+`scenario_version_changed` (изменилась `componentQaSemanticVersion` —
+FNV-1a-хеш стабильно сериализованных сценариев, компонентов, `uiImpact` и
+флага конфликта критериев). Фонового наблюдателя нет: устаревание фиксируется
+при следующем запросе старта и учитывается gate'ом при попытке перехода.
+Снимок сценариев рана берёт из readiness только кейсы с
+`testType ∈ {ui, automated, mixed}`.
+
+`componentQaLaunchReasons` для UI-задачи требует непустой список компонентов и
+хотя бы один обязательный component-сценарий; компонент со story обязан
+заявить все семь признаков `StorybookCoverage`, компонент без story проходит
+только с непустыми `exclusionReason` и `alternativeVerification`; конфликт
+критериев приёмки тоже блокирует. `uiImpact=none` даёт пустой список причин,
+сохраняется аудируемым `skipped`-раном и в той же транзакции переводит карточку
+в `integration_tests` (через `canTransitionWorkflow('component_qa',
+'integration_tests','automation')`). Неполные входы создают `blocked`-ран с
+перечнем причин и оставляют карточку в `component_qa` — формального прогона не
+начинается.
+
+Клиент не передаёт путь, команду, SHA или машину: `componentQaExecutionContext`
+достаёт их SQL-джойном ран → development-ран → workspace, причём только для
+рана в статусе `queued` и workspace с `pushed = 1` и совпадающим
+`commit_sha`. Команда — `projects.test_command`, fallback
+`npm run test:storybook`; запуск идёт через тот же `ciExecutor` с `CI=1` и
+таймаутом 30 минут, stdout пишется в `component_qa_runs.log` с обрезкой до
+последних 500 000 символов. Выполняется одна команда, и её агрегированный
+исход присваивается всем сценариям снимка: exit 0 → `passed`, ненулевой код →
+`failed` с классификацией `implementation_defect`, timeout или потеря
+исполнителя (`exitCode == null`) → `blocked` с `infrastructure` и диагностикой
+`command_timeout`/`executor_disconnected`; недоступный workspace даёт
+`blocked` + `workspace_unavailable`. Отмена дергает `AbortController` из карты
+живых ранов в `server.ts` и переводит ран в `cancelled`. При старте сервера
+`failInterruptedComponentQaRuns` закрывает все `queued|running` как `blocked`
++ `infrastructure` + `server_restarted`, поэтому статус задачи не меняется, а
+повтор разрешён.
+
+`canCompleteComponentQa` (чистая функция в `qa.ts`) допускает переход только
+при статусе `passed`/`skipped` без `staleReason`, совпадении SHA и версии
+снимка с текущими, отсутствии конфликта критериев, `passed` у каждого
+обязательного сценария, полном Storybook coverage либо явном исключении с
+альтернативой у каждого компонента, `passed` и exit 0 у каждой команды и
+пустом списке блокеров; для `uiImpact=none` проверяется только сам факт
+`skipped`. `completeComponentQaRun` повторяет gate на сервере, ещё раз сверяет
+колонку и `canTransitionWorkflow` и только затем двигает карточку в
+`integration_tests`; `getComponentQaTaskState` отдаёт те же причины в
+`launchReasons`/`gateReasons` вместе с `canStart`/`canComplete`.
+
+`POST …/qa/component/runs/:runId/fix` работает для `failed`/`blocked`-рана:
+запускает один development-ран через `CiRunManager.start` (он же переносит
+карточку в `development`), кладёт в `fix_context_json` `stepId` вида
+`component_qa:<runId>`, хвост из сводки, лога, команд и артефактов (последние
+50 000 символов) и список упавших/заблокированных сценариев с фактическим
+результатом, после чего `linkComponentQaFixRun` закрывает ран как `failed` с
+`implementation_defect` и сохраняет id fix-рана. Повторный вызов идемпотентен —
+возвращает уже связанный ран.
+
+WebSocket-событий у Component QA нет: `ComponentQaPanel`
+(`packages/ui/src/components/qa/ComponentQaPanel.tsx`, встроена во вкладку QA
+карточки над `ManualQaPanel`) читает состояние REST-мостом и опрашивает его раз
+в две секунды, пока есть активный ран, поэтому переживает перезагрузку
+страницы и рестарт сервера; ответ старше локального снимка (сравнение по
+`finishedAt`/`startedAt`/`createdAt`) отбрасывается. Панель показывает ветку,
+SHA, попытку, активность процесса, причины недоступности запуска, компоненты со
+ссылками на story, сценарии, команды с exit code и длительностью, потоковый
+лог, артефакты, сводку и историю попыток, а действия — «Запустить», «Отменить»,
+«Повторить», «Открыть Storybook», «Отправить на доработку» и переход к
+интеграционным автотестам (последний активен только при `canComplete`). Методы
+`getComponent`/`startComponent`/`cancelComponent`/`completeComponent`/
+`fixComponent` в `RendererQaBridge` объявлены опциональными: без них панель
+показывает «Component QA недоступен».
+
 ## Домен и критерий допуска
 
 Общий контракт и чистые правила находятся в `packages/shared/src/qa.ts`.
+
+Структурированный сценарий — `TestCaseDefinition`: стабильный `id` (переживает
+правки, версии хранятся отдельно), `title`, `description`, `preconditions`,
+`testData`, `steps`, `expectedResult`, флаги `required` и `automatable`,
+`testType`, список `automationLinks` (`QaAutomationLink`: testId, path,
+updatedAt, commitSha — привязка автотеста к SHA), `notAutomatedReason`,
+`alternativeManualVerification`, `comments`. `QaCriterionTestType` — это
+`ui | api | integration | negative | regression | manual` плюс читаемые, но не
+предлагаемые заново legacy-значения `automated`, `mixed`,
+`not_testable_in_app`; полный список экспортируется как
+`QA_CRITERION_TEST_TYPES`, поэтому старые сохранённые сценарии не ломают чтение.
+
+UI-часть снимка описывают `UiImpact`
+(`none | existing_components | new_components | multi_component_flow`) и
+`AffectedUiComponent`: `id`, `name`, `storybookStoryId` (или `null`),
+`reusable`, `coverage`, `exclusionReason`, `alternativeVerification`.
+`StorybookCoverage` — семь независимых булевых признаков: `stories`, `states`,
+`fixtures`, `playFunctions`, `domTests`, `accessibility`, `visual`; значение
+`null` означает «покрытие не заявлено». Всё это собирается в
+`DevelopmentReadiness` (functionalRequirements, acceptanceCriteria, testCases,
+uiImpact, affectedComponents, acceptanceCriteriaConflict) — тот же снимок
+сохраняется в `task_preparation_runs.readiness_json` и позже читается стадией
+Component QA. `canConfirmDevelopmentReadiness` пропускает в Ready for
+Development только полный снимок: непустые требования и критерии, хотя бы один
+обязательный сценарий с заполненными id/title/preconditions/steps/
+expectedResult, заданный `uiImpact`, непустой список компонентов для любого
+UI-влияния, компонент без story — только с непустыми `exclusionReason` и
+`alternativeVerification`, а новый переиспользуемый компонент без story
+отклоняется отдельной причиной. `canCompleteAutomation` требует для каждого
+обязательного сценария либо `automationLinks` на текущем SHA, либо пару
+«причина неавтоматизируемости + ручная альтернатива».
 Acceptance criterion — отдельная сущность; смысловая правка создаёт новую
 версию-снимок, связывает её с предыдущей и помечает активную QA session как
 устаревшую. Редакционная правка с `semanticChange: false` обновляет текущую

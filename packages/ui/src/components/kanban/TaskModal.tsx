@@ -27,6 +27,7 @@ import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanban
 import { CiTaskSettings } from '../ci/CiTaskSettings'
 import { FeaturePreviewSection } from '../preview/FeaturePreviewSection'
 import { ManualQaPanel } from '../qa/ManualQaPanel'
+import { ComponentQaPanel } from '../qa/ComponentQaPanel'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { CiReport } from '../ci/CiReport'
 import { MergePanel } from '../ci/MergePanel'
@@ -813,7 +814,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             <FeaturePreviewSection projectId={task.projectId} taskId={task.id} />
           </div>
         </section>}
-        {!props.draft && <><section className="task-tab-panel" hidden={activeTab !== 'qa'}><ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} /></section>
+        {!props.draft && <><section className="task-tab-panel" hidden={activeTab !== 'qa'}><ComponentQaPanel projectId={task.projectId} taskId={task.id} active={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} /><ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} /></section>
         <section className="task-tab-panel" hidden={activeTab !== 'progress'}>
           {props.ciSummary?.progress && <AutomationProgressView progress={props.ciSummary.progress} />}
           <nav className="task-subtabs" role="tablist" aria-label="Ход выполнения">
