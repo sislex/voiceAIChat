@@ -10,6 +10,7 @@ import { TaskModal, type TaskModalProps } from './TaskModal'
 import { createFakeCi } from '../../test/fakeApi'
 import { makeReportStep, makeRunReport, makeTaskReport, makeUsageTotals } from '../../test/fixtures'
 import type { KbTaskUsageReport } from '@shared/kb'
+import type { TaskPreparationRun } from '@shared/qa'
 import { MOBILE_QUERY } from '../../lib/mediaQuery'
 
 function mkTask(over: Partial<Task> = {}): Task {
@@ -716,20 +717,81 @@ describe('TaskModal — отчёт по завершённой задаче', ()
 
 describe('TaskModal — подготовка к разработке', () => {
   beforeEach(() => { window.ci = createFakeCi() })
-
-  it('в TODO показывает запуск подготовки вместо CI', () => {
-    const backlogBoard: Board = { columns: [{ ...board.columns[0], name: 'TODO', semanticType: 'backlog' }], tasks: [] }
-    const onStartPreparation = vi.fn()
-    render(<TaskModal {...props({ board: backlogBoard, onStartPreparation, onStartCi: vi.fn(), onStartCiParallel: vi.fn() })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Начать подготовку задачи' }))
-    expect(onStartPreparation).toHaveBeenCalledWith('t1')
-    expect(screen.queryByTestId('task-modal-ci')).not.toBeInTheDocument()
+  const preparationBoard: Board = { columns: [{ ...board.columns[0], name: 'Подготовка к разработке', semanticType: 'preparation' }], tasks: [] }
+  const run = (status: TaskPreparationRun['status'], over: Partial<TaskPreparationRun> = {}): TaskPreparationRun => ({
+    id: `prep-${status}`, projectId: 'p1', taskId: 't1', status, attempt: 1, maxAttempts: 3,
+    log: 'Уточняю критерии', error: null, readiness: null, gateReasons: [], createdAt: 1,
+    finishedAt: status === 'running' ? null : 2, canRetry: status !== 'running', canCancel: status === 'running', ...over
   })
 
-  it('в preparation показывает отдельную ленту и не показывает development-кнопки', () => {
-    const preparationBoard: Board = { columns: [{ ...board.columns[0], name: 'Подготовка к разработке', semanticType: 'preparation' }], tasks: [] }
-    render(<TaskModal {...props({ board: preparationBoard, task: mkTask({ taskPreparationStatus: 'running', taskPreparationLog: 'Уточняю критерии' }), onStartCi: vi.fn() })} />)
-    expect(screen.getByTestId('task-preparation-feed')).toHaveTextContent('Уточняю критерии')
+  it('не показывает вкладку без истории, а активный ран открывает её автоматически', async () => {
+    const { unmount } = render(<TaskModal {...props({ board: preparationBoard })} />)
+    expect(screen.queryByRole('tab', { name: 'Подготовка к разработке' })).not.toBeInTheDocument()
+    unmount()
+
+    render(<TaskModal {...props({
+      board: preparationBoard,
+      task: mkTask({ taskPreparationRunId: 'prep-running', taskPreparationStatus: 'running' }),
+      loadPreparationRuns: async () => [run('running')]
+    })} />)
+    expect(screen.getByRole('tab', { name: 'Подготовка к разработке' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByTestId('task-preparation-feed')).toHaveTextContent('Уточняю критерии')
+  })
+
+  it.each([
+    ['running', 'выполняется'],
+    ['success', 'успешно'],
+    ['failed', 'ошибка'],
+    ['cancelled', 'отменён']
+  ] as const)('показывает статус %s и допустимые действия', async (status, label) => {
+    const value = run(status, status === 'failed' ? { error: 'Ответ модели невалиден', gateReasons: ['missing_acceptance_criteria'] } : {})
+    render(<TaskModal {...props({
+      board: preparationBoard,
+      initialTab: 'preparation',
+      task: mkTask({ taskPreparationRunId: value.id, taskPreparationStatus: status }),
+      loadPreparationRuns: async () => [value],
+      onRetryPreparation: vi.fn(),
+      onCancelPreparation: vi.fn(),
+      onStartCi: vi.fn(),
+      onStartCiParallel: vi.fn()
+    })} />)
+    expect(await screen.findByText(`Статус: ${label}`)).toBeInTheDocument()
+    if (status === 'running') {
+      expect(screen.getByRole('button', { name: 'Отменить' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Повторить подготовку' })).not.toBeInTheDocument()
+    } else {
+      expect(screen.queryByRole('button', { name: 'Отменить' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Повторить подготовку' })).toBeInTheDocument()
+    }
     expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Параллельно' })).not.toBeInTheDocument()
+    if (status === 'failed') {
+      expect(screen.getByRole('alert')).toHaveTextContent('Ответ модели невалиден')
+      expect(screen.getByTestId('task-preparation-gate-reasons')).toHaveTextContent('missing_acceptance_criteria')
+    }
+  })
+
+  it('показывает пустое состояние активного рана до появления истории', async () => {
+    render(<TaskModal {...props({
+      board: preparationBoard,
+      task: mkTask({ taskPreparationStatus: 'running' }),
+      loadPreparationRuns: async () => []
+    })} />)
+    expect(await screen.findByTestId('task-preparation-empty')).toHaveTextContent('ещё не запускалась')
+  })
+
+  it('retry добавляет новую попытку, сохраняя предыдущую', async () => {
+    const failed = run('failed')
+    const retry = run('running', { id: 'prep-2', attempt: 2 })
+    const load = vi.fn().mockResolvedValueOnce([failed]).mockResolvedValueOnce([retry, failed])
+    render(<TaskModal {...props({
+      board: preparationBoard,
+      initialTab: 'preparation',
+      task: mkTask({ taskPreparationRunId: failed.id, taskPreparationStatus: 'failed' }),
+      loadPreparationRuns: load,
+      onRetryPreparation: async () => retry
+    })} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Повторить подготовку' }))
+    await waitFor(() => expect(within(screen.getByTestId('task-preparation-history')).getAllByRole('button')).toHaveLength(2))
   })
 })
