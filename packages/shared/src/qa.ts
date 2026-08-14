@@ -154,6 +154,25 @@ export interface QaSession {
   startedAt: number; finishedAt: number | null; staleReason: string | null; summary: string
   additionalIssues?: string; linkedFixRunId?: string | null; results: QaCriterionResult[]
 }
+/** Пред-разработческая подготовка задачи — отдельна от подготовки ручного QA. */
+export type TaskPreparationStatus = 'running' | 'success' | 'failed' | 'cancelled'
+export interface TaskPreparationRun {
+  id: string
+  projectId: string
+  taskId: string
+  status: TaskPreparationStatus
+  attempt: number
+  maxAttempts: number
+  log: string
+  error: string | null
+  readiness: DevelopmentReadiness | null
+  gateReasons: string[]
+  createdAt: number
+  finishedAt: number | null
+  canRetry: boolean
+  canCancel: boolean
+}
+
 export type QaPreparationStatus = 'running' | 'success' | 'failed'
 export interface QaPreparationAttempt {
   attempt: number; rawResponse: string; error: string | null; status: 'success' | 'failed'

@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, type AcceptanceCriterionSnapshot, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, canConfirmDevelopmentReadiness, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -580,6 +580,71 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return true
   }
 
+  const parseTaskPreparation = (text: string): DevelopmentReadiness => {
+    const raw = text.trim().replace(/^\`\`\`(?:json)?\\s*/i, '').replace(/\\s*\`\`\`$/, '')
+    const value = JSON.parse(raw) as DevelopmentReadiness
+    if (!value || typeof value.functionalRequirements !== 'string' || typeof value.acceptanceCriteria !== 'string' || !Array.isArray(value.testCases) || !Array.isArray(value.affectedComponents)) {
+      throw new Error('Модель вернула неполную структуру готовности')
+    }
+    return value
+  }
+  const launchTaskPreparation = (userId: string, projectId: string, taskId: string): import('@voicechat/shared').TaskPreparationRun => {
+    const run = db.startTaskPreparationRun(userId, projectId, taskId)
+    if (run.status !== 'running' || run.log) return run
+    const task = db.getCiTask(userId, projectId, taskId)
+    const basePrompt = `Подготовь задачу к разработке. Не меняй код, не запускай инструменты и не делегируй работу. Уточни функциональные требования и верни за один ход ТОЛЬКО JSON без Markdown: {"functionalRequirements":"подробное описание","acceptanceCriteria":"нумерованный список","testCases":[{"id":"stable-id","title":"","description":"","preconditions":"","testData":"","steps":"","expectedResult":"","required":true,"testType":"manual","automatable":false,"automationLinks":[],"notAutomatedReason":"","alternativeManualVerification":"","comments":""}],"uiImpact":"none|existing_components|new_components|multi_component_flow","affectedComponents":[{"id":"","name":"","storybookStoryId":null,"reusable":false,"coverage":null,"exclusionReason":"","alternativeVerification":""}],"acceptanceCriteriaConflict":false}. Для UI-компонентов либо укажи storybookStoryId, либо непустые exclusionReason и alternativeVerification. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}`
+    const sendAttempt = (attempt: number, correction?: string): void => {
+      const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный JSON.` : basePrompt
+      claude.send({ userId, prompt, sessionId: null, model: 'sonnet', executionDisabled: true }, {
+        onDelta: (chunk) => { db.appendTaskPreparationLog(run.id, chunk); boardHub.emit(projectId) },
+        onSession: () => {},
+        onDone: (text) => {
+          try {
+            const readiness = parseTaskPreparation(text)
+            const gate = canConfirmDevelopmentReadiness(readiness)
+            if (!gate.allowed) throw new Error(`Гейт готовности не пройден: ${gate.reasons.join(', ')}`)
+            db.completeTaskPreparationRun(userId, run.id, readiness)
+            boardHub.emit(projectId)
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            if (attempt < 2) sendAttempt(attempt + 1, message)
+            else { db.failTaskPreparationRun(run.id, message); boardHub.emit(projectId) }
+          }
+        },
+        onError: (message) => {
+          if (attempt < 2) sendAttempt(attempt + 1, message)
+          else { db.failTaskPreparationRun(run.id, message); boardHub.emit(projectId) }
+        }
+      })
+    }
+    sendAttempt(1)
+    boardHub.emit(projectId)
+    return run
+  }
+
+  app.post<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/preparation/run', async (req, reply) => {
+    try { return launchTaskPreparation(uid(req), req.params.id, req.params.taskId) }
+    catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }) }
+  })
+  app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/preparation/runs', async (req) =>
+    db.listTaskPreparationRuns(uid(req), req.params.id, req.params.taskId)
+  )
+  app.get<{ Params: { runId: string } }>('/api/task-preparation/runs/:runId', async (req, reply) =>
+    db.getTaskPreparationRun(uid(req), req.params.runId) ?? reply.code(404).send({ error: 'not found' })
+  )
+  app.delete<{ Params: { runId: string } }>('/api/task-preparation/runs/:runId', async (req, reply) => {
+    const run = db.cancelTaskPreparationRun(uid(req), req.params.runId)
+    if (!run) return reply.code(404).send({ error: 'not found' })
+    boardHub.emit(run.projectId)
+    return run
+  })
+  app.post<{ Params: { runId: string } }>('/api/task-preparation/runs/:runId/retry', async (req, reply) => {
+    const previous = db.getTaskPreparationRun(uid(req), req.params.runId)
+    if (!previous) return reply.code(404).send({ error: 'not found' })
+    if (!previous.canRetry) return reply.code(409).send({ error: 'Эту попытку нельзя повторить' })
+    return launchTaskPreparation(uid(req), previous.projectId, previous.taskId)
+  })
+
   const ciRunManager = createCiRunManager({
     db,
     executor: ciExecutor,
@@ -650,7 +715,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   registerReleaseRoutes(app, db, releaseManager)
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
-  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager)
+  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId) => { launchTaskPreparation(userId, projectId, taskId) })
   mergeRunManager.reconcile()
   registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true))
 
@@ -658,6 +723,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // навсегда остались бы «running» и блокировали карточку задачи.
   const interrupted = db.failInterruptedCiRuns()
   if (interrupted.length) app.log.warn({ runs: interrupted.map((r) => r.id) }, 'ci: прерванные раны закрыты как failed')
+  const interruptedPreparation = db.failInterruptedTaskPreparationRuns()
+  if (interruptedPreparation.length) app.log.warn({ runs: interruptedPreparation }, 'task preparation: прерванные раны закрыты как failed')
   const interruptedQa = db.failInterruptedQaPreparationRuns()
   if (interruptedQa.length) app.log.warn({ runs: interruptedQa }, 'qa preparation: прерванные раны закрыты как failed')
 

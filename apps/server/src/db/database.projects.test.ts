@@ -773,3 +773,29 @@ describe('projects: чаты завершённых задач в списке �
     expect(db.listConversations('alice').map((c) => c.id)).toContain(plain.id)
   })
 })
+
+describe('projects: пред-разработческая подготовка', () => {
+  it('атомарно создаёт отдельный ран и переводит TODO в preparation', () => {
+    const project = db.createProject('alice', { name: 'Preparation' })
+    const board = db.getBoard('alice', project.id)!
+    const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
+    const preparation = board.columns.find((column) => column.semanticType === 'preparation')!
+    const task = db.createTask('alice', project.id, { columnId: backlog.id, title: 'Уточнить workflow' })!
+    const run = db.startTaskPreparationRun('alice', project.id, task.id)
+    expect(run.status).toBe('running')
+    expect(db.getBoard('alice', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).toBe(preparation.id)
+    expect(db.startTaskPreparationRun('alice', project.id, task.id).id).toBe(run.id)
+  })
+
+  it('ошибка оставляет карточку в preparation и разрешает повтор', () => {
+    const project = db.createProject('alice', { name: 'Preparation failure' })
+    const board = db.getBoard('alice', project.id)!
+    const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
+    const preparation = board.columns.find((column) => column.semanticType === 'preparation')!
+    const task = db.createTask('alice', project.id, { columnId: backlog.id, title: 'Неполные требования' })!
+    const run = db.startTaskPreparationRun('alice', project.id, task.id)
+    db.failTaskPreparationRun(run.id, 'Гейт не пройден', ['missing_acceptance_criteria'])
+    expect(db.getTaskPreparationRun('alice', run.id)).toMatchObject({ status: 'failed', canRetry: true, gateReasons: ['missing_acceptance_criteria'] })
+    expect(db.getBoard('alice', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).toBe(preparation.id)
+  })
+})

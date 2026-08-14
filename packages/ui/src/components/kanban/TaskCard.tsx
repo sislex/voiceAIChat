@@ -39,6 +39,8 @@ export interface TaskCardProps {
   ciSummary?: CiRunSummary
   /** Запустить CI-воркфлоу для задачи. */
   onStartCi?: (taskId: string) => void | Promise<void>
+  /** Запустить отдельную пред-разработческую подготовку. */
+  onStartPreparation?: (taskId: string) => void | Promise<void>
   /** Параллельный запуск: сразу в работу, мимо очереди сервера. */
   onStartCiParallel?: (taskId: string) => void | Promise<void>
   /** Открыть ленту рана. */
@@ -105,7 +107,8 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const pulse = ciCardPulse(visibleCiSummary)
   // В «Готово» запуск нового CI-рана запрещён: завершённая карточка остаётся
   // историей результата, а не точкой повторного выполнения.
-  const canStart = !done && canStartCiRun(ciSummary)
+  const developmentAllowed = props.columnSemanticType !== 'backlog' && props.columnSemanticType !== 'preparation'
+  const canStart = !done && developmentAllowed && canStartCiRun(ciSummary)
 
   const epic = epicOf(task, props.allTasks)
   const children = props.allTasks.filter((t) => t.parentId === task.id)
@@ -221,7 +224,20 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </div>
       )}
 
-      {task.type === 'task' && (props.onStartCi || visibleCiSummary) && (
+      {task.type === 'task' && props.columnSemanticType === 'backlog' && props.onStartPreparation && (
+        <div className="jcard-ci" data-testid="task-preparation-panel" onClick={(e) => e.stopPropagation()}>
+          <Button variant="primary" size="sm" onClick={() => void props.onStartPreparation?.(task.id)}>Начать подготовку задачи</Button>
+        </div>
+      )}
+      {task.type === 'task' && props.columnSemanticType === 'preparation' && (
+        <div className="jcard-ci" data-testid="task-preparation-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="jcard-ci-row"><span className="ci-lozenge">{task.taskPreparationStatus === 'running' ? 'Подготовка выполняется' : task.taskPreparationStatus === 'failed' ? 'Подготовка не прошла' : 'Подготовка'}</span></div>
+          {task.taskPreparationError && <p className="jcard-ci-phase">{task.taskPreparationError}</p>}
+          <Button size="sm" onClick={() => props.onOpen(task.id)}>Лента подготовки</Button>
+          {task.taskPreparationStatus !== 'running' && props.onStartPreparation && <Button size="sm" onClick={() => void props.onStartPreparation?.(task.id)}>Повторить</Button>}
+        </div>
+      )}
+      {task.type === 'task' && developmentAllowed && (props.onStartCi || visibleCiSummary) && (
         <div className="jcard-ci" data-testid="task-ci-panel" onClick={(e) => e.stopPropagation()}>
           {visibleCiSummary && (() => {
             const ciSummary = visibleCiSummary

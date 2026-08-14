@@ -713,3 +713,23 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     await waitFor(() => expect(screen.queryByTestId('task-modal-report')).not.toBeInTheDocument())
   })
 })
+
+describe('TaskModal — подготовка к разработке', () => {
+  beforeEach(() => { window.ci = createFakeCi() })
+
+  it('в TODO показывает запуск подготовки вместо CI', () => {
+    const backlogBoard: Board = { columns: [{ ...board.columns[0], name: 'TODO', semanticType: 'backlog' }], tasks: [] }
+    const onStartPreparation = vi.fn()
+    render(<TaskModal {...props({ board: backlogBoard, onStartPreparation, onStartCi: vi.fn(), onStartCiParallel: vi.fn() })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Начать подготовку задачи' }))
+    expect(onStartPreparation).toHaveBeenCalledWith('t1')
+    expect(screen.queryByTestId('task-modal-ci')).not.toBeInTheDocument()
+  })
+
+  it('в preparation показывает отдельную ленту и не показывает development-кнопки', () => {
+    const preparationBoard: Board = { columns: [{ ...board.columns[0], name: 'Подготовка к разработке', semanticType: 'preparation' }], tasks: [] }
+    render(<TaskModal {...props({ board: preparationBoard, task: mkTask({ taskPreparationStatus: 'running', taskPreparationLog: 'Уточняю критерии' }), onStartCi: vi.fn() })} />)
+    expect(screen.getByTestId('task-preparation-feed')).toHaveTextContent('Уточняю критерии')
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
+  })
+})
