@@ -199,7 +199,7 @@ describe('projects REST: доска', () => {
   it('колонки: reorder не перехватывается :columnId; hidden; delete', async () => {
     const p = await createProject()
     let board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
-    expect(board.columns.map((c) => c.name)).toEqual(['Бэклог', 'Готово к разработке', 'В разработке', 'Автотестирование', 'Создание сценариев ручного QA', 'Ручное QA', 'Ожидает мержа', 'Мерж', 'Требуется решение', 'Готово'])
+    expect(board.columns.map((c) => c.name)).toEqual(['Бэклог', 'Подготовка к разработке', 'Ready for Development', 'Development', 'Component QA', 'Создание интеграционных автотестов', 'Automated QA', 'Создание сценариев ручного QA', 'Ручное QA', 'Ожидает мержа', 'Мерж', 'Требуется решение', 'Готово'])
 
     const reversed = board.columns.map((c) => c.id).reverse()
     const reo = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/columns/reorder`, payload: { order: reversed } })

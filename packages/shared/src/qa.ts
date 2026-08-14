@@ -1,6 +1,108 @@
 // Структурированное ручное QA: общий контракт и чистые правила допуска к merge.
-export type QaCriterionTestType = 'manual' | 'automated' | 'mixed' | 'not_testable_in_app'
-export const QA_CRITERION_TEST_TYPES: QaCriterionTestType[] = ['manual', 'automated', 'mixed', 'not_testable_in_app']
+export type QaCriterionTestType =
+  | 'ui' | 'api' | 'integration' | 'negative' | 'regression' | 'manual'
+  /** Legacy values remain readable for persisted criteria. */
+  | 'automated' | 'mixed' | 'not_testable_in_app'
+export const QA_CRITERION_TEST_TYPES: QaCriterionTestType[] = [
+  'ui', 'api', 'integration', 'negative', 'regression', 'manual',
+  'automated', 'mixed', 'not_testable_in_app'
+]
+
+export type UiImpact = 'none' | 'existing_components' | 'new_components' | 'multi_component_flow'
+export interface StorybookCoverage {
+  stories: boolean
+  states: boolean
+  fixtures: boolean
+  playFunctions: boolean
+  domTests: boolean
+  accessibility: boolean
+  visual: boolean
+}
+export interface AffectedUiComponent {
+  id: string
+  name: string
+  storybookStoryId: string | null
+  reusable: boolean
+  coverage: StorybookCoverage | null
+  exclusionReason: string
+  alternativeVerification: string
+}
+export interface QaAutomationLink {
+  testId: string
+  path: string
+  updatedAt: number
+  commitSha: string
+}
+export interface TestCaseDefinition {
+  /** Stable across edits; versions are stored separately. */
+  id: string
+  title: string
+  description: string
+  preconditions: string
+  testData: string
+  steps: string
+  expectedResult: string
+  required: boolean
+  testType: QaCriterionTestType
+  automatable: boolean
+  automationLinks: QaAutomationLink[]
+  notAutomatedReason: string
+  alternativeManualVerification: string
+  comments: string
+}
+export interface DevelopmentReadiness {
+  functionalRequirements: string
+  acceptanceCriteria: string
+  testCases: TestCaseDefinition[]
+  uiImpact: UiImpact | null
+  affectedComponents: AffectedUiComponent[]
+  acceptanceCriteriaConflict: boolean
+}
+export interface ReadinessCheck { allowed: boolean; reasons: string[] }
+
+/** Pure quality gate used before entering Ready for Development. */
+export function canConfirmDevelopmentReadiness(input: DevelopmentReadiness): ReadinessCheck {
+  const reasons: string[] = []
+  if (!input.functionalRequirements.trim()) reasons.push('missing_functional_requirements')
+  if (!input.acceptanceCriteria.trim()) reasons.push('missing_acceptance_criteria')
+  if (!input.testCases.some((testCase) => testCase.required)) reasons.push('missing_required_test_cases')
+  for (const testCase of input.testCases) {
+    if (!testCase.required) continue
+    if (!testCase.id.trim()) reasons.push('missing_stable_id')
+    if (!testCase.title.trim()) reasons.push(`missing_title:${testCase.id}`)
+    if (!testCase.preconditions.trim()) reasons.push(`missing_preconditions:${testCase.id}`)
+    if (!testCase.steps.trim()) reasons.push(`missing_steps:${testCase.id}`)
+    if (!testCase.expectedResult.trim()) reasons.push(`missing_expected_result:${testCase.id}`)
+  }
+  if (!input.uiImpact) reasons.push('missing_ui_impact')
+  if (input.uiImpact && input.uiImpact !== 'none') {
+    if (input.affectedComponents.length === 0) reasons.push('missing_affected_components')
+    for (const component of input.affectedComponents) {
+      if (!component.storybookStoryId && (!component.exclusionReason.trim() || !component.alternativeVerification.trim())) {
+        reasons.push(`missing_storybook_coverage:${component.id}`)
+      }
+      if (component.reusable && input.uiImpact === 'new_components' && !component.storybookStoryId && !component.exclusionReason.trim()) {
+        reasons.push(`new_reusable_component_without_story:${component.id}`)
+      }
+    }
+  }
+  if (input.acceptanceCriteriaConflict) reasons.push('acceptance_criteria_conflict')
+  return { allowed: reasons.length === 0, reasons }
+}
+
+/** Gate for leaving integration-test creation. */
+export function canCompleteAutomation(testCases: readonly TestCaseDefinition[], commitSha: string): ReadinessCheck {
+  const reasons: string[] = []
+  for (const testCase of testCases) {
+    if (!testCase.required) continue
+    const currentLinks = testCase.automationLinks.filter((link) => link.commitSha === commitSha && link.path.trim())
+    if (testCase.automatable && currentLinks.length === 0) reasons.push(`missing_automation:${testCase.id}`)
+    if (!testCase.automatable && (!testCase.notAutomatedReason.trim() || !testCase.alternativeManualVerification.trim())) {
+      reasons.push(`missing_manual_alternative:${testCase.id}`)
+    }
+  }
+  return { allowed: reasons.length === 0, reasons }
+}
 export type QaResultStatus = 'not_tested' | 'in_progress' | 'passed' | 'failed' | 'blocked' | 'not_applicable' | 'stale'
 export const QA_RESULT_STATUSES: QaResultStatus[] = ['not_tested', 'in_progress', 'passed', 'failed', 'blocked', 'not_applicable', 'stale']
 export type QaSessionStatus = 'active' | 'passed' | 'failed' | 'blocked' | 'stale'

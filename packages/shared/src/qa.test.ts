@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canCompleteQa, qaProgress, validateQaResult, type QaSession } from './qa'
+import { canCompleteAutomation, canCompleteQa, canConfirmDevelopmentReadiness, qaProgress, validateQaResult, type DevelopmentReadiness, type QaSession, type TestCaseDefinition } from './qa'
 
 function session(statuses: Array<'not_tested' | 'in_progress' | 'passed' | 'failed' | 'blocked' | 'not_applicable' | 'stale'>): QaSession {
   return {
@@ -21,6 +21,45 @@ function session(statuses: Array<'not_tested' | 'in_progress' | 'passed' | 'fail
     }))
   }
 }
+const testCase = (patch: Partial<TestCaseDefinition> = {}): TestCaseDefinition => ({
+  id: 'TC-1', title: 'Scenario', description: 'Goal', preconditions: 'Signed in',
+  testData: 'Fixture A', steps: 'Open page', expectedResult: 'Page is visible',
+  required: true, testType: 'ui', automatable: true, automationLinks: [],
+  notAutomatedReason: '', alternativeManualVerification: '', comments: '', ...patch
+})
+
+describe('development readiness gate', () => {
+  const ready = (): DevelopmentReadiness => ({
+    functionalRequirements: 'Requirement', acceptanceCriteria: 'Criterion',
+    testCases: [testCase()], uiImpact: 'none', affectedComponents: [],
+    acceptanceCriteriaConflict: false
+  })
+  it('rejects incomplete required cases and undefined UI impact', () => {
+    const input = ready()
+    input.testCases[0].expectedResult = ''
+    input.uiImpact = null
+    expect(canConfirmDevelopmentReadiness(input).reasons).toEqual([
+      'missing_expected_result:TC-1', 'missing_ui_impact'
+    ])
+  })
+  it('requires Storybook coverage or an explicit alternative for UI work', () => {
+    const input = ready()
+    input.uiImpact = 'new_components'
+    input.affectedComponents = [{
+      id: 'button', name: 'Button', storybookStoryId: null, reusable: true,
+      coverage: null, exclusionReason: '', alternativeVerification: ''
+    }]
+    expect(canConfirmDevelopmentReadiness(input).allowed).toBe(false)
+  })
+  it('requires a current-SHA Playwright link or a documented manual alternative', () => {
+    expect(canCompleteAutomation([testCase()], 'sha-1').reasons).toEqual(['missing_automation:TC-1'])
+    expect(canCompleteAutomation([testCase({
+      automatable: false, notAutomatedReason: 'Hardware only',
+      alternativeManualVerification: 'Verify on device'
+    })], 'sha-1').allowed).toBe(true)
+  })
+})
+
 describe('manual QA gate', () => {
   it.each([
     [['passed'], true],
