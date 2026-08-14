@@ -5035,6 +5035,10 @@ export class VoiceChatDb {
     return mapQaSession(row,results)
   }
 
+  addPreviewAudit(userId:string,projectId:string,taskId:string,action:string,payload:unknown):void {
+    this.addQaAudit(projectId, taskId, userId, action, payload)
+  }
+
   private addQaAudit(projectId:string,taskId:string,actor:string,action:string,payload:unknown):void {
     this.db.prepare(`INSERT INTO qa_audit (id,project_id,task_id,action,actor,payload_json,created_at) VALUES (?,?,?,?,?,?,?)`).run(this.newId(),projectId,taskId,action,actor,JSON.stringify(payload),this.now())
   }

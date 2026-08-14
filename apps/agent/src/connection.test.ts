@@ -163,4 +163,16 @@ describe('startConnection (handlers)', () => {
     startConnection({ serverUrl: 'ws://x/agent', token: 't', rootDir: '/tmp' }, h)
     expect(h.onLog).not.toHaveBeenCalled()
   })
+
+  it('tunnel.listen binds only a loopback ephemeral port and can be closed', async () => {
+    const conn = startConnection({ serverUrl: 'ws://x/agent', token: 't', rootDir: '/tmp' })
+    const ws = instances[0]
+    ws.emit('message', JSON.stringify({ t: 'tunnel.listen', tunnelId: 'tun-agent' }))
+    await vi.waitFor(() => {
+      const listening = ws.sent.map((item) => JSON.parse(item)).find((msg) => msg.t === 'tunnel.listening')
+      expect(listening.port).toBeGreaterThan(0)
+    })
+    ws.emit('message', JSON.stringify({ t: 'tunnel.close', tunnelId: 'tun-agent' }))
+    conn.stop()
+  })
 })

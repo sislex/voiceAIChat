@@ -304,6 +304,24 @@ describe('AgentRegistry', () => {
     expect(events.some((e) => e.t === 'pty.error')).toBe(true)
   })
 
+  it('туннель идемпотентно слушает локально и релеет только заданный target-порт', async () => {
+    const reg = makeRegistry()
+    const local = fakeSocket(), preview = fakeSocket()
+    reg.register('local', 'Ноутбук', local, DEFAULT_AGENT_POLICY, '0.10.0')
+    reg.register('preview', 'Docker', preview, DEFAULT_AGENT_POLICY, '0.10.0')
+    const opening = reg.createTunnel('tun', 'local', 'preview', 18000)
+    expect(local.sent.at(-1)).toEqual({ t: 'tunnel.listen', tunnelId: 'tun' })
+    reg.handleMessage('local', { t: 'tunnel.listening', tunnelId: 'tun', port: 32100 })
+    await expect(opening).resolves.toBe(32100)
+    await expect(reg.createTunnel('tun', 'local', 'preview', 18000)).resolves.toBe(32100)
+    expect(local.sent.filter((msg) => msg.t === 'tunnel.listen')).toHaveLength(1)
+    reg.handleMessage('local', { t: 'tunnel.open', tunnelId: 'tun', connectionId: 'c1' })
+    expect(preview.sent.at(-1)).toEqual({ t: 'tunnel.connect', tunnelId: 'tun', connectionId: 'c1', port: 18000 })
+    reg.handleMessage('preview', { t: 'tunnel.data', tunnelId: 'tun', connectionId: 'c1', data: 'YQ==' })
+    expect(local.sent.at(-1)).toEqual({ t: 'tunnel.data', tunnelId: 'tun', connectionId: 'c1', data: 'YQ==' })
+    expect(reg.closeTunnel('tun')).toBe(true)
+  })
+
 })
 
 describe('AgentRegistry — телеметрия', () => {
