@@ -911,6 +911,7 @@ export interface StoreActions {
   deleteProject(id: string): Promise<void>
   /** Добавить/убрать участника (только владелец). */
   addProjectMember(id: string, username: string): Promise<void>
+  updateProjectMemberRole(id: string, username: string, role: 'owner' | 'member'): Promise<void>
   removeProjectMember(id: string, username: string): Promise<void>
   /** Привязать/отвязать машину-агента (только владелец). */
   linkProjectMachine(id: string, agentId: string): Promise<void>
@@ -3542,6 +3543,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       fail(err)
     }
   }
+  async function updateProjectMemberRole(id: string, username: string, role: 'owner' | 'member'): Promise<void> {
+    try {
+      setState({ projectDetail: await api['projects:updateMemberRole']({ id, username, role }) })
+      await refreshProjects()
+    } catch (err) {
+      fail(err)
+    }
+  }
   async function removeProjectMember(id: string, username: string): Promise<void> {
     try {
       setState({ projectDetail: await api['projects:removeMember']({ id, username }) })
@@ -4406,6 +4415,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       updateProject,
       deleteProject,
       addProjectMember,
+      updateProjectMemberRole,
       removeProjectMember,
       linkProjectMachine,
       unlinkProjectMachine,

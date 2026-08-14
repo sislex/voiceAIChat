@@ -135,6 +135,48 @@ describe('projects REST: доступ', () => {
     expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'carol' } })).statusCode).toBe(403)
   })
 
+  it('назначает нескольких владельцев, защищает последнего и не повышает глобального admin', async () => {
+    const p = await createProject()
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'bob' } })
+
+    const promoted = await inj(adminTok, {
+      method: 'PATCH', url: `/api/projects/${p.id}/members/bob`, payload: { role: 'owner' }
+    })
+    expect(promoted.statusCode).toBe(200)
+    expect((promoted.json() as ProjectDetail).members.filter((m) => m.role === 'owner')).toHaveLength(2)
+    expect((await inj(bobTok, {
+      method: 'PATCH', url: `/api/projects/${p.id}`, payload: { description: 'второй владелец' }
+    })).statusCode).toBe(200)
+    const bobMachine = db.createAgent('bob', 'Bob Mac')
+    expect((await inj(bobTok, {
+      method: 'POST', url: `/api/projects/${p.id}/machines`, payload: { agentId: bobMachine.id }
+    })).statusCode).toBe(200)
+
+    const changedByBob = await inj(bobTok, {
+      method: 'PATCH', url: `/api/projects/${p.id}/members/admin`, payload: { role: 'member' }
+    })
+    expect(changedByBob.statusCode).toBe(200)
+    const lastOwner = await inj(bobTok, {
+      method: 'DELETE', url: `/api/projects/${p.id}/members/bob`
+    })
+    expect(lastOwner.statusCode).toBe(400)
+    expect(lastOwner.json().error).toContain('Сначала назначьте другого владельца')
+
+    const foreign = db.createProject('carol', { name: 'Чужой проект' })
+    expect((await inj(adminTok, {
+      method: 'PATCH', url: `/api/projects/${foreign.id}`, payload: { name: 'admin не владелец' }
+    })).statusCode).toBe(403)
+  })
+
+  it('не назначает владельцем пользователя до добавления в проект', async () => {
+    const p = await createProject()
+    const response = await inj(adminTok, {
+      method: 'PATCH', url: `/api/projects/${p.id}/members/bob`, payload: { role: 'owner' }
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toContain('Сначала добавьте')
+  })
+
   it('добавление несуществующего пользователя → 400', async () => {
     const p = await createProject()
     expect((await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'ghost' } })).statusCode).toBe(400)

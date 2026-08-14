@@ -64,12 +64,14 @@ export function projectPermissionForRequest(method: string, url: string): Projec
   if (url.startsWith('/api/admin/')) return 'users:manage'
   if (/^\/api\/projects\/[^/]+\/machines\/available$/.test(url)) return 'project:settings'
   if (method === 'GET') return null
-  if (/^\/api\/projects\/[^/]+\/releases\/deploy$/.test(url) || /^\/api\/merge\/runs\/[^/]+\/deploy$/.test(url)) return 'production:deploy'
+  if (/^\/api\/projects\/[^/]+\/releases\/deploy$/.test(url)) return 'production:deploy'
   if (/^\/api\/projects\/[^/]+\/releases(?:\/|$)/.test(url)) return 'release:prepare'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/merge$/.test(url) || /^\/api\/merge\/runs\/[^/]+\/retry$/.test(url)) return 'task:merge'
   if (/\/ci\/run(?:-on-machine)?$/.test(url) || /^\/api\/ci\/runs\/[^/]+\/(?:retry|retry-from-step|discard-and-retry)$/.test(url)) return 'workflow:start'
   if (method === 'POST' && /^\/api\/projects\/[^/]+\/tasks$/.test(url)) return 'task:create'
   if (method === 'PATCH' && /^\/api\/projects\/[^/]+\/tasks\/[^/]+$/.test(url)) return 'task:update'
+  // Состав и роли участников проверяются проектной ролью owner в БД. Глобальный
+  // admin сам по себе не получает эти права, а owner не обязан быть admin.
   if (url === '/api/projects' || /^\/api\/projects\/[^/]+$/.test(url) || /^\/api\/projects\/[^/]+\/(?:members|machines|default-machine|columns)(?:\/|$)/.test(url)) return 'project:settings'
   return null
 }
@@ -133,9 +135,22 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     }
     req.user = user
     const permission = projectPermissionForRequest(req.method, url)
-    if (permission && !hasProjectPermission(user.role, permission)) {
-      await reply.code(403).send({ error: 'forbidden', permission })
-      return reply
+    if (permission) {
+      const projectId = /^\/api\/projects\/([^/]+)/.exec(url)?.[1]
+      const ownerPermission =
+        permission === 'project:settings' ||
+        permission === 'release:prepare' ||
+        permission === 'production:deploy'
+      // Проектные owner-права берутся только из project_members. Это разрешает
+      // каждому владельцу критические операции независимо от глобальной роли и
+      // не превращает глобального admin во владельца чужого проекта.
+      const allowed = ownerPermission && projectId
+        ? db.isProjectOwner(user.name, decodeURIComponent(projectId))
+        : hasProjectPermission(user.role, permission)
+      if (!allowed) {
+        await reply.code(403).send({ error: 'forbidden', permission })
+        return reply
+      }
     }
   })
 

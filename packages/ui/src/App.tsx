@@ -1247,12 +1247,13 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onOpenAssistantPage={() => navigate(`/projects/${routeProjectId}/assistant`) }
         >
           {routeReleases ? (
-            state.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={state.projectDetail.ciBaseBranch ?? 'main'} owner={state.currentUser?.role === 'admin'} machines={state.projectDetail.machines} agents={state.agents} agentsStatus={state.agentsStatus} agentsError={state.agentsError} defaultAgentId={state.projectDetail.defaultAgentId} releaseTimeouts={state.projectDetail.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
+            state.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={state.projectDetail.ciBaseBranch ?? 'main'} owner={state.projectDetail.role === 'owner'} machines={state.projectDetail.machines} agents={state.agents} agentsStatus={state.agentsStatus} agentsError={state.agentsError} defaultAgentId={state.projectDetail.defaultAgentId} releaseTimeouts={state.projectDetail.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
           ) : routeSettings ? (
             state.projectDetail?.id === routeProjectId ? (
               <ProjectSettings
                 detail={state.projectDetail}
                 agents={state.agents}
+                currentUsername={state.currentUser?.name}
                 llmAccess={state.llmAccess}
                 llmEngines={state.llmEngines}
                 onUpdate={(id, fields) => void actions.updateProject(id, fields)}
@@ -1265,6 +1266,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
                   })
                 }}
                 onAddMember={(id, username) => void actions.addProjectMember(id, username)}
+                onUpdateMemberRole={(id, username, role) => void actions.updateProjectMemberRole(id, username, role)}
                 onRemoveMember={(id, username) => void actions.removeProjectMember(id, username)}
                 onLinkMachine={(id, agentId) => void actions.linkProjectMachine(id, agentId)}
                 onUnlinkMachine={(id, agentId) => void actions.unlinkProjectMachine(id, agentId)}

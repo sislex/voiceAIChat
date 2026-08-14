@@ -18,12 +18,14 @@ import { SettingsPage } from './SettingsPage'
 export interface ProjectSettingsProps {
   detail: ProjectDetail
   agents: AgentInfo[]
+  currentUsername?: string
   llmAccess?: UserLlmAccess[]
   llmEngines?: LlmEngineOption[]
   onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; previewUrl?: string | null; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; productionAgentId?: string | null; productionCheckoutPath?: string; productionHealthCheckCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null }) => void
 
   onDelete: (id: string) => void
   onAddMember: (id: string, username: string) => void
+  onUpdateMemberRole: (id: string, username: string, role: 'owner' | 'member') => void
   onRemoveMember: (id: string, username: string) => void
   onLinkMachine: (id: string, agentId: string) => void
   onUnlinkMachine: (id: string, agentId: string) => void
@@ -145,6 +147,7 @@ function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetRepos
 export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
   const { detail, agents } = props
   const isOwner = detail.role === 'owner'
+  const ownerCount = detail.members.filter((member) => member.role === 'owner').length
   const [name, setName] = useState(detail.name)
   const [description, setDescription] = useState(detail.description)
   const [gitUrl, setGitUrl] = useState(detail.gitUrl ?? '')
@@ -303,19 +306,65 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
       {activeTab === 'members' && <div className="proj-section">
         <p className="proj-field-label">Участники</p>
         <ul className="proj-members">
-          {detail.members.map((m) => (
-            <li key={m.username}>
-              <span>
-                {m.username} <span className="proj-muted">{m.role}</span>
-              </span>
-              {isOwner && m.role !== 'owner' && (
-                <IconButton size="sm" className="vc-btn--danger-quiet" aria-label={`Убрать ${m.username}`} title="Убрать участника" onClick={() => props.onRemoveMember(detail.id, m.username)}>
-                  ✕
-                </IconButton>
-              )}
-            </li>
-          ))}
+          {detail.members.map((m) => {
+            const lastOwner = m.role === 'owner' && ownerCount === 1
+            const current = m.username === props.currentUsername
+            return (
+              <li key={m.username}>
+                <span>
+                  {m.username}{current && <span className="proj-muted"> · вы</span>}
+                  {m.username === detail.createdBy && <span className="proj-muted"> · создатель</span>}
+                  {m.addedAt > 0 && (
+                    <time className="proj-muted" dateTime={new Date(m.addedAt).toISOString()}>
+                      {' · с ' + new Date(m.addedAt).toLocaleDateString()}
+                    </time>
+                  )}
+                </span>
+                <span>
+                  {isOwner ? (
+                    <select
+                      className="sel"
+                      aria-label={`Роль ${m.username}`}
+                      value={m.role}
+                      disabled={lastOwner}
+                      title={lastOwner ? 'Сначала назначьте другого владельца' : undefined}
+                      onChange={(event) => {
+                        const role = event.target.value as 'owner' | 'member'
+                        if (role === 'owner' && !window.confirm(
+                          'Назначить владельцем? Пользователь получит полный доступ к настройкам, участникам, машинам, CI и релизам.'
+                        )) return
+                        props.onUpdateMemberRole(detail.id, m.username, role)
+                      }}
+                    >
+                      <option value="owner">Владелец</option>
+                      <option value="member">Участник</option>
+                    </select>
+                  ) : (
+                    <span className="proj-muted">{m.role === 'owner' ? 'Владелец' : 'Участник'}</span>
+                  )}
+                  {isOwner && (
+                    <IconButton
+                      size="sm"
+                      className="vc-btn--danger-quiet"
+                      aria-label={`Убрать ${m.username}`}
+                      title={lastOwner ? 'Сначала назначьте другого владельца' : 'Убрать участника'}
+                      disabled={lastOwner}
+                      onClick={() => {
+                        if (m.role === 'owner' && !window.confirm(`Удалить владельца ${m.username} из проекта?`)) return
+                        props.onRemoveMember(detail.id, m.username)
+                      }}
+                    >
+                      ✕
+                    </IconButton>
+                  )}
+                </span>
+              </li>
+            )
+          })}
         </ul>
+        {isOwner && ownerCount === 1 && (
+          <p className="proj-muted">Последнего владельца нельзя понизить, удалить или вывести из проекта. Сначала назначьте другого владельца.</p>
+        )}
         {isOwner && (
           <div className="proj-add-member">
             <input

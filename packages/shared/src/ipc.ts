@@ -323,6 +323,7 @@ export interface IpcInvokeMap {
 
   /** Добавить участника (только владелец). */
   'projects:addMember': { arg: { id: string; username: string }; result: ProjectDetail }
+  'projects:updateMemberRole': { arg: { id: string; username: string; role: 'owner' | 'member' }; result: ProjectDetail }
   'projects:removeMember': { arg: { id: string; username: string }; result: ProjectDetail }
   /** Привязать/отвязать машину-агента к проекту (только владелец). */
   'projects:linkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
@@ -824,6 +825,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:update',
   'projects:delete',
   'projects:addMember',
+  'projects:updateMemberRole',
   'projects:removeMember',
   'projects:linkMachine',
   'projects:unlinkMachine',
