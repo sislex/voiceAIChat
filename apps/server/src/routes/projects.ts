@@ -425,7 +425,7 @@ export function registerProjectRoutes(
 
   app.post<{
     Params: { id: string; taskId: string }
-    Body: { columnId?: string; afterId?: string | null; beforeId?: string | null }
+    Body: { columnId?: string; fromColumnId?: string | null; afterId?: string | null; beforeId?: string | null }
   }>('/api/projects/:id/tasks/:taskId/move', async (req, reply): Promise<Task | FastifyReply> => {
     const columnId = req.body?.columnId
     if (!columnId) return badReq(reply, 'columnId required')
@@ -436,6 +436,9 @@ export function registerProjectRoutes(
     const board = db.getBoard(uid(req), req.params.id)
     const taskBeforeMove = board?.tasks.find((task) => task.id === req.params.taskId)
     const from = taskBeforeMove && board?.columns.find((column) => column.id === taskBeforeMove.columnId)
+    const requestedFrom = req.body?.fromColumnId
+      ? board?.columns.find((column) => column.id === req.body.fromColumnId)
+      : from
     const to = board?.columns.find((column) => column.id === columnId)
     if (ci && from?.semanticType === 'development' && to?.semanticType === 'backlog') {
       const latestRun = db.latestCiRunSummary(req.params.taskId)
@@ -448,6 +451,33 @@ export function registerProjectRoutes(
           return reply.code(409).send({ error })
         }
       }
+    }
+    // Ready for Development → Development — единственный drag&drop-переход,
+    // который автоматически ставит обычный development-run в FIFO-очередь.
+    // Менеджер сначала создаёт (либо находит) активный ран и только затем двигает
+    // карточку; при ошибке колонка остаётся ready.
+    if (requestedFrom?.semanticType === 'ready' && to?.semanticType === 'development' && (from?.semanticType === 'ready' || from?.semanticType === 'development')) {
+      if (!ci) {
+        req.log.error({ projectId: req.params.id, taskId: req.params.taskId }, 'development transition rejected: CI manager unavailable')
+        return reply.code(503).send({ error: 'Сервис запуска development-run временно недоступен' })
+      }
+      const result = ci.startForDevelopmentTransition(uid(req), req.params.id, req.params.taskId, from?.semanticType === 'ready')
+      if ('error' in result) {
+        req.log.warn({ projectId: req.params.id, taskId: req.params.taskId, reason: result.error }, 'development transition rejected')
+        return reply.code(409).send({ error: result.error })
+      }
+      // start() уже переносит карточку после INSERT; повторный move применяет
+      // только запрошенную drag&drop-позицию и нужен также при reuse активного рана.
+      const moved = db.moveTask(uid(req), req.params.id, req.params.taskId, {
+        columnId,
+        afterId: req.body?.afterId ?? null,
+        beforeId: req.body?.beforeId ?? null
+      })
+      if (!moved) return nf(reply)
+      reply.header('x-ci-run-id', result.run.id)
+      req.log.info({ projectId: req.params.id, taskId: req.params.taskId, runId: result.run.id, existing: result.existing }, 'development transition linked to run')
+      boardHub.emit(req.params.id)
+      return moved
     }
     // TODO → Подготовка — это запуск отдельного preparation-run, а не простой
     // визуальный перенос. Менеджер атомарно создаёт ран и переводит карточку.

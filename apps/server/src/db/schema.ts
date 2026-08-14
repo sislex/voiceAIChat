@@ -1004,6 +1004,43 @@ CREATE TABLE IF NOT EXISTS task_preparation_runs (
 CREATE INDEX IF NOT EXISTS idx_task_preparation_task ON task_preparation_runs(task_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_task_preparation_active ON task_preparation_runs(task_id) WHERE status = 'running';
 
+-- ============================ Component QA ============================
+-- Самостоятельный audit trail, зафиксированный на development workspace/SHA и
+-- версии readiness. Существующие карточки component_qa не получают synthetic pass.
+CREATE TABLE IF NOT EXISTS component_qa_runs (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  development_run_id TEXT NOT NULL,
+  linked_fix_run_id TEXT,
+  branch TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  attempt INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  ui_impact TEXT NOT NULL,
+  readiness_run_id TEXT NOT NULL,
+  readiness_version TEXT NOT NULL,
+  scenarios_json TEXT NOT NULL DEFAULT '[]',
+  components_json TEXT NOT NULL DEFAULT '[]',
+  commands_json TEXT NOT NULL DEFAULT '[]',
+  artifacts_json TEXT NOT NULL DEFAULT '[]',
+  failure_classification TEXT,
+  blocker_reasons_json TEXT NOT NULL DEFAULT '[]',
+  summary TEXT NOT NULL DEFAULT '',
+  log TEXT NOT NULL DEFAULT '',
+  storybook_url TEXT,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  finished_at INTEGER,
+  stale_reason TEXT,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (development_run_id) REFERENCES ci_runs(id)
+);
+CREATE INDEX IF NOT EXISTS idx_component_qa_task ON component_qa_runs(task_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_component_qa_active ON component_qa_runs(task_id)
+  WHERE status IN ('queued','running');
+
 -- ============================ Ручное QA ============================
 CREATE TABLE IF NOT EXISTS acceptance_criteria (
   id TEXT PRIMARY KEY, task_id TEXT NOT NULL, position INTEGER NOT NULL,

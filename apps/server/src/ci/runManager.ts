@@ -83,6 +83,8 @@ export interface CiRunStartOptions {
 
 export interface CiRunManager {
   start(userId: string, projectId: string, taskId: string, options?: CiRunMode | CiRunStartOptions): { run: CiRun } | { error: string }
+  /** Идемпотентный обычный запуск для перехода ready → development. */
+  startForDevelopmentTransition(userId: string, projectId: string, taskId: string, createIfMissing?: boolean): { run: CiRun; existing: boolean } | { error: string }
   /**
    * Немедленный запуск на явно указанной машине (из настроек задачи). Ран этой
    * задачи, ещё стоящий в очереди, не отменяется, а продвигается: получает
@@ -461,6 +463,23 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     active.set(run.id, { userId, projectId, taskId, abort: ctl })
     enqueue(run.id, userId, ctl, undefined, launch === 'parallel')
     return { run }
+  }
+
+  function startForDevelopmentTransition(userId: string, projectId: string, taskId: string, createIfMissing = true): { run: CiRun; existing: boolean } | { error: string } {
+    const existing = deps.db.activeCiRunForTask(taskId)
+    if (existing) return { run: existing, existing: true }
+    if (!createIfMissing) return { error: 'Активный development-run для этого перехода не найден' }
+    try {
+      const result = start(userId, projectId, taskId)
+      if ('run' in result) return { run: result.run, existing: false }
+      const raced = deps.db.activeCiRunForTask(taskId)
+      return raced ? { run: raced, existing: true } : result
+    } catch (error) {
+      // Если другой синхронный запрос успел создать ран, переиспользуем его.
+      const raced = deps.db.activeCiRunForTask(taskId)
+      if (raced) return { run: raced, existing: true }
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
   }
 
   /**
@@ -2118,7 +2137,7 @@ fi`
     }
   }
 
-  return { start, forceStartOnMachine, retryFromFailed, discardChangesAndRetry, cancel, dequeue, subscribe, publish, snapshot, activeRunIds, consoleExec, answerInteraction }
+  return { start, startForDevelopmentTransition, forceStartOnMachine, retryFromFailed, discardChangesAndRetry, cancel, dequeue, subscribe, publish, snapshot, activeRunIds, consoleExec, answerInteraction }
 }
 
 /**
