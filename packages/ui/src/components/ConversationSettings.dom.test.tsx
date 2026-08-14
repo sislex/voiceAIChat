@@ -184,4 +184,25 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ kbContextMode: 'manual' })))
   })
 
+  it('показывает инспектор в фактическом порядке приоритетов и отделяет инструменты', () => {
+    render(<ConversationSettings conversation={{ ...conversation, workdir: '/repo/app', skillNames: ['build'] }} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    expect(screen.getByText('Что действует прямо сейчас')).toBeInTheDocument()
+     const summaries = Array.from(document.querySelectorAll('.context-group > summary b')).map((node) => node.textContent)
+    expect(summaries.slice(0, 4)).toEqual(['Системные правила платформы', 'Инструкции приложения ChatAI', 'Инструкции проекта и рабочей директории', 'Настройки текущего разговора'])
+    expect(screen.getByText('MCP-инструменты и приложения')).toBeInTheDocument()
+    expect(screen.getByText('Неустановленные плагины не являются активными возможностями.')).toBeInTheDocument()
+  })
+
+  it('открывает безопасные подробности по устойчивому URL и не раскрывает системный текст', () => {
+    window.location.hash = ''
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('button', { name: /Правила безопасности/ }))
+    expect(window.location.hash).toBe('#/conversations/c1/context/platform-safety')
+    expect(screen.getByRole('heading', { name: 'Правила безопасности' })).toBeInTheDocument()
+    expect(screen.getByText('Полный текст недоступен, показано описание.')).toBeInTheDocument()
+    expect(screen.getByText('Скрытый текст')).toBeInTheDocument()
+  })
+
 })
