@@ -9,13 +9,11 @@ import { MachineUtility } from './MachineUtility'
 import { MessageImage } from './MessageImage'
 import type { ConsoleHistoryStore, MachineOps, SwitchUtility } from './machine'
 import {
-  activityStatus,
   chipClass,
   engineLabel,
   formatLiveUsage,
   formatTurnMeta,
   messageTime,
-  pluralActions,
   speakerName,
   statusBadge,
   type LiveSegment
@@ -215,7 +213,6 @@ export function ChatColumn({
   diarization,
   streamingReply = '',
   liveActivity = [],
-  liveUsage = null,
   canSpeak = false,
   speakingMessageId = null,
   onSpeakMessage,
@@ -271,7 +268,7 @@ export function ChatColumn({
   // Режим отображения хода по каждому сообщению (дефолт — minimal) и отдельный
   // режим для живого (стримящегося) хода (дефолт — brief).
   const [modeById, setModeById] = useState<Map<string, TimelineMode>>(new Map())
-  const [liveMode, setLiveMode] = useState<TimelineMode>('brief')
+  const [liveMode] = useState<TimelineMode>('brief')
 
   const modeOf = (id: string): TimelineMode => modeById.get(id) ?? 'minimal'
   const cycleMode = (id: string): void =>
@@ -280,7 +277,6 @@ export function ChatColumn({
       next.set(id, nextTimelineMode(prev.get(id) ?? 'minimal'))
       return next
     })
-  const cycleLiveMode = (): void => setLiveMode((m) => nextTimelineMode(m))
 
   const startTitleEdit = (): void => {
     if (!onRenameTitle) return
@@ -442,8 +438,6 @@ export function ChatColumn({
     if (hasStream) setReplyAnnounce(`${aiLabel} отвечает…`)
     else setReplyAnnounce((prev) => (prev === '' ? '' : 'Ответ получен'))
   }, [hasStream, aiLabel])
-  // Индикатор «думает» показываем, пока не пошли токены ответа.
-  const isThinking = (state === 'thinking' || state === 'transcribing') && !hasStream
 
   return (
     <main className="main">
@@ -881,43 +875,6 @@ export function ChatColumn({
             </div>
           )}
 
-          {isThinking && (
-            <div className="think" data-testid="think">
-              {liveActivity.length > 0 ? (
-                <MessageTimeline
-                  live
-                  voice={state}
-                  text=""
-                  activity={liveActivity}
-                  mode={liveMode}
-                  execTarget={execTarget}
-                />
-              ) : (
-                <>
-                  <Dots />
-                  {aiLabel} обрабатывает запрос…
-                </>
-              )}
-              {liveUsage && (
-                <span className="msgact-count msgact-tokens" data-testid="live-tokens">
-                  {formatLiveUsage(liveUsage)}
-                </span>
-              )}
-              {liveActivity.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="msgact-mode"
-                  aria-label="Переключить вид действий"
-                  title={`Вид: ${TIMELINE_MODE_LABEL[liveMode]}`}
-                  onClick={cycleLiveMode}
-                >
-                  {timelineModeButtonLabel(liveMode)}
-                </Button>
-              )}
-            </div>
-          )}
-
           {hasStream && (
             <div className="msg ai" data-testid="streaming">
               <span className={chipClass('ai', diarization, aiLabel === 'Codex' ? 'codex' : 'claude')}>
@@ -948,38 +905,6 @@ export function ChatColumn({
                       live
                     />
                   ))}
-                {/* Дубль статуса внизу пузыря: при длинном ответе верхняя строка
-                    уезжает из вида, а здесь всегда видно, что модель делает. */}
-                <div className="msgact-status msgact--bottom" data-testid="live-status-bottom">
-                  <Dots />
-                  <span className="msgact-phrase">
-                    {liveActivity.length > 0
-                      ? activityStatus(liveActivity, state, execTarget)
-                      : `${aiLabel} отвечает…`}
-                  </span>
-                  {liveUsage && (
-                    <span className="msgact-count msgact-tokens" data-testid="live-tokens">
-                      {formatLiveUsage(liveUsage)}
-                    </span>
-                  )}
-                  {liveActivity.length > 0 && (
-                    <span className="msgact-count">
-                      {liveActivity.length} {pluralActions(liveActivity.length)}
-                    </span>
-                  )}
-                  {liveActivity.length > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="msgact-mode msgact-mode--stream"
-                      aria-label="Переключить вид действий"
-                      title={`Вид: ${TIMELINE_MODE_LABEL[liveMode]}`}
-                      onClick={cycleLiveMode}
-                    >
-                      {timelineModeButtonLabel(liveMode)}
-                    </Button>
-                  )}
-                </div>
               </div>
             </div>
           )}
