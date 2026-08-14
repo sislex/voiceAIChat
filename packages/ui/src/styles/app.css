@@ -4155,6 +4155,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jmodal-desc-head { display: flex; align-items: center; gap: 4px; margin: 8px 0 0; }
 .jmodal-desc-head .jmodal-h { margin: 0; }
 .jmodal-desc-view { font-size: 13px; padding: 0 2px; }
+.task-criteria-view { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.task-criteria-view .md, .task-criteria-view ol, .task-criteria-view li { min-width: 0; max-width: 100%; }
+.task-criteria-view pre { max-width: 100%; overflow-x: auto; }
 /* Маркдаун живёт в узкой колонке карточки рядом с 13px полями: заголовки ленты
    чата (17-20px) ломали бы здесь вертикальный ритм, поэтому они мельче. */
 .jmodal-desc-view .md h1, .jmodal-desc-view .md h2 { font-size: 15px; }

@@ -13,7 +13,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Board, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
-import { TASK_PRIORITIES } from '@shared/projects'
+import { normalizeAcceptanceCriteria, TASK_PRIORITIES } from '@shared/projects'
 import type { ModifierPrompt } from '@shared/types'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
@@ -114,7 +114,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [launching, setLaunching] = useState<'queue' | 'parallel' | null>(null)
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description)
-  const [criteria, setCriteria] = useState(task.acceptanceCriteria)
+  const [criteria, setCriteria] = useState(() => normalizeAcceptanceCriteria(task.acceptanceCriteria))
   const [labelDraft, setLabelDraft] = useState('')
   const [skillDraft, setSkillDraft] = useState('')
   type TaskTab = 'general' | 'settings' | 'qa' | 'progress' | 'merge' | 'feed'
@@ -126,6 +126,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [descEditing, setDescEditing] = useState(false)
   const [criteriaEditing, setCriteriaEditing] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
+  const criteriaRef = useRef<HTMLTextAreaElement>(null)
   const descWrapRef = useRef<HTMLDivElement>(null)
   // Заголовок растёт под текст: на узком экране он занимает три-четыре строки, а
   // rows={1} со скроллом внутри поля прятал бы его конец.
@@ -185,7 +186,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   useEffect(() => {
     setTitle(task.title)
     setDescription(task.description)
-    setCriteria(task.acceptanceCriteria)
+    setCriteria(normalizeAcceptanceCriteria(task.acceptanceCriteria))
     setDescEditing(false)
     setLabelDraft('')
     setSkillDraft('')
@@ -524,17 +525,60 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             {!criteriaEditing && <IconButton size="sm" aria-label="Изменить критерии приёмки" title="Изменить критерии приёмки" onClick={() => setCriteriaEditing(true)}>✏️</IconButton>}
           </div>
           {criteriaEditing ? <textarea
+            ref={criteriaRef}
             className="login-input jmodal-desc"
             aria-label="Критерии приёмки"
+            aria-describedby="task-criteria-help"
             placeholder="Что должно быть выполнено…"
             rows={10}
             value={criteria}
-            onChange={(e) => setCriteria(e.target.value)}
+            onChange={(e) => {
+              const raw = e.target.value
+              const next = normalizeAcceptanceCriteria(raw)
+              const start = e.target.selectionStart
+              const end = e.target.selectionEnd
+              setCriteria(next)
+              requestAnimationFrame(() => {
+                const el = criteriaRef.current
+                if (!el) return
+                const delta = next.length - raw.length
+                el.setSelectionRange(Math.max(0, start + delta), Math.max(0, end + delta))
+              })
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              e.preventDefault()
+              const el = e.currentTarget
+              const start = el.selectionStart
+              const end = el.selectionEnd
+              const before = criteria.slice(0, start)
+              const line = before.slice(before.lastIndexOf('\n') + 1)
+              const emptyItem = /^\d+\.\s*$/.test(line)
+              const prefix = emptyItem ? '\n' : e.shiftKey ? '\n   ' : `\n${(criteria.match(/^\d+\. /gm) ?? []).length + 1}. `
+              const lineStart = emptyItem ? before.lastIndexOf('\n') + 1 : start
+              const next = criteria.slice(0, lineStart) + prefix + criteria.slice(end)
+              const cursor = lineStart + prefix.length
+              setCriteria(next)
+              requestAnimationFrame(() => criteriaRef.current?.setSelectionRange(cursor, cursor))
+            }}
+            onPaste={(e) => {
+              const pasted = e.clipboardData.getData('text')
+              if (!pasted.includes('\n')) return
+              e.preventDefault()
+              const el = e.currentTarget
+              const merged = criteria.slice(0, el.selectionStart) + pasted + criteria.slice(el.selectionEnd)
+              const next = normalizeAcceptanceCriteria(merged)
+              setCriteria(next)
+              requestAnimationFrame(() => criteriaRef.current?.setSelectionRange(next.length, next.length))
+            }}
             onBlur={() => {
-              if (criteria !== task.acceptanceCriteria) props.onUpdate(task.id, { acceptanceCriteria: criteria })
+              const normalized = normalizeAcceptanceCriteria(criteria)
+              setCriteria(normalized)
+              if (normalized !== task.acceptanceCriteria) props.onUpdate(task.id, { acceptanceCriteria: normalized })
               setCriteriaEditing(false)
             }}
-          /> : criteria.trim() ? <div className="jmodal-desc-view" data-testid="task-criteria-view"><Markdown>{criteria}</Markdown></div> : <button className="jmodal-desc-empty" onClick={() => setCriteriaEditing(true)}>Добавьте критерии приёмки…</button>}
+          /> : criteria.trim() ? <div className="jmodal-desc-view task-criteria-view" data-testid="task-criteria-view"><Markdown>{normalizeAcceptanceCriteria(criteria)}</Markdown></div> : <button className="jmodal-desc-empty" onClick={() => setCriteriaEditing(true)}>Добавьте критерии приёмки…</button>}
+          <span id="task-criteria-help" className="vc-sr-only">Enter создаёт новый критерий, Shift+Enter — перенос внутри критерия.</span>
           </section>
           {children.length > 0 && (
             <>

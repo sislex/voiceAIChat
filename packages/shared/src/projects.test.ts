@@ -1,9 +1,35 @@
 import { describe, it, expect } from 'vitest'
-import { compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, projectKey } from './projects'
+import { compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, projectKey } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
 const T0 = 1_700_000_000_000
+
+describe('normalizeAcceptanceCriteria', () => {
+  it('нумерует непустые абзацы и нормализует старые номера', () => {
+    expect(normalizeAcceptanceCriteria('Первый\n\n7. Второй\n7) Третий')).toBe(
+      '1. Первый\n2. Второй\n3. Третий'
+    )
+  })
+
+  it('идемпотентна и не превращает вложенное Markdown-содержимое в критерии', () => {
+    const markdown = [
+      '1. Критерий со справкой',
+      '   - вложенный пункт',
+      '   > цитата',
+      '   ```ts',
+      '   const ok = true',
+      '   ```',
+      '2. Следующий'
+    ].join('\n')
+    expect(normalizeAcceptanceCriteria(markdown)).toBe(markdown)
+    expect(normalizeAcceptanceCriteria(normalizeAcceptanceCriteria(markdown))).toBe(markdown)
+  })
+
+  it('убирает номера и checkbox-маркеры из вставленного текста', () => {
+    expect(normalizeAcceptanceCriteria('1. 4. Первый\n- [ ] Второй')).toBe('1. Первый\n2. Второй')
+  })
+})
 
 describe('isCompletedHidden — когда завершённая задача уходит с доски', () => {
   it('незавершённая задача не скрывается никогда', () => {
