@@ -121,8 +121,19 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(commands.join('\n')).not.toMatch(/affected-check|merge |tag |push .*main/)
     expect(commands.some(command=>command.includes("checkout -B 'release/0.1.27' 'fixed-sha'"))).toBe(true)
     expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.27' VC_RELEASE_VERSION_SOURCE='release-manager' && echo 'Ожидаемые production metadata: version=0.1.27 commit=fixed-sha source=release-manager' && npm run deploy:prod")
+    expect(commands.join('\n')).not.toContain('install -m 755 scripts/prod/deploy.sh')
     expect(db.getProjectRelease('owner',projectId,attempt.id)?.status).toBe('released')
     expect(prepared.status).toBe('ready')
+  })
+
+  it('refreshes the installed production launcher from the verified release checkout',async()=>{
+    const commands:string[]=[]
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return command.includes('ls-remote')?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.44\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.44","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}}
+    db.createProjectRelease('owner',projectId,{branch:'release/0.1.44',version:'0.1.44',sha:'fixed-sha',status:'ready'})
+    const target={...prod(),deployCommand:'git branch --set-upstream-to=origin/$(git branch --show-current) && /usr/local/bin/voicechat-deploy'}
+    await new ReleaseManager(db,runtime).start('owner',ci(),target,'release/0.1.44')
+    await tick();await tick()
+    expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.44' VC_RELEASE_VERSION_SOURCE='release-manager' && echo 'Ожидаемые production metadata: version=0.1.44 commit=fixed-sha source=release-manager' && install -m 755 scripts/prod/deploy.sh /usr/local/bin/voicechat-deploy && git branch --set-upstream-to=origin/$(git branch --show-current) && /usr/local/bin/voicechat-deploy")
   })
 
   it('does not release when health reports the expected commit with another version',async()=>{
