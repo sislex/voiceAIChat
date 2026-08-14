@@ -1156,6 +1156,13 @@ function composeUserText(text: string, attachments: UploadInfo[]): string {
   return text ? `${text}\n\n${note}` : note
 }
 
+/** История и realtime могут принести одну строку повторно; seq стабилен внутри рана. */
+export function mergeCiLogLines(current: CiLogLine[], incoming: CiLogLine[]): CiLogLine[] {
+  const bySeq = new Map(current.map((line) => [line.seq, line]))
+  for (const line of incoming) bySeq.set(line.seq, line)
+  return [...bySeq.values()].sort((a, b) => a.seq - b.seq)
+}
+
 export function createVoiceStore(deps: StoreDeps): VoiceStore {
   const { api } = deps
   const boardBridge = deps.board
@@ -3807,6 +3814,16 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       : [...detail.steps, step]
     return { ...detail, steps }
   }
+  function mergeCiDetail(current: CiRunDetail | null, incoming: CiRunDetail): CiRunDetail {
+    if (!current) return incoming
+    let detail: CiRunDetail | null = incoming
+    for (const step of current.steps) detail = mergeStep(detail, step)
+    return {
+      ...detail!,
+      fixAttempts: [...new Map([...incoming.fixAttempts, ...current.fixAttempts].map((item) => [item.id, item])).values()],
+      interactions: [...new Map([...(incoming.interactions ?? []), ...(current.interactions ?? [])].map((item) => [item.id, item])).values()]
+    }
+  }
 
   async function openCi(): Promise<void> {
     setState({ ciOpen: true, ciStatus: 'loading', ciError: null })
@@ -3953,7 +3970,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     patchCiRun(runId, (c) => ({ ...c, loading: true, error: null }))
     try {
       const [detail, log] = await Promise.all([ciBridge.getRun(runId), ciBridge.getRunLog(runId)])
-      patchCiRun(runId, (c) => ({ ...c, detail, log, loading: false, error: null }))
+      patchCiRun(runId, (c) => ({ ...c, detail: mergeCiDetail(c.detail, detail), log: mergeCiLogLines(c.log, log), loading: false, error: null }))
     } catch (err) {
       // Лента без шагов и без объяснения читалась как «ран пустой» — теперь в ней
       // экран ошибки с «Повторить».
@@ -3974,7 +3991,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     setState({ ciActiveRunId: null })
   }
   function applyCiSnapshot(runId: string, detail: CiRunDetail, log: CiLogLine[]): void {
-    patchCiRun(runId, (c) => ({ ...c, detail, log }))
+    patchCiRun(runId, (c) => ({ ...c, detail: mergeCiDetail(c.detail, detail), log: mergeCiLogLines(c.log, log) }))
   }
   function applyCiRun(runId: string, run: CiRun): void {
     patchCiRun(runId, (c) => ({ ...c, detail: c.detail ? { ...c.detail, run } : { run, steps: [], fixAttempts: [], interactions: [] } }))
@@ -3985,7 +4002,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     patchCiRun(runId, (c) => ({ ...c, detail: mergeStep(c.detail, step) }))
   }
   function applyCiLog(runId: string, line: CiLogLine): void {
-    patchCiRun(runId, (c) => ({ ...c, log: [...c.log, line] }))
+    patchCiRun(runId, (c) => ({ ...c, log: mergeCiLogLines(c.log, [line]) }))
   }
   function applyCiFix(runId: string, attempt: CiFixAttempt): void {
     patchCiRun(runId, (c) => {

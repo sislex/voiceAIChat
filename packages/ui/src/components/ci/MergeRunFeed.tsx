@@ -54,6 +54,7 @@ export function MergeRunFeed({ runId, onRunChanged }: { runId: string; onRunChan
   const [run, setRun] = useState<MergeRun | null>(null)
   const [error, setError] = useState('')
   const [autoscroll, setAutoscroll] = useState(true)
+  const [reload, setReload] = useState(0)
   const logRef = useRef<HTMLPreElement>(null)
   useEffect(() => {
     let alive = true
@@ -62,9 +63,18 @@ export function MergeRunFeed({ runId, onRunChanged }: { runId: string; onRunChan
     const off = window.ci?.onMerge(({ runId: id, run: value }) => { if (alive && id === runId) setRun(value) })
     const timer = window.setInterval(() => void load(), 3000)
     return () => { alive = false; off?.(); window.clearInterval(timer) }
-  }, [runId])
+  }, [runId, reload])
   useEffect(() => { const el = logRef.current; if (autoscroll && el) el.scrollTop = el.scrollHeight }, [run?.log, autoscroll])
-  if (error) return <div className="merge-alert" role="alert">{error}</div>
+  const onLogScroll = (): void => {
+    const element = logRef.current
+    if (element) setAutoscroll(element.scrollHeight - element.scrollTop - element.clientHeight < 32)
+  }
+  const jumpToNew = (): void => {
+    setAutoscroll(true)
+    const element = logRef.current
+    if (element) element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' })
+  }
+  if (error) return <div className="merge-alert" role="alert">{error}<div><Button size="sm" onClick={() => setReload((value) => value + 1)}>Повторить</Button></div></div>
   if (!run) return <div className="task-tab-empty">Загрузка merge-рана…</div>
   const tone = mergeStatusTone(run.status)
   const terminal = ['success', 'failed', 'cancelled', 'decision_required'].includes(run.status)
@@ -119,10 +129,11 @@ export function MergeRunFeed({ runId, onRunChanged }: { runId: string; onRunChan
         <summary>Лог рана</summary>
         <div className="merge-log-actions">
           <label><input type="checkbox" checked={autoscroll} onChange={(event) => setAutoscroll(event.target.checked)} /> автоскролл</label>
+          {!autoscroll && <Button size="sm" onClick={jumpToNew}>К новым событиям</Button>}
           <Button size="sm" onClick={() => void navigator.clipboard.writeText(run.log)}>Копировать</Button>
           <Button size="sm" onClick={download}>Скачать .txt</Button>
         </div>
-        <pre ref={logRef} className="merge-terminal merge-terminal--log">{run.log}</pre>
+        <pre ref={logRef} className="merge-terminal merge-terminal--log" onScroll={onLogScroll}>{run.log}</pre>
       </details>
       <dl className="merge-feed-details">
         <dt>Инициатор</dt><dd>{run.triggeredBy}</dd>

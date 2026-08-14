@@ -78,6 +78,8 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   const now = props.now ?? Date.now
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [autoscroll, setAutoscroll] = useState(true)
+  const feedRef = useRef<HTMLDivElement | null>(null)
+  const endRef = useRef<HTMLDivElement | null>(null)
   // Поток лога может молчать минутами: отдельный тик двигает длительность шага
   // и всего рана, не дожидаясь следующего серверного кадра.
   const [, setClockTick] = useState(0)
@@ -168,6 +170,21 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
 
   const logText = (): string =>
     log.map((l) => `[${new Date(l.at).toISOString()}] ${l.stream}: ${l.chunk}`).join('\n')
+
+  useEffect(() => {
+    if (autoscroll && typeof endRef.current?.scrollIntoView === 'function') endRef.current.scrollIntoView({ block: 'end' })
+  }, [autoscroll, log.length, detail?.steps.length, detail?.interactions?.length])
+
+  const onFeedScroll = (): void => {
+    const element = feedRef.current
+    if (!element) return
+    setAutoscroll(element.scrollHeight - element.scrollTop - element.clientHeight < 32)
+  }
+
+  const jumpToNew = (): void => {
+    setAutoscroll(true)
+    if (typeof endRef.current?.scrollIntoView === 'function') endRef.current.scrollIntoView({ block: 'end', behavior: 'smooth' })
+  }
 
   const download = props.download ?? defaultDownload
   const [consoleOpen, setConsoleOpen] = useState(false)
@@ -321,7 +338,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
 
   return (
     <>
-    <div className="ci-runfeed" data-testid="ci-runfeed">
+    <div className="ci-runfeed" data-testid="ci-runfeed" ref={feedRef} onScroll={onFeedScroll}>
       <div className="ci-runfeed-head">
         <span className={`ci-lozenge ci-lozenge--${run ? ciTone(run.status) : 'neutral'}`}>
           {run ? ciStatusLabel(run.status) : 'загрузка…'}
@@ -402,6 +419,8 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
           {topSteps.roots.map((s) => renderStep(s, false))}
         </ul>
       )}
+      <div ref={endRef} aria-hidden="true" />
+      {!autoscroll && <Button className="ci-runfeed-new" onClick={jumpToNew}>К новым событиям</Button>}
     </div>
     {consoleOpen && <CiConsole runId={runId} onClose={() => setConsoleOpen(false)} />}
     </>
