@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { VoiceChatDb } from '../db/database.js'
-import { requireProjectPermission, uid } from '../users/auth.js'
+import { uid } from '../users/auth.js'
 import { DEFAULT_RELEASE_TIMEOUTS } from '@voicechat/shared'
 import type { ProductionTarget, ReleaseManager, ReleaseProjectTarget } from '../releases/releaseManager.js'
 
@@ -30,9 +30,16 @@ export function registerReleaseRoutes(app:FastifyInstance,db:VoiceChatDb,release
     if(!value||!agentId||!linked||!value.productionCheckoutPath||!value.productionDeployCommand||!value.productionHealthCheckCommand||!value.gitUrl)return null
     return {projectId,agentId,path:value.productionCheckoutPath,prepareCheckout:false,gitUrl:value.gitUrl,baseBranch:value.ciBaseBranch||'main',testCommand:value.testCommand?.trim()||'npm run typecheck && npm run test',deployCommand:value.productionDeployCommand,healthCheckCommand:value.productionHealthCheckCommand,expectedRepository:value.gitUrl,limits:value.releaseTimeouts??DEFAULT_RELEASE_TIMEOUTS}
   }
-  const owner=(req:FastifyRequest,projectId:string):boolean=>project(req,projectId)?.role==='owner'
-  const prepareGuard={preHandler:requireProjectPermission('release:prepare')}
-  const deployGuard={preHandler:requireProjectPermission('production:deploy')}
+  const owner=(req:FastifyRequest,projectId:string):boolean=>db.isProjectOwner(uid(req),projectId)
+  const prepareGuard={preHandler:async(req:FastifyRequest,reply:FastifyReply)=>{
+    const projectId=(req.params as {id?:string}).id
+    if(!projectId||!owner(req,projectId))await forbidden(reply)
+  }}
+  const deployGuard={preHandler:async(req:FastifyRequest,reply:FastifyReply)=>{
+    const params=req.params as {id?:string;runId?:string}
+    const projectId=params.id??(params.runId?db.getMergeRun(uid(req),params.runId)?.projectId:undefined)
+    if(!projectId||!owner(req,projectId))await forbidden(reply)
+  }}
 
   app.get<{Params:{id:string}}>('/api/projects/:id/releases/branches',async(req,reply)=>{
     if(!project(req,req.params.id))return nf(reply)

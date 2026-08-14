@@ -683,6 +683,14 @@ export class VoiceChatDb {
     if (memberCols.length && !memberCols.some((c) => c.name === 'qa_permission')) {
       this.db.exec(`ALTER TABLE project_members ADD COLUMN qa_permission INTEGER NOT NULL DEFAULT 0`)
     }
+    // Старые проекты могли хранить владельца только в projects.created_by.
+    // PK project_members исключает дубли и сохраняет роли уже существующих участников.
+    if (memberCols.length) {
+      this.db.exec(`
+        INSERT OR IGNORE INTO project_members (project_id, username, role, added_at)
+        SELECT id, created_by, 'owner', created_at FROM projects
+      `)
+    }
     const pmCols = this.db.prepare(`PRAGMA table_info(project_machines)`).all() as Array<{ name: string }>
     if (pmCols.length && !pmCols.some((c) => c.name === 'path')) {
       this.db.exec(`ALTER TABLE project_machines ADD COLUMN path TEXT NOT NULL DEFAULT ''`)
@@ -2168,7 +2176,8 @@ export class VoiceChatDb {
     )
   }
 
-  private isProjectOwner(userId: string, projectId: string): boolean {
+  /** Единый серверный источник проектного права владельца. */
+  isProjectOwner(userId: string, projectId: string): boolean {
     return (
       this.db
         .prepare(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ? AND role = 'owner'`)
@@ -2484,32 +2493,115 @@ export class VoiceChatDb {
     return true
   }
 
+  private auditProjectMemberRole(
+    projectId: string,
+    actor: string,
+    targetUser: string,
+    oldRole: 'owner' | 'member' | null,
+    newRole: 'owner' | 'member' | null,
+    action: 'add' | 'role_change' | 'remove',
+    createdAt: number
+  ): void {
+    this.db.prepare(
+      `INSERT INTO project_member_role_audit
+       (id, project_id, target_user, actor, old_role, new_role, action, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(this.newId(), projectId, targetUser, actor, oldRole, newRole, action, createdAt)
+  }
+
   addMember(userId: string, id: string, username: string): ProjectDetail | null {
     if (!this.isProjectOwner(userId, id)) return null
     if (!this.db.prepare(`SELECT 1 FROM users WHERE name = ?`).get(username)) {
       throw new Error(`Пользователь ${username} не найден`)
     }
-    this.db
+    const ts = this.now()
+    const inserted = this.db
       .prepare(`INSERT OR IGNORE INTO project_members (project_id, username, role, added_at) VALUES (?, ?, 'member', ?)`)
-      .run(id, username, this.now())
+      .run(id, username, ts)
+    if (inserted.changes) this.auditProjectMemberRole(id, userId, username, null, 'member', 'add', ts)
+    return this.getProject(userId, id)
+  }
+
+  updateMemberRole(
+    userId: string,
+    id: string,
+    username: string,
+    role: 'owner' | 'member'
+  ): ProjectDetail | null {
+    if (!this.isProjectOwner(userId, id)) return null
+    const change = this.db.transaction(() => {
+      const row = this.db
+        .prepare(`SELECT role FROM project_members WHERE project_id = ? AND username = ?`)
+        .get(id, username) as { role: string } | undefined
+      if (!row) throw new Error('Сначала добавьте пользователя в участники проекта')
+      const oldRole = row.role === 'owner' ? 'owner' : 'member'
+      if (oldRole === role) return
+      if (oldRole === 'owner') {
+        const owners = this.db
+          .prepare(`SELECT COUNT(*) AS count FROM project_members WHERE project_id = ? AND role = 'owner'`)
+          .get(id) as { count: number }
+        if (owners.count <= 1) {
+          throw new Error('Нельзя понизить последнего владельца. Сначала назначьте другого владельца')
+        }
+      }
+      const ts = this.now()
+      this.db.prepare(`UPDATE project_members SET role = ? WHERE project_id = ? AND username = ?`).run(role, id, username)
+      this.auditProjectMemberRole(id, userId, username, oldRole, role, 'role_change', ts)
+      this.touchProject(id, ts)
+    })
+    // IMMEDIATE получает write-lock до проверки количества владельцев: два
+    // параллельных понижения не могут оба увидеть устаревший count.
+    change.immediate()
     return this.getProject(userId, id)
   }
 
   removeMember(userId: string, id: string, username: string): ProjectDetail | null {
     if (!this.isProjectOwner(userId, id)) return null
-    const row = this.db
-      .prepare(`SELECT role FROM project_members WHERE project_id = ? AND username = ?`)
-      .get(id, username) as { role: string } | undefined
-    // Владельца не удаляем этим путём (нет «осиротевших» проектов).
-    if (row && row.role !== 'owner') {
-      this.db.transaction(() => {
-        this.db.prepare(`DELETE FROM project_members WHERE project_id = ? AND username = ?`).run(id, username)
-        this.db
-          .prepare(`UPDATE tasks SET assignee = NULL, updated_at = ? WHERE project_id = ? AND assignee = ?`)
-          .run(this.now(), id, username)
-      })()
-    }
+    const remove = this.db.transaction(() => {
+      const row = this.db
+        .prepare(`SELECT role FROM project_members WHERE project_id = ? AND username = ?`)
+        .get(id, username) as { role: string } | undefined
+      if (!row) return
+      const oldRole = row.role === 'owner' ? 'owner' : 'member'
+      if (oldRole === 'owner') {
+        const owners = this.db
+          .prepare(`SELECT COUNT(*) AS count FROM project_members WHERE project_id = ? AND role = 'owner'`)
+          .get(id) as { count: number }
+        if (owners.count <= 1) {
+          throw new Error('Нельзя удалить или вывести последнего владельца. Сначала назначьте другого владельца')
+        }
+      }
+      const ts = this.now()
+      this.db.prepare(`DELETE FROM project_members WHERE project_id = ? AND username = ?`).run(id, username)
+      this.db
+        .prepare(`UPDATE tasks SET assignee = NULL, updated_at = ? WHERE project_id = ? AND assignee = ?`)
+        .run(ts, id, username)
+      this.auditProjectMemberRole(id, userId, username, oldRole, null, 'remove', ts)
+      this.touchProject(id, ts)
+    })
+    remove.immediate()
     return this.getProject(userId, id)
+  }
+
+  listProjectMemberRoleAudit(projectId: string): Array<{
+    targetUser: string
+    actor: string
+    oldRole: 'owner' | 'member' | null
+    newRole: 'owner' | 'member' | null
+    action: 'add' | 'role_change' | 'remove'
+    createdAt: number
+  }> {
+    return (this.db.prepare(
+      `SELECT target_user, actor, old_role, new_role, action, created_at
+       FROM project_member_role_audit WHERE project_id = ? ORDER BY created_at, rowid`
+    ).all(projectId) as Array<Record<string, unknown>>).map((row) => ({
+      targetUser: String(row.target_user),
+      actor: String(row.actor),
+      oldRole: row.old_role === 'owner' ? 'owner' : row.old_role === 'member' ? 'member' : null,
+      newRole: row.new_role === 'owner' ? 'owner' : row.new_role === 'member' ? 'member' : null,
+      action: row.action as 'add' | 'role_change' | 'remove',
+      createdAt: Number(row.created_at)
+    }))
   }
 
   linkMachine(userId: string, id: string, agentId: string): ProjectDetail | null {
