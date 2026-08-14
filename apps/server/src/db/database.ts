@@ -767,49 +767,109 @@ export class VoiceChatDb {
     if (colCols.length && !colCols.some((c) => c.name === 'semantic_type')) this.db.exec(`ALTER TABLE kanban_columns ADD COLUMN semantic_type TEXT NOT NULL DEFAULT 'custom'`)
     if (colCols.length && !colCols.some((c) => c.name === 'wip_limit')) this.db.exec(`ALTER TABLE kanban_columns ADD COLUMN wip_limit INTEGER`)
     // Старые доски имели To Do / In Progress / Done без стабильной семантики.
-    // Названия сохраняем, назначаем крайним колонкам базовые роли и досеиваем
-    // обязательные этапы workflow. SQL idempotent и не зависит от newId.
+    // Сначала сохраняем их пользовательские названия, назначая базовые роли.
     this.db.exec(`
       UPDATE kanban_columns SET semantic_type = 'backlog'
-      WHERE semantic_type = 'custom' AND id IN (SELECT id FROM kanban_columns c2 WHERE c2.project_id = kanban_columns.project_id ORDER BY position LIMIT 1);
+      WHERE semantic_type = 'custom'
+        AND NOT EXISTS (SELECT 1 FROM kanban_columns existing WHERE existing.project_id=kanban_columns.project_id AND existing.semantic_type='backlog')
+        AND id IN (SELECT id FROM kanban_columns c2 WHERE c2.project_id = kanban_columns.project_id ORDER BY position LIMIT 1);
       UPDATE kanban_columns SET semantic_type = 'done'
-      WHERE semantic_type = 'custom' AND id IN (SELECT id FROM kanban_columns c2 WHERE c2.project_id = kanban_columns.project_id ORDER BY position DESC LIMIT 1);
+      WHERE semantic_type = 'custom'
+        AND NOT EXISTS (SELECT 1 FROM kanban_columns existing WHERE existing.project_id=kanban_columns.project_id AND existing.semantic_type='done')
+        AND id IN (SELECT id FROM kanban_columns c2 WHERE c2.project_id = kanban_columns.project_id ORDER BY position DESC LIMIT 1);
       UPDATE kanban_columns SET semantic_type = 'development'
-      WHERE semantic_type = 'custom' AND id IN (SELECT id FROM kanban_columns c2 WHERE c2.project_id = kanban_columns.project_id ORDER BY position LIMIT 1 OFFSET 1);
-      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
-        SELECT lower(hex(randomblob(16))), p.id, 'Подготовка к разработке', 'preparation', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
-        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='preparation');
-      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
-        SELECT lower(hex(randomblob(16))), p.id, 'Готово к разработке', 'ready', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
-        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='ready');
-      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
-        SELECT lower(hex(randomblob(16))), p.id, 'Component QA', 'component_qa', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
-        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='component_qa');
-      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
-        SELECT lower(hex(randomblob(16))), p.id, 'Создание интеграционных автотестов', 'integration_tests', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
-        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='integration_tests');
-      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
-        SELECT lower(hex(randomblob(16))), p.id, 'Automated QA', 'automated_qa', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
-        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='automated_qa');
-      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
-        SELECT lower(hex(randomblob(16))), p.id, 'Тестирование', 'testing', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
-        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='testing');
-      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
-        SELECT lower(hex(randomblob(16))), p.id, 'Создание сценариев ручного QA', 'qa_preparation', COALESCE((SELECT position - 512 FROM kanban_columns WHERE project_id=p.id AND semantic_type='manual_qa' LIMIT 1), (SELECT MAX(position) + 1024 FROM kanban_columns WHERE project_id=p.id), 1024), 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
-        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='qa_preparation');
-      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
-        SELECT lower(hex(randomblob(16))), p.id, 'Ручное QA', 'manual_qa', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
-        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='manual_qa');
-      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
-        SELECT lower(hex(randomblob(16))), p.id, 'Ожидает мержа', 'awaiting_merge', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
-        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='awaiting_merge');
-      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
-        SELECT lower(hex(randomblob(16))), p.id, 'Мерж', 'merge', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
-        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='merge');
-      INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at)
-        SELECT lower(hex(randomblob(16))), p.id, 'Требуется решение', 'decision_required', COALESCE((SELECT MAX(position) FROM kanban_columns WHERE project_id=p.id),0)+1024, 0, CAST(strftime('%s','now') AS INTEGER)*1000 FROM projects p
-        WHERE NOT EXISTS (SELECT 1 FROM kanban_columns WHERE project_id=p.id AND semantic_type='decision_required');
+      WHERE semantic_type = 'custom'
+        AND NOT EXISTS (SELECT 1 FROM kanban_columns existing WHERE existing.project_id=kanban_columns.project_id AND existing.semantic_type='development')
+        AND id IN (SELECT id FROM kanban_columns c2 WHERE c2.project_id = kanban_columns.project_id ORDER BY position LIMIT 1 OFFSET 1);
     `)
+    // Полная визуальная миграция workflow: системные колонки получают один
+    // канонический порядок, legacy-колонки безопасно сливаются с новыми, custom
+    // остаются после системы. Транзакция и стабильный выбор первой колонки делают
+    // повторный запуск идемпотентным.
+    const workflowColumns: Array<[KanbanColumnSemanticType, string]> = [
+      ['backlog', 'Бэклог'],
+      ['preparation', 'Подготовка к разработке'],
+      ['ready', 'Ready for Development'],
+      ['development', 'Development'],
+      ['component_qa', 'Component QA'],
+      ['integration_tests', 'Создание интеграционных автотестов'],
+      ['automated_qa', 'Automated QA'],
+      ['manual_qa', 'Ручное QA'],
+      ['awaiting_merge', 'Ожидает мержа'],
+      ['merge', 'Мерж'],
+      ['done', 'Готово'],
+      ['decision_required', 'Требуется решение']
+    ]
+    type WorkflowColumnRow = { id: string; semantic_type: string; position: number; created_at: number }
+    type WorkflowTaskRow = { id: string }
+    this.db.transaction(() => {
+      const projectIds = this.db.prepare(`SELECT id FROM projects ORDER BY created_at, id`).all() as Array<{ id: string }>
+      const loadColumns = (projectId: string) => this.db.prepare(
+        `SELECT id, semantic_type, position, created_at FROM kanban_columns WHERE project_id=? ORDER BY position, created_at, id`
+      ).all(projectId) as WorkflowColumnRow[]
+      const mergeColumns = (projectId: string, targetId: string, sourceIds: string[]) => {
+        if (!sourceIds.length) return
+        const targetTasks = this.db.prepare(
+          `SELECT id FROM tasks WHERE project_id=? AND column_id=? ORDER BY position, created_at, id`
+        ).all(projectId, targetId) as WorkflowTaskRow[]
+        const placeholders = sourceIds.map(() => '?').join(',')
+        const sourceTasks = this.db.prepare(
+          `SELECT t.id FROM tasks t JOIN kanban_columns c ON c.id=t.column_id WHERE t.project_id=? AND t.column_id IN (${placeholders}) ORDER BY c.position, t.position, t.created_at, t.id`
+        ).all(projectId, ...sourceIds) as WorkflowTaskRow[]
+        ;[...targetTasks, ...sourceTasks].forEach((task, index) => {
+          this.db.prepare(`UPDATE tasks SET column_id=?, position=? WHERE id=?`).run(targetId, (index + 1) * RANK_STEP, task.id)
+        })
+        this.db.prepare(`DELETE FROM kanban_columns WHERE project_id=? AND id IN (${placeholders})`).run(projectId, ...sourceIds)
+      }
+
+      for (const { id: projectId } of projectIds) {
+        let columns = loadColumns(projectId)
+        let nextPosition = Math.max(0, ...columns.map(column => column.position)) + RANK_STEP
+        for (const [semantic, name] of workflowColumns) {
+          if (columns.some(column => column.semantic_type === semantic)) continue
+          this.db.prepare(
+            `INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`
+          ).run(this.newId(), projectId, name, semantic, nextPosition, this.now())
+          nextPosition += RANK_STEP
+          columns = loadColumns(projectId)
+        }
+
+        // Схлопываем дубликаты системных колонок, сохраняя первую по визуальному
+        // порядку и добавляя карточки дублей после уже лежащих в ней.
+        for (const [semantic] of workflowColumns) {
+          const matches = columns.filter(column => column.semantic_type === semantic)
+          if (matches.length > 1) {
+            mergeColumns(projectId, matches[0].id, matches.slice(1).map(column => column.id))
+            columns = loadColumns(projectId)
+          }
+        }
+
+        const canonical = new Map(columns.map(column => [column.semantic_type, column]))
+        const legacyMappings: Array<[string, KanbanColumnSemanticType]> = [
+          ['testing', 'automated_qa'],
+          ['qa_preparation', 'component_qa']
+        ]
+        for (const [legacy, targetSemantic] of legacyMappings) {
+          const sources = columns.filter(column => column.semantic_type === legacy)
+          const target = canonical.get(targetSemantic)
+          if (target && sources.length) {
+            mergeColumns(projectId, target.id, sources.map(column => column.id))
+            columns = loadColumns(projectId)
+          }
+        }
+
+        const order = [...workflowColumns.map(([semantic]) => semantic), 'custom']
+        let position = RANK_STEP
+        for (const semantic of order) {
+          const matches = columns.filter(column => column.semantic_type === semantic)
+          for (const column of matches) {
+            if (semantic === 'custom') this.db.prepare(`UPDATE kanban_columns SET position=? WHERE id=?`).run(position, column.id)
+            else this.db.prepare(`UPDATE kanban_columns SET position=?, hidden=0 WHERE id=?`).run(position, column.id)
+            position += RANK_STEP
+          }
+        }
+      }
+    })()
     const featureProjectCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'preview_url')) this.db.exec(`ALTER TABLE projects ADD COLUMN preview_url TEXT`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'commit_policy')) this.db.exec(`ALTER TABLE projects ADD COLUMN commit_policy TEXT NOT NULL DEFAULT 'agent_commits'`)
@@ -2334,12 +2394,11 @@ export class VoiceChatDb {
         ['Component QA', 'component_qa'],
         ['Создание интеграционных автотестов', 'integration_tests'],
         ['Automated QA', 'automated_qa'],
-        ['Создание сценариев ручного QA', 'qa_preparation'],
         ['Ручное QA', 'manual_qa'],
         ['Ожидает мержа', 'awaiting_merge'],
         ['Мерж', 'merge'],
-        ['Требуется решение', 'decision_required'],
-        ['Готово', 'done']
+        ['Готово', 'done'],
+        ['Требуется решение', 'decision_required']
       ].forEach(([name, semantic], i) =>
         this.db.prepare(`INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`).run(this.newId(), id, name, semantic, (i + 1) * RANK_STEP, ts)
       )
@@ -4821,7 +4880,7 @@ export class VoiceChatDb {
         JOIN project_members pm ON pm.project_id=p.id AND pm.username=?
         WHERE t.id=? AND t.project_id=?`).get(userId, taskId, projectId) as (TaskRow & { semantic_type: string; ci_base_branch: string; default_agent_id: string | null; role: string }) | undefined
       if (!row) throw new Error('task not found')
-      if (row.semantic_type !== 'awaiting_merge') throw new Error('task must be in awaiting_merge')
+      if (row.semantic_type !== 'awaiting_merge' && row.semantic_type !== 'merge') throw new Error('task must be in awaiting_merge or merge')
       if ((row.ci_base_branch || 'main') !== 'main') throw new Error('merge target must be main')
 
       const workspace = this.db.prepare(`SELECT branch,commit_sha,agent_id FROM ci_workspaces WHERE task_id=? AND project_id=? AND pushed=1 AND branch IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId, projectId) as { branch: string; commit_sha: string | null; agent_id: string | null } | undefined
@@ -4870,7 +4929,7 @@ export class VoiceChatDb {
     return this.getMergeRunRaw(runId)
   }
 
-  moveMergeTask(projectId: string, taskId: string, semanticType: 'done' | 'awaiting_merge' | 'decision_required'): void {
+  moveMergeTask(projectId: string, taskId: string, semanticType: 'done' | 'merge' | 'awaiting_merge' | 'decision_required'): void {
     const now = this.now()
     this.db.prepare(`UPDATE tasks SET column_id=(SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type=?), done_at=?, updated_at=? WHERE id=? AND project_id=?`)
       .run(projectId, semanticType, semanticType === 'done' ? now : null, now, taskId, projectId)
@@ -4880,7 +4939,9 @@ export class VoiceChatDb {
     const previous = this.getMergeRun(userId, runId)
     if (!previous) throw new Error('merge run not found')
     if (ACTIVE_MERGE_STATUSES.includes(previous.status)) return previous
-    this.moveMergeTask(previous.projectId, previous.taskId, 'awaiting_merge')
+    // Retry is an explicit user decision: failed/cancelled runs already stay in
+    // merge, while decision_required returns there before creating the next run.
+    this.moveMergeTask(previous.projectId, previous.taskId, 'merge')
     const next = this.startMergeRun(userId, previous.projectId, previous.taskId, agentIdOverride ?? previous.agentId)
     if (unpin || previous.conflicts.length > 0 || /stale source/i.test(previous.error ?? '')) return this.updateMergeRun(next.id, { sourceSha: null }) ?? next
     return next

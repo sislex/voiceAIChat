@@ -56,7 +56,7 @@ export const KANBAN_COLUMN_SEMANTIC_TYPES: KanbanColumnSemanticType[] = [
 /** Canonical machine workflow. Display names are deliberately absent. */
 export const QA_WORKFLOW: readonly KanbanColumnSemanticType[] = [
   'backlog', 'preparation', 'ready', 'development', 'component_qa',
-  'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'done'
+  'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'merge', 'done'
 ]
 
 const QA_WORKFLOW_TRANSITIONS: Readonly<Record<string, readonly KanbanColumnSemanticType[]>> = {
@@ -68,7 +68,8 @@ const QA_WORKFLOW_TRANSITIONS: Readonly<Record<string, readonly KanbanColumnSema
   integration_tests: ['automated_qa', 'development', 'decision_required'],
   automated_qa: ['manual_qa', 'integration_tests', 'development', 'decision_required'],
   manual_qa: ['awaiting_merge', 'development', 'preparation', 'decision_required'],
-  awaiting_merge: ['done', 'component_qa', 'automated_qa', 'decision_required'],
+  awaiting_merge: ['merge', 'component_qa', 'automated_qa', 'decision_required'],
+  merge: ['done', 'decision_required'],
   done: [],
   decision_required: []
 }

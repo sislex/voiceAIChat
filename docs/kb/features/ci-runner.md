@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-14
-checked: e0b2476
+checked: 0345f84
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -1496,11 +1496,13 @@ failed group. Для продуктового падения coordinator про�
 подключены. Поэтому наличие контрактов и схемы само по себе не меняет фактический
 runtime-поток карточки.
 
-## Переход к ручному QA
+## Переход в QA-workflow
 
-Успешный development-ран без выполненного legacy-шага мержа теперь переносит
-карточку в системную колонку `qa_preparation`, а не в `manual_qa` или
-`awaiting_merge`, и пишет системное событие `run.qa_preparation`. Если нужной колонки нет, ран остаётся
-успешным, но карточка не двигается. Допуск из ручной проверки к merge выполняет
-отдельная серверная операция QA. Домен критериев, sessions, результатов и
-скриншотов описан в [manual-qa.md](manual-qa.md).
+Успешный development-ран без выполненного legacy-шага мержа переносит карточку в
+системную колонку `component_qa` и пишет событие `run.component_qa`. Legacy
+`qa_preparation` больше не является визуальной стадией доски: при миграции её
+карточки безопасно объединяются с `component_qa`, а сама колонка удаляется.
+Следующие `integration_tests`, `automated_qa` и `manual_qa` остаются отдельными
+quality gates; допуск из ручной проверки переносит карточку в `awaiting_merge`.
+Домен критериев, sessions, результатов и скриншотов описан в
+[manual-qa.md](manual-qa.md).
