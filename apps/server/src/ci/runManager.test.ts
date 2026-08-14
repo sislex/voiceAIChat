@@ -443,6 +443,54 @@ describe('ci run manager', () => {
     expect(db.getCiRunRaw(runId)!.slotProgress.fixing).toBe(false)
   })
 
+  it('ready → development автоматически создаёт один queued development-run и возвращает его id', async () => {
+    const { project, task, readyColId } = setup()
+    const board = db.getBoard('admin', project.id)!
+    const development = board.columns.find((column) => column.semanticType === 'development')!
+    let release: () => void = () => {}
+    modelGate = new Promise<void>((resolve) => { release = resolve })
+
+    const [first, second] = await Promise.all([
+      inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/move`, payload: { columnId: development.id, fromColumnId: readyColId } }),
+      inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/move`, payload: { columnId: development.id, fromColumnId: readyColId } })
+    ])
+
+    expect(first.statusCode).toBe(200)
+    expect(second.statusCode).toBe(200)
+    expect(first.headers['x-ci-run-id']).toBeTruthy()
+    expect(second.headers['x-ci-run-id']).toBe(first.headers['x-ci-run-id'])
+    expect(db.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(1)
+    expect(db.getBoard('admin', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).toBe(development.id)
+    expect(db.getCiRunRaw(first.headers['x-ci-run-id'] as string)?.prevColumnId).toBe(readyColId)
+
+    release()
+    await waitRun(first.headers['x-ci-run-id'] as string)
+  })
+
+  it('ошибка автозапуска оставляет карточку в ready, а прочие переходы в development не создают ран', async () => {
+    const project = db.createProject('admin', { name: 'Без машины', gitUrl: 'git@github.com:x/y.git' })
+    const board = db.getBoard('admin', project.id)!
+    const ready = board.columns.find((column) => column.semanticType === 'ready')!
+    const development = board.columns.find((column) => column.semanticType === 'development')!
+    const task = db.createTask('admin', project.id, { columnId: ready.id, title: 'T без машины' })!
+    const readyColId = ready.id
+
+    const failed = await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/move`, payload: { columnId: development.id } })
+    expect(failed.statusCode).toBe(409)
+    expect(failed.json().error).toContain('машина')
+    expect(db.getBoard('admin', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).toBe(readyColId)
+    expect(db.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(0)
+
+    const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
+    db.moveTask('admin', project.id, task.id, { columnId: backlog.id })
+    const ordinary = await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/move`, payload: { columnId: development.id } })
+    expect(ordinary.statusCode).toBe(200)
+    expect(db.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(0)
+    const reorder = await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/move`, payload: { columnId: development.id } })
+    expect(reorder.statusCode).toBe(200)
+    expect(db.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(0)
+  })
+
   it('второй запуск той же задачи отклоняется 409, пока первый не закончился', async () => {
     const { project, task } = setup()
     // Держим первый ран на работе модели: пока он активен, задача занята.

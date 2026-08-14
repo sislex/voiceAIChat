@@ -4223,6 +4223,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     if (!id || !prev) return
     const tasks = prev.tasks.map((t) => ({ ...t }))
     const moving = tasks.find((t) => t.id === taskId)
+    const fromColumnId = moving?.columnId ?? null
     if (moving) {
       moving.columnId = columnId
       const done = prev.columns.find((column) => column.id === columnId)?.semanticType === 'done'
@@ -4241,7 +4242,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({ board: { ...prev, tasks } })
     }
     try {
-      await api['tasks:move']({ projectId: id, taskId, columnId, afterId: afterId ?? null, beforeId: beforeId ?? null })
+      await api['tasks:move']({ projectId: id, taskId, columnId, fromColumnId, afterId: afterId ?? null, beforeId: beforeId ?? null })
       await refreshBoard()
       // Переезд в «Готово» и обратно прячет/возвращает чат задачи в сайдбаре.
       // Не в общем try: упавший список — не повод откатывать удавшийся перенос.
