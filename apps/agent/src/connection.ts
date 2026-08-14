@@ -3,6 +3,8 @@
 // и в трей-приложении (Electron).
 
 import WebSocket from 'ws'
+import { createServer, connect as connectSocket, type Server, type Socket } from 'node:net'
+import { randomUUID } from 'node:crypto'
 import {
   evaluateAgentCommand,
   AGENT_VERSION,
@@ -23,6 +25,19 @@ const BACKOFF_START_MS = 1_000
 const BACKOFF_MAX_MS = 30_000
 /** Период отправки телеметрии машины на сервер. */
 const TELEMETRY_INTERVAL_MS = 30_000
+
+interface LocalTunnel { server: Server; sockets: Map<string, Socket> }
+const localTunnels = new Map<string, LocalTunnel>()
+const targetSockets = new Map<string, Socket>()
+const tunnelKey = (tunnelId: string, connectionId: string): string => `${tunnelId}:${connectionId}`
+function closeTunnel(tunnelId: string): void {
+  const local = localTunnels.get(tunnelId)
+  if (local) {
+    for (const socket of local.sockets.values()) socket.destroy()
+    local.server.close(); localTunnels.delete(tunnelId)
+  }
+  for (const [key, socket] of targetSockets) if (key.startsWith(tunnelId + ':')) { socket.destroy(); targetSockets.delete(key) }
+}
 
 /** Статус соединения агента для индикации в UI. */
 export type AgentStatus = 'connecting' | 'online' | 'offline' | 'stopped'
@@ -228,6 +243,48 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           handlers.onLog?.('терминал закрыт')
           killPty(msg.ptyId)
           break
+        case 'tunnel.listen': {
+          const existing = localTunnels.get(msg.tunnelId)
+          const address = existing?.server.address()
+          if (address && typeof address !== 'string') {
+            send({ t: 'tunnel.listening', tunnelId: msg.tunnelId, port: address.port }); break
+          }
+          const tunnel: LocalTunnel = { server: createServer(), sockets: new Map() }
+          localTunnels.set(msg.tunnelId, tunnel)
+          tunnel.server.on('connection', (client) => {
+            const connectionId = randomUUID(); tunnel.sockets.set(connectionId, client)
+            send({ t: 'tunnel.open', tunnelId: msg.tunnelId, connectionId })
+            client.on('data', (data) => send({ t: 'tunnel.data', tunnelId: msg.tunnelId, connectionId, data: data.toString('base64') }))
+            client.on('end', () => send({ t: 'tunnel.end', tunnelId: msg.tunnelId, connectionId }))
+            client.on('error', () => send({ t: 'tunnel.end', tunnelId: msg.tunnelId, connectionId }))
+          })
+          tunnel.server.listen(0, '127.0.0.1', () => {
+            const bound = tunnel.server.address()
+            if (bound && typeof bound !== 'string') send({ t: 'tunnel.listening', tunnelId: msg.tunnelId, port: bound.port })
+          })
+          tunnel.server.on('error', (error) => send({ t: 'tunnel.error', tunnelId: msg.tunnelId, message: error.message }))
+          break
+        }
+        case 'tunnel.connect': {
+          const key = tunnelKey(msg.tunnelId, msg.connectionId)
+          const target = connectSocket({ host: '127.0.0.1', port: msg.port }); targetSockets.set(key, target)
+          target.on('connect', () => send({ t: 'tunnel.connected', tunnelId: msg.tunnelId, connectionId: msg.connectionId }))
+          target.on('data', (data) => send({ t: 'tunnel.data', tunnelId: msg.tunnelId, connectionId: msg.connectionId, data: data.toString('base64') }))
+          target.on('end', () => send({ t: 'tunnel.end', tunnelId: msg.tunnelId, connectionId: msg.connectionId }))
+          target.on('error', (error) => send({ t: 'tunnel.connectionError', tunnelId: msg.tunnelId, connectionId: msg.connectionId, message: error.message }))
+          break
+        }
+        case 'tunnel.data': {
+          const socket = targetSockets.get(tunnelKey(msg.tunnelId, msg.connectionId)) ?? localTunnels.get(msg.tunnelId)?.sockets.get(msg.connectionId)
+          socket?.write(Buffer.from(msg.data, 'base64')); break
+        }
+        case 'tunnel.end': {
+          const key = tunnelKey(msg.tunnelId, msg.connectionId)
+          const socket = targetSockets.get(key) ?? localTunnels.get(msg.tunnelId)?.sockets.get(msg.connectionId)
+          socket?.end(); targetSockets.delete(key); localTunnels.get(msg.tunnelId)?.sockets.delete(msg.connectionId); break
+        }
+        case 'tunnel.close':
+          closeTunnel(msg.tunnelId); break
         case 'fs.list':
         case 'fs.read':
         case 'fs.write':
@@ -269,6 +326,9 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
     const reconnect = (): void => {
       activeSend = null
       stopTelemetry()
+      for (const id of [...localTunnels.keys()]) closeTunnel(id)
+      for (const socket of targetSockets.values()) socket.destroy()
+      targetSockets.clear()
       if (stopped) return
       handlers.onStatus?.('offline')
       handlers.onLog?.(`соединение потеряно, повтор через ${Math.round(backoff / 1000)}с`)
@@ -305,6 +365,9 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
       if (reconnectTimer) clearTimeout(reconnectTimer)
       stopTelemetry()
       imageHost?.stop()
+      for (const id of [...localTunnels.keys()]) closeTunnel(id)
+      for (const target of targetSockets.values()) target.destroy()
+      targetSockets.clear()
       handlers.onStatus?.('stopped')
       try {
         socket?.close()

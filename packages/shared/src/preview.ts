@@ -31,6 +31,21 @@ export interface PreviewConfig {
   memoryLimit?: string
 }
 
+export type PreviewTunnelState = 'checking' | 'creating' | 'connected' | 'failed' | 'closed' | 'agent_required'
+export type PreviewConnectionType = 'direct' | 'tunnel' | 'manual'
+export type PreviewServiceKind = 'app' | 'storybook'
+
+export interface PreviewAccessResult {
+  connectionType: PreviewConnectionType
+  state: PreviewTunnelState
+  url: string | null
+  tunnelId: string | null
+  manualCommand: string | null
+  internalUrl: string
+  localAgentId: string | null
+  error: string | null
+}
+
 export interface PreviewService {
   name: string
   internalPort: number

@@ -5624,6 +5624,13 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .feature-preview__scenario select { width: 100%; }
 .feature-preview__actions { justify-content: flex-start; }
 .feature-preview__log { max-height: 240px; margin: 0; overflow: auto; white-space: pre-wrap; border-radius: 7px; padding: 9px; background: var(--bg); color: var(--text); font-size: 11px; }
+.feature-preview__connection, .feature-preview__manual { display: grid; gap: 7px; min-width: 0; padding: 8px; border-radius: 7px; background: var(--panel); font-size: 12px; }
+.feature-preview__manual code, .feature-preview__technical code { overflow-wrap: anywhere; word-break: break-all; white-space: normal; }
+.feature-preview__technical { min-width: 0; font-size: 12px; }
+.feature-preview__technical summary { cursor: pointer; color: var(--text-dim); }
+.feature-preview__technical dl { display: grid; gap: 6px; margin: 8px 0 0; }
+.feature-preview__technical dd { margin: 2px 0 0; }
+@media (max-width: 520px) { .feature-preview__meta { grid-template-columns: minmax(0, 1fr); } .feature-preview__actions > * { max-width: 100%; } }
 
 .manual-qa { display: grid; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 .manual-qa-summary { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 10px; border-radius: 8px; background: var(--panel); font-size: 12px; }

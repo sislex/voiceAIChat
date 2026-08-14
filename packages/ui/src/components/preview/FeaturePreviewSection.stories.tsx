@@ -20,7 +20,9 @@ function PreviewStory({ environment }: { environment: PreviewEnvironment | null 
   window.featurePreview = {
     get: async () => environment,
     operate: async () => environment ?? makeEnvironment('building'),
-    cancel: async () => true
+    cancel: async () => true,
+    open: async () => ({ connectionType: 'direct', state: 'connected', url: environment?.appUrl ?? null, tunnelId: null, manualCommand: null, internalUrl: environment?.appUrl ?? '', localAgentId: null, error: null }),
+    closeTunnel: async () => true
   }
   return <div style={{ width: 420 }}><FeaturePreviewSection projectId="p1" taskId="t1" /></div>
 }

@@ -95,6 +95,13 @@ export type AgentToServer =
   | { t: 'fs.error'; opId: string; message: string }
   | { t: 'agent.setPolicy'; policy: AgentPolicy }
   | { t: 'agent.telemetry'; telemetry: AgentTelemetry }
+  | { t: 'tunnel.listening'; tunnelId: string; port: number }
+  | { t: 'tunnel.open'; tunnelId: string; connectionId: string }
+  | { t: 'tunnel.connected'; tunnelId: string; connectionId: string }
+  | { t: 'tunnel.data'; tunnelId: string; connectionId: string; data: string }
+  | { t: 'tunnel.end'; tunnelId: string; connectionId: string }
+  | { t: 'tunnel.error'; tunnelId: string; message: string }
+  | { t: 'tunnel.connectionError'; tunnelId: string; connectionId: string; message: string }
 
 /** Именованный скрипт («навык»), разрешённый к запуску на машине. */
 export interface AgentSkill {
@@ -200,6 +207,11 @@ export type ServerToAgent =
   | { t: 'pty.input'; ptyId: string; data: string }
   | { t: 'pty.resize'; ptyId: string; cols: number; rows: number }
   | { t: 'pty.kill'; ptyId: string }
+  | { t: 'tunnel.listen'; tunnelId: string }
+  | { t: 'tunnel.connect'; tunnelId: string; connectionId: string; port: number }
+  | { t: 'tunnel.data'; tunnelId: string; connectionId: string; data: string }
+  | { t: 'tunnel.end'; tunnelId: string; connectionId: string }
+  | { t: 'tunnel.close'; tunnelId: string }
   | FsOp
 
 /** Машина-агент для списка в настройках. */
