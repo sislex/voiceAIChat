@@ -403,6 +403,7 @@ interface TaskRow {
   merge_permitted?: number
   merge_machine_bound?: number
   merged_sha?: string | null
+  merged_source_sha?: string | null
 }
 
 
@@ -508,7 +509,8 @@ function mapTask(r: TaskRow): Task {
     activeMergeStatus: r.active_merge_status ?? null,
     mergePermitted: r.merge_permitted !== 0,
     mergeMachineBound: r.merge_machine_bound !== 0,
-    mergedSha: r.merged_sha ?? null
+    mergedSha: r.merged_sha ?? null,
+    mergedSourceSha: r.merged_source_sha ?? null
   }
 }
 
@@ -2650,11 +2652,16 @@ export class VoiceChatDb {
              (SELECT r.id FROM merge_runs r WHERE r.task_id=t.id ORDER BY r.created_at DESC LIMIT 1) AS latest_merge_run_id,
              (SELECT r.status FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_status,
              EXISTS(SELECT 1 FROM project_members pm WHERE pm.project_id=t.project_id AND pm.username=? AND pm.role='owner') AS merge_permitted,
-             EXISTS(SELECT 1 FROM project_machines pm WHERE pm.project_id=t.project_id AND pm.agent_id=COALESCE(t.agent_id,(SELECT default_agent_id FROM projects WHERE id=t.project_id))) AS merge_machine_bound,
-             (SELECT r.merge_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_sha
+             EXISTS(
+               SELECT 1 FROM ci_workspaces w JOIN agents a ON a.id=w.agent_id
+               WHERE w.id=(SELECT latest.id FROM ci_workspaces latest WHERE latest.task_id=t.id AND latest.pushed=1 ORDER BY latest.created_at DESC LIMIT 1)
+                 AND (a.user_id=? OR EXISTS(SELECT 1 FROM project_machines pm WHERE pm.project_id=t.project_id AND pm.agent_id=a.id))
+             ) AS merge_machine_bound,
+             (SELECT r.merge_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_sha,
+             (SELECT r.source_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_source_sha
            FROM tasks t WHERE t.project_id = ? ORDER BY t.column_id ASC, t.position ASC`
         )
-        .all(userId, userId, projectId) as TaskRow[]
+        .all(userId, userId, userId, projectId) as TaskRow[]
     ).map(mapTask)
     // Фильтруем на сервере: иначе payload доски рос бы бесконечно вместе с
     // колонкой «Готово». includeCompleted → порог null, скрывать нечего.
@@ -4687,7 +4694,8 @@ export class VoiceChatDb {
       const workspace = this.db.prepare(`SELECT branch,commit_sha,agent_id FROM ci_workspaces WHERE task_id=? AND project_id=? AND pushed=1 AND branch IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId, projectId) as { branch: string; commit_sha: string | null; agent_id: string | null } | undefined
       if (!workspace?.branch || !workspace.commit_sha || !/^(?!-)(?!.*\.\.)(?!.*[~^:?*\\[\\]\\\\])[A-Za-z0-9._/-]+$/.test(workspace.branch)) throw new Error('prepared task branch or pushed source SHA not found')
       const agentId = agentIdOverride ?? workspace.agent_id
-      if (!agentId || !this.db.prepare(`SELECT 1 FROM project_machines WHERE project_id=? AND agent_id=?`).get(projectId, agentId)) throw new Error(agentIdOverride ? 'merge machine is not bound to project' : 'prepared workspace machine is not bound to project')
+      if (!agentId || !this.canUseAgent(userId, agentId, projectId)) throw new Error(agentIdOverride ? 'merge machine is not available to user or project' : 'prepared workspace machine is not available to user or project')
+      if (agentId !== workspace.agent_id && !this.getProjectMachine(projectId, agentId)) throw new Error('selected merge machine has no project repository settings')
       if (!this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type='merge'`).get(projectId)) throw new Error('merge column not found')
 
       const id = this.newId(), now = this.now()
@@ -4786,7 +4794,7 @@ export class VoiceChatDb {
       productionStatus: r.production_status as string | null, error: r.error as string | null, recommendedAction: r.recommended_action as string | null,
       log: String(r.log ?? ''), canCancel: !r.push_started_at && ACTIVE_MERGE_STATUSES.includes(r.status as MergeRun['status']),
       canRetry: !ACTIVE_MERGE_STATUSES.includes(r.status as MergeRun['status']) && r.status !== 'success', pushStartedAt: r.push_started_at as number | null,
-      startedAt: r.started_at as number | null, finishedAt: r.finished_at as number | null, createdAt: Number(r.created_at), machineName: null
+      startedAt: r.started_at as number | null, finishedAt: r.finished_at as number | null, createdAt: Number(r.created_at), machineName: this.agentName(String(r.agent_id))
     }
   }
 

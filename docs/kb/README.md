@@ -20,7 +20,7 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 45 коммит(ов) в areas после сверки: 996f67a Merge task b607ac70-9051-4bca-ab05-a24531a44124 … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-14 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-14 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 306 коммит(ов) в areas после сверки: e4e0437 Merge release/0.1.42 into main … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 307 коммит(ов) в areas после сверки: d6353e9 fix(CHAT-194): refresh production deploy launcher … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-14 | ✓ |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-13 | ⚠ 3 коммит(ов) в areas после сверки: 9b5cd4c feat: complete manual QA workflow … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 12 коммит(ов) в areas после сверки: b069c6b feat(ui): open task card from task launch … |

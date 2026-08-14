@@ -82,7 +82,7 @@ export function MergeRunFeed({ runId, onRunChanged }: { runId: string; onRunChan
           {run.targetSha && <code className="merge-sha" title={`main ${run.targetSha}`}>{run.targetSha.slice(0, 8)}</code>}
           {run.mergeSha && <code className="merge-sha merge-sha--merge" title={`merge ${run.mergeSha}`}>{run.mergeSha.slice(0, 8)}</code>}
         </span>
-        <span className="merge-feed-meta">{run.machineName ?? run.agentId} · {fmtDuration(duration)}</span>
+        <span className="merge-feed-meta"><span title={run.agentId}>{run.machineName ?? run.agentId}</span> · {fmtDuration(duration)}</span>
         <div className="merge-feed-actions">
           {stale && run.canRetry && <Button variant="primary" onClick={() => void window.ci?.retryMerge(run.id, true).then(act)}>Мержить текущий head ветки</Button>}
           {run.canRetry && <Button onClick={() => void window.ci?.retryMerge(run.id).then(act)}>Повторить</Button>}

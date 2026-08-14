@@ -210,7 +210,10 @@ export interface Task {
   /** Серверный снимок прав и привязки машины; UI не заменяет им API-проверку. */
   mergePermitted?: boolean
   mergeMachineBound?: boolean
+  /** Merge-коммит последнего успешного merge-рана. */
   mergedSha?: string | null
+  /** Source SHA, который был использован последним успешным merge-раном. */
+  mergedSourceSha?: string | null
 }
 
 /**
