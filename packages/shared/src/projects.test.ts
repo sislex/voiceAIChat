@@ -9,13 +9,16 @@ describe('QA workflow semantics', () => {
   it('keeps the canonical sequence independent of display names', () => {
     expect(QA_WORKFLOW).toEqual([
       'backlog', 'preparation', 'ready', 'development', 'component_qa',
-      'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'done'
+      'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'merge', 'done'
     ])
   })
   it('requires a user decision to leave decision_required', () => {
     expect(canTransitionWorkflow('decision_required', 'development', 'automation')).toBe(false)
     expect(canTransitionWorkflow('decision_required', 'development', 'user')).toBe(true)
     expect(canTransitionWorkflow('backlog', 'development', 'user')).toBe(false)
+    expect(canTransitionWorkflow('awaiting_merge', 'merge', 'automation')).toBe(true)
+    expect(canTransitionWorkflow('merge', 'done', 'automation')).toBe(true)
+    expect(canTransitionWorkflow('awaiting_merge', 'done', 'automation')).toBe(false)
   })
 })
 

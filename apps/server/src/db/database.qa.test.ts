@@ -26,9 +26,9 @@ function fixture() {
 }
 
 describe('manual QA persistence and workflow', () => {
-  it('requires detailed scenarios before moving from preparation to manual QA', () => {
+  it('requires detailed scenarios before moving from component QA to manual QA', () => {
     const project = db.createProject('owner', { name: 'QA preparation' })
-    const preparation = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'qa_preparation')!
+    const preparation = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'component_qa')!
     const task = db.createTask('owner', project.id, { columnId: preparation.id, title: 'Feature' })!
     expect(() => db.completeQaPreparation('owner', project.id, task.id)).toThrow(/хотя бы один сценарий/)
     db.createAcceptanceCriterion('owner', project.id, task.id, {
@@ -126,6 +126,8 @@ describe('manual QA persistence and workflow', () => {
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace', project.id, task.id, 'workspace-agent', '/repos/task', 'CHAT-179', '1'.repeat(40), 1, 'released', 2)
 
     expect(db.startMergeRun('owner', project.id, task.id).agentId).toBe('workspace-agent')
+    const moved = db.getBoard('owner', project.id)!.tasks.find((item) => item.id === task.id)!
+    expect(db.getBoard('owner', project.id)!.columns.find((item) => item.id === moved.columnId)?.semanticType).toBe('merge')
   })
 
   it('allows the owner personal workspace machine and exposes a newer source after a successful merge', () => {
