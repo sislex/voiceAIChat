@@ -19,7 +19,8 @@ source="$REPO/scripts/prod/deploy.sh"
 digest=$(sha256sum "$source" | awk '{print $1}')
 runtime="/usr/local/lib/voicechat/deploy-$digest.sh"
 if [[ ! -x $runtime ]]; then install -m 755 "$source" "$runtime"; fi
-exec "$runtime" "$@"
+# Зафиксировать metadata на границе стабильного launcher.
+exec env VC_RELEASE_VERSION="${VC_RELEASE_VERSION-}" VC_RELEASE_VERSION_SOURCE="${VC_RELEASE_VERSION_SOURCE-}" "$runtime" "$@"
 EOF
 chmod 755 /usr/local/bin/voicechat-deploy
 install -m 755 "$SRC/watchdog.sh" /usr/local/bin/voicechat-watchdog

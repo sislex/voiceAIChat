@@ -96,7 +96,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     await tick();await tick()
     expect(commands.join('\n')).not.toMatch(/affected-check|merge |tag |push .*main/)
     expect(commands.some(command=>command.includes("checkout -B 'release/0.1.27' 'fixed-sha'"))).toBe(true)
-    expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.27' && npm run deploy:prod")
+    expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.27' VC_RELEASE_VERSION_SOURCE='release-manager' && echo 'Ожидаемые production metadata: version=0.1.27 commit=fixed-sha source=release-manager' && npm run deploy:prod")
     expect(db.getProjectRelease('owner',projectId,attempt.id)?.status).toBe('released')
     expect(prepared.status).toBe('ready')
   })
