@@ -8,7 +8,34 @@ const LABEL: Record<QaRunStage, string> = {
   automated_qa: 'Automated QA'
 }
 
-export function QaStageRunPanel(props: { projectId: string; taskId: string; stage: QaRunStage }): JSX.Element {
+function IntegrationTestPanel(props:{projectId:string;taskId:string}):JSX.Element {
+  const [state,setState]=useState<import('@shared/qa').IntegrationTestTaskState|null>(null)
+  const [error,setError]=useState(''),[busy,setBusy]=useState(false)
+  const load=useCallback(async()=>{if(!window.qa?.getIntegration)return;try{const next=await window.qa.getIntegration(props.projectId,props.taskId);setState((current)=>{if(!current||!next)return next;const a=current.latestRun?.finishedAt??current.latestRun?.startedAt??current.latestRun?.createdAt??0,b=next.latestRun?.finishedAt??next.latestRun?.startedAt??next.latestRun?.createdAt??0;return b>=a?next:current});setError('')}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}},[props.projectId,props.taskId])
+  useEffect(()=>{void load()},[load])
+  useEffect(()=>{if(!state?.activeRun)return;const timer=window.setInterval(()=>void load(),2000);return()=>window.clearInterval(timer)},[state?.activeRun?.id,load])
+  if(!window.qa?.getIntegration)return <section>Стадия недоступна</section>
+  if(!state)return <section>Загрузка интеграционных автотестов…</section>
+  const run=state.latestRun
+  const act=async(fn:()=>Promise<unknown>)=>{setBusy(true);try{await fn();await load()}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}}
+  return <section aria-label="Интеграционные автотесты"><header><h3>Интеграционные автотесты</h3>{run&&<span>{run.status}</span>}</header>
+    {error&&<p role="alert">{error}</p>}
+    {state.launchReasons.length>0&&<div><strong>Запуск недоступен</strong><ul>{state.launchReasons.map((reason)=><li key={reason}>{reason}</li>)}</ul></div>}
+    {run&&<><dl><dt>Ветка</dt><dd>{run.branch}</dd><dt>SHA</dt><dd><code>{run.commitSha}</code></dd><dt>Попытка</dt><dd>{run.attempt}</dd></dl>
+      {run.blockerReasons.length>0&&<ul>{run.blockerReasons.map((reason)=><li key={reason}>{reason}</li>)}</ul>}
+      <h4>Тест-кейсы</h4><ul>{run.testCases.map((item)=><li key={item.id}>{item.title} — {item.automatable?'автоматизируемый':'исключён'} {item.automationLinks.filter((link)=>link.commitSha===run.commitSha).map((link)=><a key={link.testId+link.path} href={link.path}>{link.path}</a>)}</li>)}</ul>
+      <h4>Команды</h4>{run.commands.map((command)=><details key={command.commandId}><summary>{command.name} — {command.status}, exit {command.exitCode??'—'}, {command.durationMs} ms</summary><code>{command.command}</code><pre>{command.stdout}{command.stderr}</pre></details>)}
+      {run.log&&<details open={run.status==='running'}><summary>Потоковый лог</summary><pre>{run.log}</pre></details>}{run.summary&&<p><strong>Итог:</strong> {run.summary}</p>}</>}
+    <div><Button size="sm" disabled={busy||!state.canStart} onClick={()=>void act(()=>window.qa!.startIntegration!(props.projectId,props.taskId))}>Запустить</Button>
+      {state.activeRun&&<Button size="sm" disabled={busy} onClick={()=>void act(()=>window.qa!.cancelIntegration!(props.projectId,props.taskId,state.activeRun!.id))}>Отменить</Button>}
+      {run?.canRetry&&<Button size="sm" disabled={busy||!!state.activeRun} onClick={()=>void act(()=>window.qa!.startIntegration!(props.projectId,props.taskId))}>Повторить</Button>}
+      {run&&['failed','blocked'].includes(run.status)&&<Button size="sm" disabled={busy} onClick={()=>void act(()=>window.qa!.fixIntegration!(props.projectId,props.taskId,run.id))}>Отправить на доработку</Button>}
+      {run&&<Button size="sm" disabled={busy||!state.canComplete} onClick={()=>void act(()=>window.qa!.completeIntegration!(props.projectId,props.taskId,run.id))}>Перейти к Automated QA</Button>}</div>
+    {state.runs.length>0&&<section><h4>История попыток</h4><ol>{state.runs.map((item)=><li key={item.id}>#{item.attempt} · {item.status}</li>)}</ol></section>}
+  </section>
+}
+
+function GenericQaStageRunPanel(props: { projectId: string; taskId: string; stage: QaRunStage }): JSX.Element {
   const [runs, setRuns] = useState<AnyQaStageRun[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -50,4 +77,7 @@ export function QaStageRunPanel(props: { projectId: string; taskId: string; stag
     </>}
     {runs.length > 0 && <section><h4>История попыток</h4><ol>{runs.map((item) => <li key={item.id}>#{item.attempt} · {item.status} · {new Date(item.createdAt).toLocaleString()}</li>)}</ol></section>}
   </div>
+}
+export function QaStageRunPanel(props:{projectId:string;taskId:string;stage:QaRunStage}):JSX.Element {
+  return props.stage==='integration_tests'?<IntegrationTestPanel projectId={props.projectId} taskId={props.taskId}/>:<GenericQaStageRunPanel {...props}/>
 }

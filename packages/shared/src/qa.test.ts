@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canCompleteAutomation, canCompleteComponentQa, canCompleteQa, canConfirmDevelopmentReadiness, componentQaLaunchReasons, componentQaSemanticVersion, qaProgress, validateQaResult, type ComponentQaRun, type DevelopmentReadiness, type QaSession, type TestCaseDefinition } from './qa'
+import { canCompleteAutomation, canCompleteComponentQa, canCompleteQa, canConfirmDevelopmentReadiness, componentQaLaunchReasons, componentQaSemanticVersion, integrationTestGate, integrationTestSemanticVersion, qaProgress, validateIntegrationTestDiff, validateQaResult, type ComponentQaRun, type DevelopmentReadiness, type IntegrationTestRun, type QaSession, type TestCaseDefinition } from './qa'
 
 function session(statuses: Array<'not_tested' | 'in_progress' | 'passed' | 'failed' | 'blocked' | 'not_applicable' | 'stale'>): QaSession {
   return {
@@ -98,6 +98,18 @@ describe('component QA gate', () => {
     const value = readiness(); value.uiImpact='none'; value.affectedComponents=[]
     const current=run(value); current.status='skipped'; current.uiImpact='none'; current.scenarios=[]; current.commands=[]
     expect(canCompleteComponentQa({run:current,currentCommitSha:'abc',currentReadinessVersion:componentQaSemanticVersion(value),acceptanceCriteriaConflict:false}).allowed).toBe(true)
+  })
+})
+
+describe('integration test creation gate',()=>{
+  it('accepts only test-directory or spec/test files in the committed diff',()=>{
+    expect(validateIntegrationTestDiff(['apps/server/src/foo.ts','apps/server/src/foo.test.ts','tests/api.spec.ts'])).toEqual(['apps/server/src/foo.ts'])
+  })
+  it('pins the run to SHA and semantic automatable snapshot and reuses canCompleteAutomation',()=>{
+    const cases=[testCase({automationLinks:[{testId:'TC-1',path:'tests/tc1.test.ts',updatedAt:1,commitSha:'abc'}]})]
+    const run={id:'i1',projectId:'p1',taskId:'t1',developmentRunId:'d1',linkedFixRunId:null,branch:'feature',commitSha:'abc',attempt:1,status:'passed',readinessRunId:'prep',snapshotVersion:integrationTestSemanticVersion(cases),testCases:cases,automationLinks:cases[0].automationLinks,commands:[{commandId:'stage-1',name:'tests',command:'npm test',exitCode:0,durationMs:1,status:'passed',diagnostic:'',stdout:'',stderr:''}],log:'',failureClassification:null,failureReason:null,blockerReasons:[],summary:'ok',createdAt:1,startedAt:1,finishedAt:2,staleReason:null,canCancel:false,canRetry:false} satisfies IntegrationTestRun
+    expect(integrationTestGate(run,'abc',cases).allowed).toBe(true)
+    expect(integrationTestGate(run,'def',cases).reasons).toEqual(expect.arrayContaining(['commit_sha_mismatch','missing_automation:TC-1']))
   })
 })
 

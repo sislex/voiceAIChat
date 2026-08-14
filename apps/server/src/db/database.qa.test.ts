@@ -323,4 +323,35 @@ describe('manual QA persistence and workflow', () => {
     expect(db.failInterruptedComponentQaRuns()).toEqual([run.id])
     expect(db.getComponentQaRun('owner',run.id)).toMatchObject({status:'blocked',failureClassification:'infrastructure',canRetry:true})
   })
+
+  function integrationFixture(automatable=true){
+    const {project,task,raw}=componentFixture('none')
+    const integration=db.getBoard('owner',project.id)!.columns.find((item)=>item.semanticType==='integration_tests')!
+    raw.prepare(`UPDATE tasks SET column_id=? WHERE id=?`).run(integration.id,task.id)
+    const testCase={id:'TC-INT',title:'API flow',description:'',preconditions:'server',testData:'fixture',steps:'request',expectedResult:'200',required:true,testType:'integration',automatable,automationLinks:[],notAutomatedReason:automatable?'':'External hardware',alternativeManualVerification:automatable?'':'Run device checklist',comments:''}
+    const readiness={functionalRequirements:'API works',acceptanceCriteria:'200',acceptanceCriteriaConflict:false,uiImpact:'none',testCases:[testCase],affectedComponents:[]}
+    raw.prepare(`UPDATE task_preparation_runs SET readiness_json=? WHERE id='prep-component'`).run(JSON.stringify(readiness))
+    return {project,task,raw}
+  }
+  it('creates one active integration-test run and enforces physical idempotency',()=>{
+    const {project,task}=integrationFixture()
+    const first=db.startIntegrationTestRun('owner',project.id,task.id),second=db.startIntegrationTestRun('owner',project.id,task.id)
+    expect(second.id).toBe(first.id)
+    expect(first).toMatchObject({status:'queued',commitSha:'a'.repeat(40),developmentRunId:'dev-component'})
+  })
+  it('audits a valid no-automation branch as skipped and moves to Automated QA',()=>{
+    const {project,task}=integrationFixture(false)
+    expect(db.startIntegrationTestRun('owner',project.id,task.id).status).toBe('skipped')
+    const board=db.getBoard('owner',project.id)!,moved=board.tasks.find((item)=>item.id===task.id)!
+    expect(board.columns.find((item)=>item.id===moved.columnId)?.semanticType).toBe('automated_qa')
+  })
+  it('stales the previous integration run after a workspace SHA change',()=>{
+    const {project,task,raw}=integrationFixture()
+    const run=db.startIntegrationTestRun('owner',project.id,task.id)
+    db.markIntegrationTestRunning(run.id)
+    raw.prepare(`UPDATE ci_workspaces SET commit_sha=? WHERE id='ws-component'`).run('b'.repeat(40))
+    const next=db.startIntegrationTestRun('owner',project.id,task.id)
+    expect(db.getIntegrationTestRun('owner',run.id)).toMatchObject({status:'stale',staleReason:'sha_changed'})
+    expect(next.id).not.toBe(run.id)
+  })
 })

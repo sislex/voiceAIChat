@@ -1,7 +1,7 @@
 ---
 title: Структурированное ручное QA
-updated: 2026-08-14
-checked: a64b490
+updated: 2026-08-15
+checked: 3dd8d73
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/projects.ts
@@ -12,6 +12,7 @@ areas:
   - apps/server/src/server.ts
   - apps/server/src/ci/runManager.ts
   - apps/server/src/ci/componentQa.ts
+  - apps/server/src/ci/integrationTests.ts
   - apps/server/src/ci/testStages.ts
   - apps/server/src/ci/modelHooks.ts
   - packages/ui/src/components/qa
@@ -157,6 +158,27 @@ SHA, попытку, активность процесса, причины не�
 `qa_stage_runs` со стадией `component_qa` создаются только через REST и влияют
 на видимость и автовыбор вкладок. Подробности —
 [qa-stage-runs.md](qa-stage-runs.md).
+
+## Стадия «Создание интеграционных автотестов»
+
+Следующая за Component QA колонка `integration_tests` получила третью,
+независимую от `component_qa_runs` и `qa_stage_runs` сущность —
+`integration_test_runs` (`schema.ts`, идемпотентный `CREATE TABLE IF NOT
+EXISTS`, partial unique по `task_id` для `queued|running`). Она устроена по
+образцу Component QA: тот же набор статусов, та же привязка к успешному
+development-рану/pushed workspace/SHA и к `readiness_json` последней успешной
+`task_preparation_runs`, те же `canQa`-права, та же классификация отказа
+`implementation_defect|infrastructure`, тот же 500-тысячный хвост лога и то же
+закрытие «зависших» ранов при рестарте. Гейт перехода в `automated_qa`
+обязательно проходит через существующую `canCompleteAutomation` из
+`qa.ts` — своей копии правила у стадии нет.
+
+Главное отличие от постановки: LLM-этапа в коде нет. Нового `CiRunMode` не
+появилось (`CI_RUN_MODES` — по-прежнему `plan | development`), ран не пишет
+тесты, не коммитит и не пушит. Он читает уже существующий HEAD-коммит
+development-workspace, проверяет его дифф и прогоняет проектные test stages.
+Полное описание модели, исполнителя, гейта, REST и панели —
+[qa-stage-runs.md](qa-stage-runs.md#предметный-контур-integration-tests).
 
 ## Домен и критерий допуска
 
