@@ -365,7 +365,7 @@ describe('TaskModal — вкладки и merge', () => {
     fireEvent.change(screen.getByLabelText('Критерии приёмки'), { target: { value: 'черновик' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Ручное QA' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
-    expect(screen.getByLabelText('Критерии приёмки')).toHaveValue('черновик')
+    expect(screen.getByLabelText('Критерии приёмки')).toHaveValue('1. черновик')
     expect(onClose).not.toHaveBeenCalled()
   })
 
@@ -387,6 +387,44 @@ describe('TaskModal — вкладки и merge', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
     expect(within(settings).getByLabelText('Движок модели')).toHaveValue('codex')
+  })
+})
+
+describe('TaskModal — критерии приёмки', () => {
+  it('показывает старый текст единым нумерованным списком', () => {
+    render(<TaskModal {...props({ task: mkTask({ acceptanceCriteria: 'Первый\nВторой' }) })} />)
+    const view = screen.getByTestId('task-criteria-view')
+    expect(within(view).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['Первый', 'Второй'])
+  })
+
+  it('Enter создаёт пункт, Shift+Enter — внутренний перенос, а blur сохраняет нормализованный Markdown', async () => {
+    const onUpdate = vi.fn()
+    render(<TaskModal {...props({ task: mkTask({ acceptanceCriteria: 'Первый' }), onUpdate })} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
+    const field = screen.getByRole('textbox', { name: 'Критерии приёмки' }) as HTMLTextAreaElement
+    expect(field.value).toBe('1. Первый')
+
+    field.setSelectionRange(field.value.length, field.value.length)
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(field.value).toBe('1. Первый\n2. ')
+    await userEvent.type(field, 'Второй')
+    fireEvent.keyDown(field, { key: 'Enter', shiftKey: true })
+    await userEvent.type(field, 'пояснение')
+    fireEvent.blur(field)
+
+    expect(onUpdate).toHaveBeenCalledWith('t1', {
+      acceptanceCriteria: '1. Первый\n2. Второй\n   пояснение'
+    })
+  })
+
+  it('многострочная вставка убирает повторные ручные номера', async () => {
+    render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByText('Добавьте критерии приёмки…'))
+    const field = screen.getByRole('textbox', { name: 'Критерии приёмки' }) as HTMLTextAreaElement
+    fireEvent.paste(field, {
+      clipboardData: { getData: () => '1. 9. Первый\n3. Второй' }
+    })
+    expect(field.value).toBe('1. Первый\n2. Второй')
   })
 })
 

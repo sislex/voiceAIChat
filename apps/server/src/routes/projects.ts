@@ -16,6 +16,7 @@ import {
   type KbContextMode,
   WIDGET_TOOL_CONTRACT_VERSION,
   queryWidgetItems,
+  normalizeAcceptanceCriteria,
   taskWidgetItem,
   type WidgetToolActionRequest,
   type WidgetToolGetRequest,
@@ -363,7 +364,7 @@ export function registerProjectRoutes(
         columnId: b.columnId,
         title,
         description: b.description,
-        acceptanceCriteria: b.acceptanceCriteria,
+        acceptanceCriteria: b.acceptanceCriteria === undefined ? undefined : normalizeAcceptanceCriteria(b.acceptanceCriteria),
         type: b.type,
         parentId: b.parentId,
         priority: b.priority,
@@ -389,7 +390,11 @@ export function registerProjectRoutes(
   }>('/api/projects/:id/tasks/:taskId', taskUpdateGuard, async (req, reply): Promise<Task | FastifyReply> => {
 
     try {
-      const task = db.updateTask(uid(req), req.params.id, req.params.taskId, req.body ?? {})
+      const body = req.body ?? {}
+      const task = db.updateTask(uid(req), req.params.id, req.params.taskId, {
+        ...body,
+        acceptanceCriteria: body.acceptanceCriteria === undefined ? undefined : normalizeAcceptanceCriteria(body.acceptanceCriteria)
+      })
       if (!task) return nf(reply)
       boardHub.emit(req.params.id)
       return task

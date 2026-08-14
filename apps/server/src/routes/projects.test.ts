@@ -204,6 +204,24 @@ describe('projects REST: доска', () => {
     const final = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
     expect(final.tasks.find((t) => t.id === a.id)).toBeUndefined()
   })
+
+  it('нормализует критерии одинаково при создании и обновлении', async () => {
+    const p = await createProject()
+    const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    const created = (await inj(adminTok, {
+      method: 'POST',
+      url: `/api/projects/${p.id}/tasks`,
+      payload: { columnId: board.columns[0].id, title: 'Criteria', acceptanceCriteria: 'Первый\n\n4. Второй' }
+    })).json() as Task
+    expect(created.acceptanceCriteria).toBe('1. Первый\n2. Второй')
+
+    const updated = (await inj(adminTok, {
+      method: 'PATCH',
+      url: `/api/projects/${p.id}/tasks/${created.id}`,
+      payload: { acceptanceCriteria: '8. 2. Новый\n- [ ] Ещё один' }
+    })).json() as Task
+    expect(updated.acceptanceCriteria).toBe('1. Новый\n2. Ещё один')
+  })
 })
 
 describe('projects REST: поля Jira-доски', () => {
