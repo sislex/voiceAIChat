@@ -1189,6 +1189,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
             defaultCollapsed={compactChat}
             state={state.voice}
             replyStarted={state.streamingReply.length > 0}
+            requestError={state.error}
             draft={state.draft}
             diarization={state.settings.diarization}
             detectedSpeakers={detectedSpeakers}

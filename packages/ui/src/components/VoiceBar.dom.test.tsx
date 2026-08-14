@@ -63,14 +63,16 @@ describe('VoiceBar — состояния', () => {
     expect(screen.getByText('Спикер 2')).toBeInTheDocument()
   })
 
-  it('thinking: карточка «Запрос отправлен…»', () => {
+  it('ожидание: одна строка и одна кнопка остановки', () => {
     setup('thinking')
-    expect(screen.getByText('Запрос отправлен движку Claude…')).toBeInTheDocument()
+    expect(screen.getByTestId('request-status')).toHaveTextContent('Claude обрабатывает запрос…')
+    expect(screen.getAllByLabelText('Остановить ответ')).toHaveLength(1)
+    expect(screen.queryByText(/Текст передан движку/)).not.toBeInTheDocument()
   })
 
-  it('thinking: имя движка из aiLabel (Codex)', () => {
+  it('ожидание: имя движка из aiLabel (Codex)', () => {
     setup('thinking', { aiLabel: 'Codex' })
-    expect(screen.getByText('Запрос отправлен движку Codex…')).toBeInTheDocument()
+    expect(screen.getByTestId('request-status')).toHaveTextContent('Codex обрабатывает запрос…')
   })
 
   it('speaking: поле ввода и отправка в очередь доступны, есть стоп озвучки', () => {
@@ -84,7 +86,8 @@ describe('VoiceBar — состояния', () => {
     setup('thinking', { replyStarted: true, draft: 'следующий вопрос' })
     expect(screen.getByLabelText('Поле ввода сообщения')).toBeInTheDocument()
     expect(screen.getByLabelText('Добавить сообщение в очередь')).toBeEnabled()
-    expect(screen.getByLabelText('Остановить запрос')).toBeInTheDocument()
+    expect(screen.getByLabelText('Остановить ответ')).toBeInTheDocument()
+    expect(screen.getByTestId('request-status')).toHaveTextContent('Claude формирует ответ…')
   })
 
   it('стриминг: Enter ставит сообщение в очередь', async () => {
@@ -92,6 +95,69 @@ describe('VoiceBar — состояния', () => {
     screen.getByLabelText('Поле ввода сообщения').focus()
     await userEvent.keyboard('{Enter}')
     expect(props.onSubmitText).toHaveBeenCalledOnce()
+  })
+
+  it('отправка сразу показывает начальный этап', async () => {
+    setup('idle', { draft: 'привет' })
+    await userEvent.click(screen.getByLabelText('Отправить сообщение'))
+    expect(screen.getByTestId('request-status')).toHaveTextContent('Запрос отправляется…')
+  })
+
+  it('повторные realtime-события обновляют единственную строку без дублей', () => {
+    const base = makeProps('thinking', { aiLabel: 'Codex' })
+    const { rerender } = render(<VoiceBar {...base} />)
+    rerender(<VoiceBar {...base} replyStarted />)
+    rerender(<VoiceBar {...base} replyStarted />)
+    expect(screen.getAllByTestId('request-status')).toHaveLength(1)
+    expect(screen.getByTestId('request-status')).toHaveTextContent('Codex формирует ответ…')
+    expect(screen.getAllByLabelText('Остановить ответ')).toHaveLength(1)
+  })
+
+  it('на мобильной ширине текст сжимается, а кнопка остаётся видимой', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 })
+    setup('thinking', { aiLabel: 'Очень длинное имя движка' })
+    const status = screen.getByTestId('request-status')
+    expect(status.querySelector('.request-status__text')).toBeInTheDocument()
+    expect(status.querySelector('.request-status__stop')).toBeVisible()
+    expect(screen.getAllByTestId('request-status')).toHaveLength(1)
+  })
+
+  it('повторный клик отменяет ход ровно один раз и блокирует кнопку', async () => {
+    const props = setup('thinking')
+    const stop = screen.getByLabelText('Остановить ответ')
+    await userEvent.dblClick(stop)
+    expect(props.onCancelRequest).toHaveBeenCalledOnce()
+    expect(stop).toBeDisabled()
+    expect(screen.getByTestId('request-status')).toHaveTextContent('Останавливаем запрос…')
+  })
+
+  it('кнопка остановки доступна с клавиатуры', async () => {
+    const props = setup('thinking')
+    screen.getByLabelText('Остановить ответ').focus()
+    await userEvent.keyboard('{Enter}')
+    expect(props.onCancelRequest).toHaveBeenCalledOnce()
+  })
+
+  it('после завершения убирает строку и возвращает обычный композер', () => {
+    const active = makeProps('thinking')
+    const { rerender } = render(<VoiceBar {...active} />)
+    rerender(<VoiceBar {...active} state="idle" />)
+    expect(screen.queryByTestId('request-status')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Говорить')).toBeInTheDocument()
+  })
+
+  it('ошибка и отмена показывают итоговые состояния', async () => {
+    const active = makeProps('thinking')
+    const { rerender, unmount } = render(<VoiceBar {...active} />)
+    rerender(<VoiceBar {...active} state="idle" requestError="boom" />)
+    expect(screen.getByTestId('request-status')).toHaveTextContent('Ошибка выполнения')
+    unmount()
+
+    const stopped = makeProps('thinking')
+    const view = render(<VoiceBar {...stopped} />)
+    await userEvent.click(screen.getByLabelText('Остановить ответ'))
+    view.rerender(<VoiceBar {...stopped} state="idle" />)
+    expect(screen.getByTestId('request-status')).toHaveTextContent('Запрос остановлен')
   })
 
   it('diarization off: подпись «Вы» вместо «Спикер N»', () => {
@@ -293,7 +359,7 @@ describe('VoiceBar — сворачивание композера', () => {
     const props = makeProps('thinking', {})
     const { unmount } = render(<VoiceBar {...props} />)
     await userEvent.click(screen.getByLabelText('Свернуть поле ввода'))
-    await userEvent.click(screen.getByLabelText('Остановить запрос'))
+    await userEvent.click(screen.getByLabelText('Остановить ответ'))
     expect(props.onCancelRequest).toHaveBeenCalledOnce()
     expect(screen.getByTestId('voice-announce')).toHaveTextContent('Запрос отправлен движку Claude, ждём ответ')
     unmount()
