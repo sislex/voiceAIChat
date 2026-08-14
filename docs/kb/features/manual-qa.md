@@ -1,7 +1,7 @@
 ---
 title: Структурированное ручное QA
 updated: 2026-08-14
-checked: bc4f4c3
+checked: a64b490
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/projects.ts
@@ -148,6 +148,15 @@ SHA, попытку, активность процесса, причины не�
 `getComponent`/`startComponent`/`cancelComponent`/`completeComponent`/
 `fixComponent` в `RendererQaBridge` объявлены опциональными: без них панель
 показывает «Component QA недоступен».
+
+Рядом появилась вторая, независимая сущность ранов QA-этапов `qa_stage_runs`
+(`component_qa | integration_tests | automated_qa`) со своими REST-маршрутами
+`…/qa/runs/:stage` и панелью `QaStageRunPanel`. Это не замена
+`component_qa_runs`: таблицы, API и гейты у них разные, а вкладка «Component QA»
+карточки монтирует именно `ComponentQaPanel` из этого раздела. Записи
+`qa_stage_runs` со стадией `component_qa` создаются только через REST и влияют
+на видимость и автовыбор вкладок. Подробности —
+[qa-stage-runs.md](qa-stage-runs.md).
 
 ## Домен и критерий допуска
 
