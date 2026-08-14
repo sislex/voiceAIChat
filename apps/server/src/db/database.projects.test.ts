@@ -75,6 +75,70 @@ describe('projects: миграция владельцев', () => {
   })
 })
 
+describe('projects: миграция канонического workflow', () => {
+  it('переупорядочивает старую доску, переносит legacy-карточки и повторно ничего не меняет', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-kanban-workflow-'))
+    const file = join(dir, 'db.sqlite')
+    const first = new VoiceChatDb(file)
+    first.createUser('alice', '', 'developer')
+    const project = first.createProject('alice', { name: 'Legacy workflow' })
+    const initial = first.getBoard('alice', project.id)!
+    const column = (semantic: string) => initial.columns.find((item) => item.semanticType === semantic)!
+    const testing = first.createColumn('alice', project.id, 'Старое тестирование')!
+    const preparation = first.createColumn('alice', project.id, 'Старые сценарии')!
+    const readyDuplicate = first.createColumn('alice', project.id, 'Дубликат Ready')!
+    const custom = first.createColumn('alice', project.id, 'Пользовательская')!
+    first.setColumnHidden('alice', project.id, custom.id, true)
+    first.createTask('alice', project.id, { columnId: column('automated_qa').id, title: 'Уже Automated' })
+    first.createTask('alice', project.id, { columnId: testing.id, title: 'Из Testing' })
+    first.createTask('alice', project.id, { columnId: column('component_qa').id, title: 'Уже Component' })
+    first.createTask('alice', project.id, { columnId: preparation.id, title: 'Из QA Preparation' })
+    first.createTask('alice', project.id, { columnId: readyDuplicate.id, title: 'Из дубля Ready' })
+    first.close()
+
+    const raw = new Database(file)
+    raw.prepare(`UPDATE kanban_columns SET semantic_type='testing' WHERE id=?`).run(testing.id)
+    raw.prepare(`UPDATE kanban_columns SET semantic_type='qa_preparation' WHERE id=?`).run(preparation.id)
+    raw.prepare(`UPDATE kanban_columns SET semantic_type='ready' WHERE id=?`).run(readyDuplicate.id)
+    raw.prepare(`UPDATE kanban_columns SET position=-position WHERE project_id=?`).run(project.id)
+    raw.prepare(`UPDATE kanban_columns SET name='Мой Ready', hidden=1, position=-999999 WHERE id=?`).run(column('ready').id)
+    raw.close()
+
+    const migrated = new VoiceChatDb(file)
+    const board = migrated.getBoard('alice', project.id)!
+    expect(board.columns.map((item) => item.semanticType)).toEqual([
+      'backlog', 'preparation', 'ready', 'development', 'component_qa',
+      'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge',
+      'merge', 'done', 'decision_required', 'custom'
+    ])
+    expect(board.columns.find((item) => item.id === column('ready').id)).toMatchObject({ name: 'Мой Ready', hidden: false })
+    expect(board.columns.find((item) => item.id === custom.id)).toMatchObject({ hidden: true })
+    expect(board.columns.some((item) => item.id === readyDuplicate.id)).toBe(false)
+    expect(board.columns.some((item) => item.semanticType === 'testing' || item.semanticType === 'qa_preparation')).toBe(false)
+    const titles = (semantic: string) => {
+      const id = board.columns.find((item) => item.semanticType === semantic)!.id
+      return board.tasks.filter((item) => item.columnId === id).map((item) => item.title)
+    }
+    expect(titles('automated_qa')).toEqual(['Уже Automated', 'Из Testing'])
+    expect(titles('component_qa')).toEqual(['Уже Component', 'Из QA Preparation'])
+    expect(titles('ready')).toEqual(['Из дубля Ready'])
+    const snapshot = {
+      columns: board.columns.map(({ id, semanticType, position, hidden }) => ({ id, semanticType, position, hidden })),
+      tasks: board.tasks.map(({ id, columnId, position }) => ({ id, columnId, position }))
+    }
+    migrated.close()
+
+    const again = new VoiceChatDb(file)
+    const stable = again.getBoard('alice', project.id)!
+    expect({
+      columns: stable.columns.map(({ id, semanticType, position, hidden }) => ({ id, semanticType, position, hidden })),
+      tasks: stable.tasks.map(({ id, columnId, position }) => ({ id, columnId, position }))
+    }).toEqual(snapshot)
+    again.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
 describe('projects: создание и членство', () => {
   it('createProject сеет владельца и дефолтные колонки', () => {
     const p = db.createProject('alice', { name: 'P1', description: 'd', technologies: ['ts'], skills: ['db'] })
@@ -85,7 +149,7 @@ describe('projects: создание и членство', () => {
     expect(p.members.map((m) => m.username)).toEqual(['alice'])
     expect(p.members[0].role).toBe('owner')
     const board = db.getBoard('alice', p.id)!
-    expect(board.columns.map((c) => c.name)).toEqual(['Бэклог', 'Подготовка к разработке', 'Ready for Development', 'Development', 'Component QA', 'Создание интеграционных автотестов', 'Automated QA', 'Создание сценариев ручного QA', 'Ручное QA', 'Ожидает мержа', 'Мерж', 'Требуется решение', 'Готово'])
+    expect(board.columns.map((c) => c.name)).toEqual(['Бэклог', 'Подготовка к разработке', 'Ready for Development', 'Development', 'Component QA', 'Создание интеграционных автотестов', 'Automated QA', 'Ручное QA', 'Ожидает мержа', 'Мерж', 'Готово', 'Требуется решение'])
     expect(board.tasks).toEqual([])
   })
 
@@ -184,7 +248,7 @@ describe('board: колонки и порядок', () => {
     const p = db.createProject('alice', { name: 'P1' })
     const c4 = db.createColumn('alice', p.id, 'Review')!
     let cols = db.getBoard('alice', p.id)!.columns
-    expect(cols.map((c) => c.name)).toEqual(['Бэклог', 'Подготовка к разработке', 'Ready for Development', 'Development', 'Component QA', 'Создание интеграционных автотестов', 'Automated QA', 'Создание сценариев ручного QA', 'Ручное QA', 'Ожидает мержа', 'Мерж', 'Требуется решение', 'Готово', 'Review'])
+    expect(cols.map((c) => c.name)).toEqual(['Бэклог', 'Подготовка к разработке', 'Ready for Development', 'Development', 'Component QA', 'Создание интеграционных автотестов', 'Automated QA', 'Ручное QA', 'Ожидает мержа', 'Мерж', 'Готово', 'Требуется решение', 'Review'])
     const reversed = cols.map((c) => c.id).reverse()
     expect(db.reorderColumns('alice', p.id, reversed)).toBe(true)
     cols = db.getBoard('alice', p.id)!.columns

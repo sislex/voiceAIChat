@@ -37,6 +37,12 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
 }
 
 describe('MergeRunManager',()=>{
+  it('keeps the task in merge when an active run is cancelled',()=>{
+    const s=setup([])
+    s.manager.start(s.run)
+    expect(s.manager.cancel(s.run.id,'admin')?.status).toBe('cancelled')
+    expect(s.moves).toEqual(['merge'])
+  })
   it('merges from a temporary clone when the released CI workspace no longer exists',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''])
     s.manager.start(s.run)
@@ -152,6 +158,7 @@ describe('MergeRunManager',()=>{
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
     expect(s.run.error).toContain('URL origin')
+    expect(s.moves).toContain('merge')
   })
   it('clones into the chosen machine repos_root when it differs from the workspace machine',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''],{...base(),agentId:'a2'})
@@ -195,6 +202,7 @@ describe('MergeRunManager',()=>{
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
     expect(s.repositories.every(repo=>repo.state==='active')).toBe(true)
+    expect(s.moves).toContain('merge')
     expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.some(call=>call[0].script.includes('rm -rf'))).toBe(false)
   })
   it('releases repositories when reconcile confirms an earlier push',async()=>{
