@@ -624,8 +624,12 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       }
       projects.push(p)
       ;[
-        ['Бэклог', 'backlog'], ['Готово к разработке', 'ready'], ['В разработке', 'development'],
-        ['Тестирование', 'testing'], ['Ожидает мержа', 'awaiting_merge'], ['Готово', 'done']
+        ['Бэклог', 'backlog'], ['Подготовка к разработке', 'preparation'],
+        ['Ready for Development', 'ready'], ['Development', 'development'],
+        ['Component QA', 'component_qa'], ['Создание интеграционных автотестов', 'integration_tests'],
+        ['Automated QA', 'automated_qa'], ['Ручное QA', 'manual_qa'],
+        ['Ожидает мержа', 'awaiting_merge'], ['Мерж', 'merge'], ['Готово', 'done'],
+        ['Требуется решение', 'decision_required']
       ].forEach(([name, semanticType], i) =>
         columns.push({ id: nextId(), projectId: id, name, semanticType: semanticType as KanbanColumn['semanticType'], position: (i + 1) * 1024, hidden: false, wipLimit: null, createdAt: ts })
       )

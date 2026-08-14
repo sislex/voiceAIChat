@@ -29,6 +29,7 @@ import { FeaturePreviewSection } from '../preview/FeaturePreviewSection'
 import { ManualQaPanel } from '../qa/ManualQaPanel'
 import { QaStageRunPanel } from '../qa/QaStageRunPanel'
 import type { AnyQaStageRun, QaRunStage } from '@shared/qa'
+import { ComponentQaPanel } from '../qa/ComponentQaPanel'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { CiReport } from '../ci/CiReport'
 import { MergePanel } from '../ci/MergePanel'
@@ -841,7 +842,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           </div>
         </section>}
         {!props.draft && <>
-        {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" hidden={activeTab !== stage}><QaStageRunPanel projectId={task.projectId} taskId={task.id} stage={stage} /></section>)}
+        {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" hidden={activeTab !== stage}>{stage === 'component_qa'
+          ? <ComponentQaPanel projectId={task.projectId} taskId={task.id} active={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
+          : <QaStageRunPanel projectId={task.projectId} taskId={task.id} stage={stage} />}</section>)}
         <section className="task-tab-panel" hidden={activeTab !== 'qa'}><ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} /></section>
         <section className="task-tab-panel" hidden={activeTab !== 'progress'}>
           {props.ciSummary?.progress && <AutomationProgressView progress={props.ciSummary.progress} />}

@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-14
-checked: cc31de6
+checked: 8d937de
 areas:
   - packages/ui/src
   - apps/web/src
@@ -602,6 +602,19 @@ DOM-тест умеет открыть чат задачи по адресу и 
 после «+ Новый» (`App.projects.dom.test.tsx`), а подмена `conversationId` на чужой
 чат воспроизводит гонку с опоздавшим ответом.
 
+Тот же принцип держит и структуру доски: `createProject` в `fakeApi.ts` засевает
+канонический системный workflow целиком — `backlog`, `preparation`, `ready`,
+`development`, `component_qa`, `integration_tests`, `automated_qa`, `manual_qa`,
+`awaiting_merge`, `merge`, `done` и замыкающую `decision_required`, — без legacy
+`testing`/`qa_preparation`, как это делает серверный шаблон нового проекта.
+Storybook-фикстура `makeDefaultColumns()` (`components/kanban/fixtures.ts`) даёт
+тот же набор с id вида `col-<semanticType>`, поэтому сториз канбана адресуют
+колонки семантикой (`col-automated_qa`), а не исчезнувшим `col-testing`.
+Проверки store сравнивают `semanticType`, а не подписи колонок
+(`voiceStore.projects.test.ts`): имя пользователь переименовывает, машинный смысл
+— нет; созданная пользователем колонка получает семантику `custom` и встаёт после
+`decision_required`.
+
 Гейт: `npm run -w @voicechat/ui typecheck && npm run -w @voicechat/ui test`. При CSS, host-init или сборке дополнительно `npm run -w @voicechat/web build`.
 
 ## Витрина Storybook
@@ -622,7 +635,7 @@ Storybook 8.6 на vite-билдере: `packages/ui/.storybook/main.ts` (гло
 
 Что показала витрина CI: ANSI-последовательности в логе не разбираются нигде — ни `CiConsole`, ни лента шага их не интерпретируют, поэтому «цветной» вывод `vitest`/`npm` читается хуже обычного (сториз `CI/CiConsole → AnsiColors` это фиксирует).
 
-Смоук-сборка витрины — отдельный шаг гейта репозитория: `npm run build:storybook` в корне (`npm run -w @voicechat/ui build-storybook`), входит в `npm run verify`. `tsc` проверяет только типы сториз; сломанный рендер (несуществующий проп, упавший декоратор, циклический импорт) ловится лишь сборкой. Команды: `npm run -w @voicechat/ui storybook` (dev, порт 6006) и `npm run build:storybook` (сборка чиста, если не считать двух предупреждений про `eval` внутри `@storybook/core`).
+Смоук-сборка витрины — отдельный шаг гейта репозитория: `npm run build:storybook` в корне (`npm run -w @voicechat/ui build-storybook`), входит в `npm run verify`. `tsc` проверяет только типы сториз; сломанный рендер (несуществующий проп, упавший декоратор, циклический импорт) ловится лишь сборкой. Команды: `npm run -w @voicechat/ui storybook` (dev, порт 6006) и `npm run build:storybook` (сборка чиста, если не считать двух предупреждений про `eval` внутри `@storybook/core`). Корневой `npm run test:storybook` — алиас той же сборки: он добавлен как фолбэк Component QA-рана при пустой настройке `test_command` (см. [features/manual-qa.md](features/manual-qa.md)), отдельного раннера сториз в репозитории нет.
 ## AI-помощник формулировки
 
 Переиспользуемые `PromptBuilder` и `useAiAssist` живут в `packages/ui/src/components/prompt-builder/` и экспортируются из `@voicechat/ui`. Компонент транспорт-нейтрален: генератор, модификаторы, применение и персистентность приходят через props. Builder собирает результат из вариантов и сохраняет работу при переходе в настройки; закрытие сбрасывает сессию. Генерация запускается только вручную кнопкой-палочкой справа в поле промпта: сам ввод текста и изменение модификаторов сетевой запрос не выполняют. `applyNativeInputValue` использует нативный setter и bubbling `input`, поэтому интеграция совместима с управляемыми полями и библиотеками форм. Композер `VoiceBar` — первая production-интеграция.
