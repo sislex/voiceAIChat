@@ -299,6 +299,8 @@ interface MessageRow {
   meta: string | null
   exec_target: string | null
   attachments: string | null
+  state: string
+  history_position: number | null
 }
 
 /**
@@ -974,6 +976,14 @@ export class VoiceChatDb {
     if (!msgCols.some((c) => c.name === 'attachments')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT`)
     }
+    if (!msgCols.some((c) => c.name === 'state')) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN state TEXT NOT NULL DEFAULT 'published'`)
+    }
+    if (!msgCols.some((c) => c.name === 'history_position')) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN history_position INTEGER`)
+      this.db.exec(`UPDATE messages SET history_position = rowid WHERE state = 'published'`)
+    }
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_history ON messages(conversation_id, state, history_position)`)
     // Ответ агента наследует цель ближайшей пользовательской реплики того же разговора.
     // Заполняет сообщения, созданные до сохранения exec_target у AI-ответов.
     this.db.exec(`
@@ -1315,18 +1325,21 @@ export class VoiceChatDb {
     ).run(conversationId, paused ? 1 : 0)
   }
 
-  enqueueTurn(userId: string, conversationId: string, messageId: string, payload: QueueTurnPayload): QueuedTurn[] {
+  enqueueTurn(userId: string, conversationId: string, messageId: string, payload: QueueTurnPayload, hideMessage = true): QueuedTurn[] {
     if (!this.ownsConversation(userId, conversationId)) throw new Error('conversation not found')
     const now = this.now()
     this.db.transaction(() => {
       const position = (this.db.prepare(
         `SELECT COALESCE(MAX(position), 0) + 1 AS position FROM conversation_turn_queue WHERE conversation_id = ?`
       ).get(conversationId) as { position: number }).position
-      this.db.prepare(
+      const inserted = this.db.prepare(
         `INSERT OR IGNORE INTO conversation_turn_queue
           (id, conversation_id, user_id, message_id, payload, status, position, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)`
       ).run(this.newId(), conversationId, userId, messageId, JSON.stringify(payload), position, now, now)
+      if (inserted.changes && hideMessage) {
+        this.db.prepare(`UPDATE messages SET state = 'queued', history_position = NULL WHERE id = ? AND conversation_id = ?`).run(messageId, conversationId)
+      }
     })()
     return this.listQueuedTurns(userId, conversationId)
   }
@@ -1363,7 +1376,7 @@ export class VoiceChatDb {
     return this.listQueuedTurns(userId, conversationId)
   }
 
-  takeQueuedTurn(userId: string, conversationId: string, id?: string): { id: string; messageId: string; payload: QueueTurnPayload } | null {
+  takeQueuedTurn(userId: string, conversationId: string, id?: string, publish = true): { id: string; messageId: string; payload: QueueTurnPayload; message: Message } | null {
     return this.db.transaction(() => {
       const row = this.db.prepare(
         `SELECT id, message_id, payload FROM conversation_turn_queue
@@ -1372,8 +1385,18 @@ export class VoiceChatDb {
          ORDER BY position LIMIT 1`
       ).get(userId, conversationId, id ?? null, id ?? null) as { id: string; message_id: string; payload: string } | undefined
       if (!row) return null
+      const position = (this.db.prepare(
+        `SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`
+      ).get(conversationId) as { position: number }).position
+      this.db.prepare(`UPDATE messages SET state = 'published', history_position = ? WHERE id = ? AND conversation_id = ? AND state = 'queued'`)
+        .run(position, row.message_id, conversationId)
       this.db.prepare(`DELETE FROM conversation_turn_queue WHERE id = ?`).run(row.id)
-      return { id: row.id, messageId: row.message_id, payload: JSON.parse(row.payload) as QueueTurnPayload }
+      const message = this.listMessages(userId, conversationId).find((item) => item.id === row.message_id)
+      if (!message) throw new Error('queued message not found')
+      if (!publish) {
+        this.db.prepare(`UPDATE messages SET state = 'queued', history_position = NULL WHERE id = ? AND conversation_id = ?`).run(row.message_id, conversationId)
+      }
+      return { id: row.id, messageId: row.message_id, payload: JSON.parse(row.payload) as QueueTurnPayload, message }
     })()
   }
 
@@ -1402,13 +1425,16 @@ export class VoiceChatDb {
     const id = this.newId()
     const createdAt = this.now()
     const insert = this.db.prepare(
-      `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target, attachments)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target, attachments, state, history_position)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', ?)`
     )
     const touch = this.db.prepare(`UPDATE conversations SET updated_at = ? WHERE id = ?`)
     const metaJson = meta && Object.keys(meta).length > 0 ? JSON.stringify(meta) : null
     this.db.transaction(() => {
-      insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson, execTarget ?? null, attachments?.length ? JSON.stringify(attachments) : null)
+      const position = (this.db.prepare(
+        `SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`
+      ).get(conversationId) as { position: number }).position
+      insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson, execTarget ?? null, attachments?.length ? JSON.stringify(attachments) : null, position)
       touch.run(createdAt, conversationId)
     })()
     return {
@@ -1449,7 +1475,7 @@ export class VoiceChatDb {
     if (!this.ownsConversation(userId, conversationId)) return []
     const rows = this.db
       .prepare(
-        `SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, id ASC`
+        `SELECT * FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC`
       )
       .all(conversationId) as MessageRow[]
     return rows.map((r) => ({
@@ -1485,7 +1511,7 @@ export class VoiceChatDb {
     // Индекса нет (сборка SQLite без FTS5) или искать нечего — пустая страница.
     if (!match || !this.ftsReady) return { hits: [], nextCursor: null, match }
 
-    const where = ['messages_fts MATCH ?', 'c.user_id = ?']
+    const where = ['messages_fts MATCH ?', 'c.user_id = ?', "m.state = 'published'"]
     const params: unknown[] = [match, userId]
     if (opts.projectId !== undefined) {
       if (opts.projectId === null) where.push('c.project_id IS NULL')

@@ -257,12 +257,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     for (const l of listeners) l(m, ownerUserId)
   }
 
-  function emitQueue(userId: string, conversationId: string): void {
+  function emitQueue(userId: string, conversationId: string, published?: Message): void {
     broadcast({
       t: 'claude.queue',
       conversationId,
       items: deps.db.listQueuedTurns(userId, conversationId),
-      paused: deps.db.isTurnQueuePaused(userId, conversationId)
+      paused: deps.db.isTurnQueuePaused(userId, conversationId),
+      ...(published ? { published } : {})
     }, userId)
   }
 
@@ -797,7 +798,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               verbose: req.verbose,
               execTarget: req.execTarget,
               assistantContext: req.assistantContext
-            })
+            }, false)
             deps.db.markQueuedTurnFailed(userId, conversationId, req.messageId)
             deps.db.setTurnQueuePaused(userId, conversationId, true)
             emitQueue(userId, conversationId)
@@ -845,7 +846,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       return
     }
     const next = deps.db.takeQueuedTurn(userId, conversationId)
-    emitQueue(userId, conversationId)
+    emitQueue(userId, conversationId, next?.message)
     if (!next) return
     queueMicrotask(() => void start({ userId, conversationId, messageId: next.messageId, ...next.payload }))
   }
@@ -899,13 +900,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   function sendQueuedNow(userId: string, conversationId: string, id: string): void {
     const selected = deps.db.listQueuedTurns(userId, conversationId).find((item) => item.id === id)
     if (!selected) return
-    const queued = deps.db.takeQueuedTurn(userId, conversationId, id)
+    const queued = deps.db.takeQueuedTurn(userId, conversationId, id, false)
     if (!queued) return
     const active = cancelTurn(conversationId, true)
     const activeMessage = active?.source.messageId
       ? deps.db.listMessages(userId, conversationId).find((message) => message.id === active.source.messageId)
       : [...deps.db.listMessages(userId, conversationId)].reverse().find((message) => message.role !== 'ai' && message.id !== queued.messageId)
-    const selectedMessage = deps.db.listMessages(userId, conversationId).find((message) => message.id === queued.messageId)
+    const selectedMessage = queued.message
     const original = activeMessage?.text ?? active?.source.segments.map((segment) => segment.text).join('\n') ?? ''
     const addition = selectedMessage?.text ?? selected.text
     const combined = `Исходный вопрос:\n${original}\n\nДополнение:\n${addition}\n\nОтветь на итоговый вопрос с учётом дополнения.`

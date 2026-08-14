@@ -165,7 +165,7 @@ export function useVoiceStore(deps: UseVoiceStoreDeps): UseVoiceStore {
         unsubs.push(window.claude.onActive((m) => store.actions.applyClaudeActive(m.turns)))
       }
       if (window.claude.onQueue) {
-        unsubs.push(window.claude.onQueue((m) => store.actions.applyClaudeQueue(m.conversationId, m.items, m.paused)))
+        unsubs.push(window.claude.onQueue((m) => store.actions.applyClaudeQueue(m.conversationId, m.items, m.paused, m.published)))
       }
       if (window.claude.onUsage) {
         unsubs.push(
