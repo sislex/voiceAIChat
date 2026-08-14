@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { KanbanColumnSemanticType, Task } from '@shared/projects'
-import { canStartMerge } from '@shared/merge'
+import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
 import { canStartCiRun, ciCardPulse, ciSummaryForTask, type CiRunSummary } from '@shared/ci'
 import { AutomationProgressView } from './AutomationProgressView'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
@@ -211,7 +211,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
       {task.type === 'task' && props.onStartMerge && canStartMerge({
         semanticType: props.columnSemanticType ?? 'custom',
         sourceBranch: task.mergeSourceBranch,
-        alreadyMerged: Boolean(task.mergedSha),
+        alreadyMerged: isCurrentMergeSourceMerged({ sourceSha: task.mergeSourceSha, mergedSourceSha: task.mergedSourceSha, mergedSha: task.mergedSha }),
         hasActiveRun: Boolean(task.activeMergeRunId),
         permitted: task.mergePermitted,
         machineBound: task.mergeMachineBound

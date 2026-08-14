@@ -7,9 +7,14 @@ import { createFakeCi } from '../../test/fakeApi'
 describe('MergePanel', () => {
   beforeEach(() => {
     window.ci = createFakeCi()
-    window.api = {
-      'projects:get': async () => ({ machines: [{ agentId: 'm1', name: 'MacBook', online: true, path: '/w', reposRoot: '/repos' }, { agentId: 'm2', name: 'Server', online: false, path: '/w2', reposRoot: '/repos2' }] })
-    } as unknown as typeof window.api
+    window.ci.getTaskMachines = vi.fn(async () => ({
+      machines: [
+        { agentId: 'm1', name: 'MacBook', online: true, personal: true, project: false, projectDefault: false },
+        { agentId: 'm2', name: 'Server', online: false, personal: false, project: true, projectDefault: true }
+      ],
+      selectedAgentId: null,
+      unavailableSelection: null
+    }))
   })
 
   it('запускает merge на машине workspace по умолчанию и на явно выбранной машине', async () => {
@@ -22,6 +27,8 @@ describe('MergePanel', () => {
     fireEvent.change(select, { target: { value: 'm1' } })
     fireEvent.click(screen.getByRole('button', { name: 'Мерж в main' }))
     expect(started).toEqual([null, 'm1'])
+    expect(screen.getByRole('group', { name: 'Мои машины' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Машины проекта' })).toBeInTheDocument()
     expect((screen.getByRole('option', { name: /офлайн/ }) as HTMLOptionElement).disabled).toBe(true)
   })
 

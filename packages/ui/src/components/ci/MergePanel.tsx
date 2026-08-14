@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { MergeRun, TaskRepository } from '@shared/merge'
-import type { ProjectMachine } from '@shared/projects'
+import type { CiTaskMachine } from '@shared/ci'
 import { Button } from '../ui/Button'
 import { MERGE_STATUS_LABEL, MergeRunFeed, mergeStatusTone } from './MergeRunFeed'
 
@@ -13,7 +13,7 @@ export function MergePanel(props: {
   canStart: boolean
   onStartMerge?: (agentId: string | null) => void
 }): JSX.Element {
-  const [machines, setMachines] = useState<ProjectMachine[]>([])
+  const [machines, setMachines] = useState<CiTaskMachine[]>([])
   const [agentId, setAgentId] = useState('')
   const [repos, setRepos] = useState<TaskRepository[]>([])
   const [showDeleted, setShowDeleted] = useState(false)
@@ -21,11 +21,11 @@ export function MergePanel(props: {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   useEffect(() => {
     let cancelled = false
-    void (window.api?.['projects:get']({ id: props.projectId }) ?? Promise.resolve(null)).then((project) => {
-      if (!cancelled && project) setMachines(project.machines)
-    })
+    void window.ci?.getTaskMachines(props.projectId, props.taskId).then((result) => {
+      if (!cancelled) setMachines(result.machines)
+    }).catch(() => {})
     return () => { cancelled = true }
-  }, [props.projectId])
+  }, [props.projectId, props.taskId])
   const reload = useCallback((): void => {
     void window.ci?.getTaskRepositories(props.projectId, props.taskId).then(setRepos).catch(() => {})
     void window.ci?.listMergeRuns(props.projectId, props.taskId).then(setRuns).catch(() => {})
@@ -37,6 +37,13 @@ export function MergePanel(props: {
   }, [reload, props.runId])
   const activeRunId = selectedRunId ?? props.runId ?? runs[0]?.id ?? null
   const visibleRepos = showDeleted ? repos : repos.filter((repo) => repo.state === 'active')
+  const personalMachines = machines.filter((machine) => machine.personal)
+  const projectMachines = machines.filter((machine) => machine.project && !machine.personal)
+  const machineOption = (machine: CiTaskMachine): JSX.Element => (
+    <option key={machine.agentId} value={machine.agentId} disabled={!machine.online}>
+      {machine.name}{!machine.online ? ' (офлайн)' : ''}
+    </option>
+  )
   return (
     <div className="merge-panel" data-testid="task-merge-panel">
       {props.canStart && props.onStartMerge && (
@@ -45,11 +52,8 @@ export function MergePanel(props: {
             Машина рана{' '}
             <select aria-label="Машина merge-рана" value={agentId} onChange={(event) => setAgentId(event.target.value)}>
               <option value="">Машина workspace (по умолчанию)</option>
-              {machines.map((machine) => (
-                <option key={machine.agentId} value={machine.agentId} disabled={machine.online === false}>
-                  {machine.name ?? machine.agentId}{machine.online === false ? ' (офлайн)' : ''}
-                </option>
-              ))}
+              {personalMachines.length > 0 && <optgroup label="Мои машины">{personalMachines.map(machineOption)}</optgroup>}
+              {projectMachines.length > 0 && <optgroup label="Машины проекта">{projectMachines.map(machineOption)}</optgroup>}
             </select>
           </label>
           <Button variant="primary" onClick={() => props.onStartMerge?.(agentId || null)}>Мерж в main</Button>
@@ -66,7 +70,7 @@ export function MergePanel(props: {
                 <button type="button" className={`merge-history-item${run.id === activeRunId ? ' merge-history-item--active' : ''}`} onClick={() => setSelectedRunId(run.id)}>
                   <span className={`merge-badge merge-badge--${mergeStatusTone(run.status)}`}>{MERGE_STATUS_LABEL[run.status] ?? run.status}</span>
                   <span>{new Date(run.createdAt).toLocaleString()}</span>
-                  <span>{run.machineName ?? run.agentId}</span>
+                  <span title={run.agentId}>{run.machineName ?? run.agentId}</span>
                 </button>
               </li>
             ))}
