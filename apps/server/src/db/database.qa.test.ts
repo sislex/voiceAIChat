@@ -249,6 +249,41 @@ describe('manual QA persistence and workflow', () => {
     expect(db.listActiveTaskRepositories(task.id)).toHaveLength(2)
   })
 
+  it('keeps three QA stage histories independent, idempotent and gate-driven', () => {
+    const project = db.createProject('owner', { name: 'QA stages' })
+    const board = db.getBoard('owner', project.id)!
+    const component = board.columns.find((column) => column.semanticType === 'component_qa')!
+    const task = db.createTask('owner', project.id, { columnId: component.id, title: 'Feature' })!
+
+    const first = db.startQaStageRun('owner', project.id, task.id, 'component_qa')
+    expect(db.startQaStageRun('owner', project.id, task.id, 'component_qa').id).toBe(first.id)
+    expect(first).toMatchObject({ kind: 'componentQaRun', attempt: 1, canCancel: true })
+    db.cancelQaStageRun('owner', first.id)
+    const retry = db.retryQaStageRun('owner', first.id)!
+    expect(retry).toMatchObject({ stage: 'component_qa', attempt: 2 })
+    db.completeQaStageRun('owner', retry.id, { gatePassed: false, gateReasons: ['dom_failed'] })
+    expect(db.getQaStageRun('owner', retry.id)).toMatchObject({ status: 'gate_failed', gateReasons: ['dom_failed'] })
+    expect(db.getBoard('owner', project.id)!.columns.find((column) => column.id === db.getBoard('owner', project.id)!.tasks.find((item) => item.id === task.id)!.columnId)?.semanticType).toBe('component_qa')
+
+    const passed = db.retryQaStageRun('owner', retry.id)!
+    db.completeQaStageRun('owner', passed.id, { gatePassed: true, components: ['TaskModal'] })
+    expect(db.getBoard('owner', project.id)!.columns.find((column) => column.id === db.getBoard('owner', project.id)!.tasks.find((item) => item.id === task.id)!.columnId)?.semanticType).toBe('integration_tests')
+    const integration = db.startQaStageRun('owner', project.id, task.id, 'integration_tests')
+    expect(db.listQaStageRuns('owner', project.id, task.id, 'component_qa')).toHaveLength(3)
+    expect(db.listQaStageRuns('owner', project.id, task.id, 'integration_tests')).toHaveLength(1)
+    db.completeQaStageRun('owner', integration.id, { testCases: [] })
+    expect(db.getQaStageRun('owner', integration.id)).toMatchObject({ status: 'gate_failed', gateReasons: ['missing_required_test_cases'] })
+  })
+
+  it('marks unfinished QA stage runs interrupted after restart reconciliation', () => {
+    const project = db.createProject('owner', { name: 'QA recovery' })
+    const component = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'component_qa')!
+    const task = db.createTask('owner', project.id, { columnId: component.id, title: 'Feature' })!
+    const run = db.startQaStageRun('owner', project.id, task.id, 'component_qa')
+    expect(db.failInterruptedQaStageRuns()).toEqual([run.id])
+    expect(db.getQaStageRun('owner', run.id)).toMatchObject({ status: 'interrupted', canRetry: true })
+  })
+
   function componentFixture(uiImpact:'none'|'existing_components'='existing_components') {
     const project=db.createProject('owner',{name:'Component QA'})
     const column=db.getBoard('owner',project.id)!.columns.find((item)=>item.semanticType==='component_qa')!
