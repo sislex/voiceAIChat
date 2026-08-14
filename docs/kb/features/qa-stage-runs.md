@@ -1,9 +1,11 @@
 ---
 title: Раны QA-этапов: отдельные сущности и вкладки карточки
-updated: 2026-08-14
-checked: a64b490
+updated: 2026-08-15
+checked: 3dd8d73
 areas:
   - packages/shared/src/qa.ts
+  - packages/shared/src/qa.test.ts
+  - apps/server/src/ci/integrationTests.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - apps/server/src/db/database.qa.test.ts
@@ -29,6 +31,11 @@ areas:
 ручными `qa_sessions` и merge-раном: общих таблиц, маршрутов и панелей у них
 нет, а история выбирается по discriminator `stage`.
 
+С появлением `integration_test_runs` эта сущность обслуживает исполнение только
+одной стадии — `automated_qa`; для `component_qa` и `integration_tests` есть
+специализированные таблицы и панели, а `qa_stage_runs` остаётся у них лишь
+исторической записью, влияющей на видимость вкладок.
+
 Важно не спутать `qa_stage_runs` с уже существующими `component_qa_runs`
 (см. [manual-qa.md](manual-qa.md)) — это разные таблицы и разные API. Более
 того, вкладка «Component QA» в карточке по-прежнему монтирует старую
@@ -38,6 +45,11 @@ areas:
 тестах, но на видимость вкладки и автовыбор влияют.
 
 ## Граница реализации: исполнителя нет
+
+Всё в этом разделе относится к `qa_stage_runs`. Стадия `integration_tests` из
+этой границы вышла: у неё появились собственная таблица и runner — см.
+«Предметный контур Integration Tests» ниже. Для `component_qa` и
+`automated_qa` картина прежняя.
 
 Реализованы модель данных, идемпотентный старт, гейты перехода, отмена/повтор,
 восстановление после рестарта, REST и UI-панель. Не реализовано выполнение:
@@ -182,8 +194,10 @@ development/merge → «Лента рана», иначе «Общее»». По
 подписи. Общая техническая лента development/merge осталась отдельной вкладкой
 «Лента рана».
 
-`QaStageRunPanel` (`packages/ui/src/components/qa/QaStageRunPanel.tsx`)
-монтируется на вкладку и делает только GET: открытие вкладки ран не запускает.
+`QaStageRunPanel` (`packages/ui/src/components/qa/QaStageRunPanel.tsx`) —
+диспетчер: описанное ниже поведение относится к её ветке
+`GenericQaStageRunPanel`, то есть теперь только к вкладке «Automated QA».
+Панель монтируется на вкладку и делает только GET: открытие вкладки ран не запускает.
 Пока верхний ран активен, панель опрашивает историю раз в 1,5 с — так живут
 прогресс и лента после перезагрузки страницы. Показывает статус, попытку, ветку
 и первые 10 символов SHA, текущий шаг с `progress current/total/label` и
@@ -199,12 +213,156 @@ development-рана скрыт (`developmentAllowed` теперь исключ�
 кнопкой «Лента рана». Кнопка вызывает обычное `onOpen(task.id)`: карточка
 открывается, а нужную вкладку выбирает `defaultTab` по колонке задачи.
 
+## Предметный контур Integration Tests
+
+Исполнение стадии `integration_tests` вынесено из `qa_stage_runs` в отдельную
+таблицу `integration_test_runs` со своими маршрутами `…/qa/integration`, своим
+runner'ом `apps/server/src/ci/integrationTests.ts` и своей веткой панели.
+`qa_stage_runs` остаётся исторической моделью: её записи со
+`stage='integration_tests'` продолжают влиять на видимость и автовыбор вкладки,
+но панель этой вкладки показывает уже предметное состояние.
+
+**Чего в коде нет.** LLM-этапа стадия не содержит: нового `CiRunMode` не
+появилось (`packages/shared/src/ci.ts` — `plan | development`), ран не
+запускает модель, не пишет тесты, не коммитит и не пушит. Он предполагает, что
+тесты уже лежат в HEAD-коммите development-workspace, и проверяет/прогоняет
+именно их. Соответственно нет и структурированного вывода `{testId,path}` от
+модели: покрытие синтезируется из диффа (см. ниже).
+
+**Модель и старт.** Ран хранит id успешного development-рана, ветку и SHA его
+workspace, номер попытки, статус
+(`queued|running|passed|failed|blocked|cancelled|stale|skipped`), id
+readiness-рана и `snapshot_version`, снимок тест-кейсов, записанные
+`automation_links`, `commands`, лог, классификацию отказа, `failure_reason`,
+блокеры, сводку, `stale_reason` и `linked_fix_run_id`; `canCancel`
+(queued/running) и `canRetry` (failed/blocked/cancelled/stale) вычисляются при
+чтении. `startIntegrationTestRun` требует `canQa` и в одной транзакции
+проверяет `semantic_type='integration_tests'`, pushed CI-workspace с
+веткой/SHA/машиной/путём (`findLatestPushedCiWorkspace`), успешный
+development-ран на этом workspace и успешный `task_preparation_runs` с
+`readiness_json`. Нарушения не бросают ошибку, а сохраняются аудируемым
+`blocked`-раном с точными причинами (`task_not_in_integration_tests`,
+`missing_pushed_development_workspace`, `successful_development_run_not_found`,
+`missing_readiness_snapshot`), карточка остаётся на месте. Если предусловия
+целы, обязательных automatable-кейсов нет, а каждый обязательный
+неавтоматизируемый кейс снабжён `notAutomatedReason` и
+`alternativeManualVerification`, тем же вызовом создаётся `skipped`-ран и
+`moveTask` в той же транзакции переводит карточку в `automated_qa` (после
+`canTransitionWorkflow('integration_tests','automated_qa','automation')`) — без
+отдельного вызова гейта.
+
+**Устаревание считается до идемпотентности.** Два UPDATE в начале старта
+помечают `stale` все нестарые раны задачи с другим `commit_sha`
+(`sha_changed`) или другим `snapshot_version` (`snapshot_changed`) — включая
+уже завершённые `passed`/`skipped`. Только после этого ищется активный
+`queued|running` ран: если он уцелел, метод возвращает его же, и новый не
+создаётся; если он был помечен stale — создаётся следующая попытка.
+Фонового наблюдателя нет. `integrationTestSemanticVersion` — FNV-1a по
+стабильно сериализованным **automatable**-кейсам (id, тексты, `required`,
+`testType`), поэтому правка неавтоматизируемого кейса или самих
+`automationLinks` версию не меняет.
+
+**Исполнение.** `integrationTestExecutionContext` сам достаёт машину, путь и
+`projects.test_command` джойном ран → development-ран → workspace, причём
+только для рана в `queued` с `pushed=1` и `w.commit_sha = r.commit_sha`; иначе
+runner закрывает ран как `blocked/infrastructure/workspace_unavailable`.
+Команды разбирает общий `testStages` (дефолт стадии — `npm run
+affected-check`, не Vitest-специфичный). Перед прогоном runner выполняет
+`git diff-tree --no-commit-id --name-only -r HEAD` и прогоняет список через
+`validateIntegrationTestDiff` (`qa.ts`): разрешены пути с сегментом
+`__tests__|tests?|test|integration` и файлы `*.test.*`/`*.spec.*`. Любой другой
+файл — немедленный `blocked` + `implementation_defect` +
+`non_test_files_changed` и блокеры `non_test_file:<path>`. Затем `git rev-parse
+HEAD` даёт SHA, и `recordIntegrationAutomationLinks` записывает ссылки. Стадии
+идут последовательно через тот же `ciExecutor` с `CI=1`, общий бюджет 30 минут
+делится между ними (каждая получает остаток), stdout всех стадий льётся в
+единый `log` с обрезкой до 500 000 символов, на каждую стадию создаётся запись
+`stage-N` с командой, exit code, длительностью, статусом и диагностикой. Первый
+ненулевой код прерывает остальные: все нули → `passed`; ненулевой →
+`failed/implementation_defect/non_zero_exit`; timeout или `exitCode == null` →
+`blocked/infrastructure` с `command_timeout`/`executor_disconnected`; исключение
+в промисе → `blocked/infrastructure/executor_error`. Отмена дергает
+`AbortController` из карты живых ранов, после чего цикл выходит, не записывая
+итог (статус уже проставил маршрут). `failInterruptedIntegrationTestRuns` в
+`buildServer` закрывает все `queued|running` как
+`blocked/infrastructure/server_restarted`.
+
+**Как появляются `automationLinks`.** Per-case маппинга нет: runner берёт
+первый прошедший валидацию путь из диффа и приписывает его **всем** обязательным
+automatable-кейсам снимка. `recordIntegrationAutomationLinks` пишет их в три
+места сразу — в канонический `task_preparation_runs.readiness_json` (заменяя
+ссылки с тем же SHA), в сам ран (`commit_sha`, `test_cases_json`,
+`automation_links_json`) и в `ci_workspaces.commit_sha` того workspace, откуда
+взят development-ран. Последнее существенно: именно поэтому SHA рана и SHA
+workspace после записи снова совпадают и гейт проходит. Известный дефект:
+разбор вывода `git diff-tree` использует регулярку `/\\r?\\n/` с двойным
+экранированием, то есть по строкам не режет — многофайловый дифф приходит в
+валидацию одной склеенной строкой.
+
+**Гейт.** `integrationTestGate(run, currentSha, currentCases)` (чистая функция в
+`qa.ts`, причины дедуплицируются) требует статус `passed`/`skipped` без
+`staleReason`, совпадение `commitSha` и `snapshotVersion` с текущими, `passed` и
+exit 0 у каждой записанной команды, пустой список блокеров и в конце
+безусловно добавляет причины существующей `canCompleteAutomation(currentCases,
+currentSha)`. `completeIntegrationTestRun` повторяет этот гейт на сервере,
+ещё раз сверяет колонку и `canTransitionWorkflow` и только затем двигает
+карточку; кнопка UI источником истины не является.
+`getIntegrationTestTaskState` считает тот же гейт для **последнего** рана и
+отдаёт `launchReasons`/`gateReasons`/`canStart`/`canComplete`; при отсутствии
+ранов — `integration_test_run_missing`.
+
+**REST и мост.** `GET …/qa/integration` (404 для не-члена или неизвестной
+задачи), `POST …/qa/integration/runs` (идемпотентный старт; 202 для
+`queued|running`, 200 для `blocked`/`skipped`; `queued` тут же уходит в
+runner), `…/runs/:runId/cancel`, `…/runs/:runId/complete`,
+`…/runs/:runId/fix`. Fix доступен для `failed`/`blocked`, запускает один
+development-ран через `CiRunManager.start` (он же переносит карточку в
+`development`), кладёт в `fix_context_json` `stepId=integration_tests:<runId>`,
+хвост из сводки, лога и команд (последние 50 000 символов) и список
+обязательных automatable-кейсов без ссылки на текущем SHA, после чего
+`linkIntegrationTestFixRun` сохраняет `linkedFixRunId`; повторный вызов
+возвращает уже связанный `ci_run`. В отличие от Component QA сам
+integration-ран при этом не переводится в `failed`. URL-хелперов в
+`protocol.ts` для этой стадии нет — пути собраны строками в
+`createQaRest`; методы `getIntegration`/`startIntegration`/`cancelIntegration`/
+`completeIntegration`/`fixIntegration` в `RendererQaBridge` опциональны.
+
+**Панель.** `QaStageRunPanel` стал диспетчером: для `stage='integration_tests'`
+монтируется внутренний `IntegrationTestPanel`, для `automated_qa` — прежний
+`GenericQaStageRunPanel` поверх `qa_stage_runs` (вкладка «Component QA»
+по-прежнему монтирует `ComponentQaPanel`). Живёт панель на вкладке
+«Интеграционные тесты», а не внутри «Ручного QA». Без `window.qa.getIntegration`
+она печатает «Стадия недоступна». Показывает причины недоступности запуска,
+ветку/SHA/попытку, блокеры, тест-кейсы с пометкой «автоматизируемый/исключён» и
+ссылками на файлы тестов текущего SHA, команды с exit code и длительностью,
+потоковый лог (раскрыт у running), сводку и историю попыток; действия —
+«Запустить», «Отменить», «Повторить» (тот же `startIntegration`), «Отправить на
+доработку», «Перейти к Automated QA» (активна только при `canComplete`). Пока
+есть активный ран, состояние опрашивается раз в 2 секунды, а ответ старше
+локального снимка (сравнение по `finishedAt`/`startedAt`/`createdAt`)
+отбрасывается.
+
 ## Проверки
 
-Сервер покрыт двумя кейсами в `apps/server/src/db/database.qa.test.ts`:
-независимость и идемпотентность историй трёх этапов с переходами по гейту и
-восстановление прерванных ранов в `interrupted`. UI — три DOM-теста
-`QaStageRunPanel.dom.test.tsx` (лента и отмена, показ причин гейта и повтор,
-ответ модели) и 12 сторис `QaStageRunPanel.stories.tsx` (по четыре состояния на
-этап). Видимость и автовыбор вкладок в `TaskModal`, маршруты и запрет второй
-активной попытки на уровне БД тестами не покрыты.
+Сервер по `qa_stage_runs` покрыт двумя кейсами в
+`apps/server/src/db/database.qa.test.ts`: независимость и идемпотентность
+историй трёх этапов с переходами по гейту и восстановление прерванных ранов в
+`interrupted`.
+
+Integration tests добавили три db-кейса там же (общая фикстура
+`integrationFixture` ставит карточку в `integration_tests` и подменяет
+`readiness_json`): один активный ран и физическая идемпотентность повторного
+старта, `skipped`-ветка с переездом в `automated_qa`, пометка предыдущего рана
+`stale/sha_changed` после смены SHA workspace. В `packages/shared/src/qa.test.ts`
+— два кейса: `validateIntegrationTestDiff` отсеивает нетестовые пути, и
+`integrationTestGate` привязан к SHA и семантической версии, переиспользуя
+`canCompleteAutomation`. UI — два DOM-теста `QaStageRunPanel.dom.test.tsx` (лог
+и отмена активного рана; причины недоступности запуска плюс фолбэк «Стадия
+недоступна»); прежние три теста generic-панели удалены вместе с ними.
+
+Не покрыты: маршруты `…/qa/integration` (включая идемпотентность fix), проверка
+диффа и классификация отказов внутри runner'а, `completeIntegrationTestRun` на
+уровне БД, видимость и автовыбор вкладок в `TaskModal`, запрет второй активной
+попытки на уровне БД. 12 сторис `QaStageRunPanel.stories.tsx` не обновлены: они
+подставляют только `listStageRuns`, поэтому четыре стори стадии
+`integration_tests` теперь рисуют фолбэк «Стадия недоступна».
