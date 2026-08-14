@@ -223,6 +223,13 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const parent = task.parentId ? board.tasks.find((t) => t.id === task.parentId) : null
   const children = board.tasks.filter((t) => t.parentId === task.id)
   const key = issueKey(props.projectName, task)
+  const activeCi = props.ciSummary && isActiveCiStatus(props.ciSummary.status) ? props.ciSummary : null
+  const terminalCi = props.ciSummary && !isActiveCiStatus(props.ciSummary.status) ? props.ciSummary : null
+  const activeOperation = activeCi?.slotProgress.phase || (task.activeMergeRunId ? 'Мерж выполняется' : null)
+  const terminalResult = terminalCi && ['failed', 'timeout', 'cancelled'].includes(terminalCi.status)
+    ? terminalCi.slotProgress.phase || ciStatusLabel(terminalCi.status)
+    : null
+  const currentState = [column?.name ?? 'Без статуса', activeOperation ?? terminalResult].filter(Boolean).join(' · ')
   const parentOptions = board.tasks.filter((p) =>
     p.id !== task.id && (task.type === 'story' ? p.type === 'epic' : task.type === 'task' ? p.type === 'epic' || p.type === 'story' : false)
   )
@@ -386,8 +393,28 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         их не получает: окна лежат в общем стеке (useDialogStack). Своего слушателя
         Esc у карточки нет — запрос на закрытие приходит в requestClose. */}
     <Dialog
-      title={props.draft ? 'Создание задачи' : `${TYPE_LABEL[task.type]} · ${key}`}
-      ariaLabel={props.draft ? 'Создание задачи' : undefined}
+      title={props.draft ? 'Создание задачи' : (
+        <span className="task-modal-heading" data-testid="task-modal-heading" aria-live="polite" title={`${key} · ${task.title} (${currentState})`}>
+          <span className="task-modal-heading__key">{key} ·</span>
+          <textarea
+            className="task-modal-heading__title"
+            aria-label="Заголовок задачи"
+            ref={titleGrow}
+            value={title}
+            rows={1}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commitTitle()
+              }
+            }}
+          />
+          <span className="task-modal-heading__state">({currentState})</span>
+        </span>
+      )}
+      ariaLabel={props.draft ? 'Создание задачи' : `${key} · ${task.title} (${currentState})`}
       size="lg"
       onClose={props.onClose}
       onEscape={requestClose}
@@ -396,11 +423,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       actions={headActions}
       footer={props.footer}
     >
-      {!props.draft && <div className="task-card-state" aria-live="polite">
-        <span className="task-card-state__identity">{key} · {task.title}</span>
-        <span className="task-card-state__current">{column?.name ?? 'Без статуса'}{props.ciSummary && isActiveCiStatus(props.ciSummary.status) ? ` · ${props.ciSummary.slotProgress.phase}` : task.activeMergeRunId ? ' · Мерж выполняется' : ''}</span>
-        {props.ciSummary && !isActiveCiStatus(props.ciSummary.status) && <span className={`lozenge ci-lozenge--${ciTone(props.ciSummary.status)}`}>Последний запуск: {ciStatusLabel(props.ciSummary.status)}</span>}
-      </div>}
       {!props.draft && <nav className="task-tabs" role="tablist" aria-label="Разделы карточки">
         {([['general','Общее'],['settings','Настройки'],['qa','Ручное QA'],['progress','Ход выполнения'],['merge','Merge'],['feed','Лента рана']] as const).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={activeTab === id} className={activeTab === id ? 'task-tab task-tab--active' : 'task-tab'} onClick={() => setActiveTab(id)}>{label}</button>
@@ -418,21 +440,23 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               <TypeIcon type={parent.type} /> {issueKey(props.projectName, parent)} · {parent.title}
             </button>
           )}
-          <textarea
-            className="jmodal-title"
-            aria-label="Заголовок задачи"
-            ref={titleGrow}
-            value={title}
-            rows={1}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={commitTitle}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                commitTitle()
-              }
-            }}
-          />
+          {props.draft && (
+            <textarea
+              className="jmodal-title"
+              aria-label="Заголовок задачи"
+              ref={titleGrow}
+              value={title}
+              rows={1}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  commitTitle()
+                }
+              }}
+            />
+          )}
           {mobile && (
             <div className="jmodal-quick" data-testid="task-modal-quick">
               {statusField}
