@@ -663,9 +663,15 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (!p.members.some((m) => m.username === username)) p.members.push({ username, role: 'member', addedAt: tick() })
       return detail(p)
     },
+    'projects:updateMemberRole': async ({ id, username, role }) => {
+      const p = projects.find((x) => x.id === id)!
+      const member = p.members.find((m) => m.username === username)
+      if (member) member.role = role
+      return detail(p)
+    },
     'projects:removeMember': async ({ id, username }) => {
       const p = projects.find((x) => x.id === id)!
-      p.members = p.members.filter((m) => !(m.username === username && m.role !== 'owner'))
+      p.members = p.members.filter((m) => m.username !== username)
       tasks.forEach((t) => {
         if (t.projectId === id && t.assignee === username) t.assignee = null
       })

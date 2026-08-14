@@ -19,7 +19,7 @@ function detail(over: Partial<ProjectDetail> = {}): ProjectDetail {
 function props(over: Partial<ProjectSettingsProps> = {}): ProjectSettingsProps {
   return {
     detail: detail(), agents: [],
-    onUpdate: vi.fn(), onDelete: vi.fn(), onAddMember: vi.fn(), onRemoveMember: vi.fn(),
+    onUpdate: vi.fn(), onDelete: vi.fn(), onAddMember: vi.fn(), onUpdateMemberRole: vi.fn(), onRemoveMember: vi.fn(),
     onLinkMachine: vi.fn(), onUnlinkMachine: vi.fn(), onSetMachinePath: vi.fn(),
     onSetReposRoot: vi.fn(), onSetDefaultMachine: vi.fn(),
     ...over
@@ -77,6 +77,45 @@ describe('ProjectSettings — режим базы знаний для CI-ран�
     const provider = screen.getByLabelText('Движок проекта') as HTMLSelectElement
     expect(provider).not.toHaveTextContent('Claude')
     expect(provider).toHaveTextContent('Codex')
+  })
+
+  it('показывает всех владельцев, текущего пользователя и защищает последнего', async () => {
+    render(<ProjectSettings {...props({
+      currentUsername: 'admin',
+      detail: detail({
+        members: [
+          { username: 'admin', role: 'owner', addedAt: 1 },
+          { username: 'bob', role: 'member', addedAt: 2 }
+        ]
+      })
+    })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Участники' }))
+    expect(screen.getByLabelText('Роль admin').closest('li')).toHaveTextContent('admin · вы · создатель')
+    expect(screen.getByLabelText('Роль admin')).toBeDisabled()
+    expect(screen.getByText(/Сначала назначьте другого владельца/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Убрать admin')).toBeDisabled()
+  })
+
+  it('назначение владельца требует подтверждения и вызывает смену роли', async () => {
+    const onUpdateMemberRole = vi.fn()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    render(<ProjectSettings {...props({
+      onUpdateMemberRole,
+      detail: detail({
+        members: [
+          { username: 'admin', role: 'owner', addedAt: 1 },
+          { username: 'bob', role: 'member', addedAt: 2 }
+        ]
+      })
+    })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Участники' }))
+    const role = screen.getByLabelText('Роль bob')
+    await userEvent.selectOptions(role, 'owner')
+    expect(onUpdateMemberRole).not.toHaveBeenCalled()
+    await userEvent.selectOptions(role, 'owner')
+    expect(confirm).toHaveBeenCalled()
+    expect(onUpdateMemberRole).toHaveBeenCalledWith('p1', 'bob', 'owner')
+    confirm.mockRestore()
   })
 
   it('сохраняет http/https URL превью и откатывает невалидный адрес', async () => {

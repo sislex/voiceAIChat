@@ -142,7 +142,7 @@ export function registerProjectRoutes(
       ciTestFixCycleLimit?: number
       doneRetentionDays?: number | null
     }
-  }>('/api/projects/:id', settingsGuard, async (req, reply) => {
+  }>('/api/projects/:id', async (req, reply) => {
 
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
@@ -158,7 +158,7 @@ export function registerProjectRoutes(
     return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)
   })
 
-  app.delete<{ Params: { id: string } }>('/api/projects/:id', settingsGuard, async (req, reply) => {
+  app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
     db.deleteProject(uid(req), req.params.id)
@@ -182,14 +182,33 @@ export function registerProjectRoutes(
     }
   )
 
+  app.patch<{ Params: { id: string; username: string }; Body: { role?: 'owner' | 'member' } }>(
+    '/api/projects/:id/members/:username',
+    async (req, reply) => {
+      const p = member(req, req.params.id)
+      if (!p) return nf(reply)
+      const role = req.body?.role
+      if (role !== 'owner' && role !== 'member') return badReq(reply, 'role must be owner or member')
+      try {
+        return db.updateMemberRole(uid(req), req.params.id, req.params.username, role) ?? nf(reply)
+      } catch (err) {
+        return badReq(reply, errMessage(err))
+      }
+    }
+  )
+
   app.delete<{ Params: { id: string; username: string } }>(
     '/api/projects/:id/members/:username',
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
+      try {
         const detail = db.removeMember(uid(req), req.params.id, req.params.username)
-      boardHub.emit(req.params.id) // снятые назначения меняют доску
-      return detail ?? nf(reply)
+        boardHub.emit(req.params.id) // снятые назначения меняют доску
+        return detail ?? nf(reply)
+      } catch (err) {
+        return badReq(reply, errMessage(err))
+      }
     }
   )
 

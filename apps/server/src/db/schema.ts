@@ -224,6 +224,21 @@ CREATE TABLE IF NOT EXISTS project_members (
 CREATE INDEX IF NOT EXISTS idx_project_members_user
   ON project_members(username);
 
+-- Неизменяемый аудит назначения и снятия проектных ролей.
+CREATE TABLE IF NOT EXISTS project_member_role_audit (
+  id            TEXT PRIMARY KEY,
+  project_id    TEXT NOT NULL,
+  target_user   TEXT NOT NULL,
+  actor         TEXT NOT NULL,
+  old_role      TEXT,
+  new_role      TEXT,
+  action        TEXT NOT NULL,
+  created_at    INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_project_member_role_audit_project
+  ON project_member_role_audit(project_id, created_at);
+
 CREATE TABLE IF NOT EXISTS project_machines (
   project_id TEXT NOT NULL,
   agent_id   TEXT NOT NULL,
