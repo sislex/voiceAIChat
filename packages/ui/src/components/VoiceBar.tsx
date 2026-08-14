@@ -10,7 +10,7 @@ import type { UploadInfo } from '@shared/ipc'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import type { QueuedTurn } from '@shared/protocol'
 import { useAutoGrow } from '../lib/autoGrow'
-import { chipClass, composerPeek, speakerName, statusLine, voiceAnnouncement } from '../lib/view'
+import { chipClass, composerPeek, speakerName, voiceAnnouncement } from '../lib/view'
 import { WaveBars, Dots } from './animations'
 import { IconButton } from './ui/IconButton'
 import { MicIcon, SendIcon, StopIcon, WandIcon } from './icons'
@@ -52,6 +52,8 @@ export interface VoiceBarProps {
   aiLabel?: string
   /** Ответ уже начал стримиться (пошли токены) — держим поле ввода доступным для черновика. */
   replyStarted?: boolean
+  /** Ошибка активного хода; нужна для краткого итогового состояния строки. */
+  requestError?: string | null
   /** Фактический режим активного разговора. */
   permissionMode?: PermissionMode
   /** Быстро переключить планирование/разработку для всего разговора. */
@@ -99,6 +101,7 @@ export function VoiceBar({
   onRemovePreviewElement,
   aiLabel = 'Claude',
   replyStarted = false,
+  requestError = null,
   permissionMode = 'plan',
   onChangePermissionMode,
   voiceInputEnabled = true,
@@ -113,8 +116,56 @@ export function VoiceBar({
 }: VoiceBarProps): JSX.Element {
   const isIdle = state === 'idle'
   const isListening = state === 'listening'
-  const isThinking = state === 'thinking' || state === 'transcribing'
   const isSpeaking = state === 'speaking'
+  type RequestPhase = 'sending' | 'processing' | 'streaming' | 'stopping' | 'stopped' | 'error'
+  const [requestPhase, setRequestPhase] = useState<RequestPhase | null>(null)
+  const requestWasActive = useRef(false)
+  const cancelSent = useRef(false)
+
+  // Realtime-события только переводят одну строку между этапами: повторный token
+  // не создаёт новый DOM-элемент. Итог виден коротко, затем строка исчезает.
+  useEffect(() => {
+    if (state === 'thinking') {
+      requestWasActive.current = true
+      if (!cancelSent.current) setRequestPhase(replyStarted ? 'streaming' : 'processing')
+      return
+    }
+    if (!requestWasActive.current) return
+    requestWasActive.current = false
+    if (!requestError && !cancelSent.current) {
+      setRequestPhase(null)
+      return
+    }
+    setRequestPhase(requestError ? 'error' : 'stopped')
+    const timer = window.setTimeout(() => setRequestPhase(null), 1500)
+    return () => window.clearTimeout(timer)
+  }, [state, replyStarted, requestError])
+
+  const submitRequest = (): void => {
+    if (state === 'idle') {
+      cancelSent.current = false
+      setRequestPhase('sending')
+    }
+    onSubmitText()
+  }
+
+  const stopRequest = (): void => {
+    if (cancelSent.current) return
+    cancelSent.current = true
+    setRequestPhase('stopping')
+    onCancelRequest()
+  }
+
+  const requestStatus = requestPhase ? {
+    sending: 'Запрос отправляется…',
+    processing: `${aiLabel} обрабатывает запрос…`,
+    streaming: `${aiLabel} формирует ответ…`,
+    stopping: 'Останавливаем запрос…',
+    stopped: 'Запрос остановлен',
+    error: 'Ошибка выполнения'
+  }[requestPhase] : null
+  const requestActive = requestPhase === 'sending' || requestPhase === 'processing' || requestPhase === 'streaming' || requestPhase === 'stopping'
+
   // Композер остаётся доступным во время ожидания и стриминга: сервер сам
   // сериализует новые реплики в очередь разговора.
   const composerMode = !isListening
@@ -166,7 +217,7 @@ export function VoiceBar({
     // Enter — отправить, Shift+Enter — перенос строки (многострочный ввод).
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      if (canSubmit) onSubmitText()
+      if (canSubmit) submitRequest()
     }
   }
 
@@ -199,8 +250,8 @@ export function VoiceBar({
     ? { onClick: onStopVoice, label: 'Остановить запись' }
     : isSpeaking
       ? { onClick: onStopSpeak, label: 'Остановить озвучку' }
-      : !isIdle
-        ? { onClick: onCancelRequest, label: 'Остановить запрос' }
+      : state === 'thinking'
+        ? { onClick: stopRequest, label: 'Остановить ответ' }
         : null
 
   if (collapsed) {
@@ -216,7 +267,7 @@ export function VoiceBar({
               onClick={expand}
             >
               <span className="vcollapsed-chevron" aria-hidden>⌃</span>
-              <span className="vcollapsed-text">{composerPeek(draft, attachments.length, state, aiLabel)}</span>
+              <span className="vcollapsed-text">{requestStatus ?? composerPeek(draft, attachments.length, state, aiLabel)}</span>
             </button>
             {collapsedStop && (
               <IconButton
@@ -226,6 +277,8 @@ export function VoiceBar({
                 onClick={collapsedStop.onClick}
                 title={collapsedStop.label}
                 aria-label={collapsedStop.label}
+                disabled={requestPhase === 'stopping'}
+                aria-busy={requestPhase === 'stopping' || undefined}
               >
                 <StopIcon />
               </IconButton>
@@ -422,7 +475,7 @@ export function VoiceBar({
                   <IconButton
                     className="vc-btn--circle"
                     variant="primary"
-                    onClick={onSubmitText}
+                    onClick={submitRequest}
                     title={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
                     aria-label={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
                   >
@@ -439,13 +492,13 @@ export function VoiceBar({
                     <MicIcon />
                   </IconButton>
                 ) : null}
-              {!isIdle && (
+              {isSpeaking && (
                 <IconButton
                   className="vc-btn--circle"
                   variant="danger"
-                  onClick={isSpeaking ? onStopSpeak : onCancelRequest}
-                  title={isSpeaking ? 'Остановить озвучку' : 'Остановить запрос'}
-                  aria-label={isSpeaking ? 'Остановить озвучку' : 'Остановить запрос'}
+                  onClick={onStopSpeak}
+                  title="Остановить озвучку"
+                  aria-label="Остановить озвучку"
                 >
                   <StopIcon />
                 </IconButton>
@@ -470,27 +523,28 @@ export function VoiceBar({
             </>
           )}
 
-          {isThinking && !replyStarted && (
-            <>
-              <div className="speak">
-                <Dots />
-                <span className="fs13 fw6 speak-dim">
-                  Запрос отправлен движку {aiLabel}…
-                </span>
-              </div>
+        </div>
+
+        {requestStatus && (
+          <div className="request-status" data-testid="request-status" role="status" aria-live="polite">
+            {requestActive && <Dots />}
+            <span className="request-status__text">{requestStatus}</span>
+            {requestActive && (
               <IconButton
-                className="vc-btn--circle"
+                className="vc-btn--circle request-status__stop"
+                size="sm"
                 variant="danger"
-                onClick={onCancelRequest}
-                title="Остановить запрос"
-                aria-label="Остановить запрос"
+                onClick={stopRequest}
+                disabled={requestPhase === 'stopping'}
+                aria-busy={requestPhase === 'stopping' || undefined}
+                title="Остановить ответ"
+                aria-label="Остановить ответ"
               >
                 <StopIcon />
               </IconButton>
-            </>
-          )}
-
-        </div>
+            )}
+          </div>
+        )}
 
         <div className="vbottom">
           {onChangePermissionMode && (
@@ -513,9 +567,6 @@ export function VoiceBar({
               </button>
             </div>
           )}
-          <p className="vstatus">
-            {voiceInputEnabled ? statusLine(state, aiLabel) : (state === 'idle' ? '' : statusLine(state, aiLabel))}
-          </p>
           {/* Статус записи — скринридеру. Видимую .vstatus живой областью не
               делаем: в простое там длинная подсказка про пробел и Esc, и
               читалка зачитывала бы её после каждого ответа. Здесь — короткая

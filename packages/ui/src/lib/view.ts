@@ -79,26 +79,10 @@ export function statusBadge(state: VoiceState, aiLabel = 'Claude'): string {
   }
 }
 
-/** Строка статуса под голосовой панелью. aiLabel — имя движка ответа. */
-export function statusLine(state: VoiceState, aiLabel = 'Claude'): string {
-  switch (state) {
-    case 'idle':
-      return `Пробел — говорить · Esc — стоп · распознавание и озвучка локально, ответы через ${aiLabel}`
-    case 'listening':
-      return 'Говорите… Whisper распознаёт речь на устройстве'
-    case 'transcribing':
-      return 'Финализируем транскрипт и делим по говорящим'
-    case 'thinking':
-      return `Текст передан движку ${aiLabel}`
-    case 'speaking':
-      return 'Воспроизведение ответа'
-  }
-}
-
 /**
  * Короткое объявление голосового цикла для скринридера (`aria-live` в VoiceBar).
- * Не то же, что `statusLine`: там подсказка по клавишам для зрячего, здесь —
- * факт «микрофон включён / распознаю / жду ответ». В простое молчим: возврат в
+ * Отдельно от видимой компактной строки сообщает читалке факт «микрофон
+ * включён / распознаю / жду ответ». В простое молчим: возврат в
  * покой сам по себе не событие, а зачитывать подсказку заново незачем.
  */
 export function voiceAnnouncement(state: VoiceState, aiLabel = 'Claude'): string {

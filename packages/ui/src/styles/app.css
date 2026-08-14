@@ -1135,6 +1135,27 @@
   align-items: center;
   gap: 12px;
 }
+.request-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  padding: 6px 0;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+}
+.request-status__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.request-status__stop {
+  flex: none;
+}
 /* Ручка «свернуть» — узкая полоска над композером, как у выдвижной панели. */
 .vhandle {
   display: flex;
