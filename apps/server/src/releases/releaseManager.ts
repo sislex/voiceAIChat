@@ -6,7 +6,7 @@ export interface ProductionTarget extends ReleaseProjectTarget { deployCommand:s
 export const RELEASE_TEST_TIMEOUT_MS=600_000
 export interface ReleaseCommandResult { exitCode:number|null; output:string; timedOut?:boolean }
 export interface ReleaseRuntime {
-  exec(target:ReleaseProjectTarget, command:string, timeoutMs:number):Promise<ReleaseCommandResult>
+  exec(target:ReleaseProjectTarget, command:string, timeoutMs:number, onChunk?:(chunk:string)=>void):Promise<ReleaseCommandResult>
   prepareKnowledgeBase(branch:string,target:ReleaseProjectTarget):Promise<void>
   isOnline?(agentId:string):boolean
   /** Legacy hooks kept in the injected test surface; deploy no longer calls them. */
@@ -159,10 +159,16 @@ export class ReleaseManager {
         const stage=`(${commands[index]})`
         const command=index===0?`git checkout --detach ${quote(found.sha)} && ${stage}`:stage
         const limit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='regression')?.limitMs??RELEASE_TEST_TIMEOUT_MS
-        const regression=await this.runtime.exec(target,at(target,command),limit)
-        logs.push(`$ ${commands[index]}\n${regression.output}`)
-        if(regression.timedOut)throw new Error(`Regression, стадия ${index+1}/${commands.length}: фактическая длительность превысила лимит ${Math.round(limit/1000)} с\n${regression.output}`)
-        if(regression.exitCode!==0)throw new Error(regression.output||`Regression-команда ${index+1}/${commands.length} завершилась с ошибкой`)
+        let stageOutput=''
+        const regression=await this.runtime.exec(target,at(target,command),limit,(chunk)=>{
+          stageOutput+=chunk
+          const live=[...logs,`$ ${commands[index]}\n${stageOutput}`].join('\n\n')
+          this.db.setProjectReleaseStep(release.id,'regression','running',live,actor)
+        })
+        const output=stageOutput||regression.output
+        logs.push(`$ ${commands[index]}\n${output}`)
+        if(regression.timedOut)throw new Error(`Regression, стадия ${index+1}/${commands.length}: фактическая длительность превысила лимит ${Math.round(limit/1000)} с\n${output}`)
+        if(regression.exitCode!==0)throw new Error(output||`Regression-команда ${index+1}/${commands.length} завершилась с ошибкой`)
       }
       this.db.setProjectReleaseStep(release.id,'regression','passed',logs.join('\n\n'),actor)
       for(const kind of ['switching','building','health_check'] as const)this.db.setProjectReleaseStep(release.id,kind,'skipped','Выполняется только при deploy',actor)

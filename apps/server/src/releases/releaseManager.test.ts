@@ -60,10 +60,11 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const runtime:ReleaseRuntime={
       isOnline:()=>true,
       prepareKnowledgeBase:vi.fn(async()=>{}),
-      exec:async(_target,command)=>{
+      exec:async(_target,command,_timeout,onChunk)=>{
         commands.push(command)
         if(command.includes('ls-remote'))return {exitCode:0,output:commands.some(x=>x.includes('git branch'))?'prepared-sha\trefs/heads/release/1.2.3\n':''}
         if(command.includes('git branch'))return {exitCode:0,output:'prepared-sha\n'}
+        if(command.includes('verify:release'))onChunk?.('[affected-check] active package: server; elapsed: 30s; stage: running\n')
         return {exitCode:0,output:'ok'}
       }
     }
@@ -73,7 +74,9 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(runtime.prepareKnowledgeBase).toHaveBeenCalledWith('release/1.2.3',ci())
     expect(commands.some(command=>command.includes('npm run verify:release'))).toBe(true)
     expect(commands.some(command=>command.includes('affected-check'))).toBe(false)
-    expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('ready')
+    const stored=db.getProjectRelease('owner',projectId,release.id)
+    expect(stored?.status).toBe('ready')
+    expect(stored?.steps.find(step=>step.kind==='regression')?.log).toContain('active package: server')
   })
 
   it('switches production through an attempt-specific ref instead of FETCH_HEAD',()=>{
