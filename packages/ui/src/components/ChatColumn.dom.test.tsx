@@ -407,20 +407,15 @@ describe('ChatColumn — машина активного чата в загол�
   })
 })
 
-describe('ChatColumn — статус стрима внизу пузыря и прерванный ответ', () => {
-  it('во время стрима статус и счётчик дублируются под текстом', () => {
+describe('ChatColumn — активный стрим и прерванный ответ', () => {
+  it('не дублирует lifecycle-статус в ленте', () => {
     renderCol({
       state: 'thinking',
       streamingReply: 'Длинный ответ…',
       liveActivity: [{ kind: 'tool_use', summary: 'Bash: ls', raw: '{}' }]
     })
-    const bottom = screen.getByTestId('live-status-bottom')
-    expect(bottom.textContent).toContain('1 действие')
-  })
-
-  it('стрим без активности показывает внизу «отвечает…»', () => {
-    renderCol({ state: 'thinking', streamingReply: 'Ответ' })
-    expect(screen.getByTestId('live-status-bottom').textContent).toContain('Claude отвечает')
+    expect(screen.queryByTestId('think')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('live-status-bottom')).not.toBeInTheDocument()
   })
 
   it('сообщение с meta.interrupted показывает пометку о прерванном ответе', () => {
