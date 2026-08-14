@@ -287,10 +287,13 @@ describe('TaskCard — подготовка к разработке', () => {
     expect(screen.queryByRole('button', { name: 'Параллельно' })).not.toBeInTheDocument()
   })
 
-  it('в preparation показывает отдельную ленту и ошибку', () => {
-    render(<TaskCard {...props({ columnSemanticType: 'preparation', task: mkTask({ taskPreparationStatus: 'failed', taskPreparationError: 'Гейт не пройден' }), onStartPreparation: vi.fn(), onStartCi: vi.fn() })} />)
+  it('в preparation открывает deep-link вкладки подготовки и не показывает development-действия', () => {
+    const onOpen = vi.fn()
+    render(<TaskCard {...props({ onOpen, columnSemanticType: 'preparation', task: mkTask({ taskPreparationStatus: 'failed', taskPreparationError: 'Гейт не пройден' }), onStartPreparation: vi.fn(), onStartCi: vi.fn(), onStartCiParallel: vi.fn() })} />)
     expect(screen.getByTestId('task-preparation-panel')).toHaveTextContent('Гейт не пройден')
-    expect(screen.getByRole('button', { name: 'Лента подготовки' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Лента подготовки' }))
+    expect(onOpen).toHaveBeenCalledWith('t1', 'preparation')
     expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Параллельно' })).not.toBeInTheDocument()
   })
 })

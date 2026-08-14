@@ -52,6 +52,7 @@ import type {
 } from './projects'
 
 import type { KbContextBundle, KbDocument, KbDocumentDraft, KbDocumentSummary, KbResearchRun, KbScope, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
+import type { TaskPreparationRun } from './qa'
 
 /** Статус локальной модели Whisper. */
 export interface SttStatus {
@@ -386,6 +387,9 @@ export interface IpcInvokeMap {
     arg: { projectId: string; taskId: string; columnId: string; fromColumnId?: string | null; afterId?: string | null; beforeId?: string | null }
     result: Task
   }
+  'tasks:listPreparationRuns': { arg: { projectId: string; taskId: string }; result: TaskPreparationRun[] }
+  'tasks:cancelPreparationRun': { arg: { runId: string }; result: TaskPreparationRun }
+  'tasks:retryPreparationRun': { arg: { runId: string }; result: TaskPreparationRun }
   'tasks:delete': { arg: { projectId: string; taskId: string }; result: void }
   /** Открыть (или создать) связанный с задачей чат текущего пользователя. */
   'tasks:openChat': { arg: { projectId: string; taskId: string }; result: Conversation }
@@ -841,6 +845,9 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:create',
   'tasks:update',
   'tasks:move',
+  'tasks:listPreparationRuns',
+  'tasks:cancelPreparationRun',
+  'tasks:retryPreparationRun',
   'tasks:delete',
   'tasks:openChat'
 ]

@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-08-14
-checked: a64b490
+updated: 2026-08-15
+checked: e56d286
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -27,6 +27,8 @@ areas:
   - packages/ui/src/components/kanban/KanbanBoard.tsx
   - packages/ui/src/components/kanban/TaskCard.tsx
   - packages/ui/src/components/kanban/TaskModal.tsx
+  - packages/ui/src/components/kanban/TaskPreparationTab.tsx
+  - packages/ui/src/components/ProjectBoard.tsx
   - packages/ui/src/styles/app.css
   - packages/ui/src/remote/ciBridge.ts
   - packages/ui/src/remote/httpApi.ts
@@ -326,14 +328,24 @@ Development CI только готовит и отправляет ветку з
 ## Вкладки карточки задачи
 
 `TaskModal` держит выбранную вкладку локально и не размонтирует панели при
-переключении, поэтому введённые черновики сохраняются. Между «Настройки» и
-«Ручное QA» динамически появляются самостоятельные вкладки «Component QA»,
-«Интеграционные тесты» и «Automated QA». Вкладка видима на своей или более
-поздней workflow-стадии либо при сохранённой истории ранов этого этапа. Активный
-QA-stage-run при первом открытии выбирает свою вкладку; development/merge
-по-прежнему выбирают отдельную «Ленту рана». Эффект загрузки QA-истории зависит
-только от `task.id`, поэтому обновление того же task не сбрасывает ручной выбор.
-На узком экране строка вкладок прокручивается горизонтально.
+переключении, поэтому введённые черновики сохраняются. Постоянные вкладки:
+«Общее», «Настройки», «Ручное QA», «Ход выполнения», «Merge», «Лента рана».
+Между «Настройки» и «Ручное QA» условно появляются «Подготовка к разработке» и
+самостоятельные вкладки «Component QA», «Интеграционные тесты» и «Automated QA».
+«Подготовка к разработке» видима только у обычной задачи в `backlog`,
+`preparation` или `ready`, когда существует `taskPreparationRunId` либо активный
+preparation-run. QA-вкладка видима на своей или более поздней workflow-стадии
+либо при сохранённой истории ранов этого этапа. Первоначальный выбор вкладки
+идёт по приоритетам: активный preparation-run (`taskPreparationStatus ===
+'running'`) открывает «Подготовку к разработке» при любом способе открытия
+карточки, следом её же открывает deep-link `initialTab === 'preparation'` (но
+только если вкладка видима), затем колонка QA-стадии выбирает свою вкладку,
+затем активный development-/merge-ран выбирает «Ленту рана», а без активного
+процесса открывается «Общее». `defaultTab()` пересчитывается только при
+монтировании и смене `task.id`, поэтому обновление той же карточки не сбрасывает
+вкладку, выбранную пользователем вручную. Эффект загрузки QA-истории зависит только от `task.id`,
+поэтому обновление того же task не сбрасывает ручной выбор. На узком экране
+строка вкладок прокручивается горизонтально.
 
 Эти три вкладки обслуживает отдельная сущность ранов `qa_stage_runs` со своей
 таблицей, REST-набором `…/qa/runs/:stage` и панелью `QaStageRunPanel`: она не
@@ -360,6 +372,68 @@ QA-stage-run при первом открытии выбирает свою вк
 = null` означает наследование машины проекта. «Ход выполнения» имеет подтабы
 «Обзор», «Работа модели», «Проверки», «Изменения», «База знаний», «Результат и
 доставка», «Ресурсы» и использует серверные progress/report/KB данные.
+
+«Подготовка к разработке» использует только историю `task_preparation_runs` и не
+смешивает её с development/merge ни визуально, ни по данным: её панель
+(`packages/ui/src/components/kanban/TaskPreparationTab.tsx`) не знает про
+`ci_runs`, `merge_runs` и `getTaskReport`, а «Лента рана» — про подготовку.
+Прежний inline-блок `task-modal-preparation` на вкладке «Общее» удалён целиком,
+поэтому «Начать подготовку задачи» осталось только на карточке в TODO; из
+модалки первый запуск не делается, а из вкладки доступен лишь повтор.
+
+Навигация — hash-deep-link `#/projects/:projectId/task/:taskId/preparation`.
+Кнопка «Лента подготовки» на карточке вызывает `onOpen(task.id, 'preparation')`,
+`KanbanBoard` передаёт таб вверх через `onOpenTaskChange(taskId, tab)`,
+`ProjectBoard` хранит его в состоянии и дублирует в адрес через
+`onOpenTaskRouteChange`, а `App.tsx` разбирает `segments[4] === 'preparation'`
+(соседний сегмент того же уровня, что и `/chat/:chatId`) и возвращает его в
+`initialOpenTaskTab` → `TaskModal.initialTab`. Побочный эффект той же проводки:
+теперь любое открытие карточки с доски пишет `#/projects/:id/task/:taskId`, а
+закрытие возвращает `#/projects/:id`. Дальнейшее ручное переключение вкладок
+внутри модалки адрес не меняет.
+
+`TaskPreparationTab` грузит все попытки задачи одним `loadRuns` (свежие первыми),
+выбирает активную (`task.taskPreparationRunId`) либо первую в списке и даёт
+открыть ленту любой прошлой попытки кнопками списка «Предыдущие попытки»
+(`data-testid="task-preparation-history"`, подпись «Попытка N · дата · статус»).
+Показывает `Статус: выполняется|успешно|ошибка|отменён`, «Причина ошибки» в
+`role="alert"` для failed, список `gateReasons`
+(`task-preparation-gate-reasons`), потоковый `log` в `aria-live="polite"` и
+пустое состояние `task-preparation-empty` («Подготовка к разработке ещё не
+запускалась»), когда истории нет. Реальное время сделано поллингом: пока
+`task.taskPreparationStatus === 'running'`, история перечитывается раз в 1,5 с,
+поэтому лог растёт без перезагрузки страницы; отдельного SSE/WS у подготовки нет.
+
+Действия ограничены статусом самого рана, а не UI: «Отменить» рисуется только
+при `status === 'running' && canCancel`, «Повторить подготовку» — только при
+терминальном статусе с `canRetry`, а `canRetry` в
+`mapTaskPreparationRun` истинен лишь для `failed` и `cancelled`. То есть
+успешную подготовку повторить из вкладки нельзя (опциональный пункт требования
+не реализован); повторный проход по успешной задаче — это обычный перенос
+карточки обратно в `preparation`. Development-действия «В очередь» и
+«Параллельно» на стадиях `backlog`/`preparation` не рисуются ни на карточке, ни
+в модалке.
+
+Контракт: `GET /api/projects/:id/tasks/:taskId/preparation/runs` (история),
+`DELETE /api/task-preparation/runs/:runId` (отмена),
+`POST /api/task-preparation/runs/:runId/retry` (повтор; 404 на чужой/неизвестный
+ран, 409 если `canRetry` ложен). Retry не переиспользует запись, а зовёт тот же
+`launchTaskPreparation`, то есть `startTaskPreparationRun` вставляет НОВУЮ строку
+с `attempt = MAX(attempt)+1` по задаче — предыдущие попытки остаются нетронутыми.
+Не путать два счётчика: `attempt` — порядковый номер пользовательской попытки
+подготовки, а `maxAttempts: 2` в маппинге — константа внутренних повторов вызова
+модели внутри одной записи (`sendAttempt` с коррекцией промпта). Рендерер ходит
+через мост, каналы `tasks:listPreparationRuns`, `tasks:cancelPreparationRun`,
+`tasks:retryPreparationRun` (`packages/shared/src/ipc.ts`,
+`packages/ui/src/remote/httpApi.ts`).
+
+Отмена жива и на сервере, а не только в БД. `server.ts` держит
+`taskPreparationHandles: Map<runId, {cancel()}>` с handle CLI-вызова: DELETE
+переводит запись в `cancelled` и глушит процесс, а `onDone`/`onError` перед
+работой перечитывают ран и выходят, если он уже не `running`, — иначе поздний
+`onError` запускал бы внутренний повтор у отменённой подготовки. Хук
+`app.onClose` отменяет все живые handle, чтобы CLI-дети не пережили закрытие
+приложения и не постучались в закрытую БД.
 
 «Лента рана» сразу монтирует `TaskRunFeed` внутри карточки: промежуточной кнопки и
 отдельного окна нет. При первом открытии он параллельно читает development-историю
@@ -1475,7 +1549,14 @@ fix-loop и исчерпание попыток, вызов команды мо�
 `components/ci/*.dom.test.tsx`, состояния карточки, включая «после смены статуса не остаётся ни лозенга, ни
 фазы, ни пульсации прошлого рана», — `kanban/TaskCard.dom.test.tsx`
 (+ сториз `CiRunning`/`CiFixing`/`CiAwaitingInput`/`CiFailed`/`CiSuccess`) и
-`TaskModal.dom.test.tsx`; хелперы — `shared/src/ci.test.ts`. Гейт: `npm run -w @voicechat/server typecheck && test`;
+`TaskModal.dom.test.tsx`; хелперы — `shared/src/ci.test.ts`. Вкладку подготовки
+покрывают `TaskModal.dom.test.tsx` (невидимость без истории, автовыбор вкладки
+активным раном, таблица статусов `running|success|failed|cancelled` с допустимыми
+действиями и отсутствием development-кнопок, пустое состояние, retry добавляет
+вторую строку истории), `KanbanBoard.dom.test.tsx` (клик «Лента подготовки»
+открывает модалку сразу с `aria-selected` на нужном табе), `TaskCard.dom.test.tsx`
+(`onOpen('t1','preparation')`) и `database.projects.test.ts` (повтор даёт
+`attempt: 2`, обе записи остаются в истории). Гейт: `npm run -w @voicechat/server typecheck && test`;
 UI — `typecheck` + `@voicechat/web build`.
 
 ## Группированный fail-fast test pipeline

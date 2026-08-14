@@ -34,6 +34,8 @@ import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { CiReport } from '../ci/CiReport'
 import { MergePanel } from '../ci/MergePanel'
 import { TaskRunFeed } from '../ci/TaskRunFeed'
+import { TaskPreparationTab } from './TaskPreparationTab'
+import type { TaskPreparationRun } from '@shared/qa'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { canStartCiRun, isActiveCiStatus, type CiRunSummary, type CiTaskReport } from '@shared/ci'
@@ -76,6 +78,10 @@ export interface TaskModalProps {
   ciSummary?: CiRunSummary
   onStartCi?: (taskId: string) => void | Promise<void>
   onStartPreparation?: (taskId: string) => void | Promise<void>
+  initialTab?: 'preparation'
+  loadPreparationRuns?: (taskId: string) => Promise<TaskPreparationRun[]>
+  onRetryPreparation?: (runId: string) => Promise<TaskPreparationRun | void>
+  onCancelPreparation?: (runId: string) => Promise<TaskPreparationRun | void>
   /** Параллельный запуск: сразу в работу, мимо очереди сервера. */
   onStartCiParallel?: (taskId: string) => void | Promise<void>
   onOpenCiRun?: (runId: string) => void
@@ -121,9 +127,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [criteria, setCriteria] = useState(() => normalizeAcceptanceCriteria(task.acceptanceCriteria))
   const [labelDraft, setLabelDraft] = useState('')
   const [skillDraft, setSkillDraft] = useState('')
-  type TaskTab = 'general' | 'settings' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'progress' | 'merge' | 'feed'
+  type TaskTab = 'general' | 'settings' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'progress' | 'merge' | 'feed' | 'preparation'
   type ProgressTab = 'overview' | 'model' | 'checks' | 'changes' | 'kb' | 'delivery' | 'resources'
+  const preparationVisible = task.type === 'task' && ['backlog', 'preparation', 'ready'].includes(board.columns.find((item) => item.id === task.columnId)?.semanticType ?? '') && Boolean(task.taskPreparationRunId || task.taskPreparationStatus === 'running')
   const defaultTab = (): TaskTab => {
+    if (task.taskPreparationStatus === 'running' || (props.initialTab === 'preparation' && preparationVisible)) return 'preparation'
     const stage = board.columns.find((item) => item.id === task.columnId)?.semanticType
     if (stage === 'component_qa' || stage === 'integration_tests' || stage === 'automated_qa') return stage
     return (props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || task.activeMergeRunId ? 'feed' : 'general'
@@ -452,6 +460,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       {!props.draft && <nav className="task-tabs" role="tablist" aria-label="Разделы карточки">
         {([
           ['general','Общее'],['settings','Настройки'],
+          ...(preparationVisible ? [['preparation','Подготовка к разработке'] as const] : []),
           ...qaStageOrder.filter(qaStageVisible).map((stage) => [stage, stage === 'component_qa' ? 'Component QA' : stage === 'integration_tests' ? 'Интеграционные тесты' : 'Automated QA'] as const),
           ['qa','Ручное QA'],['progress','Ход выполнения'],['merge','Merge'],['feed','Лента рана']
         ] as Array<readonly [TaskTab, string]>).map(([id, label]) => (
@@ -768,20 +777,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               </p>}
             </div>
           )}
-          {task.type === 'task' && (column?.semanticType === 'backlog' || column?.semanticType === 'preparation') && (
-            <div className="jmodal-ci" data-testid="task-modal-preparation">
-              <div className="jmodal-ci-head"><span className="ci-task-title">Подготовка задачи</span></div>
-              {column?.semanticType === 'backlog' && <p className="jcard-ci-phase">Отдельный ран уточнит требования, критерии и тестовые сценарии. Код изменяться не будет.</p>}
-              {column?.semanticType === 'preparation' && <>
-                <p className="jcard-ci-phase">Статус: {task.taskPreparationStatus === 'running' ? 'выполняется' : task.taskPreparationStatus === 'success' ? 'готово' : task.taskPreparationStatus === 'failed' ? 'ошибка' : 'не запускалась'}</p>
-                {task.taskPreparationError && <p className="jcard-ci-phase">{task.taskPreparationError}</p>}
-                <pre className="ci-console-pre" data-testid="task-preparation-feed">{task.taskPreparationLog || 'Лента подготовки пока пуста.'}</pre>
-              </>}
-              <div className="jmodal-ci-actions">
-                {props.onStartPreparation && task.taskPreparationStatus !== 'running' && <Button variant="primary" size="sm" onClick={() => void props.onStartPreparation?.(task.id)}>{column?.semanticType === 'backlog' ? 'Начать подготовку задачи' : 'Повторить подготовку'}</Button>}
-              </div>
-            </div>
-          )}
           {task.type === 'task' && column?.semanticType !== 'backlog' && column?.semanticType !== 'preparation' && (props.onStartCi || props.ciSummary) && (
             <div className="jmodal-ci" data-testid="task-modal-ci">
               <div className="jmodal-ci-head">
@@ -842,6 +837,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           </div>
         </section>}
         {!props.draft && <>
+        <section className="task-tab-panel" data-testid="task-preparation-panel" hidden={activeTab !== 'preparation'}>{preparationVisible && <TaskPreparationTab projectId={task.projectId} taskId={task.id} liveRunId={task.taskPreparationRunId} liveStatus={task.taskPreparationStatus} loadRuns={props.loadPreparationRuns} onRetry={props.onRetryPreparation} onCancel={props.onCancelPreparation} />}</section>
         {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" hidden={activeTab !== stage}>{stage === 'component_qa'
           ? <ComponentQaPanel projectId={task.projectId} taskId={task.id} active={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
           : <QaStageRunPanel projectId={task.projectId} taskId={task.id} stage={stage} />}</section>)}
