@@ -65,6 +65,11 @@ export interface MergeAvailability {
   machineBound?: boolean
 }
 
+/** Успешный merge блокирует только тот source SHA, который действительно был слит. */
+export function isCurrentMergeSourceMerged(input: { sourceSha?: string | null; mergedSourceSha?: string | null; mergedSha?: string | null }): boolean {
+  return Boolean(input.mergedSha && input.sourceSha && input.sourceSha === input.mergedSourceSha)
+}
+
 /** Единое правило UI; сервер независимо проверяет каждый инвариант при старте. */
 export function canStartMerge(input: MergeAvailability): boolean {
   return input.semanticType === 'awaiting_merge'
