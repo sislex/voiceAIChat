@@ -1549,6 +1549,12 @@ describe('voiceStore — ходы, переживающие обновление
     store.actions.applyClaudeQueue(conversationId, [item], true)
     expect(store.getState().queuedTurns[conversationId]).toEqual([item])
     expect(store.getState().queuePaused[conversationId]).toBe(true)
+    const published = { id: 'm2', conversationId, role: 'u1' as const, text: 'Следующий', time: '10:01', createdAt: 1 }
+    store.actions.applyClaudeQueue(conversationId, [], false, published)
+    expect(store.getState().queuedTurns[conversationId]).toEqual([])
+    expect(store.getState().messages.filter((message) => message.id === 'm2')).toEqual([published])
+    store.actions.applyClaudeQueue(conversationId, [], false, published)
+    expect(store.getState().messages.filter((message) => message.id === 'm2')).toHaveLength(1)
     store.actions.editQueued('q1', 'Исправленный')
     store.actions.deleteQueued('q1')
     store.actions.sendQueuedNow('q1')
