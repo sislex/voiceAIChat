@@ -71,6 +71,14 @@ export function releaseTestCommands(value:string):string[] {
   return [value]
 }
 
+const regressionWorktreePath=(target:ReleaseProjectTarget,releaseId:string):string=>`${target.path.replace(/[\\/]+$/,'')}.voicechat-regression-${releaseId}`
+export const releaseRegressionSetupCommand=(target:ReleaseProjectTarget,releaseId:string,sha:string):string=>
+  at(target,`test ! -e ${quote(regressionWorktreePath(target,releaseId))} && git worktree add --detach ${quote(regressionWorktreePath(target,releaseId))} ${quote(sha)}`)
+export const releaseRegressionStageCommand=(target:ReleaseProjectTarget,releaseId:string,command:string):string=>
+  `cd ${quote(regressionWorktreePath(target,releaseId))} && (${command})`
+export const releaseRegressionCleanupCommand=(target:ReleaseProjectTarget,releaseId:string):string=>
+  at(target,`git worktree remove --force ${quote(regressionWorktreePath(target,releaseId))}`)
+
 export class ReleaseManager {
   private readonly preparing=new Set<string>()
   private readonly deploying=new Set<string>()
@@ -154,15 +162,19 @@ export class ReleaseManager {
       this.db.setProjectReleaseStep(release.id,'regression','running','',actor)
       const logs:string[]=[]
       const commands=releaseTestCommands(target.testCommand)
-      for(let index=0;index<commands.length;index+=1){
-        // Группировка удерживает всю составную shell-стадию (включая `&`/`wait`) после `cd` в checkout.
-        const stage=`(${commands[index]})`
-        const command=index===0?`git checkout --detach ${quote(found.sha)} && ${stage}`:stage
-        const limit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='regression')?.limitMs??RELEASE_TEST_TIMEOUT_MS
-        const regression=await this.runtime.exec(target,at(target,command),limit)
-        logs.push(`$ ${commands[index]}\n${regression.output}`)
-        if(regression.timedOut)throw new Error(`Regression, стадия ${index+1}/${commands.length}: фактическая длительность превысила лимит ${Math.round(limit/1000)} с\n${regression.output}`)
-        if(regression.exitCode!==0)throw new Error(regression.output||`Regression-команда ${index+1}/${commands.length} завершилась с ошибкой`)
+      const setup=await this.runtime.exec(target,releaseRegressionSetupCommand(target,release.id,found.sha),30_000)
+      if(setup.timedOut||setup.exitCode!==0)throw new Error(setup.output||'Не удалось создать изолированный worktree для Regression')
+      try{
+        for(let index=0;index<commands.length;index+=1){
+          // Группировка удерживает всю составную shell-стадию (включая `&`/`wait`) внутри временного worktree.
+          const limit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='regression')?.limitMs??RELEASE_TEST_TIMEOUT_MS
+          const regression=await this.runtime.exec(target,releaseRegressionStageCommand(target,release.id,commands[index]!),limit)
+          logs.push(`$ ${commands[index]}\n${regression.output}`)
+          if(regression.timedOut)throw new Error(`Regression, стадия ${index+1}/${commands.length}: фактическая длительность превысила лимит ${Math.round(limit/1000)} с\n${regression.output}`)
+          if(regression.exitCode!==0)throw new Error(regression.output||`Regression-команда ${index+1}/${commands.length} завершилась с ошибкой`)
+        }
+      }finally{
+        await this.runtime.exec(target,releaseRegressionCleanupCommand(target,release.id),30_000)
       }
       this.db.setProjectReleaseStep(release.id,'regression','passed',logs.join('\n\n'),actor)
       for(const kind of ['switching','building','health_check'] as const)this.db.setProjectReleaseStep(release.id,kind,'skipped','Выполняется только при deploy',actor)
@@ -234,7 +246,7 @@ export class ReleaseManager {
       this.db.setProjectReleaseStatus(release.id,'building',actor)
       this.db.setProjectReleaseStep(release.id,'building','running','',actor)
       const buildLimit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='building')?.limitMs??300_000
-      const built=await this.runtime.exec(target,at(target,`export VC_RELEASE_VERSION=${quote(release.version)} && ${target.deployCommand}`),buildLimit)
+      const built=await this.runtime.exec(target,at(target,`export VC_RELEASE_VERSION=${quote(release.version)} VC_RELEASE_SOURCE='protected-release' && echo 'production release metadata: version='"$VC_RELEASE_VERSION"' source='"$VC_RELEASE_SOURCE" && ${target.deployCommand}`),buildLimit)
       if(built.timedOut)throw new Error(`Сборка и обновление контейнеров: фактическая длительность превысила лимит ${Math.round(buildLimit/1000)} с\n${built.output}`)
       if(built.exitCode!==0)throw new Error(built.output||'Production build завершился с ошибкой')
       this.db.setProjectReleaseStep(release.id,'building','passed',built.output,actor)

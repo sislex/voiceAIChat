@@ -230,6 +230,15 @@ production checkout, сохраняет его как content-addressed неиз
 исполняемый файл посреди `git pull`, а исправления передачи release metadata не
 застревают в старой установленной копии.
 
+При отделении через `setsid nohup` launcher явно передаёт фоновой копии
+`VC_RELEASE_VERSION`, `VC_RELEASE_SOURCE`, `VC_RELEASED_AT`,
+`VC_RELEASE_COMMIT` и `VC_RELEASE_TASK` через `env`. Это часть контракта, а
+не необязательное наследование shell-окружения: защищённый release помечает
+источник как `protected-release`, и именно его каноническая версия должна дойти
+до Compose. Обычный запуск без явной версии по-прежнему берёт строгий тег
+текущего HEAD либо публикует неизвестную версию. Перед сборкой лог содержит
+version, source, commit и task.
+
 ## Прод-каталог заодно рабочая копия — коммит там пушится сразу
 
 `/root/voiceAIChat` — не только прод-чекаут, из которого `docker compose` собирает
