@@ -1293,6 +1293,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               />}
               widget={<ProjectBoard
               initialOpenTaskId={routeTaskId}
+              initialOpenTaskTab={segments[4] === 'preparation' ? 'preparation' : undefined}
+              onOpenTaskRouteChange={(taskId, tab) => navigate(taskId ? `/projects/${routeProjectId}/task/${taskId}${tab ? `/${tab}` : ''}` : `/projects/${routeProjectId}`)}
               projectName={routeProjectName}
               board={state.board}
               loading={state.boardLoading || state.activeProjectId !== routeProjectId}
@@ -1321,6 +1323,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               onOpenCiRun={(runId) => actions.openCiRun(runId)}
               onDequeueCiRun={(runId) => void actions.dequeueCiRun(runId)}
               onStartMerge={(taskId, agentId) => { if (routeProjectId) void actions.startMergeRun(routeProjectId, taskId, agentId) }}
+              loadPreparationRuns={(taskId) => api['tasks:listPreparationRuns']({ projectId: routeProjectId!, taskId })}
+              onRetryPreparation={(runId) => api['tasks:retryPreparationRun']({ runId })}
+              onCancelPreparation={(runId) => api['tasks:cancelPreparationRun']({ runId })}
               aiAssistPrompts={state.settings.aiAssistPrompts}
               onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
               generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}

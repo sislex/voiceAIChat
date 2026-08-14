@@ -28,7 +28,7 @@ export interface TaskCardProps {
   /** Колонки со смыслом «done» — для прогресса и зачёркивания ключа. */
   doneColumnIds: ReadonlySet<string>
   columnSemanticType?: KanbanColumnSemanticType
-  onOpen: (taskId: string) => void
+  onOpen: (taskId: string, tab?: 'preparation') => void
   onUpdate: (taskId: string, fields: { flagged?: boolean }) => void
   onDelete: (taskId: string) => void
   onMoveTop: (taskId: string) => void
@@ -233,7 +233,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         <div className="jcard-ci" data-testid="task-preparation-panel" onClick={(e) => e.stopPropagation()}>
           <div className="jcard-ci-row"><span className="ci-lozenge">{task.taskPreparationStatus === 'running' ? 'Подготовка выполняется' : task.taskPreparationStatus === 'failed' ? 'Подготовка не прошла' : 'Подготовка'}</span></div>
           {task.taskPreparationError && <p className="jcard-ci-phase">{task.taskPreparationError}</p>}
-          <Button size="sm" onClick={() => props.onOpen(task.id)}>Лента подготовки</Button>
+          <Button size="sm" onClick={() => props.onOpen(task.id, 'preparation')}>Лента подготовки</Button>
           {task.taskPreparationStatus !== 'running' && props.onStartPreparation && <Button size="sm" onClick={() => void props.onStartPreparation?.(task.id)}>Повторить</Button>}
         </div>
       )}

@@ -5041,8 +5041,9 @@ export class VoiceChatDb {
     const target = this.getColumnIdBySemantic(projectId, 'preparation')
     if (!target) throw new Error('Колонка Подготовка к разработке не найдена')
     const id = this.newId(), now = this.now()
+    const attempt = Number((this.db.prepare(`SELECT COALESCE(MAX(attempt), 0) + 1 AS attempt FROM task_preparation_runs WHERE task_id=?`).get(taskId) as { attempt: number }).attempt)
     this.db.transaction(() => {
-      this.db.prepare(`INSERT INTO task_preparation_runs (id,project_id,task_id,status,created_at) VALUES (?,?,?,'running',?)`).run(id, projectId, taskId, now)
+      this.db.prepare(`INSERT INTO task_preparation_runs (id,project_id,task_id,status,attempt,created_at) VALUES (?,?,?,'running',?,?)`).run(id, projectId, taskId, attempt, now)
       if (task.columnId !== target) this.moveTask(userId, projectId, taskId, { columnId: target })
     })()
     return this.getTaskPreparationRun(userId, id)!

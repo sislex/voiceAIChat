@@ -75,6 +75,19 @@ describe('KanbanBoard (изолированный)', () => {
     expect(body.scrollTop).toBe(240)
   })
 
+  it('«Лента подготовки» открывает модалку сразу на preparation-вкладке', async () => {
+    const preparationBoard: Board = {
+      columns: [{ ...board.columns[0]!, name: 'Подготовка к разработке', semanticType: 'preparation' }],
+      tasks: [task({ id: 't1', title: 'A', taskPreparationRunId: 'prep-1', taskPreparationStatus: 'failed' })]
+    }
+    renderBoard({ board: preparationBoard, loadPreparationRuns: async () => [{ id: 'prep-1', projectId: 'p1', taskId: 't1', status: 'failed', attempt: 1, maxAttempts: 2, log: 'Лента', error: 'Ошибка', readiness: null, gateReasons: [], createdAt: 1, finishedAt: 2, canRetry: true, canCancel: false }] })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Лента подготовки' }))
+
+    expect(await screen.findByTestId('task-modal')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Подготовка к разработке' })).toHaveAttribute('aria-selected', 'true')
+  })
+
   it('обычное обновление данных сохраняет горизонтальную и вертикальные позиции', () => {
     const view = render(<KanbanBoardHarness board={dndBoard} />)
     const surface = screen.getByTestId('kanban-board')
