@@ -118,9 +118,9 @@ export interface KanbanBoardProps {
   /** Сводки CI-ранов по taskId. */
   ciSummaries?: Record<string, CiRunSummary>
   /** Запустить CI-воркфлоу для задачи (в общую очередь). */
-  onStartCi?: (taskId: string) => void
+  onStartCi?: (taskId: string) => void | Promise<void>
   /** Запустить CI-воркфлоу сразу, мимо очереди (машина подбирается автоматически). */
-  onStartCiParallel?: (taskId: string) => void
+  onStartCiParallel?: (taskId: string) => void | Promise<void>
   /** Открыть ленту CI-рана. */
   onOpenCiRun?: (runId: string) => void
   /** Убрать ожидающий ран из очереди CI. */

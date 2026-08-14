@@ -4321,7 +4321,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 /* CI-панель на карточке задачи */
 .jcard-ci { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.jcard-ci-row { display: flex; align-items: center; gap: 8px; }
+.jcard-ci-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.jcard-ci-row > .vc-btn { min-width: 0; }
 .jcard-ci-bar { flex: 1; height: 6px; background: var(--ci-neutral-bg); border-radius: 3px; overflow: hidden; }
 .jcard-ci-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
 .jcard-ci-fill--success { background: var(--ci-success); }
