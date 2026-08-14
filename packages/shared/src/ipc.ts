@@ -515,7 +515,7 @@ export interface IpcEventMap {
   'claude:usage': { conversationId: string; usage: TurnUsage }
   /** Снапшот активных ходов при (пере)подключении — восстановление стрима. */
   'claude:active': { turns: Array<{ conversationId: string; partial: string; activity?: ClaudeLogEntry[]; usage?: TurnUsage }> }
-  'claude:queue': { conversationId: string; items: QueuedTurn[]; paused: boolean }
+  'claude:queue': { conversationId: string; items: QueuedTurn[]; paused: boolean; published?: Message }
   /** Прогресс скачивания модели Whisper (0–100). */
   'stt:downloadProgress': { percent: number }
   /** Скачивание модели завершено. */

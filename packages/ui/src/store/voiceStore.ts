@@ -698,7 +698,7 @@ export interface StoreActions {
   applyClaudeError(message: string, conversationId?: string): void
   /** Применить снапшот активных ходов (claude:active) — восстановление стрима. */
   applyClaudeActive(turns: ActiveTurn[]): void
-  applyClaudeQueue(conversationId: string, items: QueuedTurn[], paused: boolean): void
+  applyClaudeQueue(conversationId: string, items: QueuedTurn[], paused: boolean, published?: Message): void
   editQueued(id: string, text: string): void
   deleteQueued(id: string): void
   sendQueuedNow(id: string): void
@@ -3257,11 +3257,19 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Живые счётчики токенов хода (claude:usage): per-разговор и, если ход активного, в liveUsage. */
-  function applyClaudeQueue(conversationId: string, items: QueuedTurn[], paused: boolean): void {
-    setState({
+  function applyClaudeQueue(conversationId: string, items: QueuedTurn[], paused: boolean, published?: Message): void {
+    const queuedIds = new Set(items.map((item) => item.messageId))
+    const patch: Partial<AppState> = {
       queuedTurns: { ...state.queuedTurns, [conversationId]: items },
       queuePaused: { ...state.queuePaused, [conversationId]: paused }
-    })
+    }
+    if (conversationId === state.activeId) {
+      const visible = state.messages.filter((message) => !queuedIds.has(message.id))
+      patch.messages = published && !visible.some((message) => message.id === published.id)
+        ? [...visible, published]
+        : visible
+    }
+    setState(patch)
   }
 
   function editQueued(id: string, text: string): void {
