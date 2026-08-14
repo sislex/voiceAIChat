@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ChatColumn } from './ChatColumn'
 import type { Message } from '@shared/types'
@@ -554,6 +554,133 @@ describe('ChatColumn — переход из поиска по сообщени�
     renderCol()
     expect(scrollIntoView).not.toHaveBeenCalled()
     expect(document.querySelector('.msg--found')).toBeNull()
+  })
+})
+
+
+describe('ChatColumn — автопрокрутка ленты', () => {
+  function metrics(el: HTMLElement, values: { scrollHeight: number; clientHeight: number; scrollTop: number }): void {
+    Object.defineProperties(el, {
+      scrollHeight: { configurable: true, get: () => values.scrollHeight },
+      clientHeight: { configurable: true, get: () => values.clientHeight },
+      scrollTop: {
+        configurable: true,
+        get: () => values.scrollTop,
+        set: (next: number) => { values.scrollTop = next }
+      }
+    })
+  }
+
+  const col = (props: Partial<Parameters<typeof ChatColumn>[0]>): JSX.Element => (
+    <ChatColumn
+      title="Тест"
+      state="thinking"
+      messages={messages}
+      liveSegments={[]}
+      diarization={false}
+      voiceBar={<div data-testid="composer">composer</div>}
+      {...props}
+    />
+  )
+
+  it('следует за токенами у конца с допуском по фактической дистанции', () => {
+    const { rerender } = render(col({ conversationId: 'scroll-near', streamingReply: 'О' }))
+    const scroll = screen.getByTestId('scroll')
+    const box = { scrollHeight: 1000, clientHeight: 300, scrollTop: 610 }
+    metrics(scroll, box)
+    fireEvent.wheel(scroll)
+    fireEvent.scroll(scroll) // до конца 90px — внутри порога 100px
+
+    box.scrollHeight = 1080
+    rerender(col({ conversationId: 'scroll-near', streamingReply: 'Ответ' }))
+
+    expect(box.scrollTop).toBe(1080)
+    expect(screen.queryByRole('button', { name: 'К новому сообщению' })).not.toBeInTheDocument()
+  })
+
+  it('ручная прокрутка вверх сохраняет scrollTop при новых токенах и показывает кнопку', () => {
+    const { rerender } = render(col({ conversationId: 'scroll-reading', streamingReply: 'О' }))
+    const scroll = screen.getByTestId('scroll')
+    const box = { scrollHeight: 1000, clientHeight: 300, scrollTop: 480 }
+    metrics(scroll, box)
+    fireEvent.wheel(scroll)
+    fireEvent.scroll(scroll)
+
+    box.scrollHeight = 1160
+    rerender(col({ conversationId: 'scroll-reading', streamingReply: 'Ответ растёт' }))
+
+    expect(box.scrollTop).toBe(480)
+    expect(screen.getByRole('button', { name: 'К новому сообщению' })).toBeInTheDocument()
+    expect(screen.getByTestId('composer').previousElementSibling).toHaveClass('new-message-row')
+  })
+
+  it('кнопка возвращает вниз, включает follow и исчезает', async () => {
+    const { rerender } = render(col({ conversationId: 'scroll-return', streamingReply: 'О' }))
+    const scroll = screen.getByTestId('scroll')
+    const box = { scrollHeight: 1000, clientHeight: 300, scrollTop: 300 }
+    metrics(scroll, box)
+    fireEvent.wheel(scroll)
+    fireEvent.scroll(scroll)
+    rerender(col({ conversationId: 'scroll-return', streamingReply: 'Ответ' }))
+
+    const button = screen.getByRole('button', { name: 'К новому сообщению' })
+    expect(button).not.toHaveFocus()
+    await userEvent.click(button)
+    expect(box.scrollTop).toBe(1000)
+    expect(screen.queryByRole('button', { name: 'К новому сообщению' })).not.toBeInTheDocument()
+
+    box.scrollHeight = 1200
+    rerender(col({ conversationId: 'scroll-return', streamingReply: 'Ответ ещё длиннее' }))
+    expect(box.scrollTop).toBe(1200)
+  })
+
+  it('самостоятельный возврат к нижней границе снова включает follow', () => {
+    const { rerender } = render(col({ conversationId: 'scroll-self-return', streamingReply: 'О' }))
+    const scroll = screen.getByTestId('scroll')
+    const box = { scrollHeight: 1000, clientHeight: 300, scrollTop: 400 }
+    metrics(scroll, box)
+    fireEvent.wheel(scroll)
+    fireEvent.scroll(scroll)
+    rerender(col({ conversationId: 'scroll-self-return', streamingReply: 'Ответ' }))
+    expect(screen.getByRole('button', { name: 'К новому сообщению' })).toBeInTheDocument()
+
+    box.scrollTop = 700
+    fireEvent.scroll(scroll)
+    expect(screen.queryByRole('button', { name: 'К новому сообщению' })).not.toBeInTheDocument()
+    box.scrollHeight = 1100
+    rerender(col({ conversationId: 'scroll-self-return', streamingReply: 'Ответ растёт' }))
+    expect(box.scrollTop).toBe(1100)
+  })
+
+  it('хранит ручную позицию отдельно для разговоров и восстанавливает её после переключения', () => {
+    const { rerender } = render(col({ conversationId: 'scroll-chat-a', streamingReply: 'A' }))
+    const scroll = screen.getByTestId('scroll')
+    const box = { scrollHeight: 1000, clientHeight: 300, scrollTop: 350 }
+    metrics(scroll, box)
+    fireEvent.wheel(scroll)
+    fireEvent.scroll(scroll)
+
+    rerender(col({ conversationId: 'scroll-chat-b', streamingReply: 'B' }))
+    expect(box.scrollTop).toBe(1000)
+    box.scrollTop = 520
+    fireEvent.scroll(scroll)
+
+    rerender(col({ conversationId: 'scroll-chat-a', streamingReply: 'A2' }))
+    expect(box.scrollTop).toBe(350)
+  })
+
+  it('новое собственное сообщение возвращает вниз и начинает новый follow-ход', () => {
+    const { rerender } = render(col({ conversationId: 'scroll-own', streamingReply: '' }))
+    const scroll = screen.getByTestId('scroll')
+    const box = { scrollHeight: 1000, clientHeight: 300, scrollTop: 300 }
+    metrics(scroll, box)
+    fireEvent.wheel(scroll)
+    fireEvent.scroll(scroll)
+
+    const own = makeUserMessage({ id: 'new-own', text: 'Новый вопрос' })
+    box.scrollHeight = 1120
+    rerender(col({ conversationId: 'scroll-own', messages: [...messages, own], streamingReply: '' }))
+    expect(box.scrollTop).toBe(1120)
   })
 })
 

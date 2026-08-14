@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { ClaudeLogEntry, KbContextMode, Message, PermissionMode, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
@@ -39,6 +39,31 @@ import { useAutoGrow } from '../lib/autoGrow'
 
 /** Сколько держим подсветку сообщения, к которому перешли из поиска. */
 const HIGHLIGHT_MS = 2000
+/** Пользователь остаётся «у конца», пока отступ не превысил этот допуск. */
+const BOTTOM_THRESHOLD_PX = 100
+const SCROLL_STORAGE_KEY = 'voicechat:chat-scroll:v1'
+const DEFAULT_CONVERSATION_KEY = '__default__'
+
+type SavedScroll = { scrollTop: number; autoFollow: boolean }
+
+function readSavedScrolls(): Record<string, SavedScroll> {
+  try {
+    const value = sessionStorage.getItem(SCROLL_STORAGE_KEY)
+    return value ? JSON.parse(value) as Record<string, SavedScroll> : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeSavedScroll(conversationId: string, value: SavedScroll): void {
+  try {
+    const saved = readSavedScrolls()
+    saved[conversationId] = value
+    sessionStorage.setItem(SCROLL_STORAGE_KEY, JSON.stringify(saved))
+  } catch {
+    // Хранилище может быть запрещено политикой браузера — прокрутка всё равно работает в текущем DOM.
+  }
+}
 
 const EDIT_MIN_ROWS = 2
 const EDIT_MAX_ROWS = 4
@@ -62,6 +87,8 @@ function modeLabel(mode?: string): string {
 
 export interface ChatColumnProps {
   title: string
+  /** Id нужен для независимого восстановления ручной позиции каждого разговора. */
+  conversationId?: string | null
   /** Переименовать текущий разговор (клик по заголовку в шапке). */
   onRenameTitle?: (title: string) => void
   /** Показать/скрыть общий Sidebar. */
@@ -171,6 +198,7 @@ export interface ChatColumnProps {
 
 export function ChatColumn({
   title,
+  conversationId,
   onRenameTitle,
   onToggleSidebar,
   sidebarExpanded = true,
@@ -225,6 +253,13 @@ export function ChatColumn({
 }: ChatColumnProps): JSX.Element {
   const [exportOpen, setExportOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const conversationKey = conversationId ?? DEFAULT_CONVERSATION_KEY
+  const activeConversationRef = useRef(conversationKey)
+  const autoFollowRef = useRef(true)
+  const programmaticScrollRef = useRef(false)
+  const lastScrollHeightRef = useRef(0)
+  const lastMessageIdRef = useRef<string | null>(null)
+  const [hasNewContent, setHasNewContent] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
   // Поле редактирования — как композер: от двух строк до четырёх, дальше скролл.
@@ -285,11 +320,99 @@ export function ChatColumn({
     cancelEdit()
   }
 
-  // Автоскролл вниз при новых сообщениях/сегментах/токенах ответа.
+  const persistScroll = useCallback((el: HTMLDivElement): void => {
+    writeSavedScroll(activeConversationRef.current, {
+      scrollTop: el.scrollTop,
+      autoFollow: autoFollowRef.current
+    })
+  }, [])
+
+  const scrollToBottom = useCallback((restoreFollow = true): void => {
+    const el = scrollRef.current
+    if (!el) return
+    programmaticScrollRef.current = true
+    el.scrollTop = el.scrollHeight
+    lastScrollHeightRef.current = el.scrollHeight
+    if (restoreFollow) autoFollowRef.current = true
+    setHasNewContent(false)
+    persistScroll(el)
+    requestAnimationFrame(() => { programmaticScrollRef.current = false })
+  }, [persistScroll])
+
+  const markManualScrollIntent = useCallback((): void => {
+    programmaticScrollRef.current = false
+  }, [])
+
+  const onScroll = useCallback((): void => {
+    const el = scrollRef.current
+    if (!el || programmaticScrollRef.current) return
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+    const atBottom = distance <= BOTTOM_THRESHOLD_PX
+    autoFollowRef.current = atBottom
+    if (atBottom) setHasNewContent(false)
+    persistScroll(el)
+  }, [persistScroll])
+
+  // Смена разговора восстанавливает именно его ручную позицию. Для нового чата
+  // исходное состояние — конец ленты; sessionStorage переживает reload/reconnect.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    activeConversationRef.current = conversationKey
+    const saved = readSavedScrolls()[conversationKey]
+    autoFollowRef.current = saved?.autoFollow ?? true
+    setHasNewContent(false)
+    programmaticScrollRef.current = true
+    el.scrollTop = saved && !saved.autoFollow ? saved.scrollTop : el.scrollHeight
+    lastScrollHeightRef.current = el.scrollHeight
+    lastMessageIdRef.current = messages[messages.length - 1]?.id ?? null
+    requestAnimationFrame(() => { programmaticScrollRef.current = false })
+  }, [conversationKey])
+
+  // Новое собственное сообщение начинает новый ход и всегда возвращает follow.
+  // В остальных случаях токены двигают ленту только если пользователь был у конца.
+  useEffect(() => {
+    const last = messages[messages.length - 1]
+    const ownMessageAdded = Boolean(last && last.role !== 'ai' && last.id !== lastMessageIdRef.current)
+    lastMessageIdRef.current = last?.id ?? null
+    if (ownMessageAdded) {
+      scrollToBottom()
+    } else if (autoFollowRef.current) {
+      scrollToBottom(false)
+    } else {
+      setHasNewContent(true)
+    }
+  }, [messages, liveSegments, state, streamingReply, scrollToBottom])
+
+  // Markdown, подсветка кода, изображения и раскрываемые блоки меняют высоту уже
+  // после рендера. ResizeObserver следует за ними только в follow-режиме.
   useEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [messages.length, liveSegments, state, streamingReply])
+    const content = el?.firstElementChild
+    if (!el || !content || typeof ResizeObserver !== 'function') return
+    const observer = new ResizeObserver(() => {
+      const grew = el.scrollHeight > lastScrollHeightRef.current
+      lastScrollHeightRef.current = el.scrollHeight
+      if (!grew) return
+      if (autoFollowRef.current) scrollToBottom(false)
+      else setHasNewContent(true)
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [conversationKey, scrollToBottom])
+
+  // Изменение окна и экранной клавиатуры не должно сбрасывать ручное чтение.
+  useEffect(() => {
+    const followViewport = (): void => {
+      if (autoFollowRef.current) scrollToBottom(false)
+    }
+    window.addEventListener('resize', followViewport)
+    window.visualViewport?.addEventListener('resize', followViewport)
+    return () => {
+      window.removeEventListener('resize', followViewport)
+      window.visualViewport?.removeEventListener('resize', followViewport)
+    }
+  }, [scrollToBottom])
 
   // Переход из поиска: прокручиваем к найденному сообщению и держим подсветку
   // HIGHLIGHT_MS. Эффект стоит после автоскролла вниз — иначе тот перебил бы
@@ -470,7 +593,17 @@ export function ChatColumn({
         {replyAnnounce}
       </p>
 
-      <div className="scroll" ref={scrollRef} data-testid="scroll">
+      <div
+        className="scroll"
+        ref={scrollRef}
+        data-testid="scroll"
+        tabIndex={0}
+        onScroll={onScroll}
+        onWheel={markManualScrollIntent}
+        onTouchMove={markManualScrollIntent}
+        onPointerDown={markManualScrollIntent}
+        onKeyDown={markManualScrollIntent}
+      >
         <div className="col-c">
           {/* Первая загрузка ленты — скелетон реплик той же геометрии, что у
               сообщений (свои слева, ответы модели шире справа). Повторная
@@ -852,6 +985,20 @@ export function ChatColumn({
           )}
         </div>
       </div>
+
+      {hasNewContent && (
+        <div className="new-message-row">
+          <Button
+            className="new-message-button"
+            variant="secondary"
+            size="sm"
+            aria-label="К новому сообщению"
+            onClick={() => scrollToBottom()}
+          >
+            ↓ К новому сообщению
+          </Button>
+        </div>
+      )}
 
       {voiceBar}
     </main>

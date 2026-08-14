@@ -1104,6 +1104,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       <div className="chat-split-chat">
       {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={state.activeId ?? ''} onChange={(event) => navigate(`/web-reader/${event.target.value}`)}>{state.conversations.filter((conversation) => conversation.assistantKind === 'web-recorder' || Boolean(conversation.previewUrl)).map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => void actions.newConversation('web-recorder').then((id) => { if (id) navigate(`/web-reader/${id}`) })}>+ Новый</button></header>}
       <ChatColumn
+        conversationId={state.activeId}
         onToggleSidebar={inReader ? undefined : toggleSidebar}
         sidebarExpanded={sidebarExpanded}
         title={activeTitle}
