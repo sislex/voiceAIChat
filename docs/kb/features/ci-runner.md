@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-14
-checked: 559a1fc
+checked: e0b2476
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -176,6 +176,20 @@ review, обновление БЗ, релизный анализ и резюме
 `pushTaskBranch` фиксирует branch/SHA/машину и `pushed=1` в `ci_workspaces`.
 Неуспешный push делает ран failed; успешный переводит карточку к подготовке
 ручного QA.
+
+### Диагностика транспорта Git на CI-машине
+
+Ошибка HTTPS push относится к учётным данным самой связанной машины, а не к
+проектной роли ChatAI. Проверять её надо в рабочей копии тем же remote и через
+`git push --dry-run` с полностью указанным refspec; имя аккаунта можно получить
+из настроенного credential helper, не печатая пароль или token. На текущей машине
+MacBook `origin` использует `https://github.com/sislex/voiceAIChat.git`, macOS
+Keychain отдаёт аккаунт `sislex`, и dry-run в этот репозиторий проходит. SSH сейчас
+не является фолбэком: `ssh -T git@github.com` и dry-run на
+`ssh://git@github.com/sislex/voiceAIChat.git` отвечают `Permission denied
+(publickey)`. Глобальное правило `insteadOf` переписывает форму
+`git@github.com:…` в HTTPS, но не явный `ssh://…`; менять origin на явный SSH
+имеет смысл только после отдельной успешной проверки ключа и права записи.
 
 Affected-check, встроенный `kb_update`, legacy merge, production deploy и cleanup
 удаляются из `after_model` идемпотентной миграцией. Записи справочника и

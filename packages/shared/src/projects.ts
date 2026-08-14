@@ -214,6 +214,60 @@ export interface Task {
 }
 
 /**
+ * Приводит критерии приёмки к единому Markdown-списку. Верхнеуровневые
+ * непустые строки становятся пунктами; строки с отступом, вложенные списки,
+ * цитаты и fenced-блоки остаются содержимым текущего пункта.
+ *
+ * Функция намеренно идемпотентна: её используют и UI, и сервер перед записью.
+ */
+export function normalizeAcceptanceCriteria(value: string): string {
+  const source = value.replace(/\r\n?/g, '\n')
+  if (!source.trim()) return ''
+
+  const items: string[][] = []
+  let current: string[] | null = null
+  let inFence = false
+
+  const newItem = (text: string): string[] | null => {
+    let clean = text.trim()
+    // Убираем любое количество старых ручных номеров: «1. 3. текст» не
+    // превращается в двойную нумерацию.
+    while (/^\d+[.)]\s+/.test(clean)) clean = clean.replace(/^\d+[.)]\s+/, '')
+    clean = clean.replace(/^[-*+]\s+(?:\[[ xX]\]\s+)?/, '')
+    return clean ? [clean] : null
+  }
+
+  for (const line of source.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      if (current?.length && current[current.length - 1] !== '') current.push('')
+      continue
+    }
+
+    const indented = /^\s+/.test(line)
+    const nested = /^(?:>\s?|#{1,6}\s+)/.test(trimmed)
+    const fence = /^\`\`\`|^~~~/.test(trimmed)
+
+    if (current && (inFence || indented || nested || fence)) {
+      current.push(trimmed)
+      if (fence) inFence = !inFence
+      continue
+    }
+
+    current = newItem(trimmed)
+    if (current) items.push(current)
+    if (current && fence) inFence = true
+  }
+
+  return items.map((lines, index) => {
+    while (lines[lines.length - 1] === '') lines.pop()
+    const [first, ...rest] = lines
+    const body = rest.map((line) => line ? `   ${line}` : '   ').join('\n')
+    return `${index + 1}. ${first}${body ? `\n${body}` : ''}`
+  }).join('\n')
+}
+
+/**
  * Сравнивает задачи одной колонки для показа на доске. В `development` сверху
  * стоят более приоритетные задачи; при одинаковом приоритете сохраняется ручной
  * порядок. В `done` первой идёт задача, которая последней попала в колонку;
