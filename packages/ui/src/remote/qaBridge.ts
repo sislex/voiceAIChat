@@ -12,6 +12,7 @@ export interface RendererQaBridge {
   startSession(projectId: string, taskId: string, input: StartSessionInput): Promise<QaSession>
   saveResult(projectId: string, taskId: string, resultId: string, revision: number, patch: Partial<QaCriterionResult> & Record<string, unknown>): Promise<QaCriterionResult>
   addAttachment(projectId: string, taskId: string, resultId: string, uploadId: string, caption: string): Promise<import('@shared/qa').QaAttachment>
+  saveAdditionalIssues?(projectId: string, taskId: string, sessionId: string, additionalIssues: string): Promise<QaSession>
   complete(projectId: string, taskId: string, sessionId: string, summary: string): Promise<QaSession>
   requestFix(projectId: string, taskId: string, sessionId: string): Promise<{ id: string }>
 }
@@ -34,6 +35,7 @@ export function createQaRest(httpBase: string): RendererQaBridge {
     startSession: (projectId: string, taskId: string, input: StartSessionInput) => request(REST.taskQaSessions(projectId, taskId), { method: 'POST', body: JSON.stringify(input) }),
     saveResult: (projectId, taskId, resultId, revision, patch) => request(REST.taskQaResult(projectId, taskId, resultId), { method: 'PATCH', body: JSON.stringify({ revision, patch }) }),
     addAttachment: (projectId, taskId, resultId, uploadId, caption) => request(`${REST.taskQaResult(projectId, taskId, resultId)}/attachments`, { method: 'POST', body: JSON.stringify({ uploadId, caption }) }),
+    saveAdditionalIssues: (projectId, taskId, sessionId, additionalIssues) => request(REST.taskQaSession(projectId, taskId, sessionId), { method: 'PATCH', body: JSON.stringify({ additionalIssues }) }),
     complete: (projectId, taskId, sessionId, summary) => request(REST.taskQaComplete(projectId, taskId, sessionId), { method: 'POST', body: JSON.stringify({ summary }) }),
     requestFix: (projectId, taskId, sessionId) => request(REST.taskQaFix(projectId, taskId, sessionId), { method: 'POST' })
   }
