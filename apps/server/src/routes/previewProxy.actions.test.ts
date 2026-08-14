@@ -177,3 +177,93 @@ describe('скрипт превью: DOM-действия', () => {
     expect(res.error).toContain('Некорректный CSS-селектор')
   })
 })
+
+// Сетевой шим context-скрипта: fetch/XHR/sendBeacon/навигация переписываются
+// на /api/preview. Нативные fetch/XHR/beacon подменяются моками ДО eval —
+// шим захватывает их как «нативные», и тесты видят, куда реально ушёл вызов.
+describe('контекст превью: сетевой шим', () => {
+  const fetchCalls: { input: unknown; init?: RequestInit }[] = []
+  const beaconCalls: unknown[][] = []
+  const xhrOpenCalls: unknown[][] = []
+  const xhrHeaderCalls: [string, string][] = []
+
+  class FakeXhr {
+    open(...args: unknown[]): void { xhrOpenCalls.push(args) }
+    setRequestHeader(name: string, value: string): void { xhrHeaderCalls.push([name, value]) }
+    send(): void {}
+  }
+
+  beforeAll(() => {
+    ;(window as unknown as { fetch: unknown }).fetch = (input: unknown, init?: RequestInit) => {
+      fetchCalls.push({ input, init })
+      return Promise.resolve('proxied-response')
+    }
+    ;(window as unknown as { XMLHttpRequest: unknown }).XMLHttpRequest = FakeXhr
+    Object.defineProperty(navigator, 'sendBeacon', {
+      configurable: true,
+      writable: true,
+      value: (...args: unknown[]) => { beaconCalls.push(args); return true }
+    })
+    const body = previewContextScript('https://shop.example/base/').replace(/^<script>/, '').replace(/<\/script>$/, '')
+    ;(0, eval)(body)
+  })
+
+  it('fetch с относительным и абсолютным URL уходит в /api/preview с credentials', async () => {
+    await window.fetch('/api/data')
+    expect(fetchCalls.at(-1)?.input).toBe('/api/preview?url=' + encodeURIComponent('https://shop.example/api/data'))
+    expect(fetchCalls.at(-1)?.init?.credentials).toBe('same-origin')
+    await window.fetch('https://shop.example/items?page=2')
+    expect(fetchCalls.at(-1)?.input).toBe('/api/preview?url=' + encodeURIComponent('https://shop.example/items?page=2'))
+  })
+
+  it('fetch не трогает уже обёрнутые и не-http URL', async () => {
+    const proxied = '/api/preview?url=' + encodeURIComponent('https://shop.example/x')
+    await window.fetch(proxied)
+    expect(fetchCalls.at(-1)?.input).toBe(proxied)
+    expect(fetchCalls.at(-1)?.init).toBeUndefined()
+    await window.fetch('data:text/plain,hi')
+    expect(fetchCalls.at(-1)?.input).toBe('data:text/plain,hi')
+  })
+
+  it('fetch сохраняет метод, тело и content-type, а Authorization страницы прячет от Bearer-гейта', async () => {
+    await window.fetch('/login', { method: 'POST', body: '{"a":1}', headers: { Authorization: 'Bearer site-token', 'Content-Type': 'application/json' } })
+    const call = fetchCalls.at(-1)!
+    expect(call.init?.method).toBe('POST')
+    expect(call.init?.body).toBe('{"a":1}')
+    const headers = call.init?.headers as Headers
+    expect(headers.get('content-type')).toBe('application/json')
+    expect(headers.get('authorization')).toBeNull()
+    expect(headers.get('x-preview-authorization')).toBe('Bearer site-token')
+  })
+
+  it('XMLHttpRequest.open переписывает URL, setRequestHeader переименовывает Authorization', () => {
+    const xhr = new (window as unknown as { XMLHttpRequest: new () => FakeXhr }).XMLHttpRequest()
+    xhr.open('POST', 'submit')
+    expect(xhrOpenCalls.at(-1)).toEqual(['POST', '/api/preview?url=' + encodeURIComponent('https://shop.example/base/submit')])
+    xhr.open('GET', 'https://shop.example/api/list', true)
+    expect(xhrOpenCalls.at(-1)).toEqual(['GET', '/api/preview?url=' + encodeURIComponent('https://shop.example/api/list'), true])
+    xhr.setRequestHeader('Authorization', 'Bearer t')
+    expect(xhrHeaderCalls.at(-1)).toEqual(['x-preview-authorization', 'Bearer t'])
+  })
+
+  it('navigator.sendBeacon заворачивает целевой URL в прокси', () => {
+    navigator.sendBeacon('https://shop.example/metrics', 'payload')
+    expect(beaconCalls.at(-1)).toEqual(['/api/preview?url=' + encodeURIComponent('https://shop.example/metrics'), 'payload'])
+  })
+
+  it('шим содержит best-effort перехват location.assign/replace/href', () => {
+    const script = previewContextScript('https://shop.example/base/')
+    expect(script).toContain("Object.defineProperty(location,'assign'")
+    expect(script).toContain("Object.defineProperty(location,'replace'")
+    expect(script).toContain("Object.defineProperty(location,'href'")
+  })
+
+  // Тест меняет location через pushState — держим его последним в файле.
+  it('history.pushState остаётся внутри /api/preview и сдвигает базу относительных fetch', async () => {
+    history.pushState({}, '', '/spa/page')
+    expect(location.pathname).toBe('/api/preview')
+    expect(location.search).toContain(encodeURIComponent('https://shop.example/spa/page'))
+    await window.fetch('next')
+    expect(fetchCalls.at(-1)?.input).toBe('/api/preview?url=' + encodeURIComponent('https://shop.example/spa/next'))
+  })
+})
