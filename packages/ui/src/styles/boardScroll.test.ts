@@ -60,7 +60,14 @@ describe('app.css — скролл длинной колонки доски', ()
     expect(decl('.jcol-body', 'overflow-y')).toBe('auto')
     expect(decl('.jcol-body', 'flex')).toBe('1')
     expect(decl('.jcol-body', 'min-height')).toBe('0')
+    expect(decl('.jcol-body', 'overscroll-behavior')).toBe('contain')
     expect(decl('.jcol-head', 'flex')).toBe('none')
+  })
+
+  it('touch-скролл остаётся у списков, а ручки захвата владеют drag-жестом', () => {
+    expect(decl('.jcard', 'touch-action')).toBeNull()
+    expect(decl('.jcol-body', 'touch-action')).toBeNull()
+    expect(decl('.jcard-grip, .jcol-grip', 'touch-action')).toBe('none')
   })
 
   it('фильтры остаются вне общей прокрутки, а шапки и композер не сжимаются', () => {
