@@ -427,7 +427,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const inTaskChat = routeTaskChatId !== null
   const inChat = (!inProjects && !onUtilityPage && !inReader && !inPlaywrightReader) || inTaskChat
   const compactChat = useMediaQuery(CHAT_COMPOSER_QUERY)
-  const { state, actions } = useVoiceStore({ api, now, delays, initialChatId: routeChatId ?? routeReaderChatId })
+  const { state, actions } = useVoiceStore({ api, now, delays, initialChatId: routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId })
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
@@ -451,38 +451,40 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 45
   })
   useEffect(() => { setPreviewElement(null) }, [state.activeId])
-  // Действия модели в превью (mcp__browser__*): исполнителя DOM-действий даёт
-  // смонтированная PreviewPane, `open` выполняем сохранением адреса превью чата.
-  const previewRunnerRef = useRef<PreviewActionRunner | null>(null)
+  // Действия модели в превью (mcp__browser__*): регистрация хранит не только
+  // runner, но и чат панели. Это не даёт переключившемуся чату обратиться к host,
+  // который ещё размонтируется, и делает Reader-маршруты единым источником истины.
+  const previewRunnerRef = useRef<{ conversationId: string; runner: PreviewActionRunner } | null>(null)
   const registerPreviewRunner = useCallback((runner: PreviewActionRunner | null) => {
-    previewRunnerRef.current = runner
-  }, [])
+    if (runner && state.activeId) previewRunnerRef.current = { conversationId: state.activeId, runner }
+    else if (!runner && previewRunnerRef.current?.conversationId === state.activeId) previewRunnerRef.current = null
+  }, [state.activeId])
   useEffect(() => {
     const bridge = window.preview
     if (!bridge) return
     return bridge.onAction(({ conversationId, requestId, action }) => {
       void (async (): Promise<PreviewActionOutcome> => {
-        // Действия ограничены активной страницей: чужой или свёрнутый чат не трогаем.
-        if (state.activeId !== conversationId || !inReader) {
-          return { ok: false, error: 'Этот чат сейчас не открыт на странице Web Reader — превью недоступно.' }
+        // Действия ограничены активной Reader-страницей и host-ом того же чата.
+        if (state.activeId !== conversationId || (!inReader && !inPlaywrightReader)) {
+          return { ok: false, error: 'Этот чат сейчас не открыт на странице Reader — панель превью недоступна.' }
+        }
+        const registration = previewRunnerRef.current
+        if (!registration || registration.conversationId !== conversationId) {
+          return { ok: false, error: 'Панель превью активного чата не открыта или ещё не подключена.' }
         }
         if (action.kind === 'open') {
           try {
-            const runner = previewRunnerRef.current
-            if (!runner) return { ok: false, error: 'Панель превью не открыта у пользователя.' }
             await actions.setConversationPreviewUrl(conversationId, action.url)
             setPreviewElement(null)
-            return runner(action)
+            return registration.runner(action)
           } catch {
             return { ok: false, error: 'Не удалось сохранить адрес превью.' }
           }
         }
-        const runner = previewRunnerRef.current
-        if (!runner) return { ok: false, error: 'Панель превью не открыта у пользователя.' }
-        return runner(action)
+        return registration.runner(action)
       })().then((outcome) => bridge.result({ requestId, ...outcome }))
     })
-  }, [state.activeId, actions, inReader])
+  }, [state.activeId, actions, inReader, inPlaywrightReader])
   useEffect(() => {
     let alive = true
     const projectId = state.conversations.find((conversation) => conversation.id === state.activeId)?.projectId
@@ -1313,8 +1315,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       />
       </div>
       {(inReader || inPlaywrightReader) && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
-      {inReader && <WebReaderHost conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null} onSave={async (previewUrl) => { if (activeConversation) await actions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterActionRunner={registerPreviewRunner} />}
-      {inPlaywrightReader && <section className="playwright-browser-pane" aria-label="Chromium"><header className="playwright-reader-header"><strong>Playwright Reader</strong><span role="status">Браузер остановлен</span><button className="vc-btn vc-btn--secondary" type="button" disabled>Перезапустить</button><button className="vc-btn vc-btn--secondary" type="button" disabled>Остановить</button></header><form className="webpreview-bar"><button type="button" disabled aria-label="Назад">←</button><button type="button" disabled aria-label="Вперёд">→</button><button type="button" disabled aria-label="Обновить">↻</button><label className="webpreview-address"><span className="vc-sr-only">Адрес Chromium</span><input type="url" placeholder="https://example.com" disabled /></label><button type="submit" disabled>Открыть</button></form><div className="webpreview-empty" role="status">Подключение к изолированному Chromium…</div></section>}
+      {(inReader || inPlaywrightReader) && <WebReaderHost conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} onSave={async (previewUrl) => { if (activeConversation) await actions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterActionRunner={registerPreviewRunner} />}
       </div>
       )}
 
