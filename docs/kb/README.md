@@ -20,15 +20,15 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 56 коммит(ов) в areas после сверки: 4163f0b feat(qa): automate integration test stage … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-15 | ⚠ 1 коммит(ов) в areas после сверки: a058e43 Merge task 501c05f5-e4c0-4e6f-8d57-34f45c9f58c0 |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-14 | ⚠ 10 коммит(ов) в areas после сверки: 4163f0b feat(qa): automate integration test stage … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 346 коммит(ов) в areas после сверки: 9d070e0 feat(web-reader): независимый список чатов, детерминированное создание и селектор … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 349 коммит(ов) в areas после сверки: f43c656 Merge task 29165873-b1c1-4cb7-8527-ae6581461802 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-15 | ⚠ 1 коммит(ов) в areas после сверки: a058e43 Merge task 501c05f5-e4c0-4e6f-8d57-34f45c9f58c0 |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-14 | ⚠ 16 коммит(ов) в areas после сверки: 9d070e0 feat(web-reader): независимый список чатов, детерминированное создание и селектор … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-13 | ⚠ 3 коммит(ов) в areas после сверки: 9b5cd4c feat: complete manual QA workflow … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 13 коммит(ов) в areas после сверки: 056f5c7 fix(chat): publish queued messages in turn order … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 47 коммит(ов) в areas после сверки: 9d070e0 feat(web-reader): независимый список чатов, детерминированное создание и селектор … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-15 | ⚠ 3 коммит(ов) в areas после сверки: 9d070e0 feat(web-reader): независимый список чатов, детерминированное создание и селектор … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-12 | ⚠ 41 коммит(ов) в areas после сверки: 4163f0b feat(qa): automate integration test stage … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-14 | ⚠ 32 коммит(ов) в areas после сверки: 4163f0b feat(qa): automate integration test stage … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-12 | ⚠ 42 коммит(ов) в areas после сверки: a9a6b43 CHAT-231: превью-прокси перехватывает fetch/XHR/beacon и JS-навигацию … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-15 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-10 | ⚠ 63 коммит(ов) в areas после сверки: 4163f0b feat(qa): automate integration test stage … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-14 | ⚠ 6 коммит(ов) в areas после сверки: 0769dc3 CHAT-228: Component QA поддерживает JSON-массив стадий в test_command … |
@@ -49,9 +49,10 @@
 
 ## Журнал сессий
 
-Всего записей: 216. Последние:
+Всего записей: 217. Последние:
 
 - [2026-08-15-mac-web-reader-chat-list.md](log/2026-08-15-mac-web-reader-chat-list.md) — Web Reader — независимый список чатов и детерминированное создание
+- [2026-08-15-mac-preview-proxy-network-shim.md](log/2026-08-15-mac-preview-proxy-network-shim.md) — preview-proxy-network-shim
 - [2026-08-15-mac-preparation-tab-navigation.md](log/2026-08-15-mac-preparation-tab-navigation.md) — preparation-tab-navigation
 - [2026-08-15-mac-integration-test-stage.md](log/2026-08-15-mac-integration-test-stage.md) — integration-test-stage
 - [2026-08-14-mac-ui-board-fixtures-canonical-columns.md](log/2026-08-14-mac-ui-board-fixtures-canonical-columns.md) — ui-board-fixtures-canonical-columns
@@ -60,7 +61,6 @@
 - [2026-08-14-mac-component-qa-automation.md](log/2026-08-14-mac-component-qa-automation.md) — component-qa-automation
 - [2026-08-14-mac-autostart-development-run.md](log/2026-08-14-mac-autostart-development-run.md) — autostart-development-run
 - [2026-08-14-alexeys-macbook-air-2-test-gate-hang-diagnostics.md](log/2026-08-14-alexeys-macbook-air-2-test-gate-hang-diagnostics.md) — test-gate-hang-diagnostics
-- [2026-08-14-alexeys-macbook-air-2-task-modal-heading.md](log/2026-08-14-alexeys-macbook-air-2-task-modal-heading.md) — task-modal-heading
 
 ## Исторические планы
 

@@ -103,12 +103,44 @@ function proxyUrl(value: string, base: URL): string {
 export const PREVIEW_INSPECTOR_SCRIPT_ID = 'voicechat-preview-inspector'
 
 /** Emulates a browser origin while the rendered document safely stays on ChatAI origin. */
-export function previewContextScript(origin: string): string {
-  const key = JSON.stringify(`voicechat.preview.context.v1:${origin}:`)
+export function previewContextScript(base: string): string {
+  const baseUrl = new URL(base)
+  const key = JSON.stringify(`voicechat.preview.context.v1:${baseUrl.origin}:`)
+  const fallbackBase = JSON.stringify(baseUrl.toString())
   return `<script>(()=>{const p=${key},nativeLocal=window.localStorage,nativeSession=window.sessionStorage;
 const storage=(native)=>({get length(){return Object.keys(native).filter(k=>k.startsWith(p)).length},key(i){return Object.keys(native).filter(k=>k.startsWith(p))[i]?.slice(p.length)??null},getItem(k){return native.getItem(p+String(k))},setItem(k,v){native.setItem(p+String(k),String(v))},removeItem(k){native.removeItem(p+String(k))},clear(){Object.keys(native).filter(k=>k.startsWith(p)).forEach(k=>native.removeItem(k))}});
 for(const [name,native] of [['localStorage',nativeLocal],['sessionStorage',nativeSession]])try{Object.defineProperty(window,name,{configurable:true,value:storage(native)})}catch{}
 const nativeIdb=window.indexedDB;if(nativeIdb)try{Object.defineProperty(window,'indexedDB',{configurable:true,value:new Proxy(nativeIdb,{get(target,key){const value=Reflect.get(target,key,target);if(key==='open'||key==='deleteDatabase')return (name,...args)=>value.call(target,p+String(name),...args);return typeof value==='function'?value.bind(target):value}})})}catch{}
+const fallbackBase=${fallbackBase};
+const currentBase=()=>{try{const u=new URL(location.href);const t=u.searchParams.get('url');if(u.pathname==='/api/preview'&&t)return t}catch{}return fallbackBase};
+const toProxy=(value)=>{const s=String(value);
+try{const local=new URL(s,location.href);if(local.origin===location.origin&&local.pathname==='/api/preview'&&local.searchParams.has('url'))return s}catch{}
+try{const u=new URL(s,currentBase());if(u.protocol==='http:'||u.protocol==='https:')return '/api/preview?url='+encodeURIComponent(u.toString())}catch{}
+return s};
+const cleanHeaders=(headers)=>{const h=new Headers(headers||undefined);const auth=h.get('authorization');if(auth!==null){h.delete('authorization');h.set('x-preview-authorization',auth)}return h};
+const nativeFetch=typeof window.fetch==='function'?window.fetch.bind(window):null;
+if(nativeFetch)window.fetch=function(input,init){
+try{const isRequest=typeof Request==='function'&&input instanceof Request;
+const raw=isRequest?input.url:String(input);
+const target=toProxy(raw);
+if(target===raw)return nativeFetch(input,init);
+const options={};
+if(isRequest){options.method=input.method;options.headers=input.headers;options.cache=input.cache;options.redirect=input.redirect;options.referrerPolicy=input.referrerPolicy;options.integrity=input.integrity;options.keepalive=input.keepalive;options.signal=input.signal}
+if(init)Object.assign(options,init);
+options.headers=cleanHeaders(options.headers);
+options.credentials='same-origin';options.mode='cors';
+if(isRequest&&!(init&&'body' in init)&&!/^(GET|HEAD)$/i.test(options.method||'GET'))return input.clone().arrayBuffer().then((body)=>nativeFetch(target,Object.assign(options,{body})));
+return nativeFetch(target,options)}catch{return nativeFetch(input,init)}};
+if(window.XMLHttpRequest&&window.XMLHttpRequest.prototype){const xhr=window.XMLHttpRequest.prototype,xhrOpen=xhr.open,xhrSetHeader=xhr.setRequestHeader;
+xhr.open=function(method,url){const rest=Array.prototype.slice.call(arguments,2);return xhrOpen.apply(this,[method,toProxy(String(url))].concat(rest))};
+xhr.setRequestHeader=function(name,value){return xhrSetHeader.call(this,/^authorization$/i.test(String(name))?'x-preview-authorization':String(name),value)}}
+if(typeof navigator.sendBeacon==='function')try{const nativeBeacon=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(url,data){return arguments.length>1?nativeBeacon(toProxy(String(url)),data):nativeBeacon(toProxy(String(url)))}}catch{}
+try{const nativeAssign=location.assign.bind(location);Object.defineProperty(location,'assign',{configurable:true,value:(value)=>nativeAssign(toProxy(String(value)))})}catch{}
+try{const nativeLocReplace=location.replace.bind(location);Object.defineProperty(location,'replace',{configurable:true,value:(value)=>nativeLocReplace(toProxy(String(value)))})}catch{}
+try{const hrefDescriptor=Object.getOwnPropertyDescriptor(location,'href');if(hrefDescriptor&&hrefDescriptor.set&&hrefDescriptor.configurable){const setHref=hrefDescriptor.set.bind(location),getHref=hrefDescriptor.get?hrefDescriptor.get.bind(location):()=>String(location);Object.defineProperty(location,'href',{configurable:true,get:getHref,set:(value)=>setHref(toProxy(String(value)))})}}catch{}
+if(window.history)try{const nativePush=history.pushState.bind(history),nativeReplaceState=history.replaceState.bind(history);
+history.pushState=(state,title,url)=>nativePush(state,title,url==null?url:toProxy(String(url)));
+history.replaceState=(state,title,url)=>nativeReplaceState(state,title,url==null?url:toProxy(String(url)))}catch{}
 })();<\/script>`
 }
 
@@ -279,6 +311,7 @@ addEventListener('message',message);addEventListener('pagehide',()=>{disable();s
 
 export function rewritePreviewBody(body: Buffer, type: string, base: URL): Buffer {
   let text = body.toString('utf8')
+  const rewriteCssUrls = (css: string): string => css.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi, (_m, quote, value) => 'url(' + quote + proxyUrl(value, base) + quote + ')')
   if (/text\/html|application\/xhtml\+xml/i.test(type)) {
     text = text.replace(/<meta\b[^>]*http-equiv\s*=\s*(['"]?)content-security-policy\1[^>]*>/gi, '')
       .replace(/\b(href|src|action|poster)\s*=\s*(["'])(.*?)\2/gi, (_m, name, quote, value) => name + '=' + quote + proxyUrl(value, base) + quote)
@@ -286,22 +319,43 @@ export function rewritePreviewBody(body: Buffer, type: string, base: URL): Buffe
         const [url, ...descriptor] = part.trim().split(/\s+/)
         return proxyUrl(url, base) + (descriptor.length ? ' ' + descriptor.join(' ') : '')
       }).join(', ') + quote)
-    const context = previewContextScript(base.origin)
+      .replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style\s*>)/gi, (_m, open, css, close) => open + rewriteCssUrls(css) + close)
+      .replace(/\bstyle\s*=\s*(["'])(.*?)\1/gi, (_m, quote, value) => 'style=' + quote + rewriteCssUrls(value) + quote)
+    const context = previewContextScript(base.toString())
     const inspector = previewInspectorScript()
     text = /<head\b[^>]*>/i.test(text) ? text.replace(/<head\b[^>]*>/i, (head) => head + context) : context + text
     text = /<\/body\s*>/i.test(text) ? text.replace(/<\/body\s*>/i, inspector + '</body>') : text + inspector
   }
-  if (/text\/css/i.test(type)) text = text.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi, (_m, quote, value) => 'url(' + quote + proxyUrl(value, base) + quote + ')')
+  if (/text\/css/i.test(type)) text = rewriteCssUrls(text)
   return Buffer.from(text)
 }
 
-async function get(url: URL, userId: string, method = 'GET', body?: string, contentType?: string): Promise<{ response: IncomingMessage; finalUrl: URL }> {
+/**
+ * Заголовки запроса страницы, которые уходят апстриму: hop-by-hop, адресация и
+ * авторизация/сессия ChatAI (cookie, authorization) отбрасываются; заголовок
+ * x-preview-authorization — так context shim передаёт Authorization самой
+ * страницы, не задевая Bearer-гейт ChatAI, — возвращается апстриму как authorization.
+ */
+const DROPPED_REQUEST_HEADERS = new Set(['host', 'connection', 'content-length', 'transfer-encoding', 'keep-alive', 'upgrade', 'te', 'trailer', 'expect', 'cookie', 'authorization', 'proxy-authorization', 'accept-encoding', 'origin', 'referer', 'via', 'priority'])
+
+export function upstreamRequestHeaders(incoming: NodeJS.Dict<string | string[]>): Record<string, string | string[]> {
+  const headers: Record<string, string | string[]> = {}
+  for (const [name, value] of Object.entries(incoming)) {
+    if (value === undefined) continue
+    const lower = name.toLowerCase()
+    if (DROPPED_REQUEST_HEADERS.has(lower) || lower.startsWith('sec-') || lower.startsWith('x-forwarded-')) continue
+    headers[lower === 'x-preview-authorization' ? 'authorization' : lower] = value
+  }
+  return headers
+}
+
+async function get(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}): Promise<{ response: IncomingMessage; finalUrl: URL }> {
   await assertPublicHost(url.hostname)
   return new Promise((resolve, reject) => {
     const transport = url.protocol === 'https:' ? httpsRequest : httpRequest
     const request = transport(url, {
       method,
-      headers: { 'user-agent': 'voiceAIChat-preview/1.0', accept: '*/*', ...(requestCookieHeader(userId, url) ? { cookie: requestCookieHeader(userId, url) } : {}), ...(body === undefined ? {} : { 'content-length': String(Buffer.byteLength(body)), ...(contentType ? { 'content-type': contentType } : {}) }) },
+      headers: { 'user-agent': 'voiceAIChat-preview/1.0', accept: '*/*', ...headers, ...(requestCookieHeader(userId, url) ? { cookie: requestCookieHeader(userId, url) } : {}), ...(body === undefined ? {} : { 'content-length': String(Buffer.byteLength(body)) }) },
       timeout: TIMEOUT_MS,
       lookup(hostname, options, callback) {
         void lookup(hostname, { all: true, verbatim: true }).then((addresses) => {
@@ -322,17 +376,23 @@ async function get(url: URL, userId: string, method = 'GET', body?: string, cont
   })
 }
 
-async function load(url: URL, userId: string, method = 'GET', body?: string, contentType?: string): Promise<{ response: IncomingMessage; finalUrl: URL }> {
+async function load(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}): Promise<{ response: IncomingMessage; finalUrl: URL }> {
   let current = url
   let currentMethod = method
   let currentBody = body
+  let currentHeaders = headers
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
-    const result = await get(current, userId, currentMethod, currentBody, contentType)
+    const result = await get(current, userId, currentMethod, currentBody, currentHeaders)
     const location = result.response.headers.location
     if (!location || ![301, 302, 303, 307, 308].includes(result.response.statusCode ?? 0)) return result
     result.response.resume()
     if (redirects === MAX_REDIRECTS) throw new PreviewProxyError(502, 'Слишком много перенаправлений')
-    if ([301, 302, 303].includes(result.response.statusCode ?? 0) && currentMethod !== 'GET' && currentMethod !== 'HEAD') { currentMethod = 'GET'; currentBody = undefined }
+    if ([301, 302, 303].includes(result.response.statusCode ?? 0) && currentMethod !== 'GET' && currentMethod !== 'HEAD') {
+      currentMethod = 'GET'
+      currentBody = undefined
+      currentHeaders = { ...currentHeaders }
+      delete currentHeaders['content-type']
+    }
     current = new URL(location, current)
     if (current.protocol !== 'http:' && current.protocol !== 'https:') throw new PreviewProxyError(400, 'Разрешены только HTTP и HTTPS')
   }
@@ -355,35 +415,39 @@ async function readLimited(response: IncomingMessage): Promise<Buffer> {
 }
 
 export function registerPreviewProxy(app: FastifyInstance): void {
-  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => done(null, body))
-  app.all<{ Querystring: { url?: string }; Body: string }>('/api/preview', async (req, reply) => {
-    let url: URL
-    try {
-      url = new URL(req.query.url ?? '')
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error()
-    } catch {
-      return reply.code(400).send({ error: 'invalid_url', message: 'Разрешены только HTTP и HTTPS адреса' })
-    }
-    try {
-      const userId = uid(req)
-      const body = typeof req.body === 'string' && req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined
-      const contentType = typeof req.headers['content-type'] === 'string' ? req.headers['content-type'] : undefined
-      const { response, finalUrl } = await load(url, userId, req.method, body, contentType)
-      storeResponseCookies(userId, finalUrl, response.headers['set-cookie'])
-      const responseType = response.headers['content-type'] ?? 'application/octet-stream'
-      const responseBody = await readLimited(response)
-      const rewritten = /text\/(html|css)|application\/xhtml\+xml/i.test(responseType) ? rewritePreviewBody(responseBody, responseType, finalUrl) : responseBody
-      reply.code(response.statusCode ?? 502)
-      for (const [name, value] of Object.entries(response.headers)) {
-        if (value === undefined || ['x-frame-options', 'content-security-policy', 'set-cookie', 'content-length', 'connection', 'transfer-encoding'].includes(name.toLowerCase())) continue
-        reply.header(name, value)
+  // Отдельный scope: тело любого content-type (JSON, multipart, бинарь) уходит
+  // апстриму сырым буфером и не попадает в парсеры остального API.
+  void app.register(async (scope) => {
+    scope.removeAllContentTypeParsers()
+    scope.addContentTypeParser('*', { parseAs: 'buffer' }, (_req, body, done) => done(null, body))
+    scope.all<{ Querystring: { url?: string }; Body: string | Buffer }>('/api/preview', async (req, reply) => {
+      let url: URL
+      try {
+        url = new URL(req.query.url ?? '')
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error()
+      } catch {
+        return reply.code(400).send({ error: 'invalid_url', message: 'Разрешены только HTTP и HTTPS адреса' })
       }
-      reply.header('content-type', responseType)
-      reply.header('content-length', String(rewritten.length))
-      return reply.send(rewritten)
-    } catch (err) {
-      const known = err instanceof PreviewProxyError ? err : new PreviewProxyError(502, 'Сайт недоступен')
-      return reply.code(known.status).send({ error: 'preview_unavailable', message: known.message })
-    }
+      try {
+        const userId = uid(req)
+        const body = (typeof req.body === 'string' || Buffer.isBuffer(req.body)) && req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined
+        const { response, finalUrl } = await load(url, userId, req.method, body, upstreamRequestHeaders(req.headers))
+        storeResponseCookies(userId, finalUrl, response.headers['set-cookie'])
+        const responseType = response.headers['content-type'] ?? 'application/octet-stream'
+        const responseBody = await readLimited(response)
+        const rewritten = /text\/(html|css)|application\/xhtml\+xml/i.test(responseType) ? rewritePreviewBody(responseBody, responseType, finalUrl) : responseBody
+        reply.code(response.statusCode ?? 502)
+        for (const [name, value] of Object.entries(response.headers)) {
+          if (value === undefined || ['x-frame-options', 'content-security-policy', 'set-cookie', 'content-length', 'connection', 'transfer-encoding'].includes(name.toLowerCase())) continue
+          reply.header(name, value)
+        }
+        reply.header('content-type', responseType)
+        reply.header('content-length', String(rewritten.length))
+        return reply.send(rewritten)
+      } catch (err) {
+        const known = err instanceof PreviewProxyError ? err : new PreviewProxyError(502, 'Сайт недоступен')
+        return reply.code(known.status).send({ error: 'preview_unavailable', message: known.message })
+      }
+    })
   })
 }
