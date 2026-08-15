@@ -22,7 +22,7 @@ import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook } from './types.js'
 import {
   EMPTY_CHANGES, KB_DIFF_SCRIPT, KB_FILE_TOPICS_SCRIPT, KB_REPO_ROOT_CHECK_SCRIPT, KB_UPDATE_TIMEOUT_MS, MAX_PROMPT_GAPS, affectedProjectDocs, formatKbUpdateSummary,
-  KbUpdateParseError, kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput, type KbGapForPrompt
+  KB_UPDATE_REPAIR_PROMPT, KbUpdateParseError, kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput, type KbGapForPrompt
 } from '../kb/codeUpdate.js'
 
 export interface CiModelHooksDeps {
@@ -362,14 +362,15 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       build: (model: string) => LlmRequest,
       onLog: (stream: 'stdout' | 'system', chunk: string) => void,
       signal: AbortSignal,
-      abortNote?: string
+      abortNote?: string,
+      allowModelFallback = true
     ): Promise<TurnResult> => {
       const runModel = runModelOf(ctx)
       const stageModel = (model ??= modelFor(ctx, stage))
       const first = await runTurn(clientFor(ctx), build(stageModel), onLog, signal, abortNote, now)
       recordUsage(ctx, stage, stepId, first, stageModel)
       const empty = !first.text.trim() && !first.meta && !first.usage
-      if (first.ok || first.cancelled || signal.aborted || stageModel === runModel || !empty) return first
+      if (first.ok || first.cancelled || signal.aborted || !allowModelFallback || stageModel === runModel || !empty) return first
       onLog('system', `Модель «${stageModel}» стадии «${CI_USAGE_KIND_LABELS[stage]}» не отработала — повторяю на модели рана «${runModel}».\n`)
       model = runModel
       const second = await runTurn(clientFor(ctx), build(runModel), onLog, signal, abortNote, now)
@@ -994,25 +995,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       timedOut = true
       ctl.abort()
     }, deps.kbTimeoutMs ?? KB_UPDATE_TIMEOUT_MS)
-    let turn: TurnResult
-    try {
-      turn = await stageRunner(ctx, 'kb_update', ctx.parentStepId)(
-        req,
-        (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk),
-        ctl.signal,
-        'Шаг актуализации базы знаний остановлен.\n'
-      )
-    } catch (err) {
-      return { ok: false, message: `Шаг не выполнен: ${err instanceof Error ? err.message : String(err)}` }
-    } finally {
-      clearTimeout(timer)
-      ctx.signal.removeEventListener('abort', onAbort)
-    }
-    if (timedOut) {
-      // CLI уже остановлен `runTurn`, но модель могла успеть записать файловые
-      // темы до того, как зависла на финальном JSON. Эти изменения безопасно
-      // оставить в копии: следующий шаг закоммитит их вместе с кодом. Статьи
-      // проекта без JSON намеренно не сохраняем и честно сообщаем об этом.
+    const timeoutResult = async (repair: boolean): Promise<{ ok: boolean; message: string }> => {
       const topics: string[] = []
       if (ctx.agentId && deps.executor && !ctx.signal.aborted) {
         try {
@@ -1022,37 +1005,102 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             ctx.signal
           )
         } catch {
-          // Таймаут уже известен; ошибка диагностической проверки не должна
-          // превращать возможную файловую актуализацию в ложный успех.
+          // Таймаут уже известен; диагностическая проверка не меняет его исход.
         }
       }
       const changedTopics = [...new Set(topics)]
+      const timeoutMessage = repair
+        ? 'Repair финального ответа не завершён до таймаута'
+        : 'Модель не вернула финальный ответ до таймаута'
       if (changedTopics.length) {
         return {
           ok: true,
-          message: `Файловые темы базы знаний обновлены (${changedTopics.join(', ')}), но модель не вернула финальный ответ до таймаута; статьи раздела проекта не сохранены`
+          message: `${timeoutMessage}; файловые темы базы знаний обновлены (${changedTopics.join(', ')}), статьи раздела проекта не сохранены`
         }
       }
-      return { ok: false, message: 'Шаг не уложился в отведённое время — файловые темы базы знаний не изменены' }
+      return { ok: false, message: repair ? timeoutMessage : 'Шаг не уложился в отведённое время — файловые темы базы знаний не изменены' }
     }
-    if (ctx.signal.aborted) return cancelled
-    if (!turn.ok) return { ok: false, message: 'Модель не ответила — база знаний не обновлена' }
 
+    const runStageTurn = stageRunner(ctx, 'kb_update', ctx.parentStepId)
     let out
+    let repairRecovered = false
     try {
-      out = parseKbUpdateOutput(turn.text)
+      const turn = await runStageTurn(
+        req,
+        (stream, chunk) => ctx.log(ctx.parentStepId, stream, chunk),
+        ctl.signal,
+        'Шаг актуализации базы знаний остановлен.\n'
+      )
+      if (timedOut) return await timeoutResult(false)
+      if (ctx.signal.aborted) return cancelled
+      if (!turn.ok) return { ok: false, message: 'Модель не ответила — база знаний не обновлена' }
+
+      try {
+        out = parseKbUpdateOutput(turn.text)
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err)
+        const code = err instanceof KbUpdateParseError ? err.code : 'unknown'
+        log(`Финальный ответ kb_update отклонён [${code}]: ${detail}\n`)
+        const repairable = err instanceof KbUpdateParseError
+          && (err.code === 'json_not_found' || err.code === 'invalid_json' || err.code === 'invalid_contract')
+        if (!repairable) {
+          const message = err instanceof KbUpdateParseError && err.code === 'ambiguous_json'
+            ? 'В ответе модели несколько JSON-кандидатов — статьи раздела проекта не сохранены'
+            : 'Ответ модели неразборчив — статьи раздела проекта не сохранены'
+          log('Repair финального JSON не запускается; merge остановлен.\n')
+          return { ok: false, message }
+        }
+        if (!turn.sessionId) {
+          log('Repair финального JSON не запущен: sessionId отсутствует; merge остановлен.\n')
+          return { ok: false, message: 'Repair финального ответа не выполнен: сессия модели недоступна' }
+        }
+
+        log(`Запускаю repair финального JSON; sessionId доступен.\n`)
+        const repairStartedAt = now()
+        const repaired = await runStageTurn(
+          (model) => ({
+            userId: ctx.run.triggeredBy,
+            prompt: KB_UPDATE_REPAIR_PROMPT,
+            sessionId: turn.sessionId,
+            model,
+            permissionMode: 'plan',
+            executionDisabled: true
+          }),
+          (stream, chunk) => {
+            // Финальный текст не дублируем в пользовательскую ленту; системная
+            // активность остаётся в техническом логе.
+            if (stream === 'system') ctx.log(ctx.parentStepId, stream, chunk)
+          },
+          ctl.signal,
+          'Repair финального ответа остановлен.\n',
+          false
+        )
+        log(`Repair финального JSON завершил ход за ${Math.max(0, now() - repairStartedAt)} мс.\n`)
+        if (timedOut) {
+          log('Repair финального JSON не завершён до общего таймаута; merge остановлен.\n')
+          return await timeoutResult(true)
+        }
+        if (ctx.signal.aborted) return cancelled
+        if (!repaired.ok) {
+          log('Repair финального JSON завершился ошибкой транспорта; merge остановлен.\n')
+          return { ok: false, message: 'Модель повторно не вернула корректный JSON — статьи раздела проекта не сохранены' }
+        }
+        try {
+          out = parseKbUpdateOutput(repaired.text)
+        } catch (repairErr) {
+          const repairDetail = repairErr instanceof Error ? repairErr.message : String(repairErr)
+          const repairCode = repairErr instanceof KbUpdateParseError ? repairErr.code : 'unknown'
+          log(`Repair финального JSON отклонён [${repairCode}]: ${repairDetail}; merge остановлен.\n`)
+          return { ok: false, message: 'Модель повторно не вернула корректный JSON — статьи раздела проекта не сохранены' }
+        }
+        repairRecovered = true
+        log('Repair финального JSON успешно восстановил ответ.\n')
+      }
     } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err)
-      log(`Финальный ответ kb_update отклонён: ${detail}\n`)
-      const message = err instanceof KbUpdateParseError
-        ? {
-            json_not_found: 'JSON в ответе модели не найден — статьи раздела проекта не сохранены',
-            ambiguous_json: 'В ответе модели несколько JSON-кандидатов — статьи раздела проекта не сохранены',
-            invalid_json: 'JSON в ответе модели повреждён — статьи раздела проекта не сохранены',
-            invalid_contract: 'JSON ответа модели не соответствует контракту — статьи раздела проекта не сохранены'
-          }[err.code]
-        : 'Ответ модели неразборчив — статьи раздела проекта не сохранены'
-      return { ok: false, message }
+      return { ok: false, message: `Шаг не выполнен: ${err instanceof Error ? err.message : String(err)}` }
+    } finally {
+      clearTimeout(timer)
+      ctx.signal.removeEventListener('abort', onAbort)
     }
     // Раздел и владелец статьи — дело сервера: чужой id молча становится новой
     // статьёй, раздел всегда `project` (видна только участникам проекта).
@@ -1074,7 +1122,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       })
       return { title: doc.title, action: id ? ('updated' as const) : ('created' as const) }
     })
-    return { ok: true, message: formatKbUpdateSummary(out, saved) }
+    const summary = formatKbUpdateSummary(out, saved)
+    return { ok: true, message: repairRecovered ? `Финальный JSON восстановлен дополнительным запросом. ${summary}` : summary }
   }
 
   const kbUpdateForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; targetRef: string; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
