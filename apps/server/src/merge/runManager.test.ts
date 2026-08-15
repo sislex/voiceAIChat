@@ -8,7 +8,8 @@ const source='1'.repeat(40), target='2'.repeat(40), merged='3'.repeat(40)
 const base=():MergeRun=>({id:'r1',projectId:'p1',taskId:'t1',status:'queued',triggeredBy:'admin',sourceBranch:'CHAT-178',targetBranch:'main',sourceSha:source,targetSha:null,mergeSha:null,revertSha:null,agentId:'a1',machineName:'Mac',llmEngineId:null,llmProvider:'claude',llmModel:'',stage:'queued',stages:[],conflicts:[],conflictDetails:[],checks:[],deployId:null,deployVersion:null,productionStatus:null,error:null,recommendedAction:null,log:'',canCancel:true,canRetry:false,pushStartedAt:null,startedAt:null,finishedAt:null,createdAt:1})
 
 type Out=string|{output:string;exitCode:number}
-function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affected-check', gitUrl='git@example/repo.git', kbUpdate:(ctx:MergeKbUpdateContext)=>Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>=async()=>({ok:true,message:'Нечего обновлять'}), isOnline:(agentId:string)=>boolean=()=>true){
+function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affected-check', gitUrl='git@example/repo.git', kbUpdate:(ctx:MergeKbUpdateContext)=>Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>=async()=>({ok:true,message:'Нечего обновлять'}), isOnline:(agentId:string)=>boolean=()=>true, kbFiles:string[]=[]){
+  const kbSha=kbFiles.length?'5'.repeat(40):merged
   let run=initial
   const moves:string[]=[]
   const repositories:{agentId:string;path:string;kind:string;state:string}[]=[]
@@ -27,8 +28,13 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
     listActiveTaskRepositories:()=>repositories.filter(r=>r.state==='active').map(r=>({taskId:'t1',agentId:r.agentId,path:r.path}))
   }
   const executor:CommandExecutor={run:vi.fn(async (req,onChunk)=>{
+    if(req.script.includes('git ls-remote --exit-code')){onChunk(`${target}\trefs/heads/main\n${source}\trefs/heads/${run.sourceBranch}\n`);return{exitCode:0,timedOut:false}}
     if(req.script.includes("printf 'TARGET=%s\\nSOURCE=%s\\n'")){outputs.shift();onChunk(`TARGET=${target}\nSOURCE=${run.sourceSha ?? source}\n`);return{exitCode:0,timedOut:false}}
-    if(req.script.includes('git add -- docs/kb')){onChunk(merged+'\n');return{exitCode:0,timedOut:false}}
+    if(req.script.includes('git worktree add --detach'))return{exitCode:0,timedOut:false}
+    if(req.script.includes('git worktree remove --force')||req.script==='git worktree prune')return{exitCode:0,timedOut:false}
+    if(req.script.includes('git add -- docs/kb')){onChunk(`${kbFiles.length?'KB_COMMITTED':'KB_TREE_UNCHANGED'}\nFINAL=${kbSha}\nCHANGED\n${kbFiles.join('\n')}\n`);return{exitCode:0,timedOut:false}}
+    if(req.script.includes('git push --porcelain')){onChunk('push ok\n');return{exitCode:0,timedOut:false}}
+    if(req.script==='git ls-remote origin refs/heads/main'){onChunk(kbSha+' refs/heads/main\n');return{exitCode:0,timedOut:false}}
     if(req.script.includes('git checkout --ours -- docs/kb/README.md'))return{exitCode:0,timedOut:false}
     const item=outputs.shift()??'';const spec=typeof item==='string'?{output:item,exitCode:0}:item;onChunk(spec.output);return{exitCode:spec.exitCode,timedOut:false}
   })}
@@ -50,15 +56,18 @@ describe('MergeRunManager',()=>{
     expect(s.run.status, `${s.run.error}\n${s.run.log}`).toBe('success')
     expect(s.moves).toContain('done')
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
-    expect(scripts.find(v=>v.includes('git push'))).toContain(`--force-with-lease=refs/heads/main:${target}`)
+    expect(scripts.find(v=>v.includes('git push')&&v.includes('refs/heads/main'))).toContain(`--force-with-lease=refs/heads/main:${target}`)
+    expect(scripts.findIndex(v=>v.includes(`refs/heads/${s.run.sourceBranch}`))).toBeLessThan(scripts.findIndex(v=>v.includes('refs/heads/main')&&v.includes('git push')))
     expect(scripts.findIndex(v=>v.includes('npm ci'))).toBeLessThan(scripts.findIndex(v=>v.includes('affected-check')))
-    expect(scripts.findIndex(v=>v.includes('kb.mjs index'))).toBeLessThan(scripts.findIndex(v=>v.includes('affected-check')))
     expect(scripts.findIndex(v=>v.includes('affected-check'))).toBeLessThan(scripts.findIndex(v=>v.includes('git push')))
+    expect(scripts.find(v=>v.includes('git worktree add'))).toContain('.merge-run-r1-tests')
+    expect(scripts.find(v=>v.includes('git worktree add'))).toContain('.merge-run-r1-kb')
     expect(scripts.find(v=>v.includes('kb.mjs index'))).toContain('kb.mjs check')
     expect(scripts.find(v=>v.includes('npm ci'))).toContain('npm_config_cache')
-    expect(scripts.find(v=>v.includes('npm ci'))).toContain('merge-lock-sha')
+    expect(scripts.filter(v=>v.includes('npm ci'))).toHaveLength(1)
     const calls=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls
-    expect(calls[0][0]).toMatchObject({workdir:'/repo',script:expect.stringContaining("git clone --no-checkout")})
+    expect(calls[0][0]).toMatchObject({workdir:'/repo',script:expect.stringContaining('git ls-remote --exit-code')})
+    expect(calls.find(call=>call[0].script.includes('git clone'))?.[0]).toMatchObject({workdir:'/repo',script:expect.stringContaining('git clone --no-checkout')})
     expect(calls.some(call=>call[0].workdir==='/repo/.merge')).toBe(true)
   })
   it('finishes instantly with success when the branch is already merged into main',async()=>{
@@ -164,10 +173,13 @@ describe('MergeRunManager',()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''],{...base(),agentId:'a2'})
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('success'))
-    const first=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls[0][0]
-    expect(first.workdir).toBe('/other-repos')
-    expect(first.script).toContain('/other-repos/repo/.merge')
-    expect(first.script).toContain('mkdir -p')
+    const calls=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls
+    const preflight=calls[0][0]
+    expect(preflight.workdir).toBe('/other-repos')
+    expect(preflight.script).toContain('git ls-remote --exit-code')
+    const clone=calls.find(call=>call[0].script.includes('git clone'))?.[0]
+    expect(clone?.script).toContain('/other-repos/repo/.merge')
+    expect(clone?.script).toContain('mkdir -p')
     expect(s.repositories.some(r=>r.agentId==='a1'&&r.path==='/repo/task'&&r.kind==='dev-workspace')).toBe(true)
   })
   it('releases all task repositories after a successful merge',async()=>{
@@ -218,9 +230,9 @@ describe('MergeRunManager',()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''],base(),'npm run affected-check','git@example/repo.git',hook)
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('success'))
-    expect(seen).toEqual({repo:'/repo/.merge',targetRef:'refs/merge-runs/r1/target'})
+    expect(seen).toEqual({repo:'/repo/.merge-run-r1-kb',targetRef:'refs/merge-runs/r1/target'})
     expect(s.run.stages.map(stage=>stage.stage)).toEqual(expect.arrayContaining(['merging','kb_update','testing','pushing']))
-    expect(s.run.stages.find(stage=>stage.stage==='kb_update')).toMatchObject({status:'passed',message:'Файловая БЗ обновлена'})
+    expect(s.run.stages.find(stage=>stage.stage==='kb_update')).toMatchObject({status:'passed',message:expect.stringContaining('Файловая БЗ обновлена')})
     expect(s.run).toMatchObject({llmEngineId:'engine-1',llmProvider:'codex',llmModel:'gpt-5.6-luna'})
   })
   it('stops before tests and push when mandatory kb_update fails',async()=>{
@@ -229,7 +241,8 @@ describe('MergeRunManager',()=>{
     await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
     expect(s.run.stages.find(stage=>stage.stage==='kb_update')).toMatchObject({status:'failed'})
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
-    expect(scripts.some(script=>script.includes('affected-check'))).toBe(false)
+    // Проверки уже стартовали параллельно с БЗ, но публикация всё равно запрещена.
+    expect(scripts.some(script=>script.includes('affected-check'))).toBe(true)
     expect(scripts.some(script=>script.includes('git push'))).toBe(false)
   })
 
@@ -241,5 +254,28 @@ describe('MergeRunManager',()=>{
     expect(scripts.indexOf('npm run one')).toBeLessThan(scripts.indexOf('npm run two'))
     expect(s.run.checks[0].command).toBe('npm run one\nnpm run two')
     expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.find(call=>call[0].script==='npm run one')?.[0].timeoutMs).toBe(1800000)
+  })
+
+  it('creates a separate KB commit in feature and pushes exactly that SHA to main',async()=>{
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n','deps repeat\n','docs ok\n',`TARGET=${target}\n`],base(),'npm run affected-check','git@example/repo.git',async()=>({ok:true,message:'БЗ обновлена'}),()=>true,['docs/kb/merge.md'])
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('success'))
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    const kbCommit=scripts.find(script=>script.includes('docs(kb): update after merge'))
+    expect(kbCommit).toBeTruthy()
+    expect(kbCommit).not.toContain('commit --amend')
+    const final='5'.repeat(40)
+    expect(scripts.find(script=>script.includes(`refs/heads/${s.run.sourceBranch}`)&&script.includes('git push'))).toContain(final)
+    expect(scripts.find(script=>script.includes('refs/heads/main')&&script.includes('git push'))).toContain(final)
+    expect(s.run.checks.map(check=>check.name)).toEqual(['Проверки проекта','Документальный гейт после БЗ'])
+  })
+
+  it('repeats the full gate when the KB worktree changes build-affecting files',async()=>{
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n','deps repeat\n','tests repeat\n',`TARGET=${target}\n`],base(),'npm run affected-check','git@example/repo.git',async()=>({ok:true,message:'БЗ и код обновлены'}),()=>true,['apps/server/src/config.ts'])
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('success'))
+    expect(s.run.checks.map(check=>check.name)).toEqual(['Проверки проекта','Полный повторный гейт после БЗ'])
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    expect(scripts.filter(script=>script==='npm run affected-check')).toHaveLength(2)
   })
 })
