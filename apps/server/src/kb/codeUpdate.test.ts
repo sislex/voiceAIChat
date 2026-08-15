@@ -71,26 +71,81 @@ describe('выбор задетых статей по areas', () => {
 })
 
 describe('parseKbUpdateOutput', () => {
-  it('терпит ```json-обёртку и текст вокруг', () => {
-    const out = parseKbUpdateOutput('Готово.\n```json\n{"note":"обновил","topics":["ci-runner"],"documents":[{"title":"CI","body":"# CI","areas":["apps/server/src/ci"]}]}\n```')
-    expect(out.note).toBe('обновил')
-    expect(out.topics).toEqual(['ci-runner'])
+  const document = {
+    id: '',
+    title: 'CI',
+    kind: 'subsystem',
+    tags: ['ci'],
+    areas: ['apps/server/src/ci'],
+    body: '# CI'
+  }
+  const reply = (overrides: Record<string, unknown> = {}): string => JSON.stringify({
+    note: 'обновил',
+    nothingToUpdate: false,
+    topics: ['ci-runner'],
+    documents: [document],
+    ...overrides
+  })
+
+  it('разбирает чистый JSON полного контракта', () => {
+    const out = parseKbUpdateOutput(reply())
+    expect(out).toMatchObject({ note: 'обновил', nothingToUpdate: false, topics: ['ci-runner'] })
     expect(out.documents).toHaveLength(1)
-    expect(out.nothingToUpdate).toBe(false)
   })
 
-  it('явный nothingToUpdate и пустой ответ — «нечего обновлять»', () => {
-    expect(parseKbUpdateOutput('{"note":"мелкий рефакторинг","nothingToUpdate":true}').nothingToUpdate).toBe(true)
-    expect(parseKbUpdateOutput('{"documents":[]}').nothingToUpdate).toBe(true)
+  it('разбирает фактический ответ merge-рана: отчёт перед единственным json fence и хвост после него', () => {
+    const out = parseKbUpdateOutput(`Файловые темы обновлены, проверка вернула { ok: true }.
+\`\`\`json
+${reply()}
+\`\`\`
+Готово.`)
+    expect(out.documents[0]?.title).toBe('CI')
   })
 
-  it('неразборчивый ответ — ошибка (шаг превратит её в предупреждение)', () => {
-    expect(() => parseKbUpdateOutput('совсем не json')).toThrow()
+  it('разбирает единственный fence без метки, если внутри объект ожидаемого формата', () => {
+    expect(parseKbUpdateOutput(`Отчёт
+\`\`\`
+${reply()}
+\`\`\``).topics).toEqual(['ci-runner'])
   })
 
-  it('статьи без заголовка или текста отбрасываются', () => {
-    const out = parseKbUpdateOutput('{"documents":[{"title":"Есть","body":"# Есть"},{"title":"","body":"x"},{"title":"Пусто"}]}')
-    expect(out.documents.map((d) => d.title)).toEqual(['Есть'])
+  it('отклоняет несколько JSON-кандидатов как неоднозначный ответ', () => {
+    expect(() => parseKbUpdateOutput(`\`\`\`json
+${reply()}
+\`\`\`
+\`\`\`json
+${reply({ note: 'второй' })}
+\`\`\``)).toThrow(/несколько JSON-кандидатов/)
+  })
+
+  it('различает отсутствие JSON и синтаксически повреждённый JSON', () => {
+    expect(() => parseKbUpdateOutput('совсем не json')).toThrow(/JSON не найден/)
+    expect(() => parseKbUpdateOutput('Перед ответом\n```json\n{"note":\n```')).toThrow(/синтаксически повреждён/)
+  })
+
+  it('валидирует обязательные поля корня и типы topics', () => {
+    expect(() => parseKbUpdateOutput(JSON.stringify({ nothingToUpdate: false, topics: [], documents: [] }))).toThrow(/поле note/)
+    expect(() => parseKbUpdateOutput(reply({ topics: ['ci-runner', 1] }))).toThrow(/topics/)
+  })
+
+  it('отклоняет nothingToUpdate=true при наличии documents', () => {
+    expect(() => parseKbUpdateOutput(reply({ nothingToUpdate: true }))).toThrow(/nothingToUpdate=true.*documents/)
+  })
+
+  it.each([
+    ['id', { ...document, id: 1 }],
+    ['title', { ...document, title: '' }],
+    ['kind', { ...document, kind: 'dangerous' }],
+    ['tags', { ...document, tags: ['ci', 1] }],
+    ['areas', { ...document, areas: 'apps/server' }],
+    ['body', { ...document, body: '' }]
+  ])('отклоняет документ с невалидным обязательным полем %s', (field, invalid) => {
+    expect(() => parseKbUpdateOutput(reply({ documents: [document, invalid] }))).toThrow(new RegExp(`documents\\[1\\].*${field}`))
+  })
+
+  it('ничего не обновляет только по явному согласованному флагу', () => {
+    const out = parseKbUpdateOutput(reply({ nothingToUpdate: true, topics: [], documents: [] }))
+    expect(out.nothingToUpdate).toBe(true)
   })
 })
 
@@ -113,6 +168,9 @@ describe('kbUpdatePrompt', () => {
     expect(prompt).toContain('НЕ коммить')
     expect(prompt).toContain('doc-1 · CI-раннер')
     expect(prompt).toContain('apps/server/src/ci/runManager.ts')
+    expect(prompt).toContain('ровно один JSON-объект')
+    expect(prompt).toContain('Не добавляй markdown fences')
+    expect(prompt).toContain('любые символы до/после JSON')
   })
 
   it('пробелы базы знаний идут в промпт: с найденным ответом и без него', () => {

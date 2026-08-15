@@ -16,24 +16,24 @@
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-14 | ⚠ код изменён 2026-08-15, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-15 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-14 | ⚠ код изменён 2026-08-15, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-13 | ⚠ 31 коммит(ов) в areas после сверки: 67b8d5f refactor(ui): extract shared ui-kit package … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-13 | ⚠ 32 коммит(ов) в areas после сверки: 31432f6 Fix kb_update response parsing … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 56 коммит(ов) в areas после сверки: 4163f0b feat(qa): automate integration test stage … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-15 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-14 | ⚠ код изменён 2026-08-15, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-15 | ⚠ 4 коммит(ов) в areas после сверки: 67b8d5f refactor(ui): extract shared ui-kit package … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 353 коммит(ов) в areas после сверки: 67b8d5f refactor(ui): extract shared ui-kit package … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 355 коммит(ов) в areas после сверки: 31432f6 Fix kb_update response parsing … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-15 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-14 | ⚠ код изменён 2026-08-15, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-13 | ⚠ 3 коммит(ов) в areas после сверки: 9b5cd4c feat: complete manual QA workflow … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-15 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 13 коммит(ов) в areas после сверки: 056f5c7 fix(chat): publish queued messages in turn order … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 51 коммит(ов) в areas после сверки: 67b8d5f refactor(ui): extract shared ui-kit package … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-15 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-12 | ⚠ 45 коммит(ов) в areas после сверки: 6d4fa4b Merge task ef3c6770-100a-4f16-9ad3-b24fee08f982 … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-15 | ⚠ 1 коммит(ов) в areas после сверки: 6d4fa4b Merge task ef3c6770-100a-4f16-9ad3-b24fee08f982 |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-15 | ⚠ 2 коммит(ов) в areas после сверки: 31432f6 Fix kb_update response parsing … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-15 | ⚠ 3 коммит(ов) в areas после сверки: 6d4fa4b Merge task ef3c6770-100a-4f16-9ad3-b24fee08f982 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-14 | ⚠ код изменён 2026-08-15, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-15 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-15 | ⚠ 1 коммит(ов) в areas после сверки: 60f5840 Merge task 4d93723c-cb18-4568-9270-5073ce386d53 |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-15, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -47,11 +47,10 @@
 - [apps/web](../../apps/web/AGENTS.md)
 - [packages/shared](../../packages/shared/AGENTS.md)
 - [packages/ui](../../packages/ui/AGENTS.md)
-- [packages/ui-kit](../../packages/ui-kit/AGENTS.md)
 
 ## Журнал сессий
 
-Всего записей: 220. Последние:
+Всего записей: 221. Последние:
 
 - [2026-08-15-mac-web-reader-chat-list.md](log/2026-08-15-mac-web-reader-chat-list.md) — Web Reader — независимый список чатов и детерминированное создание
 - [2026-08-15-mac-preview-proxy-network-shim.md](log/2026-08-15-mac-preview-proxy-network-shim.md) — preview-proxy-network-shim
@@ -60,9 +59,9 @@
 - [2026-08-15-2470-com-web-reader-action-readiness.md](log/2026-08-15-2470-com-web-reader-action-readiness.md) — web-reader-action-readiness
 - [2026-08-15-2470-com-ui-kit-package.md](log/2026-08-15-2470-com-ui-kit-package.md) — Выделение пакета @voicechat/ui-kit
 - [2026-08-15-2470-com-playwright-reader-и-browser-runner.md](log/2026-08-15-2470-com-playwright-reader-и-browser-runner.md) — Playwright Reader и browser-runner — первый срез
+- [2026-08-15-2470-com-features-ci-runner.md](log/2026-08-15-2470-com-features-ci-runner.md) — features/ci-runner
 - [2026-08-14-mac-ui-board-fixtures-canonical-columns.md](log/2026-08-14-mac-ui-board-fixtures-canonical-columns.md) — ui-board-fixtures-canonical-columns
 - [2026-08-14-mac-qa-stage-runs.md](log/2026-08-14-mac-qa-stage-runs.md) — qa-stage-runs
-- [2026-08-14-mac-component-qa-test-stages.md](log/2026-08-14-mac-component-qa-test-stages.md) — component-qa-test-stages
 
 ## Исторические планы
 

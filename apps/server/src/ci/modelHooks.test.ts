@@ -5,7 +5,7 @@
 // рана. Поэтому «отмена рана снимает токен» проверяется и для работы модели, и
 // для fix-loop, а брокер здесь — двойник, который умеет показать живые токены.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { EMPTY_CI_TOOL_CALLS, isTrimmedToolOutput, trimmedToolOutputOriginalChars } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
 import { createCiModelHooks, parseCiTestFailures } from './modelHooks.js'
@@ -824,8 +824,9 @@ describe('пробелы базы знаний доходят до шага ак
   }
   const KB_REPLY = JSON.stringify({
     note: 'закрыл пробел',
+    nothingToUpdate: false,
     topics: ['ci-runner'],
-    documents: [{ title: 'Пробелы БЗ', kind: 'feature', areas: ['apps/server/src/ci'], body: '# Пробелы БЗ\n\nfix-loop живёт в attemptFix.' }]
+    documents: [{ id: '', title: 'Пробелы БЗ', kind: 'feature', tags: ['kb'], areas: ['apps/server/src/ci'], body: '# Пробелы БЗ\n\nfix-loop живёт в attemptFix.' }]
   })
 
   /** Ход работы модели и ход шага базы знаний отвечают по-разному. */
@@ -891,6 +892,28 @@ describe('пробелы базы знаний доходят до шага ак
     expect(prompt).toContain('куда писать по мнению модели: ci-runner')
     // Пополнение состоялось: статья раздела проекта записана сервером.
     expect(db.kbDocuments({ scope: 'project', projectId: project.id }).some((d) => d.title === 'Пробелы БЗ')).toBe(true)
+  })
+
+  it('валидирует все проектные документы до записи и пишет точную причину только в технический лог', async () => {
+    const valid = { id: '', title: 'Валидная', kind: 'feature', tags: ['kb'], areas: ['apps/server/src/kb'], body: '# Валидная' }
+    const invalid = { ...valid, title: '' }
+    const stage = twoStage('готово', JSON.stringify({
+      note: 'обновил',
+      nothingToUpdate: false,
+      topics: [],
+      documents: [valid, invalid]
+    }))
+    const { ctx } = setup('off')
+    const log: string[] = []
+    const save = vi.spyOn(db, 'saveKbDocument')
+    const result = await hooksWith(stage.client, { kb: undefined, executor: diffExecutor }).kbUpdate({
+      ...withAgent(ctx),
+      log: (_stepId: string, _stream: string, chunk: string) => log.push(chunk)
+    } as unknown as CiModelContext)
+
+    expect(result).toEqual({ ok: false, message: 'JSON ответа модели не соответствует контракту — статьи раздела проекта не сохранены' })
+    expect(save).not.toHaveBeenCalled()
+    expect(log.join('')).toContain('documents[1].title')
   })
 
   it('fix-loop: правка — то же исследование, пробел из неё тоже уезжает в базу', async () => {
