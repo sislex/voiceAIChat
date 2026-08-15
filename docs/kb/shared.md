@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-08-10
-checked: d9b71af
+updated: 2026-08-15
+checked: ac6f0db
 areas:
   - packages/shared/src
 ---
@@ -37,7 +37,7 @@ areas:
 
 ## Базовая модель данных
 
-`Conversation` хранит серверные настройки конкретного чата: цель выполнения (`execTarget`), рабочий каталог, выбранные skills, LLM provider/model, permission mode, режим KB, проект и lifecycle-статус. Настройки чата намеренно отделены от глобального `Settings`: изменение одного разговора не меняет другие. Для веб-превью `previewUrl` — override разговора, а `projectPreviewUrl` — проектный fallback в том же снапшоте; override имеет приоритет. `ProjectSummary.previewUrl` хранит проектный адрес по умолчанию.
+`Conversation` хранит серверные настройки конкретного чата: цель выполнения (`execTarget`), рабочий каталог, выбранные skills, LLM provider/model, permission mode, режим KB, проект и lifecycle-статус. Настройки чата намеренно отделены от глобального `Settings`: изменение одного разговора не меняет другие. Для веб-превью `previewUrl` — override разговора, а `projectPreviewUrl` — проектный fallback в том же снапшоте; override имеет приоритет. `ProjectSummary.previewUrl` хранит проектный адрес по умолчанию. Вид разговора типизирован: `assistantKind` — это `AssistantKind | null` (`web-recorder`, `playwright-reader`, `kanban`), а не свободная строка. Рядом в `types.ts` лежат контракты браузерной сессии Playwright Reader (`Browser*`) и три чистые функции для кадров и координат — описаны в [features/playwright-reader.md](features/playwright-reader.md), пока их использует только `apps/browser-runner`.
 
 `Message` содержит текст, роль, время, движок, метаданные хода и фактическую цель выполнения реплики. Последнее важно для истории: будущая смена машины разговора не переписывает сведения о том, где исполнялась старая команда.
 

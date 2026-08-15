@@ -5539,7 +5539,16 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 /* Отдельная страница Web Reader: на обычном чате браузерной панели нет. */
 .chat-page { grid-column: 2; min-width: 0; min-height: 0; height: 100%; }
-.app--web-reader { grid-template-columns: minmax(0, 1fr); height: 100%; }
+.app--web-reader, .app--playwright-reader { grid-template-columns: minmax(0, 1fr); height: 100%; }
+.app--playwright-reader > .chat-split { grid-column: 1; }
+.playwright-reader-selector > strong { white-space: nowrap; }
+.playwright-browser-pane { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
+.playwright-reader-header { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.playwright-reader-header [role='status'] { margin-left: auto; color: var(--text-dim); }
+@media (max-width: 768px) {
+  .chat-split-chat, .playwright-browser-pane { flex: 1 1 auto; width: 100%; min-height: 0; }
+  .chat-split--chat .playwright-browser-pane, .chat-split--preview .chat-split-chat { display: none; }
+}
 .chat-page > .chat-split-chat, .chat-page > .chat-split-chat > .main { height: 100%; }
 .web-recorder-selector { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .web-recorder-selector label { flex: 1; min-width: 0; }
