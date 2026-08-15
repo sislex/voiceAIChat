@@ -96,8 +96,9 @@ beforeEach(() => {
   diffBundle = BUNDLE_WITH_CHANGES
   modelReply = JSON.stringify({
     note: 'записал новый шаг',
+    nothingToUpdate: false,
     topics: ['ci-runner'],
-    documents: [{ title: 'CI-раннер', kind: 'feature', areas: ['apps/server/src/ci'], body: '# CI-раннер\n\nШаг актуализации базы знаний.' }]
+    documents: [{ id: '', title: 'CI-раннер', kind: 'feature', tags: ['ci'], areas: ['apps/server/src/ci'], body: '# CI-раннер\n\nШаг актуализации базы знаний.' }]
   })
 })
 afterEach(async () => {
