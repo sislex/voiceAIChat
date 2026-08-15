@@ -6,7 +6,7 @@ import type { Board, Task } from '@shared/projects'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, isPreviewElementMessage, isPreviewInspectorCommand, type PreviewElementPayload } from '@shared/previewInspector'
-import { PREVIEW_ACTION_COMMAND_TYPE, isPreviewActionResultMessage, type PreviewActionResult, type PreviewDomAction } from '@shared/previewActions'
+import { PREVIEW_ACTION_COMMAND_TYPE, isPreviewActionResultMessage, type PreviewAction, type PreviewActionResult } from '@shared/previewActions'
 import { WEB_RECORDER_MESSAGE_TYPE, type WebRecorderClientMessage } from '@shared/webRecorder'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
@@ -103,7 +103,7 @@ export interface PreviewActionOutcome {
 }
 
 /** Исполнитель DOM-действий модели на странице превью (регистрирует PreviewPane). */
-export type PreviewActionRunner = (action: PreviewDomAction) => Promise<PreviewActionOutcome>
+export type PreviewActionRunner = (action: PreviewAction) => Promise<PreviewActionOutcome>
 
 /** Сценарий автотеста хранит устойчивый CSS-селектор; секреты не содержат значение. */
 export type WebScenarioStep =
@@ -311,31 +311,73 @@ export function openWebReaderWorkspace(): void {
  * Host-side integration only. The recorder is a separately built application;
  * ChatAI communicates exclusively through @shared/webRecorder postMessage events.
  */
-function WebReaderHost({ conversationUrl, projectUrl, onSave, onSelectElement, onRegisterActionRunner }: PreviewPaneProps): JSX.Element {
+export function WebReaderHost({ conversationUrl, projectUrl, onSave, onSelectElement, onRegisterActionRunner }: PreviewPaneProps): JSX.Element {
   const frameRef = useRef<HTMLIFrameElement>(null)
-  const pending = useRef(new Map<string, (outcome: PreviewActionOutcome) => void>())
-  const ready = useRef(false)
+  const shellReady = useRef(false)
+  const pageStatus = useRef<'empty' | 'loading' | 'ready' | 'error'>('empty')
+  const pageError = useRef<string>()
+  const pending = useRef(new Map<string, { action: PreviewAction; sent: boolean; timer: ReturnType<typeof setTimeout>; resolve: (outcome: PreviewActionOutcome) => void }>())
   const url = conversationUrl ?? projectUrl
   const send = (message: object): void => frameRef.current?.contentWindow?.postMessage({ type: WEB_RECORDER_MESSAGE_TYPE, ...message }, '*')
-  useEffect(() => { send({ kind: 'set-url', url }) }, [url])
+  const settle = (requestId: string, outcome: PreviewActionOutcome): void => {
+    const entry = pending.current.get(requestId)
+    if (!entry) return
+    clearTimeout(entry.timer)
+    pending.current.delete(requestId)
+    entry.resolve(outcome)
+  }
+  const flush = (): void => {
+    if (!shellReady.current || pageStatus.current !== 'ready') return
+    for (const [requestId, entry] of pending.current) {
+      if (entry.sent) continue
+      if (entry.action.kind === 'open') { settle(requestId, { ok: true, result: { url: entry.action.url } }); continue }
+      entry.sent = true
+      send({ kind: 'run-action', requestId, action: entry.action })
+    }
+  }
+  useEffect(() => { pageStatus.current = url ? 'loading' : 'empty'; pageError.current = undefined; send({ kind: 'set-url', url }) }, [url])
   useEffect(() => {
     const receive = (event: MessageEvent): void => {
       if (event.source !== frameRef.current?.contentWindow || event.data?.type !== WEB_RECORDER_MESSAGE_TYPE) return
       const message = event.data as WebRecorderClientMessage
-      if (message.kind === 'ready') { ready.current = true; send({ kind: 'set-url', url }); return }
+      if (message.kind === 'ready') { shellReady.current = true; send({ kind: 'set-url', url }); return }
+      if (message.kind === 'page-status') {
+        pageStatus.current = message.status
+        pageError.current = message.error
+        if (message.status === 'ready') flush()
+        if (message.status === 'error') for (const requestId of [...pending.current.keys()]) settle(requestId, { ok: false, error: 'Сайт или страница недоступны: ' + (message.error ?? 'ошибка загрузки.') })
+        return
+      }
       if (message.kind === 'save-url') { void onSave(message.url); return }
       if (message.kind === 'element') { onSelectElement?.(message.element); return }
-      if (message.kind === 'action-result') { const resolve = pending.current.get(message.requestId); if (resolve) { pending.current.delete(message.requestId); resolve({ ok: message.ok, result: message.result, error: message.error }) } }
+      if (message.kind === 'action-result') settle(message.requestId, message.ok ? { ok: true, ...(message.result ? { result: message.result } : {}) } : { ok: false, error: message.error ?? 'Действие в превью не выполнено.' })
     }
     window.addEventListener('message', receive); return () => window.removeEventListener('message', receive)
   }, [onSave, onSelectElement, url])
   useEffect(() => {
     if (!onRegisterActionRunner) return
     onRegisterActionRunner((action) => {
-      if (!ready.current) return Promise.resolve({ ok: false, error: 'Web Reader ещё не готов.' })
-      return new Promise((resolve) => { const requestId = 'wr-' + crypto.randomUUID(); pending.current.set(requestId, resolve); send({ kind: 'run-action', requestId, action }) })
+      if (!shellReady.current) return Promise.resolve({ ok: false, error: 'Панель Web Reader не открыта или ещё не подключена.' })
+      if (action.kind === 'open') { pageStatus.current = 'loading'; pageError.current = undefined }
+      if (pageStatus.current === 'empty' && action.kind !== 'open') return Promise.resolve({ ok: false, error: 'Панель открыта, но в ней нет страницы — сначала вызови open.' })
+      if (pageStatus.current === 'error' && action.kind !== 'open') return Promise.resolve({ ok: false, error: 'Сайт или страница недоступны: ' + (pageError.current ?? 'ошибка загрузки.') })
+      return new Promise((resolve) => {
+        const requestId = 'wr-' + crypto.randomUUID()
+        const timer = setTimeout(() => settle(requestId, {
+          ok: false,
+          error: pageStatus.current === 'loading'
+            ? 'Страница всё ещё загружается и не стала готова за время ожидания.'
+            : 'Клиентский мост Web Reader не ответил на команду при открытой панели.'
+        }), PREVIEW_ACTION_UI_TIMEOUT_MS)
+        pending.current.set(requestId, { action, sent: false, timer, resolve })
+        flush()
+      })
     })
-    return () => { onRegisterActionRunner(null); for (const resolve of pending.current.values()) resolve({ ok: false, error: 'Web Reader закрыт.' }); pending.current.clear() }
+    return () => {
+      onRegisterActionRunner(null)
+      for (const requestId of [...pending.current.keys()]) settle(requestId, { ok: false, error: 'Панель Web Reader закрыта.' })
+      shellReady.current = false
+    }
   }, [onRegisterActionRunner])
   return <section className="webpreview" aria-label="Web Reader"><iframe ref={frameRef} className="webpreview-frame" src="/web-recorder/" title="Web Reader" aria-hidden="true" /></section>
 }
@@ -424,9 +466,11 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         }
         if (action.kind === 'open') {
           try {
+            const runner = previewRunnerRef.current
+            if (!runner) return { ok: false, error: 'Панель превью не открыта у пользователя.' }
             await actions.setConversationPreviewUrl(conversationId, action.url)
             setPreviewElement(null)
-            return { ok: true, result: { url: action.url } }
+            return runner(action)
           } catch {
             return { ok: false, error: 'Не удалось сохранить адрес превью.' }
           }

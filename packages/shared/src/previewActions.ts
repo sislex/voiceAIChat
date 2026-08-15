@@ -12,6 +12,9 @@
 
 export const PREVIEW_ACTION_COMMAND_TYPE = 'voicechat.preview.action.v1' as const
 export const PREVIEW_ACTION_RESULT_TYPE = 'voicechat.preview.action-result.v1' as const
+/** Внутренний iframe сообщает recorder-оболочке, что инъецированный мост DOM готов. */
+export const PREVIEW_PAGE_READY_TYPE = 'voicechat.preview.page-ready.v1' as const
+export const PREVIEW_PAGE_LOADING_TYPE = 'voicechat.preview.page-loading.v1' as const
 
 /** Лимиты полезной нагрузки: страница не должна вливать в ход мегабайты DOM. */
 export const PREVIEW_ACTION_LIMITS = {
