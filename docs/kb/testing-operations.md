@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-08-14
-checked: b444ebe
+updated: 2026-08-15
+checked: 0a044e4
 areas:
   - package.json
   - scripts
@@ -55,7 +55,7 @@ Server запускает исходники через tsx. Web dev proxy со�
 
 Shared — чистые unit и contract tests без моков. Здесь проверяются union/runtime lists, parsers, policy, state machine, prompt и преобразования.
 
-Server HTTP тестируется `app.inject()` с `:memory:` SQLite. WebSocket поднимает ephemeral listener и реальный ws-клиент, но engines/CLI заменяются fake. Spawn, fetch, filesystem и resource probes инъектируются. Тест никогда не использует настоящий HOME или найденные repo-модели; `VITEST` отключает autodiscovery. Глобальный `testTimeout` server-набора — 10 минут: полный merge-гейт запускает пакеты параллельно, и интеграционные WS-тесты не должны ложно падать из-за кратковременной нагрузки машины.
+Server HTTP тестируется `app.inject()` с `:memory:` SQLite. WebSocket поднимает ephemeral listener и реальный ws-клиент, но engines/CLI заменяются fake. Spawn, fetch, filesystem и resource probes инъектируются. Тест никогда не использует настоящий HOME или найденные repo-модели; `VITEST` отключает autodiscovery. Глобальный `testTimeout` server-набора — 10 минут: полный merge-гейт запускает пакеты параллельно, и интеграционные WS-тесты не должны ложно падать из-за кратковременной нагрузки машины. Многошаговые оркестраторы (CI-, merge- и release-раны) тестируются тем же приёмом: реальный `CommandExecutor` заменяется `vi.fn`, который узнаёт скрипт по подстроке и отдаёт заготовленный stdout, а `now` инъектируется счётчиком, поэтому порядок команд и длительности детерминированы без git, сети и CLI (образец — `merge/runManager.test.ts`, разбор в [features/merge-runner.md](features/merge-runner.md)).
 
 Исполнитель LLM (`apps/llm-runner`) тестируется как сервер — `app.inject()` и фейковый `spawn`, — но поток `/v1/run` проверяется только через реальный `listen()` и построчное чтение `fetch`: `inject()` отдаёт тело целиком и не показал бы, что строки не буферизуются. Тем же `inject()` покрываются профильные файловые API `/v1/auth/status`, `/v1/files/read`, `/v1/fs/cc/*` и `/v1/fs/cx/*`: тесты заводят временный `dataDir`, создают профили `cli-users/<base64url(user)>` и проверяют, что формы ответов совпадают с прежними серверными роутами. Bearer в тестах обязательно ASCII: значение заголовка — ByteString, и `fetch` с кириллическим токеном падает до запроса.
 

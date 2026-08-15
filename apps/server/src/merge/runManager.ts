@@ -146,6 +146,19 @@ git add -- ${q}`,repo,30000)
   }
   private async execute(id:string,ctl:AbortController):Promise<void> {
     let run=this.deps.db.getMergeRunRaw(id); if(!run)return
+    const temporaryWorktrees:string[]=[]
+    let worktreeRepo:string|null=null
+    const cleanupWorktrees=async():Promise<void>=>{
+      if(!worktreeRepo||temporaryWorktrees.length===0)return
+      const paths=[...temporaryWorktrees].reverse()
+      temporaryWorktrees.length=0
+      for(const path of paths){
+        try {
+          await this.deps.executor.run({agentId:run.agentId,script:`git worktree remove --force ${shellQuote(path)}`,workdir:worktreeRepo,env:{},timeoutMs:60000,secrets:[]},()=>{})
+        } catch { /* best effort; prune ниже убирает служебную запись Git */ }
+      }
+      try { await this.deps.executor.run({agentId:run.agentId,script:'git worktree prune',workdir:worktreeRepo,env:{},timeoutMs:30000,secrets:[]},()=>{}) } catch { /* машина могла отключиться */ }
+    }
     try {
       if(run.pushStartedAt&&run.mergeSha){
         const project=this.deps.db.getProject(run.triggeredBy,run.projectId), ws=this.deps.db.findLatestPushedCiWorkspace(run.projectId,run.taskId)
@@ -165,6 +178,11 @@ git add -- ${q}`,repo,30000)
       if(!this.deps.isOnline(run.agentId))throw new Error('Выбранная машина не в сети')
       if(run.targetBranch!=='main'||!validBranch.test(run.sourceBranch)||(run.sourceSha!==null&&!validSha.test(run.sourceSha)))throw new Error('Некорректный серверный снимок ветки')
       const {repo,parent,workdir,cacheDir}=this.mergeBase(run,ws)
+      // Read-only preflight идёт до mkdir/clone/checkout: обе ветки и доступ к
+      // origin должны быть подтверждены прежде любой мутации репозитория.
+      const preflight=await this.cmd(run,`git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/heads/${run.sourceBranch}`,workdir,30000)
+      const preflightRefs=preflight.output.split(/\r?\n/).filter(Boolean)
+      if(preflight.exitCode||preflightRefs.length!==2)throw new Error('origin недоступен либо main/feature-ветка не существует')
       const cloned=await this.cmd(run,`mkdir -p ${shellQuote(parent)}\nif [ -d ${shellQuote(`${repo}/.git`)} ]; then echo "постоянный merge-клон уже создан"; else git clone --no-checkout --origin origin ${shellQuote(project.gitUrl)} ${shellQuote(repo)}; fi`,workdir)
       if(cloned.exitCode)throw new Error('Не удалось подготовить постоянный merge-клон')
       if(ws.agentId)this.deps.db.upsertTaskRepository(run.projectId,run.taskId,ws.agentId,ws.path,'dev-workspace')
@@ -252,67 +270,106 @@ git add -- ${q}`,repo,30000)
           this.finish(id,'decision_required','Конфликты требуют решения пользователя','Разрешите файлы в ветке задачи и повторите merge.','decision_required'); return
         }
       }
-      const rev=await this.cmd(run,'git rev-parse HEAD',repo,30000), mergeSha=rev.output.match(/[0-9a-f]{40}/i)?.[0]
-      if(!mergeSha)throw new Error('Merge-коммит не создан')
-      this.deps.db.updateMergeRun(id,{mergeSha}); this.stage(id,'merging','passed',`Создан merge ${mergeSha.slice(0,8)}`)
+      const rev=await this.cmd(run,'git rev-parse HEAD',repo,30000), checkedSha=rev.output.match(/[0-9a-f]{40}/i)?.[0]
+      if(!checkedSha)throw new Error('Merge-коммит не создан')
+      // Направление истории намеренно явное: merge-коммит строится от pinned main
+      // с feature как вторым родителем; отдельный KB-коммит становится его потомком
+      // в feature. В main публикуется ровно итоговый feature SHA.
+      this.deps.db.updateMergeRun(id,{mergeSha:checkedSha}); this.stage(id,'merging','passed',`Проверяемый SHA ${checkedSha.slice(0,8)} (main + feature)`)
 
-      this.stage(id,'kb_update','running','Актуализирую базу знаний по итоговому merged diff')
       if (!this.deps.kbUpdate) throw new Error('Обязательный обработчик актуализации базы знаний не подключён')
-      const kbResult = await this.deps.kbUpdate({ run: this.deps.db.getMergeRunRaw(id) ?? run, repo, targetRef, signal: ctl.signal, log: chunk => this.log(id, chunk) })
-      this.deps.db.updateMergeRun(id, {
-        ...(kbResult.llmEngineId !== undefined ? { llmEngineId: kbResult.llmEngineId } : {}),
-        ...(kbResult.llmProvider ? { llmProvider: kbResult.llmProvider } : {}),
-        ...(kbResult.llmModel !== undefined ? { llmModel: kbResult.llmModel } : {})
-      })
-      if (!kbResult.ok) {
-        this.stage(id,'kb_update','failed',kbResult.message)
-        throw new Error(kbResult.message)
-      }
-      // Индекс строится ровно здесь — после содержательного обновления БЗ и
-      // до тестов. Версия README из development-ветки никогда не становится
-      // итоговой и потому не требует осмысленного разрешения конфликтов.
-      const kbCommitted = await this.cmd(run,`node scripts/kb.mjs index\nnode scripts/kb.mjs check\ngit add -- docs/kb\nif git diff --cached --quiet; then echo KB_TREE_UNCHANGED; else git -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --amend --no-edit; fi\ngit rev-parse HEAD`,repo,300000)
-      const finalMergeSha = kbCommitted.output.match(/[0-9a-f]{40}/ig)?.at(-1)
-      if (kbCommitted.exitCode || !finalMergeSha) throw new Error('Не удалось включить файловую базу знаний в merge-коммит')
-      this.deps.db.updateMergeRun(id,{mergeSha:finalMergeSha})
-      this.stage(id,'kb_update','passed',kbResult.message)
+      worktreeRepo=repo
+      const worktreeRoot=`${parent}/.merge-run-${id.replace(/[^A-Za-z0-9_-]/g,'_')}`
+      const testsRepo=`${worktreeRoot}-tests`,kbRepo=`${worktreeRoot}-kb`
+      const prepared=await this.cmd(run,`git worktree add --detach ${shellQuote(testsRepo)} ${shellQuote(checkedSha)}\ngit worktree add --detach ${shellQuote(kbRepo)} ${shellQuote(checkedSha)}`,repo,300000)
+      if(prepared.exitCode||prepared.timedOut)throw new Error('Не удалось создать изолированные worktree для проверок и БЗ')
+      temporaryWorktrees.push(testsRepo,kbRepo)
 
-      this.stage(id,'testing','running','Проверяю зависимости merge-клона')
-      // node_modules переживает раны: установка нужна только при изменении
-      // package-lock.json; маркер живёт внутри node_modules (git clean его не трёт).
-      const installed=await this.cmd(run,`LOCK=$(git hash-object package-lock.json)\nif [ -f node_modules/.merge-lock-sha ] && [ "$(cat node_modules/.merge-lock-sha)" = "$LOCK" ]; then echo DEPS_UP_TO_DATE; else npm_config_cache=${shellQuote(cacheDir)} npm ci --no-audit --no-fund && printf %s "$LOCK" > node_modules/.merge-lock-sha; fi`,repo,900000)
-      if(installed.exitCode||installed.timedOut)throw new Error('Не удалось установить зависимости merge-клона')
-      this.stage(id,'testing','running',installed.output.includes('DEPS_UP_TO_DATE')?'Зависимости актуальны (npm ci пропущен), запускаю проверки':'Запускаю обязательные проверки до push')
-      const commands=testStages(project.testCommand??'',['npm run affected-check']), began=this.now()
-      let tested:{exitCode:number|null;timedOut:boolean;output:string}={exitCode:0,timedOut:false,output:''}
-      for(const command of commands){
-        const result=await this.cmd(run,command,repo,1800000)
-        tested={...result,output:tested.output+result.output}
-        if(result.exitCode||result.timedOut)break
+      const commands=testStages(project.testCommand??'',['npm run affected-check'])
+      const parallelStarted=this.now()
+      this.stage(id,'testing','running',`Параллельно запускаю проверки SHA ${checkedSha.slice(0,8)} в изолированном worktree`)
+      this.stage(id,'kb_update','running',`Параллельно актуализирую БЗ SHA ${checkedSha.slice(0,8)} в отдельном worktree`)
+      const branchCtl=new AbortController()
+      ctl.signal.addEventListener('abort',()=>branchCtl.abort(),{once:true})
+      const runGate=async(workdir:string,gateCommands:string[],name:string):Promise<MergeCheck>=>{
+        const began=this.now()
+        const installed=await this.cmd(run,`npm_config_cache=${shellQuote(cacheDir)} npm ci --no-audit --no-fund`,workdir,900000)
+        let tested={...installed,output:installed.output}
+        if(!installed.exitCode&&!installed.timedOut){
+          tested={exitCode:0 as number|null,timedOut:false,output:installed.output}
+          for(const command of gateCommands){
+            const result=await this.cmd(run,command,workdir,1800000)
+            tested={...result,output:tested.output+result.output}
+            if(result.exitCode||result.timedOut)break
+          }
+        }
+        return{name,command:gateCommands.join('\n'),status:tested.exitCode===0&&!tested.timedOut?'passed':'failed',startedAt:began,finishedAt:this.now(),durationMs:this.now()-began,exitCode:tested.exitCode,timedOut:tested.timedOut,output:tested.output}
       }
-      const check:MergeCheck={name:'Проверки проекта',command:commands.join('\n'),status:tested.exitCode===0&&!tested.timedOut?'passed':'failed',startedAt:began,finishedAt:this.now(),durationMs:this.now()-began,exitCode:tested.exitCode,timedOut:tested.timedOut,output:tested.output}
+      const testsPromise=runGate(testsRepo,commands,'Проверки проекта').then(result=>{if(result.status==='failed')branchCtl.abort();return result})
+      const kbPromise=this.deps.kbUpdate({run:this.deps.db.getMergeRunRaw(id)??run,repo:kbRepo,targetRef,signal:branchCtl.signal,log:chunk=>this.log(id,chunk)}).then(result=>{if(!result.ok)branchCtl.abort();return result})
+      const [testsSettled,kbSettled]=await Promise.allSettled([testsPromise,kbPromise])
+      const parallelDuration=this.now()-parallelStarted
+      if(testsSettled.status==='rejected')throw testsSettled.reason
+      const check=testsSettled.value
       this.deps.db.updateMergeRun(id,{checks:[check]})
-      if(tested.exitCode||tested.timedOut)throw new Error(tested.timedOut?'Проверки превысили timeout':`Проверки упали (exit ${tested.exitCode})`)
-      this.stage(id,'testing','passed','Все обязательные проверки прошли')
+      this.stage(id,'testing',check.status==='passed'?'passed':'failed',`Проверки ${check.status==='passed'?'прошли':'не прошли'} за ${check.durationMs} мс; параллельный участок ${parallelDuration} мс`)
+      if(check.status==='failed')throw new Error(check.timedOut?'Проверки превысили timeout':`Проверки упали (exit ${check.exitCode})`)
+      if(kbSettled.status==='rejected')throw kbSettled.reason
+      const kbResult=kbSettled.value
+      this.deps.db.updateMergeRun(id,{
+        ...(kbResult.llmEngineId!==undefined?{llmEngineId:kbResult.llmEngineId}:{}),
+        ...(kbResult.llmProvider?{llmProvider:kbResult.llmProvider}:{}),
+        ...(kbResult.llmModel!==undefined?{llmModel:kbResult.llmModel}:{})
+      })
+      if(!kbResult.ok){this.stage(id,'kb_update','failed',kbResult.message);throw new Error(kbResult.message)}
 
-      this.stage(id,'pushing','running','Повторно проверяю origin/main перед push')
+      const kbCommitted=await this.cmd(run,`node scripts/kb.mjs index\nnode scripts/kb.mjs check\ngit add -- docs/kb\nif git diff --cached --quiet; then echo KB_TREE_UNCHANGED; else git -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit -m "docs(kb): update after merge ${run.taskId}"; fi\nprintf 'FINAL=%s\\n' "$(git rev-parse HEAD)"\nprintf 'CHANGED\\n'\ngit diff --name-only ${shellQuote(checkedSha)} HEAD`,kbRepo,300000)
+      const finalSha=kbCommitted.output.match(/FINAL=([0-9a-f]{40})/i)?.[1]
+      if(kbCommitted.exitCode||!finalSha)throw new Error('Не удалось создать отдельный коммит файловой БЗ')
+      const changed=kbCommitted.output.split(/CHANGED\r?\n/)[1]?.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)??[]
+      const kbChanged=finalSha.toLowerCase()!==checkedSha.toLowerCase()
+      this.deps.db.updateMergeRun(id,{mergeSha:finalSha})
+      this.stage(id,'kb_update','passed',`${kbResult.message}; ${kbChanged?`отдельный KB-коммит ${finalSha.slice(0,8)}`:'дерево не изменилось, пустой коммит не создан'}; ${parallelDuration} мс`)
+
+      if(kbChanged){
+        const docsOnly=changed.every(path=>/^docs\/(?!.*(?:generated|dist|build))/.test(path)||/^(?:\.github\/|[^/]*\.md$)/.test(path))
+        const repeatCommands=docsOnly?['node scripts/kb.mjs check']:commands
+        this.stage(id,'testing','running',docsOnly?'Запускаю сокращённый документальный гейт после KB-коммита':'Изменения влияют на сборку; повторяю полный гейт')
+        const repeated=await runGate(kbRepo,repeatCommands,docsOnly?'Документальный гейт после БЗ':'Полный повторный гейт после БЗ')
+        this.deps.db.updateMergeRun(id,{checks:[check,repeated]})
+        this.stage(id,'testing',repeated.status==='passed'?'passed':'failed',`${repeated.name}: ${repeated.status}, ${repeated.durationMs} мс`)
+        if(repeated.status==='failed')throw new Error(`${repeated.name} не пройден`)
+      }
+
+      this.stage(id,'pushing','running','Повторно сверяю pinned origin/main и feature перед публикацией')
       const refreshed=await this.cmd(run,`git fetch --no-tags origin +refs/heads/main:${shellQuote(targetRef)} +${shellQuote(run.sourceBranch)}:${shellQuote(sourceRef)}\nprintf 'TARGET=%s\\nSOURCE=%s\\n' "$(git rev-parse ${shellQuote(targetRef)})" "$(git rev-parse ${shellQuote(sourceRef)})"`,repo)
-      const latest=refreshed.output.match(/TARGET=([0-9a-f]{40})/i)?.[1], latestSource=refreshed.output.match(/SOURCE=([0-9a-f]{40})/i)?.[1]
-      if(!latest||latest.toLowerCase()!==target.toLowerCase())throw new Error('origin/main изменился конкурентно; повторите merge')
+      const latest=refreshed.output.match(/TARGET=([0-9a-f]{40})/i)?.[1],latestSource=refreshed.output.match(/SOURCE=([0-9a-f]{40})/i)?.[1]
+      if(!latest)throw new Error('Не удалось повторно прочитать origin/main')
+      if(latest.toLowerCase()!==target.toLowerCase()){
+        this.log(id,`origin/main изменился с ${target.slice(0,8)} до ${latest.slice(0,8)}; старые результаты не переиспользуются`)
+        await cleanupWorktrees()
+        return await this.execute(id,ctl)
+      }
       if(!latestSource||latestSource.toLowerCase()!==source.toLowerCase())throw new Error('stale source: ветка изменилась перед push')
-      const finalSha=this.deps.db.getMergeRunRaw(id)?.mergeSha
-      if(!finalSha)throw new Error('Итоговый merge SHA отсутствует')
       this.deps.db.updateMergeRun(id,{pushStartedAt:this.now()})
-      const pushed=await this.cmd(run,`git push --porcelain --force-with-lease=refs/heads/main:${target} origin ${finalSha}:refs/heads/main`,repo)
-      if(pushed.exitCode)throw new Error('Безопасный push отклонён; требуется reconcile')
+      const featurePushed=await this.cmd(run,`git push --porcelain --force-with-lease=refs/heads/${run.sourceBranch}:${source} origin ${finalSha}:refs/heads/${run.sourceBranch}`,repo)
+      if(featurePushed.exitCode)throw new Error('Push feature-ветки отклонён; main не изменён')
+      const mainPushed=await this.cmd(run,`git push --porcelain --force-with-lease=refs/heads/main:${target} origin ${finalSha}:refs/heads/main`,repo)
+      if(mainPushed.exitCode)throw new Error('Безопасный push main отклонён; требуется reconcile')
       const verified=await this.cmd(run,'git ls-remote origin refs/heads/main',repo,30000)
       if(!verified.output.toLowerCase().startsWith(finalSha.toLowerCase()))throw new Error('Неопределённый результат push; требуется reconcile')
-      this.stage(id,'pushing','passed','origin/main подтверждён'); this.finish(id,'success',null,null,'done')
+      this.stage(id,'pushing','passed',`В main отправлен итоговый feature SHA ${finalSha}`);this.finish(id,'success',null,null,'done')
+      await cleanupWorktrees()
       await this.releaseTaskRepositories(run)
     } catch(error) {
       if(ctl.signal.aborted)return
       const message=error instanceof Error?error.message:String(error), decision=/stale source|конкурентно|reconcile|Неопределённый/i.test(message)
+      this.log(id,`Остановка merge: ${message}`)
       this.finish(id,decision?'decision_required':'failed',message,decision?'Обновите ветку или main и повторите merge.':'Исправьте причину и повторите merge.',decision?'decision_required':'merge')
+    } finally {
+      await cleanupWorktrees()
+      const current=this.deps.db.getMergeRunRaw(id)
+      if(current?.startedAt&&current.finishedAt)this.log(id,`Общая длительность merge: ${current.finishedAt-current.startedAt} мс`)
     }
   }
   private finish(id:string,status:'success'|'failed'|'cancelled'|'decision_required',error:string|null,action:string|null,column:'done'|'merge'|'decision_required'):void {
