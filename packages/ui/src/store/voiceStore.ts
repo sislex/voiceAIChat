@@ -159,6 +159,14 @@ function sameDoneTasks(a: Board, b: Board): boolean {
  * Добавляет беседу в список, если её там нет, сохраняя порядок «свежее выше».
  * Нужно для активного чата завершённой задачи: из общего списка он скрыт.
  */
+/**
+ * Reader-чат: типизированный web-recorder или старый разговор с сохранённым
+ * previewUrl (создан до появления `assistantKind`, но совместим с Web Reader).
+ */
+export function isReaderConversation(conv: Conversation): boolean {
+  return conv.assistantKind === 'web-recorder' || Boolean(conv.previewUrl)
+}
+
 function withConversation(list: Conversation[], conv: Conversation): Conversation[] {
   if (list.some((c) => c.id === conv.id)) return list
   const at = list.findIndex((c) => c.updatedAt < conv.updatedAt)
@@ -256,6 +264,12 @@ export interface AppState {
   authError: string | null
   voice: VoiceState
   conversations: Conversation[]
+  /**
+   * Все reader-чаты пользователя из полного ответа `conversations:list` — без
+   * фильтра сайдбара по проекту. Экран Web Reader живёт отдельно от обычного
+   * чата, поэтому его список не должен сжиматься от смены `sidebarProjectId`.
+   */
+  readerConversations: Conversation[]
   /** Состояние загрузки списка бесед (сайдбар: скелетон / ошибка с «Повторить»). */
   conversationsStatus: LoadStatus
   /** Текст ошибки загрузки списка бесед (деталь под «Подробнее»). */
@@ -1025,6 +1039,7 @@ function initialState(): AppState {
     authError: null,
     voice: 'idle',
     conversations: [],
+    readerConversations: [],
     conversationsStatus: 'loading',
     conversationsError: null,
     searchQuery: '',
@@ -1317,7 +1332,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       // Список/поиск сужаем до выбранного в сайдбаре проекта (null — чаты без проекта).
       const pid = state.sidebarProjectId
       const conversations = keepPinned(all.filter((c) => (c.projectId ?? null) === pid), pid, q)
-      setState({ conversations, conversationsStatus: 'ready', conversationsError: null })
+      setState({
+        conversations,
+        conversationsStatus: 'ready',
+        conversationsError: null,
+        // Reader-чаты берём из полного ответа, до фильтра проекта. Поиск сужает
+        // только сайдбар — при активном запросе список Web Reader не трогаем.
+        ...(q ? {} : { readerConversations: all.filter(isReaderConversation) })
+      })
       void loadTaskChatBadges()
     } catch (err) {
       setState({
@@ -1827,7 +1849,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     // Сайдбар сразу фильтруем по восстановленному из localStorage проекту.
     const pid = state.sidebarProjectId
     const visible = conversations.filter((c) => (c.projectId ?? null) === pid)
-    setState({ settings, llmEngines, llmAccess, projects, projectsLoaded: true, conversations: visible, conversationsStatus: 'ready', conversationsError: null })
+    setState({ settings, llmEngines, llmAccess, projects, projectsLoaded: true, conversations: visible, readerConversations: conversations.filter(isReaderConversation), conversationsStatus: 'ready', conversationsError: null })
     void loadTaskChatBadges()
     await refreshMics()
     await refreshModelStatus()
@@ -2692,7 +2714,25 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     void audio.stop().catch((err) => console.warn('[audio] остановка захвата не удалась', err))
   }
 
+  /**
+   * Токен актуальности `conversations:get`: инкремент — при каждой смене чата
+   * пользователем. Ответ применяется, только если за время его полёта не было
+   * более позднего выбора или создания чата; устаревший отбрасывается молча.
+   */
+  let selectToken = 0
+
+  /** Порядковый номер для различимого имени нового reader-чата («Web Reader N»). */
+  function nextReaderNumber(): number {
+    let max = 0
+    for (const conv of state.readerConversations) {
+      const m = /^Web Reader (\d+)$/.exec(conv.title)
+      if (m) max = Math.max(max, Number(m[1]))
+    }
+    return max + 1
+  }
+
   async function newConversation(assistantKind?: 'web-recorder'): Promise<string | null> {
+    selectToken++ // недолетевший ответ прежнего выбора не должен перетереть новый чат
     cancelTimers()
     stopCapture()
     resetTts() // ход текущего разговора не отменяем — он доиграет на сервере
@@ -2702,17 +2742,21 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       setState({
         activeId: null,
         ...chatSwitchReset(),
+        loadingMessages: false, // незавершённый selectConversation больше не владеет лентой
         draft: '',
         promptHelper: { open: false, loading: false, variants: [], error: null },
         attachments: []
       })
       return null
     }
-    // Web Reader — специальный сохраняемый lifecycle, он не является ручным черновиком.
-    const conversation = await api['conversations:create']({ title: 'Новый разговор', assistantKind })
+    // Web Reader — специальный сохраняемый lifecycle, он не является ручным
+    // черновиком. Имя даём различимое: безымянные записи в селекторе не отличить.
+    const conversation = await api['conversations:create']({ title: `Web Reader ${nextReaderNumber()}`, assistantKind })
     setState({
       activeId: conversation.id,
+      readerConversations: withConversation(state.readerConversations, conversation),
       ...chatSwitchReset(),
+      loadingMessages: false, // незавершённый selectConversation больше не владеет лентой
       draft: '',
       promptHelper: { open: false, loading: false, variants: [], error: null },
       attachments: []
@@ -2722,6 +2766,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   async function selectConversation(id: string): Promise<boolean> {
+    const token = ++selectToken
     cancelTimers()
     stopCapture()
     resetTts() // ход прежнего разговора не отменяем — он доиграет на сервере
@@ -2730,6 +2775,9 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
     let known = true
     try {
       const res = await api['conversations:get']({ id })
+      // Пока ответ летел, пользователь выбрал другой чат или создал новый:
+      // состоянием владеет более поздний вызов, этот ответ отбрасываем молча.
+      if (token !== selectToken) return false
       if (res) {
         opened = res.conversation
         known = state.conversations.some((c) => c.id === res.conversation.id)
@@ -2737,7 +2785,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
         restoreStreamIfActive() // у разговора есть недоигранный ход → показываем стрим
       }
     } finally {
-      setState({ loadingMessages: false })
+      if (token === selectToken) setState({ loadingMessages: false })
     }
     if (!opened) {
       setState({ error: 'Разговор не найден: возможно, он удалён.' })
@@ -2825,6 +2873,8 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       await api['conversations:delete']({ id })
       // Иначе закреплённая строка удалённого чата вернулась бы в список.
       if (state.pinnedConversation?.id === id) setState({ pinnedConversation: null })
+      // При активном поиске перезапрос ниже не перечитает полный список — reader-чат убираем сами.
+      setState({ readerConversations: state.readerConversations.filter((c) => c.id !== id) })
       const wasActive = state.activeId === id
       await refreshConversations()
       if (wasActive) {
@@ -3620,7 +3670,13 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
   async function setConversationPreviewUrl(id: string, previewUrl: string | null): Promise<void> {
     const conversation = await api['conversations:setPreviewUrl']({ id, previewUrl })
-    setState({ conversations: state.conversations.map((c) => (c.id === id ? conversation : c)) })
+    setState({
+      conversations: state.conversations.map((c) => (c.id === id ? conversation : c)),
+      // previewUrl меняет принадлежность к reader-чатам: старый чат с URL входит в список, без URL — выходит.
+      readerConversations: isReaderConversation(conversation)
+        ? withConversation(state.readerConversations.map((c) => (c.id === id ? conversation : c)), conversation)
+        : state.readerConversations.filter((c) => c.id !== id)
+    })
   }
   async function setConversationStatus(id: string, status: ConversationStatus): Promise<void> {
     const conversation = await api['conversations:setStatus']({ id, status })

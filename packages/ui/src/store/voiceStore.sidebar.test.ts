@@ -200,3 +200,67 @@ describe('voiceStore — сайдбар обновляется по событи
     expect(list).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('voiceStore — список reader-чатов и гонка выбора', () => {
+  it('readerConversations не сжимается фильтром проекта в сайдбаре', async () => {
+    const api = createFakeApi()
+    const store = createVoiceStore({ api, now: () => 1_700_000_000_000 })
+    const project = await api['projects:create']({ name: 'P' })
+    await store.actions.init()
+    const readerId = await store.actions.newConversation('web-recorder')
+    // Старый reader-чат без assistantKind, но с сохранённым previewUrl.
+    const legacy = await api['conversations:create']({ title: 'Старый ридер' })
+    await api['conversations:setPreviewUrl']({ id: legacy.id, previewUrl: 'https://example.com' })
+
+    await store.actions.setSidebarProject(project.id)
+
+    // Сайдбар сужен проектом: reader-чаты без проекта из него ушли…
+    expect(store.getState().conversations.map((c) => c.id)).not.toContain(readerId)
+    // …а список Web Reader остался полным — оба вида reader-чатов на месте.
+    const readerIds = store.getState().readerConversations.map((c) => c.id)
+    expect(readerIds).toContain(readerId)
+    expect(readerIds).toContain(legacy.id)
+    // Обычных чатов в нём нет и лишние reader-чаты не создавались.
+    expect(api._state.conversations.filter((c) => c.assistantKind === 'web-recorder')).toHaveLength(1)
+  })
+
+  it('устаревший ответ conversations:get не перетирает только что созданный чат', async () => {
+    const api = createFakeApi()
+    const store = createVoiceStore({ api, now: () => 1_700_000_000_000 })
+    const old = await api['conversations:create']({ title: 'Старый' })
+    await api['messages:add']({ conversationId: old.id, role: 'u1', text: 'привет', time: '10:00' })
+    await api['conversations:create']({ title: 'Свежий' })
+    await store.actions.init()
+
+    // Ответ на клик по старому чату задерживаем — за кликом сразу идёт «+ Новый».
+    const realGet = api['conversations:get']
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    api['conversations:get'] = async (arg) => { await gate; return realGet(arg) }
+    const pending = store.actions.selectConversation(old.id)
+    api['conversations:get'] = realGet
+
+    const readerId = await store.actions.newConversation('web-recorder')
+    release()
+
+    // Устаревший ответ отброшен молча: без ошибки и без перезаписи состояния.
+    await expect(pending).resolves.toBe(false)
+    expect(store.getState().activeId).toBe(readerId)
+    expect(store.getState().messages).toHaveLength(0)
+    expect(store.getState().error).toBeNull()
+    expect(store.getState().loadingMessages).toBe(false)
+  })
+
+  it('новые reader-чаты получают различимые имена «Web Reader N»', async () => {
+    const api = createFakeApi()
+    const store = createVoiceStore({ api, now: () => 1_700_000_000_000 })
+    await store.actions.init()
+
+    await store.actions.newConversation('web-recorder')
+    await store.actions.newConversation('web-recorder')
+
+    const titles = store.getState().readerConversations.map((c) => c.title)
+    expect(titles).toContain('Web Reader 1')
+    expect(titles).toContain('Web Reader 2')
+  })
+})

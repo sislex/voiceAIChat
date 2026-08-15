@@ -670,13 +670,28 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   // Отдельный экран Web Reader держит только типизированные чаты; старые
   // разговоры с сохранённым URL совместимы с ним и остаются доступны после переноса.
   // ID обычного чата в адресе не должен превращать Reader во второй экран чата.
+  // Список — state.readerConversations (полный ответ conversations:list): фильтр
+  // проекта в сайдбаре обычного чата не должен ни сжимать его, ни зациклить
+  // создание, когда только что созданный чат не попал бы в срез проекта.
+  const readerCreating = useRef(false)
+  const createReaderChat = (replace = false): void => {
+    if (readerCreating.current) return
+    readerCreating.current = true
+    void actions.newConversation('web-recorder')
+      .then((id) => { if (id) navigate(`/web-reader/${id}`, { replace }) })
+      .catch(() => { /* ошибка уже показана стором */ })
+      .finally(() => { readerCreating.current = false })
+  }
   useEffect(() => {
     if (!authed || !inReader || state.conversationsStatus !== 'ready') return
     if (legacyReaderRoute) {
       navigate(`/web-reader${routeReaderChatId ? `/${routeReaderChatId}` : ''}`, { replace: true })
       return
     }
-    const readerChats = state.conversations.filter((item) => item.assistantKind === 'web-recorder' || Boolean(item.previewUrl))
+    // Пока создание нового чата в полёте, авто-выбор молчит: иначе обновление
+    // списка успело бы увести activeId на старый чат или создать второй.
+    if (readerCreating.current) return
+    const readerChats = state.readerConversations
     const routedReaderChat = readerChats.find((item) => item.id === routeReaderChatId)
     if (routedReaderChat) {
       if (routedReaderChat.id !== state.activeId) void actions.selectConversation(routedReaderChat.id)
@@ -684,8 +699,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     }
     const target = readerChats[0]
     if (target) { navigate(`/web-reader/${target.id}`, { replace: true }); return }
-    void actions.newConversation('web-recorder').then((id) => { if (id) navigate(`/web-reader/${id}`, { replace: true }) })
-  }, [authed, inReader, legacyReaderRoute, routeReaderChatId, state.activeId, state.conversations, state.conversationsStatus, actions, navigate])
+    createReaderChat(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, inReader, legacyReaderRoute, routeReaderChatId, state.activeId, state.readerConversations, state.conversationsStatus, actions, navigate])
 
   // URL → данные стора: вход/выход в раздел «Проекты», загрузка доски и
   // оверлея настроек. Навигацию делают клики (navigate), данные грузятся тут.
@@ -768,6 +784,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg, routeUserName, state.currentUser, state.authRequired])
 
+  // Активный чат может быть ещё не выбран или не быть reader-чатом (грузится по
+  // ссылке): подсвечивать вместо него первый пункт селектора нельзя — покажем плейсхолдер.
+  const readerActiveListed = state.readerConversations.some((c) => c.id === state.activeId)
   const activeConversation = state.conversations.find((c) => c.id === state.activeId)
   const activeTitle = activeConversation?.title ?? 'Новый разговор'
   const activeExecTarget = activeConversation?.execTarget ?? null
@@ -1102,7 +1121,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       <div className={inReader ? `chat-split chat-split--${chatView}` : 'chat-page'} style={inReader ? { '--preview-width': `${previewWidth}%` } as CSSProperties : undefined}>
       {inReader && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>Сайт</button></div></nav>}
       <div className="chat-split-chat">
-      {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={state.activeId ?? ''} onChange={(event) => navigate(`/web-reader/${event.target.value}`)}>{state.conversations.filter((conversation) => conversation.assistantKind === 'web-recorder' || Boolean(conversation.previewUrl)).map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => void actions.newConversation('web-recorder').then((id) => { if (id) navigate(`/web-reader/${id}`) })}>+ Новый</button></header>}
+      {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? state.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{state.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
       <ChatColumn
         conversationId={state.activeId}
         onToggleSidebar={inReader ? undefined : toggleSidebar}
