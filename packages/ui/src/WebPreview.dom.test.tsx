@@ -192,6 +192,7 @@ describe('WebReaderHost action lifecycle', () => {
     }
     await finish(runner({ kind: 'find', text: 'Cookies' }), 'find')
     await finish(runner({ kind: 'click', text: 'Accept' }), 'click')
+    await finish(runner({ kind: 'type', selector: '#search', text: 'shoes', submit: true }), 'type')
     hostMessage(frame, { kind: 'page-status', status: 'loading', url: 'https://next.example' })
     const before = post.mock.calls.length
     const read = runner({ kind: 'read' })
