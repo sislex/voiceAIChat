@@ -204,6 +204,14 @@ function gapsBlock(gaps: KbGapForPrompt[]): string[] {
  * Промпт актуализации. Один текст на оба входа (шаг рана и ручной фолбэк):
  * расходятся они только тем, разрешено ли модели править файлы в рабочей копии.
  */
+export const KB_UPDATE_REPAIR_PROMPT = [
+  'Верни заново только финальный JSON-объект по результатам уже выполненной работы. Выводы не пересматривай.',
+  'Схема: {"note":"string","nothingToUpdate":boolean,"topics":["string"],"documents":[{"id":"string","title":"string","kind":"feature|subsystem|protocol|decision|convention|runbook|package","tags":["string"],"areas":["string"],"body":"string"}]}',
+  'Обязательны note, nothingToUpdate, topics, documents и все поля каждого документа: id, title, kind, tags, areas, body.',
+  'Неизвестные поля запрещены. nothingToUpdate=true допустим только при пустых topics и documents; при false нужен минимум один документ.',
+  'Верни JSON без markdown-fence, пояснений и любого текста вокруг.'
+].join('\n')
+
 export function kbUpdatePrompt(args: KbUpdatePromptArgs): string {
   const { changes } = args
   const fileTopics = args.editFileTopics
@@ -391,8 +399,8 @@ export function validateKbUpdateJson(value: unknown): KbUpdateOutput {
   if (root.nothingToUpdate && (topics.length > 0 || documents.length > 0)) {
     contractError('nothingToUpdate=true несовместимо с непустыми topics или documents')
   }
-  if (!root.nothingToUpdate && topics.length === 0 && documents.length === 0) {
-    contractError('nothingToUpdate=false требует хотя бы одну тему или документ')
+  if (!root.nothingToUpdate && documents.length === 0) {
+    contractError('nothingToUpdate=false требует хотя бы один документ')
   }
   return { note: root.note.trim(), nothingToUpdate: root.nothingToUpdate, topics, documents }
 }

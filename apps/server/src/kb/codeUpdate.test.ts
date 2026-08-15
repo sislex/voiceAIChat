@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest'
 import {
-  areaMatchesFile, formatKbUpdateSummary, KB_UPDATE_TIMEOUT_MS, kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput, pickAffectedDocs
+  areaMatchesFile, formatKbUpdateSummary, KB_UPDATE_REPAIR_PROMPT, KB_UPDATE_TIMEOUT_MS, kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput, pickAffectedDocs
 } from './codeUpdate.js'
 
 describe('KB_UPDATE_TIMEOUT_MS', () => {
@@ -130,6 +130,7 @@ ${reply({ note: 'второй' })}
 
   it('отклоняет nothingToUpdate=true при наличии documents', () => {
     expect(() => parseKbUpdateOutput(reply({ nothingToUpdate: true }))).toThrow(/nothingToUpdate=true.*documents/)
+    expect(() => parseKbUpdateOutput(reply({ nothingToUpdate: false, topics: ['ci-runner'], documents: [] }))).toThrow(/хотя бы один документ/)
   })
 
   it.each([
@@ -146,6 +147,19 @@ ${reply({ note: 'второй' })}
   it('ничего не обновляет только по явному согласованному флагу', () => {
     const out = parseKbUpdateOutput(reply({ nothingToUpdate: true, topics: [], documents: [] }))
     expect(out.nothingToUpdate).toBe(true)
+  })
+})
+
+describe('KB_UPDATE_REPAIR_PROMPT', () => {
+  it('содержит полный контракт и только форматирующие ограничения', () => {
+    expect(KB_UPDATE_REPAIR_PROMPT).toContain('"note":"string"')
+    expect(KB_UPDATE_REPAIR_PROMPT).toContain('"documents"')
+    expect(KB_UPDATE_REPAIR_PROMPT).toContain('id, title, kind, tags, areas, body')
+    expect(KB_UPDATE_REPAIR_PROMPT).toContain('nothingToUpdate=true')
+    expect(KB_UPDATE_REPAIR_PROMPT).toContain('при false нужен минимум один документ')
+    expect(KB_UPDATE_REPAIR_PROMPT).toContain('Неизвестные поля запрещены')
+    expect(KB_UPDATE_REPAIR_PROMPT).toContain('без markdown-fence')
+    expect(KB_UPDATE_REPAIR_PROMPT).not.toMatch(/прочитай|файл|команд|MCP|docs\/kb/i)
   })
 })
 
