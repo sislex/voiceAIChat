@@ -8,6 +8,7 @@ export type WebRecorderHostMessage =
   | { type: typeof WEB_RECORDER_MESSAGE_TYPE; kind: 'run-action'; requestId: string; action: PreviewDomAction }
 export type WebRecorderClientMessage =
   | { type: typeof WEB_RECORDER_MESSAGE_TYPE; kind: 'ready' }
+  | { type: typeof WEB_RECORDER_MESSAGE_TYPE; kind: 'page-status'; status: 'empty' | 'loading' | 'ready' | 'error'; url: string | null; error?: string }
   | { type: typeof WEB_RECORDER_MESSAGE_TYPE; kind: 'save-url'; url: string | null }
   | { type: typeof WEB_RECORDER_MESSAGE_TYPE; kind: 'element'; element: PreviewElementPayload }
   | { type: typeof WEB_RECORDER_MESSAGE_TYPE; kind: 'action-result'; requestId: string; ok: boolean; result?: PreviewActionResult; error?: string }
