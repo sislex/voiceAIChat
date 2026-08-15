@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-15
-checked: f43c656
+checked: 281c41d
 areas:
   - apps/server/src
 ---
@@ -110,9 +110,10 @@ session-cookie от предыдущего входа уже пропала; б�
 сессии получали 401 на любом сайте в превью. Оба пути лежат под публичным префиксом
 `/api/session/` (`isPublic()`), поэтому `/api/session/preview` проверяет Bearer сам и
 без него отвечает 401 без cookie. `POST /api/session/logout` снимает cookie через
-`Max-Age=0`. На клиенте `PreviewPane` вызывает мостовой `session.ensurePreview()` и
-не монтирует iframe, пока cookie не подтверждена — подробности флоу в
-[ui.md](ui.md#веб-превью).
+`Max-Age=0`. На клиенте мостовой `session.ensurePreview()` вызывает только
+`PreviewPane`, которая в приложении уже не монтируется; живая панель Web Reader
+(`WebReaderHost` → iframe рекордера) идёт в `/api/preview` без клиентского гейта и
+полагается на cookie от login — подробности флоу в [ui.md](ui.md#веб-превью).
 
 ## WebSocket `/ws`
 

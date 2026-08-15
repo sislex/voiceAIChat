@@ -196,7 +196,9 @@ const click=(e)=>{if(!active)return;const el=e.target;if(!(el instanceof Element
 const key=(e)=>{if(active&&e.key==='Escape'){e.preventDefault();disable();parent.postMessage({type:COMMAND,enabled:false},location.origin)}};
 const enable=()=>{if(active)return;active=true;document.addEventListener('pointerover',move,true);document.addEventListener('click',click,true);document.addEventListener('keydown',key,true)};
 const disable=()=>{active=false;selected=null;document.removeEventListener('pointerover',move,true);document.removeEventListener('click',click,true);document.removeEventListener('keydown',key,true);hide()};
-const ACTION='voicechat.preview.action.v1', RESULT='voicechat.preview.action-result.v1', RECORD='voicechat.preview.record.v1';
+const ACTION='voicechat.preview.action.v1', RESULT='voicechat.preview.action-result.v1', READY='voicechat.preview.page-ready.v1', LOADING='voicechat.preview.page-loading.v1', RECORD='voicechat.preview.record.v1';
+parent.postMessage({type:READY,url:location.href},location.origin);
+addEventListener('beforeunload',()=>parent.postMessage({type:LOADING,url:location.href},location.origin));
 const EL_TEXT=200, SNIPPET=4000, FIND_MAX=30, HEADINGS=64, LINKS=100, BUTTONS=50, INPUTS=50;
 const CLICKABLE='a,button,[role=button],[role=link],[role=tab],[role=menuitem],input,select,textarea,label,summary,[onclick]';
 const unproxy=(value)=>{try{const u=new URL(value,location.href);if(u.pathname==='/api/preview'){const t=u.searchParams.get('url');if(t)return t}return u.toString()}catch{return value}};

@@ -3,7 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PREVIEW_INSPECTOR_MESSAGE_TYPE } from '@shared/previewInspector'
 import { PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE } from '@shared/previewActions'
-import { PreviewPane, type PreviewActionRunner } from './App'
+import { PreviewPane, WebReaderHost, type PreviewActionRunner } from './App'
+import { WEB_RECORDER_MESSAGE_TYPE } from '@shared/webRecorder'
 
 const payload = {
   tag: 'div', id: 'hero', classes: [], dataAttributes: {}, selector: '#hero', ancestors: ['html','body','div#hero'],
@@ -149,5 +150,68 @@ describe('WebPreview inspector', () => {
     expect(screen.getByLabelText('Селектор шага 1')).toHaveValue('#buy')
     expect(screen.getByLabelText('Значение шага 2')).toHaveValue('••••••')
     expect(screen.getByText('секрет не сохранён')).toBeInTheDocument()
+  })
+})
+
+describe('WebReaderHost action lifecycle', () => {
+  const hostMessage = (frame: HTMLIFrameElement, data: object): void => {
+    fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, ...data } }))
+  }
+
+  it('open→read ждёт page ready и сопоставляет ответ', async () => {
+    const register = vi.fn<(runner: PreviewActionRunner | null) => void>()
+    const view = render(<WebReaderHost conversationUrl="https://shop.example" projectUrl={null} onSave={vi.fn()} onRegisterActionRunner={register} />)
+    const frame = screen.getByTitle('Web Reader') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    hostMessage(frame, { kind: 'ready' })
+    const runner = register.mock.calls.at(-1)?.[0]!
+    const open = runner({ kind: 'open', url: 'https://shop.example' })
+    const read = runner({ kind: 'read' })
+    expect(post.mock.calls.some(([message]) => (message as { kind?: string }).kind === 'run-action')).toBe(false)
+    hostMessage(frame, { kind: 'page-status', status: 'ready', url: 'https://shop.example' })
+    await expect(open).resolves.toEqual({ ok: true, result: { url: 'https://shop.example' } })
+    const command = post.mock.calls.map(([message]) => message as { kind?: string; requestId?: string; action?: { kind: string } }).find((message) => message.kind === 'run-action' && message.action?.kind === 'read')!
+    const result = { page: { url: 'https://shop.example', title: 'Shop' }, headings: [], links: [], buttons: [], inputs: [], text: 'Loaded' }
+    hostMessage(frame, { kind: 'action-result', requestId: command.requestId, ok: true, result })
+    await expect(read).resolves.toEqual({ ok: true, result })
+    view.unmount()
+  })
+
+  it('find→click и read после navigation снова ждёт ready', async () => {
+    const register = vi.fn<(runner: PreviewActionRunner | null) => void>()
+    render(<WebReaderHost conversationUrl="https://shop.example" projectUrl={null} onSave={vi.fn()} onRegisterActionRunner={register} />)
+    const frame = screen.getByTitle('Web Reader') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    hostMessage(frame, { kind: 'ready' })
+    hostMessage(frame, { kind: 'page-status', status: 'ready', url: 'https://shop.example' })
+    const runner = register.mock.calls.at(-1)?.[0]!
+    const finish = async (promise: Promise<unknown>, kind: string): Promise<void> => {
+      const command = post.mock.calls.map(([message]) => message as { kind?: string; requestId?: string; action?: { kind: string } }).filter((message) => message.kind === 'run-action' && message.action?.kind === kind).at(-1)!
+      hostMessage(frame, { kind: 'action-result', requestId: command.requestId, ok: true, result: { page: { url: 'https://shop.example', title: '' }, elements: [], total: 0 } })
+      await promise
+    }
+    await finish(runner({ kind: 'find', text: 'Cookies' }), 'find')
+    await finish(runner({ kind: 'click', text: 'Accept' }), 'click')
+    hostMessage(frame, { kind: 'page-status', status: 'loading', url: 'https://next.example' })
+    const before = post.mock.calls.length
+    const read = runner({ kind: 'read' })
+    expect(post.mock.calls).toHaveLength(before)
+    hostMessage(frame, { kind: 'page-status', status: 'ready', url: 'https://next.example' })
+    expect(post.mock.calls.length).toBeGreaterThan(before)
+    await finish(read, 'read')
+  })
+
+  it('различает ошибку сайта и очищает ожидания при закрытии', async () => {
+    const register = vi.fn<(runner: PreviewActionRunner | null) => void>()
+    const view = render(<WebReaderHost conversationUrl="https://broken.example" projectUrl={null} onSave={vi.fn()} onRegisterActionRunner={register} />)
+    const frame = screen.getByTitle('Web Reader') as HTMLIFrameElement
+    hostMessage(frame, { kind: 'ready' })
+    const runner = register.mock.calls.at(-1)?.[0]!
+    const pending = runner({ kind: 'read' })
+    hostMessage(frame, { kind: 'page-status', status: 'error', url: 'https://broken.example', error: 'DNS lookup failed' })
+    await expect(pending).resolves.toMatchObject({ ok: false, error: expect.stringContaining('DNS') })
+    const hanging = runner({ kind: 'open', url: 'https://slow.example' })
+    view.unmount()
+    await expect(hanging).resolves.toMatchObject({ ok: false, error: expect.stringContaining('закрыта') })
   })
 })
