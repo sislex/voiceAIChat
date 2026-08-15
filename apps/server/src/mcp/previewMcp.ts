@@ -125,7 +125,7 @@ export class PreviewActionRelay {
         expected: sinks.size,
         answered: 0,
         timer: setTimeout(
-          () => settle({ ok: false, error: 'Клиент не ответил вовремя — превью не открыто или страница не загрузилась.' }),
+          () => settle({ ok: false, error: 'Клиентский мост Web Reader не ответил при формально подключённом клиенте.' }),
           timeoutMs
         ),
         resolve: settle

@@ -20,17 +20,17 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 56 коммит(ов) в areas после сверки: 4163f0b feat(qa): automate integration test stage … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-15 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-14 | ⚠ код изменён 2026-08-15, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-15 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 349 коммит(ов) в areas после сверки: ed88f1a Merge task 29165873-b1c1-4cb7-8527-ae6581461802 … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-15 | ⚠ 3 коммит(ов) в areas после сверки: 281c41d Merge task ef3c6770-100a-4f16-9ad3-b24fee08f982 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 352 коммит(ов) в areas после сверки: 281c41d Merge task ef3c6770-100a-4f16-9ad3-b24fee08f982 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-15 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-14 | ⚠ код изменён 2026-08-15, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-13 | ⚠ 3 коммит(ов) в areas после сверки: 9b5cd4c feat: complete manual QA workflow … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 13 коммит(ов) в areas после сверки: 056f5c7 fix(chat): publish queued messages in turn order … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 48 коммит(ов) в areas после сверки: 8e8e1e9 CHAT-233: add Playwright Reader foundation … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-12 | ⚠ 50 коммит(ов) в areas после сверки: 281c41d Merge task ef3c6770-100a-4f16-9ad3-b24fee08f982 … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-15 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-12 | ⚠ 43 коммит(ов) в areas после сверки: 8e8e1e9 CHAT-233: add Playwright Reader foundation … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-12 | ⚠ 45 коммит(ов) в areas после сверки: 281c41d Merge task ef3c6770-100a-4f16-9ad3-b24fee08f982 … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-15 | ✓ |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-15 | ✓ |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-15 | ⚠ 3 коммит(ов) в areas после сверки: 281c41d Merge task ef3c6770-100a-4f16-9ad3-b24fee08f982 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-14 | ⚠ код изменён 2026-08-15, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-15 | ✓ |
@@ -41,7 +41,6 @@
 
 - [apps/agent](../../apps/agent/AGENTS.md)
 - [apps/agent-tray](../../apps/agent-tray/AGENTS.md)
-- [apps/browser-runner](../../apps/browser-runner/AGENTS.md)
 - [apps/desktop](../../apps/desktop/AGENTS.md)
 - [apps/llm-runner](../../apps/llm-runner/AGENTS.md)
 - [apps/server](../../apps/server/AGENTS.md)
@@ -51,18 +50,18 @@
 
 ## Журнал сессий
 
-Всего записей: 218. Последние:
+Всего записей: 219. Последние:
 
 - [2026-08-15-mac-web-reader-chat-list.md](log/2026-08-15-mac-web-reader-chat-list.md) — Web Reader — независимый список чатов и детерминированное создание
 - [2026-08-15-mac-preview-proxy-network-shim.md](log/2026-08-15-mac-preview-proxy-network-shim.md) — preview-proxy-network-shim
 - [2026-08-15-mac-preparation-tab-navigation.md](log/2026-08-15-mac-preparation-tab-navigation.md) — preparation-tab-navigation
 - [2026-08-15-mac-integration-test-stage.md](log/2026-08-15-mac-integration-test-stage.md) — integration-test-stage
+- [2026-08-15-2470-com-web-reader-action-readiness.md](log/2026-08-15-2470-com-web-reader-action-readiness.md) — web-reader-action-readiness
 - [2026-08-15-2470-com-playwright-reader-и-browser-runner.md](log/2026-08-15-2470-com-playwright-reader-и-browser-runner.md) — Playwright Reader и browser-runner — первый срез
 - [2026-08-14-mac-ui-board-fixtures-canonical-columns.md](log/2026-08-14-mac-ui-board-fixtures-canonical-columns.md) — ui-board-fixtures-canonical-columns
 - [2026-08-14-mac-qa-stage-runs.md](log/2026-08-14-mac-qa-stage-runs.md) — qa-stage-runs
 - [2026-08-14-mac-component-qa-test-stages.md](log/2026-08-14-mac-component-qa-test-stages.md) — component-qa-test-stages
 - [2026-08-14-mac-component-qa-automation.md](log/2026-08-14-mac-component-qa-automation.md) — component-qa-automation
-- [2026-08-14-mac-autostart-development-run.md](log/2026-08-14-mac-autostart-development-run.md) — autostart-development-run
 
 ## Исторические планы
 
