@@ -10,8 +10,8 @@
 
 import { useState } from 'react'
 import type { AgentInfo, AgentPolicy, AgentSkill } from '@shared/agentProtocol'
-import { IconButton } from './ui/IconButton'
-import { Button } from './ui/Button'
+import { IconButton } from '@voicechat/ui-kit'
+import { Button } from '@voicechat/ui-kit'
 
 export interface AgentCardProps {
   agent: AgentInfo

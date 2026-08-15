@@ -20,10 +20,11 @@ import {
 } from '../lib/view'
 import { Dots } from './animations'
 import { QuestionsForm } from './QuestionsForm'
-import { Button } from './ui/Button'
-import { Skeleton, RefreshIndicator } from './ui/Skeleton'
-import { EmptyState } from './ui/EmptyState'
-import { IconButton, SidebarToggle } from './ui/IconButton'
+import { Button } from '@voicechat/ui-kit'
+import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
+import { EmptyState } from '@voicechat/ui-kit'
+import { IconButton } from '@voicechat/ui-kit'
+import { SidebarToggle } from './ui/IconButton'
 import { MessageMeta } from './MessageMeta'
 import {
   MessageTimeline,

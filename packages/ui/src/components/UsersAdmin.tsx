@@ -13,11 +13,11 @@ import type {
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { Conversation, Message, LlmProvider } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
-import { Button } from './ui/Button'
+import { Button } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
-import { Skeleton, RefreshIndicator } from './ui/Skeleton'
-import { EmptyState } from './ui/EmptyState'
-import { ErrorState } from './ui/ErrorState'
+import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
+import { EmptyState } from '@voicechat/ui-kit'
+import { ErrorState } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '../lib/loadState'
 
 export interface UsersAdminProps {

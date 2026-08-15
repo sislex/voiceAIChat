@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { MergeRun } from '@shared/merge'
-import { Button } from '../ui/Button'
+import { Button } from '@voicechat/ui-kit'
 import { fmtDuration } from './ciFormat'
 
 export const MERGE_STATUS_LABEL: Record<string, string> = {

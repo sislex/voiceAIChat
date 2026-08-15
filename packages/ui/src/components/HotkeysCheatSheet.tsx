@@ -12,8 +12,8 @@
 import { COMMAND_SECTIONS, SECTION_TITLES, type Command, type CommandSection } from '../lib/commands'
 import { formatCombo, isApplePlatform } from '../lib/hotkeys'
 import { useCommandRegistry } from '../lib/useCommands'
-import { Dialog } from './ui/Dialog'
-import { EmptyState } from './ui/EmptyState'
+import { Dialog } from '@voicechat/ui-kit'
+import { EmptyState } from '@voicechat/ui-kit'
 
 export interface HotkeysCheatSheetProps {
   open: boolean

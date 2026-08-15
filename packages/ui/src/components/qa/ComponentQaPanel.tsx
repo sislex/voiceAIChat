@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ComponentQaTaskState } from '@shared/qa'
-import { Button } from '../ui/Button'
+import { Button } from '@voicechat/ui-kit'
 
 export function ComponentQaPanel(props:{projectId:string;taskId:string;active:boolean;onFixStarted?:(id:string)=>void}):JSX.Element {
   const [state,setState]=useState<ComponentQaTaskState|null>(null)

@@ -3,8 +3,7 @@
 // на matchMedia, поэтому важна именно ширина фрейма, а не размер контейнера.
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
-import { Button } from './Button'
-import { Dialog, type DialogSize } from './Dialog'
+import { Button, Dialog, type DialogSize } from '@voicechat/ui-kit'
 
 const meta: Meta<typeof Dialog> = {
   title: 'UI/Dialog',

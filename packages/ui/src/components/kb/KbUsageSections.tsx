@@ -5,7 +5,7 @@
 
 import { useMemo, useState } from 'react'
 import type { KbUsageSectionAggregate } from '@shared/kb'
-import { EmptyState } from '../ui/EmptyState'
+import { EmptyState } from '@voicechat/ui-kit'
 import { KbFreshnessChip } from './KbFreshnessChip'
 import { num, timeOf } from './kbUsageFormat'
 

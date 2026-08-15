@@ -3,7 +3,7 @@
 // об изменении нужно сообщить, не перетаскивая фокус.
 
 import type { KbUsageQuery } from '@shared/kb'
-import { EmptyState } from '../ui/EmptyState'
+import { EmptyState } from '@voicechat/ui-kit'
 import { Dots } from '../animations'
 import { num, queryLabel, SOURCE_LABEL, STATUS_LABEL, timeOf } from './kbUsageFormat'
 

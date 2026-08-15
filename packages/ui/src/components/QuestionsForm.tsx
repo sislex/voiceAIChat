@@ -3,7 +3,7 @@
 // Кнопка отправки активируется, когда отвечены ВСЕ вопросы.
 
 import { useState } from 'react'
-import { Button } from './ui/Button'
+import { Button } from '@voicechat/ui-kit'
 import { formatAnswers, type QuestionSpec } from '@shared/questions'
 
 export interface QuestionsFormProps {

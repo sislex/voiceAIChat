@@ -2,7 +2,7 @@
 // переполненная очередь и вариант на телефоне (стек снизу, над композером).
 import { useEffect } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
-import { ToastProvider, useToast, type ToastKind, type ToastOptions } from './Toast'
+import { ToastProvider, useToast, type ToastKind, type ToastOptions } from '@voicechat/ui-kit'
 
 const meta: Meta<typeof ToastProvider> = {
   title: 'UI/Toast',
