@@ -21,8 +21,8 @@ import {
 } from '../lib/commands'
 import { formatCombo } from '../lib/hotkeys'
 import { useCommandRegistry } from '../lib/useCommands'
-import { Dialog } from './ui/Dialog'
-import { EmptyState } from './ui/EmptyState'
+import { Dialog } from '@voicechat/ui-kit'
+import { EmptyState } from '@voicechat/ui-kit'
 
 export interface CommandPaletteProps {
   open: boolean

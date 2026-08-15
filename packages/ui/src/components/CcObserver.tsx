@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { CcProject, CcSession, CcItem, CcItemKind } from '@shared/cc'
 import { Markdown } from './Markdown'
-import { Button } from './ui/Button'
+import { Button } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
 
 export interface CcObserverProps {

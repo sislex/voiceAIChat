@@ -542,6 +542,16 @@ viewport. На десктопе тест может сразу обращать�
 
 Тесты: `lib/fuzzy.test.ts`, `lib/hotkeys.test.ts`, `lib/commands.test.ts`, `lib/appCommands.test.ts`, `lib/useHotkeys.test.tsx`, `components/CommandPalette.dom.test.tsx`, `components/HotkeysCheatSheet.dom.test.tsx`, `App.commands.dom.test.tsx` (клавиши в собранном приложении) плюс проверки реестра в `KanbanBoard.dom.test.tsx` и `RunFeed.dom.test.tsx`. Сториз — `CommandPalette.stories.tsx` (в том числе `HugeList` на 600 бесед) и `HotkeysCheatSheet.stories.tsx`.
 
+## Библиотека универсальных примитивов @voicechat/ui-kit
+
+`packages/ui-kit` — независимый workspace-пакет визуальных примитивов. Публичный API доступен только через `@voicechat/ui-kit`, стили и токены — через `@voicechat/ui-kit/styles.css`. Экспортируются `Button`, `IconButton`, `Dialog`, `ConfirmDialog`, confirm/toast providers и hooks, `Skeleton`, `RefreshIndicator`, `EmptyState`, `ErrorState` и `UiProviders`. `packages/ui` подключает stylesheet из своего `global.css`, поэтому web и Electron renderer получают те же светлую и тёмную темы.
+
+Внутри ui-kit разрешены React, React DOM, библиотека иконок и чистые общие типы. Запрещены зависимости на `@voicechat/ui`, `apps/*`, `voiceStore`/`useVoiceStore`, remote/bridge/transport реализации, HTTP/WebSocket/Electron и продуктовые модули ChatAI. Границу проверяет `packages/ui-kit/src/architecture.test.ts`. Продуктовые `SidebarToggle`, `PopupFrame` и `ToolFrame` остаются в `@voicechat/ui`; последний использует экспортированный стек диалогов, чтобы вложенные слои сохраняли общий Escape и scroll lock.
+
+Новый примитив добавляют в `packages/ui-kit/src`, явно экспортируют из `src/index.ts`, стилизуют только в `src/styles.css` на семантических токенах и покрывают DOM-тестом. Story хранится в общей витрине `packages/ui` и обязана импортировать компонент через публичный `@voicechat/ui-kit`; отдельной витрины у пакета нет. Исходная инвентаризация зависимостей, классов, тестов и stories лежит в `packages/ui-kit/docs/inventory.md`.
+
+Проверки: `npm run -w @voicechat/ui-kit typecheck`, `npm run -w @voicechat/ui-kit test`, затем гейты потребителя и корневой `npm run affected-check`; витрина собирается `npm run build:storybook`.
+
 ## Кнопки
 
 Кнопка одна на всё приложение — `components/ui/Button.tsx`: `variant` (`primary` | `secondary` | `ghost` | `danger`), `size` (`sm` | `md`), `loading`, `fullWidth`, `iconLeft`/`iconRight`, `forwardRef`, `type="button"` по умолчанию (кнопка внутри формы не отправляет её неожиданно). `loading` рисует спиннер вместо `iconLeft`, ставит `aria-busy` и блокирует кнопку — это и защита от двойной отправки; так работают «Сохранить» в настройках разговора, «Выбрать» в пикере директории и палочка генерации в `PromptBuilder`. Кнопка без видимой подписи — `IconButton` рядом: в её типах `aria-label` и `title` **обязательные** (сборка падает без них), потому что одного `aria-label` мало — браузер его не показывает.

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { MergeRun, TaskRepository } from '@shared/merge'
 import type { CiTaskMachine } from '@shared/ci'
-import { Button } from '../ui/Button'
+import { Button } from '@voicechat/ui-kit'
 import { MERGE_STATUS_LABEL, MergeRunFeed, mergeStatusTone } from './MergeRunFeed'
 
 /** Вкладка merge задачи: запуск с выбором машины, живая лента выбранной

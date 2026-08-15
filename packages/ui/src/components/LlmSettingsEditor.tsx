@@ -3,7 +3,7 @@ import type { UserLlmAccess } from '@shared/llmAccess'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { CODEX_MODELS, normalizeClaudeModel } from '@shared/types'
 import type { LlmProvider } from '@shared/types'
-import { Button } from './ui/Button'
+import { Button } from '@voicechat/ui-kit'
 
 export interface LlmSettingsValue {
   engineId?: string | null

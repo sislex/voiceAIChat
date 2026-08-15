@@ -12,7 +12,7 @@ import {
   serverBaseFromConnection,
   type AgentOs
 } from '@shared/agentInstall'
-import { Button } from './ui/Button'
+import { Button } from '@voicechat/ui-kit'
 import { copyText } from '../lib/clipboard'
 
 export interface AgentCommandsProps {

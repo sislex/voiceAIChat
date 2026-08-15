@@ -7,8 +7,7 @@
 // разойтись с боевым видом.
 import type { CSSProperties } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
-import { Button, type ButtonSize, type ButtonVariant } from './Button'
-import { IconButton } from './IconButton'
+import { Button, IconButton, type ButtonSize, type ButtonVariant } from '@voicechat/ui-kit'
 
 const meta: Meta<typeof Button> = {
   title: 'UI/Button',

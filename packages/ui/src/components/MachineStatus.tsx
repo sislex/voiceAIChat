@@ -12,12 +12,12 @@ import { agentOsFromPlatform, installCommand, UPDATE_HINT } from '@shared/agentI
 import { copyText } from '../lib/clipboard'
 import { AgentCard } from './AgentCard'
 import { AgentCommands } from './AgentCommands'
-import { Button } from './ui/Button'
-import { IconButton } from './ui/IconButton'
+import { Button } from '@voicechat/ui-kit'
+import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
-import { Skeleton, RefreshIndicator } from './ui/Skeleton'
-import { EmptyState } from './ui/EmptyState'
-import { ErrorState } from './ui/ErrorState'
+import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
+import { EmptyState } from '@voicechat/ui-kit'
+import { ErrorState } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '../lib/loadState'
 
 export interface MachineStatusProps {

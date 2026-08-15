@@ -4,8 +4,8 @@ import type { MergeRun } from '@shared/merge'
 import { RunFeed, type RunFeedCache } from './RunFeed'
 import { MergeRunFeed } from './MergeRunFeed'
 import { ciStatusLabel } from './ciFormat'
-import { EmptyState } from '../ui/EmptyState'
-import { ErrorState } from '../ui/ErrorState'
+import { EmptyState } from '@voicechat/ui-kit'
+import { ErrorState } from '@voicechat/ui-kit'
 
 type RunChoice =
   | { kind: 'development'; id: string; createdAt: number; status: string }

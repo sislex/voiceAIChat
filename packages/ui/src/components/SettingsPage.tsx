@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { SessionUser, UserPersonalization } from '@shared/types'
 import { DEFAULT_PERSONALIZATION } from '@shared/types'
-import { Button } from './ui/Button'
-import { useConfirm } from './ui/useConfirm'
+import { Button } from '@voicechat/ui-kit'
+import { useConfirm } from '@voicechat/ui-kit'
 
 export interface SettingsPageTab<T extends string> {
   id: T

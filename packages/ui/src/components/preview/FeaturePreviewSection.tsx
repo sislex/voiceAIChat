@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import type { PreviewEnvironment, PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@shared/preview'
 import type { ProjectMachine } from '@shared/projects'
 import { isPreviewBusy, previewActions } from '@shared/preview'
-import { Button } from '../ui/Button'
-import { useConfirm } from '../ui/useConfirm'
+import { Button } from '@voicechat/ui-kit'
+import { useConfirm } from '@voicechat/ui-kit'
 
 export function previewIdempotencyKey(): string {
   const cryptoApi = globalThis.crypto

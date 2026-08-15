@@ -5,7 +5,7 @@ import type { CiClarifyLevel, CiCommand, CiLlmConfig, CiRunMode } from '@shared/
 import { CI_CLARIFY_MAX_LIMIT, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
-import { Button } from '../ui/Button'
+import { Button } from '@voicechat/ui-kit'
 import { LlmSettingsEditor } from '../LlmSettingsEditor'
 import { CiSlotEditor } from './CiSlotEditor'
 import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
