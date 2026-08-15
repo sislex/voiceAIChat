@@ -125,7 +125,7 @@ export interface IpcInvokeMap {
    * завершённых задач»).
    */
   'conversations:list': { arg: { includeCompleted?: boolean }; result: Conversation[] }
-  'conversations:create': { arg: { title?: string; assistantKind?: 'web-recorder' }; result: Conversation }
+  'conversations:create': { arg: { title?: string; assistantKind?: 'web-recorder' | 'playwright-reader' }; result: Conversation }
   /** Атомарно сохраняет новый обычный разговор и его первую пользовательскую реплику. */
   'conversations:createDraft': {
     arg: { idempotencyKey: string; title: string; projectId?: string | null; message: Omit<AddMessageArgs, 'conversationId'> }

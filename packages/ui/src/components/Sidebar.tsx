@@ -243,6 +243,8 @@ export interface SidebarProps {
   onOpenConsole?: () => void
   /** Открыть отдельную страницу Web Reader. */
   onOpenWebReader?: () => void
+  /** Открыть изолированный Playwright Reader. */
+  onOpenPlaywrightReader?: () => void
   /** Открыть админ-страницу пользователей (только admin). */
   onOpenUsers?: () => void
   /** Открыть меню «Машины» (статус агентских машин; web). */
@@ -306,6 +308,7 @@ export function Sidebar({
   onOpenFiles,
   onOpenConsole,
   onOpenWebReader,
+  onOpenPlaywrightReader,
   onOpenUsers,
   onOpenMachines,
   onOpenCi,
@@ -730,6 +733,12 @@ export function Sidebar({
                     Web Reader
                   </Button>
                 )}
+                {onOpenPlaywrightReader && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenPlaywrightReader)}>
+                    <span className="footico">▣</span>
+                    Playwright Reader
+                  </Button>
+                )}
                 <div className="acct-sep" aria-hidden />
                 {onOpenMachines && (
                   <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenMachines)}>
@@ -789,6 +798,11 @@ export function Sidebar({
               {onOpenWebReader && (
                 <IconButton className="foottools-item" onClick={onOpenWebReader} title="Web Reader" aria-label="Web Reader">
                   🌐
+                </IconButton>
+              )}
+              {onOpenPlaywrightReader && (
+                <IconButton className="foottools-item" onClick={onOpenPlaywrightReader} title="Playwright Reader" aria-label="Playwright Reader">
+                  ▣
                 </IconButton>
               )}
             </div>

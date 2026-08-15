@@ -1145,7 +1145,7 @@ export class VoiceChatDb {
 
   // ---- Conversations ----------------------------------------------------
 
-  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | null = null): Conversation {
+  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | null = null): Conversation {
     const id = this.newId()
     const ts = this.now()
     this.db
@@ -1242,7 +1242,7 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
-           AND (c.assistant_kind IS NULL OR c.assistant_kind = 'web-recorder')
+           AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader'))
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
          ORDER BY c.updated_at DESC`
       )
@@ -1292,7 +1292,7 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
-           AND (c.assistant_kind IS NULL OR c.assistant_kind = 'web-recorder')
+           AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader'))
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
            AND (ulower(c.title) LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM messages m
@@ -2286,7 +2286,7 @@ export class VoiceChatDb {
           : null,
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
       projectId: row.project_id ?? null,
-      assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' ? row.assistant_kind : null,
+      assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' || row.assistant_kind === 'playwright-reader' ? row.assistant_kind : null,
       previewUrl: row.preview_url ?? null,
       projectPreviewUrl: row.project_id ? ((this.db.prepare(`SELECT preview_url FROM projects WHERE id = ?`).get(row.project_id) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
       taskId: row.task_id ?? null,
@@ -2792,6 +2792,10 @@ export class VoiceChatDb {
    * машины) и навыки (=skills проекта). Гейт — членство в проекте.
    */
   setConversationProject(userId: string, convId: string, projectId: string | null): Conversation | null {
+    const current = this.getConversation(userId, convId)
+    if (!current) return null
+    // Playwright Reader is a non-project product mode by contract.
+    if (current.assistantKind === 'playwright-reader' && projectId !== null) return null
     if (projectId === null) {
       this.db.prepare(`UPDATE conversations SET project_id = NULL WHERE id = ? AND user_id = ?`).run(convId, userId)
       return this.getConversation(userId, convId)
