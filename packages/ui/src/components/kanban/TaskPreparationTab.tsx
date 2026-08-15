@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { TaskPreparationRun } from '@shared/qa'
-import { Button } from '../ui/Button'
+import { Button } from '@voicechat/ui-kit'
 
 export interface TaskPreparationTabProps {
   projectId: string

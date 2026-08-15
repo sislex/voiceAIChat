@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Button } from './ui/Button'
+import { Button } from '@voicechat/ui-kit'
 
 export interface LoginScreenProps {
   /** Вход по логину/паролю. */

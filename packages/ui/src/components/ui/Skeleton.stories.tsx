@@ -2,7 +2,7 @@
 // статичную подложку при `prefers-reduced-motion: reduce` (в браузере оно
 // проверяется системной настройкой, поэтому здесь — только напоминание в docs).
 import type { Meta, StoryObj } from '@storybook/react'
-import { RefreshIndicator, Skeleton } from './Skeleton'
+import { RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
 import { TaskCard } from '../kanban/TaskCard'
 import { makeTask } from '../kanban/fixtures'
 

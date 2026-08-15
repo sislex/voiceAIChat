@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Dialog } from './ui/Dialog'
-import { Button } from './ui/Button'
-import { IconButton } from './ui/IconButton'
-import { useConfirm } from './ui/useConfirm'
+import { Dialog } from '@voicechat/ui-kit'
+import { Button } from '@voicechat/ui-kit'
+import { IconButton } from '@voicechat/ui-kit'
+import { useConfirm } from '@voicechat/ui-kit'
 import type {
   CatalogVoice,
   Settings,

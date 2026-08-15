@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Dialog } from './ui/Dialog'
-import { IconButton } from './ui/IconButton'
+import { Dialog } from '@voicechat/ui-kit'
+import { IconButton } from '@voicechat/ui-kit'
 import type { MessageRole, TurnMeta } from '@shared/types'
 import { estimateKbTokens } from '@shared/kb'
 

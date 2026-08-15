@@ -12,7 +12,7 @@ import type { TaskChatContext } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import { ciCardPulse, ciSummaryForTask, isTerminalCiStatus } from '@shared/ci'
 import { RUN_MODE_LABEL, ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
-import { IconButton } from '../ui/IconButton'
+import { IconButton } from '@voicechat/ui-kit'
 import { AutomationProgressView } from '../kanban/AutomationProgressView'
 
 export interface TaskChatHeaderProps {

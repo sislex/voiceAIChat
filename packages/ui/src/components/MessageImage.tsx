@@ -13,7 +13,7 @@ import type { ServerFileInfo } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { copyImage } from '../lib/clipboard'
 import { Dots } from './animations'
-import { IconButton } from './ui/IconButton'
+import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame, type ToolFrameControl } from './ToolFrame'
 import type { MachineOps, UtilityVariant } from './machine'
 

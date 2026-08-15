@@ -6,7 +6,7 @@
 // верхнему окну, а не всем сразу.
 
 import { type ReactNode } from 'react'
-import { useDialogStack } from './ui/useDialogStack'
+import { useDialogStack } from '@voicechat/ui-kit'
 
 export interface PopupFrameProps {
   title: string

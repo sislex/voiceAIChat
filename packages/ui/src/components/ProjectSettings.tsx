@@ -11,8 +11,8 @@ import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 
 import type { AgentInfo } from '@shared/agentProtocol'
-import { Button } from './ui/Button'
-import { IconButton } from './ui/IconButton'
+import { Button } from '@voicechat/ui-kit'
+import { IconButton } from '@voicechat/ui-kit'
 import { SettingsPage } from './SettingsPage'
 
 export interface ProjectSettingsProps {

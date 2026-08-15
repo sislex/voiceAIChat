@@ -6,7 +6,7 @@ import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 import { CODEX_MODELS } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
-import { Button } from '../ui/Button'
+import { Button } from '@voicechat/ui-kit'
 import { CiSlotEditor } from './CiSlotEditor'
 
 export interface CiTaskSettingsProps {

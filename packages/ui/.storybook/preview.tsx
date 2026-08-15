@@ -5,7 +5,7 @@ import { useEffect, type ReactNode } from 'react'
 import type { Preview } from '@storybook/react'
 import '../src/styles/global.css'
 import '../src/styles/app.css'
-import { UiProviders } from '../src/components/ui/UiProviders'
+import { UiProviders } from '@voicechat/ui-kit'
 
 // Как и в App: тема дублируется на <html>, иначе модальные окна (портал в
 // document.body) остаются без токенов [data-theme='dark']. Фон body тянем к

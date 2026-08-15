@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import { userEvent, within } from '@storybook/test'
 import { CommandPalette } from './CommandPalette'
-import { Button } from './ui/Button'
+import { Button } from '@voicechat/ui-kit'
 import { rememberCommand, type Command, type CommandSection } from '../lib/commands'
 
 function cmd(id: string, title: string, section: CommandSection, extra: Partial<Command> = {}): Command {

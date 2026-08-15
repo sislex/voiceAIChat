@@ -3,7 +3,7 @@
 // --space-150 живёт в паддингах блоков, а не в зазорах между иконками.
 import { useEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
-import { Button } from '../../components/ui/Button'
+import { Button } from '@voicechat/ui-kit'
 import { Mono, Page, Section, TABLE, TD, TH } from './parts'
 import { readTokens, varUsage, type Token } from './tokens'
 

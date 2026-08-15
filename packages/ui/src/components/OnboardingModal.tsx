@@ -1,5 +1,5 @@
-import { Button } from './ui/Button'
-import { Dialog } from './ui/Dialog'
+import { Button } from '@voicechat/ui-kit'
+import { Dialog } from '@voicechat/ui-kit'
 
 export interface OnboardingModalProps {
   /** Локальная модель Whisper уже скачана. */

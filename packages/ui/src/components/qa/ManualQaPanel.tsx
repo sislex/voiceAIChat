@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AcceptanceCriterion, AcceptanceCriterionSnapshot, QaCriterionResult, QaResultStatus, QaSession, QaTaskState } from '@shared/qa'
 import { canCompleteQa, qaProgress } from '@shared/qa'
-import { Button } from '../ui/Button'
+import { Button } from '@voicechat/ui-kit'
 
 export function ManualQaPanel(props: { projectId: string; taskId: string; activeRun?: boolean; onFixStarted?: (runId: string) => void }): JSX.Element {
   const [state, setState] = useState<QaTaskState | null>(null)

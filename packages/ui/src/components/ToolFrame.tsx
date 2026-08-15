@@ -6,8 +6,8 @@
 
 import { useState, type ReactNode } from 'react'
 import { PopupFrame } from './PopupFrame'
-import { IconButton } from './ui/IconButton'
-import { useDialogStack } from './ui/useDialogStack'
+import { IconButton } from '@voicechat/ui-kit'
+import { useDialogStack } from '@voicechat/ui-kit'
 import type { UtilityVariant } from './machine'
 
 /** Управление разворотом — для содержимого, которому нужен фуллскрин по клику. */

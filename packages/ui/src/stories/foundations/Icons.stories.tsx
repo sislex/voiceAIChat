@@ -8,9 +8,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import * as iconModule from '../../components/icons'
-import { Button } from '../../components/ui/Button'
-import { IconButton } from '../../components/ui/IconButton'
-import { useToast } from '../../components/ui/Toast'
+import { Button } from '@voicechat/ui-kit'
+import { IconButton } from '@voicechat/ui-kit'
+import { useToast } from '@voicechat/ui-kit'
 import { Mono, Page, Section, ThemePane } from './parts'
 
 const meta: Meta = {

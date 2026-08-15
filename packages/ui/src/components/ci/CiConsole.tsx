@@ -5,8 +5,8 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import type { CiLogLine } from '@shared/ci'
 import { copyText } from '../../lib/clipboard'
-import { Button } from '../ui/Button'
-import { useToast } from '../ui/Toast'
+import { Button } from '@voicechat/ui-kit'
+import { useToast } from '@voicechat/ui-kit'
 
 const EDIT_LIMIT_MS = 5 * 60 * 1000
 
