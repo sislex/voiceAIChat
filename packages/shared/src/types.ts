@@ -89,6 +89,95 @@ export type ConversationStatus =
   | 'development_done' // разработка закончена
   | 'done'             // закончено
 
+export const PLAYWRIGHT_READER_KIND = 'playwright-reader' as const
+export type AssistantKind = 'web-recorder' | 'playwright-reader' | 'kanban'
+
+export type BrowserSessionState = 'idle' | 'starting' | 'ready' | 'reconnecting' | 'stopping' | 'stopped' | 'failed'
+
+export interface BrowserViewport {
+  width: number
+  height: number
+  deviceScaleFactor: number
+}
+
+export interface BrowserTab {
+  id: string
+  url: string
+  title: string
+  active: boolean
+}
+
+export interface BrowserError {
+  code: 'not_found' | 'forbidden' | 'not_ready' | 'stale_incarnation' | 'stale_tab' | 'stale_element_ref' | 'timeout' | 'policy_blocked' | 'confirmation_required' | 'runner_unavailable' | 'internal'
+  message: string
+  retryable: boolean
+  details?: Record<string, string | number | boolean | null>
+}
+
+export interface BrowserSessionMetadata {
+  id: string
+  conversationId: string
+  incarnation: string
+  state: BrowserSessionState
+  activeTabId: string | null
+  tabs: BrowserTab[]
+  viewport: BrowserViewport
+  currentUrl: string | null
+  title: string | null
+  error?: BrowserError
+}
+
+export interface BrowserFrameMetadata {
+  incarnation: string
+  tabId: string
+  sequence: number
+  viewport: BrowserViewport
+  mimeType: 'image/jpeg' | 'image/webp'
+  timestamp: number
+}
+
+export type BrowserInputAction =
+  | { type: 'mouseMove'; x: number; y: number }
+  | { type: 'mouseDown'; x: number; y: number; button?: 'left' | 'middle' | 'right' }
+  | { type: 'mouseUp'; x: number; y: number; button?: 'left' | 'middle' | 'right' }
+  | { type: 'click'; x: number; y: number; button?: 'left' | 'middle' | 'right'; clickCount?: 1 | 2 }
+  | { type: 'wheel'; deltaX: number; deltaY: number }
+  | { type: 'type'; text: string }
+  | { type: 'press'; key: string }
+  | { type: 'keyDown'; key: string }
+  | { type: 'keyUp'; key: string }
+
+export interface BrowserCommandRequest {
+  requestId: string
+  incarnation: string
+  tabId?: string
+  actor: 'user' | 'assistant'
+  command:
+    | { type: 'navigate'; url: string }
+    | { type: 'back' | 'forward' | 'reload' | 'stop' }
+    | { type: 'newTab'; url?: string }
+    | { type: 'selectTab' | 'closeTab'; tabId: string }
+    | { type: 'resize'; viewport: BrowserViewport }
+    | { type: 'input'; action: BrowserInputAction }
+    | { type: 'screenshot'; fullPage?: boolean; format?: 'png' | 'jpeg' | 'webp'; quality?: number }
+}
+
+export function isPlaywrightReaderConversation(value: Pick<Conversation, 'assistantKind'>): boolean {
+  return value.assistantKind === PLAYWRIGHT_READER_KIND
+}
+
+export function shouldApplyBrowserFrame(current: Pick<BrowserSessionMetadata, 'incarnation' | 'activeTabId'>, lastSequence: number, frame: BrowserFrameMetadata): boolean {
+  return frame.incarnation === current.incarnation && frame.tabId === current.activeTabId && frame.sequence > lastSequence
+}
+
+export function scaleBrowserCoordinates(x: number, y: number, renderedWidth: number, renderedHeight: number, viewport: BrowserViewport): { x: number; y: number } {
+  if (renderedWidth <= 0 || renderedHeight <= 0) return { x: 0, y: 0 }
+  return {
+    x: Math.max(0, Math.min(viewport.width, x * viewport.width / renderedWidth)),
+    y: Math.max(0, Math.min(viewport.height, y * viewport.height / renderedHeight))
+  }
+}
+
 export interface Conversation {
   id: string
   title: string
@@ -119,7 +208,7 @@ export interface Conversation {
   /** Проект, к которому привязан чат (null/undefined — не привязан). */
   projectId?: string | null
   /** Служебный приватный чат виджета; его строковое имя становится лейблом источника в селекторах. */
-  assistantKind?: string | null
+  assistantKind?: AssistantKind | null
   /** URL веб-превью только этого разговора; null — наследовать у проекта. */
   previewUrl?: string | null
   /** URL проекта для превью; сервер отдаёт рядом, чтобы чат не зависел от загрузки списка проектов. */
