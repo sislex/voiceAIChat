@@ -22,7 +22,7 @@ import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook } from './types.js'
 import {
   EMPTY_CHANGES, KB_DIFF_SCRIPT, KB_FILE_TOPICS_SCRIPT, KB_REPO_ROOT_CHECK_SCRIPT, KB_UPDATE_TIMEOUT_MS, MAX_PROMPT_GAPS, affectedProjectDocs, formatKbUpdateSummary,
-  kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput, type KbGapForPrompt
+  KbUpdateParseError, kbUpdatePrompt, parseDiffBundle, parseKbUpdateOutput, type KbGapForPrompt
 } from '../kb/codeUpdate.js'
 
 export interface CiModelHooksDeps {
@@ -1041,8 +1041,18 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     let out
     try {
       out = parseKbUpdateOutput(turn.text)
-    } catch {
-      return { ok: false, message: 'Ответ модели неразборчив — статьи раздела проекта не сохранены' }
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
+      log(`Финальный ответ kb_update отклонён: ${detail}\n`)
+      const message = err instanceof KbUpdateParseError
+        ? {
+            json_not_found: 'JSON в ответе модели не найден — статьи раздела проекта не сохранены',
+            ambiguous_json: 'В ответе модели несколько JSON-кандидатов — статьи раздела проекта не сохранены',
+            invalid_json: 'JSON в ответе модели повреждён — статьи раздела проекта не сохранены',
+            invalid_contract: 'JSON ответа модели не соответствует контракту — статьи раздела проекта не сохранены'
+          }[err.code]
+        : 'Ответ модели неразборчив — статьи раздела проекта не сохранены'
+      return { ok: false, message }
     }
     // Раздел и владелец статьи — дело сервера: чужой id молча становится новой
     // статьёй, раздел всегда `project` (видна только участникам проекта).

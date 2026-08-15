@@ -12,8 +12,9 @@
 //     `db.saveKbDocument`, как в KbResearchManager: раздел и владелец статьи не
 //     должны зависеть от того, что модель себе придумала.
 
+import type { KbDocumentKind } from '@voicechat/shared'
 import type { KbStoredDocument } from '../db/database.js'
-import { MAX_DOCUMENTS, parseModelDocuments, type ResearchDocument } from './modelDocs.js'
+import { MAX_BODY_CHARS, MAX_DOCUMENTS, type ResearchDocument } from './modelDocs.js'
 
 /** Шаг длинный (модель читает диф и правит файлы), но ран из-за него не ждёт вечно. */
 export const KB_UPDATE_TIMEOUT_MS = 20 * 60 * 1000
@@ -263,7 +264,8 @@ export function kbUpdatePrompt(args: KbUpdatePromptArgs): string {
       ? 'На пробелы базы знаний это исключение не распространяется: их закрывают, даже если сам диф базы не касается.'
       : '',
     '',
-    'Верни в конце ответа ТОЛЬКО JSON без пояснений:',
+    'Финальный ответ должен содержать ровно один JSON-объект полного формата ниже.',
+    'Не добавляй markdown fences, промежуточный отчёт, пояснительный текст или любые символы до/после JSON:',
     '{"note":"что записал одной фразой","nothingToUpdate":false,"topics":["protocol"],"documents":[{"id":"id существующей статьи или пусто","title":"Заголовок","kind":"subsystem","tags":["..."],"areas":["path/to/file.ts"],"body":"# Заголовок\\n\\nТекст статьи"}]}'
   ]
     .filter((l) => l !== '')
@@ -280,11 +282,123 @@ export interface KbUpdateOutput {
   documents: ResearchDocument[]
 }
 
+export type KbUpdateParseErrorCode = 'json_not_found' | 'ambiguous_json' | 'invalid_json' | 'invalid_contract'
+
+/** Ошибка без текста ответа модели: код пригоден для короткого UI-сообщения, detail — для технического лога. */
+export class KbUpdateParseError extends Error {
+  constructor(readonly code: KbUpdateParseErrorCode, detail: string) {
+    super(detail)
+    this.name = 'KbUpdateParseError'
+  }
+}
+
+const UPDATE_KINDS = new Set<KbDocumentKind>(['feature', 'subsystem', 'protocol', 'decision', 'convention', 'runbook', 'package'])
+const ROOT_FIELDS = new Set(['note', 'nothingToUpdate', 'topics', 'documents'])
+const DOCUMENT_FIELDS = new Set(['id', 'title', 'kind', 'tags', 'areas', 'body'])
+
+function looksLikeKbUpdateObject(value: string): boolean {
+  const text = value.trim()
+  return text.startsWith('{') && /"(?:note|nothingToUpdate|topics|documents)"\s*:/.test(text)
+}
+
+/**
+ * Транспортный слой ответа: чистый JSON имеет приоритет; иначе принимается ровно
+ * один явный fence json либо один немаркированный fence, похожий на контракт.
+ * Фигурные скобки вне fence намеренно не используются для поиска кандидата.
+ */
+export function extractKbUpdateJson(raw: string): unknown {
+  const text = raw.trim()
+  if (!text) throw new KbUpdateParseError('json_not_found', 'JSON не найден: ответ пуст')
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    // Ответ может быть транспортной обёрткой с отчётом — разбираем только fences.
+  }
+
+  const candidates: string[] = []
+  const fence = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g
+  for (const match of text.matchAll(fence)) {
+    const label = (match[1] ?? '').trim().toLowerCase()
+    const body = (match[2] ?? '').trim()
+    if (label === 'json' || (!label && looksLikeKbUpdateObject(body))) candidates.push(body)
+  }
+  if (candidates.length > 1) {
+    throw new KbUpdateParseError('ambiguous_json', `Найдено несколько JSON-кандидатов: ${candidates.length}`)
+  }
+  if (!candidates.length) {
+    if (looksLikeKbUpdateObject(text)) {
+      throw new KbUpdateParseError('invalid_json', 'JSON синтаксически повреждён')
+    }
+    throw new KbUpdateParseError('json_not_found', 'JSON не найден ни как чистый ответ, ни в поддерживаемом fenced-блоке')
+  }
+  try {
+    return JSON.parse(candidates[0]!) as unknown
+  } catch (err) {
+    throw new KbUpdateParseError('invalid_json', `JSON синтаксически повреждён: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+function contractError(detail: string): never {
+  throw new KbUpdateParseError('invalid_contract', `JSON не соответствует контракту: ${detail}`)
+}
+
+function stringArray(value: unknown, path: string): string[] {
+  if (!Array.isArray(value)) contractError(`поле ${path} должно быть массивом строк`)
+  return value.map((item, index) => {
+    if (typeof item !== 'string' || !item.trim()) contractError(`поле ${path}[${index}] должно быть непустой строкой`)
+    return item.trim()
+  })
+}
+
+function exactFields(value: Record<string, unknown>, allowed: Set<string>, path: string): void {
+  const unknown = Object.keys(value).filter((key) => !allowed.has(key))
+  if (unknown.length) contractError(`${path} содержит неизвестные поля: ${unknown.join(', ')}`)
+}
+
+/** Схема содержимого проверяется целиком до того, как вызывающий начнёт запись документов. */
+export function validateKbUpdateJson(value: unknown): KbUpdateOutput {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) contractError('корень должен быть объектом')
+  const root = value as Record<string, unknown>
+  exactFields(root, ROOT_FIELDS, 'корень')
+  if (typeof root.note !== 'string') contractError('поле note обязательно и должно быть строкой')
+  if (typeof root.nothingToUpdate !== 'boolean') contractError('поле nothingToUpdate обязательно и должно быть boolean')
+  const topics = stringArray(root.topics, 'topics')
+  if (!Array.isArray(root.documents)) contractError('поле documents обязательно и должно быть массивом')
+  if (root.documents.length > MAX_DOCUMENTS) contractError(`documents содержит больше ${MAX_DOCUMENTS} элементов`)
+
+  const documents = root.documents.map((item, index): ResearchDocument => {
+    const path = `documents[${index}]`
+    if (!item || typeof item !== 'object' || Array.isArray(item)) contractError(`${path} должен быть объектом`)
+    const doc = item as Record<string, unknown>
+    exactFields(doc, DOCUMENT_FIELDS, path)
+    if (typeof doc.id !== 'string') contractError(`${path}.id обязательно и должно быть строкой`)
+    if (typeof doc.title !== 'string' || !doc.title.trim()) contractError(`${path}.title обязательно и должно быть непустой строкой`)
+    if (typeof doc.kind !== 'string' || !UPDATE_KINDS.has(doc.kind as KbDocumentKind)) contractError(`${path}.kind содержит недопустимое значение`)
+    const tags = stringArray(doc.tags, `${path}.tags`)
+    const areas = stringArray(doc.areas, `${path}.areas`)
+    if (typeof doc.body !== 'string' || !doc.body.trim()) contractError(`${path}.body обязательно и должно быть непустой строкой`)
+    const body = doc.body.trim()
+    return {
+      ...(doc.id.trim() ? { id: doc.id.trim() } : {}),
+      title: doc.title.trim(),
+      kind: doc.kind as KbDocumentKind,
+      tags,
+      areas,
+      body: body.length > MAX_BODY_CHARS ? `${body.slice(0, MAX_BODY_CHARS)}\n\n[…текст обрезан сервером]` : body
+    }
+  })
+
+  if (root.nothingToUpdate && (topics.length > 0 || documents.length > 0)) {
+    contractError('nothingToUpdate=true несовместимо с непустыми topics или documents')
+  }
+  if (!root.nothingToUpdate && topics.length === 0 && documents.length === 0) {
+    contractError('nothingToUpdate=false требует хотя бы одну тему или документ')
+  }
+  return { note: root.note.trim(), nothingToUpdate: root.nothingToUpdate, topics, documents }
+}
+
 export function parseKbUpdateOutput(raw: string): KbUpdateOutput {
-  const { root, note, documents } = parseModelDocuments(raw)
-  const topics = Array.isArray(root.topics) ? root.topics.filter((t): t is string => typeof t === 'string') : []
-  const nothing = root.nothingToUpdate === true || (documents.length === 0 && topics.length === 0)
-  return { note, nothingToUpdate: nothing, topics, documents }
+  return validateKbUpdateJson(extractKbUpdateJson(raw))
 }
 
 /** Строка для ленты шага: что именно ушло в базу знаний. */
