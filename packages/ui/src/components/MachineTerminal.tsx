@@ -6,7 +6,7 @@ import type { AgentInfo } from '@shared/agentProtocol'
 import type { RendererPtyBridge } from '@shared/ipc'
 import { ToolFrame } from './ToolFrame'
 import { MachineUtilityHeader } from './MachineUtilityHeader'
-import { EmptyState } from './ui/EmptyState'
+import { EmptyState } from '@voicechat/ui-kit'
 import type { PtySessionStore, PtySessionTab, SwitchUtility, UtilityVariant } from './machine'
 import { ptySessionStore } from '../store/ptySessions'
 

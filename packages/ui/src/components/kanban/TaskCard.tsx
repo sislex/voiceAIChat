@@ -16,9 +16,9 @@ import { canStartCiRun, ciCardPulse, ciSummaryForTask, type CiRunSummary } from 
 import { AutomationProgressView } from './AutomationProgressView'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
-import { Button } from '../ui/Button'
-import { IconButton } from '../ui/IconButton'
-import { useConfirm } from '../ui/useConfirm'
+import { Button } from '@voicechat/ui-kit'
+import { IconButton } from '@voicechat/ui-kit'
+import { useConfirm } from '@voicechat/ui-kit'
 
 export interface TaskCardProps {
   task: Task

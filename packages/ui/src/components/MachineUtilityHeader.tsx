@@ -13,7 +13,7 @@
 // «Машины», где политика правится.
 
 import type { AgentInfo, AgentPolicy } from '@shared/agentProtocol'
-import { Button } from './ui/Button'
+import { Button } from '@voicechat/ui-kit'
 import type { UtilityKind } from './machine'
 
 /** Запрет политики: короткая подпись бейджа и подсказка, что именно нельзя. */

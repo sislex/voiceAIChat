@@ -9,8 +9,8 @@
 // через общий стек окон (TaskModal → PopupFrame), а не закрывает страницу.
 
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
-import { ErrorState } from './ui/ErrorState'
-import { EmptyState } from './ui/EmptyState'
+import { ErrorState } from '@voicechat/ui-kit'
+import { EmptyState } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
 import { SidebarToggle } from './ui/IconButton'
 

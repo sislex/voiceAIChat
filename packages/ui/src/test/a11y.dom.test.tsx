@@ -15,8 +15,8 @@ import {
   expectNoViolations,
   iconButtonProblems
 } from './a11y'
-import { IconButton } from '../components/ui/IconButton'
-import { Button } from '../components/ui/Button'
+import { IconButton } from '@voicechat/ui-kit'
+import { Button } from '@voicechat/ui-kit'
 import { LoginScreen } from '../components/LoginScreen'
 
 describe('страж icon-only кнопок', () => {

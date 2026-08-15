@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AnyQaStageRun, QaRunStage } from '@shared/qa'
-import { Button } from '../ui/Button'
+import { Button } from '@voicechat/ui-kit'
 
 const LABEL: Record<QaRunStage, string> = {
   component_qa: 'Component QA',

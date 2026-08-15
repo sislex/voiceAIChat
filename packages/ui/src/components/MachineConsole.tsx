@@ -3,11 +3,11 @@ import type { AgentExecResult, AgentInfo } from '@shared/agentProtocol'
 import type { ConsoleHistoryStore, SwitchUtility, UtilityVariant } from './machine'
 import { MachineUtilityHeader } from './MachineUtilityHeader'
 import { copyText } from '../lib/clipboard'
-import { IconButton } from './ui/IconButton'
+import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
-import { RefreshIndicator } from './ui/Skeleton'
-import { EmptyState } from './ui/EmptyState'
-import { ErrorState } from './ui/ErrorState'
+import { RefreshIndicator } from '@voicechat/ui-kit'
+import { EmptyState } from '@voicechat/ui-kit'
+import { ErrorState } from '@voicechat/ui-kit'
 
 /** Сколько команд помнит сама консоль, когда историю не держит стор. */
 const LOCAL_HISTORY_MAX = 100

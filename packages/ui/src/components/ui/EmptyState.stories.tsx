@@ -1,7 +1,7 @@
 // Сториз пустого экрана: текст обязан объяснять следующий шаг, а не
 // констатировать пустоту. Ниже — те же формулировки, что стоят в приложении.
 import type { Meta, StoryObj } from '@storybook/react'
-import { EmptyState } from './EmptyState'
+import { EmptyState } from '@voicechat/ui-kit'
 
 const meta: Meta<typeof EmptyState> = {
   title: 'UI/EmptyState',

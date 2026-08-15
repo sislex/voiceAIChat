@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { KbContextMode, LlmProvider, PermissionMode } from '@shared/types'
 import type { ProjectSummary } from '@shared/projects'
-import { Button } from './ui/Button'
+import { Button } from '@voicechat/ui-kit'
 
 type ContextStatus = 'Применяется' | 'Доступен' | 'Не выбран' | 'Недоступен' | 'Ограничен' | 'Скрытый текст' | 'Не применимо'
 interface ContextItem { id: string; title: string; description: string; type: string; source: string; scope: string; status: ContextStatus; priority: string; details: string; reason: string; limitations: string; technicalName?: string; parameters?: string[]; mutates?: boolean }

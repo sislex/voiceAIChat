@@ -12,7 +12,7 @@ import type { KbContextMode } from '@shared/types'
 import type { KbUsageQuery, KbUsageSectionAggregate, KbUsageTotals } from '@shared/kb'
 import { KbFreshnessChip } from './KbFreshnessChip'
 import { num, SOURCE_LABEL, STATUS_LABEL, timeOf } from './kbUsageFormat'
-import { Button } from '../ui/Button'
+import { Button } from '@voicechat/ui-kit'
 
 export interface KbUsageBriefProps {
   title: string

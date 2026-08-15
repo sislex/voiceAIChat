@@ -1,6 +1,6 @@
 // Сториз подтверждения: обычное, опасное и необратимое (ввод названия объекта).
 import type { Meta, StoryObj } from '@storybook/react'
-import { ConfirmDialog } from './ConfirmDialog'
+import { ConfirmDialog } from '@voicechat/ui-kit'
 
 const meta: Meta<typeof ConfirmDialog> = {
   title: 'UI/ConfirmDialog',

@@ -1,7 +1,7 @@
 // Сториз экрана ошибки: короткое сообщение, техническая деталь под «Подробнее»
 // и «Повторить». Без него ошибка чтения выглядела как пустой список.
 import type { Meta, StoryObj } from '@storybook/react'
-import { ErrorState } from './ErrorState'
+import { ErrorState } from '@voicechat/ui-kit'
 
 const meta: Meta<typeof ErrorState> = {
   title: 'UI/ErrorState',
