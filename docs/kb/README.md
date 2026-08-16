@@ -9,20 +9,20 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 111 коммит(ов) в areas после сверки: 0d21f9c refactor(ui): extract projects frontend foundation … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-01 | ⚠ 112 коммит(ов) в areas после сверки: 6e34b72 feat(preparation): движок и модель подготовки из настроек этапа … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-07-27 | ⚠ 9 коммит(ов) в areas после сверки: 183a5f6 feat: add structured manual QA workflow … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 4 коммит(ов) в areas после сверки: 8e8e1e9 CHAT-233: add Playwright Reader foundation … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-13 | ⚠ код изменён 2026-08-15, сверка 2026-08-13 (по датам: правки того же дня не видны — поставь checked) |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-14 | ⚠ код изменён 2026-08-15, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-14 | ⚠ код изменён 2026-08-16, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-16 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-14 | ⚠ код изменён 2026-08-15, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-13 | ⚠ код изменён 2026-08-16, сверка 2026-08-13 (по датам: правки того же дня не видны — поставь checked) |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 56 коммит(ов) в areas после сверки: 4163f0b feat(qa): automate integration test stage … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 57 коммит(ов) в areas после сверки: 6e34b72 feat(preparation): движок и модель подготовки из настроек этапа … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-15 | ⚠ код изменён 2026-08-16, сверка 2026-08-15 (по датам: правки того же дня не видны — поставь checked) |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-15 | ✓ |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-15 | ⚠ код изменён 2026-08-16, сверка 2026-08-15 (по датам: правки того же дня не видны — поставь checked) |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-16 | ⚠ 1 коммит(ов) в areas после сверки: 0d21f9c refactor(ui): extract projects frontend foundation |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 366 коммит(ов) в areas после сверки: 5318356 CHAT-253: стадия kb_update merge-рана наследует движок development-рана … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-15 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 369 коммит(ов) в areas после сверки: b9b9232 Merge origin/main into CHAT-254 … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-15 | ⚠ код изменён 2026-08-16, сверка 2026-08-15 (по датам: правки того же дня не видны — поставь checked) |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-14 | ⚠ код изменён 2026-08-16, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 1 коммит(ов) в areas после сверки: 5318356 CHAT-253: стадия kb_update merge-рана наследует движок development-рана |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 13 коммит(ов) в areas после сверки: 056f5c7 fix(chat): publish queued messages in turn order … |
@@ -51,8 +51,9 @@
 
 ## Журнал сессий
 
-Всего записей: 227. Последние:
+Всего записей: 228. Последние:
 
+- [2026-08-16-mac-task-preparation-llm-settings.md](log/2026-08-16-mac-task-preparation-llm-settings.md) — task-preparation-llm-settings
 - [2026-08-16-mac-playwright-reader-preview-binding.md](log/2026-08-16-mac-playwright-reader-preview-binding.md) — playwright-reader-preview-binding
 - [2026-08-16-mac-merge-kb-update-engine.md](log/2026-08-16-mac-merge-kb-update-engine.md) — merge-kb-update-engine
 - [2026-08-16-mac-ci-runner.md](log/2026-08-16-mac-ci-runner.md) — ci-runner
@@ -62,7 +63,6 @@
 - [2026-08-15-mac-preparation-tab-navigation.md](log/2026-08-15-mac-preparation-tab-navigation.md) — preparation-tab-navigation
 - [2026-08-15-mac-integration-test-stage.md](log/2026-08-15-mac-integration-test-stage.md) — integration-test-stage
 - [2026-08-15-2470-com-web-reader-action-readiness.md](log/2026-08-15-2470-com-web-reader-action-readiness.md) — web-reader-action-readiness
-- [2026-08-15-2470-com-ui-kit-package.md](log/2026-08-15-2470-com-ui-kit-package.md) — Выделение пакета @voicechat/ui-kit
 
 ## Исторические планы
 
