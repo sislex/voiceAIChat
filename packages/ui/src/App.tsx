@@ -1155,7 +1155,15 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         onOpenMachines={state.authRequired ? menu(() => navigate('/machines')) : undefined}
         onOpenCi={state.authRequired ? menu(() => navigate('/ci')) : undefined}
         currentUser={state.currentUser}
-        onLogout={state.authRequired ? () => void actions.logout() : undefined}
+        onLogout={state.authRequired ? async () => {
+          const accepted = await confirm({
+            title: 'Выйти из ChatAI?',
+            message: 'Текущая сессия завершится. Чаты, проекты, настройки и подключения внешних сервисов сохранятся.',
+            confirmLabel: 'Выйти',
+            variant: 'danger'
+          })
+          if (accepted && await actions.logout()) navigate('/')
+        } : undefined}
         mode={sidebarMode}
         onModeChange={state.authRequired ? (m) => {
           setSidebarMode(m)
