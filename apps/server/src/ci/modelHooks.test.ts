@@ -911,9 +911,132 @@ describe('пробелы базы знаний доходят до шага ак
       log: (_stepId: string, _stream: string, chunk: string) => log.push(chunk)
     } as unknown as CiModelContext)
 
-    expect(result).toEqual({ ok: false, message: 'JSON ответа модели не соответствует контракту — статьи раздела проекта не сохранены' })
+    expect(result).toEqual({ ok: false, message: 'Repair финального ответа не выполнен: сессия модели недоступна' })
     expect(save).not.toHaveBeenCalled()
     expect(log.join('')).toContain('documents[1].title')
+  })
+
+  function repairClient(mainReply: string, repairReply: string, sessionId: string | null = 'kb-session') {
+    const requests: LlmRequest[] = []
+    const client: LlmClient = {
+      send: (req, handlers) => {
+        requests.push(req)
+        const text = requests.length === 1 ? mainReply : repairReply
+        if (requests.length === 1 && sessionId) handlers.onSession?.(sessionId)
+        handlers.onUsage?.({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheCreationTokens: 0 })
+        handlers.onDelta?.(text)
+        handlers.onDone?.(text)
+        return { cancel: () => {} }
+      }
+    }
+    return { client, requests }
+  }
+
+  it.each([
+    ['json_not_found', 'Готово'],
+    ['invalid_json', '{"note":'],
+    ['invalid_contract', JSON.stringify({ note: 'x', nothingToUpdate: false, topics: [], documents: [] })]
+  ])('repair ровно один раз восстанавливает %s в той же сессии без инструментов', async (_code, mainReply) => {
+    const stage = repairClient(mainReply, KB_REPLY)
+    const { ctx, project, run } = setup('off')
+    const logs: string[] = []
+    const repairCtx = { ...withAgent(ctx), log: (_stepId: string, _stream: string, chunk: string) => logs.push(chunk) } as unknown as CiModelContext
+    const result = await hooksWith(stage.client, { kb: undefined, executor: diffExecutor }).kbUpdate(repairCtx)
+
+    expect(result).toMatchObject({ ok: true, message: expect.stringContaining('Финальный JSON восстановлен дополнительным запросом') })
+    expect(stage.requests).toHaveLength(2)
+    expect(stage.requests[1]).toMatchObject({
+      sessionId: 'kb-session',
+      executionDisabled: true,
+      permissionMode: 'plan'
+    })
+    expect(stage.requests[1]?.remote).toBeUndefined()
+    expect(stage.requests[1]?.kbMcpUrl).toBeUndefined()
+    expect(stage.requests[1]?.prompt).toContain('"note":"string"')
+    expect(stage.requests[1]?.prompt).toContain('Неизвестные поля запрещены')
+    expect(db.kbDocuments({ scope: 'project', projectId: project.id }).some((d) => d.title === 'Пробелы БЗ')).toBe(true)
+    expect(db.listCiRunUsage(run.id)).toHaveLength(2)
+    expect(logs.join('')).toContain(`[${_code}]`)
+    expect(logs.join('')).toContain('sessionId доступен')
+    expect(logs.join('')).toMatch(/Repair финального JSON завершил ход за \d+ мс/)
+    expect(logs.join('')).toContain('успешно восстановил')
+  })
+
+  it('ambiguous_json остаётся fail-closed и repair не запускает', async () => {
+    const main = 'отчёт\n\`\`\`json\n{}\n\`\`\`\n\`\`\`json\n{}\n\`\`\`'
+    const stage = repairClient(main, KB_REPLY)
+    const { ctx, project } = setup('off')
+    const save = vi.spyOn(db, 'saveKbDocument')
+    const result = await hooksWith(stage.client, { kb: undefined, executor: diffExecutor }).kbUpdate(withAgent(ctx))
+
+    expect(result).toEqual({ ok: false, message: 'В ответе модели несколько JSON-кандидатов — статьи раздела проекта не сохранены' })
+    expect(stage.requests).toHaveLength(1)
+    expect(save).not.toHaveBeenCalled()
+    expect(db.kbDocuments({ scope: 'project', projectId: project.id }).some((d) => d.title === 'Пробелы БЗ')).toBe(false)
+  })
+
+  it('без sessionId сохраняет исходный fail-closed и не начинает независимый ход', async () => {
+    const stage = repairClient('Готово', KB_REPLY, null)
+    const { ctx } = setup('off')
+    const result = await hooksWith(stage.client, { kb: undefined, executor: diffExecutor }).kbUpdate(withAgent(ctx))
+    expect(result).toEqual({ ok: false, message: 'Repair финального ответа не выполнен: сессия модели недоступна' })
+    expect(stage.requests).toHaveLength(1)
+  })
+
+  it('невалидный repair останавливает merge без частичного сохранения и без третьего хода', async () => {
+    const stage = repairClient('Готово', JSON.stringify({
+      note: 'x', nothingToUpdate: false, topics: [], documents: [
+        { id: '', title: 'валидный', kind: 'feature', tags: [], areas: [], body: '# ok' },
+        { id: '', title: '', kind: 'feature', tags: [], areas: [], body: '# bad' }
+      ]
+    }))
+    const { ctx } = setup('off')
+    const save = vi.spyOn(db, 'saveKbDocument')
+    const result = await hooksWith(stage.client, { kb: undefined, executor: diffExecutor }).kbUpdate(withAgent(ctx))
+    expect(result).toEqual({ ok: false, message: 'Модель повторно не вернула корректный JSON — статьи раздела проекта не сохранены' })
+    expect(stage.requests).toHaveLength(2)
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('общий таймаут гасит repair и не выдаёт ему новый бюджет стадии', async () => {
+    const requests: LlmRequest[] = []
+    const client: LlmClient = {
+      send: (req, handlers) => {
+        requests.push(req)
+        if (requests.length === 1) {
+          handlers.onSession?.('kb-session')
+          handlers.onDelta?.('Готово')
+          handlers.onDone?.('Готово')
+        }
+        return { cancel: () => {} }
+      }
+    }
+    const { ctx } = setup('off')
+    const result = await hooksWith(client, { kb: undefined, executor: diffExecutor, kbTimeoutMs: 5 }).kbUpdate(withAgent(ctx))
+    expect(result).toEqual({ ok: false, message: 'Repair финального ответа не завершён до таймаута' })
+    expect(requests).toHaveLength(2)
+  })
+
+  it('отмена merge-рана останавливает открытый repair', async () => {
+    const ctl = new AbortController()
+    const requests: LlmRequest[] = []
+    const client: LlmClient = {
+      send: (req, handlers) => {
+        requests.push(req)
+        if (requests.length === 1) {
+          handlers.onSession?.('kb-session')
+          handlers.onDelta?.('Готово')
+          handlers.onDone?.('Готово')
+        } else {
+          queueMicrotask(() => ctl.abort())
+        }
+        return { cancel: () => {} }
+      }
+    }
+    const { ctx } = setup('off', ctl.signal)
+    const result = await hooksWith(client, { kb: undefined, executor: diffExecutor }).kbUpdate(withAgent(ctx))
+    expect(result).toEqual({ ok: true, message: 'Ран отменён — база знаний не обновлялась' })
+    expect(requests).toHaveLength(2)
   })
 
   it('fix-loop: правка — то же исследование, пробел из неё тоже уезжает в базу', async () => {
