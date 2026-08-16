@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, canConfirmDevelopmentReadiness, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, canConfirmDevelopmentReadiness, DEFAULT_CODEX_MODEL, type CiUsageKind, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -162,6 +162,44 @@ export function parseQaPreparationResponse(text: string): AcceptanceCriterionSna
     if (row.testType !== 'manual' && row.testType !== 'mixed' && row.testType !== 'not_testable_in_app') throw new Error(`Сценарий ${index + 1}: недопустимый testType`)
     return { title: strings.title.trim(), description: strings.description.trim(), preconditions: strings.preconditions.trim(), steps: strings.steps.trim(), testData: strings.testData.trim(), expectedResult: strings.expectedResult.trim(), required: row.required, testType: row.testType }
   })
+}
+
+/**
+ * Этап workflow, под которым живут настройки LLM «Подготовки к разработке».
+ * Отдельного вида расхода у неё нет, а по смыслу это планирование задачи, поэтому
+ * движок и модель она наследует из настроек стадии `planning`.
+ */
+const TASK_PREPARATION_STAGE: CiUsageKind = 'planning'
+
+/** Модель Claude по умолчанию для подготовки — прежняя константа этапа. */
+const TASK_PREPARATION_CLAUDE_MODEL = 'sonnet'
+
+/**
+ * Модель CLI подготовки: явный выбор любого уровня наследования, иначе дефолт
+ * движка. `default` в настройках Claude означает «модель не выбрана», поэтому он
+ * ведёт на sonnet — как было до того, как подготовка научилась читать настройки.
+ */
+export function taskPreparationModel(provider: LlmProvider, model: string): string {
+  const explicit = model.trim()
+  if (provider === 'codex') return explicit || DEFAULT_CODEX_MODEL
+  return explicit && explicit !== 'default' ? explicit : TASK_PREPARATION_CLAUDE_MODEL
+}
+
+/** Похоже ли падение CLI на отсутствующую или протухшую авторизацию профиля. */
+const CLI_AUTH_FAILURE = /authenticat|oauth|unauthor|not logged in|login|credential|api key|401|403/i
+
+/**
+ * Ошибка подготовки с указанием движка и владельца CLI-профиля. CLI запускается
+ * в профиле нажавшего кнопку, поэтому «OAuth session expired» у пользователя,
+ * который логинился только в другой движок, — это состояние его профиля, а не
+ * поломка подготовки; из сырой строки CLI это не видно.
+ */
+export function taskPreparationFailure(provider: LlmProvider, userId: string, message: string): string {
+  const label = provider === 'codex' ? 'Codex' : 'Claude'
+  const head = `Подготовка через ${label} CLI (профиль пользователя «${userId}»)`
+  return CLI_AUTH_FAILURE.test(message)
+    ? `${head}: CLI не авторизован — войдите в ${label} под этим профилем. Ответ CLI: ${message}`
+    : `${head} завершилась ошибкой: ${message}`
 }
 
 export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> {
@@ -601,10 +639,26 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const run = db.startTaskPreparationRun(userId, projectId, taskId)
     if (run.status !== 'running' || run.log) return run
     const task = db.getCiTask(userId, projectId, taskId)
+    // Движок и модель — как у остальных автоматических этапов: этап задачи →
+    // этап проекта → модель проекта → настройки запустившего пользователя. CLI
+    // работает в ЕГО профиле, поэтому зашитый Claude просто не был авторизован у
+    // того, кто работает на Codex.
+    const userLlm = db.ciLlmDefaultsForUser(userId)
+    const stageLlm = db.resolveTaskStageLlmConfig(projectId, taskId, TASK_PREPARATION_STAGE, {
+      llmEngineId: userLlm.llmEngineId ?? null,
+      provider: userLlm.provider,
+      model: userLlm.model
+    })
+    const provider = stageLlm.provider
+    const model = taskPreparationModel(provider, stageLlm.model)
+    const client = provider === 'codex' ? codex : claude
+    // Чем шла подготовка — первой строкой ленты: без этого причину падения CLI
+    // приходится искать в коде подготовки.
+    db.appendTaskPreparationLog(run.id, `[система] Движок: ${provider === 'codex' ? 'Codex' : 'Claude'}, модель: ${model}, CLI-профиль: ${userId}\n`)
     const basePrompt = `Подготовь задачу к разработке. Не меняй код, не запускай инструменты и не делегируй работу. Уточни функциональные требования и верни за один ход ТОЛЬКО JSON без Markdown: {"functionalRequirements":"подробное описание","acceptanceCriteria":"нумерованный список","testCases":[{"id":"stable-id","title":"","description":"","preconditions":"","testData":"","steps":"","expectedResult":"","required":true,"testType":"manual","automatable":false,"automationLinks":[],"notAutomatedReason":"","alternativeManualVerification":"","comments":""}],"uiImpact":"none|existing_components|new_components|multi_component_flow","affectedComponents":[{"id":"","name":"","storybookStoryId":null,"reusable":false,"coverage":null,"exclusionReason":"","alternativeVerification":""}],"acceptanceCriteriaConflict":false}. Для UI-компонентов либо укажи storybookStoryId, либо непустые exclusionReason и alternativeVerification. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}`
     const sendAttempt = (attempt: number, correction?: string): void => {
       const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный JSON.` : basePrompt
-      const handle = claude.send({ userId, prompt, sessionId: null, model: 'sonnet', executionDisabled: true }, {
+      const handle = client.send({ userId, prompt, sessionId: null, model, executionDisabled: true }, {
         onDelta: (chunk) => { db.appendTaskPreparationLog(run.id, chunk); boardHub.emit(projectId) },
         onSession: () => {},
         onDone: (text) => {
@@ -626,7 +680,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           taskPreparationHandles.delete(run.id)
           if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
           if (attempt < 2) sendAttempt(attempt + 1, message)
-          else { db.failTaskPreparationRun(run.id, message); boardHub.emit(projectId) }
+          else { db.failTaskPreparationRun(run.id, taskPreparationFailure(provider, userId, message)); boardHub.emit(projectId) }
         }
       })
       if (handle) taskPreparationHandles.set(run.id, handle)
