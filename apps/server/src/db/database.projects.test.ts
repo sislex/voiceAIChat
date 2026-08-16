@@ -279,7 +279,11 @@ describe('board: задачи, приоритеты, assignee, перемеще�
     const t = db.createTask('alice', p.id, { columnId: col.id, title: 'T', assignee: 'bob', priority: 'high' })!
     expect(t.assignee).toBe('bob')
     expect(t.priority).toBe('high')
+    expect(db.createTask('alice', p.id, { columnId: col.id, title: 'Без исполнителя', assignee: null })!.assignee).toBeNull()
     expect(() => db.updateTask('alice', p.id, t.id, { assignee: 'carol' })).toThrow()
+    db.setUserBlocked('bob', true)
+    expect(db.getProject('alice', p.id)!.members.find((member) => member.username === 'bob')?.active).toBe(false)
+    expect(() => db.createTask('alice', p.id, { columnId: col.id, title: 'Blocked', assignee: 'bob' })).toThrow()
   })
 
   it('машина задачи доступна лично или через проект, чужая отклоняется', () => {
@@ -764,6 +768,23 @@ describe('projects: чаты завершённых задач в списке �
     db.moveTask('alice', pid, taskId, { columnId: done })
     expect(db.searchConversations('alice', 'Скролл').map((c) => c.id)).not.toContain(chatId)
     expect(db.searchConversations('alice', 'Скролл', { includeCompleted: true }).map((c) => c.id)).toContain(chatId)
+  })
+
+  it('отмена отдельного CI-рана не скрывает чат активной задачи', () => {
+    const { pid, taskId, chatId, dev } = withTaskChat()
+    const run = db.createCiRun({
+      projectId: pid,
+      taskId,
+      agentId: null,
+      triggeredBy: 'alice',
+      prevColumnId: dev,
+      runColumnId: dev,
+      slotProgress: { done: 0, total: 1, phase: 'Отменён' }
+    })
+    db.updateCiRun(run.id, { status: 'cancelled', terminalColumnId: dev })
+
+    expect(db.listConversations('alice').map((c) => c.id)).toContain(chatId)
+    expect(db.getBoard('alice', pid)!.tasks.find((task) => task.id === taskId)!.columnId).toBe(dev)
   })
 
   it('обычные чаты (без задачи) в списке остаются', () => {

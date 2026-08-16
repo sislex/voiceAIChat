@@ -19,14 +19,22 @@
 
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { decl } from './cssRules'
+import { decl, mediaBody } from './cssRules'
 
 describe('app.css — скролл длинной колонки доски', () => {
-  it('корень приложения обрезает содержимое и служит блок-контейнером', () => {
+  it('корень приложения ограничивает обе оси доступным viewport', () => {
+    expect(decl('.app', 'display')).toBe('grid')
+    expect(decl('.app', 'grid-template-columns')).toBe('264px minmax(0, 1fr)')
+    expect(decl('.app', 'grid-template-rows')).toBe('minmax(0, 1fr)')
     expect(decl('.app', 'height')).toBe('100vh')
     expect(decl('.app', 'overflow')).toBe('hidden')
     // Без этого абсолютные потомки считаются от страницы и растягивают документ.
     expect(decl('.app', 'position')).toBe('relative')
+  })
+
+  it('на мобильной ширине корень использует динамическую высоту viewport', () => {
+    const mobile = mediaBody('(max-width: 768px)')
+    expect(mobile).toMatch(/\.app,\s*\.app--console\s*\{[^}]*height:\s*100dvh/s)
   })
 
   it('карточка — блок-контейнер для своей скринридерной подсказки', () => {
@@ -37,7 +45,13 @@ describe('app.css — скролл длинной колонки доски', ()
     // На телефоне у .app высота в dvh: 100vh у рамки был бы выше её клетки.
     expect(decl('.toolpage', 'height')).toBe('100%')
     expect(decl('.toolpage', 'overflow')).toBe('hidden')
+    expect(decl('.toolpage', 'display')).toBe('flex')
+    expect(decl('.toolpage', 'flex-direction')).toBe('column')
+    expect(decl('.toolpage', 'min-width')).toBe('0')
     expect(decl('.toolpage', 'min-height')).toBe('0')
+    expect(decl('.toolpage.projpage', 'height')).toBe('100%')
+    expect(decl('.toolpage.projpage', 'overflow')).toBe('hidden')
+    expect(decl('.toolpage.projpage > .mdhead', 'flex')).toBe('none')
   })
 
   it('flex-цепочка от рамки до списков карточек не теряет ограничения размеров', () => {
@@ -49,6 +63,13 @@ describe('app.css — скролл длинной колонки доски', ()
     expect(decl('.toolpage > .jboard-wrap', 'overflow')).toBe('hidden')
     expect(decl('.jboard', 'overflow-x')).toBe('auto')
     expect(decl('.jboard', 'overflow-y')).toBe('hidden')
+    expect(decl('.jboard', 'display')).toBe('flex')
+    expect(decl('.jboard', 'align-items')).toBe('stretch')
+    expect(decl('.jcol', 'display')).toBe('flex')
+    expect(decl('.jcol', 'flex-direction')).toBe('column')
+    expect(decl('.jcol', 'flex')).toBe('0 0 272px')
+    expect(decl('.jcol', 'width')).toBe('272px')
+    expect(decl('.jcol', 'min-width')).toBe('0')
     expect(decl('.jcol', 'height')).toBe('100%')
     expect(decl('.jcol', 'max-height')).toBe('100%')
     expect(decl('.jcol', 'min-height')).toBe('0')
@@ -56,12 +77,22 @@ describe('app.css — скролл длинной колонки доски', ()
   })
 
   it('только списки карточек прокручиваются вертикально и независимо', () => {
+    expect(decl('.jcol-body', 'display')).toBe('flex')
+    expect(decl('.jcol-body', 'flex-direction')).toBe('column')
+    expect(decl('.jcol-body', 'min-width')).toBe('0')
     expect(decl('.jcol-body', 'overflow-x')).toBe('hidden')
     expect(decl('.jcol-body', 'overflow-y')).toBe('auto')
     expect(decl('.jcol-body', 'flex')).toBe('1')
     expect(decl('.jcol-body', 'min-height')).toBe('0')
     expect(decl('.jcol-body', 'overscroll-behavior')).toBe('contain')
     expect(decl('.jcol-head', 'flex')).toBe('none')
+  })
+
+  it('свимлейны сохраняют общий вертикальный скролл и авто-высоту ячеек', () => {
+    expect(decl('.jboard--lanes', 'overflow-y')).toBe('auto')
+    expect(decl('.jcol--incell', 'height')).toBe('auto')
+    expect(decl('.jcol--incell', 'max-height')).toBe('none')
+    expect(decl('.jcol--incell', 'overflow')).toBe('visible')
   })
 
   it('touch-скролл остаётся у списков, а ручки захвата владеют drag-жестом', () => {

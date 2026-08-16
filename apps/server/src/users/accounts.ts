@@ -17,7 +17,9 @@ function sign(payload: string, secret: string): string {
 
 /** Подписанный токен `payloadB64.sigB64` для пользователя (в payload — только имя). */
 export function signToken(user: SessionUser, secret: string): string {
-  const payload = base64url(Buffer.from(JSON.stringify({ name: user.name })))
+  // Случайный id делает каждую сессию отдельной: logout может отозвать текущий
+  // токен, не завершая другие входы пользователя и не блокируя следующий login.
+  const payload = base64url(Buffer.from(JSON.stringify({ name: user.name, sid: base64url(randomBytes(18)) })))
   return `${payload}.${sign(payload, secret)}`
 }
 

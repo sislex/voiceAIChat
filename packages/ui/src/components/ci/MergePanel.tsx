@@ -60,7 +60,7 @@ export function MergePanel(props: {
           <span className="merge-start-hint">Ран сольёт подготовленную ветку задачи в main: изолированный клон, обязательные проверки, безопасный push.</span>
         </div>
       )}
-      {activeRunId ? <MergeRunFeed runId={activeRunId} onRunChanged={reload} /> : <p className="task-tab-empty">Merge-ранов у задачи ещё не было.</p>}
+      {activeRunId ? <MergeRunFeed runId={activeRunId} machines={machines} onRunChanged={reload} /> : <p className="task-tab-empty">Merge-ранов у задачи ещё не было.</p>}
       {runs.length > 1 && (
         <section className="merge-history">
           <strong>Попытки</strong>

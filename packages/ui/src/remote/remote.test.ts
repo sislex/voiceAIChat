@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WsClient } from './wsClient'
 import { createHttpApi } from './httpApi'
 import { base64ToArrayBuffer } from './decode'
-import { makeClaudeBridge, makePreviewBridge, migrateDesktopLegacy } from './index'
+import { makeClaudeBridge, makePreviewBridge, makeSessionBridge, migrateDesktopLegacy } from './index'
 
 class FakeWebSocket {
   static OPEN = 1
@@ -230,6 +230,36 @@ describe('createHttpApi', () => {
 describe('base64ToArrayBuffer', () => {
   it('декодирует RIFF', () => {
     expect(new TextDecoder().decode(base64ToArrayBuffer('UklGRg=='))).toBe('RIFF')
+  })
+})
+
+describe('session bridge logout', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('вызывает server logout с Bearer и удаляет локальный токен только после успеха', async () => {
+    localStorage.setItem('vc.session.token', 'session-token')
+    const ws = { reconnect: vi.fn() } as unknown as WsClient
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    ;(globalThis as unknown as { fetch: unknown }).fetch = fetchMock
+
+    await makeSessionBridge('http://srv', ws).logout()
+
+    expect(fetchMock).toHaveBeenCalledWith('http://srv/api/session/logout', {
+      method: 'POST',
+      headers: { authorization: 'Bearer session-token' }
+    })
+    expect(localStorage.getItem('vc.session.token')).toBeNull()
+    expect(ws.reconnect).toHaveBeenCalledOnce()
+  })
+
+  it('при ошибке сервера сохраняет токен и сообщает понятную ошибку', async () => {
+    localStorage.setItem('vc.session.token', 'session-token')
+    const ws = { reconnect: vi.fn() } as unknown as WsClient
+    ;(globalThis as unknown as { fetch: unknown }).fetch = vi.fn().mockResolvedValue({ ok: false })
+
+    await expect(makeSessionBridge('', ws).logout()).rejects.toThrow('Не удалось завершить сессию')
+    expect(localStorage.getItem('vc.session.token')).toBe('session-token')
+    expect(ws.reconnect).not.toHaveBeenCalled()
   })
 })
 

@@ -1,7 +1,7 @@
 ---
 title: Feature-preview окружения задач
-updated: 2026-08-14
-checked: 1168c74
+updated: 2026-08-17
+checked: f8139cb
 areas:
   - packages/shared/src/preview.ts
   - packages/shared/src/agentProtocol.ts
@@ -51,7 +51,7 @@ Companion слушает случайный порт только на `127.0.0.
 
 ## Карточка задачи
 
-`FeaturePreviewSection` в `packages/ui/src/components/preview/FeaturePreviewSection.tsx` встроена в `TaskModal` только для task. При mount компонент только читает серверное состояние и не запускает окружение. Во время изменяющей операции он опрашивает сервер каждые 1,5 секунды. Idempotency key кнопки генерируется совместимо: используется `crypto.randomUUID`, затем Web Crypto `getRandomValues`, а для старых webview предусмотрен последний локальный fallback.
+`FeaturePreviewSection` в `packages/ui/src/components/preview/FeaturePreviewSection.tsx` встроена в `TaskModal` только для task и показана первой во вкладке «Ручное QA», перед `ManualQaPanel` с тест-кейсами и QA-сессией; в «Настройках» этой секции нет. При mount компонент только читает серверное состояние и не запускает окружение. Во время изменяющей операции он опрашивает сервер каждые 1,5 секунды. Idempotency key кнопки генерируется совместимо: используется `crypto.randomUUID`, затем Web Crypto `getRandomValues`, а для старых webview предусмотрен последний локальный fallback.
 
 Секция показывает branch, workspace, expected/current/built SHA, статус Git-проверки, выбранную машину, health, seed-сценарий, ошибку и последнее сохранённое лог-сообщение. Для `running + healthy` выводится основная кнопка «Открыть проект», а для готового Storybook — отдельная кнопка. Внешний URL открывается напрямую; loopback URL открывается через персональный туннель companion-агента. Внутренние URL и host-порты оставлены в раскрываемом техническом блоке. Действия вычисляются из shared-контракта; reset, remove и установка Docker требуют подтверждения. При несовпадении SHA старое окружение остаётся доступным, но UI показывает stale-предупреждение и предлагает пересборку. После подтверждённого `running + healthy` manager сохраняет `tasks.preview_ready`; карточка доски получает зелёную пульсацию, а stop/remove/failure/reconcile снимают признак. При `prefers-reduced-motion` остаётся статичная зелёная рамка.
 

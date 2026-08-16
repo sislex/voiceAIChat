@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -618,6 +618,97 @@ describe('App — запуск задачи из чата', () => {
     expect(within(dialog).getByRole('button', { name: 'Работать в текущем чате' })).toBeInTheDocument()
   })
 
+  it('показывает участников проекта и создаёт задачу с выбранным исполнителем', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const project = await api['projects:create']({ name: 'Проект назначения' })
+    await api['projects:addMember']({ id: project.id, username: 'bob' })
+    const board = await api['board:get']({ id: project.id })
+    const source = await api['tasks:create']({ projectId: project.id, columnId: board.columns[0]!.id, title: 'Исходная' })
+    const chat = await api['tasks:openChat']({ projectId: project.id, taskId: source.id })
+    await api['messages:add']({
+      conversationId: chat.id,
+      role: 'ai',
+      text: 'Предложение.',
+      time: '12:01',
+      meta: { taskLaunch: { title: 'Назначаемая задача', description: 'Описание', acceptanceCriteria: 'Готово' } }
+    })
+
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/chat/${chat.id}`)
+    render(<App api={api} delays={SLOW} />)
+    const dialog = await screen.findByRole('dialog', { name: 'Создание задачи' })
+    const assignee = within(dialog).getByRole('combobox', { name: 'Исполнитель' })
+    expect(assignee).toHaveValue('')
+    expect(within(assignee).getByRole('option', { name: 'Не назначен' })).toBeInTheDocument()
+    expect(within(assignee).getByRole('option', { name: 'bob' })).toBeInTheDocument()
+    await userEvent.selectOptions(assignee, 'bob')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Создать в TODO' }))
+
+    await waitFor(async () => {
+      expect((await api['board:get']({ id: project.id })).tasks.find((task) => task.title === 'Назначаемая задача')?.assignee).toBe('bob')
+    })
+  })
+
+  it('создаёт задачу без исполнителя, если выбор оставлен пустым', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const project = await api['projects:create']({ name: 'Проект без назначения' })
+    const board = await api['board:get']({ id: project.id })
+    const source = await api['tasks:create']({ projectId: project.id, columnId: board.columns[0]!.id, title: 'Исходная' })
+    const chat = await api['tasks:openChat']({ projectId: project.id, taskId: source.id })
+    await api['messages:add']({
+      conversationId: chat.id,
+      role: 'ai',
+      text: 'Предложение.',
+      time: '12:01',
+      meta: { taskLaunch: { title: 'Свободная задача', description: 'Описание', acceptanceCriteria: 'Готово' } }
+    })
+
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/chat/${chat.id}`)
+    render(<App api={api} delays={SLOW} />)
+    const dialog = await screen.findByRole('dialog', { name: 'Создание задачи' })
+    expect(within(dialog).getByRole('combobox', { name: 'Исполнитель' })).toHaveValue('')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Создать в TODO' }))
+
+    await waitFor(async () => {
+      expect((await api['board:get']({ id: project.id })).tasks.find((task) => task.title === 'Свободная задача')?.assignee).toBeNull()
+    })
+  })
+
+  it('сохраняет поля и исполнителя в открытой форме после ошибки создания', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const project = await api['projects:create']({ name: 'Проект ошибки' })
+    await api['projects:addMember']({ id: project.id, username: 'bob' })
+    const board = await api['board:get']({ id: project.id })
+    const source = await api['tasks:create']({ projectId: project.id, columnId: board.columns[0]!.id, title: 'Исходная' })
+    const chat = await api['tasks:openChat']({ projectId: project.id, taskId: source.id })
+    await api['messages:add']({
+      conversationId: chat.id,
+      role: 'ai',
+      text: 'Предложение.',
+      time: '12:01',
+      meta: { taskLaunch: { title: 'Черновик после ошибки', description: 'Описание', acceptanceCriteria: 'Готово' } }
+    })
+    const createTask = api['tasks:create']
+    api['tasks:create'] = async (input) => {
+      if (input.title === 'Черновик после ошибки') throw new Error('Исполнитель больше недоступен')
+      return createTask(input)
+    }
+
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/chat/${chat.id}`)
+    render(<App api={api} delays={SLOW} />)
+    const dialog = await screen.findByRole('dialog', { name: 'Создание задачи' })
+    const assignee = within(dialog).getByRole('combobox', { name: 'Исполнитель' })
+    await userEvent.selectOptions(assignee, 'bob')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Создать в TODO' }))
+
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Создать в TODO' })).toBeEnabled())
+    expect(screen.getByRole('dialog', { name: 'Создание задачи' })).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Заголовок задачи')).toHaveValue('Черновик после ошибки')
+    expect(assignee).toHaveValue('bob')
+  })
+
   it('каждая из нескольких карточек создаёт свою задачу и восстанавливается из истории', async () => {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
@@ -748,5 +839,39 @@ describe('App — запуск задачи из чата', () => {
     render(<App api={api} delays={SLOW} />)
     await screen.findByTestId('task-chat-header')
     expect(screen.queryByRole('dialog', { name: 'Создание задачи' })).not.toBeInTheDocument()
+  })
+})
+
+describe('App — выход из аккаунта', () => {
+  afterEach(() => {
+    delete (window as unknown as { session?: unknown }).session
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/`)
+  })
+
+  it('просит подтверждение, завершает сессию и закрывает защищённый маршрут экраном входа', async () => {
+    const api = await seededApi()
+    const logout = vi.fn().mockResolvedValue(undefined)
+    ;(window as unknown as { session: unknown }).session = {
+      me: vi.fn().mockResolvedValue({ name: 'admin', role: 'admin' }),
+      login: vi.fn(),
+      logout
+    }
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users`)
+    render(<App api={api} delays={SLOW} />)
+
+    await userEvent.click(await screen.findByTitle('Роль: admin'))
+    await userEvent.click(screen.getByRole('menuitem', { name: /Выйти/ }))
+    expect(logout).not.toHaveBeenCalled()
+
+    const dialog = screen.getByRole('dialog', { name: 'Выйти из ChatAI?' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Выйти' }))
+
+    expect(await screen.findByRole('heading', { name: 'Вход' })).toBeInTheDocument()
+    expect(logout).toHaveBeenCalledOnce()
+    expect(window.location.hash).toBe('#/')
+
+    window.history.back()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Вход' })).toBeInTheDocument())
+    expect(screen.queryByText('Пользователи')).not.toBeInTheDocument()
   })
 })

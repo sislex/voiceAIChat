@@ -154,6 +154,11 @@ CREATE TABLE IF NOT EXISTS users (
   created_at    INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS session_revocations (
+  token_hash TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS user_llm_access (
   user_name TEXT NOT NULL,
   provider  TEXT NOT NULL,

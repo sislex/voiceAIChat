@@ -408,6 +408,29 @@ describe('TaskModal — описание: маркдаун в просмотре
 describe('TaskModal — вкладки и merge', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
+  it('располагает постоянные вкладки по workflow', () => {
+    render(<TaskModal {...props()} />)
+
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Общее', 'Настройки', 'Ход выполнения', 'Ручное QA', 'Merge', 'Лента рана'
+    ])
+  })
+
+  it('располагает preparation и QA-вкладки на своих местах workflow', () => {
+    const preparationBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Подготовка', semanticType: 'preparation' }] }
+    const { unmount } = render(<TaskModal {...props({ board: preparationBoard, task: mkTask({ taskPreparationRunId: 'prep-1' }) })} />)
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Общее', 'Подготовка к разработке', 'Настройки', 'Ход выполнения', 'Ручное QA', 'Merge', 'Лента рана'
+    ])
+    unmount()
+
+    const manualQaBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Ручное QA', semanticType: 'manual_qa' }] }
+    render(<TaskModal {...props({ board: manualQaBoard })} />)
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Общее', 'Настройки', 'Ход выполнения', 'Component QA', 'Интеграционные тесты', 'Automated QA', 'Ручное QA', 'Merge', 'Лента рана'
+    ])
+  })
+
   it('переключает шесть вкладок без закрытия и сохраняет черновик', async () => {
     const onClose = vi.fn()
     render(<TaskModal {...props({ onClose })} />)
@@ -434,10 +457,22 @@ describe('TaskModal — вкладки и merge', () => {
     const settings = screen.getByTestId('task-settings-panel')
     await waitFor(() => expect(within(settings).getByLabelText('Движок модели')).toHaveValue('claude'))
     expect(within(settings).getByLabelText('Машина выполнения')).toBeInTheDocument()
+    expect(within(settings).queryByTestId('feature-preview')).not.toBeInTheDocument()
     fireEvent.change(within(settings).getByLabelText('Движок модели'), { target: { value: 'codex' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
     expect(within(settings).getByLabelText('Движок модели')).toHaveValue('codex')
+  })
+
+  it('показывает тестовое окружение перед тест-кейсами и QA-сессией в ручном QA', async () => {
+    window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate: vi.fn(), cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
+    render(<TaskModal {...props()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Ручное QA' }))
+
+    const panel = screen.getByTestId('task-manual-qa-panel')
+    const preview = await within(panel).findByTestId('feature-preview')
+    const manualQa = within(panel).getByRole('region', { name: 'Ручное QA' })
+    expect(preview.compareDocumentPosition(manualQa) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
 
@@ -526,6 +561,92 @@ describe('TaskModal — использование базы знаний по р
     // Отчёта нет вовсе — блок не рисуется, карточка живёт своей жизнью.
     await waitFor(() => expect(screen.queryByTestId('task-modal-kb-usage')).not.toBeInTheDocument())
     expect(screen.getByDisplayValue('Задача A')).toBeInTheDocument()
+  })
+})
+
+describe('TaskModal — сворачиваемая работа модели', () => {
+  beforeEach(() => {
+    window.ci = { ...createFakeCi(), getTaskReport: async () => makeTaskReport() } as typeof window.ci
+  })
+
+  const progress = (over: Partial<NonNullable<CiRunSummary['progress']>> = {}): NonNullable<CiRunSummary['progress']> => ({
+    runId: 'run-1',
+    version: 1,
+    stage: 'Работа модели',
+    status: 'running',
+    startedAt: 1,
+    finishedAt: null,
+    elapsedMs: 2_000,
+    percent: null,
+    completedSteps: 1,
+    totalSteps: null,
+    currentStep: 'Анализ кода',
+    etaMs: null,
+    etaRangeMs: null,
+    etaUnavailableReason: 'Объём работы модели заранее неизвестен',
+    logUrl: '#run-1',
+    steps: [],
+    ...over
+  })
+
+  it('по умолчанию показывает компактную строку и раскрывает подробности кликом и клавиатурой', async () => {
+    render(<TaskModal {...props({ ciSummary: mkSummary({ progress: progress() }) })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Ход выполнения', hidden: true }))
+
+    const block = screen.getByTestId('task-model-work')
+    const toggle = within(block).getByRole('button', { name: /Работа модели/ })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(within(toggle).getByText('выполняется')).toBeInTheDocument()
+    expect(within(toggle).getByText('Анализ кода')).toBeInTheDocument()
+    expect(within(toggle).getByRole('progressbar', { name: 'Прогресс работы модели' })).toBeInTheDocument()
+    expect(within(block).queryByText('Данных о работе модели пока нет.')).not.toBeInTheDocument()
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(within(block).getByText('Данных о работе модели пока нет.')).toBeInTheDocument()
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    toggle.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await userEvent.keyboard(' ')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('сохраняет ручное раскрытие при realtime-обновлении статуса, стадии и прогресса', async () => {
+    const initial = props({ ciSummary: mkSummary({ progress: progress() }) })
+    const view = render(<TaskModal {...initial} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Ход выполнения', hidden: true }))
+    const toggle = within(screen.getByTestId('task-model-work')).getByRole('button', { name: /Работа модели/ })
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+    view.rerender(<TaskModal {...initial} ciSummary={mkSummary({
+      status: 'success',
+      modelActive: false,
+      progress: progress({ version: 2, status: 'success', percent: 100, currentStep: 'Готово', finishedAt: 5_000 })
+    })} />)
+
+    const updated = within(screen.getByTestId('task-model-work')).getByRole('button', { name: /Работа модели/ })
+    expect(updated).toHaveAttribute('aria-expanded', 'true')
+    expect(within(updated).getByText('завершена')).toBeInTheDocument()
+    expect(within(updated).getByText('Готово')).toBeInTheDocument()
+    expect(within(updated).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100')
+    expect(await within(screen.getByTestId('task-model-work')).findByText(/claude · opus/i)).toBeInTheDocument()
+  })
+
+  it.each([
+    ['queued', 'ожидает запуска'],
+    ['running', 'выполняется'],
+    ['waiting', 'ожидает ответа'],
+    ['success', 'завершена'],
+    ['failed', 'завершилась ошибкой'],
+    ['cancelled', 'отменена']
+  ] as const)('корректно отображает состояние %s', (status, label) => {
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: status === 'waiting' ? 'awaiting_input' : status, progress: progress({ status }) }) })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Ход выполнения', hidden: true }))
+    expect(within(screen.getByTestId('task-model-work')).getByText(label)).toBeInTheDocument()
   })
 })
 

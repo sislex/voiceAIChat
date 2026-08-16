@@ -2023,6 +2023,17 @@ export class VoiceChatDb {
     this.db.prepare(`DELETE FROM users WHERE name = ?`).run(name)
   }
 
+  /** Делает конкретный Bearer-токен недействительным даже после рестарта сервера. */
+  revokeSession(token: string): void {
+    const hash = createHash('sha256').update(token).digest('hex')
+    this.db.prepare(`INSERT OR IGNORE INTO session_revocations (token_hash, created_at) VALUES (?, ?)`).run(hash, this.now())
+  }
+
+  isSessionRevoked(token: string): boolean {
+    const hash = createHash('sha256').update(token).digest('hex')
+    return Boolean(this.db.prepare(`SELECT 1 FROM session_revocations WHERE token_hash = ?`).get(hash))
+  }
+
   /** Deny-list rows only: an empty list means every provider and model is allowed. */
   getUserLlmAccess(userId: string): UserLlmAccess[] {
     return this.db.prepare(`SELECT provider, model_id AS modelId FROM user_llm_access WHERE user_name = ? ORDER BY provider, model_id`).all(userId) as UserLlmAccess[]
@@ -2306,6 +2317,15 @@ export class VoiceChatDb {
     )
   }
 
+  /** Назначать задачи можно только незаблокированному участнику проекта. */
+  private isActiveProjectMember(userId: string, projectId: string): boolean {
+    return (
+      this.db
+        .prepare(`SELECT 1 FROM project_members pm JOIN users u ON u.name = pm.username WHERE pm.project_id = ? AND pm.username = ? AND u.blocked = 0`)
+        .get(projectId, userId) !== undefined
+    )
+  }
+
   /** Единый серверный источник проектного права владельца. */
   isProjectOwner(userId: string, projectId: string): boolean {
     return (
@@ -2466,13 +2486,14 @@ export class VoiceChatDb {
     if (!row) return null
     const members = (
       this.db
-        .prepare(`SELECT username, role, added_at FROM project_members WHERE project_id = ? ORDER BY added_at ASC`)
-        .all(id) as ProjectMemberRow[]
+        .prepare(`SELECT pm.username, pm.role, pm.added_at, u.blocked FROM project_members pm JOIN users u ON u.name = pm.username WHERE pm.project_id = ? ORDER BY pm.added_at ASC`)
+        .all(id) as Array<ProjectMemberRow & { blocked: number }>
     ).map(
       (m): ProjectMember => ({
         username: m.username,
         role: m.role === 'owner' ? 'owner' : 'member',
-        addedAt: m.added_at
+        addedAt: m.added_at,
+        active: m.blocked === 0
       })
     )
     const machines = (
@@ -3112,8 +3133,8 @@ export class VoiceChatDb {
     if (!this.isProjectMember(userId, projectId)) return null
 
     if (!this.columnInProject(projectId, args.columnId)) return null
-    if (args.assignee != null && !this.isProjectMember(args.assignee, projectId)) {
-      throw new Error('Исполнитель не участник проекта')
+    if (args.assignee != null && !this.isActiveProjectMember(args.assignee, projectId)) {
+      throw new Error('Исполнитель должен быть активным участником проекта')
     }
     const itemType = args.type ?? 'task'
     // Навыки карточки: явно переданные, иначе — навыки по умолчанию из настроек
@@ -3180,8 +3201,8 @@ export class VoiceChatDb {
     const current = this.getTask(projectId, taskId)
 
     if (!current) return null
-    if (fields.assignee != null && !this.isProjectMember(fields.assignee, projectId)) {
-      throw new Error('Исполнитель не участник проекта')
+    if (fields.assignee != null && !this.isActiveProjectMember(fields.assignee, projectId)) {
+      throw new Error('Исполнитель должен быть активным участником проекта')
     }
     if (fields.agentId !== undefined) this.validateTaskAgent(userId, projectId, fields.agentId)
     const nextType = fields.type ?? current.type
