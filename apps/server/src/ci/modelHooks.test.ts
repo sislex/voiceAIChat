@@ -6,7 +6,7 @@
 // для fix-loop, а брокер здесь — двойник, который умеет показать живые токены.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { EMPTY_CI_TOOL_CALLS, isTrimmedToolOutput, trimmedToolOutputOriginalChars } from '@voicechat/shared'
+import { EMPTY_CI_TOOL_CALLS, isTrimmedToolOutput, trimmedToolOutputOriginalChars, type MergeRun } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
 import { createCiModelHooks, parseCiTestFailures } from './modelHooks.js'
 import { kbTaskQuery } from '../kb/taskQuery.js'
@@ -1080,6 +1080,112 @@ describe('пробелы базы знаний доходят до шага ак
     const { ctx } = setup('auto')
     db.addCiRunKbGaps = () => { throw new Error('БД недоступна') }
     expect(await hooksWith(stage.client).modelWork(ctx)).toEqual({ ok: true })
+  })
+})
+
+// Стадия kb_update merge-рана работает в CLI-профиле автора development-рана
+// (`~/.claude` пользователя, из чьего рана взят контекст). Значит и движок она
+// обязана наследовать оттуда же: системный дефолт claude/opus в чужом профиле,
+// где Claude не залогинен, валит merge на исправном коде.
+describe('merge kb_update: движок наследуется от development-рана', () => {
+  const MERGE_USER = 'bob'
+  const KB_REPLY = JSON.stringify({ note: 'нечего добавлять', nothingToUpdate: true, topics: [], documents: [] })
+
+  /** Диф merge-клона собирает исполнитель; проверка корня проходит. */
+  const diffExecutor: CommandExecutor = {
+    run: async (_req, onChunk) => {
+      onChunk('===FILES===\napps/server/src/ci/modelHooks.ts\n===STAT===\n 1 file changed\n===PATCH===\ndiff\n')
+      return { exitCode: 0, timedOut: false }
+    }
+  }
+
+  /** development-ран задачи на заданном движке + merge-ран, запущенный ДРУГИМ пользователем. */
+  function mergeSetup(llm: { llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string }) {
+    const project = db.createProject(U, { name: 'P' })
+    const board = db.getBoard(U, project.id)!
+    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    db.createUser(MERGE_USER, '', 'developer')
+    db.addMember(U, project.id, MERGE_USER)
+    db.createCiRun({
+      projectId: project.id, taskId: task.id, agentId: 'agent-1', triggeredBy: U, prevColumnId: null,
+      slotProgress: { done: 0, total: 1, phase: 'В очереди' }, ...llm
+    })
+    const run = { id: 'merge-1', projectId: project.id, taskId: task.id, agentId: 'agent-1', triggeredBy: MERGE_USER } as unknown as MergeRun
+    return { project, task, run }
+  }
+
+  const kbUpdateForMerge = (hooks: ReturnType<typeof hooksWith>, run: MergeRun) =>
+    hooks.kbUpdateForMerge({ run, repo: '/repos/p/merge', targetRef: 'target-sha', signal: new AbortController().signal, log: () => {} })
+
+  it('без оверрайдов стадия идёт на движке development-рана, а не на системном дефолте', async () => {
+    const { run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    const claude = recorder(KB_REPLY)
+    const codex = recorder(KB_REPLY)
+    const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })
+
+    const result = await kbUpdateForMerge(hooks, run)
+
+    expect(result).toMatchObject({ ok: true, llmEngineId: null, llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    expect(codex.last()?.model).toBe('gpt-5.6-sol')
+    // Профиль CLI и движок — из одного рана: ход идёт от автора development-рана.
+    expect(codex.last()?.userId).toBe(U)
+    expect(claude.all()).toHaveLength(0)
+  })
+
+  it('оверрайд этапа проекта сильнее наследования от development-рана', async () => {
+    const { project, run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    db.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'claude', model: 'sonnet' })
+    const claude = recorder(KB_REPLY)
+    const codex = recorder(KB_REPLY)
+    const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })
+
+    const result = await kbUpdateForMerge(hooks, run)
+
+    expect(result).toMatchObject({ ok: true, llmProvider: 'claude', llmModel: 'sonnet' })
+    expect(claude.last()?.model).toBe('sonnet')
+    expect(codex.all()).toHaveLength(0)
+  })
+
+  it('оверрайд этапа задачи остаётся наивысшим приоритетом', async () => {
+    const { project, task, run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    db.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'claude', model: 'sonnet' })
+    db.setCiStageLlmConfig('task', task.id, 'kb_update', { provider: 'codex', model: 'gpt-5.6-luna' })
+    const claude = recorder(KB_REPLY)
+    const codex = recorder(KB_REPLY)
+    const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })
+
+    const result = await kbUpdateForMerge(hooks, run)
+
+    expect(result).toMatchObject({ ok: true, llmProvider: 'codex', llmModel: 'gpt-5.6-luna' })
+    expect(codex.last()?.model).toBe('gpt-5.6-luna')
+  })
+
+  it('пустые поля уровня не расщепляют тройку: модель этапа, исполнитель и провайдер — из development-рана', async () => {
+    // Переопределена ТОЛЬКО модель этапа. Провайдер и исполнитель обязаны
+    // остаться от development-рана, иначе codex-модель уедет в Claude CLI.
+    const { project, run } = mergeSetup({ llmEngineId: 'engine-1', llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    db.setCiStageLlmConfig('project', project.id, 'kb_update', { model: 'gpt-5.6-luna' })
+    const claude = recorder(KB_REPLY)
+    const codex = recorder(KB_REPLY)
+    const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })
+
+    const result = await kbUpdateForMerge(hooks, run)
+
+    expect(result).toMatchObject({ ok: true, llmEngineId: 'engine-1', llmProvider: 'codex', llmModel: 'gpt-5.6-luna' })
+    expect(claude.all()).toHaveLength(0)
+  })
+
+  it('модель проекта сильнее наследования, но слабее этапа проекта', async () => {
+    const { project, run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    db.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    const claude = recorder(KB_REPLY)
+    const codex = recorder(KB_REPLY)
+    const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })
+
+    const result = await kbUpdateForMerge(hooks, run)
+
+    expect(result).toMatchObject({ ok: true, llmProvider: 'claude', llmModel: 'opus' })
+    expect(codex.all()).toHaveLength(0)
   })
 })
 
