@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { parseProjectsRoute } from '@voicechat/projects-app'
 import type { RendererApi } from '@shared/ipc'
 import type { LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
@@ -398,14 +399,14 @@ export default function App(props: AppProps = {}): JSX.Element {
 function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
   // Hash-роутинг: URL — источник навигации (см. useHashRoute).
   const { path, segments, navigate } = useHashRoute()
-  const inProjects = segments[0] === 'projects'
-  const routeProjectId = inProjects ? (segments[1] ?? null) : null
-  const routeSettings = inProjects && segments[2] === 'settings'
-  const routeReleases = inProjects && segments[2] === 'releases'
-  // «Открыть задачу» из шапки связанного чата: #/projects/:id/task/:taskId.
-  const routeTaskId = inProjects && segments[2] === 'task' ? (segments[3] ?? null) : null
-  // Связанный чат карточки — самостоятельная страница, но сохраняет проектный URL.
-  const routeTaskChatId = inProjects && segments[2] === 'task' && segments[4] === 'chat' ? (segments[5] ?? null) : null
+  const projectsRoute = parseProjectsRoute(path)
+  const inProjects = projectsRoute !== null
+  const routeProjectId = projectsRoute && projectsRoute.kind !== 'index' ? projectsRoute.projectId : null
+  const routeSettings = projectsRoute?.kind === 'settings'
+  const routeReleases = projectsRoute?.kind === 'releases'
+  // Проектный parser владеет deep links карточки, подготовки и связанного чата.
+  const routeTaskId = projectsRoute && 'taskId' in projectsRoute ? projectsRoute.taskId : null
+  const routeTaskChatId = projectsRoute?.kind === 'task-chat' ? projectsRoute.conversationId : null
   // Утилиты-страницы: один сегмент из белого списка (#/machines, #/kb, …).
   // У базы знаний есть второй сегмент — открытый документ (#/kb/:documentId):
   // так на раздел можно дать ссылку из панели «Использование БЗ» и из «Подробнее».
@@ -628,7 +629,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   // Куда ведёт вход в раздел «Проекты» и удаление текущего проекта.
   const firstProjectId = state.projects[0]?.id ?? null
   const routeProjectName =
-    (state.projectDetail?.id === routeProjectId ? state.projectDetail.name : null) ??
+    (state.projectDetail?.id === routeProjectId ? state.projectDetail!.name : null) ??
     state.projects.find((p) => p.id === routeProjectId)?.name ??
     'Проект'
   const kanbanAssistantContext = useMemo<WidgetAssistantContext<KanbanAssistantSelection>>(() => {
@@ -1341,11 +1342,11 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onOpenAssistantPage={() => navigate(`/projects/${routeProjectId}/assistant`) }
         >
           {routeReleases ? (
-            state.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={state.projectDetail.ciBaseBranch ?? 'main'} owner={state.projectDetail.role === 'owner'} machines={state.projectDetail.machines} agents={state.agents} agentsStatus={state.agentsStatus} agentsError={state.agentsError} defaultAgentId={state.projectDetail.defaultAgentId} releaseTimeouts={state.projectDetail.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
+            state.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={state.projectDetail!.ciBaseBranch ?? 'main'} owner={state.projectDetail!.role === 'owner'} machines={state.projectDetail!.machines} agents={state.agents} agentsStatus={state.agentsStatus} agentsError={state.agentsError} defaultAgentId={state.projectDetail!.defaultAgentId} releaseTimeouts={state.projectDetail!.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
           ) : routeSettings ? (
             state.projectDetail?.id === routeProjectId ? (
               <ProjectSettings
-                detail={state.projectDetail}
+                detail={state.projectDetail!}
                 agents={state.agents}
                 currentUsername={state.currentUser?.name}
                 llmAccess={state.llmAccess}
