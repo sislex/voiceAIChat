@@ -6,7 +6,7 @@
 // списка — сам фильтр живёт в `voiceStore.test.ts`.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { CONVERSATIONS_REFRESH_DEBOUNCE_MS } from './domains/chatStore'
+import { CONVERSATIONS_REFRESH_DEBOUNCE_MS } from '@voicechat/chat-app'
 import { createTestStore, type TestStore } from '../test/appHarness'
 import { createFakeApi, createFakeCi, type FakeApi } from '../test/fakeApi'
 import { makeLogLine, makeRun, makeStep } from '../test/fixtures'
