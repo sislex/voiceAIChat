@@ -1131,7 +1131,17 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     const task = deps.db.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
     const development = deps.db.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
     if (!project || !task || !development) return { ok:false, message:'Контекст development-рана для БЗ недоступен', llmEngineId:null, llmProvider:'claude', llmModel:'' }
-    const llm = deps.db.resolveTaskStageLlmConfig(args.run.projectId, args.run.taskId, 'kb_update')
+    // Стадия работает в CLI-профиле автора development-рана (`run.triggeredBy`
+    // ниже), поэтому и последний уровень наследования — снимок движка того же
+    // рана, а не системный дефолт claude/opus. Иначе merge, запущенный другим
+    // пользователем, шёл в Claude CLI под профилем, где Claude не залогинен.
+    // Тройку передаём целиком: поля резолвятся независимо, и половина снимка
+    // склеила бы провайдера одного уровня с моделью другого.
+    const llm = deps.db.resolveTaskStageLlmConfig(args.run.projectId, args.run.taskId, 'kb_update', {
+      llmEngineId: development.llmEngineId ?? null,
+      provider: development.llmProvider,
+      model: development.llmModel
+    })
     const noop = (): never => { throw new Error('Операция development CI недоступна в merge kb_update') }
     const ctx = {
       runId: development.id,
