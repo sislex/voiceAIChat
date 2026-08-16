@@ -94,6 +94,8 @@ export interface ProjectMember {
   username: string
   role: ProjectRole
   addedAt: number
+  /** Заблокированный пользователь остаётся участником, но не может быть исполнителем. */
+  active?: boolean
 }
 
 /**
