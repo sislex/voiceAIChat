@@ -3,6 +3,15 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import { MergePanel } from './MergePanel'
 import { createFakeCi } from '../../test/fakeApi'
+import type { MergeRun } from '@shared/merge'
+
+const mergeRun = (patch: Partial<MergeRun> = {}): MergeRun => ({
+  id: 'run-1', projectId: 'p1', taskId: 't1', status: 'failed', triggeredBy: 'alexey', sourceBranch: 'CHAT-255', targetBranch: 'main',
+  sourceSha: 'a'.repeat(40), targetSha: null, mergeSha: null, revertSha: null, agentId: 'm1', machineName: 'MacBook',
+  llmEngineId: null, llmProvider: 'codex', llmModel: '', stage: 'failed', stages: [], conflicts: [], conflictDetails: [], checks: [],
+  deployId: null, deployVersion: null, productionStatus: null, error: 'Ошибка', recommendedAction: null, log: '', canCancel: false, canRetry: true,
+  pushStartedAt: null, startedAt: 1, finishedAt: 2, createdAt: 1, ...patch
+})
 
 describe('MergePanel', () => {
   beforeEach(() => {
@@ -30,6 +39,44 @@ describe('MergePanel', () => {
     expect(screen.getByRole('group', { name: 'Мои машины' })).toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Машины проекта' })).toBeInTheDocument()
     expect((screen.getByRole('option', { name: /офлайн/ }) as HTMLOptionElement).disabled).toBe(true)
+  })
+
+  it('наследует машину завершённой попытки и передаёт её в retry', async () => {
+    const previous = mergeRun()
+    vi.spyOn(window.ci!, 'getMerge').mockResolvedValue(previous)
+    vi.spyOn(window.ci!, 'listMergeRuns').mockResolvedValue([previous])
+    const retry = vi.spyOn(window.ci!, 'retryMerge').mockResolvedValue(mergeRun({ id: 'run-2' }))
+    render(<MergePanel projectId="p1" taskId="t1" runId="run-1" canStart={false} />)
+    const select = await screen.findByLabelText('Машина повторного merge-рана') as HTMLSelectElement
+    expect(select.value).toBe('m1')
+    expect(screen.getByRole('option', { name: 'MacBook' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    await waitFor(() => expect(retry).toHaveBeenCalledWith('run-1', 'm1', false))
+  })
+
+  it('позволяет сменить доступную машину перед retry', async () => {
+    const previous = mergeRun()
+    vi.spyOn(window.ci!, 'getMerge').mockResolvedValue(previous)
+    vi.spyOn(window.ci!, 'listMergeRuns').mockResolvedValue([previous])
+    const retry = vi.spyOn(window.ci!, 'retryMerge').mockResolvedValue(mergeRun({ id: 'run-2', agentId: 'm2', machineName: 'Server' }))
+    window.ci!.getTaskMachines = vi.fn(async () => ({ machines: [
+      { agentId: 'm1', name: 'MacBook', online: true, personal: true, project: false, projectDefault: false },
+      { agentId: 'm2', name: 'Server', online: true, personal: false, project: true, projectDefault: true }
+    ], selectedAgentId: null, unavailableSelection: null }))
+    render(<MergePanel projectId="p1" taskId="t1" runId="run-1" canStart={false} />)
+    const select = await screen.findByLabelText('Машина повторного merge-рана')
+    fireEvent.change(select, { target: { value: 'm2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    await waitFor(() => expect(retry).toHaveBeenCalledWith('run-1', 'm2', false))
+  })
+
+  it('не позволяет менять машину активного merge-рана', async () => {
+    const active = mergeRun({ status: 'checking', stage: 'checking', canRetry: false, canCancel: true, finishedAt: null })
+    vi.spyOn(window.ci!, 'getMerge').mockResolvedValue(active)
+    vi.spyOn(window.ci!, 'listMergeRuns').mockResolvedValue([active])
+    render(<MergePanel projectId="p1" taskId="t1" runId="run-1" canStart={false} />)
+    expect(await screen.findByText('MacBook')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Машина повторного merge-рана')).not.toBeInTheDocument()
   })
 
   it('показывает репозитории задачи по машинам с типом и состоянием', async () => {

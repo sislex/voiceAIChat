@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { MergeRun } from '@shared/merge'
+import type { CiTaskMachine } from '@shared/ci'
 import { Button } from '@voicechat/ui-kit'
 import { fmtDuration } from './ciFormat'
 
@@ -50,15 +51,17 @@ function MergeKbDisclosure({ run }: { run: MergeRun }): JSX.Element {
 
 /** Живая лента merge-рана: статус-шапка, степпер стадий, терминальные блоки
  *  лога и проверок. Обновления — WS merge.snapshot + fallback-опрос. */
-export function MergeRunFeed({ runId, onRunChanged }: { runId: string; onRunChanged?: () => void }): JSX.Element {
+export function MergeRunFeed({ runId, machines = [], onRunChanged }: { runId: string; machines?: CiTaskMachine[]; onRunChanged?: () => void }): JSX.Element {
   const [run, setRun] = useState<MergeRun | null>(null)
+  const [retryAgentId, setRetryAgentId] = useState('')
   const [error, setError] = useState('')
   const [autoscroll, setAutoscroll] = useState(true)
   const [reload, setReload] = useState(0)
   const logRef = useRef<HTMLPreElement>(null)
   useEffect(() => {
     let alive = true
-    const load = (): Promise<void> | undefined => window.ci?.getMerge(runId).then((value) => { if (alive) { setRun(value); setError('') } }).catch((e) => { if (alive) setError(e instanceof Error ? e.message : String(e)) })
+    setRetryAgentId('')
+    const load = (): Promise<void> | undefined => window.ci?.getMerge(runId).then((value) => { if (alive) { setRun(value); setRetryAgentId((current) => current || value.agentId); setError('') } }).catch((e) => { if (alive) setError(e instanceof Error ? e.message : String(e)) })
     void load()
     const off = window.ci?.onMerge(({ runId: id, run: value }) => { if (alive && id === runId) setRun(value) })
     const timer = window.setInterval(() => void load(), 3000)
@@ -80,7 +83,11 @@ export function MergeRunFeed({ runId, onRunChanged }: { runId: string; onRunChan
   const terminal = ['success', 'failed', 'cancelled', 'decision_required'].includes(run.status)
   const duration = (run.finishedAt ?? Date.now()) - (run.startedAt ?? run.createdAt)
   const stale = /stale source/i.test(run.error ?? '')
-  const act = (value: MergeRun): void => { setRun(value); onRunChanged?.() }
+  const act = (value: MergeRun): void => { setRun(value); setRetryAgentId(value.agentId); onRunChanged?.() }
+  const retry = (unpin = false): void => { void window.ci?.retryMerge(run.id, retryAgentId || run.agentId, unpin).then(act) }
+  const retryMachines = machines.some((machine) => machine.agentId === run.agentId)
+    ? machines
+    : [{ agentId: run.agentId, name: run.machineName ?? run.agentId, online: false, personal: false, project: false, projectDefault: false }, ...machines]
   const download = (): void => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([run.log], { type: 'text/plain' })); a.download = `merge-run-${run.id}.txt`; a.click(); URL.revokeObjectURL(a.href) }
   return (
     <section className="merge-feed" data-testid="merge-run-feed">
@@ -93,9 +100,14 @@ export function MergeRunFeed({ runId, onRunChanged }: { runId: string; onRunChan
           {run.mergeSha && <code className="merge-sha merge-sha--merge" title={`merge ${run.mergeSha}`}>{run.mergeSha.slice(0, 8)}</code>}
         </span>
         <span className="merge-feed-meta"><span title={run.agentId}>{run.machineName ?? run.agentId}</span> · {fmtDuration(duration)}</span>
+        {run.canRetry && <label className="merge-start-machine">Машина повтора{' '}
+          <select aria-label="Машина повторного merge-рана" value={retryAgentId || run.agentId} onChange={(event) => setRetryAgentId(event.target.value)}>
+            {retryMachines.map((machine) => <option key={machine.agentId} value={machine.agentId} disabled={!machine.online}>{machine.name}{!machine.online ? ' (офлайн)' : ''}</option>)}
+          </select>
+        </label>}
         <div className="merge-feed-actions">
-          {stale && run.canRetry && <Button variant="primary" onClick={() => void window.ci?.retryMerge(run.id, true).then(act)}>Мержить текущий head ветки</Button>}
-          {run.canRetry && <Button onClick={() => void window.ci?.retryMerge(run.id).then(act)}>Повторить</Button>}
+          {stale && run.canRetry && <Button variant="primary" onClick={() => retry(true)}>Мержить текущий head ветки</Button>}
+          {run.canRetry && <Button onClick={() => retry()}>Повторить</Button>}
           {run.canCancel && <Button onClick={() => void window.ci?.cancelMerge(run.id).then(act)}>Отменить</Button>}
           {run.status === 'success' && !run.deployId && <Button variant="primary" onClick={() => void window.ci?.deployMergeRun(run.id).then(act).catch((e) => setError(e instanceof Error ? e.message : String(e)))}>Выпустить на прод</Button>}
         </div>
