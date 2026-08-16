@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-17
-checked: c973c6d
+checked: 22dee7b
 areas:
   - packages/ui/src
   - packages/ui-kit/src
@@ -335,6 +335,14 @@ UI показывает блок «В очереди»: текст, число �
 Кадры `ci.*` идут потоком (лог, шаги), поэтому все поводы проходят через
 `scheduleConversationsRefresh()` — окно склейки `CONVERSATIONS_REFRESH_DEBOUNCE_MS`,
 и пачка терминальных кадров одного рана стоит одного `conversations:list`.
+Таймер этого окна и debounce поиска сообщений (`searchTimer`) намеренно создаются
+самим `chatStore`, а не через `createStoreCore.timer()`: смена разговора и
+`cancelRequest()` вызывают общий `core.clearTimers()` для таймеров живого хода.
+Если зарегистрировать там и эти два debounce, очистка оставит их локальные ссылки
+ненулевыми; новый refresh больше не запланируется, а поиск потеряет ожидаемый
+запуск. Оба таймера отдельно снимаются при `dispose()`, поисковый — ещё и при
+следующем запросе.
+
 Скелетон при этом не мигает (`conversationsStatus` + `loadView`), а открытый чат
 из списка не пропадает: фоновое обновление идёт с `keepActiveListed`, и активный
 чат, которого больше нет в ответе сервера, закрепляется (`pinActiveIfHidden` →
