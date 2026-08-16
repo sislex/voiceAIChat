@@ -21,7 +21,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-15 | ⚠ код изменён 2026-08-17, сверка 2026-08-15 (по датам: правки того же дня не видны — поставь checked) |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 4 коммит(ов) в areas после сверки: f8139cb Merge task 098cbd49-fb21-41d8-99e8-18841bdd3da6 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-16 | ⚠ 3 коммит(ов) в areas после сверки: 7c9c968 Merge task 29841760-d6bd-4fc5-a5a2-ed4b5932bd50 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 373 коммит(ов) в areas после сверки: eb7701d docs(kb): update after merge 29841760-d6bd-4fc5-a5a2-ed4b5932bd50 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 374 коммит(ов) в areas после сверки: 50addb7 docs(kb): update after merge 098cbd49-fb21-41d8-99e8-18841bdd3da6 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-15 | ⚠ код изменён 2026-08-17, сверка 2026-08-15 (по датам: правки того же дня не видны — поставь checked) |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-14 | ⚠ код изменён 2026-08-17, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 1 коммит(ов) в areas после сверки: 5318356 CHAT-253: стадия kb_update merge-рана наследует движок development-рана |
