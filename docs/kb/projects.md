@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-08-15
-checked: e56d286
+updated: 2026-08-16
+checked: d909ba0
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/qa.ts
@@ -278,9 +278,21 @@ Done ставит её заново; перенос между done-колонк
 
 ## Фронтенд
 
-Всё в `packages/ui` (как и остальной UI). Состояние/экшены — в `voiceStore.ts`
-(`projectsOpen`, `projects`, `projectsLoaded`, `projectDetail`, `activeProjectId`,
-`board`; оптимистичные `moveTask`/`reorderColumns`, мерж `applyBoardUpdate` из WS).
+Проектная frontend-граница начинается в workspace-пакете `packages/projects-app`
+(`@voicechat/projects-app`). Пакет содержит транспортно-независимые `ProjectsClient`,
+`ProjectsHost`/`ProjectsChatPort`, фабрику React-независимого `projectsStore`, React-provider,
+parser/builder всех `#/projects/*` deep links, нормализацию и fixtures канбана. Store
+отбрасывает устаревшие ответы после смены проекта, владеет board-подпиской и снимает её
+при закрытии/dispose; move/reorder применяются оптимистично и при ошибке откатываются с
+последующей сверкой снапшота. Запрещённые зависимости (`@voicechat/ui`, `voiceStore`,
+`window.*`, fetch/WebSocket/Electron и apps/web|desktop) проверяет архитектурный тест.
+
+`packages/ui` остаётся host-ом Web/Electron: существующие `RendererApi` и board WS bridge
+преобразуются в `ProjectsClient` функцией `createProjectsClient`; верхнеуровневый hash-router
+делегирует распознавание project URL функции `parseProjectsRoute`. Переходные UI-обёртки
+нормализации и Storybook fixtures импортируют реализацию только из публичного входа
+`@voicechat/projects-app`. Остальная реализация экранов и историческое project-состояние
+пока остаются в `packages/ui`/`voiceStore` до завершения переноса.
 
 **Одна страница проекта на весь раздел.** `ProjectPage` держит `ToolFrame
 variant="page"`: в заголовке имя проекта, в слоте `actions` — вкладки «Канбан» и

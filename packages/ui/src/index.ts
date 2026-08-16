@@ -11,6 +11,7 @@ export type { RendererCiBridge } from './remote/ciBridge'
 export type { RendererFeaturePreviewBridge } from './remote/featurePreviewBridge'
 export type { RendererQaBridge } from './remote/qaBridge'
 export type { RendererKbBridge } from './remote/kbBridge'
+export { createProjectsClient } from './projects/createProjectsClient'
 
 // Стили подключаются приложениями через '@voicechat/ui/styles.css' либо напрямую.
 
