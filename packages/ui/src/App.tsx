@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import type { RendererApi } from '@shared/ipc'
 import type { LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
-import type { Board, Task } from '@shared/projects'
+import type { Board, ProjectMember, Task } from '@shared/projects'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, isPreviewElementMessage, isPreviewInspectorCommand, type PreviewElementPayload } from '@shared/previewInspector'
@@ -556,6 +556,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     proposalId: string
     board: Board
     projectName: string
+    members: ProjectMember[]
     task: Task
     provider: LlmProvider
     model: string
@@ -897,6 +898,9 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       return false
     }
     const project = state.projects.find((item) => item.id === projectId)
+    const detail = state.projectDetail?.id === projectId
+      ? state.projectDetail
+      : await actions.fetchProjectDetail(projectId)
     const now = Date.now()
     const provider = allowedProviders.includes(ciProvider) ? ciProvider : (allowedProviders[0] ?? ciProvider)
     const models = provider === 'codex' ? allowedCodexModels : allowedClaudeModels
@@ -905,7 +909,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       messageId,
       proposalId: request.id,
       board,
-      projectName: project?.name ?? 'Проект',
+      projectName: detail?.name ?? project?.name ?? 'Проект',
+      members: detail?.members ?? [],
       task: {
         id: `task-launch-draft:${messageId}:${request.id}`,
         projectId,
@@ -916,7 +921,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         description: request.description,
         acceptanceCriteria: request.acceptanceCriteria,
         priority: 'medium',
-        assignee: state.currentUser?.name ?? null,
+        assignee: null,
         labels: [],
         skills: project?.defaultSkills.task ?? [],
         storyPoints: null,
@@ -993,6 +998,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       actions.setDraft(selection)
       await actions.submitText()
       if (mode === 'chat') toast.success('Продолжаем работу в текущем чате')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Не удалось создать задачу')
     } finally {
       setTaskLaunchPending(false)
     }
@@ -1588,7 +1595,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           task={taskProposal.task}
           board={taskProposal.board}
           projectName={taskProposal.projectName}
-          members={state.projectDetail?.id === taskProposal.projectId ? state.projectDetail.members : []}
+          members={taskProposal.members}
           onUpdate={(_taskId: string, fields: TaskUpdateFields) => setTaskProposal((current) => current ? { ...current, task: { ...current.task, ...fields } } : null)}
           onDelete={() => undefined}
           onMoveToColumn={(_taskId, columnId) => setTaskProposal((current) => current ? { ...current, task: { ...current.task, columnId } } : null)}

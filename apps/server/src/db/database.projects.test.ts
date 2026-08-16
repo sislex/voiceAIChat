@@ -279,7 +279,11 @@ describe('board: задачи, приоритеты, assignee, перемеще�
     const t = db.createTask('alice', p.id, { columnId: col.id, title: 'T', assignee: 'bob', priority: 'high' })!
     expect(t.assignee).toBe('bob')
     expect(t.priority).toBe('high')
+    expect(db.createTask('alice', p.id, { columnId: col.id, title: 'Без исполнителя', assignee: null })!.assignee).toBeNull()
     expect(() => db.updateTask('alice', p.id, t.id, { assignee: 'carol' })).toThrow()
+    db.setUserBlocked('bob', true)
+    expect(db.getProject('alice', p.id)!.members.find((member) => member.username === 'bob')?.active).toBe(false)
+    expect(() => db.createTask('alice', p.id, { columnId: col.id, title: 'Blocked', assignee: 'bob' })).toThrow()
   })
 
   it('машина задачи доступна лично или через проект, чужая отклоняется', () => {
