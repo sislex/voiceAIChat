@@ -529,6 +529,92 @@ describe('TaskModal — использование базы знаний по р
   })
 })
 
+describe('TaskModal — сворачиваемая работа модели', () => {
+  beforeEach(() => {
+    window.ci = { ...createFakeCi(), getTaskReport: async () => makeTaskReport() } as typeof window.ci
+  })
+
+  const progress = (over: Partial<NonNullable<CiRunSummary['progress']>> = {}): NonNullable<CiRunSummary['progress']> => ({
+    runId: 'run-1',
+    version: 1,
+    stage: 'Работа модели',
+    status: 'running',
+    startedAt: 1,
+    finishedAt: null,
+    elapsedMs: 2_000,
+    percent: null,
+    completedSteps: 1,
+    totalSteps: null,
+    currentStep: 'Анализ кода',
+    etaMs: null,
+    etaRangeMs: null,
+    etaUnavailableReason: 'Объём работы модели заранее неизвестен',
+    logUrl: '#run-1',
+    steps: [],
+    ...over
+  })
+
+  it('по умолчанию показывает компактную строку и раскрывает подробности кликом и клавиатурой', async () => {
+    render(<TaskModal {...props({ ciSummary: mkSummary({ progress: progress() }) })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Ход выполнения', hidden: true }))
+
+    const block = screen.getByTestId('task-model-work')
+    const toggle = within(block).getByRole('button', { name: /Работа модели/ })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(within(toggle).getByText('выполняется')).toBeInTheDocument()
+    expect(within(toggle).getByText('Анализ кода')).toBeInTheDocument()
+    expect(within(toggle).getByRole('progressbar', { name: 'Прогресс работы модели' })).toBeInTheDocument()
+    expect(within(block).queryByText('Данных о работе модели пока нет.')).not.toBeInTheDocument()
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(within(block).getByText('Данных о работе модели пока нет.')).toBeInTheDocument()
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    toggle.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await userEvent.keyboard(' ')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('сохраняет ручное раскрытие при realtime-обновлении статуса, стадии и прогресса', async () => {
+    const initial = props({ ciSummary: mkSummary({ progress: progress() }) })
+    const view = render(<TaskModal {...initial} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Ход выполнения', hidden: true }))
+    const toggle = within(screen.getByTestId('task-model-work')).getByRole('button', { name: /Работа модели/ })
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+    view.rerender(<TaskModal {...initial} ciSummary={mkSummary({
+      status: 'success',
+      modelActive: false,
+      progress: progress({ version: 2, status: 'success', percent: 100, currentStep: 'Готово', finishedAt: 5_000 })
+    })} />)
+
+    const updated = within(screen.getByTestId('task-model-work')).getByRole('button', { name: /Работа модели/ })
+    expect(updated).toHaveAttribute('aria-expanded', 'true')
+    expect(within(updated).getByText('завершена')).toBeInTheDocument()
+    expect(within(updated).getByText('Готово')).toBeInTheDocument()
+    expect(within(updated).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100')
+    expect(await within(screen.getByTestId('task-model-work')).findByText(/claude · opus/i)).toBeInTheDocument()
+  })
+
+  it.each([
+    ['queued', 'ожидает запуска'],
+    ['running', 'выполняется'],
+    ['waiting', 'ожидает ответа'],
+    ['success', 'завершена'],
+    ['failed', 'завершилась ошибкой'],
+    ['cancelled', 'отменена']
+  ] as const)('корректно отображает состояние %s', (status, label) => {
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: status === 'waiting' ? 'awaiting_input' : status, progress: progress({ status }) }) })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Ход выполнения', hidden: true }))
+    expect(within(screen.getByTestId('task-model-work')).getByText(label)).toBeInTheDocument()
+  })
+})
+
 // Раздел «Отчёт»: во что обошёлся ран задачи. Показывается только у завершённого
 // рана — пока ран идёт, цифры устаревают на глазах, и смотреть надо ленту.
 describe('TaskModal — отчёт по завершённой задаче', () => {
