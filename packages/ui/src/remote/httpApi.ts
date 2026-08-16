@@ -406,7 +406,7 @@ export function createCiRest(httpBase: string): RendererCiRest {
     getTaskRepositories: (projectId, taskId) => req<import('@shared/merge').TaskRepository[]>(REST.taskRepositories(projectId, taskId)),
     getMerge: (runId) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}`),
     cancelMerge: (runId) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' }),
-    retryMerge: (runId, unpin) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST', body: JSON.stringify(unpin ? { unpin: true } : {}) }),
+    retryMerge: (runId, agentId, unpin) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST', body: JSON.stringify({ ...(agentId ? { agentId } : {}), ...(unpin ? { unpin: true } : {}) }) }),
     listMergeRuns: (projectId, taskId) => req<import('@shared/merge').MergeRun[]>(REST.taskMergeRuns(projectId, taskId)),
     deployMergeRun: (runId) => req<import('@shared/merge').MergeRun>(REST.mergeRunDeploy(runId), { method: 'POST' }),
     forceStartRun: (projectId, taskId, agentId) => req<CiRun>(REST.ciRunForceStart(projectId, taskId), { method: 'POST', body: JSON.stringify({ agentId }) }),
