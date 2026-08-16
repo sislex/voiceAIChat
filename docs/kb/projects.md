@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-16
-checked: a686b93
+checked: de895b5
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/qa.ts
@@ -19,7 +19,7 @@ areas:
   - packages/shared/src/widgetAssistant.ts
   - packages/shared/src/ipc.ts
   - packages/ui/src/lib/dnd.ts
-  - packages/ui/src/store/voiceStore.ts
+  - packages/ui/src/store/domains/projectsStore.ts
   - packages/ui/src/components/ConversationSettings.tsx
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
@@ -28,7 +28,7 @@ areas:
   - packages/ui/src/components/ChatColumn.tsx
   - packages/ui/src/App.tsx
   - packages/ui/src/styles/app.css
-  - packages/ui/src/store/useVoiceStore.ts
+  - packages/ui/src/store/react.tsx
 ---
 
 # Проекты и канбан-доска
@@ -241,7 +241,7 @@ Done ставит её заново; перенос между done-колонк
 `#/chat/:id` и кнопка «Открыть чат» на карточке
 (`POST /api/projects/:id/tasks/:taskId/chat`) работают как раньше. Открытый
 скрытый чат стор держит в списке (`pinnedConversation` + `keepPinned` в
-`voiceStore.ts`): иначе вместе со строкой сайдбара пропали бы машина и рабочая
+`chatStore.ts`): иначе вместе со строкой сайдбара пропали бы машина и рабочая
 папка активного разговора. Если последний CI-ран упал, а задачу после этого
 вручную перенесли в `done`, открытый/показанный фильтром чат перестаёт выглядеть
 ошибочным: старый ран остаётся доступен в ленте, но его `failed`/`timeout` не
@@ -262,7 +262,7 @@ Done ставит её заново; перенос между done-колонк
 
 `ChatColumn` не рендерит промежуточную таблицу или кнопку предложения. `App.tsx` на маршруте открытого активного чата (`routeChatId === activeId`) сразу открывает стандартную `TaskModal` в режиме черновика; у чата без проекта карточка не открывается и показывается тост с причиной. Несколько предложений обрабатываются по очереди.
 
-Состояние предложения является частью метаданных сообщения. При показе карточки `voiceStore.ts` ставит элементу `status: 'opened'`, а после выбора — `created` или `declined`; целиком обновлённые метаданные уходят через `messages:updateMeta` / `PATCH /api/conversations/:id/messages/:messageId`, после чего сервер сохраняет JSON в SQLite. `opened` не даёт закрытому черновику открыться повторно после перезагрузки. Другие окна получают возвращённое сообщение через `localStorage`-ключ `vc:message-meta-update` и событие `storage`. Старый `meta.taskLaunch` UI читает как предложение с `id: 'legacy'` и при первом изменении метаданных преобразует его в `taskLaunches`.
+Состояние предложения является частью метаданных сообщения. При показе карточки `chatStore.ts` ставит элементу `status: 'opened'`, а после выбора — `created` или `declined`; целиком обновлённые метаданные уходят через `messages:updateMeta` / `PATCH /api/conversations/:id/messages/:messageId`, после чего сервер сохраняет JSON в SQLite. `opened` не даёт закрытому черновику открыться повторно после перезагрузки. Другие окна получают возвращённое сообщение через `localStorage`-ключ `vc:message-meta-update` и событие `storage`. Старый `meta.taskLaunch` UI читает как предложение с `id: 'legacy'` и при первом изменении метаданных преобразует его в `taskLaunches`.
 
 При выборе TODO UI получает доску и ищет колонку по стабильному `semanticType === 'backlog'` (с запасным вариантом — первая колонка), а не по отображаемому имени «TODO». Выбор InProgress создаёт задачу и запускает CI через существующее действие; выбор «Работать в текущем чате» отклоняет предложение без создания задачи. Любой из трёх выборов отправляется ассистенту отдельным следующим ходом. Набор допустимых семантик колонки определён в `packages/shared/src/projects.ts`: `backlog`, `preparation`, `ready`, `development`, `component_qa`, `integration_tests`, `automated_qa`, legacy `testing` и `qa_preparation`, `manual_qa`, `awaiting_merge`, `merge`, `decision_required`, `done`, `custom`.
 
@@ -282,7 +282,7 @@ Done ставит её заново; перенос между done-колонк
 Проектный фронтенд разделён между двумя пакетами, и **граница пока проведена только
 наполовину**. Экраны — `ProjectPage`, `ProjectBoard`, `ProjectSettings`, `KanbanBoard`,
 `TaskCard`, `TaskModal`, CI/QA/merge-панели, releases и `KanbanAssistant` — по-прежнему
-живут в `packages/ui` и работают на прежнем `voiceStore` (`projectsOpen`, `projects`,
+живут в `packages/ui` и работают на доменном `projectsStore` из `packages/ui/src/store/domains` (`projectsOpen`, `projects`,
 `projectsLoaded`, `projectDetail`, `activeProjectId`, `board`; оптимистичные
 `moveTask`/`reorderColumns`, мерж `applyBoardUpdate` из WS). Новый workspace-пакет
 `packages/projects-app` (`@voicechat/projects-app`) содержит будущий фундамент этого
@@ -298,7 +298,7 @@ Done ставит её заново; перенос между done-колонк
 `ProjectsApp`, `createProjectsClient` (адаптер `RendererApi` + board-мост → `ProjectsClient`,
 экспортируется из `packages/ui/src/index.ts`) и `styles.css` пакета потребителей ещё не
 имеют: они собираются и тестируются, но ни один экран через них не рендерится. Значит, при
-правке поведения доски менять надо `voiceStore`, а не `projectsStore`, — иначе изменение
+правке поведения доски менять надо `packages/ui/src/store/domains/projectsStore.ts`, а не одноимённый стор пакета `/projects-app`, — иначе изменение
 просто не проявится.
 
 Делегирование маршрутов в `App.tsx` тоже частичное. Через `parseProjectsRoute(path)`
@@ -536,7 +536,7 @@ AI-помощник (`useAiAssist` + `applyNativeInputValue`) привязан �
 - Гейт как обычно: `npm run -w @voicechat/server typecheck && test` + тесты
   `ui`/`shared`. Тесты рядом: `db/database.projects.test.ts`,
   `routes/projects.test.ts`, `routes/projects.ws.test.ts`,
-  `store/voiceStore.projects.test.ts`, `components/ProjectBoard.dom.test.tsx`.
+  `store/appRuntime.projects.test.ts`, `components/ProjectBoard.dom.test.tsx`.
 - Машины проекта в v1 — только выбор/метадата (id агентов владельца); выполнение
   задач на них ещё не реализовано (изоляция агентов и `execTarget` не затрагиваются).
 
