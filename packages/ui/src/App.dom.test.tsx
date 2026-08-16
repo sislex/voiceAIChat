@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -839,5 +839,39 @@ describe('App — запуск задачи из чата', () => {
     render(<App api={api} delays={SLOW} />)
     await screen.findByTestId('task-chat-header')
     expect(screen.queryByRole('dialog', { name: 'Создание задачи' })).not.toBeInTheDocument()
+  })
+})
+
+describe('App — выход из аккаунта', () => {
+  afterEach(() => {
+    delete (window as unknown as { session?: unknown }).session
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/`)
+  })
+
+  it('просит подтверждение, завершает сессию и закрывает защищённый маршрут экраном входа', async () => {
+    const api = await seededApi()
+    const logout = vi.fn().mockResolvedValue(undefined)
+    ;(window as unknown as { session: unknown }).session = {
+      me: vi.fn().mockResolvedValue({ name: 'admin', role: 'admin' }),
+      login: vi.fn(),
+      logout
+    }
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users`)
+    render(<App api={api} delays={SLOW} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /admin/ }))
+    await userEvent.click(screen.getByRole('menuitem', { name: /Выйти/ }))
+    expect(logout).not.toHaveBeenCalled()
+
+    const dialog = screen.getByRole('dialog', { name: 'Выйти из ChatAI?' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Выйти' }))
+
+    expect(await screen.findByRole('heading', { name: 'Вход' })).toBeInTheDocument()
+    expect(logout).toHaveBeenCalledOnce()
+    expect(window.location.hash).toBe('#/')
+
+    window.history.back()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Вход' })).toBeInTheDocument())
+    expect(screen.queryByText('Пользователи')).not.toBeInTheDocument()
   })
 })

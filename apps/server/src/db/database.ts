@@ -2023,6 +2023,17 @@ export class VoiceChatDb {
     this.db.prepare(`DELETE FROM users WHERE name = ?`).run(name)
   }
 
+  /** Делает конкретный Bearer-токен недействительным даже после рестарта сервера. */
+  revokeSession(token: string): void {
+    const hash = createHash('sha256').update(token).digest('hex')
+    this.db.prepare(`INSERT OR IGNORE INTO session_revocations (token_hash, created_at) VALUES (?, ?)`).run(hash, this.now())
+  }
+
+  isSessionRevoked(token: string): boolean {
+    const hash = createHash('sha256').update(token).digest('hex')
+    return Boolean(this.db.prepare(`SELECT 1 FROM session_revocations WHERE token_hash = ?`).get(hash))
+  }
+
   /** Deny-list rows only: an empty list means every provider and model is allowed. */
   getUserLlmAccess(userId: string): UserLlmAccess[] {
     return this.db.prepare(`SELECT provider, model_id AS modelId FROM user_llm_access WHERE user_name = ? ORDER BY provider, model_id`).all(userId) as UserLlmAccess[]
