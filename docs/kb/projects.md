@@ -1,10 +1,11 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-16
-checked: d909ba0
+checked: a686b93
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/qa.ts
+  - packages/projects-app/src
   - apps/server/src/routes/projects.ts
   - apps/server/src/projects
   - apps/server/src/db/schema.ts
@@ -278,21 +279,39 @@ Done ставит её заново; перенос между done-колонк
 
 ## Фронтенд
 
-Проектная frontend-граница начинается в workspace-пакете `packages/projects-app`
-(`@voicechat/projects-app`). Пакет содержит транспортно-независимые `ProjectsClient`,
-`ProjectsHost`/`ProjectsChatPort`, фабрику React-независимого `projectsStore`, React-provider,
-parser/builder всех `#/projects/*` deep links, нормализацию и fixtures канбана. Store
-отбрасывает устаревшие ответы после смены проекта, владеет board-подпиской и снимает её
-при закрытии/dispose; move/reorder применяются оптимистично и при ошибке откатываются с
-последующей сверкой снапшота. Запрещённые зависимости (`@voicechat/ui`, `voiceStore`,
-`window.*`, fetch/WebSocket/Electron и apps/web|desktop) проверяет архитектурный тест.
+Проектный фронтенд разделён между двумя пакетами, и **граница пока проведена только
+наполовину**. Экраны — `ProjectPage`, `ProjectBoard`, `ProjectSettings`, `KanbanBoard`,
+`TaskCard`, `TaskModal`, CI/QA/merge-панели, releases и `KanbanAssistant` — по-прежнему
+живут в `packages/ui` и работают на прежнем `voiceStore` (`projectsOpen`, `projects`,
+`projectsLoaded`, `projectDetail`, `activeProjectId`, `board`; оптимистичные
+`moveTask`/`reorderColumns`, мерж `applyBoardUpdate` из WS). Новый workspace-пакет
+`packages/projects-app` (`@voicechat/projects-app`) содержит будущий фундамент этого
+раздела: контракты `ProjectsClient`/`ProjectsHost`/`ProjectsChatPort`, React-независимый
+`createProjectsStore`, `ProjectsProvider`, `ProjectsApp`, parser/builder всех `#/projects/*`
+адресов и переехавшие туда нормализацию и fixtures канбана. Устройство пакета, его гейты
+и архитектурный тест описаны в [ui.md](ui.md#пакет-voicechatprojects-app-контракты-store-и-маршруты).
 
-`packages/ui` остаётся host-ом Web/Electron: существующие `RendererApi` и board WS bridge
-преобразуются в `ProjectsClient` функцией `createProjectsClient`; верхнеуровневый hash-router
-делегирует распознавание project URL функции `parseProjectsRoute`. Переходные UI-обёртки
-нормализации и Storybook fixtures импортируют реализацию только из публичного входа
-`@voicechat/projects-app`. Остальная реализация экранов и историческое project-состояние
-пока остаются в `packages/ui`/`voiceStore` до завершения переноса.
+Из нового пакета в работающем приложении используются ровно три вещи: `parseProjectsRoute`
+в `App.tsx` и два файла-реэкспорта в `packages/ui/src/components/kanban/`
+(`normalize.ts` и `fixtures.ts` теперь только пробрасывают реализацию из публичного входа
+пакета, своего кода в них не осталось). `createProjectsStore`, `ProjectsProvider`,
+`ProjectsApp`, `createProjectsClient` (адаптер `RendererApi` + board-мост → `ProjectsClient`,
+экспортируется из `packages/ui/src/index.ts`) и `styles.css` пакета потребителей ещё не
+имеют: они собираются и тестируются, но ни один экран через них не рендерится. Значит, при
+правке поведения доски менять надо `voiceStore`, а не `projectsStore`, — иначе изменение
+просто не проявится.
+
+Делегирование маршрутов в `App.tsx` тоже частичное. Через `parseProjectsRoute(path)`
+теперь определяются сам факт «мы в проектах», `routeProjectId`, вкладки `settings` и
+`releases`, `taskId` и `conversationId` связанного чата; вкладка ассистента
+(`segments[2] === 'assistant'`) и deep link на подготовку (`segments[4] === 'preparation'`)
+по-прежнему читаются из сырых сегментов. У этого есть два наблюдаемых следствия.
+Во-первых, идентификаторы из адреса теперь проходят `decodeURIComponent`, а сырые
+сегменты — нет. Во-вторых, распознавание раздела стало строгим: parser возвращает `null`
+на любом лишнем или неполном сегменте (`#/projects/p1/task` без id, `#/projects/p1/foo`,
+`#/projects/p1/settings/nope`), поэтому такой адрес больше не показывает страницу проекта,
+а проваливается в обычный Chat — раньше `segments[0] === 'projects'` оставлял пользователя
+в разделе.
 
 **Одна страница проекта на весь раздел.** `ProjectPage` держит `ToolFrame
 variant="page"`: в заголовке имя проекта, в слоте `actions` — вкладки «Канбан» и
