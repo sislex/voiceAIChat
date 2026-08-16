@@ -128,7 +128,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [labelDraft, setLabelDraft] = useState('')
   const [skillDraft, setSkillDraft] = useState('')
   type TaskTab = 'general' | 'settings' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'progress' | 'merge' | 'feed' | 'preparation'
-  type ProgressTab = 'overview' | 'model' | 'checks' | 'changes' | 'kb' | 'delivery' | 'resources'
+  type ProgressTab = 'overview' | 'checks' | 'changes' | 'kb' | 'delivery' | 'resources'
   const preparationVisible = task.type === 'task' && ['backlog', 'preparation', 'ready'].includes(board.columns.find((item) => item.id === task.columnId)?.semanticType ?? '') && Boolean(task.taskPreparationRunId || task.taskPreparationStatus === 'running')
   const defaultTab = (): TaskTab => {
     if (task.taskPreparationStatus === 'running' || (props.initialTab === 'preparation' && preparationVisible)) return 'preparation'
@@ -138,6 +138,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   }
   const [activeTab, setActiveTab] = useState<TaskTab>(defaultTab)
   const [progressTab, setProgressTab] = useState<ProgressTab>('overview')
+  // Управляется только пользователем и живёт до закрытия карточки; обновления
+  // ciSummary/отчёта не меняют раскрытие блока работы модели.
+  const [modelWorkOpen, setModelWorkOpen] = useState(false)
   const [qaStageRuns, setQaStageRuns] = useState<Partial<Record<QaRunStage, AnyQaStageRun[]>>>({})
   useEffect(() => {
     if (props.draft || task.type !== 'task' || !window.qa?.listStageRuns) return
@@ -847,12 +850,39 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         </section>
         <section className="task-tab-panel" hidden={activeTab !== 'progress'}>
           {props.ciSummary?.progress && <AutomationProgressView progress={props.ciSummary.progress} />}
+          {(() => {
+            const progress = props.ciSummary?.progress
+            const status = progress?.status ?? (props.ciSummary?.status === 'awaiting_input' ? 'waiting' : props.ciSummary?.status)
+            const statusLabel = status === 'queued' ? 'ожидает запуска'
+              : status === 'running' ? 'выполняется'
+              : status === 'waiting' ? 'ожидает ответа'
+              : status === 'success' ? 'завершена'
+              : status === 'cancelled' ? 'отменена'
+              : status === 'failed' || status === 'timeout' ? 'завершилась ошибкой'
+              : 'ожидает запуска'
+            const stage = progress?.currentStep ?? progress?.stage ?? props.ciSummary?.slotProgress.phase
+            const percent = progress?.percent ?? (status === 'success' ? 100 : status === 'queued' ? 0 : null)
+            const detailId = 'task-model-work-detail'
+            return <section className="task-model-work" data-testid="task-model-work">
+              <button className="task-model-work__toggle" aria-expanded={modelWorkOpen} aria-controls={detailId} onClick={() => setModelWorkOpen((open) => !open)}>
+                <strong>Работа модели</strong>
+                <span className={`task-model-work__status task-model-work__status--${status ?? 'queued'}`}>{statusLabel}</span>
+                <span className={`task-model-work__bar${percent == null ? ' task-model-work__bar--indeterminate' : ''}`} role="progressbar" aria-label="Прогресс работы модели" aria-valuemin={percent == null ? undefined : 0} aria-valuemax={percent == null ? undefined : 100} aria-valuenow={percent ?? undefined} aria-valuetext={percent == null ? statusLabel : `${percent}% — ${statusLabel}`}>
+                  {percent != null && <span style={{ width: `${percent}%` }} />}
+                </span>
+                {stage && <span className="task-model-work__stage" title={stage}>{stage}</span>}
+                <span className="task-model-work__chevron" aria-hidden="true">⌄</span>
+              </button>
+              {modelWorkOpen && <div className="task-model-work__detail task-progress-detail" id={detailId}>
+                {ciReport.report?.runs[0] ? <><h4>{ciReport.report.runs[0].provider} · {ciReport.report.runs[0].model}</h4><p>Попыток исправления: {ciReport.report.runs[0].fixAttempts}</p><ul>{ciReport.report.runs[0].stages.map((modelStage) => <li key={`${modelStage.kind}:${modelStage.model}`}>{modelStage.kind} · {modelStage.model} · {modelStage.totals.requests} запросов</li>)}</ul></> : <p className="task-tab-empty">Данных о работе модели пока нет.</p>}
+              </div>}
+            </section>
+          })()}
           <nav className="task-subtabs" role="tablist" aria-label="Ход выполнения">
-            {([['overview','Обзор'],['model','Работа модели'],['checks','Проверки'],['changes','Изменения'],['kb','База знаний'],['delivery','Результат и доставка'],['resources','Ресурсы']] as const).map(([id,label]) => <button key={id} role="tab" aria-selected={progressTab === id} className={progressTab === id ? 'task-tab task-tab--active' : 'task-tab'} onClick={() => setProgressTab(id)}>{label}</button>)}
+            {([['overview','Обзор'],['checks','Проверки'],['changes','Изменения'],['kb','База знаний'],['delivery','Результат и доставка'],['resources','Ресурсы']] as const).map(([id,label]) => <button key={id} role="tab" aria-selected={progressTab === id} className={progressTab === id ? 'task-tab task-tab--active' : 'task-tab'} onClick={() => setProgressTab(id)}>{label}</button>)}
           </nav>
           {progressTab === 'overview' && <CiReport report={ciReport.report} loading={ciReport.loading} error={ciReport.error} onOpenRun={props.onOpenCiRun} testId="task-modal-report" />}
           <div hidden={progressTab !== 'kb'}>{kbUsage.report && <KbUsageBrief title="База знаний" note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'} totals={kbUsage.report.totals} sections={kbUsage.report.sections} loading={kbUsage.loading} error={kbUsage.error} testId="task-modal-kb-usage" />}</div>
-          {progressTab === 'model' && (ciReport.report?.runs[0] ? <div className="task-progress-detail"><h4>{ciReport.report.runs[0].provider} · {ciReport.report.runs[0].model}</h4><p>Попыток исправления: {ciReport.report.runs[0].fixAttempts}</p><ul>{ciReport.report.runs[0].stages.map((stage) => <li key={`${stage.kind}:${stage.model}`}>{stage.kind} · {stage.model} · {stage.totals.requests} запросов</li>)}</ul></div> : <p className="task-tab-empty">Данных о работе модели пока нет.</p>)}
           {progressTab === 'checks' && (ciReport.report?.runs[0]?.steps.length ? <ol className="task-progress-list">{ciReport.report.runs[0].steps.map((step) => <li key={step.id} data-status={step.status}><span>{step.title}</span><span>{ciStatusLabel(step.status)}{step.durationMs != null ? ` · ${fmtDuration(step.durationMs)}` : ''}</span></li>)}</ol> : <p className="task-tab-empty">Сервер не сообщил проверки для этого запуска.</p>)}
           {progressTab === 'changes' && <p className="task-tab-empty">Сведения о ветке, файлах и коммитах появятся, когда сервер включит их в отчёт запуска.</p>}
           {progressTab === 'delivery' && (ciReport.report?.runs[0] ? <dl className="task-progress-facts"><dt>Результат</dt><dd>{ciStatusLabel(ciReport.report.runs[0].status)}</dd><dt>Начало</dt><dd>{ciReport.report.runs[0].startedAt ? new Date(ciReport.report.runs[0].startedAt).toLocaleString('ru') : '—'}</dd><dt>Завершение</dt><dd>{ciReport.report.runs[0].finishedAt ? new Date(ciReport.report.runs[0].finishedAt).toLocaleString('ru') : '—'}</dd></dl> : <p className="task-tab-empty">Результата доставки пока нет.</p>)}
