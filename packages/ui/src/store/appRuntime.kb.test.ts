@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createVoiceStore, type VoiceStore } from './voiceStore'
+import { createTestStore, type TestStore } from '../test/appHarness'
 import { createFakeApi } from '../test/fakeApi'
 import type { RendererKbBridge } from '../remote/kbBridge'
 import { makeKbProjectUsageReport, makeKbQuery, makeKbUsageReport } from '../test/fixtures'
 
-function makeStore(kb?: RendererKbBridge): VoiceStore {
-  return createVoiceStore({ api: createFakeApi(), kb, now: () => 1_700_000_000_000 })
+function makeStore(kb?: RendererKbBridge): TestStore {
+  return createTestStore({ api: createFakeApi(), kb, now: () => 1_700_000_000_000 })
 }
 
 function fakeBridge(over: Partial<RendererKbBridge> = {}): RendererKbBridge {
@@ -117,7 +117,7 @@ describe('voiceStore — телеметрия базы знаний', () => {
     expect(store.getState().kbStatus?.available).toBe(true)
     const api = createFakeApi()
     api['kb:status'] = async () => { throw new Error('нет сети') }
-    const broken = createVoiceStore({ api })
+    const broken = createTestStore({ api })
     await expect(broken.actions.refreshKbStatus()).resolves.toBeUndefined()
     expect(broken.getState().kbStatus).toBeNull()
   })

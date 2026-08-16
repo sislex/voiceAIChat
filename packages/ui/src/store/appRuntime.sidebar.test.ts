@@ -6,14 +6,15 @@
 // списка — сам фильтр живёт в `voiceStore.test.ts`.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { CONVERSATIONS_REFRESH_DEBOUNCE_MS, createVoiceStore, type VoiceStore } from './voiceStore'
+import { CONVERSATIONS_REFRESH_DEBOUNCE_MS } from './domains/chatStore'
+import { createTestStore, type TestStore } from '../test/appHarness'
 import { createFakeApi, createFakeCi, type FakeApi } from '../test/fakeApi'
 import { makeLogLine, makeRun, makeStep } from '../test/fixtures'
 import type { CiRunSummary, CiStatus } from '@shared/ci'
 import type { Message } from '@shared/types'
 
 interface Scene {
-  store: VoiceStore
+  store: TestStore
   api: FakeApi
   projectId: string
   taskId: string
@@ -26,7 +27,7 @@ interface Scene {
 /** Проект с задачей в работе и её чатом; сайдбар сужен этим проектом. */
 async function scene(): Promise<Scene> {
   const api = createFakeApi()
-  const store = createVoiceStore({ api, now: () => 1_700_000_000_000 })
+  const store = createTestStore({ api, now: () => 1_700_000_000_000 })
   const project = await api['projects:create']({ name: 'P' })
   const board = await api['board:get']({ id: project.id })
   const work = board.columns[0]!
@@ -46,7 +47,7 @@ async function scene(): Promise<Scene> {
   }
 }
 
-const ids = (store: VoiceStore): string[] => store.getState().conversations.map((c) => c.id)
+const ids = (store: TestStore): string[] => store.getState().conversations.map((c) => c.id)
 
 /** Проматывает окно склейки и даёт улететь отложенному `conversations:list`. */
 async function flushRefresh(): Promise<void> {
@@ -87,7 +88,7 @@ afterEach(() => {
 describe('voiceStore — исключение ожидающего CI-рана', () => {
   it('применяет подтверждённое сервером исключение, а начавшийся ран показывает как running', async () => {
     const ci = createFakeCi()
-    const store = createVoiceStore({ api: createFakeApi(), ci })
+    const store = createTestStore({ api: createFakeApi(), ci })
     const queued = await store.actions.startCiRun('p1', 't1')
     expect(queued?.status).toBe('queued')
 
@@ -204,7 +205,7 @@ describe('voiceStore — сайдбар обновляется по событи
 describe('voiceStore — список reader-чатов и гонка выбора', () => {
   it('readerConversations не сжимается фильтром проекта в сайдбаре', async () => {
     const api = createFakeApi()
-    const store = createVoiceStore({ api, now: () => 1_700_000_000_000 })
+    const store = createTestStore({ api, now: () => 1_700_000_000_000 })
     const project = await api['projects:create']({ name: 'P' })
     await store.actions.init()
     const readerId = await store.actions.newConversation('web-recorder')
@@ -226,7 +227,7 @@ describe('voiceStore — список reader-чатов и гонка выбор
 
   it('устаревший ответ conversations:get не перетирает только что созданный чат', async () => {
     const api = createFakeApi()
-    const store = createVoiceStore({ api, now: () => 1_700_000_000_000 })
+    const store = createTestStore({ api, now: () => 1_700_000_000_000 })
     const old = await api['conversations:create']({ title: 'Старый' })
     await api['messages:add']({ conversationId: old.id, role: 'u1', text: 'привет', time: '10:00' })
     await api['conversations:create']({ title: 'Свежий' })
@@ -253,7 +254,7 @@ describe('voiceStore — список reader-чатов и гонка выбор
 
   it('новые reader-чаты получают различимые имена «Web Reader N»', async () => {
     const api = createFakeApi()
-    const store = createVoiceStore({ api, now: () => 1_700_000_000_000 })
+    const store = createTestStore({ api, now: () => 1_700_000_000_000 })
     await store.actions.init()
 
     await store.actions.newConversation('web-recorder')

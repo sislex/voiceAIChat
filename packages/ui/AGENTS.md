@@ -8,10 +8,20 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
 ## Устройство
 
 - `App.tsx` — единственный экспорт-компонент (`index.ts` реэкспортирует его).
-- `store/voiceStore.ts` — стор как обычное замыкание (`getState/subscribe/actions`),
-  **без React**: тестируется напрямую. React подключается через
-  `store/useVoiceStore.ts`. Голосовые переходы — только через
-  `transition()` из `@shared/stateMachine`, не руками.
+- `store/domains/*.ts` — семь доменных хранилищ (`shell`, `session`, `settings`,
+  `chat`, `voice`, `operations`, `admin`) плюс временно живущий здесь
+  `projectsStore`. Каждое — обычное замыкание `getState/subscribe/actions/dispose`
+  на общей основе `store/createStore.ts`, **без React**: тестируется напрямую.
+  **Хранилища не импортируют друг друга** — соседа им даёт порт от
+  `runtime/appRuntime.ts` (он же ведёт bootstrap, маршрутизацию WS-кадров,
+  logout и dispose). Общие ключи localStorage и голосовой срез настроек — в
+  `store/contracts.ts`. Внешний мир — только через доменные клиенты
+  (`clients/types.ts`), их адаптеры к `window.*` — `clients/browser.ts` и
+  `clients/realtime.ts`. React подключается через `store/react.tsx`
+  (`useChat(selector)`, `useVoice(selector)`, … + `use*Actions`); универсального
+  хука со всеми доменами нет и заводить его нельзя. Голосовые переходы — только
+  через `transition()` из `@shared/stateMachine`, не руками. Границы сторожит
+  `src/architecture.test.ts`.
 - `remote/` — мосты поверх REST+WS: `wsClient` (реконнект, токен сессии),
   `httpApi`, `session` (токен в localStorage), `decode`.
 - `audio/` — захват микрофона (`browserAudio`, `pcmWorkletSource`, `microphones`)
@@ -103,7 +113,7 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   незакоммиченных файлов) — `requireText`: кнопка включается после ввода названия
   объекта. Тексты подтверждений менять нельзя не подумав — они выверены.
 - **Ошибка вызова моста — тостом, а не тишиной.** Стор кладёт её в очередь
-  `notices` (`fail(err, retry?)` в `voiceStore.ts`), `App` показывает тостом и
+  `notices` оболочки (`fail(err, retry?)` в `store/domains/shellStore.ts`), `App` показывает тостом и
   добавляет «Повторить», если `retry` задан. `retry` дают только чтению и
   идемпотентной правке; создание, удаление и запуск CI-рана — без него.
   Баннер `state.error` остался для голоса, хода модели и загрузок.
@@ -161,7 +171,9 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   `src/test/uiRender.tsx` (он оборачивает в `UiProviders`); подтверждение в тесте
   **кликают**, а не мокают. Ответ `confirm()` приходит промисом — после клика по
   кнопке окна ждите `waitFor`/`findBy`.
-  Логика стора — `store/voiceStore.test.ts` без DOM.
+  Логика доменов — `store/domains/stores.contract.test.ts` и `store/appRuntime.*.test.ts`
+  без DOM; координация — `runtime/appRuntime.test.ts`. Поведенческие тесты собирают
+  runtime через `src/test/appHarness.ts` (тестовый харнесс, в приложение не входит).
 
 ## Доступность
 

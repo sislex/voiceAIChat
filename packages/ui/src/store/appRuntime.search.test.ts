@@ -2,15 +2,15 @@
 // четыре состояния панели, пагинация и подсветка найденного сообщения.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { createVoiceStore, type VoiceStore } from './voiceStore'
+import { createTestStore, type TestStore } from '../test/appHarness'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
 import type { MessageSearchHit, MessageSearchResult } from '@shared/types'
 
 const DEBOUNCE = 250
 
-function makeStore(): { store: VoiceStore; api: FakeApi } {
+function makeStore(): { store: TestStore; api: FakeApi } {
   const api = createFakeApi(['Беседа'])
-  return { store: createVoiceStore({ api, now: () => 1_700_000_000_000 }), api }
+  return { store: createTestStore({ api, now: () => 1_700_000_000_000 }), api }
 }
 
 function hit(id: string): MessageSearchHit {
@@ -32,7 +32,7 @@ function page(ids: string[], nextCursor: string | null = null): MessageSearchRes
 }
 
 describe('voiceStore — поиск по сообщениям', () => {
-  let store: VoiceStore
+  let store: TestStore
   let api: FakeApi
 
   beforeEach(() => {
