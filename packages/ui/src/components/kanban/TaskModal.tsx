@@ -352,7 +352,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           onChange={(e) => props.onUpdate(task.id, { assignee: e.target.value || null })}
         >
           <option value="">Не назначен</option>
-          {props.members.map((m) => (
+          {props.members.filter((m) => m.active !== false).map((m) => (
             <option key={m.username} value={m.username}>{m.username}</option>
           ))}
         </select>
