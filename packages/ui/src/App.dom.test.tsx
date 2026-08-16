@@ -859,7 +859,7 @@ describe('App — выход из аккаунта', () => {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users`)
     render(<App api={api} delays={SLOW} />)
 
-    await userEvent.click(await screen.findByRole('button', { name: /admin/ }))
+    await userEvent.click(await screen.findByTitle('Роль: admin'))
     await userEvent.click(screen.getByRole('menuitem', { name: /Выйти/ }))
     expect(logout).not.toHaveBeenCalled()
 

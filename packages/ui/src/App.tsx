@@ -46,7 +46,27 @@ import { KbUsagePanel } from './components/kb/KbUsagePanel'
 import { hasPendingKbUsage } from './lib/kbUsage'
 import { CommandPalette } from './components/CommandPalette'
 import { HotkeysCheatSheet } from './components/HotkeysCheatSheet'
-import { useVoiceStore } from './store/useVoiceStore'
+import {
+  AppRuntimeProvider,
+  useAdmin,
+  useAdminActions,
+  useAppRuntime,
+  useChat,
+  useChatActions,
+  useCreateAppRuntime,
+  useOperations,
+  useOperationsActions,
+  useProjects,
+  useProjectsActions,
+  useSession,
+  useSettings,
+  useSettingsActions,
+  useShell,
+  useShellActions,
+  useVoice,
+  useVoiceActions
+} from './store/react'
+import type { PipelineDelays } from './store/mockPipeline'
 import { useVoiceCues } from './lib/useVoiceCues'
 import { useHashRoute } from './lib/useHashRoute'
 import { useHotkeys, type HotkeyBinding } from './lib/useHotkeys'
@@ -64,7 +84,7 @@ export interface AppProps {
   /** Источник времени для меток сообщений (тесты подменяют детерминированным). */
   now?: () => number
   /** Переопределение задержек мок-пайплайна (тесты ускоряют их). */
-  delays?: Parameters<typeof useVoiceStore>[0]['delays']
+  delays?: Partial<PipelineDelays>
 }
 
 export interface WidgetActionInput {
@@ -391,12 +411,43 @@ export function WebReaderHost({ conversationUrl, projectUrl, onSave, onSelectEle
 export default function App(props: AppProps = {}): JSX.Element {
   return (
     <UiProviders avoidSelector=".voicebar">
-      <AppBody {...props} />
+      <AppRuntimeHost {...props} />
     </UiProviders>
   )
 }
 
-function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
+/** Чат из адреса на момент монтирования: его bootstrap откроет первым. */
+function initialChatIdFromPath(path: string, segments: string[]): string | null {
+  if (segments[0] === 'chat') return segments[1] ?? null
+  if (segments[0] === 'web-reader' || segments[0] === 'web-recorder' || segments[0] === 'playwright-reader') {
+    return segments[1] ?? null
+  }
+  const route = parseProjectsRoute(path)
+  return route?.kind === 'task-chat' ? route.conversationId : null
+}
+
+/**
+ * Композиционный корень состояния: создаёт AppRuntime (он владеет доменными
+ * хранилищами и координирует их) и отдаёт его дереву. Универсального хука со
+ * всеми доменами сразу нет — экраны подписываются на свой домен.
+ */
+function AppRuntimeHost({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
+  const { path, segments } = useHashRoute()
+  const initialChatId = useRef(initialChatIdFromPath(path, segments))
+  const runtime = useCreateAppRuntime({
+    api,
+    ...(now ? { now } : {}),
+    ...(delays ? { delays } : {}),
+    initialChatId: initialChatId.current
+  })
+  return (
+    <AppRuntimeProvider runtime={runtime}>
+      <AppBody api={api} {...(now ? { now } : {})} />
+    </AppRuntimeProvider>
+  )
+}
+
+function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Hash-роутинг: URL — источник навигации (см. useHashRoute).
   const { path, segments, navigate } = useHashRoute()
   const projectsRoute = parseProjectsRoute(path)
@@ -428,7 +479,24 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   const inTaskChat = routeTaskChatId !== null
   const inChat = (!inProjects && !onUtilityPage && !inReader && !inPlaywrightReader) || inTaskChat
   const compactChat = useMediaQuery(CHAT_COMPOSER_QUERY)
-  const { state, actions } = useVoiceStore({ api, now, delays, initialChatId: routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId })
+  // Каждый домен — своя подписка: обновление аудио или админских данных не
+  // тянет за собой перерисовку соседних экранов.
+  const runtime = useAppRuntime()
+  const shell = useShell((s) => s)
+  const session = useSession((s) => s)
+  const settingsState = useSettings((s) => s)
+  const chat = useChat((s) => s)
+  const voice = useVoice((s) => s)
+  const operations = useOperations((s) => s)
+  const admin = useAdmin((s) => s)
+  const projects = useProjects((s) => s)
+  const shellActions = useShellActions()
+  const settingsActions = useSettingsActions()
+  const chatActions = useChatActions()
+  const voiceActions = useVoiceActions()
+  const operationsActions = useOperationsActions()
+  const adminActions = useAdminActions()
+  const projectsActions = useProjectsActions()
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
@@ -451,22 +519,22 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     const saved = Number(globalThis.localStorage?.getItem('voicechat.previewWidth'))
     return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 45
   })
-  useEffect(() => { setPreviewElement(null) }, [state.activeId])
+  useEffect(() => { setPreviewElement(null) }, [chat.activeId])
   // Действия модели в превью (mcp__browser__*): регистрация хранит не только
   // runner, но и чат панели. Это не даёт переключившемуся чату обратиться к host,
   // который ещё размонтируется, и делает Reader-маршруты единым источником истины.
   const previewRunnerRef = useRef<{ conversationId: string; runner: PreviewActionRunner } | null>(null)
   const registerPreviewRunner = useCallback((runner: PreviewActionRunner | null) => {
-    if (runner && state.activeId) previewRunnerRef.current = { conversationId: state.activeId, runner }
-    else if (!runner && previewRunnerRef.current?.conversationId === state.activeId) previewRunnerRef.current = null
-  }, [state.activeId])
+    if (runner && chat.activeId) previewRunnerRef.current = { conversationId: chat.activeId, runner }
+    else if (!runner && previewRunnerRef.current?.conversationId === chat.activeId) previewRunnerRef.current = null
+  }, [chat.activeId])
   useEffect(() => {
     const bridge = window.preview
     if (!bridge) return
     return bridge.onAction(({ conversationId, requestId, action }) => {
       void (async (): Promise<PreviewActionOutcome> => {
         // Действия ограничены активной Reader-страницей и host-ом того же чата.
-        if (state.activeId !== conversationId || (!inReader && !inPlaywrightReader)) {
+        if (chat.activeId !== conversationId || (!inReader && !inPlaywrightReader)) {
           return { ok: false, error: 'Этот чат сейчас не открыт на странице Reader — панель превью недоступна.' }
         }
         const registration = previewRunnerRef.current
@@ -475,7 +543,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         }
         if (action.kind === 'open') {
           try {
-            await actions.setConversationPreviewUrl(conversationId, action.url)
+            await chatActions.setConversationPreviewUrl(conversationId, action.url)
             setPreviewElement(null)
             return registration.runner(action)
           } catch {
@@ -485,14 +553,14 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         return registration.runner(action)
       })().then((outcome) => bridge.result({ requestId, ...outcome }))
     })
-  }, [state.activeId, actions, inReader, inPlaywrightReader])
+  }, [chat.activeId, chatActions, inReader, inPlaywrightReader])
   useEffect(() => {
     let alive = true
-    const projectId = state.conversations.find((conversation) => conversation.id === state.activeId)?.projectId
+    const projectId = chat.conversations.find((conversation) => conversation.id === chat.activeId)?.projectId
     if (!projectId) { setActiveProjectPreviewUrl(null); return }
     void api['projects:get']({ id: projectId }).then((project) => { if (alive) setActiveProjectPreviewUrl(project?.previewUrl ?? null) })
     return () => { alive = false }
-  }, [api, state.activeId, state.conversations])
+  }, [api, chat.activeId, chat.conversations])
   const resizePreview = (event: ReactPointerEvent<HTMLDivElement>): void => {
     event.currentTarget.setPointerCapture(event.pointerId)
     const container = event.currentTarget.parentElement
@@ -513,21 +581,16 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   }, [api])
   const toast = useToast()
   const confirm = useConfirm()
-  const authed = !state.authRequired || Boolean(state.currentUser)
-  // Мобильный режим: выдвинут ли сайдбар (на десктопе класс side--open не влияет).
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const authed = !session.authRequired || Boolean(session.currentUser)
+  // Состояние оболочки живёт в shellStore: выдвижной сайдбар на телефоне и
+  // свёрнутый на десктопе (персист под прежним ключом `vc:sidebarCollapsed`).
+  const sidebarOpen = shell.sidebarOpen
+  const collapsed = shell.sidebarCollapsed
+  const setSidebarOpen = shellActions.setSidebarOpen
   // Любой переход закрывает выдвижной сайдбар: он рисуется поверх контента, и
   // забытая открытой панель закрывала собой открытую страницу или карточку
   // (напр. переход «Открыть задачу» из шапки связанного чата).
-  useEffect(() => { setSidebarOpen(false) }, [path])
-  // Десктоп: свёрнут ли сайдбар (колонка → 0). Персист в localStorage.
-  const [collapsed, setCollapsed] = useState(() => {
-    try { return localStorage.getItem('vc:sidebarCollapsed') === '1' } catch { return false }
-  })
-  const setCollapsedPersist = (v: boolean): void => {
-    setCollapsed(v)
-    try { localStorage.setItem('vc:sidebarCollapsed', v ? '1' : '0') } catch { /* приватный режим */ }
-  }
+  useEffect(() => { setSidebarOpen(false) }, [path, setSidebarOpen])
   const sidebarExpanded = compactChat ? sidebarOpen : !collapsed
   const focusSidebarToggle = (): void => {
     document.querySelector<HTMLButtonElement>('.sidebar-toggle')?.focus()
@@ -537,8 +600,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     if (restoreFocus) focusSidebarToggle()
   }
   const toggleSidebar = (): void => {
-    if (compactChat) setSidebarOpen((value) => !value)
-    else setCollapsedPersist(!collapsed)
+    if (compactChat) setSidebarOpen(!sidebarOpen)
+    else shellActions.setSidebarCollapsed(!collapsed)
   }
   useEffect(() => {
     if (!compactChat || !sidebarOpen) return
@@ -567,53 +630,53 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   // (переключатель) живёт до следующей смены маршрута.
   const [sidebarMode, setSidebarMode] = useState<'chats' | 'projects'>('chats')
   useEffect(() => { setSidebarMode(inProjects ? 'projects' : 'chats') }, [inProjects])
-  useVoiceCues(state.voice) // звуковые сигналы: старт/стоп записи, «думает»
+  useVoiceCues(voice.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
   // Канал уведомлений стора → тосты. Показанные сразу снимаем из очереди, а
   // отданные id помним: без этого повторный прогон эффекта (StrictMode) показал
   // бы каждое уведомление дважды.
   const shownNotices = useRef(new Set<string>())
   useEffect(() => {
-    for (const notice of state.notices) {
+    for (const notice of shell.notices) {
       if (!shownNotices.current.has(notice.id)) {
         shownNotices.current.add(notice.id)
         toast[notice.kind](notice.text, notice.retry ? { action: { label: 'Повторить', onClick: notice.retry } } : undefined)
       }
-      actions.dismissNotice(notice.id)
+      shellActions.dismissNotice(notice.id)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.notices])
+  }, [shell.notices])
 
   // Тема дублируется на <html>: модальные окна уходят порталом в document.body,
   // вне .app, и без этого теряли бы токены [data-theme='dark'].
   useEffect(() => {
-    document.documentElement.dataset.theme = state.settings.theme
-  }, [state.settings.theme])
+    document.documentElement.dataset.theme = settingsState.settings.theme
+  }, [settingsState.settings.theme])
 
   // Командная палитра (⌘K) и шпаргалка (?) — окна поверх всего остального.
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [cheatSheetOpen, setCheatSheetOpen] = useState(false)
 
   const stopOrCancel = (): void => {
-    const v = state.voice
-    if (v === 'thinking' || v === 'speaking') actions.cancelRequest()
-    else if (v === 'listening') actions.stopVoice()
+    const v = voice.voice
+    if (v === 'thinking' || v === 'speaking') chatActions.cancelRequest()
+    else if (v === 'listening') voiceActions.stopVoice()
   }
 
   // Горячие клавиши: пробел (hold) — запись, Esc — стоп/отмена по состоянию,
   // плюс биндинги палитры и шпаргалки. `enabled` гасит только голосовые клавиши
   // (модал настроек — свои поля и фокус); у остальных биндингов свой `enabled`.
   const hotkeyBindings: HotkeyBinding[] = buildHotkeyBindings({
-    onboarded: state.settings.onboarded,
-    voice: state.voice,
+    onboarded: settingsState.settings.onboarded,
+    voice: voice.voice,
     togglePalette: () => setPaletteOpen((v) => !v),
     openCheatSheet: () => setCheatSheetOpen(true)
   })
 
   useHotkeys({
-    enabled: !state.settingsOpen && state.settings.onboarded,
-    onPushStart: actions.startVoice,
-    onPushEnd: actions.stopVoice,
+    enabled: !shell.settingsOpen && settingsState.settings.onboarded,
+    onPushStart: voiceActions.startVoice,
+    onPushEnd: voiceActions.stopVoice,
     onEscape: stopOrCancel,
     bindings: hotkeyBindings
   })
@@ -624,18 +687,18 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   // Источник — функция: она вызывается в момент сборки списка, поэтому видит
   // свежее состояние стора, а не то, что было на момент регистрации.
   const boardProjectName =
-    state.projectDetail?.id === state.activeProjectId
-      ? state.projectDetail.name
-      : state.projects.find((p) => p.id === state.activeProjectId)?.name ?? null
+    projects.projectDetail?.id === projects.activeProjectId
+      ? projects.projectDetail.name
+      : projects.projects.find((p) => p.id === projects.activeProjectId)?.name ?? null
   // Куда ведёт вход в раздел «Проекты» и удаление текущего проекта.
-  const firstProjectId = state.projects[0]?.id ?? null
+  const firstProjectId = projects.projects[0]?.id ?? null
   const routeProjectName =
-    (state.projectDetail?.id === routeProjectId ? state.projectDetail!.name : null) ??
-    state.projects.find((p) => p.id === routeProjectId)?.name ??
+    (projects.projectDetail?.id === routeProjectId ? projects.projectDetail!.name : null) ??
+    projects.projects.find((p) => p.id === routeProjectId)?.name ??
     'Проект'
   const kanbanAssistantContext = useMemo<WidgetAssistantContext<KanbanAssistantSelection>>(() => {
-    const project = state.projects.find((item) => item.id === routeProjectId) ?? null
-    const board = state.activeProjectId === routeProjectId ? state.board : null
+    const project = projects.projects.find((item) => item.id === routeProjectId) ?? null
+    const board = projects.activeProjectId === routeProjectId ? projects.board : null
     const openTask = board?.tasks.find((task) => task.id === assistantTaskId) ?? null
     return {
       version: 1,
@@ -644,39 +707,39 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       selection: board && routeProjectId ? { board: { projectId: routeProjectId, columns: board.columns, tasks: board.tasks, revision: String(Math.max(0, ...board.tasks.map((task) => task.updatedAt)) ) }, openTask, selectedField: assistantField } : null,
       recentActions: widgetActions
     }
-  }, [state.projects, state.board, state.activeProjectId, routeProjectId, routeProjectName, assistantTaskId, assistantField, widgetActions])
+  }, [projects.projects, projects.board, projects.activeProjectId, routeProjectId, routeProjectName, assistantTaskId, assistantField, widgetActions])
   // Список загружен, а проекта из адреса в нём нет: удалён или нет доступа.
   const projectMissing =
-    routeProjectId !== null && state.projectsLoaded && !state.projects.some((p) => p.id === routeProjectId)
+    routeProjectId !== null && projects.projectsLoaded && !projects.projects.some((p) => p.id === routeProjectId)
   useCommandSource(() =>
     buildAppCommands({
       voiceEnabled: VOICE_INPUT_ENABLED,
-      voice: state.voice,
-      autoSpeak: state.settings.autoSpeak,
-      theme: state.settings.theme,
-      web: state.authRequired,
+      voice: voice.voice,
+      autoSpeak: settingsState.settings.autoSpeak,
+      theme: settingsState.settings.theme,
+      web: session.authRequired,
       paletteOpen,
-      boardProjectId: state.activeProjectId ?? state.projects[0]?.id ?? null,
-      chats: state.conversations,
-      projects: state.projects,
-      tasks: state.board?.tasks ?? [],
+      boardProjectId: projects.activeProjectId ?? projects.projects[0]?.id ?? null,
+      chats: chat.conversations,
+      projects: projects.projects,
+      tasks: projects.board?.tasks ?? [],
       taskProject:
-        state.activeProjectId && boardProjectName
-          ? { id: state.activeProjectId, name: boardProjectName }
+        projects.activeProjectId && boardProjectName
+          ? { id: projects.activeProjectId, name: boardProjectName }
           : null,
-      machines: state.authRequired ? state.agents : [],
-      newChat: () => void actions.newConversation().then((id) => navigate(id ? `/chat/${id}` : '/')),
-      toggleMic: () => (state.voice === 'listening' ? actions.stopVoice() : actions.startVoice()),
+      machines: session.authRequired ? operations.agents : [],
+      newChat: () => void chatActions.newConversation().then((id) => navigate(id ? `/chat/${id}` : '/')),
+      toggleMic: () => (voice.voice === 'listening' ? voiceActions.stopVoice() : voiceActions.startVoice()),
       stopOrCancel,
-      toggleAutoSpeak: () => void actions.updateSettings({ autoSpeak: !state.settings.autoSpeak }),
-      toggleTheme: () => void actions.updateSettings({ theme: state.settings.theme === 'dark' ? 'light' : 'dark' }),
-      openSettings: actions.openSettings,
+      toggleAutoSpeak: () => void settingsActions.updateSettings({ autoSpeak: !settingsState.settings.autoSpeak }),
+      toggleTheme: () => void settingsActions.updateSettings({ theme: settingsState.settings.theme === 'dark' ? 'light' : 'dark' }),
+      openSettings: shellActions.openSettings,
       openBoard: (projectId) => navigate(`/projects/${projectId}`),
       openMachineConsole: (agentId) =>
-        agentId ? actions.openUtility('console', agentId) : actions.openUtilityForActiveChat('console'),
+        agentId ? operationsActions.openUtility('console', agentId) : operationsActions.openUtilityForActiveChat('console'),
       openKnowledgeBase: () => navigate('/kb'),
-      openKbUsage: actions.openKbUsage,
-      logout: () => void actions.logout(),
+      openKbUsage: runtime.openKbUsage,
+      logout: () => void runtime.logout(),
       openPalette: () => setPaletteOpen(true),
       openCheatSheet: () => setCheatSheetOpen(true),
       openChat: (id) => navigate(`/chat/${id}`),
@@ -695,14 +758,14 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     if (!authed || !inChat) return
     if (routeChatId && routeChatId !== syncedChatId.current) {
       syncedChatId.current = routeChatId
-      if (routeChatId === state.activeId) return // стор уже открыл этот чат
-      const fallback = state.activeId
-      void actions.selectConversation(routeChatId).then((ok) => {
+      if (routeChatId === chat.activeId) return // стор уже открыл этот чат
+      const fallback = chat.activeId
+      void chatActions.selectConversation(routeChatId).then((ok) => {
         if (ok || syncedChatId.current !== routeChatId) return
         // Чата нет (удалён или чужой) — возвращаемся к прежнему.
         syncedChatId.current = fallback
         if (fallback) {
-          void actions.selectConversation(fallback)
+          void chatActions.selectConversation(fallback)
           navigate(`/chat/${fallback}`, { replace: true })
         } else {
           navigate('/', { replace: true })
@@ -710,30 +773,30 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       })
       return
     }
-    if (state.activeId && (routeChatId === null || state.activeId !== syncedChatId.current)) {
-      syncedChatId.current = state.activeId
-      navigate(`/chat/${state.activeId}`, { replace: true })
+    if (chat.activeId && (routeChatId === null || chat.activeId !== syncedChatId.current)) {
+      syncedChatId.current = chat.activeId
+      navigate(`/chat/${chat.activeId}`, { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inChat, routeChatId, state.activeId])
+  }, [authed, inChat, routeChatId, chat.activeId])
 
   // Отдельный экран Web Reader держит только типизированные чаты; старые
   // разговоры с сохранённым URL совместимы с ним и остаются доступны после переноса.
   // ID обычного чата в адресе не должен превращать Reader во второй экран чата.
-  // Список — state.readerConversations (полный ответ conversations:list): фильтр
+  // Список — chat.readerConversations (полный ответ conversations:list): фильтр
   // проекта в сайдбаре обычного чата не должен ни сжимать его, ни зациклить
   // создание, когда только что созданный чат не попал бы в срез проекта.
   const readerCreating = useRef(false)
   const createReaderChat = (replace = false): void => {
     if (readerCreating.current) return
     readerCreating.current = true
-    void actions.newConversation('web-recorder')
+    void chatActions.newConversation('web-recorder')
       .then((id) => { if (id) navigate(`/web-reader/${id}`, { replace }) })
       .catch(() => { /* ошибка уже показана стором */ })
       .finally(() => { readerCreating.current = false })
   }
   useEffect(() => {
-    if (!authed || !inReader || state.conversationsStatus !== 'ready') return
+    if (!authed || !inReader || chat.conversationsStatus !== 'ready') return
     if (legacyReaderRoute) {
       navigate(`/web-reader${routeReaderChatId ? `/${routeReaderChatId}` : ''}`, { replace: true })
       return
@@ -741,53 +804,53 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     // Пока создание нового чата в полёте, авто-выбор молчит: иначе обновление
     // списка успело бы увести activeId на старый чат или создать второй.
     if (readerCreating.current) return
-    const readerChats = state.readerConversations
+    const readerChats = chat.readerConversations
     const routedReaderChat = readerChats.find((item) => item.id === routeReaderChatId)
     if (routedReaderChat) {
-      if (routedReaderChat.id !== state.activeId) void actions.selectConversation(routedReaderChat.id)
+      if (routedReaderChat.id !== chat.activeId) void chatActions.selectConversation(routedReaderChat.id)
       return
     }
     const target = readerChats[0]
     if (target) { navigate(`/web-reader/${target.id}`, { replace: true }); return }
     createReaderChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inReader, legacyReaderRoute, routeReaderChatId, state.activeId, state.readerConversations, state.conversationsStatus, actions, navigate])
+  }, [authed, inReader, legacyReaderRoute, routeReaderChatId, chat.activeId, chat.readerConversations, chat.conversationsStatus, chatActions, navigate])
 
   const playwrightReaderCreating = useRef(false)
   const createPlaywrightReaderChat = (replace = false): void => {
     if (playwrightReaderCreating.current) return
     playwrightReaderCreating.current = true
-    void actions.newConversation('playwright-reader')
+    void chatActions.newConversation('playwright-reader')
       .then((id) => { if (id) navigate(`/playwright-reader/${id}`, { replace }) })
       .catch(() => { /* store owns the visible error */ })
       .finally(() => { playwrightReaderCreating.current = false })
   }
   useEffect(() => {
-    if (!authed || !inPlaywrightReader || state.conversationsStatus !== 'ready' || playwrightReaderCreating.current) return
-    const chats = state.playwrightReaderConversations
+    if (!authed || !inPlaywrightReader || chat.conversationsStatus !== 'ready' || playwrightReaderCreating.current) return
+    const chats = chat.playwrightReaderConversations
     const routed = chats.find((item) => item.id === routePlaywrightReaderChatId)
     if (routed) {
-      if (routed.id !== state.activeId) void actions.selectConversation(routed.id)
+      if (routed.id !== chat.activeId) void chatActions.selectConversation(routed.id)
       return
     }
     const fallback = chats[0]
     if (fallback) { navigate(`/playwright-reader/${fallback.id}`, { replace: true }); return }
     createPlaywrightReaderChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inPlaywrightReader, routePlaywrightReaderChatId, state.activeId, state.playwrightReaderConversations, state.conversationsStatus, actions, navigate])
+  }, [authed, inPlaywrightReader, routePlaywrightReaderChatId, chat.activeId, chat.playwrightReaderConversations, chat.conversationsStatus, chatActions, navigate])
 
   // URL → данные стора: вход/выход в раздел «Проекты», загрузка доски и
   // оверлея настроек. Навигацию делают клики (navigate), данные грузятся тут.
   useEffect(() => {
     if (!authed) return
-    if (inProjects) { if (!state.projectsOpen) void actions.openProjects() }
-    else if (state.projectsOpen) actions.closeProjects()
+    if (inProjects) { if (!projects.projectsOpen) void projectsActions.openProjects() }
+    else if (projects.projectsOpen) projectsActions.closeProjects()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects])
   useEffect(() => {
     if (!authed || !inProjects) return
-    if (routeProjectId) { if (state.activeProjectId !== routeProjectId) void actions.openBoard(routeProjectId) }
-    else if (state.activeProjectId) actions.closeBoard()
+    if (routeProjectId) { if (projects.activeProjectId !== routeProjectId) void projectsActions.openBoard(routeProjectId) }
+    else if (projects.activeProjectId) projectsActions.closeBoard()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects, routeProjectId])
   // Прямая ссылка на завершённую задачу: сервер прячет с доски давно готовые
@@ -795,11 +858,11 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   // один раз включаем «Показать завершённые» и доска приходит целиком.
   useEffect(() => {
     if (!authed || !inProjects || !routeTaskId) return
-    if (state.boardIncludeCompleted || state.boardLoading || !state.board) return
-    if (state.board.tasks.some((t) => t.id === routeTaskId)) return
-    void actions.setBoardIncludeCompleted(true)
+    if (projects.boardIncludeCompleted || projects.boardLoading || !projects.board) return
+    if (projects.board.tasks.some((t) => t.id === routeTaskId)) return
+    void projectsActions.setBoardIncludeCompleted(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inProjects, routeTaskId, state.board, state.boardLoading, state.boardIncludeCompleted])
+  }, [authed, inProjects, routeTaskId, projects.board, projects.boardLoading, projects.boardIncludeCompleted])
   // Страницы-списка проектов нет: #/projects без id — это всегда переход на
   // первый проект списка. Правило то же, что у клика «Проекты» в сайдбаре,
   // поэтому персист последнего проекта не нужен. Нет проектов — редиректа нет,
@@ -811,76 +874,76 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   }, [authed, inProjects, routeProjectId, firstProjectId])
   useEffect(() => {
     if (!authed) return
-    if (routeSettings || routeReleases) { if (!state.projectSettingsOpen) actions.openProjectSettings() }
-    else if (state.projectSettingsOpen) actions.closeProjectSettings()
+    if (routeSettings || routeReleases) { if (!projects.projectSettingsOpen) projectsActions.openProjectSettings() }
+    else if (projects.projectSettingsOpen) projectsActions.closeProjectSettings()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, routeSettings, routeReleases])
   // URL → данные стора: утилиты-страницы. Вход на маршрут грузит данные, уход
   // зовёт close* — store-экшены прежние, поменялся только триггер (URL).
   useEffect(() => {
-    if (utilitySeg === 'claude-code') { if (!state.ccOpen) void actions.openObserver() }
-    else if (state.ccOpen) actions.closeObserver()
+    if (utilitySeg === 'claude-code') { if (!operations.ccOpen) void operationsActions.openObserver() }
+    else if (operations.ccOpen) operationsActions.closeObserver()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg])
   useEffect(() => {
-    if (utilitySeg === 'codex') { if (!state.cxOpen) void actions.openCodexObserver() }
-    else if (state.cxOpen) actions.closeCodexObserver()
+    if (utilitySeg === 'codex') { if (!operations.cxOpen) void operationsActions.openCodexObserver() }
+    else if (operations.cxOpen) operationsActions.closeCodexObserver()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg])
   useEffect(() => {
-    if (!state.authRequired) return
-    if (utilitySeg === 'machines') { if (!state.machinesOpen) actions.openMachines() }
-    else if (state.machinesOpen) actions.closeMachines()
+    if (!session.authRequired) return
+    if (utilitySeg === 'machines') { if (!operations.machinesOpen) operationsActions.openMachines() }
+    else if (operations.machinesOpen) operationsActions.closeMachines()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg])
   useEffect(() => {
-    if (!state.authRequired) return
-    if (utilitySeg === 'ci') { if (!state.ciOpen) void actions.openCi() }
-    else if (state.ciOpen) actions.closeCi()
+    if (!session.authRequired) return
+    if (utilitySeg === 'ci') { if (!projects.ciOpen) void projectsActions.openCi() }
+    else if (projects.ciOpen) projectsActions.closeCi()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg])
   useEffect(() => {
-    if (!state.authRequired) return
-    if (utilitySeg === 'users') { if (!state.usersOpen) void actions.openUsers() }
-    else if (state.usersOpen) actions.closeUsers()
+    if (!session.authRequired) return
+    if (utilitySeg === 'users') { if (!admin.usersOpen) void runtime.openAdmin() }
+    else if (admin.usersOpen) adminActions.closeUsers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg])
   useEffect(() => {
-    if (utilitySeg !== 'users' || !routeUserName || !state.usersOpen || state.adminSelected === routeUserName) return
-    void actions.selectAdminUser(routeUserName)
+    if (utilitySeg !== 'users' || !routeUserName || !admin.usersOpen || admin.adminSelected === routeUserName) return
+    void adminActions.selectAdminUser(routeUserName)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [utilitySeg, routeUserName, state.usersOpen, state.adminSelected])
+  }, [utilitySeg, routeUserName, admin.usersOpen, admin.adminSelected])
   // Гейты: «Пользователи» — только админ; машины/пользователи — только web.
   useEffect(() => {
-    if (utilitySeg === 'users' && state.currentUser && state.currentUser.role !== 'admin' && routeUserName && routeUserName !== state.currentUser.name) navigate('/users')
-    if ((utilitySeg === 'users' || utilitySeg === 'machines' || utilitySeg === 'ci') && !state.authRequired) navigate('/')
+    if (utilitySeg === 'users' && session.currentUser && session.currentUser.role !== 'admin' && routeUserName && routeUserName !== session.currentUser.name) navigate('/users')
+    if ((utilitySeg === 'users' || utilitySeg === 'machines' || utilitySeg === 'ci') && !session.authRequired) navigate('/')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [utilitySeg, routeUserName, state.currentUser, state.authRequired])
+  }, [utilitySeg, routeUserName, session.currentUser, session.authRequired])
 
   // Активный чат может быть ещё не выбран или не быть reader-чатом (грузится по
   // ссылке): подсвечивать вместо него первый пункт селектора нельзя — покажем плейсхолдер.
-  const readerActiveListed = state.readerConversations.some((c) => c.id === state.activeId)
-  const playwrightReaderActiveListed = state.playwrightReaderConversations.some((c) => c.id === state.activeId)
-  const activeConversation = state.conversations.find((c) => c.id === state.activeId)
+  const readerActiveListed = chat.readerConversations.some((c) => c.id === chat.activeId)
+  const playwrightReaderActiveListed = chat.playwrightReaderConversations.some((c) => c.id === chat.activeId)
+  const activeConversation = chat.conversations.find((c) => c.id === chat.activeId)
   const activeTitle = activeConversation?.title ?? 'Новый разговор'
   const activeExecTarget = activeConversation?.execTarget ?? null
-  const activeKbUsage = state.activeId ? state.kbUsage[state.activeId] : undefined
+  const activeKbUsage = chat.activeId ? chat.kbUsage[chat.activeId] : undefined
   // Счётчик обращений на кнопке «Использование БЗ» должен быть честным ДО
   // открытия панели, поэтому снапшот читаем при открытии чата и после каждого
   // нового сообщения (новый ход = возможные новые обращения).
   useEffect(() => {
-    if (authed && state.activeId) void actions.loadKbUsage(state.activeId)
+    if (authed && chat.activeId) void chatActions.loadKbUsage(chat.activeId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, state.activeId, state.messages.length])
-  const forcedPlan = state.currentUser?.role !== 'admin' && (!activeExecTarget || activeExecTarget === 'none')
+  }, [authed, chat.activeId, chat.messages.length])
+  const forcedPlan = session.currentUser?.role !== 'admin' && (!activeExecTarget || activeExecTarget === 'none')
   const activePermissionMode: PermissionMode = forcedPlan
     ? 'plan'
-    : activeConversation?.permissionMode ?? state.settings.permissionMode
-  const ciProvider = state.settings.llmProvider
-  const ciModel = ciProvider === 'codex' ? state.settings.codexModel : state.settings.model
-  const allowedClaudeModels = allowedModels(state.llmAccess, 'claude')
-  const allowedCodexModels = allowedModels(state.llmAccess, 'codex')
-  const allowedProviders = (['claude', 'codex'] as const).filter((provider) => isProviderAllowed(state.llmAccess, provider) && (provider === 'claude' ? allowedClaudeModels.length : allowedCodexModels.length))
+    : activeConversation?.permissionMode ?? settingsState.settings.permissionMode
+  const ciProvider = settingsState.settings.llmProvider
+  const ciModel = ciProvider === 'codex' ? settingsState.settings.codexModel : settingsState.settings.model
+  const allowedClaudeModels = allowedModels(settingsState.llmAccess, 'claude')
+  const allowedCodexModels = allowedModels(settingsState.llmAccess, 'codex')
+  const allowedProviders = (['claude', 'codex'] as const).filter((provider) => isProviderAllowed(settingsState.llmAccess, provider) && (provider === 'claude' ? allowedClaudeModels.length : allowedCodexModels.length))
   const proposalModels = taskProposal?.provider === 'codex' ? allowedCodexModels : allowedClaudeModels
   const openedTaskLaunches = useRef(new Set<string>())
 
@@ -890,18 +953,18 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       return false
     }
     const projectId = activeConversation.projectId
-    const board = state.activeProjectId === projectId && state.board
-      ? state.board
+    const board = projects.activeProjectId === projectId && projects.board
+      ? projects.board
       : await api['board:get']({ id: projectId })
     const column = board.columns.find((item) => item.semanticType === 'backlog') ?? board.columns[0]
     if (!column) {
       toast.error('Невозможно создать задачу: в проекте нет колонок.')
       return false
     }
-    const project = state.projects.find((item) => item.id === projectId)
-    const detail = state.projectDetail?.id === projectId
-      ? state.projectDetail
-      : await actions.fetchProjectDetail(projectId)
+    const project = projects.projects.find((item) => item.id === projectId)
+    const detail = projects.projectDetail?.id === projectId
+      ? projects.projectDetail
+      : await projectsActions.fetchProjectDetail(projectId)
     const now = Date.now()
     const provider = allowedProviders.includes(ciProvider) ? ciProvider : (allowedProviders[0] ?? ciProvider)
     const models = provider === 'codex' ? allowedCodexModels : allowedClaudeModels
@@ -941,8 +1004,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   }
 
   useEffect(() => {
-    if (taskProposal || !activeConversation || !inChat || routeChatId !== state.activeId) return
-    const message = [...state.messages].reverse().find((item) => item.role === 'ai' && (item.meta?.taskLaunches?.length || item.meta?.taskLaunch))
+    if (taskProposal || !activeConversation || !inChat || routeChatId !== chat.activeId) return
+    const message = [...chat.messages].reverse().find((item) => item.role === 'ai' && (item.meta?.taskLaunches?.length || item.meta?.taskLaunch))
     if (!message) return
     const proposals: TaskLaunchProposal[] = message.meta?.taskLaunches?.length
       ? message.meta.taskLaunches
@@ -953,10 +1016,10 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
     if (!proposal) return
     openedTaskLaunches.current.add(`${message.id}:${proposal.id}`)
     void openTaskProposal(proposal, message.id).then((opened) => {
-      if (opened) void actions.updateTaskLaunchStatus(message.id, proposal.id, 'opened')
+      if (opened) void chatActions.updateTaskLaunchStatus(message.id, proposal.id, 'opened')
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.messages, state.activeId, routeChatId, inChat, taskProposal, activeConversation?.id, activeConversation?.projectId])
+  }, [chat.messages, chat.activeId, routeChatId, inChat, taskProposal, activeConversation?.id, activeConversation?.projectId])
 
   const chooseTaskLaunch = async (mode: 'todo' | 'in-progress' | 'chat'): Promise<void> => {
     if (!taskProposal || taskLaunchPending) return
@@ -985,19 +1048,19 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         })
         toast.success('Задача создана в TODO')
       } else if (mode === 'in-progress') {
-        const run = await actions.createTaskAndStartCi(taskProposal.projectId, { ...task, provider: taskProposal.provider, model: taskProposal.model })
+        const run = await projectsActions.createTaskAndStartCi(taskProposal.projectId, { ...task, provider: taskProposal.provider, model: taskProposal.model })
         if (!run) return
         toast.success('Задача создана и поставлена в CI-очередь')
       }
-      await actions.updateTaskLaunchStatus(taskProposal.messageId, taskProposal.proposalId, mode === 'chat' ? 'declined' : 'created')
+      await chatActions.updateTaskLaunchStatus(taskProposal.messageId, taskProposal.proposalId, mode === 'chat' ? 'declined' : 'created')
       setTaskProposal(null)
       const selection = mode === 'todo'
         ? 'Пользователь выбрал: создать предложенную задачу в TODO.'
         : mode === 'in-progress'
           ? 'Пользователь выбрал: создать предложенную задачу в InProgress и начать разработку.'
           : 'Пользователь выбрал: работать над предложенной задачей в текущем чате без создания карточки.'
-      actions.setDraft(selection)
-      await actions.submitText()
+      chatActions.setDraft(selection)
+      await chatActions.submitText()
       if (mode === 'chat') toast.success('Продолжаем работу в текущем чате')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Не удалось создать задачу')
@@ -1017,7 +1080,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         confirmLabel: 'Перейти'
       }))
     ) return
-    await actions.setConversationExecTarget(
+    await chatActions.setConversationExecTarget(
       activeConversation.id,
       activeConversation.execTarget,
       activeConversation.workdir,
@@ -1030,24 +1093,24 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
 
   // Номера обнаруженных спикеров — из растущего транскрипта; при пустом live —
   // от режима диаризации (как в прототипе).
-  const liveSpeakers = [...new Set(state.liveSegments.map((s) => s.speakerId))].sort((a, b) => a - b)
+  const liveSpeakers = [...new Set(voice.liveSegments.map((s) => s.speakerId))].sort((a, b) => a - b)
   const detectedSpeakers =
-    liveSpeakers.length > 0 ? liveSpeakers : state.settings.diarization ? [1, 2] : [1]
+    liveSpeakers.length > 0 ? liveSpeakers : settingsState.settings.diarization ? [1, 2] : [1]
 
-  const showConsole = state.settings.showConsole
+  const showConsole = settingsState.settings.showConsole
 
   // Операции над машиной для утилит (консоль/проводник); только web (есть мост fs).
-  const machineOps: MachineOps | undefined = state.authRequired
+  const machineOps: MachineOps | undefined = session.authRequired
     ? {
-        list: actions.fsList,
-        read: actions.fsRead,
-        write: actions.fsWrite,
-        remove: actions.fsRemove,
-        rename: actions.fsRename,
-        mkdir: actions.fsMkdir,
-        download: actions.downloadFsFile,
-        upload: actions.uploadFsFile,
-        exec: actions.agentExec
+        list: operationsActions.fsList,
+        read: operationsActions.fsRead,
+        write: operationsActions.fsWrite,
+        remove: operationsActions.fsRemove,
+        rename: operationsActions.fsRename,
+        mkdir: operationsActions.fsMkdir,
+        download: operationsActions.downloadFsFile,
+        upload: operationsActions.uploadFsFile,
+        exec: operationsActions.agentExec
       }
     : undefined
 
@@ -1055,8 +1118,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   // ↑/↓ должны листать то же, что набирали до этого. Объект пересобирается на
   // каждый рендер (как machineOps) — в зависимости эффектов его не кладут.
   const consoleHistory: ConsoleHistoryStore = {
-    get: (agentId) => state.consoleHistory[agentId] ?? [],
-    push: actions.pushConsoleCommand
+    get: (agentId) => operations.consoleHistory[agentId] ?? [],
+    push: operationsActions.pushConsoleCommand
   }
 
   // Закрывает мобильный сайдбар и выполняет действие пункта меню.
@@ -1066,12 +1129,12 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
   }
 
   // Многопользовательский режим (web): пока не вошли — показываем экран логина.
-  if (state.authRequired && !state.currentUser) {
+  if (session.authRequired && !session.currentUser) {
     return (
       <LoginScreen
-        onLogin={(name, password) => void actions.login(name, password)}
-        error={state.authError}
-        theme={state.settings.theme}
+        onLogin={(name, password) => void runtime.login(name, password)}
+        error={session.authError}
+        theme={settingsState.settings.theme}
       />
     )
   }
@@ -1085,7 +1148,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         inReader && 'app--web-reader',
         inPlaywrightReader && 'app--playwright-reader'
       ].filter(Boolean).join(' ')}
-      data-theme={state.settings.theme}
+      data-theme={settingsState.settings.theme}
     >
       {release?.version && (() => {
         const details = [
@@ -1106,80 +1169,86 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       {!inReader && !inPlaywrightReader && <>
       <Sidebar
         open={sidebarOpen}
-        onToggleCollapse={() => setCollapsedPersist(true)}
-        conversations={state.conversations.filter((conversation) => conversation.assistantKind !== 'web-recorder' && !conversation.previewUrl)}
-        conversationsStatus={state.conversationsStatus}
-        conversationsError={state.conversationsError}
-        onRetryConversations={() => void actions.retryConversations()}
-        activeId={state.activeId}
-        taskBadges={state.taskChatBadges}
-        ciSummaries={state.ciSummaries}
+        onToggleCollapse={() => shellActions.setSidebarCollapsed(true)}
+        conversations={chat.conversations.filter((conversation) => conversation.assistantKind !== 'web-recorder' && !conversation.previewUrl)}
+        conversationsStatus={chat.conversationsStatus}
+        conversationsError={chat.conversationsError}
+        onRetryConversations={() => void chatActions.retryConversations()}
+        activeId={chat.activeId}
+        taskBadges={chat.taskChatBadges}
+        ciSummaries={projects.ciSummaries}
         workingIds={[
-          ...Object.keys(state.activeTurns),
-          ...((state.voice === 'thinking' || state.voice === 'speaking') && state.activeId
-            ? [state.activeId]
+          ...Object.keys(chat.activeTurns),
+          ...((voice.voice === 'thinking' || voice.voice === 'speaking') && chat.activeId
+            ? [chat.activeId]
             : [])
         ]}
         now={now ? now() : Date.now()}
         onNew={() => {
           setSidebarOpen(false)
-          void actions.newConversation().then((id) => navigate(id ? `/chat/${id}` : '/'))
+          void chatActions.newConversation().then((id) => navigate(id ? `/chat/${id}` : '/'))
         }}
         onPick={(id) => {
           setSidebarOpen(false)
           navigate(`/chat/${id}`)
         }}
-        onDelete={actions.deleteConversation}
-        defaultPermissionMode={state.settings.permissionMode}
-        agents={state.agents}
-        searchQuery={state.searchQuery}
-        onSearch={actions.setSearchQuery}
-        searchScope={state.searchScope}
-        onSearchScopeChange={(scope) => void actions.setSearchScope(scope)}
-        messageSearch={state.messageSearch}
+        onDelete={chatActions.deleteConversation}
+        defaultPermissionMode={settingsState.settings.permissionMode}
+        agents={operations.agents}
+        searchQuery={chat.searchQuery}
+        onSearch={chatActions.setSearchQuery}
+        searchScope={chat.searchScope}
+        onSearchScopeChange={(scope) => void chatActions.setSearchScope(scope)}
+        messageSearch={chat.messageSearch}
         onPickMessage={(hit) => {
           setSidebarOpen(false)
           // Подсветку просим заранее: лента прокрутится к сообщению, как только
           // оно окажется в DOM (беседа может ещё грузиться).
-          actions.focusMessage(hit.messageId)
+          chatActions.focusMessage(hit.messageId)
           navigate(`/chat/${hit.conversationId}`)
         }}
-        onRetryMessageSearch={() => void actions.retryMessageSearch()}
-        onLoadMoreMessages={() => void actions.loadMoreMessageSearch()}
-        showDoneTaskChats={state.showDoneTaskChats}
-        onShowDoneTaskChatsChange={(show) => void actions.setShowDoneTaskChats(show)}
-        projects={state.projects}
-        selectedProjectId={state.sidebarProjectId}
-        onSelectProject={(id) => void actions.setSidebarProject(id)}
+        onRetryMessageSearch={() => void chatActions.retryMessageSearch()}
+        onLoadMoreMessages={() => void chatActions.loadMoreMessageSearch()}
+        showDoneTaskChats={chat.showDoneTaskChats}
+        onShowDoneTaskChatsChange={(show) => void chatActions.setShowDoneTaskChats(show)}
+        projects={projects.projects}
+        selectedProjectId={chat.sidebarProjectId}
+        onSelectProject={(id) => void chatActions.setSidebarProject(id)}
         onOpenObserver={menu(() => navigate('/claude-code'))}
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
-        onOpenPersonalization={state.currentUser ? menu(() => navigate('/personalization')) : undefined}
-        onOpenSettings={menu(actions.openSettings)}
-        onOpenFiles={state.authRequired ? menu(() => actions.openUtilityForActiveChat('explorer')) : undefined}
-        onOpenConsole={state.authRequired ? menu(() => actions.openUtilityForActiveChat('console')) : undefined}
-        onOpenWebReader={state.authRequired ? menu(openWebReaderWorkspace) : undefined}
-        onOpenPlaywrightReader={state.authRequired ? menu(() => navigate('/playwright-reader')) : undefined}
-        onOpenUsers={state.authRequired ? menu(() => navigate('/users')) : undefined}
-        onOpenMachines={state.authRequired ? menu(() => navigate('/machines')) : undefined}
-        onOpenCi={state.authRequired ? menu(() => navigate('/ci')) : undefined}
-        currentUser={state.currentUser}
-        onLogout={state.authRequired ? async () => {
+        onOpenPersonalization={session.currentUser ? menu(() => navigate('/personalization')) : undefined}
+        onOpenSettings={menu(shellActions.openSettings)}
+        onOpenFiles={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('explorer')) : undefined}
+        onOpenConsole={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('console')) : undefined}
+        onOpenWebReader={session.authRequired ? menu(openWebReaderWorkspace) : undefined}
+        onOpenPlaywrightReader={session.authRequired ? menu(() => navigate('/playwright-reader')) : undefined}
+        onOpenUsers={session.authRequired ? menu(() => navigate('/users')) : undefined}
+        onOpenMachines={session.authRequired ? menu(() => navigate('/machines')) : undefined}
+        onOpenCi={session.authRequired ? menu(() => navigate('/ci')) : undefined}
+        currentUser={session.currentUser}
+        onLogout={session.authRequired ? async () => {
           const accepted = await confirm({
             title: 'Выйти из ChatAI?',
             message: 'Текущая сессия завершится. Чаты, проекты, настройки и подключения внешних сервисов сохранятся.',
             confirmLabel: 'Выйти',
             variant: 'danger'
           })
-          if (accepted && await actions.logout()) navigate('/')
+          if (!accepted) return
+          try {
+            await runtime.logout()
+            navigate('/')
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Не удалось завершить сессию. Попробуйте ещё раз.')
+          }
         } : undefined}
         mode={sidebarMode}
-        onModeChange={state.authRequired ? (m) => {
+        onModeChange={session.authRequired ? (m) => {
           setSidebarMode(m)
           // «Проекты» — не просто другой список в сайдбаре: раздел открывается
           // страницей первого проекта. Список сначала перечитываем — выходя из
           // раздела, стор его чистит (closeProjects).
           if (m === 'projects') {
-            void actions.refreshProjects().catch(() => state.projects).then((list) => {
+            void projectsActions.refreshProjects().catch(() => projects.projects).then((list) => {
               if (inProjects) return
               const first = list[0]?.id
               navigate(first ? `/projects/${first}` : '/projects')
@@ -1193,7 +1262,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         }}
         onCreateProject={(name) => {
           setSidebarOpen(false)
-          void actions.createProject({ name }).then((detail) => {
+          void projectsActions.createProject({ name }).then((detail) => {
             if (detail) navigate(`/projects/${detail.id}`)
           })
         }}
@@ -1211,59 +1280,59 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       <div className={(inReader || inPlaywrightReader) ? `chat-split chat-split--${chatView}` : 'chat-page'} style={(inReader || inPlaywrightReader) ? { '--preview-width': `${previewWidth}%` } as CSSProperties : undefined}>
       {(inReader || inPlaywrightReader) && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>Сайт</button></div></nav>}
       <div className="chat-split-chat">
-      {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? state.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{state.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
-      {inPlaywrightReader && <header className="web-recorder-selector playwright-reader-selector"><strong>Playwright Reader</strong><label><span className="vc-sr-only">Разговор Playwright Reader</span><select aria-label="Разговор Playwright Reader" value={playwrightReaderActiveListed ? state.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/playwright-reader/${event.target.value}`) }}>{!playwrightReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{state.playwrightReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createPlaywrightReaderChat()}>+ Новый</button></header>}
+      {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
+      {inPlaywrightReader && <header className="web-recorder-selector playwright-reader-selector"><strong>Playwright Reader</strong><label><span className="vc-sr-only">Разговор Playwright Reader</span><select aria-label="Разговор Playwright Reader" value={playwrightReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/playwright-reader/${event.target.value}`) }}>{!playwrightReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.playwrightReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createPlaywrightReaderChat()}>+ Новый</button></header>}
       <ChatColumn
-        conversationId={state.activeId}
+        conversationId={chat.activeId}
         onToggleSidebar={(inReader || inPlaywrightReader) ? undefined : toggleSidebar}
         sidebarExpanded={sidebarExpanded}
         title={activeTitle}
         onRenameTitle={(t) => {
-          if (state.activeId) void actions.renameConversation(state.activeId, t)
+          if (chat.activeId) void chatActions.renameConversation(chat.activeId, t)
         }}
-        onOpenConversationSettings={() => { setConversationSettingsOpen(true); void actions.refreshProjects() }}
+        onOpenConversationSettings={() => { setConversationSettingsOpen(true); void projectsActions.refreshProjects() }}
         permissionMode={activePermissionMode}
-        onExecutePlan={(answerId) => void actions.executePlan(answerId)}
+        onExecutePlan={(answerId) => void chatActions.executePlan(answerId)}
         canExecutePlan={!forcedPlan}
-        state={state.voice}
-        messages={state.messages.filter((message) => !(state.activeId ? state.queuedTurns[state.activeId] ?? [] : []).some((item) => item.messageId === message.id))}
-        loadingMessages={state.loadingMessages}
-        highlightMessageId={state.highlightMessageId}
-        onHighlightDone={actions.clearMessageHighlight}
-        liveSegments={state.liveSegments}
-        diarization={state.settings.diarization}
-        streamingReply={state.streamingReply}
-        liveActivity={state.liveActivity}
-        liveUsage={state.liveUsage}
-        canSpeak={state.ttsAvailable}
-        speakingMessageId={state.speakingMessageId}
-        onSpeakMessage={actions.replayMessage}
-        onDeleteMessage={actions.deleteMessage}
-        onEditMessage={actions.editMessage}
-        onAnswerQuestions={(text) => void actions.answerQuestions(text)}
-        onAnswerCiInteraction={(runId, interactionId, text) => void actions.answerCiInteraction(runId, interactionId, { text })}
-        answeredCiInteractions={state.answeredCiInteractions}
+        state={voice.voice}
+        messages={chat.messages.filter((message) => !(chat.activeId ? chat.queuedTurns[chat.activeId] ?? [] : []).some((item) => item.messageId === message.id))}
+        loadingMessages={chat.loadingMessages}
+        highlightMessageId={chat.highlightMessageId}
+        onHighlightDone={chatActions.clearMessageHighlight}
+        liveSegments={voice.liveSegments}
+        diarization={settingsState.settings.diarization}
+        streamingReply={chat.streamingReply}
+        liveActivity={chat.liveActivity}
+        liveUsage={chat.liveUsage}
+        canSpeak={settingsState.ttsAvailable}
+        speakingMessageId={voice.speakingMessageId}
+        onSpeakMessage={voiceActions.replayMessage}
+        onDeleteMessage={chatActions.deleteMessage}
+        onEditMessage={chatActions.editMessage}
+        onAnswerQuestions={(text) => void chatActions.answerQuestions(text)}
+        onAnswerCiInteraction={(runId, interactionId, text) => void projectsActions.answerCiInteraction(runId, interactionId, { text })}
+        answeredCiInteractions={projects.answeredCiInteractions}
         taskHeader={
           // Виджет задачи — свойство открытого чата: показываем только контекст
           // этого чата. Так залипание невозможно по построению, кто бы и где ни
           // сменил `activeId` (новый чат, resume CC/Codex, переход по адресу).
-          state.taskChatContext && state.taskChatContext.conversationId === state.activeId ? (
+          chat.taskChatContext && chat.taskChatContext.conversationId === chat.activeId ? (
             <TaskChatHeader
-              context={state.taskChatContext}
-              summary={state.ciSummaries[state.taskChatContext.task.id] ?? null}
+              context={chat.taskChatContext}
+              summary={projects.ciSummaries[chat.taskChatContext.task.id] ?? null}
               onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)}
               renderRunFeed={(runId) => (
                 <RunFeed
                   runId={runId}
-                  cache={state.ciRuns[runId]}
-                  onSubscribe={actions.ciSubscribe}
-                  onUnsubscribe={actions.ciUnsubscribe}
-                  onLoad={(id) => void actions.loadCiRun(id)}
-                  onRetry={(id) => void actions.retryCiRun(id)}
-                  onRetryFromStep={(id, selection) => void actions.retryCiRunFromStep(id, selection)}
-                  onDiscardAndRetry={(id) => void actions.discardCiWorkspaceAndRetry(id)}
-                  onCancel={(id) => void actions.cancelCiRun(id)}
-                  onAnswerInteraction={(id, interactionId, answer) => void actions.answerCiInteraction(id, interactionId, answer)}
+                  cache={projects.ciRuns[runId]}
+                  onSubscribe={projectsActions.ciSubscribe}
+                  onUnsubscribe={projectsActions.ciUnsubscribe}
+                  onLoad={(id) => void projectsActions.loadCiRun(id)}
+                  onRetry={(id) => void projectsActions.retryCiRun(id)}
+                  onRetryFromStep={(id, selection) => void projectsActions.retryCiRunFromStep(id, selection)}
+                  onDiscardAndRetry={(id) => void projectsActions.discardCiWorkspaceAndRetry(id)}
+                  onCancel={(id) => void projectsActions.cancelCiRun(id)}
+                  onAnswerInteraction={(id, interactionId, answer) => void projectsActions.answerCiInteraction(id, interactionId, answer)}
                 />
               )}
             />
@@ -1271,67 +1340,67 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         }
         machineOps={machineOps}
         consoleHistory={consoleHistory}
-        readServerFile={actions.readServerFile}
-        onOpenImageInExplorer={(agentId, path) => actions.openUtility('explorer', agentId, path)}
+        readServerFile={operationsActions.readServerFile}
+        onOpenImageInExplorer={(agentId, path) => operationsActions.openUtility('explorer', agentId, path)}
         // Переключение утилиты из шапки встроенной карточки: та же машина и папка,
         // но окном (в сообщении карточка остаётся такой, какой её прислала модель).
-        onSwitchUtility={(kind, agentId, dir) => actions.openUtility(kind, agentId, dir, kind === 'explorer')}
-        onOpenMachines={state.authRequired ? () => navigate('/machines') : undefined}
+        onSwitchUtility={(kind, agentId, dir) => operationsActions.openUtility(kind, agentId, dir, kind === 'explorer')}
+        onOpenMachines={session.authRequired ? () => navigate('/machines') : undefined}
         onOpenKbDocument={(documentId) => navigate(`/kb/${encodeURIComponent(documentId)}`)}
-        error={state.error}
-        onDismissError={actions.dismissError}
-        modelMissing={!state.modelPresent}
-        modelLabel={state.settings.whisperModel}
-        downloading={state.downloading}
-        downloadPercent={state.downloadPercent}
-        onDownloadModel={actions.downloadModel}
-        onExport={actions.exportConversation}
-        onOpenKbUsage={state.activeId ? actions.openKbUsage : undefined}
+        error={shell.error}
+        onDismissError={shellActions.dismissError}
+        modelMissing={!settingsState.modelPresent}
+        modelLabel={settingsState.settings.whisperModel}
+        downloading={settingsState.downloading}
+        downloadPercent={settingsState.downloadPercent}
+        onDownloadModel={settingsActions.downloadModel}
+        onExport={chatActions.exportConversation}
+        onOpenKbUsage={chat.activeId ? runtime.openKbUsage : undefined}
         kbUsageCount={activeKbUsage?.report?.unreadCount ?? 0}
         kbUsageActive={hasPendingKbUsage(activeKbUsage?.report ?? null)}
         kbContextMode={activeConversation?.kbContextMode ?? 'auto'}
-        turnMeta={state.lastTurnMeta}
-        agents={state.agents}
+        turnMeta={chat.lastTurnMeta}
+        agents={operations.agents}
         execTarget={activeExecTarget}
-        aiLabel={(activeConversation?.llmProvider ?? state.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
+        aiLabel={(activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar
             defaultCollapsed={compactChat}
-            state={state.voice}
-            replyStarted={state.streamingReply.length > 0}
-            requestError={state.error}
-            draft={state.draft}
-            diarization={state.settings.diarization}
+            state={voice.voice}
+            replyStarted={chat.streamingReply.length > 0}
+            requestError={shell.error}
+            draft={chat.draft}
+            diarization={settingsState.settings.diarization}
             detectedSpeakers={detectedSpeakers}
-            aiLabel={(activeConversation?.llmProvider ?? state.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
-            attachments={state.attachments}
+            aiLabel={(activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
+            attachments={chat.attachments}
             previewElement={previewElement}
-            queuedTurns={state.activeId ? state.queuedTurns[state.activeId] ?? [] : []}
-            queuePaused={state.activeId ? state.queuePaused[state.activeId] ?? false : false}
-            onEditQueued={actions.editQueued}
-            onDeleteQueued={actions.deleteQueued}
-            onSendQueuedNow={actions.sendQueuedNow}
-            onDraftChange={actions.setDraft}
-            onSubmitText={() => { void actions.submitText(previewElement ?? undefined).then((sent) => { if (sent) setPreviewElement(null) }) }}
-            onStartVoice={actions.startVoice}
-            onStopVoice={actions.stopVoice}
-            onStopSpeak={actions.stopSpeak}
-            onCancelRequest={actions.cancelRequest}
-            onAddFiles={(files) => files.forEach((f) => void actions.addAttachment(f))}
-            onRemoveAttachment={actions.removeAttachment}
+            queuedTurns={chat.activeId ? chat.queuedTurns[chat.activeId] ?? [] : []}
+            queuePaused={chat.activeId ? chat.queuePaused[chat.activeId] ?? false : false}
+            onEditQueued={chatActions.editQueued}
+            onDeleteQueued={chatActions.deleteQueued}
+            onSendQueuedNow={chatActions.sendQueuedNow}
+            onDraftChange={chatActions.setDraft}
+            onSubmitText={() => { void chatActions.submitText(previewElement ?? undefined).then((sent) => { if (sent) setPreviewElement(null) }) }}
+            onStartVoice={voiceActions.startVoice}
+            onStopVoice={voiceActions.stopVoice}
+            onStopSpeak={voiceActions.stopSpeak}
+            onCancelRequest={chatActions.cancelRequest}
+            onAddFiles={(files) => files.forEach((f) => void chatActions.addAttachment(f))}
+            onRemoveAttachment={chatActions.removeAttachment}
             onRemovePreviewElement={() => setPreviewElement(null)}
             permissionMode={activePermissionMode}
             onChangePermissionMode={(mode) => void changeConversationMode(mode)}
             voiceInputEnabled={VOICE_INPUT_ENABLED}
-            aiAssistPrompts={state.settings.aiAssistPrompts}
-            onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
+            aiAssistPrompts={settingsState.settings.aiAssistPrompts}
+            onAiAssistPromptsChange={(next) => void settingsActions.updateSettings({ aiAssistPrompts: next })}
             generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
           />
         }
       />
       </div>
       {(inReader || inPlaywrightReader) && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
-      {(inReader || inPlaywrightReader) && <WebReaderHost conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} onSave={async (previewUrl) => { if (activeConversation) await actions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterActionRunner={registerPreviewRunner} />}
+      {(inReader || inPlaywrightReader) && <WebReaderHost conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterActionRunner={registerPreviewRunner} />}
       </div>
       )}
 
@@ -1357,32 +1426,32 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
           onOpenAssistantPage={() => navigate(`/projects/${routeProjectId}/assistant`) }
         >
           {routeReleases ? (
-            state.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={state.projectDetail!.ciBaseBranch ?? 'main'} owner={state.projectDetail!.role === 'owner'} machines={state.projectDetail!.machines} agents={state.agents} agentsStatus={state.agentsStatus} agentsError={state.agentsError} defaultAgentId={state.projectDetail!.defaultAgentId} releaseTimeouts={state.projectDetail!.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
+            projects.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={projects.projectDetail!.ciBaseBranch ?? 'main'} owner={projects.projectDetail!.role === 'owner'} machines={projects.projectDetail!.machines} agents={operations.agents} agentsStatus={operations.agentsStatus} agentsError={operations.agentsError} defaultAgentId={projects.projectDetail!.defaultAgentId} releaseTimeouts={projects.projectDetail!.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
           ) : routeSettings ? (
-            state.projectDetail?.id === routeProjectId ? (
+            projects.projectDetail?.id === routeProjectId ? (
               <ProjectSettings
-                detail={state.projectDetail!}
-                agents={state.agents}
-                currentUsername={state.currentUser?.name}
-                llmAccess={state.llmAccess}
-                llmEngines={state.llmEngines}
-                onUpdate={(id, fields) => void actions.updateProject(id, fields)}
+                detail={projects.projectDetail!}
+                agents={operations.agents}
+                currentUsername={session.currentUser?.name}
+                llmAccess={settingsState.llmAccess}
+                llmEngines={settingsState.llmEngines}
+                onUpdate={(id, fields) => void projectsActions.updateProject(id, fields)}
                 onDelete={(id) => {
                   // Удалили проект — уводим на другой доступный, а если их не
                   // осталось, в пустое состояние (#/projects без id).
-                  const next = state.projects.find((p) => p.id !== id)?.id ?? null
-                  void actions.deleteProject(id).then(() => {
+                  const next = projects.projects.find((p) => p.id !== id)?.id ?? null
+                  void projectsActions.deleteProject(id).then(() => {
                     navigate(next ? `/projects/${next}` : '/projects', { replace: true })
                   })
                 }}
-                onAddMember={(id, username) => void actions.addProjectMember(id, username)}
-                onUpdateMemberRole={(id, username, role) => void actions.updateProjectMemberRole(id, username, role)}
-                onRemoveMember={(id, username) => void actions.removeProjectMember(id, username)}
-                onLinkMachine={(id, agentId) => void actions.linkProjectMachine(id, agentId)}
-                onUnlinkMachine={(id, agentId) => void actions.unlinkProjectMachine(id, agentId)}
-                onSetMachinePath={(id, agentId, path) => void actions.setProjectMachinePath(id, agentId, path)}
-                onSetReposRoot={(id, agentId, root) => void actions.setProjectReposRoot(id, agentId, root)}
-                onSetDefaultMachine={(id, agentId) => void actions.setProjectDefaultMachine(id, agentId)}
+                onAddMember={(id, username) => void projectsActions.addProjectMember(id, username)}
+                onUpdateMemberRole={(id, username, role) => void projectsActions.updateProjectMemberRole(id, username, role)}
+                onRemoveMember={(id, username) => void projectsActions.removeProjectMember(id, username)}
+                onLinkMachine={(id, agentId) => void projectsActions.linkProjectMachine(id, agentId)}
+                onUnlinkMachine={(id, agentId) => void projectsActions.unlinkProjectMachine(id, agentId)}
+                onSetMachinePath={(id, agentId, path) => void projectsActions.setProjectMachinePath(id, agentId, path)}
+                onSetReposRoot={(id, agentId, root) => void projectsActions.setProjectReposRoot(id, agentId, root)}
+                onSetDefaultMachine={(id, agentId) => void projectsActions.setProjectDefaultMachine(id, agentId)}
               />
             ) : (
               <div className="proj-page-state" aria-busy="true">
@@ -1406,38 +1475,38 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
               initialOpenTaskTab={segments[4] === 'preparation' ? 'preparation' : undefined}
               onOpenTaskRouteChange={(taskId, tab) => navigate(taskId ? `/projects/${routeProjectId}/task/${taskId}${tab ? `/${tab}` : ''}` : `/projects/${routeProjectId}`)}
               projectName={routeProjectName}
-              board={state.board}
-              loading={state.boardLoading || state.activeProjectId !== routeProjectId}
-              error={state.boardError}
-              onRetry={() => void actions.openBoard(routeProjectId)}
-              showCompleted={state.boardIncludeCompleted}
-              onShowCompletedChange={(show) => void actions.setBoardIncludeCompleted(show)}
-              showDoneTaskChats={state.showDoneTaskChats}
-              onShowDoneTaskChatsChange={(show) => void actions.setShowDoneTaskChats(show)}
-              members={state.projectDetail?.members ?? []}
-              currentUser={state.currentUser?.name ?? null}
-              onCreateColumn={(name) => void actions.createColumn(name)}
-              onUpdateColumn={(id, fields) => void actions.updateColumn(id, fields)}
-              onSetColumnHidden={(id, hidden) => void actions.setColumnHidden(id, hidden)}
-              onReorderColumns={(order) => void actions.reorderColumns(order)}
-              onDeleteColumn={(id) => void actions.deleteColumn(id)}
-              onCreateTask={(columnId, input) => void actions.createTask(columnId, input)}
-              onUpdateTask={(taskId, fields) => void actions.updateTask(taskId, fields)}
-              onMoveTask={(taskId, columnId, afterId, beforeId) => void actions.moveTask(taskId, columnId, afterId, beforeId)}
-              onDeleteTask={(taskId) => void actions.deleteTask(taskId)}
-              onOpenChat={(taskId) => void actions.openTaskChat(taskId).then((id) => navigate(id ? `/projects/${routeProjectId}/task/${taskId}/chat/${id}` : '/'))}
-              onEnsureChat={(taskId) => void actions.ensureTaskChat(taskId)}
-              ciSummaries={state.ciSummaries}
-              onStartCi={async (taskId) => { if (routeProjectId) { const run = await actions.startCiRun(routeProjectId, taskId); if (run) actions.openCiRun(run.id) } }}
-              onStartCiParallel={async (taskId) => { if (routeProjectId) { const run = await actions.startCiRun(routeProjectId, taskId, { launch: 'parallel' }); if (run) actions.openCiRun(run.id) } }}
-              onOpenCiRun={(runId) => actions.openCiRun(runId)}
-              onDequeueCiRun={(runId) => void actions.dequeueCiRun(runId)}
-              onStartMerge={(taskId, agentId) => { if (routeProjectId) void actions.startMergeRun(routeProjectId, taskId, agentId) }}
+              board={projects.board}
+              loading={projects.boardLoading || projects.activeProjectId !== routeProjectId}
+              error={projects.boardError}
+              onRetry={() => void projectsActions.openBoard(routeProjectId)}
+              showCompleted={projects.boardIncludeCompleted}
+              onShowCompletedChange={(show) => void projectsActions.setBoardIncludeCompleted(show)}
+              showDoneTaskChats={chat.showDoneTaskChats}
+              onShowDoneTaskChatsChange={(show) => void chatActions.setShowDoneTaskChats(show)}
+              members={projects.projectDetail?.members ?? []}
+              currentUser={session.currentUser?.name ?? null}
+              onCreateColumn={(name) => void projectsActions.createColumn(name)}
+              onUpdateColumn={(id, fields) => void projectsActions.updateColumn(id, fields)}
+              onSetColumnHidden={(id, hidden) => void projectsActions.setColumnHidden(id, hidden)}
+              onReorderColumns={(order) => void projectsActions.reorderColumns(order)}
+              onDeleteColumn={(id) => void projectsActions.deleteColumn(id)}
+              onCreateTask={(columnId, input) => void projectsActions.createTask(columnId, input)}
+              onUpdateTask={(taskId, fields) => void projectsActions.updateTask(taskId, fields)}
+              onMoveTask={(taskId, columnId, afterId, beforeId) => void projectsActions.moveTask(taskId, columnId, afterId, beforeId)}
+              onDeleteTask={(taskId) => void projectsActions.deleteTask(taskId)}
+              onOpenChat={(taskId) => void projectsActions.openTaskChat(taskId).then((id) => navigate(id ? `/projects/${routeProjectId}/task/${taskId}/chat/${id}` : '/'))}
+              onEnsureChat={(taskId) => void projectsActions.ensureTaskChat(taskId)}
+              ciSummaries={projects.ciSummaries}
+              onStartCi={async (taskId) => { if (routeProjectId) { const run = await projectsActions.startCiRun(routeProjectId, taskId); if (run) projectsActions.openCiRun(run.id) } }}
+              onStartCiParallel={async (taskId) => { if (routeProjectId) { const run = await projectsActions.startCiRun(routeProjectId, taskId, { launch: 'parallel' }); if (run) projectsActions.openCiRun(run.id) } }}
+              onOpenCiRun={(runId) => projectsActions.openCiRun(runId)}
+              onDequeueCiRun={(runId) => void projectsActions.dequeueCiRun(runId)}
+              onStartMerge={(taskId, agentId) => { if (routeProjectId) void projectsActions.startMergeRun(routeProjectId, taskId, agentId) }}
               loadPreparationRuns={(taskId) => api['tasks:listPreparationRuns']({ projectId: routeProjectId!, taskId })}
               onRetryPreparation={(runId) => api['tasks:retryPreparationRun']({ runId })}
               onCancelPreparation={(runId) => api['tasks:cancelPreparationRun']({ runId })}
-              aiAssistPrompts={state.settings.aiAssistPrompts}
-              onAiAssistPromptsChange={(next) => void actions.updateSettings({ aiAssistPrompts: next })}
+              aiAssistPrompts={settingsState.settings.aiAssistPrompts}
+              onAiAssistPromptsChange={(next) => void settingsActions.updateSettings({ aiAssistPrompts: next })}
               generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
               onAssistantSelectionChange={handleAssistantSelectionChange}
             />}
@@ -1445,22 +1514,22 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
                 projectId={routeProjectId!}
                 context={kanbanAssistantContext}
                 api={api}
-                llmEngines={state.llmEngines}
+                llmEngines={settingsState.llmEngines}
                 conversationId={assistantConversationId}
                 onCommand={async (command: WidgetAssistantCommand) => {
                   rememberWidgetAction('assistant.command', command.type, 'taskId' in command ? command.taskId : undefined)
                   if (command.type === 'navigate.project-settings') { navigate(`/projects/${command.projectId}/settings`); return }
                   if (command.type === 'navigate.task') { navigate(`/projects/${command.projectId}/task/${command.taskId}`); return }
-                  if (command.type === 'propose.settings-update') { await actions.updateSettings(command.patch); return }
-                  if (command.type === 'propose.task-create') { await actions.createTask(command.input.columnId, command.input); return }
+                  if (command.type === 'propose.settings-update') { await settingsActions.updateSettings(command.patch); return }
+                  if (command.type === 'propose.task-create') { await projectsActions.createTask(command.input.columnId, command.input); return }
                   const patch: SupportedTaskPatch = command.type === 'propose.task-update'
                     ? command.patch
                     : command.type === 'propose.acceptance-criteria'
                       ? { acceptanceCriteria: command.value }
                       : { [command.field]: command.value }
                   const { columnId, ...fields } = patch
-                  if (columnId) await actions.moveTask(command.taskId, columnId, null, null)
-                  if (Object.keys(fields).length > 0) await actions.updateTask(command.taskId, fields)
+                  if (columnId) await projectsActions.moveTask(command.taskId, columnId, null, null)
+                  if (Object.keys(fields).length > 0) await projectsActions.updateTask(command.taskId, fields)
                 }}
               />}
             />
@@ -1472,8 +1541,8 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
         <KnowledgeBase api={api} variant="page" documentId={routeKbDocumentId} onClose={() => navigate('/')} />
       )}
 
-      {utilitySeg === 'personalization' && state.currentUser && (
-        <PersonalizationPage user={state.currentUser} value={state.settings.personalization} onSave={async (personalization) => { await actions.updateSettings({ personalization }); navigate('/') }} onCancel={() => navigate('/')} />
+      {utilitySeg === 'personalization' && session.currentUser && (
+        <PersonalizationPage user={session.currentUser} value={settingsState.settings.personalization} onSave={async (personalization) => { await settingsActions.updateSettings({ personalization }); navigate('/') }} onCancel={() => navigate('/')} />
       )}
 
       {/* Объединённый наблюдатель агентов: один компонент с переключателем
@@ -1482,7 +1551,7 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       {(() => {
         const engine: ObserverEngine | null =
           utilitySeg === 'claude-code' ? 'claude' : utilitySeg === 'codex' ? 'codex' : null
-        const open = engine === 'claude' ? state.ccOpen : engine === 'codex' ? state.cxOpen : false
+        const open = engine === 'claude' ? operations.ccOpen : engine === 'codex' ? operations.cxOpen : false
         if (!engine || !open) return null
         return (
           <EnginesObserver
@@ -1491,114 +1560,114 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
             onSwitchEngine={(e) => navigate(e === 'claude' ? '/claude-code' : '/codex')}
             onClose={() => navigate('/')}
             claude={{
-              projects: state.ccProjects,
-              sessions: state.ccSessions,
-              transcript: state.ccTranscript,
-              activeProject: state.ccProjectSlug,
-              activeSession: state.ccSessionId,
-              usage: state.ccUsage,
-              onSelectProject: actions.selectCcProject,
-              onSelectSession: actions.selectCcSession,
+              projects: operations.ccProjects,
+              sessions: operations.ccSessions,
+              transcript: operations.ccTranscript,
+              activeProject: operations.ccProjectSlug,
+              activeSession: operations.ccSessionId,
+              usage: operations.ccUsage,
+              onSelectProject: operationsActions.selectCcProject,
+              onSelectSession: operationsActions.selectCcSession,
               onResumeSession: (slug, id) =>
-                void actions.resumeCcSession(slug, id).then((cid) => navigate(cid ? `/chat/${cid}` : '/'))
+                void runtime.resumeCcSession(slug, id).then((cid) => navigate(cid ? `/chat/${cid}` : '/'))
             }}
             codex={{
-              projects: state.cxProjects,
-              sessions: state.cxSessions,
-              transcript: state.cxTranscript,
-              activeProject: state.cxProjectCwd,
-              activeSession: state.cxSessionId,
-              usage: state.cxUsage,
-              onSelectProject: actions.selectCxProject,
-              onSelectSession: actions.selectCxSession,
+              projects: operations.cxProjects,
+              sessions: operations.cxSessions,
+              transcript: operations.cxTranscript,
+              activeProject: operations.cxProjectCwd,
+              activeSession: operations.cxSessionId,
+              usage: operations.cxUsage,
+              onSelectProject: operationsActions.selectCxProject,
+              onSelectSession: operationsActions.selectCxSession,
               onResumeSession: (id) =>
-                void actions.resumeCxSession(id).then((cid) => navigate(cid ? `/chat/${cid}` : '/'))
+                void runtime.resumeCxSession(id).then((cid) => navigate(cid ? `/chat/${cid}` : '/'))
             }}
           />
         )
       })()}
 
-      {utilitySeg === 'machines' && state.machinesOpen && (
+      {utilitySeg === 'machines' && operations.machinesOpen && (
         <MachineStatus
           variant="page"
-          agents={state.agents}
-          status={state.agentsStatus}
-          error={state.agentsError}
-          onRetry={() => void actions.refreshAgents()}
-          onSetPolicy={(id, policy) => void actions.setAgentPolicy(id, policy)}
-          onCreateAgent={actions.createAgent}
-          onRegenerateToken={actions.regenerateAgentToken}
-          onGetConnectionString={actions.getAgentConnectionString}
-          onUpdateAgent={actions.updateAgent}
-          onDeleteAgent={(id) => void actions.deleteAgent(id)}
-          defaultAgentId={state.settings.defaultAgentId}
-          onSetDefault={(id) => void actions.updateSettings({ defaultAgentId: id })}
+          agents={operations.agents}
+          status={operations.agentsStatus}
+          error={operations.agentsError}
+          onRetry={() => void operationsActions.refreshAgents()}
+          onSetPolicy={(id, policy) => void operationsActions.setAgentPolicy(id, policy)}
+          onCreateAgent={operationsActions.createAgent}
+          onRegenerateToken={operationsActions.regenerateAgentToken}
+          onGetConnectionString={operationsActions.getAgentConnectionString}
+          onUpdateAgent={operationsActions.updateAgent}
+          onDeleteAgent={(id) => void operationsActions.deleteAgent(id)}
+          defaultAgentId={settingsState.settings.defaultAgentId}
+          onSetDefault={(id) => void settingsActions.updateSettings({ defaultAgentId: id })}
           onClose={() => navigate('/')}
         />
       )}
 
-      {utilitySeg === 'users' && state.usersOpen && (
+      {utilitySeg === 'users' && admin.usersOpen && (
         <UsersAdmin
           variant="page"
-          users={state.adminUsers}
-          usageSummary={state.adminUsageSummary}
-          isAdmin={state.currentUser?.role === 'admin'}
-          status={state.adminUsersStatus}
-          error={state.adminUsersError}
-          onRetry={() => void actions.openUsers()}
-          selected={routeUserName ?? state.adminSelected}
-          usage={state.adminUsage}
-          conversations={state.adminConversations}
-          messages={state.adminMessages}
-          conversationId={state.adminConversationId}
-          currentUserName={state.currentUser?.name ?? ''}
-          onSelect={(name) => { navigate(`/users/${encodeURIComponent(name)}`); void actions.selectAdminUser(name) }}
-          onCreate={(name, password, role) => void actions.createUserAccount(name, password, role)}
-          onSetBlocked={(name, blocked) => void actions.setUserBlocked(name, blocked)}
-          onDelete={(name) => void actions.deleteUserAccount(name)}
-          onLoadUsage={(unit, from, to, conversationId) => void actions.loadAdminUsage(unit, from, to, conversationId)}
-          onOpenConversation={(id) => void actions.openAdminConversation(id)}
-          llmAccess={state.adminUserLlmAccess}
-          onSaveLlmAccess={(access) => void actions.saveAdminUserLlmAccess(access)}
-          engines={state.adminLlmEngines}
-          enginesStatus={state.adminLlmEnginesStatus}
-          enginesError={state.adminLlmEnginesError}
-          engineHealth={state.adminLlmEngineHealth}
-          onRetryEngines={() => void actions.refreshAdminLlmEngines()}
-          onCreateEngine={(input) => void actions.createAdminLlmEngine(input)}
-          onUpdateEngine={(id, patch) => void actions.updateAdminLlmEngine(id, patch)}
-          onDeleteEngine={(id) => void actions.deleteAdminLlmEngine(id)}
-          onCheckEngineHealth={(id) => void actions.checkAdminLlmEngineHealth(id)}
-          modelPrices={state.adminModelPrices}
-          onSaveModelPrice={(input) => void actions.saveAdminModelPrice(input)}
-          onDeleteModelPrice={(provider, model) => void actions.deleteAdminModelPrice(provider, model)}
+          users={admin.adminUsers}
+          usageSummary={admin.adminUsageSummary}
+          isAdmin={session.currentUser?.role === 'admin'}
+          status={admin.adminUsersStatus}
+          error={admin.adminUsersError}
+          onRetry={() => void runtime.openAdmin()}
+          selected={routeUserName ?? admin.adminSelected}
+          usage={admin.adminUsage}
+          conversations={admin.adminConversations}
+          messages={admin.adminMessages}
+          conversationId={admin.adminConversationId}
+          currentUserName={session.currentUser?.name ?? ''}
+          onSelect={(name) => { navigate(`/users/${encodeURIComponent(name)}`); void adminActions.selectAdminUser(name) }}
+          onCreate={(name, password, role) => void adminActions.createUserAccount(name, password, role)}
+          onSetBlocked={(name, blocked) => void adminActions.setUserBlocked(name, blocked)}
+          onDelete={(name) => void adminActions.deleteUserAccount(name)}
+          onLoadUsage={(unit, from, to, conversationId) => void adminActions.loadAdminUsage(unit, from, to, conversationId)}
+          onOpenConversation={(id) => void adminActions.openAdminConversation(id)}
+          llmAccess={admin.adminUserLlmAccess}
+          onSaveLlmAccess={(access) => void adminActions.saveAdminUserLlmAccess(access)}
+          engines={admin.adminLlmEngines}
+          enginesStatus={admin.adminLlmEnginesStatus}
+          enginesError={admin.adminLlmEnginesError}
+          engineHealth={admin.adminLlmEngineHealth}
+          onRetryEngines={() => void adminActions.refreshAdminLlmEngines()}
+          onCreateEngine={(input) => void adminActions.createAdminLlmEngine(input)}
+          onUpdateEngine={(id, patch) => void adminActions.updateAdminLlmEngine(id, patch)}
+          onDeleteEngine={(id) => void adminActions.deleteAdminLlmEngine(id)}
+          onCheckEngineHealth={(id) => void adminActions.checkAdminLlmEngineHealth(id)}
+          modelPrices={admin.adminModelPrices}
+          onSaveModelPrice={(input) => void adminActions.saveAdminModelPrice(input)}
+          onDeleteModelPrice={(provider, model) => void adminActions.deleteAdminModelPrice(provider, model)}
           onClose={() => navigate('/')}
         />
       )}
 
-      {utilitySeg === 'ci' && state.ciOpen && (
+      {utilitySeg === 'ci' && projects.ciOpen && (
         <CiCommands
-          commands={state.ciCommands}
-          status={state.ciStatus}
-          error={state.ciError}
-          onRetry={() => void actions.openCi()}
-          settings={state.ciSettings}
-          suggestions={state.ciSuggestions}
-          workspaces={state.ciWorkspaces}
-          role={state.currentUser?.role ?? 'admin'}
-          llmAccess={state.llmAccess}
-          projects={state.projects.map((p) => ({ id: p.id, name: p.name }))}
-          onCreate={(input) => actions.createCiCommand(input)}
-          onUpdate={(id, input) => actions.updateCiCommand(id, input)}
-          onDelete={(id) => actions.deleteCiCommand(id)}
-          onUsage={(id) => actions.ciCommandUsage(id)}
-          onSaveSettings={(next) => actions.saveCiSettings(next)}
-          onResolveSuggestion={(id, accept) => actions.resolveCiSuggestion(id, accept)}
+          commands={projects.ciCommands}
+          status={projects.ciStatus}
+          error={projects.ciError}
+          onRetry={() => void projectsActions.openCi()}
+          settings={projects.ciSettings}
+          suggestions={projects.ciSuggestions}
+          workspaces={projects.ciWorkspaces}
+          role={session.currentUser?.role ?? 'admin'}
+          llmAccess={settingsState.llmAccess}
+          projects={projects.projects.map((p) => ({ id: p.id, name: p.name }))}
+          onCreate={(input) => projectsActions.createCiCommand(input)}
+          onUpdate={(id, input) => projectsActions.updateCiCommand(id, input)}
+          onDelete={(id) => projectsActions.deleteCiCommand(id)}
+          onUsage={(id) => projectsActions.ciCommandUsage(id)}
+          onSaveSettings={(next) => projectsActions.saveCiSettings(next)}
+          onResolveSuggestion={(id, accept) => projectsActions.resolveCiSuggestion(id, accept)}
           onClose={() => navigate('/')}
         />
       )}
 
-      {taskProposal && inChat && routeChatId === state.activeId && (
+      {taskProposal && inChat && routeChatId === chat.activeId && (
         <TaskModal
           draft
           task={taskProposal.task}
@@ -1639,25 +1708,25 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
       {conversationSettingsOpen && activeConversation && (
         <ConversationSettings
           conversation={activeConversation}
-          agents={state.agents}
+          agents={operations.agents}
           machineOps={machineOps}
-          role={state.currentUser?.role ?? 'admin'}
-          settings={state.settings}
-          engines={state.llmEngines}
-          llmAccess={state.llmAccess}
-          defaultAgentId={state.settings.defaultAgentId}
-          projects={state.projects}
-          fetchProjectDetail={actions.fetchProjectDetail}
-          fetchMachines={actions.fetchConversationMachines}
+          role={session.currentUser?.role ?? 'admin'}
+          settings={settingsState.settings}
+          engines={settingsState.llmEngines}
+          llmAccess={settingsState.llmAccess}
+          defaultAgentId={settingsState.settings.defaultAgentId}
+          projects={projects.projects}
+          fetchProjectDetail={projectsActions.fetchProjectDetail}
+          fetchMachines={chatActions.fetchConversationMachines}
           onSave={async ({ title, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
-            await actions.renameConversation(activeConversation.id, title)
-            await actions.setConversationProject(activeConversation.id, projectId)
-            await actions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, llmEngineId)
+            await chatActions.renameConversation(activeConversation.id, title)
+            await chatActions.setConversationProject(activeConversation.id, projectId)
+            await chatActions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, llmEngineId)
           }}
           onAddSkill={async (agentId, skill) => {
-            const agent = state.agents.find((item) => item.id === agentId)
+            const agent = operations.agents.find((item) => item.id === agentId)
             if (!agent) return
-            await actions.setAgentPolicy(agentId, { ...agent.policy, skills: [...agent.policy.skills, skill] })
+            await operationsActions.setAgentPolicy(agentId, { ...agent.policy, skills: [...agent.policy.skills, skill] })
           }}
           onClose={() => setConversationSettingsOpen(false)}
         />
@@ -1665,118 +1734,118 @@ function AppBody({ api = window.api, now, delays }: AppProps = {}): JSX.Element 
 
       {showConsole && (
         <ConsolePanel
-          log={state.consoleLog}
-          open={state.consoleOpen}
-          onToggle={actions.toggleConsole}
+          log={chat.consoleLog}
+          open={shell.consoleOpen}
+          onToggle={shellActions.toggleConsole}
         />
       )}
 
 
-      {state.utility && machineOps && (
+      {operations.utility && machineOps && (
         <MachineUtility
           tool={{
-            kind: state.utility.kind,
-            ...(state.utility.agentId ? { agentId: state.utility.agentId } : {}),
-            ...(state.utility.path ? { path: state.utility.path } : {}),
-            ...(state.utility.dir ? { dir: true } : {})
+            kind: operations.utility.kind,
+            ...(operations.utility.agentId ? { agentId: operations.utility.agentId } : {}),
+            ...(operations.utility.path ? { path: operations.utility.path } : {}),
+            ...(operations.utility.dir ? { dir: true } : {})
           }}
-          agents={state.agents}
+          agents={operations.agents}
           ops={machineOps}
           consoleHistory={consoleHistory}
           variant="modal"
-          onSwitchUtility={(kind, agentId, dir) => actions.openUtility(kind, agentId, dir, kind === 'explorer')}
+          onSwitchUtility={(kind, agentId, dir) => operationsActions.openUtility(kind, agentId, dir, kind === 'explorer')}
           // Раздел «Машины» — страница контентной колонки, поэтому окно утилиты
           // закрываем: иначе оно осталось бы висеть поверх неё.
           onOpenMachines={
-            state.authRequired
+            session.authRequired
               ? () => {
-                  actions.closeUtility()
+                  operationsActions.closeUtility()
                   navigate('/machines')
                 }
               : undefined
           }
-          onClose={actions.closeUtility}
+          onClose={operationsActions.closeUtility}
         />
       )}
 
-      {state.kbUsageOpen && state.activeId && (
+      {shell.kbUsageOpen && chat.activeId && (
         <KbUsagePanel
-          conversationId={state.activeId}
+          conversationId={chat.activeId}
           projectId={activeConversation?.projectId ?? null}
           cache={activeKbUsage}
-          projectCache={activeConversation?.projectId ? state.kbUsageByProject[activeConversation.projectId] : undefined}
-          kbStatus={state.kbStatus}
+          projectCache={activeConversation?.projectId ? chat.kbUsageByProject[activeConversation.projectId] : undefined}
+          kbStatus={chat.kbStatus}
           mode={activeConversation?.kbContextMode ?? 'auto'}
-          onLoad={(id) => { void actions.loadKbUsage(id, true); void actions.refreshKbStatus() }}
-          onLoadProject={(id) => void actions.loadProjectKbUsage(id)}
-          onClose={actions.closeKbUsage}
-          onOpenDocument={(documentId) => { actions.closeKbUsage(); navigate(`/kb/${encodeURIComponent(documentId)}`) }}
-          onOpenKnowledgeBase={() => { actions.closeKbUsage(); navigate('/kb') }}
-          onOpenConversationSettings={() => { actions.closeKbUsage(); setConversationSettingsOpen(true) }}
-          titleOf={(id) => state.conversations.find((c) => c.id === id)?.title}
-          onOpenRun={(runId) => { actions.closeKbUsage(); actions.openCiRun(runId) }}
+          onLoad={(id) => { void chatActions.loadKbUsage(id, true); void chatActions.refreshKbStatus() }}
+          onLoadProject={(id) => void chatActions.loadProjectKbUsage(id)}
+          onClose={runtime.closeKbUsage}
+          onOpenDocument={(documentId) => { runtime.closeKbUsage(); navigate(`/kb/${encodeURIComponent(documentId)}`) }}
+          onOpenKnowledgeBase={() => { runtime.closeKbUsage(); navigate('/kb') }}
+          onOpenConversationSettings={() => { runtime.closeKbUsage(); setConversationSettingsOpen(true) }}
+          titleOf={(id) => chat.conversations.find((c) => c.id === id)?.title}
+          onOpenRun={(runId) => { runtime.closeKbUsage(); projectsActions.openCiRun(runId) }}
         />
       )}
 
-      {state.ciActiveRunId && (
-        <ToolFrame title="Лента CI-рана" variant="modal" testId="ci-run-modal" onClose={actions.closeCiRun}>
+      {projects.ciActiveRunId && (
+        <ToolFrame title="Лента CI-рана" variant="modal" testId="ci-run-modal" onClose={projectsActions.closeCiRun}>
           <div style={{ padding: '12px', overflow: 'auto' }}>
             <RunFeed
-              runId={state.ciActiveRunId}
-              cache={state.ciRuns[state.ciActiveRunId]}
-              llmAccess={state.llmAccess}
-              onSubscribe={actions.ciSubscribe}
-              onUnsubscribe={actions.ciUnsubscribe}
-              onLoad={(runId) => void actions.loadCiRun(runId)}
-              onRetry={(runId) => void actions.retryCiRun(runId).then((run) => { if (run) actions.openCiRun(run.id) })}
-              onRetryFromStep={(runId, selection) => { void actions.retryCiRunFromStep(runId, selection); actions.openCiRun(runId) }}
-              onDiscardAndRetry={(runId) => void actions.discardCiWorkspaceAndRetry(runId).then((run) => { if (run) actions.openCiRun(run.id) })}
-              onCancel={(runId) => void actions.cancelCiRun(runId)}
-              onAnswerInteraction={(runId, interactionId, answer) => void actions.answerCiInteraction(runId, interactionId, answer)}
+              runId={projects.ciActiveRunId}
+              cache={projects.ciRuns[projects.ciActiveRunId]}
+              llmAccess={settingsState.llmAccess}
+              onSubscribe={projectsActions.ciSubscribe}
+              onUnsubscribe={projectsActions.ciUnsubscribe}
+              onLoad={(runId) => void projectsActions.loadCiRun(runId)}
+              onRetry={(runId) => void projectsActions.retryCiRun(runId).then((run) => { if (run) projectsActions.openCiRun(run.id) })}
+              onRetryFromStep={(runId, selection) => { void projectsActions.retryCiRunFromStep(runId, selection); projectsActions.openCiRun(runId) }}
+              onDiscardAndRetry={(runId) => void projectsActions.discardCiWorkspaceAndRetry(runId).then((run) => { if (run) projectsActions.openCiRun(run.id) })}
+              onCancel={(runId) => void projectsActions.cancelCiRun(runId)}
+              onAnswerInteraction={(runId, interactionId, answer) => void projectsActions.answerCiInteraction(runId, interactionId, answer)}
             />
           </div>
         </ToolFrame>
       )}
 
-      {!state.settings.onboarded && (
+      {!settingsState.settings.onboarded && (
         <OnboardingModal
-          modelPresent={state.modelPresent}
-          modelLabel={state.settings.whisperModel}
-          downloading={state.downloading}
-          downloadPercent={state.downloadPercent}
-          onDownloadModel={actions.downloadModel}
-          hasVoice={state.ttsVoices.length > 0}
-          onDone={actions.completeOnboarding}
+          modelPresent={settingsState.modelPresent}
+          modelLabel={settingsState.settings.whisperModel}
+          downloading={settingsState.downloading}
+          downloadPercent={settingsState.downloadPercent}
+          onDownloadModel={settingsActions.downloadModel}
+          hasVoice={settingsState.ttsVoices.length > 0}
+          onDone={settingsActions.completeOnboarding}
         />
       )}
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <HotkeysCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
 
-      {state.settingsOpen && (
+      {shell.settingsOpen && (
         <SettingsModal
-          settings={state.settings}
-          engines={state.llmEngines}
-          mics={state.mics}
-          voices={state.ttsVoices}
-          voiceCatalog={state.voiceCatalog}
-          voicesDownloadable={state.voicesDownloadable}
-          voiceDownloads={state.voiceDownloads}
-          whisperModels={state.whisperModels}
-          capabilities={state.capabilities}
-          mcpServers={state.mcpServers}
-          loginStatus={state.loginStatus}
-          onDownloadDesktopApp={() => void actions.downloadDesktopApp()}
-          onDownloadAgentApp={() => void actions.downloadAgentApp()}
-          onDownloadAgentScript={() => void actions.downloadAgentScript()}
-          onChange={actions.updateSettings}
-          onDownloadVoice={actions.downloadVoice}
-          onDeleteVoice={actions.deleteVoice}
-          onDeleteModel={actions.deleteModel}
-          role={state.currentUser?.role ?? 'admin'}
-          llmAccess={state.llmAccess}
+          settings={settingsState.settings}
+          engines={settingsState.llmEngines}
+          mics={settingsState.mics}
+          voices={settingsState.ttsVoices}
+          voiceCatalog={settingsState.voiceCatalog}
+          voicesDownloadable={settingsState.voicesDownloadable}
+          voiceDownloads={settingsState.voiceDownloads}
+          whisperModels={settingsState.whisperModels}
+          capabilities={settingsState.capabilities}
+          mcpServers={settingsState.mcpServers}
+          loginStatus={settingsState.loginStatus}
+          onDownloadDesktopApp={() => void operationsActions.downloadDesktopApp()}
+          onDownloadAgentApp={() => void operationsActions.downloadAgentApp()}
+          onDownloadAgentScript={() => void operationsActions.downloadAgentScript()}
+          onChange={settingsActions.updateSettings}
+          onDownloadVoice={settingsActions.downloadVoice}
+          onDeleteVoice={settingsActions.deleteVoice}
+          onDeleteModel={settingsActions.deleteModel}
+          role={session.currentUser?.role ?? 'admin'}
+          llmAccess={settingsState.llmAccess}
           voiceInputEnabled={VOICE_INPUT_ENABLED}
-          onClose={actions.closeSettings}
+          onClose={shellActions.closeSettings}
         />
       )}
     </div>

@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-08-01
-checked: dc73c33
+updated: 2026-08-16
+checked: de895b5
 areas:
   - apps/server/src/server.ts
   - apps/llm-runner/src/server.ts
@@ -93,9 +93,12 @@ CLI локально, либо переключиться на `RemoteLlmClient`
 
 `idle → listening → transcribing → thinking → speaking → idle`, переходы — только
 через чистый редьюсер `packages/shared/src/stateMachine.ts` (включая barge-in из
-`speaking`). Стор (`packages/ui/src/store/voiceStore.ts`) — обычное замыкание с
-`getState/subscribe/actions`, не привязанное к React: тестируется без DOM,
-React подключается через `useVoiceStore.ts`.
+`speaking`). Голосовой стор (`packages/ui/src/store/domains/voiceStore.ts`) —
+обычное замыкание с `getState/subscribe/actions/dispose`, не привязанное к React:
+тестируется без DOM, React подключается через `store/react.tsx`. После CHAT-236 он
+отвечает только за аудио: готовую транскрипцию он публикует событием, а разговор
+создаёт и реплику сохраняет `chatStore` — их сводит `runtime/appRuntime.ts`.
+Карта доменов состояния — [ui.md](ui.md#слои).
 
 Озвучка идёт по мере готовности предложений: `sentences.ts` (shared + ui) режет
 поток токенов на произносимые фразы, `lib/ttsPlayer.ts` играет их очередью.

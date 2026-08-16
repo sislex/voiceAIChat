@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { createVoiceStore, type VoiceStore } from './voiceStore'
+import { createTestStore, type TestStore } from '../test/appHarness'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
 import type { ClaudeLogEntry, Message } from '@shared/types'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
@@ -10,9 +10,9 @@ const DELAYS = { frame: 20, transcribe: 20, think: 20, speak: 20 }
 // ровно одно звено цепочки таймеров (иначе этапы «схлопываются»).
 const STEP = 25
 
-function makeStore(seed: string[] = []): { store: VoiceStore; api: FakeApi } {
+function makeStore(seed: string[] = []): { store: TestStore; api: FakeApi } {
   const api = createFakeApi(seed)
-  const store = createVoiceStore({ api, now: () => 1_700_000_000_000, delays: DELAYS })
+  const store = createTestStore({ api, now: () => 1_700_000_000_000, delays: DELAYS })
   return { store, api }
 }
 
@@ -216,7 +216,7 @@ describe('voiceStore — интеграция стора с api-моком и м
   })
 
   it('глобальная блокировка не позволяет запустить запись', () => {
-    const store = createVoiceStore({ api: createFakeApi([]), voiceInputEnabled: false })
+    const store = createTestStore({ api: createFakeApi([]), voiceInputEnabled: false })
     store.actions.startVoice()
     expect(store.getState().voice).toBe('idle')
   })
@@ -371,7 +371,7 @@ describe('voiceStore — интеграция стора с api-моком и м
     vi.spyOn(api, 'mcp:list').mockResolvedValue([
       { name: 'fs', detail: 'npx server', status: '✓ Connected', connected: true }
     ])
-    const store = createVoiceStore({ api, now: () => 1, delays: DELAYS })
+    const store = createTestStore({ api, now: () => 1, delays: DELAYS })
     await store.actions.init()
     expect(store.getState().mcpServers).toEqual([
       { name: 'fs', detail: 'npx server', status: '✓ Connected', connected: true }
@@ -418,7 +418,7 @@ describe('voiceStore — интеграция стора с api-моком и м
   it('exportConversation зовёт download с корректными именем/mime/содержимым', async () => {
     const download = vi.fn()
     const api = createFakeApi(['Лиссабон'])
-    const store = createVoiceStore({ api, now: () => 1_700_000_000_000, delays: DELAYS, download })
+    const store = createTestStore({ api, now: () => 1_700_000_000_000, delays: DELAYS, download })
     await store.actions.init()
     await store.actions.selectConversation(store.getState().conversations[0].id)
     store.actions.setDraft('Привет')
@@ -449,7 +449,7 @@ describe('voiceStore — интеграция с аудиозахватом (Ш�
   it('init загружает список микрофонов из listMics', async () => {
     const api = createFakeApi([])
     const listMics = vi.fn().mockResolvedValue([{ deviceId: 'mic-a', label: 'Микрофон A' }])
-    const store = createVoiceStore({ api, delays: DELAYS, listMics })
+    const store = createTestStore({ api, delays: DELAYS, listMics })
 
     await store.actions.init()
 
@@ -460,7 +460,7 @@ describe('voiceStore — интеграция с аудиозахватом (Ш�
   it('startVoice запускает захват с выбранным устройством, stopVoice — останавливает', async () => {
     const api = createFakeApi([])
     const audio = { start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) }
-    const store = createVoiceStore({ api, delays: DELAYS, audio })
+    const store = createTestStore({ api, delays: DELAYS, audio })
     await store.actions.init()
     await store.actions.updateSettings({ micDeviceId: 'mic-x' })
 
@@ -489,9 +489,9 @@ describe('voiceStore — реальный STT (sttEnabled)', () => {
     vi.useRealTimers()
   })
 
-  function makeSttStore(): VoiceStore {
+  function makeSttStore(): TestStore {
     const api = createFakeApi([])
-    return createVoiceStore({ api, delays: DELAYS, sttEnabled: true })
+    return createTestStore({ api, delays: DELAYS, sttEnabled: true })
   }
 
   it('startVoice не запускает мок-транскрипт; partial наполняет live-блок', async () => {
@@ -589,14 +589,14 @@ describe('voiceStore — реальный Claude (claudeEnabled)', () => {
   })
 
   function makeClaudeStore(): {
-    store: VoiceStore
+    store: TestStore
     sendClaudePrompt: ReturnType<typeof vi.fn>
     cancelClaude: ReturnType<typeof vi.fn>
   } {
     const api = createFakeApi([])
     const sendClaudePrompt = vi.fn()
     const cancelClaude = vi.fn()
-    const store = createVoiceStore({
+    const store = createTestStore({
       api,
       delays: DELAYS,
       claudeEnabled: true,
@@ -690,9 +690,9 @@ describe('voiceStore — barge-in голосом (VAD)', () => {
     vi.useRealTimers()
   })
 
-  async function speakingStore(bargeIn: boolean): Promise<VoiceStore> {
+  async function speakingStore(bargeIn: boolean): Promise<TestStore> {
     const api = createFakeApi([])
-    const store = createVoiceStore({
+    const store = createTestStore({
       api,
       delays: DELAYS,
       claudeEnabled: true,
@@ -736,7 +736,7 @@ describe('voiceStore — hands-free (VAD авто-пауза + авто-стар
 
   it('в listening пауза после речи авто-финализирует запись (speech-end → stopVoice)', async () => {
     const api = createFakeApi([])
-    const store = createVoiceStore({ api, delays: DELAYS })
+    const store = createTestStore({ api, delays: DELAYS })
     await store.actions.init()
     await store.actions.updateSettings({ handsFree: true })
     store.actions.startVoice()
@@ -750,7 +750,7 @@ describe('voiceStore — hands-free (VAD авто-пауза + авто-стар
 
   it('без handsFree тишина не останавливает запись', async () => {
     const api = createFakeApi([])
-    const store = createVoiceStore({ api, delays: DELAYS })
+    const store = createTestStore({ api, delays: DELAYS })
     await store.actions.init()
     store.actions.startVoice()
     for (let i = 0; i < 3; i++) store.actions.applyMicEnergy(0.5)
@@ -760,7 +760,7 @@ describe('voiceStore — hands-free (VAD авто-пауза + авто-стар
 
   it('после ответа (speaking → idle) hands-free авто-стартует запись', async () => {
     const api = createFakeApi([])
-    const store = createVoiceStore({
+    const store = createTestStore({
       api,
       delays: DELAYS,
       claudeEnabled: true,
@@ -793,7 +793,7 @@ describe('voiceStore — Проводник Claude Code', () => {
     vi.spyOn(api, 'cc:transcript').mockResolvedValue({ items: [{ kind: 'user', text: 'Привет' }], usage: {} })
     const ccTailStart = vi.fn()
     const ccTailStop = vi.fn()
-    const store = createVoiceStore({ api, now: () => 1, ccTailStart, ccTailStop })
+    const store = createTestStore({ api, now: () => 1, ccTailStart, ccTailStop })
 
     await store.actions.openObserver()
     expect(store.getState().ccOpen).toBe(true)
@@ -830,7 +830,7 @@ describe('voiceStore — режим консоли (activity log)', () => {
 
   it('applyClaudeLog добавляет записи в consoleLog по порядку', () => {
     const api = createFakeApi([])
-    const store = createVoiceStore({ api, delays: DELAYS })
+    const store = createTestStore({ api, delays: DELAYS })
     store.actions.applyClaudeLog(entry('Bash: ls'))
     store.actions.applyClaudeLog(entry('Read: index.ts'))
     expect(store.getState().consoleLog.map((e) => e.summary)).toEqual(['Bash: ls', 'Read: index.ts'])
@@ -838,7 +838,7 @@ describe('voiceStore — режим консоли (activity log)', () => {
 
   it('toggleConsole переключает признак развёрнутости панели', () => {
     const api = createFakeApi([])
-    const store = createVoiceStore({ api, delays: DELAYS })
+    const store = createTestStore({ api, delays: DELAYS })
     const initial = store.getState().consoleOpen
     store.actions.toggleConsole()
     expect(store.getState().consoleOpen).toBe(!initial)
@@ -849,7 +849,7 @@ describe('voiceStore — режим консоли (activity log)', () => {
   it('submitText передаёт verbose=true в Claude всегда (активность нужна для статуса)', async () => {
     const api = createFakeApi([])
     const sendClaudePrompt = vi.fn()
-    const store = createVoiceStore({
+    const store = createTestStore({
       api,
       delays: DELAYS,
       claudeEnabled: true,
@@ -921,7 +921,7 @@ describe('voiceStore — статус и скачивание модели (Ша
   it('init выставляет modelPresent из getSttStatus', async () => {
     const api = createFakeApi([])
     const getSttStatus = vi.fn().mockResolvedValue({ present: false, model: 'large-v3-turbo' })
-    const store = createVoiceStore({ api, getSttStatus })
+    const store = createTestStore({ api, getSttStatus })
     await store.actions.init()
     expect(getSttStatus).toHaveBeenCalled()
     expect(store.getState().modelPresent).toBe(false)
@@ -930,7 +930,7 @@ describe('voiceStore — статус и скачивание модели (Ша
   it('downloadModel запускает загрузку; прогресс и done обновляют состояние', async () => {
     const api = createFakeApi([])
     const startModelDownload = vi.fn()
-    const store = createVoiceStore({
+    const store = createTestStore({
       api,
       startModelDownload,
       getSttStatus: async () => ({ present: false, model: 'large-v3-turbo' })
@@ -952,7 +952,7 @@ describe('voiceStore — статус и скачивание модели (Ша
 
   it('applyDownloadError снимает флаг и показывает ошибку', async () => {
     const api = createFakeApi([])
-    const store = createVoiceStore({
+    const store = createTestStore({
       api,
       startModelDownload: vi.fn(),
       getSttStatus: async () => ({ present: false, model: 'small' })
@@ -966,7 +966,7 @@ describe('voiceStore — статус и скачивание модели (Ша
 
   it('init грузит каталог голосов', async () => {
     const api = createFakeApi([])
-    const store = createVoiceStore({ api })
+    const store = createTestStore({ api })
     await store.actions.init()
     expect(store.getState().voicesDownloadable).toBe(true)
     expect(store.getState().voiceCatalog.length).toBeGreaterThan(0)
@@ -975,7 +975,7 @@ describe('voiceStore — статус и скачивание модели (Ша
   it('downloadVoice запускает загрузку; прогресс/done обновляют состояние', async () => {
     const api = createFakeApi([])
     const startVoiceDownload = vi.fn()
-    const store = createVoiceStore({ api, startVoiceDownload })
+    const store = createTestStore({ api, startVoiceDownload })
     await store.actions.init()
 
     store.actions.downloadVoice('ru_RU-ruslan-medium')
@@ -991,7 +991,7 @@ describe('voiceStore — статус и скачивание модели (Ша
 
   it('applyVoiceError снимает прогресс и показывает ошибку', async () => {
     const api = createFakeApi([])
-    const store = createVoiceStore({ api, startVoiceDownload: vi.fn() })
+    const store = createTestStore({ api, startVoiceDownload: vi.fn() })
     await store.actions.init()
     store.actions.downloadVoice('ru_RU-ruslan-medium')
     store.actions.applyVoiceError('ru_RU-ruslan-medium', 'нет сети')
@@ -1008,7 +1008,7 @@ describe('voiceStore — TTS (ttsEnabled, Шаг 10)', () => {
   })
 
   function makeTtsStore(): {
-    store: VoiceStore
+    store: TestStore
     speakText: ReturnType<typeof vi.fn>
     cancelTts: ReturnType<typeof vi.fn>
   } {
@@ -1016,11 +1016,11 @@ describe('voiceStore — TTS (ttsEnabled, Шаг 10)', () => {
     api._state.settings.autoSpeak = true // автоозвучка для проверки TTS-пайплайна
     const speakText = vi.fn()
     const cancelTts = vi.fn()
-    const store = createVoiceStore({ api, delays: DELAYS, ttsEnabled: true, speakText, cancelTts })
+    const store = createTestStore({ api, delays: DELAYS, ttsEnabled: true, speakText, cancelTts })
     return { store, speakText, cancelTts }
   }
 
-  async function reachSpeaking(store: VoiceStore): Promise<void> {
+  async function reachSpeaking(store: TestStore): Promise<void> {
     await store.actions.init()
     store.actions.setDraft('привет')
     await store.actions.submitText()
@@ -1074,7 +1074,7 @@ describe('voiceStore — TTS (ttsEnabled, Шаг 10)', () => {
 
 describe('voiceStore — стриминговая озвучка Claude + кнопка озвучки', () => {
   function makeStreamStore(): {
-    store: VoiceStore
+    store: TestStore
     speakText: ReturnType<typeof vi.fn>
     cancelTts: ReturnType<typeof vi.fn>
   } {
@@ -1082,7 +1082,7 @@ describe('voiceStore — стриминговая озвучка Claude + кно
     api._state.settings.autoSpeak = true // автоозвучка для проверки стриминга TTS
     const speakText = vi.fn()
     const cancelTts = vi.fn()
-    const store = createVoiceStore({
+    const store = createTestStore({
       api,
       delays: DELAYS,
       claudeEnabled: true,
@@ -1181,7 +1181,7 @@ describe('voiceStore — правки/удаление/вложения', () => 
   })
 
   function makeClaudeStore(): {
-    store: VoiceStore
+    store: TestStore
     api: FakeApi
     sendClaudePrompt: ReturnType<typeof vi.fn>
     cancelClaude: ReturnType<typeof vi.fn>
@@ -1195,7 +1195,7 @@ describe('voiceStore — правки/удаление/вложения', () => 
     const editQueued = vi.fn()
     const deleteQueued = vi.fn()
     const sendQueuedNow = vi.fn()
-    const store = createVoiceStore({
+    const store = createTestStore({
       api,
       delays: DELAYS,
       claudeEnabled: true,
@@ -1393,7 +1393,7 @@ describe('voiceStore — ходы, переживающие обновление
   })
 
   function makeClaudeStore(): {
-    store: VoiceStore
+    store: TestStore
     api: FakeApi
     sendClaudePrompt: ReturnType<typeof vi.fn>
     cancelClaude: ReturnType<typeof vi.fn>
@@ -1407,7 +1407,7 @@ describe('voiceStore — ходы, переживающие обновление
     const editQueued = vi.fn()
     const deleteQueued = vi.fn()
     const sendQueuedNow = vi.fn()
-    const store = createVoiceStore({
+    const store = createTestStore({
       api,
       delays: DELAYS,
       claudeEnabled: true,
@@ -1580,7 +1580,7 @@ describe('voiceStore — сессия/аутентификация (web)', () =>
       login: vi.fn(),
       logout: vi.fn()
     }
-    const store = createVoiceStore({ api, session })
+    const store = createTestStore({ api, session })
     await store.actions.init()
     expect(store.getState().authRequired).toBe(true)
     expect(store.getState().currentUser).toBeNull()
@@ -1597,7 +1597,7 @@ describe('voiceStore — сессия/аутентификация (web)', () =>
         .mockResolvedValueOnce({ name: 'user', role: 'user' }),
       logout: vi.fn()
     }
-    const store = createVoiceStore({ api, session })
+    const store = createTestStore({ api, session })
     await store.actions.init()
 
     // Первая попытка — неверные данные.
@@ -1612,24 +1612,20 @@ describe('voiceStore — сессия/аутентификация (web)', () =>
     expect(store.getState().conversations.length).toBe(1)
   })
 
-  it('ошибка logout сохраняет авторизацию и показывает понятное уведомление', async () => {
+  it('ошибка logout сохраняет авторизацию и пользовательские данные', async () => {
     const api = createFakeApi(['Разговор'])
     const session = {
       me: vi.fn().mockResolvedValue({ name: 'admin', role: 'admin' }),
       login: vi.fn(),
       logout: vi.fn().mockRejectedValue(new Error('Не удалось завершить сессию. Попробуйте ещё раз.'))
     }
-    const store = createVoiceStore({ api, session })
+    const store = createTestStore({ api, session })
     await store.actions.init()
 
-    await store.actions.logout()
+    await expect(store.actions.logout()).rejects.toThrow('Не удалось завершить сессию. Попробуйте ещё раз.')
 
     expect(store.getState().currentUser).toEqual({ name: 'admin', role: 'admin' })
     expect(store.getState().conversations).toHaveLength(1)
-    expect(store.getState().notices.at(-1)).toEqual(expect.objectContaining({
-      kind: 'error',
-      text: 'Не удалось завершить сессию. Попробуйте ещё раз.'
-    }))
   })
 
   it('logout очищает пользователя и возвращает на экран логина', async () => {
@@ -1639,7 +1635,7 @@ describe('voiceStore — сессия/аутентификация (web)', () =>
       login: vi.fn(),
       logout: vi.fn().mockResolvedValue(undefined)
     }
-    const store = createVoiceStore({ api, session })
+    const store = createTestStore({ api, session })
     await store.actions.init()
     expect(store.getState().currentUser).toEqual({ name: 'admin', role: 'admin' })
 
@@ -1667,7 +1663,7 @@ describe('voiceStore — машинные утилиты', () => {
 
   it('тонкие ops пробрасывают вызовы в мост fs', async () => {
     const fs = makeFs()
-    const store = createVoiceStore({ api: createFakeApi([]), fs })
+    const store = createTestStore({ api: createFakeApi([]), fs })
     const res = await store.actions.fsList('m1', '/x')
     expect(fs.list).toHaveBeenCalledWith('m1', '/x')
     expect(res.entries).toHaveLength(1)
@@ -1681,7 +1677,7 @@ describe('voiceStore — машинные утилиты', () => {
   })
 
   it('история команд консоли: по машине, без подряд идущих дублей, с капом', () => {
-    const store = createVoiceStore({ api: createFakeApi([]), fs: makeFs() })
+    const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
     store.actions.pushConsoleCommand('m1', 'ls')
     store.actions.pushConsoleCommand('m1', 'ls') // подряд повторённую не дублируем
     store.actions.pushConsoleCommand('m1', ' pwd ') // хранится обрезанной
@@ -1710,7 +1706,7 @@ describe('voiceStore — машинные утилиты', () => {
   })
 
   it('openUtility выбирает онлайн-машину и открывает; closeUtility закрывает', () => {
-    const store = createVoiceStore({ api: createFakeApi([]), fs: makeFs() })
+    const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
     store.actions.openUtility('console', 'm1', '/work')
     expect(store.getState().utility).toEqual({ kind: 'console', agentId: 'm1', path: '/work' })
     store.actions.closeUtility()
@@ -1718,14 +1714,14 @@ describe('voiceStore — машинные утилиты', () => {
   })
 
   it('openUtility с dir открывает проводник ВНУТРИ папки (переключение из терминала)', () => {
-    const store = createVoiceStore({ api: createFakeApi([]), fs: makeFs() })
+    const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
     store.actions.openUtility('explorer', 'm1', '/work', true)
     // Без dir тот же путь считался бы файлом, и проводник открыл бы его родителя.
     expect(store.getState().utility).toEqual({ kind: 'explorer', agentId: 'm1', path: '/work', dir: true })
   })
 
   it('команда «открой консоль» создаёт ai-сообщение с tool-блоком (без LLM)', async () => {
-    const store = createVoiceStore({ api: createFakeApi([]), fs: makeFs() })
+    const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
     await store.actions.init()
     store.actions.setDraft('открой консоль')
     await store.actions.submitText()
@@ -1741,7 +1737,7 @@ describe('voiceStore — машинные утилиты', () => {
 
 describe('voiceStore — админ-страница пользователей', () => {
   it('openUsers грузит список; createUserAccount обновляет его', async () => {
-    const store = createVoiceStore({ api: createFakeApi([]) })
+    const store = createTestStore({ api: createFakeApi([]) })
     await store.actions.openUsers()
     expect(store.getState().usersOpen).toBe(true)
     expect(store.getState().adminUsers.map((u) => u.name)).toContain('admin')
@@ -1828,7 +1824,7 @@ describe('voiceStore — помощник промптов', () => {
 
 describe('voiceStore — чаты завершённых задач', () => {
   /** Проект с задачей в «Готово» и её чатом; сайдбар сужен этим проектом. */
-  async function withDoneTaskChat(): Promise<{ store: VoiceStore; api: FakeApi; chatId: string; taskId: string; projectId: string }> {
+  async function withDoneTaskChat(): Promise<{ store: TestStore; api: FakeApi; chatId: string; taskId: string; projectId: string }> {
     const { store, api } = makeStore(['Обычный'])
     const p = await api['projects:create']({ name: 'P' })
     const board = await api['board:get']({ id: p.id })

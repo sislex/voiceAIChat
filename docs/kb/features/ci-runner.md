@@ -32,7 +32,7 @@ areas:
   - packages/ui/src/styles/app.css
   - packages/ui/src/remote/ciBridge.ts
   - packages/ui/src/remote/httpApi.ts
-  - packages/ui/src/store/voiceStore.ts
+  - packages/ui/src/store/domains/projectsStore.ts
 symbols:
   - createCiRunManager
   - clarifyBudget
@@ -505,7 +505,7 @@ Development-вариант использует штатный `RunFeed` неп�
 отбрасывает кадры других запусков и при переключении отписывается от прежнего.
 REST-история, snapshot и live-кадры объединяются без очистки уже показанного:
 шаги — по `step.id`, лог — по монотонному `CiLogLine.seq`, интеракции и fix-попытки
-— по `id`. То же объединение истории и realtime применяется в `voiceStore`, так
+— по `id`. То же объединение истории и realtime применяется в `projectsStore`, так
 что повторный кадр и reload/reconnect не создают дубль и поздний REST-ответ не
 стирает свежую запись.
 
@@ -539,7 +539,7 @@ FIFO-очередь. Триггер сужен намеренно: маршру�
 источника и чтобы сервер видел карточку либо ещё в `ready`, либо уже в
 `development`. Колонку источника присылает клиент полем `fromColumnId`
 (`tasks:move` в `packages/shared/src/ipc.ts`, снимок `columnId` до
-оптимистичного переноса в `moveTask`, `packages/ui/src/store/voiceStore.ts`) —
+оптимистичного переноса в `moveTask`, `packages/ui/src/store/domains/projectsStore.ts`) —
 без него повторный или конкурирующий запрос уже не смог бы отличить настоящий
 переход от сортировки, потому что карточка к тому моменту лежит в
 `development`. Переход из `backlog`, `component_qa`, `done` и любой другой

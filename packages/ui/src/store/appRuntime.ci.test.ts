@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CiLogLine } from '@shared/ci'
-import { mergeCiLogLines } from './voiceStore'
+import { mergeCiLogLines } from './domains/projectsStore'
 
 const line = (seq: number, chunk = String(seq)): CiLogLine => ({
   runId: 'run-1', stepId: 'step-1', seq, stream: 'stdout', chunk, at: seq
