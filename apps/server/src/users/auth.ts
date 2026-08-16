@@ -123,12 +123,14 @@ export function resolveUser(db: VoiceChatDb, token: string | undefined, secret: 
 
 export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: string): void {
   app.decorateRequest('user', null)
+  const activeUser = (token: string | undefined): SessionUser | null =>
+    token && !db.isSessionRevoked(token) ? resolveUser(db, token, secret) : null
 
   app.addHook('preHandler', async (req, reply) => {
     const url = req.url.split('?')[0]
     if (!url.startsWith('/api/')) return // статика/SPA/ws — не трогаем
     if (isPublic(url)) return
-    const user = resolveUser(db, bearer(req) ?? previewSession(req, url), secret)
+    const user = activeUser(bearer(req) ?? previewSession(req, url))
     if (!user) {
       await reply.code(401).send({ error: 'unauthorized' })
       return reply
@@ -173,18 +175,21 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   // сессионная) без этого роута остаются без cookie, и iframe получает 401.
   // Путь публичный (префикс /api/session/), поэтому Bearer проверяется здесь.
   app.post(REST.sessionPreview, async (req, reply) => {
-    const user = resolveUser(db, bearer(req), secret)
+    const user = activeUser(bearer(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     reply.header('set-cookie', previewCookie(signToken(user, secret)))
     return { ok: true }
   })
 
   app.get(REST.sessionMe, async (req) => {
-    const user = resolveUser(db, bearer(req), secret)
+    const user = activeUser(bearer(req))
     return user ? { user } : { user: null }
   })
 
-  app.post(REST.sessionLogout, async (_req, reply) => {
+  app.post(REST.sessionLogout, async (req, reply) => {
+    const token = bearer(req)
+    if (!activeUser(token)) return reply.code(401).send({ error: 'unauthorized' })
+    db.revokeSession(token!)
     reply.header('set-cookie', previewCookie('', 0))
     return { ok: true }
   })

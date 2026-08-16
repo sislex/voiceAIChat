@@ -1612,6 +1612,26 @@ describe('voiceStore — сессия/аутентификация (web)', () =>
     expect(store.getState().conversations.length).toBe(1)
   })
 
+  it('ошибка logout сохраняет авторизацию и показывает понятное уведомление', async () => {
+    const api = createFakeApi(['Разговор'])
+    const session = {
+      me: vi.fn().mockResolvedValue({ name: 'admin', role: 'admin' }),
+      login: vi.fn(),
+      logout: vi.fn().mockRejectedValue(new Error('Не удалось завершить сессию. Попробуйте ещё раз.'))
+    }
+    const store = createVoiceStore({ api, session })
+    await store.actions.init()
+
+    await store.actions.logout()
+
+    expect(store.getState().currentUser).toEqual({ name: 'admin', role: 'admin' })
+    expect(store.getState().conversations).toHaveLength(1)
+    expect(store.getState().notices.at(-1)).toEqual(expect.objectContaining({
+      kind: 'error',
+      text: 'Не удалось завершить сессию. Попробуйте ещё раз.'
+    }))
+  })
+
   it('logout очищает пользователя и возвращает на экран логина', async () => {
     const api = createFakeApi(['Разговор'])
     const session = {
