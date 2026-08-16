@@ -78,7 +78,8 @@
 
 .app {
   display: grid;
-  grid-template-columns: 264px 1fr;
+  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   height: 100vh;
   background: var(--bg);
   overflow: hidden;
@@ -5721,7 +5722,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 }
 
 /* ---- Центр релизов ---- */
-.toolpage.projpage{height:100%;overflow:hidden}.toolpage.projpage>.mdhead{flex:none}.toolpage.projpage>.release-center{flex:1;min-height:0;min-width:0}
+.toolpage.projpage { height: 100%; overflow: hidden; }
+.toolpage.projpage > .mdhead { flex: none; }
+.toolpage.projpage > .release-center { flex: 1; min-height: 0; min-width: 0; }
 .release-center,.release-detail{width:100%;max-width:1120px;margin:0 auto;padding:20px;min-width:0}.release-center{display:flex;flex-direction:column;gap:18px;overflow:hidden}.release-detail{display:grid;gap:18px;min-height:0;overflow-y:auto}.release-pane{display:flex;flex:1;min-height:0;min-width:0;flex-direction:column;gap:18px;overflow:hidden}.release-pane>header,.release-detail>header{display:flex;align-items:center;justify-content:space-between;gap:16px}.release-pane>header>span{display:flex;align-items:center;gap:10px}
 .release-center h2,.release-detail h2{margin:0}.release-center header p,.release-detail header p{margin:4px 0 0;color:var(--text-dim)}
 .release-tabs{display:flex;gap:6px;border-bottom:1px solid var(--border)}
