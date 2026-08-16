@@ -766,6 +766,23 @@ describe('projects: чаты завершённых задач в списке �
     expect(db.searchConversations('alice', 'Скролл', { includeCompleted: true }).map((c) => c.id)).toContain(chatId)
   })
 
+  it('отмена отдельного CI-рана не скрывает чат активной задачи', () => {
+    const { pid, taskId, chatId, dev } = withTaskChat()
+    const run = db.createCiRun({
+      projectId: pid,
+      taskId,
+      agentId: null,
+      triggeredBy: 'alice',
+      prevColumnId: dev,
+      runColumnId: dev,
+      slotProgress: { done: 0, total: 1, phase: 'Отменён' }
+    })
+    db.updateCiRun(run.id, { status: 'cancelled', terminalColumnId: dev })
+
+    expect(db.listConversations('alice').map((c) => c.id)).toContain(chatId)
+    expect(db.getBoard('alice', pid)!.tasks.find((task) => task.id === taskId)!.columnId).toBe(dev)
+  })
+
   it('обычные чаты (без задачи) в списке остаются', () => {
     const { pid, taskId, done } = withTaskChat()
     const plain = db.createConversation('alice', 'Просто чат')
