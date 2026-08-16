@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, it, expect } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 import { createFakeApi, type FakeApi } from './test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
+import type { PreviewAction } from '@shared/previewActions'
+import { WEB_RECORDER_MESSAGE_TYPE } from '@shared/webRecorder'
 
 // Большие задержки пайплайна: асинхронные этапы не срабатывают за время теста,
 // а таймеры гасятся при размонтировании (dispose). Проверяем синхронные переходы
@@ -129,7 +131,7 @@ describe('App — онбординг первого запуска', () => {
 })
 
 describe('App — действия модели в веб-превью (мост window.preview)', () => {
-  interface BridgeAction { conversationId: string; requestId: string; action: { kind: string; url?: string } }
+  interface BridgeAction { conversationId: string; requestId: string; action: PreviewAction }
   interface BridgeResult { requestId: string; ok: boolean; result?: unknown; error?: string }
 
   /** Ставит фейковый мост и возвращает способ отправить действие + ответы. */
@@ -143,7 +145,7 @@ describe('App — действия модели в веб-превью (мост
     return { emit: (m) => onAction?.(m), results }
   }
 
-  afterEach(() => { delete (window as { preview?: unknown }).preview })
+  afterEach(() => { delete (window as { preview?: unknown }).preview; window.location.hash = '' })
 
   it('браузерное действие из обычного чата отклоняется: рекордер доступен только на отдельной странице', async () => {
     const bridge = installPreviewBridge()
@@ -174,6 +176,52 @@ describe('App — действия модели в веб-превью (мост
     bridge.emit({ conversationId: active.id, requestId: 'r3', action: { kind: 'read' } })
     await waitFor(() => expect(bridge.results).toHaveLength(1))
     expect(bridge.results[0].ok).toBe(false)
+  })
+
+  it('Playwright Reader привязывает open/read к чату и восстанавливает панель после refresh', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const chat = await api['conversations:create']({ title: 'Reader A', assistantKind: 'playwright-reader' })
+    window.location.hash = `#/playwright-reader/${chat.id}`
+    let bridge = installPreviewBridge()
+    const view = render(<App api={api} delays={SLOW} />)
+    let frame = await screen.findByTitle('Web Reader') as HTMLIFrameElement
+    fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, kind: 'ready' } }))
+    bridge.emit({ conversationId: chat.id, requestId: 'pw-open', action: { kind: 'open', url: 'https://shop.example/' } })
+    await waitFor(() => expect(api._state.conversations.find((item) => item.id === chat.id)?.previewUrl).toBe('https://shop.example/'))
+    fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, kind: 'page-status', status: 'ready', url: 'https://shop.example/' } }))
+    await waitFor(() => expect(bridge.results).toContainEqual({ requestId: 'pw-open', ok: true, result: { url: 'https://shop.example/' } }))
+
+    view.unmount()
+    bridge = installPreviewBridge()
+    render(<App api={api} delays={SLOW} />)
+    frame = await screen.findByTitle('Web Reader') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, kind: 'ready' } }))
+    fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, kind: 'page-status', status: 'ready', url: 'https://shop.example/' } }))
+    bridge.emit({ conversationId: chat.id, requestId: 'pw-read', action: { kind: 'read' } })
+    await waitFor(() => expect(post.mock.calls.some(([message]) => (message as { kind?: string; action?: { kind: string } }).kind === 'run-action' && (message as { action?: { kind: string } }).action?.kind === 'read')).toBe(true))
+    const command = post.mock.calls.map(([message]) => message as { kind?: string; requestId?: string; action?: { kind: string } }).find((message) => message.kind === 'run-action' && message.action?.kind === 'read')!
+    const result = { page: { url: 'https://shop.example/', title: 'Shop' }, headings: [], links: [], buttons: [], inputs: [], text: 'Loaded' }
+    fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, kind: 'action-result', requestId: command.requestId, ok: true, result } }))
+    await waitFor(() => expect(bridge.results).toContainEqual({ requestId: 'pw-read', ok: true, result }))
+  })
+
+  it('при переключении Playwright Reader отклоняет команды панели другого чата', async () => {
+    const bridge = installPreviewBridge()
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const first = await api['conversations:create']({ title: 'Reader A', assistantKind: 'playwright-reader' })
+    const second = await api['conversations:create']({ title: 'Reader B', assistantKind: 'playwright-reader' })
+    window.location.hash = `#/playwright-reader/${first.id}`
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByTitle('Web Reader')
+    await userEvent.selectOptions(screen.getByLabelText('Разговор Playwright Reader'), second.id)
+    await waitFor(() => expect(window.location.hash).toBe(`#/playwright-reader/${second.id}`))
+    await waitFor(() => expect(screen.getByLabelText('Разговор Playwright Reader')).toHaveValue(second.id))
+    bridge.emit({ conversationId: first.id, requestId: 'old-chat', action: { kind: 'read' } })
+    await waitFor(() => expect(bridge.results).toHaveLength(1))
+    expect(bridge.results[0]).toMatchObject({ requestId: 'old-chat', ok: false, error: expect.stringContaining('не открыт') })
   })
 })
 
