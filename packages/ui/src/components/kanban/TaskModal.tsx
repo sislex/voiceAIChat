@@ -459,10 +459,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     >
       {!props.draft && <nav className="task-tabs" role="tablist" aria-label="Разделы карточки">
         {([
-          ['general','Общее'],['settings','Настройки'],
+          ['general','Общее'],
           ...(preparationVisible ? [['preparation','Подготовка к разработке'] as const] : []),
+          ['settings','Настройки'],['progress','Ход выполнения'],
           ...qaStageOrder.filter(qaStageVisible).map((stage) => [stage, stage === 'component_qa' ? 'Component QA' : stage === 'integration_tests' ? 'Интеграционные тесты' : 'Automated QA'] as const),
-          ['qa','Ручное QA'],['progress','Ход выполнения'],['merge','Merge'],['feed','Лента рана']
+          ['qa','Ручное QA'],['merge','Merge'],['feed','Лента рана']
         ] as Array<readonly [TaskTab, string]>).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={activeTab === id} className={activeTab === id ? 'task-tab task-tab--active' : 'task-tab'} onClick={() => setActiveTab(id)}>{label}</button>
         ))}
@@ -833,7 +834,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             <CiTaskSettings section="machine" projectId={task.projectId} taskId={task.id} mergeMachineBound={task.mergeMachineBound} />
             <CiTaskSettings section="model" projectId={task.projectId} taskId={task.id} />
             <CiTaskSettings section="commands" projectId={task.projectId} taskId={task.id} />
-            <FeaturePreviewSection projectId={task.projectId} taskId={task.id} />
           </div>
         </section>}
         {!props.draft && <>
@@ -841,7 +841,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" hidden={activeTab !== stage}>{stage === 'component_qa'
           ? <ComponentQaPanel projectId={task.projectId} taskId={task.id} active={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
           : <QaStageRunPanel projectId={task.projectId} taskId={task.id} stage={stage} />}</section>)}
-        <section className="task-tab-panel" hidden={activeTab !== 'qa'}><ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} /></section>
+        <section className="task-tab-panel" data-testid="task-manual-qa-panel" hidden={activeTab !== 'qa'}>
+          <FeaturePreviewSection projectId={task.projectId} taskId={task.id} />
+          <ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
+        </section>
         <section className="task-tab-panel" hidden={activeTab !== 'progress'}>
           {props.ciSummary?.progress && <AutomationProgressView progress={props.ciSummary.progress} />}
           <nav className="task-subtabs" role="tablist" aria-label="Ход выполнения">
