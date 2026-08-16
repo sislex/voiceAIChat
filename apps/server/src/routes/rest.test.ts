@@ -105,9 +105,25 @@ describe('REST: аутентификация', () => {
     const anonymous = await app.inject({ method: 'GET', url: '/api/preview?url=invalid' })
     expect(anonymous.statusCode).toBe(401)
 
-    const logout = await app.inject({ method: 'POST', url: '/api/session/logout' })
+    const token = login.json().token as string
+    const logout = await app.inject({
+      method: 'POST',
+      url: '/api/session/logout',
+      headers: { authorization: `Bearer ${token}` }
+    })
+    expect(logout.statusCode).toBe(200)
     expect(logout.headers['set-cookie']).toContain('vc_preview_session=;')
     expect(logout.headers['set-cookie']).toContain('Max-Age=0')
+    expect((await app.inject({
+      method: 'GET',
+      url: '/api/conversations',
+      headers: { authorization: `Bearer ${token}` }
+    })).statusCode).toBe(401)
+
+    // Отзывается только текущая сессия: новый вход того же аккаунта работает.
+    const relogin = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'user', password: '' } })
+    expect(relogin.statusCode).toBe(200)
+    expect(relogin.json().token).not.toBe(token)
   })
 
   it('POST /api/session/preview выпускает preview-cookie из Bearer, без токена — 401', async () => {

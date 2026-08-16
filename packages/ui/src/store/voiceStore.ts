@@ -626,7 +626,7 @@ export interface StoreActions {
   /** Войти по логину/паролю (web). Успех → загрузка данных пользователя. */
   login(name: string, password: string): Promise<void>
   /** Выйти: очистить сессию и данные, показать экран логина (web). */
-  logout(): Promise<void>
+  logout(): Promise<boolean>
   /** Открыть локальный черновик; специальные web-recorder создаются сразу. */
   newConversation(assistantKind?: 'web-recorder' | 'playwright-reader'): Promise<string | null>
   /** Открыть разговор. `false` — такого разговора нет (удалён/чужой). */
@@ -1896,7 +1896,7 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
   }
 
   /** Выход: гасим таймеры/аудио, чистим сессию и состояние, показываем логин. */
-  async function logout(): Promise<void> {
+  async function logout(): Promise<boolean> {
     cancelTimers()
     stopCapture()
     resetTts()
@@ -1904,8 +1904,14 @@ export function createVoiceStore(deps: StoreDeps): VoiceStore {
       clearInterval(loginStatusPoll)
       loginStatusPoll = null
     }
-    await deps.session?.logout().catch(() => {})
+    try {
+      await deps.session?.logout()
+    } catch (error) {
+      fail(error)
+      return false
+    }
     setState({ ...initialState(), authRequired: true, ttsAvailable: ttsEnabled })
+    return true
   }
 
   /** Запускает периодический опрос статуса входа (идемпотентно). */

@@ -13,6 +13,12 @@ describe('accounts — токены', () => {
     expect(verifyTokenName(token, secret)).toBe('bob')
   })
 
+  it('каждый вход получает отдельный токен', () => {
+    expect(signToken({ name: 'bob', role: 'developer' }, secret)).not.toBe(
+      signToken({ name: 'bob', role: 'developer' }, secret)
+    )
+  })
+
   it('чужой секрет / подделка / мусор → null', () => {
     const token = signToken({ name: 'admin', role: 'admin' }, secret)
     expect(verifyTokenName(token, 'secret-B')).toBeNull()

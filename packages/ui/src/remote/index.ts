@@ -188,7 +188,7 @@ export async function migrateDesktopLegacy(httpBase: string, token: string): Pro
 }
 
 /** Мост сессии поверх REST: логин сохраняет токен и перезапускает WS с ним. */
-function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessionBridge {
+export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessionBridge {
   const authHeaders = (): Record<string, string> => {
     const t = getToken()
     return t ? { authorization: `Bearer ${t}` } : {}
@@ -219,6 +219,8 @@ function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessionBridg
       return user ?? null
     },
     logout: async () => {
+      const res = await fetch(httpBase + REST.sessionLogout, { method: 'POST', headers: authHeaders() })
+      if (!res.ok) throw new Error('Не удалось завершить сессию. Попробуйте ещё раз.')
       setToken(null)
       ws.reconnect() // рвём авторизованное соединение
     },
