@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-08-15
-checked: ac6f0db
+updated: 2026-08-16
+checked: 26abea0
 areas:
   - apps/browser-runner/src
   - packages/shared/src/types.ts
@@ -34,6 +34,24 @@ iframe-рекордером, а не `browser-runner`. URL хранится в �
 и его привязка восстанавливаются после refresh. При переключении чатов
 регистрация runner-а пересоздаётся с новым `conversationId`; команда старого
 чата отклоняется до обращения к панели.
+
+Механика привязки одна на оба Reader-режима и живёт в `AppBody`
+(`packages/ui/src/App.tsx`): `previewRunnerRef` хранит не голый runner, а пару
+`{ conversationId, runner }`, снятие регистрации обнуляет ссылку только для
+своего чата, а обработчик моста пропускает действие лишь при совпадении
+активного чата, Reader-маршрута (`inReader || inPlaywrightReader`) и
+`conversationId` регистрации. После refresh чат берётся из адреса: в
+`useVoiceStore` передаётся `routeChatId ?? routeReaderChatId ??
+routePlaywrightReaderChatId`, поэтому `#/playwright-reader/<id>` сразу даёт
+активный чат, host монтируется с сохранённым в разговоре `previewUrl` и
+привязка восстанавливается без действий пользователя. Диагностика осталась
+различимой: «не открыт на странице Reader» ≠ «панель активного чата не
+открыта или ещё не подключена» ≠ тексты самого host-а про неготовую страницу.
+Формулировки и цепочка команд — в
+[ui.md](../ui.md#действия-модели-в-превью-mcp__browser__). Регрессии — в
+`packages/ui/src/App.dom.test.tsx` (open/read в Playwright-чате, повторное
+монтирование после refresh, отказ команде прежнего чата при переключении) и в
+`packages/ui/src/WebPreview.dom.test.tsx` (жизненный цикл find/click/type).
 
 Не реализованы: серверная оркестрация сессий browser-runner (REST/WS, проверка
 владения разговором, service-токен раннера), screencast и передача кадров,
@@ -136,6 +154,11 @@ Playwright. `server.ts` переводит эти строки в статусы
 
 ## Маршрут и UI
 
-UI-поверхность описана в [ui.md](../ui.md#отдельный-режим-web-reader): hash-маршруты
-`#/playwright-reader[/<conversationId>]`, пункт меню в `Sidebar`, собственный
-список чатов в сторе и заглушка правой панели.
+UI-поверхность описана в [ui.md](../ui.md#отдельный-режим-playwright-reader):
+hash-маршруты `#/playwright-reader[/<conversationId>]`, пункт меню в `Sidebar`,
+собственный список чатов в сторе и общая с Web Reader правая панель
+`WebReaderHost` (её подпись в DOM — «Web Reader», проектный URL в этом режиме не
+передаётся). Разметки-заглушки Chromium в приложении больше нет; её CSS-правила
+`.playwright-browser-pane` и `.playwright-reader-header` остались в
+`packages/ui/src/styles/app.css` мёртвыми и пригодятся, когда появится настоящая
+панель раннера.
