@@ -135,6 +135,17 @@ describe('voiceStore — сайдбар обновляется по событи
     expect(ids(s.store)).not.toContain(s.chatId)
   })
 
+  it('cancelled у отдельного CI-рана не скрывает чат активной задачи', async () => {
+    const s = await scene()
+    await s.store.actions.newConversation()
+    expect(ids(s.store)).toContain(s.chatId)
+
+    s.store.actions.applyCiSummary(s.projectId, summaryOf(s.taskId, 'cancelled'))
+    await flushRefresh()
+
+    expect(ids(s.store)).toContain(s.chatId)
+  })
+
   it('открытый чат завершённой задачи остаётся в списке', async () => {
     const s = await scene()
     expect(await s.store.actions.selectConversation(s.chatId)).toBe(true)

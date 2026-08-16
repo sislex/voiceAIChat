@@ -228,10 +228,18 @@ describe('projects REST: доска', () => {
     const a = await mk('A')
     const b = await mk('B')
 
-    // assignee не участник → 400; participant ok
+    // assignee не участник → 400; активный участник ok; блокированный участник → 400
     expect((await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title: 'C', assignee: 'bob' } })).statusCode).toBe(400)
     await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'bob' } })
-    expect((await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title: 'C', assignee: 'bob' } })).statusCode).toBe(200)
+    const assigned = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title: 'C', assignee: 'bob' } })
+    expect(assigned.statusCode).toBe(200)
+    expect((assigned.json() as Task).assignee).toBe('bob')
+    const unassigned = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title: 'D', assignee: null } })
+    expect(unassigned.statusCode).toBe(200)
+    expect((unassigned.json() as Task).assignee).toBeNull()
+    db.setUserBlocked('bob', true)
+    expect((await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title: 'E', assignee: 'bob' } })).statusCode).toBe(400)
+    db.setUserBlocked('bob', false)
 
     // move A в колонку doing
     const moved = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${a.id}/move`, payload: { columnId: doing.id } })

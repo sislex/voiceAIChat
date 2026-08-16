@@ -101,7 +101,8 @@ export function createSessionStore(deps: SessionDeps = {}): SessionStore {
         return user
       },
       async logout() {
-        await client?.logout().catch(() => {})
+        await client?.logout()
+        if (core.disposed()) return
         core.resetState(initialState(!!client))
         emit({ type: 'session.signedOut' })
       },

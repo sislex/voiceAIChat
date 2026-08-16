@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-08-13
-checked: c7e30b3
+updated: 2026-08-17
+checked: c744579
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -36,6 +36,7 @@ SQL-комментариях внутри него **нельзя обратны
 | `settings` | key-value, значения — JSON-строки |
 | `agents` | машины: `token_hash`, `last_seen`, `policy` (JSON), `user_id` |
 | `users` | `name` (PK и он же id владельца), `password_hash`, `role`, `blocked` |
+| `session_revocations` | SHA-256 отозванного Bearer-токена и время отзыва; deny-list переживает рестарт сервера |
 | `llm_engines` | реестр HTTP-исполнителей LLM для админки: `name`, `kind` (`claude`/`codex`), `base_url`, открытый `token`, `enabled`, `allowed_roles` (JSON-массив ролей), `is_default`, `created_at` |
 | `model_prices` | поддерживаемые тарифы Codex/OpenAI: USD за 1M обычных, кэшированных, записанных в кэш и выходных токенов, источник и даты тарифа/обновления; стартовые строки обновляются только через `INSERT OR IGNORE` |
 | `kb_usage_queries` | обращение к базе знаний: `seq` (монотонный курсор внутри разговора — по нему клиент отсекает устаревшие кадры `kb.usage`), `source` (`auto`/`tool_*`), `status`, `chars`/`est_tokens`, `prompt_chars`, `project_id` — СНИМОК проекта на момент обращения, `ci_run_id`/`ci_step_id` — ран и шаг CI-раннера, если обращение случилось в его ходе (NULL — обычный чат); каскад по разговору |
@@ -159,6 +160,20 @@ FTS5 не должна валить старт (тогда `searchMessages` пр
 `preHandler` (`users/auth.ts`) наполняет `req.user`, проверяет блокировку; список
 публичных путей — функция `isPublic` там же. Админские роуты — `requireAdmin`
 (403 для не-админа).
+
+Каждый login получает отдельный токен: `signToken()` в `users/accounts.ts` добавляет
+случайный `sid` в подписанный payload. `POST /api/session/logout` принимает только
+действующий текущий Bearer, сохраняет его SHA-256 через `VoiceChatDb.revokeSession()`
+и удаляет preview-cookie. Глобальная проверка сессии и выпуск preview-cookie сверяются
+с `session_revocations`, поэтому отозванный токен не действует и после рестарта;
+другие сессии аккаунта и новый login остаются рабочими.
+
+Web-мост `packages/ui/src/remote/index.ts` удаляет `vc.session.token` и переподключает
+WebSocket только после успешного ответа logout. При ошибке токен и пользовательское
+состояние сохраняются, а store показывает уведомление. Успешный выход очищает
+сессионное состояние UI и ведёт на экран входа после подтверждения в меню пользователя.
+Он не удаляет чаты, проекты, задачи или настройки и не меняет CLI-профили и входы
+Claude, Codex и других внешних сервисов.
 
 **Изоляция данных — по логину**: `uid(req)` возвращает `req.user.name`, и разговоры,
 машины и ходы фильтруются по нему. Добавляя роут, работающий с данными
