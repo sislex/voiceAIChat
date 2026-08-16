@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-17
-checked: 7c9c968
+checked: ffec1df
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/qa.ts
@@ -231,8 +231,10 @@ Done ставит её заново; перенос между done-колонк
 действует** (он про карточку на доске, а не про строку в списке). Фильтрует
 сервер: `listConversations`/`searchConversations` отбрасывают беседы, чей
 `conversations.task_id` указывает на задачу в колонке с семантикой `done`
-(константа `NOT_DONE_TASK_CHAT` в `database.ts`). Проверяем колонку, а не
-`tasks.done_at`, чтобы возврат задачи в работу возвращал чат в список сразу.
+(константа `NOT_DONE_TASK_CHAT` в `database.ts`). Проверяем колонку самой задачи,
+а не `tasks.done_at` или статус отдельного CI-рана: терминальный realtime-кадр
+`cancelled` перезапрашивает список, но чат остаётся видимым, пока задача находится
+в активной колонке. Поэтому возврат задачи в работу возвращает чат в список сразу.
 Флаг: `GET /api/conversations?includeCompleted=1` и тот же параметр у
 `/api/conversations/search`; админский список бесед пользователя приходит
 полным.
