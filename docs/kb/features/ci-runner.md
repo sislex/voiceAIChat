@@ -158,6 +158,15 @@ ETA использует среднюю длительность фактиче�
 разработка, исправление тестов, анализ ручного QA, подготовка данных, code
 review, обновление БЗ, релизный анализ и резюме.
 
+Тем же порядком выбирает движок «Подготовка к разработке»
+(`launchTaskPreparation` в `apps/server/src/server.ts`): она резолвит стадию
+`planning` через `resolveTaskStageLlmConfig`, а последним уровнем передаёт
+`ciLlmDefaultsForUser` НАЖАВШЕГО кнопку — CLI запускается в его профиле. При
+`provider === 'codex'` запрос уходит в codex-клиент. Модель по умолчанию зависит
+от движка: пустая модель и claude-`default` дают `sonnet`, у codex —
+`DEFAULT_CODEX_MODEL`. Отдельной записи `ci_stage_runs` и строк расхода у
+подготовки нет: её история — `task_preparation_runs`.
+
 Системный fallback у этой цепочки заменяем: четвёртый параметр
 `db.resolveTaskStageLlmConfig(projectId, taskId, stage, fallback)` подставляет
 свою тройку вместо `claude/opus` (и вместо отсутствующей модели проекта). Им
