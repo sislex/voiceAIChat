@@ -408,6 +408,29 @@ describe('TaskModal — описание: маркдаун в просмотре
 describe('TaskModal — вкладки и merge', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
+  it('располагает постоянные вкладки по workflow', () => {
+    render(<TaskModal {...props()} />)
+
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Общее', 'Настройки', 'Ход выполнения', 'Ручное QA', 'Merge', 'Лента рана'
+    ])
+  })
+
+  it('располагает preparation и QA-вкладки на своих местах workflow', () => {
+    const preparationBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Подготовка', semanticType: 'preparation' }] }
+    const { unmount } = render(<TaskModal {...props({ board: preparationBoard, task: mkTask({ taskPreparationRunId: 'prep-1' }) })} />)
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Общее', 'Подготовка к разработке', 'Настройки', 'Ход выполнения', 'Ручное QA', 'Merge', 'Лента рана'
+    ])
+    unmount()
+
+    const manualQaBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Ручное QA', semanticType: 'manual_qa' }] }
+    render(<TaskModal {...props({ board: manualQaBoard })} />)
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Общее', 'Настройки', 'Ход выполнения', 'Component QA', 'Интеграционные тесты', 'Automated QA', 'Ручное QA', 'Merge', 'Лента рана'
+    ])
+  })
+
   it('переключает шесть вкладок без закрытия и сохраняет черновик', async () => {
     const onClose = vi.fn()
     render(<TaskModal {...props({ onClose })} />)
@@ -434,10 +457,22 @@ describe('TaskModal — вкладки и merge', () => {
     const settings = screen.getByTestId('task-settings-panel')
     await waitFor(() => expect(within(settings).getByLabelText('Движок модели')).toHaveValue('claude'))
     expect(within(settings).getByLabelText('Машина выполнения')).toBeInTheDocument()
+    expect(within(settings).queryByTestId('feature-preview')).not.toBeInTheDocument()
     fireEvent.change(within(settings).getByLabelText('Движок модели'), { target: { value: 'codex' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
     expect(within(settings).getByLabelText('Движок модели')).toHaveValue('codex')
+  })
+
+  it('показывает тестовое окружение перед тест-кейсами и QA-сессией в ручном QA', async () => {
+    window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate: vi.fn(), cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
+    render(<TaskModal {...props()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Ручное QA' }))
+
+    const panel = screen.getByTestId('task-manual-qa-panel')
+    const preview = await within(panel).findByTestId('feature-preview')
+    const manualQa = within(panel).getByRole('region', { name: 'Ручное QA' })
+    expect(preview.compareDocumentPosition(manualQa) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
 
