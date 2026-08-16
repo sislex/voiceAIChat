@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-08-12
-checked: d812a98
+updated: 2026-08-16
+checked: de895b5
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -18,7 +18,7 @@ areas:
   - packages/ui/src/components/Machine*.tsx
   - packages/ui/src/components/FileExplorer.tsx
   - packages/ui/src/remote/httpApi.ts
-  - packages/ui/src/store/voiceStore.ts
+  - packages/ui/src/store/domains/operationsStore.ts
 ---
 
 # Машины: компаньон-агент, политика, PTY, проводник

@@ -1,7 +1,7 @@
 ---
 title: Раны QA-этапов: отдельные сущности и вкладки карточки
-updated: 2026-08-15
-checked: 3dd8d73
+updated: 2026-08-16
+checked: de895b5
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/qa.test.ts
@@ -168,7 +168,7 @@ preparation/QA-preparation/Component QA и пишет предупреждени
   `integration_tests` в `awaiting_input`, пустой ответ отклоняется).
 
 Отдельного маршрута «завершить ран/зачесть гейт» нет. WS-событий и подписки у
-этих ранов тоже нет: ни `protocol.ts`, ни `ws.ts`, ни `voiceStore` о них не
+этих ранов тоже нет: ни `protocol.ts`, ни `ws.ts`, ни доменные хранилища UI о них не
 знают, живость обеспечивает опрос панели. Клиентская сторона — опциональные
 методы `listStageRuns`, `startStageRun`, `cancelStageRun`, `retryStageRun`,
 `answerStageRun` в `RendererQaBridge` (`packages/ui/src/remote/qaBridge.ts`),

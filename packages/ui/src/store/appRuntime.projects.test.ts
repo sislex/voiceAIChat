@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createVoiceStore, type VoiceStore } from './voiceStore'
+import { createTestStore, type TestStore } from '../test/appHarness'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import type { Message } from '@shared/types'
 
-function makeStore(): { store: VoiceStore; api: FakeApi } {
+function makeStore(): { store: TestStore; api: FakeApi } {
   const api = createFakeApi()
-  const store = createVoiceStore({ api, now: () => 1_700_000_000_000 })
+  const store = createTestStore({ api, now: () => 1_700_000_000_000 })
   return { store, api }
 }
 
@@ -39,7 +39,7 @@ describe('voiceStore — проекты и доска', () => {
     const startRun = vi.fn(async (_projectId: string, taskId: string) => ({
       id: 'run-1', projectId: 'project', taskId, status: 'queued', slotProgress: null, durationMs: null
     }))
-    const store = createVoiceStore({ api, ci: { startRun } as never })
+    const store = createTestStore({ api, ci: { startRun } as never })
     const project = await api['projects:create']({ name: 'P1' })
 
     const run = await store.actions.createTaskAndStartCi(project.id, {
@@ -274,7 +274,7 @@ describe('voiceStore — выбор проекта в сайдбаре', () => {
     await store.actions.createProject({ name: 'P' })
     const pid = store.getState().projectDetail!.id
     await store.actions.setSidebarProject(pid)
-    const store2 = createVoiceStore({ api: createFakeApi(), now: () => 1_700_000_000_000 })
+    const store2 = createTestStore({ api: createFakeApi(), now: () => 1_700_000_000_000 })
     expect(store2.getState().sidebarProjectId).toBe(pid)
   })
 })
@@ -389,7 +389,7 @@ describe('voiceStore — канал уведомлений', () => {
 // смена активного чата обязана его убрать, не дожидаясь ответа сервера.
 describe('voiceStore — контекст задачи не залипает при смене чата', () => {
   /** Проект с задачей и открытым связанным чатом (контекст уже загружен). */
-  async function openedTaskChat(): Promise<{ store: VoiceStore; api: FakeApi; chatId: string }> {
+  async function openedTaskChat(): Promise<{ store: TestStore; api: FakeApi; chatId: string }> {
     const { store, api } = makeStore()
     await store.actions.createProject({ name: 'P1' })
     const projectId = store.getState().projectDetail!.id

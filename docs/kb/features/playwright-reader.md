@@ -1,12 +1,12 @@
 ---
 title: Playwright Reader и browser-runner
 updated: 2026-08-16
-checked: 26abea0
+checked: de895b5
 areas:
   - apps/browser-runner/src
   - packages/shared/src/types.ts
   - packages/ui/src/App.tsx
-  - packages/ui/src/store/voiceStore.ts
+  - packages/ui/src/store/domains/chatStore.ts
   - apps/server/src/db/database.ts
   - apps/server/src/routes/rest.ts
 ---
