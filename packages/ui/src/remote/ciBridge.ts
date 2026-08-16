@@ -93,8 +93,8 @@ export interface RendererCiRest {
   startMerge(projectId: string, taskId: string, agentId?: string | null): Promise<MergeRun>
   getMerge(runId: string): Promise<MergeRun>
   cancelMerge(runId: string): Promise<MergeRun>
-  /** unpin=true — «мержить текущий head»: новая попытка без закреплённого SHA. */
-  retryMerge(runId: string, unpin?: boolean): Promise<MergeRun>
+  /** agentId выбирает машину новой попытки; unpin=true снимает закреплённый SHA. */
+  retryMerge(runId: string, agentId?: string, unpin?: boolean): Promise<MergeRun>
   /** История merge-попыток задачи, свежие первыми. */
   listMergeRuns(projectId: string, taskId: string): Promise<MergeRun[]>
   /** Штатный production-деплой из успешного merge-рана. */
